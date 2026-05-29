@@ -380,7 +380,7 @@ pub const Sema = struct {
             .neg  => if (t.is_numeric()) t else .any,
             .bnot => if (t.is_integer()) t else .any,
             .not  => .bool,
-            .len  => .i64,
+            .len  => if (t == .any) .any else .i64,
         };
     }
 };
