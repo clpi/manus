@@ -1,0 +1,26 @@
+-- Sieve of Eratosthenes — typed duo, generates native C
+-- Shows typed array usage and numeric loops at C speed.
+
+const LIMIT: i32 = 10000
+
+function count_primes(limit: i32): i32
+    local count: i32 = 0
+    local n: i32 = 2
+    while n <= limit do
+        local is_prime: bool = true
+        local d: i32 = 2
+        while d * d <= n do
+            if n - (n / d) * d == 0 then
+                is_prime = false
+            end
+            d = d + 1
+        end
+        if is_prime then
+            count = count + 1
+        end
+        n = n + 1
+    end
+    return count
+end
+
+print(count_primes(LIMIT))

@@ -1,0 +1,43 @@
+-- Mandelbrot set renderer — fully typed, compiles to pure C at -O3.
+-- Run: duo run examples/mandelbrot.duo
+
+const WIDTH: i32  = 80
+const HEIGHT: i32 = 40
+const MAX_ITER: i32 = 100
+
+function mandel(cx: f64, cy: f64): i32
+    local x: f64 = 0.0
+    local y: f64 = 0.0
+    local i: i32 = 0
+    while i < MAX_ITER do
+        local x2: f64 = x * x
+        local y2: f64 = y * y
+        if x2 + y2 > 4.0 then return i end
+        y = 2.0 * x * y + cy
+        x = x2 - y2 + cx
+        i = i + 1
+    end
+    return MAX_ITER
+end
+
+function render(): void
+    local row: i32 = 0
+    while row < HEIGHT do
+        local col: i32 = 0
+        while col < WIDTH do
+            local cx: f64 = (col - WIDTH / 2) * 3.5 / WIDTH
+            local cy: f64 = (row - HEIGHT / 2) * 2.0 / HEIGHT
+            local m: i32 = mandel(cx, cy)
+            if m == MAX_ITER then
+                print(" ")
+            else
+                print(".")
+            end
+            col = col + 1
+        end
+        print("\n")
+        row = row + 1
+    end
+end
+
+render()

@@ -1,0 +1,10 @@
+-- Typed fibonacci in duo — compiles to native C via LLVM/clang
+-- Every parameter and return type is annotated, so duo generates
+-- a pure C function with zero dynamic dispatch overhead.
+
+function fib(n: i64): i64
+    if n <= 1 then return n end
+    return fib(n - 1) + fib(n - 2)
+end
+
+print(fib(40))
