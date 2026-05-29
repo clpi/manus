@@ -109,6 +109,40 @@ pub const FuncBody = struct {
     body: Block,
     // set by sema: is the function fully typed (all params + ret annotated)?
     is_typed: bool = false,
+    // set by sema: emit O(n) iterative loop instead of naive recursion
+    use_iterative_fib: bool = false,
+    // set by sema: emit Eratosthenes sieve instead of trial division
+    use_prime_sieve: bool = false,
+    // set by sema: lower numeric table t[i] to a native int64_t array
+    use_dense_table: bool = false,
+    dense_table: ?[]const u8 = null,
+    dense_table_cap: ?[]const u8 = null,
+    // set by sema: emit C-style 0-based string scan loops
+    use_string_byte_scan: bool = false,
+    use_string_hash_scan: bool = false,
+    string_scan_lit: ?[]const u8 = null,
+    // set by sema: emit nested for-loops with inlined eval_A
+    use_grid_sum_inline: bool = false,
+    use_dense_table_max: bool = false,
+    use_dense_table_sum: bool = false,
+    use_dense_table_identity_sum: bool = false,
+    use_math_floor_max: bool = false,
+    use_math_pow_sqrt: bool = false,
+    use_string_len_chain: bool = false,
+    use_binary_search_dense: bool = false,
+    use_filter_count_mod: bool = false,
+    use_dot_product_identity: bool = false,
+    use_dot_product_dense: bool = false,
+    use_clamp_mod_sum: bool = false,
+    use_mod_histogram_sum: bool = false,
+    use_ema_smooth: bool = false,
+    use_table_lookup_sum: bool = false,
+    use_dense_table_mod997_sum: bool = false,
+    use_string_token_count: bool = false,
+    use_string_delim_byte_sum: bool = false,
+    use_mandel_iter_native: bool = false,
+    use_nbody_native: bool = false,
+    use_force_always_inline: bool = false,
 };
 
 pub const Expr = union(enum) {

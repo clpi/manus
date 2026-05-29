@@ -17,6 +17,12 @@ pub const ResolvedType = union(enum) {
     nil,
     never,     // function that never returns (e.g. error())
 
+    // SIMD vector types
+    v4f64,
+    v4i64,
+    v8f32,
+    v8i32,
+
     // Aggregate types
     array: struct { elem: *ResolvedType, size: ?usize },
     pointer: *ResolvedType,
@@ -36,7 +42,22 @@ pub const ResolvedType = union(enum) {
     }
 
     pub fn is_float(self: ResolvedType) bool {
-        return switch (self) { .f32, .f64 => true, else => false };
+        return switch (self) { .f32, .f64, .v4f64, .v8f32 => true, else => false };
+    }
+
+    pub fn is_vector(self: ResolvedType) bool {
+        return switch (self) { .v4f64, .v4i64, .v8f32, .v8i32 => true, else => false };
+    }
+
+    /// Integer lane mask for vector comparisons (e.g. v4f64 cmp → v4i64).
+    pub fn vector_mask(self: ResolvedType) ?ResolvedType {
+        return switch (self) {
+            .v4f64 => .v4i64,
+            .v4i64 => .v4i64,
+            .v8f32 => .v8i32,
+            .v8i32 => .v8i32,
+            else => null,
+        };
     }
 
     pub fn is_numeric(self: ResolvedType) bool {
@@ -63,6 +84,10 @@ pub const ResolvedType = union(enum) {
             .u64   => switch (b) { .u64   => true, else => false },
             .f32   => switch (b) { .f32   => true, else => false },
             .f64   => switch (b) { .f64   => true, else => false },
+            .v4f64 => switch (b) { .v4f64 => true, else => false },
+            .v4i64 => switch (b) { .v4i64 => true, else => false },
+            .v8f32 => switch (b) { .v8f32 => true, else => false },
+            .v8i32 => switch (b) { .v8i32 => true, else => false },
             .bool  => switch (b) { .bool  => true, else => false },
             .void  => switch (b) { .void  => true, else => false },
             .str   => switch (b) { .str   => true, else => false },
@@ -94,6 +119,10 @@ pub const ResolvedType = union(enum) {
             .u64   => "uint64_t",
             .f32   => "float",
             .f64   => "double",
+            .v4f64 => "v4f64",
+            .v4i64 => "v4i64",
+            .v8f32 => "v8f32",
+            .v8i32 => "v8i32",
             .bool  => "bool",
             .void  => "void",
             .str   => "const char*",
@@ -130,6 +159,10 @@ pub const ResolvedType = union(enum) {
             .u64 => try w.writeAll("u64"),
             .f32 => try w.writeAll("f32"),
             .f64 => try w.writeAll("f64"),
+            .v4f64 => try w.writeAll("v4f64"),
+            .v4i64 => try w.writeAll("v4i64"),
+            .v8f32 => try w.writeAll("v8f32"),
+            .v8i32 => try w.writeAll("v8i32"),
             .bool  => try w.writeAll("bool"),
             .void  => try w.writeAll("void"),
             .str   => try w.writeAll("str"),
@@ -157,6 +190,26 @@ pub const ResolvedType = union(enum) {
     }
 };
 
+/// Map a native resolved type back to an annotation name (for inferred signatures).
+pub fn rt_to_type_name(rt: ResolvedType) ?[]const u8 {
+    return switch (rt) {
+        .i8 => "i8",
+        .i16 => "i16",
+        .i32 => "i32",
+        .i64 => "i64",
+        .u8 => "u8",
+        .u16 => "u16",
+        .u32 => "u32",
+        .u64 => "u64",
+        .f32 => "f32",
+        .f64 => "f64",
+        .bool => "bool",
+        .void => "void",
+        .str => "str",
+        else => null,
+    };
+}
+
 /// Convert a `ast.TypeExpr` (parsed annotation) to a `ResolvedType`.
 pub fn resolve(te: ast.TypeExpr, alloc: std.mem.Allocator) !ResolvedType {
     return switch (te) {
@@ -172,6 +225,10 @@ pub fn resolve(te: ast.TypeExpr, alloc: std.mem.Allocator) !ResolvedType {
             if (std.mem.eql(u8, n, "u64"))  return .u64;
             if (std.mem.eql(u8, n, "f32"))  return .f32;
             if (std.mem.eql(u8, n, "f64"))  return .f64;
+            if (std.mem.eql(u8, n, "v4f64")) return .v4f64;
+            if (std.mem.eql(u8, n, "v4i64")) return .v4i64;
+            if (std.mem.eql(u8, n, "v8f32")) return .v8f32;
+            if (std.mem.eql(u8, n, "v8i32")) return .v8i32;
             if (std.mem.eql(u8, n, "bool")) return .bool;
             if (std.mem.eql(u8, n, "void")) return .void;
             if (std.mem.eql(u8, n, "str"))  return .str;

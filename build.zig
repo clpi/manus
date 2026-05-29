@@ -23,4 +23,10 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run tests");
     _ = test_step;
+
+    const bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark.sh" });
+    bench_cmd.setCwd(b.path("."));
+    bench_cmd.step.dependOn(b.getInstallStep());
+    const bench_step = b.step("bench", "Run Duo vs C benchmark suite");
+    bench_step.dependOn(&bench_cmd.step);
 }

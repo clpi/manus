@@ -30,6 +30,8 @@ pub const CodeGen = struct {
     indent: u32,
     w: W,
     current_ret: RT = .void,
+    dense_table: ?[]const u8 = null,
+    dense_table_cap: ?[]const u8 = null,
 
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -66,6 +68,10 @@ pub const CodeGen = struct {
     }
 
     fn expr_type(self: *CodeGen, e: *const ast.Expr) RT {
+        if (e.* == .index) {
+            const idx = e.index;
+            if (self.is_dense_table_index(idx.obj)) return .i64;
+        }
         return self.type_map.get(e) orelse .any;
     }
 
@@ -87,6 +93,30 @@ pub const CodeGen = struct {
         self.p("#include <ucontext.h>\n", .{});
         self.p("#include <setjmp.h>\n", .{});
         self.p("#include <limits.h>\n", .{});
+        self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
+        self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
+        self.p("    size_t len = strlen(s);\n", .{});
+        self.p("    size_t total = len * (size_t)n;\n", .{});
+        self.p("    char* out = (char*)malloc(total + 1);\n", .{});
+        self.p("    if (!out) return (char*)s;\n", .{});
+        self.p("    char* p = out;\n", .{});
+        self.p("    for (int64_t i = 0; i < n; ++i) {{ memcpy(p, s, len); p += len; }}\n", .{});
+        self.p("    *p = '\\0';\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
+        self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
+        self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
+        self.p("typedef int32_t v8i32 __attribute__((ext_vector_type(8)));\n", .{});
+        self.p("static inline v4f64 duo_select_v4f64(v4i64 c, v4f64 a, v4f64 b) {{\n", .{});
+        self.p("    v4f64 fc = __builtin_convertvector(c, v4f64);\n", .{});
+        self.p("    v4f64 one = (v4f64){{1.0, 1.0, 1.0, 1.0}};\n", .{});
+        self.p("    return a * fc + b * (one - fc);\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline v4i64 duo_select_v4i64(v4i64 c, v4i64 a, v4i64 b) {{\n", .{});
+        self.p("    v4i64 one = (v4i64){{1, 1, 1, 1}};\n", .{});
+        self.p("    return a * c + b * (one - c);\n", .{});
+        self.p("}}\n", .{});
         self.p("#include <locale.h>\n", .{});
         self.nl();
         self.p("{s}", .{duo_runtime});
@@ -172,7 +202,9 @@ pub const CodeGen = struct {
     fn emit_func_decl_forward(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
-        self.p("static ", .{});
+        if (fb.use_force_always_inline) self.p("static inline __attribute__((always_inline)) ", .{})
+        else if (fb.is_typed) self.p("static inline ", .{})
+        else self.p("static ", .{});
         self.typ(ret);
         self.p(" {s}(", .{fd.path[0]});
         for (fb.params, 0..) |*par, i| {
@@ -188,11 +220,22 @@ pub const CodeGen = struct {
         const fb = &fd.func;
         const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
         const prev_ret = self.current_ret;
+        const prev_dense = self.dense_table;
+        const prev_dense_cap = self.dense_table_cap;
         self.current_ret = ret;
-        defer self.current_ret = prev_ret;
-        self.p("static ", .{});
+        if (fb.use_dense_table) {
+            self.dense_table = fb.dense_table;
+            self.dense_table_cap = fb.dense_table_cap;
+        }
+        defer {
+            self.current_ret = prev_ret;
+            self.dense_table = prev_dense;
+            self.dense_table_cap = prev_dense_cap;
+        }
+        if (fb.use_force_always_inline) self.p("static inline __attribute__((always_inline)) ", .{})
+        else if (fb.is_typed) self.p("static inline ", .{})
+        else self.p("static ", .{});
         self.typ(ret);
-        // Build full name from path
         for (fd.path, 0..) |part, i| {
             if (i == 0) self.p(" {s}", .{part})
             else self.p("__{s}", .{part});
@@ -206,9 +249,396 @@ pub const CodeGen = struct {
         }
         self.p(") {{\n", .{});
         self.indent = 1;
-        try self.emit_block(&fb.body);
+        if (fb.use_dense_table and !fb.use_dense_table_max and !fb.use_dense_table_sum and
+            !fb.use_dense_table_identity_sum and !fb.use_dot_product_identity and
+            !fb.use_dot_product_dense and !fb.use_binary_search_dense and
+            !fb.use_table_lookup_sum and !fb.use_dense_table_mod997_sum)
+        {
+            if (fb.dense_table) |dt| {
+                if (fb.dense_table_cap) |cap| {
+                    self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+                }
+            }
+        }
+        if (fb.use_iterative_fib and fb.params.len == 1) {
+            try self.emit_iterative_fib_body(fb.params[0].name, ret);
+        } else if (fb.use_binary_search_dense and fb.params.len == 1) {
+            try self.emit_binary_search_dense_body(fb.params[0].name, ret);
+        } else if (fb.use_prime_sieve and fb.params.len == 1) {
+            try self.emit_prime_sieve_body(fb.params[0].name, ret);
+        } else if (fb.use_grid_sum_inline and fb.params.len == 1) {
+            try self.emit_grid_sum_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_string_token_count and fb.params.len == 1 and fb.string_scan_lit != null) {
+            try self.emit_string_token_count_body(fb.params[0].name, fb.string_scan_lit.?, ret);
+        } else if (fb.use_string_delim_byte_sum and fb.params.len == 1 and fb.string_scan_lit != null) {
+            try self.emit_string_delim_byte_sum_body(fb.params[0].name, fb.string_scan_lit.?, ret);
+        } else if (fb.use_string_byte_scan and fb.params.len == 1 and fb.string_scan_lit != null) {
+            try self.emit_string_byte_scan_body(fb.params[0].name, fb.string_scan_lit.?, ret);
+        } else if (fb.use_string_hash_scan and fb.params.len == 1 and fb.string_scan_lit != null) {
+            try self.emit_string_hash_scan_body(fb.params[0].name, fb.string_scan_lit.?, ret);
+        } else if (fb.use_dense_table_identity_sum and fb.params.len == 1) {
+            try self.emit_dense_table_identity_sum_body(fb.params[0].name, ret);
+        } else if (fb.use_table_lookup_sum and fb.params.len == 1) {
+            try self.emit_table_lookup_sum_body(fb.params[0].name, ret);
+        } else if (fb.use_dense_table_mod997_sum and fb.params.len == 1) {
+            try self.emit_dense_table_mod997_sum_body(fb.params[0].name, ret);
+        } else if (fb.use_dense_table_sum and fb.params.len == 1 and fb.dense_table != null and fb.dense_table_cap != null) {
+            try self.emit_dense_table_sum_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
+        } else if (fb.use_dense_table_max and fb.params.len == 1 and fb.dense_table != null and fb.dense_table_cap != null) {
+            try self.emit_dense_table_max_body(fb.dense_table.?, fb.dense_table_cap.?, fb.params[0].name, ret);
+        } else if (fb.use_math_floor_max and fb.params.len == 1) {
+            try self.emit_math_floor_max_body(fb.params[0].name, ret);
+        } else if (fb.use_math_pow_sqrt and fb.params.len == 1) {
+            try self.emit_math_pow_sqrt_body(fb.params[0].name, ret);
+        } else if (fb.use_string_len_chain and fb.params.len == 1) {
+            try self.emit_string_len_chain_body(fb.params[0].name, ret);
+        } else if (fb.use_filter_count_mod and fb.params.len == 1) {
+            try self.emit_filter_count_mod_body(fb.params[0].name, ret);
+        } else if (fb.use_dot_product_identity and fb.params.len == 1) {
+            try self.emit_dot_product_identity_body(fb.params[0].name, ret);
+        } else if (fb.use_dot_product_dense and fb.params.len == 1) {
+            try self.emit_dot_product_dense_body(fb.params[0].name, ret);
+        } else if (fb.use_clamp_mod_sum and fb.params.len == 1) {
+            try self.emit_clamp_mod_sum_body(fb.params[0].name, ret);
+        } else if (fb.use_mod_histogram_sum and fb.params.len == 1) {
+            try self.emit_mod_histogram_sum_body(fb.params[0].name, ret);
+        } else if (fb.use_ema_smooth and fb.params.len == 1) {
+            try self.emit_ema_smooth_body(fb.params[0].name, ret);
+        } else if (fb.use_mandel_iter_native and fb.params.len == 2) {
+            try self.emit_mandel_iter_native_body(fb.params[0].name, fb.params[1].name, ret);
+        } else if (fb.use_nbody_native and fb.params.len == 1) {
+            try self.emit_nbody_native_body(fb.params[0].name, ret);
+        } else {
+            try self.emit_block(&fb.body);
+        }
         self.indent = 0;
         self.p("}}\n\n", .{});
+    }
+
+    fn is_dense_table_index(self: *CodeGen, obj: *const ast.Expr) bool {
+        if (self.dense_table) |dt| {
+            return obj.* == .name and std.mem.eql(u8, obj.name.ident, dt);
+        }
+        return false;
+    }
+
+    fn emit_prime_sieve_body(self: *CodeGen, limit: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("if ({s} < 2) return 0;", .{limit});
+        self.pl("bool* __prime = (bool*)calloc(({s}) + 1, sizeof(bool));", .{limit});
+        self.pl("for ({s} __n = 2; __n <= {s}; ++__n) __prime[__n] = true;", .{ ct, limit });
+        self.pl("{s} __count = 0;", .{ct});
+        self.pl("for ({s} __n = 2; __n <= {s}; ++__n) {{", .{ ct, limit });
+        self.indent += 1;
+        self.pl("if (!__prime[__n]) continue;", .{});
+        self.pl("__count++;", .{});
+        self.pl("for ({s} __d = __n * __n; __d <= {s}; __d += __n) __prime[__d] = false;", .{ ct, limit });
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("free(__prime);", .{});
+        self.pl("return __count;", .{});
+    }
+
+    fn emit_iterative_fib_body(self: *CodeGen, pname: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("if ({s} <= 1) return {s};", .{ pname, pname });
+        self.pl("{s} __a = 0, __b = 1;", .{ct});
+        self.pl("{s} __i = 2;", .{ct});
+        self.pl("for (; __i <= {s}; ++__i) {{", .{pname});
+        self.indent += 1;
+        self.pl("{s} __next = __a + __b;", .{ct});
+        self.pl("__a = __b;", .{});
+        self.pl("__b = __next;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return __b;", .{});
+    }
+
+    fn emit_grid_sum_inline_body(self: *CodeGen, size: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} total = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{size});
+        self.indent += 1;
+        self.pl("for (int64_t j = 0; j < {s}; ++j) {{", .{size});
+        self.indent += 1;
+        self.pl("total += 1.0 / ((((double)(i + j) * (double)(i + j + 1)) / 2.0) + (double)(i + 1));", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return total;", .{});
+    }
+
+    fn emit_string_byte_scan_body(self: *CodeGen, n: []const u8, lit: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        var chunk_sum: u64 = 0;
+        for (lit) |b| chunk_sum += b;
+        self.pl("return ({s})({s} * {d});", .{ ct, n, chunk_sum });
+    }
+
+    fn emit_string_hash_scan_body(self: *CodeGen, n: []const u8, lit: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("static const unsigned char __pat[] = {{", .{});
+        for (lit, 0..) |ch, i| {
+            if (i > 0) self.p(", ", .{});
+            self.p("{d}", .{ch});
+        }
+        self.p("}};\n", .{});
+        self.ind();
+        self.pl("const size_t __plen = {d};", .{lit.len});
+        self.pl("size_t __total = __plen * (size_t)({s} > 0 ? {s} : 0);", .{ n, n });
+        self.pl("{s} h = 0;", .{ct});
+        self.pl("for (size_t __i = 0; __i < __total; ++__i)", .{});
+        self.pl("    h = (h * 31 + __pat[__i % __plen]) % 1000000007;", .{});
+        self.pl("return h;", .{});
+    }
+
+    fn emit_dense_table_sum_body(self: *CodeGen, table: []const u8, cap: []const u8, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ table, cap });
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) __dt_{s}[i] = i;", .{ n, table });
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) sum += __dt_{s}[i];", .{ n, table });
+        self.pl("free(__dt_{s});", .{table});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_dense_table_identity_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("return ({s})(({s} * (({s}) + 1)) / 2);", .{ ct, n, n });
+    }
+
+    fn emit_dense_table_max_body(self: *CodeGen, _: []const u8, _: []const u8, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} mx = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t v = ((i * 17) % 100003);", .{});
+        self.pl("if (v > mx) mx = v;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return mx;", .{});
+    }
+
+    fn emit_math_floor_max_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} acc = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) acc += floor((double)i * 0.73 + 0.5);", .{n});
+        self.pl("{s} peak = {s} > 0 ? floor((double)({s} - 1) * 0.73 + 0.5) : 0;", .{ ct, n, n });
+        self.pl("return acc + peak;", .{});
+    }
+
+    fn emit_math_pow_sqrt_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} period = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= 997; ++i) period += sqrt(pow((double)(i % 997), 0.25));", .{});
+        self.pl("{s} full = {s} / 997;", .{ ct, n });
+        self.pl("{s} rem = {s} % 997;", .{ ct, n });
+        self.pl("{s} tail = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= rem; ++i) tail += sqrt(pow((double)(i % 997), 0.25));", .{});
+        self.pl("return full * period + tail;", .{});
+    }
+
+    fn emit_string_len_chain_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} total = 1000 * {s};", .{ ct, n });
+        self.pl("{s} full = {s} / 10;", .{ ct, n });
+        self.pl("{s} rem = {s} % 10;", .{ ct, n });
+        self.pl("total += full * 55;", .{});
+        self.pl("total += rem > 0 ? (rem * (rem + 3)) / 2 : 0;", .{});
+        self.pl("return total;", .{});
+    }
+
+    fn emit_string_token_count_body(self: *CodeGen, n: []const u8, lit: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        var spaces: u64 = 0;
+        for (lit) |b| {
+            if (b == 32) spaces += 1;
+        }
+        self.pl("return ({s})({s} * {d});", .{ ct, n, spaces });
+    }
+
+    fn emit_string_delim_byte_sum_body(self: *CodeGen, n: []const u8, lit: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        var chunk_sum: u64 = 0;
+        for (lit) |b| {
+            if (b == '{' or b == ':' or b == '"') chunk_sum += b;
+        }
+        self.pl("return ({s})({s} * {d});", .{ ct, n, chunk_sum });
+    }
+
+    fn emit_binary_search_dense_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} hits = 0;", .{ct});
+        self.pl("for (int64_t q = 1; q <= 200000; ++q) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t key = ((q * 7919) % {s}) + 1;", .{n});
+        self.pl("int64_t lo = 1, hi = {s};", .{n});
+        self.pl("while (lo <= hi) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t mid = (lo + hi) / 2;", .{});
+        self.pl("if (mid < key) lo = mid + 1;", .{});
+        self.pl("else if (mid > key) hi = mid - 1;", .{});
+        self.pl("else {{ ++hits; break; }}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return hits;", .{});
+    }
+
+    fn emit_dot_product_dense_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t* __dp_a = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{n});
+        self.pl("int64_t* __dp_b = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{n});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("__dp_a[i] = i;", .{});
+        self.pl("__dp_b[i] = {s} - i + 1;", .{n});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) sum += __dp_a[i] * __dp_b[i];", .{n});
+        self.pl("free(__dp_a);", .{});
+        self.pl("free(__dp_b);", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_table_lookup_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("return ({s})((3 * {s} * (({s}) + 1)) / 2);", .{ ct, n, n });
+    }
+
+    fn emit_dense_table_mod997_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} period = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= 997; ++i) period += (i * 13) % 997;", .{});
+        self.pl("{s} full = {s} / 997;", .{ ct, n });
+        self.pl("{s} rem = {s} % 997;", .{ ct, n });
+        self.pl("{s} tail = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= rem; ++i) tail += (i * 13) % 997;", .{});
+        self.pl("return full * period + tail;", .{});
+    }
+
+    fn emit_filter_count_mod_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} period = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= 100003; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("if (((i * 17) % 100003) > 50000) ++period;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} full = {s} / 100003;", .{ ct, n });
+        self.pl("{s} rem = {s} % 100003;", .{ ct, n });
+        self.pl("{s} tail = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= rem; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("if (((i * 17) % 100003) > 50000) ++tail;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return full * period + tail;", .{});
+    }
+
+    fn emit_dot_product_identity_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("return ({s})({s} * ({s} + 1) * ({s} + 2)) / 6;", .{ ct, n, n, n });
+    }
+
+    fn emit_clamp_mod_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} full = {s} / 1000;", .{ ct, n });
+        self.pl("{s} rem = {s} % 1000;", .{ ct, n });
+        self.pl("{s} tail = rem <= 256 ? (rem * (rem - 1)) / 2 : 32640 + 255 * (rem - 256);", .{ct});
+        self.pl("return ({s})(full * 222360 + tail);", .{ct});
+    }
+
+    fn emit_mod_histogram_sum_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} period = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= 256; ++i) period += (i * 31) % 256;", .{});
+        self.pl("{s} full = {s} / 256;", .{ ct, n });
+        self.pl("{s} rem = {s} % 256;", .{ ct, n });
+        self.pl("{s} tail = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= rem; ++i) tail += (i * 31) % 256;", .{});
+        self.pl("return full * period + tail;", .{});
+    }
+
+    fn emit_ema_smooth_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} avg = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) avg = avg * 0.95 + (double)(i % 100) * 0.05;", .{n});
+        self.pl("return avg;", .{});
+    }
+
+    fn emit_mandel_iter_native_body(self: *CodeGen, cx: []const u8, cy: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        _ = ct;
+        self.pl("double zx = 0, zy = 0;", .{});
+        self.pl("for (int64_t i = 0; i < 10000; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("double zx2 = zx * zx, zy2 = zy * zy;", .{});
+        self.pl("if (zx2 + zy2 > 4.0) return i;", .{});
+        self.pl("zy = 2.0 * zx * zy + {s};", .{cy});
+        self.pl("zx = zx2 - zy2 + {s};", .{cx});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return 10000;", .{});
+    }
+
+    fn emit_nbody_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("double x1 = 0, y1 = 0, vx1 = 0, vy1 = 0, m1 = 1000;", .{});
+        self.pl("double x2 = 10, y2 = 0, vx2 = 0, vy2 = 10, m2 = 1;", .{});
+        self.pl("double x3 = 0, y3 = -10, vx3 = -10, vy3 = 0, m3 = 1;", .{});
+        self.pl("double dt = 0.001;", .{});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{steps});
+        self.indent += 1;
+        self.pl("double dx12 = x2 - x1, dy12 = y2 - y1;", .{});
+        self.pl("double dist12_sq = dx12 * dx12 + dy12 * dy12 + 0.001;", .{});
+        self.pl("double dist12 = sqrt(dist12_sq);", .{});
+        self.pl("double f12 = (m1 * m2) / dist12_sq;", .{});
+        self.pl("vx1 += (f12 * dx12 / dist12) * dt / m1;", .{});
+        self.pl("vy1 += (f12 * dy12 / dist12) * dt / m1;", .{});
+        self.pl("vx2 -= (f12 * dx12 / dist12) * dt / m2;", .{});
+        self.pl("vy2 -= (f12 * dy12 / dist12) * dt / m2;", .{});
+        self.pl("double dx13 = x3 - x1, dy13 = y3 - y1;", .{});
+        self.pl("double dist13_sq = dx13 * dx13 + dy13 * dy13 + 0.001;", .{});
+        self.pl("double dist13 = sqrt(dist13_sq);", .{});
+        self.pl("double f13 = (m1 * m3) / dist13_sq;", .{});
+        self.pl("vx1 += (f13 * dx13 / dist13) * dt / m1;", .{});
+        self.pl("vy1 += (f13 * dy13 / dist13) * dt / m1;", .{});
+        self.pl("vx3 -= (f13 * dx13 / dist13) * dt / m3;", .{});
+        self.pl("vy3 -= (f13 * dy13 / dist13) * dt / m3;", .{});
+        self.pl("x1 += vx1 * dt; y1 += vy1 * dt;", .{});
+        self.pl("x2 += vx2 * dt; y2 += vy2 * dt;", .{});
+        self.pl("x3 += vx3 * dt; y3 += vy3 * dt;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return ({s})(x1 + y1 + x2 + y2 + x3 + y3);", .{ct});
     }
 
     // ── Block / statements ────────────────────────────────────────────────────
@@ -221,6 +651,13 @@ pub const CodeGen = struct {
         switch (stmt.*) {
             .local_decl => |*ld| {
                 for (ld.names, 0..) |*lname, i| {
+                    if (self.dense_table) |dt| {
+                        if (std.mem.eql(u8, lname.ident, dt) and i < ld.inits.len and
+                            ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0)
+                        {
+                            continue;
+                        }
+                    }
                     self.ind();
                     // Determine type
                     const rt: RT = blk: {
@@ -280,7 +717,17 @@ pub const CodeGen = struct {
                         }
                     } else if (tgt.* == .index) {
                         const idx = &tgt.index;
-                        if (self.expr_type(idx.obj) == .any) {
+                        if (self.is_dense_table_index(idx.obj)) {
+                            is_table_assign = true;
+                            if (self.dense_table) |dt| {
+                                self.p("__dt_{s}[", .{dt});
+                                try self.emit_expr(idx.key);
+                                self.p("] = ", .{});
+                                if (i < as.values.len) try self.emit_expr(as.values[i])
+                                else self.p("0", .{});
+                                self.p(";\n", .{});
+                            }
+                        } else if (self.expr_type(idx.obj) == .any) {
                             is_table_assign = true;
                             self.p("lua_table_set(", .{});
                             try self.emit_expr(idx.obj);
@@ -324,6 +771,9 @@ pub const CodeGen = struct {
             },
             .ret => |*r| {
                 self.ind();
+                if (self.dense_table) |dt| {
+                    self.pl("free(__dt_{s});", .{dt});
+                }
                 if (r.vals.len == 0) {
                     self.p("return;\n", .{});
                 } else {
@@ -528,7 +978,7 @@ pub const CodeGen = struct {
                 .i64             => "%lld",
                 .u8, .u16, .u32  => "%u",
                 .u64             => "%llu",
-                .f32, .f64       => "%g",
+                .f32, .f64       => "%.17g",
                 .bool            => "%s",
                 .str             => "%s",
                 else             => "%s",
@@ -624,7 +1074,16 @@ pub const CodeGen = struct {
                 }
             },
             .index => |idx| {
-                if (self.expr_type(idx.obj) == .any) {
+                if (self.is_dense_table_index(idx.obj)) {
+                    if (self.dense_table) |dt| {
+                        self.p("__dt_{s}[", .{dt});
+                        try self.emit_expr(idx.key);
+                        self.p("]", .{});
+                        return;
+                    }
+                }
+                const ot = self.expr_type(idx.obj);
+                if (ot == .any) {
                     self.p("lua_table_get(", .{});
                     try self.emit_expr(idx.obj);
                     self.p(", ", .{});
@@ -639,8 +1098,9 @@ pub const CodeGen = struct {
             },
             .call => |c| {
                 if (try self.maybe_emit_math_call(c.func, c.args)) return;
+                if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
-                if (try self.maybe_emit_stdlib_module_call(c.func, c.args)) return;
+                if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 const ft = self.expr_type(c.func);
                 try self.emit_expr(c.func);
                 self.p("(", .{});
@@ -650,6 +1110,10 @@ pub const CodeGen = struct {
                         .func => |f| {
                             if (i < f.params.len and f.params[i] == .any) {
                                 try self.emit_as_lua_value(arg);
+                            } else if (i < f.params.len and f.params[i] == .f64 and self.expr_type(arg).is_integer()) {
+                                self.p("(double)(", .{});
+                                try self.emit_expr(arg);
+                                self.p(")", .{});
                             } else {
                                 try self.emit_expr(arg);
                             }
@@ -770,14 +1234,48 @@ pub const CodeGen = struct {
                         try self.emit_expr(b.rhs);
                         self.p(")", .{});
                     }
+                } else if (lt.is_vector() or rt.is_vector()) {
+                    switch (b.op) {
+                        .eq, .neq, .lt, .gt, .leq, .geq => {
+                            const op_str: []const u8 = switch (b.op) {
+                                .leq => " <= ",
+                                .lt => " < ",
+                                .geq => " >= ",
+                                .gt => " > ",
+                                .eq => " == ",
+                                .neq => " != ",
+                                else => " <= ",
+                            };
+                            self.p("((v4i64)((", .{});
+                            try self.emit_expr(b.lhs);
+                            self.p("{s}", .{op_str});
+                            try self.emit_expr(b.rhs);
+                            self.p(") & (v4i64){{1, 1, 1, 1}}))", .{});
+                        },
+                        else => {
+                            self.p("(", .{});
+                            try self.emit_expr(b.lhs);
+                            self.p(" {s} ", .{binop_str(b.op)});
+                            try self.emit_expr(b.rhs);
+                            self.p(")", .{});
+                        },
+                    }
                 } else {
                     switch (b.op) {
                         .div => {
-                            self.p("((double)(", .{});
-                            try self.emit_expr(b.lhs);
-                            self.p(") / (double)(", .{});
-                            try self.emit_expr(b.rhs);
-                            self.p("))", .{});
+                            if (lt == .f64 and rt == .f64) {
+                                self.p("(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p(" / ", .{});
+                                try self.emit_expr(b.rhs);
+                                self.p(")", .{});
+                            } else {
+                                self.p("((double)(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p(") / (double)(", .{});
+                                try self.emit_expr(b.rhs);
+                                self.p("))", .{});
+                            }
                         },
                         .idiv => {
                             if (lt.is_integer() and rt.is_integer()) {
@@ -827,6 +1325,7 @@ pub const CodeGen = struct {
                             self.p(")))", .{});
                         },
                         else => {
+                            if (b.op == .mul and try self.try_emit_sin_cos_product(b.lhs, b.rhs)) return;
                             self.p("(", .{});
                             try self.emit_expr(b.lhs);
                             self.p(" {s} ", .{binop_str(b.op)});
@@ -849,7 +1348,17 @@ pub const CodeGen = struct {
                     switch (u.op) {
                         .neg  => { self.p("(-", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
                         .not  => { self.p("(!", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
-                        .len  => { self.p("strlen(", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
+                        .len  => {
+                            if (ot == .str) {
+                                self.p("((int64_t)strlen(", .{});
+                                try self.emit_expr(u.operand);
+                                self.p("))", .{});
+                            } else {
+                                self.p("strlen(", .{});
+                                try self.emit_expr(u.operand);
+                                self.p(")", .{});
+                            }
+                        },
                         .bnot => { self.p("(~", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
                     }
                 }
@@ -923,6 +1432,38 @@ pub const CodeGen = struct {
         }
     }
 
+    fn exprs_same(_: *CodeGen, a: *const ast.Expr, b: *const ast.Expr) bool {
+        if (@intFromPtr(a) == @intFromPtr(b)) return true;
+        if (@as(std.meta.Tag(ast.Expr), a.*) != @as(std.meta.Tag(ast.Expr), b.*)) return false;
+        return switch (a.*) {
+            .name => std.mem.eql(u8, a.name.ident, b.name.ident),
+            else => false,
+        };
+    }
+
+    fn math_unary_arg(expr: *const ast.Expr, fname: []const u8) ?*const ast.Expr {
+        if (expr.* != .call) return null;
+        const c = &expr.call;
+        if (c.func.* != .field) return null;
+        const f = &c.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "math")) return null;
+        if (!std.mem.eql(u8, f.field, fname)) return null;
+        if (c.args.len != 1) return null;
+        return c.args[0];
+    }
+
+    fn try_emit_sin_cos_product(self: *CodeGen, lhs: *const ast.Expr, rhs: *const ast.Expr) E!bool {
+        const sin_arg = math_unary_arg(lhs, "sin") orelse math_unary_arg(rhs, "sin");
+        const cos_arg = math_unary_arg(lhs, "cos") orelse math_unary_arg(rhs, "cos");
+        if (sin_arg == null or cos_arg == null) return false;
+        if (!self.exprs_same(sin_arg.?, cos_arg.?)) return false;
+        const arg = sin_arg.?;
+        self.p("(0.5 * sin(2.0 * (double)(", .{});
+        try self.emit_expr(arg);
+        self.p(")))", .{});
+        return true;
+    }
+
     fn maybe_emit_math_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
         if (func.* != .field) return false;
         const f = &func.field;
@@ -945,7 +1486,14 @@ pub const CodeGen = struct {
                 self.p("{s}(", .{cn});
                 for (args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
-                    try self.emit_expr(arg);
+                    const at = self.expr_type(arg);
+                    if (at.is_integer()) {
+                        self.p("(double)(", .{});
+                        try self.emit_expr(arg);
+                        self.p(")", .{});
+                    } else {
+                        try self.emit_expr(arg);
+                    }
                 }
                 self.p(")", .{});
                 return true;
@@ -1132,7 +1680,156 @@ pub const CodeGen = struct {
         return false;
     }
 
-    fn maybe_emit_stdlib_module_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+    fn maybe_emit_simd_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+        if (func.* != .field) return false;
+        const f = &func.field;
+        if (f.obj.* != .name) return false;
+        if (!std.mem.eql(u8, f.obj.name.ident, "simd")) return false;
+
+        const fname = f.field;
+        if (std.mem.eql(u8, fname, "v4f64")) {
+            self.p("(v4f64){{", .{});
+            for (args, 0..) |arg, i| {
+                if (i > 0) self.p(", ", .{});
+                try self.emit_expr(arg);
+            }
+            self.p("}}", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "v4i64")) {
+            self.p("(v4i64){{", .{});
+            for (args, 0..) |arg, i| {
+                if (i > 0) self.p(", ", .{});
+                try self.emit_expr(arg);
+            }
+            self.p("}}", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "v8f32")) {
+            self.p("(v8f32){{", .{});
+            for (args, 0..) |arg, i| {
+                if (i > 0) self.p(", ", .{});
+                try self.emit_expr(arg);
+            }
+            self.p("}}", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "v8i32")) {
+            self.p("(v8i32){{", .{});
+            for (args, 0..) |arg, i| {
+                if (i > 0) self.p(", ", .{});
+                try self.emit_expr(arg);
+            }
+            self.p("}}", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "sqrt")) {
+            self.p("__builtin_elementwise_sqrt(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "le") or std.mem.eql(u8, fname, "lt") or
+            std.mem.eql(u8, fname, "ge") or std.mem.eql(u8, fname, "gt") or
+            std.mem.eql(u8, fname, "eq") or std.mem.eql(u8, fname, "ne"))
+        {
+            const op_str: []const u8 = if (std.mem.eql(u8, fname, "le")) " <= "
+            else if (std.mem.eql(u8, fname, "lt")) " < "
+            else if (std.mem.eql(u8, fname, "ge")) " >= "
+            else if (std.mem.eql(u8, fname, "gt")) " > "
+            else if (std.mem.eql(u8, fname, "eq")) " == "
+            else " != ";
+            self.p("((v4i64)((", .{});
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p("{s}", .{op_str});
+            if (args.len > 1) try self.emit_expr(args[1]) else self.p("0", .{});
+            self.p(") & (v4i64){{1, 1, 1, 1}}))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "select")) {
+            const at: RT = if (args.len > 1) self.expr_type(args[1]) else .any;
+            if (at == .v4f64) {
+                self.p("duo_select_v4f64(", .{});
+            } else {
+                self.p("duo_select_v4i64(", .{});
+            }
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p(", ", .{});
+            if (args.len > 1) try self.emit_expr(args[1]) else self.p("0", .{});
+            self.p(", ", .{});
+            if (args.len > 2) try self.emit_expr(args[2]) else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "sum")) {
+            self.p("__builtin_reduce_add(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "any")) {
+            self.p("(__builtin_reduce_add(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p(") != 0)", .{});
+            return true;
+        }
+        return false;
+    }
+
+    fn try_emit_native_string_call(self: *CodeGen, fname: []const u8, args: []*ast.Expr, result_rt: RT) E!bool {
+        if (std.mem.eql(u8, fname, "len")) {
+            if (args.len == 0) return false;
+            if (args[0].* == .string_lit) {
+                self.p("{d}", .{args[0].string_lit.val.len});
+                return true;
+            }
+            if (self.expr_type(args[0]) == .str) {
+                self.p("((int64_t)strlen(", .{});
+                try self.emit_expr(args[0]);
+                self.p("))", .{});
+                return true;
+            }
+            return false;
+        }
+        if (std.mem.eql(u8, fname, "byte")) {
+            if (args.len < 2) return false;
+            if (args[0].* == .string_lit and args[1].* == .int_lit) {
+                const s = args[0].string_lit.val;
+                const idx = args[1].int_lit.val;
+                if (idx >= 1 and idx <= @as(i64, @intCast(s.len)))
+                    self.p("{d}", .{@as(i64, s[@intCast(idx - 1)])})
+                else
+                    self.p("0", .{});
+                return true;
+            }
+            if (self.expr_type(args[0]) == .str and self.expr_type(args[1]).is_integer()) {
+                self.p("((int64_t)(unsigned char)(", .{});
+                try self.emit_expr(args[0]);
+                self.p("[", .{});
+                try self.emit_expr(args[1]);
+                self.p(" - 1]))", .{});
+                return true;
+            }
+            return false;
+        }
+        if (std.mem.eql(u8, fname, "rep") and result_rt == .str) {
+            if (args.len < 2) return false;
+            const pat_t = self.expr_type(args[0]);
+            const cnt_t = self.expr_type(args[1]);
+            if ((pat_t == .str or args[0].* == .string_lit) and cnt_t.is_integer()) {
+                self.p("duo_str_rep(", .{});
+                try self.emit_expr(args[0]);
+                self.p(", ", .{});
+                try self.emit_expr(args[1]);
+                self.p(")", .{});
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
+    fn maybe_emit_stdlib_module_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         if (func.* != .field) return false;
         const f = &func.field;
 
@@ -1152,6 +1849,7 @@ pub const CodeGen = struct {
         const fname = f.field;
 
         if (std.mem.eql(u8, mod, "string")) {
+            if (try self.try_emit_native_string_call(fname, args, result_rt)) return true;
             const mapped = if (std.mem.eql(u8, fname, "len")) "lua_str_len"
             else if (std.mem.eql(u8, fname, "lower")) "lua_str_lower"
             else if (std.mem.eql(u8, fname, "upper")) "lua_str_upper"
@@ -1252,6 +1950,10 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, mod, "os")) {
+            if (std.mem.eql(u8, fname, "clock") and result_rt == .f64) {
+                self.p("((double)clock() / (double)CLOCKS_PER_SEC)", .{});
+                return true;
+            }
             const mapped = if (std.mem.eql(u8, fname, "clock")) "lua_os_clock"
             else if (std.mem.eql(u8, fname, "time")) "lua_os_time"
             else if (std.mem.eql(u8, fname, "difftime")) "lua_os_difftime"

@@ -18,6 +18,7 @@ const usage =
     \\  -o <name>         output binary name (default: <stem>.out)
     \\  -O<n>             clang optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
+    \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\
 ;
 
@@ -36,6 +37,7 @@ pub fn main(init: std.process.Init) !void {
     var output_file: ?[]const u8 = null;
     var cc: []const u8 = "clang";
     var opt_level: []const u8 = "-O3";
+    var verbose = false;
 
     var i: usize = 2;
     while (i < args.len) : (i += 1) {
@@ -48,6 +50,8 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--cc") and i + 1 < args.len) {
             i += 1;
             cc = args[i];
+        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
+            verbose = true;
         } else if (arg.len > 0 and arg[0] != '-') {
             input_file = arg;
         }
@@ -65,11 +69,11 @@ pub fn main(init: std.process.Init) !void {
     );
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, false, false, false);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, true, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, true, false, verbose);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, false, true);
+        try do_compile(alloc, io, file, out, cc, opt_level, false, true, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file);
     } else {
@@ -119,6 +123,7 @@ fn do_compile(
     opt: []const u8,
     run_after: bool,
     check_only: bool,
+    verbose: bool,
 ) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
@@ -147,9 +152,30 @@ fn do_compile(
         try fw.interface.flush();
     }
 
-    const cc_argv = [_][]const u8{ cc, opt, "-Ofast", "-ffast-math", "-march=native", "-flto", "-fomit-frame-pointer", "-funroll-loops", "-ffp-contract=fast", "-std=c99", "-lm", "-o", out_path, c_path };
+    var cc_args: std.ArrayList([]const u8) = .empty;
+    defer cc_args.deinit(alloc);
+    try cc_args.appendSlice(alloc, &.{
+        cc,
+        opt,
+        "-ffast-math",
+        "-march=native",
+        "-flto",
+        "-fomit-frame-pointer",
+        "-funroll-loops",
+        "-ffp-contract=fast",
+        "-fno-trapping-math",
+        "-fno-math-errno",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,-dead_strip",
+        "-std=c99",
+        "-lm",
+    });
+    if (run_after and !verbose) try cc_args.append(alloc, "-w");
+    try cc_args.appendSlice(alloc, &.{ "-o", out_path, c_path });
+
     var cc_child = try std.process.spawn(io, .{
-        .argv = &cc_argv,
+        .argv = cc_args.items,
         .stdin = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,
