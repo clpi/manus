@@ -21,7 +21,17 @@ const Symbol = struct {
     is_const: bool,
     is_for_control: bool = false,
     is_global: bool = false,
+    is_close: bool = false,
+    is_vararg_rest: bool = false,
 };
+
+fn is_const_attrib(attrib: ?[]const u8) bool {
+    return attrib != null and std.mem.eql(u8, attrib.?, "const");
+}
+
+fn is_close_attrib(attrib: ?[]const u8) bool {
+    return attrib != null and std.mem.eql(u8, attrib.?, "close");
+}
 
 /// Lexical scope: a stack of hash maps.
 pub const Scope = struct {
@@ -90,6 +100,8 @@ pub const Sema = struct {
     errors: u32,
     current_ret: RT,
     next_closure_id: u32 = 0,
+    /// When true, module scope starts with implicit `global *` (plain .lua files).
+    lua55_mode: bool = false,
 
     pub fn init(alloc: Allocator) Sema {
         return .{
@@ -122,6 +134,60 @@ pub const Sema = struct {
         std.debug.print("{}: error: " ++ fmt ++ "\n", .{loc} ++ args);
     }
 
+    fn define_vararg_rest(self: *Sema, fb: *const ast.FuncBody) !void {
+        if (fb.vararg_name) |vn| {
+            try self.scope.define(vn, .{
+                .typ = .any,
+                .is_const = false,
+                .is_vararg_rest = true,
+            });
+        }
+    }
+
+    fn check_assign_target(self: *Sema, tgt: *ast.Expr) SemaError!void {
+        switch (tgt.*) {
+            .name => |n| {
+                if (self.scope.lookup(n.ident)) |sym| {
+                    if (sym.is_for_control) {
+                        self.err(n.loc, "cannot assign to for loop control variable '{s}'", .{n.ident});
+                    } else if (sym.is_const) {
+                        self.err(n.loc, "attempt to assign to const variable '{s}'", .{n.ident});
+                    } else if (sym.is_close) {
+                        self.err(n.loc, "attempt to assign to to-be-closed variable '{s}'", .{n.ident});
+                    } else if (sym.is_vararg_rest) {
+                        self.err(n.loc, "attempt to modify read-only vararg table '{s}'", .{n.ident});
+                    }
+                } else {
+                    if (self.scope.needs_explicit_global()) {
+                        self.err(n.loc, "attempt to assign to undeclared global '{s}'", .{n.ident});
+                    }
+                    try self.note_global(n.ident, .any);
+                }
+            },
+            .index => |idx| {
+                if (idx.obj.* == .name) {
+                    const n = idx.obj.name;
+                    if (self.scope.lookup(n.ident)) |sym| {
+                        if (sym.is_vararg_rest) {
+                            self.err(idx.loc, "attempt to modify read-only vararg table '{s}'", .{n.ident});
+                        }
+                    }
+                }
+            },
+            .field => |f| {
+                if (f.obj.* == .name) {
+                    const n = f.obj.name;
+                    if (self.scope.lookup(n.ident)) |sym| {
+                        if (sym.is_vararg_rest) {
+                            self.err(f.loc, "attempt to modify read-only vararg table '{s}'", .{n.ident});
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
     fn record(self: *Sema, expr: *const ast.Expr, t: RT) !RT {
         try self.type_map.put(expr, t);
         return t;
@@ -132,6 +198,9 @@ pub const Sema = struct {
     pub fn check_module(self: *Sema, mod: *ast.Module) !void {
         try self.scope.push();
         self.seed_globals();
+        if (self.lua55_mode) {
+            self.scope.set_require_global(true);
+        }
         try self.check_block(&mod.body);
         self.scope.pop();
     }
@@ -139,11 +208,12 @@ pub const Sema = struct {
     fn seed_globals(self: *Sema) void {
         const names = [_][]const u8{
             "print", "math", "string", "table", "io", "os",
+            "package", "coroutine", "utf8", "debug",
             "ipairs", "pairs", "tostring", "tonumber", "type",
-            "error", "assert", "pcall", "require", "simd",
-            "setmetatable", "getmetatable", "rawget", "rawset",
+            "error", "assert", "pcall", "xpcall", "require", "simd",
+            "setmetatable", "getmetatable", "rawget", "rawset", "rawlen", "rawequal",
             "next", "select", "unpack", "load", "loadfile",
-            "dofile", "collectgarbage",
+            "dofile", "collectgarbage", "warn", "_VERSION",
         };
         for (names) |n| {
             self.scope.define(n, .{ .typ = .any, .is_const = true }) catch {};
@@ -170,14 +240,29 @@ pub const Sema = struct {
                 for (ld.names, 0..) |*lname, i| {
                     var t: RT = if (i < init_types.items.len)
                         init_types.items[i]
+                    else if (ld.inits.len == 1 and ld.names.len > 1)
+                        .any
                     else
-                        .nil;
+                        .any;
                     // If annotated, use the annotation
                     if (lname.typ != .inferred) {
                         const ann = types.resolve(lname.typ, self.alloc) catch .any;
                         t = ann;
                     }
-                    try self.scope.define(lname.ident, .{ .typ = t, .is_const = false });
+                    const is_const = is_const_attrib(lname.attrib);
+                    const is_close = is_close_attrib(lname.attrib);
+                    const has_init = i < ld.inits.len or (ld.inits.len == 1 and ld.names.len > 1 and i == 0);
+                    if (is_const and !has_init) {
+                        self.err(lname.loc, "const variable '{s}' must have an initializer", .{lname.ident});
+                    }
+                    if (is_close and !has_init) {
+                        self.err(lname.loc, "to-be-closed variable '{s}' must have an initializer", .{lname.ident});
+                    }
+                    try self.scope.define(lname.ident, .{
+                        .typ = t,
+                        .is_const = is_const,
+                        .is_close = is_close,
+                    });
                 }
             },
             .const_decl => |*cd| {
@@ -200,16 +285,23 @@ pub const Sema = struct {
                 for (gd.names, 0..) |*lname, i| {
                     var t: RT = if (i < init_types.items.len)
                         init_types.items[i]
+                    else if (gd.inits.len == 1 and gd.names.len > 1)
+                        .any
                     else
                         .any;
                     if (lname.typ != .inferred) {
                         const ann = types.resolve(lname.typ, self.alloc) catch .any;
                         t = ann;
                     }
+                    const is_const = is_const_attrib(lname.attrib);
+                    const has_init = i < gd.inits.len or (gd.inits.len == 1 and gd.names.len > 1 and i == 0);
+                    if (is_const and !has_init) {
+                        self.err(lname.loc, "const global '{s}' must have an initializer", .{lname.ident});
+                    }
                     try self.note_global(lname.ident, t);
                     try self.scope.define(lname.ident, .{
                         .typ = t,
-                        .is_const = false,
+                        .is_const = is_const,
                         .is_global = true,
                     });
                 }
@@ -217,15 +309,7 @@ pub const Sema = struct {
             .assign => |*as| {
                 for (as.values) |v| _ = try self.check_expr(v);
                 for (as.targets) |tgt| {
-                    if (tgt.* == .name) {
-                        if (self.scope.lookup(tgt.name.ident)) |sym| {
-                            if (sym.is_for_control) {
-                                self.err(tgt.name.loc, "cannot assign to for loop control variable '{s}'", .{tgt.name.ident});
-                            }
-                        } else {
-                            try self.note_global(tgt.name.ident, .any);
-                        }
-                    }
+                    try self.check_assign_target(tgt);
                     _ = try self.check_expr(tgt);
                 }
             },
@@ -317,16 +401,19 @@ pub const Sema = struct {
         try self.scope.push();
         for (fb.params, 0..) |*p, i|
             try self.scope.define(p.name, .{ .typ = param_types[i], .is_const = false });
+        try self.define_vararg_rest(fb);
         try self.check_block(&fb.body);
         self.scope.pop();
         self.current_ret = prev_ret;
 
         const ret_ptr = try self.alloc.create(RT);
         ret_ptr.* = ret_t;
+        const has_vararg = fb.vararg or fb.vararg_name != null;
         return RT{ .func = .{
             .params = param_types,
             .ret = ret_ptr,
-            .is_native = all_typed,
+            .is_native = all_typed and !has_vararg,
+            .has_vararg = has_vararg,
         }};
     }
 
@@ -763,6 +850,7 @@ pub const Sema = struct {
 
     fn check_func_decl(self: *Sema, fd: *ast.FuncDecl) SemaError!void {
         const fb = &fd.func;
+        const has_vararg = fb.vararg or fb.vararg_name != null;
         var all_typed = true;
         for (fb.params) |*p| {
             if (p.typ == .inferred) all_typed = false;
@@ -782,8 +870,9 @@ pub const Sema = struct {
         var fb_t = RT{ .func = .{
             .params = param_types,
             .ret = ret_ptr,
-            .is_native = fb.is_typed,
-        }};
+            .is_native = fb.is_typed and !has_vararg,
+            .has_vararg = has_vararg,
+        } };
         if (fd.path.len == 1 and !fd.method) {
             try self.scope.define(fd.path[0], .{ .typ = fb_t, .is_const = true });
         }
@@ -794,6 +883,7 @@ pub const Sema = struct {
         try self.scope.push();
         for (fb.params, param_types) |*p, pt|
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
+        try self.define_vararg_rest(fb);
         try self.check_block(&fb.body);
         self.scope.pop();
 
@@ -813,7 +903,7 @@ pub const Sema = struct {
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
         }
-        fb.is_typed = all_typed or (ret_t.is_native() and params_native);
+        fb.is_typed = (all_typed or (ret_t.is_native() and params_native)) and !has_vararg;
         fb.use_iterative_fib = detect_naive_fib_pattern(fb);
         fb.use_prime_sieve = detect_trial_division_primes(fb);
         try detect_string_scan_loops(fb);
@@ -861,14 +951,15 @@ pub const Sema = struct {
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
         }
-        fb.is_typed = all_typed or (ret_t.is_native() and params_native);
+        fb.is_typed = (all_typed or (ret_t.is_native() and params_native)) and !has_vararg;
 
         ret_ptr.* = ret_t;
         fb_t = RT{ .func = .{
             .params = param_types,
             .ret = ret_ptr,
             .is_native = fb.is_typed,
-        }};
+            .has_vararg = has_vararg,
+        } };
         if (fd.path.len == 1 and !fd.method) {
             try self.scope.define(fd.path[0], .{ .typ = fb_t, .is_const = true });
         }
@@ -879,6 +970,7 @@ pub const Sema = struct {
             try self.scope.push();
             for (fb.params, param_types) |*p, pt|
                 try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
+            try self.define_vararg_rest(fb);
             try self.check_block(&fb.body);
             self.scope.pop();
         }
@@ -1900,9 +1992,10 @@ pub const Sema = struct {
             if (func.* != .name) return false;
             const n = func.name.ident;
             const blocked = [_][]const u8{
-                "print", "require", "pcall", "load", "loadfile", "dofile",
+                "print", "require", "pcall", "xpcall", "load", "loadfile", "dofile",
                 "pairs", "ipairs", "tostring", "tonumber", "type", "error",
-                "assert", "select", "unpack", "collectgarbage",
+                "assert", "select", "unpack", "collectgarbage", "warn",
+                "rawlen", "rawequal",
             };
             for (blocked) |b| {
                 if (std.mem.eql(u8, n, b)) return true;
@@ -1989,6 +2082,10 @@ pub const Sema = struct {
                     }
                 },
                 .ret => |*r| {
+                    if (r.vals.len > 1) {
+                        self.ok = false;
+                        return;
+                    }
                     for (r.vals) |v| {
                         const t = self.infer_expr(v, .any);
                         self.ret_tys.append(self.sema.alloc, t) catch return;

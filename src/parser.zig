@@ -243,9 +243,20 @@ pub const Parser = struct {
         const typ = try self.maybe_type_ann();
         var attrib: ?[]const u8 = null;
         if (try self.eat(.lt) != null) {
-            const a = try self.expect(.name);
-            _ = try self.expect(.gt);
-            attrib = a.text;
+            const attr_tok = try self.pk();
+            attrib = switch (attr_tok.kind) {
+                .name => blk: {
+                    const a = try self.adv();
+                    _ = try self.expect(.gt);
+                    break :blk a.text;
+                },
+                .kw_const => blk: {
+                    _ = try self.adv();
+                    _ = try self.expect(.gt);
+                    break :blk "const";
+                },
+                else => return error.ExpectedToken,
+            };
         }
         return ast.LocalName{ .ident = nm.text, .typ = typ, .attrib = attrib, .loc = nm.loc };
     }

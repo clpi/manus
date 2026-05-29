@@ -55,7 +55,7 @@ assert(coroutine.status(co) == "dead", "coroutine status should be dead")
 -- 4. Package and Require (package & require)
 print("\n--- Package & Require ---")
 print("package.path:", package.path)
-assert(package.path == "./?.lua", "package.path failed")
+assert(package.path == "./?.lua;./?/init.lua", "package.path failed")
 
 local pkg = require("math")
 print("require successfully called!")

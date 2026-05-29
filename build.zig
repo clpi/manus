@@ -21,8 +21,11 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run duo");
     run_step.dependOn(&run_cmd.step);
 
+    const test_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_compile_fail_tests.sh" });
+    test_cmd.setCwd(b.path("."));
+    test_cmd.step.dependOn(b.getInstallStep());
     const test_step = b.step("test", "Run tests");
-    _ = test_step;
+    test_step.dependOn(&test_cmd.step);
 
     const bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark.sh" });
     bench_cmd.setCwd(b.path("."));

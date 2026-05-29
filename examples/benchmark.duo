@@ -1,4 +1,3 @@
--- Duo benchmark suite (mirrors benchmark.lua; same 23 workloads)
 -- Duo Comprehensive Performance Benchmark Suite
 -- Exercises numeric hot loops and stdlib (string, math, table) paths.
 

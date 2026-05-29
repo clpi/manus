@@ -32,6 +32,7 @@ pub const CodeGen = struct {
     type_map: *sema.TypeMap,
     module_globals: ?*const std.StringHashMapUnmanaged(RT) = null,
     local_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
+    close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
     indent: u32,
     w: W,
     current_ret: RT = .void,
@@ -42,6 +43,7 @@ pub const CodeGen = struct {
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     mandel_native: bool = false,
     load_chunk: bool = false,
+    vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -58,12 +60,31 @@ pub const CodeGen = struct {
 
     fn push_local_scope(self: *CodeGen) E!void {
         try self.local_scopes.append(self.alloc, std.StringHashMapUnmanaged(void).empty);
+        try self.close_scopes.append(self.alloc, .empty);
     }
 
     fn pop_local_scope(self: *CodeGen) void {
+        if (self.close_scopes.items.len > 0) {
+            var closes = self.close_scopes.pop().?;
+            var i = closes.items.len;
+            while (i > 0) {
+                i -= 1;
+                const name = closes.items[i];
+                self.ind();
+                self.p("lua_close_local(", .{});
+                self.emit_var_name(name);
+                self.p(");\n", .{});
+            }
+            closes.deinit(self.alloc);
+        }
         if (self.local_scopes.items.len == 0) return;
         var m = self.local_scopes.pop().?;
         m.deinit(self.alloc);
+    }
+
+    fn note_close_local(self: *CodeGen, name: []const u8) !void {
+        if (self.close_scopes.items.len == 0) return;
+        try self.close_scopes.items[self.close_scopes.items.len - 1].append(self.alloc, name);
     }
 
     fn note_local(self: *CodeGen, name: []const u8) !void {
@@ -85,8 +106,19 @@ pub const CodeGen = struct {
         return null;
     }
 
+    fn is_runtime_global(name: []const u8) bool {
+        const runtime_globals = [_][]const u8{
+            "package", "math", "utf8", "debug", "coroutine", "string", "table",
+            "io", "os", "duo_modules", "current_input", "current_output", "_VERSION",
+        };
+        for (runtime_globals) |g| {
+            if (std.mem.eql(u8, name, g)) return true;
+        }
+        return false;
+    }
+
     fn emit_var_name(self: *CodeGen, name: []const u8) void {
-        if (!self.is_local_name(name) and self.global_type(name) != null) {
+        if (!self.is_local_name(name) and self.global_type(name) != null and !is_runtime_global(name)) {
             self.p("duo_g_{s}", .{name});
         } else {
             self.p("{s}", .{name});
@@ -120,6 +152,12 @@ pub const CodeGen = struct {
     fn typ(self: *CodeGen, rt: RT) void {
         var buf: [128]u8 = undefined;
         self.p("{s}", .{rt.c_type(&buf)});
+    }
+
+    fn uses_multi_return(self: *CodeGen, init_expr: *const ast.Expr, name_count: usize) bool {
+        if (name_count <= 1) return false;
+        if (init_expr.* == .call) return true;
+        return self.expr_type(init_expr) == .any;
     }
 
     fn expr_type(self: *CodeGen, e: *const ast.Expr) RT {
@@ -185,6 +223,7 @@ pub const CodeGen = struct {
         if (self.module_globals) |globals| {
             var it = globals.keyIterator();
             while (it.next()) |key| {
+                if (is_runtime_global(key.*)) continue;
                 const gt = globals.get(key.*) orelse .any;
                 self.p("static ", .{});
                 self.typ(gt);
@@ -251,6 +290,8 @@ pub const CodeGen = struct {
             try self.emit_func_def(fd);
         }
 
+        try self.emit_argv_lookup();
+
         if (self.mandel_native) {
             self.p("#pragma GCC push_options\n", .{});
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
@@ -299,6 +340,7 @@ pub const CodeGen = struct {
         self.pl("os = lua_os_init();", .{});
         self.pl("duo_modules = lua_table_new();", .{});
         self.pl("duo_register_modules();", .{});
+        self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
 
         try self.push_local_scope();
         defer self.pop_local_scope();
@@ -352,6 +394,12 @@ pub const CodeGen = struct {
 
     fn emit_func_decl_forward(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        var name_buf: [128]u8 = undefined;
+        const cname = self.emit_func_c_name(fd, &name_buf);
+        if (fb.vararg_name != null or fb.vararg) {
+            self.p("static lua_Value {s}__argv(int argc, lua_Value* argv);\n", .{cname});
+            return;
+        }
         const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
         if (fb.use_fp_strict_always_inline) {
             self.p("#pragma GCC push_options\n", .{});
@@ -522,6 +570,10 @@ pub const CodeGen = struct {
         const fb = &fd.func;
         if (fb.use_mandel_iter_native) self.mandel_native = true;
         const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
+        if ((fb.vararg_name != null or fb.vararg) and ret == .any) {
+            try self.emit_vararg_func_def(fd);
+            return;
+        }
         const prev_ret = self.current_ret;
         const prev_dense = self.dense_table;
         const prev_dense_cap = self.dense_table_cap;
@@ -633,6 +685,67 @@ pub const CodeGen = struct {
         try self.emit_lua_thunk(fd);
     }
 
+    fn emit_vararg_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
+        const fb = &fd.func;
+        var name_buf: [128]u8 = undefined;
+        const cname = self.emit_func_c_name(fd, &name_buf);
+        if (fd.path.len == 1 and !fd.method) {
+            const owned = try self.alloc.dupe(u8, cname);
+            try self.vararg_funcs.put(self.alloc, fd.path[0], owned);
+        }
+        self.p("static lua_Value {s}__argv(int argc, lua_Value* argv) {{\n", .{cname});
+        self.indent = 1;
+        const prev_ret = self.current_ret;
+        const prev_ctx = self.closure_ctx;
+        self.current_ret = .any;
+        self.closure_ctx = fb;
+        try self.push_local_scope();
+        defer {
+            self.pop_local_scope();
+            self.closure_ctx = prev_ctx;
+            self.current_ret = prev_ret;
+        }
+        for (fb.params, 0..) |par, i| {
+            try self.note_local(par.name);
+            const pt = types.resolve(par.typ, self.alloc) catch .any;
+            if (pt == .any) {
+                self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
+            } else if (pt.is_integer()) {
+                self.pl("int64_t {s} = (int64_t)lua_to_num(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+            } else if (pt == .f64) {
+                self.pl("double {s} = lua_to_num(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+            } else if (pt == .bool) {
+                self.pl("bool {s} = lua_to_bool(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+            } else if (pt == .str) {
+                self.pl("const char* {s} = lua_to_str(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+            } else {
+                self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
+            }
+        }
+        if (fb.vararg_name) |vn| {
+            try self.note_local(vn);
+            self.pl("lua_Value {s} = lua_tbl_pack_argv(argc - {d}, argv + {d});", .{ vn, fb.params.len, fb.params.len });
+        }
+        try self.emit_block_stmts(&fb.body);
+        self.pl("return lua_val_nil();", .{});
+        self.indent = 0;
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_argv_lookup(self: *CodeGen) E!void {
+        self.p("duo_ArgvFn duo_lookup_argv(void* f) {{\n", .{});
+        var it = self.vararg_funcs.iterator();
+        while (it.next()) |entry| {
+            self.p("    if (f == (void*){s}__argv) return {s}__argv;\n", .{ entry.value_ptr.*, entry.value_ptr.* });
+        }
+        self.p("    if (f == (void*)lua_tbl_create_argv) return lua_tbl_create_argv;\n", .{});
+        self.p("    if (f == (void*)lua_tbl_pack_argv_fn) return lua_tbl_pack_argv_fn;\n", .{});
+        self.p("    if (f == (void*)lua_pcall_argv_fn) return lua_pcall_argv_fn;\n", .{});
+        self.p("    if (f == (void*)lua_xpcall_argv_fn) return lua_xpcall_argv_fn;\n", .{});
+        self.p("    return NULL;\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
     fn emit_native_func_as_lua_value(self: *CodeGen, expr: *const ast.Expr) E!void {
         const ft = self.expr_type(expr);
         if (ft != .func or !ft.func.is_native) {
@@ -650,6 +763,10 @@ pub const CodeGen = struct {
                 return;
             },
         };
+        if (self.vararg_funcs.get(cname)) |argv_cname| {
+            self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
+            return;
+        }
         const nparams = ft.func.params.len;
         if (nparams == 0 or nparams == 1) {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value)){s}__lua)", .{cname});
@@ -1120,16 +1237,20 @@ pub const CodeGen = struct {
         switch (stmt.*) {
             .local_decl => |*ld| {
                 for (ld.names) |*lname| try self.note_local(lname.ident);
-                if (ld.names.len > 1 and ld.inits.len == 1 and self.expr_type(ld.inits[0]) == .any) {
+                if (ld.inits.len == 1 and self.uses_multi_return(ld.inits[0], ld.names.len)) {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
                     self.ind();
-                    self.p("(void)(", .{});
-                    try self.emit_expr(ld.inits[0]);
-                    self.p(");\n", .{});
-                    for (ld.names, 0..) |*lname, i| {
+                    self.p("lua_Value {s} = ", .{ld.names[0].ident});
+                    try self.emit_as_lua_value(ld.inits[0]);
+                    self.p(";\n", .{});
+                    if (ld.names[0].attrib != null and std.mem.eql(u8, ld.names[0].attrib.?, "close"))
+                        try self.note_close_local(ld.names[0].ident);
+                    for (ld.names[1..], 0..) |*lname, i| {
                         self.ind();
                         self.p("lua_Value {s} = lua_mret_get({d});\n", .{ lname.ident, i });
+                        if (lname.attrib != null and std.mem.eql(u8, lname.attrib.?, "close"))
+                            try self.note_close_local(lname.ident);
                     }
                 } else for (ld.names, 0..) |*lname, i| {
                     if (self.dense_table) |dt| {
@@ -1165,18 +1286,20 @@ pub const CodeGen = struct {
                         }
                     }
                     self.p(";\n", .{});
+                    if (lname.attrib != null and std.mem.eql(u8, lname.attrib.?, "close"))
+                        try self.note_close_local(lname.ident);
                 }
             },
             .global_decl => |*gd| {
                 if (gd.star) return;
-                if (gd.names.len > 1 and gd.inits.len == 1 and self.expr_type(gd.inits[0]) == .any) {
+                if (gd.inits.len == 1 and self.uses_multi_return(gd.inits[0], gd.names.len)) {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
                     self.ind();
-                    self.p("(void)(", .{});
-                    try self.emit_expr(gd.inits[0]);
-                    self.p(");\n", .{});
-                    for (gd.names, 0..) |*lname, i| {
+                    self.p("duo_g_{s} = ", .{gd.names[0].ident});
+                    try self.emit_as_lua_value(gd.inits[0]);
+                    self.p(";\n", .{});
+                    for (gd.names[1..], 0..) |*lname, i| {
                         self.ind();
                         self.p("duo_g_{s} = lua_mret_get({d});\n", .{ lname.ident, i });
                     }
@@ -1213,10 +1336,57 @@ pub const CodeGen = struct {
                 self.p(";\n", .{});
             },
             .assign => |*as| {
-                for (as.targets, 0..) |tgt, i| {
+                if (as.values.len == 1 and self.uses_multi_return(as.values[0], as.targets.len)) {
+                    self.ind();
+                    self.pl("lua_mret_clear();", .{});
+                    self.ind();
+                    const tt0 = self.expr_type(as.targets[0]);
+                    try self.emit_lvalue(as.targets[0]);
+                    self.p(" = ", .{});
+                    if (tt0 == .any) {
+                        try self.emit_as_lua_value(as.values[0]);
+                    } else if (tt0.is_numeric()) {
+                        self.p("((", .{});
+                        self.typ(tt0);
+                        self.p(")lua_to_num(", .{});
+                        try self.emit_as_lua_value(as.values[0]);
+                        self.p("))", .{});
+                    } else if (tt0 == .bool) {
+                        self.p("lua_to_bool(", .{});
+                        try self.emit_as_lua_value(as.values[0]);
+                        self.p(")", .{});
+                    } else if (tt0 == .str) {
+                        self.p("lua_to_str(", .{});
+                        try self.emit_as_lua_value(as.values[0]);
+                        self.p(")", .{});
+                    } else {
+                        try self.emit_as_lua_value(as.values[0]);
+                    }
+                    self.p(";\n", .{});
+                    for (as.targets[1..], 0..) |tgt, i| {
+                        self.ind();
+                        const tt = self.expr_type(tgt);
+                        try self.emit_lvalue(tgt);
+                        self.p(" = ", .{});
+                        if (tt == .any) {
+                            self.p("lua_mret_get({d})", .{i});
+                        } else if (tt.is_numeric()) {
+                            self.p("((", .{});
+                            self.typ(tt);
+                            self.p(")lua_to_num(lua_mret_get({d})))", .{i});
+                        } else if (tt == .bool) {
+                            self.p("lua_to_bool(lua_mret_get({d}))", .{i});
+                        } else if (tt == .str) {
+                            self.p("lua_to_str(lua_mret_get({d}))", .{i});
+                        } else {
+                            self.p("lua_mret_get({d})", .{i});
+                        }
+                        self.p(";\n", .{});
+                    }
+                } else for (as.targets, 0..) |tgt, i| {
                     self.ind();
                     const tt = self.expr_type(tgt);
-                    
+
                     var is_table_assign = false;
                     if (tgt.* == .field) {
                         const f = &tgt.field;
@@ -1310,15 +1480,23 @@ pub const CodeGen = struct {
                 if (r.vals.len == 0) {
                     self.p("return;\n", .{});
                 } else if (self.closure_ctx != null or self.current_ret == .any) {
-                    self.pl("lua_mret_clear();", .{});
-                    for (r.vals) |v| {
+                    if (r.vals.len == 1) {
+                        self.p("return ", .{});
+                        try self.emit_as_lua_value(r.vals[0]);
+                        self.p(";\n", .{});
+                    } else {
+                        self.pl("lua_mret_clear();", .{});
+                        for (r.vals[1..]) |v| {
+                            self.ind();
+                            self.p("lua_mret_push(", .{});
+                            try self.emit_as_lua_value(v);
+                            self.p(");\n", .{});
+                        }
                         self.ind();
-                        self.p("lua_mret_push(", .{});
-                        try self.emit_as_lua_value(v);
-                        self.p(");\n", .{});
+                        self.p("return ", .{});
+                        try self.emit_as_lua_value(r.vals[0]);
+                        self.p(";\n", .{});
                     }
-                    self.ind();
-                    self.p("return lua_mret_get(0);\n", .{});
                 } else {
                     self.p("return ", .{});
                     try self.emit_expr(r.vals[0]);
@@ -1406,12 +1584,11 @@ pub const CodeGen = struct {
                 self.p("for (", .{});
                 self.typ(vt2);
                 self.p(" {s} = ", .{nf.var_name});
-                try self.emit_expr(nf.start);
+                try self.emit_num_for_bound(nf.start, vt2);
                 self.p("; {s} <= ", .{nf.var_name});
-                try self.emit_expr(nf.stop);
+                try self.emit_num_for_bound(nf.stop, vt2);
                 self.p("; {s} += ", .{nf.var_name});
-                if (nf.step) |s| try self.emit_expr(s)
-                else self.p("1", .{});
+                if (nf.step) |s| try self.emit_num_for_bound(s, vt2) else self.p("1", .{});
                 self.p(") {{\n", .{});
                 self.indent += 1;
                 try self.emit_block(&nf.body);
@@ -1639,7 +1816,12 @@ pub const CodeGen = struct {
                     self.p(")", .{});
                 }
             },
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => {
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
+                self.p("lua_val_from_int((int64_t)(", .{});
+                try self.emit_expr(expr);
+                self.p("))", .{});
+            },
+            .f32, .f64 => {
                 self.p("lua_val_from_num((double)(", .{});
                 try self.emit_expr(expr);
                 self.p("))", .{});
@@ -1666,6 +1848,18 @@ pub const CodeGen = struct {
     }
 
     // ── Expressions ───────────────────────────────────────────────────────────
+
+    fn emit_num_for_bound(self: *CodeGen, expr: *const ast.Expr, vt: RT) E!void {
+        if (self.expr_type(expr) == .any) {
+            self.p("(", .{});
+            self.typ(vt);
+            self.p(")lua_to_num(", .{});
+            try self.emit_as_lua_value(expr);
+            self.p(")", .{});
+        } else {
+            try self.emit_expr(expr);
+        }
+    }
 
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
@@ -1746,6 +1940,31 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 const ft = self.expr_type(c.func);
+                if (c.func.* == .name) {
+                    if (self.vararg_funcs.get(c.func.name.ident)) |argv_cname| {
+                        self.p("({{\n", .{});
+                        self.indent += 1;
+                        self.ind();
+                        if (c.args.len == 0) {
+                            self.pl("lua_Value __r = {s}__argv(0, NULL);", .{argv_cname});
+                        } else {
+                            self.p("lua_Value __argv[{d}] = {{", .{c.args.len});
+                            for (c.args, 0..) |arg, i| {
+                                if (i > 0) self.p(", ", .{});
+                                try self.emit_as_lua_value(arg);
+                            }
+                            self.p("}};\n", .{});
+                            self.ind();
+                            self.p("lua_Value __r = {s}__argv({d}, __argv);\n", .{ argv_cname, c.args.len });
+                        }
+                        self.ind();
+                        self.p("__r;\n", .{});
+                        self.indent -= 1;
+                        self.ind();
+                        self.p("}})", .{});
+                        return;
+                    }
+                }
                 if (ft == .any) {
                     self.p("({{\n", .{});
                     self.indent += 1;
@@ -1810,6 +2029,36 @@ pub const CodeGen = struct {
                     } else if (std.mem.eql(u8, mc.method, "get") or std.mem.eql(u8, mc.method, "tostring") or std.mem.eql(u8, mc.method, "read")) {
                         self.p("lua_file_read_method(", .{});
                         try self.emit_expr(mc.obj);
+                        self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "reset")) {
+                        self.p("lua_str_buf_reset(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "set")) {
+                        self.p("lua_str_buf_set(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p(", ", .{});
+                        if (mc.args.len > 0) try self.emit_as_lua_value(mc.args[0]) else self.p("lua_val_nil()", .{});
+                        self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "free")) {
+                        self.p("lua_str_buf_free(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "len")) {
+                        self.p("lua_str_buf_len(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "putf")) {
+                        self.p("lua_str_buf_putf(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p(", ", .{});
+                        if (mc.args.len > 0) try self.emit_as_lua_value(mc.args[0]) else self.p("lua_val_nil()", .{});
+                        self.p(", ", .{});
+                        if (mc.args.len > 1) try self.emit_as_lua_value(mc.args[1]) else self.p("lua_val_nil()", .{});
+                        self.p(", ", .{});
+                        if (mc.args.len > 2) try self.emit_as_lua_value(mc.args[2]) else self.p("lua_val_nil()", .{});
+                        self.p(", ", .{});
+                        if (mc.args.len > 3) try self.emit_as_lua_value(mc.args[3]) else self.p("lua_val_nil()", .{});
                         self.p(")", .{});
                     } else if (std.mem.eql(u8, mc.method, "close")) {
                         self.p("lua_io_close(", .{});
@@ -1897,6 +2146,8 @@ pub const CodeGen = struct {
                         .gt  => "lua_gt",
                         .leq => "lua_leq",
                         .geq => "lua_geq",
+                        .@"or"  => "lua_or",
+                        .@"and" => "lua_and",
                         else => null,
                     };
                     if (func) |f| {
@@ -2157,13 +2408,13 @@ pub const CodeGen = struct {
         const fname = f.field;
         const lua_names = [_][]const u8{
             "sqrt", "abs", "floor", "ceil", "sin", "cos", "tan",
-            "asin", "acos", "atan", "sinh", "cosh", "tanh",
-            "exp", "log", "pow", "fmod", "max", "min",
+            "asin", "acos", "atan",
+            "exp", "log", "fmod", "max", "min",
         };
         const c_names = [_][]const u8{
             "sqrt", "fabs", "floor", "ceil", "sin", "cos", "tan",
-            "asin", "acos", "atan", "sinh", "cosh", "tanh",
-            "exp", "log", "pow", "fmod", "fmax", "fmin",
+            "asin", "acos", "atan",
+            "exp", "log", "fmod", "fmax", "fmin",
         };
         for (lua_names, c_names) |ln, cn| {
             if (std.mem.eql(u8, fname, ln)) {
@@ -2237,19 +2488,28 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "pcall")) {
-            self.p("lua_pcall(", .{});
-            if (args.len > 0) {
-                try self.emit_as_lua_value(args[0]);
+            if (args.len > 2) {
+                self.p("lua_pcall_argv_fn({d}, (lua_Value[]){{", .{args.len});
+                for (args, 0..) |arg, i| {
+                    if (i > 0) self.p(", ", .{});
+                    try self.emit_as_lua_value(arg);
+                }
+                self.p("}})", .{});
             } else {
-                self.p("lua_val_nil()", .{});
+                self.p("lua_pcall(", .{});
+                if (args.len > 0) {
+                    try self.emit_as_lua_value(args[0]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+                self.p(", ", .{});
+                if (args.len > 1) {
+                    try self.emit_as_lua_value(args[1]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+                self.p(")", .{});
             }
-            self.p(", ", .{});
-            if (args.len > 1) {
-                try self.emit_as_lua_value(args[1]);
-            } else {
-                self.p("lua_val_nil()", .{});
-            }
-            self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "next")) {
             self.p("lua_next(", .{});
@@ -2328,13 +2588,22 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "xpcall")) {
-            self.p("lua_xpcall(", .{});
-            if (args.len > 0) try self.emit_as_lua_value(args[0]) else self.p("lua_val_nil()", .{});
-            self.p(", ", .{});
-            if (args.len > 1) try self.emit_as_lua_value(args[1]) else self.p("lua_val_nil()", .{});
-            self.p(", ", .{});
-            if (args.len > 2) try self.emit_as_lua_value(args[2]) else self.p("lua_val_nil()", .{});
-            self.p(")", .{});
+            if (args.len > 3) {
+                self.p("lua_xpcall_argv_fn({d}, (lua_Value[]){{", .{args.len});
+                for (args, 0..) |arg, i| {
+                    if (i > 0) self.p(", ", .{});
+                    try self.emit_as_lua_value(arg);
+                }
+                self.p("}})", .{});
+            } else {
+                self.p("lua_xpcall(", .{});
+                if (args.len > 0) try self.emit_as_lua_value(args[0]) else self.p("lua_val_nil()", .{});
+                self.p(", ", .{});
+                if (args.len > 1) try self.emit_as_lua_value(args[1]) else self.p("lua_val_nil()", .{});
+                self.p(", ", .{});
+                if (args.len > 2) try self.emit_as_lua_value(args[2]) else self.p("lua_val_nil()", .{});
+                self.p(")", .{});
+            }
             return true;
         } else if (std.mem.eql(u8, name, "load")) {
             self.p("lua_load(", .{});
@@ -2597,7 +2866,13 @@ pub const CodeGen = struct {
             const inner = &f.obj.field;
             if (inner.obj.* == .name and std.mem.eql(u8, inner.obj.name.ident, "string") and std.mem.eql(u8, inner.field, "buffer")) {
                 if (std.mem.eql(u8, f.field, "new")) {
-                    self.p("lua_str_buf_new()", .{});
+                    if (args.len > 0) {
+                        self.p("lua_str_buf_new_init(", .{});
+                        try self.emit_as_lua_value(args[0]);
+                        self.p(")", .{});
+                    } else {
+                        self.p("lua_str_buf_new()", .{});
+                    }
                     return true;
                 }
             }
@@ -2651,16 +2926,29 @@ pub const CodeGen = struct {
             else if (std.mem.eql(u8, fname, "concat")) "lua_tbl_concat"
             else if (std.mem.eql(u8, fname, "sort")) "lua_tbl_sort"
             else if (std.mem.eql(u8, fname, "new")) "lua_tbl_new"
+            else if (std.mem.eql(u8, fname, "create")) "lua_tbl_new"
             else if (std.mem.eql(u8, fname, "clear")) "lua_tbl_clear"
             else if (std.mem.eql(u8, fname, "move")) "lua_tbl_move"
             else if (std.mem.eql(u8, fname, "unpack")) "lua_tbl_unpack"
             else if (std.mem.eql(u8, fname, "pack")) "lua_tbl_pack"
+            else if (std.mem.eql(u8, fname, "freeze")) "lua_tbl_freeze"
+            else if (std.mem.eql(u8, fname, "isfrozen")) "lua_tbl_isfrozen"
             else return false;
+
+            if (std.mem.eql(u8, fname, "pack") and args.len > 1) {
+                self.p("lua_tbl_pack_argv({d}, (lua_Value[]){{", .{args.len});
+                for (args, 0..) |arg, i| {
+                    if (i > 0) self.p(", ", .{});
+                    try self.emit_as_lua_value(arg);
+                }
+                self.p("}})", .{});
+                return true;
+            }
 
             const expected: usize = if (std.mem.eql(u8, fname, "sort")) @as(usize, 2)
             else if (std.mem.eql(u8, fname, "pack")) @as(usize, 1)
-            else if (std.mem.eql(u8, fname, "clear")) @as(usize, 1)
-            else if (std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "new")) @as(usize, 2)
+            else if (std.mem.eql(u8, fname, "clear") or std.mem.eql(u8, fname, "freeze") or std.mem.eql(u8, fname, "isfrozen")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "new") or std.mem.eql(u8, fname, "create")) @as(usize, 2)
             else if (std.mem.eql(u8, fname, "insert") or std.mem.eql(u8, fname, "unpack")) @as(usize, 3)
             else if (std.mem.eql(u8, fname, "concat")) @as(usize, 4)
             else if (std.mem.eql(u8, fname, "move")) @as(usize, 5)
@@ -2786,21 +3074,27 @@ pub const CodeGen = struct {
             else if (std.mem.eql(u8, fname, "acos")) "lua_math_acos"
             else if (std.mem.eql(u8, fname, "asin")) "lua_math_asin"
             else if (std.mem.eql(u8, fname, "atan")) "lua_math_atan"
+            else if (std.mem.eql(u8, fname, "atan2")) "lua_math_atan2"
             else if (std.mem.eql(u8, fname, "ceil")) "lua_math_ceil"
             else if (std.mem.eql(u8, fname, "cos")) "lua_math_cos"
             else if (std.mem.eql(u8, fname, "exp")) "lua_math_exp"
             else if (std.mem.eql(u8, fname, "floor")) "lua_math_floor"
             else if (std.mem.eql(u8, fname, "fmod")) "lua_math_fmod"
             else if (std.mem.eql(u8, fname, "log")) "lua_math_log"
+            else if (std.mem.eql(u8, fname, "log10")) "lua_math_log10"
             else if (std.mem.eql(u8, fname, "max")) "lua_math_max"
             else if (std.mem.eql(u8, fname, "min")) "lua_math_min"
             else if (std.mem.eql(u8, fname, "sin")) "lua_math_sin"
             else if (std.mem.eql(u8, fname, "sqrt")) "lua_math_sqrt"
             else if (std.mem.eql(u8, fname, "tan")) "lua_math_tan"
+            else if (std.mem.eql(u8, fname, "pow")) "lua_math_pow"
+            else if (std.mem.eql(u8, fname, "sinh")) "lua_math_sinh"
+            else if (std.mem.eql(u8, fname, "cosh")) "lua_math_cosh"
+            else if (std.mem.eql(u8, fname, "tanh")) "lua_math_tanh"
             else return false;
 
-            const expected: usize = if (std.mem.eql(u8, fname, "randomseed") or std.mem.eql(u8, fname, "deg") or std.mem.eql(u8, fname, "rad") or std.mem.eql(u8, fname, "type") or std.mem.eql(u8, fname, "tointeger") or std.mem.eql(u8, fname, "modf") or std.mem.eql(u8, fname, "abs") or std.mem.eql(u8, fname, "acos") or std.mem.eql(u8, fname, "asin") or std.mem.eql(u8, fname, "atan") or std.mem.eql(u8, fname, "ceil") or std.mem.eql(u8, fname, "cos") or std.mem.eql(u8, fname, "exp") or std.mem.eql(u8, fname, "floor") or std.mem.eql(u8, fname, "log") or std.mem.eql(u8, fname, "sin") or std.mem.eql(u8, fname, "sqrt") or std.mem.eql(u8, fname, "tan")) @as(usize, 1)
-            else if (std.mem.eql(u8, fname, "random") or std.mem.eql(u8, fname, "ult") or std.mem.eql(u8, fname, "fmod") or std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) @as(usize, 2)
+            const expected: usize = if (std.mem.eql(u8, fname, "randomseed") or std.mem.eql(u8, fname, "deg") or std.mem.eql(u8, fname, "rad") or std.mem.eql(u8, fname, "type") or std.mem.eql(u8, fname, "tointeger") or std.mem.eql(u8, fname, "modf") or std.mem.eql(u8, fname, "abs") or std.mem.eql(u8, fname, "acos") or std.mem.eql(u8, fname, "asin") or std.mem.eql(u8, fname, "atan") or std.mem.eql(u8, fname, "ceil") or std.mem.eql(u8, fname, "cos") or std.mem.eql(u8, fname, "exp") or std.mem.eql(u8, fname, "floor") or std.mem.eql(u8, fname, "log") or std.mem.eql(u8, fname, "log10") or std.mem.eql(u8, fname, "sin") or std.mem.eql(u8, fname, "sqrt") or std.mem.eql(u8, fname, "tan") or std.mem.eql(u8, fname, "sinh") or std.mem.eql(u8, fname, "cosh") or std.mem.eql(u8, fname, "tanh")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "random") or std.mem.eql(u8, fname, "ult") or std.mem.eql(u8, fname, "fmod") or std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min") or std.mem.eql(u8, fname, "atan2") or std.mem.eql(u8, fname, "pow")) @as(usize, 2)
             else 0;
 
             self.p("{s}(", .{mapped});
@@ -2843,9 +3137,11 @@ pub const CodeGen = struct {
             return true;
         } else if (std.mem.eql(u8, mod, "debug")) {
             const mapped = if (std.mem.eql(u8, fname, "traceback")) "lua_debug_traceback"
+            else if (std.mem.eql(u8, fname, "getinfo")) "lua_debug_getinfo"
             else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "traceback")) @as(usize, 0)
+            else if (std.mem.eql(u8, fname, "getinfo")) @as(usize, 2)
             else 0;
 
             self.p("{s}(", .{mapped});
@@ -3251,6 +3547,7 @@ pub const CodeGen = struct {
         var submod = parser.parse_module() catch return;
         var subsem = sema.Sema.init(self.alloc);
         defer subsem.deinit();
+        subsem.lua55_mode = std.mem.endsWith(u8, path, ".lua");
         subsem.check_module(&submod) catch return;
 
         self.p("static lua_Value duo_mod_{s}(lua_Value _unused) {{\n", .{cname});
@@ -3300,6 +3597,7 @@ const duo_runtime =
     \\
     \\typedef struct {
     \\    lua_ValType type;
+    \\    uint8_t number_kind; /* 1=integer, 2=float; only when type==VAL_NUMBER */
     \\    union {
     \\        bool bval;
     \\        double nval;
@@ -3312,6 +3610,7 @@ const duo_runtime =
     \\typedef struct {
     \\    FILE* f;
     \\    bool is_pipe;
+    \\    bool is_stdio;
     \\} lua_File;
     \\
     \\typedef struct {
@@ -3333,6 +3632,7 @@ const duo_runtime =
     \\    int capacity;
     \\    int count;
     \\    lua_Value metatable;
+    \\    bool frozen;
     \\} lua_Table;
     \\
     \\typedef lua_Value (*lua_CFunction)(int argc, lua_Value* argv);
@@ -3374,6 +3674,9 @@ const duo_runtime =
     \\
     \\extern lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv);
     \\
+    \\typedef lua_Value (*duo_ArgvFn)(int, lua_Value* argv);
+    \\duo_ArgvFn duo_lookup_argv(void* f);
+    \\
     \\static inline lua_Value lua_call_metamethod(lua_Value obj, const char* name, int argc, lua_Value* argv);
     \\
     \\static inline lua_Value lua_invoke(lua_Value f, int argc, lua_Value* argv) {
@@ -3383,6 +3686,13 @@ const duo_runtime =
     \\        return duo_invoke_closure(cl->id, cl, argc, argv);
     \\    }
     \\    if (f.type == VAL_FUNC && f.as.fval) {
+    \\        duo_ArgvFn argv_fn = duo_lookup_argv(f.as.fval);
+    \\        if (argv_fn) {
+    \\            lua_mret_clear();
+    \\            lua_Value r = argv_fn(argc, argv);
+    \\            lua_mret_push(r);
+    \\            return r;
+    \\        }
     \\        lua_mret_clear();
     \\        if (argc == 2) {
     \\            lua_Value (*fn2)(lua_Value, lua_Value) = (lua_Value (*)(lua_Value, lua_Value))f.as.fval;
@@ -3450,6 +3760,7 @@ const duo_runtime =
     \\static lua_Value duo_modules;
     \\static lua_Value current_input;
     \\static lua_Value current_output;
+    \\static lua_Value _VERSION;
     \\
     \\static inline uint32_t lua_hash_value(lua_Value v) {
     \\    switch (v.type) {
@@ -3478,6 +3789,8 @@ const duo_runtime =
     \\static inline lua_Value lua_math_init(void);
     \\static inline lua_Value lua_utf8_init(void);
     \\static inline lua_Value lua_debug_init(void);
+    \\static inline lua_Value lua_package_searchpath(lua_Value name, lua_Value path, lua_Value sep, lua_Value rep);
+    \\static lua_Value duo_runtime_load_path(const char* path);
     \\static inline lua_Value lua_coroutine_init(void);
     \\static inline lua_Value lua_string_init(void);
     \\static inline lua_Value lua_table_init(void);
@@ -3502,10 +3815,21 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value lua_val_from_num(double n) {
-    \\    lua_Value v;
-    \\    v.type = VAL_NUMBER;
-    \\    v.as.nval = n;
+    \\    lua_Value v = { .type = VAL_NUMBER, .number_kind = 2, .as = { .nval = n } };
     \\    return v;
+    \\}
+    \\
+    \\static inline lua_Value lua_val_from_int(int64_t n) {
+    \\    lua_Value v = { .type = VAL_NUMBER, .number_kind = 1, .as = { .nval = (double)n } };
+    \\    return v;
+    \\}
+    \\
+    \\static inline lua_Value lua_num_combine(double r, uint8_t ak, uint8_t bk, int force_float) {
+    \\    if (!force_float && ak == 1 && bk == 1) {
+    \\        int64_t ir = (int64_t)r;
+    \\        if ((double)ir == r) return lua_val_from_int(ir);
+    \\    }
+    \\    return lua_val_from_num(r);
     \\}
     \\
     \\static inline uint32_t calc_hash(const char* s, size_t len) {
@@ -3631,7 +3955,7 @@ const duo_runtime =
     \\        static int bidx = 0;
     \\        char* b = bufs[bidx];
     \\        bidx = (bidx + 1) & 15;
-    \\        sprintf(b, "%g", v.as.nval);
+    \\        sprintf(b, "%.17g", v.as.nval);
     \\        return b;
     \\    }
     \\    if (v.type == VAL_BOOL) return v.as.bval ? "true" : "false";
@@ -3656,6 +3980,16 @@ const duo_runtime =
     \\static inline bool lua_to_bool(lua_Value v) {
     \\    if (LUA_LIKELY(v.type == VAL_BOOL)) return v.as.bval;
     \\    return v.type != VAL_NIL;
+    \\}
+    \\
+    \\static inline lua_Value lua_or(lua_Value a, lua_Value b) {
+    \\    if (lua_to_bool(a)) return a;
+    \\    return b;
+    \\}
+    \\
+    \\static inline lua_Value lua_and(lua_Value a, lua_Value b) {
+    \\    if (!lua_to_bool(a)) return a;
+    \\    return b;
     \\}
     \\
     \\static inline lua_Value lua_table_new(void) {
@@ -3738,6 +4072,10 @@ const duo_runtime =
     \\    if (LUA_UNLIKELY(table.type != VAL_TABLE)) return;
     \\    lua_Table* t = (lua_Table*)table.as.tval;
     \\    if (LUA_UNLIKELY(!t)) return;
+    \\    if (t->frozen) {
+    \\        lua_error(lua_val_from_str("attempt to modify a frozen table"));
+    \\        return;
+    \\    }
     \\    if (key.type == VAL_NUMBER) {
     \\        int idx = (int)key.as.nval;
     \\        if (idx >= 1 && idx <= t->array_size) {
@@ -3832,7 +4170,10 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value lua_unm(lua_Value v) {
-    \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) return lua_val_from_num(-v.as.nval);
+    \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) {
+    \\        if (v.number_kind == 1) return lua_val_from_int(-(int64_t)v.as.nval);
+    \\        return lua_val_from_num(-v.as.nval);
+    \\    }
     \\    lua_Value mm = lua_get_metafield(v, "__unm");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
@@ -3843,7 +4184,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_bnot(lua_Value v) {
     \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num((double)(~((int64_t)v.as.nval)));
+    \\        return lua_val_from_int(~((int64_t)v.as.nval));
     \\    }
     \\    lua_Value mm = lua_get_metafield(v, "__bnot");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
@@ -3855,7 +4196,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_add(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num(a.as.nval + b.as.nval);
+    \\        return lua_num_combine(a.as.nval + b.as.nval, a.number_kind, b.number_kind, 0);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__add", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3864,7 +4205,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_sub(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num(a.as.nval - b.as.nval);
+    \\        return lua_num_combine(a.as.nval - b.as.nval, a.number_kind, b.number_kind, 0);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__sub", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3873,7 +4214,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_mul(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num(a.as.nval * b.as.nval);
+    \\        return lua_num_combine(a.as.nval * b.as.nval, a.number_kind, b.number_kind, 0);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__mul", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3891,6 +4232,9 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_idiv(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        if (a.number_kind == 1 && b.number_kind == 1) {
+    \\            return lua_val_from_int((int64_t)floor(a.as.nval / b.as.nval));
+    \\        }
     \\        return lua_val_from_num(floor(a.as.nval / b.as.nval));
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__idiv", a, b);
@@ -3902,7 +4246,9 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        double na = a.as.nval;
     \\        double nb = b.as.nval;
-    \\        return lua_val_from_num(na - nb * floor(na / nb));
+    \\        double r = na - nb * floor(na / nb);
+    \\        if (a.number_kind == 1 && b.number_kind == 1) return lua_val_from_int((int64_t)r);
+    \\        return lua_val_from_num(r);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__mod", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3922,7 +4268,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_band(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num((double)((int64_t)a.as.nval & (int64_t)b.as.nval));
+    \\        return lua_val_from_int((int64_t)a.as.nval & (int64_t)b.as.nval);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__band", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3931,7 +4277,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_bor(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num((double)((int64_t)a.as.nval | (int64_t)b.as.nval));
+    \\        return lua_val_from_int((int64_t)a.as.nval | (int64_t)b.as.nval);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__bor", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3940,7 +4286,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_bxor(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num((double)((int64_t)a.as.nval ^ (int64_t)b.as.nval));
+    \\        return lua_val_from_int((int64_t)a.as.nval ^ (int64_t)b.as.nval);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__bxor", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3949,7 +4295,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_lshift(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num((double)((int64_t)a.as.nval << (int64_t)b.as.nval));
+    \\        return lua_val_from_int((int64_t)a.as.nval << (int64_t)b.as.nval);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__shl", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -3958,7 +4304,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_rshift(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num((double)((int64_t)a.as.nval >> (int64_t)b.as.nval));
+    \\        return lua_val_from_int((int64_t)a.as.nval >> (int64_t)b.as.nval);
     \\    }
     \\    lua_Value mm = lua_binop_metamethod("__shr", a, b);
     \\    if (mm.type != VAL_NIL) return mm;
@@ -4392,6 +4738,7 @@ const duo_runtime =
     \\    lua_File* lf = malloc(sizeof(lua_File));
     \\    lf->f = stdin;
     \\    lf->is_pipe = false;
+    \\    lf->is_stdio = false;
     \\    lua_Value v;
     \\    v.type = VAL_FILE;
     \\    v.as.tval = (void*)lf;
@@ -4411,6 +4758,7 @@ const duo_runtime =
     \\    lua_File* lf = malloc(sizeof(lua_File));
     \\    lf->f = stdout;
     \\    lf->is_pipe = false;
+    \\    lf->is_stdio = false;
     \\    lua_Value v;
     \\    v.type = VAL_FILE;
     \\    v.as.tval = (void*)lf;
@@ -4565,6 +4913,12 @@ const duo_runtime =
     \\    return lua_table_new_with_capacity(na, nh);
     \\}
     \\
+    \\static inline lua_Value lua_tbl_create_argv(int argc, lua_Value* argv) {
+    \\    lua_Value na = argc > 0 ? argv[0] : lua_val_nil();
+    \\    lua_Value nh = argc > 1 ? argv[1] : lua_val_nil();
+    \\    return lua_tbl_new(na, nh);
+    \\}
+    \\
     \\static inline lua_Value lua_tbl_clear(lua_Value table) {
     \\    if (table.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
@@ -4617,6 +4971,47 @@ const duo_runtime =
     \\    return lua_val_from_str(strdup(b->data));
     \\}
     \\
+    \\static inline lua_Value lua_str_buf_reset(lua_Value buf) {
+    \\    if (buf.type != VAL_BUFFER) return lua_val_nil();
+    \\    lua_Buffer* b = (lua_Buffer*)buf.as.tval;
+    \\    b->len = 0;
+    \\    if (b->data) b->data[0] = '\0';
+    \\    return buf;
+    \\}
+    \\
+    \\static inline lua_Value lua_str_buf_set(lua_Value buf, lua_Value s) {
+    \\    if (buf.type != VAL_BUFFER) return lua_val_nil();
+    \\    lua_str_buf_reset(buf);
+    \\    return lua_str_buf_put(buf, s);
+    \\}
+    \\
+    \\static inline lua_Value lua_str_buf_free(lua_Value buf) {
+    \\    if (buf.type != VAL_BUFFER) return lua_val_nil();
+    \\    lua_Buffer* b = (lua_Buffer*)buf.as.tval;
+    \\    free(b->data);
+    \\    free(b);
+    \\    buf.as.tval = NULL;
+    \\    buf.type = VAL_NIL;
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_str_buf_new_init(lua_Value init) {
+    \\    lua_Value buf = lua_str_buf_new();
+    \\    if (init.type != VAL_NIL) lua_str_buf_set(buf, init);
+    \\    return buf;
+    \\}
+    \\
+    \\static inline lua_Value lua_str_buf_len(lua_Value buf) {
+    \\    if (buf.type != VAL_BUFFER) return lua_val_from_num(0);
+    \\    lua_Buffer* b = (lua_Buffer*)buf.as.tval;
+    \\    return lua_val_from_num((double)b->len);
+    \\}
+    \\
+    \\static inline lua_Value lua_str_buf_putf(lua_Value buf, lua_Value fmt, lua_Value a1, lua_Value a2, lua_Value a3) {
+    \\    lua_Value formatted = lua_str_format(fmt, a1, a2, a3);
+    \\    return lua_str_buf_put(buf, formatted);
+    \\}
+    \\
     \\typedef enum {
     \\    CO_SUSPENDED,
     \\    CO_RUNNING,
@@ -4653,6 +5048,7 @@ const duo_runtime =
     \\    co->resume_value = lua_val_nil();
     \\    co->stack = malloc(16384 * 4);
     \\    
+    \\    getcontext(&co->caller_context);
     \\    getcontext(&co->context);
     \\    co->context.uc_stack.ss_sp = co->stack;
     \\    co->context.uc_stack.ss_size = 16384 * 4;
@@ -4705,7 +5101,11 @@ const duo_runtime =
     \\    lua_Value cached = lua_table_get_raw(loaded_tbl, name_val);
     \\    if (cached.type != VAL_NIL) return cached;
     \\    lua_Value mod = lua_val_nil();
-    \\    if (strcmp(name, "math") == 0) mod = math;
+    \\    lua_Value preload = lua_table_get_raw(package, lua_val_from_str("preload"));
+    \\    lua_Value pre = lua_table_get_raw(preload, name_val);
+    \\    if (pre.type == VAL_FUNC || pre.type == VAL_CLOSURE) {
+    \\        mod = lua_invoke(pre, 0, NULL);
+    \\    } else if (strcmp(name, "math") == 0) mod = math;
     \\    else if (strcmp(name, "package") == 0) mod = package;
     \\    else if (strcmp(name, "utf8") == 0) mod = utf8;
     \\    else if (strcmp(name, "debug") == 0) mod = debug;
@@ -4715,6 +5115,20 @@ const duo_runtime =
     \\    else if (strcmp(name, "io") == 0) mod = io;
     \\    else if (strcmp(name, "os") == 0) mod = os;
     \\    else mod = lua_table_get(duo_modules, name_val);
+    \\    if (mod.type == VAL_NIL) {
+    \\        lua_Value path = lua_package_searchpath(name_val,
+    \\            lua_table_get_raw(package, lua_val_from_str("path")),
+    \\            lua_val_nil(), lua_val_nil());
+    \\        if (path.type != VAL_NIL) {
+    \\            lua_Value chunk = duo_runtime_load_path(path.as.sval);
+    \\            if (chunk.type == VAL_FUNC || chunk.type == VAL_CLOSURE) {
+    \\                mod = lua_invoke(chunk, 0, NULL);
+    \\            } else if (chunk.type == VAL_NIL) {
+    \\                lua_Value err = lua_mret_get(0);
+    \\                if (err.type != VAL_NIL) lua_error(err);
+    \\            }
+    \\        }
+    \\    }
     \\    if (mod.type == VAL_NIL) {
     \\        lua_error(lua_val_from_str("module not found"));
     \\    }
@@ -4765,26 +5179,28 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_math_type(lua_Value v) {
     \\    if (v.type != VAL_NUMBER) return lua_val_nil();
-    \\    double d = v.as.nval;
-    \\    if (d == (double)(int64_t)d) {
-    \\        return lua_val_from_str("integer");
-    \\    } else {
-    \\        return lua_val_from_str("float");
-    \\    }
+    \\    if (v.number_kind == 1) return lua_val_from_str("integer");
+    \\    return lua_val_from_str("float");
     \\}
     \\
     \\static inline lua_Value lua_math_abs(lua_Value v) { return lua_val_from_num(fabs(lua_to_num(v))); }
     \\static inline lua_Value lua_math_acos(lua_Value v) { return lua_val_from_num(acos(lua_to_num(v))); }
     \\static inline lua_Value lua_math_asin(lua_Value v) { return lua_val_from_num(asin(lua_to_num(v))); }
     \\static inline lua_Value lua_math_atan(lua_Value v) { return lua_val_from_num(atan(lua_to_num(v))); }
+    \\static inline lua_Value lua_math_atan2(lua_Value y, lua_Value x) { return lua_val_from_num(atan2(lua_to_num(y), lua_to_num(x))); }
     \\static inline lua_Value lua_math_ceil(lua_Value v) { return lua_val_from_num(ceil(lua_to_num(v))); }
     \\static inline lua_Value lua_math_cos(lua_Value v) { return lua_val_from_num(cos(lua_to_num(v))); }
     \\static inline lua_Value lua_math_exp(lua_Value v) { return lua_val_from_num(exp(lua_to_num(v))); }
     \\static inline lua_Value lua_math_floor(lua_Value v) { return lua_val_from_num(floor(lua_to_num(v))); }
     \\static inline lua_Value lua_math_log(lua_Value v) { return lua_val_from_num(log(lua_to_num(v))); }
+    \\static inline lua_Value lua_math_log10(lua_Value v) { return lua_val_from_num(log10(lua_to_num(v))); }
     \\static inline lua_Value lua_math_sin(lua_Value v) { return lua_val_from_num(sin(lua_to_num(v))); }
     \\static inline lua_Value lua_math_sqrt(lua_Value v) { return lua_val_from_num(sqrt(lua_to_num(v))); }
     \\static inline lua_Value lua_math_tan(lua_Value v) { return lua_val_from_num(tan(lua_to_num(v))); }
+    \\static inline lua_Value lua_math_pow(lua_Value x, lua_Value y) { return lua_val_from_num(pow(lua_to_num(x), lua_to_num(y))); }
+    \\static inline lua_Value lua_math_sinh(lua_Value v) { return lua_val_from_num(sinh(lua_to_num(v))); }
+    \\static inline lua_Value lua_math_cosh(lua_Value v) { return lua_val_from_num(cosh(lua_to_num(v))); }
+    \\static inline lua_Value lua_math_tanh(lua_Value v) { return lua_val_from_num(tanh(lua_to_num(v))); }
     \\
     \\static inline lua_Value lua_math_fmod(lua_Value m, lua_Value n) { return lua_val_from_num(fmod(lua_to_num(m), lua_to_num(n))); }
     \\static inline lua_Value lua_math_max(lua_Value m, lua_Value n) { return lua_to_num(m) > lua_to_num(n) ? m : n; }
@@ -5173,6 +5589,14 @@ const duo_runtime =
     \\    exit(1);
     \\}
     \\
+    \\static inline void lua_pcall_store_success(lua_Value r) {
+    \\    if (lua_mret_n + 1 < LUA_MRET_MAX) {
+    \\        for (int i = lua_mret_n; i > 0; i--) lua_mret_buf[i] = lua_mret_buf[i - 1];
+    \\        lua_mret_buf[0] = r;
+    \\        lua_mret_n++;
+    \\    }
+    \\}
+    \\
     \\static inline lua_Value lua_pcall(lua_Value f, lua_Value arg) {
     \\    jmp_buf old_jmp;
     \\    memcpy(old_jmp, error_jmp, sizeof(jmp_buf));
@@ -5180,9 +5604,31 @@ const duo_runtime =
     \\    has_error_jmp = true;
     \\    if (setjmp(error_jmp) == 0) {
     \\        lua_Value args[1] = { arg };
-    \\        lua_invoke(f, 1, args);
+    \\        lua_Value r = lua_invoke(f, 1, args);
     \\        has_error_jmp = old_has;
     \\        memcpy(error_jmp, old_jmp, sizeof(jmp_buf));
+    \\        lua_pcall_store_success(r);
+    \\        return lua_val_from_bool(true);
+    \\    } else {
+    \\        has_error_jmp = old_has;
+    \\        memcpy(error_jmp, old_jmp, sizeof(jmp_buf));
+    \\        lua_mret_clear();
+    \\        lua_mret_push(last_error);
+    \\        return lua_val_from_bool(false);
+    \\    }
+    \\}
+    \\
+    \\static inline lua_Value lua_pcall_argv_fn(int argc, lua_Value* argv) {
+    \\    if (argc < 1) return lua_val_from_bool(false);
+    \\    jmp_buf old_jmp;
+    \\    memcpy(old_jmp, error_jmp, sizeof(jmp_buf));
+    \\    bool old_has = has_error_jmp;
+    \\    has_error_jmp = true;
+    \\    if (setjmp(error_jmp) == 0) {
+    \\        lua_Value r = lua_invoke(argv[0], argc - 1, argv + 1);
+    \\        has_error_jmp = old_has;
+    \\        memcpy(error_jmp, old_jmp, sizeof(jmp_buf));
+    \\        lua_pcall_store_success(r);
     \\        return lua_val_from_bool(true);
     \\    } else {
     \\        has_error_jmp = old_has;
@@ -5201,6 +5647,7 @@ const duo_runtime =
     \\    lua_File* lf = malloc(sizeof(lua_File));
     \\    lf->f = f;
     \\    lf->is_pipe = false;
+    \\    lf->is_stdio = false;
     \\    lua_Value v;
     \\    v.type = VAL_FILE;
     \\    v.as.tval = (void*)lf;
@@ -5210,6 +5657,7 @@ const duo_runtime =
     \\static inline lua_Value lua_io_close(lua_Value file_val) {
     \\    if (file_val.type == VAL_FILE && file_val.as.tval) {
     \\        lua_File* lf = (lua_File*)file_val.as.tval;
+    \\        if (lf->is_stdio) return lua_val_nil();
     \\        if (lf->f) {
     \\            if (lf->is_pipe) {
     \\                pclose(lf->f);
@@ -5220,6 +5668,17 @@ const duo_runtime =
     \\        }
     \\    }
     \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline void lua_close_local(lua_Value v) {
+    \\    if (v.type == VAL_NIL) return;
+    \\    lua_Value mm = lua_get_metafield(v, "__close");
+    \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
+    \\        lua_Value args[2] = { v, lua_val_from_bool(false) };
+    \\        (void)lua_invoke(mm, 2, args);
+    \\        return;
+    \\    }
+    \\    if (v.type == VAL_FILE) (void)lua_io_close(v);
     \\}
     \\
     \\static inline lua_Value lua_file_write_method(lua_Value file_val, lua_Value s) {
@@ -5296,6 +5755,23 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_debug_traceback(void) {
     \\    return lua_val_from_str("stack traceback:\n  [C]: in function 'debug.traceback'");
+    \\}
+    \\
+    \\static inline lua_Value lua_debug_getinfo(lua_Value level, lua_Value opts) {
+    \\    (void)level;
+    \\    (void)opts;
+    \\    lua_Value t = lua_table_new();
+    \\    lua_table_set(t, lua_val_from_str("source"), lua_val_from_str("=[C]"));
+    \\    lua_table_set(t, lua_val_from_str("short_src"), lua_val_from_str("[C]"));
+    \\    lua_table_set(t, lua_val_from_str("what"), lua_val_from_str("C"));
+    \\    lua_table_set(t, lua_val_from_str("name"), lua_val_from_str(""));
+    \\    lua_table_set(t, lua_val_from_str("linedefined"), lua_val_from_num(-1));
+    \\    lua_table_set(t, lua_val_from_str("lastlinedefined"), lua_val_from_num(-1));
+    \\    lua_table_set(t, lua_val_from_str("currentline"), lua_val_from_num(-1));
+    \\    lua_table_set(t, lua_val_from_str("nups"), lua_val_from_num(0));
+    \\    lua_table_set(t, lua_val_from_str("nparams"), lua_val_from_num(0));
+    \\    lua_table_set(t, lua_val_from_str("isvararg"), lua_val_from_bool(false));
+    \\    return t;
     \\}
     \\
     \\static inline lua_Value lua_select_argv(lua_Value index_val, int argc, lua_Value* argv) {
@@ -5568,6 +6044,12 @@ const duo_runtime =
     \\    int byte_pos = i - 1;
     \\    if (n == 0) {
     \\        while (byte_pos > 0 && (s[byte_pos] & 0xC0) == 0x80) byte_pos--;
+    \\        lua_mret_clear();
+    \\        int char_pos = 1;
+    \\        for (int j = 0; j < byte_pos; j++) {
+    \\            if ((s[j] & 0xC0) != 0x80) char_pos++;
+    \\        }
+    \\        lua_mret_push(lua_val_from_num((double)char_pos));
     \\        return lua_val_from_num((double)(byte_pos + 1));
     \\    }
     \\    if (n > 0) {
@@ -5583,6 +6065,12 @@ const duo_runtime =
     \\        }
     \\    }
     \\    if (n == 0 && byte_pos <= len) {
+    \\        lua_mret_clear();
+    \\        int char_pos = 1;
+    \\        for (int j = 0; j < byte_pos; j++) {
+    \\            if ((s[j] & 0xC0) != 0x80) char_pos++;
+    \\        }
+    \\        lua_mret_push(lua_val_from_num((double)char_pos));
     \\        return lua_val_from_num((double)(byte_pos + 1));
     \\    }
     \\    return lua_val_nil();
@@ -5602,6 +6090,23 @@ const duo_runtime =
     \\        lua_table_set(t, lua_val_from_num((double)(i + 1)), argv[i]);
     \\    }
     \\    return t;
+    \\}
+    \\
+    \\static inline lua_Value lua_tbl_pack_argv_fn(int argc, lua_Value* argv) {
+    \\    return lua_tbl_pack_argv(argc, argv);
+    \\}
+    \\
+    \\static inline lua_Value lua_tbl_freeze(lua_Value table) {
+    \\    if (table.type != VAL_TABLE) return table;
+    \\    lua_Table* t = (lua_Table*)table.as.tval;
+    \\    if (t) t->frozen = true;
+    \\    return table;
+    \\}
+    \\
+    \\static inline lua_Value lua_tbl_isfrozen(lua_Value table) {
+    \\    if (table.type != VAL_TABLE) return lua_val_from_bool(false);
+    \\    lua_Table* t = (lua_Table*)table.as.tval;
+    \\    return lua_val_from_bool(t && t->frozen);
     \\}
     \\
     \\static lua_Value lua_co_wrap_thread = { .type = VAL_NIL };
@@ -5784,6 +6289,7 @@ const duo_runtime =
     \\    lua_File* lf = malloc(sizeof(lua_File));
     \\    lf->f = f;
     \\    lf->is_pipe = false;
+    \\    lf->is_stdio = false;
     \\    lua_Value v;
     \\    v.type = VAL_FILE;
     \\    v.as.tval = (void*)lf;
@@ -6029,8 +6535,7 @@ const duo_runtime =
     \\        lua_Value r = lua_invoke(func_val, 1, args);
     \\        has_error_jmp = old_has;
     \\        memcpy(error_jmp, old_jmp, sizeof(jmp_buf));
-    \\        lua_mret_clear();
-    \\        lua_mret_push(r);
+    \\        lua_pcall_store_success(r);
     \\        return lua_val_from_bool(true);
     \\    } else {
     \\        has_error_jmp = old_has;
@@ -6039,6 +6544,32 @@ const duo_runtime =
     \\        if (msgh_val.type == VAL_FUNC || msgh_val.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { err };
     \\            err = lua_invoke(msgh_val, 1, args);
+    \\        }
+    \\        lua_mret_clear();
+    \\        lua_mret_push(err);
+    \\        return lua_val_from_bool(false);
+    \\    }
+    \\}
+    \\
+    \\static inline lua_Value lua_xpcall_argv_fn(int argc, lua_Value* argv) {
+    \\    if (argc < 2) return lua_val_from_bool(false);
+    \\    jmp_buf old_jmp;
+    \\    memcpy(old_jmp, error_jmp, sizeof(jmp_buf));
+    \\    bool old_has = has_error_jmp;
+    \\    has_error_jmp = true;
+    \\    if (setjmp(error_jmp) == 0) {
+    \\        lua_Value r = lua_invoke(argv[0], argc - 2, argv + 2);
+    \\        has_error_jmp = old_has;
+    \\        memcpy(error_jmp, old_jmp, sizeof(jmp_buf));
+    \\        lua_pcall_store_success(r);
+    \\        return lua_val_from_bool(true);
+    \\    } else {
+    \\        has_error_jmp = old_has;
+    \\        memcpy(error_jmp, old_jmp, sizeof(jmp_buf));
+    \\        lua_Value err = last_error;
+    \\        if (argv[1].type == VAL_FUNC || argv[1].type == VAL_CLOSURE) {
+    \\            lua_Value args[1] = { err };
+    \\            err = lua_invoke(argv[1], 1, args);
     \\        }
     \\        lua_mret_clear();
     \\        lua_mret_push(err);
@@ -6151,8 +6682,12 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_package_init(void) {
     \\    lua_Value pkg = lua_table_new();
-    \\    lua_table_set(pkg, lua_val_from_str("path"), lua_val_from_str("./?.lua"));
+    \\    lua_table_set(pkg, lua_val_from_str("path"), lua_val_from_str("./?.lua;./?/init.lua"));
+    \\    lua_table_set(pkg, lua_val_from_str("cpath"), lua_val_from_str(""));
+    \\    lua_table_set(pkg, lua_val_from_str("config"), lua_val_from_str("/"));
     \\    lua_table_set(pkg, lua_val_from_str("loaded"), lua_table_new());
+    \\    lua_table_set(pkg, lua_val_from_str("preload"), lua_table_new());
+    \\    lua_table_set(pkg, lua_val_from_str("searchers"), lua_table_new());
     \\    lua_table_set(pkg, lua_val_from_str("searchpath"), lua_val_from_func((lua_Value (*)(lua_Value))lua_package_searchpath));
     \\    return pkg;
     \\}
@@ -6168,11 +6703,13 @@ const duo_runtime =
     \\    lua_table_set(m, lua_val_from_str("acos"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_acos));
     \\    lua_table_set(m, lua_val_from_str("asin"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_asin));
     \\    lua_table_set(m, lua_val_from_str("atan"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_atan));
+    \\    lua_table_set(m, lua_val_from_str("atan2"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_atan2));
     \\    lua_table_set(m, lua_val_from_str("ceil"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_ceil));
     \\    lua_table_set(m, lua_val_from_str("cos"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_cos));
     \\    lua_table_set(m, lua_val_from_str("exp"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_exp));
     \\    lua_table_set(m, lua_val_from_str("floor"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_floor));
     \\    lua_table_set(m, lua_val_from_str("log"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_log));
+    \\    lua_table_set(m, lua_val_from_str("log10"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_log10));
     \\    lua_table_set(m, lua_val_from_str("sin"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_sin));
     \\    lua_table_set(m, lua_val_from_str("sqrt"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_sqrt));
     \\    lua_table_set(m, lua_val_from_str("tan"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_tan));
@@ -6185,6 +6722,10 @@ const duo_runtime =
     \\    lua_table_set(m, lua_val_from_str("fmod"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_fmod));
     \\    lua_table_set(m, lua_val_from_str("max"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_max));
     \\    lua_table_set(m, lua_val_from_str("min"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_min));
+    \\    lua_table_set(m, lua_val_from_str("pow"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_pow));
+    \\    lua_table_set(m, lua_val_from_str("sinh"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_sinh));
+    \\    lua_table_set(m, lua_val_from_str("cosh"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_cosh));
+    \\    lua_table_set(m, lua_val_from_str("tanh"), lua_val_from_func((lua_Value (*)(lua_Value))lua_math_tanh));
     \\    return m;
     \\}
     \\
@@ -6203,6 +6744,14 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_string_init(void) {
     \\    lua_Value m = lua_table_new();
+    \\    lua_Value bufmod = lua_table_new();
+    \\    lua_table_set(bufmod, lua_val_from_str("new"), lua_val_from_func((void*)lua_str_buf_new));
+    \\    lua_table_set(bufmod, lua_val_from_str("reset"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_buf_reset));
+    \\    lua_table_set(bufmod, lua_val_from_str("set"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_buf_set));
+    \\    lua_table_set(bufmod, lua_val_from_str("free"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_buf_free));
+    \\    lua_table_set(bufmod, lua_val_from_str("len"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_buf_len));
+    \\    lua_table_set(bufmod, lua_val_from_str("putf"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_buf_putf));
+    \\    lua_table_set(m, lua_val_from_str("buffer"), bufmod);
     \\    lua_table_set(m, lua_val_from_str("len"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_len));
     \\    lua_table_set(m, lua_val_from_str("lower"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_lower));
     \\    lua_table_set(m, lua_val_from_str("upper"), lua_val_from_func((lua_Value (*)(lua_Value))lua_str_upper));
@@ -6226,17 +6775,33 @@ const duo_runtime =
     \\    lua_table_set(m, lua_val_from_str("remove"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_remove));
     \\    lua_table_set(m, lua_val_from_str("concat"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_concat));
     \\    lua_table_set(m, lua_val_from_str("sort"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_sort));
-    \\    lua_table_set(m, lua_val_from_str("new"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_new));
-    \\    lua_table_set(m, lua_val_from_str("create"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_new));
+    \\    lua_table_set(m, lua_val_from_str("new"), lua_val_from_func((void*)lua_tbl_create_argv));
+    \\    lua_table_set(m, lua_val_from_str("create"), lua_val_from_func((void*)lua_tbl_create_argv));
     \\    lua_table_set(m, lua_val_from_str("clear"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_clear));
     \\    lua_table_set(m, lua_val_from_str("move"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_move));
     \\    lua_table_set(m, lua_val_from_str("unpack"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_unpack));
-    \\    lua_table_set(m, lua_val_from_str("pack"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_pack));
+    \\    lua_table_set(m, lua_val_from_str("pack"), lua_val_from_func((void*)lua_tbl_pack_argv_fn));
+    \\    lua_table_set(m, lua_val_from_str("freeze"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_freeze));
+    \\    lua_table_set(m, lua_val_from_str("isfrozen"), lua_val_from_func((lua_Value (*)(lua_Value))lua_tbl_isfrozen));
     \\    return m;
+    \\}
+    \\
+    \\static inline lua_Value lua_io_make_stdio(FILE* f) {
+    \\    lua_File* lf = malloc(sizeof(lua_File));
+    \\    lf->f = f;
+    \\    lf->is_pipe = false;
+    \\    lf->is_stdio = true;
+    \\    lua_Value v;
+    \\    v.type = VAL_FILE;
+    \\    v.as.tval = (void*)lf;
+    \\    return v;
     \\}
     \\
     \\static inline lua_Value lua_io_init(void) {
     \\    lua_Value m = lua_table_new();
+    \\    lua_table_set(m, lua_val_from_str("stdin"), lua_io_make_stdio(stdin));
+    \\    lua_table_set(m, lua_val_from_str("stdout"), lua_io_make_stdio(stdout));
+    \\    lua_table_set(m, lua_val_from_str("stderr"), lua_io_make_stdio(stderr));
     \\    lua_table_set(m, lua_val_from_str("write"), lua_val_from_func((lua_Value (*)(lua_Value))lua_io_write));
     \\    lua_table_set(m, lua_val_from_str("read"), lua_val_from_func((lua_Value (*)(lua_Value))lua_io_read));
     \\    lua_table_set(m, lua_val_from_str("flush"), lua_val_from_func((lua_Value (*)(lua_Value))lua_io_flush));
@@ -6280,6 +6845,7 @@ const duo_runtime =
     \\static inline lua_Value lua_debug_init(void) {
     \\    lua_Value m = lua_table_new();
     \\    lua_table_set(m, lua_val_from_str("traceback"), lua_val_from_func((lua_Value (*)(lua_Value))lua_debug_traceback));
+    \\    lua_table_set(m, lua_val_from_str("getinfo"), lua_val_from_func((lua_Value (*)(lua_Value))lua_debug_getinfo));
     \\    return m;
     \\}
     \\/* --------------------------- */

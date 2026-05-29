@@ -96,6 +96,10 @@ const ParsedModule = struct {
     sem: Sema,
 };
 
+fn is_lua_source_path(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, ".lua");
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
 
@@ -107,6 +111,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     };
 
     var sem = Sema.init(alloc);
+    sem.lua55_mode = is_lua_source_path(src_path);
     sem.check_module(&mod) catch |e| {
         std.debug.print("sema error: {}\n", .{e});
         std.process.exit(1);
@@ -218,7 +223,11 @@ fn do_compile(
         const run_term = try run_child.wait(io);
         switch (run_term) {
             .exited => |code| std.process.exit(code),
-            else => {},
+            .signal => std.process.exit(128),
+            else => {
+                std.debug.print("program terminated abnormally\n", .{});
+                std.process.exit(1);
+            },
         }
     }
 }

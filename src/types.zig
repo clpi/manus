@@ -30,6 +30,7 @@ pub const ResolvedType = union(enum) {
         params: []ResolvedType,
         ret: *ResolvedType,
         is_native: bool, // fully typed → true; has dynamic params → false
+        has_vararg: bool = false,
     },
     @"struct": struct { name: []const u8 },
 
