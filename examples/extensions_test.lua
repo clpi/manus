@@ -6,6 +6,7 @@ local t = table.new(10, 10)
 table.insert(t, "apple")
 table.insert(t, "banana")
 print("table size after insert:", #t) -- using generic table len
+assert(#t == 2, "table size mismatch")
 assert(table.concat(t, ", ") == "apple, banana", "table.new insert failed")
 
 table.clear(t)
@@ -25,7 +26,7 @@ assert(result == "Hello, Duo Extensions!", "string.buffer failed")
 
 -- 3. Coroutines (coroutine)
 print("\n--- Coroutines ---")
-local co = coroutine.create(function(val)
+local function my_coroutine(val)
     print("Coroutine started with value:", val)
     assert(val == "start", "coroutine input mismatch")
     
@@ -34,7 +35,9 @@ local co = coroutine.create(function(val)
     assert(yield_res == "resume_data", "coroutine resume mismatch")
     
     return "done"
-end)
+end
+
+local co = coroutine.create(my_coroutine)
 
 print("Coroutine status before resume:", coroutine.status(co))
 assert(coroutine.status(co) == "suspended", "coroutine status failed")

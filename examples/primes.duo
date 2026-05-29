@@ -10,7 +10,7 @@ function count_primes(limit: i32): i32
         local is_prime: bool = true
         local d: i32 = 2
         while d * d <= n do
-            if n - (n / d) * d == 0 then
+            if n % d == 0 then
                 is_prime = false
             end
             d = d + 1

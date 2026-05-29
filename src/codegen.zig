@@ -124,6 +124,9 @@ pub const CodeGen = struct {
         self.p("int main(void) {{\n", .{});
         self.indent = 1;
         self.pl("package = lua_package_init();", .{});
+        self.pl("math = lua_math_init();", .{});
+        self.pl("utf8 = lua_utf8_init();", .{});
+        self.pl("debug = lua_debug_init();", .{});
 
         // Emit top-level statements (except function/struct/const definitions)
         for (mod.body.stmts) |*stmt| {
@@ -630,8 +633,8 @@ pub const CodeGen = struct {
             .method_call => |mc| {
                 const ot = self.expr_type(mc.obj);
                 if (ot == .any) {
-                    if (std.mem.eql(u8, mc.method, "put")) {
-                        self.p("lua_str_buf_put(", .{});
+                    if (std.mem.eql(u8, mc.method, "put") or std.mem.eql(u8, mc.method, "write")) {
+                        self.p("lua_file_write_method(", .{});
                         try self.emit_expr(mc.obj);
                         self.p(", ", .{});
                         if (mc.args.len > 0) {
@@ -640,8 +643,12 @@ pub const CodeGen = struct {
                             self.p("lua_val_nil()", .{});
                         }
                         self.p(")", .{});
-                    } else if (std.mem.eql(u8, mc.method, "get") or std.mem.eql(u8, mc.method, "tostring")) {
-                        self.p("lua_str_buf_get(", .{});
+                    } else if (std.mem.eql(u8, mc.method, "get") or std.mem.eql(u8, mc.method, "tostring") or std.mem.eql(u8, mc.method, "read")) {
+                        self.p("lua_file_read_method(", .{});
+                        try self.emit_expr(mc.obj);
+                        self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "close")) {
+                        self.p("lua_io_close(", .{});
                         try self.emit_expr(mc.obj);
                         self.p(")", .{});
                     } else {
@@ -857,10 +864,12 @@ pub const CodeGen = struct {
         const fname = f.field;
         const lua_names = [_][]const u8{
             "sqrt", "abs", "floor", "ceil", "sin", "cos", "tan",
+            "asin", "acos", "atan", "sinh", "cosh", "tanh",
             "exp", "log", "pow", "fmod", "max", "min",
         };
         const c_names = [_][]const u8{
             "sqrt", "fabs", "floor", "ceil", "sin", "cos", "tan",
+            "asin", "acos", "atan", "sinh", "cosh", "tanh",
             "exp", "log", "pow", "fmod", "fmax", "fmin",
         };
         for (lua_names, c_names) |ln, cn| {
@@ -938,10 +947,13 @@ pub const CodeGen = struct {
             else if (std.mem.eql(u8, fname, "format")) "lua_str_format"
             else if (std.mem.eql(u8, fname, "rep")) "lua_str_rep"
             else if (std.mem.eql(u8, fname, "reverse")) "lua_str_reverse"
+            else if (std.mem.eql(u8, fname, "byte")) "lua_str_byte"
+            else if (std.mem.eql(u8, fname, "find")) "lua_str_find"
             else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse")) 1
-            else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep")) 3
+            else if (std.mem.eql(u8, fname, "find")) 2
+            else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep") or std.mem.eql(u8, fname, "byte")) 3
             else 4;
 
             self.p("{s}(", .{mapped});
@@ -963,12 +975,15 @@ pub const CodeGen = struct {
             else if (std.mem.eql(u8, fname, "sort")) "lua_tbl_sort"
             else if (std.mem.eql(u8, fname, "new")) "lua_tbl_new"
             else if (std.mem.eql(u8, fname, "clear")) "lua_tbl_clear"
+            else if (std.mem.eql(u8, fname, "move")) "lua_tbl_move"
+            else if (std.mem.eql(u8, fname, "unpack")) "lua_tbl_unpack"
             else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "sort") or std.mem.eql(u8, fname, "clear")) @as(usize, 1)
             else if (std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "new")) @as(usize, 2)
-            else if (std.mem.eql(u8, fname, "insert")) @as(usize, 3)
+            else if (std.mem.eql(u8, fname, "insert") or std.mem.eql(u8, fname, "unpack")) @as(usize, 3)
             else if (std.mem.eql(u8, fname, "concat")) @as(usize, 4)
+            else if (std.mem.eql(u8, fname, "move")) @as(usize, 5)
             else 0;
 
             self.p("{s}(", .{mapped});
@@ -987,10 +1002,13 @@ pub const CodeGen = struct {
             const mapped = if (std.mem.eql(u8, fname, "write")) "lua_io_write"
             else if (std.mem.eql(u8, fname, "read")) "lua_io_read"
             else if (std.mem.eql(u8, fname, "flush")) "lua_io_flush"
+            else if (std.mem.eql(u8, fname, "open")) "lua_io_open"
+            else if (std.mem.eql(u8, fname, "close")) "lua_io_close"
             else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "flush")) @as(usize, 0)
-            else if (std.mem.eql(u8, fname, "read")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "read") or std.mem.eql(u8, fname, "close")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "open")) @as(usize, 2)
             else if (std.mem.eql(u8, fname, "write")) @as(usize, 4)
             else 0;
 
@@ -1014,11 +1032,13 @@ pub const CodeGen = struct {
             else if (std.mem.eql(u8, fname, "getenv")) "lua_os_getenv"
             else if (std.mem.eql(u8, fname, "remove")) "lua_os_remove"
             else if (std.mem.eql(u8, fname, "rename")) "lua_os_rename"
+            else if (std.mem.eql(u8, fname, "date")) "lua_os_date"
+            else if (std.mem.eql(u8, fname, "execute")) "lua_os_execute"
             else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "clock")) @as(usize, 0)
-            else if (std.mem.eql(u8, fname, "time") or std.mem.eql(u8, fname, "exit") or std.mem.eql(u8, fname, "getenv") or std.mem.eql(u8, fname, "remove")) @as(usize, 1)
-            else if (std.mem.eql(u8, fname, "difftime") or std.mem.eql(u8, fname, "rename")) @as(usize, 2)
+            else if (std.mem.eql(u8, fname, "time") or std.mem.eql(u8, fname, "exit") or std.mem.eql(u8, fname, "getenv") or std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "execute")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "difftime") or std.mem.eql(u8, fname, "rename") or std.mem.eql(u8, fname, "date")) @as(usize, 2)
             else 0;
 
             self.p("{s}(", .{mapped});
@@ -1038,10 +1058,76 @@ pub const CodeGen = struct {
             else if (std.mem.eql(u8, fname, "resume")) "lua_co_resume"
             else if (std.mem.eql(u8, fname, "yield")) "lua_co_yield"
             else if (std.mem.eql(u8, fname, "status")) "lua_co_status"
+            else if (std.mem.eql(u8, fname, "running")) "lua_co_running"
             else return false;
 
-            const expected: usize = if (std.mem.eql(u8, fname, "create") or std.mem.eql(u8, fname, "yield") or std.mem.eql(u8, fname, "status")) @as(usize, 1)
+            const expected: usize = if (std.mem.eql(u8, fname, "running")) @as(usize, 0)
+            else if (std.mem.eql(u8, fname, "create") or std.mem.eql(u8, fname, "yield") or std.mem.eql(u8, fname, "status")) @as(usize, 1)
             else if (std.mem.eql(u8, fname, "resume")) @as(usize, 2)
+            else 0;
+
+            self.p("{s}(", .{mapped});
+            var i: usize = 0;
+            while (i < expected) : (i += 1) {
+                if (i > 0) self.p(", ", .{});
+                if (i < args.len) {
+                    try self.emit_as_lua_value(args[i]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+            }
+            self.p(")", .{});
+            return true;
+        } else if (std.mem.eql(u8, mod, "math")) {
+            const mapped = if (std.mem.eql(u8, fname, "random")) "lua_math_random"
+            else if (std.mem.eql(u8, fname, "randomseed")) "lua_math_randomseed"
+            else if (std.mem.eql(u8, fname, "deg")) "lua_math_deg"
+            else if (std.mem.eql(u8, fname, "rad")) "lua_math_rad"
+            else if (std.mem.eql(u8, fname, "type")) "lua_math_type"
+            else return false;
+
+            const expected: usize = if (std.mem.eql(u8, fname, "randomseed") or std.mem.eql(u8, fname, "deg") or std.mem.eql(u8, fname, "rad") or std.mem.eql(u8, fname, "type")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "random")) @as(usize, 2)
+            else 0;
+
+            self.p("{s}(", .{mapped});
+            var i: usize = 0;
+            while (i < expected) : (i += 1) {
+                if (i > 0) self.p(", ", .{});
+                if (i < args.len) {
+                    try self.emit_as_lua_value(args[i]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+            }
+            self.p(")", .{});
+            return true;
+        } else if (std.mem.eql(u8, mod, "utf8")) {
+            const mapped = if (std.mem.eql(u8, fname, "char")) "lua_str_char"
+            else if (std.mem.eql(u8, fname, "len")) "lua_utf8_len"
+            else return false;
+
+            const expected: usize = if (std.mem.eql(u8, fname, "len")) @as(usize, 1)
+            else if (std.mem.eql(u8, fname, "char")) @as(usize, 4)
+            else 0;
+
+            self.p("{s}(", .{mapped});
+            var i: usize = 0;
+            while (i < expected) : (i += 1) {
+                if (i > 0) self.p(", ", .{});
+                if (i < args.len) {
+                    try self.emit_as_lua_value(args[i]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+            }
+            self.p(")", .{});
+            return true;
+        } else if (std.mem.eql(u8, mod, "debug")) {
+            const mapped = if (std.mem.eql(u8, fname, "traceback")) "lua_debug_traceback"
+            else return false;
+
+            const expected: usize = if (std.mem.eql(u8, fname, "traceback")) @as(usize, 0)
             else 0;
 
             self.p("{s}(", .{mapped});
@@ -1095,6 +1181,9 @@ const duo_runtime =
     \\#include <stdlib.h>
     \\#include <string.h>
     \\
+    \\#define LUA_LIKELY(x)   __builtin_expect(!!(x), 1)
+    \\#define LUA_UNLIKELY(x) __builtin_expect(!!(x), 0)
+    \\
     \\typedef enum {
     \\    VAL_NIL,
     \\    VAL_BOOL,
@@ -1104,6 +1193,7 @@ const duo_runtime =
     \\    VAL_BUFFER,
     \\    VAL_THREAD,
     \\    VAL_FUNC,
+    \\    VAL_FILE,
     \\} lua_ValType;
     \\
     \\typedef struct {
@@ -1118,8 +1208,14 @@ const duo_runtime =
     \\} lua_Value;
     \\
     \\static lua_Value package;
+    \\static lua_Value math;
+    \\static lua_Value utf8;
+    \\static lua_Value debug;
     \\static inline bool lua_eq(lua_Value a, lua_Value b);
     \\static inline lua_Value lua_package_init(void);
+    \\static inline lua_Value lua_math_init(void);
+    \\static inline lua_Value lua_utf8_init(void);
+    \\static inline lua_Value lua_debug_init(void);
     \\static inline lua_Value lua_require(lua_Value name_val);
     \\
     \\static inline lua_Value lua_val_nil(void) {
@@ -1164,11 +1260,12 @@ const duo_runtime =
     \\}
     \\
     \\static inline const char* lua_to_str(lua_Value v) {
-    \\    if (v.type == VAL_STRING) return v.as.sval;
+    \\    if (LUA_LIKELY(v.type == VAL_STRING)) return v.as.sval;
     \\    if (v.type == VAL_TABLE) return "table";
     \\    if (v.type == VAL_BUFFER) return "string.buffer";
     \\    if (v.type == VAL_THREAD) return "thread";
     \\    if (v.type == VAL_FUNC) return "function";
+    \\    if (v.type == VAL_FILE) return "file";
     \\    if (v.type == VAL_NUMBER) {
     \\        char* buf = malloc(32);
     \\        sprintf(buf, "%g", v.as.nval);
@@ -1179,14 +1276,14 @@ const duo_runtime =
     \\}
     \\
     \\static inline double lua_to_num(lua_Value v) {
-    \\    if (v.type == VAL_NUMBER) return v.as.nval;
+    \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) return v.as.nval;
     \\    if (v.type == VAL_BOOL) return v.as.bval ? 1.0 : 0.0;
     \\    if (v.type == VAL_STRING) return atof(v.as.sval);
     \\    return 0.0;
     \\}
     \\
     \\static inline bool lua_to_bool(lua_Value v) {
-    \\    if (v.type == VAL_BOOL) return v.as.bval;
+    \\    if (LUA_LIKELY(v.type == VAL_BOOL)) return v.as.bval;
     \\    if (v.type == VAL_NIL) return false;
     \\    return true;
     \\}
@@ -1259,32 +1356,55 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value lua_add(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return lua_val_from_num(a.as.nval + b.as.nval);
+    \\    }
     \\    return lua_val_from_num(lua_to_num(a) + lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_sub(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return lua_val_from_num(a.as.nval - b.as.nval);
+    \\    }
     \\    return lua_val_from_num(lua_to_num(a) - lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_mul(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return lua_val_from_num(a.as.nval * b.as.nval);
+    \\    }
     \\    return lua_val_from_num(lua_to_num(a) * lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_div(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return lua_val_from_num(a.as.nval / b.as.nval);
+    \\    }
     \\    return lua_val_from_num(lua_to_num(a) / lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_idiv(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return lua_val_from_num(floor(a.as.nval / b.as.nval));
+    \\    }
     \\    return lua_val_from_num(floor(lua_to_num(a) / lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_mod(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        double na = a.as.nval;
+    \\        double nb = b.as.nval;
+    \\        return lua_val_from_num(na - nb * floor(na / nb));
+    \\    }
     \\    double na = lua_to_num(a);
     \\    double nb = lua_to_num(b);
     \\    return lua_val_from_num(na - nb * floor(na / nb));
     \\}
     \\
     \\static inline lua_Value lua_pow(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return lua_val_from_num(pow(a.as.nval, b.as.nval));
+    \\    }
     \\    return lua_val_from_num(pow(lua_to_num(a), lua_to_num(b)));
     \\}
     \\
@@ -1319,6 +1439,7 @@ const duo_runtime =
     \\        case VAL_BUFFER: return a.as.tval == b.as.tval;
     \\        case VAL_THREAD: return a.as.tval == b.as.tval;
     \\        case VAL_FUNC: return a.as.fval == b.as.fval;
+    \\        case VAL_FILE: return a.as.tval == b.as.tval;
     \\    }
     \\    return false;
     \\}
@@ -1328,18 +1449,30 @@ const duo_runtime =
     \\}
     \\
     \\static inline bool lua_lt(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return a.as.nval < b.as.nval;
+    \\    }
     \\    return lua_to_num(a) < lua_to_num(b);
     \\}
     \\
     \\static inline bool lua_gt(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return a.as.nval > b.as.nval;
+    \\    }
     \\    return lua_to_num(a) > lua_to_num(b);
     \\}
     \\
     \\static inline bool lua_leq(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return a.as.nval <= b.as.nval;
+    \\    }
     \\    return lua_to_num(a) <= lua_to_num(b);
     \\}
     \\
     \\static inline bool lua_geq(lua_Value a, lua_Value b) {
+    \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        return a.as.nval >= b.as.nval;
+    \\    }
     \\    return lua_to_num(a) >= lua_to_num(b);
     \\}
     \\
@@ -1361,6 +1494,7 @@ const duo_runtime =
     \\        case VAL_BUFFER: return lua_val_from_str("string.buffer");
     \\        case VAL_THREAD: return lua_val_from_str("thread");
     \\        case VAL_FUNC: return lua_val_from_str("function");
+    \\        case VAL_FILE: return lua_val_from_str("file");
     \\    }
     \\    return lua_val_from_str("unknown");
     \\}
@@ -1799,8 +1933,208 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value lua_require(lua_Value name_val) {
-    \\    (void)name_val;
+    \\    const char* name = lua_to_str(name_val);
+    \\    if (strcmp(name, "math") == 0) return math;
+    \\    if (strcmp(name, "package") == 0) return package;
+    \\    if (strcmp(name, "utf8") == 0) return utf8;
+    \\    if (strcmp(name, "debug") == 0) return debug;
     \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_math_random(lua_Value arg1, lua_Value arg2) {
+    \\    if (arg1.type == VAL_NIL && arg2.type == VAL_NIL) {
+    \\        double r = (double)rand() / (double)RAND_MAX;
+    \\        return lua_val_from_num(r);
+    \\    } else if (arg2.type == VAL_NIL) {
+    \\        int m = (int)lua_to_num(arg1);
+    \\        if (m < 1) return lua_val_from_num(0);
+    \\        int r = 1 + (rand() % m);
+    \\        return lua_val_from_num((double)r);
+    \\    } else {
+    \\        int m = (int)lua_to_num(arg1);
+    \\        int n = (int)lua_to_num(arg2);
+    \\        if (m > n) return lua_val_from_num(0);
+    \\        int r = m + (rand() % (n - m + 1));
+    \\        return lua_val_from_num((double)r);
+    \\    }
+    \\}
+    \\
+    \\static inline lua_Value lua_math_randomseed(lua_Value seed) {
+    \\    srand((unsigned int)lua_to_num(seed));
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_math_deg(lua_Value rad) {
+    \\    return lua_val_from_num(lua_to_num(rad) * (180.0 / 3.14159265358979323846));
+    \\}
+    \\
+    \\static inline lua_Value lua_math_rad(lua_Value deg) {
+    \\    return lua_val_from_num(lua_to_num(deg) * (3.14159265358979323846 / 180.0));
+    \\}
+    \\
+    \\static inline lua_Value lua_math_type(lua_Value v) {
+    \\    if (v.type != VAL_NUMBER) return lua_val_nil();
+    \\    double d = v.as.nval;
+    \\    if (d == (double)(int64_t)d) {
+    \\        return lua_val_from_str("integer");
+    \\    } else {
+    \\        return lua_val_from_str("float");
+    \\    }
+    \\}
+    \\
+    \\static inline lua_Value lua_math_init(void) {
+    \\    lua_Value m = lua_table_new();
+    \\    lua_table_set(m, lua_val_from_str("pi"), lua_val_from_num(3.14159265358979323846));
+    \\    lua_table_set(m, lua_val_from_str("maxinteger"), lua_val_from_num(9223372036854775807.0));
+    \\    lua_table_set(m, lua_val_from_str("mininteger"), lua_val_from_num(-9223372036854775808.0));
+    \\    return m;
+    \\}
+    \\
+    \\static inline lua_Value lua_str_byte(lua_Value s, lua_Value i_val, lua_Value j_val) {
+    \\    (void)j_val;
+    \\    const char* str = lua_to_str(s);
+    \\    int len = (int)strlen(str);
+    \\    int idx = i_val.type == VAL_NIL ? 1 : (int)lua_to_num(i_val);
+    \\    if (idx < 0) idx = len + idx + 1;
+    \\    if (idx < 1 || idx > len) return lua_val_nil();
+    \\    return lua_val_from_num((double)(unsigned char)str[idx - 1]);
+    \\}
+    \\
+    \\static inline lua_Value lua_str_find(lua_Value s, lua_Value pat_val) {
+    \\    const char* str = lua_to_str(s);
+    \\    const char* pat = lua_to_str(pat_val);
+    \\    const char* found = strstr(str, pat);
+    \\    if (found) {
+    \\        int pos = (int)(found - str) + 1;
+    \\        return lua_val_from_num((double)pos);
+    \\    }
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_tbl_move(lua_Value a1, lua_Value f_val, lua_Value e_val, lua_Value t_val, lua_Value a2) {
+    \\    lua_Value dest = a2.type == VAL_NIL ? a1 : a2;
+    \\    int f = (int)lua_to_num(f_val);
+    \\    int e = (int)lua_to_num(e_val);
+    \\    int t = (int)lua_to_num(t_val);
+    \\    if (f > e) return dest;
+    \\    int count = e - f + 1;
+    \\    lua_Value* temp = malloc(count * sizeof(lua_Value));
+    \\    for (int i = 0; i < count; i++) {
+    \\        temp[i] = lua_table_get(a1, lua_val_from_num((double)(f + i)));
+    \\    }
+    \\    for (int i = 0; i < count; i++) {
+    \\        lua_table_set(dest, lua_val_from_num((double)(t + i)), temp[i]);
+    \\    }
+    \\    free(temp);
+    \\    return dest;
+    \\}
+    \\
+    \\static inline lua_Value lua_tbl_unpack(lua_Value list, lua_Value i_val, lua_Value j_val) {
+    \\    (void)j_val;
+    \\    int i = i_val.type == VAL_NIL ? 1 : (int)lua_to_num(i_val);
+    \\    return lua_table_get(list, lua_val_from_num((double)i));
+    \\}
+    \\
+    \\static inline lua_Value lua_io_open(lua_Value filename_val, lua_Value mode_val) {
+    \\    const char* filename = lua_to_str(filename_val);
+    \\    const char* mode = mode_val.type == VAL_NIL ? "r" : lua_to_str(mode_val);
+    \\    FILE* f = fopen(filename, mode);
+    \\    if (!f) return lua_val_nil();
+    \\    lua_Value v;
+    \\    v.type = VAL_FILE;
+    \\    v.as.tval = (void*)f;
+    \\    return v;
+    \\}
+    \\
+    \\static inline lua_Value lua_io_close(lua_Value file_val) {
+    \\    if (file_val.type == VAL_FILE && file_val.as.tval) {
+    \\        fclose((FILE*)file_val.as.tval);
+    \\    }
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_file_write_method(lua_Value file_val, lua_Value s) {
+    \\    if (file_val.type == VAL_FILE) {
+    \\        FILE* f = (FILE*)file_val.as.tval;
+    \\        if (f) {
+    \\            fprintf(f, "%s", lua_to_str(s));
+    \\        }
+    \\    } else if (file_val.type == VAL_BUFFER) {
+    \\        lua_str_buf_put(file_val, s);
+    \\    }
+    \\    return file_val;
+    \\}
+    \\
+    \\static inline lua_Value lua_file_read_method(lua_Value file_val) {
+    \\    if (file_val.type == VAL_FILE) {
+    \\        FILE* f = (FILE*)file_val.as.tval;
+    \\        if (f) {
+    \\            char buf[4096];
+    \\            if (fgets(buf, sizeof(buf), f)) {
+    \\                size_t l = strlen(buf);
+    \\                if (l > 0 && buf[l - 1] == '\n') buf[l - 1] = '\0';
+    \\                return lua_val_from_str(strdup(buf));
+    \\            }
+    \\        }
+    \\        return lua_val_nil();
+    \\    } else if (file_val.type == VAL_BUFFER) {
+    \\        return lua_str_buf_get(file_val);
+    \\    }
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_os_date(lua_Value fmt_val, lua_Value t_val) {
+    \\    time_t t = t_val.type == VAL_NIL ? time(NULL) : (time_t)lua_to_num(t_val);
+    \\    const char* fmt = fmt_val.type == VAL_NIL ? "%c" : lua_to_str(fmt_val);
+    \\    struct tm* ltime = localtime(&t);
+    \\    if (!ltime) return lua_val_nil();
+    \\    char buf[1024];
+    \\    if (strftime(buf, sizeof(buf), fmt, ltime) > 0) {
+    \\        return lua_val_from_str(strdup(buf));
+    \\    }
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_os_execute(lua_Value cmd_val) {
+    \\    if (cmd_val.type == VAL_NIL) {
+    \\        return lua_val_from_bool(system(NULL) != 0);
+    \\    }
+    \\    int res = system(lua_to_str(cmd_val));
+    \\    return lua_val_from_bool(res == 0);
+    \\}
+    \\
+    \\static inline lua_Value lua_co_running(void) {
+    \\    if (active_thread) {
+    \\        lua_Value v;
+    \\        v.type = VAL_THREAD;
+    \\        v.as.tval = active_thread;
+    \\        return v;
+    \\    }
+    \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_utf8_len(lua_Value s) {
+    \\    const char* str = lua_to_str(s);
+    \\    int len = 0;
+    \\    while (*str) {
+    \\        if ((*str & 0xC0) != 0x80) {
+    \\            len++;
+    \\        }
+    \\        str++;
+    \\    }
+    \\    return lua_val_from_num((double)len);
+    \\}
+    \\
+    \\static inline lua_Value lua_utf8_init(void) {
+    \\    return lua_table_new();
+    \\}
+    \\
+    \\static inline lua_Value lua_debug_init(void) {
+    \\    return lua_table_new();
+    \\}
+    \\
+    \\static inline lua_Value lua_debug_traceback(void) {
+    \\    return lua_val_from_str("stack traceback:\n  [C]: in function 'debug.traceback'");
     \\}
     \\/* --------------------------- */
     \\

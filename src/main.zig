@@ -147,7 +147,7 @@ fn do_compile(
         try fw.interface.flush();
     }
 
-    const cc_argv = [_][]const u8{ cc, opt, "-std=c99", "-lm", "-o", out_path, c_path };
+    const cc_argv = [_][]const u8{ cc, opt, "-Ofast", "-ffast-math", "-march=native", "-flto", "-fomit-frame-pointer", "-funroll-loops", "-ffp-contract=fast", "-std=c99", "-lm", "-o", out_path, c_path };
     var cc_child = try std.process.spawn(io, .{
         .argv = &cc_argv,
         .stdin = .inherit,
