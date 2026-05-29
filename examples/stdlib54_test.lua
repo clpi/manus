@@ -47,12 +47,13 @@ assert(packed_tbl.n == 1, "table.pack count failed")
 assert(packed_tbl[1] == "packed_item", "table.pack content failed")
 
 print("\n--- Testing Coroutine 5.4 Extras ---")
--- local function test_co(v)
---     print("Inside wrapped coroutine:", v)
---     return "done"
--- end
--- local ok_wrap, wrap_err = pcall(function() coroutine.wrap(test_co) end)
--- assert(not ok_wrap, "coroutine.wrap should throw an unsupported error")
+local function test_co(v)
+    return v * 2
+end
+local wrap_fn = coroutine.wrap(test_co)
+local wrap_res = wrap_fn(21)
+assert(wrap_res == 42, "coroutine.wrap failed")
+print("coroutine.wrap: ok")
 
 local yieldable = coroutine.isyieldable()
 print("Main thread yieldable:", yieldable)
@@ -71,5 +72,17 @@ assert(codep == 117, "utf8.codepoint failed")
 local offs = utf8.offset("Duo 🚀", 5) -- offset for emoji (5th codepoint)
 print("utf8.offset('Duo 🚀', 5) offset:", offs)
 assert(offs == 5, "utf8.offset failed")
+
+local n = 0
+for p, c in utf8.codes("Duo") do
+    n = n + 1
+    if n == 1 then
+        print("utf8.codes first pos/cp:", p, c)
+        assert(p == 1 and c == 68, "utf8.codes failed on D")
+    elseif n == 2 then
+        assert(p == 2 and c == 117, "utf8.codes failed on u")
+    end
+end
+assert(n == 3, "utf8.codes count failed")
 
 print("\nAll standard library features verified successfully!")

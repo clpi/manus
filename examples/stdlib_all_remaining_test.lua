@@ -8,13 +8,12 @@ local first_val = unpack(tbl)
 print("unpack(tbl):", first_val)
 assert(first_val == "one", "unpack failed")
 
--- 2. setmetatable / getmetatable (unsupported, will throw error)
--- local mt = {}
--- local t = {}
--- local ok, err = pcall(setmetatable, t, mt)
--- assert(not ok, "setmetatable should throw an unsupported error")
--- local ok2, err2 = pcall(getmetatable, t)
--- assert(not ok2, "getmetatable should throw an unsupported error")
+-- 2. setmetatable / getmetatable
+local mt = { __tostring = function() return "custom" end }
+local t = {}
+setmetatable(t, mt)
+assert(getmetatable(t) == mt, "setmetatable/getmetatable failed")
+print("setmetatable/getmetatable: ok")
 
 -- 3. rawget / rawset / rawlen / rawequal
 local rt = {}
@@ -37,7 +36,7 @@ assert(eq_res == true, "rawequal failed")
 -- 4. collectgarbage
 local gc_res = collectgarbage("count")
 print("collectgarbage:", gc_res)
-assert(gc_res == 0, "collectgarbage failed")
+assert(type(gc_res) == "number" and gc_res >= 0, "collectgarbage failed")
 
 -- 5. warn
 warn("This is a Duo warning!")
@@ -53,13 +52,25 @@ local xp_ok = xpcall(buggy, handler, "arg")
 print("xpcall success:", xp_ok)
 assert(xp_ok == true, "xpcall failed")
 
--- 7. load / loadfile / dofile (unsupported, will throw error)
--- local l_res = load("print('loaded')")
--- local lf_res = loadfile("somefile.lua")
--- local df_res = dofile("somefile.lua")
--- assert(l_res == nil, "load should return nil stub")
--- assert(lf_res == nil, "loadfile should return nil stub")
--- assert(df_res == nil, "dofile should return nil stub")
+-- 7. load / loadfile / dofile
+local lf, lerr = load("return 42")
+assert(lf, lerr or "load failed")
+assert(lf() == 42, "load chunk failed")
+
+local chunk_file = "duo_load_test_chunk.lua"
+local wf = io.open(chunk_file, "w")
+assert(wf, "failed to create chunk file")
+wf:write("return 43")
+wf:close()
+
+local lf2, lerr2 = loadfile(chunk_file)
+assert(lf2, lerr2 or "loadfile returned nil")
+assert(lf2() == 43, "loadfile chunk failed")
+
+local df_res = dofile(chunk_file)
+assert(df_res == 43, "dofile failed")
+os.remove(chunk_file)
+print("load/loadfile/dofile: ok")
 
 print("\n--- Testing Module Extras ---")
 
@@ -72,25 +83,24 @@ assert(close_ok == true, "coroutine.close failed")
 -- 9. package.searchpath
 local path_res = package.searchpath("mymod", "./?.lua")
 print("package.searchpath:", path_res)
-assert(path_res == "mymod", "package.searchpath failed")
+assert(path_res == nil, "package.searchpath should return nil when module not found")
 
 -- 10. string.pack / unpack / packsize / gmatch / dump
--- local packed = string.pack("i", 42)
--- local unpacked = string.unpack("i", packed)
--- local psize = string.packsize("i")
+local packed = string.pack("i", 42)
+local unpacked = string.unpack("i", packed)
+local psize = string.packsize("i")
 local gm = string.gmatch("hello", ".*")
 local dmp = string.dump(function() end)
 
--- print("string.pack:", packed)
--- print("string.unpack:", unpacked)
--- print("string.packsize:", psize)
-print("string.gmatch:", gm)
+print("string.packsize:", psize)
+print("string.unpack:", unpacked)
+local gm_first = gm()
+print("string.gmatch first:", gm_first)
 print("string.dump:", dmp)
 
--- assert(packed == 42, "string.pack failed")
--- assert(unpacked == packed, "string.unpack failed")
--- assert(psize == 1, "string.packsize failed")
-assert(gm == "hello", "string.gmatch failed")
+assert(psize == 4, "string.packsize failed")
+assert(unpacked == 42, "string.unpack failed")
+assert(gm_first == "hello", "string.gmatch failed")
 
 -- 11. io.input / io.output / io.type / io.popen / seek / flush
 print("\n--- Testing Advanced IO features ---")
@@ -141,5 +151,15 @@ pipe:close()
 
 -- local lin_res = io.lines("somefile.lua")
 -- assert(lin_res == nil, "io.lines failed")
+local lines_file = "duo_io_lines_test.txt"
+local lw = io.open(lines_file, "w")
+lw:write("line1\nline2\n")
+lw:close()
+local iter = io.lines(lines_file)
+assert(iter() == "line1", "io.lines first failed")
+assert(iter() == "line2", "io.lines second failed")
+assert(iter() == nil, "io.lines third failed")
+os.remove(lines_file)
+print("io.lines: ok")
 
 print("\nAll remaining global and module standard library functions compiled and executed successfully!")

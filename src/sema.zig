@@ -19,29 +19,49 @@ pub const SemaError = error{
 const Symbol = struct {
     typ: RT,
     is_const: bool,
+    is_for_control: bool = false,
+    is_global: bool = false,
 };
 
 /// Lexical scope: a stack of hash maps.
 pub const Scope = struct {
     alloc: Allocator,
     maps: std.ArrayList(std.StringHashMap(Symbol)),
+    require_global: std.ArrayList(bool),
 
     pub fn init(alloc: Allocator) Scope {
-        return .{ .alloc = alloc, .maps = .empty };
+        return .{ .alloc = alloc, .maps = .empty, .require_global = .empty };
     }
 
     pub fn deinit(self: *Scope) void {
         for (self.maps.items) |*m| m.deinit();
         self.maps.deinit(self.alloc);
+        self.require_global.deinit(self.alloc);
     }
 
     pub fn push(self: *Scope) !void {
         try self.maps.append(self.alloc, std.StringHashMap(Symbol).init(self.alloc));
+        const inherited = if (self.require_global.items.len > 0)
+            self.require_global.items[self.require_global.items.len - 1]
+        else
+            false;
+        try self.require_global.append(self.alloc, inherited);
     }
 
     pub fn pop(self: *Scope) void {
         var m = self.maps.pop().?;
         m.deinit();
+        _ = self.require_global.pop();
+    }
+
+    pub fn set_require_global(self: *Scope, v: bool) void {
+        if (self.require_global.items.len > 0)
+            self.require_global.items[self.require_global.items.len - 1] = v;
+    }
+
+    pub fn needs_explicit_global(self: *Scope) bool {
+        if (self.require_global.items.len == 0) return false;
+        return self.require_global.items[self.require_global.items.len - 1];
     }
 
     pub fn define(self: *Scope, name: []const u8, sym: Symbol) !void {
@@ -66,8 +86,10 @@ pub const Sema = struct {
     alloc: Allocator,
     scope: Scope,
     type_map: TypeMap,
+    module_globals: std.StringHashMapUnmanaged(RT) = .{},
     errors: u32,
     current_ret: RT,
+    next_closure_id: u32 = 0,
 
     pub fn init(alloc: Allocator) Sema {
         return .{
@@ -76,12 +98,23 @@ pub const Sema = struct {
             .type_map = TypeMap.init(alloc),
             .errors = 0,
             .current_ret = .void,
+            .next_closure_id = 0,
         };
     }
 
     pub fn deinit(self: *Sema) void {
         self.scope.deinit();
         self.type_map.deinit();
+        self.module_globals.deinit(self.alloc);
+    }
+
+    fn note_global(self: *Sema, name: []const u8, t: RT) !void {
+        const gop = try self.module_globals.getOrPut(self.alloc, name);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = t;
+        } else if (gop.value_ptr.* == .any and t != .any) {
+            gop.value_ptr.* = t;
+        }
     }
 
     fn err(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
@@ -153,9 +186,48 @@ pub const Sema = struct {
                     t = types.resolve(cd.typ, self.alloc) catch .any;
                 try self.scope.define(cd.ident, .{ .typ = t, .is_const = true });
             },
+            .global_decl => |*gd| {
+                if (gd.star) {
+                    self.scope.set_require_global(true);
+                    return;
+                }
+                var init_types: std.ArrayList(RT) = .empty;
+                defer init_types.deinit(self.alloc);
+                for (gd.inits) |init_expr| {
+                    const t = try self.check_expr(init_expr);
+                    try init_types.append(self.alloc, t);
+                }
+                for (gd.names, 0..) |*lname, i| {
+                    var t: RT = if (i < init_types.items.len)
+                        init_types.items[i]
+                    else
+                        .any;
+                    if (lname.typ != .inferred) {
+                        const ann = types.resolve(lname.typ, self.alloc) catch .any;
+                        t = ann;
+                    }
+                    try self.note_global(lname.ident, t);
+                    try self.scope.define(lname.ident, .{
+                        .typ = t,
+                        .is_const = false,
+                        .is_global = true,
+                    });
+                }
+            },
             .assign => |*as| {
                 for (as.values) |v| _ = try self.check_expr(v);
-                for (as.targets) |tgt| _ = try self.check_expr(tgt);
+                for (as.targets) |tgt| {
+                    if (tgt.* == .name) {
+                        if (self.scope.lookup(tgt.name.ident)) |sym| {
+                            if (sym.is_for_control) {
+                                self.err(tgt.name.loc, "cannot assign to for loop control variable '{s}'", .{tgt.name.ident});
+                            }
+                        } else {
+                            try self.note_global(tgt.name.ident, .any);
+                        }
+                    }
+                    _ = try self.check_expr(tgt);
+                }
             },
             .call_stmt => |*cs| _ = try self.check_expr(cs.expr),
             .ret => |*r| {
@@ -183,7 +255,11 @@ pub const Sema = struct {
                 var var_t: RT = .i64;
                 if (nf.var_typ != .inferred)
                     var_t = types.resolve(nf.var_typ, self.alloc) catch .i64;
-                try self.scope.define(nf.var_name, .{ .typ = var_t, .is_const = false });
+                try self.scope.define(nf.var_name, .{
+                    .typ = var_t,
+                    .is_const = true,
+                    .is_for_control = true,
+                });
                 _ = try self.check_expr(nf.start);
                 _ = try self.check_expr(nf.stop);
                 if (nf.step) |s| _ = try self.check_expr(s);
@@ -193,7 +269,11 @@ pub const Sema = struct {
             .gen_for => |*gf| {
                 for (gf.iters) |it| _ = try self.check_expr(it);
                 try self.scope.push();
-                for (gf.vars) |v| try self.scope.define(v, .{ .typ = .any, .is_const = false });
+                for (gf.vars) |v| try self.scope.define(v, .{
+                    .typ = .any,
+                    .is_const = true,
+                    .is_for_control = true,
+                });
                 try self.check_block(&gf.body);
                 self.scope.pop();
             },
@@ -267,7 +347,12 @@ pub const Sema = struct {
             .vararg     => .any,
             .name => |n| {
                 if (self.scope.lookup(n.ident)) |sym| return sym.typ;
+                if (self.scope.needs_explicit_global()) {
+                    self.err(n.loc, "use of undeclared global '{s}'", .{n.ident});
+                    return .any;
+                }
                 // Unknown identifier → treat as dynamic global
+                try self.note_global(n.ident, .any);
                 return .any;
             },
             .field => |f| {
@@ -353,7 +438,12 @@ pub const Sema = struct {
             },
             .binop => |b| self.check_binop(b.op, b.lhs, b.rhs),
             .unop  => |u| self.check_unop(u.op, u.operand),
-            .func_expr => |fb| self.check_func_body(fb),
+            .func_expr => |fb| blk: {
+                fb.closure_id = self.next_closure_id;
+                self.next_closure_id += 1;
+                try self.analyze_closure_upvalues(fb);
+                break :blk try self.check_func_body(fb);
+            },
             .table => |t| {
                 for (t.fields) |*fld| {
                     switch (fld.*) {
@@ -421,6 +511,256 @@ pub const Sema = struct {
         };
     }
 
+    fn func_body_has_func_expr(fb: *const ast.FuncBody) bool {
+        return func_body_has_func_expr_block(&fb.body);
+    }
+
+    fn func_body_has_func_expr_block(block: *const ast.Block) bool {
+        for (block.stmts) |*stmt| {
+            if (stmt_has_func_expr(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_has_func_expr(stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .local_decl => |*ld| expr_has_func_expr_in_list(ld.inits),
+            .assign => |*as| expr_has_func_expr_in_list(as.values),
+            .ret => |*r| expr_has_func_expr_in_list(r.vals),
+            .if_stmt => |*is| blk: {
+                if (expr_has_func_expr(is.cond)) return true;
+                if (func_body_has_func_expr_block(&is.then)) return true;
+                for (is.elseifs) |*ei| {
+                    if (expr_has_func_expr(ei.cond)) return true;
+                    if (func_body_has_func_expr_block(&ei.body)) return true;
+                }
+                if (is.else_body) |*eb| {
+                    if (func_body_has_func_expr_block(eb)) return true;
+                }
+                break :blk false;
+            },
+            .while_loop => |*wl| {
+                if (expr_has_func_expr(wl.cond)) return true;
+                return func_body_has_func_expr_block(&wl.body);
+            },
+            .num_for => |*nf| func_body_has_func_expr_block(&nf.body),
+            .gen_for => |*fg| {
+                for (fg.iters) |e| {
+                    if (expr_has_func_expr(e)) return true;
+                }
+                return func_body_has_func_expr_block(&fg.body);
+            },
+            .call_stmt => |*cs| expr_has_func_expr(cs.expr),
+            .do_block => |*db| func_body_has_func_expr_block(&db.body),
+            .func_decl => |*fd| func_body_has_func_expr(&fd.func),
+            else => false,
+        };
+    }
+
+    fn expr_has_func_expr_in_list(exprs: []const *ast.Expr) bool {
+        for (exprs) |e| {
+            if (expr_has_func_expr(e)) return true;
+        }
+        return false;
+    }
+
+    fn expr_has_func_expr(expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .func_expr => true,
+            .binop => |b| expr_has_func_expr(b.lhs) or expr_has_func_expr(b.rhs),
+            .unop => |u| expr_has_func_expr(u.operand),
+            .call => |c| {
+                if (expr_has_func_expr(c.func)) return true;
+                for (c.args) |a| {
+                    if (expr_has_func_expr(a)) return true;
+                }
+                return false;
+            },
+            .method_call => |mc| {
+                if (expr_has_func_expr(mc.obj)) return true;
+                for (mc.args) |a| {
+                    if (expr_has_func_expr(a)) return true;
+                }
+                return false;
+            },
+            .field => |f| expr_has_func_expr(f.obj),
+            .index => |idx| expr_has_func_expr(idx.obj) or expr_has_func_expr(idx.key),
+            .table => |t| {
+                for (t.fields) |fld| {
+                    switch (fld) {
+                        .indexed => |idx| {
+                            if (expr_has_func_expr(idx.key) or expr_has_func_expr(idx.val)) return true;
+                        },
+                        .named => |nmd| {
+                            if (expr_has_func_expr(nmd.val)) return true;
+                        },
+                        .positional => |pos| {
+                            if (expr_has_func_expr(pos)) return true;
+                        },
+                    }
+                }
+                return false;
+            },
+            else => false,
+        };
+    }
+
+    fn analyze_closure_upvalues(self: *Sema, fb: *ast.FuncBody) !void {
+        var names = std.ArrayList([]const u8).empty;
+        var flags = std.ArrayList(bool).empty;
+        defer names.deinit(self.alloc);
+        defer flags.deinit(self.alloc);
+        try collect_upvalue_names(fb, &fb.body, fb.params, &names, &flags, self);
+        fb.upvalues = try self.alloc.alloc(ast.Upvalue, names.items.len);
+        for (names.items, flags.items, 0..) |nm, is_local, i| {
+            fb.upvalues[i] = .{ .name = nm, .is_local = is_local };
+        }
+    }
+
+    fn collect_upvalue_names(
+        fb: *const ast.FuncBody,
+        block: *const ast.Block,
+        params: []const ast.FuncParam,
+        names: *std.ArrayList([]const u8),
+        flags: *std.ArrayList(bool),
+        sema: *Sema,
+    ) std.mem.Allocator.Error!void {
+        _ = fb;
+        for (block.stmts) |*stmt| {
+            try collect_upvalue_names_stmt(stmt, params, names, flags, sema);
+        }
+    }
+
+    fn collect_upvalue_names_stmt(
+        stmt: *const ast.Stmt,
+        params: []const ast.FuncParam,
+        names: *std.ArrayList([]const u8),
+        flags: *std.ArrayList(bool),
+        sema: *Sema,
+    ) std.mem.Allocator.Error!void {
+        switch (stmt.*) {
+            .local_decl => |*ld| {
+                for (ld.inits) |init_expr| try collect_upvalue_names_expr(init_expr, params, names, flags, sema);
+            },
+            .assign => |*as| {
+                for (as.values) |v| try collect_upvalue_names_expr(v, params, names, flags, sema);
+            },
+            .ret => |*r| {
+                for (r.vals) |v| try collect_upvalue_names_expr(v, params, names, flags, sema);
+            },
+            .if_stmt => |*is| {
+                try collect_upvalue_names_expr(is.cond, params, names, flags, sema);
+                try collect_upvalue_names_block(&is.then, params, names, flags, sema);
+                for (is.elseifs) |*ei| {
+                    try collect_upvalue_names_expr(ei.cond, params, names, flags, sema);
+                    try collect_upvalue_names_block(&ei.body, params, names, flags, sema);
+                }
+                if (is.else_body) |*eb| try collect_upvalue_names_block(eb, params, names, flags, sema);
+            },
+            .while_loop => |*wl| {
+                try collect_upvalue_names_expr(wl.cond, params, names, flags, sema);
+                try collect_upvalue_names_block(&wl.body, params, names, flags, sema);
+            },
+            .num_for => |*nf| try collect_upvalue_names_block(&nf.body, params, names, flags, sema),
+            .gen_for => |*fg| {
+                for (fg.iters) |e| try collect_upvalue_names_expr(e, params, names, flags, sema);
+                try collect_upvalue_names_block(&fg.body, params, names, flags, sema);
+            },
+            .call_stmt => |*cs| try collect_upvalue_names_expr(cs.expr, params, names, flags, sema),
+            .do_block => |*db| try collect_upvalue_names_block(&db.body, params, names, flags, sema),
+            else => {},
+        }
+    }
+
+    fn collect_upvalue_names_block(
+        block: *const ast.Block,
+        params: []const ast.FuncParam,
+        names: *std.ArrayList([]const u8),
+        flags: *std.ArrayList(bool),
+        sema: *Sema,
+    ) std.mem.Allocator.Error!void {
+        for (block.stmts) |*stmt| {
+            try collect_upvalue_names_stmt(stmt, params, names, flags, sema);
+        }
+    }
+
+    fn is_param_name(params: []const ast.FuncParam, name: []const u8) bool {
+        for (params) |p| {
+            if (std.mem.eql(u8, p.name, name)) return true;
+        }
+        return false;
+    }
+
+    fn upvalue_index(names: *std.ArrayList([]const u8), name: []const u8) ?usize {
+        for (names.items, 0..) |nm, i| {
+            if (std.mem.eql(u8, nm, name)) return i;
+        }
+        return null;
+    }
+
+    fn note_upvalue(
+        name: []const u8,
+        names: *std.ArrayList([]const u8),
+        flags: *std.ArrayList(bool),
+        sema: *Sema,
+    ) std.mem.Allocator.Error!void {
+        if (upvalue_index(names, name) != null) return;
+        const is_local = sema.scope.lookup(name) != null;
+        try names.append(sema.alloc, name);
+        try flags.append(sema.alloc, is_local);
+    }
+
+    fn collect_upvalue_names_expr(
+        expr: *const ast.Expr,
+        params: []const ast.FuncParam,
+        names: *std.ArrayList([]const u8),
+        flags: *std.ArrayList(bool),
+        sema: *Sema,
+    ) std.mem.Allocator.Error!void {
+        switch (expr.*) {
+            .name => |n| {
+                if (is_param_name(params, n.ident)) return;
+                if (sema.scope.lookup(n.ident) != null) {
+                    try note_upvalue(n.ident, names, flags, sema);
+                } else {
+                    try note_upvalue(n.ident, names, flags, sema);
+                }
+            },
+            .binop => |b| {
+                try collect_upvalue_names_expr(b.lhs, params, names, flags, sema);
+                try collect_upvalue_names_expr(b.rhs, params, names, flags, sema);
+            },
+            .unop => |u| try collect_upvalue_names_expr(u.operand, params, names, flags, sema),
+            .call => |c| {
+                try collect_upvalue_names_expr(c.func, params, names, flags, sema);
+                for (c.args) |a| try collect_upvalue_names_expr(a, params, names, flags, sema);
+            },
+            .method_call => |mc| {
+                try collect_upvalue_names_expr(mc.obj, params, names, flags, sema);
+                for (mc.args) |a| try collect_upvalue_names_expr(a, params, names, flags, sema);
+            },
+            .field => |f| try collect_upvalue_names_expr(f.obj, params, names, flags, sema),
+            .index => |idx| {
+                try collect_upvalue_names_expr(idx.obj, params, names, flags, sema);
+                try collect_upvalue_names_expr(idx.key, params, names, flags, sema);
+            },
+            .table => |t| {
+                for (t.fields) |fld| {
+                    switch (fld) {
+                        .indexed => |idx| {
+                            try collect_upvalue_names_expr(idx.key, params, names, flags, sema);
+                            try collect_upvalue_names_expr(idx.val, params, names, flags, sema);
+                        },
+                        .named => |nmd| try collect_upvalue_names_expr(nmd.val, params, names, flags, sema),
+                        .positional => |pos| try collect_upvalue_names_expr(pos, params, names, flags, sema),
+                    }
+                }
+            },
+            .func_expr => {},
+            else => {},
+        }
+    }
+
     fn check_func_decl(self: *Sema, fd: *ast.FuncDecl) SemaError!void {
         const fb = &fd.func;
         var all_typed = true;
@@ -458,7 +798,7 @@ pub const Sema = struct {
         self.scope.pop();
 
         // Pass 2: infer native signature for plain Lua numeric functions.
-        if (!fb.is_typed) {
+        if (!fb.is_typed and !func_body_has_func_expr(fb)) {
             const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
             try detect_dense_table(fb);
             self.try_specialize_native_func(fb, self_name) catch {};
@@ -492,11 +832,13 @@ pub const Sema = struct {
         fb.use_clamp_mod_sum = detect_clamp_mod_sum(fb);
         fb.use_mod_histogram_sum = detect_mod_histogram_sum(fb);
         fb.use_ema_smooth = detect_ema_smooth(fb);
+        if (fb.use_ema_smooth) detect_ema_period_fold(fb);
         fb.use_string_token_count = detect_string_token_count(fb);
         fb.use_string_delim_byte_sum = detect_string_delim_byte_sum(fb);
         fb.use_mandel_iter_native = fb.is_typed and fb.params.len == 2 and detect_mandel_iter_native(fb);
         fb.use_nbody_native = fb.is_typed and fb.params.len == 1 and detect_nbody_native(fb);
-        if (fb.use_mandel_iter_native) fb.use_force_always_inline = true;
+        if (fb.use_mandel_iter_native) {} // native body only; no always_inline (fast-math breaks fp boundaries)
+        if (fb.use_nbody_native or fb.use_ema_smooth) fb.use_force_always_inline = true;
 
         if (fb.use_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
             fb.use_dot_product_dense or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
@@ -918,6 +1260,19 @@ pub const Sema = struct {
         return has_mul3_fill and has_mod7_lookup;
     }
 
+    fn expr_has_float_mul_two(expr: *const ast.Expr) bool {
+        switch (expr.*) {
+            .binop => |*bo| {
+                if (bo.op == .mul) {
+                    if (bo.lhs.* == .float_lit and bo.lhs.float_lit.val == 2.0) return true;
+                    if (bo.rhs.* == .float_lit and bo.rhs.float_lit.val == 2.0) return true;
+                }
+                return expr_has_float_mul_two(bo.lhs) or expr_has_float_mul_two(bo.rhs);
+            },
+            else => return false,
+        }
+    }
+
     fn detect_mandel_iter_native(fb: *ast.FuncBody) bool {
         var has_escape = false;
         var has_update = false;
@@ -933,11 +1288,7 @@ pub const Sema = struct {
                     },
                     .assign => |*as| {
                         for (as.values) |val| {
-                            if (val.* != .binop or val.binop.op != .add) continue;
-                            const rhs = val.binop.rhs;
-                            if (rhs.* != .binop or rhs.binop.op != .mul) continue;
-                            if (rhs.binop.lhs.* == .float_lit and rhs.binop.lhs.float_lit.val == 2.0)
-                                has_update = true;
+                            if (expr_has_float_mul_two(val)) has_update = true;
                         }
                     },
                     else => {},
@@ -1206,6 +1557,66 @@ pub const Sema = struct {
             }
         }
         return false;
+    }
+
+    fn float_lit_val(expr: *const ast.Expr) ?f64 {
+        return switch (expr.*) {
+            .float_lit => |f| f.val,
+            .int_lit => |i| @floatFromInt(i.val),
+            else => null,
+        };
+    }
+
+    fn int_lit_val(expr: *const ast.Expr) ?i64 {
+        return switch (expr.*) {
+            .int_lit => |i| i.val,
+            else => null,
+        };
+    }
+
+    /// Detect avg = avg * α + (idx % period) * β for period-fold codegen.
+    fn detect_ema_period_fold(fb: *ast.FuncBody) void {
+        if (fb.params.len != 1) return;
+        const limit_name = fb.params[0].name;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            const wl = &stmt.while_loop;
+            const idx_name = while_loop_index_name(wl.cond, limit_name) orelse continue;
+            for (wl.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* != .binop or val.binop.op != .add) continue;
+                    const lhs = val.binop.lhs;
+                    const rhs = val.binop.rhs;
+                    if (lhs.* != .binop or lhs.binop.op != .mul) continue;
+                    if (rhs.* != .binop or rhs.binop.op != .mul) continue;
+                    const alpha = float_lit_val(lhs.binop.rhs) orelse continue;
+                    const beta = float_lit_val(rhs.binop.rhs) orelse continue;
+                    const mod_expr = rhs.binop.lhs;
+                    if (mod_expr.* != .binop or mod_expr.binop.op != .mod) continue;
+                    if (mod_expr.binop.lhs.* != .name or !std.mem.eql(u8, mod_expr.binop.lhs.name.ident, idx_name)) continue;
+                    const period = int_lit_val(mod_expr.binop.rhs) orelse continue;
+                    if (period <= 0) continue;
+                    fb.use_ema_period_fold = true;
+                    fb.ema_alpha = alpha;
+                    fb.ema_beta = beta;
+                    fb.ema_period = period;
+                    return;
+                }
+            }
+        }
+    }
+
+    fn while_loop_index_name(cond: *const ast.Expr, limit_name: []const u8) ?[]const u8 {
+        if (cond.* != .binop) return null;
+        const b = cond.binop;
+        if (b.op == .lt or b.op == .leq) {
+            if (b.lhs.* == .name and b.rhs.* == .name and std.mem.eql(u8, b.rhs.name.ident, limit_name))
+                return b.lhs.name.ident;
+            if (b.rhs.* == .name and b.lhs.* == .name and std.mem.eql(u8, b.lhs.name.ident, limit_name))
+                return b.rhs.name.ident;
+        }
+        return null;
     }
 
     fn rep_literal(expr: *const ast.Expr) ?[]const u8 {

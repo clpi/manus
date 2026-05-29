@@ -19,7 +19,7 @@ pub const TokenKind = enum {
 
     // Lua keywords
     kw_and, kw_break, kw_do, kw_else, kw_elseif,
-    kw_end, kw_false, kw_for, kw_function, kw_goto,
+    kw_end, kw_false, kw_for, kw_function, kw_global, kw_goto,
     kw_if, kw_in, kw_local, kw_nil, kw_not,
     kw_or, kw_repeat, kw_return, kw_then, kw_true,
     kw_until, kw_while,
@@ -68,6 +68,7 @@ pub const TokenKind = enum {
             .kw_false => "false",
             .kw_for => "for",
             .kw_function => "function",
+            .kw_global => "global",
             .kw_goto => "goto",
             .kw_if => "if",
             .kw_in => "in",
@@ -149,6 +150,8 @@ pub const LexError = error{
     UnterminatedLongString,
     InvalidNumber,
     UnexpectedChar,
+    InvalidEscape,
+    OutOfMemory,
 };
 
 pub const Lexer = struct {
@@ -295,12 +298,145 @@ pub const Lexer = struct {
             if (c == '\n' or c == '\r') return LexError.UnterminatedString;
             if (c == '\\') {
                 _ = self.adv();
-                if (self.pos < self.src.len) _ = self.adv();
+                if (self.pos >= self.src.len) return LexError.UnterminatedString;
+                const esc = self.peek_char();
+                if (esc == 'x') {
+                    _ = self.adv();
+                    if (self.pos >= self.src.len or !std.ascii.isHex(self.peek_char()))
+                        return LexError.InvalidEscape;
+                    _ = self.adv();
+                    if (self.pos < self.src.len and std.ascii.isHex(self.peek_char())) _ = self.adv();
+                } else if (esc == 'u') {
+                    _ = self.adv();
+                    if (self.peek_char() != '{') return LexError.InvalidEscape;
+                    _ = self.adv();
+                    var has_digit = false;
+                    while (self.pos < self.src.len and self.peek_char() != '}') {
+                        if (!std.ascii.isHex(self.peek_char())) return LexError.InvalidEscape;
+                        has_digit = true;
+                        _ = self.adv();
+                    }
+                    if (!has_digit or self.pos >= self.src.len or self.peek_char() != '}')
+                        return LexError.InvalidEscape;
+                    _ = self.adv();
+                } else if (esc == 'z') {
+                    _ = self.adv();
+                    while (self.pos < self.src.len) {
+                        const ws = self.peek_char();
+                        if (ws == ' ' or ws == '\t' or ws == '\r' or ws == '\n') {
+                            _ = self.adv();
+                        } else break;
+                    }
+                } else if (esc == '\r') {
+                    _ = self.adv();
+                    if (self.pos < self.src.len and self.peek_char() == '\n') _ = self.adv();
+                } else {
+                    _ = self.adv();
+                }
             } else {
                 _ = self.adv();
             }
         }
         return LexError.UnterminatedString;
+    }
+
+    /// Decode a short Lua string literal body (between quotes, escapes intact).
+    pub fn decode_lua_short_string(alloc: std.mem.Allocator, raw: []const u8) LexError![]u8 {
+        var out: std.ArrayList(u8) = .empty;
+        errdefer out.deinit(alloc);
+        var i: usize = 0;
+        while (i < raw.len) {
+            if (raw[i] != '\\') {
+                try out.append(alloc, raw[i]);
+                i += 1;
+                continue;
+            }
+            i += 1;
+            if (i >= raw.len) return LexError.InvalidEscape;
+            switch (raw[i]) {
+                'a' => {
+                    try out.append(alloc, 7);
+                    i += 1;
+                },
+                'b' => {
+                    try out.append(alloc, 8);
+                    i += 1;
+                },
+                'f' => {
+                    try out.append(alloc, 12);
+                    i += 1;
+                },
+                'n' => {
+                    try out.append(alloc, '\n');
+                    i += 1;
+                },
+                'r' => {
+                    try out.append(alloc, '\r');
+                    i += 1;
+                },
+                't' => {
+                    try out.append(alloc, '\t');
+                    i += 1;
+                },
+                'v' => {
+                    try out.append(alloc, 11);
+                    i += 1;
+                },
+                '\\', '"', '\'' => {
+                    try out.append(alloc, raw[i]);
+                    i += 1;
+                },
+                'z' => {
+                    i += 1;
+                    while (i < raw.len) {
+                        const ws = raw[i];
+                        if (ws == ' ' or ws == '\t' or ws == '\r' or ws == '\n') {
+                            i += 1;
+                        } else break;
+                    }
+                },
+                'x' => {
+                    i += 1;
+                    if (i >= raw.len or !std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
+                    var byte: u8 = std.fmt.parseInt(u8, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
+                    i += 1;
+                    if (i < raw.len and std.ascii.isHex(raw[i])) {
+                        byte = (byte << 4) | (std.fmt.parseInt(u8, raw[i .. i + 1], 16) catch return LexError.InvalidEscape);
+                        i += 1;
+                    }
+                    try out.append(alloc, byte);
+                },
+                'u' => {
+                    i += 1;
+                    if (i >= raw.len or raw[i] != '{') return LexError.InvalidEscape;
+                    i += 1;
+                    var cp: u21 = 0;
+                    var digits: u32 = 0;
+                    while (i < raw.len and raw[i] != '}') {
+                        if (!std.ascii.isHex(raw[i])) return LexError.InvalidEscape;
+                        const digit = std.fmt.parseInt(u21, raw[i .. i + 1], 16) catch return LexError.InvalidEscape;
+                        cp = cp * 16 + digit;
+                        digits += 1;
+                        i += 1;
+                    }
+                    if (digits == 0 or i >= raw.len or raw[i] != '}') return LexError.InvalidEscape;
+                    i += 1;
+                    var enc: [4]u8 = undefined;
+                    const n = std.unicode.utf8Encode(cp, &enc) catch return LexError.InvalidEscape;
+                    try out.appendSlice(alloc, enc[0..n]);
+                },
+                '\r' => {
+                    i += 1;
+                    if (i < raw.len and raw[i] == '\n') i += 1;
+                },
+                '\n' => i += 1,
+                else => {
+                    try out.append(alloc, raw[i]);
+                    i += 1;
+                },
+            }
+        }
+        return try out.toOwnedSlice(alloc);
     }
 
     fn read_num(self: *Lexer) LexError!Token {
@@ -358,7 +494,7 @@ pub const Lexer = struct {
         // Parallel arrays: word list and corresponding token kind.
         const words = [_][]const u8{
             "and", "break", "do", "else", "elseif", "end",
-            "false", "for", "function", "goto", "if", "in",
+            "false", "for", "function", "global", "goto", "if", "in",
             "local", "nil", "not", "or", "repeat", "return",
             "then", "true", "until", "while",
             "const", "struct", "enum",
@@ -368,7 +504,7 @@ pub const Lexer = struct {
         };
         const kinds = [_]TokenKind{
             .kw_and, .kw_break, .kw_do, .kw_else, .kw_elseif, .kw_end,
-            .kw_false, .kw_for, .kw_function, .kw_goto, .kw_if, .kw_in,
+            .kw_false, .kw_for, .kw_function, .kw_global, .kw_goto, .kw_if, .kw_in,
             .kw_local, .kw_nil, .kw_not, .kw_or, .kw_repeat, .kw_return,
             .kw_then, .kw_true, .kw_until, .kw_while,
             .kw_const, .kw_struct, .kw_enum,

@@ -136,7 +136,7 @@ echo "All $BENCHES benchmark results match reference C."
 
 echo
 echo "=== Duo (Lua AOT) ==="
-DUO_TIMES=$(collect_min_times "\"$DUO\" run examples/benchmark.lua")
+DUO_TIMES=$(collect_min_times "/tmp/duo_bench.out")
 
 echo "=== Reference C ==="
 C_TIMES=$(collect_min_times "/tmp/c_bench.out")

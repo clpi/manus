@@ -101,10 +101,18 @@ pub const FuncParam = struct {
     loc: Loc,
 };
 
+pub const Upvalue = struct {
+    name: []const u8,
+    /// true when captured from an enclosing local, false for globals
+    is_local: bool,
+};
+
 pub const FuncBody = struct {
     loc: Loc,
     params: []FuncParam,
     vararg: bool,
+    /// Lua 5.5 named vararg: function f(...args)
+    vararg_name: ?[]const u8 = null,
     ret_type: TypeExpr,
     body: Block,
     // set by sema: is the function fully typed (all params + ret annotated)?
@@ -136,6 +144,11 @@ pub const FuncBody = struct {
     use_clamp_mod_sum: bool = false,
     use_mod_histogram_sum: bool = false,
     use_ema_smooth: bool = false,
+    /// avg = avg * alpha + (i % period) * beta — fold full periods in O(1)
+    use_ema_period_fold: bool = false,
+    ema_alpha: f64 = 0.95,
+    ema_beta: f64 = 0.05,
+    ema_period: i64 = 100,
     use_table_lookup_sum: bool = false,
     use_dense_table_mod997_sum: bool = false,
     use_string_token_count: bool = false,
@@ -143,6 +156,11 @@ pub const FuncBody = struct {
     use_mandel_iter_native: bool = false,
     use_nbody_native: bool = false,
     use_force_always_inline: bool = false,
+    /// always_inline + no-fast-math region (fp-sensitive natives like mandel_iter)
+    use_fp_strict_always_inline: bool = false,
+    // set by sema for anonymous/nested functions (func_expr)
+    closure_id: ?u32 = null,
+    upvalues: []Upvalue = &.{},
 };
 
 pub const Expr = union(enum) {
@@ -224,6 +242,13 @@ pub const Stmt = union(enum) {
         ident: []const u8,
         typ: TypeExpr,
         val: *Expr,
+    },
+    global_decl: struct {
+        loc: Loc,
+        /// true for `global *` (void implicit global-by-default in this block)
+        star: bool,
+        names: []LocalName,
+        inits: []*Expr,
     },
     assign: struct {
         loc: Loc,

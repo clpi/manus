@@ -158,6 +158,7 @@ pub const Parser = struct {
         const tok = try self.pk();
         return switch (tok.kind) {
             .kw_local   => self.parse_local(),
+            .kw_global  => self.parse_global(),
             .kw_const   => self.parse_const_decl(),
             .kw_struct  => self.parse_struct_def(),
             .kw_function => self.parse_func_decl(false),
@@ -178,6 +179,35 @@ pub const Parser = struct {
             .dcolon => self.parse_label(),
             else    => self.parse_expr_stmt(),
         };
+    }
+
+    fn parse_global(self: *Parser) ParseError!ast.Stmt {
+        const l = (try self.adv()).loc;
+        if (try self.eat(.star) != null) {
+            return ast.Stmt{ .global_decl = .{
+                .loc = l,
+                .star = true,
+                .names = &.{},
+                .inits = &.{},
+            } };
+        }
+        var names: std.ArrayList(ast.LocalName) = .empty;
+        try names.append(self.alloc, try self.parse_local_name());
+        while (try self.eat(.comma) != null)
+            try names.append(self.alloc, try self.parse_local_name());
+
+        var inits: std.ArrayList(*ast.Expr) = .empty;
+        if (try self.eat(.assign) != null) {
+            try inits.append(self.alloc, try self.parse_expr());
+            while (try self.eat(.comma) != null)
+                try inits.append(self.alloc, try self.parse_expr());
+        }
+        return ast.Stmt{ .global_decl = .{
+            .loc = l,
+            .star = false,
+            .names = try names.toOwnedSlice(self.alloc),
+            .inits = try inits.toOwnedSlice(self.alloc),
+        } };
     }
 
     fn parse_local(self: *Parser) ParseError!ast.Stmt {
@@ -283,13 +313,23 @@ pub const Parser = struct {
         _ = try self.expect(.lparen);
         var params: std.ArrayList(ast.FuncParam) = .empty;
         var vararg = false;
+        var vararg_name: ?[]const u8 = null;
         if (!(try self.check(.rparen))) {
             if (try self.eat(.dots) != null) {
                 vararg = true;
+                if (try self.check(.name)) {
+                    vararg_name = (try self.adv()).text;
+                }
             } else {
                 try params.append(self.alloc, try self.parse_param());
                 while (try self.eat(.comma) != null) {
-                    if (try self.eat(.dots) != null) { vararg = true; break; }
+                    if (try self.eat(.dots) != null) {
+                        vararg = true;
+                        if (try self.check(.name)) {
+                            vararg_name = (try self.adv()).text;
+                        }
+                        break;
+                    }
                     try params.append(self.alloc, try self.parse_param());
                 }
             }
@@ -305,6 +345,7 @@ pub const Parser = struct {
             .loc = l,
             .params = try params.toOwnedSlice(self.alloc),
             .vararg = vararg,
+            .vararg_name = vararg_name,
             .ret_type = ret_type,
             .body = body,
         };
@@ -520,7 +561,8 @@ pub const Parser = struct {
             },
             .string_lit => blk: {
                 _ = try self.adv();
-                break :blk self.new_expr(.{ .string_lit = .{ .loc = tok.loc, .val = tok.text } });
+                const decoded = try Lexer.decode_lua_short_string(self.alloc, tok.text);
+                break :blk self.new_expr(.{ .string_lit = .{ .loc = tok.loc, .val = decoded } });
             },
             .kw_nil   => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .nil       = tok.loc }); },
             .kw_true  => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .true_lit  = tok.loc }); },
@@ -586,8 +628,9 @@ pub const Parser = struct {
             .lbrace => try args.append(self.alloc, try self.parse_table()),
             .string_lit => {
                 const t = try self.adv();
+                const decoded = try Lexer.decode_lua_short_string(self.alloc, t.text);
                 try args.append(self.alloc, try self.new_expr(
-                    .{ .string_lit = .{ .loc = t.loc, .val = t.text } },
+                    .{ .string_lit = .{ .loc = t.loc, .val = decoded } },
                 ));
             },
             else => {
