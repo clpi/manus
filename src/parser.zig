@@ -99,6 +99,19 @@ pub const Parser = struct {
                 elem.* = try self.parse_type();
                 return .{ .array = .{ .elem = elem, .size = size } };
             },
+            .lt => {
+                _ = try self.adv();
+                // Parse type parameters for generics: <T, U>
+                var params: std.ArrayList(ast.TypeExpr) = .empty;
+                try params.append(self.alloc, try self.parse_type());
+                while (try self.eat(.comma) != null) {
+                    try params.append(self.alloc, try self.parse_type());
+                }
+                _ = try self.expect(.gt);
+                const base = try self.alloc.create(ast.TypeExpr);
+                base.* = try self.parse_type();
+                return .{ .generic = .{ .base = base, .params = try params.toOwnedSlice(self.alloc) } };
+            },
             else => {
                 std.debug.print("{}: expected type, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
                 return ParseError.ExpectedToken;
@@ -156,12 +169,62 @@ pub const Parser = struct {
 
     fn parse_stmt(self: *Parser) ParseError!ast.Stmt {
         const tok = try self.pk();
+        
+        // Check for bash-style function call: name arg1 arg2 ...
+        // Works with literals and names, but not with parentheses (to avoid breaking traditional calls)
+        if (tok.kind == .name) {
+            const peek = try self.pk();
+            const is_bash_arg = switch (peek.kind) {
+                .string_lit, .int_lit, .float_lit, .name => true,
+                else => false,
+            };
+            
+            if (is_bash_arg and peek.kind != .lparen) {
+                // This is a bash-style call: print arg1 arg2
+                const func_name_tok = try self.adv();
+                
+                var args: std.ArrayList(*ast.Expr) = .empty;
+                
+                // Parse the first argument
+                try args.append(self.alloc, try self.parse_expr());
+                
+                // Continue collecting arguments while we have simple tokens
+                while (true) {
+                    const peek_tok = try self.pk();
+                    const is_next_simple = switch (peek_tok.kind) {
+                        .string_lit, .int_lit, .float_lit, .name => true,
+                        else => false,
+                    };
+                    if (!is_next_simple) break;
+                    if (peek_tok.kind == .semi or peek_tok.kind == .eof or 
+                        peek_tok.kind == .kw_end or peek_tok.kind == .kw_else or 
+                        peek_tok.kind == .kw_elseif or peek_tok.kind == .kw_until) break;
+                    
+                    try args.append(self.alloc, try self.parse_expr());
+                }
+                
+                // Create function name expression
+                const func_name_expr = try self.alloc.create(ast.Expr);
+                func_name_expr.* = .{ .name = .{ .loc = func_name_tok.loc, .ident = func_name_tok.text } };
+                
+                // Create call expression
+                const call_expr = try self.alloc.create(ast.Expr);
+                call_expr.* = .{ .call = .{
+                    .loc = func_name_tok.loc,
+                    .func = func_name_expr,
+                    .args = try args.toOwnedSlice(self.alloc),
+                }};
+                
+                return ast.Stmt{ .call_stmt = .{ .loc = func_name_tok.loc, .expr = call_expr } };
+            }
+        }
+        
         return switch (tok.kind) {
             .kw_local   => self.parse_local(),
             .kw_global  => self.parse_global(),
             .kw_const   => self.parse_const_decl(),
             .kw_struct  => self.parse_struct_def(),
-            .kw_function => self.parse_func_decl(false),
+            .kw_function, .kw_fun => self.parse_func_decl(false),
             .kw_if      => self.parse_if(),
             .kw_while   => self.parse_while(),
             .kw_repeat  => self.parse_repeat(),
@@ -212,7 +275,7 @@ pub const Parser = struct {
 
     fn parse_local(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
-        if (try self.eat(.kw_function) != null) {
+        if (try self.eat(.kw_function) != null or try self.eat(.kw_fun) != null) {
             const nm = try self.expect(.name);
             const fb = try self.parse_func_body(l);
             const path = try self.alloc.dupe([]const u8, &[_][]const u8{nm.text});
@@ -321,6 +384,18 @@ pub const Parser = struct {
     }
 
     fn parse_func_body(self: *Parser, l: ast.Loc) ParseError!ast.FuncBody {
+        // Check for type parameters: <T, U>
+        var type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lt) != null) {
+            var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try tp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try tp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.gt);
+            type_params = try tp_list.toOwnedSlice(self.alloc);
+        }
+
         _ = try self.expect(.lparen);
         var params: std.ArrayList(ast.FuncParam) = .empty;
         var vararg = false;
@@ -359,6 +434,7 @@ pub const Parser = struct {
             .vararg_name = vararg_name,
             .ret_type = ret_type,
             .body = body,
+            .type_params = type_params,
         };
     }
 
@@ -468,6 +544,7 @@ pub const Parser = struct {
     fn parse_expr_stmt(self: *Parser) ParseError!ast.Stmt {
         const first = try self.parse_suffixed_expr();
         const nxt = try self.pk();
+        
         if (nxt.kind == .assign or nxt.kind == .comma) {
             var targets: std.ArrayList(*ast.Expr) = .empty;
             try targets.append(self.alloc, first);
@@ -484,14 +561,31 @@ pub const Parser = struct {
                 .values = try values.toOwnedSlice(self.alloc),
             }};
         }
+        
+        // Accept both regular calls and bash-style calls (which are now parsed as .call expressions)
         switch (first.*) {
             .call, .method_call => {},
+            .name => {
+                // Single name without args is not a valid statement in Duo
+                std.debug.print("{}: expression is not a statement\n", .{first.loc()});
+                return ParseError.UnexpectedToken;
+            },
             else => {
                 std.debug.print("{}: expression is not a statement\n", .{first.loc()});
                 return ParseError.UnexpectedToken;
             },
         }
         return ast.Stmt{ .call_stmt = .{ .loc = first.loc(), .expr = first } };
+    }
+
+    fn is_expr_start(_: *Parser, kind: TK) bool {
+        return switch (kind) {
+            .name, .int_lit, .float_lit, .string_lit,
+            .kw_nil, .kw_true, .kw_false, .dots,
+            .lparen, .lbrace, .lbracket,
+            .kw_not, .hash, .minus, .tilde, .hash_hash => true,
+            else => false,
+        };
     }
 
     // ── Pratt expression parser ───────────────────────────────────────────────
@@ -545,11 +639,12 @@ pub const Parser = struct {
     fn parse_unary(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
         const op: ?ast.UnOp = switch (tok.kind) {
-            .kw_not => .not,
-            .hash   => .len,
-            .minus  => .neg,
-            .tilde  => .bnot,
-            else    => null,
+            .kw_not    => .not,
+            .hash      => .len,
+            .hash_hash => .compile,
+            .minus     => .neg,
+            .tilde     => .bnot,
+            else       => null,
         };
         if (op) |uop| {
             _ = try self.adv();
@@ -579,10 +674,20 @@ pub const Parser = struct {
             .kw_true  => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .true_lit  = tok.loc }); },
             .kw_false => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .false_lit = tok.loc }); },
             .dots     => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .vararg    = tok.loc }); },
-            .kw_function => blk: {
+            .kw_function, .kw_fun => blk: {
                 const l = (try self.adv()).loc;
                 const fb = try self.new_fb(try self.parse_func_body(l));
                 break :blk self.new_expr(.{ .func_expr = fb });
+            },
+            .name => blk: {
+                const name_tok = try self.adv();
+                break :blk self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
+            },
+            .lparen => blk: {
+                _ = try self.adv();
+                const e = try self.parse_expr();
+                _ = try self.expect(.rparen);
+                break :blk e;
             },
             .lbrace => self.parse_table(),
             else    => self.parse_suffixed_expr(),
@@ -590,7 +695,7 @@ pub const Parser = struct {
     }
 
     fn parse_suffixed_expr(self: *Parser) ParseError!*ast.Expr {
-        var e = try self.parse_primary();
+        var e = try self.parse_simple_expr();
         while (true) {
             const tok = try self.pk();
             switch (tok.kind) {
@@ -650,26 +755,6 @@ pub const Parser = struct {
             },
         }
         return args.toOwnedSlice(self.alloc);
-    }
-
-    fn parse_primary(self: *Parser) ParseError!*ast.Expr {
-        const tok = try self.pk();
-        switch (tok.kind) {
-            .name => {
-                _ = try self.adv();
-                return self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = tok.text } });
-            },
-            .lparen => {
-                _ = try self.adv();
-                const e = try self.parse_expr();
-                _ = try self.expect(.rparen);
-                return e;
-            },
-            else => {
-                std.debug.print("{}: unexpected token '{s}' in expression\n", .{ tok.loc, tok.kind.spelling() });
-                return ParseError.UnexpectedToken;
-            },
-        }
     }
 
     fn parse_table(self: *Parser) ParseError!*ast.Expr {

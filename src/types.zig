@@ -216,6 +216,14 @@ pub fn resolve(te: ast.TypeExpr, alloc: std.mem.Allocator) !ResolvedType {
     return switch (te) {
         .inferred => .any,
         .named => |n| {
+            // Check for common single-letter type parameter names (heuristic)
+            if (n.len == 1) {
+                const c = n[0];
+                if ((c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z')) {
+                    // Likely a type parameter, resolve to any for now
+                    return .any;
+                }
+            }
             if (std.mem.eql(u8, n, "i8"))   return .i8;
             if (std.mem.eql(u8, n, "i16"))  return .i16;
             if (std.mem.eql(u8, n, "i32"))  return .i32;
@@ -256,6 +264,11 @@ pub fn resolve(te: ast.TypeExpr, alloc: std.mem.Allocator) !ResolvedType {
             const ret = try alloc.create(ResolvedType);
             ret.* = try resolve(f.ret.*, alloc);
             return ResolvedType{ .func = .{ .params = params, .ret = ret, .is_native = true } };
+        },
+        .generic => |g| {
+            // For now, just resolve to the base type as a simplification
+            // Full monomorphization would require more complex handling
+            return try resolve(g.base.*, alloc);
         },
     };
 }

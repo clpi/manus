@@ -100,6 +100,10 @@ fn is_lua_source_path(path: []const u8) bool {
     return std.mem.endsWith(u8, path, ".lua");
 }
 
+fn is_duo_source_path(path: []const u8) bool {
+    return std.mem.endsWith(u8, path, ".duo");
+}
+
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
 
@@ -112,6 +116,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
 
     var sem = Sema.init(alloc);
     sem.lua55_mode = is_lua_source_path(src_path);
+    sem.duo_mode = is_duo_source_path(src_path);
     sem.check_module(&mod) catch |e| {
         std.debug.print("sema error: {}\n", .{e});
         std.process.exit(1);
@@ -157,6 +162,7 @@ fn do_compile(
         var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface);
         cg.src_path = src_path;
         cg.load_chunk = load_chunk;
+        cg.duo_mode = ps.sem.duo_mode;
         cg.emit_module(&ps.mod) catch |e| {
             std.debug.print("codegen error: {}\n", .{e});
             std.process.exit(1);

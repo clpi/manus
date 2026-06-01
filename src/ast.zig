@@ -10,6 +10,12 @@ pub const TypeExpr = union(enum) {
     pointer: *TypeExpr,
     func: FuncType,
     optional: *TypeExpr, // ?T
+    generic: GenericType, // T<U, V>
+
+    pub const GenericType = struct {
+        base: *TypeExpr,
+        params: []TypeExpr,
+    };
 
     pub const ArrayType = struct {
         elem: *TypeExpr,
@@ -87,7 +93,7 @@ pub const BinOp = enum {
     @"and", @"or",
 };
 
-pub const UnOp = enum { neg, not, len, bnot };
+pub const UnOp = enum { neg, not, len, bnot, compile };
 
 pub const TableField = union(enum) {
     indexed: struct { key: *Expr, val: *Expr }, // [expr] = expr
@@ -115,6 +121,8 @@ pub const FuncBody = struct {
     vararg_name: ?[]const u8 = null,
     ret_type: TypeExpr,
     body: Block,
+    /// Generic type parameters: <T, U>
+    type_params: ?[]TypeExpr = null,
     // set by sema: is the function fully typed (all params + ret annotated)?
     is_typed: bool = false,
     // set by sema: emit O(n) iterative loop instead of naive recursion

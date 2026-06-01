@@ -19,7 +19,7 @@ pub const TokenKind = enum {
 
     // Lua keywords
     kw_and, kw_break, kw_do, kw_else, kw_elseif,
-    kw_end, kw_false, kw_for, kw_function, kw_global, kw_goto,
+    kw_end, kw_false, kw_for, kw_function, kw_fun, kw_global, kw_goto,
     kw_if, kw_in, kw_local, kw_nil, kw_not,
     kw_or, kw_repeat, kw_return, kw_then, kw_true,
     kw_until, kw_while,
@@ -41,6 +41,7 @@ pub const TokenKind = enum {
     // Multi-char operators
     concat, // ..
     dots, // ...
+    hash_hash, // ##
     eq, // ==
     neq, // ~=
     leq, // <=
@@ -68,6 +69,7 @@ pub const TokenKind = enum {
             .kw_false => "false",
             .kw_for => "for",
             .kw_function => "function",
+            .kw_fun => "fun",
             .kw_global => "global",
             .kw_goto => "goto",
             .kw_if => "if",
@@ -123,6 +125,7 @@ pub const TokenKind = enum {
             .dot => ".",
             .concat => "..",
             .dots => "...",
+            .hash_hash => "##",
             .eq => "==",
             .neq => "~=",
             .leq => "<=",
@@ -494,7 +497,7 @@ pub const Lexer = struct {
         // Parallel arrays: word list and corresponding token kind.
         const words = [_][]const u8{
             "and", "break", "do", "else", "elseif", "end",
-            "false", "for", "function", "global", "goto", "if", "in",
+            "false", "for", "function", "fun", "global", "goto", "if", "in",
             "local", "nil", "not", "or", "repeat", "return",
             "then", "true", "until", "while",
             "const", "struct", "enum",
@@ -504,7 +507,7 @@ pub const Lexer = struct {
         };
         const kinds = [_]TokenKind{
             .kw_and, .kw_break, .kw_do, .kw_else, .kw_elseif, .kw_end,
-            .kw_false, .kw_for, .kw_function, .kw_global, .kw_goto, .kw_if, .kw_in,
+            .kw_false, .kw_for, .kw_function, .kw_fun, .kw_global, .kw_goto, .kw_if, .kw_in,
             .kw_local, .kw_nil, .kw_not, .kw_or, .kw_repeat, .kw_return,
             .kw_then, .kw_true, .kw_until, .kw_while,
             .kw_const, .kw_struct, .kw_enum,
@@ -561,7 +564,10 @@ pub const Lexer = struct {
             '*' => Token{ .kind = .star, .loc = l, .text = self.src[p - 1 .. p] },
             '%' => Token{ .kind = .percent, .loc = l, .text = self.src[p - 1 .. p] },
             '^' => Token{ .kind = .caret, .loc = l, .text = self.src[p - 1 .. p] },
-            '#' => Token{ .kind = .hash, .loc = l, .text = self.src[p - 1 .. p] },
+            '#' => if (self.peek_char() == '#') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .hash_hash, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .hash, .loc = l, .text = self.src[p - 1 .. p] },
             '&' => Token{ .kind = .amp, .loc = l, .text = self.src[p - 1 .. p] },
             '|' => Token{ .kind = .pipe, .loc = l, .text = self.src[p - 1 .. p] },
             '(' => Token{ .kind = .lparen, .loc = l, .text = self.src[p - 1 .. p] },

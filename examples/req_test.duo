@@ -1,0 +1,9 @@
+-- Test 'req' as a regular identifier
+-- 'req' can be used as a function name and provided by the standard library
+-- as an alias for 'require'
+
+local req = function(module: str): str
+    return "loaded: " .. module
+end
+
+print(req("mylib"))

@@ -1,0 +1,12 @@
+-- Test metaprogramming support with ## prefix
+
+-- Basic compile-time constant evaluation
+local a = ##42
+print(a)
+
+local b = ##(10 + 20)
+print(b)
+
+-- String constant
+local c = ##"hello"
+print(c)

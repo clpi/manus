@@ -102,6 +102,8 @@ pub const Sema = struct {
     next_closure_id: u32 = 0,
     /// When true, module scope starts with implicit `global *` (plain .lua files).
     lua55_mode: bool = false,
+    /// When true, variables are local by default ( .duo files).
+    duo_mode: bool = false,
 
     pub fn init(alloc: Allocator) Sema {
         return .{
@@ -158,10 +160,17 @@ pub const Sema = struct {
                         self.err(n.loc, "attempt to modify read-only vararg table '{s}'", .{n.ident});
                     }
                 } else {
-                    if (self.scope.needs_explicit_global()) {
+                    if (self.duo_mode) {
+                        // In duo mode, undeclared variables are local by default
+                        try self.scope.define(n.ident, .{
+                            .typ = .any,
+                            .is_const = false,
+                        });
+                    } else if (self.scope.needs_explicit_global()) {
                         self.err(n.loc, "attempt to assign to undeclared global '{s}'", .{n.ident});
+                    } else {
+                        try self.note_global(n.ident, .any);
                     }
-                    try self.note_global(n.ident, .any);
                 }
             },
             .index => |idx| {
@@ -198,7 +207,7 @@ pub const Sema = struct {
     pub fn check_module(self: *Sema, mod: *ast.Module) !void {
         try self.scope.push();
         self.seed_globals();
-        if (self.lua55_mode) {
+        if (self.lua55_mode or self.duo_mode) {
             self.scope.set_require_global(true);
         }
         try self.check_block(&mod.body);
@@ -591,10 +600,11 @@ pub const Sema = struct {
     fn check_unop(self: *Sema, op: ast.UnOp, operand: *ast.Expr) SemaError!RT {
         const t = try self.check_expr(operand);
         return switch (op) {
-            .neg  => if (t.is_numeric()) t else .any,
-            .bnot => if (t.is_integer() or t.is_vector()) t else .any,
-            .not  => .bool,
-            .len  => if (t == .any) .any else .i64,
+            .neg     => if (t.is_numeric()) t else .any,
+            .bnot    => if (t.is_integer() or t.is_vector()) t else .any,
+            .not     => .bool,
+            .len     => if (t == .any) .any else .i64,
+            .compile => t, // Compile-time operator has same type as operand
         };
     }
 
@@ -2204,12 +2214,14 @@ pub const Sema = struct {
                         .not => .bool,
                         .len => .i64,
                         .bnot => hint,
+                        .compile => hint,
                     });
                     break :blk switch (u.op) {
                         .neg => if (ot.is_numeric()) ot else .any,
                         .not => .bool,
                         .len => .i64,
                         .bnot => ot,
+                        .compile => ot,
                     };
                 },
                 .table => self.infer_table_expr(expr),

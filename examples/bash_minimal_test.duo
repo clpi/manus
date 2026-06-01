@@ -1,0 +1,8 @@
+-- Test minimal bash-style function call
+
+fun greet(name: str): str
+    return "Hello, " .. name
+end
+
+-- Bash-style call
+print greet "World"

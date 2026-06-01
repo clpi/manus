@@ -43,6 +43,7 @@ pub const CodeGen = struct {
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     mandel_native: bool = false,
     load_chunk: bool = false,
+    duo_mode: bool = false,
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     fn calc_lua_hash(s: []const u8) u32 {
@@ -97,6 +98,13 @@ pub const CodeGen = struct {
         while (i > 0) {
             i -= 1;
             if (self.local_scopes.items[i].contains(name)) return true;
+        }
+        return false;
+    }
+
+    fn is_global_name(self: *CodeGen, name: []const u8) bool {
+        if (self.module_globals) |globals| {
+            return globals.contains(name);
         }
         return false;
     }
@@ -1387,6 +1395,40 @@ pub const CodeGen = struct {
                     self.ind();
                     const tt = self.expr_type(tgt);
 
+                    // In duo mode, automatically declare local variables for simple name assignments
+                    if (self.duo_mode and tgt.* == .name) {
+                        const name = tgt.name.ident;
+                        if (!self.is_local_name(name) and !self.is_global_name(name)) {
+                            // This is an undeclared variable, declare it as local
+                            try self.note_local(name);
+                            if (tt == .any) {
+                                self.p("lua_Value {s} = ", .{name});
+                                if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
+                            } else if (tt.is_numeric()) {
+                                self.typ(tt);
+                                self.p(" {s} = (", .{name});
+                                self.typ(tt);
+                                self.p(")lua_to_num(", .{});
+                                if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
+                                self.p(")", .{});
+                            } else if (tt == .bool) {
+                                self.p("bool {s} = lua_to_bool(", .{name});
+                                if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
+                                self.p(")", .{});
+                            } else if (tt == .str) {
+                                self.p("const char* {s} = lua_to_str(", .{name});
+                                if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
+                                self.p(")", .{});
+                            } else {
+                                self.typ(tt);
+                                self.p(" {s} = ", .{name});
+                                if (i < as.values.len) try self.emit_expr(as.values[i]) else self.p("lua_val_nil()", .{});
+                            }
+                            self.p(";\n", .{});
+                            continue;
+                        }
+                    }
+
                     var is_table_assign = false;
                     if (tgt.* == .field) {
                         const f = &tgt.field;
@@ -2272,6 +2314,19 @@ pub const CodeGen = struct {
                         .not  => { self.p("(!lua_to_bool(", .{}); try self.emit_expr(u.operand); self.p("))", .{}); },
                         .len  => { self.p("lua_len(", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
                         .bnot => { self.p("lua_bnot(", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
+                        .compile => {
+                            // For basic metaprogramming, try to evaluate constant expressions
+                            if (u.operand.* == .int_lit) {
+                                self.p("lua_val_from_int({d})", .{u.operand.int_lit.val});
+                            } else if (u.operand.* == .float_lit) {
+                                self.p("lua_val_from_num({d})", .{u.operand.float_lit.val});
+                            } else if (u.operand.* == .string_lit) {
+                                self.p("lua_val_from_str(\"{s}\")", .{u.operand.string_lit.val});
+                            } else {
+                                // If not constant, just emit the operand
+                                try self.emit_expr(u.operand);
+                            }
+                        },
                     }
                 } else {
                     switch (u.op) {
@@ -2289,6 +2344,16 @@ pub const CodeGen = struct {
                             }
                         },
                         .bnot => { self.p("(~", .{}); try self.emit_expr(u.operand); self.p(")", .{}); },
+                        .compile => {
+                            // For typed expressions, evaluate constants at compile time
+                            if (u.operand.* == .int_lit) {
+                                self.p("{d}", .{u.operand.int_lit.val});
+                            } else if (u.operand.* == .float_lit) {
+                                self.p("{d}", .{u.operand.float_lit.val});
+                            } else {
+                                try self.emit_expr(u.operand);
+                            }
+                        },
                     }
                 }
             },

@@ -1,0 +1,20 @@
+-- Test basic bash-style function calls
+
+-- Define a simple function
+fun greet(name: str): str
+    return "Hello, " .. name
+end
+
+-- Traditional Lua-style call
+print(greet("World"))
+
+-- Bash-style call (no parentheses)
+print greet "Duo"
+
+-- Multiple arguments
+fun add(a: i64, b: i64): i64
+    return a + b
+end
+
+-- Bash-style call with multiple arguments
+print add 5 3
