@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DUO="$ROOT/zig-out/bin/duo"
