@@ -2386,7 +2386,26 @@ test "sema: typed function sets is_typed = true" {
     try testing.expect(fd.func.is_typed);
 }
 
-test "sema: untyped function sets is_typed = false" {
+test "sema: untyped function with dynamic body stays untyped" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function f(a, b)
+        \\  return tostring(a) .. tostring(b)
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(!fd.func.is_typed);
+}
+
+test "sema: untyped function can be specialized to native" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2402,7 +2421,10 @@ test "sema: untyped function sets is_typed = false" {
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
     const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(!fd.func.is_typed);
+    try testing.expect(fd.func.is_typed);
+    try testing.expectEqualStrings("i64", fd.func.params[0].typ.named);
+    try testing.expectEqualStrings("i64", fd.func.params[1].typ.named);
+    try testing.expectEqualStrings("i64", fd.func.ret_type.named);
 }
 
 test "sema: integer literal resolves to i64" {

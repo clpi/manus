@@ -44,6 +44,7 @@ pub const CodeGen = struct {
     mandel_native: bool = false,
     load_chunk: bool = false,
     duo_mode: bool = false,
+    target: []const u8 = "native",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     fn calc_lua_hash(s: []const u8) u32 {
@@ -192,9 +193,29 @@ pub const CodeGen = struct {
         self.p("#include <math.h>\n", .{});
         self.p("#include <time.h>\n", .{});
         self.p("#include <ctype.h>\n", .{});
-        self.p("#include <ucontext.h>\n", .{});
-        self.p("#include <setjmp.h>\n", .{});
         self.p("#include <limits.h>\n", .{});
+        if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.p("#ifdef __wasm__\n", .{});
+            self.p("// WASM stubs for missing POSIX features\n", .{});
+            self.p("typedef int jmp_buf[1];\n", .{});
+            self.p("#define setjmp(j) 0\n", .{});
+            self.p("#define longjmp(j, v) do {{ (void)(j); (void)(v); }} while(0)\n", .{});
+            self.p("struct lua_Thread;\n", .{});
+            self.p("typedef struct {{ struct {{ void* ss_sp; size_t ss_size; }} uc_stack; struct lua_Thread* uc_link; }} ucontext_t;\n", .{});
+            self.p("#define getcontext(u) (-1)\n", .{});
+            self.p("#define makecontext(u, f, c) do {{ }} while(0)\n", .{});
+            self.p("#define swapcontext(o, n) do {{ }} while(0)\n", .{});
+            self.p("static inline FILE* popen(const char* c, const char* m) {{ (void)c; (void)m; return NULL; }}\n", .{});
+            self.p("static inline int pclose(FILE* f) {{ (void)f; return -1; }}\n", .{});
+            self.p("static inline int mkstemp(char* t) {{ (void)t; return -1; }}\n", .{});
+            self.p("static inline int close(int fd) {{ (void)fd; return 0; }}\n", .{});
+            self.p("static inline int unlink(const char* p) {{ (void)p; return 0; }}\n", .{});
+            self.p("#define L_tmpnam 256\n", .{});
+            self.p("#endif\n", .{});
+        } else {
+            self.p("#include <setjmp.h>\n", .{});
+            self.p("#include <ucontext.h>\n", .{});
+        }
         self.p("#include <unistd.h>\n", .{});
         self.p("#include <dlfcn.h>\n", .{});
         self.p("#include <fcntl.h>\n", .{});
@@ -341,11 +362,13 @@ pub const CodeGen = struct {
         self.pl("math = lua_math_init();", .{});
         self.pl("utf8 = lua_utf8_init();", .{});
         self.pl("debug = lua_debug_init();", .{});
-        self.pl("coroutine = lua_coroutine_init();", .{});
         self.pl("string = lua_string_init();", .{});
         self.pl("table = lua_table_init();", .{});
-        self.pl("io = lua_io_init();", .{});
-        self.pl("os = lua_os_init();", .{});
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.pl("coroutine = lua_coroutine_init();", .{});
+            self.pl("io = lua_io_init();", .{});
+            self.pl("os = lua_os_init();", .{});
+        }
         self.pl("duo_modules = lua_table_new();", .{});
         self.pl("duo_register_modules();", .{});
         self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});

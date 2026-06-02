@@ -3,3 +3,8 @@
 **zig-cache/
 **zig-out/
 **.zig-out/
+duo
+test
+test3
+test4
+*.o

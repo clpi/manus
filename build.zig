@@ -16,7 +16,11 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
+    if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) {
+        run_cmd.addPassthruArgs();
+    } else {
+        run_cmd.addArgs(b.args orelse &.{});
+    }
 
     const run_step = b.step("run", "Run duo");
     run_step.dependOn(&run_cmd.step);

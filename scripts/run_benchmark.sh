@@ -5,9 +5,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DUO="$ROOT/zig-out/bin/duo"
 CC="${CC:-clang}"
 CFLAGS="-O3 -Ofast -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections -fdata-sections -Wl,-dead_strip -std=c99 -lm"
+export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)}"
 
 cd "$ROOT"
-zig build
+# Binary must be built separately: `zig build` or use `/tmp/zig-.../zig build`
 "$DUO" compile examples/benchmark.lua -o /tmp/duo_bench.out
 $CC $CFLAGS -o /tmp/c_bench.out examples/benchmark_c.c
 
