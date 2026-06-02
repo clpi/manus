@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  ZIG_VERSION: 0.17.0-dev.644+3de725074
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        run: |
+          curl -fsSL "https://ziglang.org/builds/zig-linux-x86_64-${{ env.ZIG_VERSION }}.tar.xz" -o /tmp/zig.tar.xz
+          tar -xJf /tmp/zig.tar.xz -C /tmp
+          ZIG_DIR=$(ls -d /tmp/zig-linux-x86_64-* | head -1)
+          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: zig build
+
+      - name: Unit tests
+        run: zig build unit-test
+
+      - name: Compile-fail tests
+        run: bash scripts/run_compile_fail_tests.sh
+
+      - name: WASM compilation test
+        run: |
+          ./zig-out/bin/duo compile examples/hello.lua --target wasm32-wasi -o /tmp/hello.wasm
+          file /tmp/hello.wasm | grep -q "WebAssembly"
+          echo "WASM OK"
+
+  bench:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        run: |
+          curl -fsSL "https://ziglang.org/builds/zig-macos-aarch64-${{ env.ZIG_VERSION }}.tar.xz" -o /tmp/zig.tar.xz
+          tar -xJf /tmp/zig.tar.xz -C /tmp
+          ZIG_DIR=$(ls -d /tmp/zig-macos-aarch64-* | head -1)
+          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: zig build
+
+      - name: Benchmark
+        run: zig build bench
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        run: |
+          curl -fsSL "https://ziglang.org/builds/zig-linux-x86_64-${{ env.ZIG_VERSION }}.tar.xz" -o /tmp/zig.tar.xz
+          tar -xJf /tmp/zig.tar.xz -C /tmp
+          ZIG_DIR=$(ls -d /tmp/zig-linux-x86_64-* | head -1)
+          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+
+      - name: Build release binary
+        run: zig build -Doptimize=ReleaseFast
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zig-out/bin/duo
