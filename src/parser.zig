@@ -792,3 +792,364 @@ pub const Parser = struct {
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
     }
 };
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+
+fn parseSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.Module {
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    return p.parse_module();
+}
+
+test "parse: empty module" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("", &arena);
+    try testing.expectEqual(@as(usize, 0), mod.body.stmts.len);
+}
+
+test "parse: local declaration with integer initializer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local x = 42", &arena);
+    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .local_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.local_decl.names.len);
+    try testing.expectEqualStrings("x", stmt.local_decl.names[0].ident);
+    try testing.expectEqual(@as(usize, 1), stmt.local_decl.inits.len);
+    const init_expr = stmt.local_decl.inits[0];
+    try testing.expect(init_expr.* == .int_lit);
+    try testing.expectEqual(@as(i64, 42), init_expr.int_lit.val);
+}
+
+test "parse: local declaration with no initializer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local y", &arena);
+    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .local_decl);
+    try testing.expectEqual(@as(usize, 0), stmt.local_decl.inits.len);
+}
+
+test "parse: local with type annotation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local n: i32 = 0", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .local_decl);
+    const name = stmt.local_decl.names[0];
+    try testing.expectEqualStrings("n", name.ident);
+    try testing.expect(name.typ == .named);
+    try testing.expectEqualStrings("i32", name.typ.named);
+}
+
+test "parse: multiple locals" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local a, b = 1, 2", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .local_decl);
+    try testing.expectEqual(@as(usize, 2), stmt.local_decl.names.len);
+    try testing.expectEqualStrings("a", stmt.local_decl.names[0].ident);
+    try testing.expectEqualStrings("b", stmt.local_decl.names[1].ident);
+    try testing.expectEqual(@as(usize, 2), stmt.local_decl.inits.len);
+}
+
+test "parse: function declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\function greet()
+        \\end
+    , &arena);
+    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.path.len);
+    try testing.expectEqualStrings("greet", stmt.func_decl.path[0]);
+    try testing.expect(!stmt.func_decl.method);
+    try testing.expect(!stmt.func_decl.is_local);
+}
+
+test "parse: typed function with return type" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\function add(a: i32, b: i32) -> i32
+        \\  return a + b
+        \\end
+    , &arena);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqual(@as(usize, 2), fd.func.params.len);
+    try testing.expectEqualStrings("a", fd.func.params[0].name);
+    try testing.expect(fd.func.params[0].typ == .named);
+    try testing.expectEqualStrings("i32", fd.func.params[0].typ.named);
+    try testing.expect(fd.func.ret_type == .named);
+    try testing.expectEqualStrings("i32", fd.func.ret_type.named);
+}
+
+test "parse: local function declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local function f()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expect(stmt.func_decl.is_local);
+}
+
+test "parse: function with varargs" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\function f(...)
+        \\end
+    , &arena);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(fd.func.vararg);
+}
+
+test "parse: return statement with value" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return 99", &arena);
+    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    try testing.expectEqual(@as(usize, 1), stmt.ret.vals.len);
+    try testing.expect(stmt.ret.vals[0].* == .int_lit);
+    try testing.expectEqual(@as(i64, 99), stmt.ret.vals[0].int_lit.val);
+}
+
+test "parse: return with no value" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    try testing.expectEqual(@as(usize, 0), stmt.ret.vals.len);
+}
+
+test "parse: if statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\if true then
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .if_stmt);
+    try testing.expect(stmt.if_stmt.cond.* == .true_lit);
+    try testing.expect(stmt.if_stmt.else_body == null);
+}
+
+test "parse: if/else statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\if false then
+        \\else
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .if_stmt);
+    try testing.expect(stmt.if_stmt.else_body != null);
+}
+
+test "parse: while loop" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\while true do
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .while_loop);
+    try testing.expect(stmt.while_loop.cond.* == .true_lit);
+}
+
+test "parse: numeric for loop" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\for i = 1, 10 do
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .num_for);
+    try testing.expectEqualStrings("i", stmt.num_for.var_name);
+    try testing.expect(stmt.num_for.start.* == .int_lit);
+    try testing.expectEqual(@as(i64, 1), stmt.num_for.start.int_lit.val);
+    try testing.expectEqual(@as(i64, 10), stmt.num_for.stop.int_lit.val);
+    try testing.expect(stmt.num_for.step == null);
+}
+
+test "parse: numeric for with step" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\for i = 0, 10, 2 do
+        \\end
+    , &arena);
+    const nf = mod.body.stmts[0].num_for;
+    try testing.expect(nf.step != null);
+    try testing.expectEqual(@as(i64, 2), nf.step.?.int_lit.val);
+}
+
+test "parse: generic for loop" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\for k, v in pairs(t) do
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .gen_for);
+    try testing.expectEqual(@as(usize, 2), stmt.gen_for.vars.len);
+    try testing.expectEqualStrings("k", stmt.gen_for.vars[0]);
+    try testing.expectEqualStrings("v", stmt.gen_for.vars[1]);
+}
+
+test "parse: repeat/until loop" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\repeat
+        \\until true
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .repeat_loop);
+    try testing.expect(stmt.repeat_loop.cond.* == .true_lit);
+}
+
+test "parse: do block" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\do
+        \\end
+    , &arena);
+    try testing.expect(mod.body.stmts[0] == .do_block);
+}
+
+test "parse: binary expression addition" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local r = 1 + 2", &arena);
+    const init_expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(init_expr.* == .binop);
+    try testing.expectEqual(ast.BinOp.add, init_expr.binop.op);
+}
+
+test "parse: operator precedence: * before +" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // 1 + 2 * 3 should parse as 1 + (2 * 3)
+    const mod = try parseSource("local r = 1 + 2 * 3", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .binop);
+    try testing.expectEqual(ast.BinOp.add, expr.binop.op);
+    // rhs should be the multiplication
+    try testing.expect(expr.binop.rhs.* == .binop);
+    try testing.expectEqual(ast.BinOp.mul, expr.binop.rhs.binop.op);
+}
+
+test "parse: unary negation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local r = -1", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .unop);
+    try testing.expectEqual(ast.UnOp.neg, expr.unop.op);
+}
+
+test "parse: table constructor empty" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local t = {}", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .table);
+    try testing.expectEqual(@as(usize, 0), expr.table.fields.len);
+}
+
+test "parse: table constructor with named fields" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local t = {x = 1, y = 2}", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .table);
+    try testing.expectEqual(@as(usize, 2), expr.table.fields.len);
+    try testing.expect(expr.table.fields[0] == .named);
+    try testing.expectEqualStrings("x", expr.table.fields[0].named.key);
+}
+
+test "parse: assignment statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("x = 5", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .assign);
+    try testing.expectEqual(@as(usize, 1), stmt.assign.targets.len);
+    try testing.expectEqual(@as(usize, 1), stmt.assign.values.len);
+}
+
+test "parse: const declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("const PI = 3", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .const_decl);
+    try testing.expectEqualStrings("PI", stmt.const_decl.ident);
+}
+
+test "parse: struct definition" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\struct Point {
+        \\  x: f64,
+        \\  y: f64,
+        \\}
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .struct_def);
+    try testing.expectEqualStrings("Point", stmt.struct_def.name);
+    try testing.expectEqual(@as(usize, 2), stmt.struct_def.fields.len);
+    try testing.expectEqualStrings("x", stmt.struct_def.fields[0].name);
+}
+
+test "parse: goto and label" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("goto skip\n::skip::", &arena);
+    try testing.expect(mod.body.stmts[0] == .goto_stmt);
+    try testing.expectEqualStrings("skip", mod.body.stmts[0].goto_stmt.label);
+    try testing.expect(mod.body.stmts[1] == .label_stmt);
+    try testing.expectEqualStrings("skip", mod.body.stmts[1].label_stmt.label);
+}
+
+test "parse: break statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\while true do
+        \\  break
+        \\end
+    , &arena);
+    const body = mod.body.stmts[0].while_loop.body;
+    try testing.expect(body.stmts[0] == .brk);
+}
+
+test "parse error: unexpected token" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // 'end' without a matching block opener should fail
+    try testing.expectError(error.ExpectedToken, parseSource("if true", &arena));
+}

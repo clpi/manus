@@ -2329,3 +2329,232 @@ pub const Sema = struct {
         }
     };
 };
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+const Lexer  = @import("lexer.zig").Lexer;
+const Parser = @import("parser.zig").Parser;
+
+fn runSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    return s;
+}
+
+test "sema: empty module produces no errors" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSema("", &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: simple local declaration produces no errors" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSema("local x = 42", &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: multiple locals produce no errors" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSema("local a = 1\nlocal b = 2\nlocal c = a + b", &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: typed function sets is_typed = true" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function add(a: i32, b: i32) -> i32
+        \\  return a + b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(fd.func.is_typed);
+}
+
+test "sema: untyped function sets is_typed = false" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function add(a, b)
+        \\  return a + b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(!fd.func.is_typed);
+}
+
+test "sema: integer literal resolves to i64" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "local x = 1";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // The initializer expression should be recorded as i64
+    const init_expr = mod.body.stmts[0].local_decl.inits[0];
+    const t = s.type_map.get(init_expr);
+    try testing.expect(t != null);
+    try testing.expectEqual(RT.i64, t.?);
+}
+
+test "sema: float literal resolves to f64" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "local x = 1.5";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    const init_expr = mod.body.stmts[0].local_decl.inits[0];
+    const t = s.type_map.get(init_expr);
+    try testing.expect(t != null);
+    try testing.expectEqual(RT.f64, t.?);
+}
+
+test "sema: string literal resolves to str" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "local x = \"hello\"";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    const init_expr = mod.body.stmts[0].local_decl.inits[0];
+    const t = s.type_map.get(init_expr);
+    try testing.expect(t != null);
+    try testing.expectEqual(RT.str, t.?);
+}
+
+test "sema: boolean literals resolve to bool" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "local a = true\nlocal b = false";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const t_true  = s.type_map.get(mod.body.stmts[0].local_decl.inits[0]);
+    const t_false = s.type_map.get(mod.body.stmts[1].local_decl.inits[0]);
+    try testing.expectEqual(RT.bool, t_true.?);
+    try testing.expectEqual(RT.bool, t_false.?);
+}
+
+test "sema: const reassignment reports an error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSema(
+        \\local x <const> = 1
+        \\x = 2
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: for-loop control variable cannot be assigned" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSema(
+        \\for i = 1, 10 do
+        \\  i = 99
+        \\end
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: scope: define and lookup" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var scope = Scope.init(arena.allocator());
+    try scope.push();
+    try scope.define("x", .{ .typ = .i32, .is_const = false });
+    const sym = scope.lookup("x");
+    try testing.expect(sym != null);
+    try testing.expectEqual(RT.i32, sym.?.typ);
+    scope.pop();
+}
+
+test "sema: scope: inner scope shadows outer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var scope = Scope.init(arena.allocator());
+    try scope.push();
+    try scope.define("x", .{ .typ = .i64, .is_const = false });
+    try scope.push();
+    try scope.define("x", .{ .typ = .i32, .is_const = false });
+    try testing.expectEqual(RT.i32, scope.lookup("x").?.typ);
+    scope.pop();
+    try testing.expectEqual(RT.i64, scope.lookup("x").?.typ);
+    scope.pop();
+}
+
+test "sema: scope: undefined name returns null" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var scope = Scope.init(arena.allocator());
+    try scope.push();
+    try testing.expect(scope.lookup("undefined") == null);
+    scope.pop();
+}
+
+test "sema: add/sub of two integers yields integer" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "local r = 3 + 5";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .binop);
+    const t = s.type_map.get(expr);
+    try testing.expect(t != null);
+    try testing.expect(t.?.is_integer());
+}
+
+test "sema: comparison yields bool" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "local r = 1 < 2";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    const t = s.type_map.get(expr);
+    try testing.expectEqual(RT.bool, t.?);
+}

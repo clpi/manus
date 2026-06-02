@@ -313,3 +313,56 @@ pub const Module = struct {
     file: []const u8,
     body: Block,
 };
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+const testing = @import("std").testing;
+
+test "TypeExpr.is_numeric" {
+    try testing.expect((TypeExpr{ .named = "i32" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "i64" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "u8" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "f32" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "f64" }).is_numeric());
+    try testing.expect(!(TypeExpr{ .named = "bool" }).is_numeric());
+    try testing.expect(!(TypeExpr{ .named = "str" }).is_numeric());
+    try testing.expect(!TypeExpr.inferred.is_numeric());
+}
+
+test "TypeExpr.is_integer" {
+    try testing.expect((TypeExpr{ .named = "i8" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "i16" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "i32" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "i64" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "u8" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "u64" }).is_integer());
+    try testing.expect(!(TypeExpr{ .named = "f32" }).is_integer());
+    try testing.expect(!(TypeExpr{ .named = "bool" }).is_integer());
+}
+
+test "TypeExpr.is_float" {
+    try testing.expect((TypeExpr{ .named = "f32" }).is_float());
+    try testing.expect((TypeExpr{ .named = "f64" }).is_float());
+    try testing.expect(!(TypeExpr{ .named = "i32" }).is_float());
+    try testing.expect(!TypeExpr.inferred.is_float());
+}
+
+test "TypeExpr.eql: identical named types" {
+    const a = TypeExpr{ .named = "i32" };
+    const b = TypeExpr{ .named = "i32" };
+    try testing.expect(a.eql(b));
+}
+
+test "TypeExpr.eql: different named types" {
+    const a = TypeExpr{ .named = "i32" };
+    const b = TypeExpr{ .named = "i64" };
+    try testing.expect(!a.eql(b));
+}
+
+test "TypeExpr.eql: inferred == inferred" {
+    try testing.expect(TypeExpr.inferred.eql(.inferred));
+}
+
+test "TypeExpr.eql: inferred != named" {
+    try testing.expect(!TypeExpr.inferred.eql(.{ .named = "i32" }));
+}
