@@ -47,21 +47,36 @@ _ok_job() {
 
 # ── Launch all tests in parallel ──────────────────────────────────────────────
 
+pids=()
 N=0
-_fail_job $((N++)) examples/compile_fail/global_star_read.lua    "use of undeclared global"
-_fail_job $((N++)) examples/compile_fail/implicit_global_read.lua "use of undeclared global"
-_fail_job $((N++)) examples/compile_fail/global_star_assign.lua  "attempt to assign to undeclared global"
-_fail_job $((N++)) examples/compile_fail/for_assign_num.lua      "cannot assign to for loop control variable"
-_fail_job $((N++)) examples/compile_fail/for_assign_gen.lua      "cannot assign to for loop control variable"
-_fail_job $((N++)) examples/compile_fail/const_local_assign.lua  "attempt to assign to const variable"
-_fail_job $((N++)) examples/compile_fail/const_no_init.lua       "must have an initializer"
-_fail_job $((N++)) examples/compile_fail/close_no_init.lua       "must have an initializer"
-_fail_job $((N++)) examples/compile_fail/vararg_rest_assign.lua  "read-only vararg table"
-_fail_job $((N++)) examples/compile_fail/global_const_assign.lua "attempt to assign to const variable"
-_ok_job   $((N++)) tests/test.lua
-_ok_job   $((N++)) examples/hello.lua
-_ok_job   $((N++)) examples/fib.lua
-_ok_job   $((N++)) examples/fib.duo
+_fail_job $((N++)) examples/compile_fail/global_star_read.lua    "use of undeclared global" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/implicit_global_read.lua "use of undeclared global" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/global_star_assign.lua  "attempt to assign to undeclared global" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/for_assign_num.lua      "cannot assign to for loop control variable" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/for_assign_gen.lua      "cannot assign to for loop control variable" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/const_local_assign.lua  "attempt to assign to const variable" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/const_no_init.lua       "must have an initializer" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/close_no_init.lua       "must have an initializer" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/vararg_rest_assign.lua  "read-only vararg table" &
+pids+=($!)
+_fail_job $((N++)) examples/compile_fail/global_const_assign.lua "attempt to assign to const variable" &
+pids+=($!)
+_ok_job   $((N++)) tests/test.lua &
+pids+=($!)
+_ok_job   $((N++)) examples/hello.lua &
+pids+=($!)
+_ok_job   $((N++)) examples/fib.lua &
+pids+=($!)
+_ok_job   $((N++)) examples/fib.duo &
+pids+=($!)
 TOTAL=$N
 
 # ── Collect results (in declaration order) ────────────────────────────────────
