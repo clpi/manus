@@ -87,6 +87,11 @@ done
 
 any_failed=0
 for i in $(seq 0 $((TOTAL - 1))); do
+    if [[ ! -f "$TMP/$i.msg" ]] || [[ ! -f "$TMP/$i.status" ]]; then
+        echo "ERROR: Test $i did not complete (missing output files)"
+        any_failed=1
+        continue
+    fi
     cat "$TMP/$i.msg"
     [[ "$(cat "$TMP/$i.status")" == OK ]] || any_failed=1
 done
