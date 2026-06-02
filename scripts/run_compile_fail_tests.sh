@@ -81,7 +81,9 @@ TOTAL=$N
 
 # ── Collect results (in declaration order) ────────────────────────────────────
 
-wait
+for pid in "${pids[@]}"; do
+    wait "$pid"
+done
 
 any_failed=0
 for i in $(seq 0 $((TOTAL - 1))); do
