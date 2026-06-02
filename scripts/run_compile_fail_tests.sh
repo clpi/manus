@@ -17,8 +17,7 @@ cd "$ROOT"
 _fail_job() {
     local idx="$1" file="$2" pattern="$3"
     (
-        set +e; out=$("$DUO" check "$file" 2>&1); rc=$?; set -e
-        if [[ $rc -eq 0 ]]; then
+        if out=$("$DUO" check "$file" 2>&1); then
             echo FAIL > "$TMP/$idx.status"
             printf 'FAIL: %s should not compile\n%s\n' "$file" "$out" > "$TMP/$idx.msg"
         elif echo "$out" | grep -qF "$pattern"; then
