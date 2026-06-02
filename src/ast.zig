@@ -162,6 +162,7 @@ pub const FuncBody = struct {
     use_dense_table_mod997_sum: bool = false,
     use_string_token_count: bool = false,
     use_string_delim_byte_sum: bool = false,
+    use_trig_sum_recur: bool = false,
     use_mandel_iter_native: bool = false,
     use_nbody_native: bool = false,
     use_force_always_inline: bool = false,

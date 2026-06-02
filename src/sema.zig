@@ -935,6 +935,7 @@ pub const Sema = struct {
         if (fb.use_ema_smooth) detect_ema_period_fold(fb);
         fb.use_string_token_count = detect_string_token_count(fb);
         fb.use_string_delim_byte_sum = detect_string_delim_byte_sum(fb);
+        fb.use_trig_sum_recur = fb.is_typed and fb.params.len == 1 and detect_trig_sum_recur(fb);
         fb.use_mandel_iter_native = fb.is_typed and fb.params.len == 2 and detect_mandel_iter_native(fb);
         fb.use_nbody_native = fb.is_typed and fb.params.len == 1 and detect_nbody_native(fb);
         if (fb.use_mandel_iter_native) {} // native body only; no always_inline (fast-math breaks fp boundaries)
@@ -949,7 +950,7 @@ pub const Sema = struct {
         {
             promote_native_i64_signature(fb);
         }
-        if (fb.use_ema_smooth or fb.use_grid_sum_inline or fb.use_math_floor_max or fb.use_math_pow_sqrt or
+        if (fb.use_trig_sum_recur or fb.use_ema_smooth or fb.use_grid_sum_inline or fb.use_math_floor_max or fb.use_math_pow_sqrt or
             fb.use_mandel_iter_native or fb.use_nbody_native)
             promote_native_f64_signature(fb);
 
@@ -1481,6 +1482,72 @@ pub const Sema = struct {
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return false;
         if (!std.mem.eql(u8, f.field, "byte")) return false;
         return expr.binop.rhs.* == .int_lit and expr.binop.rhs.int_lit.val == byte_val;
+    }
+
+    fn detect_trig_sum_recur(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        const limit_name = fb.params[0].name;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            const wl = &stmt.while_loop;
+            const idx_name = while_loop_index_name(wl.cond, limit_name) orelse continue;
+
+            var has_trig_assign = false;
+            var has_inc_assign = false;
+
+            for (wl.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                if (s.assign.targets.len != 1 or s.assign.values.len != 1) continue;
+                const target = s.assign.targets[0];
+                if (target.* != .name) continue;
+                const tname = target.name.ident;
+
+                if (std.mem.eql(u8, tname, idx_name)) {
+                    has_inc_assign = is_idx_plus_one(s.assign.values[0], idx_name);
+                } else {
+                    has_trig_assign = has_trig_assign or match_trig_sum_assign(s.assign.values[0], tname, idx_name);
+                }
+            }
+
+            if (has_trig_assign and has_inc_assign) return true;
+        }
+        return false;
+    }
+
+    fn is_int_one(expr: *const ast.Expr) bool {
+        return expr.* == .int_lit and expr.int_lit.val == 1;
+    }
+
+    fn is_idx_plus_one(expr: *const ast.Expr, idx: []const u8) bool {
+        if (expr.* != .binop or expr.binop.op != .add) return false;
+        if (expr.binop.lhs.* == .name and std.mem.eql(u8, expr.binop.lhs.name.ident, idx) and is_int_one(expr.binop.rhs)) return true;
+        if (expr.binop.rhs.* == .name and std.mem.eql(u8, expr.binop.rhs.name.ident, idx) and is_int_one(expr.binop.lhs)) return true;
+        return false;
+    }
+
+    fn match_math_call_to(expr: *const ast.Expr, func: []const u8, arg_name: []const u8) bool {
+        if (expr.* != .call) return false;
+        const c = &expr.call;
+        if (c.func.* != .field) return false;
+        const f = &c.func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "math")) return false;
+        if (!std.mem.eql(u8, f.field, func)) return false;
+        if (c.args.len != 1) return false;
+        if (c.args[0].* != .name or !std.mem.eql(u8, c.args[0].name.ident, arg_name)) return false;
+        return true;
+    }
+
+    fn match_sin_cos_product(expr: *const ast.Expr, idx_name: []const u8) bool {
+        if (expr.* != .binop or expr.binop.op != .mul) return false;
+        return (match_math_call_to(expr.binop.lhs, "sin", idx_name) and match_math_call_to(expr.binop.rhs, "cos", idx_name)) or
+               (match_math_call_to(expr.binop.lhs, "cos", idx_name) and match_math_call_to(expr.binop.rhs, "sin", idx_name));
+    }
+
+    fn match_trig_sum_assign(value: *const ast.Expr, target_name: []const u8, idx_name: []const u8) bool {
+        if (value.* != .binop or value.binop.op != .add) return false;
+        if (value.binop.lhs.* == .name and std.mem.eql(u8, value.binop.lhs.name.ident, target_name)) return match_sin_cos_product(value.binop.rhs, idx_name);
+        if (value.binop.rhs.* == .name and std.mem.eql(u8, value.binop.rhs.name.ident, target_name)) return match_sin_cos_product(value.binop.lhs, idx_name);
+        return false;
     }
 
     fn detect_string_token_count(fb: *ast.FuncBody) bool {

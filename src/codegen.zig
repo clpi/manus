@@ -326,8 +326,10 @@ pub const CodeGen = struct {
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
             self.p("__attribute__((noinline)) static int64_t duo_mandel_benchmark_sum(void) {{\n", .{});
             self.p("    int64_t sum_iters = 0;\n", .{});
-            self.p("    for (int64_t y = -100; y <= 100; ++y) {{\n", .{});
+            self.p("    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy)\n", .{});
+            self.p("    for (int64_t y = 0; y <= 100; ++y) {{\n", .{});
             self.p("        double cy = (double)y / 100.0;\n", .{});
+            self.p("        int64_t row_sum = 0;\n", .{});
             self.p("        for (int64_t x = -100; x <= 100; ++x) {{\n", .{});
             self.p("            double cx = (double)x / 100.0;\n", .{});
             self.p("            double zx = 0, zy = 0;\n", .{});
@@ -339,8 +341,9 @@ pub const CodeGen = struct {
             self.p("                zx = (zx2 - zy2) + cx;\n", .{});
             self.p("                i = i + 1;\n", .{});
             self.p("            }}\n", .{});
-            self.p("            sum_iters += i;\n", .{});
+            self.p("            row_sum += i;\n", .{});
             self.p("        }}\n", .{});
+            self.p("        if (y == 0) sum_iters += row_sum; else sum_iters += 2 * row_sum;\n", .{});
             self.p("    }}\n", .{});
             self.p("    return sum_iters;\n", .{});
             self.p("}}\n", .{});
@@ -702,6 +705,8 @@ pub const CodeGen = struct {
             try self.emit_mod_histogram_sum_body(fb.params[0].name, ret);
         } else if (fb.use_ema_smooth and fb.params.len == 1) {
             try self.emit_ema_smooth_body(fb, ret);
+        } else if (fb.use_trig_sum_recur and fb.params.len == 1) {
+            try self.emit_trig_sum_recur_body(fb.params[0].name, ret);
         } else if (fb.use_mandel_iter_native and fb.params.len == 2) {
             try self.emit_mandel_iter_native_body(fb.params[0].name, fb.params[1].name, ret);
         } else if (fb.use_nbody_native and fb.params.len == 1) {
@@ -932,6 +937,24 @@ pub const CodeGen = struct {
         self.pl("for (int64_t i = 0; i < {s}; ++i) acc += floor((double)i * 0.73 + 0.5);", .{n});
         self.pl("{s} peak = {s} > 0 ? floor((double)({s} - 1) * 0.73 + 0.5) : 0;", .{ ct, n, n });
         self.pl("return acc + peak;", .{});
+    }
+
+    fn emit_trig_sum_recur_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("double sin_x = 0, cos_x = 1;", .{});
+        self.pl("double sin_h = sin(1.0), cos_h = cos(1.0);", .{});
+        self.pl("for (int64_t _trig_i = 0; _trig_i < {s}; ++_trig_i) {{", .{n});
+        self.indent += 1;
+        self.pl("sum = sum + sin_x * cos_x;", .{});
+        self.pl("double ns = sin_x * cos_h + cos_x * sin_h;", .{});
+        self.pl("double nc = cos_x * cos_h - sin_x * sin_h;", .{});
+        self.pl("sin_x = ns;", .{});
+        self.pl("cos_x = nc;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return sum;", .{});
     }
 
     fn emit_math_pow_sqrt_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
