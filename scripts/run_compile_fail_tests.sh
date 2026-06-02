@@ -89,9 +89,13 @@ for i in $(seq 0 $((TOTAL - 1))); do
         echo "ERROR: Test $i did not complete (missing output files)"
         any_failed=1
         continue
+for i in $(seq 0 $((TOTAL - 1))); do
+    if [[ -f "$TMP/$i.msg" ]]; then
+        cat "$TMP/$i.msg"
+    else
+        echo "FAIL: Test $i terminated unexpectedly"
     fi
-    cat "$TMP/$i.msg"
-    [[ "$(cat "$TMP/$i.status")" == OK ]] || any_failed=1
+    [[ -f "$TMP/$i.status" && "$(< "$TMP/$i.status")" == OK ]] || any_failed=1
 done
 
 echo ""
