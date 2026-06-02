@@ -637,3 +637,342 @@ pub const Lexer = struct {
         return self.peeked.?;
     }
 };
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+
+test "lex: identifiers" {
+    var l = Lexer.init("foo bar _x hello123", "test");
+    const names = [_][]const u8{ "foo", "bar", "_x", "hello123" };
+    for (names) |expected| {
+        const tok = try l.next();
+        try testing.expectEqual(TokenKind.name, tok.kind);
+        try testing.expectEqualStrings(expected, tok.text);
+    }
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: standard keywords" {
+    var l = Lexer.init("and break do else elseif end false for function goto if in local nil not or repeat return then true until while", "test");
+    const expected = [_]TokenKind{
+        .kw_and, .kw_break, .kw_do, .kw_else, .kw_elseif, .kw_end,
+        .kw_false, .kw_for, .kw_function, .kw_goto, .kw_if, .kw_in,
+        .kw_local, .kw_nil, .kw_not, .kw_or, .kw_repeat, .kw_return,
+        .kw_then, .kw_true, .kw_until, .kw_while,
+    };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+}
+
+test "lex: duo extension keywords" {
+    var l = Lexer.init("const struct enum fun global", "test");
+    const expected = [_]TokenKind{ .kw_const, .kw_struct, .kw_enum, .kw_fun, .kw_global };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+}
+
+test "lex: type keywords" {
+    var l = Lexer.init("i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 bool void str", "test");
+    const expected = [_]TokenKind{
+        .kw_i8, .kw_i16, .kw_i32, .kw_i64,
+        .kw_u8, .kw_u16, .kw_u32, .kw_u64,
+        .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str,
+    };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+}
+
+test "lex: decimal integers" {
+    var l = Lexer.init("0 1 42 255 1000", "test");
+    const vals = [_]i64{ 0, 1, 42, 255, 1000 };
+    for (vals) |expected| {
+        const tok = try l.next();
+        try testing.expectEqual(TokenKind.int_lit, tok.kind);
+        try testing.expectEqual(expected, tok.int_val);
+    }
+}
+
+test "lex: hex integers" {
+    var l = Lexer.init("0xff 0xFF 0x0 0x10", "test");
+    const vals = [_]i64{ 255, 255, 0, 16 };
+    for (vals) |expected| {
+        const tok = try l.next();
+        try testing.expectEqual(TokenKind.int_lit, tok.kind);
+        try testing.expectEqual(expected, tok.int_val);
+    }
+}
+
+test "lex: float literals" {
+    var l = Lexer.init("3.14 1.0 0.5", "test");
+    const expected_vals = [_]f64{ 3.14, 1.0, 0.5 };
+    for (expected_vals) |expected| {
+        const tok = try l.next();
+        try testing.expectEqual(TokenKind.float_lit, tok.kind);
+        try testing.expectApproxEqAbs(expected, tok.float_val, 1e-9);
+    }
+}
+
+test "lex: float with exponent" {
+    var l = Lexer.init("1.5e2 2.0e-1", "test");
+    const tok1 = try l.next();
+    try testing.expectEqual(TokenKind.float_lit, tok1.kind);
+    try testing.expectApproxEqAbs(@as(f64, 150.0), tok1.float_val, 1e-9);
+    const tok2 = try l.next();
+    try testing.expectEqual(TokenKind.float_lit, tok2.kind);
+    try testing.expectApproxEqAbs(@as(f64, 0.2), tok2.float_val, 1e-9);
+}
+
+test "lex: double-quoted string" {
+    var l = Lexer.init("\"hello\"", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("hello", tok.text);
+}
+
+test "lex: single-quoted string" {
+    var l = Lexer.init("'world'", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("world", tok.text);
+}
+
+test "lex: empty string" {
+    var l = Lexer.init("\"\"", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("", tok.text);
+}
+
+test "lex: long string level 0" {
+    var l = Lexer.init("[[hello world]]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("hello world", tok.text);
+}
+
+test "lex: long string level 1" {
+    var l = Lexer.init("[=[content]=]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("content", tok.text);
+}
+
+test "lex: long string level 2" {
+    var l = Lexer.init("[==[text]==]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("text", tok.text);
+}
+
+test "lex: long string strips leading newline" {
+    var l = Lexer.init("[[\nhello]]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("hello", tok.text);
+}
+
+test "lex: long string with embedded newlines preserved" {
+    var l = Lexer.init("[[line1\nline2]]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("line1\nline2", tok.text);
+}
+
+test "lex: long string embedded in other tokens" {
+    var l = Lexer.init("42 [[inside]] 99", "test");
+    const t1 = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, t1.kind);
+    const t2 = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, t2.kind);
+    try testing.expectEqualStrings("inside", t2.text);
+    const t3 = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, t3.kind);
+    try testing.expectEqual(@as(i64, 99), t3.int_val);
+}
+
+test "lex: line comment is skipped" {
+    var l = Lexer.init("-- ignored\n42", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, tok.kind);
+    try testing.expectEqual(@as(i64, 42), tok.int_val);
+}
+
+test "lex: block comment is skipped" {
+    var l = Lexer.init("--[[block comment]]99", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, tok.kind);
+    try testing.expectEqual(@as(i64, 99), tok.int_val);
+}
+
+test "lex: block comment with level skipped" {
+    var l = Lexer.init("--[==[comment]==]77", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, tok.kind);
+    try testing.expectEqual(@as(i64, 77), tok.int_val);
+}
+
+test "lex: single-char operators" {
+    var l = Lexer.init("+ - * / % ^ # & | < > = ~ ; : , .", "test");
+    const expected = [_]TokenKind{
+        .plus, .minus, .star, .slash, .percent, .caret, .hash,
+        .amp, .pipe, .lt, .gt, .assign, .tilde, .semi, .colon, .comma, .dot,
+    };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+}
+
+test "lex: multi-char operators" {
+    var l = Lexer.init("== ~= <= >= << >> // .. ... ## -> ::", "test");
+    const expected = [_]TokenKind{
+        .eq, .neq, .leq, .geq, .lshift, .rshift, .idiv,
+        .concat, .dots, .hash_hash, .arrow, .dcolon,
+    };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+}
+
+test "lex: brackets and braces" {
+    var l = Lexer.init("( ) { } [ ]", "test");
+    const expected = [_]TokenKind{ .lparen, .rparen, .lbrace, .rbrace, .lbracket, .rbracket };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+}
+
+test "lex: line and column tracking" {
+    var l = Lexer.init("a\nb", "test");
+    const t1 = try l.next();
+    try testing.expectEqual(@as(u32, 1), t1.loc.line);
+    try testing.expectEqual(@as(u32, 1), t1.loc.col);
+    const t2 = try l.next();
+    try testing.expectEqual(@as(u32, 2), t2.loc.line);
+    try testing.expectEqual(@as(u32, 1), t2.loc.col);
+}
+
+test "lex: column advances within a line" {
+    var l = Lexer.init("ab", "test");
+    const tok = try l.next();
+    try testing.expectEqual(@as(u32, 1), tok.loc.col);
+}
+
+test "lex: file name preserved in loc" {
+    var l = Lexer.init("x", "myfile.duo");
+    const tok = try l.next();
+    try testing.expectEqualStrings("myfile.duo", tok.loc.file);
+}
+
+test "lex: peek does not consume" {
+    var l = Lexer.init("42", "test");
+    const p1 = try l.peek();
+    const p2 = try l.peek();
+    const n1 = try l.next();
+    try testing.expectEqual(p1.kind, p2.kind);
+    try testing.expectEqual(p1.kind, n1.kind);
+    try testing.expectEqual(p1.int_val, n1.int_val);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: whitespace skipped" {
+    var l = Lexer.init("   \t\r\n  42", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, tok.kind);
+    try testing.expectEqual(@as(i64, 42), tok.int_val);
+}
+
+test "lex error: unterminated double-quoted string" {
+    var l = Lexer.init("\"oops", "test");
+    try testing.expectError(error.UnterminatedString, l.next());
+}
+
+test "lex error: unterminated single-quoted string" {
+    var l = Lexer.init("'oops", "test");
+    try testing.expectError(error.UnterminatedString, l.next());
+}
+
+test "lex error: unterminated long string" {
+    var l = Lexer.init("[[oops", "test");
+    try testing.expectError(error.UnterminatedLongString, l.next());
+}
+
+test "lex error: long string wrong closing level" {
+    // [==[...]=] — closing has one fewer '=' than opening
+    var l = Lexer.init("[==[oops]=]", "test");
+    try testing.expectError(error.UnterminatedLongString, l.next());
+}
+
+test "lex error: unexpected character" {
+    var l = Lexer.init("`", "test");
+    try testing.expectError(error.UnexpectedChar, l.next());
+}
+
+test "decode_lua_short_string: no escapes" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "hello");
+    defer testing.allocator.free(result);
+    try testing.expectEqualStrings("hello", result);
+}
+
+test "decode_lua_short_string: newline escape" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "a\\nb");
+    defer testing.allocator.free(result);
+    try testing.expectEqualStrings("a\nb", result);
+}
+
+test "decode_lua_short_string: all single-char escapes" {
+    const alloc = testing.allocator;
+    const cases = [_]struct { in: []const u8, out: []const u8 }{
+        .{ .in = "\\a",  .out = "\x07" },
+        .{ .in = "\\b",  .out = "\x08" },
+        .{ .in = "\\f",  .out = "\x0C" },
+        .{ .in = "\\n",  .out = "\n"   },
+        .{ .in = "\\r",  .out = "\r"   },
+        .{ .in = "\\t",  .out = "\t"   },
+        .{ .in = "\\v",  .out = "\x0B" },
+        .{ .in = "\\\\", .out = "\\"   },
+        .{ .in = "\\\"", .out = "\""   },
+        .{ .in = "\\'",  .out = "'"    },
+    };
+    for (cases) |c| {
+        const result = try Lexer.decode_lua_short_string(alloc, c.in);
+        defer alloc.free(result);
+        try testing.expectEqualStrings(c.out, result);
+    }
+}
+
+test "decode_lua_short_string: hex escape \\x41 = 'A'" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "\\x41");
+    defer testing.allocator.free(result);
+    try testing.expectEqualStrings("A", result);
+}
+
+test "decode_lua_short_string: hex escape \\xFF" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "\\xFF");
+    defer testing.allocator.free(result);
+    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expectEqual(@as(u8, 0xFF), result[0]);
+}
+
+test "decode_lua_short_string: unicode escape \\u{0041} = 'A'" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "\\u{0041}");
+    defer testing.allocator.free(result);
+    try testing.expectEqualStrings("A", result);
+}
+
+test "decode_lua_short_string: \\z skips whitespace" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "a\\z   b");
+    defer testing.allocator.free(result);
+    try testing.expectEqualStrings("ab", result);
+}
+
+test "decode_lua_short_string: empty string" {
+    const result = try Lexer.decode_lua_short_string(testing.allocator, "");
+    defer testing.allocator.free(result);
+    try testing.expectEqualStrings("", result);
+}
+
+test "decode_lua_short_string error: invalid hex escape" {
+    try testing.expectError(
+        error.InvalidEscape,
+        Lexer.decode_lua_short_string(testing.allocator, "\\xGG"),
+    );
+}
+
+test "decode_lua_short_string error: incomplete unicode escape" {
+    try testing.expectError(
+        error.InvalidEscape,
+        Lexer.decode_lua_short_string(testing.allocator, "\\u{"),
+    );
+}
