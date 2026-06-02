@@ -34,8 +34,7 @@ _fail_job() {
 _ok_job() {
     local idx="$1" file="$2"
     (
-        set +e; out=$("$DUO" check "$file" 2>&1); rc=$?; set -e
-        if [[ $rc -eq 0 ]]; then
+        if out=$("$DUO" check "$file" 2>&1); then
             echo OK > "$TMP/$idx.status"
             printf 'OK:   %s  (check passes)\n' "$file" > "$TMP/$idx.msg"
         else
