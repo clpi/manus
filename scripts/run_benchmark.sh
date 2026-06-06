@@ -246,7 +246,7 @@ while IFS='|' read -r d c lj l5 n; do
   idx=$((idx + 1))
   name="${NAMES[$((idx - 1))]:-bench-$idx}"
   winner=$(awk -v d="$d" -v c="$c" 'BEGIN {
-    eps = (c > 0 ? c * 0.08 : 1e-7)
+    eps = (c > 0 ? c * 0.05 : 1e-7)
     if (c < 0.01) eps = (eps > 5e-5 ? eps : 5e-5)
     if (d + 0 <= c + eps) print "Duo"; else print "C"
   }')

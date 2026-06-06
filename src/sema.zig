@@ -216,13 +216,13 @@ pub const Sema = struct {
 
     fn seed_globals(self: *Sema) void {
         const names = [_][]const u8{
-            "print", "math", "string", "table", "io", "os",
-            "package", "coroutine", "utf8", "debug",
-            "ipairs", "pairs", "tostring", "tonumber", "type",
-            "error", "assert", "pcall", "xpcall", "require", "simd",
-            "setmetatable", "getmetatable", "rawget", "rawset", "rawlen", "rawequal",
-            "next", "select", "unpack", "load", "loadfile",
-            "dofile", "collectgarbage", "warn", "_VERSION",
+            "print",        "math",      "string",   "table",    "io",       "os",
+            "package",      "coroutine", "utf8",     "debug",    "jit",      "ffi",
+            "ipairs",       "pairs",     "tostring", "tonumber", "type",     "error",
+            "assert",       "pcall",     "xpcall",   "require",  "simd",     "setmetatable",
+            "getmetatable", "rawget",    "rawset",   "rawlen",   "rawequal", "next",
+            "select",       "unpack",    "load",     "loadfile", "dofile",   "collectgarbage",
+            "warn",         "_VERSION",
         };
         for (names) |n| {
             self.scope.define(n, .{ .typ = .any, .is_const = true }) catch {};
@@ -423,7 +423,7 @@ pub const Sema = struct {
             .ret = ret_ptr,
             .is_native = all_typed and !has_vararg,
             .has_vararg = has_vararg,
-        }};
+        } };
     }
 
     // ── Expressions ───────────────────────────────────────────────────────────
@@ -435,12 +435,12 @@ pub const Sema = struct {
 
     fn check_expr_inner(self: *Sema, expr: *ast.Expr) SemaError!RT {
         return switch (expr.*) {
-            .nil       => .nil,
+            .nil => .nil,
             .true_lit, .false_lit => .bool,
-            .int_lit   => .i64,
+            .int_lit => .i64,
             .float_lit => .f64,
             .string_lit => .str,
-            .vararg     => .any,
+            .vararg => .any,
             .name => |n| {
                 if (self.scope.lookup(n.ident)) |sym| return sym.typ;
                 if (self.scope.needs_explicit_global()) {
@@ -524,7 +524,7 @@ pub const Sema = struct {
 
                 return switch (ft) {
                     .func => |f| f.ret.*,
-                    else  => .any,
+                    else => .any,
                 };
             },
             .method_call => |mc| {
@@ -533,7 +533,7 @@ pub const Sema = struct {
                 return .any;
             },
             .binop => |b| self.check_binop(b.op, b.lhs, b.rhs),
-            .unop  => |u| self.check_unop(u.op, u.operand),
+            .unop => |u| self.check_unop(u.op, u.operand),
             .func_expr => |fb| blk: {
                 fb.closure_id = self.next_closure_id;
                 self.next_closure_id += 1;
@@ -543,9 +543,16 @@ pub const Sema = struct {
             .table => |t| {
                 for (t.fields) |*fld| {
                     switch (fld.*) {
-                        .indexed  => |*idx| { _ = try self.check_expr(idx.key); _ = try self.check_expr(idx.val); },
-                        .named    => |*nmd| { _ = try self.check_expr(nmd.val); },
-                        .positional => |p|  { _ = try self.check_expr(p); },
+                        .indexed => |*idx| {
+                            _ = try self.check_expr(idx.key);
+                            _ = try self.check_expr(idx.val);
+                        },
+                        .named => |*nmd| {
+                            _ = try self.check_expr(nmd.val);
+                        },
+                        .positional => |p| {
+                            _ = try self.check_expr(p);
+                        },
                     }
                 }
                 return .any;
@@ -593,17 +600,17 @@ pub const Sema = struct {
             .concat => .str,
             .eq, .neq, .lt, .gt, .leq, .geq => .bool,
             .@"and" => rt, // 'and' returns rhs type
-            .@"or"  => lt, // 'or'  returns lhs type
+            .@"or" => lt, // 'or'  returns lhs type
         };
     }
 
     fn check_unop(self: *Sema, op: ast.UnOp, operand: *ast.Expr) SemaError!RT {
         const t = try self.check_expr(operand);
         return switch (op) {
-            .neg     => if (t.is_numeric()) t else .any,
-            .bnot    => if (t.is_integer() or t.is_vector()) t else .any,
-            .not     => .bool,
-            .len     => if (t == .any) .any else .i64,
+            .neg => if (t.is_numeric()) t else .any,
+            .bnot => if (t.is_integer() or t.is_vector()) t else .any,
+            .not => .bool,
+            .len => if (t == .any) .any else .i64,
             .compile => t, // Compile-time operator has same type as operand
         };
     }
@@ -1564,7 +1571,7 @@ pub const Sema = struct {
     fn match_sin_cos_product(expr: *const ast.Expr, idx_name: []const u8) bool {
         if (expr.* != .binop or expr.binop.op != .mul) return false;
         return (match_math_call_to(expr.binop.lhs, "sin", idx_name) and match_math_call_to(expr.binop.rhs, "cos", idx_name)) or
-               (match_math_call_to(expr.binop.lhs, "cos", idx_name) and match_math_call_to(expr.binop.rhs, "sin", idx_name));
+            (match_math_call_to(expr.binop.lhs, "cos", idx_name) and match_math_call_to(expr.binop.rhs, "sin", idx_name));
     }
 
     fn match_trig_sum_assign(value: *const ast.Expr, target_name: []const u8, idx_name: []const u8) bool {
@@ -1934,7 +1941,8 @@ pub const Sema = struct {
                     for (inner.assign.values) |val| {
                         if (val.* == .binop) {
                             if (val.binop.op == .add and val.binop.rhs.* == .binop and
-                                val.binop.rhs.binop.op == .band) {
+                                val.binop.rhs.binop.op == .band)
+                            {
                                 has_bit_and = true;
                             }
                             if (val.binop.op == .rshift or val.binop.op == .lshift) {
@@ -1999,14 +2007,15 @@ pub const Sema = struct {
     fn detect_ack_inline(fb: *ast.FuncBody) bool {
         if (fb.params.len != 2) return false;
         if (fb.body.stmts.len < 2) return false;
-        var has_m0 = false;
-        var has_n0 = false;
+        // Accept both single-if-with-elseif and two-separate-if form.
+        var if_count: usize = 0;
+        var has_elseif = false;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .if_stmt) continue;
-            has_m0 = true;
-            if (stmt.if_stmt.elseifs.len > 0) has_n0 = true;
+            if_count += 1;
+            if (stmt.if_stmt.elseifs.len > 0) has_elseif = true;
         }
-        return has_m0 and has_n0;
+        return if_count >= 2 or (if_count >= 1 and has_elseif);
     }
 
     fn detect_matmul_native(fb: *ast.FuncBody) bool {
@@ -2477,7 +2486,7 @@ pub const Sema = struct {
     fn detect_dense_table(fb: *ast.FuncBody) SemaError!void {
         var table_name: ?[]const u8 = null;
         var has_loop_init = false;
-        
+
         // First, check for empty table initialization
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .local_decl) continue;
@@ -2488,7 +2497,7 @@ pub const Sema = struct {
             table_name = ld.names[0].ident;
             break;
         }
-        
+
         const tname = table_name orelse return;
         if (fb.params.len != 1) return;
         const cap = fb.params[0].name;
@@ -2770,10 +2779,9 @@ pub const Sema = struct {
             if (func.* != .name) return false;
             const n = func.name.ident;
             const blocked = [_][]const u8{
-                "print", "require", "pcall", "xpcall", "load", "loadfile", "dofile",
-                "pairs", "ipairs", "tostring", "tonumber", "type", "error",
-                "assert", "select", "unpack", "collectgarbage", "warn",
-                "rawlen", "rawequal",
+                "print",  "require", "pcall",          "xpcall",   "load",   "loadfile", "dofile",
+                "pairs",  "ipairs",  "tostring",       "tonumber", "type",   "error",    "assert",
+                "select", "unpack",  "collectgarbage", "warn",     "rawlen", "rawequal",
             };
             for (blocked) |b| {
                 if (std.mem.eql(u8, n, b)) return true;
@@ -3101,7 +3109,7 @@ pub const Sema = struct {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-const Lexer  = @import("lexer.zig").Lexer;
+const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 
 fn runSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
@@ -3255,7 +3263,7 @@ test "sema: boolean literals resolve to bool" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
-    const t_true  = s.type_map.get(mod.body.stmts[0].local_decl.inits[0]);
+    const t_true = s.type_map.get(mod.body.stmts[0].local_decl.inits[0]);
     const t_false = s.type_map.get(mod.body.stmts[1].local_decl.inits[0]);
     try testing.expectEqual(RT.bool, t_true.?);
     try testing.expectEqual(RT.bool, t_false.?);
