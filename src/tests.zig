@@ -9,4 +9,5 @@ test {
     _ = @import("types.zig");
     _ = @import("parser.zig");
     _ = @import("sema.zig");
+    _ = @import("property_tests.zig");
 }

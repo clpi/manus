@@ -65,20 +65,62 @@ pub const Parser = struct {
     fn parse_type(self: *Parser) ParseError!ast.TypeExpr {
         const tok = try self.pk();
         return switch (tok.kind) {
-            .kw_i8  => { _ = try self.adv(); return .{ .named = "i8" };  },
-            .kw_i16 => { _ = try self.adv(); return .{ .named = "i16" }; },
-            .kw_i32 => { _ = try self.adv(); return .{ .named = "i32" }; },
-            .kw_i64 => { _ = try self.adv(); return .{ .named = "i64" }; },
-            .kw_u8  => { _ = try self.adv(); return .{ .named = "u8" };  },
-            .kw_u16 => { _ = try self.adv(); return .{ .named = "u16" }; },
-            .kw_u32 => { _ = try self.adv(); return .{ .named = "u32" }; },
-            .kw_u64 => { _ = try self.adv(); return .{ .named = "u64" }; },
-            .kw_f32 => { _ = try self.adv(); return .{ .named = "f32" }; },
-            .kw_f64 => { _ = try self.adv(); return .{ .named = "f64" }; },
-            .kw_bool => { _ = try self.adv(); return .{ .named = "bool" }; },
-            .kw_void => { _ = try self.adv(); return .{ .named = "void" }; },
-            .kw_str  => { _ = try self.adv(); return .{ .named = "str" };  },
-            .name    => { const t = try self.adv(); return .{ .named = t.text }; },
+            .kw_i8 => {
+                _ = try self.adv();
+                return .{ .named = "i8" };
+            },
+            .kw_i16 => {
+                _ = try self.adv();
+                return .{ .named = "i16" };
+            },
+            .kw_i32 => {
+                _ = try self.adv();
+                return .{ .named = "i32" };
+            },
+            .kw_i64 => {
+                _ = try self.adv();
+                return .{ .named = "i64" };
+            },
+            .kw_u8 => {
+                _ = try self.adv();
+                return .{ .named = "u8" };
+            },
+            .kw_u16 => {
+                _ = try self.adv();
+                return .{ .named = "u16" };
+            },
+            .kw_u32 => {
+                _ = try self.adv();
+                return .{ .named = "u32" };
+            },
+            .kw_u64 => {
+                _ = try self.adv();
+                return .{ .named = "u64" };
+            },
+            .kw_f32 => {
+                _ = try self.adv();
+                return .{ .named = "f32" };
+            },
+            .kw_f64 => {
+                _ = try self.adv();
+                return .{ .named = "f64" };
+            },
+            .kw_bool => {
+                _ = try self.adv();
+                return .{ .named = "bool" };
+            },
+            .kw_void => {
+                _ = try self.adv();
+                return .{ .named = "void" };
+            },
+            .kw_str => {
+                _ = try self.adv();
+                return .{ .named = "str" };
+            },
+            .name => {
+                const t = try self.adv();
+                return .{ .named = t.text };
+            },
             .star => {
                 _ = try self.adv();
                 const inner = try self.alloc.create(ast.TypeExpr);
@@ -157,7 +199,7 @@ pub const Parser = struct {
         var vals: std.ArrayList(*ast.Expr) = .empty;
         const nxt = try self.pk();
         switch (nxt.kind) {
-            .kw_end, .kw_else, .kw_elseif, .kw_until, .eof, .semi => {},
+            .kw_end, .kw_else, .kw_elseif, .kw_until, .kw_catch, .eof, .semi => {},
             else => {
                 try vals.append(self.alloc, try self.parse_expr());
                 while (try self.eat(.comma) != null)
@@ -169,30 +211,299 @@ pub const Parser = struct {
 
     fn parse_stmt(self: *Parser) ParseError!ast.Stmt {
         const tok = try self.pk();
-        
+
         return switch (tok.kind) {
-            .kw_local   => self.parse_local(),
-            .kw_global  => self.parse_global(),
-            .kw_const   => self.parse_const_decl(),
-            .kw_struct  => self.parse_struct_def(),
-            .kw_function, .kw_fun => self.parse_func_decl(false),
-            .kw_if      => self.parse_if(),
-            .kw_while   => self.parse_while(),
-            .kw_repeat  => self.parse_repeat(),
-            .kw_for     => self.parse_for(),
-            .kw_do      => self.parse_do(),
-            .kw_goto    => blk: {
+            .at => self.parse_attributed_decl(),
+            .kw_local => self.parse_local(),
+            .kw_global => self.parse_global(),
+            .kw_const => self.parse_const_decl(),
+            .kw_struct => self.parse_struct_def_with_attrs(&.{}),
+            .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, &.{}),
+            .kw_async => self.parse_async_func_decl_with_attrs(&.{}),
+            .kw_enum => self.parse_enum_def_with_attrs(&.{}),
+            .kw_concept => self.parse_concept_def_with_attrs(&.{}),
+            .kw_if => self.parse_if(),
+            .kw_while => self.parse_while(),
+            .kw_repeat => self.parse_repeat(),
+            .kw_for => self.parse_for(),
+            .kw_do => self.parse_do(),
+            .kw_match => self.parse_match_stmt(),
+            .kw_try => self.parse_try(),
+            .kw_defer => self.parse_defer(),
+            .kw_goto => blk: {
                 _ = try self.adv();
                 const lbl = try self.expect(.name);
                 break :blk ast.Stmt{ .goto_stmt = .{ .loc = tok.loc, .label = lbl.text } };
             },
-            .kw_break   => blk: {
+            .kw_break => blk: {
                 _ = try self.adv();
                 break :blk ast.Stmt{ .brk = tok.loc };
             },
             .dcolon => self.parse_label(),
-            else    => self.parse_expr_stmt(),
+            else => self.parse_expr_stmt(),
         };
+    }
+
+    /// Parse one or more `@name` or `@name(args)` attributes, then the declaration
+    /// that follows (function, struct, enum, concept, or async function).
+    fn parse_attributed_decl(self: *Parser) ParseError!ast.Stmt {
+        var attrs: std.ArrayList(ast.Attribute) = .empty;
+        while ((try self.pk()).kind == .at) {
+            try attrs.append(self.alloc, try self.parse_one_attribute());
+        }
+        const attrs_slice = try attrs.toOwnedSlice(self.alloc);
+
+        const tok = try self.pk();
+        return switch (tok.kind) {
+            .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
+            .kw_async => self.parse_async_func_decl_with_attrs(attrs_slice),
+            .kw_struct => self.parse_struct_def_with_attrs(attrs_slice),
+            .kw_enum => self.parse_enum_def_with_attrs(attrs_slice),
+            .kw_concept => self.parse_concept_def_with_attrs(attrs_slice),
+            else => {
+                std.debug.print("{}: expected declaration after attribute(s), got '{s}'\n", .{
+                    tok.loc, tok.kind.spelling(),
+                });
+                return ParseError.UnexpectedToken;
+            },
+        };
+    }
+
+    /// Parse a single attribute: `@name` or `@name(args)`
+    fn parse_one_attribute(self: *Parser) ParseError!ast.Attribute {
+        _ = try self.expect(.at); // consume `@`
+        const name_tok = try self.expect(.name);
+        var args: ?[]const u8 = null;
+        if ((try self.pk()).kind == .lparen) {
+            _ = try self.adv(); // consume `(`
+            // Capture everything inside parens as raw text
+            args = try self.parse_attribute_args();
+            _ = try self.expect(.rparen);
+        }
+        return ast.Attribute{ .name = name_tok.text, .args = args };
+    }
+
+    /// Parse attribute argument text between parens, handling nested parens.
+    /// Returns the raw source text content (not including outer parens).
+    fn parse_attribute_args(self: *Parser) ParseError![]const u8 {
+        // At this point, the opening `(` has already been consumed.
+        // The lexer's `peeked` is null and `pos` is right after `(`.
+        // We need to find the source range between `(` and matching `)`.
+
+        // Get the position in source right after `(` was consumed.
+        // Since we may have a peeked token, clear it by peeking first.
+        const first_tok = try self.pk();
+        if (first_tok.kind == .rparen) return ""; // empty args
+
+        // Compute start of args in source by looking at first token position.
+        // For string_lit tokens, text doesn't include quotes, so we use the
+        // pointer to compute where in src the token's semantic text starts.
+        // We want the RAW source text including any string delimiters.
+        // Use: start = position of first non-whitespace after `(`
+        const src = self.lex.src;
+
+        // Walk forward from the `(` to find raw source span.
+        // The opening `(` was consumed, so we can compute its end position.
+        // We'll determine start from first token's text pointer adjusted for
+        // possible quote prefix (for string literals the text pointer is after the quote).
+        var start: usize = undefined;
+        if (first_tok.kind == .string_lit) {
+            // String token text starts after the opening quote
+            start = (@intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr)) - 1;
+        } else {
+            start = @intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr);
+        }
+
+        // Consume tokens until matching `)`, tracking depth
+        var depth: u32 = 1;
+        var end: usize = start;
+
+        while (depth > 0) {
+            const tok = try self.pk();
+            if (tok.kind == .eof) {
+                std.debug.print("{}: unexpected EOF in attribute arguments\n", .{tok.loc});
+                return ParseError.UnexpectedToken;
+            }
+            if (tok.kind == .rparen) {
+                depth -= 1;
+                if (depth == 0) break; // don't consume the closing paren
+            }
+            // Update end to span this token in source
+            const tok_start = @intFromPtr(tok.text.ptr) - @intFromPtr(src.ptr);
+            if (tok.kind == .string_lit) {
+                // Include the closing quote
+                end = tok_start + tok.text.len + 1;
+            } else {
+                end = tok_start + tok.text.len;
+            }
+            _ = try self.adv();
+            if (tok.kind == .lparen) depth += 1;
+        }
+
+        if (end <= start) return "";
+        return src[start..end];
+    }
+
+    /// Parse `enum Name[T, E] ... end` with variant cases and optional payloads.
+    fn parse_enum_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        const l = (try self.adv()).loc; // consume `enum`
+        const nm = try self.expect(.name);
+
+        // Optional generic type parameters: [T, E]
+        var type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lbracket) != null) {
+            var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try tp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try tp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.rbracket);
+            type_params = try tp_list.toOwnedSlice(self.alloc);
+        }
+
+        // Parse variants until `end`
+        var variants: std.ArrayList(ast.EnumVariant) = .empty;
+        while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
+            const vname = try self.expect(.name);
+
+            // Optional payload: (name: Type, name: Type, ...)
+            var payload: ?[]ast.EnumVariant.PayloadField = null;
+            if (try self.eat(.lparen) != null) {
+                var fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
+                if (!(try self.check(.rparen))) {
+                    try fields.append(self.alloc, try self.parseEnumPayloadField());
+                    while (try self.eat(.comma) != null) {
+                        try fields.append(self.alloc, try self.parseEnumPayloadField());
+                    }
+                }
+                _ = try self.expect(.rparen);
+                payload = try fields.toOwnedSlice(self.alloc);
+            }
+
+            try variants.append(self.alloc, ast.EnumVariant{
+                .name = vname.text,
+                .payload = payload,
+            });
+        }
+        _ = try self.expect(.kw_end);
+
+        return ast.Stmt{ .enum_def = .{
+            .loc = l,
+            .name = nm.text,
+            .type_params = type_params,
+            .variants = try variants.toOwnedSlice(self.alloc),
+            .attributes = attrs,
+        } };
+    }
+
+    /// Parse a single enum payload field: `name: Type` or just `Type` (positional).
+    fn parseEnumPayloadField(self: *Parser) ParseError!ast.EnumVariant.PayloadField {
+        // Try to parse `name: Type` — peek ahead for colon after name
+        const tok = try self.pk();
+        if (tok.kind == .name) {
+            // Speculatively consume the name and check for colon
+            const name_tok = try self.adv();
+            if (try self.eat(.colon) != null) {
+                // Named field: name: Type
+                const typ = try self.parse_type();
+                return .{ .name = name_tok.text, .typ = typ };
+            }
+            // No colon — this is a positional type (the name token IS the type)
+            return .{ .name = null, .typ = ast.TypeExpr{ .named = name_tok.text } };
+        }
+        // Not a name token, parse as a type directly
+        const typ = try self.parse_type();
+        return .{ .name = null, .typ = typ };
+    }
+
+    /// Parse `concept Name[T, ...] ... end` with required methods and fields.
+    fn parse_concept_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        const l = (try self.adv()).loc; // consume `concept`
+        const nm = try self.expect(.name);
+
+        // Optional generic type parameters: [T, E]
+        var type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lbracket) != null) {
+            var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try tp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try tp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.rbracket);
+            type_params = try tp_list.toOwnedSlice(self.alloc);
+        }
+
+        // Parse required methods and fields until `end`
+        var methods: std.ArrayList(ast.FuncSignature) = .empty;
+        var fields: std.ArrayList(ast.ConceptDef.RequiredField) = .empty;
+
+        while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
+            if ((try self.pk()).kind == .kw_fun or (try self.pk()).kind == .kw_function) {
+                // Required method: fun name(params) -> ret_type
+                _ = try self.adv(); // consume `fun` or `function`
+                const method_name = try self.expect(.name);
+
+                // Optional method type parameters: [T]
+                var method_type_params: ?[]ast.TypeExpr = null;
+                if (try self.eat(.lbracket) != null) {
+                    var mtp_list: std.ArrayList(ast.TypeExpr) = .empty;
+                    try mtp_list.append(self.alloc, try self.parse_type());
+                    while (try self.eat(.comma) != null) {
+                        try mtp_list.append(self.alloc, try self.parse_type());
+                    }
+                    _ = try self.expect(.rbracket);
+                    method_type_params = try mtp_list.toOwnedSlice(self.alloc);
+                }
+
+                // Parse parameter list
+                _ = try self.expect(.lparen);
+                var params: std.ArrayList(ast.FuncParam) = .empty;
+                if (!(try self.check(.rparen))) {
+                    try params.append(self.alloc, try self.parse_param());
+                    while (try self.eat(.comma) != null) {
+                        try params.append(self.alloc, try self.parse_param());
+                    }
+                }
+                _ = try self.expect(.rparen);
+
+                // Optional return type: -> type or : type
+                var ret_type: ast.TypeExpr = .inferred;
+                if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+                    ret_type = try self.parse_type();
+
+                try methods.append(self.alloc, .{
+                    .name = method_name.text,
+                    .params = try params.toOwnedSlice(self.alloc),
+                    .ret_type = ret_type,
+                    .type_params = method_type_params,
+                });
+            } else if ((try self.pk()).kind == .name) {
+                // Required field: name: type
+                const field_name = try self.adv();
+                _ = try self.expect(.colon);
+                const field_type = try self.parse_type();
+                try fields.append(self.alloc, .{
+                    .name = field_name.text,
+                    .typ = field_type,
+                });
+            } else {
+                // Skip unexpected tokens to avoid infinite loops
+                std.debug.print("{}: unexpected token in concept body: '{s}'\n", .{
+                    (try self.pk()).loc, (try self.pk()).kind.spelling(),
+                });
+                return ParseError.UnexpectedToken;
+            }
+        }
+        _ = try self.expect(.kw_end);
+
+        return ast.Stmt{ .concept_def = .{
+            .loc = l,
+            .name = nm.text,
+            .type_params = type_params,
+            .required_methods = try methods.toOwnedSlice(self.alloc),
+            .required_fields = try fields.toOwnedSlice(self.alloc),
+            .attributes = attrs,
+        } };
     }
 
     fn parse_global(self: *Parser) ParseError!ast.Stmt {
@@ -231,8 +542,12 @@ pub const Parser = struct {
             const fb = try self.parse_func_body(l);
             const path = try self.alloc.dupe([]const u8, &[_][]const u8{nm.text});
             return ast.Stmt{ .func_decl = .{
-                .loc = l, .path = path, .method = false, .is_local = true, .func = fb,
-            }};
+                .loc = l,
+                .path = path,
+                .method = false,
+                .is_local = true,
+                .func = fb,
+            } };
         }
         var names: std.ArrayList(ast.LocalName) = .empty;
         try names.append(self.alloc, try self.parse_local_name());
@@ -249,7 +564,7 @@ pub const Parser = struct {
             .loc = l,
             .names = try names.toOwnedSlice(self.alloc),
             .inits = try inits.toOwnedSlice(self.alloc),
-        }};
+        } };
     }
 
     fn parse_local_name(self: *Parser) ParseError!ast.LocalName {
@@ -284,9 +599,23 @@ pub const Parser = struct {
         return ast.Stmt{ .const_decl = .{ .loc = l, .ident = nm.text, .typ = typ, .val = val } };
     }
 
-    fn parse_struct_def(self: *Parser) ParseError!ast.Stmt {
+    fn parse_struct_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         const nm = try self.expect(.name);
+
+        // Parse optional `implements Concept1, Concept2, ...` clause
+        var impl_list: std.ArrayList([]const u8) = .empty;
+        if ((try self.pk()).kind == .name and std.mem.eql(u8, (try self.pk()).text, "implements")) {
+            _ = try self.adv(); // consume 'implements'
+            const first_concept = try self.expect(.name);
+            try impl_list.append(self.alloc, first_concept.text);
+            while ((try self.pk()).kind == .comma) {
+                _ = try self.adv(); // consume ','
+                const next_concept = try self.expect(.name);
+                try impl_list.append(self.alloc, next_concept.text);
+            }
+        }
+
         _ = try self.expect(.lbrace);
         var fields: std.ArrayList(ast.StructField) = .empty;
         while (!(try self.check(.rbrace))) {
@@ -297,17 +626,24 @@ pub const Parser = struct {
             var def: ?*ast.Expr = null;
             if (try self.eat(.assign) != null) def = try self.parse_expr();
             try fields.append(self.alloc, ast.StructField{
-                .name = fn_tok.text, .typ = ft, .default = def, .loc = fl,
+                .name = fn_tok.text,
+                .typ = ft,
+                .default = def,
+                .loc = fl,
             });
             if (try self.eat(.comma) == null and !(try self.check(.rbrace))) break;
         }
         _ = try self.expect(.rbrace);
         return ast.Stmt{ .struct_def = .{
-            .loc = l, .name = nm.text, .fields = try fields.toOwnedSlice(self.alloc),
-        }};
+            .loc = l,
+            .name = nm.text,
+            .fields = try fields.toOwnedSlice(self.alloc),
+            .attributes = attrs,
+            .implements = try impl_list.toOwnedSlice(self.alloc),
+        } };
     }
 
-    fn parse_func_decl(self: *Parser, is_local: bool) ParseError!ast.Stmt {
+    fn parse_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         var path: std.ArrayList([]const u8) = .empty;
         var method = false;
@@ -331,7 +667,35 @@ pub const Parser = struct {
             .method = method,
             .is_local = is_local,
             .func = fb,
-        }};
+            .attributes = attrs,
+        } };
+    }
+
+    /// Backwards-compatible: parse function decl with no attributes.
+    fn parse_func_decl(self: *Parser, is_local: bool) ParseError!ast.Stmt {
+        return self.parse_func_decl_with_attrs(is_local, &.{});
+    }
+
+    /// Parse `async fun name(...) ... end` or `async function name(...) ... end`.
+    /// The `async` keyword has already been peeked; this function consumes it,
+    /// then expects `fun`/`function` and delegates to the normal function parser.
+    fn parse_async_func_decl_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        _ = try self.adv(); // consume `async`
+        const nxt = try self.pk();
+        if (nxt.kind != .kw_function and nxt.kind != .kw_fun) {
+            std.debug.print("{}: expected 'function' or 'fun' after 'async', got '{s}'\n", .{
+                nxt.loc, nxt.kind.spelling(),
+            });
+            return ParseError.ExpectedToken;
+        }
+        var stmt = try self.parse_func_decl_with_attrs(false, attrs);
+        stmt.func_decl.func.is_async = true;
+        return stmt;
+    }
+
+    /// Backwards-compatible: parse async function decl with no attributes.
+    fn parse_async_func_decl(self: *Parser) ParseError!ast.Stmt {
+        return self.parse_async_func_decl_with_attrs(&.{});
     }
 
     fn parse_func_body(self: *Parser, l: ast.Loc) ParseError!ast.FuncBody {
@@ -398,14 +762,14 @@ pub const Parser = struct {
     fn parse_if(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         const cond = try self.parse_expr();
-        _ = try self.expect(.kw_then);
+        _ = try self.eat(.kw_then); // `then` is optional in Duo
         const then = try self.parse_block();
         var elseifs: std.ArrayList(ast.ElseIf) = .empty;
         var else_body: ?ast.Block = null;
         while (true) {
             if (try self.eat(.kw_elseif) != null) {
                 const ec = try self.parse_expr();
-                _ = try self.expect(.kw_then);
+                _ = try self.eat(.kw_then); // `then` is optional in Duo
                 const eb = try self.parse_block();
                 try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
             } else if (try self.eat(.kw_else) != null) {
@@ -415,9 +779,12 @@ pub const Parser = struct {
         }
         _ = try self.expect(.kw_end);
         return ast.Stmt{ .if_stmt = .{
-            .loc = l, .cond = cond, .then = then,
-            .elseifs = try elseifs.toOwnedSlice(self.alloc), .else_body = else_body,
-        }};
+            .loc = l,
+            .cond = cond,
+            .then = then,
+            .elseifs = try elseifs.toOwnedSlice(self.alloc),
+            .else_body = else_body,
+        } };
     }
 
     fn parse_while(self: *Parser) ParseError!ast.Stmt {
@@ -453,9 +820,14 @@ pub const Parser = struct {
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .num_for = .{
-                .loc = l, .var_name = first_name.text, .var_typ = var_typ,
-                .start = start, .stop = stop, .step = step, .body = body,
-            }};
+                .loc = l,
+                .var_name = first_name.text,
+                .var_typ = var_typ,
+                .start = start,
+                .stop = stop,
+                .step = step,
+                .body = body,
+            } };
         } else {
             var vars: std.ArrayList([]const u8) = .empty;
             try vars.append(self.alloc, first_name.text);
@@ -472,9 +844,11 @@ pub const Parser = struct {
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .gen_for = .{
-                .loc = l, .vars = try vars.toOwnedSlice(self.alloc),
-                .iters = try iters.toOwnedSlice(self.alloc), .body = body,
-            }};
+                .loc = l,
+                .vars = try vars.toOwnedSlice(self.alloc),
+                .iters = try iters.toOwnedSlice(self.alloc),
+                .body = body,
+            } };
         }
     }
 
@@ -483,6 +857,437 @@ pub const Parser = struct {
         const body = try self.parse_block();
         _ = try self.expect(.kw_end);
         return ast.Stmt{ .do_block = .{ .loc = l, .body = body } };
+    }
+
+    // ── try/catch/defer ───────────────────────────────────────────────────────
+
+    /// Parse a block that terminates at `catch` or `end` (in addition to the
+    /// regular block terminators like `else`, `elseif`, `until`, `eof`).
+    fn parse_try_body(self: *Parser) ParseError!ast.Block {
+        const l = (try self.pk()).loc;
+        var stmts: std.ArrayList(ast.Stmt) = .empty;
+        while (true) {
+            while (try self.eat(.semi) != null) {}
+            const tok = try self.pk();
+            switch (tok.kind) {
+                .kw_end, .kw_catch, .kw_else, .kw_elseif, .kw_until, .eof => break,
+                .kw_return => {
+                    try stmts.append(self.alloc, try self.parse_return());
+                    _ = try self.eat(.semi);
+                    break;
+                },
+                else => try stmts.append(self.alloc, try self.parse_stmt()),
+            }
+        }
+        return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc) };
+    }
+
+    /// Parse `try ... catch ... end` statement.
+    ///
+    /// ```
+    /// try
+    ///   -- body
+    /// catch ErrorType e
+    ///   -- handle specific error
+    /// catch e
+    ///   -- handle any error
+    /// end
+    /// ```
+    fn parse_try(self: *Parser) ParseError!ast.Stmt {
+        const l = (try self.adv()).loc; // consume `try`
+        const body = try self.parse_try_body();
+
+        var catches: std.ArrayList(ast.CatchClause) = .empty;
+        var defers: std.ArrayList(ast.DeferStmt) = .empty;
+
+        // Parse zero or more catch clauses
+        while ((try self.pk()).kind == .kw_catch) {
+            const catch_loc = (try self.adv()).loc; // consume `catch`
+
+            var error_type: ?ast.TypeExpr = null;
+            var binding: ?[]const u8 = null;
+
+            const nxt = try self.pk();
+            if (nxt.kind == .name) {
+                // Could be either:
+                //   catch ErrorType e   (type + binding)
+                //   catch e             (binding only, no type)
+                // Peek ahead: if we see a name followed by another name, it's type + binding.
+                // Otherwise, it's just a binding.
+                const saved = self.lex.*;
+                const first_name = try self.adv();
+                const after = try self.pk();
+                if (after.kind == .name) {
+                    // `catch ErrorType e` — first_name is the type, next is binding
+                    error_type = .{ .named = first_name.text };
+                    binding = (try self.adv()).text;
+                } else {
+                    // `catch e` — first_name is just the binding
+                    _ = saved; // don't restore; we already consumed the name
+                    binding = first_name.text;
+                }
+            }
+
+            // Parse the catch body (which also terminates at next `catch` or `end`)
+            const catch_body = try self.parse_try_body();
+            try catches.append(self.alloc, ast.CatchClause{
+                .loc = catch_loc,
+                .error_type = error_type,
+                .binding = binding,
+                .body = catch_body,
+            });
+        }
+
+        _ = try self.expect(.kw_end);
+
+        return ast.Stmt{ .try_stmt = .{
+            .loc = l,
+            .body = body,
+            .catches = try catches.toOwnedSlice(self.alloc),
+            .defers = try defers.toOwnedSlice(self.alloc),
+        } };
+    }
+
+    /// Parse `defer ... end` statement.
+    ///
+    /// ```
+    /// defer
+    ///   -- cleanup code
+    /// end
+    /// ```
+    fn parse_defer(self: *Parser) ParseError!ast.Stmt {
+        const l = (try self.adv()).loc; // consume `defer`
+        const body = try self.parse_block();
+        _ = try self.expect(.kw_end);
+        return ast.Stmt{ .defer_stmt = .{ .loc = l, .body = body } };
+    }
+
+    // ── match ─────────────────────────────────────────────────────────────────
+
+    /// Parse `match expr ... end` as a statement.
+    fn parse_match_stmt(self: *Parser) ParseError!ast.Stmt {
+        const me = try self.parse_match_inner();
+        return ast.Stmt{ .match_stmt = me };
+    }
+
+    /// Parse `match expr ... end` as an expression.
+    fn parse_match_expr(self: *Parser) ParseError!*ast.Expr {
+        const me = try self.parse_match_inner();
+        const p = try self.alloc.create(ast.MatchExpr);
+        p.* = me;
+        return self.new_expr(.{ .match_expr = p });
+    }
+
+    /// Shared implementation for parsing a match expression/statement.
+    ///
+    /// ```
+    /// match expr
+    ///   pattern1 => body1
+    ///   pattern2 if guard => body2
+    ///   _ => default_body
+    /// end
+    /// ```
+    fn parse_match_inner(self: *Parser) ParseError!ast.MatchExpr {
+        const l = (try self.adv()).loc; // consume `match`
+        const scrutinee = try self.parse_match_scrutinee();
+
+        var arms: std.ArrayList(ast.MatchArm) = .empty;
+        while (true) {
+            while (try self.eat(.semi) != null) {}
+            const tok = try self.pk();
+            if (tok.kind == .kw_end or tok.kind == .eof) break;
+            try arms.append(self.alloc, try self.parse_match_arm());
+        }
+        _ = try self.expect(.kw_end);
+
+        return ast.MatchExpr{
+            .loc = l,
+            .scrutinee = scrutinee,
+            .arms = try arms.toOwnedSlice(self.alloc),
+        };
+    }
+
+    /// Parse match scrutinee — a restricted expression that does not consume
+    /// `{`, `[`, or string_lit as call/index suffixes (those start pattern arms).
+    fn parse_match_scrutinee(self: *Parser) ParseError!*ast.Expr {
+        return self.parse_match_scrutinee_prec(0);
+    }
+
+    fn parse_match_scrutinee_prec(self: *Parser, min_prec: u8) ParseError!*ast.Expr {
+        var lhs: *ast.Expr = undefined;
+        {
+            const tok = try self.pk();
+            if (tok.kind == .kw_await) {
+                _ = try self.adv(); // consume `await`
+                const operand = try self.parse_match_scrutinee_prec(20);
+                lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
+            } else {
+                const op: ?ast.UnOp = switch (tok.kind) {
+                    .kw_not => .not,
+                    .hash => .len,
+                    .hash_hash => .compile,
+                    .minus => .neg,
+                    .tilde => .bnot,
+                    else => null,
+                };
+                if (op) |uop| {
+                    _ = try self.adv();
+                    const operand = try self.parse_match_scrutinee_prec(20);
+                    lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
+                } else {
+                    lhs = try self.parse_match_scrutinee_suffixed();
+                }
+            }
+        }
+        while (true) {
+            const tok = try self.pk();
+            const inf = infix_prec(tok.kind) orelse break;
+            if (inf.left <= min_prec) break;
+            _ = try self.adv();
+            const rhs = try self.parse_match_scrutinee_prec(inf.right);
+            lhs = try self.new_expr(.{ .binop = .{
+                .loc = lhs.loc(),
+                .op = inf.op,
+                .lhs = lhs,
+                .rhs = rhs,
+            } });
+        }
+        return lhs;
+    }
+
+    /// Like parse_suffixed_expr but does NOT consume `{`, `[`, or string_lit
+    /// as call/index suffixes (those tokens start match arm patterns).
+    fn parse_match_scrutinee_suffixed(self: *Parser) ParseError!*ast.Expr {
+        var e = try self.parse_simple_expr();
+        while (true) {
+            const tok = try self.pk();
+            switch (tok.kind) {
+                .dot => {
+                    _ = try self.adv();
+                    const fld = try self.expect(.name);
+                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld.text } });
+                },
+                .colon => {
+                    _ = try self.adv();
+                    const method = try self.expect(.name);
+                    // Only allow parenthesized call args after method
+                    if ((try self.pk()).kind == .lparen) {
+                        const callargs = try self.parse_call_args();
+                        e = try self.new_expr(.{ .method_call = .{
+                            .loc = tok.loc,
+                            .obj = e,
+                            .method = method.text,
+                            .args = callargs,
+                        } });
+                    } else {
+                        // method with no args — treat as field access
+                        e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = method.text } });
+                    }
+                },
+                .lparen => {
+                    const callargs = try self.parse_call_args();
+                    e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
+                },
+                // Do NOT consume {, [, string_lit as suffixes in match scrutinee
+                else => break,
+            }
+        }
+        return e;
+    }
+
+    /// Parse a single match arm: `pattern [if guard] => body`
+    /// The body is either a single expression (as a return statement) or
+    /// a block that terminates at the next arm or `end`.
+    fn parse_match_arm(self: *Parser) ParseError!ast.MatchArm {
+        const pattern = try self.parse_pattern();
+
+        // Optional guard: `if cond`
+        var guard: ?*ast.Expr = null;
+        if ((try self.pk()).kind == .kw_if) {
+            _ = try self.adv(); // consume `if`
+            guard = try self.parse_expr();
+        }
+
+        _ = try self.expect(.fat_arrow);
+
+        // Parse arm body as a block that ends at next arm start or `end`.
+        const body = try self.parse_match_arm_body();
+
+        return ast.MatchArm{
+            .pattern = pattern,
+            .guard = guard,
+            .body = body,
+        };
+    }
+
+    /// Parse the body of a match arm — exactly one statement.
+    /// Each arm has a single statement body (like Rust/OCaml match arms).
+    /// Uses restricted expression parsing to avoid consuming the next arm's pattern.
+    fn parse_match_arm_body(self: *Parser) ParseError!ast.Block {
+        const l = (try self.pk()).loc;
+        var stmts: std.ArrayList(ast.Stmt) = .empty;
+        while (try self.eat(.semi) != null) {}
+        const tok = try self.pk();
+        switch (tok.kind) {
+            .kw_end, .eof => {},
+            .kw_return => {
+                // Use restricted return parsing that doesn't consume string/table/array
+                // suffixes (those start the next pattern arm).
+                const ret_loc = (try self.adv()).loc;
+                var vals: std.ArrayList(*ast.Expr) = .empty;
+                const nxt = try self.pk();
+                switch (nxt.kind) {
+                    .kw_end, .kw_else, .kw_elseif, .kw_until, .eof, .semi => {},
+                    else => {
+                        try vals.append(self.alloc, try self.parse_match_scrutinee());
+                        while (try self.eat(.comma) != null)
+                            try vals.append(self.alloc, try self.parse_match_scrutinee());
+                    },
+                }
+                try stmts.append(self.alloc, ast.Stmt{ .ret = .{
+                    .loc = ret_loc,
+                    .vals = try vals.toOwnedSlice(self.alloc),
+                } });
+            },
+            else => {
+                try stmts.append(self.alloc, try self.parse_stmt());
+            },
+        }
+        return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc) };
+    }
+
+    /// Parse a pattern. Patterns can be:
+    /// - `_` (wildcard)
+    /// - `...name` (rest)
+    /// - `{key1: pat1, key2: pat2}` (table destructuring)
+    /// - `[pat1, pat2, ...]` (array destructuring)
+    /// - `Name.Variant(payload...)` (variant)
+    /// - literal: number, string, bool, nil
+    /// - `name` (binding)
+    fn parse_pattern(self: *Parser) ParseError!ast.Pattern {
+        const tok = try self.pk();
+        switch (tok.kind) {
+            // Rest pattern: ...name
+            .dots => {
+                _ = try self.adv();
+                const nm = try self.expect(.name);
+                return ast.Pattern{ .rest = nm.text };
+            },
+            // Table destructuring: {key: pat, ...}
+            .lbrace => return self.parse_table_destr_pattern(),
+            // Array destructuring: [pat, pat, ...]
+            .lbracket => return self.parse_array_destr_pattern(),
+            // Literals
+            .int_lit => {
+                const e = try self.parse_simple_expr();
+                return ast.Pattern{ .literal = e };
+            },
+            .float_lit => {
+                const e = try self.parse_simple_expr();
+                return ast.Pattern{ .literal = e };
+            },
+            .string_lit => {
+                const e = try self.parse_simple_expr();
+                return ast.Pattern{ .literal = e };
+            },
+            .kw_nil => {
+                const e = try self.parse_simple_expr();
+                return ast.Pattern{ .literal = e };
+            },
+            .kw_true => {
+                const e = try self.parse_simple_expr();
+                return ast.Pattern{ .literal = e };
+            },
+            .kw_false => {
+                const e = try self.parse_simple_expr();
+                return ast.Pattern{ .literal = e };
+            },
+            // Name — could be wildcard `_`, variant `Name.Variant(...)`, or binding
+            .name => {
+                if (std.mem.eql(u8, tok.text, "_")) {
+                    _ = try self.adv();
+                    return ast.Pattern.wildcard;
+                }
+                // Check for variant pattern: Name.Variant(payload...)
+                // A variant is recognized by Name.Name( pattern
+                const saved = self.lex.*;
+                const first_name = try self.adv();
+                if ((try self.pk()).kind == .dot) {
+                    _ = try self.adv(); // consume `.`
+                    const after_dot = try self.pk();
+                    if (after_dot.kind == .name) {
+                        const variant_name = try self.adv();
+                        // Build tag as "EnumName.VariantName"
+                        const tag = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ first_name.text, variant_name.text });
+                        // Check for payload: (pattern, pattern, ...)
+                        var payload: ?[]ast.Pattern = null;
+                        if ((try self.pk()).kind == .lparen) {
+                            _ = try self.adv(); // consume `(`
+                            var patterns: std.ArrayList(ast.Pattern) = .empty;
+                            if ((try self.pk()).kind != .rparen) {
+                                try patterns.append(self.alloc, try self.parse_pattern());
+                                while (try self.eat(.comma) != null) {
+                                    try patterns.append(self.alloc, try self.parse_pattern());
+                                }
+                            }
+                            _ = try self.expect(.rparen);
+                            payload = try patterns.toOwnedSlice(self.alloc);
+                        }
+                        return ast.Pattern{ .variant = .{ .tag = tag, .payload = payload } };
+                    } else {
+                        // Not a variant, restore and treat as binding
+                        self.lex.* = saved;
+                        _ = try self.adv(); // re-consume the name
+                        return ast.Pattern{ .binding = .{ .name = first_name.text, .typ = null } };
+                    }
+                }
+                // Simple binding
+                return ast.Pattern{ .binding = .{ .name = first_name.text, .typ = null } };
+            },
+            // Unary minus for negative number literals
+            .minus => {
+                _ = try self.adv();
+                const num_tok = try self.pk();
+                if (num_tok.kind == .int_lit or num_tok.kind == .float_lit) {
+                    const e = try self.parse_simple_expr();
+                    const neg_e = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = .neg, .operand = e } });
+                    return ast.Pattern{ .literal = neg_e };
+                }
+                std.debug.print("{}: expected number after '-' in pattern\n", .{tok.loc});
+                return ParseError.UnexpectedToken;
+            },
+            else => {
+                std.debug.print("{}: expected pattern, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
+                return ParseError.UnexpectedToken;
+            },
+        }
+    }
+
+    /// Parse table destructuring pattern: `{key1: pat1, key2: pat2}`
+    fn parse_table_destr_pattern(self: *Parser) ParseError!ast.Pattern {
+        _ = try self.adv(); // consume `{`
+        var entries: std.ArrayList(ast.Pattern.TableDestrEntry) = .empty;
+        while ((try self.pk()).kind != .rbrace) {
+            const key_tok = try self.expect(.name);
+            _ = try self.expect(.colon);
+            const pat = try self.parse_pattern();
+            try entries.append(self.alloc, .{ .key = key_tok.text, .pat = pat });
+            if (try self.eat(.comma) == null) break;
+        }
+        _ = try self.expect(.rbrace);
+        return ast.Pattern{ .table_destr = try entries.toOwnedSlice(self.alloc) };
+    }
+
+    /// Parse array destructuring pattern: `[pat1, pat2, ...name]`
+    fn parse_array_destr_pattern(self: *Parser) ParseError!ast.Pattern {
+        _ = try self.adv(); // consume `[`
+        var patterns: std.ArrayList(ast.Pattern) = .empty;
+        while ((try self.pk()).kind != .rbracket) {
+            try patterns.append(self.alloc, try self.parse_pattern());
+            if (try self.eat(.comma) == null) break;
+        }
+        _ = try self.expect(.rbracket);
+        return ast.Pattern{ .array_destr = try patterns.toOwnedSlice(self.alloc) };
     }
 
     fn parse_label(self: *Parser) ParseError!ast.Stmt {
@@ -495,7 +1300,7 @@ pub const Parser = struct {
     fn parse_expr_stmt(self: *Parser) ParseError!ast.Stmt {
         const first = try self.parse_suffixed_expr();
         const nxt = try self.pk();
-        
+
         if (nxt.kind == .assign or nxt.kind == .comma) {
             var targets: std.ArrayList(*ast.Expr) = .empty;
             try targets.append(self.alloc, first);
@@ -510,9 +1315,9 @@ pub const Parser = struct {
                 .loc = first.loc(),
                 .targets = try targets.toOwnedSlice(self.alloc),
                 .values = try values.toOwnedSlice(self.alloc),
-            }};
+            } };
         }
-        
+
         // Bash-style call: name arg1 arg2 ...
         if (first.* == .name) {
             const is_bash_arg = switch (nxt.kind) {
@@ -542,13 +1347,13 @@ pub const Parser = struct {
                     .loc = name_info.loc,
                     .func = func_expr,
                     .args = try args.toOwnedSlice(self.alloc),
-                }};
+                } };
                 return ast.Stmt{ .call_stmt = .{ .loc = name_info.loc, .expr = call_expr } };
             }
             std.debug.print("{}: expression is not a statement\n", .{first.loc()});
             return ParseError.UnexpectedToken;
         }
-        
+
         switch (first.*) {
             .call, .method_call => {},
             else => {
@@ -561,10 +1366,7 @@ pub const Parser = struct {
 
     fn is_expr_start(_: *Parser, kind: TK) bool {
         return switch (kind) {
-            .name, .int_lit, .float_lit, .string_lit,
-            .kw_nil, .kw_true, .kw_false, .dots,
-            .lparen, .lbrace, .lbracket,
-            .kw_not, .hash, .minus, .tilde, .hash_hash => true,
+            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_await => true,
             else => false,
         };
     }
@@ -573,28 +1375,29 @@ pub const Parser = struct {
 
     fn infix_prec(kind: TK) ?struct { op: ast.BinOp, left: u8, right: u8 } {
         return switch (kind) {
-            .kw_or   => .{ .op = .@"or",  .left = 1,  .right = 2  },
-            .kw_and  => .{ .op = .@"and", .left = 3,  .right = 4  },
-            .lt      => .{ .op = .lt,     .left = 5,  .right = 5  },
-            .gt      => .{ .op = .gt,     .left = 5,  .right = 5  },
-            .leq     => .{ .op = .leq,    .left = 5,  .right = 5  },
-            .geq     => .{ .op = .geq,    .left = 5,  .right = 5  },
-            .eq      => .{ .op = .eq,     .left = 5,  .right = 5  },
-            .neq     => .{ .op = .neq,    .left = 5,  .right = 5  },
-            .pipe    => .{ .op = .bor,    .left = 6,  .right = 7  },
-            .tilde   => .{ .op = .bxor,   .left = 8,  .right = 9  },
-            .amp     => .{ .op = .band,   .left = 10, .right = 11 },
-            .lshift  => .{ .op = .lshift, .left = 12, .right = 13 },
-            .rshift  => .{ .op = .rshift, .left = 12, .right = 13 },
-            .concat  => .{ .op = .concat, .left = 15, .right = 14 }, // right-assoc
-            .plus    => .{ .op = .add,    .left = 16, .right = 17 },
-            .minus   => .{ .op = .sub,    .left = 16, .right = 17 },
-            .star    => .{ .op = .mul,    .left = 18, .right = 19 },
-            .slash   => .{ .op = .div,    .left = 18, .right = 19 },
-            .idiv    => .{ .op = .idiv,   .left = 18, .right = 19 },
-            .percent => .{ .op = .mod,    .left = 18, .right = 19 },
-            .caret   => .{ .op = .pow,    .left = 22, .right = 21 }, // right-assoc
-            else     => null,
+            .kw_or => .{ .op = .@"or", .left = 1, .right = 2 },
+            .kw_and => .{ .op = .@"and", .left = 3, .right = 4 },
+            .lt => .{ .op = .lt, .left = 5, .right = 5 },
+            .gt => .{ .op = .gt, .left = 5, .right = 5 },
+            .leq => .{ .op = .leq, .left = 5, .right = 5 },
+            .geq => .{ .op = .geq, .left = 5, .right = 5 },
+            .eq => .{ .op = .eq, .left = 5, .right = 5 },
+            .neq => .{ .op = .neq, .left = 5, .right = 5 },
+            .kw_in => .{ .op = .contains, .left = 5, .right = 5 },
+            .pipe => .{ .op = .bor, .left = 6, .right = 7 },
+            .tilde => .{ .op = .bxor, .left = 8, .right = 9 },
+            .amp => .{ .op = .band, .left = 10, .right = 11 },
+            .lshift => .{ .op = .lshift, .left = 12, .right = 13 },
+            .rshift => .{ .op = .rshift, .left = 12, .right = 13 },
+            .concat => .{ .op = .concat, .left = 15, .right = 14 }, // right-assoc
+            .plus => .{ .op = .add, .left = 16, .right = 17 },
+            .minus => .{ .op = .sub, .left = 16, .right = 17 },
+            .star => .{ .op = .mul, .left = 18, .right = 19 },
+            .slash => .{ .op = .div, .left = 18, .right = 19 },
+            .idiv => .{ .op = .idiv, .left = 18, .right = 19 },
+            .percent => .{ .op = .mod, .left = 18, .right = 19 },
+            .caret => .{ .op = .pow, .left = 22, .right = 21 }, // right-assoc
+            else => null,
         };
     }
 
@@ -606,20 +1409,26 @@ pub const Parser = struct {
         var lhs: *ast.Expr = undefined;
         {
             const tok = try self.pk();
-            const op: ?ast.UnOp = switch (tok.kind) {
-                .kw_not    => .not,
-                .hash      => .len,
-                .hash_hash => .compile,
-                .minus     => .neg,
-                .tilde     => .bnot,
-                else       => null,
-            };
-            if (op) |uop| {
-                _ = try self.adv();
+            if (tok.kind == .kw_await) {
+                _ = try self.adv(); // consume `await`
                 const operand = try self.parse_prec(20);
-                lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
+                lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
-                lhs = try self.parse_suffixed_expr();
+                const op: ?ast.UnOp = switch (tok.kind) {
+                    .kw_not => .not,
+                    .hash => .len,
+                    .hash_hash => .compile,
+                    .minus => .neg,
+                    .tilde => .bnot,
+                    else => null,
+                };
+                if (op) |uop| {
+                    _ = try self.adv();
+                    const operand = try self.parse_prec(20);
+                    lhs = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = uop, .operand = operand } });
+                } else {
+                    lhs = try self.parse_suffixed_expr();
+                }
             }
         }
         while (true) {
@@ -629,21 +1438,29 @@ pub const Parser = struct {
             _ = try self.adv();
             const rhs = try self.parse_prec(inf.right);
             lhs = try self.new_expr(.{ .binop = .{
-                .loc = lhs.loc(), .op = inf.op, .lhs = lhs, .rhs = rhs,
-            }});
+                .loc = lhs.loc(),
+                .op = inf.op,
+                .lhs = lhs,
+                .rhs = rhs,
+            } });
         }
         return lhs;
     }
 
     fn parse_unary(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
+        if (tok.kind == .kw_await) {
+            _ = try self.adv(); // consume `await`
+            const operand = try self.parse_prec(20);
+            return self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
+        }
         const op: ?ast.UnOp = switch (tok.kind) {
-            .kw_not    => .not,
-            .hash      => .len,
+            .kw_not => .not,
+            .hash => .len,
             .hash_hash => .compile,
-            .minus     => .neg,
-            .tilde     => .bnot,
-            else       => null,
+            .minus => .neg,
+            .tilde => .bnot,
+            else => null,
         };
         if (op) |uop| {
             _ = try self.adv();
@@ -669,10 +1486,22 @@ pub const Parser = struct {
                 const decoded = try Lexer.decode_lua_short_string(self.alloc, tok.text);
                 break :blk self.new_expr(.{ .string_lit = .{ .loc = tok.loc, .val = decoded } });
             },
-            .kw_nil   => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .nil       = tok.loc }); },
-            .kw_true  => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .true_lit  = tok.loc }); },
-            .kw_false => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .false_lit = tok.loc }); },
-            .dots     => blk: { _ = try self.adv(); break :blk self.new_expr(.{ .vararg    = tok.loc }); },
+            .kw_nil => blk: {
+                _ = try self.adv();
+                break :blk self.new_expr(.{ .nil = tok.loc });
+            },
+            .kw_true => blk: {
+                _ = try self.adv();
+                break :blk self.new_expr(.{ .true_lit = tok.loc });
+            },
+            .kw_false => blk: {
+                _ = try self.adv();
+                break :blk self.new_expr(.{ .false_lit = tok.loc });
+            },
+            .dots => blk: {
+                _ = try self.adv();
+                break :blk self.new_expr(.{ .vararg = tok.loc });
+            },
             .kw_function, .kw_fun => blk: {
                 const l = (try self.adv()).loc;
                 const fb = try self.new_fb(try self.parse_func_body(l));
@@ -689,6 +1518,7 @@ pub const Parser = struct {
                 break :blk e;
             },
             .lbrace => self.parse_table(),
+            .kw_match => self.parse_match_expr(),
             else => {
                 std.debug.print("{}: expected expression, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
                 return ParseError.ExpectedToken;
@@ -717,12 +1547,23 @@ pub const Parser = struct {
                     const method = try self.expect(.name);
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .method_call = .{
-                        .loc = tok.loc, .obj = e, .method = method.text, .args = callargs,
-                    }});
+                        .loc = tok.loc,
+                        .obj = e,
+                        .method = method.text,
+                        .args = callargs,
+                    } });
                 },
                 .lparen, .lbrace, .string_lit => {
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
+                },
+                .question => {
+                    _ = try self.adv();
+                    e = try self.new_expr(.{ .try_expr = .{ .loc = tok.loc, .operand = e } });
+                },
+                .bang => {
+                    _ = try self.adv();
+                    e = try self.new_expr(.{ .unwrap_expr = .{ .loc = tok.loc, .operand = e } });
                 },
                 else => break,
             }
@@ -965,6 +1806,34 @@ test "parse: if/else statement" {
     try testing.expect(stmt.if_stmt.else_body != null);
 }
 
+test "parse: if without then" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\if true
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .if_stmt);
+    try testing.expect(stmt.if_stmt.cond.* == .true_lit);
+    try testing.expect(stmt.if_stmt.else_body == null);
+}
+
+test "parse: if/elseif/else without then" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\if false
+        \\elseif true
+        \\else
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .if_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.if_stmt.elseifs.len);
+    try testing.expect(stmt.if_stmt.else_body != null);
+}
+
 test "parse: while loop" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -1154,4 +2023,853 @@ test "parse error: unexpected token" {
     defer arena.deinit();
     // 'end' without a matching block opener should fail
     try testing.expectError(error.ExpectedToken, parseSource("if true", &arena));
+}
+
+test "parse: try with no catch clauses" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\try
+        \\  local x = 1
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .try_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.try_stmt.body.stmts.len);
+    try testing.expectEqual(@as(usize, 0), stmt.try_stmt.catches.len);
+}
+
+test "parse: try with single catch binding" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\try
+        \\  local x = 1
+        \\catch e
+        \\  local y = 2
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .try_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.try_stmt.body.stmts.len);
+    try testing.expectEqual(@as(usize, 1), stmt.try_stmt.catches.len);
+    const c = stmt.try_stmt.catches[0];
+    try testing.expect(c.error_type == null);
+    try testing.expectEqualStrings("e", c.binding.?);
+    try testing.expectEqual(@as(usize, 1), c.body.stmts.len);
+}
+
+test "parse: try with typed catch clause" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\try
+        \\  local x = 1
+        \\catch IOError e
+        \\  local y = 2
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .try_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.try_stmt.catches.len);
+    const c = stmt.try_stmt.catches[0];
+    try testing.expect(c.error_type != null);
+    try testing.expectEqualStrings("IOError", c.error_type.?.named);
+    try testing.expectEqualStrings("e", c.binding.?);
+}
+
+test "parse: try with multiple catch clauses" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\try
+        \\  local x = 1
+        \\catch IOError e
+        \\  local a = 1
+        \\catch e
+        \\  local b = 2
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .try_stmt);
+    try testing.expectEqual(@as(usize, 2), stmt.try_stmt.catches.len);
+    // First: typed catch
+    const c0 = stmt.try_stmt.catches[0];
+    try testing.expect(c0.error_type != null);
+    try testing.expectEqualStrings("IOError", c0.error_type.?.named);
+    try testing.expectEqualStrings("e", c0.binding.?);
+    // Second: untyped catch
+    const c1 = stmt.try_stmt.catches[1];
+    try testing.expect(c1.error_type == null);
+    try testing.expectEqualStrings("e", c1.binding.?);
+}
+
+test "parse: defer statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\defer
+        \\  local x = 1
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .defer_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.defer_stmt.body.stmts.len);
+}
+
+test "parse: try with catch and no binding" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\try
+        \\  local x = 1
+        \\catch
+        \\  local y = 2
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .try_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.try_stmt.catches.len);
+    const c = stmt.try_stmt.catches[0];
+    try testing.expect(c.error_type == null);
+    try testing.expect(c.binding == null);
+}
+
+test "parse: match statement with wildcard" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match x
+        \\  _ => return 1
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expect(stmt.match_stmt.scrutinee.* == .name);
+    try testing.expectEqualStrings("x", stmt.match_stmt.scrutinee.name.ident);
+    try testing.expectEqual(@as(usize, 1), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .wildcard);
+    try testing.expect(stmt.match_stmt.arms[0].guard == null);
+}
+
+test "parse: match statement with literal patterns" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match n
+        \\  1 => return "one"
+        \\  2 => return "two"
+        \\  _ => return "other"
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 3), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[1].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[2].pattern == .wildcard);
+}
+
+test "parse: match with binding pattern" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match val
+        \\  x => return x
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.match_stmt.arms.len);
+    const pat = stmt.match_stmt.arms[0].pattern;
+    try testing.expect(pat == .binding);
+    try testing.expectEqualStrings("x", pat.binding.name);
+}
+
+test "parse: match with guard expression" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match val
+        \\  x if x > 0 => return x
+        \\  _ => return 0
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 2), stmt.match_stmt.arms.len);
+    const arm = stmt.match_stmt.arms[0];
+    try testing.expect(arm.pattern == .binding);
+    try testing.expect(arm.guard != null);
+    try testing.expect(arm.guard.?.* == .binop);
+}
+
+test "parse: match with variant pattern" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match result
+        \\  Option.Some(val) => return val
+        \\  Option.None => return nil
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 2), stmt.match_stmt.arms.len);
+    const arm0 = stmt.match_stmt.arms[0];
+    try testing.expect(arm0.pattern == .variant);
+    try testing.expectEqualStrings("Option.Some", arm0.pattern.variant.tag);
+    try testing.expect(arm0.pattern.variant.payload != null);
+    try testing.expectEqual(@as(usize, 1), arm0.pattern.variant.payload.?.len);
+    const arm1 = stmt.match_stmt.arms[1];
+    try testing.expect(arm1.pattern == .variant);
+    try testing.expectEqualStrings("Option.None", arm1.pattern.variant.tag);
+    try testing.expect(arm1.pattern.variant.payload == null);
+}
+
+test "parse: match with table destructuring" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match obj
+        \\  {x: a, y: b} => return a + b
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.match_stmt.arms.len);
+    const pat = stmt.match_stmt.arms[0].pattern;
+    try testing.expect(pat == .table_destr);
+    try testing.expectEqual(@as(usize, 2), pat.table_destr.len);
+    try testing.expectEqualStrings("x", pat.table_destr[0].key);
+    try testing.expectEqualStrings("y", pat.table_destr[1].key);
+}
+
+test "parse: match with array destructuring" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match arr
+        \\  [first, second] => return first
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 1), stmt.match_stmt.arms.len);
+    const pat = stmt.match_stmt.arms[0].pattern;
+    try testing.expect(pat == .array_destr);
+    try testing.expectEqual(@as(usize, 2), pat.array_destr.len);
+}
+
+test "parse: match with rest pattern in array" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match arr
+        \\  [head, ...tail] => return head
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    const pat = stmt.match_stmt.arms[0].pattern;
+    try testing.expect(pat == .array_destr);
+    try testing.expectEqual(@as(usize, 2), pat.array_destr.len);
+    try testing.expect(pat.array_destr[0] == .binding);
+    try testing.expect(pat.array_destr[1] == .rest);
+    try testing.expectEqualStrings("tail", pat.array_destr[1].rest);
+}
+
+test "parse: match as expression" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local r = match x
+        \\  1 => return "one"
+        \\  _ => return "other"
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .local_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.local_decl.inits.len);
+    const expr = stmt.local_decl.inits[0];
+    try testing.expect(expr.* == .match_expr);
+    try testing.expectEqual(@as(usize, 2), expr.match_expr.arms.len);
+}
+
+test "parse: match with string literal pattern" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match cmd
+        \\  "start" => return 1
+        \\  "stop" => return 0
+        \\  _ => return -1
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 3), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[0].pattern.literal.* == .string_lit);
+}
+
+test "parse: match with nil and boolean patterns" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match flag
+        \\  nil => return "nil"
+        \\  true => return "yes"
+        \\  false => return "no"
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 3), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[0].pattern.literal.* == .nil);
+    try testing.expect(stmt.match_stmt.arms[1].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[1].pattern.literal.* == .true_lit);
+    try testing.expect(stmt.match_stmt.arms[2].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[2].pattern.literal.* == .false_lit);
+}
+
+test "parse: empty match statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match x
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 0), stmt.match_stmt.arms.len);
+}
+
+test "parse: postfix ? produces try_expr" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return x?", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    try testing.expect(expr.* == .try_expr);
+    try testing.expect(expr.try_expr.operand.* == .name);
+    try testing.expectEqualStrings("x", expr.try_expr.operand.name.ident);
+}
+
+test "parse: postfix ! produces unwrap_expr" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return x!", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    try testing.expect(expr.* == .unwrap_expr);
+    try testing.expect(expr.unwrap_expr.operand.* == .name);
+    try testing.expectEqualStrings("x", expr.unwrap_expr.operand.name.ident);
+}
+
+test "parse: postfix ? on call expression" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return get_value()?", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    try testing.expect(expr.* == .try_expr);
+    try testing.expect(expr.try_expr.operand.* == .call);
+}
+
+test "parse: postfix ! on call expression" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return get_value()!", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    try testing.expect(expr.* == .unwrap_expr);
+    try testing.expect(expr.unwrap_expr.operand.* == .call);
+}
+
+test "parse: chained postfix operators" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // x?.field! means ((x?).field)!
+    const mod = try parseSource("return x?.field!", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    // outermost is unwrap_expr (!)
+    try testing.expect(expr.* == .unwrap_expr);
+    // its operand is a field access
+    const field_expr = expr.unwrap_expr.operand;
+    try testing.expect(field_expr.* == .field);
+    // the object of the field is a try_expr (?)
+    try testing.expect(field_expr.field.obj.* == .try_expr);
+    try testing.expect(field_expr.field.obj.try_expr.operand.* == .name);
+}
+
+test "parse: single attribute on function" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@inline
+        \\fun fast_add(a: i64, b: i64) -> i64
+        \\  return a + b
+        \\end
+    , &arena);
+    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqualStrings("fast_add", stmt.func_decl.path[0]);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("inline", stmt.func_decl.attributes[0].name);
+    try testing.expect(stmt.func_decl.attributes[0].args == null);
+}
+
+test "parse: attribute with args on function" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@deprecated("use new_func instead")
+        \\fun old_func()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("deprecated", stmt.func_decl.attributes[0].name);
+    try testing.expectEqualStrings("\"use new_func instead\"", stmt.func_decl.attributes[0].args.?);
+}
+
+test "parse: multiple attributes on function" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@deprecated("use new_func instead")
+        \\@nopanic
+        \\fun old_func()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 2), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("deprecated", stmt.func_decl.attributes[0].name);
+    try testing.expectEqualStrings("\"use new_func instead\"", stmt.func_decl.attributes[0].args.?);
+    try testing.expectEqualStrings("nopanic", stmt.func_decl.attributes[1].name);
+    try testing.expect(stmt.func_decl.attributes[1].args == null);
+}
+
+test "parse: attribute on struct" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@packed
+        \\struct Data {
+        \\  x: i32,
+        \\  y: i32
+        \\}
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .struct_def);
+    try testing.expectEqualStrings("Data", stmt.struct_def.name);
+    try testing.expectEqual(@as(usize, 1), stmt.struct_def.attributes.len);
+    try testing.expectEqualStrings("packed", stmt.struct_def.attributes[0].name);
+}
+
+test "parse: attribute with numeric arg" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@align(16)
+        \\struct AlignedData {
+        \\  x: i64
+        \\}
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .struct_def);
+    try testing.expectEqual(@as(usize, 1), stmt.struct_def.attributes.len);
+    try testing.expectEqualStrings("align", stmt.struct_def.attributes[0].name);
+    try testing.expectEqualStrings("16", stmt.struct_def.attributes[0].args.?);
+}
+
+test "parse: attribute on async function" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@nopanic
+        \\async fun worker()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expect(stmt.func_decl.func.is_async);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("nopanic", stmt.func_decl.attributes[0].name);
+}
+
+test "parse: attribute on enum" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@derive("Debug")
+        \\enum Color
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    try testing.expectEqualStrings("Color", stmt.enum_def.name);
+    try testing.expectEqual(@as(usize, 1), stmt.enum_def.attributes.len);
+    try testing.expectEqualStrings("derive", stmt.enum_def.attributes[0].name);
+}
+
+test "parse: function without attributes has empty attributes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun simple()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 0), stmt.func_decl.attributes.len);
+}
+
+test "parse: attribute with ffi string arg" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@ffi("my_c_func")
+        \\fun wrapper()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("ffi", stmt.func_decl.attributes[0].name);
+    try testing.expectEqualStrings("\"my_c_func\"", stmt.func_decl.attributes[0].args.?);
+}
+
+test "parse: async function declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\async fun fetch_data()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expect(stmt.func_decl.func.is_async);
+    try testing.expectEqualStrings("fetch_data", stmt.func_decl.path[0]);
+}
+
+test "parse: async function keyword" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\async function long_task()
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expect(stmt.func_decl.func.is_async);
+    try testing.expectEqualStrings("long_task", stmt.func_decl.path[0]);
+}
+
+test "parse: await as prefix operator" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return await x", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    try testing.expect(expr.* == .await_expr);
+    try testing.expect(expr.await_expr.operand.* == .name);
+    try testing.expectEqualStrings("x", expr.await_expr.operand.name.ident);
+}
+
+test "parse: await on call expression" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return await fetch()", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    try testing.expect(expr.* == .await_expr);
+    try testing.expect(expr.await_expr.operand.* == .call);
+}
+
+test "parse: await binds tighter than binary ops" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("return await x + 1", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .ret);
+    const expr = stmt.ret.vals[0];
+    // await binds at precedence 20 (like other prefix unary ops),
+    // so `await x + 1` = `(await x) + 1` → binop(add, await_expr(x), 1)
+    try testing.expect(expr.* == .binop);
+    try testing.expect(expr.binop.lhs.* == .await_expr);
+    try testing.expectEqualStrings("x", expr.binop.lhs.await_expr.operand.name.ident);
+}
+
+test "parse: simple enum with no variants" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("enum Empty\nend", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    try testing.expectEqualStrings("Empty", stmt.enum_def.name);
+    try testing.expectEqual(@as(usize, 0), stmt.enum_def.variants.len);
+    try testing.expect(stmt.enum_def.type_params == null);
+}
+
+test "parse: enum with simple variants" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\enum Color
+        \\  Red
+        \\  Green
+        \\  Blue
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    try testing.expectEqualStrings("Color", stmt.enum_def.name);
+    try testing.expectEqual(@as(usize, 3), stmt.enum_def.variants.len);
+    try testing.expectEqualStrings("Red", stmt.enum_def.variants[0].name);
+    try testing.expectEqualStrings("Green", stmt.enum_def.variants[1].name);
+    try testing.expectEqualStrings("Blue", stmt.enum_def.variants[2].name);
+    try testing.expect(stmt.enum_def.variants[0].payload == null);
+    try testing.expect(stmt.enum_def.variants[1].payload == null);
+    try testing.expect(stmt.enum_def.variants[2].payload == null);
+}
+
+test "parse: enum with generic type parameter" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\enum Option[T]
+        \\  Some(value: T)
+        \\  None
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    try testing.expectEqualStrings("Option", stmt.enum_def.name);
+    // Type params
+    try testing.expect(stmt.enum_def.type_params != null);
+    try testing.expectEqual(@as(usize, 1), stmt.enum_def.type_params.?.len);
+    try testing.expect(stmt.enum_def.type_params.?[0] == .named);
+    try testing.expectEqualStrings("T", stmt.enum_def.type_params.?[0].named);
+    // Variants
+    try testing.expectEqual(@as(usize, 2), stmt.enum_def.variants.len);
+    try testing.expectEqualStrings("Some", stmt.enum_def.variants[0].name);
+    try testing.expect(stmt.enum_def.variants[0].payload != null);
+    try testing.expectEqual(@as(usize, 1), stmt.enum_def.variants[0].payload.?.len);
+    try testing.expectEqualStrings("value", stmt.enum_def.variants[0].payload.?[0].name.?);
+    try testing.expect(stmt.enum_def.variants[0].payload.?[0].typ == .named);
+    try testing.expectEqualStrings("None", stmt.enum_def.variants[1].name);
+    try testing.expect(stmt.enum_def.variants[1].payload == null);
+}
+
+test "parse: enum with multiple generic type parameters" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\enum Result[T, E]
+        \\  Ok(value: T)
+        \\  Err(error: E)
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    try testing.expectEqualStrings("Result", stmt.enum_def.name);
+    // Type params
+    try testing.expect(stmt.enum_def.type_params != null);
+    try testing.expectEqual(@as(usize, 2), stmt.enum_def.type_params.?.len);
+    // Variants
+    try testing.expectEqual(@as(usize, 2), stmt.enum_def.variants.len);
+    try testing.expectEqualStrings("Ok", stmt.enum_def.variants[0].name);
+    try testing.expectEqual(@as(usize, 1), stmt.enum_def.variants[0].payload.?.len);
+    try testing.expectEqualStrings("value", stmt.enum_def.variants[0].payload.?[0].name.?);
+    try testing.expectEqualStrings("Err", stmt.enum_def.variants[1].name);
+    try testing.expectEqual(@as(usize, 1), stmt.enum_def.variants[1].payload.?.len);
+    try testing.expectEqualStrings("error", stmt.enum_def.variants[1].payload.?[0].name.?);
+}
+
+test "parse: enum variant with multiple payload fields" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\enum Event
+        \\  Click(x: i32, y: i32)
+        \\  Key(code: i32)
+        \\  Quit
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    try testing.expectEqualStrings("Event", stmt.enum_def.name);
+    try testing.expectEqual(@as(usize, 3), stmt.enum_def.variants.len);
+    // Click has 2 payload fields
+    const click = stmt.enum_def.variants[0];
+    try testing.expectEqualStrings("Click", click.name);
+    try testing.expect(click.payload != null);
+    try testing.expectEqual(@as(usize, 2), click.payload.?.len);
+    try testing.expectEqualStrings("x", click.payload.?[0].name.?);
+    try testing.expectEqualStrings("y", click.payload.?[1].name.?);
+    // Key has 1 field
+    const key = stmt.enum_def.variants[1];
+    try testing.expectEqualStrings("Key", key.name);
+    try testing.expectEqual(@as(usize, 1), key.payload.?.len);
+    // Quit has no payload
+    try testing.expect(stmt.enum_def.variants[2].payload == null);
+}
+
+test "parse: enum variant with positional (unnamed) payload" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\enum Wrapper
+        \\  Val(i32)
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .enum_def);
+    const val = stmt.enum_def.variants[0];
+    try testing.expectEqualStrings("Val", val.name);
+    try testing.expect(val.payload != null);
+    try testing.expectEqual(@as(usize, 1), val.payload.?.len);
+    // Positional payload has no name
+    try testing.expect(val.payload.?[0].name == null);
+    try testing.expect(val.payload.?[0].typ == .named);
+}
+
+test "parse: simple concept with one method" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Printable
+        \\  fun to_string(self) -> str
+        \\end
+    , &arena);
+    try testing.expectEqual(@as(usize, 1), mod.body.stmts.len);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .concept_def);
+    const cd = stmt.concept_def;
+    try testing.expectEqualStrings("Printable", cd.name);
+    try testing.expect(cd.type_params == null);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("to_string", cd.required_methods[0].name);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods[0].params.len);
+    try testing.expectEqualStrings("self", cd.required_methods[0].params[0].name);
+    try testing.expect(cd.required_methods[0].ret_type == .named);
+    try testing.expectEqualStrings("str", cd.required_methods[0].ret_type.named);
+    try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
+}
+
+test "parse: concept with generic type parameter" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Comparable[T]
+        \\  fun compare(self, other: T) -> i64
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Comparable", cd.name);
+    try testing.expect(cd.type_params != null);
+    try testing.expectEqual(@as(usize, 1), cd.type_params.?.len);
+    try testing.expect(cd.type_params.?[0] == .named);
+    try testing.expectEqualStrings("T", cd.type_params.?[0].named);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("compare", cd.required_methods[0].name);
+    try testing.expectEqual(@as(usize, 2), cd.required_methods[0].params.len);
+    try testing.expectEqualStrings("self", cd.required_methods[0].params[0].name);
+    try testing.expectEqualStrings("other", cd.required_methods[0].params[1].name);
+}
+
+test "parse: concept with multiple methods" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Iterator[T]
+        \\  fun next(self) -> T
+        \\  fun has_next(self) -> bool
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Iterator", cd.name);
+    try testing.expectEqual(@as(usize, 2), cd.required_methods.len);
+    try testing.expectEqualStrings("next", cd.required_methods[0].name);
+    try testing.expectEqualStrings("has_next", cd.required_methods[1].name);
+}
+
+test "parse: concept with required field" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Sized
+        \\  size: i64
+        \\  fun measure(self) -> i64
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Sized", cd.name);
+    try testing.expectEqual(@as(usize, 1), cd.required_fields.len);
+    try testing.expectEqualStrings("size", cd.required_fields[0].name);
+    try testing.expect(cd.required_fields[0].typ == .named);
+    try testing.expectEqualStrings("i64", cd.required_fields[0].typ.named);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("measure", cd.required_methods[0].name);
+}
+
+test "parse: concept with multiple type params" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Mappable[K, V]
+        \\  fun get(self, key: K) -> V
+        \\  fun set(self, key: K, val: V)
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Mappable", cd.name);
+    try testing.expect(cd.type_params != null);
+    try testing.expectEqual(@as(usize, 2), cd.type_params.?.len);
+    try testing.expectEqualStrings("K", cd.type_params.?[0].named);
+    try testing.expectEqualStrings("V", cd.type_params.?[1].named);
+    try testing.expectEqual(@as(usize, 2), cd.required_methods.len);
+}
+
+test "parse: concept with attribute" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@deprecated
+        \\concept Legacy
+        \\  fun old_method(self)
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Legacy", cd.name);
+    try testing.expectEqual(@as(usize, 1), cd.attributes.len);
+    try testing.expectEqualStrings("deprecated", cd.attributes[0].name);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+}
+
+test "parse: empty concept" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Empty
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Empty", cd.name);
+    try testing.expectEqual(@as(usize, 0), cd.required_methods.len);
+    try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
 }

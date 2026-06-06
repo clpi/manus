@@ -18,25 +18,85 @@ pub const TokenKind = enum {
     string_lit,
 
     // Lua keywords
-    kw_and, kw_break, kw_do, kw_else, kw_elseif,
-    kw_end, kw_false, kw_for, kw_function, kw_fun, kw_global, kw_goto,
-    kw_if, kw_in, kw_local, kw_nil, kw_not,
-    kw_or, kw_repeat, kw_return, kw_then, kw_true,
-    kw_until, kw_while,
+    kw_and,
+    kw_break,
+    kw_do,
+    kw_else,
+    kw_elseif,
+    kw_end,
+    kw_false,
+    kw_for,
+    kw_function,
+    kw_fun,
+    kw_global,
+    kw_goto,
+    kw_if,
+    kw_in,
+    kw_local,
+    kw_nil,
+    kw_not,
+    kw_or,
+    kw_repeat,
+    kw_return,
+    kw_then,
+    kw_true,
+    kw_until,
+    kw_while,
 
     // Duo type keywords
-    kw_const, kw_struct, kw_enum,
-    kw_i8, kw_i16, kw_i32, kw_i64,
-    kw_u8, kw_u16, kw_u32, kw_u64,
-    kw_f32, kw_f64, kw_bool, kw_void, kw_str,
+    kw_const,
+    kw_struct,
+    kw_enum,
+    kw_i8,
+    kw_i16,
+    kw_i32,
+    kw_i64,
+    kw_u8,
+    kw_u16,
+    kw_u32,
+    kw_u64,
+    kw_f32,
+    kw_f64,
+    kw_bool,
+    kw_void,
+    kw_str,
+
+    // Duo contextual keywords
+    kw_match,
+    kw_try,
+    kw_catch,
+    kw_defer,
+    kw_async,
+    kw_await,
+    kw_concept,
 
     // Single-char punctuation
-    lparen, rparen,
-    lbracket, rbracket,
-    lbrace, rbrace,
-    plus, minus, star, slash, percent, caret, hash,
-    amp, pipe, lt, gt, assign, tilde,
-    semi, colon, comma, dot,
+    lparen,
+    rparen,
+    lbracket,
+    rbracket,
+    lbrace,
+    rbrace,
+    plus,
+    minus,
+    star,
+    slash,
+    percent,
+    caret,
+    hash,
+    amp,
+    pipe,
+    lt,
+    gt,
+    assign,
+    tilde,
+    semi,
+    colon,
+    comma,
+    dot,
+    at, // @
+    question, // ?
+    bang, // !
 
     // Multi-char operators
     concat, // ..
@@ -51,6 +111,7 @@ pub const TokenKind = enum {
     idiv, // //
     dcolon, // ::
     arrow, // ->
+    fat_arrow, // =>
 
     eof,
 
@@ -100,6 +161,13 @@ pub const TokenKind = enum {
             .kw_bool => "bool",
             .kw_void => "void",
             .kw_str => "str",
+            .kw_match => "match",
+            .kw_try => "try",
+            .kw_catch => "catch",
+            .kw_defer => "defer",
+            .kw_async => "async",
+            .kw_await => "await",
+            .kw_concept => "concept",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -123,6 +191,9 @@ pub const TokenKind = enum {
             .colon => ":",
             .comma => ",",
             .dot => ".",
+            .at => "@",
+            .question => "?",
+            .bang => "!",
             .concat => "..",
             .dots => "...",
             .hash_hash => "##",
@@ -135,6 +206,7 @@ pub const TokenKind = enum {
             .idiv => "//",
             .dcolon => "::",
             .arrow => "->",
+            .fat_arrow => "=>",
             .eof => "<eof>",
         };
     }
@@ -496,24 +568,24 @@ pub const Lexer = struct {
     fn lookup_kw(text: []const u8) ?TokenKind {
         // Parallel arrays: word list and corresponding token kind.
         const words = [_][]const u8{
-            "and", "break", "do", "else", "elseif", "end",
-            "false", "for", "function", "fun", "global", "goto", "if", "in",
-            "local", "nil", "not", "or", "repeat", "return",
-            "then", "true", "until", "while",
-            "const", "struct", "enum",
-            "i8", "i16", "i32", "i64",
-            "u8",  "u16", "u32", "u64",
-            "f32", "f64", "bool", "void", "str",
+            "and",    "break",  "do",       "else",  "elseif",  "end",
+            "false",  "for",    "function", "fun",   "global",  "goto",
+            "if",     "in",     "local",    "nil",   "not",     "or",
+            "repeat", "return", "then",     "true",  "until",   "while",
+            "const",  "struct", "enum",     "i8",    "i16",     "i32",
+            "i64",    "u8",     "u16",      "u32",   "u64",     "f32",
+            "f64",    "bool",   "void",     "str",   "match",   "try",
+            "catch",  "defer",  "async",    "await", "concept",
         };
         const kinds = [_]TokenKind{
-            .kw_and, .kw_break, .kw_do, .kw_else, .kw_elseif, .kw_end,
-            .kw_false, .kw_for, .kw_function, .kw_fun, .kw_global, .kw_goto, .kw_if, .kw_in,
-            .kw_local, .kw_nil, .kw_not, .kw_or, .kw_repeat, .kw_return,
-            .kw_then, .kw_true, .kw_until, .kw_while,
-            .kw_const, .kw_struct, .kw_enum,
-            .kw_i8, .kw_i16, .kw_i32, .kw_i64,
-            .kw_u8,  .kw_u16, .kw_u32, .kw_u64,
-            .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str,
+            .kw_and,    .kw_break,  .kw_do,       .kw_else,  .kw_elseif,  .kw_end,
+            .kw_false,  .kw_for,    .kw_function, .kw_fun,   .kw_global,  .kw_goto,
+            .kw_if,     .kw_in,     .kw_local,    .kw_nil,   .kw_not,     .kw_or,
+            .kw_repeat, .kw_return, .kw_then,     .kw_true,  .kw_until,   .kw_while,
+            .kw_const,  .kw_struct, .kw_enum,     .kw_i8,    .kw_i16,     .kw_i32,
+            .kw_i64,    .kw_u8,     .kw_u16,      .kw_u32,   .kw_u64,     .kw_f32,
+            .kw_f64,    .kw_bool,   .kw_void,     .kw_str,   .kw_match,   .kw_try,
+            .kw_catch,  .kw_defer,  .kw_async,    .kw_await, .kw_concept,
         };
         for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
         return null;
@@ -597,6 +669,9 @@ pub const Lexer = struct {
             '=' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .eq, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else if (self.peek_char() == '>') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .fat_arrow, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .assign, .loc = l, .text = self.src[p - 1 .. p] },
             '~' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
@@ -620,6 +695,9 @@ pub const Lexer = struct {
                 _ = self.adv();
                 break :blk Token{ .kind = .dcolon, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .colon, .loc = l, .text = self.src[p - 1 .. p] },
+            '@' => Token{ .kind = .at, .loc = l, .text = self.src[p - 1 .. p] },
+            '?' => Token{ .kind = .question, .loc = l, .text = self.src[p - 1 .. p] },
+            '!' => Token{ .kind = .bang, .loc = l, .text = self.src[p - 1 .. p] },
             else => LexError.UnexpectedChar,
         };
     }
@@ -656,10 +734,10 @@ test "lex: identifiers" {
 test "lex: standard keywords" {
     var l = Lexer.init("and break do else elseif end false for function goto if in local nil not or repeat return then true until while", "test");
     const expected = [_]TokenKind{
-        .kw_and, .kw_break, .kw_do, .kw_else, .kw_elseif, .kw_end,
-        .kw_false, .kw_for, .kw_function, .kw_goto, .kw_if, .kw_in,
-        .kw_local, .kw_nil, .kw_not, .kw_or, .kw_repeat, .kw_return,
-        .kw_then, .kw_true, .kw_until, .kw_while,
+        .kw_and,   .kw_break, .kw_do,       .kw_else,  .kw_elseif, .kw_end,
+        .kw_false, .kw_for,   .kw_function, .kw_goto,  .kw_if,     .kw_in,
+        .kw_local, .kw_nil,   .kw_not,      .kw_or,    .kw_repeat, .kw_return,
+        .kw_then,  .kw_true,  .kw_until,    .kw_while,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }
@@ -673,9 +751,10 @@ test "lex: duo extension keywords" {
 test "lex: type keywords" {
     var l = Lexer.init("i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 bool void str", "test");
     const expected = [_]TokenKind{
-        .kw_i8, .kw_i16, .kw_i32, .kw_i64,
-        .kw_u8, .kw_u16, .kw_u32, .kw_u64,
-        .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str,
+        .kw_i8,  .kw_i16, .kw_i32,  .kw_i64,
+        .kw_u8,  .kw_u16, .kw_u32,  .kw_u64,
+        .kw_f32, .kw_f64, .kw_bool, .kw_void,
+        .kw_str,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }
@@ -812,8 +891,9 @@ test "lex: block comment with level skipped" {
 test "lex: single-char operators" {
     var l = Lexer.init("+ - * / % ^ # & | < > = ~ ; : , .", "test");
     const expected = [_]TokenKind{
-        .plus, .minus, .star, .slash, .percent, .caret, .hash,
-        .amp, .pipe, .lt, .gt, .assign, .tilde, .semi, .colon, .comma, .dot,
+        .plus,  .minus, .star, .slash, .percent, .caret, .hash,
+        .amp,   .pipe,  .lt,   .gt,    .assign,  .tilde, .semi,
+        .colon, .comma, .dot,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }
@@ -821,7 +901,7 @@ test "lex: single-char operators" {
 test "lex: multi-char operators" {
     var l = Lexer.init("== ~= <= >= << >> // .. ... ## -> ::", "test");
     const expected = [_]TokenKind{
-        .eq, .neq, .leq, .geq, .lshift, .rshift, .idiv,
+        .eq,     .neq,  .leq,       .geq,   .lshift, .rshift, .idiv,
         .concat, .dots, .hash_hash, .arrow, .dcolon,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
@@ -914,16 +994,16 @@ test "decode_lua_short_string: newline escape" {
 test "decode_lua_short_string: all single-char escapes" {
     const alloc = testing.allocator;
     const cases = [_]struct { in: []const u8, out: []const u8 }{
-        .{ .in = "\\a",  .out = "\x07" },
-        .{ .in = "\\b",  .out = "\x08" },
-        .{ .in = "\\f",  .out = "\x0C" },
-        .{ .in = "\\n",  .out = "\n"   },
-        .{ .in = "\\r",  .out = "\r"   },
-        .{ .in = "\\t",  .out = "\t"   },
-        .{ .in = "\\v",  .out = "\x0B" },
-        .{ .in = "\\\\", .out = "\\"   },
-        .{ .in = "\\\"", .out = "\""   },
-        .{ .in = "\\'",  .out = "'"    },
+        .{ .in = "\\a", .out = "\x07" },
+        .{ .in = "\\b", .out = "\x08" },
+        .{ .in = "\\f", .out = "\x0C" },
+        .{ .in = "\\n", .out = "\n" },
+        .{ .in = "\\r", .out = "\r" },
+        .{ .in = "\\t", .out = "\t" },
+        .{ .in = "\\v", .out = "\x0B" },
+        .{ .in = "\\\\", .out = "\\" },
+        .{ .in = "\\\"", .out = "\"" },
+        .{ .in = "\\'", .out = "'" },
     };
     for (cases) |c| {
         const result = try Lexer.decode_lua_short_string(alloc, c.in);
@@ -975,4 +1055,104 @@ test "decode_lua_short_string error: incomplete unicode escape" {
         error.InvalidEscape,
         Lexer.decode_lua_short_string(testing.allocator, "\\u{"),
     );
+}
+
+test "lex: contextual keywords" {
+    var l = Lexer.init("match try catch defer async await concept", "test");
+    const expected = [_]TokenKind{
+        .kw_match, .kw_try, .kw_catch, .kw_defer, .kw_async, .kw_await, .kw_concept,
+    };
+    for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: at operator" {
+    var l = Lexer.init("@", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.at, tok.kind);
+    try testing.expectEqualStrings("@", tok.text);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: question operator" {
+    var l = Lexer.init("?", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.question, tok.kind);
+    try testing.expectEqualStrings("?", tok.text);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: bang operator" {
+    var l = Lexer.init("!", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.bang, tok.kind);
+    try testing.expectEqualStrings("!", tok.text);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: fat arrow operator" {
+    var l = Lexer.init("=>", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.fat_arrow, tok.kind);
+    try testing.expectEqualStrings("=>", tok.text);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: fat arrow distinguished from assign" {
+    var l = Lexer.init("= =>", "test");
+    const t1 = try l.next();
+    try testing.expectEqual(TokenKind.assign, t1.kind);
+    const t2 = try l.next();
+    try testing.expectEqual(TokenKind.fat_arrow, t2.kind);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: at question bang in sequence" {
+    var l = Lexer.init("@ ? !", "test");
+    try testing.expectEqual(TokenKind.at, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.question, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.bang, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: contextual keywords in expression context" {
+    // Contextual keywords used as identifiers should still lex as keywords
+    // (the parser determines contextual usage, not the lexer)
+    var l = Lexer.init("match(x)", "test");
+    try testing.expectEqual(TokenKind.kw_match, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.lparen, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.name, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.rparen, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: attribute usage pattern" {
+    // Common pattern: @inline fun foo() end
+    var l = Lexer.init("@inline", "test");
+    const t1 = try l.next();
+    try testing.expectEqual(TokenKind.at, t1.kind);
+    const t2 = try l.next();
+    try testing.expectEqual(TokenKind.name, t2.kind);
+    try testing.expectEqualStrings("inline", t2.text);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: postfix operators after name" {
+    // Pattern: value? and value!
+    var l = Lexer.init("x? y!", "test");
+    try testing.expectEqual(TokenKind.name, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.question, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.name, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.bang, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
+}
+
+test "lex: match arm with fat arrow" {
+    // Pattern: | Some(x) => body
+    var l = Lexer.init("| x => 42", "test");
+    try testing.expectEqual(TokenKind.pipe, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.name, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.fat_arrow, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.int_lit, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
 }

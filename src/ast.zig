@@ -30,8 +30,8 @@ pub const TypeExpr = union(enum) {
     pub fn is_numeric(self: TypeExpr) bool {
         return switch (self) {
             .named => |n| for ([_][]const u8{
-                "i8", "i16", "i32", "i64",
-                "u8", "u16", "u32", "u64",
+                "i8",  "i16", "i32", "i64",
+                "u8",  "u16", "u32", "u64",
                 "f32", "f64",
             }) |t| {
                 if (std.mem.eql(u8, n, t)) break true;
@@ -61,7 +61,10 @@ pub const TypeExpr = union(enum) {
 
     pub fn eql(a: TypeExpr, b: TypeExpr) bool {
         return switch (a) {
-            .inferred => switch (b) { .inferred => true, else => false },
+            .inferred => switch (b) {
+                .inferred => true,
+                else => false,
+            },
             .named => |na| switch (b) {
                 .named => |nb| std.mem.eql(u8, na, nb),
                 else => false,
@@ -87,11 +90,28 @@ pub const TypeExpr = union(enum) {
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 pub const BinOp = enum {
-    add, sub, mul, div, idiv, mod, pow,
-    band, bor, bxor, lshift, rshift,
+    add,
+    sub,
+    mul,
+    div,
+    idiv,
+    mod,
+    pow,
+    band,
+    bor,
+    bxor,
+    lshift,
+    rshift,
     concat,
-    eq, neq, lt, gt, leq, geq,
-    @"and", @"or",
+    eq,
+    neq,
+    lt,
+    gt,
+    leq,
+    geq,
+    @"and",
+    @"or",
+    contains,
 };
 
 pub const UnOp = enum { neg, not, len, bnot, compile };
@@ -124,6 +144,8 @@ pub const FuncBody = struct {
     body: Block,
     /// Generic type parameters: <T, U>
     type_params: ?[]TypeExpr = null,
+    /// Whether the function was declared with the `async` modifier
+    is_async: bool = false,
     // set by sema: is the function fully typed (all params + ret annotated)?
     is_typed: bool = false,
     // set by sema: emit O(n) iterative loop instead of naive recursion
@@ -208,6 +230,11 @@ pub const Expr = union(enum) {
     unop: struct { loc: Loc, op: UnOp, operand: *Expr },
     func_expr: *FuncBody,
     table: struct { loc: Loc, fields: []TableField },
+    try_expr: struct { loc: Loc, operand: *Expr }, // expr?
+    unwrap_expr: struct { loc: Loc, operand: *Expr }, // expr!
+    match_expr: *MatchExpr,
+    await_expr: struct { loc: Loc, operand: *Expr },
+    contains_expr: struct { loc: Loc, lhs: *Expr, rhs: *Expr }, // x in y
 
     pub fn loc(self: Expr) Loc {
         return switch (self) {
@@ -227,8 +254,96 @@ pub const Expr = union(enum) {
             .unop => |x| x.loc,
             .func_expr => |f| f.loc,
             .table => |x| x.loc,
+            .try_expr => |x| x.loc,
+            .unwrap_expr => |x| x.loc,
+            .match_expr => |m| m.loc,
+            .await_expr => |x| x.loc,
+            .contains_expr => |x| x.loc,
         };
     }
+};
+
+// ── Match / Try / Defer / Enum / Concept ──────────────────────────────────────
+
+pub const MatchExpr = struct {
+    loc: Loc,
+    scrutinee: *Expr,
+    arms: []MatchArm,
+};
+
+pub const MatchArm = struct {
+    pattern: Pattern,
+    guard: ?*Expr,
+    body: Block,
+};
+
+pub const Pattern = union(enum) {
+    literal: *Expr,
+    binding: struct { name: []const u8, typ: ?TypeExpr },
+    variant: struct { tag: []const u8, payload: ?[]Pattern },
+    table_destr: []TableDestrEntry,
+    array_destr: []Pattern,
+    rest: []const u8, // ...name
+    wildcard, // _
+
+    pub const TableDestrEntry = struct { key: []const u8, pat: Pattern };
+};
+
+pub const TryStmt = struct {
+    loc: Loc,
+    body: Block,
+    catches: []CatchClause,
+    defers: []DeferStmt,
+};
+
+pub const CatchClause = struct {
+    loc: Loc,
+    error_type: ?TypeExpr,
+    binding: ?[]const u8,
+    body: Block,
+};
+
+pub const DeferStmt = struct {
+    loc: Loc,
+    body: Block,
+};
+
+pub const EnumDef = struct {
+    loc: Loc,
+    name: []const u8,
+    type_params: ?[]TypeExpr,
+    variants: []EnumVariant,
+    attributes: []Attribute,
+};
+
+pub const EnumVariant = struct {
+    name: []const u8,
+    payload: ?[]PayloadField,
+
+    pub const PayloadField = struct { name: ?[]const u8, typ: TypeExpr };
+};
+
+pub const Attribute = struct {
+    name: []const u8,
+    args: ?[]const u8, // raw string for now; parsed by sema
+};
+
+pub const FuncSignature = struct {
+    name: []const u8,
+    params: []FuncParam,
+    ret_type: TypeExpr,
+    type_params: ?[]TypeExpr,
+};
+
+pub const ConceptDef = struct {
+    loc: Loc,
+    name: []const u8,
+    type_params: ?[]TypeExpr,
+    required_methods: []FuncSignature,
+    required_fields: []RequiredField,
+    attributes: []Attribute = &.{},
+
+    pub const RequiredField = struct { name: []const u8, typ: TypeExpr };
 };
 
 // ── Statements ────────────────────────────────────────────────────────────────
@@ -251,12 +366,16 @@ pub const FuncDecl = struct {
     method: bool,
     is_local: bool,
     func: FuncBody,
+    attributes: []Attribute = &.{},
 };
 
 pub const StructDefPayload = struct {
     loc: Loc,
     name: []const u8,
     fields: []StructField,
+    attributes: []Attribute = &.{},
+    /// Concept names this struct declares it implements (via `implements Concept1, Concept2`).
+    implements: []const []const u8 = &.{},
 };
 
 pub const Stmt = union(enum) {
@@ -315,6 +434,11 @@ pub const Stmt = union(enum) {
     goto_stmt: struct { loc: Loc, label: []const u8 },
     label_stmt: struct { loc: Loc, label: []const u8 },
     struct_def: StructDefPayload,
+    match_stmt: MatchExpr,
+    try_stmt: TryStmt,
+    defer_stmt: DeferStmt,
+    enum_def: EnumDef,
+    concept_def: ConceptDef,
 };
 
 pub const StructField = struct {

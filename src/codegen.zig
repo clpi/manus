@@ -2245,6 +2245,9 @@ pub const CodeGen = struct {
                 }
             },
             .struct_def => {}, // handled at module level
+            .match_stmt, .try_stmt, .defer_stmt, .enum_def, .concept_def => {
+                // TODO: codegen for Duo-extended statements
+            },
             .brk => self.pl("break;", .{}),
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
@@ -2657,6 +2660,7 @@ pub const CodeGen = struct {
                         .geq => "lua_geq",
                         .@"or" => "lua_or",
                         .@"and" => "lua_and",
+                        .contains => "lua_contains",
                         else => null,
                     };
                     if (func) |f| {
@@ -2908,6 +2912,18 @@ pub const CodeGen = struct {
                 self.indent -= 1;
                 self.ind();
                 self.p("}})", .{});
+            },
+            .try_expr, .unwrap_expr, .await_expr => {
+                // TODO: codegen for Duo-extended expressions
+                self.p("/* TODO: {s} */", .{@tagName(std.meta.activeTag(expr.*))});
+            },
+            .match_expr => {
+                // TODO: codegen for match expression
+                self.p("/* TODO: match_expr */", .{});
+            },
+            .contains_expr => {
+                // TODO: codegen for contains/in expression
+                self.p("/* TODO: contains */", .{});
             },
         }
     }
@@ -3664,6 +3680,7 @@ pub const CodeGen = struct {
             .geq => ">=",
             .@"and" => "&&",
             .@"or" => "||",
+            .contains => "/* in */",
         };
     }
 

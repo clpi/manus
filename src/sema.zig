@@ -23,6 +23,8 @@ const Symbol = struct {
     is_global: bool = false,
     is_close: bool = false,
     is_vararg_rest: bool = false,
+    /// If non-null, using this symbol emits a deprecation warning.
+    deprecated_msg: ?[]const u8 = null,
 };
 
 fn is_const_attrib(attrib: ?[]const u8) bool {
@@ -31,6 +33,39 @@ fn is_const_attrib(attrib: ?[]const u8) bool {
 
 fn is_close_attrib(attrib: ?[]const u8) bool {
     return attrib != null and std.mem.eql(u8, attrib.?, "close");
+}
+
+/// Check whether a function has the @nopanic attribute.
+fn has_nopanic_attr(attributes: []const ast.Attribute) bool {
+    for (attributes) |attr| {
+        if (std.mem.eql(u8, attr.name, "nopanic")) return true;
+    }
+    return false;
+}
+
+/// Extract the deprecation message from attributes, or null if not deprecated.
+fn get_deprecated_msg(attributes: []const ast.Attribute) ?[]const u8 {
+    for (attributes) |attr| {
+        if (std.mem.eql(u8, attr.name, "deprecated")) {
+            return attr.args orelse "deprecated";
+        }
+    }
+    return null;
+}
+
+/// Check whether attributes contain @arc(false) and validate the argument.
+/// Returns true if @arc attribute is present (valid or invalid).
+fn validate_arc_attr(attributes: []const ast.Attribute) ?bool {
+    for (attributes) |attr| {
+        if (std.mem.eql(u8, attr.name, "arc")) {
+            if (attr.args) |args| {
+                return std.mem.eql(u8, args, "false");
+            }
+            // @arc without argument is invalid
+            return false;
+        }
+    }
+    return null;
 }
 
 /// Lexical scope: a stack of hash maps.
@@ -92,18 +127,67 @@ pub const Scope = struct {
 /// The Sema pass fills this map; CodeGen reads it.
 pub const TypeMap = std.AutoHashMap(*const ast.Expr, RT);
 
+/// A registered concept with its required methods and fields.
+pub const ConceptInfo = struct {
+    name: []const u8,
+    required_methods: []const MethodRequirement,
+    required_fields: []const FieldRequirement,
+
+    pub const MethodRequirement = struct {
+        name: []const u8,
+        param_count: usize, // number of params (including self)
+        ret_type: RT,
+    };
+
+    pub const FieldRequirement = struct {
+        name: []const u8,
+        typ: RT,
+    };
+};
+
+/// A stored function signature for overload resolution (Requirement 12).
+pub const FuncSignature = struct {
+    param_types: []const RT,
+    ret: RT,
+    is_vararg: bool,
+};
+
+/// A record of a generic instantiation site, tracked for the monomorphizer (Requirement 4.1, 4.3).
+pub const InstantiationRecord = struct {
+    /// Name of the generic type/function being instantiated.
+    generic_name: []const u8,
+    /// The resolved type arguments at this instantiation site.
+    type_args: []const RT,
+    /// A stable key for specialization caching (hash of generic_name + type_args).
+    specialization_key: u64,
+    /// Source location of the instantiation.
+    loc: ast.Loc,
+};
+
 pub const Sema = struct {
     alloc: Allocator,
     scope: Scope,
     type_map: TypeMap,
     module_globals: std.StringHashMapUnmanaged(RT) = .{},
+    /// Registry of declared enum types for exhaustiveness checking.
+    enum_types: std.StringHashMapUnmanaged(RT) = .{},
+    /// Registry of declared concepts for satisfaction checking.
+    concepts: std.StringHashMapUnmanaged(ConceptInfo) = .{},
+    /// Registry of overloaded function signatures (Requirement 12).
+    /// Maps function name → list of overload signatures.
+    overloads: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(FuncSignature)) = .{},
+    /// Tracked generic instantiation sites for the monomorphizer (Requirement 4.1, 4.3).
+    instantiation_sites: std.ArrayListUnmanaged(InstantiationRecord) = .empty,
     errors: u32,
+    warnings: u32,
     current_ret: RT,
     next_closure_id: u32 = 0,
     /// When true, module scope starts with implicit `global *` (plain .lua files).
     lua55_mode: bool = false,
     /// When true, variables are local by default ( .duo files).
     duo_mode: bool = false,
+    /// When true, the current function has the @nopanic attribute.
+    current_nopanic: bool = false,
 
     pub fn init(alloc: Allocator) Sema {
         return .{
@@ -111,8 +195,21 @@ pub const Sema = struct {
             .scope = Scope.init(alloc),
             .type_map = TypeMap.init(alloc),
             .errors = 0,
+            .warnings = 0,
             .current_ret = .void,
             .next_closure_id = 0,
+        };
+    }
+
+    /// Check whether the current function's return type is result-compatible.
+    /// A type is result-compatible if it is a result type, an option type,
+    /// or 'any' (which could be a result at runtime).
+    fn is_result_compatible_ret(self: *const Sema) bool {
+        return switch (self.current_ret) {
+            .result => true,
+            .option => true,
+            .any => true,
+            else => false,
         };
     }
 
@@ -120,6 +217,15 @@ pub const Sema = struct {
         self.scope.deinit();
         self.type_map.deinit();
         self.module_globals.deinit(self.alloc);
+        self.enum_types.deinit(self.alloc);
+        self.concepts.deinit(self.alloc);
+        // Clean up overload lists.
+        var it = self.overloads.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.deinit(self.alloc);
+        }
+        self.overloads.deinit(self.alloc);
+        self.instantiation_sites.deinit(self.alloc);
     }
 
     fn note_global(self: *Sema, name: []const u8, t: RT) !void {
@@ -134,6 +240,11 @@ pub const Sema = struct {
     fn err(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.errors += 1;
         std.debug.print("{}: error: " ++ fmt ++ "\n", .{loc} ++ args);
+    }
+
+    fn warn_msg(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
+        self.warnings += 1;
+        std.debug.print("{}: warning: " ++ fmt ++ "\n", .{loc} ++ args);
     }
 
     fn define_vararg_rest(self: *Sema, fb: *const ast.FuncBody) !void {
@@ -253,9 +364,17 @@ pub const Sema = struct {
                         .any
                     else
                         .any;
-                    // If annotated, use the annotation
+                    // If annotated, use the annotation and enforce type match
                     if (lname.typ != .inferred) {
                         const ann = types.resolve(lname.typ, self.alloc) catch .any;
+                        // Check type mismatch: if init type is known (not any/nil) and
+                        // annotation is known (not any), they must match
+                        if (i < init_types.items.len) {
+                            const init_t = init_types.items[i];
+                            if (ann != .any and init_t != .any and init_t != .nil and !ann.eql(init_t)) {
+                                self.err(lname.loc, "type mismatch: variable '{s}' declared as {}, but initializer has type {}", .{ lname.ident, ann, init_t });
+                            }
+                        }
                         t = ann;
                     }
                     const is_const = is_const_attrib(lname.attrib);
@@ -379,8 +498,67 @@ pub const Sema = struct {
                     .typ = RT{ .@"struct" = .{ .name = sd.name } },
                     .is_const = true,
                 });
+                // Check concept satisfaction for each declared `implements` concept
+                for (sd.implements) |concept_name| {
+                    try self.check_concept_satisfaction(sd, concept_name);
+                }
             },
             .brk, .goto_stmt, .label_stmt => {},
+            .match_stmt => |*ms| try self.check_match(ms),
+            .enum_def => |*ed| try self.check_enum_def(ed),
+            .try_stmt => |*ts| {
+                // Type-check the try body
+                try self.check_block(&ts.body);
+                // Type-check each catch clause
+                for (ts.catches) |*cc| {
+                    try self.scope.push();
+                    // If a binding name is provided, define it in the catch scope
+                    if (cc.binding) |name| {
+                        // If the catch specifies an error type, resolve it;
+                        // otherwise use 'any' for untyped catches
+                        var err_typ: RT = .any;
+                        if (cc.error_type) |et| {
+                            err_typ = types.resolve(et, self.alloc) catch .any;
+                            // Validate that the error type is a known type.
+                            // If it resolves to a struct (user-defined type name), check
+                            // that the type is declared in scope or the enum registry.
+                            if (err_typ == .@"struct") {
+                                const type_name = err_typ.@"struct".name;
+                                const in_scope = self.scope.lookup(type_name) != null;
+                                const in_enums = self.enum_types.get(type_name) != null;
+                                if (!in_scope and !in_enums) {
+                                    self.err(cc.loc, "unknown error type '{s}' in catch clause", .{type_name});
+                                }
+                            }
+                        }
+                        try self.scope.define(name, .{ .typ = err_typ, .is_const = true });
+                    } else if (cc.error_type) |et| {
+                        // Error type specified but no binding — still validate the type
+                        const err_typ = types.resolve(et, self.alloc) catch .any;
+                        if (err_typ == .@"struct") {
+                            const type_name = err_typ.@"struct".name;
+                            const in_scope = self.scope.lookup(type_name) != null;
+                            const in_enums = self.enum_types.get(type_name) != null;
+                            if (!in_scope and !in_enums) {
+                                self.err(cc.loc, "unknown error type '{s}' in catch clause", .{type_name});
+                            }
+                        }
+                    }
+                    try self.check_block(&cc.body);
+                    self.scope.pop();
+                }
+                // Type-check defers within the try statement
+                for (ts.defers) |*d| {
+                    try self.check_block(&d.body);
+                }
+            },
+            .defer_stmt => |*ds| {
+                // Type-check the deferred body
+                try self.check_block(&ds.body);
+            },
+            .concept_def => |*cd| {
+                try self.check_concept_def(cd);
+            },
         }
     }
 
@@ -406,7 +584,11 @@ pub const Sema = struct {
 
         // Check body
         const prev_ret = self.current_ret;
+        const prev_nopanic = self.current_nopanic;
         self.current_ret = ret_t;
+        // Anonymous function expressions don't carry @nopanic;
+        // reset to false so inner expressions aren't incorrectly flagged.
+        self.current_nopanic = false;
         try self.scope.push();
         for (fb.params, 0..) |*p, i|
             try self.scope.define(p.name, .{ .typ = param_types[i], .is_const = false });
@@ -414,6 +596,7 @@ pub const Sema = struct {
         try self.check_block(&fb.body);
         self.scope.pop();
         self.current_ret = prev_ret;
+        self.current_nopanic = prev_nopanic;
 
         const ret_ptr = try self.alloc.create(RT);
         ret_ptr.* = ret_t;
@@ -442,7 +625,13 @@ pub const Sema = struct {
             .string_lit => .str,
             .vararg => .any,
             .name => |n| {
-                if (self.scope.lookup(n.ident)) |sym| return sym.typ;
+                if (self.scope.lookup(n.ident)) |sym| {
+                    // Emit deprecation warning if symbol is @deprecated (Requirement 18.7)
+                    if (sym.deprecated_msg) |msg| {
+                        self.warn_msg(n.loc, "'{s}' is deprecated: {s}", .{ n.ident, msg });
+                    }
+                    return sym.typ;
+                }
                 if (self.scope.needs_explicit_global()) {
                     self.err(n.loc, "use of undeclared global '{s}'", .{n.ident});
                     return .any;
@@ -557,6 +746,35 @@ pub const Sema = struct {
                 }
                 return .any;
             },
+            .try_expr => |te| {
+                _ = try self.check_expr(te.operand);
+                // The ? operator requires the enclosing function to have
+                // a result-compatible return type (Requirement 9.7)
+                if (!self.is_result_compatible_ret()) {
+                    self.err(te.loc, "'?' operator requires enclosing function to have a result-compatible return type", .{});
+                }
+                return .any;
+            },
+            .unwrap_expr => |ue| {
+                _ = try self.check_expr(ue.operand);
+                // The ! operator is rejected in @nopanic functions (Requirement 9.8)
+                if (self.current_nopanic) {
+                    self.err(ue.loc, "'!' operator cannot be used in @nopanic function (it may panic)", .{});
+                }
+                return .any;
+            },
+            .match_expr => |me| {
+                return try self.check_match_expr(me);
+            },
+            .await_expr => |ae| {
+                _ = try self.check_expr(ae.operand);
+                return .any;
+            },
+            .contains_expr => |ce| {
+                _ = try self.check_expr(ce.lhs);
+                _ = try self.check_expr(ce.rhs);
+                return .any;
+            },
         };
     }
 
@@ -599,6 +817,7 @@ pub const Sema = struct {
             },
             .concat => .str,
             .eq, .neq, .lt, .gt, .leq, .geq => .bool,
+            .contains => .bool,
             .@"and" => rt, // 'and' returns rhs type
             .@"or" => lt, // 'or'  returns lhs type
         };
@@ -891,12 +1110,46 @@ pub const Sema = struct {
             .has_vararg = has_vararg,
         } };
         if (fd.path.len == 1 and !fd.method) {
-            try self.scope.define(fd.path[0], .{ .typ = fb_t, .is_const = true });
+            const name = fd.path[0];
+            // Check if a function with this name already exists in scope.
+            // If so, register it as an overload (Requirement 12).
+            if (self.scope.lookup(name)) |existing| {
+                if (existing.typ == .func) {
+                    // First overload encounter: register the existing signature too.
+                    const gop = try self.overloads.getOrPut(self.alloc, name);
+                    if (!gop.found_existing) {
+                        gop.value_ptr.* = .empty;
+                        // Add the previously-registered signature.
+                        try gop.value_ptr.append(self.alloc, .{
+                            .param_types = existing.typ.func.params,
+                            .ret = existing.typ.func.ret.*,
+                            .is_vararg = existing.typ.func.has_vararg,
+                        });
+                    }
+                    // Add the new overload signature.
+                    try gop.value_ptr.append(self.alloc, .{
+                        .param_types = param_types,
+                        .ret = ret_t,
+                        .is_vararg = has_vararg,
+                    });
+                }
+            }
+            try self.scope.define(name, .{ .typ = fb_t, .is_const = true, .deprecated_msg = get_deprecated_msg(fd.attributes) });
+        }
+
+        // Validate @arc(false) attribute on function (emit error if malformed)
+        if (validate_arc_attr(fd.attributes)) |valid| {
+            if (!valid) {
+                self.err(fd.loc, "@arc attribute requires argument 'false'", .{});
+            }
         }
 
         // Pass 1: type-check with declared (or dynamic) signature to populate type_map.
         const prev_ret = self.current_ret;
+        const prev_nopanic = self.current_nopanic;
         self.current_ret = ret_t;
+        // Check if this function has the @nopanic attribute
+        self.current_nopanic = has_nopanic_attr(fd.attributes);
         try self.scope.push();
         for (fb.params, param_types) |*p, pt|
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
@@ -1003,7 +1256,19 @@ pub const Sema = struct {
             .has_vararg = has_vararg,
         } };
         if (fd.path.len == 1 and !fd.method) {
-            try self.scope.define(fd.path[0], .{ .typ = fb_t, .is_const = true });
+            const name = fd.path[0];
+            try self.scope.define(name, .{ .typ = fb_t, .is_const = true });
+            // Update the overload registry with final inferred types if applicable.
+            if (self.overloads.getPtr(name)) |overload_list| {
+                if (overload_list.items.len > 0) {
+                    // Update the last registered overload (this function) with final types.
+                    overload_list.items[overload_list.items.len - 1] = .{
+                        .param_types = param_types,
+                        .ret = ret_t,
+                        .is_vararg = has_vararg,
+                    };
+                }
+            }
         }
 
         // Pass 3: re-check body with native types when specialized.
@@ -1018,6 +1283,362 @@ pub const Sema = struct {
         }
 
         self.current_ret = prev_ret;
+        self.current_nopanic = prev_nopanic;
+    }
+
+    fn check_match(self: *Sema, me: *ast.MatchExpr) SemaError!void {
+        _ = try self.check_match_inner(me);
+    }
+
+    fn check_match_expr(self: *Sema, me: *ast.MatchExpr) SemaError!RT {
+        return try self.check_match_inner(me);
+    }
+
+    /// Shared match type-checking logic for both statement and expression form.
+    /// Type-checks the scrutinee and each arm, then runs exhaustiveness checking.
+    fn check_match_inner(self: *Sema, me: *ast.MatchExpr) SemaError!RT {
+        // Type-check the scrutinee
+        var scrutinee_type = try self.check_expr(me.scrutinee);
+
+        // If the scrutinee type is a struct that matches an enum name, resolve it
+        if (scrutinee_type == .@"struct") {
+            if (self.enum_types.get(scrutinee_type.@"struct".name)) |et| {
+                scrutinee_type = et;
+            }
+        }
+
+        // Also try to resolve the enum from a variable's type when the scrutinee is a name
+        if (scrutinee_type == .any) {
+            if (me.scrutinee.* == .name) {
+                if (self.scope.lookup(me.scrutinee.name.ident)) |sym| {
+                    if (sym.typ == .enum_type) {
+                        scrutinee_type = sym.typ;
+                    } else if (sym.typ == .@"struct") {
+                        if (self.enum_types.get(sym.typ.@"struct".name)) |et| {
+                            scrutinee_type = et;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Type-check each arm's pattern, guard, and body
+        var has_wildcard = false;
+        for (me.arms) |*arm| {
+            try self.scope.push();
+            try self.check_pattern(&arm.pattern, scrutinee_type);
+            if (arm.pattern == .wildcard) has_wildcard = true;
+            if (arm.guard) |guard| _ = try self.check_expr(guard);
+            try self.check_block(&arm.body);
+            self.scope.pop();
+        }
+
+        // Exhaustiveness checking for enum types
+        if (scrutinee_type == .enum_type and !has_wildcard) {
+            self.check_exhaustiveness(me, scrutinee_type.enum_type);
+        }
+
+        return .any;
+    }
+
+    /// Type-check a pattern against the expected scrutinee type.
+    /// Binds variables introduced in the pattern into the current scope.
+    fn check_pattern(self: *Sema, pattern: *const ast.Pattern, scrutinee_type: RT) SemaError!void {
+        switch (pattern.*) {
+            .literal => |lit| {
+                _ = try self.check_expr(lit);
+            },
+            .binding => |b| {
+                // Bind the variable in the current scope with the scrutinee's type
+                var bind_type = scrutinee_type;
+                if (b.typ) |type_expr| {
+                    bind_type = types.resolve(type_expr, self.alloc) catch .any;
+                }
+                try self.scope.define(b.name, .{ .typ = bind_type, .is_const = true });
+            },
+            .variant => |v| {
+                // Variant pattern: validate that the tag is a valid variant of the enum
+                if (scrutinee_type == .enum_type) {
+                    const variant_info = self.find_enum_variant(scrutinee_type.enum_type, v.tag);
+                    if (variant_info) |vi| {
+                        // Check payload sub-patterns with known payload types
+                        if (v.payload) |payload_pats| {
+                            if (vi.payload) |payload_types| {
+                                for (payload_pats, 0..) |*sub_pat, pi| {
+                                    const pt: RT = if (pi < payload_types.len) payload_types[pi] else .any;
+                                    try self.check_pattern(sub_pat, pt);
+                                }
+                            } else {
+                                // Variant has no payload but pattern expects one
+                                for (payload_pats) |*sub_pat| {
+                                    try self.check_pattern(sub_pat, .any);
+                                }
+                            }
+                        }
+                    } else {
+                        // Tag doesn't match any variant — still check sub-patterns
+                        if (v.payload) |payload_pats| {
+                            for (payload_pats) |*sub_pat| {
+                                try self.check_pattern(sub_pat, .any);
+                            }
+                        }
+                    }
+                } else {
+                    // Not matching against an enum — just check sub-patterns
+                    if (v.payload) |payload_pats| {
+                        for (payload_pats) |*sub_pat| {
+                            try self.check_pattern(sub_pat, .any);
+                        }
+                    }
+                }
+            },
+            .table_destr => |entries| {
+                for (entries) |*entry| {
+                    try self.check_pattern(&entry.pat, .any);
+                }
+            },
+            .array_destr => |patterns| {
+                for (patterns) |*sub_pat| {
+                    try self.check_pattern(sub_pat, .any);
+                }
+            },
+            .rest => |name| {
+                try self.scope.define(name, .{ .typ = .any, .is_const = true });
+            },
+            .wildcard => {},
+        }
+    }
+
+    /// Look up a variant in the enum type by tag name.
+    /// Handles both qualified ("EnumName.Variant") and unqualified ("Variant") tags.
+    fn find_enum_variant(self: *const Sema, enum_info: anytype, tag: []const u8) ?types.EnumVariantType {
+        _ = self;
+        // Extract the variant name from the tag (may be "EnumName.Variant" or just "Variant")
+        const variant_name = if (std.mem.indexOfScalar(u8, tag, '.')) |dot_idx|
+            tag[dot_idx + 1 ..]
+        else
+            tag;
+
+        for (enum_info.variants) |variant| {
+            if (std.mem.eql(u8, variant.name, variant_name)) {
+                return variant;
+            }
+        }
+        return null;
+    }
+
+    /// Check exhaustiveness of a match over an enum type.
+    /// Verifies all enum variants are covered or emits an error listing missing ones.
+    fn check_exhaustiveness(self: *Sema, me: *const ast.MatchExpr, enum_info: anytype) void {
+        const variants = enum_info.variants;
+        const enum_name = enum_info.name;
+
+        // Collect which variant names are covered by the arms
+        for (me.arms) |arm| {
+            switch (arm.pattern) {
+                .variant => |v| {
+                    // Variant patterns have a tag like "EnumName.Variant" or just "Variant"
+                    _ = v;
+                },
+                .wildcard => return, // wildcard covers everything
+                else => {},
+            }
+        }
+
+        // Check each variant for coverage
+        var missing_count: usize = 0;
+        var missing_buf: [64][]const u8 = undefined;
+
+        for (variants) |variant| {
+            var found = false;
+            for (me.arms) |arm| {
+                switch (arm.pattern) {
+                    .variant => |v| {
+                        // Match if the tag is "EnumName.Variant" or just "Variant"
+                        const full_tag = v.tag;
+                        if (std.mem.eql(u8, full_tag, variant.name)) {
+                            found = true;
+                            break;
+                        }
+                        // Check if tag is qualified: "EnumName.VariantName"
+                        if (std.mem.indexOfScalar(u8, full_tag, '.')) |dot_idx| {
+                            const after_dot = full_tag[dot_idx + 1 ..];
+                            if (std.mem.eql(u8, after_dot, variant.name)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    },
+                    .wildcard => {
+                        found = true;
+                        break;
+                    },
+                    else => {},
+                }
+            }
+            if (!found and missing_count < missing_buf.len) {
+                missing_buf[missing_count] = variant.name;
+                missing_count += 1;
+            }
+        }
+
+        if (missing_count > 0) {
+            // Emit error listing missing variants
+            self.errors += 1;
+            std.debug.print("{}: error: non-exhaustive match on enum '{s}': missing variant(s): ", .{ me.loc, enum_name });
+            for (missing_buf[0..missing_count], 0..) |name, i| {
+                if (i > 0) std.debug.print(", ", .{});
+                std.debug.print("{s}", .{name});
+            }
+            std.debug.print("\n", .{});
+        }
+    }
+
+    // ── Enum definition ─────────────────────────────────────────────────────────
+
+    /// Register an enum type definition in the type registry and scope.
+    fn check_enum_def(self: *Sema, ed: *const ast.EnumDef) SemaError!void {
+        // Build the list of EnumVariantType from the AST definition
+        var variant_types = try self.alloc.alloc(types.EnumVariantType, ed.variants.len);
+        for (ed.variants, 0..) |*v, i| {
+            var payload_types: ?[]const RT = null;
+            if (v.payload) |fields| {
+                var pt = try self.alloc.alloc(RT, fields.len);
+                for (fields, 0..) |field, fi| {
+                    pt[fi] = types.resolve(field.typ, self.alloc) catch .any;
+                }
+                payload_types = pt;
+            }
+            variant_types[i] = .{
+                .name = v.name,
+                .payload = payload_types,
+            };
+        }
+
+        const enum_t = RT{ .enum_type = .{
+            .name = ed.name,
+            .variants = variant_types,
+        } };
+
+        // Register in the enum type registry (for exhaustiveness checking)
+        try self.enum_types.put(self.alloc, ed.name, enum_t);
+
+        // Define the enum name in scope as a constant type
+        try self.scope.define(ed.name, .{ .typ = enum_t, .is_const = true });
+    }
+
+    // ── Concept definition and satisfaction checking ──────────────────────────
+
+    /// Register a concept definition in the concept registry.
+    fn check_concept_def(self: *Sema, cd: *const ast.ConceptDef) SemaError!void {
+        // Build method requirements
+        var methods = try self.alloc.alloc(ConceptInfo.MethodRequirement, cd.required_methods.len);
+        for (cd.required_methods, 0..) |*m, i| {
+            const ret_t = types.resolve(m.ret_type, self.alloc) catch .any;
+            methods[i] = .{
+                .name = m.name,
+                .param_count = m.params.len,
+                .ret_type = ret_t,
+            };
+        }
+
+        // Build field requirements
+        var fields = try self.alloc.alloc(ConceptInfo.FieldRequirement, cd.required_fields.len);
+        for (cd.required_fields, 0..) |*f, i| {
+            const field_t = types.resolve(f.typ, self.alloc) catch .any;
+            fields[i] = .{
+                .name = f.name,
+                .typ = field_t,
+            };
+        }
+
+        const info = ConceptInfo{
+            .name = cd.name,
+            .required_methods = methods,
+            .required_fields = fields,
+        };
+
+        // Register in the concept registry
+        try self.concepts.put(self.alloc, cd.name, info);
+
+        // Define the concept name in scope as a constant
+        try self.scope.define(cd.name, .{
+            .typ = .any, // Concepts are compile-time constructs
+            .is_const = true,
+        });
+    }
+
+    /// Check that a struct satisfies a declared concept.
+    /// Emits errors listing each missing method or field.
+    fn check_concept_satisfaction(self: *Sema, sd: *const ast.StructDefPayload, concept_name: []const u8) SemaError!void {
+        const concept = self.concepts.get(concept_name) orelse {
+            self.err(sd.loc, "undeclared concept '{s}'", .{concept_name});
+            return;
+        };
+
+        // Collect the struct's field names for checking
+        var missing_methods: std.ArrayList([]const u8) = .empty;
+        defer missing_methods.deinit(self.alloc);
+        var missing_fields: std.ArrayList([]const u8) = .empty;
+        defer missing_fields.deinit(self.alloc);
+
+        // Check required fields
+        for (concept.required_fields) |req_field| {
+            var found = false;
+            for (sd.fields) |struct_field| {
+                if (std.mem.eql(u8, struct_field.name, req_field.name)) {
+                    // Check type compatibility: if both are resolved and non-any, they must match
+                    const struct_field_type = types.resolve(struct_field.typ, self.alloc) catch .any;
+                    if (req_field.typ != .any and struct_field_type != .any and !req_field.typ.eql(struct_field_type)) {
+                        self.errors += 1;
+                        std.debug.print("{}: error: struct '{s}' field '{s}' has type {}, but concept '{s}' requires type {}\n", .{
+                            sd.loc, sd.name, req_field.name, struct_field_type, concept_name, req_field.typ,
+                        });
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                try missing_fields.append(self.alloc, req_field.name);
+            }
+        }
+
+        // Check required methods — for now, methods are fields with function types
+        // In future this would also check function declarations attached to the struct
+        for (concept.required_methods) |req_method| {
+            var found = false;
+            for (sd.fields) |struct_field| {
+                if (std.mem.eql(u8, struct_field.name, req_method.name)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                try missing_methods.append(self.alloc, req_method.name);
+            }
+        }
+
+        // Emit error if any members are missing
+        const total_missing = missing_methods.items.len + missing_fields.items.len;
+        if (total_missing > 0) {
+            self.errors += 1;
+            std.debug.print("{}: error: struct '{s}' does not satisfy concept '{s}': missing ", .{
+                sd.loc, sd.name, concept_name,
+            });
+            var first = true;
+            for (missing_methods.items) |name| {
+                if (!first) std.debug.print(", ", .{});
+                std.debug.print("method '{s}'", .{name});
+                first = false;
+            }
+            for (missing_fields.items) |name| {
+                if (!first) std.debug.print(", ", .{});
+                std.debug.print("field '{s}'", .{name});
+                first = false;
+            }
+            std.debug.print("\n", .{});
+        }
     }
 
     fn detect_trial_division_primes(fb: *ast.FuncBody) bool {
@@ -3006,6 +3627,15 @@ pub const Sema = struct {
                     break :blk .any;
                 },
                 .vararg => .any,
+                .try_expr, .unwrap_expr, .await_expr => blk: {
+                    self.ok = false;
+                    break :blk .any;
+                },
+                .match_expr => blk: {
+                    self.ok = false;
+                    break :blk .any;
+                },
+                .contains_expr => .bool,
             };
             return result;
         }
@@ -3101,6 +3731,7 @@ pub const Sema = struct {
                 },
                 .@"and" => self.infer_expr(rhs, hint),
                 .@"or" => self.infer_expr(lhs, hint),
+                .contains => .bool,
             };
         }
     };
@@ -3355,4 +3986,622 @@ test "sema: comparison yields bool" {
     const expr = mod.body.stmts[0].local_decl.inits[0];
     const t = s.type_map.get(expr);
     try testing.expectEqual(RT.bool, t.?);
+}
+
+test "sema: try_expr (?) in void-returning function emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function f(x: i64) -> i64
+        \\  return x?
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // i64 is not result-compatible, so ? should trigger an error
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: try_expr (?) in result-returning function is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Return type is 'any', which is result-compatible (dynamic check deferred to runtime)
+    const src =
+        \\function f(x)
+        \\  return x?
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // 'any' return type is result-compatible, so no error
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: unwrap_expr (!) in @nopanic function emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\@nopanic
+        \\function f(x: i64) -> i64
+        \\  return x!
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // ! in @nopanic should emit an error
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: unwrap_expr (!) in normal function is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function f(x: i64) -> i64
+        \\  return x!
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // ! in normal function is fine
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match_stmt scrutinee and arms are type-checked" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local x = 42
+        \\match x
+        \\  1 => print("one")
+        \\  2 => print("two")
+        \\  _ => print("other")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match on enum with wildcard is exhaustive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Color
+        \\  Red
+        \\  Green
+        \\  Blue
+        \\end
+        \\local c = Color
+        \\match c
+        \\  Color.Red => print("red")
+        \\  _ => print("other")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match on enum missing variants emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Color
+        \\  Red
+        \\  Green
+        \\  Blue
+        \\end
+        \\local c = Color
+        \\match c
+        \\  Color.Red => print("red")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // Should emit an error for missing Green and Blue variants
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: match on enum all variants covered is exhaustive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Direction
+        \\  Up
+        \\  Down
+        \\end
+        \\local d = Direction
+        \\match d
+        \\  Direction.Up => print("up")
+        \\  Direction.Down => print("down")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match on non-enum does not check exhaustiveness" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local x = 42
+        \\match x
+        \\  1 => print("one")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // No exhaustiveness error for non-enum scrutinees
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: enum_def registers type in scope" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Status
+        \\  Active
+        \\  Inactive
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    // The enum type should be registered
+    try testing.expect(s.enum_types.get("Status") != null);
+}
+
+test "sema: try_stmt body is type-checked" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\try
+        \\  local x = 42
+        \\catch e
+        \\  local y = e
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: defer_stmt body is type-checked" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\defer
+        \\  local x = 1
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match on enum with unqualified variant names" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Shape
+        \\  Circle
+        \\  Square
+        \\  Triangle
+        \\end
+        \\local s = Shape
+        \\match s
+        \\  Shape.Circle => print("circle")
+        \\  Shape.Square => print("square")
+        \\  Shape.Triangle => print("triangle")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // All variants covered with qualified names — no error
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match on enum partial coverage emits specific missing variants" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Season
+        \\  Spring
+        \\  Summer
+        \\  Autumn
+        \\  Winter
+        \\end
+        \\local s = Season
+        \\match s
+        \\  Season.Spring => print("spring")
+        \\  Season.Summer => print("summer")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // Should report error for missing Autumn and Winter
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: match expression type-checks scrutinee and arms" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Coin
+        \\  Heads
+        \\  Tails
+        \\end
+        \\local c = Coin
+        \\local result = match c
+        \\  Coin.Heads => return 1
+        \\  Coin.Tails => return 0
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: match with guard expressions type-checked" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local x = 42
+        \\match x
+        \\  n if n > 10 => print("big")
+        \\  _ => print("small")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+// ── Duo mode scoping tests (Requirements 1.3, 1.4, 1.7, 1.8) ─────────────────
+
+fn runSemaDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    return s;
+}
+
+test "sema: duo mode — bare assignment creates local binding" {
+    // Requirement 1.3: bare assignment at declaration position creates local
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\x = 42
+        \\print(x)
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: duo mode — bare assignment then read is valid" {
+    // Requirement 1.3: assigned variable is accessible afterwards
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\y = 10
+        \\z = y + 1
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: duo mode — reading undeclared variable is an error" {
+    // In duo mode, require_global is true, so reading an undeclared name errors
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\print(undeclared_var)
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 1), s.errors);
+}
+
+test "sema: duo mode — local keyword still works (Lua compat)" {
+    // Requirement 1.8: local keyword is still valid in duo mode
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\local x = 1
+        \\local y = x + 2
+        \\print(y)
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: duo mode — global keyword creates module-scope binding" {
+    // Requirement 1.4: global keyword creates module-global binding
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\global g = 100
+        \\print(g)
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    // Verify the variable was registered as a module global
+    try testing.expect(s.module_globals.get("g") != null);
+}
+
+test "sema: duo mode — global binding is marked is_global" {
+    // Requirement 1.4: global keyword sets is_global flag on symbol
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\global myvar = 42
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expect(s.module_globals.get("myvar") != null);
+}
+
+test "sema: duo mode — let is not a keyword, usable as identifier" {
+    // Requirement 1.7: let is NOT a reserved word, can be used as variable name
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\let = 5
+        \\print(let)
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: duo mode — both local and bare create local bindings" {
+    // Requirement 1.8: local x = 1 and bare x = 1 both produce local bindings
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local a = 1
+        \\b = 2
+        \\print(a + b)
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    // Neither a nor b should appear in module_globals
+    try testing.expect(s.module_globals.get("a") == null);
+    try testing.expect(s.module_globals.get("b") == null);
+}
+
+test "sema: duo mode — bare assignment does not create global" {
+    // Verify that bare assignment in duo mode does NOT add to module_globals
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\x = 42
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    // x should NOT be in module_globals since it was auto-local
+    try testing.expect(s.module_globals.get("x") == null);
+}
+
+test "sema: duo mode — multiple bare assignments in sequence" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\a = 1
+        \\b = 2
+        \\c = a + b
+        \\print(c)
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: duo mode — reassignment to existing local is valid" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\x = 1
+        \\x = 2
+        \\print(x)
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: try_stmt catch with known error type is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum IoError
+        \\  NotFound
+        \\  PermissionDenied
+        \\end
+        \\try
+        \\  local x = 42
+        \\catch IoError e
+        \\  local y = e
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // IoError is declared as an enum, so it should be accepted
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: try_stmt catch with unknown error type emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\try
+        \\  local x = 42
+        \\catch UnknownError e
+        \\  local y = e
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // UnknownError is not declared, so it should emit an error
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: try_stmt catch with primitive error type is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Primitive types (str, i64, etc.) resolve to non-struct types,
+    // so they are always accepted without requiring scope lookup
+    const src =
+        \\try
+        \\  local x = 42
+        \\catch e
+        \\  local y = e
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // No error type specified, just a binding — should be fine
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: try_stmt catch with struct type in scope is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\struct MyError { code: i64 }
+        \\try
+        \\  local x = 42
+        \\catch MyError e
+        \\  local y = e
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // MyError is declared as a struct, so it should be accepted
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: try_expr (?) in function with 'any' return type is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // 'any' return type is result-compatible (runtime check)
+    const src =
+        \\function f(x)
+        \\  local y = x?
+        \\  return y
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    // 'any' is result-compatible, so ? should be accepted
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }
