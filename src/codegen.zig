@@ -1294,9 +1294,9 @@ pub const CodeGen = struct {
         self.indent += 1;
         self.pl("register int64_t x = i;", .{});
         self.pl("register int64_t steps = 0;", .{});
-        self.pl("while (__builtin_expect(x != 1, 1)) {{", .{});
+        self.pl("while (x != 1) {{", .{});
         self.indent += 1;
-        self.pl("if (__builtin_expect(x & 1, 0)) x = 3 * x + 1; else x >>= 1;", .{});
+        self.pl("if (x & 1) x = 3 * x + 1; else x >>= 1;", .{});
         self.pl("steps++;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
@@ -1310,13 +1310,7 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} acc = 0;", .{ct});
-        self.pl("const int64_t __xor_mul = 2654435761LL;", .{});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
-        self.indent += 1;
-        self.pl("register int64_t v = i * __xor_mul;", .{});
-        self.pl("acc ^= v;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) acc ^= i * (int64_t)2654435761LL;", .{n});
         self.pl("return acc;", .{});
     }
 
@@ -1561,7 +1555,7 @@ pub const CodeGen = struct {
         self.indent += 1;
         self.pl("int64_t a_char = a_char_base % 26;", .{});
         self.pl("int64_t b_char = (rep * 13 + j * 5) % 26;", .{});
-        self.pl("int64_t cost = __builtin_expect(a_char != b_char, 1) ? 1 : 0;", .{});
+        self.pl("int64_t cost = a_char != b_char ? 1 : 0;", .{});
         self.pl("int64_t del = prev[j] + 1;", .{});
         self.pl("int64_t ins = curr[j - 1] + 1;", .{});
         self.pl("int64_t sub = prev[j - 1] + cost;", .{});
