@@ -8,10 +8,14 @@ CFLAGS="-O3 -Ofast -ffast-math -march=native -flto -fomit-frame-pointer -funroll
 
 cd "$ROOT"
 zig build
-"$DUO" compile examples/benchmark.lua -o /tmp/duo_bench.out
-$CC $CFLAGS -o /tmp/c_bench.out examples/benchmark_c.c
+"$DUO" compile examples/benchmark.lua -o /tmp/duo_bench.out &
+DUO_COMP_PID=$!
+$CC $CFLAGS -o /tmp/c_bench.out examples/benchmark_c.c &
+CC_COMP_PID=$!
+wait $DUO_COMP_PID
+wait $CC_COMP_PID
 
-BENCHES=23
+BENCHES=40
 
 extract_times() {
   awk '/Time/ {
@@ -134,12 +138,47 @@ if [ "$RESULT_FAIL" -ne 0 ]; then
 fi
 echo "All $BENCHES benchmark results match reference C."
 
+# Compile timer.so for high resolution timing in Lua 5.5 and LuaJIT
+cat << 'EOF' > /tmp/timer.c
+#include <sys/time.h>
+#include <lua.h>
+#include <lauxlib.h>
+static int l_now(lua_State *L) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    lua_pushnumber(L, (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0);
+    return 1;
+}
+int luaopen_timer(lua_State *L) {
+    lua_pushcfunction(L, l_now);
+    return 1;
+}
+EOF
+clang -shared -undefined dynamic_lookup -o /tmp/timer.so /tmp/timer.c 2>/dev/null || true
+
+# Prepare untyped benchmark script for standard Lua
+sed -E 's/:[ ]*[a-zA-Z0-9_]+//g' examples/benchmark.lua > /tmp/lua_bench.lua
+# Inject high-res timer override safely
+sed -i '' '1i\
+local ok, t = pcall(require, "timer"); if ok and type(t) == "function" then os.clock = t end\
+' /tmp/lua_bench.lua
+
 echo
 echo "=== Duo (Lua AOT) ==="
 DUO_TIMES=$(collect_min_times "/tmp/duo_bench.out")
 
 echo "=== Reference C ==="
 C_TIMES=$(collect_min_times "/tmp/c_bench.out")
+
+echo "=== LuaJIT ==="
+LUAJIT_TIMES=$(LUA_CPATH="/tmp/?.so;;" collect_min_times "luajit /tmp/lua_bench.lua")
+
+echo "=== Lua 5.5 ==="
+LUA55_TIMES=$(LUA_CPATH="/tmp/?.so;;" collect_min_times "lua /tmp/lua_bench.lua")
+
+echo "=== Nelua ==="
+# Note: Nelua may fail to compile the untyped bench if it uses generic tables, but we run it anyway
+NELUA_TIMES=$(collect_min_times "nelua /tmp/lua_bench.lua 2>/dev/null || true")
 
 NAMES=(
   "Fibonacci(40)"
@@ -165,15 +204,32 @@ NAMES=(
   "Config parse"
   "Table lookup"
   "Table churn"
+  "Matrix multiply"
+  "Prefix sum"
+  "GCD reduce"
+  "Collatz sum"
+  "XOR fold"
+  "Ring buffer"
+  "Cond swap"
+  "Ackermann"
+  "Levenshtein"
+  "Sieve"
+  "Fenwick tree"
+  "Interpolation"
+  "Run-length"
+  "Bitcount"
+  "CORDIC sin"
+  "Sparse dot"
+  "Game of Life"
 )
 
 FAIL=0
 echo
-printf "%-16s %12s %12s %8s\n" "Benchmark" "Duo(s)" "C(s)" "Winner"
-printf "%-16s %12s %12s %8s\n" "----------------" "------------" "------------" "--------"
+printf "%-16s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "Duo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
+printf "%-16s %12s %12s %12s %12s %12s %8s\n" "----------------" "------------" "------------" "------------" "------------" "------------" "--------"
 
 idx=0
-while IFS='|' read -r d c; do
+while IFS='|' read -r d c lj l5 n; do
   idx=$((idx + 1))
   name="${NAMES[$((idx - 1))]:-bench-$idx}"
   winner=$(awk -v d="$d" -v c="$c" 'BEGIN {
@@ -182,8 +238,18 @@ while IFS='|' read -r d c; do
     if (d + 0 <= c + eps) print "Duo"; else print "C"
   }')
   if [ "$winner" = "C" ]; then FAIL=1; fi
-  printf "%-16s %12s %12s %8s\n" "$name" "$d" "$c" "$winner"
-done < <(paste -d '|' <(echo "$DUO_TIMES") <(echo "$C_TIMES"))
+  # If a compiler fails, its time might be empty. Format gracefully.
+  d_fmt=$(printf "%g" "$d" 2>/dev/null || echo "N/A")
+  c_fmt=$(printf "%g" "$c" 2>/dev/null || echo "N/A")
+  lj_fmt=$(printf "%g" "$lj" 2>/dev/null || echo "N/A")
+  l5_fmt=$(printf "%g" "$l5" 2>/dev/null || echo "N/A")
+  n_fmt=$(printf "%g" "$n" 2>/dev/null || echo "N/A")
+  if [ -z "$lj" ]; then lj_fmt="N/A"; fi
+  if [ -z "$l5" ]; then l5_fmt="N/A"; fi
+  if [ -z "$n" ]; then n_fmt="N/A"; fi
+
+  printf "%-16s %12s %12s %12s %12s %12s %8s\n" "$name" "$d_fmt" "$c_fmt" "$lj_fmt" "$l5_fmt" "$n_fmt" "$winner"
+done < <(paste -d '|' <(echo "$DUO_TIMES") <(echo "$C_TIMES") <(echo "$LUAJIT_TIMES") <(echo "$LUA55_TIMES") <(echo "$NELUA_TIMES"))
 
 if [ "$FAIL" -ne 0 ]; then
   echo

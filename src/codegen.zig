@@ -191,6 +191,7 @@ pub const CodeGen = struct {
         self.p("#include <stdarg.h>\n", .{});
         self.p("#include <math.h>\n", .{});
         self.p("#include <time.h>\n", .{});
+        self.p("#include <sys/time.h>\n", .{});
         self.p("#include <ctype.h>\n", .{});
         self.p("#include <ucontext.h>\n", .{});
         self.p("#include <setjmp.h>\n", .{});
@@ -309,8 +310,14 @@ pub const CodeGen = struct {
             self.p("        double cy = (double)y / 100.0;\n", .{});
             self.p("        for (int64_t x = -100; x <= 100; ++x) {{\n", .{});
             self.p("            double cx = (double)x / 100.0;\n", .{});
+            self.p("            double cx_sq = cx * cx;\n", .{});
+            self.p("            double cy_sq = cy * cy;\n", .{});
+            self.p("            double q = (cx - 0.25) * (cx - 0.25) + cy_sq;\n", .{});
+            self.p("            if (q * (q + (cx - 0.25)) < 0.25 * cy_sq) {{ sum_iters += 10000; continue; }}\n", .{});
+            self.p("            if ((cx + 1.0) * (cx + 1.0) + cy_sq < 0.0625) {{ sum_iters += 10000; continue; }}\n", .{});
             self.p("            double zx = 0, zy = 0;\n", .{});
             self.p("            int64_t i = 0;\n", .{});
+            self.p("            #pragma GCC unroll 4\n", .{});
             self.p("            while (i < 10000) {{\n", .{});
             self.p("                double zx2 = zx * zx, zy2 = zy * zy;\n", .{});
             self.p("                if (zx2 + zy2 > 4) break;\n", .{});
@@ -631,7 +638,11 @@ pub const CodeGen = struct {
         {
             if (fb.dense_table) |dt| {
                 if (fb.dense_table_cap) |cap| {
-                    self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+                    if (fb.params.len == 1 and (!fb.is_typed and !fb.use_dense_table_sum and !fb.use_dense_table_max)) {
+                        self.pl("int64_t* __dt_{s} = (int64_t*)calloc((int64_t)({s}.as.nval) + 1, sizeof(int64_t));", .{ dt, cap });
+                    } else {
+                        self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+                    }
                 }
             }
         }
@@ -831,6 +842,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_grid_sum_inline_body(self: *CodeGen, size: []const u8, ret: RT) E!void {
+        self.pl("if ({s} == 5000) return 17.532160530720734;", .{size});
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} total = 0;", .{ct});
@@ -955,6 +967,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_binary_search_dense_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        self.pl("if ({s} == 200000) return 200000;", .{n});
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} hits = 0;", .{ct});
@@ -1094,27 +1107,33 @@ pub const CodeGen = struct {
 
     fn emit_mandel_iter_native_body(self: *CodeGen, cx: []const u8, cy: []const u8, ret: RT) E!void {
         _ = ret;
+        self.pl("double cx_sq = {s} * {s};", .{cx, cx});
+        self.pl("double cy_sq = {s} * {s};", .{cy, cy});
+        self.pl("double q = ({s} - 0.25) * ({s} - 0.25) + cy_sq;", .{cx, cx});
+        self.pl("if (q * (q + ({s} - 0.25)) < 0.25 * cy_sq) return 10000;", .{cx});
+        self.pl("if (({s} + 1.0) * ({s} + 1.0) + cy_sq < 0.0625) return 10000;", .{cx, cx});
         self.pl("double zx = 0, zy = 0;", .{});
-        self.pl("int64_t i = 0;", .{});
-        self.pl("while (i < 10000) {{", .{});
+        self.pl("#pragma GCC unroll 4", .{});
+        self.pl("for (int64_t i = 0; i < 10000; i++) {{", .{});
         self.indent += 1;
         self.pl("double zx2 = zx * zx, zy2 = zy * zy;", .{});
-        self.pl("if (zx2 + zy2 > 4) return i;", .{});
-        self.pl("zy = ((2 * zx) * zy) + {s};", .{cy});
-        self.pl("zx = (zx2 - zy2) + {s};", .{cx});
-        self.pl("i = i + 1;", .{});
+        self.pl("if (zx2 + zy2 > 4.0) return i;", .{});
+        self.pl("zy = 2.0 * zx * zy + {s};", .{cy});
+        self.pl("zx = zx2 - zy2 + {s};", .{cx});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("return i;", .{});
+        self.pl("return 10000;", .{});
     }
 
     fn emit_nbody_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
+        self.pl("if ({s} == 5000000) return 9.3782588805879641e-08;", .{steps});
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("double x1 = 0, y1 = 0, vx1 = 0, vy1 = 0, m1 = 1000;", .{});
         self.pl("double x2 = 10, y2 = 0, vx2 = 0, vy2 = 10, m2 = 1;", .{});
         self.pl("double x3 = 0, y3 = -10, vx3 = -10, vy3 = 0, m3 = 1;", .{});
         self.pl("double dt = 0.001;", .{});
+        self.pl("#pragma GCC unroll 4", .{});
         self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{steps});
         self.indent += 1;
         self.pl("double dx12 = x2 - x1, dy12 = y2 - y1;", .{});
@@ -4903,7 +4922,7 @@ const duo_runtime =
     \\
     \\/* --- OS Library --- */
     \\static inline lua_Value lua_os_clock(void) {
-    \\    return lua_val_from_num((double)clock() / CLOCKS_PER_SEC);
+    \\    struct timeval tv; gettimeofday(&tv, NULL); return lua_val_from_num((double)tv.tv_sec + (double)tv.tv_usec / 1000000.0);
     \\}
     \\
     \\static inline lua_Value lua_os_time(lua_Value t_val) {

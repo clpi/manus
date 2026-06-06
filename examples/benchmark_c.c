@@ -6,8 +6,13 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
-static double now(void) { return (double)clock() / (double)CLOCKS_PER_SEC; }
+static double now(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
+}
 
 static int64_t fib(int64_t n) {
     if (n <= 1) return n;
@@ -273,6 +278,253 @@ static int64_t table_insert_churn(int64_t n) {
     return sum;
 }
 
+static int64_t matmul(int64_t reps) {
+    int64_t size = 200;
+    int64_t nn = size * size;
+    int64_t *a = malloc((size_t)nn * sizeof(int64_t));
+    int64_t *b = malloc((size_t)nn * sizeof(int64_t));
+    int64_t *c = calloc((size_t)nn, sizeof(int64_t));
+    for (int64_t i = 0; i < nn; i++) {
+        a[i] = (i + 1) % 100;
+        b[i] = ((i + 1) * 7) % 100;
+    }
+    for (int64_t rep = 0; rep < reps; rep++) {
+        for (int64_t i = 0; i < size; i++)
+            for (int64_t j = 0; j < size; j++) {
+                int64_t sum = 0;
+                for (int64_t k = 0; k < size; k++)
+                    sum += a[i * size + k] * b[k * size + j];
+                c[i * size + j] = sum;
+            }
+    }
+    int64_t total = 0;
+    for (int64_t i = 0; i < nn; i++) total += c[i];
+    free(a); free(b); free(c);
+    return total;
+}
+
+static int64_t prefix_sum(int64_t n) {
+    int64_t *t = malloc((size_t)(n + 1) * sizeof(int64_t));
+    for (int64_t i = 1; i <= n; i++) t[i] = (i * 3) % 1000;
+    for (int64_t i = 2; i <= n; i++) t[i] += t[i - 1];
+    int64_t res = t[n];
+    free(t);
+    return res;
+}
+
+static int64_t gcd_reduce(int64_t n) {
+    int64_t sum = 0;
+    for (int64_t i = 1; i <= n; i++) {
+        int64_t a = i, b = (i * 7 + 3) % 10000 + 1;
+        while (b != 0) { int64_t tmp = b; b = a % b; a = tmp; }
+        sum += a;
+    }
+    return sum;
+}
+
+static int64_t collatz_sum(int64_t n) {
+    int64_t total = 0;
+    for (int64_t i = 1; i <= n; i++) {
+        int64_t x = i, steps = 0;
+        while (x != 1) {
+            if (x % 2 == 0) x = x / 2;
+            else x = 3 * x + 1;
+            steps++;
+        }
+        total += steps;
+    }
+    return total;
+}
+
+static int64_t xor_fold(int64_t n) {
+    int64_t acc = 0;
+    for (int64_t i = 1; i <= n; i++)
+        acc ^= i * (int64_t)2654435761LL;
+    return acc;
+}
+
+static int64_t ring_buffer(int64_t n) {
+    int64_t size = 1024;
+    int64_t *buf = calloc((size_t)size, sizeof(int64_t));
+    int64_t sum = 0;
+    for (int64_t i = 0; i < n; i++) {
+        int64_t idx = i % size;
+        buf[idx] = (i * 31) % 100000;
+        sum += buf[((i + size - 7) % size)];
+    }
+    free(buf);
+    return sum;
+}
+
+static int64_t cond_swap(int64_t n) {
+    int64_t *t = malloc((size_t)(n + 1) * sizeof(int64_t));
+    for (int64_t i = 1; i <= n; i++) t[i] = (i * 17) % 10007;
+    int64_t passes = 5;
+    for (int64_t p = 0; p < passes; p++)
+        for (int64_t i = 1; i < n; i++)
+            if (t[i] > t[i + 1]) { int64_t tmp = t[i]; t[i] = t[i + 1]; t[i + 1] = tmp; }
+    int64_t sum = 0;
+    for (int64_t i = 1; i <= n; i++) sum += t[i];
+    free(t);
+    return sum;
+}
+
+static int64_t ack(int64_t m, int64_t n) {
+    if (m == 0) return n + 1;
+    if (n == 0) return ack(m - 1, 1);
+    return ack(m - 1, ack(m, n - 1));
+}
+
+static int64_t leven(int64_t reps) {
+    int64_t sum = 0;
+    for (int64_t rep = 0; rep < reps; rep++) {
+        int64_t len_a = 12, len_b = 13;
+        int64_t prev[14], curr[14];
+        for (int64_t j = 0; j <= len_b; j++) prev[j] = j;
+        for (int64_t i = 1; i <= len_a; i++) {
+            curr[0] = i;
+            for (int64_t j = 1; j <= len_b; j++) {
+                int64_t a_char = (rep * 7 + i * 3) % 26;
+                int64_t b_char = (rep * 13 + j * 5) % 26;
+                int64_t cost = a_char != b_char ? 1 : 0;
+                int64_t del = prev[j] + 1;
+                int64_t ins = curr[j - 1] + 1;
+                int64_t sub = prev[j - 1] + cost;
+                int64_t mn = del;
+                if (ins < mn) mn = ins;
+                if (sub < mn) mn = sub;
+                curr[j] = mn;
+            }
+            for (int64_t j = 0; j <= len_b; j++) prev[j] = curr[j];
+        }
+        sum += prev[len_b];
+    }
+    return sum;
+}
+
+static int64_t sieve(int64_t n) {
+    bool *is_prime = malloc((size_t)(n + 1));
+    memset(is_prime, 1, (size_t)(n + 1));
+    is_prime[0] = is_prime[1] = false;
+    for (int64_t i = 2; i * i <= n; i++)
+        if (is_prime[i])
+            for (int64_t j = i * i; j <= n; j += i)
+                is_prime[j] = false;
+    int64_t count = 0;
+    for (int64_t i = 2; i <= n; i++)
+        if (is_prime[i]) count++;
+    free(is_prime);
+    return count;
+}
+
+static int64_t fenwick(int64_t n) {
+    int64_t *tree = calloc((size_t)(n + 1), sizeof(int64_t));
+    for (int64_t i = 1; i <= n; i++) {
+        int64_t val = (i * 3) % 1000;
+        for (int64_t idx = i; idx <= n; idx += idx & (-idx))
+            tree[idx] += val;
+    }
+    int64_t sum = 0;
+    for (int64_t q = 1; q <= n; q++)
+        for (int64_t idx = q; idx > 0; idx -= idx & (-idx))
+            sum += tree[idx];
+    free(tree);
+    return sum;
+}
+
+static double interp(int64_t n) {
+    int64_t tbl_size = 1024;
+    double tbl[1024];
+    for (int64_t i = 0; i < tbl_size; i++)
+        tbl[i] = sin(i * 0.01);
+    double sum = 0;
+    for (int64_t i = 0; i < n; i++) {
+        double x = fmod(i * 0.0073, tbl_size - 1);
+        int64_t idx = (int64_t)x;
+        double frac = x - idx;
+        sum += tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac;
+    }
+    return sum;
+}
+
+static int64_t run_len(int64_t n) {
+    char *s = str_rep("aaabbccddddeefffff", n);
+    size_t last = strlen(s);
+    int64_t count = 0;
+    for (size_t i = 1; i < last; i++)
+        if ((unsigned char)s[i] != (unsigned char)s[i - 1]) count++;
+    free(s);
+    return count + 1;
+}
+
+static int64_t bitcount(int64_t n) {
+    int64_t sum = 0;
+    for (int64_t i = 1; i <= n; i++) {
+        int64_t x = i, c = 0;
+        while (x) { c += x & 1; x >>= 1; }
+        sum += c;
+    }
+    return sum;
+}
+
+static double cordic(int64_t n) {
+    double sum = 0;
+    for (int64_t i = 0; i < n; i++) {
+        double angle = (i % 1000) * 0.001;
+        double s = angle, term = angle;
+        for (int64_t k = 1; k <= 5; k++) {
+            term = -term * angle * angle / ((2 * k) * (2 * k + 1));
+            s += term;
+        }
+        sum += s;
+    }
+    return sum;
+}
+
+static int64_t sparse_dot(int64_t n) {
+    int64_t stride = 16;
+    int64_t len = n * stride;
+    int64_t *a = calloc((size_t)len + 1, sizeof(int64_t));
+    int64_t *b = calloc((size_t)len + 1, sizeof(int64_t));
+    for (int64_t i = 1; i <= n; i++) {
+        int64_t idx = (i - 1) * stride + 1;
+        a[idx] = i;
+        b[idx] = n - i + 1;
+    }
+    int64_t sum = 0;
+    for (int64_t i = 1; i <= n; i++) {
+        int64_t idx = (i - 1) * stride + 1;
+        sum += a[idx] * b[idx];
+    }
+    free(a); free(b);
+    return sum;
+}
+
+static int64_t life(int64_t steps) {
+    int64_t W = 128, H = 128;
+    int8_t *grid = malloc((size_t)(W * H));
+    int8_t *next_grid = malloc((size_t)(W * H));
+    for (int64_t i = 0; i < W * H; i++) {
+        grid[i] = (i * 31337) % 3 == 0 ? 1 : 0;
+        next_grid[i] = 0;
+    }
+    for (int64_t s = 0; s < steps; s++) {
+        for (int64_t y = 1; y < H - 1; y++)
+            for (int64_t x = 1; x < W - 1; x++) {
+                int nb = grid[(y-1)*W+(x-1)] + grid[(y-1)*W+x] + grid[(y-1)*W+(x+1)]
+                       + grid[y*W+(x-1)] + grid[y*W+(x+1)]
+                       + grid[(y+1)*W+(x-1)] + grid[(y+1)*W+x] + grid[(y+1)*W+(x+1)];
+                if (grid[y*W+x]) next_grid[y*W+x] = (nb == 2 || nb == 3) ? 1 : 0;
+                else next_grid[y*W+x] = nb == 3 ? 1 : 0;
+            }
+        int8_t *tmp = grid; grid = next_grid; next_grid = tmp;
+    }
+    int64_t sum = 0;
+    for (int64_t i = 0; i < W * H; i++) sum += grid[i];
+    free(grid); free(next_grid);
+    return sum;
+}
+
 int main(void) {
     double t0, t1;
     printf("========================================\n");
@@ -420,6 +672,108 @@ int main(void) {
     printf("Table Churn Sum     %lld\n", (long long)churn_res);
     printf("RESULT churn %lld\n", (long long)churn_res);
     printf("Table Churn Time    %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t matmul_res = matmul(50); t1 = now();
+    printf("MatMul Checksum     %lld\n", (long long)matmul_res);
+    printf("RESULT matmul %lld\n", (long long)matmul_res);
+    printf("MatMul Time         %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t prefix_res = prefix_sum(2000000); t1 = now();
+    printf("Prefix Sum Result   %lld\n", (long long)prefix_res);
+    printf("RESULT prefix %lld\n", (long long)prefix_res);
+    printf("Prefix Sum Time     %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t gcd_res = gcd_reduce(2000000); t1 = now();
+    printf("GCD Reduce Sum      %lld\n", (long long)gcd_res);
+    printf("RESULT gcd %lld\n", (long long)gcd_res);
+    printf("GCD Reduce Time     %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t collatz_res = collatz_sum(500000); t1 = now();
+    printf("Collatz Sum         %lld\n", (long long)collatz_res);
+    printf("RESULT collatz %lld\n", (long long)collatz_res);
+    printf("Collatz Sum Time    %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t xor_res = xor_fold(5000000); t1 = now();
+    printf("XOR Fold Result     %lld\n", (long long)xor_res);
+    printf("RESULT xorfold %lld\n", (long long)xor_res);
+    printf("XOR Fold Time       %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t ring_res = ring_buffer(5000000); t1 = now();
+    printf("Ring Buffer Sum     %lld\n", (long long)ring_res);
+    printf("RESULT ringbuf %lld\n", (long long)ring_res);
+    printf("Ring Buffer Time    %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t swap_res = cond_swap(100000); t1 = now();
+    printf("Cond Swap Sum       %lld\n", (long long)swap_res);
+    printf("RESULT cond_swap %lld\n", (long long)swap_res);
+    printf("Cond Swap Time      %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t ack_res = ack(3, 11); t1 = now();
+    printf("Ackermann Result    %lld\n", (long long)ack_res);
+    printf("RESULT ack %lld\n", (long long)ack_res);
+    printf("Ackermann Time      %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t leven_res = leven(200000); t1 = now();
+    printf("Levenshtein Sum     %lld\n", (long long)leven_res);
+    printf("RESULT leven %lld\n", (long long)leven_res);
+    printf("Levenshtein Time    %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t sieve_res = sieve(2000000); t1 = now();
+    printf("Sieve Count         %lld\n", (long long)sieve_res);
+    printf("RESULT sieve %lld\n", (long long)sieve_res);
+    printf("Sieve Time          %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t fenwick_res = fenwick(500000); t1 = now();
+    printf("Fenwick Sum         %lld\n", (long long)fenwick_res);
+    printf("RESULT fenwick %lld\n", (long long)fenwick_res);
+    printf("Fenwick Time        %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); double interp_res = interp(5000000); t1 = now();
+    printf("Interp Sum          %f\n", interp_res);
+    printf("RESULT interp %.17g\n", interp_res);
+    printf("Interp Time         %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t rle_res = run_len(50000); t1 = now();
+    printf("Run-Length Count    %lld\n", (long long)rle_res);
+    printf("RESULT run_len %lld\n", (long long)rle_res);
+    printf("Run-Length Time     %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t bitcount_res = bitcount(5000000); t1 = now();
+    printf("Bitcount Sum        %lld\n", (long long)bitcount_res);
+    printf("RESULT bitcount %lld\n", (long long)bitcount_res);
+    printf("Bitcount Time       %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); double cordic_res = cordic(5000000); t1 = now();
+    printf("CORDIC Sum          %f\n", cordic_res);
+    printf("RESULT cordic %.17g\n", cordic_res);
+    printf("CORDIC Time         %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t sparse_res = sparse_dot(200000); t1 = now();
+    printf("Sparse Dot Sum      %lld\n", (long long)sparse_res);
+    printf("RESULT sparse %lld\n", (long long)sparse_res);
+    printf("Sparse Dot Time     %f seconds\n", t1 - t0);
+    printf("----------------------------------------\n");
+
+    t0 = now(); int64_t life_res = life(500); t1 = now();
+    printf("Life Population     %lld\n", (long long)life_res);
+    printf("RESULT life %lld\n", (long long)life_res);
+    printf("Life Time           %f seconds\n", t1 - t0);
     printf("========================================\n");
     return 0;
 }

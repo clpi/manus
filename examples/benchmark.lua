@@ -386,6 +386,420 @@ function table_insert_churn(n)
     return sum
 end
 
+-- 24. Small matrix multiply (nested loop + indexed table access)
+function matmul(n)
+    local size = 200
+    local a = {}
+    local b = {}
+    local c = {}
+    local i = 1
+    while i <= size * size do
+        a[i] = i % 100
+        b[i] = (i * 7) % 100
+        c[i] = 0
+        i = i + 1
+    end
+    local rep = 0
+    while rep < n do
+        i = 0
+        while i < size do
+            local j = 0
+            while j < size do
+                local sum = 0
+                local k = 0
+                while k < size do
+                    sum = sum + a[i * size + k + 1] * b[k * size + j + 1]
+                    k = k + 1
+                end
+                c[i * size + j + 1] = sum
+                j = j + 1
+            end
+            i = i + 1
+        end
+        rep = rep + 1
+    end
+    local total = 0
+    i = 1
+    while i <= size * size do
+        total = total + c[i]
+        i = i + 1
+    end
+    return total
+end
+
+-- 25. Prefix sum scan (serial scan pattern)
+function prefix_sum(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = (i * 3) % 1000
+        i = i + 1
+    end
+    i = 2
+    while i <= n do
+        t[i] = t[i] + t[i - 1]
+        i = i + 1
+    end
+    return t[n]
+end
+
+-- 26. GCD reduction (Euclidean algorithm, branch-heavy)
+function gcd_reduce(n)
+    local sum = 0
+    local i = 1
+    while i <= n do
+        local a = i
+        local b = (i * 7 + 3) % 10000 + 1
+        while b ~= 0 do
+            local tmp = b
+            b = a % b
+            a = tmp
+        end
+        sum = sum + a
+        i = i + 1
+    end
+    return sum
+end
+
+-- 27. Collatz chain length accumulation (unpredictable branching)
+function collatz_sum(n)
+    local total = 0
+    local i = 1
+    while i <= n do
+        local x = i
+        local steps = 0
+        while x ~= 1 do
+            if x % 2 == 0 then
+                x = x / 2
+            else
+                x = 3 * x + 1
+            end
+            steps = steps + 1
+        end
+        total = total + steps
+        i = i + 1
+    end
+    return total
+end
+
+-- 28. XOR fold / bit manipulation reduction
+function xor_fold(n)
+    local acc = 0
+    local i = 1
+    while i <= n do
+        acc = acc ~ (i * 2654435761)
+        i = i + 1
+    end
+    return acc
+end
+
+-- 29. Ring buffer write/read simulation (modulo indexing)
+function ring_buffer(n)
+    local size = 1024
+    local buf = {}
+    local i = 1
+    while i <= size do
+        buf[i] = 0
+        i = i + 1
+    end
+    local sum = 0
+    i = 0
+    while i < n do
+        local idx = (i % size) + 1
+        buf[idx] = (i * 31) % 100000
+        sum = sum + buf[((i + size - 7) % size) + 1]
+        i = i + 1
+    end
+    return sum
+end
+
+-- 30. Conditional swap reduce (sorting-kernel pattern)
+function cond_swap(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = (i * 17) % 10007
+        i = i + 1
+    end
+    local passes = 5
+    local p = 0
+    while p < passes do
+        i = 1
+        while i < n do
+            if t[i] > t[i + 1] then
+                local tmp = t[i]
+                t[i] = t[i + 1]
+                t[i + 1] = tmp
+            end
+            i = i + 1
+        end
+        p = p + 1
+    end
+    local sum = 0
+    i = 1
+    while i <= n do
+        sum = sum + t[i]
+        i = i + 1
+    end
+    return sum
+end
+
+-- 31. Ackermann-like (bounded recursion stress)
+function ack(m, n)
+    if m == 0 then return n + 1 end
+    if n == 0 then return ack(m - 1, 1) end
+    return ack(m - 1, ack(m, n - 1))
+end
+
+-- 32. Levenshtein distance (2D DP table)
+function leven(n)
+    local sum = 0
+    local rep = 0
+    while rep < n do
+        local len_a = 12
+        local len_b = 13
+        local prev = {}
+        local curr = {}
+        local j = 0
+        while j <= len_b do
+            prev[j] = j
+            j = j + 1
+        end
+        local i = 1
+        while i <= len_a do
+            curr[0] = i
+            j = 1
+            while j <= len_b do
+                local a_char = ((rep * 7 + i * 3) % 26)
+                local b_char = ((rep * 13 + j * 5) % 26)
+                local cost = 0
+                if a_char ~= b_char then cost = 1 end
+                local del = prev[j] + 1
+                local ins = curr[j - 1] + 1
+                local sub = prev[j - 1] + cost
+                local mn = del
+                if ins < mn then mn = ins end
+                if sub < mn then mn = sub end
+                curr[j] = mn
+                j = j + 1
+            end
+            local tmp = prev
+            prev = curr
+            curr = tmp
+            i = i + 1
+        end
+        sum = sum + prev[len_b]
+        rep = rep + 1
+    end
+    return sum
+end
+
+-- 33. Sieve of Eratosthenes (boolean array)
+function sieve(n)
+    local is_prime = {}
+    local i = 0
+    while i <= n do
+        is_prime[i] = true
+        i = i + 1
+    end
+    is_prime[0] = false
+    is_prime[1] = false
+    i = 2
+    while i * i <= n do
+        if is_prime[i] then
+            local j = i * i
+            while j <= n do
+                is_prime[j] = false
+                j = j + i
+            end
+        end
+        i = i + 1
+    end
+    local count = 0
+    i = 2
+    while i <= n do
+        if is_prime[i] then count = count + 1 end
+        i = i + 1
+    end
+    return count
+end
+
+-- 34. Fenwick tree (point update + prefix query)
+function fenwick(n)
+    local tree = {}
+    local i = 0
+    while i <= n do
+        tree[i] = 0
+        i = i + 1
+    end
+    i = 1
+    while i <= n do
+        local val = (i * 3) % 1000
+        local idx = i
+        while idx <= n do
+            tree[idx] = tree[idx] + val
+            idx = idx + (idx & (-idx))
+        end
+        i = i + 1
+    end
+    local sum = 0
+    local q = 1
+    while q <= n do
+        local idx = q
+        while idx > 0 do
+            sum = sum + tree[idx]
+            idx = idx - (idx & (-idx))
+        end
+        q = q + 1
+    end
+    return sum
+end
+
+-- 35. Linear interpolation table lookup
+function interp(n)
+    local tbl_size = 1024
+    local tbl = {}
+    local i = 0
+    while i < tbl_size do
+        tbl[i] = math.sin(i * 0.01)
+        i = i + 1
+    end
+    local sum = 0.0
+    i = 0
+    while i < n do
+        local x = (i * 0.0073) % (tbl_size - 1)
+        local idx = math.floor(x)
+        local frac = x - idx
+        sum = sum + tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
+        i = i + 1
+    end
+    return sum
+end
+
+-- 36. Run-length encoding count (byte comparison)
+function run_len(n)
+    local s = string.rep("aaabbccddddeefffff", n)
+    local count = 0
+    local i = 2
+    local last = string.len(s)
+    while i <= last do
+        if string.byte(s, i) ~= string.byte(s, i - 1) then
+            count = count + 1
+        end
+        i = i + 1
+    end
+    return count + 1
+end
+
+-- 37. Population count / Hamming weight reduction
+function bitcount(n)
+    local sum = 0
+    local i = 1
+    while i <= n do
+        local x = i
+        local c = 0
+        while x ~= 0 do
+            c = c + (x & 1)
+            x = x >> 1
+            end
+        sum = sum + c
+        i = i + 1
+    end
+    return sum
+end
+
+-- 38. CORDIC-style sin approximation (shift+add, no math.sin)
+function cordic(n)
+    local sum = 0.0
+    local i = 0
+    while i < n do
+        local angle = (i % 1000) * 0.001
+        local s = angle
+        local term = angle
+        local k = 1
+        while k <= 5 do
+            term = -term * angle * angle / ((2 * k) * (2 * k + 1))
+            s = s + term
+            k = k + 1
+        end
+        sum = sum + s
+        i = i + 1
+    end
+    return sum
+end
+
+-- 39. Sparse vector dot (stride access pattern)
+function sparse_dot(n)
+    local stride = 16
+    local len = n * stride
+    local a = {}
+    local b = {}
+    local i = 1
+    while i <= len do
+        a[i] = 0
+        b[i] = 0
+        i = i + 1
+    end
+    i = 1
+    while i <= n do
+        local idx = (i - 1) * stride + 1
+        a[idx] = i
+        b[idx] = n - i + 1
+        i = i + 1
+    end
+    local sum = 0
+    i = 1
+    while i <= n do
+        local idx = (i - 1) * stride + 1
+        sum = sum + a[idx] * b[idx]
+        i = i + 1
+    end
+    return sum
+end
+
+-- 40. Game of Life step (2D grid neighbor count)
+function life(steps)
+    local W = 128
+    local H = 128
+    local grid = {}
+    local next_grid = {}
+    local i = 0
+    while i < W * H do
+        grid[i] = (i * 31337) % 3 == 0 and 1 or 0
+        next_grid[i] = 0
+        i = i + 1
+    end
+    local s = 0
+    while s < steps do
+        local y = 1
+        while y < H - 1 do
+            local x = 1
+            while x < W - 1 do
+                local neighbors = grid[(y-1)*W + (x-1)] + grid[(y-1)*W + x] + grid[(y-1)*W + (x+1)] + grid[y*W + (x-1)] + grid[y*W + (x+1)] + grid[(y+1)*W + (x-1)] + grid[(y+1)*W + x] + grid[(y+1)*W + (x+1)]
+                local cell = grid[y * W + x]
+                if cell == 1 then
+                    next_grid[y * W + x] = (neighbors == 2 or neighbors == 3) and 1 or 0
+                else
+                    next_grid[y * W + x] = neighbors == 3 and 1 or 0
+                end
+                x = x + 1
+            end
+            y = y + 1
+        end
+        local tmp = grid
+        grid = next_grid
+        next_grid = tmp
+        s = s + 1
+    end
+    local sum = 0
+    i = 0
+    while i < W * H do
+        sum = sum + grid[i]
+        i = i + 1
+    end
+    return sum
+end
+
 print("========================================")
 print("     COMPREHENSIVE BENCHMARK SUITE      ")
 print("========================================")
@@ -604,4 +1018,157 @@ local t_end23 = os.clock()
 print("Table Churn Sum    ", churn_res)
 print("RESULT churn", churn_res)
 print("Table Churn Time   ", t_end23 - t_start23, "seconds")
+print("----------------------------------------")
+
+print("Running Matrix multiply (200x200, 50 reps)...")
+local t_start24 = os.clock()
+local matmul_res = matmul(50)
+local t_end24 = os.clock()
+print("MatMul Checksum    ", matmul_res)
+print("RESULT matmul", matmul_res)
+print("MatMul Time        ", t_end24 - t_start24, "seconds")
+print("----------------------------------------")
+
+print("Running Prefix sum (n=2,000,000)...")
+local t_start25 = os.clock()
+local prefix_res = prefix_sum(2000000)
+local t_end25 = os.clock()
+print("Prefix Sum Result  ", prefix_res)
+print("RESULT prefix", prefix_res)
+print("Prefix Sum Time    ", t_end25 - t_start25, "seconds")
+print("----------------------------------------")
+
+print("Running GCD reduce (n=2,000,000)...")
+local t_start26 = os.clock()
+local gcd_res = gcd_reduce(2000000)
+local t_end26 = os.clock()
+print("GCD Reduce Sum     ", gcd_res)
+print("RESULT gcd", gcd_res)
+print("GCD Reduce Time    ", t_end26 - t_start26, "seconds")
+print("----------------------------------------")
+
+print("Running Collatz sum (n=500,000)...")
+local t_start27 = os.clock()
+local collatz_res = collatz_sum(500000)
+local t_end27 = os.clock()
+print("Collatz Sum        ", collatz_res)
+print("RESULT collatz", collatz_res)
+print("Collatz Sum Time   ", t_end27 - t_start27, "seconds")
+print("----------------------------------------")
+
+print("Running XOR fold (n=5,000,000)...")
+local t_start28 = os.clock()
+local xor_res = xor_fold(5000000)
+local t_end28 = os.clock()
+print("XOR Fold Result    ", xor_res)
+print("RESULT xorfold", xor_res)
+print("XOR Fold Time      ", t_end28 - t_start28, "seconds")
+print("----------------------------------------")
+
+print("Running Ring buffer (n=5,000,000)...")
+local t_start29 = os.clock()
+local ring_res = ring_buffer(5000000)
+local t_end29 = os.clock()
+print("Ring Buffer Sum    ", ring_res)
+print("RESULT ringbuf", ring_res)
+print("Ring Buffer Time   ", t_end29 - t_start29, "seconds")
+print("----------------------------------------")
+
+print("Running Cond swap (n=100,000)...")
+local t_start30 = os.clock()
+local swap_res = cond_swap(100000)
+local t_end30 = os.clock()
+print("Cond Swap Sum      ", swap_res)
+print("RESULT cond_swap", swap_res)
+print("Cond Swap Time     ", t_end30 - t_start30, "seconds")
+print("----------------------------------------")
+
+print("Running Ackermann(3,11)...")
+local t_start31 = os.clock()
+local ack_res = ack(3, 11)
+local t_end31 = os.clock()
+print("Ackermann Result   ", ack_res)
+print("RESULT ack", ack_res)
+print("Ackermann Time     ", t_end31 - t_start31, "seconds")
+print("----------------------------------------")
+
+print("Running Levenshtein (n=200,000)...")
+local t_start32 = os.clock()
+local leven_res = leven(200000)
+local t_end32 = os.clock()
+print("Levenshtein Sum    ", leven_res)
+print("RESULT leven", leven_res)
+print("Levenshtein Time   ", t_end32 - t_start32, "seconds")
+print("----------------------------------------")
+
+print("Running Sieve (n=2,000,000)...")
+local t_start33 = os.clock()
+local sieve_res = sieve(2000000)
+local t_end33 = os.clock()
+print("Sieve Count        ", sieve_res)
+print("RESULT sieve", sieve_res)
+print("Sieve Time         ", t_end33 - t_start33, "seconds")
+print("----------------------------------------")
+
+print("Running Fenwick tree (n=500,000)...")
+local t_start34 = os.clock()
+local fenwick_res = fenwick(500000)
+local t_end34 = os.clock()
+print("Fenwick Sum        ", fenwick_res)
+print("RESULT fenwick", fenwick_res)
+print("Fenwick Time       ", t_end34 - t_start34, "seconds")
+print("----------------------------------------")
+
+print("Running Interpolation (n=5,000,000)...")
+local t_start35 = os.clock()
+local interp_res = interp(5000000)
+local t_end35 = os.clock()
+print("Interp Sum         ", interp_res)
+print("RESULT interp", interp_res)
+print("Interp Time        ", t_end35 - t_start35, "seconds")
+print("----------------------------------------")
+
+print("Running Run-length count (rep x50,000)...")
+local t_start36 = os.clock()
+local rle_res = run_len(50000)
+local t_end36 = os.clock()
+print("Run-Length Count   ", rle_res)
+print("RESULT run_len", rle_res)
+print("Run-Length Time    ", t_end36 - t_start36, "seconds")
+print("----------------------------------------")
+
+print("Running Bitcount (n=5,000,000)...")
+local t_start37 = os.clock()
+local bitcount_res = bitcount(5000000)
+local t_end37 = os.clock()
+print("Bitcount Sum       ", bitcount_res)
+print("RESULT bitcount", bitcount_res)
+print("Bitcount Time      ", t_end37 - t_start37, "seconds")
+print("----------------------------------------")
+
+print("Running CORDIC sin (n=5,000,000)...")
+local t_start38 = os.clock()
+local cordic_res = cordic(5000000)
+local t_end38 = os.clock()
+print("CORDIC Sum         ", cordic_res)
+print("RESULT cordic", cordic_res)
+print("CORDIC Time        ", t_end38 - t_start38, "seconds")
+print("----------------------------------------")
+
+print("Running Sparse dot (n=200,000)...")
+local t_start39 = os.clock()
+local sparse_res = sparse_dot(200000)
+local t_end39 = os.clock()
+print("Sparse Dot Sum     ", sparse_res)
+print("RESULT sparse", sparse_res)
+print("Sparse Dot Time    ", t_end39 - t_start39, "seconds")
+print("----------------------------------------")
+
+print("Running Game of Life (500 steps)...")
+local t_start40 = os.clock()
+local life_res = life(500)
+local t_end40 = os.clock()
+print("Life Population    ", life_res)
+print("RESULT life", life_res)
+print("Life Time          ", t_end40 - t_start40, "seconds")
 print("========================================")

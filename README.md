@@ -1,6 +1,6 @@
 # Duo
 
-Duo is a Lua-like language that compiles to native C (AOT). This repository includes a 23-benchmark suite comparing Duo against hand-written reference C.
+Duo is a Lua-like language that compiles to native C (AOT). This repository includes a 40-benchmark suite comparing Duo against hand-written reference C.
 
 ## Build
 
@@ -21,7 +21,7 @@ zig build bench
 This executes `scripts/run_benchmark.sh`, which:
 
 1. Compiles `examples/benchmark.lua` with Duo and `examples/benchmark_c.c` with Clang (`-O3 -ffast-math -march=native -flto`).
-2. Verifies all 23 `RESULT <id> <value>` lines match between Duo and reference C.
+2. Verifies all 40 `RESULT <id> <value>` lines match between Duo and reference C.
 3. Runs each benchmark 10 times and compares minimum wall times. **Duo must beat or tie C on every test** (1% slack on C time).
 
 ### Sources
@@ -29,7 +29,7 @@ This executes `scripts/run_benchmark.sh`, which:
 | File | Role |
 |------|------|
 | `examples/benchmark.lua` | Primary benchmark driver (untyped Lua) |
-| `examples/benchmark.duo` | Mirror of `benchmark.lua` (same 23 workloads; kept in sync) |
+| `examples/benchmark.duo` | Mirror of `benchmark.lua` (same 40 workloads; kept in sync) |
 | `examples/benchmark_c.c` | Reference C implementation with matching semantics |
 | `scripts/run_benchmark.sh` | Correctness + timing harness |
 
@@ -60,6 +60,23 @@ This executes `scripts/run_benchmark.sh`, which:
 | 21 | `parse` | JSON-ish delimiter byte sum |
 | 22 | `lookup` | Indexed table lookup accumulation |
 | 23 | `churn` | Table insert + aggregate |
+| 24 | `matmul` | Small matrix multiply (nested loop + indexed access) |
+| 25 | `prefix` | Prefix sum scan (serial accumulation) |
+| 26 | `gcd` | GCD reduction (Euclidean algorithm, branch-heavy) |
+| 27 | `collatz` | Collatz chain length (unpredictable branching) |
+| 28 | `xorfold` | XOR fold / bit manipulation reduction |
+| 29 | `ringbuf` | Ring buffer write/read (modulo indexing) |
+| 30 | `cond_swap` | Conditional swap reduce (sorting-kernel pattern) |
+| 31 | `ack` | Ackermann function (deep recursion stress) |
+| 32 | `leven` | Levenshtein distance (2D DP table) |
+| 33 | `sieve` | Sieve of Eratosthenes (boolean array scan) |
+| 34 | `fenwick` | Fenwick tree point-update + prefix-query |
+| 35 | `interp` | Linear interpolation table (float index) |
+| 36 | `run_len` | Run-length encoding count (byte comparison) |
+| 37 | `bitcount` | Population count / Hamming weight |
+| 38 | `cordic` | Taylor-series sin approximation (shift+add) |
+| 39 | `sparse` | Sparse vector dot product (stride access) |
+| 40 | `life` | Game of Life step (2D neighbor count) |
 
 Each section prints `RESULT <id> <value>` for automated verification.
 
