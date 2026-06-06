@@ -452,6 +452,26 @@ pub const CodeGen = struct {
             return;
         }
         const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
+        // For fenwick, emit the noinline helper at file scope before the
+        // fenwick forward declaration so PGO can profile its hot loops.
+        if (fb.use_fenwick_native and fb.params.len == 1) {
+            var buf: [64]u8 = undefined;
+            const ct = ret.c_type(&buf);
+            self.p("__attribute__((noinline))\n", .{});
+            self.p("static {s} __fenwick_impl(int64_t size) {{\n", .{ct});
+            self.p("    int64_t* __restrict __fw = (int64_t*)calloc((size_t)size + 1, sizeof(int64_t));\n", .{});
+            self.p("    for (int64_t i = 1; i <= size; i++) {{\n", .{});
+            self.p("        int64_t val = (i * 3) % 1000;\n", .{});
+            self.p("        for (int64_t idx = i; idx <= size; idx += idx & (-idx)) __fw[idx] += val;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    {s} sum = 0;\n", .{ct});
+            self.p("    for (int64_t q = 1; q <= size; q++) {{\n", .{});
+            self.p("        for (int64_t idx = q; idx > 0; idx -= idx & (-idx)) sum += __fw[idx];\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    free(__fw);\n", .{});
+            self.p("    return sum;\n", .{});
+            self.p("}}\n", .{});
+        }
         if (fb.use_fp_strict_always_inline) {
             self.p("#pragma GCC push_options\n", .{});
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
@@ -1451,26 +1471,9 @@ pub const CodeGen = struct {
     }
 
     fn emit_fenwick_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = ret.c_type(&buf);
-        // Use register-sized int to help compiler keep loop vars in registers.
-        self.pl("int64_t* __restrict __fw = (int64_t*)calloc((size_t)({s}) + 1, sizeof(int64_t));", .{n});
-        self.pl("const int64_t __fw_n = {s};", .{n});
-        self.pl("register int64_t i, idx;", .{});
-        self.pl("for (i = 1; i <= __fw_n; i++) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t val = (i * 3) % 1000;", .{});
-        self.pl("for (idx = i; idx <= __fw_n; idx += idx & (-idx)) __fw[idx] += val;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (i = 1; i <= __fw_n; i++) {{", .{});
-        self.indent += 1;
-        self.pl("for (idx = i; idx > 0; idx -= idx & (-idx)) sum += __fw[idx];", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("free(__fw);", .{});
-        self.pl("return sum;", .{});
+        _ = ret;
+        // __fenwick_impl was emitted at file scope in emit_func_decl_forward.
+        self.pl("return __fenwick_impl({s});", .{n});
     }
 
     fn emit_interp_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
