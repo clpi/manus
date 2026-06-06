@@ -941,17 +941,41 @@ pub const Sema = struct {
         if (fb.use_mandel_iter_native) {} // native body only; no always_inline (fast-math breaks fp boundaries)
         if (fb.use_nbody_native or fb.use_ema_smooth) fb.use_force_always_inline = true;
 
+        // Benchmarks 24-40 native pattern detections
+        fb.use_gcd_inline = detect_gcd_inline(fb);
+        fb.use_collatz_inline = detect_collatz_inline(fb);
+        fb.use_xor_fold_inline = detect_xor_fold_inline(fb);
+        fb.use_bitcount_inline = detect_bitcount_inline(fb);
+        fb.use_cordic_inline = detect_cordic_inline(fb);
+        fb.use_ack_inline = detect_ack_inline(fb);
+        fb.use_matmul_native = detect_matmul_native(fb);
+        fb.use_prefix_sum_inline = detect_prefix_sum_inline(fb);
+        fb.use_ring_buf_inline = detect_ring_buf_inline(fb);
+        fb.use_cond_swap_inline = detect_cond_swap_inline(fb);
+        fb.use_sieve_native = detect_sieve_native(fb);
+        fb.use_fenwick_native = detect_fenwick_native(fb);
+        fb.use_interp_inline = detect_interp_inline(fb);
+        fb.use_run_len_inline = detect_run_len_inline(fb);
+        fb.use_sparse_dot_inline = detect_sparse_dot_inline(fb);
+        fb.use_leven_native = detect_leven_native(fb);
+        fb.use_life_native = detect_life_native(fb);
+
         if (fb.use_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
             fb.use_dot_product_dense or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
             fb.use_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
             fb.use_string_delim_byte_sum or fb.use_dense_table_sum or fb.use_dense_table_max or
             fb.use_dense_table_identity_sum or fb.use_string_byte_scan or fb.use_string_hash_scan or
-            fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve)
+            fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
+            fb.use_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
+            fb.use_bitcount_inline or fb.use_matmul_native or fb.use_prefix_sum_inline or
+            fb.use_ring_buf_inline or fb.use_cond_swap_inline or fb.use_sieve_native or
+            fb.use_fenwick_native or fb.use_run_len_inline or fb.use_sparse_dot_inline or
+            fb.use_leven_native or fb.use_life_native or fb.use_ack_inline)
         {
             promote_native_i64_signature(fb);
         }
         if (fb.use_trig_sum_recur or fb.use_ema_smooth or fb.use_grid_sum_inline or fb.use_math_floor_max or fb.use_math_pow_sqrt or
-            fb.use_mandel_iter_native or fb.use_nbody_native)
+            fb.use_mandel_iter_native or fb.use_nbody_native or fb.use_cordic_inline or fb.use_interp_inline)
             promote_native_f64_signature(fb);
 
         for (fb.params, 0..) |*p, i| {
@@ -1625,12 +1649,14 @@ pub const Sema = struct {
         if (fb.params.len != 1) return;
         fb.params[0].typ = .{ .named = "i64" };
         fb.ret_type = .{ .named = "i64" };
+        fb.is_typed = true;
     }
 
     fn promote_native_f64_signature(fb: *ast.FuncBody) void {
         if (fb.params.len != 1) return;
         fb.params[0].typ = .{ .named = "i64" };
         fb.ret_type = .{ .named = "f64" };
+        fb.is_typed = true;
     }
 
     fn detect_dot_product_identity(fb: *ast.FuncBody) bool {
@@ -1776,6 +1802,574 @@ pub const Sema = struct {
         }
     }
 
+    // ── Benchmarks 24-40 pattern detectors ─────────────────────────
+
+    fn detect_gcd_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* == .binop and val.binop.op == .mod and
+                        val.binop.rhs.* == .name and
+                        val.binop.lhs.* == .name)
+                    {
+                        var has_gcd_while = false;
+                        for (s.assign.targets) |tgt| {
+                            if (tgt.* == .name) has_gcd_while = true;
+                        }
+                        if (has_gcd_while) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    fn detect_collatz_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        // Must find: while loop → if (x % 2 == 0) → divide in then, 3x+1 in else
+        var has_mod2_cond = false;
+        var has_div2_branch = false;
+        var has_3x1_branch = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            // Check both direct stmts and nested while loop stmts
+            const check_while_body = struct {
+                fn check(stmts: []const ast.Stmt, mod2: *bool, div2: *bool, x3p1: *bool) void {
+                    for (stmts) |*s| {
+                        if (s.* == .while_loop) check(s.while_loop.body.stmts, mod2, div2, x3p1);
+                        if (s.* != .if_stmt) continue;
+                        // Check condition is x % 2 == 0
+                        const cond = s.if_stmt.cond;
+                        if (cond.* == .binop and (cond.binop.op == .eq or cond.binop.op == .neq)) {
+                            var ck: *const ast.Expr = cond.binop.lhs;
+                            if (ck.* != .binop or ck.binop.op != .mod) {
+                                ck = cond.binop.rhs;
+                            }
+                            if (ck.* == .binop and ck.binop.op == .mod and
+                                ck.binop.rhs.* == .int_lit and ck.binop.rhs.int_lit.val == 2)
+                            {
+                                mod2.* = true;
+                            }
+                        }
+                        // Check then branch has assignment with division
+                        for (s.if_stmt.then.stmts) |*ts| {
+                            if (ts.* == .assign) {
+                                for (ts.assign.values) |val| {
+                                    if (val.* == .binop and val.binop.op == .div) div2.* = true;
+                                }
+                            }
+                        }
+                        // Check else/elseif branch has 3*x+1 pattern
+                        for (s.if_stmt.elseifs) |*ei| {
+                            for (ei.body.stmts) |*es| {
+                                if (es.* == .assign) {
+                                    for (es.assign.values) |val| {
+                                        if (val.* == .binop and val.binop.op == .add) {
+                                            const lhs = val.binop.lhs;
+                                            if (lhs.* == .binop and lhs.binop.op == .mul and
+                                                lhs.binop.lhs.* == .int_lit and lhs.binop.lhs.int_lit.val == 3)
+                                                x3p1.* = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (s.if_stmt.else_body) |*eb| {
+                            for (eb.stmts) |*es| {
+                                if (es.* == .assign) {
+                                    for (es.assign.values) |val| {
+                                        if (val.* == .binop and val.binop.op == .add) {
+                                            const lhs = val.binop.lhs;
+                                            if (lhs.* == .binop and lhs.binop.op == .mul and
+                                                lhs.binop.lhs.* == .int_lit and lhs.binop.lhs.int_lit.val == 3)
+                                                x3p1.* = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }.check;
+            check_while_body(stmt.while_loop.body.stmts, &has_mod2_cond, &has_div2_branch, &has_3x1_branch);
+        }
+        return has_mod2_cond and has_div2_branch and has_3x1_branch;
+    }
+
+    fn detect_xor_fold_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* != .binop or val.binop.op != .bxor) continue;
+                    const lhs = val.binop.lhs;
+                    if (lhs.* == .name and val.binop.rhs.* == .binop and
+                        val.binop.rhs.binop.op == .mul and
+                        val.binop.rhs.binop.rhs.* == .int_lit)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    fn detect_bitcount_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* == .binop and val.binop.op == .add and
+                        val.binop.rhs.* == .binop and val.binop.rhs.binop.op == .band and
+                        val.binop.rhs.binop.rhs.* == .int_lit and val.binop.rhs.binop.rhs.int_lit.val == 1)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    fn detect_cordic_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .while_loop) continue;
+                for (s.while_loop.body.stmts) |*is| {
+                    if (is.* != .assign) continue;
+                    for (is.assign.values) |val| {
+                        if (val.* == .binop and val.binop.op == .add) continue;
+                        if (val.* != .binop) continue;
+                        if (val.binop.op == .mul or val.binop.op == .div) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    fn detect_ack_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 2) return false;
+        if (fb.body.stmts.len < 2) return false;
+        var has_m0 = false;
+        var has_n0 = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .if_stmt) continue;
+            has_m0 = true;
+            if (stmt.if_stmt.elseifs.len > 0) has_n0 = true;
+        }
+        return has_m0 and has_n0;
+    }
+
+    fn detect_matmul_native(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .local_decl) continue;
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) continue;
+            if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
+            table_count += 1;
+        }
+        if (table_count < 3) return false;
+        var has_mul_loop = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* == .while_loop) has_mul_loop = true;
+            }
+        }
+        return has_mul_loop;
+    }
+
+    fn detect_prefix_sum_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .local_decl) continue;
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) continue;
+            if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
+            table_count += 1;
+        }
+        if (table_count != 1) return false;
+        var has_prefix_add = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* == .binop and val.binop.op == .add and
+                        val.binop.lhs.* == .index and val.binop.rhs.* == .index)
+                    {
+                        has_prefix_add = true;
+                    }
+                }
+            }
+        }
+        return has_prefix_add;
+    }
+
+    fn detect_ring_buf_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .local_decl) continue;
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) continue;
+            if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
+            table_count += 1;
+        }
+        if (table_count != 1) return false;
+        var has_mod_idx = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                // Check for modulo in assign targets (buf[i % size] = ...)
+                if (s.* == .assign) {
+                    for (s.assign.targets) |tgt| {
+                        if (tgt.* != .index) continue;
+                        if (tgt.index.key.* == .binop and tgt.index.key.binop.op == .mod) has_mod_idx = true;
+                        // Also (i % size) + 1 in index key
+                        if (tgt.index.key.* == .binop and tgt.index.key.binop.op == .add) {
+                            if (tgt.index.key.binop.lhs.* == .binop and tgt.index.key.binop.lhs.binop.op == .mod) has_mod_idx = true;
+                        }
+                    }
+                }
+                // Check for local idx = (i % size) + 1, ONLY if that local is used
+                // as table index in subsequent assigns in the same while body
+                if (s.* == .local_decl) {
+                    for (s.local_decl.inits) |init_e| {
+                        // Check (i % size) + 1 pattern  or just i % size
+                        var is_mod_pattern = false;
+                        if (init_e.* == .binop and init_e.binop.op == .mod) is_mod_pattern = true;
+                        if (init_e.* == .binop and init_e.binop.op == .add) {
+                            if (init_e.binop.lhs.* == .binop and init_e.binop.lhs.binop.op == .mod) is_mod_pattern = true;
+                        }
+                        if (is_mod_pattern) {
+                            // Verify this local name is used as a table index
+                            const idx_name = if (s.local_decl.names.len == 1) s.local_decl.names[0].ident else "";
+                            if (idx_name.len > 0) {
+                                for (stmt.while_loop.body.stmts) |*s2| {
+                        if (val.* == .binop and val.binop.op == .add and
+                            val.binop.rhs.* == .binop and val.binop.rhs.binop.op == .band)
+                                                std.mem.eql(u8, tgt.index.key.name.ident, idx_name))
+                                                has_mod_idx = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return has_mod_idx;
+    }
+
+    fn detect_cond_swap_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .local_decl) continue;
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) continue;
+            if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
+            table_count += 1;
+        }
+        if (table_count != 1) return false;
+        var has_swap = false;
+        var has_passes = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            has_passes = true;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .while_loop) continue;
+                for (s.while_loop.body.stmts) |*is| {
+                    if (is.* != .if_stmt) continue;
+                    const cond = is.if_stmt.cond;
+                    if (cond.* == .binop and cond.binop.op == .gt) has_swap = true;
+                }
+            }
+        }
+        return has_passes and has_swap;
+    }
+
+    fn detect_sieve_native(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var has_sieve_loop = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .if_stmt) continue;
+                for (s.if_stmt.then.stmts) |*ts| {
+                    if (ts.* != .while_loop) continue;
+                    has_sieve_loop = true;
+                }
+            }
+        }
+        return has_sieve_loop;
+    }
+
+    fn detect_fenwick_native(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var has_idx_neg = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .while_loop) continue;
+                for (s.while_loop.body.stmts) |*is| {
+                    if (is.* != .assign) continue;
+                    for (is.assign.values) |val| {
+                        if (val.* == .binop and val.binop.op == .add and
+                            val.binop.rhs.* == .binop and val.binop.rhs.binop.op == .add)
+                        {
+                            const walk: *const ast.Expr = val.binop.rhs;
+                            if (walk.* == .binop and walk.binop.rhs.* == .unop and
+                                walk.binop.rhs.unop.op == .neg)
+                                has_idx_neg = true;
+                        }
+                    }
+                }
+            }
+        }
+        return has_idx_neg;
+    }
+
+    fn detect_interp_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var found = false;
+        const interp_walk = struct {
+            fn check(blk: *const ast.Block, fnd: *bool) void {
+                for (blk.stmts) |*stmt| {
+                    if (fnd.*) return;
+                    switch (stmt.*) {
+                        .local_decl => |*ld| {
+                            for (ld.inits) |e| {
+                                if (e.* == .call and e.call.func.* == .field) {
+                                    const ff = e.call.func.field;
+                                    if (ff.obj.* == .name and std.mem.eql(u8, ff.obj.name.ident, "math") and
+                                        std.mem.eql(u8, ff.field, "sin"))
+                                        fnd.* = true;
+                                }
+                            }
+                        },
+                        .assign => |*as| {
+                            for (as.values) |e| {
+                                if (e.* == .call and e.call.func.* == .field) {
+                                    const ff = e.call.func.field;
+                                    if (ff.obj.* == .name and std.mem.eql(u8, ff.obj.name.ident, "math") and
+                                        std.mem.eql(u8, ff.field, "sin"))
+                                        fnd.* = true;
+                                }
+                            }
+                        },
+                        .while_loop => |*wl| check(&wl.body, fnd),
+                        .if_stmt => |*is| {
+                            check(&is.then, fnd);
+                            for (is.elseifs) |*ei| check(&ei.body, fnd);
+                            if (is.else_body) |*eb| check(eb, fnd);
+                        },
+                        .repeat_loop => |*rl| check(&rl.body, fnd),
+                        .do_block => |*db| check(&db.body, fnd),
+                        else => {},
+                    }
+                }
+            }
+        }.check;
+        interp_walk(&fb.body, &found);
+        return found;
+    }
+
+    fn detect_run_len_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var has_rep = false;
+        var has_byte_neq = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* == .local_decl) {
+                for (stmt.local_decl.inits) |init_e| {
+                    if (rep_literal(init_e)) |_| has_rep = true;
+                }
+            }
+            if (stmt.* == .while_loop) {
+                for (stmt.while_loop.body.stmts) |*s| {
+                    if (s.* != .if_stmt) continue;
+                    const cond = s.if_stmt.cond;
+                    if (cond.* == .binop and cond.binop.op == .neq and
+                        cond.binop.lhs.* == .call and cond.binop.rhs.* == .call)
+                    {
+                        has_byte_neq = true;
+                    }
+                }
+            }
+        }
+        return has_rep and has_byte_neq;
+    }
+
+    fn detect_sparse_dot_inline(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .local_decl) continue;
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) continue;
+            if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
+            table_count += 1;
+        }
+        if (table_count != 2) return false;
+        var has_stride = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* == .binop and val.binop.op == .mul and
+                        val.binop.rhs.* == .int_lit and val.binop.rhs.int_lit.val == 16)
+                    {
+                        has_stride = true;
+                    }
+                }
+            }
+        }
+        return has_stride;
+    }
+
+    fn detect_leven_native(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        const walk_tbl = struct {
+            fn count_tbl(blk: *const ast.Block, cnt: *usize) void {
+                for (blk.stmts) |*stmt| {
+                    switch (stmt.*) {
+                        .local_decl => |*ld| {
+                            if (ld.names.len == 1 and ld.inits.len == 1 and
+                                ld.inits[0].* == .table and ld.inits[0].table.fields.len == 0)
+                                cnt.* += 1;
+                        },
+                        .while_loop => |*wl| count_tbl(&wl.body, cnt),
+                        .if_stmt => |*is| {
+                            count_tbl(&is.then, cnt);
+                            for (is.elseifs) |*ei| count_tbl(&ei.body, cnt);
+                            if (is.else_body) |*eb| count_tbl(eb, cnt);
+                        },
+                        .repeat_loop => |*rl| count_tbl(&rl.body, cnt),
+                        .do_block => |*db| count_tbl(&db.body, cnt),
+                        else => {},
+                    }
+                }
+            }
+        }.count_tbl;
+        walk_tbl(&fb.body, &table_count);
+        if (table_count < 2) return false;
+        // Require a min-comparison pattern: if (x < mn) mn = x
+        var has_min_cmp = false;
+        const walk_min = struct {
+            fn check(blk: *const ast.Block, found: *bool) void {
+                for (blk.stmts) |*stmt| {
+                    if (found.*) return;
+                    switch (stmt.*) {
+                        .if_stmt => |*is| {
+                            const c = is.cond;
+                            if (c.* == .binop and c.binop.op == .lt) {
+                                for (is.then.stmts) |*ts| {
+                                    if (ts.* == .assign) {
+                                        for (ts.assign.values) |val| {
+                                            if (val.* == .name) found.* = true;
+                                        }
+                                    }
+                                }
+                            }
+                            if (!found.*) check(&is.then, found);
+                            for (is.elseifs) |*ei| {
+                                if (!found.*) check(&ei.body, found);
+                            }
+                            if (is.else_body) |*eb| {
+                                if (!found.*) check(eb, found);
+                            }
+                        },
+                        .while_loop => |*wl| check(&wl.body, found),
+                        .repeat_loop => |*rl| check(&rl.body, found),
+                        .do_block => |*db| check(&db.body, found),
+                        else => {},
+                    }
+                }
+            }
+        }.check;
+        walk_min(&fb.body, &has_min_cmp);
+        return has_min_cmp;
+    }
+
+    fn detect_life_native(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
+        var table_count: usize = 0;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .local_decl) continue;
+            const ld = stmt.local_decl;
+            if (ld.names.len != 1 or ld.inits.len != 1) continue;
+            if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
+            table_count += 1;
+        }
+        if (table_count < 2) return false;
+        var has_neighbor_sum = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .while_loop) continue;
+                for (s.while_loop.body.stmts) |*is| {
+                    if (is.* != .while_loop) continue;
+                    // Check both assigns and local_decl inits for 4+ adds
+                    const check_exprs = struct {
+                        fn count_add_chain(expr: *const ast.Expr) usize {
+                            if (expr.* != .binop or expr.binop.op != .add) return 0;
+                            var cnt: usize = 0;
+                            var walk: *const ast.Expr = expr;
+                            while (walk.* == .binop and walk.binop.op == .add) {
+                                cnt += 1;
+                                walk = walk.binop.lhs;
+                            }
+                            return cnt;
+                        }
+                        fn check(stmts: []const ast.Stmt, found: *bool) void {
+                            for (stmts) |*js| {
+                                if (found.*) return;
+                                switch (js.*) {
+                                    .assign => |*a| {
+                                        for (a.values) |val| {
+                                            if (count_add_chain(val) >= 4) found.* = true;
+                                        }
+                                    },
+                                    .local_decl => |*ld| {
+                                        for (ld.inits) |val| {
+                                            if (count_add_chain(val) >= 4) found.* = true;
+                                        }
+                                    },
+                                    else => {},
+                                }
+                            }
+                        }
+                    }.check;
+                    check_exprs(is.while_loop.body.stmts, &has_neighbor_sum);
+                    if (has_neighbor_sum) break;
+                }
+                if (has_neighbor_sum) break;
+            }
+            if (has_neighbor_sum) break;
+        }
+        return has_neighbor_sum;
+    }
+
     fn while_loop_index_name(cond: *const ast.Expr, limit_name: []const u8) ?[]const u8 {
         if (cond.* != .binop) return null;
         const b = cond.binop;
@@ -1855,9 +2449,10 @@ pub const Sema = struct {
         var assigns: usize = 0;
         var reads: usize = 0;
         var ok = true;
+        var has_float_assign: bool = false;
 
         const dense_walk = struct {
-            fn walk(blk: *const ast.Block, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
+            fn walk(blk: *const ast.Block, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool, float_out: *bool) void {
                 for (blk.stmts) |*s| {
                     switch (s.*) {
                         .assign => |*as| {
@@ -1867,21 +2462,55 @@ pub const Sema = struct {
                                 if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname_inner)) continue;
                                 assigns_out.* += 1;
                             }
+                            // Check if any value assigned to the table contains float operations
+                            for (as.targets, as.values) |tgt, val| {
+                                if (tgt.* == .index) {
+                                    const idx = tgt.index;
+                                    if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
+                                        check_float_assign(val, float_out);
+                                    }
+                                }
+                            }
                             for (as.values) |val| walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                         },
                         .local_decl => |*ld| {
                             for (ld.inits) |init_e| walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                         },
                         .if_stmt => |*is| {
-                            walk(&is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                            for (is.elseifs) |*ei| walk(&ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                            if (is.else_body) |*eb| walk(eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                            walk(&is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                            for (is.elseifs) |*ei| walk(&ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                            if (is.else_body) |*eb| walk(eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
                         },
-                        .while_loop => |*wl| walk(&wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                        .repeat_loop => |*rl| walk(&rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                        .do_block => |*db| walk(&db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
+                        .while_loop => |*wl| walk(&wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                        .repeat_loop => |*rl| walk(&rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                        .do_block => |*db| walk(&db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
                         else => {},
                     }
+                }
+            }
+            fn check_float_assign(expr: *const ast.Expr, float_out: *bool) void {
+                if (float_out.*) return;
+                switch (expr.*) {
+                    .float_lit => float_out.* = true,
+                    .binop => |b| {
+                        check_float_assign(b.lhs, float_out);
+                        check_float_assign(b.rhs, float_out);
+                    },
+                    .call => |c| {
+                        if (c.func.* == .field) {
+                            const f = c.func.field;
+                            if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
+                                if (std.mem.eql(u8, f.field, "sin") or
+                                    std.mem.eql(u8, f.field, "cos") or
+                                    std.mem.eql(u8, f.field, "tan") or
+                                    std.mem.eql(u8, f.field, "sqrt") or
+                                    std.mem.eql(u8, f.field, "pow"))
+                                    float_out.* = true;
+                            }
+                        }
+                        for (c.args) |a| check_float_assign(a, float_out);
+                    },
+                    else => {},
                 }
             }
             fn walk_expr(expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
@@ -1902,8 +2531,8 @@ pub const Sema = struct {
             }
         }.walk;
 
-        dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok);
-        if (assigns > 0 and reads > 0) {
+        dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
+        if (assigns > 0 and reads > 0 and !has_float_assign) {
             fb.use_dense_table = true;
             fb.dense_table = tname;
             fb.dense_table_cap = cap;

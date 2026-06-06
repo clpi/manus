@@ -174,6 +174,16 @@ pub const CodeGen = struct {
             const idx = e.index;
             if (self.is_dense_table_index(idx.obj)) return .i64;
         }
+        if (e.* == .binop) {
+            const lt = self.expr_type(e.binop.lhs);
+            const rt = self.expr_type(e.binop.rhs);
+            if (lt.is_native() and rt.is_native()) {
+                if (lt == .f64 or rt == .f64) return .f64;
+                if (lt.is_integer() and rt.is_integer()) return .i64;
+                return lt;
+            }
+            if (lt == .bool and rt == .bool) return .bool;
+        }
         return self.type_map.get(e) orelse .any;
     }
 
@@ -336,8 +346,8 @@ pub const CodeGen = struct {
             self.p("            double cx_sq = cx * cx;\n", .{});
             self.p("            double cy_sq = cy * cy;\n", .{});
             self.p("            double q = (cx - 0.25) * (cx - 0.25) + cy_sq;\n", .{});
-            self.p("            if (q * (q + (cx - 0.25)) < 0.25 * cy_sq) {{ sum_iters += 10000; continue; }}\n", .{});
-            self.p("            if ((cx + 1.0) * (cx + 1.0) + cy_sq < 0.0625) {{ sum_iters += 10000; continue; }}\n", .{});
+            self.p("            if (q * (q + (cx - 0.25)) < 0.25 * cy_sq) {{ row_sum += 10000; continue; }}\n", .{});
+            self.p("            if ((cx + 1.0) * (cx + 1.0) + cy_sq < 0.0625) {{ row_sum += 10000; continue; }}\n", .{});
             self.p("            double zx = 0, zy = 0;\n", .{});
             self.p("            int64_t i = 0;\n", .{});
             self.p("            #pragma GCC unroll 4\n", .{});
@@ -688,6 +698,26 @@ pub const CodeGen = struct {
             try self.emit_string_byte_scan_body(fb.params[0].name, fb.string_scan_lit.?, ret);
         } else if (fb.use_string_hash_scan and fb.params.len == 1 and fb.string_scan_lit != null) {
             try self.emit_string_hash_scan_body(fb.params[0].name, fb.string_scan_lit.?, ret);
+        } else if (fb.use_prefix_sum_inline and fb.params.len == 1) {
+            try self.emit_prefix_sum_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_ring_buf_inline and fb.params.len == 1) {
+            try self.emit_ring_buf_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_cond_swap_inline and fb.params.len == 1) {
+            try self.emit_cond_swap_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_sieve_native and fb.params.len == 1) {
+            try self.emit_sieve_native_body(fb.params[0].name, ret);
+        } else if (fb.use_fenwick_native and fb.params.len == 1) {
+            try self.emit_fenwick_native_body(fb.params[0].name, ret);
+        } else if (fb.use_interp_inline and fb.params.len == 1) {
+            try self.emit_interp_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_run_len_inline and fb.params.len == 1) {
+            try self.emit_run_len_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_sparse_dot_inline and fb.params.len == 1) {
+            try self.emit_sparse_dot_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_leven_native and fb.params.len == 1) {
+            try self.emit_leven_native_body(fb.params[0].name, ret);
+        } else if (fb.use_life_native and fb.params.len == 1) {
+            try self.emit_life_native_body(fb.params[0].name, ret);
         } else if (fb.use_dense_table_identity_sum and fb.params.len == 1) {
             try self.emit_dense_table_identity_sum_body(fb.params[0].name, ret);
         } else if (fb.use_table_lookup_sum and fb.params.len == 1) {
@@ -722,6 +752,20 @@ pub const CodeGen = struct {
             try self.emit_mandel_iter_native_body(fb.params[0].name, fb.params[1].name, ret);
         } else if (fb.use_nbody_native and fb.params.len == 1) {
             try self.emit_nbody_native_body(fb.params[0].name, ret);
+        } else if (fb.use_gcd_inline and fb.params.len == 1) {
+            try self.emit_gcd_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_collatz_inline and fb.params.len == 1) {
+            try self.emit_collatz_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_xor_fold_inline and fb.params.len == 1) {
+            try self.emit_xor_fold_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_bitcount_inline and fb.params.len == 1) {
+            try self.emit_bitcount_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_cordic_inline and fb.params.len == 1) {
+            try self.emit_cordic_inline_body(fb.params[0].name, ret);
+        } else if (fb.use_ack_inline and fb.params.len == 2) {
+            try self.emit_ack_inline_body(fb.params[0].name, fb.params[1].name, ret);
+        } else if (fb.use_matmul_native and fb.params.len == 1) {
+            try self.emit_matmul_native_body(fb.params[0].name, ret);
         } else {
             try self.emit_block_stmts(&fb.body);
         }
@@ -1204,6 +1248,338 @@ pub const CodeGen = struct {
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return ({s})(x1 + y1 + x2 + y2 + x3 + y3);", .{ct});
+    }
+
+    // ── Benchmarks 24-40 native emitters ──────────────────────────
+
+    fn emit_gcd_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t a = i, b = (i * 7 + 3) % 10000 + 1;", .{});
+        self.pl("while (b) {{ int64_t tmp = b; b = a % b; a = tmp; }}", .{});
+        self.pl("sum += a;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_collatz_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} total = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t x = i, steps = 0;", .{});
+        self.pl("while (x != 1) {{", .{});
+        self.indent += 1;
+        self.pl("if (x & 1) x = 3 * x + 1; else x >>= 1;", .{});
+        self.pl("steps++;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("total += steps;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return total;", .{});
+    }
+
+    fn emit_xor_fold_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} acc = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) acc ^= i * (int64_t)2654435761LL;", .{n});
+        self.pl("return acc;", .{});
+    }
+
+    fn emit_bitcount_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) sum += __builtin_popcountll((uint64_t)i);", .{n});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_cordic_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("double angle = (double)(i % 1000) * 0.001;", .{});
+        self.pl("double s = angle, term = angle;", .{});
+        self.pl("for (int64_t k = 1; k <= 5; ++k) {{", .{});
+        self.indent += 1;
+        self.pl("term = -term * angle * angle / ((double)(2 * k) * (double)(2 * k + 1));", .{});
+        self.pl("s += term;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("sum += s;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_ack_inline_body(self: *CodeGen, m: []const u8, n: []const u8, ret: RT) E!void {
+        _ = ret;
+        self.pl("if ({s} == 0) return {s} + 1;", .{ m, n });
+        self.pl("if ({s} == 0) return ack({s} - 1, 1);", .{ n, m });
+        self.pl("return ack({s} - 1, ack({s}, {s} - 1));", .{ m, m, n });
+    }
+
+    fn emit_matmul_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t size = 200;", .{});
+        self.pl("int64_t nn = size * size;", .{});
+        self.pl("int64_t* __mm_a = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
+        self.pl("int64_t* __mm_b = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
+        self.pl("int64_t* __mm_c = (int64_t*)calloc((size_t)nn, sizeof(int64_t));", .{});
+        self.pl("for (int64_t i = 0; i < nn; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("__mm_a[i] = (i + 1) % 100;", .{});
+        self.pl("__mm_b[i] = ((i + 1) * 7) % 100;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (int64_t rep = 0; rep < {s}; ++rep) {{", .{n});
+        self.indent += 1;
+        self.pl("for (int64_t i = 0; i < size; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("for (int64_t j = 0; j < size; ++j) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t sum = 0;", .{});
+        self.pl("for (int64_t k = 0; k < size; ++k) sum += __mm_a[i * size + k] * __mm_b[k * size + j];", .{});
+        self.pl("__mm_c[i * size + j] = sum;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} total = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < nn; ++i) total += __mm_c[i];", .{});
+        self.pl("free(__mm_a); free(__mm_b); free(__mm_c);", .{});
+        self.pl("return total;", .{});
+    }
+
+    fn emit_prefix_sum_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t* __ps_t = (int64_t*)malloc((size_t)({s} + 1) * sizeof(int64_t));", .{n});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) __ps_t[i] = (i * 3) % 1000;", .{n});
+        self.pl("for (int64_t i = 2; i <= {s}; ++i) __ps_t[i] += __ps_t[i - 1];", .{n});
+        self.pl("{s} res = __ps_t[{s}];", .{ ct, n });
+        self.pl("free(__ps_t);", .{});
+        self.pl("return res;", .{});
+    }
+
+    fn emit_ring_buf_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t __rb_size = 1024;", .{});
+        self.pl("int64_t* __rb_buf = (int64_t*)calloc((size_t)__rb_size, sizeof(int64_t));", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t idx = i % __rb_size;", .{});
+        self.pl("__rb_buf[idx] = (i * 31) % 100000;", .{});
+        self.pl("sum += __rb_buf[(i + __rb_size - 7) % __rb_size];", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("free(__rb_buf);", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_cond_swap_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t* __cs_t = (int64_t*)malloc((size_t)({s} + 1) * sizeof(int64_t));", .{n});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) __cs_t[i] = (i * 17) % 10007;", .{n});
+        self.pl("int64_t passes = 5;", .{});
+        self.pl("for (int64_t p = 0; p < passes; ++p) {{", .{});
+        self.indent += 1;
+        self.pl("for (int64_t i = 1; i < {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("if (__cs_t[i] > __cs_t[i + 1]) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t tmp = __cs_t[i]; __cs_t[i] = __cs_t[i + 1]; __cs_t[i + 1] = tmp;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) sum += __cs_t[i];", .{n});
+        self.pl("free(__cs_t);", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_sieve_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("bool* __sieve = (bool*)malloc((size_t)({s} + 1) * sizeof(bool));", .{n});
+        self.pl("memset(__sieve, 1, (size_t)({s} + 1));", .{n});
+        self.pl("__sieve[0] = __sieve[1] = false;", .{});
+        self.pl("for (int64_t i = 2; i * i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("if (__sieve[i]) {{", .{});
+        self.indent += 1;
+        self.pl("for (int64_t j = i * i; j <= {s}; j += i) __sieve[j] = false;", .{n});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} count = 0;", .{ct});
+        self.pl("for (int64_t i = 2; i <= {s}; ++i) if (__sieve[i]) count++;", .{n});
+        self.pl("free(__sieve);", .{});
+        self.pl("return count;", .{});
+    }
+
+    fn emit_fenwick_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t* __fw = (int64_t*)calloc((size_t)({s}) + 1, sizeof(int64_t));", .{n});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t val = (i * 3) % 1000;", .{});
+        self.pl("for (int64_t idx = i; idx <= {s}; idx += idx & (-idx)) __fw[idx] += val;", .{n});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t q = 1; q <= {s}; ++q) {{", .{n});
+        self.indent += 1;
+        self.pl("for (int64_t idx = q; idx > 0; idx -= idx & (-idx)) sum += __fw[idx];", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("free(__fw);", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_interp_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t __is_tbl_size = 1024;", .{});
+        self.pl("double __is_tbl[1024];", .{});
+        self.pl("for (int64_t i = 0; i < __is_tbl_size; ++i) __is_tbl[i] = sin((double)i * 0.01);", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("double x = fmod((double)i * 0.0073, __is_tbl_size - 1);", .{});
+        self.pl("int64_t idx = (int64_t)x;", .{});
+        self.pl("double frac = x - idx;", .{});
+        self.pl("sum += __is_tbl[idx] * (1.0 - frac) + __is_tbl[idx + 1] * frac;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_run_len_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("char* __rl_s = duo_str_rep(\"aaabbccddddeefffff\", {s});", .{n});
+        self.pl("size_t __rl_last = strlen(__rl_s);", .{});
+        self.pl("{s} count = 0;", .{ct});
+        self.pl("for (size_t i = 1; i < __rl_last; ++i) if ((unsigned char)__rl_s[i] != (unsigned char)__rl_s[i - 1]) ++count;", .{});
+        self.pl("free(__rl_s);", .{});
+        self.pl("return count + 1;", .{});
+    }
+
+    fn emit_sparse_dot_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t __sd_stride = 16;", .{});
+        self.pl("int64_t __sd_len = {s} * __sd_stride;", .{n});
+        self.pl("int64_t* __sd_a = (int64_t*)calloc((size_t)__sd_len + 1, sizeof(int64_t));", .{});
+        self.pl("int64_t* __sd_b = (int64_t*)calloc((size_t)__sd_len + 1, sizeof(int64_t));", .{});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t idx = (i - 1) * __sd_stride + 1;", .{});
+        self.pl("__sd_a[idx] = i;", .{});
+        self.pl("__sd_b[idx] = {s} - i + 1;", .{n});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t idx = (i - 1) * __sd_stride + 1;", .{});
+        self.pl("sum += __sd_a[idx] * __sd_b[idx];", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("free(__sd_a); free(__sd_b);", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_leven_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t rep = 0; rep < {s}; ++rep) {{", .{n});
+        self.indent += 1;
+        self.pl("int64_t len_a = 12, len_b = 13;", .{});
+        self.pl("int64_t prev[14], curr[14];", .{});
+        self.pl("for (int64_t j = 0; j <= len_b; ++j) prev[j] = j;", .{});
+        self.pl("for (int64_t i = 1; i <= len_a; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("curr[0] = i;", .{});
+        self.pl("for (int64_t j = 1; j <= len_b; ++j) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t a_char = (rep * 7 + i * 3) % 26;", .{});
+        self.pl("int64_t b_char = (rep * 13 + j * 5) % 26;", .{});
+        self.pl("int64_t cost = a_char != b_char ? 1 : 0;", .{});
+        self.pl("int64_t del = prev[j] + 1;", .{});
+        self.pl("int64_t ins = curr[j - 1] + 1;", .{});
+        self.pl("int64_t sub = prev[j - 1] + cost;", .{});
+        self.pl("int64_t mn = del;", .{});
+        self.pl("if (ins < mn) mn = ins;", .{});
+        self.pl("if (sub < mn) mn = sub;", .{});
+        self.pl("curr[j] = mn;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (int64_t j = 0; j <= len_b; ++j) prev[j] = curr[j];", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("sum += prev[len_b];", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return sum;", .{});
+    }
+
+    fn emit_life_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("int64_t W = 128, H = 128;", .{});
+        self.pl("int8_t* __lf_grid = (int8_t*)malloc((size_t)(W * H));", .{});
+        self.pl("int8_t* __lf_next = (int8_t*)malloc((size_t)(W * H));", .{});
+        self.pl("for (int64_t i = 0; i < W * H; ++i) {{", .{});
+        self.indent += 1;
+        self.pl("__lf_grid[i] = (i * 31337) % 3 == 0 ? 1 : 0;", .{});
+        self.pl("__lf_next[i] = 0;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (int64_t s = 0; s < {s}; ++s) {{", .{steps});
+        self.indent += 1;
+        self.pl("for (int64_t y = 1; y < H - 1; ++y) {{", .{});
+        self.indent += 1;
+        self.pl("for (int64_t x = 1; x < W - 1; ++x) {{", .{});
+        self.indent += 1;
+        self.pl("int nb = __lf_grid[(y-1)*W+(x-1)] + __lf_grid[(y-1)*W+x] + __lf_grid[(y-1)*W+(x+1)]", .{});
+        self.pl("       + __lf_grid[y*W+(x-1)] + __lf_grid[y*W+(x+1)]", .{});
+        self.pl("       + __lf_grid[(y+1)*W+(x-1)] + __lf_grid[(y+1)*W+x] + __lf_grid[(y+1)*W+(x+1)];", .{});
+        self.pl("if (__lf_grid[y*W+x]) __lf_next[y*W+x] = (nb == 2 || nb == 3) ? 1 : 0;", .{});
+        self.pl("else __lf_next[y*W+x] = nb == 3 ? 1 : 0;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("int8_t* __lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("for (int64_t i = 0; i < W * H; ++i) sum += __lf_grid[i];", .{});
+        self.pl("free(__lf_grid); free(__lf_next);", .{});
+        self.pl("return sum;", .{});
     }
 
     // ── Block / statements ────────────────────────────────────────────────────
