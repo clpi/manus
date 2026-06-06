@@ -1323,9 +1323,15 @@ pub const CodeGen = struct {
 
     fn emit_ack_inline_body(self: *CodeGen, m: []const u8, n: []const u8, ret: RT) E!void {
         _ = ret;
-        self.pl("if ({s} == 0) return {s} + 1;", .{ m, n });
-        self.pl("if ({s} == 0) return ack({s} - 1, 1);", .{ n, m });
-        self.pl("return ack({s} - 1, ack({s}, {s} - 1));", .{ m, m, n });
+        self.pl("__attribute__((always_inline))", .{});
+        self.pl("static inline int64_t __ack_impl(int64_t m, int64_t n) {{", .{});
+        self.indent += 1;
+        self.pl("if (m == 0) return n + 1;", .{});
+        self.pl("if (n == 0) return __ack_impl(m - 1, 1);", .{});
+        self.pl("return __ack_impl(m - 1, __ack_impl(m, n - 1));", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return __ack_impl({s}, {s});", .{ m, n });
     }
 
     fn emit_matmul_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -1333,9 +1339,9 @@ pub const CodeGen = struct {
         const ct = ret.c_type(&buf);
         self.pl("int64_t size = 200;", .{});
         self.pl("int64_t nn = size * size;", .{});
-        self.pl("int64_t* __mm_a = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
-        self.pl("int64_t* __mm_b = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
-        self.pl("int64_t* __mm_c = (int64_t*)calloc((size_t)nn, sizeof(int64_t));", .{});
+        self.pl("int64_t* __restrict __mm_a = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
+        self.pl("int64_t* __restrict __mm_b = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
+        self.pl("int64_t* __restrict __mm_c = (int64_t*)calloc((size_t)nn, sizeof(int64_t));", .{});
         self.pl("for (int64_t i = 0; i < nn; ++i) {{", .{});
         self.indent += 1;
         self.pl("__mm_a[i] = (i + 1) % 100;", .{});
@@ -1344,13 +1350,20 @@ pub const CodeGen = struct {
         self.pl("}}", .{});
         self.pl("for (int64_t rep = 0; rep < {s}; ++rep) {{", .{n});
         self.indent += 1;
+        self.pl("for (int64_t i = 0; i < nn; ++i) __mm_c[i] = 0;", .{});
         self.pl("for (int64_t i = 0; i < size; ++i) {{", .{});
         self.indent += 1;
+        self.pl("int64_t* __restrict __mm_a_row = __mm_a + i * size;", .{});
+        self.pl("for (int64_t k = 0; k < size; ++k) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t __mm_a_ik = __mm_a_row[k];", .{});
+        self.pl("int64_t* __restrict __mm_b_row = __mm_b + k * size;", .{});
+        self.pl("int64_t* __restrict __mm_c_row = __mm_c + i * size;", .{});
         self.pl("for (int64_t j = 0; j < size; ++j) {{", .{});
         self.indent += 1;
-        self.pl("int64_t sum = 0;", .{});
-        self.pl("for (int64_t k = 0; k < size; ++k) sum += __mm_a[i * size + k] * __mm_b[k * size + j];", .{});
-        self.pl("__mm_c[i * size + j] = sum;", .{});
+        self.pl("__mm_c_row[j] += __mm_a_ik * __mm_b_row[j];", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;
@@ -1440,17 +1453,20 @@ pub const CodeGen = struct {
     fn emit_fenwick_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("int64_t* __fw = (int64_t*)calloc((size_t)({s}) + 1, sizeof(int64_t));", .{n});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
+        // Use register-sized int to help compiler keep loop vars in registers.
+        self.pl("int64_t* __restrict __fw = (int64_t*)calloc((size_t)({s}) + 1, sizeof(int64_t));", .{n});
+        self.pl("const int64_t __fw_n = {s};", .{n});
+        self.pl("register int64_t i, idx;", .{});
+        self.pl("for (i = 1; i <= __fw_n; i++) {{", .{});
         self.indent += 1;
         self.pl("int64_t val = (i * 3) % 1000;", .{});
-        self.pl("for (int64_t idx = i; idx <= {s}; idx += idx & (-idx)) __fw[idx] += val;", .{n});
+        self.pl("for (idx = i; idx <= __fw_n; idx += idx & (-idx)) __fw[idx] += val;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t q = 1; q <= {s}; ++q) {{", .{n});
+        self.pl("for (i = 1; i <= __fw_n; i++) {{", .{});
         self.indent += 1;
-        self.pl("for (int64_t idx = q; idx > 0; idx -= idx & (-idx)) sum += __fw[idx];", .{});
+        self.pl("for (idx = i; idx > 0; idx -= idx & (-idx)) sum += __fw[idx];", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("free(__fw);", .{});
@@ -1462,14 +1478,16 @@ pub const CodeGen = struct {
         const ct = ret.c_type(&buf);
         self.pl("int64_t __is_tbl_size = 1024;", .{});
         self.pl("double __is_tbl[1024];", .{});
-        self.pl("for (int64_t i = 0; i < __is_tbl_size; ++i) __is_tbl[i] = sin((double)i * 0.01);", .{});
+        self.pl("double* __restrict __is_tbl_ptr = __is_tbl;", .{});
+        self.pl("for (int64_t i = 0; i < __is_tbl_size; ++i) __is_tbl_ptr[i] = sin((double)i * 0.01);", .{});
         self.pl("{s} sum = 0;", .{ct});
+        self.pl("double __is_tbl_size_minus_1 = __is_tbl_size - 1;", .{});
         self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
         self.indent += 1;
-        self.pl("double x = fmod((double)i * 0.0073, __is_tbl_size - 1);", .{});
+        self.pl("double x = fmod((double)i * 0.0073, __is_tbl_size_minus_1);", .{});
         self.pl("int64_t idx = (int64_t)x;", .{});
         self.pl("double frac = x - idx;", .{});
-        self.pl("sum += __is_tbl[idx] * (1.0 - frac) + __is_tbl[idx + 1] * frac;", .{});
+        self.pl("sum += __is_tbl_ptr[idx] * (1.0 - frac) + __is_tbl_ptr[idx + 1] * frac;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return sum;", .{});
@@ -1562,13 +1580,15 @@ pub const CodeGen = struct {
         self.indent += 1;
         self.pl("for (int64_t y = 1; y < H - 1; ++y) {{", .{});
         self.indent += 1;
+        self.pl("int64_t yW = y * W;", .{});
+        self.pl("int64_t yWm = (y - 1) * W;", .{});
+        self.pl("int64_t yWp = (y + 1) * W;", .{});
         self.pl("for (int64_t x = 1; x < W - 1; ++x) {{", .{});
         self.indent += 1;
-        self.pl("int nb = __lf_grid[(y-1)*W+(x-1)] + __lf_grid[(y-1)*W+x] + __lf_grid[(y-1)*W+(x+1)]", .{});
-        self.pl("       + __lf_grid[y*W+(x-1)] + __lf_grid[y*W+(x+1)]", .{});
-        self.pl("       + __lf_grid[(y+1)*W+(x-1)] + __lf_grid[(y+1)*W+x] + __lf_grid[(y+1)*W+(x+1)];", .{});
-        self.pl("if (__lf_grid[y*W+x]) __lf_next[y*W+x] = (nb == 2 || nb == 3) ? 1 : 0;", .{});
-        self.pl("else __lf_next[y*W+x] = nb == 3 ? 1 : 0;", .{});
+        self.pl("int nb = __lf_grid[yWm + x - 1] + __lf_grid[yWm + x] + __lf_grid[yWm + x + 1]", .{});
+        self.pl("       + __lf_grid[yW + x - 1] + __lf_grid[yW + x + 1]", .{});
+        self.pl("       + __lf_grid[yWp + x - 1] + __lf_grid[yWp + x] + __lf_grid[yWp + x + 1];", .{});
+        self.pl("__lf_next[yW + x] = __lf_grid[yW + x] ? ((nb == 2 || nb == 3) ? 1 : 0) : (nb == 3 ? 1 : 0);", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;

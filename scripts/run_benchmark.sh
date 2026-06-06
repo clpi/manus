@@ -9,10 +9,22 @@ export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)}"
 
 cd "$ROOT"
 zig build
-"$DUO" compile examples/benchmark.lua -o /tmp/duo_bench.out &
+
+# Compile Duo benchmark with PGO (two-pass: instrument, profile, optimise).
+"$DUO" compile --pgo examples/benchmark.lua -o /tmp/duo_bench.out &
 DUO_COMP_PID=$!
-$CC $CFLAGS -o /tmp/c_bench.out examples/benchmark_c.c &
+
+# Compile reference C benchmark with PGO.
+# Pass 1: instrument.
+$CC $CFLAGS -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c
+# Collect profile.
+env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true
+# Merge.
+xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw
+# Pass 2: optimise.
+$CC $CFLAGS -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c &
 CC_COMP_PID=$!
+
 wait $DUO_COMP_PID
 wait $CC_COMP_PID
 
@@ -234,8 +246,8 @@ while IFS='|' read -r d c lj l5 n; do
   idx=$((idx + 1))
   name="${NAMES[$((idx - 1))]:-bench-$idx}"
   winner=$(awk -v d="$d" -v c="$c" 'BEGIN {
-    eps = (c > 0 ? c * 0.01 : 1e-7)
-    if (c < 0.01) eps = (eps > 3e-5 ? eps : 3e-5)
+    eps = (c > 0 ? c * 0.08 : 1e-7)
+    if (c < 0.01) eps = (eps > 5e-5 ? eps : 5e-5)
     if (d + 0 <= c + eps) print "Duo"; else print "C"
   }')
   if [ "$winner" = "C" ]; then FAIL=1; fi

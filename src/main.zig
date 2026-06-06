@@ -20,6 +20,7 @@ const usage =
     \\  --cc <path>       C compiler (default: clang)
     \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
+    \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\
 ;
@@ -42,6 +43,7 @@ pub fn main(init: std.process.Init) !void {
     var target: []const u8 = "native";
     var verbose = false;
     var load_chunk = false;
+    var pgo = false;
 
     var i: usize = 2;
     while (i < args.len) : (i += 1) {
@@ -59,6 +61,8 @@ pub fn main(init: std.process.Init) !void {
             target = args[i];
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
+        } else if (std.mem.eql(u8, arg, "--pgo")) {
+            pgo = true;
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
         } else if (arg.len > 0 and arg[0] != '-') {
@@ -80,11 +84,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file);
     } else {
@@ -135,6 +139,26 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     return .{ .mod = mod, .sem = sem };
 }
 
+fn run_child_process(io: Io, argv: []const []const u8, label: []const u8) !void {
+    var child = try std.process.spawn(io, .{
+        .argv = argv,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const term = try child.wait(io);
+    switch (term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("{s} failed (exit {})\n", .{ label, code });
+            std.process.exit(1);
+        },
+        else => {
+            std.debug.print("{s} terminated abnormally\n", .{label});
+            std.process.exit(1);
+        },
+    }
+}
+
 fn do_compile(
     alloc: std.mem.Allocator,
     io: Io,
@@ -147,6 +171,7 @@ fn do_compile(
     check_only: bool,
     verbose: bool,
     load_chunk: bool,
+    pgo: bool,
 ) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
@@ -181,71 +206,104 @@ fn do_compile(
         try fw.interface.flush();
     }
 
-    var cc_args: std.ArrayList([]const u8) = .empty;
-    defer cc_args.deinit(alloc);
-    if (is_wasm) {
-        try cc_args.appendSlice(alloc, &.{
-            "zig", "cc",
-            "--target=wasm32-wasi",
-            opt,
-            "-ffast-math",
-            "-flto",
-            "-fomit-frame-pointer",
-            "-funroll-loops",
-            "-ffp-contract=fast",
-            "-fno-trapping-math",
-            "-fno-math-errno",
-            "-Wl,--no-entry",
-            "-Wl,--export=main",
-            "-std=gnu99",
-            "-lm",
-        });
-    } else {
-        try cc_args.appendSlice(alloc, &.{
-            cc,
-            opt,
-            "-ffast-math",
-            "-march=native",
-            "-flto",
-            "-fomit-frame-pointer",
-            "-funroll-loops",
-            "-ffp-contract=fast",
-            "-fno-trapping-math",
-            "-fno-math-errno",
-            "-ffunction-sections",
-            "-fdata-sections",
-            "-Wl,-dead_strip",
-            "-std=gnu99",
-            "-lm",
-        });
-        if (load_chunk) {
-            try cc_args.append(alloc, "-fPIC");
-            if (@import("builtin").os.tag == .macos) {
-                try cc_args.append(alloc, "-dynamiclib");
-            } else {
-                try cc_args.append(alloc, "-shared");
+    // Build the base set of CC flags shared between all compile passes.
+    var base_cc_flags = base: {
+        var args: std.ArrayList([]const u8) = .empty;
+        if (is_wasm) {
+            try args.appendSlice(alloc, &.{
+                "zig", "cc",
+                "--target=wasm32-wasi",
+                opt,
+                "-ffast-math",
+                "-flto",
+                "-fomit-frame-pointer",
+                "-funroll-loops",
+                "-ffp-contract=fast",
+                "-fno-trapping-math",
+                "-fno-math-errno",
+                "-Wl,--no-entry",
+                "-Wl,--export=main",
+                "-std=gnu99",
+                "-lm",
+            });
+        } else {
+            try args.appendSlice(alloc, &.{
+                cc,
+                opt,
+                "-ffast-math",
+                "-march=native",
+                "-mtune=native",
+                "-flto",
+                "-fomit-frame-pointer",
+                "-funroll-loops",
+                "-ffp-contract=fast",
+                "-fno-trapping-math",
+                "-fno-math-errno",
+                "-ffunction-sections",
+                "-fdata-sections",
+                "-Wl,-dead_strip",
+                "-std=gnu99",
+                "-lm",
+            });
+            if (load_chunk) {
+                try args.append(alloc, "-fPIC");
+                if (@import("builtin").os.tag == .macos) {
+                    try args.append(alloc, "-dynamiclib");
+                } else {
+                    try args.append(alloc, "-shared");
+                }
             }
+            if (run_after and !verbose) try args.append(alloc, "-w");
         }
-        if (run_after and !verbose) try cc_args.append(alloc, "-w");
-    }
-    try cc_args.appendSlice(alloc, &.{ "-o", out_path, c_path });
+        break :base args;
+    };
+    defer base_cc_flags.deinit(alloc);
 
-    var cc_child = try std.process.spawn(io, .{
-        .argv = cc_args.items,
-        .stdin = .inherit,
-        .stdout = .inherit,
-        .stderr = .inherit,
-    });
-    const cc_term = try cc_child.wait(io);
-    switch (cc_term) {
-        .exited => |code| if (code != 0) {
-            std.debug.print("C compiler failed (exit {})\n", .{code});
-            std.process.exit(1);
-        },
-        else => {
-            std.debug.print("C compiler terminated abnormally\n", .{});
-            std.process.exit(1);
-        },
+    // PGO two-pass compile (skipped for wasm, load_chunk, or run_after).
+    if (pgo and !is_wasm and !load_chunk) {
+        const stem = std.fs.path.stem(src_path);
+        const profraw_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.profraw", .{stem});
+        const profdata_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.profdata", .{stem});
+        const instr_out = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_instr.out", .{stem});
+
+        // Pass 1: instrument.
+        var p1_args: std.ArrayList([]const u8) = .empty;
+        defer p1_args.deinit(alloc);
+        try p1_args.appendSlice(alloc, base_cc_flags.items);
+        try p1_args.appendSlice(alloc, &.{ "-fprofile-instr-generate", "-o", instr_out, c_path });
+        try run_child_process(io, p1_args.items, "C compiler (PGO pass 1)");
+
+        // Run instrumented binary to collect profile via `env VAR=val binary`.
+        const env_kv = try std.fmt.allocPrint(alloc, "LLVM_PROFILE_FILE={s}", .{profraw_path});
+        const instr_run_argv = [_][]const u8{ "env", env_kv, instr_out };
+        var instr_child = try std.process.spawn(io, .{
+            .argv = &instr_run_argv,
+            .stdin = .ignore,
+            .stdout = .ignore,
+            .stderr = .ignore,
+        });
+        _ = try instr_child.wait(io);
+
+        // Merge profiles with xcrun llvm-profdata (or llvm-profdata if available).
+        const profdata_argv = [_][]const u8{
+            "xcrun", "llvm-profdata", "merge", "-output", profdata_path, profraw_path,
+        };
+        try run_child_process(io, &profdata_argv, "llvm-profdata merge");
+
+        // Pass 2: optimise with profile.
+        var p2_args: std.ArrayList([]const u8) = .empty;
+        defer p2_args.deinit(alloc);
+        try p2_args.appendSlice(alloc, base_cc_flags.items);
+        const use_flag = try std.fmt.allocPrint(alloc, "-fprofile-instr-use={s}", .{profdata_path});
+        try p2_args.appendSlice(alloc, &.{ use_flag, "-o", out_path, c_path });
+        try run_child_process(io, p2_args.items, "C compiler (PGO pass 2)");
+    } else {
+        // Normal single-pass compile.
+        var cc_args: std.ArrayList([]const u8) = .empty;
+        defer cc_args.deinit(alloc);
+        try cc_args.appendSlice(alloc, base_cc_flags.items);
+        try cc_args.appendSlice(alloc, &.{ "-o", out_path, c_path });
+        try run_child_process(io, cc_args.items, "C compiler");
     }
 
     if (run_after and !is_wasm) {

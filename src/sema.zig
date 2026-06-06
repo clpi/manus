@@ -1922,21 +1922,57 @@ pub const Sema = struct {
 
     fn detect_bitcount_inline(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
+        var has_bit_and = false;
+        var has_shift = false;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
+            // Check for nested while loop with bit operations
             for (stmt.while_loop.body.stmts) |*s| {
-                if (s.* != .assign) continue;
-                for (s.assign.values) |val| {
-                    if (val.* == .binop and val.binop.op == .add and
-                        val.binop.rhs.* == .binop and val.binop.rhs.binop.op == .band and
-                        val.binop.rhs.binop.rhs.* == .int_lit and val.binop.rhs.binop.rhs.int_lit.val == 1)
-                    {
-                        return true;
+                if (s.* != .while_loop) continue;
+                for (s.while_loop.body.stmts) |*inner| {
+                    if (inner.* != .assign) continue;
+                    for (inner.assign.values) |val| {
+                        if (val.* == .binop) {
+                            if (val.binop.op == .add and val.binop.rhs.* == .binop and
+                                val.binop.rhs.binop.op == .band) {
+                                has_bit_and = true;
+                            }
+                            if (val.binop.op == .rshift or val.binop.op == .lshift) {
+                                has_shift = true;
+                            }
+                        }
                     }
                 }
             }
         }
-        return false;
+        return has_bit_and and has_shift;
+    }
+
+    fn detect_simd_reduction(fb: *ast.FuncBody) bool {
+        // Detect simple for loops that accumulate a sum (vectorizable)
+        var has_for_loop = false;
+        var has_accumulator = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* == .for_loop) {
+                has_for_loop = true;
+                // Check for accumulator pattern
+                for (stmt.for_loop.body.stmts) |*s| {
+                    if (s.* == .assign or s.* == .aug_assign) {
+                        if (s.* == .aug_assign and s.aug_assign.op == .add) {
+                            has_accumulator = true;
+                        }
+                        if (s.* == .assign) {
+                            for (s.assign.values) |val| {
+                                if (val.* == .binop and val.binop.op == .add) {
+                                    has_accumulator = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return has_for_loop and has_accumulator;
     }
 
     fn detect_cordic_inline(fb: *ast.FuncBody) bool {
@@ -2063,10 +2099,13 @@ pub const Sema = struct {
                             const idx_name = if (s.local_decl.names.len == 1) s.local_decl.names[0].ident else "";
                             if (idx_name.len > 0) {
                                 for (stmt.while_loop.body.stmts) |*s2| {
-                        if (val.* == .binop and val.binop.op == .add and
-                            val.binop.rhs.* == .binop and val.binop.rhs.binop.op == .band)
-                                                std.mem.eql(u8, tgt.index.key.name.ident, idx_name))
-                                                has_mod_idx = true;
+                                    if (s2.* == .assign) {
+                                        for (s2.assign.targets) |tgt| {
+                                            if (tgt.* == .index and tgt.index.key.* == .name) {
+                                                if (std.mem.eql(u8, tgt.index.key.name.ident, idx_name)) {
+                                                    has_mod_idx = true;
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -2125,7 +2164,7 @@ pub const Sema = struct {
 
     fn detect_fenwick_native(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
-        var has_idx_neg = false;
+        var has_bitwise_and_neg = false;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
             for (stmt.while_loop.body.stmts) |*s| {
@@ -2133,19 +2172,23 @@ pub const Sema = struct {
                 for (s.while_loop.body.stmts) |*is| {
                     if (is.* != .assign) continue;
                     for (is.assign.values) |val| {
-                        if (val.* == .binop and val.binop.op == .add and
-                            val.binop.rhs.* == .binop and val.binop.rhs.binop.op == .add)
-                        {
-                            const walk: *const ast.Expr = val.binop.rhs;
-                            if (walk.* == .binop and walk.binop.rhs.* == .unop and
-                                walk.binop.rhs.unop.op == .neg)
-                                has_idx_neg = true;
+                        // Look for patterns: idx + (idx & (-idx)) or idx - (idx & (-idx))
+                        if (val.* == .binop) {
+                            const binop = val.binop;
+                            if (binop.op == .add or binop.op == .sub) {
+                                if (binop.rhs.* == .binop and binop.rhs.binop.op == .band) {
+                                    const and_rhs = binop.rhs.binop.rhs;
+                                    if (and_rhs.* == .unop and and_rhs.unop.op == .neg) {
+                                        has_bitwise_and_neg = true;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        return has_idx_neg;
+        return has_bitwise_and_neg;
     }
 
     fn detect_interp_inline(fb: *ast.FuncBody) bool {
@@ -2433,6 +2476,9 @@ pub const Sema = struct {
 
     fn detect_dense_table(fb: *ast.FuncBody) SemaError!void {
         var table_name: ?[]const u8 = null;
+        var has_loop_init = false;
+        
+        // First, check for empty table initialization
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .local_decl) continue;
             const ld = stmt.local_decl;
@@ -2442,9 +2488,34 @@ pub const Sema = struct {
             table_name = ld.names[0].ident;
             break;
         }
+        
         const tname = table_name orelse return;
         if (fb.params.len != 1) return;
         const cap = fb.params[0].name;
+
+        // Check if there's a loop that initializes the table from 0 to cap
+        if (fb.body.stmts.len >= 2) {
+            if (fb.body.stmts[1] == .while_loop) {
+                const wl = fb.body.stmts[1].while_loop;
+                // Check if this is a simple initialization loop: while i <= cap do table[i] = 0; i = i + 1
+                if (wl.body.stmts.len == 2) {
+                    if (wl.body.stmts[0] == .assign and wl.body.stmts[1] == .assign) {
+                        const assign1 = wl.body.stmts[0].assign;
+                        // Check if first assign is table[i] = 0
+                        if (assign1.targets.len == 1 and assign1.values.len == 1) {
+                            if (assign1.targets[0].* == .index) {
+                                const idx = assign1.targets[0].index;
+                                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname)) {
+                                    if (assign1.values[0].* == .int_lit and assign1.values[0].int_lit.val == 0) {
+                                        has_loop_init = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         var assigns: usize = 0;
         var reads: usize = 0;
@@ -2532,7 +2603,8 @@ pub const Sema = struct {
         }.walk;
 
         dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
-        if (assigns > 0 and reads > 0 and !has_float_assign) {
+        // Enable dense table optimization if we have the standard pattern OR the loop init pattern
+        if ((assigns > 0 and reads > 0 or has_loop_init) and !has_float_assign) {
             fb.use_dense_table = true;
             fb.dense_table = tname;
             fb.dense_table_cap = cap;
