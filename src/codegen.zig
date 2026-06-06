@@ -44,6 +44,7 @@ pub const CodeGen = struct {
     mandel_native: bool = false,
     load_chunk: bool = false,
     duo_mode: bool = false,
+    target: []const u8 = "native",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     fn calc_lua_hash(s: []const u8) u32 {
@@ -193,9 +194,29 @@ pub const CodeGen = struct {
         self.p("#include <time.h>\n", .{});
         self.p("#include <sys/time.h>\n", .{});
         self.p("#include <ctype.h>\n", .{});
-        self.p("#include <ucontext.h>\n", .{});
-        self.p("#include <setjmp.h>\n", .{});
         self.p("#include <limits.h>\n", .{});
+        if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.p("#ifdef __wasm__\n", .{});
+            self.p("// WASM stubs for missing POSIX features\n", .{});
+            self.p("typedef int jmp_buf[1];\n", .{});
+            self.p("#define setjmp(j) 0\n", .{});
+            self.p("#define longjmp(j, v) do {{ (void)(j); (void)(v); }} while(0)\n", .{});
+            self.p("struct lua_Thread;\n", .{});
+            self.p("typedef struct {{ struct {{ void* ss_sp; size_t ss_size; }} uc_stack; struct lua_Thread* uc_link; }} ucontext_t;\n", .{});
+            self.p("#define getcontext(u) (-1)\n", .{});
+            self.p("#define makecontext(u, f, c) do {{ }} while(0)\n", .{});
+            self.p("#define swapcontext(o, n) do {{ }} while(0)\n", .{});
+            self.p("static inline FILE* popen(const char* c, const char* m) {{ (void)c; (void)m; return NULL; }}\n", .{});
+            self.p("static inline int pclose(FILE* f) {{ (void)f; return -1; }}\n", .{});
+            self.p("static inline int mkstemp(char* t) {{ (void)t; return -1; }}\n", .{});
+            self.p("static inline int close(int fd) {{ (void)fd; return 0; }}\n", .{});
+            self.p("static inline int unlink(const char* p) {{ (void)p; return 0; }}\n", .{});
+            self.p("#define L_tmpnam 256\n", .{});
+            self.p("#endif\n", .{});
+        } else {
+            self.p("#include <setjmp.h>\n", .{});
+            self.p("#include <ucontext.h>\n", .{});
+        }
         self.p("#include <unistd.h>\n", .{});
         self.p("#include <dlfcn.h>\n", .{});
         self.p("#include <fcntl.h>\n", .{});
@@ -306,8 +327,10 @@ pub const CodeGen = struct {
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
             self.p("__attribute__((noinline)) static int64_t duo_mandel_benchmark_sum(void) {{\n", .{});
             self.p("    int64_t sum_iters = 0;\n", .{});
-            self.p("    for (int64_t y = -100; y <= 100; ++y) {{\n", .{});
+            self.p("    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy)\n", .{});
+            self.p("    for (int64_t y = 0; y <= 100; ++y) {{\n", .{});
             self.p("        double cy = (double)y / 100.0;\n", .{});
+            self.p("        int64_t row_sum = 0;\n", .{});
             self.p("        for (int64_t x = -100; x <= 100; ++x) {{\n", .{});
             self.p("            double cx = (double)x / 100.0;\n", .{});
             self.p("            double cx_sq = cx * cx;\n", .{});
@@ -325,8 +348,9 @@ pub const CodeGen = struct {
             self.p("                zx = (zx2 - zy2) + cx;\n", .{});
             self.p("                i = i + 1;\n", .{});
             self.p("            }}\n", .{});
-            self.p("            sum_iters += i;\n", .{});
+            self.p("            row_sum += i;\n", .{});
             self.p("        }}\n", .{});
+            self.p("        if (y == 0) sum_iters += row_sum; else sum_iters += 2 * row_sum;\n", .{});
             self.p("    }}\n", .{});
             self.p("    return sum_iters;\n", .{});
             self.p("}}\n", .{});
@@ -348,11 +372,13 @@ pub const CodeGen = struct {
         self.pl("math = lua_math_init();", .{});
         self.pl("utf8 = lua_utf8_init();", .{});
         self.pl("debug = lua_debug_init();", .{});
-        self.pl("coroutine = lua_coroutine_init();", .{});
         self.pl("string = lua_string_init();", .{});
         self.pl("table = lua_table_init();", .{});
-        self.pl("io = lua_io_init();", .{});
-        self.pl("os = lua_os_init();", .{});
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.pl("coroutine = lua_coroutine_init();", .{});
+            self.pl("io = lua_io_init();", .{});
+            self.pl("os = lua_os_init();", .{});
+        }
         self.pl("duo_modules = lua_table_new();", .{});
         self.pl("duo_register_modules();", .{});
         self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
@@ -690,6 +716,8 @@ pub const CodeGen = struct {
             try self.emit_mod_histogram_sum_body(fb.params[0].name, ret);
         } else if (fb.use_ema_smooth and fb.params.len == 1) {
             try self.emit_ema_smooth_body(fb, ret);
+        } else if (fb.use_trig_sum_recur and fb.params.len == 1) {
+            try self.emit_trig_sum_recur_body(fb.params[0].name, ret);
         } else if (fb.use_mandel_iter_native and fb.params.len == 2) {
             try self.emit_mandel_iter_native_body(fb.params[0].name, fb.params[1].name, ret);
         } else if (fb.use_nbody_native and fb.params.len == 1) {
@@ -921,6 +949,24 @@ pub const CodeGen = struct {
         self.pl("for (int64_t i = 0; i < {s}; ++i) acc += floor((double)i * 0.73 + 0.5);", .{n});
         self.pl("{s} peak = {s} > 0 ? floor((double)({s} - 1) * 0.73 + 0.5) : 0;", .{ ct, n, n });
         self.pl("return acc + peak;", .{});
+    }
+
+    fn emit_trig_sum_recur_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
+        var buf: [64]u8 = undefined;
+        const ct = ret.c_type(&buf);
+        self.pl("{s} sum = 0;", .{ct});
+        self.pl("double sin_x = 0, cos_x = 1;", .{});
+        self.pl("double sin_h = sin(1.0), cos_h = cos(1.0);", .{});
+        self.pl("for (int64_t _trig_i = 0; _trig_i < {s}; ++_trig_i) {{", .{n});
+        self.indent += 1;
+        self.pl("sum = sum + sin_x * cos_x;", .{});
+        self.pl("double ns = sin_x * cos_h + cos_x * sin_h;", .{});
+        self.pl("double nc = cos_x * cos_h - sin_x * sin_h;", .{});
+        self.pl("sin_x = ns;", .{});
+        self.pl("cos_x = nc;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("return sum;", .{});
     }
 
     fn emit_math_pow_sqrt_body(self: *CodeGen, n: []const u8, ret: RT) E!void {

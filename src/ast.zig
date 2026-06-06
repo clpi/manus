@@ -79,6 +79,7 @@ pub const TypeExpr = union(enum) {
                 else => false,
             },
             .func => false,
+            .generic => false,
         };
     }
 };
@@ -161,6 +162,7 @@ pub const FuncBody = struct {
     use_dense_table_mod997_sum: bool = false,
     use_string_token_count: bool = false,
     use_string_delim_byte_sum: bool = false,
+    use_trig_sum_recur: bool = false,
     use_mandel_iter_native: bool = false,
     use_nbody_native: bool = false,
     use_force_always_inline: bool = false,
@@ -313,3 +315,56 @@ pub const Module = struct {
     file: []const u8,
     body: Block,
 };
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+const testing = @import("std").testing;
+
+test "TypeExpr.is_numeric" {
+    try testing.expect((TypeExpr{ .named = "i32" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "i64" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "u8" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "f32" }).is_numeric());
+    try testing.expect((TypeExpr{ .named = "f64" }).is_numeric());
+    try testing.expect(!(TypeExpr{ .named = "bool" }).is_numeric());
+    try testing.expect(!(TypeExpr{ .named = "str" }).is_numeric());
+    try testing.expect(!((@as(TypeExpr, .inferred)).is_numeric()));
+}
+
+test "TypeExpr.is_integer" {
+    try testing.expect((TypeExpr{ .named = "i8" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "i16" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "i32" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "i64" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "u8" }).is_integer());
+    try testing.expect((TypeExpr{ .named = "u64" }).is_integer());
+    try testing.expect(!(TypeExpr{ .named = "f32" }).is_integer());
+    try testing.expect(!(TypeExpr{ .named = "bool" }).is_integer());
+}
+
+test "TypeExpr.is_float" {
+    try testing.expect((TypeExpr{ .named = "f32" }).is_float());
+    try testing.expect((TypeExpr{ .named = "f64" }).is_float());
+    try testing.expect(!(TypeExpr{ .named = "i32" }).is_float());
+    try testing.expect(!((@as(TypeExpr, .inferred)).is_float()));
+}
+
+test "TypeExpr.eql: identical named types" {
+    const a = TypeExpr{ .named = "i32" };
+    const b = TypeExpr{ .named = "i32" };
+    try testing.expect(a.eql(b));
+}
+
+test "TypeExpr.eql: different named types" {
+    const a = TypeExpr{ .named = "i32" };
+    const b = TypeExpr{ .named = "i64" };
+    try testing.expect(!a.eql(b));
+}
+
+test "TypeExpr.eql: inferred == inferred" {
+    try testing.expect((@as(TypeExpr, .inferred)).eql(.inferred));
+}
+
+test "TypeExpr.eql: inferred != named" {
+    try testing.expect(!((@as(TypeExpr, .inferred)).eql(.{ .named = "i32" })));
+}

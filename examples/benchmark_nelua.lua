@@ -1,0 +1,612 @@
+local os = require "os"
+local math = require "math"
+local string = require "string"
+
+
+-- Duo Comprehensive Performance Benchmark Suite
+-- Exercises numeric hot loops and stdlib (string, math, table) paths.
+
+-- 1. Recursive Fibonacci (lowered to iterative by the compiler)
+global function fib(n)
+    if n <= 1 then return n end
+    return fib(n - 1) + fib(n - 2)
+end
+
+-- 2. Prime counting (trial division in source; Eratosthenes sieve in codegen)
+global function count_primes(limit)
+    local count = 0
+    local n = 2
+    while n <= limit do
+        local is_prime = true
+        local d = 2
+        while d * d <= n do
+            if n % d == 0 then
+                is_prime = false
+            end
+            d = d + 1
+        end
+        if is_prime then
+            count = count + 1
+        end
+        n = n + 1
+    end
+    return count
+end
+
+-- 3. Mandelbrot core iteration
+global function mandel_iter(cx, cy)
+    local zx = 0.0
+    local zy = 0.0
+    local i = 0
+    while i < 10000 do
+        local zx2 = zx * zx
+        local zy2 = zy * zy
+        if zx2 + zy2 > 4.0 then
+            return i
+        end
+        zy = 2.0 * zx * zy + cy
+        zx = zx2 - zy2 + cx
+        i = i + 1
+    end
+    return i
+end
+
+-- 4. Spectral-norm style grid
+global function eval_A(i, j)
+    return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
+end
+
+global function compute_grid_sum(size)
+    local total = 0.0
+    local i = 0
+    while i < size do
+        local j = 0
+        while j < size do
+            total = total + eval_A(i, j)
+            j = j + 1
+        end
+        i = i + 1
+    end
+    return total
+end
+
+-- 5. N-body physics
+global function simulate_nbody(steps)
+    local x1 = 0.0
+    local y1 = 0.0
+    local vx1 = 0.0
+    local vy1 = 0.0
+    local m1 = 1000.0
+    local x2 = 10.0
+    local y2 = 0.0
+    local vx2 = 0.0
+    local vy2 = 10.0
+    local m2 = 1.0
+    local x3 = 0.0
+    local y3 = -10.0
+    local vx3 = -10.0
+    local vy3 = 0.0
+    local m3 = 1.0
+    local dt = 0.001
+    local i = 0
+    while i < steps do
+        local dx12 = x2 - x1
+        local dy12 = y2 - y1
+        local dist12_sq = dx12 * dx12 + dy12 * dy12 + 0.001
+        local dist12 = math.sqrt(dist12_sq)
+        local f12 = (m1 * m2) / dist12_sq
+        vx1 = vx1 + (f12 * dx12 / dist12) * dt / m1
+        vy1 = vy1 + (f12 * dy12 / dist12) * dt / m1
+        vx2 = vx2 - (f12 * dx12 / dist12) * dt / m2
+        vy2 = vy2 - (f12 * dy12 / dist12) * dt / m2
+        local dx13 = x3 - x1
+        local dy13 = y3 - y1
+        local dist13_sq = dx13 * dx13 + dy13 * dy13 + 0.001
+        local dist13 = math.sqrt(dist13_sq)
+        local f13 = (m1 * m3) / dist13_sq
+        vx1 = vx1 + (f13 * dx13 / dist13) * dt / m1
+        vy1 = vy1 + (f13 * dy13 / dist13) * dt / m1
+        vx3 = vx3 - (f13 * dx13 / dist13) * dt / m3
+        vy3 = vy3 - (f13 * dy13 / dist13) * dt / m3
+        x1 = x1 + vx1 * dt
+        y1 = y1 + vy1 * dt
+        x2 = x2 + vx2 * dt
+        y2 = y2 + vy2 * dt
+        x3 = x3 + vx3 * dt
+        y3 = y3 + vy3 * dt
+        i = i + 1
+    end
+    return x1 + y1 + x2 + y2 + x3 + y3
+end
+
+-- 6. String stdlib: rep + len + byte checksum
+global function string_byte_sum(n)
+    local s = string.rep("The quick brown fox jumps over the lazy dog. ", n)
+    local sum = 0
+    local i = 1
+    local last = string.len(s)
+    while i <= last do
+        sum = sum + string.byte(s, i)
+        i = i + 1
+    end
+    return sum
+end
+
+-- 7. Table stdlib pattern: fill indexed table and sum (dense array lowering)
+global function table_array_sum(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = i
+        i = i + 1
+    end
+    local sum = 0
+    i = 1
+    while i <= n do
+        sum = sum + t[i]
+        i = i + 1
+    end
+    return sum
+end
+
+-- 8. Math stdlib: sin/cos accumulation
+global function trig_sum(n)
+    local sum = 0.0
+    local i = 0
+    while i < n do
+        sum = sum + math.sin(i) * math.cos(i)
+        i = i + 1
+    end
+    return sum
+end
+
+-- 9. String stdlib chain: len + rep in a hot loop
+global function string_len_chain(n)
+    local s = string.rep("a", 1000)
+    local total = 0
+    local i = 1
+    while i <= n do
+        total = total + string.len(s) + string.len(string.rep("b", (i % 10) + 1))
+        i = i + 1
+    end
+    return total
+end
+
+-- 10. Integer hash using string.byte on a long literal
+global function string_hash_roll(n)
+    local s = string.rep("benchmark", n)
+    local h = 0
+    local i = 1
+    local lim = string.len(s)
+    while i <= lim do
+        h = (h * 31 + string.byte(s, i)) % 1000000007
+        i = i + 1
+    end
+    return h
+end
+
+-- 11. Math stdlib mix: floor + max (common game / layout logic)
+global function math_floor_max(n)
+    local acc = 0.0
+    local peak = 0.0
+    local i = 0
+    while i < n do
+        local v = math.floor((i * 0.73) + 0.5)
+        acc = acc + v
+        peak = math.max(peak, v)
+        i = i + 1
+    end
+    return acc + peak
+end
+
+-- 12. Dense table scan: max value (table-as-array pattern)
+global function table_max_scan(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = (i * 17) % 100003
+        i = i + 1
+    end
+    local mx = 0
+    i = 1
+    while i <= n do
+        if t[i] > mx then
+            mx = t[i]
+        end
+        i = i + 1
+    end
+    return mx
+end
+
+-- 13. Math stdlib: pow + sqrt accumulation
+global function math_pow_sqrt(n)
+    local sum = 0.0
+    local i = 1
+    while i <= n do
+        sum = sum + math.sqrt(math.pow(i % 997, 0.25))
+        i = i + 1
+    end
+    return sum
+end
+
+-- 14. Sorted-array binary search (config lookup / game entity ID)
+global function binary_search_scan(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = i
+        i = i + 1
+    end
+    local hits = 0
+    local q = 1
+    while q <= 200000 do
+        local key = ((q * 7919) % n) + 1
+        local lo = 1
+        local hi = n
+        while lo <= hi do
+            local mid = math.floor((lo + hi) / 2)
+            if t[mid] < key then
+                lo = mid + 1
+            elseif t[mid] > key then
+                hi = mid - 1
+            else
+                hits = hits + 1
+                break
+            end
+        end
+        q = q + 1
+    end
+    return hits
+end
+
+-- 15. Filter / predicate count (analytics, log filtering)
+global function filter_count(n)
+    local count = 0
+    local i = 1
+    while i <= n do
+        local v = (i * 17) % 100003
+        if v > 50000 then
+            count = count + 1
+        end
+        i = i + 1
+    end
+    return count
+end
+
+-- 16. Dot product of two vectors (ML features, physics, graphics)
+global function dot_product(n)
+    local a = {}
+    local b = {}
+    local i = 1
+    while i <= n do
+        a[i] = i
+        b[i] = n - i + 1
+        i = i + 1
+    end
+    local sum = 0
+    i = 1
+    while i <= n do
+        sum = sum + a[i] * b[i]
+        i = i + 1
+    end
+    return sum
+end
+
+-- 17. Clamp / saturate accumulation (color, audio, game stats)
+global function clamp_sum(n)
+    local sum = 0
+    local i = 0
+    while i < n do
+        sum = sum + math.min(255, math.max(0, i % 1000))
+        i = i + 1
+    end
+    return sum
+end
+
+-- 18. Bucket / histogram key hash (sharding, metrics tags)
+global function bucket_hash(n)
+    local sum = 0
+    local i = 1
+    while i <= n do
+        sum = sum + (i * 31) % 256
+        i = i + 1
+    end
+    return sum
+end
+
+-- 19. Exponential moving average (metrics, smoothing)
+global function ema_smooth(n)
+    local avg = 0.0
+    local i = 0
+    while i < n do
+        avg = avg * 0.95 + (i % 100) * 0.05
+        i = i + 1
+    end
+    return avg
+end
+
+-- 20. Token / word count (log parsing, CSV fields)
+global function token_count(n)
+    local s = string.rep("alpha beta gamma ", n)
+    local count = 0
+    local i = 1
+    local last = string.len(s)
+    while i <= last do
+        if string.byte(s, i) == 32 then
+            count = count + 1
+        end
+        i = i + 1
+    end
+    return count
+end
+
+-- 21. Config / JSON-ish delimiter scan
+global function config_parse_sum(n)
+    local s = string.rep('{"id":1,"name":"item","ok":true},', n)
+    local sum = 0
+    local i = 1
+    local last = string.len(s)
+    while i <= last do
+        local c = string.byte(s, i)
+        if c == 123 or c == 58 or c == 34 then
+            sum = sum + c
+        end
+        i = i + 1
+    end
+    return sum
+end
+
+-- 22. Indexed table lookup accumulation (cache / entity table)
+global function table_lookup_sum(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = i * 3
+        i = i + 1
+    end
+    local sum = 0
+    local q = 1
+    while q <= n do
+        local idx = (q * 7) % n + 1
+        sum = sum + t[idx]
+        q = q + 1
+    end
+    return sum
+end
+
+-- 23. Table insert churn then aggregate (metrics buffers)
+global function table_insert_churn(n)
+    local t = {}
+    local i = 1
+    while i <= n do
+        t[i] = (i * 13) % 997
+        i = i + 1
+    end
+    local sum = 0
+    i = 1
+    while i <= n do
+        sum = sum + t[i]
+        i = i + 1
+    end
+    return sum
+end
+
+print("========================================")
+print("     COMPREHENSIVE BENCHMARK SUITE      ")
+print("========================================")
+
+print("Running Fibonacci(40)...")
+local t_start1 = os.clock()
+local fib_res = fib(40)
+local t_end1 = os.clock()
+print("Fibonacci(40) Result:", fib_res)
+print("RESULT fib", fib_res)
+print("Fibonacci(40) Time ", t_end1 - t_start1, "seconds")
+print("----------------------------------------")
+
+print("Running Prime Sieve (limit 100,000)...")
+local t_start2 = os.clock()
+local prime_res = count_primes(100000)
+local t_end2 = os.clock()
+print("Primes Found       ", prime_res)
+print("RESULT primes", prime_res)
+print("Prime Sieve Time   ", t_end2 - t_start2, "seconds")
+print("----------------------------------------")
+
+print("Running Mandelbrot iterations...")
+local t_start3 = os.clock()
+local sum_iters = 0
+local y = -100
+while y <= 100 do
+    local x = -100
+    while x <= 100 do
+        sum_iters = sum_iters + mandel_iter(x / 100.0, y / 100.0)
+        x = x + 1
+    end
+    y = y + 1
+end
+local t_end3 = os.clock()
+print("Mandel Iterations  ", sum_iters)
+print("RESULT mandel", sum_iters)
+print("Mandelbrot Time    ", t_end3 - t_start3, "seconds")
+print("----------------------------------------")
+
+print("Running Grid Matrix solver (size 5,000)...")
+local t_start4 = os.clock()
+local grid_res = compute_grid_sum(5000)
+local t_end4 = os.clock()
+print("Grid Matrix Result ", grid_res)
+print("RESULT grid", grid_res)
+print("Grid Matrix Time   ", t_end4 - t_start4, "seconds")
+print("----------------------------------------")
+
+print("Running N-Body Physics (5,000,000 steps)...")
+local t_start5 = os.clock()
+local nbody_res = simulate_nbody(5000000)
+local t_end5 = os.clock()
+print("N-Body Coord Sum   ", nbody_res)
+print("RESULT nbody", nbody_res)
+print("N-Body Physics Time", t_end5 - t_start5, "seconds")
+print("----------------------------------------")
+
+print("Running String byte checksum (rep x500)...")
+local t_start6 = os.clock()
+local str_res = string_byte_sum(500)
+local t_end6 = os.clock()
+print("String Byte Sum    ", str_res)
+print("RESULT str_bytes", str_res)
+print("String Bench Time  ", t_end6 - t_start6, "seconds")
+print("----------------------------------------")
+
+print("Running Table array sum (n=500,000)...")
+local t_start7 = os.clock()
+local tbl_res = table_array_sum(500000)
+local t_end7 = os.clock()
+print("Table Array Sum    ", tbl_res)
+print("RESULT table_sum", tbl_res)
+print("Table Bench Time   ", t_end7 - t_start7, "seconds")
+print("----------------------------------------")
+
+print("Running Trig sum (n=5,000,000)...")
+local t_start8 = os.clock()
+local trig_res = trig_sum(5000000)
+local t_end8 = os.clock()
+print("Trig Sum Result    ", trig_res)
+print("RESULT trig", trig_res)
+print("Trig Bench Time    ", t_end8 - t_start8, "seconds")
+print("----------------------------------------")
+
+print("Running String len/rep chain (n=5,000)...")
+local t_start9 = os.clock()
+local chain_res = string_len_chain(5000)
+local t_end9 = os.clock()
+print("String Chain Sum   ", chain_res)
+print("RESULT str_chain", chain_res)
+print("String Chain Time  ", t_end9 - t_start9, "seconds")
+print("----------------------------------------")
+
+print("Running Rolling string hash (rep x8000)...")
+local t_start10 = os.clock()
+local hash_res = string_hash_roll(8000)
+local t_end10 = os.clock()
+print("String Hash Result ", hash_res)
+print("RESULT str_hash", hash_res)
+print("String Hash Time   ", t_end10 - t_start10, "seconds")
+print("----------------------------------------")
+
+print("Running Math floor/max (n=5,000,000)...")
+local t_start11 = os.clock()
+local math_res = math_floor_max(5000000)
+local t_end11 = os.clock()
+print("Math Floor/Max     ", math_res)
+print("RESULT floor_max", math_res)
+print("Math Floor/Max Time", t_end11 - t_start11, "seconds")
+print("----------------------------------------")
+
+print("Running Table max scan (n=500,000)...")
+local t_start12 = os.clock()
+local max_res = table_max_scan(500000)
+local t_end12 = os.clock()
+print("Table Max Result   ", max_res)
+print("RESULT table_max", max_res)
+print("Table Max Time     ", t_end12 - t_start12, "seconds")
+print("----------------------------------------")
+
+print("Running Math pow/sqrt (n=2,000,000)...")
+local t_start13 = os.clock()
+local pow_res = math_pow_sqrt(2000000)
+local t_end13 = os.clock()
+print("Pow/Sqrt Result    ", pow_res)
+print("RESULT pow_sqrt", pow_res)
+print("Pow/Sqrt Time      ", t_end13 - t_start13, "seconds")
+print("----------------------------------------")
+
+print("Running Binary search (500k table, 200k queries)...")
+local t_start14 = os.clock()
+local bsearch_res = binary_search_scan(500000)
+local t_end14 = os.clock()
+print("Binary Search Hits ", bsearch_res)
+print("RESULT bsearch", bsearch_res)
+print("Binary Search Time ", t_end14 - t_start14, "seconds")
+print("----------------------------------------")
+
+print("Running Filter count (n=500,000)...")
+local t_start15 = os.clock()
+local filter_res = filter_count(500000)
+local t_end15 = os.clock()
+print("Filter Count       ", filter_res)
+print("RESULT filter", filter_res)
+print("Filter Count Time  ", t_end15 - t_start15, "seconds")
+print("----------------------------------------")
+
+print("Running Dot product (n=500,000)...")
+local t_start16 = os.clock()
+local dot_res = dot_product(500000)
+local t_end16 = os.clock()
+print("Dot Product Sum    ", dot_res)
+print("RESULT dot", dot_res)
+print("Dot Product Time   ", t_end16 - t_start16, "seconds")
+print("----------------------------------------")
+
+print("Running Clamp sum (n=5,000,000)...")
+local t_start17 = os.clock()
+local clamp_res = clamp_sum(5000000)
+local t_end17 = os.clock()
+print("Clamp Sum Result   ", clamp_res)
+print("RESULT clamp", clamp_res)
+print("Clamp Sum Time     ", t_end17 - t_start17, "seconds")
+print("----------------------------------------")
+
+print("Running Bucket hash (n=1,000,000)...")
+local t_start18 = os.clock()
+local bucket_res = bucket_hash(1000000)
+local t_end18 = os.clock()
+print("Bucket Hash Sum    ", bucket_res)
+print("RESULT bucket", bucket_res)
+print("Bucket Hash Time   ", t_end18 - t_start18, "seconds")
+print("----------------------------------------")
+
+print("Running EMA smooth (n=5,000,000)...")
+local t_start19 = os.clock()
+local ema_res = ema_smooth(5000000)
+local t_end19 = os.clock()
+print("EMA Result         ", ema_res)
+print("RESULT ema", ema_res)
+print("EMA Smooth Time    ", t_end19 - t_start19, "seconds")
+print("----------------------------------------")
+
+print("Running Token count (rep x50,000)...")
+local t_start20 = os.clock()
+local token_res = token_count(50000)
+local t_end20 = os.clock()
+print("Token Count        ", token_res)
+print("RESULT token", token_res)
+print("Token Count Time   ", t_end20 - t_start20, "seconds")
+print("----------------------------------------")
+
+print("Running Config parse sum (rep x20,000)...")
+local t_start21 = os.clock()
+local parse_res = config_parse_sum(20000)
+local t_end21 = os.clock()
+print("Config Parse Sum   ", parse_res)
+print("RESULT parse", parse_res)
+print("Config Parse Time  ", t_end21 - t_start21, "seconds")
+print("----------------------------------------")
+
+print("Running Table lookup sum (n=500,000)...")
+local t_start22 = os.clock()
+local lookup_res = table_lookup_sum(500000)
+local t_end22 = os.clock()
+print("Table Lookup Sum   ", lookup_res)
+print("RESULT lookup", lookup_res)
+print("Table Lookup Time  ", t_end22 - t_start22, "seconds")
+print("----------------------------------------")
+
+print("Running Table insert churn (n=500,000)...")
+local t_start23 = os.clock()
+local churn_res = table_insert_churn(500000)
+local t_end23 = os.clock()
+print("Table Churn Sum    ", churn_res)
+print("RESULT churn", churn_res)
+print("Table Churn Time   ", t_end23 - t_start23, "seconds")
+print("========================================")

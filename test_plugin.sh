@@ -1,32 +1,71 @@
 #!/bin/bash
+# Verify that the Neovim plugin files are structurally valid.
+# Checks that required files exist and that Neovim can load the ftdetect
+# script without errors (headless mode).  Does NOT require a full Neovim
+# installation — missing nvim just skips the live test and reports the
+# file-existence results.
 
-# Test script to verify Duo plugin works locally
+set -euo pipefail
 
-echo "Testing Duo Neovim plugin..."
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PASS=0
+FAIL=0
 
-# Create a temporary neovim config for testing
-TEST_DIR="/tmp/duo_plugin_test"
-mkdir -p "$TEST_DIR"
+ok()  { echo "OK:   $*"; PASS=$((PASS + 1)); }
+fail(){ echo "FAIL: $*"; FAIL=$((FAIL + 1)); }
 
-# Copy plugin files to test directory
-mkdir -p "$TEST_DIR/ftdetect"
-mkdir -p "$TEST_DIR/syntax"
-mkdir -p "$TEST_DIR/plugin"
-mkdir -p "$TEST_DIR/lua/duo"
+# ── 1. Required plugin files exist ───────────────────────────────────────────
 
-cp /Users/clp/x/duo/ftdetect/duo.vim "$TEST_DIR/ftdetect/"
-cp /Users/clp/x/duo/syntax/duo.vim "$TEST_DIR/syntax/"
-cp /Users/clp/x/duo/plugin/duo.vim "$TEST_DIR/plugin/"
-cp /Users/clp/x/duo/lua/duo/init.lua "$TEST_DIR/lua/duo/"
+for f in \
+    "ftdetect/duo.vim" \
+    "syntax/duo.vim" \
+    "plugin/duo.vim" \
+    "lua/duo/init.lua"
+do
+    if [ -f "$ROOT/$f" ]; then
+        ok "$f exists"
+    else
+        fail "$f is missing"
+    fi
+done
 
-echo "Plugin files copied to $TEST_DIR"
+# ── 2. Syntax file contains at least one syntax keyword ──────────────────────
+
+SYN="$ROOT/syntax/duo.vim"
+if grep -q 'syntax keyword\|syn keyword' "$SYN" 2>/dev/null; then
+    ok "syntax/duo.vim defines keywords"
+else
+    fail "syntax/duo.vim has no 'syntax keyword' definitions"
+fi
+
+# ── 3. ftdetect registers .duo extension ─────────────────────────────────────
+
+FTD="$ROOT/ftdetect/duo.vim"
+if grep -qE '\.duo' "$FTD" 2>/dev/null; then
+    ok "ftdetect/duo.vim references .duo extension"
+else
+    fail "ftdetect/duo.vim does not reference .duo extension"
+fi
+
+# ── 4. Optional: headless nvim smoke-test ────────────────────────────────────
+
+if command -v nvim &>/dev/null; then
+    if nvim --headless \
+        -c "set rtp+=$ROOT" \
+        -c "source $ROOT/ftdetect/duo.vim" \
+        -c "qa" 2>/dev/null; then
+        ok "nvim loads ftdetect without errors"
+    else
+        fail "nvim exited non-zero loading ftdetect"
+    fi
+else
+    echo "SKIP: nvim not found — skipping live Neovim test"
+fi
+
+# ── Summary ──────────────────────────────────────────────────────────────────
+
 echo ""
-echo "Testing syntax highlighting..."
-nvim --headless -c 'set rtp+=/tmp/duo_plugin_test' -c 'source /tmp/duo_plugin_test/ftdetect/duo.vim' -c 'e examples/syntax_test.duo' -c 'echo "Filetype: " . &filetype' -c 'syntax on' -c 'qa'
-
-echo ""
-echo "To test manually, run:"
-echo "nvim --cmd 'set rtp+=$TEST_DIR' examples/syntax_test.duo"
-echo ""
-echo "Plugin structure:"
-ls -la "$TEST_DIR"
+echo "Results: $PASS passed, $FAIL failed"
+if [ "$FAIL" -gt 0 ]; then
+    exit 1
+fi

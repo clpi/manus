@@ -15,9 +15,10 @@ const usage =
     \\  dump-c   <file>   print generated C to stdout
     \\
     \\options:
-    \\  -o <name>         output binary name (default: <stem>.out)
-    \\  -O<n>             clang optimisation level (default: -O3)
+    \\  -o <name>         output binary name (default: <stem>.out or <stem>.wasm)
+    \\  -O<n>             optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
+    \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\
@@ -38,6 +39,7 @@ pub fn main(init: std.process.Init) !void {
     var output_file: ?[]const u8 = null;
     var cc: []const u8 = "clang";
     var opt_level: []const u8 = "-O3";
+    var target: []const u8 = "native";
     var verbose = false;
     var load_chunk = false;
 
@@ -52,6 +54,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--cc") and i + 1 < args.len) {
             i += 1;
             cc = args[i];
+        } else if (std.mem.eql(u8, arg, "--target") and i + 1 < args.len) {
+            i += 1;
+            target = args[i];
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
@@ -66,18 +71,20 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
-    const out = output_file orelse try std.fmt.allocPrint(
-        alloc,
-        "./{s}.out",
-        .{std.fs.path.stem(file)},
-    );
+    const out = output_file orelse out: {
+        const stem = std.fs.path.stem(file);
+        if (std.mem.eql(u8, target, "wasm32-wasi")) {
+            break :out try std.fmt.allocPrint(alloc, "./{s}.wasm", .{stem});
+        }
+        break :out try std.fmt.allocPrint(alloc, "./{s}.out", .{stem});
+    };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, false, false, false, load_chunk);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, true, false, verbose, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, false, true, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file);
     } else {
@@ -135,6 +142,7 @@ fn do_compile(
     out_path: []const u8,
     cc: []const u8,
     opt: []const u8,
+    target: []const u8,
     run_after: bool,
     check_only: bool,
     verbose: bool,
@@ -147,6 +155,8 @@ fn do_compile(
         std.debug.print("OK\n", .{});
         return;
     }
+
+    const is_wasm = std.mem.eql(u8, target, "wasm32-wasi");
 
     const c_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.c", .{
         std.fs.path.stem(src_path),
@@ -161,6 +171,7 @@ fn do_compile(
         var fw: Io.File.Writer = .init(cf, io, &buf);
         var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface);
         cg.src_path = src_path;
+        cg.target = target;
         cg.load_chunk = load_chunk;
         cg.duo_mode = ps.sem.duo_mode;
         cg.emit_module(&ps.mod) catch |e| {
@@ -172,32 +183,51 @@ fn do_compile(
 
     var cc_args: std.ArrayList([]const u8) = .empty;
     defer cc_args.deinit(alloc);
-    try cc_args.appendSlice(alloc, &.{
-        cc,
-        opt,
-        "-ffast-math",
-        "-march=native",
-        "-flto",
-        "-fomit-frame-pointer",
-        "-funroll-loops",
-        "-ffp-contract=fast",
-        "-fno-trapping-math",
-        "-fno-math-errno",
-        "-ffunction-sections",
-        "-fdata-sections",
-        "-Wl,-dead_strip",
-        "-std=gnu99",
-        "-lm",
-    });
-    if (load_chunk) {
-        try cc_args.append(alloc, "-fPIC");
-        if (@import("builtin").os.tag == .macos) {
-            try cc_args.append(alloc, "-dynamiclib");
-        } else {
-            try cc_args.append(alloc, "-shared");
+    if (is_wasm) {
+        try cc_args.appendSlice(alloc, &.{
+            "zig", "cc",
+            "--target=wasm32-wasi",
+            opt,
+            "-ffast-math",
+            "-flto",
+            "-fomit-frame-pointer",
+            "-funroll-loops",
+            "-ffp-contract=fast",
+            "-fno-trapping-math",
+            "-fno-math-errno",
+            "-Wl,--no-entry",
+            "-Wl,--export=main",
+            "-std=gnu99",
+            "-lm",
+        });
+    } else {
+        try cc_args.appendSlice(alloc, &.{
+            cc,
+            opt,
+            "-ffast-math",
+            "-march=native",
+            "-flto",
+            "-fomit-frame-pointer",
+            "-funroll-loops",
+            "-ffp-contract=fast",
+            "-fno-trapping-math",
+            "-fno-math-errno",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-Wl,-dead_strip",
+            "-std=gnu99",
+            "-lm",
+        });
+        if (load_chunk) {
+            try cc_args.append(alloc, "-fPIC");
+            if (@import("builtin").os.tag == .macos) {
+                try cc_args.append(alloc, "-dynamiclib");
+            } else {
+                try cc_args.append(alloc, "-shared");
+            }
         }
+        if (run_after and !verbose) try cc_args.append(alloc, "-w");
     }
-    if (run_after and !verbose) try cc_args.append(alloc, "-w");
     try cc_args.appendSlice(alloc, &.{ "-o", out_path, c_path });
 
     var cc_child = try std.process.spawn(io, .{
@@ -218,7 +248,7 @@ fn do_compile(
         },
     }
 
-    if (run_after) {
+    if (run_after and !is_wasm) {
         const run_argv = [_][]const u8{out_path};
         var run_child = try std.process.spawn(io, .{
             .argv = &run_argv,

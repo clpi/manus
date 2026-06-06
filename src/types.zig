@@ -191,9 +191,166 @@ pub const ResolvedType = union(enum) {
     }
 };
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+const testing = @import("std").testing;
+
+fn rt(tag: anytype) ResolvedType {
+    return @as(ResolvedType, tag);
+}
+
+// local alias for non-shadowing use
+const r = rt;
+
+test "ResolvedType.eql: same primitives" {
+    try testing.expect(r(.i8).eql(.i8));
+    try testing.expect(r(.i16).eql(.i16));
+    try testing.expect(r(.i32).eql(.i32));
+    try testing.expect(r(.i64).eql(.i64));
+    try testing.expect(r(.u8).eql(.u8));
+    try testing.expect(r(.u16).eql(.u16));
+    try testing.expect(r(.u32).eql(.u32));
+    try testing.expect(r(.u64).eql(.u64));
+    try testing.expect(r(.f32).eql(.f32));
+    try testing.expect(r(.f64).eql(.f64));
+    try testing.expect(r(.bool).eql(.bool));
+    try testing.expect(r(.void).eql(.void));
+    try testing.expect(r(.str).eql(.str));
+    try testing.expect(r(.any).eql(.any));
+    try testing.expect(r(.nil).eql(.nil));
+}
+
+test "ResolvedType.eql: different primitives" {
+    try testing.expect(!r(.i32).eql(.i64));
+    try testing.expect(!r(.f32).eql(.f64));
+    try testing.expect(!r(.bool).eql(.i32));
+    try testing.expect(!r(.str).eql(.any));
+}
+
+test "ResolvedType.is_integer" {
+    try testing.expect(r(.i8).is_integer());
+    try testing.expect(r(.i16).is_integer());
+    try testing.expect(r(.i32).is_integer());
+    try testing.expect(r(.i64).is_integer());
+    try testing.expect(r(.u8).is_integer());
+    try testing.expect(r(.u16).is_integer());
+    try testing.expect(r(.u32).is_integer());
+    try testing.expect(r(.u64).is_integer());
+    try testing.expect(!r(.f32).is_integer());
+    try testing.expect(!r(.f64).is_integer());
+    try testing.expect(!r(.bool).is_integer());
+    try testing.expect(!r(.str).is_integer());
+    try testing.expect(!r(.any).is_integer());
+}
+
+test "ResolvedType.is_float" {
+    try testing.expect(r(.f32).is_float());
+    try testing.expect(r(.f64).is_float());
+    try testing.expect(r(.v4f64).is_float());
+    try testing.expect(r(.v8f32).is_float());
+    try testing.expect(!r(.i32).is_float());
+    try testing.expect(!r(.bool).is_float());
+}
+
+test "ResolvedType.is_numeric" {
+    try testing.expect(r(.i32).is_numeric());
+    try testing.expect(r(.f64).is_numeric());
+    try testing.expect(!r(.str).is_numeric());
+    try testing.expect(!r(.bool).is_numeric());
+    try testing.expect(!r(.any).is_numeric());
+}
+
+test "ResolvedType.is_vector" {
+    try testing.expect(r(.v4f64).is_vector());
+    try testing.expect(r(.v4i64).is_vector());
+    try testing.expect(r(.v8f32).is_vector());
+    try testing.expect(r(.v8i32).is_vector());
+    try testing.expect(!r(.f64).is_vector());
+    try testing.expect(!r(.i32).is_vector());
+}
+
+test "ResolvedType.vector_mask" {
+    try testing.expectEqual(r(.v4i64), r(.v4f64).vector_mask().?);
+    try testing.expectEqual(r(.v4i64), r(.v4i64).vector_mask().?);
+    try testing.expectEqual(r(.v8i32), r(.v8f32).vector_mask().?);
+    try testing.expectEqual(r(.v8i32), r(.v8i32).vector_mask().?);
+    try testing.expect(r(.f64).vector_mask() == null);
+    try testing.expect(r(.i32).vector_mask() == null);
+}
+
+test "ResolvedType.is_native" {
+    try testing.expect(r(.i32).is_native());
+    try testing.expect(r(.f64).is_native());
+    try testing.expect(r(.bool).is_native());
+    try testing.expect(r(.str).is_native());
+    try testing.expect(!r(.any).is_native());
+    try testing.expect(!r(.nil).is_native());
+    try testing.expect(!r(.never).is_native());
+}
+
+test "ResolvedType.c_type primitive names" {
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("int8_t",   r(.i8).c_type(&buf));
+    try testing.expectEqualStrings("int16_t",  r(.i16).c_type(&buf));
+    try testing.expectEqualStrings("int32_t",  r(.i32).c_type(&buf));
+    try testing.expectEqualStrings("int64_t",  r(.i64).c_type(&buf));
+    try testing.expectEqualStrings("uint8_t",  r(.u8).c_type(&buf));
+    try testing.expectEqualStrings("uint16_t", r(.u16).c_type(&buf));
+    try testing.expectEqualStrings("uint32_t", r(.u32).c_type(&buf));
+    try testing.expectEqualStrings("uint64_t", r(.u64).c_type(&buf));
+    try testing.expectEqualStrings("float",       r(.f32).c_type(&buf));
+    try testing.expectEqualStrings("double",      r(.f64).c_type(&buf));
+    try testing.expectEqualStrings("bool",        r(.bool).c_type(&buf));
+    try testing.expectEqualStrings("void",        r(.void).c_type(&buf));
+    try testing.expectEqualStrings("const char*", r(.str).c_type(&buf));
+    try testing.expectEqualStrings("lua_Value",   r(.any).c_type(&buf));
+}
+
+test "resolve: primitive named types" {
+    const alloc = testing.allocator;
+    const ATE = @import("ast.zig").TypeExpr;
+
+    try testing.expectEqual(r(.i8),   try resolve(.{ .named = "i8" },   alloc));
+    try testing.expectEqual(r(.i16),  try resolve(.{ .named = "i16" },  alloc));
+    try testing.expectEqual(r(.i32),  try resolve(.{ .named = "i32" },  alloc));
+    try testing.expectEqual(r(.i64),  try resolve(.{ .named = "i64" },  alloc));
+    try testing.expectEqual(r(.u8),   try resolve(.{ .named = "u8" },   alloc));
+    try testing.expectEqual(r(.u16),  try resolve(.{ .named = "u16" },  alloc));
+    try testing.expectEqual(r(.u32),  try resolve(.{ .named = "u32" },  alloc));
+    try testing.expectEqual(r(.u64),  try resolve(.{ .named = "u64" },  alloc));
+    try testing.expectEqual(r(.f32),  try resolve(.{ .named = "f32" },  alloc));
+    try testing.expectEqual(r(.f64),  try resolve(.{ .named = "f64" },  alloc));
+    try testing.expectEqual(r(.bool), try resolve(.{ .named = "bool" }, alloc));
+    try testing.expectEqual(r(.void), try resolve(.{ .named = "void" }, alloc));
+    try testing.expectEqual(r(.str),  try resolve(.{ .named = "str" },  alloc));
+    try testing.expectEqual(r(.any),  try resolve(.{ .named = "any" },  alloc));
+    _ = ATE;
+}
+
+test "resolve: inferred becomes any" {
+    const alloc = testing.allocator;
+    try testing.expectEqual(r(.any), try resolve(.inferred, alloc));
+}
+
+test "resolve: user struct" {
+    const alloc = testing.allocator;
+    const result = try resolve(.{ .named = "MyStruct" }, alloc);
+    try testing.expect(result == .@"struct");
+    try testing.expectEqualStrings("MyStruct", result.@"struct".name);
+}
+
+test "resolve: pointer type" {
+    const alloc = testing.allocator;
+    var inner = @import("ast.zig").TypeExpr{ .named = "i32" };
+    const result = try resolve(.{ .pointer = &inner }, alloc);
+    defer alloc.destroy(result.pointer);
+    try testing.expect(result == .pointer);
+    try testing.expectEqual(r(.i32), result.pointer.*);
+}
+
 /// Map a native resolved type back to an annotation name (for inferred signatures).
-pub fn rt_to_type_name(rt: ResolvedType) ?[]const u8 {
-    return switch (rt) {
+pub fn rt_to_type_name(t: ResolvedType) ?[]const u8 {
+    return switch (t) {
         .i8 => "i8",
         .i16 => "i16",
         .i32 => "i32",
