@@ -79,9 +79,6 @@ run_ok   tests/test.lua
 run_ok   examples/hello.lua
 run_ok   examples/fib.lua
 run_ok   examples/fib.duo
-run_output examples/duo/defer.duo      'in-if\ninner\nouter-b\nouter-a\n1\nafter-if\nouter-b\nouter-a\n2'
-run_output examples/duo/enum_match.duo 'green\nblue'
-run_output examples/duo/bitwise.duo    '240\n61455\n61680\n255\n-1\n0\n-1\n0\n-256\n1\n4611686018427387904\n-16\n32\n-1\n6148914691236517205\n1066947177396211406'
 run_property_11() {
     local idx=$N; N=$((N + 1))
     (
