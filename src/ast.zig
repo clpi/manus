@@ -550,3 +550,48 @@ test "TypeExpr.eql: inferred == inferred" {
 test "TypeExpr.eql: inferred != named" {
     try testing.expect(!((@as(TypeExpr, .inferred)).eql(.{ .named = "i32" })));
 }
+
+test "Expr.loc returns correct location for all variants" {
+    const loc = Loc{ .line = 42, .col = 10, .file = "test.duo" };
+    var dummy_expr = Expr{ .nil = loc };
+    var dummy_func_body = FuncBody{
+        .loc = loc,
+        .params = &.{},
+        .vararg = false,
+        .ret_type = .inferred,
+        .body = Block{ .loc = loc, .stmts = &.{} },
+    };
+    var dummy_match_expr = MatchExpr{
+        .loc = loc,
+        .scrutinee = &dummy_expr,
+        .arms = &.{},
+    };
+
+    const exprs = [_]Expr{
+        .{ .nil = loc },
+        .{ .true_lit = loc },
+        .{ .false_lit = loc },
+        .{ .int_lit = .{ .loc = loc, .val = 42 } },
+        .{ .float_lit = .{ .loc = loc, .val = 3.14 } },
+        .{ .string_lit = .{ .loc = loc, .val = "hello" } },
+        .{ .vararg = loc },
+        .{ .name = .{ .loc = loc, .ident = "foo" } },
+        .{ .index = .{ .loc = loc, .obj = &dummy_expr, .key = &dummy_expr } },
+        .{ .field = .{ .loc = loc, .obj = &dummy_expr, .field = "bar" } },
+        .{ .call = .{ .loc = loc, .func = &dummy_expr, .args = &.{} } },
+        .{ .method_call = .{ .loc = loc, .obj = &dummy_expr, .method = "meth", .args = &.{} } },
+        .{ .binop = .{ .loc = loc, .op = .add, .lhs = &dummy_expr, .rhs = &dummy_expr } },
+        .{ .unop = .{ .loc = loc, .op = .neg, .operand = &dummy_expr } },
+        .{ .func_expr = &dummy_func_body },
+        .{ .table = .{ .loc = loc, .fields = &.{} } },
+        .{ .try_expr = .{ .loc = loc, .operand = &dummy_expr } },
+        .{ .unwrap_expr = .{ .loc = loc, .operand = &dummy_expr } },
+        .{ .match_expr = &dummy_match_expr },
+        .{ .await_expr = .{ .loc = loc, .operand = &dummy_expr } },
+        .{ .contains_expr = .{ .loc = loc, .lhs = &dummy_expr, .rhs = &dummy_expr } },
+    };
+
+    for (exprs) |expr| {
+        try testing.expectEqual(loc, expr.loc());
+    }
+}
