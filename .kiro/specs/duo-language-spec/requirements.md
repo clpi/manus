@@ -4,7 +4,11 @@
 
 Duo is a programming language that is a superset of Lua 5.5, designed for high-performance systems programming with shell-script ergonomics. It compiles ahead-of-time to C (and optionally to WASM via wasi-sdk), providing zero-cost abstractions while maintaining Lua's familiar syntax. Duo reduces verbosity, adds a static type system (dynamic when needed), introduces structured error handling, generics, concurrency primitives, an expanded standard library, and rich metaprogramming capabilities. Every valid Lua 5.5 program is expressible in Duo.
 
+Duo deliberately omits the `struct` and `class` keywords; all composite data is a Lua table, and a typed shape is given via an inline record-type annotation on a binding (e.g. `local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }`). OO-style objects are just table literals with method fields. Concept satisfaction is declared via the `@implements(...)` attribute on a binding, not on a type declaration. Error handling uses an untyped `try/catch` form — there is no `catch ErrorType e` syntax; error discrimination is done by reading `__tag` inside the catch body.
+
 **Lua compatibility note:** This specification tracks Lua 5.5 (work branch). The normative reference is the Lua 5.5 work-tree as of commit `lua/lua@v5.5-work.2` (or the first release candidate, whichever is published first). Any feature gated behind a subsequent work-tree commit that is later removed before final release SHALL be re-evaluated for inclusion. The "all Lua 5.5 standard metamethods" list in Requirement 14.1 is pinned to the metamethod set present at that reference point.
+
+**No `struct` keyword, no `class` keyword.** Duo deliberately omits the `struct` and `class` keywords. All composite data is a Lua table. To attach a static shape to a value, the user annotates the binding with an inline record type (`{ field: T, ... }`); to attach behavior, the user attaches methods as table fields. This is the only way to declare a typed record in Duo. There is no `record`, `type`, or `data` keyword either — type names are not first-class declarations.
 
 ## Glossary
 
@@ -17,7 +21,7 @@ Duo is a programming language that is a superset of Lua 5.5, designed for high-p
 - **Runtime**: The minimal runtime support library linked into compiled Duo programs
 - **Scheduler**: The component within the Runtime that manages concurrent task execution
 - **Module**: A Duo source file, which is implicitly a closure returning its exports
-- **Table**: The fundamental composite data structure in Duo, also usable as a class
+- **Table**: The fundamental composite data structure in Duo, also usable as a class. There is no `class` keyword; OO-style objects are just table literals with method fields, optionally annotated with a record type and `@implements(...)`.
 - **Metatable**: A table attached to another table that defines operator and protocol behavior
 - **Metamethod**: A function stored in a metatable under a reserved key (e.g., `__index`) that customizes operator or protocol behavior
 - **Concept**: A named set of constraints (required methods and fields) that a type must satisfy
@@ -78,6 +82,8 @@ Duo is a programming language that is a superset of Lua 5.5, designed for high-p
 4. WHEN a function signature includes parameter types, THE Type_Checker SHALL verify argument types at each call site
 5. WHEN the Type_Checker cannot infer a type and no annotation is provided, THE Type_Checker SHALL assign the `any` type and emit a diagnostic warning
 6. THE Type_Checker SHALL support primitive types: `nil`, `bool`, `int`, `float`, `string`, `table`, `function`, and `any`
+7. THE Type_Checker SHALL support **anonymous record types** as type annotations: `{ name: str, age: i64, items: []str }`. Record types are structural: two records with identical field sets are interchangeable, regardless of source position
+8. THE Type_Checker SHALL recognize the `option` and `result` types declared in the standard library (`Option[T]`, `Result[T, E]`) and any type with the `__try` metamethod as result-compatible for the `?` operator
 
 ---
 
@@ -141,16 +147,18 @@ Duo is a programming language that is a superset of Lua 5.5, designed for high-p
 
 ### Requirement 8: Error Handling — try/catch/defer
 
-**User Story:** As a developer, I want structured error handling with typed errors and resource cleanup, so that I can write robust code without manual error propagation.
+**User Story:** As a developer, I want structured error handling with resource cleanup, so that I can write robust code without manual error propagation.
 
 #### Acceptance Criteria
 
 1. WHEN a `try` block is entered, THE Runtime SHALL capture any error raised within it
 2. WHEN an error is raised inside a `try` block and a matching `catch` clause exists, THE Runtime SHALL transfer control to that `catch` clause
-3. WHEN a `catch` clause specifies an error type, THE Runtime SHALL match errors using `__tag` (as defined in Requirement 14) on the error value
-4. WHEN a `defer` statement is encountered, THE Runtime SHALL execute the deferred expression when the enclosing scope exits, regardless of whether an error occurred
-5. WHEN multiple `defer` statements exist in a scope, THE Runtime SHALL execute them in reverse order of declaration (LIFO)
-6. WHEN a value with `__close` defined in its metatable goes out of scope, THE Runtime SHALL invoke `__close` as part of deferred cleanup (as defined in Requirement 14)
+3. WHEN a `catch` clause names a binding, THE Runtime SHALL bind the caught error value to that name for the duration of the catch body; the error value is a table (any user-constructed shape)
+4. WHEN no `catch` clause is present and an error is raised, THE Runtime SHALL run pending `defer` blocks in LIFO order and propagate the error up the call stack
+5. WHEN a `defer` statement is encountered, THE Runtime SHALL execute the deferred expression when the enclosing scope exits, regardless of whether an error occurred
+6. WHEN multiple `defer` statements exist in a scope, THE Runtime SHALL execute them in reverse order of declaration (LIFO)
+7. WHEN a value with `__close` defined in its metatable goes out of scope, THE Runtime SHALL invoke `__close` as part of deferred cleanup (as defined in Requirement 14)
+8. **There is no typed `catch ErrorType e` syntax.** All errors are tables; user code that needs to discriminate error kinds does so by reading `e.__tag` (a string) and switching with `match` / `if`. The `try/catch` mechanism is structural, not nominal.
 
 ---
 
@@ -193,8 +201,15 @@ Duo is a programming language that is a superset of Lua 5.5, designed for high-p
 1. WHEN a table is assigned a metatable with an `__index` pointing to another table, THE Runtime SHALL resolve field lookups through the prototype chain
 2. WHEN a method is called on a table that does not define it, THE Runtime SHALL traverse the metatable chain to find the method
 3. WHEN a child table overrides a method from its parent metatable, THE Runtime SHALL invoke the child's version
-4. WHEN `private` is specified on a field or method, THE Type_Checker SHALL enforce at compile time that only methods declared within the same table definition can access that member
-5. IF a `private` member is accessed from outside its declaring table, THEN THE Type_Checker SHALL emit a compile-time error naming the inaccessible member
+4. A "table definition" in the OO sense is just a binding whose initializer is a table literal whose annotation is a `{ field: T, ... }` record type. There is no `class` or `struct` keyword; declaring an OO-style object is done with:
+   ```duo
+   local Counter: { count: i64, inc: () -> void } = {
+       count = 0,
+       inc = function() self.count = self.count + 1 end,
+   }
+   ```
+5. WHEN `private` is specified on a field of a record type annotation (e.g. `{ name: str, @private id: i64 }`), THE Type_Checker SHALL enforce at compile time that only methods defined in the same initializer may access that field
+6. IF a `private` member is accessed from outside its declaring initializer, THEN THE Type_Checker SHALL emit a compile-time error naming the inaccessible member
 
 ---
 
@@ -266,9 +281,11 @@ Duo is a programming language that is a superset of Lua 5.5, designed for high-p
 #### Acceptance Criteria
 
 1. WHEN a concept is defined, THE Type_Checker SHALL record the set of required methods and fields with their expected signatures
-2. WHEN `__implements(concept)` or `__satisfies(constraint)` is declared on a type, THE Type_Checker SHALL verify that the type provides all required members with compatible signatures
-3. WHEN `__concepts()` is called on a type, THE Runtime SHALL return the set of concept tags the type satisfies
-4. WHEN a generic constraint is not met at instantiation, THE Type_Checker SHALL emit an error naming the unsatisfied concept, the type that failed, and each missing or incompatible member
+2. WHEN a binding is annotated with `@implements(concept)` (or `@implements(C1, C2, ...)`), THE Type_Checker SHALL verify that the binding's record-type annotation provides all required members of each named concept, and the binding's initializer is checked for the corresponding field/method definitions
+3. Generic type parameters continue to use `__implements` / `__satisfies` for constraint syntax (e.g., `function f<T: __implements(Hashable)>(x: T)`) — these are still recognised by the Type_Checker
+4. WHEN `__concepts()` is called on a table value, THE Runtime SHALL return the set of concept tags the value was declared with via `@implements(...)`
+5. WHEN a generic constraint is not met at instantiation, THE Type_Checker SHALL emit an error naming the unsatisfied concept, the type that failed, and each missing or incompatible member
+6. **There is no `struct X implements Y` form** — concepts attach to values through `@implements` attribute annotations, not to type declarations. Type declarations do not exist; only record-type annotations on bindings do.
 
 ---
 
@@ -372,8 +389,9 @@ The attribute system is extensible; this list is non-exhaustive. Additional attr
 1. WHEN a function is annotated with `@ffi("C_name")`, THE Codegen SHALL generate a C-compatible function with that name and the C calling convention
 2. WHEN an external C function is declared in Duo with type annotations, THE Compiler SHALL generate the correct calling convention and type marshalling code
 3. WHEN a Duo function is exported for C consumption, THE Codegen SHALL produce a C header file declaring the function's signature
-4. THE Type_Checker SHALL verify that FFI-annotated types map to valid C types (integers, floats, pointers, fixed-size arrays, structs)
-5. WHEN `@align(N)` or `@packed` is used on an FFI struct, THE Codegen SHALL match the specified C memory layout exactly
+4. THE Type_Checker SHALL verify that FFI-annotated types map to valid C types (integers, floats, pointers, fixed-size arrays, anonymous record types which lower to C structs)
+5. WHEN `@align(N)` or `@packed` is used on an FFI record (i.e. on a binding whose annotation is an anonymous record type), THE Codegen SHALL match the specified C memory layout exactly
+6. Anonymous record types used in FFI bindings get a deterministic C struct name derived from a content hash, so that C headers can be re-generated and matched by the linker
 
 ---
 

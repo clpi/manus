@@ -127,6 +127,25 @@ pub const Parser = struct {
                 inner.* = try self.parse_type();
                 return .{ .pointer = inner };
             },
+            .lparen => {
+                // Function type: `(T, U) -> R` or `() -> R`
+                _ = try self.adv(); // consume '('
+                var params: std.ArrayList(ast.TypeExpr) = .empty;
+                if (!(try self.check(.rparen))) {
+                    try params.append(self.alloc, try self.parse_type());
+                    while (try self.eat(.comma) != null) {
+                        try params.append(self.alloc, try self.parse_type());
+                    }
+                }
+                _ = try self.expect(.rparen);
+                _ = try self.expect(.arrow);
+                const ret = try self.alloc.create(ast.TypeExpr);
+                ret.* = try self.parse_type();
+                return .{ .func = .{
+                    .params = try params.toOwnedSlice(self.alloc),
+                    .ret = ret,
+                } };
+            },
             .lbracket => {
                 _ = try self.adv();
                 var size: ?usize = null;
@@ -153,6 +172,29 @@ pub const Parser = struct {
                 const base = try self.alloc.create(ast.TypeExpr);
                 base.* = try self.parse_type();
                 return .{ .generic = .{ .base = base, .params = try params.toOwnedSlice(self.alloc) } };
+            },
+            .lbrace => {
+                // Inline record-type literal: { name: T, name2: T2, ... }
+                _ = try self.adv(); // consume '{'
+                var fields: std.ArrayList(ast.RecordField) = .empty;
+                if (!(try self.check(.rbrace))) {
+                    while (true) {
+                        const fl = (try self.pk()).loc;
+                        const fn_tok = try self.expect(.name);
+                        _ = try self.expect(.colon);
+                        const ft = try self.parse_type();
+                        try fields.append(self.alloc, ast.RecordField{
+                            .name = fn_tok.text,
+                            .typ = ft,
+                            .loc = fl,
+                        });
+                        if (try self.eat(.comma) == null) break;
+                    }
+                }
+                _ = try self.expect(.rbrace);
+                const rt = try self.alloc.create(ast.TypeExpr.RecordType);
+                rt.* = .{ .fields = try fields.toOwnedSlice(self.alloc) };
+                return .{ .record = rt };
             },
             else => {
                 std.debug.print("{}: expected type, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
@@ -217,7 +259,9 @@ pub const Parser = struct {
             .kw_local => self.parse_local(),
             .kw_global => self.parse_global(),
             .kw_const => self.parse_const_decl(),
-            .kw_struct => self.parse_struct_def_with_attrs(&.{}),
+            // NOTE: there is no `.kw_struct` case. Duo has no `struct`
+            // keyword; records are declared via inline type-literal
+            // annotations on bindings.
             .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, &.{}),
             .kw_async => self.parse_async_func_decl_with_attrs(&.{}),
             .kw_enum => self.parse_enum_def_with_attrs(&.{}),
@@ -245,7 +289,8 @@ pub const Parser = struct {
     }
 
     /// Parse one or more `@name` or `@name(args)` attributes, then the declaration
-    /// that follows (function, struct, enum, concept, or async function).
+    /// that follows (function, enum, concept, async function, or local/global
+    /// binding with `@implements(...)`).
     fn parse_attributed_decl(self: *Parser) ParseError!ast.Stmt {
         var attrs: std.ArrayList(ast.Attribute) = .empty;
         while ((try self.pk()).kind == .at) {
@@ -257,9 +302,10 @@ pub const Parser = struct {
         return switch (tok.kind) {
             .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
             .kw_async => self.parse_async_func_decl_with_attrs(attrs_slice),
-            .kw_struct => self.parse_struct_def_with_attrs(attrs_slice),
+            // NOTE: there is no `.kw_struct` case.
             .kw_enum => self.parse_enum_def_with_attrs(attrs_slice),
             .kw_concept => self.parse_concept_def_with_attrs(attrs_slice),
+            .kw_local, .kw_global => self.parse_local_or_global_with_attrs(attrs_slice),
             else => {
                 std.debug.print("{}: expected declaration after attribute(s), got '{s}'\n", .{
                     tok.loc, tok.kind.spelling(),
@@ -267,6 +313,26 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             },
         };
+    }
+
+    /// Parse a `local` or `global` declaration that has been preceded by
+    /// attribute(s). The attributes are attached to each parsed `LocalName`.
+    fn parse_local_or_global_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        const tok = try self.pk();
+        var stmt = if (tok.kind == .kw_local)
+            try self.parse_local()
+        else
+            try self.parse_global();
+        switch (stmt) {
+            .local_decl => |*ld| attach_attrs_to_names(ld.names, attrs),
+            .global_decl => |*gd| attach_attrs_to_names(gd.names, attrs),
+            else => {},
+        }
+        return stmt;
+    }
+
+    fn attach_attrs_to_names(names: []ast.LocalName, attrs: []ast.Attribute) void {
+        for (names) |*n| n.attributes = attrs;
     }
 
     /// Parse a single attribute: `@name` or `@name(args)`
@@ -599,49 +665,10 @@ pub const Parser = struct {
         return ast.Stmt{ .const_decl = .{ .loc = l, .ident = nm.text, .typ = typ, .val = val } };
     }
 
-    fn parse_struct_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
-        const l = (try self.adv()).loc;
-        const nm = try self.expect(.name);
-
-        // Parse optional `implements Concept1, Concept2, ...` clause
-        var impl_list: std.ArrayList([]const u8) = .empty;
-        if ((try self.pk()).kind == .name and std.mem.eql(u8, (try self.pk()).text, "implements")) {
-            _ = try self.adv(); // consume 'implements'
-            const first_concept = try self.expect(.name);
-            try impl_list.append(self.alloc, first_concept.text);
-            while ((try self.pk()).kind == .comma) {
-                _ = try self.adv(); // consume ','
-                const next_concept = try self.expect(.name);
-                try impl_list.append(self.alloc, next_concept.text);
-            }
-        }
-
-        _ = try self.expect(.lbrace);
-        var fields: std.ArrayList(ast.StructField) = .empty;
-        while (!(try self.check(.rbrace))) {
-            const fl = (try self.pk()).loc;
-            const fn_tok = try self.expect(.name);
-            _ = try self.expect(.colon);
-            const ft = try self.parse_type();
-            var def: ?*ast.Expr = null;
-            if (try self.eat(.assign) != null) def = try self.parse_expr();
-            try fields.append(self.alloc, ast.StructField{
-                .name = fn_tok.text,
-                .typ = ft,
-                .default = def,
-                .loc = fl,
-            });
-            if (try self.eat(.comma) == null and !(try self.check(.rbrace))) break;
-        }
-        _ = try self.expect(.rbrace);
-        return ast.Stmt{ .struct_def = .{
-            .loc = l,
-            .name = nm.text,
-            .fields = try fields.toOwnedSlice(self.alloc),
-            .attributes = attrs,
-            .implements = try impl_list.toOwnedSlice(self.alloc),
-        } };
-    }
+    // NOTE: `parse_struct_def_with_attrs` was removed. Duo has no `struct`
+    // keyword. To declare a typed record, use an inline record-type
+    // annotation on a binding: `local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }`.
+    // For concept satisfaction, attach `@implements(C)` to the binding.
 
     fn parse_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
@@ -884,13 +911,16 @@ pub const Parser = struct {
 
     /// Parse `try ... catch ... end` statement.
     ///
+    /// Catch clauses are untyped in Duo. There is no `catch MyError e` form.
+    /// If a name follows `catch`, it's the binding; if a non-name token
+    /// follows, the catch is anonymous. Error discrimination is done inside
+    /// the body with `match e.__tag` (or `if e.__tag == "..."`).
+    ///
     /// ```
     /// try
     ///   -- body
-    /// catch ErrorType e
-    ///   -- handle specific error
     /// catch e
-    ///   -- handle any error
+    ///   -- handle error; check e.__tag
     /// end
     /// ```
     fn parse_try(self: *Parser) ParseError!ast.Stmt {
@@ -904,35 +934,19 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .kw_catch) {
             const catch_loc = (try self.adv()).loc; // consume `catch`
 
-            var error_type: ?ast.TypeExpr = null;
             var binding: ?[]const u8 = null;
 
             const nxt = try self.pk();
             if (nxt.kind == .name) {
-                // Could be either:
-                //   catch ErrorType e   (type + binding)
-                //   catch e             (binding only, no type)
-                // Peek ahead: if we see a name followed by another name, it's type + binding.
-                // Otherwise, it's just a binding.
-                const saved = self.lex.*;
-                const first_name = try self.adv();
-                const after = try self.pk();
-                if (after.kind == .name) {
-                    // `catch ErrorType e` — first_name is the type, next is binding
-                    error_type = .{ .named = first_name.text };
-                    binding = (try self.adv()).text;
-                } else {
-                    // `catch e` — first_name is just the binding
-                    _ = saved; // don't restore; we already consumed the name
-                    binding = first_name.text;
-                }
+                // The name after `catch` is always the binding. There is no
+                // typed catch form.
+                binding = (try self.adv()).text;
             }
 
             // Parse the catch body (which also terminates at next `catch` or `end`)
             const catch_body = try self.parse_try_body();
             try catches.append(self.alloc, ast.CatchClause{
                 .loc = catch_loc,
-                .error_type = error_type,
                 .binding = binding,
                 .body = catch_body,
             });
@@ -1980,20 +1994,19 @@ test "parse: const declaration" {
     try testing.expectEqualStrings("PI", stmt.const_decl.ident);
 }
 
-test "parse: struct definition" {
+test "parse: anonymous record type literal in annotation" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\struct Point {
-        \\  x: f64,
-        \\  y: f64,
-        \\}
+        \\local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
     , &arena);
     const stmt = mod.body.stmts[0];
-    try testing.expect(stmt == .struct_def);
-    try testing.expectEqualStrings("Point", stmt.struct_def.name);
-    try testing.expectEqual(@as(usize, 2), stmt.struct_def.fields.len);
-    try testing.expectEqualStrings("x", stmt.struct_def.fields[0].name);
+    try testing.expect(stmt == .local_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.local_decl.names.len);
+    try testing.expectEqualStrings("p", stmt.local_decl.names[0].ident);
+    try testing.expect(stmt.local_decl.names[0].typ == .record);
+    try testing.expectEqual(@as(usize, 2), stmt.local_decl.names[0].typ.record.fields.len);
+    try testing.expectEqualStrings("x", stmt.local_decl.names[0].typ.record.fields[0].name);
 }
 
 test "parse: goto and label" {
@@ -2054,28 +2067,8 @@ test "parse: try with single catch binding" {
     try testing.expectEqual(@as(usize, 1), stmt.try_stmt.body.stmts.len);
     try testing.expectEqual(@as(usize, 1), stmt.try_stmt.catches.len);
     const c = stmt.try_stmt.catches[0];
-    try testing.expect(c.error_type == null);
     try testing.expectEqualStrings("e", c.binding.?);
     try testing.expectEqual(@as(usize, 1), c.body.stmts.len);
-}
-
-test "parse: try with typed catch clause" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const mod = try parseSource(
-        \\try
-        \\  local x = 1
-        \\catch IOError e
-        \\  local y = 2
-        \\end
-    , &arena);
-    const stmt = mod.body.stmts[0];
-    try testing.expect(stmt == .try_stmt);
-    try testing.expectEqual(@as(usize, 1), stmt.try_stmt.catches.len);
-    const c = stmt.try_stmt.catches[0];
-    try testing.expect(c.error_type != null);
-    try testing.expectEqualStrings("IOError", c.error_type.?.named);
-    try testing.expectEqualStrings("e", c.binding.?);
 }
 
 test "parse: try with multiple catch clauses" {
@@ -2084,24 +2077,21 @@ test "parse: try with multiple catch clauses" {
     const mod = try parseSource(
         \\try
         \\  local x = 1
-        \\catch IOError e
+        \\catch first
         \\  local a = 1
-        \\catch e
+        \\catch second
         \\  local b = 2
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
     try testing.expect(stmt == .try_stmt);
     try testing.expectEqual(@as(usize, 2), stmt.try_stmt.catches.len);
-    // First: typed catch
+    // First catch has a binding named "first"
     const c0 = stmt.try_stmt.catches[0];
-    try testing.expect(c0.error_type != null);
-    try testing.expectEqualStrings("IOError", c0.error_type.?.named);
-    try testing.expectEqualStrings("e", c0.binding.?);
-    // Second: untyped catch
+    try testing.expectEqualStrings("first", c0.binding.?);
+    // Second catch has a binding named "second"
     const c1 = stmt.try_stmt.catches[1];
-    try testing.expect(c1.error_type == null);
-    try testing.expectEqualStrings("e", c1.binding.?);
+    try testing.expectEqualStrings("second", c1.binding.?);
 }
 
 test "parse: defer statement" {
@@ -2131,7 +2121,6 @@ test "parse: try with catch and no binding" {
     try testing.expect(stmt == .try_stmt);
     try testing.expectEqual(@as(usize, 1), stmt.try_stmt.catches.len);
     const c = stmt.try_stmt.catches[0];
-    try testing.expect(c.error_type == null);
     try testing.expect(c.binding == null);
 }
 
@@ -2461,37 +2450,21 @@ test "parse: multiple attributes on function" {
     try testing.expect(stmt.func_decl.attributes[1].args == null);
 }
 
-test "parse: attribute on struct" {
+test "parse: @implements attribute on local" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const mod = try parseSource(
-        \\@packed
-        \\struct Data {
-        \\  x: i32,
-        \\  y: i32
-        \\}
+        \\@implements(Iterable, Comparable)
+        \\local x: { count: i64, name: str } = { count = 0, name = "x" }
     , &arena);
     const stmt = mod.body.stmts[0];
-    try testing.expect(stmt == .struct_def);
-    try testing.expectEqualStrings("Data", stmt.struct_def.name);
-    try testing.expectEqual(@as(usize, 1), stmt.struct_def.attributes.len);
-    try testing.expectEqualStrings("packed", stmt.struct_def.attributes[0].name);
-}
-
-test "parse: attribute with numeric arg" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const mod = try parseSource(
-        \\@align(16)
-        \\struct AlignedData {
-        \\  x: i64
-        \\}
-    , &arena);
-    const stmt = mod.body.stmts[0];
-    try testing.expect(stmt == .struct_def);
-    try testing.expectEqual(@as(usize, 1), stmt.struct_def.attributes.len);
-    try testing.expectEqualStrings("align", stmt.struct_def.attributes[0].name);
-    try testing.expectEqualStrings("16", stmt.struct_def.attributes[0].args.?);
+    try testing.expect(stmt == .local_decl);
+    try testing.expectEqual(@as(usize, 1), stmt.local_decl.names.len);
+    try testing.expectEqualStrings("x", stmt.local_decl.names[0].ident);
+    try testing.expectEqual(@as(usize, 1), stmt.local_decl.names[0].attributes.len);
+    try testing.expectEqualStrings("implements", stmt.local_decl.names[0].attributes[0].name);
+    // The args text is a raw capture between the parens.
+    try testing.expect(stmt.local_decl.names[0].attributes[0].args != null);
 }
 
 test "parse: attribute on async function" {

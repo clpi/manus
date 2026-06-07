@@ -45,7 +45,6 @@ pub const TokenKind = enum {
 
     // Duo type keywords
     kw_const,
-    kw_struct,
     kw_enum,
     kw_i8,
     kw_i16,
@@ -146,7 +145,6 @@ pub const TokenKind = enum {
             .kw_until => "until",
             .kw_while => "while",
             .kw_const => "const",
-            .kw_struct => "struct",
             .kw_enum => "enum",
             .kw_i8 => "i8",
             .kw_i16 => "i16",
@@ -568,11 +566,11 @@ pub const Lexer = struct {
     fn lookup_kw(text: []const u8) ?TokenKind {
         // Parallel arrays: word list and corresponding token kind.
         const words = [_][]const u8{
-            "and",    "break",  "do",       "else",  "elseif",  "end",
-            "false",  "for",    "function", "fun",   "global",  "goto",
-            "if",     "in",     "local",    "nil",   "not",     "or",
-            "repeat", "return", "then",     "true",  "until",   "while",
-            "const",  "struct", "enum",     "i8",    "i16",     "i32",
+            "and",     "break",   "do",        "else",    "elseif",   "end",
+            "false",   "for",     "function",  "fun",     "global",   "goto",
+            "if",      "in",      "local",     "nil",     "not",      "or",
+            "repeat",  "return",  "then",      "true",    "until",    "while",
+            "const",  "enum",     "i8",    "i16",     "i32",
             "i64",    "u8",     "u16",      "u32",   "u64",     "f32",
             "f64",    "bool",   "void",     "str",   "match",   "try",
             "catch",  "defer",  "async",    "await", "concept",
@@ -582,7 +580,7 @@ pub const Lexer = struct {
             .kw_false,  .kw_for,    .kw_function, .kw_fun,   .kw_global,  .kw_goto,
             .kw_if,     .kw_in,     .kw_local,    .kw_nil,   .kw_not,     .kw_or,
             .kw_repeat, .kw_return, .kw_then,     .kw_true,  .kw_until,   .kw_while,
-            .kw_const,  .kw_struct, .kw_enum,     .kw_i8,    .kw_i16,     .kw_i32,
+            .kw_const,  .kw_enum,     .kw_i8,    .kw_i16,     .kw_i32,
             .kw_i64,    .kw_u8,     .kw_u16,      .kw_u32,   .kw_u64,     .kw_f32,
             .kw_f64,    .kw_bool,   .kw_void,     .kw_str,   .kw_match,   .kw_try,
             .kw_catch,  .kw_defer,  .kw_async,    .kw_await, .kw_concept,
@@ -743,8 +741,8 @@ test "lex: standard keywords" {
 }
 
 test "lex: duo extension keywords" {
-    var l = Lexer.init("const struct enum fun global", "test");
-    const expected = [_]TokenKind{ .kw_const, .kw_struct, .kw_enum, .kw_fun, .kw_global };
+    var l = Lexer.init("const enum fun global", "test");
+    const expected = [_]TokenKind{ .kw_const, .kw_enum, .kw_fun, .kw_global };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }
 

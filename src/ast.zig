@@ -5,12 +5,21 @@ pub const Loc = @import("lexer.zig").Loc;
 
 pub const TypeExpr = union(enum) {
     inferred, // no annotation; type must be inferred
-    named: []const u8, // i32, f64, bool, void, str, or user struct name
+    named: []const u8, // i32, f64, bool, void, str, etc.
     array: ArrayType,
     pointer: *TypeExpr,
     func: FuncType,
     optional: *TypeExpr, // ?T
     generic: GenericType, // T<U, V>
+    /// Inline record-type literal: `{ name: T, name2: U, ... }`. This is the
+    /// only mechanism for declaring a typed record in Duo. Records are
+    /// structural and anonymous (no name). The codegen mints a C `struct`
+    /// for each unique record shape (deduplicated by content hash).
+    record: *RecordType,
+
+    pub const RecordType = struct {
+        fields: []RecordField,
+    };
 
     pub const GenericType = struct {
         base: *TypeExpr,
@@ -59,6 +68,8 @@ pub const TypeExpr = union(enum) {
         };
     }
 
+    /// Structural equality. Two record types are equal iff their field sets
+    /// are equal in name-and-type; field order does not matter.
     pub fn eql(a: TypeExpr, b: TypeExpr) bool {
         return switch (a) {
             .inferred => switch (b) {
@@ -81,9 +92,28 @@ pub const TypeExpr = union(enum) {
                 .array => |ab| aa.size == ab.size and aa.elem.eql(ab.elem.*),
                 else => false,
             },
+            .record => |ra| switch (b) {
+                .record => |rb| record_eql(ra, rb),
+                else => false,
+            },
             .func => false,
             .generic => false,
         };
+    }
+
+    fn record_eql(a: *RecordType, b: *RecordType) bool {
+        if (a.fields.len != b.fields.len) return false;
+        for (a.fields) |af| {
+            var found = false;
+            for (b.fields) |bf| {
+                if (std.mem.eql(u8, af.name, bf.name) and af.typ.eql(bf.typ)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
     }
 };
 
@@ -296,9 +326,11 @@ pub const TryStmt = struct {
     defers: []DeferStmt,
 };
 
+/// A catch clause always binds the caught error to a single name. There is
+/// no typed `catch MyError e` form — errors are table values and any caller-
+/// supplied `__tag` check is performed inside the body with `match` / `if`.
 pub const CatchClause = struct {
     loc: Loc,
-    error_type: ?TypeExpr,
     binding: ?[]const u8,
     body: Block,
 };
@@ -352,6 +384,9 @@ pub const LocalName = struct {
     ident: []const u8,
     typ: TypeExpr,
     attrib: ?[]const u8, // <const> or <close>
+    /// Attribute annotations on this binding (e.g. `@implements(Concept)`,
+    /// `@arc(false)`, `@packed`, `@align(N)`, `@deprecated("msg")`).
+    attributes: []Attribute = &.{},
     loc: Loc,
 };
 
@@ -367,15 +402,6 @@ pub const FuncDecl = struct {
     is_local: bool,
     func: FuncBody,
     attributes: []Attribute = &.{},
-};
-
-pub const StructDefPayload = struct {
-    loc: Loc,
-    name: []const u8,
-    fields: []StructField,
-    attributes: []Attribute = &.{},
-    /// Concept names this struct declares it implements (via `implements Concept1, Concept2`).
-    implements: []const []const u8 = &.{},
 };
 
 pub const Stmt = union(enum) {
@@ -433,7 +459,9 @@ pub const Stmt = union(enum) {
     brk: Loc,
     goto_stmt: struct { loc: Loc, label: []const u8 },
     label_stmt: struct { loc: Loc, label: []const u8 },
-    struct_def: StructDefPayload,
+    // NOTE: there is no `struct_def` variant. Typed records are expressed as
+    // anonymous record-type annotations on bindings (LocalName.typ or
+    // FuncParam.typ). See the `record` variant of `TypeExpr`.
     match_stmt: MatchExpr,
     try_stmt: TryStmt,
     defer_stmt: DeferStmt,
@@ -441,10 +469,20 @@ pub const Stmt = union(enum) {
     concept_def: ConceptDef,
 };
 
-pub const StructField = struct {
+/// One field of an inline record type literal: `{ name: T, name2: U, ... }`.
+pub const RecordField = struct {
     name: []const u8,
     typ: TypeExpr,
-    default: ?*Expr,
+    loc: Loc,
+};
+
+/// One field of an actual table literal initializer: `{ name = expr, ... }`.
+/// Mirrors `RecordField` but pairs a name with a value expression instead of
+/// a type. The sema pass uses these to verify that an initializer matches its
+/// record-type annotation and to check `@implements(Concept)` satisfaction.
+pub const TableLitField = struct {
+    name: []const u8,
+    val: *Expr,
     loc: Loc,
 };
 

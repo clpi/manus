@@ -92,20 +92,41 @@ test "pipeline: numeric for with typed variable" {
     try std.testing.expectEqual(@as(u32, 0), result.sem.errors);
 }
 
-test "pipeline: struct definition and usage" {
+test "pipeline: inline record type annotation on a binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
+    // Duo has no `struct` keyword. Records are declared via inline type
+    // literals on bindings. The annotation is parsed, the binding is
+    // type-checked against the record shape, and the table literal is
+    // accepted as the initializer.
     const result = try parseAndCheck(
-        \\struct Vec2 {
-        \\  x: f64,
-        \\  y: f64,
-        \\}
+        \\local v: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
     , &arena);
     try std.testing.expectEqual(@as(u32, 0), result.sem.errors);
     const stmt = result.mod.body.stmts[0];
-    try std.testing.expect(stmt == .struct_def);
-    try std.testing.expectEqualStrings("Vec2", stmt.struct_def.name);
-    try std.testing.expectEqual(@as(usize, 2), stmt.struct_def.fields.len);
+    try std.testing.expect(stmt == .local_decl);
+    try std.testing.expectEqual(@as(usize, 1), stmt.local_decl.names.len);
+    try std.testing.expectEqualStrings("v", stmt.local_decl.names[0].ident);
+    try std.testing.expect(stmt.local_decl.names[0].typ == .record);
+    try std.testing.expectEqual(@as(usize, 2), stmt.local_decl.names[0].typ.record.fields.len);
+}
+
+test "pipeline: @implements attribute on a record-typed binding" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    // Concept satisfaction is declared via `@implements(...)` on the
+    // binding, not on a struct definition. Concept lookup against the
+    // record-type annotation is the Type_Checker's job; the function
+    // above does not define a concept so this just exercises the
+    // parsing-and-resolution path with an undeclared concept tolerated.
+    const result = try parseAndCheck(
+        \\@implements(Iterable)
+        \\local counter: { count: i64 } = { count = 0 }
+    , &arena);
+    const stmt = result.mod.body.stmts[0];
+    try std.testing.expect(stmt == .local_decl);
+    try std.testing.expectEqual(@as(usize, 1), stmt.local_decl.names[0].attributes.len);
+    try std.testing.expectEqualStrings("implements", stmt.local_decl.names[0].attributes[0].name);
 }
 
 test "pipeline: type annotation on typed function affects type_map" {

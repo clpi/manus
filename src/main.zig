@@ -4,6 +4,9 @@ const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 const Sema = @import("sema.zig").Sema;
 const CodeGen = @import("codegen.zig").CodeGen;
+const Mono = @import("mono.zig");
+const Arc = @import("arc.zig");
+const AsyncLower = @import("async_lower.zig");
 
 const usage =
     \\usage: duo <command> [options] <file>
@@ -211,19 +214,13 @@ fn do_compile(
         var args: std.ArrayList([]const u8) = .empty;
         if (is_wasm) {
             try args.appendSlice(alloc, &.{
-                "zig", "cc",
-                "--target=wasm32-wasi",
-                opt,
-                "-ffast-math",
-                "-flto",
-                "-fomit-frame-pointer",
-                "-funroll-loops",
-                "-ffp-contract=fast",
-                "-fno-trapping-math",
-                "-fno-math-errno",
-                "-Wl,--no-entry",
-                "-Wl,--export=main",
-                "-std=gnu99",
+                "zig",                  "cc",
+                "--target=wasm32-wasi", opt,
+                "-ffast-math",          "-flto",
+                "-fomit-frame-pointer", "-funroll-loops",
+                "-ffp-contract=fast",   "-fno-trapping-math",
+                "-fno-math-errno",      "-Wl,--no-entry",
+                "-Wl,--export=main",    "-std=gnu99",
                 "-lm",
             });
         } else {

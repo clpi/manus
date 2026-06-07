@@ -4,6 +4,10 @@
 
 This plan implements the full Duo language specification in a bottom-up order: lexer extensions → AST additions → parser enhancements → type system expansion → semantic analysis upgrades → new compiler passes (monomorphization, ARC insertion, async lowering) → codegen extensions → runtime library → standard library modules → CLI updates. Each task builds incrementally on previous work, with property-based tests validating correctness properties from the design document.
 
+### Key design decision: implicit records (no `struct`/`class` keyword)
+
+Duo deliberately omits the `struct` and `class` keywords. All composite data is a Lua table; a static shape is given by an inline record-type annotation on a binding (`local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }`). Concept satisfaction is declared via the `@implements(...)` attribute on a binding, not on a type declaration. Error handling is untyped — `try/catch` has no `catch ErrorType e` form; error discrimination is done inside the body by reading `e.__tag`. These rules are normative; tasks below reflect them.
+
 ## Tasks
 
 - [x] 1. Extend the Lexer with Duo tokens
@@ -34,6 +38,8 @@ This plan implements the full Duo language specification in a bottom-up order: l
     - Add `enum_def: EnumDef` variant (extend existing `kw_enum` handling)
     - Add `concept_def: ConceptDef` variant
     - Define `MatchExpr`, `MatchArm`, `Pattern`, `TryStmt`, `CatchClause`, `DeferStmt`, `EnumDef`, `EnumVariant`, `Attribute`, `ConceptDef` structs as specified in the design
+    - **CatchClause**: remove the `error_type` field — catch clauses are untyped, only carry a binding
+    - **There is no `struct_def` variant and no `StructDefPayload` struct.** Records are anonymous; their shape is captured by the type-literal annotation on a binding and stored on the binding's `LocalName`/parameter annotation, not on a statement node
     - _Requirements: 5.1, 6.1, 8.1, 15.1, 23.4, 23.5, 23.8_
 
   - [x] 2.2 Add new expression nodes to `src/ast.zig`
@@ -53,7 +59,8 @@ This plan implements the full Duo language specification in a bottom-up order: l
     - _Requirements: 6.1, 6.3, 6.6, 7.1, 7.2, 7.3, 23.4_
 
   - [x] 3.2 Implement `try`/`catch`/`defer` parsing in `src/parser.zig`
-    - Parse `try` block followed by zero or more `catch` clauses with optional error type
+    - Parse `try` block followed by zero or more `catch` clauses
+    - **Catch clauses are untyped**: `catch e` only. There is no `catch MyError e` form. If a name follows `catch` it's always the binding; if the body uses a structured error, dispatch is done with `match e.__tag` inside the catch body
     - Parse standalone `defer` statements
     - _Requirements: 8.1, 8.2, 8.3, 23.5_
 
@@ -64,7 +71,8 @@ This plan implements the full Duo language specification in a bottom-up order: l
 
   - [x] 3.4 Implement attribute parsing in `src/parser.zig`
     - Parse `@name` and `@name(args)` annotations before declarations
-    - Store attributes on `FuncDecl`, `EnumDef`, `ConceptDef`, struct definitions
+    - Store attributes on `FuncDecl`, `EnumDef`, `ConceptDef`
+    - `@implements(Concept1, Concept2)` is a binding-level attribute; it attaches to a `local`/`global` declaration and is stored alongside the binding's type-literal annotation
     - _Requirements: 18.1–18.13, 23.7_
 
   - [x] 3.5 Implement enum declaration parsing in `src/parser.zig`
@@ -100,7 +108,13 @@ This plan implements the full Duo language specification in a bottom-up order: l
     - Generate for-loop headers with `in` and expression contexts with `in`; verify correct parsing in each context
     - **Validates: Requirements 23.10**
 
-- [ ] 4. Checkpoint - Lexer, AST, and Parser
+  - [x] 3.12 Add record-type annotation to type expressions in `src/parser.zig` and `src/ast.zig`
+    - Extend `TypeExpr` with a `record` variant carrying a slice of `RecordField { name: []const u8, typ: TypeExpr }`
+    - Parse `{ name: T, name2: T2, ... }` as a type literal wherever a `TypeExpr` is expected
+    - This is the only mechanism for declaring typed records in Duo
+    - _Requirements: 3.7_
+
+- [x] 4. Checkpoint - Lexer, AST, and Parser
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Extend the Type System
@@ -147,46 +161,48 @@ This plan implements the full Duo language specification in a bottom-up order: l
   - [x] 6.3 Implement type checking for `try`/`catch`/`defer`
     - Validate `?` operator is only used in functions with result-compatible return type
     - Validate `!` operator is rejected in `@nopanic` functions
-    - Type-check error types in catch clauses
+    - **Catch clauses are untyped** — no error-type lookup is performed. The binding (if any) is defined in the catch scope with type `any` (errors are tables, statically unknown). User code uses `match`/`if` on `e.__tag` inside the body
     - _Requirements: 8.2, 8.3, 9.2, 9.7, 9.8_
 
-  - [-] 6.4 Implement concept satisfaction checking
-    - When `__implements(concept)` is declared, verify all required members exist with compatible signatures
-    - Emit clear error on unsatisfied concepts listing each missing member
+  - [x] 6.4 Implement concept satisfaction checking on `@implements` bindings
+    - When a binding is annotated with `@implements(Concept1, ...)`, the Type_Checker resolves the binding's record-type annotation against each concept's required members
+    - The binding's initializer is checked for the corresponding field/method definitions
+    - Emit clear error on unsatisfied concepts listing each missing member, with the binding's location
     - _Requirements: 15.2, 15.4_
 
-  - [-] 6.5 Implement generic constraint validation
+  - [x] 6.5 Implement generic constraint validation
     - At instantiation sites, verify type arguments satisfy declared constraints
     - Track instantiation sites for the monomorphizer
     - _Requirements: 4.2, 4.3_
 
-  - [-] 6.6 Implement overload resolution
+  - [x] 6.6 Implement overload resolution
     - When multiple functions share a name, select based on argument types
     - Emit ambiguity error when multiple overloads match equally
     - _Requirements: 12.1, 12.4, 12.5_
 
-  - [ ] 6.7 Implement attribute validation
+  - [x] 6.7 Implement attribute validation
     - Validate `@nopanic` functions don't use `!` operator
-    - Validate `@arc(false)` types
+    - Validate `@arc(false)` types (only valid on table-typed bindings and record-type annotations)
     - Validate `@deprecated` emits warnings at use sites
+    - Validate `@implements` is only attached to bindings whose annotation is a record type
     - _Requirements: 18.1–18.10_
 
-  - [ ] 6.8 Write property test for scoping invariant (Property 3)
+  - [x] 6.8 Write property test for scoping invariant (Property 3)
     - **Property 3: Scoping Invariant**
     - Generate identifiers in `.duo` mode; verify bare assignment creates local, `global` creates module-global
     - **Validates: Requirements 1.3, 1.4**
 
-  - [ ] 6.9 Write property test for match exhaustiveness (Property 7)
+  - [x] 6.9 Write property test for match exhaustiveness (Property 7)
     - **Property 7: Match Exhaustiveness**
     - Generate enums with N variants and partial matches; verify compiler emits error for missing cases
     - **Validates: Requirements 5.5, 6.2**
 
-  - [ ] 6.10 Write property test for concept constraint checking (Property 14)
+  - [x] 6.10 Write property test for concept constraint checking (Property 14)
     - **Property 14: Concept Constraint Checking**
-    - Generate types and concepts with varying member sets; verify acceptance iff all members provided
+    - Generate bindings with `@implements(Concept)` and varying field sets; verify acceptance iff all members provided
     - **Validates: Requirements 15.1, 15.2, 15.4**
 
-- [ ] 7. Checkpoint - Type System and Semantic Analysis
+- [x] 7. Checkpoint - Type System and Semantic Analysis
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 8. Implement Monomorphizer (`src/mono.zig`)
@@ -291,6 +307,15 @@ This plan implements the full Duo language specification in a bottom-up order: l
     - Emit tagged union structs for enum types
     - Emit tag constants and payload access
     - _Requirements: 5.1, 5.2, 5.3_
+
+  - [-] 12.6a Implement anonymous record (table-type literal) codegen
+    - When a binding is annotated with a `{ field: T, ... }` record type, mint a fresh C `struct` (deterministic name from a content hash) and use it as the binding's storage
+    - Deduplicate by content hash so two structurally-equivalent records share one C struct declaration
+    - Field access compiles to plain `struct.field` reads/writes (no `__index` chain) for typed bindings
+    - When a record-typed value is assigned to a generic `table` parameter, promote to `duo_Table*` and switch to ARC
+    - Generate concept tags onto the table's metatable for `@implements`-annotated bindings
+    - **Status**: content-hash dedup + struct typedef are in place (`ensure_record_decl`); emission of struct literals as C struct initializers (instead of Lua table construction) for record-typed bindings is still pending
+    - _Requirements: 3.7, 11.4, 15.4_
 
   - [ ] 12.7 Implement closure representation in codegen
     - Emit `duo_closure_N` structs with captured variable pointers
@@ -499,14 +524,14 @@ This plan implements the full Duo language specification in a bottom-up order: l
 {
   "waves": [
     { "id": 0, "tasks": ["1.1", "2.1", "2.2", "2.3"] },
-    { "id": 1, "tasks": ["1.2", "1.3", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9"] },
+    { "id": 1, "tasks": ["1.2", "1.3", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "3.12"] },
     { "id": 2, "tasks": ["3.10", "3.11", "5.1", "5.2"] },
     { "id": 3, "tasks": ["5.3", "5.4", "6.1", "6.2", "6.3", "6.4", "6.5", "6.6", "6.7"] },
     { "id": 4, "tasks": ["6.8", "6.9", "6.10", "8.1"] },
     { "id": 5, "tasks": ["8.2", "9.1", "10.1"] },
     { "id": 6, "tasks": ["8.3", "8.4", "9.2", "9.3", "10.2"] },
     { "id": 7, "tasks": ["9.4", "9.5", "10.3"] },
-    { "id": 8, "tasks": ["12.1", "12.2", "12.3", "12.4", "12.5", "12.6", "12.7", "12.8"] },
+    { "id": 8, "tasks": ["12.1", "12.2", "12.3", "12.4", "12.5", "12.6", "12.6a", "12.7", "12.8"] },
     { "id": 9, "tasks": ["12.9", "12.10", "14.1", "14.2", "14.4"] },
     { "id": 10, "tasks": ["14.3", "14.5", "14.6", "14.7"] },
     { "id": 11, "tasks": ["14.8", "14.9", "14.10", "16.1", "16.2", "16.3", "16.4", "16.5", "16.6", "16.7", "16.8", "16.9"] },

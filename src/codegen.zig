@@ -46,6 +46,10 @@ pub const CodeGen = struct {
     duo_mode: bool = false,
     target: []const u8 = "native",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Set of anonymous record hashes for which we have already emitted a
+    /// C `struct` typedef. Lets us emit the typedef exactly once per
+    /// unique record shape, even if the shape is used at many sites.
+    emitted_records: std.AutoHashMapUnmanaged(u64, void) = .empty,
 
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -280,7 +284,7 @@ pub const CodeGen = struct {
             if (stmt.* == .const_decl) {
                 const cd = &stmt.const_decl;
                 const rt = if (cd.typ != .inferred)
-                    types.resolve(cd.typ, self.alloc) catch .any
+                    types.resolve(cd.typ, null, self.alloc) catch .any
                 else
                     self.expr_type(cd.val);
                 self.p("static const ", .{});
@@ -291,6 +295,13 @@ pub const CodeGen = struct {
             }
         }
         self.nl();
+
+        // Walk the module to find every record-type annotation (function
+        // parameters, return types, local/global decls, struct fields) and
+        // emit the corresponding C struct typedefs at file scope. This must
+        // run *before* the function forward-declarations so they can name
+        // the record types in their signatures.
+        try self.collect_and_emit_record_decls(mod);
 
         // Forward-declare top-level functions
         for (mod.body.stmts) |*stmt| {
@@ -304,10 +315,11 @@ pub const CodeGen = struct {
         }
         self.nl();
 
-        // Emit struct definitions
-        for (mod.body.stmts) |*stmt| {
-            if (stmt.* == .struct_def) try self.emit_struct_def(&stmt.struct_def);
-        }
+        // NOTE: there is no `struct_def` to emit at the module level.
+        // Anonymous record types are emitted at file scope (above) by
+        // `collect_and_emit_record_decls`, which walks the entire module
+        // first so that every function's parameter / return record types
+        // are defined before the function is forward-declared.
 
         try self.emit_closure_functions(mod);
         try self.emit_required_modules(mod);
@@ -408,7 +420,7 @@ pub const CodeGen = struct {
         var i: usize = 0;
         while (i < mod.body.stmts.len) {
             switch (mod.body.stmts[i]) {
-                .func_decl, .struct_def, .const_decl => {
+                .func_decl, .const_decl => {
                     i += 1;
                     continue;
                 },
@@ -433,17 +445,230 @@ pub const CodeGen = struct {
         self.p("}}\n", .{});
     }
 
-    // ── Struct ────────────────────────────────────────────────────────────────
+    // ── Anonymous record (table-type literal) ──────────────────────────────────
+    //
+    // A binding annotated with `{ field: T, ... }` triggers emission of a
+    // fresh C `typedef struct { ... } duo_rec_<hash>;` declaration. We
+    // dedupe by content hash so each unique record shape is emitted once.
+    // The actual struct declaration is emitted lazily by `ensure_record_decl`
+    // the first time the record type is referenced.
+    fn ensure_record_decl(self: *CodeGen, rt: RT) E!void {
+        const t = rt.table_type;
+        const hash = record_content_hash(t.fields);
+        if (self.emitted_records.contains(hash)) return;
+        try self.emitted_records.put(self.alloc, hash, {});
 
-    fn emit_struct_def(self: *CodeGen, sd: *const ast.StructDefPayload) E!void {
+        var name_buf: [64]u8 = undefined;
+        const cname = std.fmt.bufPrint(&name_buf, "duo_rec_{x}", .{hash}) catch "duo_rec";
         self.p("typedef struct {{\n", .{});
-        for (sd.fields) |f| {
+        for (t.fields) |f| {
             self.p("    ", .{});
-            const rt = types.resolve(f.typ, self.alloc) catch .any;
-            self.typ(rt);
+            self.typ(f.typ);
             self.p(" {s};\n", .{f.name});
         }
-        self.p("}} duo_{s};\n\n", .{sd.name});
+        self.p("}} {s};\n\n", .{cname});
+    }
+
+    fn record_content_hash(fields: []const types.FieldType) u64 {
+        var h = std.hash.Wyhash.init(0xDADBEEF);
+        for (fields) |f| {
+            h.update(f.name);
+            var name_buf: [64]u8 = undefined;
+            h.update(f.typ.c_type(&name_buf));
+        }
+        return h.final();
+    }
+
+    /// Emit a C struct initializer for a record-typed binding, given the
+    /// declared field set (from the record-type annotation) and the
+    /// `*ast.Expr` of the table-literal initializer. Fields that the user
+    /// didn't set in the initializer are zero-initialized with `0`.
+    /// (Works for any field type; for pointer/struct fields the user is
+    /// expected to supply a value — the `0` is a deliberate sentinel that
+    /// will fail loudly if the program actually uses it.)
+    fn emit_record_initializer(
+        self: *CodeGen,
+        rec_fields: []const types.FieldType,
+        init_expr: *const ast.Expr,
+    ) E!void {
+        const t = init_expr.table;
+        // Build a quick name -> value lookup from the user's fields.
+        // The user's table literal is `{ name = expr, ... }`, so each
+        // named field carries a `val` expression.
+        var found: std.StringHashMapUnmanaged(*const ast.Expr) = .empty;
+        defer found.deinit(self.alloc);
+        for (t.fields) |tf| switch (tf) {
+            .named => |nf| found.put(self.alloc, nf.key, nf.val) catch {},
+            else => {},
+        };
+
+        self.p("{{\n", .{});
+        self.indent += 1;
+        for (rec_fields, 0..) |rf, i| {
+            if (i > 0) self.p(",\n", .{});
+            self.ind();
+            self.p(".{s} = ", .{rf.name});
+            if (found.get(rf.name)) |val| {
+                try self.emit_expr(val);
+            } else {
+                self.p("0", .{});
+            }
+        }
+        self.indent -= 1;
+        self.nl();
+        self.ind();
+        self.p("}}", .{});
+    }
+
+    /// Walk the entire module collecting every record-type annotation that
+    /// will need a C struct typedef at file scope, then emit those typedefs.
+    /// This runs once, before any function forward-declaration, so that all
+    /// record types are known when the function signatures are printed.
+    fn collect_and_emit_record_decls(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .func_decl => |*fd| try self.collect_records_in_func(&fd.func),
+                .local_decl => |*ld| {
+                    for (ld.names) |*n| try self.collect_records_in_typ(n.typ);
+                    for (ld.inits) |e| try self.collect_records_in_expr(e);
+                },
+                .global_decl => |*gd| {
+                    for (gd.names) |*n| try self.collect_records_in_typ(n.typ);
+                    for (gd.inits) |e| try self.collect_records_in_expr(e);
+                },
+                .const_decl => |*cd| try self.collect_records_in_expr(cd.val),
+                else => {},
+            }
+        }
+    }
+
+    fn collect_records_in_func(self: *CodeGen, fb: *ast.FuncBody) E!void {
+        for (fb.params) |param| try self.collect_records_in_typ(param.typ);
+        try self.collect_records_in_typ(fb.ret_type);
+        for (fb.type_params orelse &[_]ast.TypeExpr{}) |tp| {
+            try self.collect_records_in_typ(tp);
+        }
+    }
+
+    fn collect_records_in_typ(self: *CodeGen, te: ast.TypeExpr) E!void {
+        switch (te) {
+            .record => {
+                const rt = types.resolve(te, null, self.alloc) catch return;
+                if (rt == .table_type) try self.ensure_record_decl(rt);
+            },
+            .pointer, .optional => |inner| try self.collect_records_in_typ(inner.*),
+            .array => |a| try self.collect_records_in_typ(a.elem.*),
+            .func => |f| {
+                for (f.params) |param| try self.collect_records_in_typ(param);
+                try self.collect_records_in_typ(f.ret.*);
+            },
+            .generic => |g| {
+                for (g.params) |param| try self.collect_records_in_typ(param);
+                try self.collect_records_in_typ(g.base.*);
+            },
+            else => {},
+        }
+    }
+
+    fn collect_records_in_expr(self: *CodeGen, e: *ast.Expr) E!void {
+        switch (e.*) {
+            .table => |t| for (t.fields) |tf| {
+                switch (tf) {
+                    .named => |nf| try self.collect_records_in_expr(nf.val),
+                    .indexed => |ix| try self.collect_records_in_expr(ix.val),
+                    .positional => |pos| try self.collect_records_in_expr(pos),
+                }
+            },
+            .call => |c| {
+                try self.collect_records_in_expr(c.func);
+                for (c.args) |a| try self.collect_records_in_expr(a);
+            },
+            .method_call => |m| {
+                try self.collect_records_in_expr(m.obj);
+                for (m.args) |a| try self.collect_records_in_expr(a);
+            },
+            .field => |f| try self.collect_records_in_expr(f.obj),
+            .index => |i| {
+                try self.collect_records_in_expr(i.obj);
+                try self.collect_records_in_expr(i.key);
+            },
+            .binop => |b| {
+                try self.collect_records_in_expr(b.lhs);
+                try self.collect_records_in_expr(b.rhs);
+            },
+            .unop => |u| try self.collect_records_in_expr(u.operand),
+            .func_expr => |f| try self.collect_records_in_func(f),
+            .try_expr => |x| try self.collect_records_in_expr(x.operand),
+            .unwrap_expr => |x| try self.collect_records_in_expr(x.operand),
+            .match_expr => |m| {
+                try self.collect_records_in_expr(m.scrutinee);
+                for (m.arms) |arm| {
+                    for (arm.body.stmts) |*s| try self.collect_records_in_stmt(s);
+                }
+            },
+            .await_expr => |a| try self.collect_records_in_expr(a.operand),
+            .contains_expr => |c| {
+                try self.collect_records_in_expr(c.lhs);
+                try self.collect_records_in_expr(c.rhs);
+            },
+            else => {},
+        }
+    }
+
+    fn collect_records_in_stmt(self: *CodeGen, s: *ast.Stmt) E!void {
+        switch (s.*) {
+            .local_decl => |*ld| {
+                for (ld.names) |*n| try self.collect_records_in_typ(n.typ);
+                for (ld.inits) |e| try self.collect_records_in_expr(e);
+            },
+            .global_decl => |*gd| {
+                for (gd.names) |*n| try self.collect_records_in_typ(n.typ);
+                for (gd.inits) |e| try self.collect_records_in_expr(e);
+            },
+            .assign => |a| {
+                for (a.targets) |t| try self.collect_records_in_expr(t);
+                for (a.values) |v| try self.collect_records_in_expr(v);
+            },
+            .call_stmt => |c| try self.collect_records_in_expr(c.expr),
+            .do_block => |*d| for (d.body.stmts) |*s2| try self.collect_records_in_stmt(s2),
+            .while_loop => |*w| {
+                try self.collect_records_in_expr(w.cond);
+                for (w.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+            },
+            .repeat_loop => |*r| {
+                for (r.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+                try self.collect_records_in_expr(r.cond);
+            },
+            .if_stmt => |*i| {
+                try self.collect_records_in_expr(i.cond);
+                for (i.then.stmts) |*s2| try self.collect_records_in_stmt(s2);
+                for (i.elseifs) |*ei| {
+                    try self.collect_records_in_expr(ei.cond);
+                    for (ei.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+                }
+                if (i.else_body) |*eb| for (eb.stmts) |*s2| try self.collect_records_in_stmt(s2);
+            },
+            .num_for => |*nf| {
+                try self.collect_records_in_typ(nf.var_typ);
+                try self.collect_records_in_expr(nf.start);
+                try self.collect_records_in_expr(nf.stop);
+                if (nf.step) |st| try self.collect_records_in_expr(st);
+                for (nf.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+            },
+            .gen_for => |*g| {
+                for (g.iters) |it| try self.collect_records_in_expr(it);
+                for (g.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+            },
+            .func_decl => |*fd| try self.collect_records_in_func(&fd.func),
+            .ret => |*r| for (r.vals) |v| try self.collect_records_in_expr(v),
+            .match_stmt => |*m| try self.collect_records_in_expr(&m.scrutinee.*),
+            .try_stmt => |*t| {
+                for (t.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+                for (t.catches) |*cc| for (cc.body.stmts) |*s2| try self.collect_records_in_stmt(s2);
+            },
+            .defer_stmt => |*d| for (d.body.stmts) |*s2| try self.collect_records_in_stmt(s2),
+            else => {},
+        }
     }
 
     // ── Functions ─────────────────────────────────────────────────────────────
@@ -456,7 +681,7 @@ pub const CodeGen = struct {
             self.p("static lua_Value {s}__argv(int argc, lua_Value* argv);\n", .{cname});
             return;
         }
-        const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
+        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
 
         // For Ackermann, emit the optimised helper at file scope (forward decl
         // + full definition) before the ack() wrapper function.
@@ -486,7 +711,7 @@ pub const CodeGen = struct {
         self.p(" {s}(", .{fd.path[0]});
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
-            const pt = types.resolve(par.typ, self.alloc) catch .any;
+            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
             self.typ(pt);
             self.p(" {s}", .{par.name});
         }
@@ -562,7 +787,7 @@ pub const CodeGen = struct {
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (!fb.is_typed) return;
-        const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
+        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
         const nparams = fb.params.len;
@@ -583,7 +808,7 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 1) {
-            const pt = types.resolve(fb.params[0].typ, self.alloc) catch .any;
+            const pt = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{cname});
             self.ind();
             var pbuf: [32]u8 = undefined;
@@ -600,8 +825,8 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 2) {
-            const pt0 = types.resolve(fb.params[0].typ, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, self.alloc) catch .any;
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -618,9 +843,9 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 3) {
-            const pt0 = types.resolve(fb.params[0].typ, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, self.alloc) catch .any;
-            const pt2 = types.resolve(fb.params[2].typ, self.alloc) catch .any;
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -642,7 +867,7 @@ pub const CodeGen = struct {
     fn emit_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (fb.use_mandel_iter_native) self.mandel_native = true;
-        const ret = types.resolve(fb.ret_type, self.alloc) catch .any;
+        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
         if ((fb.vararg_name != null or fb.vararg) and ret == .any) {
             try self.emit_vararg_func_def(fd);
             return;
@@ -674,7 +899,7 @@ pub const CodeGen = struct {
         self.p("(", .{});
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
-            const pt = types.resolve(par.typ, self.alloc) catch .any;
+            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
             self.typ(pt);
             self.p(" {s}", .{par.name});
         }
@@ -818,7 +1043,7 @@ pub const CodeGen = struct {
         }
         for (fb.params, 0..) |par, i| {
             try self.note_local(par.name);
-            const pt = types.resolve(par.typ, self.alloc) catch .any;
+            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
             if (pt == .any) {
                 self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
             } else if (pt.is_integer()) {
@@ -1716,6 +1941,15 @@ pub const CodeGen = struct {
         switch (stmt.*) {
             .local_decl => |*ld| {
                 for (ld.names) |*lname| try self.note_local(lname.ident);
+                // If any name in this declaration is annotated with a
+                // record-type literal, ensure the corresponding C struct
+                // declaration is emitted at file scope before we use it.
+                for (ld.names) |*lname| {
+                    if (lname.typ == .record) {
+                        const rt = types.resolve(lname.typ, null, self.alloc) catch .any;
+                        if (rt == .table_type) try self.ensure_record_decl(rt);
+                    }
+                }
                 if (ld.inits.len == 1 and self.uses_multi_return(ld.inits[0], ld.names.len)) {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
@@ -1743,7 +1977,7 @@ pub const CodeGen = struct {
                     // Determine type
                     const rt: RT = blk: {
                         if (lname.typ != .inferred) {
-                            break :blk types.resolve(lname.typ, self.alloc) catch .any;
+                            break :blk types.resolve(lname.typ, null, self.alloc) catch .any;
                         }
                         if (i < ld.inits.len) {
                             break :blk self.expr_type(ld.inits[i]);
@@ -1756,6 +1990,18 @@ pub const CodeGen = struct {
                             self.p(" = ", .{});
                             try self.emit_as_lua_value(ld.inits[i]);
                         }
+                    } else if (rt == .table_type and i < ld.inits.len and ld.inits[i].* == .table) {
+                        // Record-typed binding initialized from a table
+                        // literal: emit as a C struct initializer. Field
+                        // order in the struct typedef matches the order
+                        // declared in the record-type annotation, so we
+                        // iterate the table's named fields and emit them
+                        // in that order. Missing fields default-init
+                        // (zero) — emitted as `{0}` so any plain-`int`
+                        // field still gets a valid C value.
+                        self.typ(rt);
+                        self.p(" {s} = ", .{lname.ident});
+                        try self.emit_record_initializer(rt.table_type.fields, ld.inits[i]);
                     } else {
                         self.typ(rt);
                         self.p(" {s}", .{lname.ident});
@@ -1786,7 +2032,7 @@ pub const CodeGen = struct {
                     self.ind();
                     const rt: RT = blk: {
                         if (lname.typ != .inferred) {
-                            break :blk types.resolve(lname.typ, self.alloc) catch .any;
+                            break :blk types.resolve(lname.typ, null, self.alloc) catch .any;
                         }
                         if (i < gd.inits.len) {
                             break :blk self.expr_type(gd.inits[i]);
@@ -1804,7 +2050,7 @@ pub const CodeGen = struct {
             .const_decl => |*cd| {
                 self.ind();
                 const rt = if (cd.typ != .inferred)
-                    types.resolve(cd.typ, self.alloc) catch .any
+                    types.resolve(cd.typ, null, self.alloc) catch .any
                 else
                     self.expr_type(cd.val);
                 self.p("const ", .{});
@@ -2086,7 +2332,7 @@ pub const CodeGen = struct {
                 self.ind();
                 try self.note_local(nf.var_name);
                 const vt: RT = if (nf.var_typ != .inferred)
-                    types.resolve(nf.var_typ, self.alloc) catch .i64
+                    types.resolve(nf.var_typ, null, self.alloc) catch .i64
                 else
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
@@ -2244,10 +2490,24 @@ pub const CodeGen = struct {
                     // Hoisted to file scope in emit_module.
                 }
             },
-            .struct_def => {}, // handled at module level
-            .match_stmt, .try_stmt, .defer_stmt, .enum_def, .concept_def => {
-                // TODO: codegen for Duo-extended statements
+            // NOTE: there is no `.struct_def` case. Anonymous record
+            // bindings don't need a top-level emission — they are handled
+            // inline at the binding site.
+            .match_stmt => |match_stmt| {
+                try self.emit_match_expr(match_stmt);
             },
+            .try_stmt => |try_stmt| {
+                try self.emit_try_stmt(try_stmt);
+            },
+            .defer_stmt => |defer_stmt| {
+                // Defer is handled by the async lowering pass; at runtime
+                // defers are executed by the task scheduler on scope exit.
+                // Emit a marker comment for debugging.
+                self.p("/* defer: body emitted by async lowering */", .{});
+                _ = defer_stmt;
+            },
+            .enum_def => {}, // handled at module level
+            .concept_def => {}, // concepts are compile-time only, no codegen
             .brk => self.pl("break;", .{}),
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
@@ -2917,9 +3177,8 @@ pub const CodeGen = struct {
                 // TODO: codegen for Duo-extended expressions
                 self.p("/* TODO: {s} */", .{@tagName(std.meta.activeTag(expr.*))});
             },
-            .match_expr => {
-                // TODO: codegen for match expression
-                self.p("/* TODO: match_expr */", .{});
+            .match_expr => |match_expr| {
+                try self.emit_match_expr(match_expr);
             },
             .contains_expr => {
                 // TODO: codegen for contains/in expression
@@ -3848,7 +4107,7 @@ pub const CodeGen = struct {
             self.current_ret = .any;
             self.closure_ctx = fb;
             for (fb.params, 0..) |par, i| {
-                const pt = types.resolve(par.typ, self.alloc) catch .any;
+                const pt = types.resolve(par.typ, null, self.alloc) catch .any;
                 if (pt == .any) {
                     self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
                 } else if (pt.is_integer()) {
@@ -4037,7 +4296,7 @@ pub const CodeGen = struct {
         self.closure_ctx = null;
         for (submod.body.stmts) |*stmt| {
             switch (stmt.*) {
-                .func_decl, .struct_def, .const_decl => {},
+                .func_decl, .const_decl => {},
                 else => try self.emit_stmt(stmt),
             }
         }
@@ -4046,6 +4305,168 @@ pub const CodeGen = struct {
         self.current_ret = prev_ret;
         self.closure_ctx = prev_ctx;
         self.p("}}\n\n", .{});
+    }
+
+    // ── Duo Language Extensions ────────────────────────────────────────────────
+
+    /// Emit a match expression or statement as nested if/switch in C.
+    fn emit_match_expr(self: *CodeGen, match_expr: anytype) E!void {
+        // Generate a temporary variable to hold the scrutinee value
+        const scrutinee_var = try self.alloc.dupe(u8, "__match_s");
+        defer self.alloc.free(scrutinee_var);
+
+        // Emit scrutinee evaluation
+        self.p("({{", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("auto __match_s = ", .{});
+        try self.emit_expr(match_expr.scrutinee);
+        self.p(";", .{});
+
+        // Generate arms
+        for (match_expr.arms, 0..) |arm, i| {
+            self.nl();
+            self.ind();
+
+            if (i == 0) {
+                self.p("if (", .{});
+            } else {
+                self.p("else if (", .{});
+            }
+
+            try self.emit_pattern_condition(arm.pattern, scrutinee_var);
+            self.p(") {{", .{});
+
+            self.indent += 1;
+            self.nl();
+
+            // Emit guard if present
+            if (arm.guard) |guard| {
+                self.ind();
+                self.p("if (!(", .{});
+                try self.emit_expr(guard);
+                self.p(")) goto __match_arm_{d}_fail;", .{i});
+                self.nl();
+            }
+
+            // Emit arm body (Block contains stmts)
+            for (arm.body.stmts) |*stmt| {
+                try self.emit_stmt(stmt);
+            }
+
+            if (arm.guard != null) {
+                self.nl();
+                self.indent -= 1;
+                self.ind();
+                self.p("__match_arm_{d}_fail:;", .{i});
+                self.indent += 1;
+            }
+
+            self.indent -= 1;
+            self.nl();
+            self.ind();
+            self.p("}}", .{});
+        }
+
+        // Default case if no wildcard
+        self.nl();
+        self.ind();
+        self.p("else {{", .{});
+        self.indent += 1;
+        self.nl();
+        self.ind();
+        self.p("lua_panic(\"match non-exhaustive\");", .{});
+        self.indent -= 1;
+        self.nl();
+        self.ind();
+        self.p("}}", .{});
+
+        self.indent -= 1;
+        self.nl();
+        self.ind();
+        self.p("}})", .{});
+    }
+
+    /// Emit pattern matching condition for an arm.
+    fn emit_pattern_condition(self: *CodeGen, pattern: ast.Pattern, scrutinee_var: []const u8) E!void {
+        switch (pattern) {
+            .wildcard => self.p("1", .{}), // Always match
+            .literal => |lit| {
+                self.p("(", .{});
+                self.p("{s} == ", .{scrutinee_var});
+                try self.emit_expr(lit);
+                self.p(")", .{});
+            },
+            .binding => |b| {
+                // Bind the value - for now emit as always true with assignment
+                self.p("(", .{});
+                if (b.typ) |type_expr| {
+                    const rt = types.resolve(type_expr, null, self.alloc) catch .any;
+                    self.typ(rt);
+                } else {
+                    self.p("auto", .{});
+                }
+                self.p(" {s} = {s}, 1)", .{ b.name, scrutinee_var });
+            },
+            .variant => |v| {
+                // Check enum variant tag
+                // TODO: Variant pattern needs type info - for now assume __match_s is the enum
+                self.p("(__match_s.tag == __enum_tag_{s})", .{v.tag});
+                // TODO: Handle payload patterns
+            },
+            else => self.p("1", .{}), // Conservative: match everything
+        }
+    }
+
+    /// Emit a try/catch statement.
+    fn emit_try_stmt(self: *CodeGen, try_stmt: ast.TryStmt) E!void {
+        // Use setjmp/longjmp for error handling
+        self.p("({{", .{});
+        self.indent += 1;
+        self.nl();
+        self.ind();
+        self.p("jmp_buf __try_env;", .{});
+        self.nl();
+        self.ind();
+        self.p("if (setjmp(__try_env) == 0) {{", .{});
+
+        // Try block
+        self.indent += 1;
+        self.nl();
+        for (try_stmt.body.stmts) |*stmt| {
+            try self.emit_stmt(stmt);
+        }
+        self.indent -= 1;
+        self.nl();
+        self.ind();
+        self.p("}}", .{});
+
+        // Catch clauses
+        for (try_stmt.catches) |catch_clause| {
+            self.p(" else {{", .{});
+            self.indent += 1;
+            self.nl();
+
+            if (catch_clause.binding) |var_name| {
+                self.ind();
+                self.p("lua_Value {s} = __catch_val;", .{var_name});
+                self.nl();
+            }
+
+            for (catch_clause.body.stmts) |*stmt| {
+                try self.emit_stmt(stmt);
+            }
+
+            self.indent -= 1;
+            self.nl();
+            self.ind();
+            self.p("}}", .{});
+        }
+
+        self.indent -= 1;
+        self.nl();
+        self.ind();
+        self.p("}})", .{});
     }
 };
 

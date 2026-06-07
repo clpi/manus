@@ -232,6 +232,16 @@ pub const ResolvedType = union(enum) {
                 .instantiated => |ib| ia.specialization_key == ib.specialization_key,
                 else => false,
             },
+            .func => |fa| switch (b) {
+                .func => |fb| blk: {
+                    if (fa.params.len != fb.params.len) break :blk false;
+                    for (fa.params, fb.params) |pa, pb| {
+                        if (!pa.eql(pb)) break :blk false;
+                    }
+                    break :blk fa.ret.eql(fb.ret.*);
+                },
+                else => false,
+            },
             else => false,
         };
     }
@@ -240,6 +250,22 @@ pub const ResolvedType = union(enum) {
         if (a == null and b_opt == null) return true;
         if (a == null or b_opt == null) return false;
         return std.mem.eql(u8, a.?, b_opt.?);
+    }
+
+    /// Deterministic content hash of a record's field set, used to mint a
+    /// stable C struct name for anonymous record types. Two records with
+    /// the same field set hash to the same value, which is how the codegen
+    /// deduplicates `typedef struct { … }` declarations.
+    fn record_content_hash(fields: []const FieldType) u64 {
+        var h = std.hash.Wyhash.init(0xDADBEEF);
+        for (fields) |f| {
+            h.update(f.name);
+            // Use the type's `eql` representation rather than the C name, so
+            // the hash is stable across codegen changes.
+            var name_buf: [64]u8 = undefined;
+            h.update(f.typ.c_type(&name_buf));
+        }
+        return h.final();
     }
 
     /// Return the C type string for this type.
@@ -291,7 +317,13 @@ pub const ResolvedType = union(enum) {
             },
             .channel => "duo_Channel",
             .generic_param => "/* generic */",
-            .table_type => "duo_Table",
+            .table_type => |t| {
+                // Anonymous record type: mint a content-hashed C struct name.
+                // The codegen dedupes by content hash to share one struct decl
+                // across identical record shapes.
+                const hash = record_content_hash(t.fields);
+                return std.fmt.bufPrint(buf, "duo_rec_{x}", .{hash}) catch "duo_rec";
+            },
             .instantiated => |inst| {
                 return std.fmt.bufPrint(buf, "duo_spec_{}", .{inst.specialization_key}) catch "duo_spec";
             },
@@ -507,31 +539,31 @@ test "resolve: primitive named types" {
     const alloc = testing.allocator;
     const ATE = @import("ast.zig").TypeExpr;
 
-    try testing.expectEqual(r(.i8), try resolve(.{ .named = "i8" }, alloc));
-    try testing.expectEqual(r(.i16), try resolve(.{ .named = "i16" }, alloc));
-    try testing.expectEqual(r(.i32), try resolve(.{ .named = "i32" }, alloc));
-    try testing.expectEqual(r(.i64), try resolve(.{ .named = "i64" }, alloc));
-    try testing.expectEqual(r(.u8), try resolve(.{ .named = "u8" }, alloc));
-    try testing.expectEqual(r(.u16), try resolve(.{ .named = "u16" }, alloc));
-    try testing.expectEqual(r(.u32), try resolve(.{ .named = "u32" }, alloc));
-    try testing.expectEqual(r(.u64), try resolve(.{ .named = "u64" }, alloc));
-    try testing.expectEqual(r(.f32), try resolve(.{ .named = "f32" }, alloc));
-    try testing.expectEqual(r(.f64), try resolve(.{ .named = "f64" }, alloc));
-    try testing.expectEqual(r(.bool), try resolve(.{ .named = "bool" }, alloc));
-    try testing.expectEqual(r(.void), try resolve(.{ .named = "void" }, alloc));
-    try testing.expectEqual(r(.str), try resolve(.{ .named = "str" }, alloc));
-    try testing.expectEqual(r(.any), try resolve(.{ .named = "any" }, alloc));
+    try testing.expectEqual(r(.i8), try resolve(.{ .named = "i8" }, null, alloc));
+    try testing.expectEqual(r(.i16), try resolve(.{ .named = "i16" }, null, alloc));
+    try testing.expectEqual(r(.i32), try resolve(.{ .named = "i32" }, null, alloc));
+    try testing.expectEqual(r(.i64), try resolve(.{ .named = "i64" }, null, alloc));
+    try testing.expectEqual(r(.u8), try resolve(.{ .named = "u8" }, null, alloc));
+    try testing.expectEqual(r(.u16), try resolve(.{ .named = "u16" }, null, alloc));
+    try testing.expectEqual(r(.u32), try resolve(.{ .named = "u32" }, null, alloc));
+    try testing.expectEqual(r(.u64), try resolve(.{ .named = "u64" }, null, alloc));
+    try testing.expectEqual(r(.f32), try resolve(.{ .named = "f32" }, null, alloc));
+    try testing.expectEqual(r(.f64), try resolve(.{ .named = "f64" }, null, alloc));
+    try testing.expectEqual(r(.bool), try resolve(.{ .named = "bool" }, null, alloc));
+    try testing.expectEqual(r(.void), try resolve(.{ .named = "void" }, null, alloc));
+    try testing.expectEqual(r(.str), try resolve(.{ .named = "str" }, null, alloc));
+    try testing.expectEqual(r(.any), try resolve(.{ .named = "any" }, null, alloc));
     _ = ATE;
 }
 
 test "resolve: inferred becomes any" {
     const alloc = testing.allocator;
-    try testing.expectEqual(r(.any), try resolve(.inferred, alloc));
+    try testing.expectEqual(r(.any), try resolve(.inferred, null, alloc));
 }
 
 test "resolve: user struct" {
     const alloc = testing.allocator;
-    const result = try resolve(.{ .named = "MyStruct" }, alloc);
+    const result = try resolve(.{ .named = "MyStruct" }, null, alloc);
     try testing.expect(result == .@"struct");
     try testing.expectEqualStrings("MyStruct", result.@"struct".name);
 }
@@ -539,7 +571,7 @@ test "resolve: user struct" {
 test "resolve: pointer type" {
     const alloc = testing.allocator;
     var inner = @import("ast.zig").TypeExpr{ .named = "i32" };
-    const result = try resolve(.{ .pointer = &inner }, alloc);
+    const result = try resolve(.{ .pointer = &inner }, null, alloc);
     defer alloc.destroy(result.pointer);
     try testing.expect(result == .pointer);
     try testing.expectEqual(r(.i32), result.pointer.*);
@@ -566,7 +598,7 @@ pub fn rt_to_type_name(t: ResolvedType) ?[]const u8 {
 }
 
 /// Convert a `ast.TypeExpr` (parsed annotation) to a `ResolvedType`.
-pub fn resolve(te: ast.TypeExpr, alloc: std.mem.Allocator) !ResolvedType {
+pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !ResolvedType {
     return switch (te) {
         .inferred => .any,
         .named => |n| {
@@ -600,30 +632,42 @@ pub fn resolve(te: ast.TypeExpr, alloc: std.mem.Allocator) !ResolvedType {
         },
         .pointer => |inner| {
             const p = try alloc.create(ResolvedType);
-            p.* = try resolve(inner.*, alloc);
+            p.* = try resolve(inner.*, sema, alloc);
             return ResolvedType{ .pointer = p };
         },
         .optional => |inner| {
             const elem = try alloc.create(ResolvedType);
-            elem.* = try resolve(inner.*, alloc);
+            elem.* = try resolve(inner.*, sema, alloc);
             return ResolvedType{ .option = elem };
         },
         .array => |a| {
             const elem = try alloc.create(ResolvedType);
-            elem.* = try resolve(a.elem.*, alloc);
+            elem.* = try resolve(a.elem.*, sema, alloc);
             return ResolvedType{ .array = .{ .elem = elem, .size = a.size } };
         },
         .func => |f| {
             var params = try alloc.alloc(ResolvedType, f.params.len);
-            for (f.params, 0..) |p, i| params[i] = try resolve(p, alloc);
+            for (f.params, 0..) |p, i| params[i] = try resolve(p, sema, alloc);
             const ret = try alloc.create(ResolvedType);
-            ret.* = try resolve(f.ret.*, alloc);
+            ret.* = try resolve(f.ret.*, sema, alloc);
             return ResolvedType{ .func = .{ .params = params, .ret = ret, .is_native = true } };
         },
         .generic => |g| {
             // For now, just resolve to the base type as a simplification
             // Full monomorphization would require more complex handling
-            return try resolve(g.base.*, alloc);
+            return try resolve(g.base.*, sema, alloc);
+        },
+        .record => |rec| {
+            // Translate a record-type literal `{ name: T, ... }` to a
+            // `table_type` ResolvedType, resolving each field's type.
+            var fields = try alloc.alloc(FieldType, rec.fields.len);
+            for (rec.fields, 0..) |f, i| {
+                fields[i] = .{
+                    .name = f.name,
+                    .typ = try resolve(f.typ, sema, alloc),
+                };
+            }
+            return ResolvedType{ .table_type = .{ .fields = fields } };
         },
     };
 }

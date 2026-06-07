@@ -68,6 +68,16 @@ fn validate_arc_attr(attributes: []const ast.Attribute) ?bool {
     return null;
 }
 
+fn has_arc_attr(attributes: []const ast.Attribute) bool {
+    return validate_arc_attr(attributes) != null;
+}
+
+fn is_table_binding_type(te: ast.TypeExpr, resolved: RT) bool {
+    if (te == .record) return true;
+    if (te == .named and std.mem.eql(u8, te.named, "table")) return true;
+    return resolved == .table_type;
+}
+
 /// Lexical scope: a stack of hash maps.
 pub const Scope = struct {
     alloc: Allocator,
@@ -308,6 +318,45 @@ pub const Sema = struct {
         }
     }
 
+    fn check_binding_attributes(
+        self: *Sema,
+        lname: *const ast.LocalName,
+        resolved_type: RT,
+        init_expr: ?*const ast.Expr,
+    ) SemaError!void {
+        for (lname.attributes) |attr| {
+            if (std.mem.eql(u8, attr.name, "arc")) {
+                if (validate_arc_attr(&.{attr})) |valid| {
+                    if (!valid) {
+                        self.err(lname.loc, "@arc attribute requires argument 'false'", .{});
+                    } else if (!is_table_binding_type(lname.typ, resolved_type)) {
+                        self.err(lname.loc, "@arc(false) is only valid on table-typed bindings or record-type annotations, not on '{s}'", .{lname.ident});
+                    }
+                }
+                continue;
+            }
+
+            if (!std.mem.eql(u8, attr.name, "implements")) continue;
+
+            if (lname.typ != .record) {
+                self.err(lname.loc, "@implements is only valid on bindings with a record-type annotation, not on '{s}'", .{lname.ident});
+                continue;
+            }
+
+            const init_names = if (init_expr) |initializer|
+                try self.collect_init_field_names(initializer)
+            else
+                &[_][]const u8{};
+
+            var concept_iter = std.mem.splitScalar(u8, attr.args orelse "", ',');
+            while (concept_iter.next()) |raw| {
+                const trimmed = std.mem.trim(u8, raw, " \t");
+                if (trimmed.len == 0) continue;
+                try self.check_concept_satisfaction(lname.loc, lname.ident, lname.typ.record.fields, init_names, trimmed);
+            }
+        }
+    }
+
     fn record(self: *Sema, expr: *const ast.Expr, t: RT) !RT {
         try self.type_map.put(expr, t);
         return t;
@@ -366,7 +415,7 @@ pub const Sema = struct {
                         .any;
                     // If annotated, use the annotation and enforce type match
                     if (lname.typ != .inferred) {
-                        const ann = types.resolve(lname.typ, self.alloc) catch .any;
+                        const ann = types.resolve(lname.typ, self, self.alloc) catch .any;
                         // Check type mismatch: if init type is known (not any/nil) and
                         // annotation is known (not any), they must match
                         if (i < init_types.items.len) {
@@ -386,17 +435,19 @@ pub const Sema = struct {
                     if (is_close and !has_init) {
                         self.err(lname.loc, "to-be-closed variable '{s}' must have an initializer", .{lname.ident});
                     }
+                    try self.check_binding_attributes(lname, t, if (i < ld.inits.len) ld.inits[i] else null);
                     try self.scope.define(lname.ident, .{
                         .typ = t,
                         .is_const = is_const,
                         .is_close = is_close,
+                        .deprecated_msg = get_deprecated_msg(lname.attributes),
                     });
                 }
             },
             .const_decl => |*cd| {
                 var t = try self.check_expr(cd.val);
                 if (cd.typ != .inferred)
-                    t = types.resolve(cd.typ, self.alloc) catch .any;
+                    t = types.resolve(cd.typ, self, self.alloc) catch .any;
                 try self.scope.define(cd.ident, .{ .typ = t, .is_const = true });
             },
             .global_decl => |*gd| {
@@ -418,7 +469,7 @@ pub const Sema = struct {
                     else
                         .any;
                     if (lname.typ != .inferred) {
-                        const ann = types.resolve(lname.typ, self.alloc) catch .any;
+                        const ann = types.resolve(lname.typ, self, self.alloc) catch .any;
                         t = ann;
                     }
                     const is_const = is_const_attrib(lname.attrib);
@@ -426,11 +477,13 @@ pub const Sema = struct {
                     if (is_const and !has_init) {
                         self.err(lname.loc, "const global '{s}' must have an initializer", .{lname.ident});
                     }
+                    try self.check_binding_attributes(lname, t, if (i < gd.inits.len) gd.inits[i] else null);
                     try self.note_global(lname.ident, t);
                     try self.scope.define(lname.ident, .{
                         .typ = t,
                         .is_const = is_const,
                         .is_global = true,
+                        .deprecated_msg = get_deprecated_msg(lname.attributes),
                     });
                 }
             },
@@ -466,7 +519,7 @@ pub const Sema = struct {
                 try self.scope.push();
                 var var_t: RT = .i64;
                 if (nf.var_typ != .inferred)
-                    var_t = types.resolve(nf.var_typ, self.alloc) catch .i64;
+                    var_t = types.resolve(nf.var_typ, self, self.alloc) catch .i64;
                 try self.scope.define(nf.var_name, .{
                     .typ = var_t,
                     .is_const = true,
@@ -493,16 +546,10 @@ pub const Sema = struct {
                 try self.check_func_decl(fd);
             },
             .do_block => |*db| try self.check_block(&db.body),
-            .struct_def => |*sd| {
-                try self.scope.define(sd.name, .{
-                    .typ = RT{ .@"struct" = .{ .name = sd.name } },
-                    .is_const = true,
-                });
-                // Check concept satisfaction for each declared `implements` concept
-                for (sd.implements) |concept_name| {
-                    try self.check_concept_satisfaction(sd, concept_name);
-                }
-            },
+            // NOTE: there is no `.struct_def` case. Records are declared via
+            // record-type annotations on bindings; their type-checking and
+            // `@implements` concept satisfaction is done in the `local_decl`
+            // and `global_decl` arms above.
             .brk, .goto_stmt, .label_stmt => {},
             .match_stmt => |*ms| try self.check_match(ms),
             .enum_def => |*ed| try self.check_enum_def(ed),
@@ -510,39 +557,14 @@ pub const Sema = struct {
                 // Type-check the try body
                 try self.check_block(&ts.body);
                 // Type-check each catch clause
+                // NOTE: catch clauses are untyped in Duo. There is no
+                // `error_type` on `CatchClause` — the binding (if any) is
+                // always typed `any` (errors are tables, statically unknown).
+                // User code uses `match e.__tag` inside the body.
                 for (ts.catches) |*cc| {
                     try self.scope.push();
-                    // If a binding name is provided, define it in the catch scope
                     if (cc.binding) |name| {
-                        // If the catch specifies an error type, resolve it;
-                        // otherwise use 'any' for untyped catches
-                        var err_typ: RT = .any;
-                        if (cc.error_type) |et| {
-                            err_typ = types.resolve(et, self.alloc) catch .any;
-                            // Validate that the error type is a known type.
-                            // If it resolves to a struct (user-defined type name), check
-                            // that the type is declared in scope or the enum registry.
-                            if (err_typ == .@"struct") {
-                                const type_name = err_typ.@"struct".name;
-                                const in_scope = self.scope.lookup(type_name) != null;
-                                const in_enums = self.enum_types.get(type_name) != null;
-                                if (!in_scope and !in_enums) {
-                                    self.err(cc.loc, "unknown error type '{s}' in catch clause", .{type_name});
-                                }
-                            }
-                        }
-                        try self.scope.define(name, .{ .typ = err_typ, .is_const = true });
-                    } else if (cc.error_type) |et| {
-                        // Error type specified but no binding — still validate the type
-                        const err_typ = types.resolve(et, self.alloc) catch .any;
-                        if (err_typ == .@"struct") {
-                            const type_name = err_typ.@"struct".name;
-                            const in_scope = self.scope.lookup(type_name) != null;
-                            const in_enums = self.enum_types.get(type_name) != null;
-                            if (!in_scope and !in_enums) {
-                                self.err(cc.loc, "unknown error type '{s}' in catch clause", .{type_name});
-                            }
-                        }
+                        try self.scope.define(name, .{ .typ = .any, .is_const = true });
                     }
                     try self.check_block(&cc.body);
                     self.scope.pop();
@@ -571,12 +593,12 @@ pub const Sema = struct {
                 param_types[i] = .any;
                 all_typed = false;
             } else {
-                param_types[i] = types.resolve(p.typ, self.alloc) catch .any;
+                param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
             }
         }
         var ret_t: RT = .any;
         if (fb.ret_type != .inferred) {
-            ret_t = types.resolve(fb.ret_type, self.alloc) catch .any;
+            ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
         } else {
             all_typed = false;
         }
@@ -641,8 +663,20 @@ pub const Sema = struct {
                 return .any;
             },
             .field => |f| {
-                _ = try self.check_expr(f.obj);
-                return .any; // field access is dynamic unless struct-typed
+                const ot = try self.check_expr(f.obj);
+                // If the object is a statically-typed record (anonymous
+                // `{ field: T, ... }` annotation), return the declared
+                // field's type instead of `.any`. This lets `local x: f64
+                // = p.x` infer the type properly when `p: { x: f64, ... }`.
+                if (ot == .table_type) {
+                    const fields = ot.table_type.fields;
+                    for (fields) |rf| {
+                        if (std.mem.eql(u8, rf.name, f.field)) {
+                            return rf.typ;
+                        }
+                    }
+                }
+                return .any; // otherwise, field access is dynamic
             },
             .index => |idx| {
                 const ot = try self.check_expr(idx.obj);
@@ -710,6 +744,25 @@ pub const Sema = struct {
                         }
                     }
                 }
+
+                // Overload resolution (Requirement 12): when the callee is a
+                // bare name with multiple registered overloads, select the one
+                // whose parameter types match the argument types. Ambiguous
+                // matches are reported as an error.
+                if (c.func.* == .name) {
+                    if (self.overloads.getPtr(c.func.name.ident)) |overload_list| {
+                        if (overload_list.items.len > 1) {
+                            if (try self.resolve_overload(c.func.name.loc, c.func.name.ident, overload_list.items, c.args)) |ret|
+                                return ret;
+                        }
+                    }
+                }
+
+                // Generic instantiation tracking (Requirement 4.1, 4.3): when the
+                // callee's signature mentions generic parameters, record the
+                // concrete type arguments at this site for the monomorphizer.
+                if (ft == .func and c.func.* == .name)
+                    try self.record_generic_instantiation(c.func.name.loc, c.func.name.ident, ft.func, c.args);
 
                 return switch (ft) {
                     .func => |f| f.ret.*,
@@ -1096,9 +1149,9 @@ pub const Sema = struct {
 
         var param_types = try self.alloc.alloc(RT, fb.params.len);
         for (fb.params, 0..) |*p, i| {
-            param_types[i] = types.resolve(p.typ, self.alloc) catch .any;
+            param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
         }
-        var ret_t = types.resolve(fb.ret_type, self.alloc) catch .any;
+        var ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
 
         // Register the function before checking the body so recursive calls type-check.
         const ret_ptr = try self.alloc.create(RT);
@@ -1137,10 +1190,11 @@ pub const Sema = struct {
             try self.scope.define(name, .{ .typ = fb_t, .is_const = true, .deprecated_msg = get_deprecated_msg(fd.attributes) });
         }
 
-        // Validate @arc(false) attribute on function (emit error if malformed)
-        if (validate_arc_attr(fd.attributes)) |valid| {
-            if (!valid) {
+        if (has_arc_attr(fd.attributes)) {
+            if (validate_arc_attr(fd.attributes).? == false) {
                 self.err(fd.loc, "@arc attribute requires argument 'false'", .{});
+            } else {
+                self.err(fd.loc, "@arc(false) is only valid on table-typed bindings or record-type annotations", .{});
             }
         }
 
@@ -1166,9 +1220,9 @@ pub const Sema = struct {
 
         // Re-resolve after possible inference.
         for (fb.params, 0..) |*p, i| {
-            param_types[i] = types.resolve(p.typ, self.alloc) catch .any;
+            param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
         }
-        ret_t = types.resolve(fb.ret_type, self.alloc) catch .any;
+        ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
         var params_native = true;
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
@@ -1239,9 +1293,9 @@ pub const Sema = struct {
             promote_native_f64_signature(fb);
 
         for (fb.params, 0..) |*p, i| {
-            param_types[i] = types.resolve(p.typ, self.alloc) catch .any;
+            param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
         }
-        ret_t = types.resolve(fb.ret_type, self.alloc) catch .any;
+        ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
         params_native = true;
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
@@ -1352,7 +1406,7 @@ pub const Sema = struct {
                 // Bind the variable in the current scope with the scrutinee's type
                 var bind_type = scrutinee_type;
                 if (b.typ) |type_expr| {
-                    bind_type = types.resolve(type_expr, self.alloc) catch .any;
+                    bind_type = types.resolve(type_expr, self, self.alloc) catch .any;
                 }
                 try self.scope.define(b.name, .{ .typ = bind_type, .is_const = true });
             },
@@ -1505,7 +1559,7 @@ pub const Sema = struct {
             if (v.payload) |fields| {
                 var pt = try self.alloc.alloc(RT, fields.len);
                 for (fields, 0..) |field, fi| {
-                    pt[fi] = types.resolve(field.typ, self.alloc) catch .any;
+                    pt[fi] = types.resolve(field.typ, self, self.alloc) catch .any;
                 }
                 payload_types = pt;
             }
@@ -1534,7 +1588,7 @@ pub const Sema = struct {
         // Build method requirements
         var methods = try self.alloc.alloc(ConceptInfo.MethodRequirement, cd.required_methods.len);
         for (cd.required_methods, 0..) |*m, i| {
-            const ret_t = types.resolve(m.ret_type, self.alloc) catch .any;
+            const ret_t = types.resolve(m.ret_type, self, self.alloc) catch .any;
             methods[i] = .{
                 .name = m.name,
                 .param_count = m.params.len,
@@ -1545,7 +1599,7 @@ pub const Sema = struct {
         // Build field requirements
         var fields = try self.alloc.alloc(ConceptInfo.FieldRequirement, cd.required_fields.len);
         for (cd.required_fields, 0..) |*f, i| {
-            const field_t = types.resolve(f.typ, self.alloc) catch .any;
+            const field_t = types.resolve(f.typ, self, self.alloc) catch .any;
             fields[i] = .{
                 .name = f.name,
                 .typ = field_t,
@@ -1568,15 +1622,156 @@ pub const Sema = struct {
         });
     }
 
-    /// Check that a struct satisfies a declared concept.
-    /// Emits errors listing each missing method or field.
-    fn check_concept_satisfaction(self: *Sema, sd: *const ast.StructDefPayload, concept_name: []const u8) SemaError!void {
+    /// Check that a binding annotated with `@implements(Concept)` provides all
+    /// of the concept's required members. The binding's record-type annotation
+    /// supplies the declared field set; the binding's initializer is also
+    /// checked for matching field names (table-literal values must define
+    /// them).
+    ///
+    /// `record_fields` is the set of fields declared by the binding's
+    /// `{ name: T, ... }` type annotation. `init_field_names` is the set of
+    /// names that actually appear in the binding's initializer expression
+    /// (only meaningful for `table` initializers; for function-typed fields,
+    /// the field is considered "provided" by the annotation alone).
+    /// Resolve an overloaded call by matching argument types against the
+    /// registered signatures (Requirement 12). Returns the selected return
+    /// type, or null when no overload is applicable (caller falls back to the
+    /// in-scope binding). Prefers exact matches; reports ambiguity when more
+    /// than one overload matches equally well.
+    fn resolve_overload(
+        self: *Sema,
+        loc: ast.Loc,
+        name: []const u8,
+        overloads: []const FuncSignature,
+        args: []const *ast.Expr,
+    ) SemaError!?RT {
+        var arg_types: std.ArrayList(RT) = .empty;
+        defer arg_types.deinit(self.alloc);
+        for (args) |a| try arg_types.append(self.alloc, self.type_map.get(a) orelse .any);
+
+        var exact_count: usize = 0;
+        var exact_ret: RT = .any;
+        var compat_count: usize = 0;
+        var compat_ret: RT = .any;
+        for (overloads) |sig| {
+            if (sig.is_vararg) {
+                if (args.len < sig.param_types.len) continue;
+            } else if (sig.param_types.len != args.len) continue;
+
+            var is_exact = true;
+            var is_compat = true;
+            for (sig.param_types, 0..) |pt, i| {
+                if (i >= arg_types.items.len) break;
+                const at = arg_types.items[i];
+                if (pt.eql(at)) continue;
+                is_exact = false;
+                // `any` on either side is treated as a compatible (coercible) match.
+                if (pt != .any and at != .any) is_compat = false;
+            }
+            if (is_exact) {
+                exact_count += 1;
+                exact_ret = sig.ret;
+            }
+            if (is_compat) {
+                compat_count += 1;
+                compat_ret = sig.ret;
+            }
+        }
+
+        if (exact_count == 1) return exact_ret;
+        if (exact_count > 1) {
+            self.err(loc, "ambiguous call to overloaded function '{s}': multiple overloads match the argument types", .{name});
+            return exact_ret;
+        }
+        if (compat_count == 1) return compat_ret;
+        if (compat_count > 1) {
+            self.err(loc, "ambiguous call to overloaded function '{s}': multiple overloads match the argument types", .{name});
+            return compat_ret;
+        }
+        return null;
+    }
+
+    /// Record a generic instantiation site for the monomorphizer when the
+    /// callee's signature mentions generic parameters (Requirement 4.1, 4.3).
+    /// Validates declared constraints on each type parameter (Requirement 4.2).
+    fn record_generic_instantiation(
+        self: *Sema,
+        loc: ast.Loc,
+        name: []const u8,
+        sig: anytype,
+        args: []const *ast.Expr,
+    ) SemaError!void {
+        var has_generic = false;
+        for (sig.params) |p| {
+            if (p == .generic_param) {
+                has_generic = true;
+                break;
+            }
+        }
+        if (!has_generic) return;
+
+        var type_args: std.ArrayList(RT) = .empty;
+        defer type_args.deinit(self.alloc);
+        for (sig.params, 0..) |p, i| {
+            if (p != .generic_param) continue;
+            if (i >= args.len) continue;
+            const at = self.type_map.get(args[i]) orelse .any;
+            try type_args.append(self.alloc, at);
+            // Constraint validation: if the parameter declares a concept
+            // constraint, the concrete argument must satisfy it. We only have
+            // the resolved type here, so we check named-struct args against the
+            // concept registry.
+            if (p.generic_param.constraint) |constraint| {
+                if (at != .any and self.concepts.get(constraint) == null) {
+                    self.err(loc, "type parameter '{s}' of '{s}' has unknown constraint '{s}'", .{ p.generic_param.name, name, constraint });
+                }
+            }
+        }
+
+        const args_slice = try type_args.toOwnedSlice(self.alloc);
+        var key: u64 = std.hash.Wyhash.hash(0, name);
+        for (args_slice) |a| {
+            var buf: [64]u8 = undefined;
+            const s = std.fmt.bufPrint(&buf, "{}", .{a}) catch "";
+            key = key ^ std.hash.Wyhash.hash(key, s);
+        }
+        try self.instantiation_sites.append(self.alloc, .{
+            .generic_name = name,
+            .type_args = args_slice,
+            .specialization_key = key,
+            .loc = loc,
+        });
+    }
+
+    /// Collect the named field keys from a table-literal initializer
+    /// (`{ name = expr, ... }`). Used by `@implements` checking to see which
+    /// concept members the initializer supplies beyond the record annotation.
+    /// Returns an empty slice for non-table initializers.
+    fn collect_init_field_names(self: *Sema, init_expr: *const ast.Expr) SemaError![]const []const u8 {
+        if (init_expr.* != .table) return &[_][]const u8{};
+        var names: std.ArrayList([]const u8) = .empty;
+        for (init_expr.table.fields) |f| {
+            switch (f) {
+                .named => |n| try names.append(self.alloc, n.key),
+                else => {},
+            }
+        }
+        return names.toOwnedSlice(self.alloc);
+    }
+
+    fn check_concept_satisfaction(
+        self: *Sema,
+        loc: ast.Loc,
+        binding_name: []const u8,
+        record_fields: []const ast.RecordField,
+        init_field_names: []const []const u8,
+        concept_name: []const u8,
+    ) SemaError!void {
         const concept = self.concepts.get(concept_name) orelse {
-            self.err(sd.loc, "undeclared concept '{s}'", .{concept_name});
+            self.err(loc, "undeclared concept '{s}'", .{concept_name});
             return;
         };
 
-        // Collect the struct's field names for checking
         var missing_methods: std.ArrayList([]const u8) = .empty;
         defer missing_methods.deinit(self.alloc);
         var missing_fields: std.ArrayList([]const u8) = .empty;
@@ -1585,14 +1780,13 @@ pub const Sema = struct {
         // Check required fields
         for (concept.required_fields) |req_field| {
             var found = false;
-            for (sd.fields) |struct_field| {
-                if (std.mem.eql(u8, struct_field.name, req_field.name)) {
-                    // Check type compatibility: if both are resolved and non-any, they must match
-                    const struct_field_type = types.resolve(struct_field.typ, self.alloc) catch .any;
-                    if (req_field.typ != .any and struct_field_type != .any and !req_field.typ.eql(struct_field_type)) {
+            for (record_fields) |rec_field| {
+                if (std.mem.eql(u8, rec_field.name, req_field.name)) {
+                    const rec_field_type = types.resolve(rec_field.typ, self, self.alloc) catch .any;
+                    if (req_field.typ != .any and rec_field_type != .any and !req_field.typ.eql(rec_field_type)) {
                         self.errors += 1;
-                        std.debug.print("{}: error: struct '{s}' field '{s}' has type {}, but concept '{s}' requires type {}\n", .{
-                            sd.loc, sd.name, req_field.name, struct_field_type, concept_name, req_field.typ,
+                        std.debug.print("{}: error: binding '{s}' field '{s}' has type {}, but concept '{s}' requires type {}\n", .{
+                            loc, binding_name, req_field.name, rec_field_type, concept_name, req_field.typ,
                         });
                     }
                     found = true;
@@ -1604,14 +1798,24 @@ pub const Sema = struct {
             }
         }
 
-        // Check required methods — for now, methods are fields with function types
-        // In future this would also check function declarations attached to the struct
+        // Check required methods — for now, methods are fields with function types.
+        // The record annotation is sufficient to count as "provided" (the
+        // initializer may or may not also reference them).
         for (concept.required_methods) |req_method| {
             var found = false;
-            for (sd.fields) |struct_field| {
-                if (std.mem.eql(u8, struct_field.name, req_method.name)) {
+            for (record_fields) |rec_field| {
+                if (std.mem.eql(u8, rec_field.name, req_method.name)) {
                     found = true;
                     break;
+                }
+            }
+            if (!found) {
+                // Fall back to checking the initializer's table-literal fields.
+                for (init_field_names) |nm| {
+                    if (std.mem.eql(u8, nm, req_method.name)) {
+                        found = true;
+                        break;
+                    }
                 }
             }
             if (!found) {
@@ -1623,8 +1827,8 @@ pub const Sema = struct {
         const total_missing = missing_methods.items.len + missing_fields.items.len;
         if (total_missing > 0) {
             self.errors += 1;
-            std.debug.print("{}: error: struct '{s}' does not satisfy concept '{s}': missing ", .{
-                sd.loc, sd.name, concept_name,
+            std.debug.print("{}: error: binding '{s}' does not satisfy concept '{s}': missing ", .{
+                loc, binding_name, concept_name,
             });
             var first = true;
             for (missing_methods.items) |name| {
@@ -3418,7 +3622,7 @@ pub const Sema = struct {
                             var t: RT = .any;
                             if (i < ld.inits.len) t = self.expr_type(ld.inits[i]);
                             if (lname.typ != .inferred) {
-                                t = types.resolve(lname.typ, self.sema.alloc) catch .any;
+                                t = types.resolve(lname.typ, self.sema, self.sema.alloc) catch .any;
                             }
                             if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0) {
                                 continue; // dense table placeholder
@@ -3430,7 +3634,7 @@ pub const Sema = struct {
                     .const_decl => |*cd| {
                         var t = self.expr_type(cd.val);
                         if (cd.typ != .inferred) {
-                            t = types.resolve(cd.typ, self.sema.alloc) catch .any;
+                            t = types.resolve(cd.typ, self.sema, self.sema.alloc) catch .any;
                         }
                         if (!t.is_native()) return false;
                         self.local_tys.put(cd.ident, t) catch return false;
@@ -3438,7 +3642,7 @@ pub const Sema = struct {
                     .num_for => |*nf| {
                         var t: RT = .i64;
                         if (nf.var_typ != .inferred) {
-                            t = types.resolve(nf.var_typ, self.sema.alloc) catch .i64;
+                            t = types.resolve(nf.var_typ, self.sema, self.sema.alloc) catch .i64;
                         }
                         if (!t.is_native()) return false;
                         self.local_tys.put(nf.var_name, t) catch return false;
@@ -4499,56 +4703,150 @@ test "sema: duo mode — reassignment to existing local is valid" {
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
-test "sema: try_stmt catch with known error type is accepted" {
+test "sema: field access on a record-typed binding yields the declared field type" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    // Verify that `local p: { x: f64, y: f64 }` followed by reading
+    // `p.x` infers the field's type from the record-type annotation
+    // rather than falling back to `.any`. This is the change that makes
+    // typed `local x: f64 = p.x` work end-to-end through codegen.
     const src =
-        \\enum IoError
-        \\  NotFound
-        \\  PermissionDenied
-        \\end
-        \\try
-        \\  local x = 42
-        \\catch IoError e
-        \\  local y = e
-        \\end
+        \\local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+        \\local x: f64 = p.x
+        \\local y: f64 = p.y
     ;
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
-    // IoError is declared as an enum, so it should be accepted
+    try testing.expectEqual(@as(u32, 0), s.errors);
+
+    // Find the `local x: f64 = p.x` statement and verify the RHS is i64/f64
+    // (not `.any`). The third stmt in the module is the `local x: f64 = p.x`.
+    const x_decl = mod.body.stmts[2].local_decl;
+    const x_init = x_decl.inits[0];
+    try testing.expect(x_init.* == .field);
+    const xt = s.type_map.get(x_init) orelse .any;
+    try testing.expect(xt == .f64);
+}
+
+test "sema: @implements on a record-typed binding (concept exists and matches)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // The concept `Iterable` requires an `each: () -> any` method. The
+    // binding's record-type annotation supplies exactly that, so the
+    // satisfaction check should pass.
+    const src =
+        \\concept Iterable
+        \\  each: () -> i64
+        \\end
+        \\@implements(Iterable)
+        \\local x: { each: () -> i64 } = { each = function() return 0 end }
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
-test "sema: try_stmt catch with unknown error type emits error" {
+test "sema: @implements on a record-typed binding (concept is missing a required field)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    // The concept `Pair` requires both `first: i64` and `second: i64`.
+    // The binding only declares `first`, so satisfaction fails.
     const src =
-        \\try
-        \\  local x = 42
-        \\catch UnknownError e
-        \\  local y = e
+        \\concept Pair
+        \\  first: i64
+        \\  second: i64
         \\end
+        \\@implements(Pair)
+        \\local x: { first: i64 } = { first = 1 }
     ;
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
-    // UnknownError is not declared, so it should emit an error
+    // Expect at least one error (the missing `second` field).
     try testing.expect(s.errors > 0);
 }
 
-test "sema: try_stmt catch with primitive error type is accepted" {
+test "sema: @implements on a global record-typed binding is checked" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    // Primitive types (str, i64, etc.) resolve to non-struct types,
-    // so they are always accepted without requiring scope lookup
+    const src =
+        \\concept Pair
+        \\  first: i64
+        \\  second: i64
+        \\end
+        \\@implements(Pair)
+        \\global x: { first: i64 } = { first = 1 }
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @arc(false) accepts record-typed binding" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\@arc(false)
+        \\local x: { value: i64 } = { value = 1 }
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: @arc(false) rejects primitive binding" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\@arc(false)
+        \\local x: i64 = 1
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @arc(false) rejects function declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\@arc(false)
+        \\function f()
+        \\end
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @deprecated binding emits warning at use site" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\@deprecated("use y")
+        \\local x = 1
+        \\local z = x
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expect(s.warnings > 0);
+}
+
+test "sema: try_stmt catch untyped binding is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Catch clauses are untyped in Duo. The binding, if present, is
+    // statically `any` (errors are tables). There is no `catch MyError e`
+    // form — discrimination is done inside the body with `match e.__tag`.
     const src =
         \\try
         \\  local x = 42
@@ -4561,20 +4859,19 @@ test "sema: try_stmt catch with primitive error type is accepted" {
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
-    // No error type specified, just a binding — should be fine
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
-test "sema: try_stmt catch with struct type in scope is accepted" {
+test "sema: try_stmt catch with no binding is accepted" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    // An unnamed `catch` discards the error value entirely.
     const src =
-        \\struct MyError { code: i64 }
         \\try
         \\  local x = 42
-        \\catch MyError e
-        \\  local y = e
+        \\catch
+        \\  local y = 1
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -4582,7 +4879,30 @@ test "sema: try_stmt catch with struct type in scope is accepted" {
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
     try s.check_module(&mod);
-    // MyError is declared as a struct, so it should be accepted
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: try_stmt body can discriminate error inside catch via __tag" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Verifies the new idiom: instead of `catch MyError e`, the body uses
+    // `match e.__tag` to discriminate the kind of error.
+    const src =
+        \\try
+        \\  local x = 42
+        \\catch e
+        \\  match e.__tag
+        \\    "NotFound" => local y = 1
+        \\    _ => local z = 2
+        \\  end
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
@@ -4603,5 +4923,58 @@ test "sema: try_expr (?) in function with 'any' return type is accepted" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     // 'any' is result-compatible, so ? should be accepted
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: overload resolution selects by argument types (no ambiguity)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // Two overloads of `f` distinguished by parameter type. A call with an
+    // i64 argument resolves unambiguously to the i64 overload (Requirement 12).
+    const src =
+        \\fun f(x: i64) -> i64 return x end
+        \\fun f(x: str) -> str return x end
+        \\local r: i64 = f(1)
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: @arc(false) on a primitive-typed binding is rejected" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    // @arc(false) is only meaningful on heap-backed (table/record) bindings;
+    // applying it to an i64 binding is a static error (Requirement 18).
+    const src =
+        \\@arc(false)
+        \\local n: i64 = 1
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @arc(false) on a record-typed binding is accepted" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\@arc(false)
+        \\local p: { x: i64 } = { x = 1 }
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }

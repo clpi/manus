@@ -1042,3 +1042,229 @@ test "Property 4 (eql): random type pairs - acceptance iff types compatible" {
         }
     }
 }
+
+// ─── Property 3: Scoping Invariant ───────────────────────────────────────────
+//
+// **Validates: Requirements 1.3, 1.4**
+//
+// In `.duo` mode, a bare assignment (`x = ...`) at a new-binding position SHALL
+// create a local binding (not visible as a module global), while the `global`
+// keyword SHALL create a module-global binding.
+
+/// Run sema in `.duo` mode and return the sema state.
+fn parse_and_check_duo(alloc: std.mem.Allocator, src: []const u8) !Sema {
+    var lex = Lexer.init(src, "test");
+    var parser = Parser.init(&lex, alloc);
+    var mod = try parser.parse_module();
+    var sema = Sema.init(alloc);
+    sema.duo_mode = true;
+    try sema.check_module(&mod);
+    return sema;
+}
+
+test "Property 3: bare assignment creates a local, not a module global" {
+    // Feature: duo-language-spec, Property 3: Scoping Invariant
+    var prng = std.Random.DefaultPrng.init(0xA3_0001);
+    const rng = prng.random();
+
+    var src_buf: [256]u8 = undefined;
+    var id_buf: [16]u8 = undefined;
+
+    for (0..100) |_| {
+        const ident = gen_safe_identifier(rng, &id_buf);
+        // Bare assignment followed by a use so the name is referenced.
+        const src = std.fmt.bufPrint(&src_buf, "{s} = 1\nprint({s})", .{ ident, ident }) catch continue;
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+
+        var sema = parse_and_check_duo(arena.allocator(), src) catch |err| {
+            std.debug.print("Error for source: `{s}`: {}\n", .{ src, err });
+            return err;
+        };
+
+        try std.testing.expectEqual(@as(u32, 0), sema.errors);
+        // A bare local must NOT be registered as a module global.
+        try std.testing.expect(sema.module_globals.get(ident) == null);
+    }
+}
+
+test "Property 3: `global` keyword creates a module-global binding" {
+    // Feature: duo-language-spec, Property 3: Scoping Invariant
+    var prng = std.Random.DefaultPrng.init(0xA3_0002);
+    const rng = prng.random();
+
+    var src_buf: [256]u8 = undefined;
+    var id_buf: [16]u8 = undefined;
+
+    for (0..100) |_| {
+        const ident = gen_safe_identifier(rng, &id_buf);
+        const src = std.fmt.bufPrint(&src_buf, "global {s} = 1\nprint({s})", .{ ident, ident }) catch continue;
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+
+        var sema = parse_and_check_duo(arena.allocator(), src) catch |err| {
+            std.debug.print("Error for source: `{s}`: {}\n", .{ src, err });
+            return err;
+        };
+
+        try std.testing.expectEqual(@as(u32, 0), sema.errors);
+        // A `global` binding MUST be registered as a module global.
+        try std.testing.expect(sema.module_globals.get(ident) != null);
+    }
+}
+
+// ─── Property 7: Match Exhaustiveness ────────────────────────────────────────
+//
+// **Validates: Requirements 5.5, 6.2**
+//
+// For a `match` on an enum with N variants, the compiler SHALL emit an error
+// when fewer than N variants are covered (and no wildcard is present), and
+// SHALL accept the match when all variants are covered or a wildcard is given.
+
+/// Emit `enum NAME V0 V1 ... end` plus `local v = NAME` and a `match` covering
+/// the first `covered` variants (optionally with a trailing wildcard).
+/// A tiny append helper over a fixed buffer (std.io is unavailable here).
+const BufWriter = struct {
+    buf: []u8,
+    len: usize = 0,
+    fn print(self: *BufWriter, comptime fmt: []const u8, args: anytype) bool {
+        const s = std.fmt.bufPrint(self.buf[self.len..], fmt, args) catch return false;
+        self.len += s.len;
+        return true;
+    }
+    fn written(self: *const BufWriter) []const u8 {
+        return self.buf[0..self.len];
+    }
+};
+
+fn build_enum_match_src(
+    buf: []u8,
+    enum_name: []const u8,
+    variants: usize,
+    covered: usize,
+    wildcard: bool,
+) ?[]const u8 {
+    var w = BufWriter{ .buf = buf };
+    if (!w.print("enum {s}\n", .{enum_name})) return null;
+    for (0..variants) |i| if (!w.print("  V{d}\n", .{i})) return null;
+    if (!w.print("end\nlocal v = {s}\nmatch v\n", .{enum_name})) return null;
+    for (0..covered) |i| if (!w.print("  {s}.V{d} => print(1)\n", .{ enum_name, i })) return null;
+    if (wildcard) if (!w.print("  _ => print(0)\n", .{})) return null;
+    if (!w.print("end\n", .{})) return null;
+    return w.written();
+}
+
+test "Property 7: partial match on an enum is rejected" {
+    // Feature: duo-language-spec, Property 7: Match Exhaustiveness
+    var prng = std.Random.DefaultPrng.init(0xA7_0001);
+    const rng = prng.random();
+
+    var src_buf: [1024]u8 = undefined;
+
+    for (0..100) |_| {
+        const variants = rng.intRangeAtMost(usize, 2, 6);
+        const covered = rng.intRangeAtMost(usize, 1, variants - 1); // strictly fewer
+        const src = build_enum_match_src(&src_buf, "E", variants, covered, false) orelse continue;
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+
+        const result = parse_and_check(arena.allocator(), src) catch |err| {
+            std.debug.print("Error for source: `{s}`: {}\n", .{ src, err });
+            return err;
+        };
+
+        // Missing variants with no wildcard → at least one exhaustiveness error.
+        if (result.sema.errors == 0) {
+            std.debug.print("FAIL: expected exhaustiveness error for:\n{s}\n", .{src});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "Property 7: full coverage or wildcard is exhaustive" {
+    // Feature: duo-language-spec, Property 7: Match Exhaustiveness
+    var prng = std.Random.DefaultPrng.init(0xA7_0002);
+    const rng = prng.random();
+
+    var src_buf: [1024]u8 = undefined;
+
+    for (0..100) |_| {
+        const variants = rng.intRangeAtMost(usize, 2, 6);
+        // Half the time cover all variants; otherwise cover a subset + wildcard.
+        const use_wildcard = rng.boolean();
+        const covered = if (use_wildcard) rng.intRangeAtMost(usize, 0, variants) else variants;
+        const src = build_enum_match_src(&src_buf, "E", variants, covered, use_wildcard) orelse continue;
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+
+        const result = parse_and_check(arena.allocator(), src) catch |err| {
+            std.debug.print("Error for source: `{s}`: {}\n", .{ src, err });
+            return err;
+        };
+
+        if (result.sema.errors != 0) {
+            std.debug.print("FAIL: unexpected error for exhaustive match:\n{s}\n", .{src});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+// ─── Property 14: Concept Constraint Checking ────────────────────────────────
+//
+// **Validates: Requirements 15.1, 15.2, 15.4**
+//
+// A binding annotated `@implements(Concept)` SHALL be accepted iff its
+// record-type annotation supplies every member the concept requires.
+
+/// Build a concept with `required` i64 fields and a binding whose record
+/// annotation supplies the first `provided` of them.
+fn build_concept_impl_src(buf: []u8, required: usize, provided: usize) ?[]const u8 {
+    var w = BufWriter{ .buf = buf };
+    if (!w.print("concept C\n", .{})) return null;
+    for (0..required) |i| if (!w.print("  f{d}: i64\n", .{i})) return null;
+    if (!w.print("end\n@implements(C)\nlocal x: {{ ", .{})) return null;
+    for (0..provided) |i| {
+        if (i > 0) if (!w.print(", ", .{})) return null;
+        if (!w.print("f{d}: i64", .{i})) return null;
+    }
+    if (!w.print(" }} = {{ ", .{})) return null;
+    for (0..provided) |i| {
+        if (i > 0) if (!w.print(", ", .{})) return null;
+        if (!w.print("f{d} = {d}", .{ i, i })) return null;
+    }
+    if (!w.print(" }}\n", .{})) return null;
+    return w.written();
+}
+
+test "Property 14: @implements accepted iff all required members provided" {
+    // Feature: duo-language-spec, Property 14: Concept Constraint Checking
+    var prng = std.Random.DefaultPrng.init(0xA14_0001);
+    const rng = prng.random();
+
+    var src_buf: [1024]u8 = undefined;
+
+    for (0..100) |_| {
+        const required = rng.intRangeAtMost(usize, 1, 5);
+        const provided = rng.intRangeAtMost(usize, 1, required);
+        const src = build_concept_impl_src(&src_buf, required, provided) orelse continue;
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+
+        const result = parse_and_check(arena.allocator(), src) catch |err| {
+            std.debug.print("Error for source: `{s}`: {}\n", .{ src, err });
+            return err;
+        };
+
+        const fully_satisfied = (provided == required);
+        const accepted = (result.sema.errors == 0);
+        if (accepted != fully_satisfied) {
+            std.debug.print("FAIL: required={d} provided={d} accepted={} for:\n{s}\n", .{ required, provided, accepted, src });
+            return error.TestUnexpectedResult;
+        }
+    }
+}

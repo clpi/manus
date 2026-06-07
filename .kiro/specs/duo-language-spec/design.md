@@ -120,6 +120,18 @@ parse_prec(min_prec):
 
 ### 3. AST (`src/ast.zig`)
 
+**No `struct` keyword.** Duo follows Lua's philosophy: all composite data is a table. There is no `struct`, no `class`, no explicit record declaration. To give a table a typed shape, the user annotates the binding's type with a **table type literal** `{ field: T, field: U, ... }` (a.k.a. inline record type). The Type_Checker treats the literal as a structural type — equivalence is by shape, not by name.
+
+```zig
+// Typed record via type-literal annotation
+local Point: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+
+// A table literal annotated with @implements(Concept) declares a value
+// whose runtime type is tagged with that concept (sets `__concepts`).
+@implements(Iterable)
+local my_iter: { __iter: () -> any } = { __iter = function() ... end }
+```
+
 **New AST nodes required**:
 
 ```zig
@@ -130,6 +142,8 @@ pub const Stmt = union(enum) {
     defer_stmt: DeferStmt,
     enum_def: EnumDef,
     concept_def: ConceptDef,
+    // NOTE: there is no `struct_def` variant. Records are expressed as
+    // typed table literals (`@implements(C) local x: { ... } = { ... }`).
 };
 
 pub const MatchExpr = struct {
@@ -154,6 +168,11 @@ pub const Pattern = union(enum) {
     wildcard,          // _
 };
 
+pub const DeferStmt = struct {
+    loc: Loc,
+    body: Block,
+};
+
 pub const TryStmt = struct {
     loc: Loc,
     body: Block,
@@ -161,14 +180,12 @@ pub const TryStmt = struct {
     defers: []DeferStmt,
 };
 
+/// A catch clause always binds the caught error to a single name. There is
+/// no typed `catch MyError e` form — errors are table values and any caller-
+/// supplied `__tag` check is performed inside the body with `match` / `if`.
 pub const CatchClause = struct {
-    error_type: ?TypeExpr,
-    binding: ?[]const u8,
-    body: Block,
-};
-
-pub const DeferStmt = struct {
     loc: Loc,
+    binding: ?[]const u8,
     body: Block,
 };
 
@@ -226,7 +243,10 @@ pub const ResolvedType = union(enum) {
     enum_type: struct { name: []const u8, variants: []EnumVariantType },
     channel: struct { elem: *ResolvedType, capacity: ?usize },
     generic_param: struct { name: []const u8, constraint: ?[]const u8 },
-    table_type: struct { fields: []FieldType },  // typed table / class
+    // Inline record type — structural, no name. Equivalent to a Lua table
+    // whose fields have been declared via a type-literal annotation. The
+    // Codegen lowers this to a C `struct` of the same shape.
+    table_type: struct { fields: []FieldType },
 
     // Type constructors for generics:
     instantiated: struct {
@@ -236,6 +256,13 @@ pub const ResolvedType = union(enum) {
     },
 };
 ```
+
+**Records are anonymous by design.** A binding annotated with
+`local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }` produces a value of
+`table_type` whose fields are the declared keys. Two record types are equal
+iff their field sets are equal (structural typing, with field names mattering).
+There is no syntax to *name* a record type — pass it around as a function
+parameter annotation, or alias it via a type-parameter binding.
 
 **Concept Registry** (within Sema):
 
@@ -266,6 +293,15 @@ pub const ConceptInfo = struct {
    - Bottom-up expression typing (already partially implemented)
    - Generic instantiation tracking
    - Concept satisfaction checking
+
+5. **Concept satisfaction via attribute**:
+   - A binding annotated with `@implements(Concept1, Concept2, ...)` declares
+     that its (table) value satisfies one or more concepts. There is no
+     `struct ... implements C ...` form. The Sema resolves the annotated
+     binding's table-type literal against each concept's required members
+     and emits an error if any are missing.
+   - At runtime, the concept tags are stamped onto the table's metatable so
+     that `__concepts()` returns the list.
 
 3. **Exhaustiveness checker** (for match):
    - Tracks which variants are covered
@@ -399,6 +435,24 @@ typedef struct {
 } duo_MyEnum;
 ```
 
+8. **Anonymous record (table-type literal) representation**:
+   - When a binding is annotated with a `{ field: T, ... }` type, the Codegen
+     mints a fresh C `struct` (no name conflict because records are anonymous
+     and inline), embeds it inside the function's scope, and uses it as the
+     binding's storage.
+   - Two structurally-equivalent records get distinct C struct declarations;
+     Codegen deduplicates by content hash to keep the generated C small.
+   - Field accesses compile to plain `struct.field` reads/writes — no
+     hashtable lookup, no `__index` chain, fully native speed.
+   - If a record value is assigned to a generic `table` parameter, the value
+     gets promoted to a `duo_Table*` and ARC takes over.
+
+```c
+// local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+struct __anon_record_0 { double x; double y; };
+struct __anon_record_0 p = { .x = 1.0, .y = 2.0 };
+```
+
 ### 10. Runtime Library (`src/runtime/`)
 
 **Components**:
@@ -434,6 +488,7 @@ typedef struct {
 | `Option[T]` | `duo_Option_T` (struct with tag + value) |
 | `Channel[T]` | `duo_Channel_T*` (ARC-managed, thread-safe when threaded) |
 | `enum MyEnum` | Tagged union struct |
+| Anonymous record `{ x: f64, y: f64 }` | Inline C struct with the declared fields; ARC-managed when stored in a table, by-value when stored as a `local` |
 | Generic `Vec[T]` | `duo_Vec_T` per monomorphization |
 
 ### ARC Object Layout

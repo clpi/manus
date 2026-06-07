@@ -1,4 +1,10 @@
 -- Syntax highlighting test for Duo
+--
+-- Note: Duo has no `struct` or `class` keyword. Typed records are declared
+-- via inline type-literal annotations on bindings:
+--   local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+-- OO-style objects are just table literals with method fields. Concept
+-- satisfaction is declared via `@implements(...)` on the binding.
 
 fun greet(name: str): str
     return "Hello, " .. name
@@ -11,29 +17,24 @@ end
 local result: i64 = ##1 + 2
 global counter: i64 = 0
 
-struct Point
-    x: f64
-    y: f64
-end
-
 fun calculate(): void
     local x: i64 = 10
     local y: i64 = 20
-    
+
     if x > y then
-        print "x is greater"
+        print("x is greater")
     else
-        print "y is greater"
+        print("y is greater")
     end
-    
+
     while x < 100 do
         x = x + 1
     end
-    
+
     for i = 1, 10 do
-        print i
+        print(i)
     end
 end
 
-print greet "World"
-print add 5 3
+print(greet("World"))
+print(add(5, 3))
