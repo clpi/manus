@@ -1268,3 +1268,226 @@ test "Property 14: @implements accepted iff all required members provided" {
         }
     }
 }
+
+// ─── Property 6: Monomorphization Uniqueness ─────────────────────────────────
+//
+// **Validates: Requirements 4.1, 4.3**
+//
+// For a generic function instantiated at several call sites, distinct tuples of
+// concrete type arguments SHALL produce distinct specializations, while
+// identical tuples SHALL reuse a single specialization. Equivalently: the number
+// of specializations equals the number of *distinct* type-argument tuples seen.
+
+const Mono = @import("mono.zig");
+
+/// One of the four literal kinds the property generator chooses among, paired
+/// with the source text used to produce an argument of that type.
+const LitKind = enum(u3) { int, float, str, boolean };
+
+fn lit_source(kind: LitKind) []const u8 {
+    return switch (kind) {
+        .int => "1",
+        .float => "1.0",
+        .str => "\"s\"",
+        .boolean => "true",
+    };
+}
+
+test "Property 6: specialization count equals number of distinct type args" {
+    // Feature: duo-language-spec, Property 6: Monomorphization Uniqueness
+    var prng = std.Random.DefaultPrng.init(0xA6_0001);
+    const rng = prng.random();
+
+    var src_buf: [4096]u8 = undefined;
+
+    for (0..100) |_| {
+        const num_calls = rng.intRangeAtMost(usize, 1, 12);
+
+        // Choose a literal kind per call and track which distinct kinds appear.
+        var kinds: [12]LitKind = undefined;
+        var seen = [_]bool{ false, false, false, false };
+        for (0..num_calls) |c| {
+            const k: LitKind = @enumFromInt(rng.intRangeAtMost(u3, 0, 3));
+            kinds[c] = k;
+            seen[@intFromEnum(k)] = true;
+        }
+        var distinct: usize = 0;
+        for (seen) |b| {
+            if (b) distinct += 1;
+        }
+
+        // Build the source: a generic identity function plus one binding per call.
+        var w = BufWriter{ .buf = &src_buf };
+        if (!w.print("fun id<T>(x: T) -> T\n  return x\nend\n", .{})) continue;
+        for (0..num_calls) |c| {
+            if (!w.print("local v{d} = id({s})\n", .{ c, lit_source(kinds[c]) })) continue;
+        }
+        const src = w.written();
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        const result = parse_and_check(alloc, src) catch |err| {
+            std.debug.print("Error for source:\n{s}\n{}\n", .{ src, err });
+            return err;
+        };
+
+        var mod = result.mod;
+        var sema = result.sema;
+        var mono = Mono.Monomorphizer.init(alloc, &sema.type_map);
+        try mono.run(&mod);
+
+        if (mono.count() != distinct) {
+            std.debug.print("FAIL: expected {d} specializations, got {d} for:\n{s}\n", .{ distinct, mono.count(), src });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "Property 6: identical type args always reuse one specialization" {
+    // Feature: duo-language-spec, Property 6: Monomorphization Uniqueness
+    var prng = std.Random.DefaultPrng.init(0xA6_0002);
+    const rng = prng.random();
+
+    var src_buf: [4096]u8 = undefined;
+
+    for (0..100) |_| {
+        const num_calls = rng.intRangeAtMost(usize, 2, 12);
+        const k: LitKind = @enumFromInt(rng.intRangeAtMost(u3, 0, 3));
+
+        // Every call uses the SAME literal kind → exactly one specialization.
+        var w = BufWriter{ .buf = &src_buf };
+        if (!w.print("fun id<T>(x: T) -> T\n  return x\nend\n", .{})) continue;
+        for (0..num_calls) |c| {
+            if (!w.print("local v{d} = id({s})\n", .{ c, lit_source(k) })) continue;
+        }
+        const src = w.written();
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        const result = parse_and_check(alloc, src) catch |err| {
+            std.debug.print("Error for source:\n{s}\n{}\n", .{ src, err });
+            return err;
+        };
+
+        var mod = result.mod;
+        var sema = result.sema;
+        var mono = Mono.Monomorphizer.init(alloc, &sema.type_map);
+        try mono.run(&mod);
+
+        if (mono.count() != 1) {
+            std.debug.print("FAIL: expected 1 specialization, got {d} for:\n{s}\n", .{ mono.count(), src });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+// ─── Property 13: ARC Refcount Correctness ───────────────────────────────────
+//
+// **Validates: Requirements 26.1, 26.2**
+//
+// Across any sequence of heap-binding declarations, reassignments, and scope
+// exits, the retain and release annotations SHALL be balanced — equivalently,
+// every heap value's reference count returns to zero exactly when no live
+// reference to it remains.
+
+const Arc = @import("arc.zig");
+
+test "Property 13: retains and releases are balanced over random sequences" {
+    // Feature: duo-language-spec, Property 13: ARC Refcount Correctness
+    var prng = std.Random.DefaultPrng.init(0xA13_0001);
+    const rng = prng.random();
+
+    var src_buf: [8192]u8 = undefined;
+
+    for (0..100) |_| {
+        const num_bindings = rng.intRangeAtMost(usize, 1, 6);
+        const num_reassigns = rng.intRangeAtMost(usize, 0, 6);
+
+        var w = BufWriter{ .buf = &src_buf };
+        // Declare `num_bindings` heap (str) locals.
+        for (0..num_bindings) |i| {
+            if (!w.print("local h{d}: str = \"v\"\n", .{i})) continue;
+        }
+        // Reassign random existing bindings to new heap values.
+        var reassigns_done: usize = 0;
+        for (0..num_reassigns) |_| {
+            const target = rng.intRangeAtMost(usize, 0, num_bindings - 1);
+            if (!w.print("h{d} = \"w\"\n", .{target})) continue;
+            reassigns_done += 1;
+        }
+        const src = w.written();
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        const result = parse_and_check(alloc, src) catch |err| {
+            std.debug.print("Error for source:\n{s}\n{}\n", .{ src, err });
+            return err;
+        };
+
+        var mod = result.mod;
+        var sema = result.sema;
+        var arc = Arc.ArcPass.init(alloc, &sema.type_map);
+        try arc.run(&mod);
+
+        const retains = arc.countOp(.retain);
+        const releases = arc.countOp(.release);
+        // Balance invariant: refcount returns to zero.
+        if (retains != releases) {
+            std.debug.print("FAIL: retains={d} releases={d} for:\n{s}\n", .{ retains, releases, src });
+            return error.TestUnexpectedResult;
+        }
+        // Each binding and each reassignment contributes exactly one retain.
+        const expected = num_bindings + reassigns_done;
+        if (retains != expected) {
+            std.debug.print("FAIL: expected {d} retains, got {d} for:\n{s}\n", .{ expected, retains, src });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
+test "Property 13: balance holds across nested scopes" {
+    // Feature: duo-language-spec, Property 13: ARC Refcount Correctness
+    var prng = std.Random.DefaultPrng.init(0xA13_0002);
+    const rng = prng.random();
+
+    var src_buf: [8192]u8 = undefined;
+
+    for (0..100) |_| {
+        const outer = rng.intRangeAtMost(usize, 0, 4);
+        const inner = rng.intRangeAtMost(usize, 1, 4);
+
+        var w = BufWriter{ .buf = &src_buf };
+        for (0..outer) |i| {
+            if (!w.print("local o{d}: str = \"o\"\n", .{i})) continue;
+        }
+        if (!w.print("do\n", .{})) continue;
+        for (0..inner) |i| {
+            if (!w.print("  local i{d}: str = \"i\"\n", .{i})) continue;
+        }
+        if (!w.print("end\n", .{})) continue;
+        const src = w.written();
+
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        const result = parse_and_check(alloc, src) catch |err| {
+            std.debug.print("Error for source:\n{s}\n{}\n", .{ src, err });
+            return err;
+        };
+
+        var mod = result.mod;
+        var sema = result.sema;
+        var arc = Arc.ArcPass.init(alloc, &sema.type_map);
+        try arc.run(&mod);
+
+        try std.testing.expectEqual(arc.countOp(.retain), arc.countOp(.release));
+        try std.testing.expectEqual(outer + inner, arc.countOp(.retain));
+    }
+}

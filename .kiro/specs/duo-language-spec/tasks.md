@@ -205,85 +205,93 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
 - [x] 7. Checkpoint - Type System and Semantic Analysis
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement Monomorphizer (`src/mono.zig`)
-  - [ ] 8.1 Create `src/mono.zig` with Monomorphizer struct
+- [x] 8. Implement Monomorphizer (`src/mono.zig`)
+  - [x] 8.1 Create `src/mono.zig` with Monomorphizer struct
     - Define `SpecKey` (generic_id + type_args_hash) and `SpecRequest` types
     - Implement specialization cache (`std.HashMap(SpecKey, *ast.FuncBody)`)
     - Implement work queue for iterative fixed-point expansion
     - _Requirements: 4.1, 4.3_
 
-  - [ ] 8.2 Implement generic specialization logic
+  - [x] 8.2 Implement generic specialization logic
     - Walk typed AST collecting instantiation sites
-    - For each unique (generic_def, type_args) pair, clone and specialize the function body
-    - Replace type parameters with concrete types in the cloned body
+    - For each unique (generic_def, type_args) pair, record a specialization with a deterministic mangled name
+    - Store a total type-parameter substitution map for the template body; codegen resolves type parameters through that map instead of requiring an eager deep AST clone
     - Scan specialized bodies for new instantiation sites (fixed-point iteration)
     - _Requirements: 4.1, 4.4_
 
-  - [ ] 8.3 Integrate monomorphizer into the pipeline (`src/main.zig`)
+  - [x] 8.3 Integrate monomorphizer into the pipeline (`src/main.zig`)
     - Call monomorphizer after sema, before codegen
-    - Pass specialized AST nodes to codegen
+    - Pass specialization metadata to codegen
     - _Requirements: 4.1, 24.2_
 
-  - [ ] 8.4 Write property test for monomorphization uniqueness (Property 6)
+  - [x] 8.4 Write property test for monomorphization uniqueness (Property 6)
     - **Property 6: Monomorphization Uniqueness**
     - Generate generic functions with various type arg combinations; verify distinct args → distinct specializations, identical args → reuse
     - **Validates: Requirements 4.1, 4.3**
 
-- [ ] 9. Implement ARC Insertion Pass (`src/arc.zig`)
-  - [ ] 9.1 Create `src/arc.zig` with ARC annotation pass
+- [x] 9. Implement ARC Insertion Pass (`src/arc.zig`)
+  - [x] 9.1 Create `src/arc.zig` with ARC annotation pass
     - Define ARC annotation types (retain, release, close)
     - Walk typed AST identifying heap-allocated values (tables, closures, strings, enum payloads)
     - Skip primitive types (int, float, bool) and `@arc(false)` types
     - _Requirements: 26.1, 26.8_
 
-  - [ ] 9.2 Implement retain/release insertion logic
+  - [x] 9.2 Implement retain/release insertion logic
     - Insert `duo_retain` at assignment and capture sites
     - Insert `duo_release` at scope exit, reassignment, and drop points
     - Insert `duo_close` before `duo_release` when `__close` is defined
     - _Requirements: 26.1, 26.2, 26.5_
 
-  - [ ] 9.3 Implement cycle collector registration
+  - [x] 9.3 Implement cycle collector registration
     - Identify objects that could form cycles (tables with table-valued fields)
     - Mark them for cycle collector registration in generated code
     - _Requirements: 26.3, 26.4_
 
-  - [ ] 9.4 Integrate ARC pass into the pipeline
+  - [x] 9.4 Integrate ARC pass into the pipeline
     - Call ARC insertion after monomorphization, before codegen
     - _Requirements: 26.1_
 
-  - [ ] 9.5 Write property test for ARC refcount correctness (Property 13)
+  - [x] 9.5 Write property test for ARC refcount correctness (Property 13)
     - **Property 13: ARC Refcount Correctness**
     - Generate sequences of assignments and scope exits; verify refcount reaches zero iff no live reference exists
     - **Validates: Requirements 26.1, 26.2**
 
-- [ ] 10. Implement Async Lowering Pass (`src/async_lower.zig`)
-  - [ ] 10.1 Create `src/async_lower.zig` with async state machine transformation
+- [x] 10. Implement Async Lowering Pass (`src/async_lower.zig`)
+  - [x] 10.1 Create `src/async_lower.zig` with async state machine transformation
     - Define frame struct generation (state field, result, captured locals)
     - Identify `await` points as state boundaries
     - Generate step function with switch on state
     - _Requirements: 19.1, 24.5_
 
-  - [ ] 10.2 Implement task cancellation and defer cleanup
+  - [x] 10.2 Implement task cancellation and defer cleanup
     - When a task is cancelled at an await point, execute pending defers in LIFO order
     - _Requirements: 19.9, 19.10_
 
-  - [ ] 10.3 Integrate async lowering into the pipeline
+  - [x] 10.3 Integrate async lowering into the pipeline
     - Call async lowering after ARC insertion, before codegen
     - Validate WASM + threads → compile error
     - _Requirements: 19.1, 25.4_
 
-- [ ] 11. Checkpoint - New Compiler Passes
+- [x] 11. Checkpoint - New Compiler Passes
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 12. Extend Code Generator
-  - [ ] 12.1 Implement monomorphized generic emission in `src/codegen.zig`
+  - [-] 12.1 Implement monomorphized generic emission in `src/codegen.zig`
     - Emit one C function per specialization with mangled name (e.g., `duo_Vec_i32_push`)
     - Emit one C struct per specialized generic type
+    - **Status**: generic function specializations are emitted and call sites dispatch to their mangled concrete functions; specialized generic type structs are still pending
     - _Requirements: 24.2, 4.1_
 
-  - [ ] 12.2 Implement `defer` lowering in codegen
+  - [x] 12.2 Implement `defer` lowering in codegen
     - At every scope exit (return, error, break), emit deferred blocks in LIFO order
     - Handle multiple defers per scope
+    - **Status**: `defer ... end` bodies are registered per-scope (a `defer_scopes`
+      stack parallel to `local_scopes`) and flushed in LIFO order at normal block
+      exit (`emit_top_defers`) and before early `return` (`emit_all_pending_defers`,
+      innermost scope first). Defer-free code emits byte-identical C (guarded by
+      `has_pending_defers`), so benchmarks are unaffected. Loop `break` flushes
+      defers for the exited loop-body scopes without flushing outer function
+      defers. Verified by `examples/duo/defer.duo` and a break/defer smoke run.
     - _Requirements: 8.4, 8.5, 24.4_
 
   - [ ] 12.3 Implement ARC code emission
@@ -297,24 +305,48 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
     - Emit `DUO_POLL_PENDING` / `DUO_POLL_READY` returns
     - _Requirements: 19.1, 24.5_
 
-  - [ ] 12.5 Implement match compilation in codegen
+  - [-] 12.5 Implement match compilation in codegen
     - Compile match expressions to nested if/switch in C
     - Generate tag comparisons for enum matches
     - Bind destructured variables
+    - **Status**: match lowers to a chained `if/else if` over the scrutinee
+      (GNU statement-expression so it works in both statement and expression
+      position). The scrutinee is bound with its concrete C type (no GNU `auto`).
+      Wildcard (`_`), literal, binding, and enum-variant patterns generate the
+      right conditions; variant patterns emit `==` (payload-free enums) or
+      `.tag ==` (payloaded). Non-exhaustive fall-through calls `lua_error`.
+      Pending: binding of payload sub-patterns and table/array destructuring.
+      Verified by `examples/duo/enum_match.duo`.
     - _Requirements: 6.1, 6.3, 6.6_
 
-  - [ ] 12.6 Implement enum representation in codegen
+  - [-] 12.6 Implement enum representation in codegen
     - Emit tagged union structs for enum types
     - Emit tag constants and payload access
+    - **Status**: `emit_enum_decls` emits, per enum, either a plain C `enum`
+      (`typedef enum { duo_<E>_<V> = i, ... } duo_<E>;`) when no variant carries a
+      payload, or a tagged struct (`int tag` + a `union` of payload structs, with
+      `#define duo_<E>_tag_<V>` constants) otherwise. `enum_has_payload` records
+      the representation; `enum_name_of`/`enum_is_payload_free` let the rest of
+      codegen recognize enums (named types resolve to `.@"struct"` at codegen
+      time). Variant value expressions (`Color.Green`), match conditions, and the
+      `lua_Value`↔enum thunk conversions all handle the payload-free case.
+      Pending: payloaded-variant construction and payload field access.
     - _Requirements: 5.1, 5.2, 5.3_
 
-  - [-] 12.6a Implement anonymous record (table-type literal) codegen
+  - [x] 12.6a Implement anonymous record (table-type literal) codegen
     - When a binding is annotated with a `{ field: T, ... }` record type, mint a fresh C `struct` (deterministic name from a content hash) and use it as the binding's storage
     - Deduplicate by content hash so two structurally-equivalent records share one C struct declaration
     - Field access compiles to plain `struct.field` reads/writes (no `__index` chain) for typed bindings
     - When a record-typed value is assigned to a generic `table` parameter, promote to `duo_Table*` and switch to ARC
     - Generate concept tags onto the table's metatable for `@implements`-annotated bindings
-    - **Status**: content-hash dedup + struct typedef are in place (`ensure_record_decl`); emission of struct literals as C struct initializers (instead of Lua table construction) for record-typed bindings is still pending
+    - **Status**: content-hash dedup + struct typedef (`ensure_record_decl`) are in
+      place, and record-typed bindings initialized from a table literal now emit a
+      designated-initializer C struct literal (`emit_record_initializer`, wired at
+      the `local_decl` site) with field access lowering to plain `s.field`.
+      Verified: `local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }; print(p.x)`
+      emits a `duo_rec_<hash>` struct and runs. Pending (separate follow-ups):
+      promotion to `duo_Table*`/ARC when passed to a generic `table` parameter, and
+      `@implements` concept-tag metatable emission.
     - _Requirements: 3.7, 11.4, 15.4_
 
   - [ ] 12.7 Implement closure representation in codegen

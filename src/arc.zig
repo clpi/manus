@@ -1,593 +1,508 @@
+//! ARC insertion pass (Requirement 26): a static analysis over the typed AST
+//! that decides where the generated C must `duo_retain` / `duo_release` /
+//! `duo_close` heap-allocated values, and which aggregates must be registered
+//! with the cycle collector.
+//!
+//! ## What gets reference-counted
+//!
+//! Only statically heap-backed types: strings, tables/records, closures,
+//! arrays, options/results, enums (with payloads), channels, and instantiated
+//! generics. Primitive scalars (ints, floats, bool, SIMD vectors) are never
+//! counted. Dynamic `any` values are left to the runtime (they carry their own
+//! header), and any binding marked `@arc(false)` is skipped (Requirement 26.8).
+//!
+//! ## The balance invariant
+//!
+//! Every heap binding is `retain`ed where it is introduced and `release`d at
+//! scope exit; a reassignment `release`s the old value and `retain`s the new
+//! one. As a result the retains and releases for any value are balanced, so the
+//! reference count returns to zero exactly when no live reference remains
+//! (Requirement 26.1, 26.2). To-be-closed bindings (`<close>`) get a `close`
+//! emitted immediately before their `release` (Requirement 26.5).
+//!
+//! Codegen consumes the produced annotations in Task 12.3; until then the pass
+//! runs in the pipeline (Task 9.4) and is exercised by its own tests.
+
 const std = @import("std");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
+const sema_mod = @import("sema.zig");
 
 const Allocator = std.mem.Allocator;
-const AutoHashMap = std.AutoHashMap;
+const RT = types.ResolvedType;
+const TypeMap = sema_mod.TypeMap;
 
-/// ARC annotation types for memory management
-pub const ARCAnnotation = union(enum) {
-    /// Retain a reference (increment refcount)
-    retain: struct {
-        ptr: *ast.Expr,
-        loc: ast.Loc,
-    },
-    /// Release a reference (decrement refcount, may free)
-    release: struct {
-        ptr: *ast.Expr,
-        loc: ast.Loc,
-    },
-    /// Close resource before release (call __close method)
-    close: struct {
-        ptr: *ast.Expr,
-        loc: ast.Loc,
-    },
+pub const ArcOp = enum { retain, release, close };
+
+/// A single ARC action the codegen must emit, attached to a binding.
+pub const Annotation = struct {
+    op: ArcOp,
+    /// Name of the binding this action applies to.
+    var_name: []const u8,
+    loc: ast.Loc,
+    ty: RT,
 };
 
-/// ARC insertion pass state
-pub const ARCPass = struct {
-    allocator: Allocator,
+/// A binding currently live in some lexical scope.
+const Tracked = struct {
+    name: []const u8,
+    loc: ast.Loc,
+    ty: RT,
+    is_close: bool,
+};
 
-    /// Annotations to insert at specific program points
-    annotations: std.ArrayList(ARCAnnotation),
+pub const ArcPass = struct {
+    alloc: Allocator,
+    type_map: *const TypeMap,
 
-    /// Track variables that need ARC management in current scope
-    tracked_vars: std.StringHashMap(*types.ResolvedType),
-
-    /// Stack of scopes for proper cleanup ordering
-    scope_stack: std.ArrayList(std.StringHashMap(*types.ResolvedType)),
-
-    /// Objects that need cycle collector registration
-    cycle_candidates: std.ArrayList(*ast.Expr),
+    /// Ordered list of retain/release/close actions (Task 9.2).
+    annotations: std.ArrayListUnmanaged(Annotation) = .empty,
+    /// Aggregate literals that may participate in reference cycles (Task 9.3).
+    cycle_candidates: std.ArrayListUnmanaged(*const ast.Expr) = .empty,
+    /// Lexical scope stack; each scope owns the bindings declared inside it.
+    scopes: std.ArrayListUnmanaged(std.ArrayListUnmanaged(Tracked)) = .empty,
 
     const Self = @This();
-    const Error = error{OutOfMemory} || ast.Error;
+    const Error = std.mem.Allocator.Error;
 
-    pub fn init(allocator: Allocator) Self {
-        return .{
-            .allocator = allocator,
-            .annotations = std.ArrayList(ARCAnnotation).init(allocator),
-            .tracked_vars = std.StringHashMap(*types.ResolvedType).init(allocator),
-            .scope_stack = std.ArrayList(std.StringHashMap(*types.ResolvedType)).init(allocator),
-            .cycle_candidates = std.ArrayList(*ast.Expr).init(allocator),
-        };
+    pub fn init(alloc: Allocator, type_map: *const TypeMap) Self {
+        return .{ .alloc = alloc, .type_map = type_map };
     }
 
     pub fn deinit(self: *Self) void {
-        self.annotations.deinit();
-
-        // Clean up scope stack
-        for (self.scope_stack.items) |*scope| {
-            scope.deinit();
-        }
-        self.scope_stack.deinit();
-
-        self.tracked_vars.deinit();
-        self.cycle_candidates.deinit();
+        self.annotations.deinit(self.alloc);
+        self.cycle_candidates.deinit(self.alloc);
+        for (self.scopes.items) |*s| s.deinit(self.alloc);
+        self.scopes.deinit(self.alloc);
     }
 
-    /// Run ARC insertion pass on the entire module
-    pub fn run(self: *Self, module: *ast.Module) Error!void {
-        for (module.top_level.items) |decl| {
-            try self.processDecl(decl);
-        }
+    pub fn run(self: *Self, module: *const ast.Module) Error!void {
+        try self.processBlock(&module.body);
     }
 
-    /// Process a top-level declaration.
-    /// NOTE: there is no `.struct_def` arm. Records are anonymous and are
-    /// handled inline at the binding site (via table-type annotations on
-    /// `local_decl`/`global_decl` and on parameters).
-    fn processDecl(self: *Self, decl: *ast.TopLevel) Error!void {
-        switch (decl.*) {
-            .func => |func_decl| try self.processFunc(&func_decl.func),
-            .enum_def => |enum_def| try self.processEnum(enum_def),
-            else => {},
+    // ── Counting helpers (used by tests / callers) ──────────────────────────
+
+    pub fn countOp(self: *const Self, op: ArcOp) usize {
+        var n: usize = 0;
+        for (self.annotations.items) |a| {
+            if (a.op == op) n += 1;
         }
+        return n;
     }
 
-    /// Process a function declaration
-    fn processFunc(self: *Self, func: *ast.FuncDecl) Error!void {
-        // Create new scope for function
-        try self.pushScope();
-        defer self.popScope();
+    pub fn cycleCandidateCount(self: *const Self) usize {
+        return self.cycle_candidates.items.len;
+    }
 
-        // Track parameters that are heap-allocated
-        for (func.params.items) |param| {
-            if (param.ty) |ty| {
-                if (self.needsARC(ty)) {
-                    try self.tracked_vars.put(param.name, ty);
-                    // Parameters are retained by caller, no retain needed here
-                }
+    // ── Scope management ────────────────────────────────────────────────────
+
+    fn pushScope(self: *Self) Error!void {
+        try self.scopes.append(self.alloc, .empty);
+    }
+
+    /// Release every binding in the current scope in reverse (LIFO) order,
+    /// closing to-be-closed bindings first, then drop the scope.
+    fn popScope(self: *Self) Error!void {
+        if (self.scopes.items.len == 0) return;
+        var scope = self.scopes.pop().?;
+        var i = scope.items.len;
+        while (i > 0) {
+            i -= 1;
+            const t = scope.items[i];
+            if (t.is_close) try self.emit(.close, t.name, t.loc, t.ty);
+            try self.emit(.release, t.name, t.loc, t.ty);
+        }
+        scope.deinit(self.alloc);
+    }
+
+    fn track(self: *Self, t: Tracked) Error!void {
+        if (self.scopes.items.len == 0) return;
+        try self.scopes.items[self.scopes.items.len - 1].append(self.alloc, t);
+    }
+
+    /// Look up a tracked binding by name across all live scopes (innermost
+    /// first). Returns its type if found and heap-managed.
+    fn lookup(self: *Self, name: []const u8) ?Tracked {
+        var i = self.scopes.items.len;
+        while (i > 0) {
+            i -= 1;
+            const scope = self.scopes.items[i];
+            var j = scope.items.len;
+            while (j > 0) {
+                j -= 1;
+                if (std.mem.eql(u8, scope.items[j].name, name)) return scope.items[j];
             }
         }
-
-        // Process function body
-        if (func.body) |body| {
-            try self.processStmt(body.body);
-        }
-
-        // Release all remaining tracked variables at function exit
-        try self.releaseAllAtScopeExit();
-    }
-
-    /// Process a struct definition.
-    /// NOTE: removed. Duo has no `struct` keyword; record types are
-    /// declared via inline type-literal annotations on bindings. ARC for
-    /// record-typed bindings is handled by `processStmt` (the
-    /// `local_decl`/`global_decl` arms) and by the parameter-tracking loop
-    /// in `processFunc`.
-
-    /// Process an enum definition
-    fn processEnum(self: *Self, enum_def: *ast.EnumDef) Error!void {
-        // Process methods
-        for (enum_def.methods.items) |method| {
-            try self.processFunc(method);
-        }
-    }
-
-    /// Process a statement
-    fn processStmt(self: *Self, stmt: *ast.Stmt) Error!void {
-        switch (stmt.*) {
-            .expr_stmt => |expr_stmt| {
-                try self.processExpr(expr_stmt.expr);
-                // Result of expression statement is dropped - release if heap allocated
-                try self.releaseIfHeapAllocated(expr_stmt.expr);
-            },
-            .decl => |decl| {
-                if (decl.init) |init_expr| {
-                    try self.processExpr(init_expr);
-
-                    // Check if this is a new binding that needs tracking
-                    if (decl.ty) |ty| {
-                        if (self.needsARC(ty)) {
-                            // Insert retain for the initial value
-                            try self.insertRetain(init_expr);
-                            try self.tracked_vars.put(decl.name, ty);
-                        }
-                    }
-                }
-            },
-            .local => |local| {
-                if (local.init) |init_expr| {
-                    try self.processExpr(init_expr);
-
-                    if (local.ty) |ty| {
-                        if (self.needsARC(ty)) {
-                            try self.insertRetain(init_expr);
-                            try self.tracked_vars.put(local.name, ty);
-                        }
-                    }
-                }
-            },
-            .assign => |assign| {
-                // Process RHS first
-                try self.processExpr(assign.rhs);
-
-                // If assigning to a tracked variable, handle the lifecycle
-                if (self.getVarType(assign.var_name)) |old_ty| {
-                    if (self.needsARC(old_ty)) {
-                        // Release old value
-                        // (This is a simplified version - we'd need the actual expression)
-                        // try self.insertReleaseForVar(assign.var_name);
-
-                        // Retain new value
-                        try self.insertRetain(assign.rhs);
-                    }
-                }
-            },
-            .compound_assign => |ca| {
-                try self.processExpr(ca.rhs);
-            },
-            .if_stmt => |if_stmt| {
-                try self.processExpr(if_stmt.cond);
-
-                // Process then and else branches with new scopes
-                try self.pushScope();
-                try self.processStmt(if_stmt.then_body);
-                try self.releaseScopeLocals();
-                self.popScope();
-
-                if (if_stmt.else_body) |else_body| {
-                    try self.pushScope();
-                    try self.processStmt(else_body);
-                    try self.releaseScopeLocals();
-                    self.popScope();
-                }
-            },
-            .while_stmt => |while_stmt| {
-                try self.processExpr(while_stmt.cond);
-
-                try self.pushScope();
-                try self.processStmt(while_stmt.body);
-                try self.releaseScopeLocals();
-                self.popScope();
-            },
-            .for_stmt => |for_stmt| {
-                try self.processExpr(for_stmt.iter);
-
-                try self.pushScope();
-
-                // Track loop variable if it's a binding
-                // (The iter variable would be handled by the iterator protocol)
-
-                try self.processStmt(for_stmt.body);
-                try self.releaseScopeLocals();
-                self.popScope();
-            },
-            .do_stmt => |do_stmt| {
-                try self.pushScope();
-                try self.processStmt(do_stmt.body);
-                try self.releaseScopeLocals();
-                self.popScope();
-
-                try self.processExpr(do_stmt.cond);
-            },
-            .repeat_stmt => |repeat_stmt| {
-                try self.pushScope();
-                try self.processStmt(repeat_stmt.body);
-                try self.releaseScopeLocals();
-                self.popScope();
-
-                try self.processExpr(repeat_stmt.count);
-            },
-            .block => |block| {
-                try self.pushScope();
-                for (block.stmts.items) |s| {
-                    try self.processStmt(s);
-                }
-                try self.releaseScopeLocals();
-                self.popScope();
-            },
-            .ret => |ret| {
-                if (ret.val) |val| {
-                    try self.processExpr(val);
-                    // Return value is retained by caller, no release needed
-                }
-
-                // Release all tracked variables before returning
-                try self.releaseAllAtScopeExit();
-            },
-            .defer_stmt => |defer_stmt| {
-                // Defer statements are tricky - their body runs at scope exit
-                // We'll need to track this for later processing
-                // For now, just process the body
-                try self.processStmt(defer_stmt.body);
-            },
-            .try_stmt => |try_stmt| {
-                try self.pushScope();
-                try self.processStmt(try_stmt.block);
-                try self.releaseScopeLocals();
-                self.popScope();
-
-                for (try_stmt.catches) |catch_clause| {
-                    try self.pushScope();
-                    if (catch_clause.var_name) |var_name| {
-                        // The error value is owned by the catch clause
-                        // Track it but don't retain (it's already retained from propagation)
-                        if (catch_clause.error_ty) |ty| {
-                            try self.tracked_vars.put(var_name, ty);
-                        }
-                    }
-                    try self.processStmt(catch_clause.body);
-                    try self.releaseScopeLocals();
-                    self.popScope();
-                }
-            },
-            .match_stmt => |match_stmt| {
-                try self.processExpr(match_stmt.expr);
-
-                for (match_stmt.arms) |arm| {
-                    try self.pushScope();
-
-                    // Bind pattern variables
-                    try self.bindPatternVars(arm.pattern);
-
-                    if (arm.guard) |guard| {
-                        try self.processExpr(guard);
-                    }
-
-                    try self.processStmt(arm.body);
-                    try self.releaseScopeLocals();
-                    self.popScope();
-                }
-            },
-            else => {},
-        }
-    }
-
-    /// Process an expression
-    fn processExpr(self: *Self, expr: *ast.Expr) Error!void {
-        switch (expr.*) {
-            .call => |call| {
-                // Process function and arguments
-                try self.processExpr(call.func);
-                for (call.args.items) |arg| {
-                    try self.processExpr(arg);
-                    // Arguments are retained by callee (convention)
-                }
-
-                // The result of a call may need retain if heap allocated
-                // This will be handled by the caller context
-            },
-            .index => |index| {
-                try self.processExpr(index.obj);
-                try self.processExpr(index.key);
-            },
-            .field => |field| try self.processExpr(field.obj),
-            .bin_op => |bin_op| {
-                try self.processExpr(bin_op.lhs);
-                try self.processExpr(bin_op.rhs);
-            },
-            .un_op => |un_op| try self.processExpr(un_op.expr),
-            .paren => |paren| try self.processExpr(paren.expr),
-            .table => |table| {
-                // Table creation - this is a heap allocation
-                for (table.fields.items) |field| {
-                    try self.processExpr(field.val);
-                }
-
-                // Mark as needing cycle collection if it can hold references
-                if (self.tableCanContainRefs(table)) {
-                    try self.markAsCycleCandidate(expr);
-                }
-            },
-            .array => |array| {
-                for (array.elems.items) |elem| {
-                    try self.processExpr(elem);
-                }
-
-                if (self.arrayCanContainRefs(array)) {
-                    try self.markAsCycleCandidate(expr);
-                }
-            },
-            .lambda => |lambda| {
-                // Lambda creation - captures variables
-                if (lambda.body) |body| {
-                    try self.pushScope();
-
-                    // Track captured variables
-                    for (lambda.captures.items) |capture| {
-                        if (self.getVarType(capture.name)) |ty| {
-                            // Captured variables need retain
-                            if (self.needsARC(ty)) {
-                                // We'd need the actual expression for the capture
-                                // try self.insertRetain(capture_expr);
-                            }
-                        }
-                    }
-
-                    try self.processStmt(body.body);
-                    try self.releaseScopeLocals();
-                    self.popScope();
-                }
-            },
-            .match_expr => |match_expr| {
-                try self.processExpr(match_expr.expr);
-                for (match_expr.arms) |arm| {
-                    try self.pushScope();
-                    try self.bindPatternVars(arm.pattern);
-                    if (arm.guard) |guard| {
-                        try self.processExpr(guard);
-                    }
-                    try self.processExpr(arm.body);
-                    try self.releaseScopeLocals();
-                    self.popScope();
-                }
-            },
-            .try_expr => |try_expr| {
-                try self.processExpr(try_expr.expr);
-                // The ? operator may propagate errors
-                // The result type is the ok type of the result
-            },
-            .unwrap_expr => |unwrap_expr| {
-                try self.processExpr(unwrap_expr.expr);
-                // The ! operator unwraps option/result types
-            },
-            .await_expr => |await_expr| {
-                try self.processExpr(await_expr.expr);
-            },
-            .contains_expr => |contains_expr| {
-                try self.processExpr(contains_expr.lhs);
-                try self.processExpr(contains_expr.rhs);
-            },
-            .ident => |ident| {
-                // When loading a variable, we may need to retain depending on context
-                // For now, we assume the caller handles retain for loaded values
-                _ = ident;
-            },
-            else => {},
-        }
-    }
-
-    /// Check if a type needs ARC management
-    fn needsARC(self: *Self, ty: *types.ResolvedType) bool {
-        _ = self;
-        // Primitive types don't need ARC
-        switch (ty.*) {
-            .i64, .f64, .bool, .nil => return false,
-            // Reference types need ARC
-            .str, .table, .arr, .fun, .user, .option, .result => return true,
-            // Generic params may need ARC depending on constraint
-            .generic_param => |gp| {
-                // Check if it has @arc(false) attribute
-                if (gp.constraint) |constraint| {
-                    // Parse constraint for @arc attribute
-                    // This is simplified - real impl would parse properly
-                    if (std.mem.indexOf(u8, constraint, "@arc(false)") != null) {
-                        return false;
-                    }
-                }
-                return true; // Default to true for safety
-            },
-            // Channel types need ARC
-            .channel => return true,
-            // Enum types may need ARC if variants have payloads
-            .enum_type => |enum_ty| {
-                for (enum_ty.variants) |variant| {
-                    if (variant.payload_ty != null) {
-                        return true;
-                    }
-                }
-                return false;
-            },
-            else => return true, // Conservative default
-        }
-    }
-
-    /// Check if a table can contain reference types (cycles possible)
-    fn tableCanContainRefs(self: *Self, table: ast.Table) bool {
-        _ = self;
-        _ = table;
-        // Conservative: assume any table can hold references
-        // In a real implementation, we'd check the field types
-        return true;
-    }
-
-    /// Check if an array can contain reference types
-    fn arrayCanContainRefs(self: *Self, array: ast.ArrayLiteral) bool {
-        _ = self;
-        _ = array;
-        // Conservative default
-        return true;
-    }
-
-    /// Mark an expression as a cycle collection candidate
-    fn markAsCycleCandidate(self: *Self, expr: *ast.Expr) Error!void {
-        try self.cycle_candidates.append(expr);
-    }
-
-    /// Get the type of a variable if tracked
-    fn getVarType(self: *Self, name: []const u8) ?*types.ResolvedType {
-        if (self.tracked_vars.get(name)) |ty| {
-            return ty;
-        }
-
-        // Check parent scopes
-        for (self.scope_stack.items) |scope| {
-            if (scope.get(name)) |ty| {
-                return ty;
-            }
-        }
-
         return null;
     }
 
-    /// Push a new scope
-    fn pushScope(self: *Self) Error!void {
-        const new_scope = std.StringHashMap(*types.ResolvedType).init(self.allocator);
-        try self.scope_stack.append(new_scope);
+    fn emit(self: *Self, op: ArcOp, name: []const u8, loc: ast.Loc, ty: RT) Error!void {
+        try self.annotations.append(self.alloc, .{ .op = op, .var_name = name, .loc = loc, .ty = ty });
     }
 
-    /// Pop the current scope (without releasing - use releaseScopeLocals first)
-    fn popScope(self: *Self) void {
-        const scope = self.scope_stack.pop();
-        scope.deinit();
+    // ── Statement / block walking ───────────────────────────────────────────
+
+    fn processBlock(self: *Self, block: *const ast.Block) Error!void {
+        try self.pushScope();
+        for (block.stmts) |*stmt| try self.processStmt(stmt);
+        try self.popScope();
     }
 
-    /// Release all locals in the current scope
-    fn releaseScopeLocals(self: *Self) Error!void {
-        if (self.scope_stack.items.len == 0) return;
-
-        var current_scope = &self.scope_stack.items[self.scope_stack.items.len - 1];
-
-        var iter = current_scope.iterator();
-        while (iter.next()) |entry| {
-            // Insert release for each tracked variable
-            const var_name = entry.key_ptr.*;
-            const ty = entry.value_ptr.*;
-
-            if (self.needsARC(ty)) {
-                // We'd create an identifier expression and release it
-                // try self.insertReleaseForVar(var_name);
-                _ = var_name;
-            }
+    fn processStmt(self: *Self, stmt: *const ast.Stmt) Error!void {
+        switch (stmt.*) {
+            .local_decl => |d| {
+                for (d.inits) |e| try self.processExpr(e);
+                for (d.names, 0..) |lname, idx| {
+                    if (hasArcFalse(lname.attributes)) continue;
+                    const ty = self.bindingType(lname, if (idx < d.inits.len) d.inits[idx] else null);
+                    if (!needsArc(ty)) continue;
+                    try self.emit(.retain, lname.ident, lname.loc, ty);
+                    try self.track(.{
+                        .name = lname.ident,
+                        .loc = lname.loc,
+                        .ty = ty,
+                        .is_close = isClose(lname.attrib),
+                    });
+                }
+            },
+            .global_decl => |d| {
+                // Module globals are roots: retained for the program's lifetime,
+                // never released at scope exit.
+                for (d.inits) |e| try self.processExpr(e);
+                for (d.names, 0..) |lname, idx| {
+                    if (hasArcFalse(lname.attributes)) continue;
+                    const ty = self.bindingType(lname, if (idx < d.inits.len) d.inits[idx] else null);
+                    if (needsArc(ty)) try self.emit(.retain, lname.ident, lname.loc, ty);
+                }
+            },
+            .const_decl => |d| try self.processExpr(d.val),
+            .assign => |a| {
+                for (a.values) |e| try self.processExpr(e);
+                for (a.targets) |t| try self.processExpr(t);
+                // Reassignment of a tracked heap binding: release old, retain new.
+                for (a.targets) |t| {
+                    if (t.* == .name) {
+                        if (self.lookup(t.name.ident)) |tracked| {
+                            if (needsArc(tracked.ty)) {
+                                try self.emit(.release, tracked.name, t.name.loc, tracked.ty);
+                                try self.emit(.retain, tracked.name, t.name.loc, tracked.ty);
+                            }
+                        }
+                    }
+                }
+            },
+            .call_stmt => |c| try self.processExpr(c.expr),
+            .do_block => |d| try self.processBlock(&d.body),
+            .while_loop => |w| {
+                try self.processExpr(w.cond);
+                try self.processBlock(&w.body);
+            },
+            .repeat_loop => |r| {
+                try self.processBlock(&r.body);
+                try self.processExpr(r.cond);
+            },
+            .if_stmt => |i| {
+                try self.processExpr(i.cond);
+                try self.processBlock(&i.then);
+                for (i.elseifs) |ei| {
+                    try self.processExpr(ei.cond);
+                    try self.processBlock(&ei.body);
+                }
+                if (i.else_body) |eb| try self.processBlock(&eb);
+            },
+            .num_for => |f| {
+                try self.processExpr(f.start);
+                try self.processExpr(f.stop);
+                if (f.step) |s| try self.processExpr(s);
+                try self.processBlock(&f.body);
+            },
+            .gen_for => |f| {
+                for (f.iters) |e| try self.processExpr(e);
+                try self.processBlock(&f.body);
+            },
+            .func_decl => |fd| try self.processFuncBody(&fd.func),
+            .ret => |r| for (r.vals) |e| try self.processExpr(e),
+            .match_stmt => |m| try self.processMatch(&m),
+            .try_stmt => |t| {
+                try self.processBlock(&t.body);
+                for (t.catches) |c| try self.processBlock(&c.body);
+                for (t.defers) |d| try self.processBlock(&d.body);
+            },
+            .defer_stmt => |d| try self.processBlock(&d.body),
+            .brk, .goto_stmt, .label_stmt, .enum_def, .concept_def => {},
         }
     }
 
-    /// Release all tracked variables at function/scope exit
-    fn releaseAllAtScopeExit(self: *Self) Error!void {
-        // Release current scope
-        try self.releaseScopeLocals();
+    fn processMatch(self: *Self, m: *const ast.MatchExpr) Error!void {
+        try self.processExpr(m.scrutinee);
+        for (m.arms) |arm| {
+            if (arm.guard) |g| try self.processExpr(g);
+            try self.processBlock(&arm.body);
+        }
+    }
 
-        // Also release parent scopes (for early returns)
-        // In reverse order (LIFO for defers)
-        var i: usize = self.scope_stack.items.len;
-        while (i > 0) : (i -= 1) {
-            var scope = &self.scope_stack.items[i - 1];
-
-            var iter = scope.iterator();
-            while (iter.next()) |entry| {
-                const var_name = entry.key_ptr.*;
-                const ty = entry.value_ptr.*;
-
-                if (self.needsARC(ty)) {
-                    // try self.insertReleaseForVar(var_name);
-                    _ = var_name;
+    /// A function body introduces its own scope; parameters are owned by the
+    /// caller (retained at the call site), so they are not retained here.
+    fn processFuncBody(self: *Self, fb: *const ast.FuncBody) Error!void {
+        try self.pushScope();
+        // Heap-typed upvalues captured by a closure are retained at the capture.
+        for (fb.upvalues) |uv| {
+            if (uv.is_local) {
+                if (self.lookup(uv.name)) |tracked| {
+                    if (needsArc(tracked.ty)) try self.emit(.retain, tracked.name, fb.loc, tracked.ty);
                 }
             }
         }
+        for (fb.body.stmts) |*stmt| try self.processStmt(stmt);
+        try self.popScope();
     }
 
-    /// Insert a retain annotation
-    fn insertRetain(self: *Self, ptr: *ast.Expr) Error!void {
-        try self.annotations.append(.{ .retain = .{
-            .ptr = ptr,
-            .loc = ptr.loc(),
-        } });
-    }
+    // ── Expression walking ──────────────────────────────────────────────────
 
-    /// Insert a release annotation
-    fn insertRelease(self: *Self, ptr: *ast.Expr) Error!void {
-        try self.annotations.append(.{ .release = .{
-            .ptr = ptr,
-            .loc = ptr.loc(),
-        } });
-    }
-
-    /// Insert a close annotation (before release)
-    fn insertClose(self: *Self, ptr: *ast.Expr) Error!void {
-        try self.annotations.append(.{ .close = .{
-            .ptr = ptr,
-            .loc = ptr.loc(),
-        } });
-    }
-
-    /// Release if expression evaluates to a heap-allocated type
-    fn releaseIfHeapAllocated(self: *Self, expr: *ast.Expr) Error!void {
-        if (expr.getType()) |ty| {
-            if (self.needsARC(ty)) {
-                try self.insertRelease(expr);
-            }
+    fn processExpr(self: *Self, expr: *const ast.Expr) Error!void {
+        switch (expr.*) {
+            .call => |c| {
+                try self.processExpr(c.func);
+                for (c.args) |a| try self.processExpr(a);
+            },
+            .method_call => |m| {
+                try self.processExpr(m.obj);
+                for (m.args) |a| try self.processExpr(a);
+            },
+            .index => |i| {
+                try self.processExpr(i.obj);
+                try self.processExpr(i.key);
+            },
+            .field => |f| try self.processExpr(f.obj),
+            .binop => |b| {
+                try self.processExpr(b.lhs);
+                try self.processExpr(b.rhs);
+            },
+            .unop => |u| try self.processExpr(u.operand),
+            .func_expr => |fb| try self.processFuncBody(fb),
+            .table => |t| {
+                var holds_ref = false;
+                for (t.fields) |fld| switch (fld) {
+                    .indexed => |kv| {
+                        try self.processExpr(kv.key);
+                        try self.processExpr(kv.val);
+                        if (self.exprCanHoldRef(kv.val)) holds_ref = true;
+                    },
+                    .named => |nv| {
+                        try self.processExpr(nv.val);
+                        if (self.exprCanHoldRef(nv.val)) holds_ref = true;
+                    },
+                    .positional => |p| {
+                        try self.processExpr(p);
+                        if (self.exprCanHoldRef(p)) holds_ref = true;
+                    },
+                };
+                // A table whose fields can themselves hold references may form a
+                // cycle and must be registered with the cycle collector.
+                if (holds_ref) try self.cycle_candidates.append(self.alloc, expr);
+            },
+            .try_expr => |t| try self.processExpr(t.operand),
+            .unwrap_expr => |u| try self.processExpr(u.operand),
+            .match_expr => |m| try self.processMatch(m),
+            .await_expr => |a| try self.processExpr(a.operand),
+            .contains_expr => |c| {
+                try self.processExpr(c.lhs);
+                try self.processExpr(c.rhs);
+            },
+            .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
         }
     }
 
-    /// Bind pattern variables from a match pattern
-    fn bindPatternVars(self: *Self, pattern: ast.Pattern) Error!void {
-        _ = self;
-        _ = pattern;
-        // TODO: Extract variable names from patterns and track them
+    // ── Type helpers ────────────────────────────────────────────────────────
+
+    /// Determine a binding's type: prefer its annotation, else the static type
+    /// of its initializer, else `any`.
+    fn bindingType(self: *Self, lname: ast.LocalName, init_expr: ?*const ast.Expr) RT {
+        if (lname.typ != .inferred) {
+            return types.resolve(lname.typ, null, self.alloc) catch .any;
+        }
+        if (init_expr) |e| return self.type_map.get(e) orelse .any;
+        return .any;
     }
 
-    /// Get all generated annotations
-    pub fn getAnnotations(self: *Self) []const ARCAnnotation {
-        return self.annotations.items;
-    }
-
-    /// Get all cycle collection candidates
-    pub fn getCycleCandidates(self: *Self) []const *ast.Expr {
-        return self.cycle_candidates.items;
+    /// True if an expression's static type is an aggregate that could itself
+    /// hold references (used for cycle-candidate detection).
+    fn exprCanHoldRef(self: *Self, e: *const ast.Expr) bool {
+        if (e.* == .table) return true;
+        const t = self.type_map.get(e) orelse return false;
+        return switch (t) {
+            .table_type, .@"struct", .array, .instantiated, .any => true,
+            else => false,
+        };
     }
 };
 
-/// Integration with the compiler pipeline
-pub fn runARCPass(
-    allocator: Allocator,
-    module: *ast.Module,
-) !ARCPass {
-    var arc_pass = ARCPass.init(allocator);
-    errdefer arc_pass.deinit();
+// ── Free helpers ──────────────────────────────────────────────────────────
 
-    try arc_pass.run(module);
+/// Heap-allocated types are reference-counted; scalars and runtime-managed
+/// `any` values are not.
+pub fn needsArc(t: RT) bool {
+    return switch (t) {
+        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => false,
+        .bool, .void, .nil, .never => false,
+        .v4f64, .v4i64, .v8f32, .v8i32 => false,
+        .any => false, // dynamic values carry their own runtime header
+        .str, .array, .pointer, .func, .@"struct" => true,
+        .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
+    };
+}
 
-    return arc_pass;
+fn isClose(attrib: ?[]const u8) bool {
+    const a = attrib orelse return false;
+    return std.mem.eql(u8, a, "close");
+}
+
+fn hasArcFalse(attributes: []const ast.Attribute) bool {
+    for (attributes) |attr| {
+        if (std.mem.eql(u8, attr.name, "arc")) {
+            if (attr.args) |args| {
+                if (std.mem.eql(u8, args, "false")) return true;
+            }
+        }
+    }
+    return false;
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────
+
+const testing = std.testing;
+const Lexer = @import("lexer.zig").Lexer;
+const Parser = @import("parser.zig").Parser;
+const Sema = sema_mod.Sema;
+
+const Harness = struct {
+    arena: std.heap.ArenaAllocator,
+    mod: ast.Module,
+    sema: Sema,
+
+    fn run(src: []const u8) !Harness {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        const alloc = arena.allocator();
+        var lex = Lexer.init(src, "test");
+        var p = Parser.init(&lex, alloc);
+        const mod = try p.parse_module();
+        var s = Sema.init(alloc);
+        try s.check_module(@constCast(&mod));
+        return .{ .arena = arena, .mod = mod, .sema = s };
+    }
+
+    fn deinit(self: *Harness) void {
+        self.arena.deinit();
+    }
+};
+
+test "arc: primitive bindings produce no ARC annotations" {
+    var h = try Harness.run(
+        \\local a: i64 = 1
+        \\local b: f64 = 2.0
+        \\local c: bool = true
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 0), arc.annotations.items.len);
+}
+
+test "arc: a heap binding is retained once and released once (balanced)" {
+    var h = try Harness.run(
+        \\local s: str = "hello"
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 1), arc.countOp(.retain));
+    try testing.expectEqual(@as(usize, 1), arc.countOp(.release));
+}
+
+test "arc: retains and releases are always balanced (refcount returns to zero)" {
+    var h = try Harness.run(
+        \\local a: str = "x"
+        \\local p: { x: i64 } = { x = 1 }
+        \\local b: str = "y"
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    // Three heap bindings → 3 retains, all released at block exit.
+    try testing.expectEqual(@as(usize, 3), arc.countOp(.retain));
+    try testing.expectEqual(arc.countOp(.retain), arc.countOp(.release));
+}
+
+test "arc: reassignment releases the old value and retains the new one" {
+    var h = try Harness.run(
+        \\local s: str = "a"
+        \\s = "b"
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    // bind retain + reassign retain = 2; reassign release + scope-exit release = 2.
+    try testing.expectEqual(@as(usize, 2), arc.countOp(.retain));
+    try testing.expectEqual(@as(usize, 2), arc.countOp(.release));
+}
+
+test "arc: @arc(false) binding is skipped" {
+    var h = try Harness.run(
+        \\@arc(false)
+        \\local p: { x: i64 } = { x = 1 }
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 0), arc.annotations.items.len);
+}
+
+test "arc: to-be-closed binding emits close before release" {
+    var h = try Harness.run(
+        \\local p: { x: i64 } <close> = { x = 1 }
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 1), arc.countOp(.close));
+    try testing.expectEqual(@as(usize, 1), arc.countOp(.release));
+    // The close must be emitted before the release.
+    var close_idx: ?usize = null;
+    var release_idx: ?usize = null;
+    for (arc.annotations.items, 0..) |a, idx| {
+        if (a.op == .close) close_idx = idx;
+        if (a.op == .release) release_idx = idx;
+    }
+    try testing.expect(close_idx.? < release_idx.?);
+}
+
+test "arc: nested table is registered as a cycle candidate" {
+    var h = try Harness.run(
+        \\local outer = { inner = { v = 1 } }
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.run(&h.mod);
+
+    try testing.expect(arc.cycleCandidateCount() >= 1);
 }

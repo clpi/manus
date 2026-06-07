@@ -184,6 +184,42 @@ fn do_compile(
         return;
     }
 
+    // Monomorphization: expand generic functions into concrete specializations
+    // before codegen (Task 8.3). Runs on every compile so generic instantiation
+    // is exercised even before codegen consumes the specializations (Task 12.1).
+    var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
+    defer mono.deinit();
+    mono.run(&ps.mod) catch |e| {
+        std.debug.print("monomorphization error: {}\n", .{e});
+        std.process.exit(1);
+    };
+
+    // ARC insertion: decide retain/release/close points for heap values, after
+    // monomorphization and before codegen (Task 9.4).
+    var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
+    defer arc_pass.deinit();
+    arc_pass.run(&ps.mod) catch |e| {
+        std.debug.print("ARC analysis error: {}\n", .{e});
+        std.process.exit(1);
+    };
+
+    // Async lowering: describe each `async` function as a state machine, after
+    // ARC and before codegen (Task 10.3).
+    const is_wasm_target = std.mem.eql(u8, target, "wasm32-wasi");
+    // The threaded scheduler is selected by `--threads` / `@concurrent("threaded")`,
+    // wired in Task 17.1; for now no threaded mode is requested here.
+    const threaded = false;
+    AsyncLower.validateTarget(is_wasm_target, threaded) catch {
+        std.debug.print("error: the threaded scheduler is not supported on the wasm32-wasi target\n", .{});
+        std.process.exit(1);
+    };
+    var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
+    defer async_pass.deinit();
+    async_pass.run(&ps.mod) catch |e| {
+        std.debug.print("async lowering error: {}\n", .{e});
+        std.process.exit(1);
+    };
+
     const is_wasm = std.mem.eql(u8, target, "wasm32-wasi");
 
     const c_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.c", .{
@@ -198,6 +234,9 @@ fn do_compile(
         var buf: [65536]u8 = undefined;
         var fw: Io.File.Writer = .init(cf, io, &buf);
         var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface);
+        cg.mono = &mono;
+        cg.arc = &arc_pass;
+        cg.async_lower = &async_pass;
         cg.src_path = src_path;
         cg.target = target;
         cg.load_chunk = load_chunk;
@@ -327,10 +366,37 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
 
+    var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
+    defer mono.deinit();
+    mono.run(&ps.mod) catch |e| {
+        std.debug.print("monomorphization error: {}\n", .{e});
+        std.process.exit(1);
+    };
+
+    var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
+    defer arc_pass.deinit();
+    arc_pass.run(&ps.mod) catch |e| {
+        std.debug.print("ARC analysis error: {}\n", .{e});
+        std.process.exit(1);
+    };
+
+    const is_wasm_target = false;
+    const threaded = false;
+    AsyncLower.validateTarget(is_wasm_target, threaded) catch unreachable;
+    var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
+    defer async_pass.deinit();
+    async_pass.run(&ps.mod) catch |e| {
+        std.debug.print("async lowering error: {}\n", .{e});
+        std.process.exit(1);
+    };
+
     const stdout = Io.File.stdout();
     var buf: [65536]u8 = undefined;
     var fw: Io.File.Writer = .init(stdout, io, &buf);
     var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface);
+    cg.mono = &mono;
+    cg.arc = &arc_pass;
+    cg.async_lower = &async_pass;
     cg.src_path = src_path;
     cg.emit_module(&ps.mod) catch |e| {
         std.debug.print("codegen error: {}\n", .{e});

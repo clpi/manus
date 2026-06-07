@@ -42,6 +42,29 @@ run_ok() {
     ) &
 }
 
+# Compile + run a .duo/.lua file and assert its stdout equals an expected
+# string (newlines written as literal \n in the second argument).
+run_output() {
+    local idx=$N; N=$((N + 1))
+    local file="$1" expected="$2"
+    (
+        if out=$("$DUO" run "$file" 2>&1); then
+            local want
+            want=$(printf '%b' "$expected")
+            if [[ "$out" == "$want" ]]; then
+                echo OK > "$STATUS_DIR/$idx.status"
+                printf 'OK:   %s  (run output matches)\n' "$file" > "$STATUS_DIR/$idx.msg"
+            else
+                echo FAIL > "$STATUS_DIR/$idx.status"
+                printf 'FAIL: %s  output mismatch\n--- want ---\n%s\n--- got ---\n%s\n' "$file" "$want" "$out" > "$STATUS_DIR/$idx.msg"
+            fi
+        else
+            echo FAIL > "$STATUS_DIR/$idx.status"
+            printf 'FAIL: %s  should compile+run but got:\n%s\n' "$file" "$out" > "$STATUS_DIR/$idx.msg"
+        fi
+    ) &
+}
+
 run_fail examples/compile_fail/global_star_read.lua    "use of undeclared global"
 run_fail examples/compile_fail/implicit_global_read.lua "use of undeclared global"
 run_fail examples/compile_fail/global_star_assign.lua  "attempt to assign to undeclared global"
@@ -56,6 +79,8 @@ run_ok   tests/test.lua
 run_ok   examples/hello.lua
 run_ok   examples/fib.lua
 run_ok   examples/fib.duo
+run_output examples/duo/defer.duo      'in-if\ninner\nouter-b\nouter-a\n1\nafter-if\nouter-b\nouter-a\n2'
+run_output examples/duo/enum_match.duo 'green\nblue'
 TOTAL=$N
 
 # Collect results in order

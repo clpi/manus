@@ -14,6 +14,9 @@ const ast = @import("ast.zig");
 const types = @import("types.zig");
 const RT = types.ResolvedType;
 const sema = @import("sema.zig");
+const mono = @import("mono.zig");
+const arc = @import("arc.zig");
+const async_lower = @import("async_lower.zig");
 
 pub const CodeGenError = error{
     Unsupported,
@@ -31,8 +34,13 @@ pub const CodeGen = struct {
     io: Io,
     type_map: *sema.TypeMap,
     module_globals: ?*const std.StringHashMapUnmanaged(RT) = null,
-    local_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
+    local_scopes: std.ArrayList(std.StringHashMapUnmanaged(RT)) = .empty,
     close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
+    /// Per-scope stack of pending `defer` bodies, parallel to `local_scopes`.
+    /// A `defer ... end` statement registers its body here instead of emitting
+    /// it inline; the bodies are flushed in LIFO order at scope exit (Task 12.2).
+    defer_scopes: std.ArrayList(std.ArrayListUnmanaged(*const ast.Block)) = .empty,
+    break_scope_bases: std.ArrayList(usize) = .empty,
     indent: u32,
     w: W,
     current_ret: RT = .void,
@@ -50,6 +58,24 @@ pub const CodeGen = struct {
     /// C `struct` typedef. Lets us emit the typedef exactly once per
     /// unique record shape, even if the shape is used at many sites.
     emitted_records: std.AutoHashMapUnmanaged(u64, void) = .empty,
+    /// Map of enum type name -> whether any variant carries a payload. Used
+    /// to choose the C representation: payload-free enums become a plain C
+    /// `enum` (matched with `==`), payloaded enums become a tagged struct
+    /// (matched on `.tag`). Populated by `emit_enum_decls` (Task 12.6).
+    enum_has_payload: std.StringHashMapUnmanaged(bool) = .empty,
+    /// Monomorphized generic specializations produced by the mono pass, made
+    /// available to codegen so it can emit one concrete C function per
+    /// specialization (Task 12.1). Null when there are no generics.
+    mono: ?*mono.Monomorphizer = null,
+    current_mono_spec: ?*const mono.Specialization = null,
+    /// ARC annotations (retain/release/close) computed by the ARC pass, made
+    /// available so codegen can emit the reference-counting calls (Task 12.3).
+    /// Null when ARC analysis was not run.
+    arc: ?*const arc.ArcPass = null,
+    /// Async lowering descriptors, made available so codegen can emit frame
+    /// structs and step functions for `async` functions (Task 12.4). Null when
+    /// async analysis was not run.
+    async_lower: ?*const async_lower.AsyncLower = null,
 
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -65,11 +91,16 @@ pub const CodeGen = struct {
     }
 
     fn push_local_scope(self: *CodeGen) E!void {
-        try self.local_scopes.append(self.alloc, std.StringHashMapUnmanaged(void).empty);
+        try self.local_scopes.append(self.alloc, std.StringHashMapUnmanaged(RT).empty);
         try self.close_scopes.append(self.alloc, .empty);
+        try self.defer_scopes.append(self.alloc, .empty);
     }
 
     fn pop_local_scope(self: *CodeGen) void {
+        if (self.defer_scopes.items.len > 0) {
+            var d = self.defer_scopes.pop().?;
+            d.deinit(self.alloc);
+        }
         if (self.close_scopes.items.len > 0) {
             var closes = self.close_scopes.pop().?;
             var i = closes.items.len;
@@ -95,7 +126,87 @@ pub const CodeGen = struct {
 
     fn note_local(self: *CodeGen, name: []const u8) !void {
         if (self.local_scopes.items.len == 0) return;
-        try self.local_scopes.items[self.local_scopes.items.len - 1].put(self.alloc, name, {});
+        try self.local_scopes.items[self.local_scopes.items.len - 1].put(self.alloc, name, .any);
+    }
+
+    fn note_local_type(self: *CodeGen, name: []const u8, rt: RT) !void {
+        if (self.local_scopes.items.len == 0) return;
+        try self.local_scopes.items[self.local_scopes.items.len - 1].put(self.alloc, name, rt);
+    }
+
+    /// Register a `defer` body to run on exit of the current (innermost) scope.
+    fn note_defer(self: *CodeGen, body: *const ast.Block) !void {
+        if (self.defer_scopes.items.len == 0) return;
+        try self.defer_scopes.items[self.defer_scopes.items.len - 1].append(self.alloc, body);
+    }
+
+    /// True if any active scope has a pending defer. Lets the common
+    /// defer-free path stay byte-identical to before (zero overhead).
+    fn has_pending_defers(self: *CodeGen) bool {
+        for (self.defer_scopes.items) |s| {
+            if (s.items.len > 0) return true;
+        }
+        return false;
+    }
+
+    /// Emit one defer body as an isolated C block. Uses `emit_block` so the
+    /// body gets its own scope (nested defers inside a defer body are scoped
+    /// to that body, not the enclosing scope).
+    fn emit_defer_body(self: *CodeGen, body: *const ast.Block) E!void {
+        self.ind();
+        self.p("{{ /* defer */\n", .{});
+        self.indent += 1;
+        try self.emit_block(body);
+        self.indent -= 1;
+        self.ind();
+        self.p("}}\n", .{});
+    }
+
+    /// Flush the innermost scope's pending defers in LIFO order. Called at
+    /// normal (fall-through) exit of a block.
+    fn emit_top_defers(self: *CodeGen) E!void {
+        if (self.defer_scopes.items.len == 0) return;
+        const top = &self.defer_scopes.items[self.defer_scopes.items.len - 1];
+        var i = top.items.len;
+        while (i > 0) {
+            i -= 1;
+            try self.emit_defer_body(top.items[i]);
+        }
+    }
+
+    /// Flush every active scope's pending defers, innermost scope first and
+    /// LIFO within each scope. Called before an early `return` so that all
+    /// enclosing defers run before the function unwinds. Does not clear the
+    /// pending lists — fall-through flushing in `emit_block_stmts` is a
+    /// separate control path and emits its own (unreachable after the return).
+    fn emit_all_pending_defers(self: *CodeGen) E!void {
+        try self.emit_pending_defers_from(0);
+    }
+
+    fn emit_pending_defers_from(self: *CodeGen, base: usize) E!void {
+        var si = self.defer_scopes.items.len;
+        while (si > base) {
+            si -= 1;
+            const scope = &self.defer_scopes.items[si];
+            var di = scope.items.len;
+            while (di > 0) {
+                di -= 1;
+                try self.emit_defer_body(scope.items[di]);
+            }
+        }
+    }
+
+    fn push_break_scope(self: *CodeGen) !void {
+        try self.break_scope_bases.append(self.alloc, self.local_scopes.items.len);
+    }
+
+    fn pop_break_scope(self: *CodeGen) void {
+        if (self.break_scope_bases.items.len > 0) _ = self.break_scope_bases.pop().?;
+    }
+
+    fn current_break_scope_base(self: *CodeGen) usize {
+        if (self.break_scope_bases.items.len == 0) return 0;
+        return self.break_scope_bases.items[self.break_scope_bases.items.len - 1];
     }
 
     fn is_local_name(self: *CodeGen, name: []const u8) bool {
@@ -105,6 +216,15 @@ pub const CodeGen = struct {
             if (self.local_scopes.items[i].contains(name)) return true;
         }
         return false;
+    }
+
+    fn local_type(self: *CodeGen, name: []const u8) ?RT {
+        var i = self.local_scopes.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.local_scopes.items[i].get(name)) |rt| return rt;
+        }
+        return null;
     }
 
     fn is_global_name(self: *CodeGen, name: []const u8) bool {
@@ -177,9 +297,22 @@ pub const CodeGen = struct {
     }
 
     fn expr_type(self: *CodeGen, e: *const ast.Expr) RT {
+        if (e.* == .name) {
+            if (self.local_type(e.name.ident)) |rt| return rt;
+        }
         if (e.* == .index) {
             const idx = e.index;
             if (self.is_dense_table_index(idx.obj)) return .i64;
+        }
+        if (e.* == .call) {
+            const c = e.call;
+            if (c.func.* == .name) {
+                if (self.mono) |m| {
+                    if (m.findSpecializationForCall(c.func.name.ident, c.args)) |spec| {
+                        return spec.resolveType(spec.template.ret_type);
+                    }
+                }
+            }
         }
         if (e.* == .binop) {
             const lt = self.expr_type(e.binop.lhs);
@@ -192,6 +325,11 @@ pub const CodeGen = struct {
             if (lt == .bool and rt == .bool) return .bool;
         }
         return self.type_map.get(e) orelse .any;
+    }
+
+    fn resolve_type(self: *CodeGen, te: ast.TypeExpr) RT {
+        if (self.current_mono_spec) |spec| return spec.resolveType(te);
+        return types.resolve(te, null, self.alloc) catch .any;
     }
 
     // ── Module entry ──────────────────────────────────────────────────────────
@@ -303,6 +441,10 @@ pub const CodeGen = struct {
         // the record types in their signatures.
         try self.collect_and_emit_record_decls(mod);
 
+        // Emit enum typedefs (and tag constants) before forward-declarations,
+        // so function signatures can name `duo_<Enum>` types (Task 12.6).
+        try self.emit_enum_decls(mod);
+
         // Forward-declare top-level functions
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) {
@@ -332,8 +474,10 @@ pub const CodeGen = struct {
                 try self.emit_func_decl_forward(fd);
             }
         }
+        try self.emit_mono_forward_decls();
 
         // Emit function definitions
+        try self.emit_mono_defs();
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
@@ -467,6 +611,64 @@ pub const CodeGen = struct {
             self.p(" {s};\n", .{f.name});
         }
         self.p("}} {s};\n\n", .{cname});
+    }
+
+    // ── Enums (Task 12.6) ──────────────────────────────────────────────────────
+    //
+    // Payload-free enums lower to a plain C `enum` whose constants are named
+    // `duo_<Enum>_<Variant>`; a value of the enum is matched with `==`.
+    //
+    // Enums with at least one payload-carrying variant lower to a tagged
+    // struct: an `int tag` plus a `union` of the payload-carrying variants.
+    // Tag constants are emitted as `duo_<Enum>_tag_<Variant>` and matching is
+    // done on `.tag`. (Payload construction/binding is not yet fully wired —
+    // the type is emitted so signatures and tag comparisons compile.)
+    fn emit_enum_decls(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .enum_def) continue;
+            const ed = &stmt.enum_def;
+
+            var has_payload = false;
+            for (ed.variants) |v| {
+                if (v.payload != null and v.payload.?.len > 0) has_payload = true;
+            }
+            try self.enum_has_payload.put(self.alloc, ed.name, has_payload);
+
+            if (!has_payload) {
+                self.p("typedef enum {{\n", .{});
+                for (ed.variants, 0..) |v, i| {
+                    self.p("    duo_{s}_{s} = {d},\n", .{ ed.name, v.name, i });
+                }
+                self.p("}} duo_{s};\n\n", .{ed.name});
+            } else {
+                // Tag constants.
+                for (ed.variants, 0..) |v, i| {
+                    self.p("#define duo_{s}_tag_{s} {d}\n", .{ ed.name, v.name, i });
+                }
+                self.p("typedef struct {{\n", .{});
+                self.p("    int tag;\n", .{});
+                self.p("    union {{\n", .{});
+                for (ed.variants) |v| {
+                    if (v.payload) |fields| {
+                        if (fields.len == 0) continue;
+                        self.p("        struct {{\n", .{});
+                        for (fields, 0..) |field, fi| {
+                            const ft = types.resolve(field.typ, null, self.alloc) catch .any;
+                            self.p("            ", .{});
+                            self.typ(ft);
+                            if (field.name) |nm| {
+                                self.p(" {s};\n", .{nm});
+                            } else {
+                                self.p(" _{d};\n", .{fi});
+                            }
+                        }
+                        self.p("        }} {s};\n", .{v.name});
+                    }
+                }
+                self.p("    }} as;\n", .{});
+                self.p("}} duo_{s};\n\n", .{ed.name});
+            }
+        }
     }
 
     fn record_content_hash(fields: []const types.FieldType) u64 {
@@ -681,7 +883,7 @@ pub const CodeGen = struct {
             self.p("static lua_Value {s}__argv(int argc, lua_Value* argv);\n", .{cname});
             return;
         }
-        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
+        const ret = self.resolve_type(fb.ret_type);
 
         // For Ackermann, emit the optimised helper at file scope (forward decl
         // + full definition) before the ack() wrapper function.
@@ -711,7 +913,7 @@ pub const CodeGen = struct {
         self.p(" {s}(", .{fd.path[0]});
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
-            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
+            const pt = self.resolve_type(par.typ);
             self.typ(pt);
             self.p(" {s}", .{par.name});
         }
@@ -752,6 +954,99 @@ pub const CodeGen = struct {
         }
     }
 
+    fn emit_mono_forward_decls(self: *CodeGen) E!void {
+        const m = self.mono orelse return;
+        for (m.order.items) |spec| {
+            try self.emit_mono_signature(spec);
+            self.p(";\n", .{});
+        }
+    }
+
+    fn emit_mono_defs(self: *CodeGen) E!void {
+        const m = self.mono orelse return;
+        for (m.order.items) |spec| {
+            const prev_spec = self.current_mono_spec;
+            const prev_ret = self.current_ret;
+            self.current_mono_spec = spec;
+            self.current_ret = spec.resolveType(spec.template.ret_type);
+            defer {
+                self.current_mono_spec = prev_spec;
+                self.current_ret = prev_ret;
+            }
+
+            try self.emit_mono_signature(spec);
+            self.p(" {{\n", .{});
+            self.indent = 1;
+            try self.push_local_scope();
+            defer self.pop_local_scope();
+            for (spec.template.params) |*par| {
+                try self.note_local_type(par.name, spec.resolveType(par.typ));
+            }
+            try self.emit_block_stmts(&spec.template.body);
+            self.indent = 0;
+            self.p("}}\n\n", .{});
+        }
+    }
+
+    fn emit_mono_signature(self: *CodeGen, spec: *const mono.Specialization) E!void {
+        const prev_spec = self.current_mono_spec;
+        self.current_mono_spec = spec;
+        defer self.current_mono_spec = prev_spec;
+
+        const ret = spec.resolveType(spec.template.ret_type);
+        self.p("static inline ", .{});
+        self.typ(ret);
+        self.p(" {s}(", .{spec.mangled_name});
+        for (spec.template.params, 0..) |*par, i| {
+            if (i > 0) self.p(", ", .{});
+            const pt = spec.resolveType(par.typ);
+            self.typ(pt);
+            self.p(" {s}", .{par.name});
+        }
+        self.p(")", .{});
+    }
+
+    fn emit_mono_call(self: *CodeGen, spec: *const mono.Specialization, args: []const *ast.Expr) E!void {
+        self.p("{s}(", .{spec.mangled_name});
+        for (args, 0..) |arg, i| {
+            if (i > 0) self.p(", ", .{});
+            if (i < spec.template.params.len) {
+                const pt = spec.resolveType(spec.template.params[i].typ);
+                if (pt == .any) {
+                    try self.emit_as_lua_value(arg);
+                } else if (pt == .f64 and self.expr_type(arg).is_integer()) {
+                    self.p("(double)(", .{});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
+                } else {
+                    try self.emit_expr(arg);
+                }
+            } else {
+                try self.emit_expr(arg);
+            }
+        }
+        self.p(")", .{});
+    }
+
+    /// Return the enum name if `rt` denotes one of this module's enums.
+    /// In codegen, named types resolve to `.@"struct"` (there is no enum
+    /// registry at resolve time), so a struct whose name we registered as an
+    /// enum is treated as an enum here. `.enum_type` (from the sema type map)
+    /// is also accepted.
+    fn enum_name_of(self: *const CodeGen, rt: RT) ?[]const u8 {
+        const name = switch (rt) {
+            .enum_type => |e| e.name,
+            .@"struct" => |s| s.name,
+            else => return null,
+        };
+        if (self.enum_has_payload.contains(name)) return name;
+        return null;
+    }
+
+    fn enum_is_payload_free(self: *const CodeGen, name: []const u8) bool {
+        return !(self.enum_has_payload.get(name) orelse true);
+    }
+
     fn emit_native_param_from_lua(self: *CodeGen, pt: RT, c_name: []const u8, lua_name: []const u8) E!void {
         if (pt == .str) {
             self.p("const char* {s} = lua_to_str({s});\n", .{ c_name, lua_name });
@@ -765,6 +1060,13 @@ pub const CodeGen = struct {
             self.p("{s} {s} = ({s})lua_to_num({s});\n", .{ ct, c_name, ct, lua_name });
         } else if (pt == .bool) {
             self.p("bool {s} = lua_to_bool({s});\n", .{ c_name, lua_name });
+        } else if (self.enum_name_of(pt)) |ename| {
+            if (self.enum_is_payload_free(ename)) {
+                // Payload-free enum is an integer tag at the C level.
+                self.p("duo_{s} {s} = (duo_{s})(int)lua_to_num({s});\n", .{ ename, c_name, ename, lua_name });
+            } else {
+                self.p("lua_Value {s} = {s};\n", .{ c_name, lua_name });
+            }
         } else {
             self.p("lua_Value {s} = {s};\n", .{ c_name, lua_name });
         }
@@ -779,6 +1081,13 @@ pub const CodeGen = struct {
             self.p("lua_val_from_bool({s})", .{c_expr});
         } else if (rt.is_numeric()) {
             self.p("lua_val_from_num((double)({s}))", .{c_expr});
+        } else if (self.enum_name_of(rt)) |ename| {
+            if (self.enum_is_payload_free(ename)) {
+                // Payload-free enum is an integer tag at the C level.
+                self.p("lua_val_from_num((double)({s}))", .{c_expr});
+            } else {
+                self.p("lua_val_nil()", .{});
+            }
         } else {
             self.p("lua_val_nil()", .{});
         }
@@ -787,7 +1096,7 @@ pub const CodeGen = struct {
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (!fb.is_typed) return;
-        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
+        const ret = self.resolve_type(fb.ret_type);
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
         const nparams = fb.params.len;
@@ -899,7 +1208,7 @@ pub const CodeGen = struct {
         self.p("(", .{});
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
-            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
+            const pt = self.resolve_type(par.typ);
             self.typ(pt);
             self.p(" {s}", .{par.name});
         }
@@ -910,7 +1219,7 @@ pub const CodeGen = struct {
             self.pop_local_scope();
         }
         for (fb.params) |*par| {
-            try self.note_local(par.name);
+            try self.note_local_type(par.name, self.resolve_type(par.typ));
         }
         if (fb.use_dense_table and !fb.use_dense_table_max and !fb.use_dense_table_sum and
             !fb.use_dense_table_identity_sum and !fb.use_dot_product_identity and
@@ -1042,8 +1351,8 @@ pub const CodeGen = struct {
             self.current_ret = prev_ret;
         }
         for (fb.params, 0..) |par, i| {
-            try self.note_local(par.name);
             const pt = types.resolve(par.typ, null, self.alloc) catch .any;
+            try self.note_local_type(par.name, pt);
             if (pt == .any) {
                 self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
             } else if (pt.is_integer()) {
@@ -1852,6 +2161,8 @@ pub const CodeGen = struct {
             try self.emit_stmt(&blk.stmts[i]);
             i += 1;
         }
+        // Run this scope's pending defers in LIFO order on fall-through exit.
+        try self.emit_top_defers();
     }
 
     fn expr_is_int(self: *CodeGen, e: *const ast.Expr, val: i64) bool {
@@ -1946,7 +2257,7 @@ pub const CodeGen = struct {
                 // declaration is emitted at file scope before we use it.
                 for (ld.names) |*lname| {
                     if (lname.typ == .record) {
-                        const rt = types.resolve(lname.typ, null, self.alloc) catch .any;
+                        const rt = self.resolve_type(lname.typ);
                         if (rt == .table_type) try self.ensure_record_decl(rt);
                     }
                 }
@@ -1977,13 +2288,14 @@ pub const CodeGen = struct {
                     // Determine type
                     const rt: RT = blk: {
                         if (lname.typ != .inferred) {
-                            break :blk types.resolve(lname.typ, null, self.alloc) catch .any;
+                            break :blk self.resolve_type(lname.typ);
                         }
                         if (i < ld.inits.len) {
                             break :blk self.expr_type(ld.inits[i]);
                         }
                         break :blk .any;
                     };
+                    try self.note_local_type(lname.ident, rt);
                     if (rt == .any) {
                         self.p("lua_Value {s}", .{lname.ident});
                         if (i < ld.inits.len) {
@@ -2032,7 +2344,7 @@ pub const CodeGen = struct {
                     self.ind();
                     const rt: RT = blk: {
                         if (lname.typ != .inferred) {
-                            break :blk types.resolve(lname.typ, null, self.alloc) catch .any;
+                            break :blk self.resolve_type(lname.typ);
                         }
                         if (i < gd.inits.len) {
                             break :blk self.expr_type(gd.inits[i]);
@@ -2050,7 +2362,7 @@ pub const CodeGen = struct {
             .const_decl => |*cd| {
                 self.ind();
                 const rt = if (cd.typ != .inferred)
-                    types.resolve(cd.typ, null, self.alloc) catch .any
+                    self.resolve_type(cd.typ)
                 else
                     self.expr_type(cd.val);
                 self.p("const ", .{});
@@ -2228,6 +2540,9 @@ pub const CodeGen = struct {
                 self.p(";\n", .{});
             },
             .ret => |*r| {
+                // Run all enclosing defers (LIFO, innermost scope first)
+                // before unwinding. Cheap no-op when none are pending.
+                if (self.has_pending_defers()) try self.emit_all_pending_defers();
                 self.ind();
                 if (self.dense_table) |dt| {
                     self.pl("free(__dt_{s});", .{dt});
@@ -2308,6 +2623,8 @@ pub const CodeGen = struct {
                 }
                 self.p(") {{\n", .{});
                 self.indent += 1;
+                try self.push_break_scope();
+                defer self.pop_break_scope();
                 try self.emit_block(&wl.body);
                 self.indent -= 1;
                 self.pl("}}", .{});
@@ -2315,6 +2632,8 @@ pub const CodeGen = struct {
             .repeat_loop => |*rl| {
                 self.pl("do {{", .{});
                 self.indent += 1;
+                try self.push_break_scope();
+                defer self.pop_break_scope();
                 try self.emit_block(&rl.body);
                 self.indent -= 1;
                 self.ind();
@@ -2346,6 +2665,8 @@ pub const CodeGen = struct {
                 if (nf.step) |s| try self.emit_num_for_bound(s, vt2) else self.p("1", .{});
                 self.p(") {{\n", .{});
                 self.indent += 1;
+                try self.push_break_scope();
+                defer self.pop_break_scope();
                 try self.emit_block(&nf.body);
                 self.indent -= 1;
                 self.pl("}}", .{});
@@ -2384,7 +2705,11 @@ pub const CodeGen = struct {
                         self.pl("if (t_ptr->array[idx].type == VAL_NIL) continue;", .{});
                         if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
                         if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->array[idx];", .{gf.vars[1]});
-                        try self.emit_block(&gf.body);
+                        {
+                            try self.push_break_scope();
+                            defer self.pop_break_scope();
+                            try self.emit_block(&gf.body);
+                        }
                         self.indent -= 1;
                         self.pl("}}", .{});
                         // Then hash part
@@ -2393,7 +2718,11 @@ pub const CodeGen = struct {
                         self.pl("if (t_ptr->entries[idx].key.type == VAL_NIL) continue;", .{});
                         if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->entries[idx].key;", .{gf.vars[0]});
                         if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->entries[idx].val;", .{gf.vars[1]});
-                        try self.emit_block(&gf.body);
+                        {
+                            try self.push_break_scope();
+                            defer self.pop_break_scope();
+                            try self.emit_block(&gf.body);
+                        }
                         self.indent -= 1;
                         self.pl("}}", .{});
                     } else {
@@ -2404,7 +2733,11 @@ pub const CodeGen = struct {
                         self.pl("if (_v_val.type == VAL_NIL) break;", .{});
                         if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
                         if (gf.vars.len > 1) self.pl("lua_Value {s} = _v_val;", .{gf.vars[1]});
-                        try self.emit_block(&gf.body);
+                        {
+                            try self.push_break_scope();
+                            defer self.pop_break_scope();
+                            try self.emit_block(&gf.body);
+                        }
                         self.indent -= 1;
                         self.pl("}}", .{});
                     }
@@ -2470,7 +2803,11 @@ pub const CodeGen = struct {
                             self.pl("lua_Value {s} = lua_mret_get({d});", .{ vname, vi - 1 });
                         }
                     }
-                    try self.emit_block(&gf.body);
+                    {
+                        try self.push_break_scope();
+                        defer self.pop_break_scope();
+                        try self.emit_block(&gf.body);
+                    }
                     self.indent -= 1;
                     self.ind();
                     self.pl("}}", .{});
@@ -2494,21 +2831,28 @@ pub const CodeGen = struct {
             // bindings don't need a top-level emission — they are handled
             // inline at the binding site.
             .match_stmt => |match_stmt| {
+                self.ind();
                 try self.emit_match_expr(match_stmt);
+                self.p(";\n", .{});
             },
             .try_stmt => |try_stmt| {
                 try self.emit_try_stmt(try_stmt);
             },
-            .defer_stmt => |defer_stmt| {
-                // Defer is handled by the async lowering pass; at runtime
-                // defers are executed by the task scheduler on scope exit.
-                // Emit a marker comment for debugging.
-                self.p("/* defer: body emitted by async lowering */", .{});
-                _ = defer_stmt;
+            .defer_stmt => |*defer_stmt| {
+                // Register the body to run on scope exit (LIFO). The actual
+                // emission happens at block end (`emit_top_defers`) and before
+                // early returns (`emit_all_pending_defers`). `&defer_stmt.body`
+                // points into the stable AST, so it stays valid.
+                try self.note_defer(&defer_stmt.body);
             },
             .enum_def => {}, // handled at module level
             .concept_def => {}, // concepts are compile-time only, no codegen
-            .brk => self.pl("break;", .{}),
+            .brk => {
+                if (self.has_pending_defers()) {
+                    try self.emit_pending_defers_from(self.current_break_scope_base());
+                }
+                self.pl("break;", .{});
+            },
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
         }
@@ -2673,6 +3017,19 @@ pub const CodeGen = struct {
                 self.emit_var_name(n.ident);
             },
             .field => |f| {
+                // Enum variant access: `Color.Green` -> the C enum constant
+                // `duo_Color_Green` (payload-free) or a tag value otherwise.
+                if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
+                    const ename = f.obj.name.ident;
+                    if (self.enum_has_payload.get(ename).? == false) {
+                        self.p("duo_{s}_{s}", .{ ename, f.field });
+                    } else {
+                        // Payloaded enum referenced by bare variant: emit a
+                        // struct literal with just the tag set.
+                        self.p("((duo_{s}){{ .tag = duo_{s}_tag_{s} }})", .{ ename, ename, f.field });
+                    }
+                    return;
+                }
                 if (self.expr_type(f.obj) == .any) {
                     const hash = calc_lua_hash(f.field);
                     self.p("lua_table_get(", .{});
@@ -2711,6 +3068,14 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
+                if (c.func.* == .name) {
+                    if (self.mono) |m| {
+                        if (m.findSpecializationForCall(c.func.name.ident, c.args)) |spec| {
+                            try self.emit_mono_call(spec, c.args);
+                            return;
+                        }
+                    }
+                }
                 const ft = self.expr_type(c.func);
                 if (c.func.* == .name) {
                     if (self.vararg_funcs.get(c.func.name.ident)) |argv_cname| {
@@ -4315,11 +4680,14 @@ pub const CodeGen = struct {
         const scrutinee_var = try self.alloc.dupe(u8, "__match_s");
         defer self.alloc.free(scrutinee_var);
 
-        // Emit scrutinee evaluation
+        // Emit scrutinee evaluation. Use the scrutinee's concrete C type
+        // rather than the GNU `auto` extension so the code is portable.
+        const scrutinee_type = self.expr_type(match_expr.scrutinee);
         self.p("({{", .{});
         self.indent += 1;
         self.ind();
-        self.p("auto __match_s = ", .{});
+        self.typ(scrutinee_type);
+        self.p(" __match_s = ", .{});
         try self.emit_expr(match_expr.scrutinee);
         self.p(";", .{});
 
@@ -4334,7 +4702,7 @@ pub const CodeGen = struct {
                 self.p("else if (", .{});
             }
 
-            try self.emit_pattern_condition(arm.pattern, scrutinee_var);
+            try self.emit_pattern_condition(arm.pattern, scrutinee_var, scrutinee_type);
             self.p(") {{", .{});
 
             self.indent += 1;
@@ -4375,7 +4743,7 @@ pub const CodeGen = struct {
         self.indent += 1;
         self.nl();
         self.ind();
-        self.p("lua_panic(\"match non-exhaustive\");", .{});
+        self.p("lua_error(lua_val_from_str(\"match non-exhaustive\"));", .{});
         self.indent -= 1;
         self.nl();
         self.ind();
@@ -4387,8 +4755,10 @@ pub const CodeGen = struct {
         self.p("}})", .{});
     }
 
-    /// Emit pattern matching condition for an arm.
-    fn emit_pattern_condition(self: *CodeGen, pattern: ast.Pattern, scrutinee_var: []const u8) E!void {
+    /// Emit pattern matching condition for an arm. `scrutinee_type` is the
+    /// resolved type of the value being matched, used to pick the enum
+    /// representation for variant patterns.
+    fn emit_pattern_condition(self: *CodeGen, pattern: ast.Pattern, scrutinee_var: []const u8, scrutinee_type: RT) E!void {
         switch (pattern) {
             .wildcard => self.p("1", .{}), // Always match
             .literal => |lit| {
@@ -4398,21 +4768,39 @@ pub const CodeGen = struct {
                 self.p(")", .{});
             },
             .binding => |b| {
-                // Bind the value - for now emit as always true with assignment
+                // Irrefutable binding: declare the bound variable as the
+                // comma-expression's side effect, then evaluate to true.
                 self.p("(", .{});
                 if (b.typ) |type_expr| {
                     const rt = types.resolve(type_expr, null, self.alloc) catch .any;
                     self.typ(rt);
                 } else {
-                    self.p("auto", .{});
+                    // No annotation: bind with the scrutinee's own type.
+                    self.typ(scrutinee_type);
                 }
                 self.p(" {s} = {s}, 1)", .{ b.name, scrutinee_var });
             },
             .variant => |v| {
-                // Check enum variant tag
-                // TODO: Variant pattern needs type info - for now assume __match_s is the enum
-                self.p("(__match_s.tag == __enum_tag_{s})", .{v.tag});
-                // TODO: Handle payload patterns
+                // The pattern tag may be qualified ("Color.Red") or bare
+                // ("Red"). Resolve the enum name from the scrutinee type and
+                // the variant name from the tail of the tag.
+                const variant_name = if (std.mem.lastIndexOfScalar(u8, v.tag, '.')) |dot|
+                    v.tag[dot + 1 ..]
+                else
+                    v.tag;
+                const enum_name = if (scrutinee_type == .enum_type)
+                    scrutinee_type.enum_type.name
+                else if (std.mem.indexOfScalar(u8, v.tag, '.')) |dot|
+                    v.tag[0..dot]
+                else
+                    v.tag;
+                const has_payload = self.enum_has_payload.get(enum_name) orelse false;
+                if (has_payload) {
+                    self.p("({s}.tag == duo_{s}_tag_{s})", .{ scrutinee_var, enum_name, variant_name });
+                } else {
+                    self.p("({s} == duo_{s}_{s})", .{ scrutinee_var, enum_name, variant_name });
+                }
+                // TODO: bind payload sub-patterns for payloaded variants.
             },
             else => self.p("1", .{}), // Conservative: match everything
         }
