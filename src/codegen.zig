@@ -59,6 +59,7 @@ pub const CodeGen = struct {
     /// C `struct` typedef. Lets us emit the typedef exactly once per
     /// unique record shape, even if the shape is used at many sites.
     emitted_records: std.AutoHashMapUnmanaged(u64, void) = .empty,
+    emitted_specs: std.AutoHashMapUnmanaged(u64, void) = .empty,
     /// Map of enum type name -> whether any variant carries a payload. Used
     /// to choose the C representation: payload-free enums become a plain C
     /// `enum` (matched with `==`), payloaded enums become a tagged struct
@@ -188,7 +189,7 @@ pub const CodeGen = struct {
     fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
         _ = self;
         return switch (rt) {
-            .str, .pointer => true,
+            .str, .pointer, .func => true,
             else => false,
         };
     }
@@ -500,6 +501,8 @@ pub const CodeGen = struct {
         }
         self.nl();
 
+        try self.populate_enum_defs(mod);
+
         // Walk the module to find every record-type annotation (function
         // parameters, return types, local/global decls, struct fields) and
         // emit the corresponding C struct typedefs at file scope. This must
@@ -667,21 +670,97 @@ pub const CodeGen = struct {
     // dedupe by content hash so each unique record shape is emitted once.
     // The actual struct declaration is emitted lazily by `ensure_record_decl`
     // the first time the record type is referenced.
+    fn ensure_instantiated_decl(self: *CodeGen, rt: RT) E!void {
+        const inst = rt.instantiated;
+        std.debug.print("ensure_instantiated_decl!\n", .{}); if (self.emitted_specs.contains(inst.specialization_key)) return;
+        try self.emitted_specs.put(self.alloc, inst.specialization_key, {});
+
+        if (inst.base.* != .enum_type) return;
+        const enum_name = inst.base.enum_type.name;
+        const ed = self.enum_defs.get(enum_name) orelse return;
+
+        // Set up generic parameter substitutions
+        var substitutions: std.StringHashMapUnmanaged(RT) = .{};
+        defer substitutions.deinit(self.alloc);
+        if (ed.type_params) |tparams| {
+            for (tparams, 0..) |tparam, i| {
+                if (tparam == .named) {
+                    try substitutions.put(self.alloc, tparam.named, inst.args[i]);
+                }
+            }
+        }
+
+        // We emit the struct similar to emit_enum_decls for has_payload == true
+        self.p("typedef struct ", .{});
+        if (inst.base.enum_type.is_packed) self.p("__attribute__((packed)) ", .{});
+        if (inst.base.enum_type.align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
+        self.p("{{\n", .{});
+        self.p("    int tag;\n", .{});
+        self.p("    union {{\n", .{});
+        for (ed.variants) |v| {
+            if (v.payload) |fields| {
+                if (fields.len == 0) continue;
+                self.p("        struct {{\n", .{});
+                for (fields, 0..) |field, fi| {
+                    // We need to resolve the field type but substitute generic params.
+                    // For a proper solution, we use a Specialization-like object.
+                    var spec = mono.Specialization{
+                        .mangled_name = "",
+                        .generic_name = enum_name,
+                        .template = undefined,
+                        .type_args = inst.args,
+                        .substitutions = substitutions,
+                        .key = undefined,
+                    };
+                    const ft = spec.resolveType(field.typ);
+                    self.p("            ", .{});
+                    self.typ(ft);
+                    if (field.name) |nm| {
+                        self.p(" {s};\n", .{nm});
+                    } else {
+                        self.p(" _{d};\n", .{fi});
+                    }
+                }
+                self.p("        }} {s};\n", .{v.name});
+            }
+        }
+        self.p("    }} as;\n", .{});
+        self.p("}} duo_spec_{d};\n\n", .{inst.specialization_key});
+    }
+
     fn ensure_record_decl(self: *CodeGen, rt: RT) E!void {
         const t = rt.table_type;
-        const hash = record_content_hash(t.fields);
+        if (t.ffi_name) |_| return; // FFI types are external, don't emit definition
+        const hash = record_content_hash(t);
         if (self.emitted_records.contains(hash)) return;
         try self.emitted_records.put(self.alloc, hash, {});
 
         var name_buf: [64]u8 = undefined;
         const cname = std.fmt.bufPrint(&name_buf, "duo_rec_{x}", .{hash}) catch "duo_rec";
-        self.p("typedef struct {{\n", .{});
+        self.p("typedef struct ", .{});
+        if (t.is_packed) self.p("__attribute__((packed)) ", .{});
+        if (t.align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
+        self.p("{{\n", .{});
         for (t.fields) |f| {
             self.p("    ", .{});
             self.typ(f.typ);
             self.p(" {s};\n", .{f.name});
         }
         self.p("}} {s};\n\n", .{cname});
+    }
+
+    fn populate_enum_defs(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .enum_def) continue;
+            const ed = &stmt.enum_def;
+            try self.enum_defs.put(self.alloc, ed.name, ed);
+
+            var has_payload = false;
+            for (ed.variants) |v| {
+                if (v.payload != null and v.payload.?.len > 0) has_payload = true;
+            }
+            try self.enum_has_payload.put(self.alloc, ed.name, has_payload);
+        }
     }
 
     // ── Enums (Task 12.6) ──────────────────────────────────────────────────────
@@ -698,16 +777,37 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .enum_def) continue;
             const ed = &stmt.enum_def;
-            try self.enum_defs.put(self.alloc, ed.name, ed);
+            const has_payload = self.enum_has_payload.get(ed.name) orelse false;
 
-            var has_payload = false;
-            for (ed.variants) |v| {
-                if (v.payload != null and v.payload.?.len > 0) has_payload = true;
+            var is_packed = false;
+            var align_n: ?usize = null;
+            var ffi_name: ?[]const u8 = null;
+            
+            for (ed.attributes) |attr| {
+                if (std.mem.eql(u8, attr.name, "packed")) is_packed = true;
+                if (std.mem.eql(u8, attr.name, "align")) {
+                    if (attr.args) |args_str| {
+                        align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+                    }
+                }
+                if (std.mem.eql(u8, attr.name, "ffi")) {
+                    if (attr.args) |args_str| {
+                        if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len-1] == '"') {
+                            ffi_name = args_str[1..args_str.len-1];
+                        } else {
+                            ffi_name = args_str;
+                        }
+                    }
+                }
             }
-            try self.enum_has_payload.put(self.alloc, ed.name, has_payload);
+
+            if (ffi_name) |_| continue;
 
             if (!has_payload) {
-                self.p("typedef enum {{\n", .{});
+                self.p("typedef enum ", .{});
+                if (is_packed) self.p("__attribute__((packed)) ", .{});
+                if (align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
+                self.p("{{\n", .{});
                 for (ed.variants, 0..) |v, i| {
                     self.p("    duo_{s}_{s} = {d},\n", .{ ed.name, v.name, i });
                 }
@@ -717,7 +817,10 @@ pub const CodeGen = struct {
                 for (ed.variants, 0..) |v, i| {
                     self.p("#define duo_{s}_tag_{s} {d}\n", .{ ed.name, v.name, i });
                 }
-                self.p("typedef struct {{\n", .{});
+                self.p("typedef struct ", .{});
+                if (is_packed) self.p("__attribute__((packed)) ", .{});
+                if (align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
+                self.p("{{\n", .{});
                 self.p("    int tag;\n", .{});
                 self.p("    union {{\n", .{});
                 for (ed.variants) |v| {
@@ -743,9 +846,11 @@ pub const CodeGen = struct {
         }
     }
 
-    fn record_content_hash(fields: []const types.FieldType) u64 {
+    fn record_content_hash(t: anytype) u64 {
         var h = std.hash.Wyhash.init(0xDADBEEF);
-        for (fields) |f| {
+        h.update(std.mem.asBytes(&t.is_packed));
+        if (t.align_n) |n| h.update(std.mem.asBytes(&n));
+        for (t.fields) |f| {
             h.update(f.name);
             var name_buf: [64]u8 = undefined;
             h.update(f.typ.c_type(&name_buf));
@@ -837,6 +942,8 @@ pub const CodeGen = struct {
                 try self.collect_records_in_typ(f.ret.*);
             },
             .generic => |g| {
+                const rt = types.resolve(te, null, self.alloc) catch return;
+                if (rt == .instantiated) try self.ensure_instantiated_decl(rt);
                 for (g.params) |param| try self.collect_records_in_typ(param);
                 try self.collect_records_in_typ(g.base.*);
             },
@@ -3209,7 +3316,7 @@ pub const CodeGen = struct {
                     }
                     for (fb.upvalues, 0..) |uv, i| {
                         if (std.mem.eql(u8, uv.name, n.ident)) {
-                            self.p("cl->upvals[{d}]", .{i});
+                            self.p("cl->up{d}", .{i});
                             return;
                         }
                     }
@@ -3684,16 +3791,12 @@ pub const CodeGen = struct {
             },
             .func_expr => |fb| {
                 const id = fb.closure_id orelse 0;
-                if (fb.upvalues.len > 0) {
-                    self.p("lua_val_from_closure(lua_make_closure({d}, {d}, (lua_Value[{d}]){{", .{ id, fb.upvalues.len, fb.upvalues.len });
-                    for (fb.upvalues, 0..) |uv, i| {
-                        if (i > 0) self.p(", ", .{});
-                        self.p("{s}", .{uv.name});
-                    }
-                    self.p("}}))", .{});
-                } else {
-                    self.p("lua_val_from_closure(lua_make_closure({d}, 0, NULL))", .{id});
+                self.p("lua_val_from_closure((lua_Closure*)duo_make_closure_{d}(", .{id});
+                for (fb.upvalues, 0..) |uv, i| {
+                    if (i > 0) self.p(", ", .{});
+                    self.emit_var_name(uv.name);
                 }
+                self.p("))", .{});
             },
             .table => |t| {
                 var array_count: usize = 0;
@@ -4651,6 +4754,57 @@ pub const CodeGen = struct {
 
         for (list.items) |fb| {
             const id = fb.closure_id orelse continue;
+            self.p("typedef struct {{\n", .{});
+            self.p("    duo_ObjHeader header;\n", .{});
+            self.p("    int id;\n", .{});
+            self.p("    int nup;\n", .{});
+            var buf: [256]u8 = undefined;
+            for (fb.upvalues, 0..) |up, i| {
+                if (up.typ) |t| {
+                    self.p("    {s} up{d};\n", .{ t.c_type(&buf), i });
+                } else {
+                    self.p("    lua_Value up{d};\n", .{i});
+                }
+            }
+            self.p("}} duo_closure_{d};\n\n", .{id});
+            
+            self.p("static inline duo_closure_{d}* duo_make_closure_{d}(", .{id, id});
+            for (fb.upvalues, 0..) |up, i| {
+                if (i > 0) self.p(", ", .{});
+                if (up.typ) |t| {
+                    self.p("{s} up{d}", .{ t.c_type(&buf), i });
+                } else {
+                    self.p("lua_Value up{d}", .{i});
+                }
+            }
+            self.p(") {{\n", .{});
+            self.p("    duo_closure_{d}* cl = (duo_closure_{d}*)malloc(sizeof(duo_closure_{d}));\n", .{id, id, id});
+            self.p("    cl->header.refcount = 1;\n", .{});
+            self.p("    cl->header.type_tag = VAL_CLOSURE;\n", .{});
+            self.p("    cl->id = {d};\n", .{id});
+            self.p("    cl->nup = {d};\n", .{fb.upvalues.len});
+            for (fb.upvalues, 0..) |up, i| {
+                self.p("    cl->up{d} = up{d};\n", .{i, i});
+                if (up.typ) |t| {
+                    if (self.codegen_needs_arc(t)) {
+                        self.p("    duo_retain((void*)cl->up{d});\n", .{i});
+                    }
+                }
+            }
+            self.p("    return cl;\n", .{});
+            self.p("}}\n\n", .{});
+
+            self.p("static void duo_free_closure_{d}(duo_closure_{d}* cl) {{\n", .{id, id});
+            for (fb.upvalues, 0..) |up, i| {
+                if (up.typ) |t| {
+                    if (self.codegen_needs_arc(t)) {
+                        self.p("    duo_release((void*)cl->up{d});\n", .{i});
+                    }
+                }
+            }
+            self.p("    free(cl);\n", .{});
+            self.p("}}\n\n", .{});
+
             self.p("static lua_Value duo_cl_{d}(lua_Closure* cl, int argc, lua_Value* argv);\n", .{id});
         }
         self.p("lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{});
@@ -4664,10 +4818,22 @@ pub const CodeGen = struct {
         self.p("    }}\n", .{});
         self.p("}}\n\n", .{});
 
+        self.p("void duo_free_closure(lua_Closure* cl) {{\n", .{});
+        self.p("    switch (cl->id) {{\n", .{});
+        for (list.items) |fb| {
+            if (fb.closure_id) |id| {
+                self.p("        case {d}: duo_free_closure_{d}((duo_closure_{d}*)cl); return;\n", .{ id, id, id });
+            }
+        }
+        self.p("        default: free(cl); return;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("}}\n\n", .{});
+
         for (list.items) |fb| {
             const id = fb.closure_id orelse continue;
-            self.p("static lua_Value duo_cl_{d}(lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{id});
+            self.p("static lua_Value duo_cl_{d}(lua_Closure* cl_raw, int argc, lua_Value* argv) {{\n", .{id});
             self.indent = 1;
+            self.pl("duo_closure_{d}* cl = (duo_closure_{d}*)cl_raw;", .{id, id});
             const prev_ret = self.current_ret;
             const prev_ctx = self.closure_ctx;
             self.current_ret = .any;
@@ -5160,9 +5326,16 @@ const duo_runtime =
     \\    bool frozen;
     \\} lua_Table;
     \\
+    \\typedef struct duo_ObjHeader {
+    \\    int32_t refcount;
+    \\    uint32_t flags;
+    \\    uint32_t type_tag;
+    \\} duo_ObjHeader;
+    \\
     \\typedef lua_Value (*lua_CFunction)(int argc, lua_Value* argv);
     \\typedef struct lua_Closure lua_Closure;
     \\struct lua_Closure {
+    \\    duo_ObjHeader header;
     \\    int id;
     \\    int nup;
     \\    lua_Value upvals[];
@@ -5177,11 +5350,7 @@ const duo_runtime =
     \\    duo_gc_kbytes += (int64_t)((bytes + 1023) / 1024);
     \\}
     \\
-    \\typedef struct duo_ObjHeader {
-    \\    int32_t refcount;
-    \\    uint32_t flags;
-    \\    uint32_t type_tag;
-    \\} duo_ObjHeader;
+
     \\
     \\static inline void duo_retain(void* ptr) {
     \\    (void)ptr;

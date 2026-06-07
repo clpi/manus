@@ -82,6 +82,20 @@ run_ok   examples/fib.duo
 run_output examples/duo/defer.duo      'in-if\ninner\nouter-b\nouter-a\n1\nafter-if\nouter-b\nouter-a\n2'
 run_output examples/duo/enum_match.duo 'green\nblue'
 run_output examples/duo/bitwise.duo    '240\n61455\n61680\n255\n-1\n0\n-1\n0\n-256\n1\n4611686018427387904\n-16\n32\n-1\n6148914691236517205\n1066947177396211406'
+run_property_11() {
+    local idx=$N; N=$((N + 1))
+    (
+        if out=$(bash scripts/test_property_11.sh 2>&1); then
+            echo OK > "$STATUS_DIR/$idx.status"
+            printf "OK:   Property 11 test passes\n" > "$STATUS_DIR/$idx.msg"
+        else
+            echo FAIL > "$STATUS_DIR/$idx.status"
+            printf "FAIL: Property 11 test failed:\n%s\n" "$out" > "$STATUS_DIR/$idx.msg"
+        fi
+    ) &
+}
+run_property_11
+
 TOTAL=$N
 
 # Collect results in order
@@ -104,3 +118,4 @@ else
     echo "Some tests FAILED"
     exit 1
 fi
+

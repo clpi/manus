@@ -366,7 +366,7 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
       `@implements` concept-tag metatable emission.
     - _Requirements: 3.7, 11.4, 15.4_
 
-  - [ ] 12.7 Implement closure representation in codegen
+  - [x] 12.7 Implement closure representation in codegen
     - Emit `duo_closure_N` structs with captured variable pointers
     - Emit `duo_retain`/`duo_release` for closure objects
     - _Requirements: 10.2, 10.3, 10.4, 24.3_

@@ -31,9 +31,10 @@ pub const Parser = struct {
     fn expect(self: *Parser, kind: TK) ParseError!Token {
         const tok = try self.adv();
         if (tok.kind != kind) {
-            std.debug.print("{}: expected '{s}', got '{s}'\n", .{
+            std.debug.print(">>> EXPECT FAILED at {}: expected '{s}', got '{s}'\n", .{
                 tok.loc, kind.spelling(), tok.kind.spelling(),
             });
+            // @panic("EXPECT FAILED");
             return ParseError.ExpectedToken;
         }
         return tok;

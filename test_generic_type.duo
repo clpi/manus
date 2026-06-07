@@ -1,0 +1,20 @@
+enum Box[T]
+    Empty
+    Full(val: T)
+end
+
+fun make_box(x: i64): <i64> Box
+    return Box.Full({ val = x })
+end
+
+fun get_box(b: <i64> Box): i64
+    match b
+        Box.Full(f) => return f.val
+        _ => return 0
+    end
+end
+
+fun main(): i64
+    local b = make_box(42)
+    return get_box(b)
+end

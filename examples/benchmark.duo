@@ -462,15 +462,15 @@ function gcd_reduce(n)
 end
 
 -- 27. Collatz chain length accumulation (unpredictable branching)
-function collatz_sum(n)
-    local total = 0
-    local i = 1
+function collatz_sum(n: i64): i64
+    local total: i64 = 0
+    local i: i64 = 1
     while i <= n do
-        local x = i
-        local steps = 0
+        local x: i64 = i
+        local steps: i64 = 0
         while x ~= 1 do
             if x % 2 == 0 then
-                x = x / 2
+                x = x // 2
             else
                 x = 3 * x + 1
             end

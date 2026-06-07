@@ -1,0 +1,32 @@
+--- src/mono.zig
++++ src/mono.zig
+@@ -65,11 +65,26 @@
+     }
+ 
+     pub fn resolveType(self: *const Specialization, te: ast.TypeExpr) RT {
++        return resolveTypeRecursive(self, te);
++    }
++    fn resolveTypeRecursive(self: *const Specialization, te: ast.TypeExpr) RT {
+         switch (te) {
+             .named => |n| {
+                 if (self.substitutions.get(n)) |t| return t;
+             },
++            .pointer => |inner| {
++                const p = std.heap.page_allocator.create(RT) catch unreachable;
++                p.* = resolveTypeRecursive(self, inner.*);
++                return .{ .pointer = p };
++            },
++            .optional => |inner| {
++                const p = std.heap.page_allocator.create(RT) catch unreachable;
++                p.* = resolveTypeRecursive(self, inner.*);
++                return .{ .option = p };
++            },
++            .array => |a| {
++                const p = std.heap.page_allocator.create(RT) catch unreachable;
++                p.* = resolveTypeRecursive(self, a.elem.*);
++                return .{ .array = .{ .elem = p, .size = a.size } };
++            },
+             else => {},
+         }
+         return types.resolve(te, null, std.heap.page_allocator) catch .any;
+     }

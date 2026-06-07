@@ -1,5 +1,6 @@
 const std = @import("std");
 pub const Loc = @import("lexer.zig").Loc;
+const RT = @import("types.zig").ResolvedType;
 
 // ── Type expressions ─────────────────────────────────────────────────────────
 
@@ -162,6 +163,7 @@ pub const Upvalue = struct {
     name: []const u8,
     /// true when captured from an enclosing local, false for globals
     is_local: bool,
+    typ: ?RT = null,
 };
 
 pub const FuncBody = struct {

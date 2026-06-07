@@ -4,6 +4,8 @@ const Lexer = lexer_mod.Lexer;
 const TokenKind = lexer_mod.TokenKind;
 const Parser = @import("parser.zig").Parser;
 const ast = @import("ast.zig");
+const sema_mod = @import("sema.zig");
+const CodeGen = @import("codegen.zig").CodeGen;
 
 // ─── Property 15: `in` Operator Disambiguation (Lexer Level) ─────────────────
 //
@@ -1491,3 +1493,4 @@ test "Property 13: balance holds across nested scopes" {
         try std.testing.expectEqual(outer + inner, arc.countOp(.retain));
     }
 }
+

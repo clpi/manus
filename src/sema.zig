@@ -428,6 +428,27 @@ pub const Sema = struct {
                     }
                     const is_const = is_const_attrib(lname.attrib);
                     const is_close = is_close_attrib(lname.attrib);
+                    
+                    if (t == .table_type) {
+                        for (lname.attributes) |attr| {
+                            if (std.mem.eql(u8, attr.name, "packed")) t.table_type.is_packed = true;
+                            if (std.mem.eql(u8, attr.name, "align")) {
+                                if (attr.args) |args_str| {
+                                    t.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+                                }
+                            }
+                            if (std.mem.eql(u8, attr.name, "ffi")) {
+                                if (attr.args) |args_str| {
+                                    // Remove quotes from "C_name"
+                                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len-1] == '"') {
+                                        t.table_type.ffi_name = args_str[1..args_str.len-1];
+                                    } else {
+                                        t.table_type.ffi_name = args_str;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     const has_init = i < ld.inits.len or (ld.inits.len == 1 and ld.names.len > 1 and i == 0);
                     if (is_const and !has_init) {
                         self.err(lname.loc, "const variable '{s}' must have an initializer", .{lname.ident});
@@ -989,7 +1010,13 @@ pub const Sema = struct {
         try collect_upvalue_names(fb, &fb.body, fb.params, &names, &flags, self);
         fb.upvalues = try self.alloc.alloc(ast.Upvalue, names.items.len);
         for (names.items, flags.items, 0..) |nm, is_local, i| {
-            fb.upvalues[i] = .{ .name = nm, .is_local = is_local };
+            var typ: ?RT = null;
+            if (self.scope.lookup(nm)) |sym| {
+                typ = sym.typ;
+            } else if (self.module_globals.get(nm)) |g_typ| {
+                typ = g_typ;
+            }
+            fb.upvalues[i] = .{ .name = nm, .is_local = is_local, .typ = typ };
         }
     }
 
@@ -1569,10 +1596,28 @@ pub const Sema = struct {
             };
         }
 
-        const enum_t = RT{ .enum_type = .{
+        var enum_t = RT{ .enum_type = .{
             .name = ed.name,
             .variants = variant_types,
         } };
+
+        for (ed.attributes) |attr| {
+            if (std.mem.eql(u8, attr.name, "packed")) enum_t.enum_type.is_packed = true;
+            if (std.mem.eql(u8, attr.name, "align")) {
+                if (attr.args) |args_str| {
+                    enum_t.enum_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+                }
+            }
+            if (std.mem.eql(u8, attr.name, "ffi")) {
+                if (attr.args) |args_str| {
+                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len-1] == '"') {
+                        enum_t.enum_type.ffi_name = args_str[1..args_str.len-1];
+                    } else {
+                        enum_t.enum_type.ffi_name = args_str;
+                    }
+                }
+            }
+        }
 
         // Register in the enum type registry (for exhaustiveness checking)
         try self.enum_types.put(self.alloc, ed.name, enum_t);

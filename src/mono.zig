@@ -65,9 +65,28 @@ pub const Specialization = struct {
     /// concrete type, substituting any type parameters. Codegen uses this to
     /// emit fully-typed C for a specialized body.
     pub fn resolveType(self: *const Specialization, te: ast.TypeExpr) RT {
+        return self.resolveTypeRecursive(te);
+    }
+    
+    fn resolveTypeRecursive(self: *const Specialization, te: ast.TypeExpr) RT {
         switch (te) {
             .named => |n| {
                 if (self.substitutions.get(n)) |t| return t;
+            },
+            .pointer => |inner| {
+                const p = std.heap.page_allocator.create(RT) catch unreachable;
+                p.* = self.resolveTypeRecursive(inner.*);
+                return .{ .pointer = p };
+            },
+            .optional => |inner| {
+                const p = std.heap.page_allocator.create(RT) catch unreachable;
+                p.* = self.resolveTypeRecursive(inner.*);
+                return .{ .option = p };
+            },
+            .array => |a| {
+                const p = std.heap.page_allocator.create(RT) catch unreachable;
+                p.* = self.resolveTypeRecursive(a.elem.*);
+                return .{ .array = .{ .elem = p, .size = a.size } };
             },
             else => {},
         }

@@ -684,18 +684,6 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             for (g.params, 0..) |p, i| {
                 args[i] = try resolve(p, sema, alloc);
             }
-            if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Result")) {
-                const ok_ptr = try alloc.create(ResolvedType);
-                ok_ptr.* = args[0];
-                const err_ptr = try alloc.create(ResolvedType);
-                err_ptr.* = args[1];
-                return ResolvedType{ .result = .{ .ok = ok_ptr, .err = err_ptr } };
-            }
-            if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Option")) {
-                const opt_ptr = try alloc.create(ResolvedType);
-                opt_ptr.* = args[0];
-                return ResolvedType{ .option = opt_ptr };
-            }
             var key: u64 = std.hash.Wyhash.hash(0, "generic");
             if (base.* == .enum_type) key = std.hash.Wyhash.hash(0, base.enum_type.name);
             if (base.* == .@"struct") key = std.hash.Wyhash.hash(0, base.@"struct".name);
