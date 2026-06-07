@@ -32,7 +32,7 @@ jobs:
           # github_token: ${{ secrets.GITHUB_TOKEN }}
           # publish_dir: ./docs/book
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v2
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

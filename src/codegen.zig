@@ -36,6 +36,7 @@ pub const CodeGen = struct {
     module_globals: ?*const std.StringHashMapUnmanaged(RT) = null,
     local_scopes: std.ArrayList(std.StringHashMapUnmanaged(RT)) = .empty,
     close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
+    arc_scopes: std.ArrayList(std.ArrayListUnmanaged(ArcLocal)) = .empty,
     /// Per-scope stack of pending `defer` bodies, parallel to `local_scopes`.
     /// A `defer ... end` statement registers its body here instead of emitting
     /// it inline; the bodies are flushed in LIFO order at scope exit (Task 12.2).
@@ -63,6 +64,8 @@ pub const CodeGen = struct {
     /// `enum` (matched with `==`), payloaded enums become a tagged struct
     /// (matched on `.tag`). Populated by `emit_enum_decls` (Task 12.6).
     enum_has_payload: std.StringHashMapUnmanaged(bool) = .empty,
+    enum_defs: std.StringHashMapUnmanaged(*const ast.EnumDef) = .empty,
+    function_c_names: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Monomorphized generic specializations produced by the mono pass, made
     /// available to codegen so it can emit one concrete C function per
     /// specialization (Task 12.1). Null when there are no generics.
@@ -76,6 +79,12 @@ pub const CodeGen = struct {
     /// structs and step functions for `async` functions (Task 12.4). Null when
     /// async analysis was not run.
     async_lower: ?*const async_lower.AsyncLower = null,
+
+    const ArcLocal = struct {
+        name: []const u8,
+        ty: RT,
+        is_close: bool,
+    };
 
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -93,6 +102,7 @@ pub const CodeGen = struct {
     fn push_local_scope(self: *CodeGen) E!void {
         try self.local_scopes.append(self.alloc, std.StringHashMapUnmanaged(RT).empty);
         try self.close_scopes.append(self.alloc, .empty);
+        try self.arc_scopes.append(self.alloc, .empty);
         try self.defer_scopes.append(self.alloc, .empty);
     }
 
@@ -100,6 +110,16 @@ pub const CodeGen = struct {
         if (self.defer_scopes.items.len > 0) {
             var d = self.defer_scopes.pop().?;
             d.deinit(self.alloc);
+        }
+        if (self.arc_scopes.items.len > 0) {
+            var arc_locals = self.arc_scopes.pop().?;
+            var i = arc_locals.items.len;
+            while (i > 0) {
+                i -= 1;
+                const local = arc_locals.items[i];
+                self.emit_arc_drop(local.name, local.ty, local.is_close);
+            }
+            arc_locals.deinit(self.alloc);
         }
         if (self.close_scopes.items.len > 0) {
             var closes = self.close_scopes.pop().?;
@@ -132,6 +152,50 @@ pub const CodeGen = struct {
     fn note_local_type(self: *CodeGen, name: []const u8, rt: RT) !void {
         if (self.local_scopes.items.len == 0) return;
         try self.local_scopes.items[self.local_scopes.items.len - 1].put(self.alloc, name, rt);
+    }
+
+    fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
+        if (self.arc_scopes.items.len == 0 or !self.codegen_needs_arc(rt)) return;
+        try self.arc_scopes.items[self.arc_scopes.items.len - 1].append(self.alloc, .{
+            .name = name,
+            .ty = rt,
+            .is_close = is_close,
+        });
+    }
+
+    fn emit_arc_retain(self: *CodeGen, name: []const u8, rt: RT) void {
+        if (!self.codegen_needs_arc(rt)) return;
+        self.ind();
+        self.p("duo_retain((void*)(", .{});
+        self.emit_var_name(name);
+        self.p("));\n", .{});
+    }
+
+    fn emit_arc_drop(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) void {
+        if (!self.codegen_needs_arc(rt)) return;
+        if (is_close) {
+            self.ind();
+            self.p("duo_close((void*)(", .{});
+            self.emit_var_name(name);
+            self.p("));\n", .{});
+        }
+        self.ind();
+        self.p("duo_release((void*)(", .{});
+        self.emit_var_name(name);
+        self.p("));\n", .{});
+    }
+
+    fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
+        _ = self;
+        return switch (rt) {
+            .str, .pointer => true,
+            else => false,
+        };
+    }
+
+    fn attr_is_close(attrib: ?[]const u8) bool {
+        const a = attrib orelse return false;
+        return std.mem.eql(u8, a, "close");
     }
 
     /// Register a `defer` body to run on exit of the current (innermost) scope.
@@ -252,7 +316,9 @@ pub const CodeGen = struct {
     }
 
     fn emit_var_name(self: *CodeGen, name: []const u8) void {
-        if (!self.is_local_name(name) and self.global_type(name) != null and !is_runtime_global(name)) {
+        if (self.function_c_names.get(name)) |cname| {
+            self.p("{s}", .{cname});
+        } else if (!self.is_local_name(name) and self.global_type(name) != null and !is_runtime_global(name)) {
             self.p("duo_g_{s}", .{name});
         } else {
             self.p("{s}", .{name});
@@ -450,6 +516,7 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
+                if (fd.func.is_async) continue;
                 if (fd.path.len == 1 and !fd.method) {
                     try self.emit_func_decl_forward(fd);
                 }
@@ -470,6 +537,7 @@ pub const CodeGen = struct {
         defer local_funcs.deinit(self.alloc);
         try self.collect_local_funcs_module(mod, &local_funcs);
         for (local_funcs.items) |fd| {
+            if (fd.func.is_async) continue;
             if (fd.path.len == 1 and !fd.method) {
                 try self.emit_func_decl_forward(fd);
             }
@@ -482,14 +550,17 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
+                if (fd.func.is_async) continue;
                 try self.emit_func_def(fd);
             }
         }
         for (local_funcs.items) |fd| {
+            if (fd.func.is_async) continue;
             try self.emit_func_def(fd);
         }
 
         try self.emit_argv_lookup();
+        try self.emit_async_defs();
 
         if (self.mandel_native) {
             self.p("#pragma GCC push_options\n", .{});
@@ -555,7 +626,6 @@ pub const CodeGen = struct {
         self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
 
         try self.push_local_scope();
-        defer self.pop_local_scope();
 
         const prev_ret = self.current_ret;
         if (self.load_chunk) self.current_ret = .any;
@@ -580,6 +650,7 @@ pub const CodeGen = struct {
         }
 
         self.current_ret = prev_ret;
+        self.pop_local_scope();
         if (self.load_chunk) {
             self.pl("return lua_val_nil();", .{});
         } else {
@@ -627,6 +698,7 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .enum_def) continue;
             const ed = &stmt.enum_def;
+            try self.enum_defs.put(self.alloc, ed.name, ed);
 
             var has_payload = false;
             for (ed.variants) |v| {
@@ -879,6 +951,11 @@ pub const CodeGen = struct {
         const fb = &fd.func;
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
+        if (fd.path.len == 1) {
+            if (func_ffi_name(fd.attributes)) |ffi_name| {
+                try self.function_c_names.put(self.alloc, fd.path[0], ffi_name);
+            }
+        }
         if (fb.vararg_name != null or fb.vararg) {
             self.p("static lua_Value {s}__argv(int argc, lua_Value* argv);\n", .{cname});
             return;
@@ -906,11 +983,9 @@ pub const CodeGen = struct {
             self.p("#pragma GCC push_options\n", .{});
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
         }
-        if (fb.use_force_always_inline or fb.use_fp_strict_always_inline)
-            self.p("static inline __attribute__((always_inline)) ", .{})
-        else if (fb.is_typed) self.p("static inline ", .{}) else self.p("static ", .{});
+        try self.emit_func_storage_and_attrs(fd);
         self.typ(ret);
-        self.p(" {s}(", .{fd.path[0]});
+        self.p(" {s}(", .{cname});
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
             const pt = self.resolve_type(par.typ);
@@ -924,6 +999,7 @@ pub const CodeGen = struct {
 
     fn emit_func_c_name(self: *CodeGen, fd: *const ast.FuncDecl, buf: []u8) []const u8 {
         _ = self;
+        if (func_ffi_name(fd.attributes)) |name| return name;
         var pos: usize = 0;
         for (fd.path, 0..) |part, i| {
             if (i > 0 and pos + 2 <= buf.len) {
@@ -936,6 +1012,61 @@ pub const CodeGen = struct {
             pos += part.len;
         }
         return buf[0..pos];
+    }
+
+    fn func_ffi_name(attrs: []const ast.Attribute) ?[]const u8 {
+        for (attrs) |attr| {
+            if (!std.mem.eql(u8, attr.name, "ffi")) continue;
+            const raw = attr.args orelse return null;
+            if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
+            return raw;
+        }
+        return null;
+    }
+
+    fn func_has_attr(attrs: []const ast.Attribute, name: []const u8) bool {
+        for (attrs) |attr| {
+            if (std.mem.eql(u8, attr.name, name)) return true;
+        }
+        return false;
+    }
+
+    fn emit_func_storage_and_attrs(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
+        const fb = &fd.func;
+        const inline_attr = fb.use_force_always_inline or fb.use_fp_strict_always_inline or func_has_attr(fd.attributes, "inline");
+        const noinline_attr = func_has_attr(fd.attributes, "noinline");
+        const cold_attr = func_has_attr(fd.attributes, "cold");
+        const hot_attr = func_has_attr(fd.attributes, "hot");
+
+        if ((inline_attr or fb.is_typed) and !noinline_attr) {
+            self.p("static inline ", .{});
+        } else {
+            self.p("static ", .{});
+        }
+
+        var first_attr = true;
+        if (inline_attr or noinline_attr or cold_attr or hot_attr) {
+            self.p("__attribute__((", .{});
+            if (inline_attr) {
+                self.p("always_inline", .{});
+                first_attr = false;
+            }
+            if (noinline_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("noinline", .{});
+                first_attr = false;
+            }
+            if (cold_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("cold", .{});
+                first_attr = false;
+            }
+            if (hot_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("hot", .{});
+            }
+            self.p(")) ", .{});
+        }
     }
 
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
@@ -1028,6 +1159,19 @@ pub const CodeGen = struct {
         self.p(")", .{});
     }
 
+    fn emit_async_defs(self: *CodeGen) E!void {
+        const al = self.async_lower orelse return;
+        if (al.getAll().len == 0) return;
+        try async_lower.AsyncLower.emitPollEnum(self.w);
+        self.nl();
+        for (al.getAll()) |*lowered| {
+            try async_lower.AsyncLower.emitFrameStruct(lowered, self.w);
+            self.nl();
+            try async_lower.AsyncLower.emitStepFunc(lowered, self.w);
+            self.nl();
+        }
+    }
+
     /// Return the enum name if `rt` denotes one of this module's enums.
     /// In codegen, named types resolve to `.@"struct"` (there is no enum
     /// registry at resolve time), so a struct whose name we registered as an
@@ -1045,6 +1189,52 @@ pub const CodeGen = struct {
 
     fn enum_is_payload_free(self: *const CodeGen, name: []const u8) bool {
         return !(self.enum_has_payload.get(name) orelse true);
+    }
+
+    fn find_enum_variant_def(self: *const CodeGen, enum_name: []const u8, variant_name: []const u8) ?*const ast.EnumVariant {
+        const ed = self.enum_defs.get(enum_name) orelse return null;
+        for (ed.variants) |*variant| {
+            if (std.mem.eql(u8, variant.name, variant_name)) return variant;
+        }
+        return null;
+    }
+
+    fn maybe_emit_enum_variant_constructor(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+        if (func.* != .field) return false;
+        const f = func.field;
+        if (f.obj.* != .name) return false;
+        const enum_name = f.obj.name.ident;
+        if (!self.enum_has_payload.contains(enum_name)) return false;
+
+        if (self.enum_is_payload_free(enum_name)) {
+            self.p("duo_{s}_{s}", .{ enum_name, f.field });
+            return true;
+        }
+
+        self.p("((duo_{s}){{ .tag = duo_{s}_tag_{s}", .{ enum_name, enum_name, f.field });
+        if (self.find_enum_variant_def(enum_name, f.field)) |variant| {
+            if (variant.payload) |fields| {
+                if (fields.len > 0) {
+                    self.p(", .as.{s} = {{", .{f.field});
+                    for (fields, 0..) |field, i| {
+                        if (i > 0) self.p(", ", .{});
+                        if (field.name) |name| {
+                            self.p(".{s} = ", .{name});
+                        } else {
+                            self.p("._{d} = ", .{i});
+                        }
+                        if (i < args.len) {
+                            try self.emit_expr(args[i]);
+                        } else {
+                            self.p("0", .{});
+                        }
+                    }
+                    self.p("}}", .{});
+                }
+            }
+        }
+        self.p(" }})", .{});
+        return true;
     }
 
     fn emit_native_param_from_lua(self: *CodeGen, pt: RT, c_name: []const u8, lua_name: []const u8) E!void {
@@ -1198,13 +1388,11 @@ pub const CodeGen = struct {
             self.p("#pragma GCC push_options\n", .{});
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
         }
-        if (fb.use_force_always_inline or fb.use_fp_strict_always_inline)
-            self.p("static inline __attribute__((always_inline)) ", .{})
-        else if (fb.is_typed) self.p("static inline ", .{}) else self.p("static ", .{});
+        try self.emit_func_storage_and_attrs(fd);
         self.typ(ret);
-        for (fd.path, 0..) |part, i| {
-            if (i == 0) self.p(" {s}", .{part}) else self.p("__{s}", .{part});
-        }
+        var name_buf: [128]u8 = undefined;
+        const cname = self.emit_func_c_name(fd, &name_buf);
+        self.p(" {s}", .{cname});
         self.p("(", .{});
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
@@ -2323,6 +2511,8 @@ pub const CodeGen = struct {
                         }
                     }
                     self.p(";\n", .{});
+                    self.emit_arc_retain(lname.ident, rt);
+                    try self.note_arc_local(lname.ident, rt, attr_is_close(lname.attrib));
                     if (lname.attrib != null and std.mem.eql(u8, lname.attrib.?, "close"))
                         try self.note_close_local(lname.ident);
                 }
@@ -2357,6 +2547,7 @@ pub const CodeGen = struct {
                         if (rt == .any) try self.emit_as_lua_value(gd.inits[i]) else try self.emit_expr(gd.inits[i]);
                     }
                     self.p(";\n", .{});
+                    self.emit_arc_retain(lname.ident, rt);
                 }
             },
             .const_decl => |*cd| {
@@ -2492,6 +2683,11 @@ pub const CodeGen = struct {
                     }
 
                     if (!is_table_assign) {
+                        if (tgt.* == .name) {
+                            const tt_for_drop = self.expr_type(tgt);
+                            self.emit_arc_drop(tgt.name.ident, tt_for_drop, false);
+                            self.ind();
+                        }
                         try self.emit_lvalue(tgt);
                         self.p(" = ", .{});
                         if (i < as.values.len) {
@@ -2523,6 +2719,10 @@ pub const CodeGen = struct {
                             self.p("0", .{});
                         }
                         self.p(";\n", .{});
+                        if (tgt.* == .name) {
+                            const tt_for_retain = self.expr_type(tgt);
+                            self.emit_arc_retain(tgt.name.ident, tt_for_retain);
+                        }
                     }
                 }
             },
@@ -3064,6 +3264,7 @@ pub const CodeGen = struct {
                 }
             },
             .call => |c| {
+                if (try self.maybe_emit_enum_variant_constructor(c.func, c.args)) return;
                 if (try self.maybe_emit_math_call(c.func, c.args)) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
@@ -4708,6 +4909,8 @@ pub const CodeGen = struct {
             self.indent += 1;
             self.nl();
 
+            try self.emit_pattern_bindings(arm.pattern, scrutinee_var, scrutinee_type);
+
             // Emit guard if present
             if (arm.guard) |guard| {
                 self.ind();
@@ -4768,17 +4971,8 @@ pub const CodeGen = struct {
                 self.p(")", .{});
             },
             .binding => |b| {
-                // Irrefutable binding: declare the bound variable as the
-                // comma-expression's side effect, then evaluate to true.
-                self.p("(", .{});
-                if (b.typ) |type_expr| {
-                    const rt = types.resolve(type_expr, null, self.alloc) catch .any;
-                    self.typ(rt);
-                } else {
-                    // No annotation: bind with the scrutinee's own type.
-                    self.typ(scrutinee_type);
-                }
-                self.p(" {s} = {s}, 1)", .{ b.name, scrutinee_var });
+                _ = b;
+                self.p("1", .{});
             },
             .variant => |v| {
                 // The pattern tag may be qualified ("Color.Red") or bare
@@ -4803,6 +4997,50 @@ pub const CodeGen = struct {
                 // TODO: bind payload sub-patterns for payloaded variants.
             },
             else => self.p("1", .{}), // Conservative: match everything
+        }
+    }
+
+    fn emit_pattern_bindings(self: *CodeGen, pattern: ast.Pattern, scrutinee_var: []const u8, scrutinee_type: RT) E!void {
+        try self.emit_pattern_binding_from(pattern, scrutinee_var, scrutinee_type);
+    }
+
+    fn emit_pattern_binding_from(self: *CodeGen, pattern: ast.Pattern, value_expr: []const u8, value_type: RT) E!void {
+        switch (pattern) {
+            .binding => |b| {
+                const bind_type = if (b.typ) |type_expr|
+                    types.resolve(type_expr, null, self.alloc) catch value_type
+                else
+                    value_type;
+                self.ind();
+                self.typ(bind_type);
+                self.p(" {s} = {s};\n", .{ b.name, value_expr });
+                try self.note_local_type(b.name, bind_type);
+            },
+            .variant => |v| {
+                const variant_name = if (std.mem.lastIndexOfScalar(u8, v.tag, '.')) |dot|
+                    v.tag[dot + 1 ..]
+                else
+                    v.tag;
+                const enum_name = if (value_type == .enum_type)
+                    value_type.enum_type.name
+                else if (std.mem.indexOfScalar(u8, v.tag, '.')) |dot|
+                    v.tag[0..dot]
+                else
+                    v.tag;
+                const variant = self.find_enum_variant_def(enum_name, variant_name) orelse return;
+                const fields = variant.payload orelse return;
+                const payload_pats = v.payload orelse return;
+                for (payload_pats, 0..) |sub_pat, i| {
+                    if (i >= fields.len) break;
+                    const field_type = types.resolve(fields[i].typ, null, self.alloc) catch RT.any;
+                    const field_name = fields[i].name orelse try std.fmt.allocPrint(self.alloc, "_{d}", .{i});
+                    defer if (fields[i].name == null) self.alloc.free(field_name);
+                    const payload_expr = try std.fmt.allocPrint(self.alloc, "{s}.as.{s}.{s}", .{ value_expr, variant_name, field_name });
+                    defer self.alloc.free(payload_expr);
+                    try self.emit_pattern_binding_from(sub_pat, payload_expr, field_type);
+                }
+            },
+            else => {},
         }
     }
 
@@ -4937,6 +5175,24 @@ const duo_runtime =
     \\static int64_t duo_gc_kbytes = 0;
     \\static inline void duo_gc_note_alloc(size_t bytes) {
     \\    duo_gc_kbytes += (int64_t)((bytes + 1023) / 1024);
+    \\}
+    \\
+    \\typedef struct duo_ObjHeader {
+    \\    int32_t refcount;
+    \\    uint32_t flags;
+    \\    uint32_t type_tag;
+    \\} duo_ObjHeader;
+    \\
+    \\static inline void duo_retain(void* ptr) {
+    \\    (void)ptr;
+    \\}
+    \\
+    \\static inline void duo_release(void* ptr) {
+    \\    (void)ptr;
+    \\}
+    \\
+    \\static inline void duo_close(void* ptr) {
+    \\    (void)ptr;
     \\}
     \\
     \\#define LUA_MRET_MAX 16

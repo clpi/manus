@@ -294,15 +294,27 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
       defers. Verified by `examples/duo/defer.duo` and a break/defer smoke run.
     - _Requirements: 8.4, 8.5, 24.4_
 
-  - [ ] 12.3 Implement ARC code emission
+  - [-] 12.3 Implement ARC code emission
     - Emit `duo_retain(ptr)` / `duo_release(ptr)` / `duo_close(ptr)` calls based on ARC annotations
     - Emit `duo_ObjHeader` for heap-allocated objects
+    - **Status**: generated C now includes `duo_ObjHeader` plus `duo_retain`,
+      `duo_release`, and `duo_close` runtime hooks. Codegen emits retain on
+      pointer-shaped heap locals/globals, release/close at scope exit, and
+      release-before/retain-after for simple name reassignment. Full runtime
+      refcount semantics and embedding headers into every heap object remain
+      pending under the runtime ARC task.
     - _Requirements: 26.1, 26.2, 26.5, 24.3_
 
-  - [ ] 12.4 Implement async state machine emission
+  - [-] 12.4 Implement async state machine emission
     - Emit frame struct typedefs per async function
     - Emit step functions with `switch (frame->state)` pattern
     - Emit `DUO_POLL_PENDING` / `DUO_POLL_READY` returns
+    - **Status**: codegen now emits `duo_Poll`, one frame typedef per lowered
+      async function, and a step-function skeleton with `switch
+      (frame->state)`, await-state cases, `DUO_POLL_PENDING`, and
+      `DUO_POLL_READY`. Normal function-body emission is skipped for async
+      declarations so `await` placeholders do not leak into C. Full await
+      resumption and scheduler integration remain pending.
     - _Requirements: 19.1, 24.5_
 
   - [-] 12.5 Implement match compilation in codegen
@@ -314,9 +326,11 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
       position). The scrutinee is bound with its concrete C type (no GNU `auto`).
       Wildcard (`_`), literal, binding, and enum-variant patterns generate the
       right conditions; variant patterns emit `==` (payload-free enums) or
-      `.tag ==` (payloaded). Non-exhaustive fall-through calls `lua_error`.
-      Pending: binding of payload sub-patterns and table/array destructuring.
-      Verified by `examples/duo/enum_match.duo`.
+      `.tag ==` (payloaded). Binding patterns, including payload bindings such
+      as `Maybe.Some(x)`, are emitted as arm-local C declarations before guards
+      and body statements. Non-exhaustive fall-through calls `lua_error`.
+      Pending: table/array destructuring. Verified by
+      `examples/duo/enum_match.duo` and a payload enum smoke.
     - _Requirements: 6.1, 6.3, 6.6_
 
   - [-] 12.6 Implement enum representation in codegen
@@ -330,7 +344,10 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
       codegen recognize enums (named types resolve to `.@"struct"` at codegen
       time). Variant value expressions (`Color.Green`), match conditions, and the
       `lua_Value`↔enum thunk conversions all handle the payload-free case.
-      Pending: payloaded-variant construction and payload field access.
+      Payloaded variant constructors such as `Maybe.Some(42)` now emit tagged
+      struct literals with union payload initializers, and payload fields can be
+      accessed through match payload bindings. Pending: direct/general payload
+      field access helpers outside match binding.
     - _Requirements: 5.1, 5.2, 5.3_
 
   - [x] 12.6a Implement anonymous record (table-type literal) codegen
@@ -354,7 +371,7 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
     - Emit `duo_retain`/`duo_release` for closure objects
     - _Requirements: 10.2, 10.3, 10.4, 24.3_
 
-  - [ ] 12.8 Implement attribute-driven C output
+  - [-] 12.8 Implement attribute-driven C output
     - `@inline` → `static inline __attribute__((always_inline))`
     - `@noinline` → `__attribute__((noinline))`
     - `@cold` → `__attribute__((cold))`
@@ -362,6 +379,11 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
     - `@packed` → `__attribute__((packed))`
     - `@align(N)` → `__attribute__((aligned(N)))`
     - `@ffi("C_name")` → use specified C identifier
+    - **Status**: function declarations/definitions now emit `@inline`,
+      `@noinline`, `@cold`, and `@hot` as GCC attributes, with `@noinline`
+      suppressing the default typed-function `static inline`. `@ffi("C_name")`
+      now changes the generated C symbol and call sites consistently. Pending:
+      `@packed`/`@align(N)` for record/enum layout and type-level `@ffi`.
     - _Requirements: 18.1–18.8, 21.1_
 
   - [ ] 12.9 Write property test for valid C output (Property 11)
