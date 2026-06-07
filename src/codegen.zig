@@ -675,8 +675,8 @@ pub const CodeGen = struct {
         std.debug.print("ensure_instantiated_decl!\n", .{}); if (self.emitted_specs.contains(inst.specialization_key)) return;
         try self.emitted_specs.put(self.alloc, inst.specialization_key, {});
 
-        if (inst.base.* != .enum_type) return;
-        const enum_name = inst.base.enum_type.name;
+        if (inst.base.* != .enum_type and inst.base.* != .@"struct") return;
+        const enum_name = if (inst.base.* == .enum_type) inst.base.enum_type.name else inst.base.@"struct".name;
         const ed = self.enum_defs.get(enum_name) orelse return;
 
         // Set up generic parameter substitutions
@@ -690,10 +690,21 @@ pub const CodeGen = struct {
             }
         }
 
+        var is_packed = false;
+        var align_n: ?usize = null;
+        for (ed.attributes) |attr| {
+            if (std.mem.eql(u8, attr.name, "packed")) is_packed = true;
+            if (std.mem.eql(u8, attr.name, "align")) {
+                if (attr.args) |args_str| {
+                    align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+                }
+            }
+        }
+
         // We emit the struct similar to emit_enum_decls for has_payload == true
         self.p("typedef struct ", .{});
-        if (inst.base.enum_type.is_packed) self.p("__attribute__((packed)) ", .{});
-        if (inst.base.enum_type.align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
+        if (is_packed) self.p("__attribute__((packed)) ", .{});
+        if (align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
         self.p("{{\n", .{});
         self.p("    int tag;\n", .{});
         self.p("    union {{\n", .{});
@@ -1306,7 +1317,7 @@ pub const CodeGen = struct {
         return null;
     }
 
-    fn maybe_emit_enum_variant_constructor(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+    fn maybe_emit_enum_variant_constructor(self: *CodeGen, expr: *const ast.Expr, func: *const ast.Expr, args: []*ast.Expr) E!bool {
         if (func.* != .field) return false;
         const f = func.field;
         if (f.obj.* != .name) return false;
@@ -1318,7 +1329,16 @@ pub const CodeGen = struct {
             return true;
         }
 
-        self.p("((duo_{s}){{ .tag = duo_{s}_tag_{s}", .{ enum_name, enum_name, f.field });
+        const rt = self.expr_type(expr);
+        var cname_buf: [64]u8 = undefined;
+        var cname: []const u8 = undefined;
+        if (rt == .instantiated) {
+            cname = std.fmt.bufPrint(&cname_buf, "duo_spec_{x}", .{rt.instantiated.specialization_key}) catch "duo_spec";
+        } else {
+            cname = std.fmt.bufPrint(&cname_buf, "duo_{s}", .{enum_name}) catch "duo";
+        }
+
+        self.p("(({s}){{ .tag = duo_{s}_tag_{s}", .{ cname, enum_name, f.field });
         if (self.find_enum_variant_def(enum_name, f.field)) |variant| {
             if (variant.payload) |fields| {
                 if (fields.len > 0) {
@@ -3371,7 +3391,7 @@ pub const CodeGen = struct {
                 }
             },
             .call => |c| {
-                if (try self.maybe_emit_enum_variant_constructor(c.func, c.args)) return;
+                if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
                 if (try self.maybe_emit_math_call(c.func, c.args)) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
