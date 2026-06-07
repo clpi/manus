@@ -1,0 +1,98 @@
+-- std.collections — basic data structures over Duo tables
+
+function std_collections_list_new()
+    return {}
+end
+
+function std_collections_list_push(list, value)
+    table.insert(list, value)
+end
+
+function std_collections_list_pop(list)
+    return table.remove(list)
+end
+
+function std_collections_list_get(list, index)
+    return list[index]
+end
+
+function std_collections_list_len(list)
+    return #list
+end
+
+function std_collections_stack_new()
+    return {}
+end
+
+function std_collections_stack_push(stack, value)
+    table.insert(stack, value)
+end
+
+function std_collections_stack_pop(stack)
+    return table.remove(stack)
+end
+
+function std_collections_queue_new()
+    return {}
+end
+
+function std_collections_queue_enqueue(q, value)
+    table.insert(q, value)
+end
+
+function std_collections_queue_dequeue(q)
+    local n = #q
+    if n == 0 then
+        return nil
+    end
+    return table.remove(q, 1)
+end
+
+function std_collections_map_new()
+    return {}
+end
+
+function std_collections_map_set(m, key, value)
+    m[key] = value
+end
+
+function std_collections_map_get(m, key)
+    return m[key]
+end
+
+function std_collections_map_has(m, key)
+    return m[key] ~= nil
+end
+
+function std_collections_set_new()
+    return {}
+end
+
+function std_collections_set_add(s, value)
+    s[value] = true
+end
+
+function std_collections_set_has(s, value)
+    return s[value] ~= nil
+end
+
+local M = {}
+M.list_new = std_collections_list_new
+M.list_push = std_collections_list_push
+M.list_pop = std_collections_list_pop
+M.list_get = std_collections_list_get
+M.list_len = std_collections_list_len
+M.stack_new = std_collections_stack_new
+M.stack_push = std_collections_stack_push
+M.stack_pop = std_collections_stack_pop
+M.queue_new = std_collections_queue_new
+M.queue_enqueue = std_collections_queue_enqueue
+M.queue_dequeue = std_collections_queue_dequeue
+M.map_new = std_collections_map_new
+M.map_set = std_collections_map_set
+M.map_get = std_collections_map_get
+M.map_has = std_collections_map_has
+M.set_new = std_collections_set_new
+M.set_add = std_collections_set_add
+M.set_has = std_collections_set_has
+return M

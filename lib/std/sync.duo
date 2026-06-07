@@ -1,0 +1,32 @@
+-- std.sync — concurrency helpers (coroutine-based channels)
+
+function std_sync_channel_new()
+    return { queue = {} }
+end
+
+function std_sync_channel_send(ch, value)
+    table.insert(ch.queue, value)
+end
+
+function std_sync_channel_recv(ch)
+    local n = #ch.queue
+    if n == 0 then
+        return nil
+    end
+    return table.remove(ch.queue, 1)
+end
+
+function std_sync_channel_try_recv(ch)
+    local n = #ch.queue
+    if n == 0 then
+        return nil
+    end
+    return table.remove(ch.queue, 1)
+end
+
+local M = {}
+M.channel_new = std_sync_channel_new
+M.channel_send = std_sync_channel_send
+M.channel_recv = std_sync_channel_recv
+M.channel_try_recv = std_sync_channel_try_recv
+return M

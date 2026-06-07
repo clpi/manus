@@ -33,12 +33,17 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
 
-    if (args.len < 3) {
+    if (args.len < 2) {
         std.debug.print("{s}", .{usage});
         std.process.exit(1);
     }
-
-    const cmd = args[1];
+    const known_cmd = args.len >= 3 and
+        (std.mem.eql(u8, args[1], "compile") or
+            std.mem.eql(u8, args[1], "run") or
+            std.mem.eql(u8, args[1], "check") or
+            std.mem.eql(u8, args[1], "dump-c"));
+    const cmd: []const u8 = if (known_cmd) args[1] else "run";
+    const start: usize = if (known_cmd) 2 else 1;
     var input_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var cc: []const u8 = "clang";
@@ -47,8 +52,7 @@ pub fn main(init: std.process.Init) !void {
     var verbose = false;
     var load_chunk = false;
     var pgo = false;
-
-    var i: usize = 2;
+    var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "-o") and i + 1 < args.len) {
@@ -142,12 +146,12 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     return .{ .mod = mod, .sem = sem };
 }
 
-fn run_child_process(io: Io, argv: []const []const u8, label: []const u8) !void {
+fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet: bool) !void {
     var child = try std.process.spawn(io, .{
         .argv = argv,
         .stdin = .inherit,
-        .stdout = .inherit,
-        .stderr = .inherit,
+        .stdout = if (quiet) .ignore else .inherit,
+        .stderr = if (quiet) .ignore else .inherit,
     });
     const term = try child.wait(io);
     switch (term) {
@@ -295,6 +299,7 @@ fn do_compile(
     };
     defer base_cc_flags.deinit(alloc);
 
+    const silent = run_after and !verbose;
     // PGO two-pass compile (skipped for wasm, load_chunk, or run_after).
     if (pgo and !is_wasm and !load_chunk) {
         const stem = std.fs.path.stem(src_path);
@@ -307,7 +312,7 @@ fn do_compile(
         defer p1_args.deinit(alloc);
         try p1_args.appendSlice(alloc, base_cc_flags.items);
         try p1_args.appendSlice(alloc, &.{ "-fprofile-instr-generate", "-o", instr_out, c_path });
-        try run_child_process(io, p1_args.items, "C compiler (PGO pass 1)");
+        try run_child_process(io, p1_args.items, "C compiler (PGO pass 1)", silent);
 
         // Run instrumented binary to collect profile via `env VAR=val binary`.
         const env_kv = try std.fmt.allocPrint(alloc, "LLVM_PROFILE_FILE={s}", .{profraw_path});
@@ -324,7 +329,7 @@ fn do_compile(
         const profdata_argv = [_][]const u8{
             "xcrun", "llvm-profdata", "merge", "-output", profdata_path, profraw_path,
         };
-        try run_child_process(io, &profdata_argv, "llvm-profdata merge");
+        try run_child_process(io, &profdata_argv, "llvm-profdata merge", silent);
 
         // Pass 2: optimise with profile.
         var p2_args: std.ArrayList([]const u8) = .empty;
@@ -332,14 +337,14 @@ fn do_compile(
         try p2_args.appendSlice(alloc, base_cc_flags.items);
         const use_flag = try std.fmt.allocPrint(alloc, "-fprofile-instr-use={s}", .{profdata_path});
         try p2_args.appendSlice(alloc, &.{ use_flag, "-o", out_path, c_path });
-        try run_child_process(io, p2_args.items, "C compiler (PGO pass 2)");
+        try run_child_process(io, p2_args.items, "C compiler (PGO pass 2)", silent);
     } else {
         // Normal single-pass compile.
         var cc_args: std.ArrayList([]const u8) = .empty;
         defer cc_args.deinit(alloc);
         try cc_args.appendSlice(alloc, base_cc_flags.items);
         try cc_args.appendSlice(alloc, &.{ "-o", out_path, c_path });
-        try run_child_process(io, cc_args.items, "C compiler");
+        try run_child_process(io, cc_args.items, "C compiler", silent);
     }
 
     if (run_after and !is_wasm) {

@@ -1,0 +1,71 @@
+-- std.path — path manipulation utilities (POSIX-style)
+
+function std_path_join(a: str, b: str): str
+    if a == "" then
+        return b
+    end
+    if b == "" then
+        return a
+    end
+    if string.sub(b, 1, 1) == "/" then
+        return b
+    end
+    if string.sub(a, -1, -1) == "/" then
+        return a .. b
+    end
+    return a .. "/" .. b
+end
+
+function std_path_basename(p: str): str
+    if p == "" then
+        return ""
+    end
+    local i = string.len(p)
+    while i > 1 and string.sub(p, i, i) == "/" do
+        i = i - 1
+    end
+    local last = i
+    while i > 1 and string.sub(p, i - 1, i - 1) ~= "/" do
+        i = i - 1
+    end
+    return string.sub(p, i, last)
+end
+
+function std_path_dirname(p: str): str
+    if p == "" then
+        return "."
+    end
+    local i = string.len(p)
+    while i > 1 and string.sub(p, i, i) == "/" do
+        i = i - 1
+    end
+    while i > 1 and string.sub(p, i - 1, i - 1) ~= "/" do
+        i = i - 1
+    end
+    if i <= 1 then
+        if string.sub(p, 1, 1) == "/" then
+            return "/"
+        end
+        return "."
+    end
+    return string.sub(p, 1, i - 1)
+end
+
+function std_path_extname(p: str): str
+    local base = std_path_basename(p)
+    local i = string.len(base)
+    while i > 1 do
+        if string.sub(base, i, i) == "." then
+            return string.sub(base, i, string.len(base))
+        end
+        i = i - 1
+    end
+    return ""
+end
+
+local M = {}
+M.join = std_path_join
+M.basename = std_path_basename
+M.dirname = std_path_dirname
+M.extname = std_path_extname
+return M

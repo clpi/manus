@@ -1,0 +1,29 @@
+-- std.proc — process utilities
+
+function std_proc_exec(cmd: str)
+    local rc = os.execute(cmd)
+    if rc == nil then
+        return -1
+    end
+    return rc
+end
+
+function std_proc_capture(cmd: str): str
+    local f = io.popen(cmd, "r")
+    if f == nil then
+        return ""
+    end
+    local out = ""
+    local line = f:read()
+    while line ~= nil do
+        out = out .. line .. "\n"
+        line = f:read()
+    end
+    f:close()
+    return out
+end
+
+local M = {}
+M.exec = std_proc_exec
+M.capture = std_proc_capture
+return M

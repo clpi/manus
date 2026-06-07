@@ -1,0 +1,60 @@
+-- Test the freestanding standard library
+
+local path = require("std.path")
+local env = require("std.env")
+local proc = require("std.proc")
+local collections = require("std.collections")
+local sync = require("std.sync")
+local net = require("std.net")
+
+print("=== std.path ===")
+print("join:", path.join("/usr", "bin"))
+print("basename:", path.basename("/usr/bin/gcc"))
+print("dirname:", path.dirname("/usr/bin/gcc"))
+print("extname:", path.extname("/usr/bin/gcc"))
+
+print("=== std.env ===")
+print("has PATH:", env.has("PATH"))
+print("get PATH len:", string.len(env.get("PATH")))
+
+print("=== std.collections ===")
+local list = collections.list_new()
+collections.list_push(list, "a")
+collections.list_push(list, "b")
+collections.list_push(list, "c")
+print("list len:", collections.list_len(list))
+print("list pop:", collections.list_pop(list))
+
+local stack = collections.stack_new()
+collections.stack_push(stack, 1)
+collections.stack_push(stack, 2)
+print("stack pop:", collections.stack_pop(stack))
+
+local queue = collections.queue_new()
+collections.queue_enqueue(queue, "x")
+collections.queue_enqueue(queue, "y")
+print("queue dequeue:", collections.queue_dequeue(queue))
+
+local map = collections.map_new()
+collections.map_set(map, "key", "value")
+print("map get:", collections.map_get(map, "key"))
+print("map has:", collections.map_has(map, "key"))
+
+local set = collections.set_new()
+collections.set_add(set, 42)
+print("set has 42:", collections.set_has(set, 42))
+print("set has 99:", collections.set_has(set, 99))
+
+print("=== std.sync ===")
+local ch = sync.channel_new()
+sync.channel_send(ch, "hello")
+print("channel recv:", sync.channel_recv(ch))
+
+print("=== std.net ===")
+-- HTTP tests intentionally skipped in basic test to avoid network dependency
+print("tcp_connect stub:", net.tcp_connect("example.com", 80))
+
+print("=== std.proc ===")
+print("whoami:", proc.capture("whoami"))
+
+print("stdlib test complete")

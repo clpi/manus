@@ -1,0 +1,10 @@
+function foo(a: str, b: str): str
+    if a == "" then
+        return b
+    end
+    return a .. b
+end
+
+local M = {}
+M.foo = foo
+return M

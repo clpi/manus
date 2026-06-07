@@ -1,0 +1,50 @@
+-- std.net — networking helpers (HTTP via curl; sockets are stubs)
+
+function std_net_http_get(url: str): str
+    local cmd = "curl -sL " .. url
+    local f = io.popen(cmd, "r")
+    if f == nil then
+        return ""
+    end
+    local out = ""
+    local line = f:read()
+    while line ~= nil do
+        out = out .. line .. "\n"
+        line = f:read()
+    end
+    f:close()
+    return out
+end
+
+function std_net_http_post(url: str, body: str): str
+    local cmd = "curl -sL -X POST -d '" .. body .. "' " .. url
+    local f = io.popen(cmd, "r")
+    if f == nil then
+        return ""
+    end
+    local out = ""
+    local line = f:read()
+    while line ~= nil do
+        out = out .. line .. "\n"
+        line = f:read()
+    end
+    f:close()
+    return out
+end
+
+function std_net_tcp_connect(host: str, port)
+    -- stub: requires socket runtime support
+    return nil
+end
+
+function std_net_udp_socket(host: str, port)
+    -- stub: requires socket runtime support
+    return nil
+end
+
+local M = {}
+M.http_get = std_net_http_get
+M.http_post = std_net_http_post
+M.tcp_connect = std_net_tcp_connect
+M.udp_socket = std_net_udp_socket
+return M

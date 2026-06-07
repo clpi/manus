@@ -1,0 +1,2 @@
+local mod = require("test_mod")
+print(mod.foo("hello", "world"))

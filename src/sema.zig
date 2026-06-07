@@ -2877,6 +2877,17 @@ pub const Sema = struct {
     fn detect_ack_inline(fb: *ast.FuncBody) bool {
         if (fb.params.len != 2) return false;
         if (fb.body.stmts.len < 2) return false;
+        // Only match integer-returning functions
+        const is_int = switch (fb.ret_type) {
+            .named => |n| for ([_][]const u8{
+                "i8", "i16", "i32", "i64",
+                "u8", "u16", "u32", "u64",
+            }) |t| {
+                if (std.mem.eql(u8, n, t)) break true;
+            } else false,
+            else => false,
+        };
+        if (!is_int) return false;
         // Accept both single-if-with-elseif and two-separate-if form.
         var if_count: usize = 0;
         var has_elseif = false;

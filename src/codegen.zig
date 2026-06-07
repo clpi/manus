@@ -382,8 +382,13 @@ pub const CodeGen = struct {
             }
         }
         if (e.* == .binop) {
-            const lt = self.expr_type(e.binop.lhs);
-            const rt = self.expr_type(e.binop.rhs);
+            const b = e.binop;
+            switch (b.op) {
+                .eq, .neq, .lt, .gt, .leq, .geq => return .bool,
+                else => {},
+            }
+            const lt = self.expr_type(b.lhs);
+            const rt = self.expr_type(b.rhs);
             if (lt.is_native() and rt.is_native()) {
                 if (lt == .f64 or rt == .f64) return .f64;
                 if (lt.is_integer() and rt.is_integer()) return .i64;
@@ -4990,20 +4995,49 @@ pub const CodeGen = struct {
             if (seen.contains(name)) continue;
             try seen.put(self.alloc, name, {});
             if (self.src_path.len == 0) continue;
-            const path = try std.fmt.allocPrint(self.alloc, "{s}/{s}.lua", .{ dir, name });
-            defer self.alloc.free(path);
-            const duo_path = try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ dir, name });
-            defer self.alloc.free(duo_path);
-            const mod_path = blk: {
-                const cwd = Io.Dir.cwd();
-                Io.Dir.access(cwd, self.io, path, .{}) catch {
-                    Io.Dir.access(cwd, self.io, duo_path, .{}) catch continue;
-                    break :blk duo_path;
-                };
-                break :blk path;
-            };
+
+            // Translate module name dots to path separators (std.path -> std/path)
+            const mod_path_name = try self.alloc.dupe(u8, name);
+            defer self.alloc.free(mod_path_name);
+            for (mod_path_name) |*c| {
+                if (c.* == '.') c.* = '/';
+            }
+
+            var mod_path: ?[]const u8 = null;
+            const src_lua = try std.fmt.allocPrint(self.alloc, "{s}/{s}.lua", .{ dir, mod_path_name });
+            const src_duo = try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ dir, mod_path_name });
+            const lib_lua = try std.fmt.allocPrint(self.alloc, "lib/{s}.lua", .{mod_path_name});
+            const lib_duo = try std.fmt.allocPrint(self.alloc, "lib/{s}.duo", .{mod_path_name});
+            const cwd = Io.Dir.cwd();
+            if (Io.Dir.access(cwd, self.io, src_lua, .{})) {
+                mod_path = src_lua;
+                self.alloc.free(src_duo); self.alloc.free(lib_lua); self.alloc.free(lib_duo);
+            } else |_| {
+                if (Io.Dir.access(cwd, self.io, src_duo, .{})) {
+                    mod_path = src_duo;
+                    self.alloc.free(src_lua); self.alloc.free(lib_lua); self.alloc.free(lib_duo);
+                } else |_| {
+                    if (Io.Dir.access(cwd, self.io, lib_lua, .{})) {
+                        mod_path = lib_lua;
+                        self.alloc.free(src_lua); self.alloc.free(src_duo); self.alloc.free(lib_duo);
+                    } else |_| {
+                        if (Io.Dir.access(cwd, self.io, lib_duo, .{})) {
+                            mod_path = lib_duo;
+                            self.alloc.free(src_lua); self.alloc.free(src_duo); self.alloc.free(lib_lua);
+                        } else |_| {
+                            self.alloc.free(src_lua); self.alloc.free(src_duo);
+                            self.alloc.free(lib_lua); self.alloc.free(lib_duo);
+                            continue;
+                        }
+                    }
+                }
+            }
+            defer self.alloc.free(mod_path.?);
             const cname = try self.module_c_name(name);
-            try self.emit_embedded_module(cname, mod_path);
+            if (!self.emit_embedded_module(cname, mod_path.?)) {
+                std.debug.print("warning: failed to embed module '{s}' from {s}\n", .{ name, mod_path.? });
+                continue;
+            }
             try embedded.append(self.alloc, .{ .name = name, .cname = cname });
         }
 
@@ -5026,18 +5060,99 @@ pub const CodeGen = struct {
         return out.toOwnedSlice(self.alloc);
     }
 
-    fn emit_embedded_module(self: *CodeGen, cname: []const u8, path: []const u8) E!void {
+    fn emit_embedded_module(self: *CodeGen, cname: []const u8, path: []const u8) bool {
         const cwd = Io.Dir.cwd();
-        const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch return;
+        const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch |e| {
+            std.debug.print("emit_embedded_module: readFileAlloc failed for {s}: {}\n", .{ path, e });
+            return false;
+        };
         defer self.alloc.free(src);
 
         var lex = @import("lexer.zig").Lexer.init(src, path);
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
-        var submod = parser.parse_module() catch return;
+        var submod = parser.parse_module() catch |e| {
+            std.debug.print("emit_embedded_module: parse failed for {s}: {}\n", .{ path, e });
+            return false;
+        };
         var subsem = sema.Sema.init(self.alloc);
         defer subsem.deinit();
         subsem.lua55_mode = std.mem.endsWith(u8, path, ".lua");
-        subsem.check_module(&submod) catch return;
+        subsem.duo_mode = std.mem.endsWith(u8, path, ".duo");
+        subsem.check_module(&submod) catch |e| {
+            std.debug.print("emit_embedded_module: sema failed for {s}: {}\n", .{ path, e });
+            return false;
+        };
+        // Copy submodule type map into main type map so codegen can resolve types
+        // for submodule expressions.
+        var type_it = subsem.type_map.iterator();
+        while (type_it.next()) |entry| {
+            self.type_map.put(entry.key_ptr.*, entry.value_ptr.*) catch |e| {
+                std.debug.print("emit_embedded_module: type map merge failed: {}\n", .{e});
+                return false;
+            };
+        }
+
+        // Emit submodule constants at file scope
+        for (submod.body.stmts) |*stmt| {
+            if (stmt.* == .const_decl) {
+                const cd = &stmt.const_decl;
+                const rt = if (cd.typ != .inferred)
+                    types.resolve(cd.typ, null, self.alloc) catch .any
+                else
+                    self.expr_type(cd.val);
+                self.p("static const ", .{});
+                self.typ(rt);
+                self.p(" {s} = ", .{cd.ident});
+                self.emit_expr(cd.val) catch |e| {
+                    std.debug.print("emit_embedded_module: expr emit failed for const {s}: {}\n", .{ cd.ident, e });
+                    return false;
+                };
+                self.p(";\n", .{});
+            }
+        }
+
+        // Collect all top-level and nested local functions from submodule
+        var sub_funcs: std.ArrayList(*ast.FuncDecl) = .empty;
+        defer sub_funcs.deinit(self.alloc);
+        for (submod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) {
+                sub_funcs.append(self.alloc, &stmt.func_decl) catch |e| {
+                    std.debug.print("emit_embedded_module: oom collecting funcs: {}\n", .{e});
+                    return false;
+                };
+            }
+        }
+        var nested: std.ArrayList(*ast.FuncDecl) = .empty;
+        defer nested.deinit(self.alloc);
+        for (sub_funcs.items) |fd| {
+            self.collect_local_funcs_block(&fd.func.body, &nested) catch |e| {
+                std.debug.print("emit_embedded_module: oom collecting nested funcs: {}\n", .{e});
+                return false;
+            };
+        }
+        sub_funcs.appendSlice(self.alloc, nested.items) catch |e| {
+            std.debug.print("emit_embedded_module: oom appending nested funcs: {}\n", .{e});
+            return false;
+        };
+
+        // Forward-declare submodule functions
+        for (sub_funcs.items) |fd| {
+            if (fd.func.is_async) continue;
+            if (fd.path.len == 1 and !fd.method) {
+                self.emit_func_decl_forward(fd) catch |e| {
+                    std.debug.print("emit_embedded_module: forward decl failed for {s}: {}\n", .{ fd.path[0], e });
+                    return false;
+                };
+            }
+        }
+        // Emit submodule function definitions at file scope
+        for (sub_funcs.items) |fd| {
+            if (fd.func.is_async) continue;
+            self.emit_func_def(fd) catch |e| {
+                std.debug.print("emit_embedded_module: func def failed for {s}: {}\n", .{ fd.path[0], e });
+                return false;
+            };
+        }
 
         self.p("static lua_Value duo_mod_{s}(lua_Value _unused) {{\n", .{cname});
         self.p("    (void)_unused;\n", .{});
@@ -5049,7 +5164,10 @@ pub const CodeGen = struct {
         for (submod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl, .const_decl => {},
-                else => try self.emit_stmt(stmt),
+                else => self.emit_stmt(stmt) catch |e| {
+                    std.debug.print("emit_embedded_module: stmt emit failed: {}\n", .{e});
+                    return false;
+                },
             }
         }
         self.pl("return lua_val_nil();", .{});
@@ -5057,6 +5175,7 @@ pub const CodeGen = struct {
         self.current_ret = prev_ret;
         self.closure_ctx = prev_ctx;
         self.p("}}\n\n", .{});
+        return true;
     }
 
     // ── Duo Language Extensions ────────────────────────────────────────────────
