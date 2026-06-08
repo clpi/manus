@@ -7,20 +7,18 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  ZIG_VERSION: master
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig ${{ env.ZIG_VERSION }}
+      - name: Install Zig
         run: |
-          curl -fsSL "https://ziglang.org/builds/zig-linux-x86_64-${{ env.ZIG_VERSION }}.tar.xz" -o /tmp/zig.tar.xz
+          ZIG_TARBALL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
+          curl -fsSL "$ZIG_TARBALL" -o /tmp/zig.tar.xz
           tar -xJf /tmp/zig.tar.xz -C /tmp
-          ZIG_DIR=$(ls -d /tmp/zig-linux-x86_64-* | head -1)
+          ZIG_DIR=$(ls -d /tmp/zig-*linux-* | head -1)
           echo "$ZIG_DIR" >> "$GITHUB_PATH"
 
       - name: Build
@@ -44,11 +42,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig ${{ env.ZIG_VERSION }}
+      - name: Install Zig
         run: |
-          curl -fsSL "https://ziglang.org/builds/zig-macos-aarch64-${{ env.ZIG_VERSION }}.tar.xz" -o /tmp/zig.tar.xz
+          ZIG_TARBALL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."aarch64-macos".tarball')
+          curl -fsSL "$ZIG_TARBALL" -o /tmp/zig.tar.xz
           tar -xJf /tmp/zig.tar.xz -C /tmp
-          ZIG_DIR=$(ls -d /tmp/zig-macos-aarch64-* | head -1)
+          ZIG_DIR=$(ls -d /tmp/zig-*macos-* | head -1)
           echo "$ZIG_DIR" >> "$GITHUB_PATH"
 
       - name: Build
@@ -64,11 +63,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig ${{ env.ZIG_VERSION }}
+      - name: Install Zig
         run: |
-          curl -fsSL "https://ziglang.org/builds/zig-linux-x86_64-${{ env.ZIG_VERSION }}.tar.xz" -o /tmp/zig.tar.xz
+          ZIG_TARBALL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
+          curl -fsSL "$ZIG_TARBALL" -o /tmp/zig.tar.xz
           tar -xJf /tmp/zig.tar.xz -C /tmp
-          ZIG_DIR=$(ls -d /tmp/zig-linux-x86_64-* | head -1)
+          ZIG_DIR=$(ls -d /tmp/zig-*linux-* | head -1)
           echo "$ZIG_DIR" >> "$GITHUB_PATH"
 
       - name: Build release binary
