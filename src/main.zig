@@ -257,13 +257,14 @@ fn do_compile(
         var args: std.ArrayList([]const u8) = .empty;
         if (is_wasm) {
             try args.appendSlice(alloc, &.{
-                "zig",                  "cc",
-                "--target=wasm32-wasi", opt,
-                "-ffast-math",          "-flto",
-                "-fomit-frame-pointer", "-funroll-loops",
-                "-ffp-contract=fast",   "-fno-trapping-math",
-                "-fno-math-errno",      "-Wl,--no-entry",
-                "-Wl,--export=main",    "-std=gnu99",
+                "zig",                   "cc",
+                "--target=wasm32-wasi",  opt,
+                "-ffast-math",           "-flto",
+                "-fomit-frame-pointer",  "-funroll-loops",
+                "-ffp-contract=fast",    "-fno-trapping-math",
+                "-fno-math-errno",       "-Wl,--no-entry",
+                "-Wl,--export=main",     "-Wl,--gc-sections",
+                "-Wl,--strip-debug",     "-std=gnu99",
                 "-lm",
             });
         } else {
