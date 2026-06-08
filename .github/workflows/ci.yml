@@ -36,6 +36,9 @@ jobs:
           file /tmp/hello.wasm | grep -q "WebAssembly"
           echo "WASM OK"
 
+      - name: WASM codegen compatibility tests
+        run: bash scripts/test_wasm_codegen.sh
+
   bench:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: macos-latest

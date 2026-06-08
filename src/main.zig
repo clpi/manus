@@ -97,7 +97,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "check")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
-        try do_dump_c(alloc, io, file);
+        try do_dump_c(alloc, io, file, target);
     } else {
         std.debug.print("error: unknown command '{s}'\n{s}", .{ cmd, usage });
         std.process.exit(1);
@@ -257,13 +257,14 @@ fn do_compile(
         var args: std.ArrayList([]const u8) = .empty;
         if (is_wasm) {
             try args.appendSlice(alloc, &.{
-                "zig",                  "cc",
-                "--target=wasm32-wasi", opt,
-                "-ffast-math",          "-flto",
-                "-fomit-frame-pointer", "-funroll-loops",
-                "-ffp-contract=fast",   "-fno-trapping-math",
-                "-fno-math-errno",      "-Wl,--no-entry",
-                "-Wl,--export=main",    "-std=gnu99",
+                "zig",                   "cc",
+                "--target=wasm32-wasi",  opt,
+                "-ffast-math",           "-flto",
+                "-fomit-frame-pointer",  "-funroll-loops",
+                "-ffp-contract=fast",    "-fno-trapping-math",
+                "-fno-math-errno",       "-Wl,--no-entry",
+                "-Wl,--export=main",     "-Wl,--gc-sections",
+                "-Wl,--strip-debug",     "-std=gnu99",
                 "-lm",
             });
         } else {
@@ -367,7 +368,7 @@ fn do_compile(
     }
 }
 
-fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []const u8) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
 
@@ -385,9 +386,12 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
         std.process.exit(1);
     };
 
-    const is_wasm_target = false;
+    const is_wasm_target = std.mem.eql(u8, target, "wasm32-wasi");
     const threaded = false;
-    AsyncLower.validateTarget(is_wasm_target, threaded) catch unreachable;
+    AsyncLower.validateTarget(is_wasm_target, threaded) catch {
+        std.debug.print("error: the threaded scheduler is not supported on the wasm32-wasi target\n", .{});
+        std.process.exit(1);
+    };
     var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
     defer async_pass.deinit();
     async_pass.run(&ps.mod) catch |e| {
@@ -403,6 +407,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     cg.arc = &arc_pass;
     cg.async_lower = &async_pass;
     cg.src_path = src_path;
+    cg.target = target;
     cg.emit_module(&ps.mod) catch |e| {
         std.debug.print("codegen error: {}\n", .{e});
         std.process.exit(1);
