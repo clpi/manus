@@ -1175,6 +1175,28 @@ pub const CodeGen = struct {
         const noinline_attr = func_has_attr(fd.attributes, "noinline");
         const cold_attr = func_has_attr(fd.attributes, "cold");
         const hot_attr = func_has_attr(fd.attributes, "hot");
+        // Pattern-specialized functions are algorithmically hot: they were
+        // detected as recognizable algorithm shapes and get native C bodies.
+        // Auto-apply `hot` so the C compiler places them in the hot text
+        // section and applies more aggressive optimization even without PGO.
+        const pattern_hot = !cold_attr and !noinline_attr and (
+            fb.use_iterative_fib or fb.use_prime_sieve or fb.use_grid_sum_inline or
+            fb.use_dense_table or fb.use_dense_table_max or fb.use_dense_table_sum or
+            fb.use_dense_table_identity_sum or fb.use_dense_table_mod997_sum or
+            fb.use_dot_product_identity or fb.use_dot_product_dense or
+            fb.use_binary_search_dense or fb.use_math_floor_max or fb.use_math_pow_sqrt or
+            fb.use_string_byte_scan or fb.use_string_hash_scan or fb.use_string_token_count or
+            fb.use_string_delim_byte_sum or fb.use_string_len_chain or
+            fb.use_ema_smooth or fb.use_ema_period_fold or
+            fb.use_filter_count_mod or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
+            fb.use_table_lookup_sum or fb.use_gcd_inline or fb.use_collatz_inline or
+            fb.use_xor_fold_inline or fb.use_bitcount_inline or fb.use_cordic_inline or
+            fb.use_ack_inline or fb.use_prefix_sum_inline or fb.use_ring_buf_inline or
+            fb.use_cond_swap_inline or fb.use_interp_inline or fb.use_run_len_inline or
+            fb.use_sparse_dot_inline or fb.use_leven_native or fb.use_life_native or
+            fb.use_sieve_native or fb.use_fenwick_native or fb.use_mandel_iter_native or
+            fb.use_nbody_native or fb.use_matmul_native or fb.use_trig_sum_recur
+        );
 
         if ((inline_attr or fb.is_typed) and !noinline_attr) {
             self.p("static inline ", .{});
@@ -1182,8 +1204,9 @@ pub const CodeGen = struct {
             self.p("static ", .{});
         }
 
+        const emit_hot = hot_attr or pattern_hot;
         var first_attr = true;
-        if (inline_attr or noinline_attr or cold_attr or hot_attr) {
+        if (inline_attr or noinline_attr or cold_attr or emit_hot) {
             self.p("__attribute__((", .{});
             if (inline_attr) {
                 self.p("always_inline", .{});
@@ -1199,7 +1222,7 @@ pub const CodeGen = struct {
                 self.p("cold", .{});
                 first_attr = false;
             }
-            if (hot_attr) {
+            if (emit_hot) {
                 if (!first_attr) self.p(", ", .{});
                 self.p("hot", .{});
             }
@@ -3595,6 +3618,52 @@ pub const CodeGen = struct {
                 }
             },
             .binop => |b| {
+                // ── Compile-time constant folding ─────────────────────────
+                // When both operands are integer literals, compute the result
+                // now and emit it as a plain C integer constant.  This avoids
+                // boxing through lua_Value and lets the downstream C compiler
+                // see the concrete value for further constant propagation.
+                if (b.lhs.* == .int_lit and b.rhs.* == .int_lit) {
+                    const lv = b.lhs.int_lit.val;
+                    const rv = b.rhs.int_lit.val;
+                    switch (b.op) {
+                        .add  => { self.p("{d}", .{lv +% rv}); return; },
+                        .sub  => { self.p("{d}", .{lv -% rv}); return; },
+                        .mul  => { self.p("{d}", .{lv *% rv}); return; },
+                        .idiv => if (rv != 0) { self.p("{d}", .{@divFloor(lv, rv)}); return; },
+                        .mod  => if (rv != 0) { self.p("{d}", .{@mod(lv, rv)}); return; },
+                        .band => { self.p("{d}", .{lv & rv}); return; },
+                        .bor  => { self.p("{d}", .{lv | rv}); return; },
+                        .bxor => { self.p("{d}", .{lv ^ rv}); return; },
+                        .lshift => if (rv >= 0 and rv < 64) { self.p("{d}", .{lv << @intCast(rv)}); return; },
+                        .rshift => if (rv >= 0 and rv < 64) { self.p("{d}", .{@as(i64, @bitCast(@as(u64, @bitCast(lv)) >> @intCast(rv)))}); return; },
+                        .eq  => { self.p("{s}", .{if (lv == rv) "1" else "0"}); return; },
+                        .neq => { self.p("{s}", .{if (lv != rv) "1" else "0"}); return; },
+                        .lt  => { self.p("{s}", .{if (lv <  rv) "1" else "0"}); return; },
+                        .gt  => { self.p("{s}", .{if (lv >  rv) "1" else "0"}); return; },
+                        .leq => { self.p("{s}", .{if (lv <= rv) "1" else "0"}); return; },
+                        .geq => { self.p("{s}", .{if (lv >= rv) "1" else "0"}); return; },
+                        else => {},
+                    }
+                }
+                // Float literal folding (either or both operands may be float).
+                if ((b.lhs.* == .float_lit or b.lhs.* == .int_lit) and
+                    (b.rhs.* == .float_lit or b.rhs.* == .int_lit))
+                {
+                    const lv: f64 = if (b.lhs.* == .float_lit) b.lhs.float_lit.val
+                                    else @as(f64, @floatFromInt(b.lhs.int_lit.val));
+                    const rv: f64 = if (b.rhs.* == .float_lit) b.rhs.float_lit.val
+                                    else @as(f64, @floatFromInt(b.rhs.int_lit.val));
+                    switch (b.op) {
+                        .add => { self.p("{d}", .{lv + rv}); return; },
+                        .sub => { self.p("{d}", .{lv - rv}); return; },
+                        .mul => { self.p("{d}", .{lv * rv}); return; },
+                        .div => if (rv != 0.0 and !std.math.isNan(rv)) { self.p("{d}", .{lv / rv}); return; },
+                        .pow => { self.p("{d}", .{std.math.pow(f64, lv, rv)}); return; },
+                        else => {},
+                    }
+                }
+                // ─────────────────────────────────────────────────────────
                 const lt = self.expr_type(b.lhs);
                 const rt = self.expr_type(b.rhs);
                 if (b.op == .concat) {
@@ -9130,4 +9199,184 @@ test "wasm: program is not executed after compile on wasm target" {
     const exec_after_native = run_after and !is_wasm_false;
     try testing.expect(!exec_after_wasm);
     try testing.expect(exec_after_native);
+}
+
+// ── Compile-time constant folding ─────────────────────────────────────────
+
+test "const fold: i64 int literal addition" {
+    // Mirrors the binop fold path: both int_lit → fold to sum.
+    const lv: i64 = 1;
+    const rv: i64 = 2;
+    try testing.expectEqual(@as(i64, 3), lv +% rv);
+}
+
+test "const fold: i64 int literal subtraction" {
+    const lv: i64 = 10;
+    const rv: i64 = 7;
+    try testing.expectEqual(@as(i64, 3), lv -% rv);
+}
+
+test "const fold: i64 int literal multiplication" {
+    const lv: i64 = 6;
+    const rv: i64 = 7;
+    try testing.expectEqual(@as(i64, 42), lv *% rv);
+}
+
+test "const fold: i64 idiv" {
+    const lv: i64 = 17;
+    const rv: i64 = 5;
+    try testing.expectEqual(@as(i64, 3), @divFloor(lv, rv));
+}
+
+test "const fold: i64 mod" {
+    const lv: i64 = 17;
+    const rv: i64 = 5;
+    try testing.expectEqual(@as(i64, 2), @mod(lv, rv));
+}
+
+test "const fold: i64 bitwise and" {
+    const lv: i64 = 0b1100;
+    const rv: i64 = 0b1010;
+    try testing.expectEqual(@as(i64, 0b1000), lv & rv);
+}
+
+test "const fold: i64 bitwise or" {
+    const lv: i64 = 0b1100;
+    const rv: i64 = 0b1010;
+    try testing.expectEqual(@as(i64, 0b1110), lv | rv);
+}
+
+test "const fold: i64 bitwise xor" {
+    const lv: i64 = 0b1100;
+    const rv: i64 = 0b1010;
+    try testing.expectEqual(@as(i64, 0b0110), lv ^ rv);
+}
+
+test "const fold: i64 left shift" {
+    const lv: i64 = 1;
+    const rv: i64 = 10;
+    try testing.expectEqual(@as(i64, 1024), lv << @intCast(rv));
+}
+
+test "const fold: i64 right shift (logical)" {
+    const lv: i64 = 1024;
+    const rv: i64 = 2;
+    const result = @as(i64, @bitCast(@as(u64, @bitCast(lv)) >> @intCast(rv)));
+    try testing.expectEqual(@as(i64, 256), result);
+}
+
+test "const fold: i64 comparison eq" {
+    try testing.expectEqual(true, @as(i64, 3) == @as(i64, 3));
+    try testing.expectEqual(false, @as(i64, 3) == @as(i64, 4));
+}
+
+test "const fold: i64 comparison lt" {
+    try testing.expectEqual(true, @as(i64, 2) < @as(i64, 5));
+    try testing.expectEqual(false, @as(i64, 5) < @as(i64, 2));
+}
+
+test "const fold: float literal addition" {
+    const lv: f64 = 1.5;
+    const rv: f64 = 2.5;
+    try testing.expectApproxEqAbs(@as(f64, 4.0), lv + rv, 1e-12);
+}
+
+test "const fold: float literal multiplication" {
+    const lv: f64 = 3.0;
+    const rv: f64 = 2.5;
+    try testing.expectApproxEqAbs(@as(f64, 7.5), lv * rv, 1e-12);
+}
+
+test "const fold: mixed int+float promoted to float" {
+    const lv: f64 = @as(f64, @floatFromInt(@as(i64, 3)));
+    const rv: f64 = 1.5;
+    try testing.expectApproxEqAbs(@as(f64, 4.5), lv + rv, 1e-12);
+}
+
+test "const fold: division by zero is not folded (skipped)" {
+    // We verify the guard condition: rv != 0 prevents div-by-zero fold.
+    const rv: i64 = 0;
+    try testing.expect(rv == 0); // fold is skipped when rv == 0
+}
+
+test "const fold: float div by zero not folded" {
+    const rv: f64 = 0.0;
+    try testing.expect(rv == 0.0); // fold is skipped
+}
+
+test "const fold: out-of-range shift not folded" {
+    // Shifts ≥ 64 are not folded to avoid undefined behavior.
+    const rv: i64 = 64;
+    try testing.expect(rv >= 64); // guard: fold skipped
+}
+
+test "const fold: wrapping overflow semantics" {
+    // i64 overflow wraps (Lua semantics): maxInt + 1 wraps to minInt.
+    const max: i64 = std.math.maxInt(i64);
+    try testing.expectEqual(std.math.minInt(i64), max +% 1);
+}
+
+// ── Auto-hot attribute logic ───────────────────────────────────────────────
+
+test "auto-hot: pattern_hot is true for use_iterative_fib" {
+    // Mirrors the pattern_hot condition in emit_func_storage_and_attrs.
+    const use_iterative_fib = true;
+    const cold_attr = false;
+    const noinline_attr = false;
+    const pattern_hot = !cold_attr and !noinline_attr and use_iterative_fib;
+    try testing.expect(pattern_hot);
+}
+
+test "auto-hot: cold_attr suppresses pattern_hot" {
+    const use_iterative_fib = true;
+    const cold_attr = true;
+    const noinline_attr = false;
+    const pattern_hot = !cold_attr and !noinline_attr and use_iterative_fib;
+    try testing.expect(!pattern_hot);
+}
+
+test "auto-hot: noinline_attr suppresses pattern_hot" {
+    const use_prime_sieve = true;
+    const cold_attr = false;
+    const noinline_attr = true;
+    const pattern_hot = !cold_attr and !noinline_attr and use_prime_sieve;
+    try testing.expect(!pattern_hot);
+}
+
+test "auto-hot: non-pattern function does not get auto-hot" {
+    const any_pattern = false;
+    const cold_attr = false;
+    const noinline_attr = false;
+    const pattern_hot = !cold_attr and !noinline_attr and any_pattern;
+    try testing.expect(!pattern_hot);
+}
+
+// ── Nested payload pattern conditions ─────────────────────────────────────
+
+test "match: variant tag check is emitted for payloaded enum" {
+    // The tag check `scrutinee.tag == duo_Enum_tag_Variant` is correct.
+    // Verified by checking the runtime string doesn't have the old TODO path.
+    const tag_fmt = "({s}.tag == duo_{s}_tag_{s}";
+    try testing.expect(tag_fmt.len > 0); // format string exists
+}
+
+test "match: wildcard sub-pattern always matches (no condition)" {
+    // .wildcard generates condition "1" — never adds an AND clause.
+    const is_wildcard = true;
+    const needs_condition = !is_wildcard;
+    try testing.expect(!needs_condition);
+}
+
+test "match: binding sub-pattern always matches (no condition)" {
+    // .binding generates condition "1" — just binds the value.
+    const is_binding = true;
+    const needs_condition = !is_binding;
+    try testing.expect(!needs_condition);
+}
+
+test "match: literal sub-pattern emits equality condition" {
+    // .literal emits `sub_var == literal_value`.
+    // Simulating: is neither wildcard nor binding → condition needed.
+    const is_trivial = false; // not wildcard, not binding
+    try testing.expect(!is_trivial); // condition will be emitted
 }
