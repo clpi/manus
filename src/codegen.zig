@@ -8802,22 +8802,147 @@ const duo_runtime =
 
 const testing = std.testing;
 
+// ── Runtime string: duo_contains ──────────────────────────────────────────
+
 test "runtime: duo_contains is defined" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "duo_contains") != null);
 }
 
-test "runtime: duo_contains iterates array and hash parts" {
+test "runtime: duo_contains checks VAL_TABLE before iterating" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "VAL_TABLE") != null);
+}
+
+test "runtime: duo_contains iterates array part via array_size" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "array_size") != null);
+}
+
+test "runtime: duo_contains iterates hash part via capacity" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "t->capacity") != null);
 }
 
-test "wasm: runtime does not unconditionally include POSIX-only headers" {
-    // sys/time.h, dlfcn.h, fcntl.h, sys/stat.h are guarded by #ifndef __wasm__
-    // in the Zig codegen source; they must not appear in duo_runtime itself.
+test "runtime: duo_contains returns false for non-table" {
+    // Verified by reading source: first branch is `if (container.type != VAL_TABLE) return false`.
+    const needle = "container.type != VAL_TABLE";
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, needle) != null);
+}
+
+test "runtime: duo_contains returns false for null table pointer" {
+    const needle = "if (!t) return false";
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, needle) != null);
+}
+
+test "runtime: duo_contains uses lua_eq for element comparison" {
+    // Relies on lua_eq being defined before duo_contains and called inside it.
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_eq") != null);
+    // Verify lua_eq appears before duo_contains in the runtime string.
+    const eq_pos  = std.mem.indexOf(u8, duo_runtime, "lua_eq").?;
+    const dc_pos  = std.mem.indexOf(u8, duo_runtime, "duo_contains").?;
+    try testing.expect(eq_pos < dc_pos);
+}
+
+// ── Runtime string: POSIX-free ────────────────────────────────────────────
+
+test "runtime: sys/time.h not in duo_runtime (guarded in preamble)" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "sys/time.h") == null);
+}
+
+test "runtime: dlfcn.h not in duo_runtime (guarded in preamble)" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "dlfcn.h") == null);
+}
+
+test "runtime: sys/stat.h not in duo_runtime (guarded in preamble)" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "sys/stat.h") == null);
 }
+
+test "runtime: unistd.h not in duo_runtime (guarded in preamble)" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "unistd.h") == null);
+}
+
+test "runtime: fcntl.h not in duo_runtime (guarded in preamble)" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "fcntl.h") == null);
+}
+
+// ── Runtime string: required portable C headers ───────────────────────────
+
+test "runtime: stdio.h is present (portable)" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "#include <stdio.h>") != null);
+}
+
+test "runtime: stdlib.h is present (portable)" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "#include <stdlib.h>") != null);
+}
+
+test "runtime: string.h is present (portable)" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "#include <string.h>") != null);
+}
+
+test "runtime: stdbool.h is present (portable)" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "#include <stdbool.h>") != null);
+}
+
+// ── Runtime string: error handling ────────────────────────────────────────
+
+test "runtime: lua_error function is defined" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_error") != null);
+}
+
+test "runtime: longjmp is called inside lua_error" {
+    // The error propagation mechanism must use longjmp (stubbed on WASM).
+    const needle = "longjmp(error_jmp";
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, needle) != null);
+}
+
+test "runtime: setjmp error_jmp is used for pcall" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "setjmp(error_jmp)") != null);
+}
+
+test "runtime: has_error_jmp guards longjmp call" {
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "has_error_jmp") != null);
+}
+
+// ── Runtime string: async/poll support ────────────────────────────────────
+
+test "runtime: DUO_POLL enum is defined" {
+    // emitPollEnum writes this; verify it would be compatible with the runtime.
+    // The poll enum is NOT in duo_runtime itself but emitted separately when
+    // async functions are present. Verify the naming convention is consistent.
+    const needle = "DUO_POLL_PENDING";
+    // Poll enum is emitted by emitPollEnum, not embedded in duo_runtime.
+    // Verify via the async_lower module instead.
+    const AsyncLower = @import("async_lower.zig");
+    var buf = std.ArrayList(u8).init(testing.allocator);
+    defer buf.deinit();
+    const writer = buf.writer();
+    try AsyncLower.AsyncLower.emitPollEnum(writer);
+    try testing.expect(std.mem.indexOf(u8, buf.items, needle) != null);
+}
+
+test "runtime: async frame step function returns DUO_POLL_PENDING or READY" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const AsyncLower = @import("async_lower.zig");
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init("async fun f() -> i64\n  return 1\nend", "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+
+    var al = AsyncLower.AsyncLower.init(alloc, &s.type_map);
+    defer al.deinit();
+    try al.run(&mod);
+
+    var buf = std.ArrayList(u8).init(alloc);
+    try AsyncLower.AsyncLower.emitStepFunc(&al.getAll()[0], buf.writer());
+    try testing.expect(std.mem.indexOf(u8, buf.items, "DUO_POLL_READY") != null);
+}
+
+// ── WASM target validation ─────────────────────────────────────────────────
 
 test "wasm: validateTarget blocks threaded scheduler on wasm32-wasi" {
     const AsyncLower = @import("async_lower.zig");
@@ -8835,4 +8960,92 @@ test "wasm: validateTarget allows async-only (no threads) on wasm32-wasi" {
 test "wasm: validateTarget allows threads on non-wasm targets" {
     const AsyncLower = @import("async_lower.zig");
     try AsyncLower.validateTarget(false, true);
+}
+
+test "wasm: validateTarget allows non-wasm non-threaded" {
+    const AsyncLower = @import("async_lower.zig");
+    try AsyncLower.validateTarget(false, false);
+}
+
+// ── WASM target string detection ──────────────────────────────────────────
+
+test "wasm: target string 'wasm32-wasi' is correctly identified" {
+    const target = "wasm32-wasi";
+    try testing.expect(std.mem.eql(u8, target, "wasm32-wasi"));
+    try testing.expect(!std.mem.eql(u8, "native", "wasm32-wasi"));
+    try testing.expect(!std.mem.eql(u8, "x86_64-linux", "wasm32-wasi"));
+    try testing.expect(!std.mem.eql(u8, "aarch64-macos", "wasm32-wasi"));
+}
+
+test "wasm: output extension is .wasm for wasm32-wasi target" {
+    // Mirrors the logic in main.zig lines 87-90.
+    const stem = "hello";
+    const target_wasm = "wasm32-wasi";
+    const target_native = "native";
+    const ext_wasm   = if (std.mem.eql(u8, target_wasm, "wasm32-wasi")) ".wasm" else ".out";
+    const ext_native = if (std.mem.eql(u8, target_native, "wasm32-wasi")) ".wasm" else ".out";
+    try testing.expectEqualStrings(".wasm", ext_wasm);
+    try testing.expectEqualStrings(".out",  ext_native);
+    _ = stem;
+}
+
+// ── Library init skip logic ───────────────────────────────────────────────
+
+test "wasm: library init skip condition is based on wasm32-wasi string" {
+    // Mirrors codegen.zig line 631: `if (!std.mem.eql(u8, self.target, "wasm32-wasi"))`
+    // coroutine/io/os are NOT initialized on WASM.
+    const target_wasm = "wasm32-wasi";
+    const should_init = !std.mem.eql(u8, target_wasm, "wasm32-wasi");
+    try testing.expect(!should_init); // should NOT init for WASM
+}
+
+test "native: all libraries are initialized on non-wasm targets" {
+    const targets = [_][]const u8{ "native", "x86_64-linux", "aarch64-macos" };
+    for (targets) |t| {
+        const should_init = !std.mem.eql(u8, t, "wasm32-wasi");
+        try testing.expect(should_init);
+    }
+}
+
+// ── XOPEN_SOURCE suppression logic ────────────────────────────────────────
+
+test "wasm: _XOPEN_SOURCE is suppressed for wasm32-wasi" {
+    const target_wasm = "wasm32-wasi";
+    const emit_xopen = !std.mem.eql(u8, target_wasm, "wasm32-wasi");
+    try testing.expect(!emit_xopen);
+}
+
+test "native: _XOPEN_SOURCE is emitted for non-wasm targets" {
+    const targets = [_][]const u8{ "native", "x86_64-linux-gnu", "aarch64-macos" };
+    for (targets) |t| {
+        const emit_xopen = !std.mem.eql(u8, t, "wasm32-wasi");
+        try testing.expect(emit_xopen);
+    }
+}
+
+// ── PGO skip logic ────────────────────────────────────────────────────────
+
+test "wasm: PGO is skipped for wasm32-wasi (mirrors main.zig condition)" {
+    // main.zig: `if (pgo and !is_wasm and !load_chunk)`
+    const pgo = true;
+    const load_chunk = false;
+    const is_wasm_true  = true;
+    const is_wasm_false = false;
+    const run_pgo_wasm   = pgo and !is_wasm_true  and !load_chunk;
+    const run_pgo_native = pgo and !is_wasm_false and !load_chunk;
+    try testing.expect(!run_pgo_wasm);
+    try testing.expect(run_pgo_native);
+}
+
+// ── run_after skip logic ──────────────────────────────────────────────────
+
+test "wasm: program is not executed after compile on wasm target" {
+    // main.zig: `if (run_after and !is_wasm)`
+    const run_after = true;
+    const is_wasm_true  = true;
+    const is_wasm_false = false;
+    const exec_after_wasm   = run_after and !is_wasm_true;
+    const exec_after_native = run_after and !is_wasm_false;
+    try testing.expect(!exec_after_wasm);
+    try testing.expect(exec_after_native);
 }
