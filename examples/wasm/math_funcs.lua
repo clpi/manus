@@ -1,0 +1,8 @@
+print(math.abs(-42))
+print(math.max(1, 5, 3))
+print(math.min(4, 2, 7))
+print(math.floor(3.7))
+print(math.ceil(3.2))
+print(math.sqrt(16))
+print(math.type(1))
+print(math.type(1.5))

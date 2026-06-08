@@ -39,6 +39,17 @@ jobs:
       - name: WASM codegen compatibility tests
         run: bash scripts/test_wasm_codegen.sh
 
+      - name: Install WASI runtime and WABT
+        run: |
+          # wabt provides wasm-validate, wasm-objdump, wasm2wat
+          sudo apt-get install -y wabt
+          # wasmtime: the reference WASI runtime
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: WASI execution tests
+        run: bash scripts/test_wasm_execution.sh
+
   bench:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
