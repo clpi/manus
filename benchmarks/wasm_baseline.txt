@@ -1,0 +1,8 @@
+# Duo WASM Runtime Benchmark Baseline
+# Generated: 2026-06-08 22:57:49 UTC
+# Commit: 9e9e75b
+# Runs per runtime: 2
+#
+# runtime  total_wall_seconds
+wasmtime      0.839
+wazero        1.739

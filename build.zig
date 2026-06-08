@@ -56,4 +56,10 @@ pub fn build(b: *std.Build) void {
     cross_bench_cmd.step.dependOn(b.getInstallStep());
     const cross_bench_step = b.step("cross-bench", "Run cross-language benchmark (Duo vs C vs Lua vs LuaJIT)");
     cross_bench_step.dependOn(&cross_bench_cmd.step);
+
+    const wasm_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_wasm_benchmark.sh" });
+    wasm_bench_cmd.setCwd(b.path("."));
+    wasm_bench_cmd.step.dependOn(b.getInstallStep());
+    const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
+    wasm_bench_step.dependOn(&wasm_bench_cmd.step);
 }
