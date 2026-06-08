@@ -653,6 +653,10 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             if (std.mem.eql(u8, n, "void")) return .void;
             if (std.mem.eql(u8, n, "str")) return .str;
             if (std.mem.eql(u8, n, "any")) return .any;
+            // Common aliases
+            if (std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "integer")) return .i64;
+            if (std.mem.eql(u8, n, "float") or std.mem.eql(u8, n, "number")) return .f64;
+            if (std.mem.eql(u8, n, "string")) return .str;
             return ResolvedType{ .@"struct" = .{ .name = n } };
         },
         .pointer => |inner| {

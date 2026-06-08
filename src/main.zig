@@ -51,6 +51,7 @@ pub fn main(init: std.process.Init) !void {
     var target: []const u8 = "native";
     var verbose = false;
     var load_chunk = false;
+    var lib_mode = false;
     var pgo = false;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
@@ -68,6 +69,10 @@ pub fn main(init: std.process.Init) !void {
             target = args[i];
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
+        } else if (std.mem.eql(u8, arg, "--lib")) {
+            // Library mode: compile @export functions as WASM exports,
+            // skip main() / _start, for use with wasmtime WAST testing.
+            lib_mode = true;
         } else if (std.mem.eql(u8, arg, "--pgo")) {
             pgo = true;
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
@@ -91,11 +96,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
     } else {
@@ -179,6 +184,7 @@ fn do_compile(
     verbose: bool,
     load_chunk: bool,
     pgo: bool,
+    lib_mode: bool,
 ) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
@@ -244,6 +250,7 @@ fn do_compile(
         cg.src_path = src_path;
         cg.target = target;
         cg.load_chunk = load_chunk;
+        cg.lib_mode = lib_mode;
         cg.duo_mode = ps.sem.duo_mode;
         cg.emit_module(&ps.mod) catch |e| {
             std.debug.print("codegen error: {}\n", .{e});
@@ -262,11 +269,16 @@ fn do_compile(
                 "-ffast-math",           "-flto",
                 "-fomit-frame-pointer",  "-funroll-loops",
                 "-ffp-contract=fast",    "-fno-trapping-math",
-                "-fno-math-errno",       "-Wl,--no-entry",
-                "-Wl,--export=main",     "-Wl,--gc-sections",
-                "-Wl,--strip-debug",     "-std=gnu99",
-                "-lm",
+                "-fno-math-errno",           "-Wl,--no-entry",
+                "-Wl,--gc-sections",         "-Wl,--strip-debug",
+                "-std=gnu99",                "-lm",
+                "-Wno-deprecated-declarations",
             });
+            if (lib_mode) {
+                try args.append(alloc, "-Wl,--export-dynamic");
+            } else {
+                try args.append(alloc, "-Wl,--export=main");
+            }
         } else {
             try args.appendSlice(alloc, &.{
                 cc,

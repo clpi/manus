@@ -22,7 +22,8 @@ assert_contains() {
 
 assert_not_contains() {
     local label="$1" text="$2" pattern="$3"
-    if grep -qF "$pattern" <<< "$text"; then
+    # Use grep -F without -q to avoid SIGPIPE breaking the pipeline under pipefail.
+    if printf '%s\n' "$text" | grep -F -- "$pattern" >/dev/null 2>&1; then
         fail "$label — expected NOT to find: $pattern"
     else
         pass "$label"

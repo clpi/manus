@@ -52,6 +52,7 @@ pub const CodeGen = struct {
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     mandel_native: bool = false,
     load_chunk: bool = false,
+    lib_mode: bool = false,
     duo_mode: bool = false,
     target: []const u8 = "native",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
@@ -482,6 +483,15 @@ pub const CodeGen = struct {
         self.p("    *p = '\\0';\n", .{});
         self.p("    return out;\n", .{});
         self.p("}}\n", .{});
+        // Floor division and floor modulo for typed int64 (Lua // and % semantics)
+        self.p("static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
+        self.p("    int64_t q = a / b, r = a % b;\n", .{});
+        self.p("    return q - ((r != 0) & ((a ^ b) < 0));\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline int64_t lua_imod_i64(int64_t a, int64_t b) {{\n", .{});
+        self.p("    int64_t r = a % b;\n", .{});
+        self.p("    return r + (((r != 0) & ((a ^ b) < 0)) ? b : 0);\n", .{});
+        self.p("}}\n", .{});
         self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
@@ -627,6 +637,10 @@ pub const CodeGen = struct {
             self.p("}}\n", .{});
             self.p("#pragma GCC pop_options\n\n", .{});
         }
+
+        // Library mode: no main()/entry point — only @export functions are
+        // exposed.  Top-level statements are intentionally not executed.
+        if (self.lib_mode) return;
 
         if (self.load_chunk) {
             self.p("#ifdef __APPLE__\n", .{});
@@ -1179,6 +1193,13 @@ pub const CodeGen = struct {
 
     fn emit_func_storage_and_attrs(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        // `@export` functions are WASM exports: external linkage, no `static`,
+        // with export_name + visibility attributes so the linker exposes them.
+        if (func_has_attr(fd.attributes, "export")) {
+            const export_name = if (fd.path.len > 0) fd.path[fd.path.len - 1] else "unknown";
+            self.p("__attribute__((export_name(\"{s}\"), visibility(\"default\"))) ", .{export_name});
+            return; // Skip static/inline/hot — these must be externally visible.
+        }
         const inline_attr = fb.use_force_always_inline or fb.use_fp_strict_always_inline or func_has_attr(fd.attributes, "inline");
         const noinline_attr = func_has_attr(fd.attributes, "noinline");
         const cold_attr = func_has_attr(fd.attributes, "cold");
@@ -3799,9 +3820,10 @@ pub const CodeGen = struct {
                         },
                         .idiv => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                self.p("((", .{});
+                                // Lua floor division via runtime helper
+                                self.p("lua_idiv_i64((int64_t)(", .{});
                                 try self.emit_expr(b.lhs);
-                                self.p(") / (", .{});
+                                self.p("), (int64_t)(", .{});
                                 try self.emit_expr(b.rhs);
                                 self.p("))", .{});
                             } else {
@@ -3816,9 +3838,10 @@ pub const CodeGen = struct {
                         },
                         .mod => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                self.p("((", .{});
+                                // Lua modulo via runtime helper (same sign as b)
+                                self.p("lua_imod_i64((int64_t)(", .{});
                                 try self.emit_expr(b.lhs);
-                                self.p(") % (", .{});
+                                self.p("), (int64_t)(", .{});
                                 try self.emit_expr(b.rhs);
                                 self.p("))", .{});
                             } else {
@@ -9083,11 +9106,10 @@ test "runtime: DUO_POLL enum is defined" {
     // Poll enum is emitted by emitPollEnum, not embedded in duo_runtime.
     // Verify via the async_lower module instead.
     const AsyncLower = @import("async_lower.zig");
-    var buf = std.ArrayList(u8).init(testing.allocator);
-    defer buf.deinit();
-    const writer = buf.writer();
-    try AsyncLower.AsyncLower.emitPollEnum(writer);
-    try testing.expect(std.mem.indexOf(u8, buf.items, needle) != null);
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
+    try AsyncLower.AsyncLower.emitPollEnum(&aw.writer);
+    try testing.expect(std.mem.indexOf(u8, aw.written(), needle) != null);
 }
 
 test "runtime: async frame step function returns DUO_POLL_PENDING or READY" {
@@ -9110,9 +9132,10 @@ test "runtime: async frame step function returns DUO_POLL_PENDING or READY" {
     defer al.deinit();
     try al.run(&mod);
 
-    var buf = std.ArrayList(u8).init(alloc);
-    try AsyncLower.AsyncLower.emitStepFunc(&al.getAll()[0], buf.writer());
-    try testing.expect(std.mem.indexOf(u8, buf.items, "DUO_POLL_READY") != null);
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try AsyncLower.AsyncLower.emitStepFunc(&al.getAll()[0], &aw.writer);
+    try testing.expect(std.mem.indexOf(u8, aw.written(), "DUO_POLL_READY") != null);
 }
 
 // ── WASM target validation ─────────────────────────────────────────────────

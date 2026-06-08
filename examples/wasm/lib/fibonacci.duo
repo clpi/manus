@@ -1,0 +1,60 @@
+-- Typed fibonacci exports for WAST testing.
+
+@export
+function fib(n: int): int
+    if n <= 1 then
+        return n
+    end
+    return fib(n - 1) + fib(n - 2)
+end
+
+@export
+function fib_iter(n: int): int
+    if n <= 1 then
+        return n
+    end
+    local a: int = 0
+    local b: int = 1
+    for i = 2, n do
+        local c: int = a + b
+        a = b
+        b = c
+    end
+    return b
+end
+
+@export
+function factorial(n: int): int
+    if n <= 1 then
+        return 1
+    end
+    return n * factorial(n - 1)
+end
+
+@export
+function gcd(a: int, b: int): int
+    while b ~= 0 do
+        local t: int = b
+        b = a % b
+        a = t
+    end
+    return a
+end
+
+@export
+function lcm(a: int, b: int): int
+    return (a // gcd(a, b)) * b
+end
+
+@export
+function pow_int(base: int, exp: int): int
+    local result: int = 1
+    while exp > 0 do
+        if exp % 2 == 1 then
+            result = result * base
+        end
+        base = base * base
+        exp = exp >> 1
+    end
+    return result
+end

@@ -1,0 +1,61 @@
+-- Boolean predicate exports for WAST testing.
+
+@export
+function is_even(n: int): int
+    if n % 2 == 0 then
+        return 1
+    end
+    return 0
+end
+
+@export
+function is_odd(n: int): int
+    if n % 2 ~= 0 then
+        return 1
+    end
+    return 0
+end
+
+@export
+function is_positive(n: int): int
+    if n > 0 then
+        return 1
+    end
+    return 0
+end
+
+@export
+function is_negative(n: int): int
+    if n < 0 then
+        return 1
+    end
+    return 0
+end
+
+@export
+function sign(n: int): int
+    if n > 0 then
+        return 1
+    elseif n < 0 then
+        return -1
+    end
+    return 0
+end
+
+@export
+function clamp(val: int, lo: int, hi: int): int
+    if val < lo then
+        return lo
+    elseif val > hi then
+        return hi
+    end
+    return val
+end
+
+@export
+function in_range(val: int, lo: int, hi: int): int
+    if val >= lo and val <= hi then
+        return 1
+    end
+    return 0
+end
