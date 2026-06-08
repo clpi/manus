@@ -821,33 +821,37 @@ pub const Sema = struct {
                 return .any;
             },
             .try_expr => |te| {
-                _ = try self.check_expr(te.operand);
+                const operand_t = try self.check_expr(te.operand);
                 // The ? operator requires the enclosing function to have
                 // a result-compatible return type (Requirement 9.7)
                 if (!self.is_result_compatible_ret()) {
                     self.err(te.loc, "'?' operator requires enclosing function to have a result-compatible return type", .{});
                 }
-                return .any;
+                // Propagate the operand's type so downstream expressions see
+                // the concrete type rather than falling back to .any.
+                return operand_t;
             },
             .unwrap_expr => |ue| {
-                _ = try self.check_expr(ue.operand);
+                const operand_t = try self.check_expr(ue.operand);
                 // The ! operator is rejected in @nopanic functions (Requirement 9.8)
                 if (self.current_nopanic) {
                     self.err(ue.loc, "'!' operator cannot be used in @nopanic function (it may panic)", .{});
                 }
-                return .any;
+                // The unwrapped value has the same type as the operand.
+                return operand_t;
             },
             .match_expr => |me| {
                 return try self.check_match_expr(me);
             },
             .await_expr => |ae| {
-                _ = try self.check_expr(ae.operand);
-                return .any;
+                const operand_t = try self.check_expr(ae.operand);
+                return operand_t;
             },
             .contains_expr => |ce| {
                 _ = try self.check_expr(ce.lhs);
                 _ = try self.check_expr(ce.rhs);
-                return .any;
+                // `x in y` is always a boolean test.
+                return .bool;
             },
         };
     }

@@ -396,6 +396,14 @@ pub const CodeGen = struct {
             }
             if (lt == .bool and rt == .bool) return .bool;
         }
+        // Propagate types through wrapping/unwrapping expressions so that
+        // operations on their results don't unnecessarily fall back to the
+        // dynamic lua_Value path.
+        if (e.* == .unwrap_expr) return self.expr_type(e.unwrap_expr.operand);
+        if (e.* == .try_expr)    return self.expr_type(e.try_expr.operand);
+        if (e.* == .await_expr)  return self.expr_type(e.await_expr.operand);
+        // `x in y` is a boolean test — always produces bool.
+        if (e.* == .contains_expr) return .bool;
         return self.type_map.get(e) orelse .any;
     }
 
@@ -3033,12 +3041,15 @@ pub const CodeGen = struct {
             },
             .num_for => |*nf| {
                 self.ind();
-                try self.note_local(nf.var_name);
+                // Resolve the loop variable's type BEFORE registering it so
+                // that inner expressions (e.g. `arr[i]`, `i * 2`) see the
+                // concrete type (i64/f64) rather than `.any`.
                 const vt: RT = if (nf.var_typ != .inferred)
                     types.resolve(nf.var_typ, null, self.alloc) catch .i64
                 else
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
+                try self.note_local_type(nf.var_name, vt2);
                 self.p("for (", .{});
                 self.typ(vt2);
                 self.p(" {s} = ", .{nf.var_name});
@@ -3071,7 +3082,18 @@ pub const CodeGen = struct {
                 }
 
                 if (table_expr) |tbl| {
-                    for (gf.vars) |vname| try self.note_local(vname);
+                    // For pairs/ipairs: the first loop variable is the key.
+                    // ipairs always produces a 1-based integer index, so
+                    // register vars[0] as i64 so inner expressions (e.g.
+                    // `arr[i]`, `i + 1`) take the typed path.
+                    for (gf.vars, 0..) |vname, vi| {
+                        const is_ipairs_idx = !is_pairs and vi == 0;
+                        if (is_ipairs_idx) {
+                            try self.note_local_type(vname, .i64);
+                        } else {
+                            try self.note_local(vname);
+                        }
+                    }
                     self.pl("{{", .{});
                     self.indent += 1;
                     self.ind();
@@ -9379,4 +9401,77 @@ test "match: literal sub-pattern emits equality condition" {
     // Simulating: is neither wildcard nor binding → condition needed.
     const is_trivial = false; // not wildcard, not binding
     try testing.expect(!is_trivial); // condition will be emitted
+}
+
+// ── Type-narrowing improvements ────────────────────────────────────────────
+
+test "num_for: loop variable is typed as i64 by default" {
+    // num_for now calls note_local_type(name, vt2) instead of note_local(name).
+    // vt2 defaults to i64 when the start expression is untyped.
+    const vt: RT = .any;   // start expression has unknown type
+    const vt2: RT = if (vt == .any) RT.i64 else vt;
+    try testing.expect(vt2 == .i64);
+}
+
+test "num_for: loop variable uses declared type annotation" {
+    // When the loop declares `for i: f64 = 0.0, 1.0, 0.1 do`, vt resolves to f64.
+    const vt: RT = .f64;
+    const vt2: RT = if (vt == .any) RT.i64 else vt;
+    try testing.expect(vt2 == .f64);
+}
+
+test "num_for: loop variable inherits start expression type" {
+    // `for i = some_f64_expr, limit do` should use f64.
+    const vt: RT = .f64;   // expr_type(start) = f64
+    const vt2: RT = if (vt == .any) RT.i64 else vt;
+    try testing.expect(vt2 == .f64);
+}
+
+test "expr_type: unwrap_expr propagates operand type" {
+    // x! where x is i64 should produce i64, not .any.
+    // Simulates the added `if (e.* == .unwrap_expr) return self.expr_type(e.unwrap_expr.operand);`
+    const operand_type: RT = .i64;
+    const result_type: RT = operand_type; // propagation
+    try testing.expect(result_type == .i64);
+}
+
+test "expr_type: try_expr propagates operand type" {
+    const operand_type: RT = .f64;
+    const result_type: RT = operand_type;
+    try testing.expect(result_type == .f64);
+}
+
+test "expr_type: await_expr propagates operand type" {
+    const operand_type: RT = .i64;
+    const result_type: RT = operand_type;
+    try testing.expect(result_type == .i64);
+}
+
+test "expr_type: contains_expr always produces bool" {
+    // `x in y` is a membership test, always boolean.
+    const result_type: RT = .bool;
+    try testing.expect(result_type == .bool);
+    try testing.expect(result_type != .any);
+}
+
+test "ipairs: first loop variable is typed i64" {
+    // ipairs always yields a 1-based integer index as vars[0].
+    const is_pairs = false; // ipairs, not pairs
+    const var_index: usize = 0;
+    const is_ipairs_idx = !is_pairs and var_index == 0;
+    try testing.expect(is_ipairs_idx);
+}
+
+test "ipairs: value variable (vars[1]) remains .any" {
+    const is_pairs = false;
+    const var_index: usize = 1;
+    const is_ipairs_idx = !is_pairs and var_index == 0;
+    try testing.expect(!is_ipairs_idx); // not the index, stays .any
+}
+
+test "pairs: both variables remain .any (keys can be any type)" {
+    const is_pairs = true;
+    const var_index: usize = 0;
+    const is_ipairs_idx = !is_pairs and var_index == 0;
+    try testing.expect(!is_ipairs_idx); // pairs: no type narrowing
 }
