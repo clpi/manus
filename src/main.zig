@@ -104,8 +104,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "run")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false);
-    } else if (std.mem.eql(u8, cmd, "dump-c")) {
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false);    } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
     } else {
         std.debug.print("error: unknown command '{s}'\n{s}", .{ cmd, usage });
@@ -189,8 +188,7 @@ fn do_compile(
     load_chunk: bool,
     pgo: bool,
     lib_mode: bool,
-    shared_mem: bool,
-) !void {
+    shared_mem: bool,) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
 
@@ -286,8 +284,7 @@ fn do_compile(
             }
             if (shared_mem) {
                 try args.appendSlice(alloc, &.{ "-matomics", "-mbulk-memory", "-mmutable-globals" });
-            }
-        } else {
+            }        } else {
             try args.appendSlice(alloc, &.{
                 cc,
                 opt,
