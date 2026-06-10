@@ -802,8 +802,8 @@ pub const CodeGen = struct {
     // Enums with at least one payload-carrying variant lower to a tagged
     // struct: an `int tag` plus a `union` of the payload-carrying variants.
     // Tag constants are emitted as `duo_<Enum>_tag_<Variant>` and matching is
-    // done on `.tag`. (Payload construction/binding is not yet fully wired —
-    // the type is emitted so signatures and tag comparisons compile.)
+    // done on `.tag`. Pattern conditions recurse into payload sub-patterns so
+    // that literal and nested patterns are fully checked at match time.
     fn emit_enum_decls(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .enum_def) continue;
@@ -1207,8 +1207,21 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Return true if any parameter of `fb` is a payloaded enum type, which
+    /// cannot be bridged through lua_Value without extra work.
+    fn has_payloaded_enum_param(self: *CodeGen, fb: *const ast.FuncBody) bool {
+        for (fb.params) |param| {
+            const pt = types.resolve(param.typ, null, self.alloc) catch continue;
+            if (self.enum_name_of(pt)) |ename| {
+                if (!self.enum_is_payload_free(ename)) return true;
+            }
+        }
+        return false;
+    }
+
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        if (self.has_payloaded_enum_param(fb)) return;
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
         const nparams = fb.params.len;
@@ -1433,6 +1446,7 @@ pub const CodeGen = struct {
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (!fb.is_typed) return;
+        if (self.has_payloaded_enum_param(fb)) return;
         const ret = self.resolve_type(fb.ret_type);
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
@@ -5325,12 +5339,43 @@ pub const CodeGen = struct {
                 else
                     v.tag;
                 const has_payload = self.enum_has_payload.get(enum_name) orelse false;
+                self.p("(", .{});
                 if (has_payload) {
-                    self.p("({s}.tag == duo_{s}_tag_{s})", .{ scrutinee_var, enum_name, variant_name });
+                    self.p("{s}.tag == duo_{s}_tag_{s}", .{ scrutinee_var, enum_name, variant_name });
                 } else {
-                    self.p("({s} == duo_{s}_{s})", .{ scrutinee_var, enum_name, variant_name });
+                    self.p("{s} == duo_{s}_{s}", .{ scrutinee_var, enum_name, variant_name });
                 }
-                // TODO: bind payload sub-patterns for payloaded variants.
+                // Recursively check non-trivial sub-pattern conditions for payload fields.
+                if (has_payload) {
+                    if (v.payload) |payload_pats| {
+                        if (self.find_enum_variant_def(enum_name, variant_name)) |vdef| {
+                            const fields = vdef.payload orelse &.{};
+                            for (payload_pats, 0..) |sub_pat, fi| {
+                                switch (sub_pat) {
+                                    .wildcard, .binding => continue,
+                                    else => {},
+                                }
+                                const field_name = if (fi < fields.len)
+                                    fields[fi].name orelse (try std.fmt.allocPrint(self.alloc, "_{d}", .{fi}))
+                                else
+                                    try std.fmt.allocPrint(self.alloc, "_{d}", .{fi});
+                                const owns_field = fi >= fields.len or fields[fi].name == null;
+                                defer if (owns_field) self.alloc.free(field_name);
+                                const payload_expr = try std.fmt.allocPrint(self.alloc, "{s}.as.{s}.{s}", .{
+                                    scrutinee_var, variant_name, field_name,
+                                });
+                                defer self.alloc.free(payload_expr);
+                                const ft = if (fi < fields.len)
+                                    types.resolve(fields[fi].typ, null, self.alloc) catch RT.any
+                                else
+                                    RT.any;
+                                self.p(" && ", .{});
+                                try self.emit_pattern_condition(sub_pat, payload_expr, ft);
+                            }
+                        }
+                    }
+                }
+                self.p(")", .{});
             },
             else => self.p("1", .{}), // Conservative: match everything
         }
@@ -5375,6 +5420,30 @@ pub const CodeGen = struct {
                     defer self.alloc.free(payload_expr);
                     try self.emit_pattern_binding_from(sub_pat, payload_expr, field_type);
                 }
+            },
+            .table_destr => |entries| {
+                for (entries) |entry| {
+                    const key_hash = calc_lua_hash(entry.key);
+                    const field_expr = try std.fmt.allocPrint(self.alloc,
+                        "lua_table_get({s}, lua_val_from_literal(\"{s}\", {d}, {d}))",
+                        .{ value_expr, entry.key, key_hash, entry.key.len });
+                    defer self.alloc.free(field_expr);
+                    try self.emit_pattern_binding_from(entry.pat, field_expr, .any);
+                }
+            },
+            .array_destr => |pats| {
+                for (pats, 0..) |sub_pat, ai| {
+                    const elem_expr = try std.fmt.allocPrint(self.alloc,
+                        "lua_table_get({s}, lua_val_from_num({d}))",
+                        .{ value_expr, ai + 1 });
+                    defer self.alloc.free(elem_expr);
+                    try self.emit_pattern_binding_from(sub_pat, elem_expr, .any);
+                }
+            },
+            .rest => |name| {
+                self.ind();
+                self.p("lua_Value {s} = {s};\n", .{ name, value_expr });
+                try self.note_local_type(name, .any);
             },
             else => {},
         }
@@ -5501,6 +5570,10 @@ const duo_runtime =
     \\    uint32_t flags;
     \\    uint32_t type_tag;
     \\} duo_ObjHeader;
+    \\
+    \\/* Result and Option type aliases — semantics: non-nil = ok/some */
+    \\typedef lua_Value duo_Result;
+    \\typedef lua_Value duo_Option;
     \\
     \\typedef lua_Value (*lua_CFunction)(int argc, lua_Value* argv);
     \\typedef struct lua_Closure lua_Closure;

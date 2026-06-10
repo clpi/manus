@@ -13,6 +13,10 @@ pub const ParseError = error{
 pub const Parser = struct {
     lex: *Lexer,
     alloc: Allocator,
+    /// Incremented while parsing a match arm body. When > 0, assignment
+    /// right-hand sides use the restricted scrutinee parser so that `[` at
+    /// the start of the next arm is not greedily consumed as an index suffix.
+    match_arm_depth: u32 = 0,
 
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
@@ -1165,6 +1169,8 @@ pub const Parser = struct {
                 } });
             },
             else => {
+                self.match_arm_depth += 1;
+                defer self.match_arm_depth -= 1;
                 try stmts.append(self.alloc, try self.parse_stmt());
             },
         }
@@ -1323,9 +1329,17 @@ pub const Parser = struct {
                 try targets.append(self.alloc, try self.parse_suffixed_expr());
             _ = try self.expect(.assign);
             var values: std.ArrayList(*ast.Expr) = .empty;
-            try values.append(self.alloc, try self.parse_expr());
-            while (try self.eat(.comma) != null)
+            // Inside a match arm body, use the restricted scrutinee parser so
+            // that `[` at the start of the next arm isn't consumed as an index.
+            if (self.match_arm_depth > 0) {
+                try values.append(self.alloc, try self.parse_match_scrutinee());
+                while (try self.eat(.comma) != null)
+                    try values.append(self.alloc, try self.parse_match_scrutinee());
+            } else {
                 try values.append(self.alloc, try self.parse_expr());
+                while (try self.eat(.comma) != null)
+                    try values.append(self.alloc, try self.parse_expr());
+            }
             return ast.Stmt{ .assign = .{
                 .loc = first.loc(),
                 .targets = try targets.toOwnedSlice(self.alloc),
