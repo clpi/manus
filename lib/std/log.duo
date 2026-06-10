@@ -1,29 +1,29 @@
-function std_log_level_new(name)
+fun std_log_level_new(name)
     return { name = name, value = nil }
 end
 
-function std_log_level_set_value(level, value)
+fun std_log_level_set_value(level, value)
     level.value = value
     return level
 end
 
-function std_log_debug(msg)
+fun std_log_debug(msg)
     io.write(string.format("[DEBUG] %s\n", msg))
 end
 
-function std_log_info(msg)
+fun std_log_info(msg)
     io.write(string.format("[INFO] %s\n", msg))
 end
 
-function std_log_warn(msg)
+fun std_log_warn(msg)
     io.write(string.format("[WARN] %s\n", msg))
 end
 
-function std_log_error(msg)
+fun std_log_error(msg)
     io.write(string.format("[ERROR] %s\n", msg))
 end
 
-function std_log_print(level, msg)
+fun std_log_print(level, msg)
     if level == nil then
         io.write(string.format("%s\n", msg))
     else
@@ -31,7 +31,7 @@ function std_log_print(level, msg)
     end
 end
 
-local M = {}
+M = {}
 M.level_new = std_log_level_new
 M.level_set_value = std_log_level_set_value
 M.debug = std_log_debug

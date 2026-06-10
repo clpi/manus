@@ -15,6 +15,6 @@ fun get_box(b: <i64> Box): i64
 end
 
 fun main(): i64
-    local b = make_box(42)
+    b = make_box(42)
     return get_box(b)
 end

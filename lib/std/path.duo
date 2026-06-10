@@ -1,6 +1,6 @@
 -- std.path — path manipulation utilities (POSIX-style)
 
-function std_path_join(a: str, b: str): str
+fun std_path_join(a: str, b: str): str
     if a == "" then
         return b
     end
@@ -16,30 +16,30 @@ function std_path_join(a: str, b: str): str
     return a .. "/" .. b
 end
 
-function std_path_basename(p: str): str
+fun std_path_basename(p: str): str
     if p == "" then
         return ""
     end
-    local i = string.len(p)
-    while i > 1 and string.sub(p, i, i) == "/" do
+    i = string.len(p)
+    while i > 1 and string.sub(p, i, i) == "/"
         i = i - 1
     end
-    local last = i
-    while i > 1 and string.sub(p, i - 1, i - 1) ~= "/" do
+    last = i
+    while i > 1 and string.sub(p, i - 1, i - 1) ~= "/"
         i = i - 1
     end
     return string.sub(p, i, last)
 end
 
-function std_path_dirname(p: str): str
+fun std_path_dirname(p: str): str
     if p == "" then
         return "."
     end
-    local i = string.len(p)
-    while i > 1 and string.sub(p, i, i) == "/" do
+    i = string.len(p)
+    while i > 1 and string.sub(p, i, i) == "/"
         i = i - 1
     end
-    while i > 1 and string.sub(p, i - 1, i - 1) ~= "/" do
+    while i > 1 and string.sub(p, i - 1, i - 1) ~= "/"
         i = i - 1
     end
     if i <= 1 then
@@ -51,10 +51,10 @@ function std_path_dirname(p: str): str
     return string.sub(p, 1, i - 1)
 end
 
-function std_path_extname(p: str): str
-    local base = std_path_basename(p)
-    local i = string.len(base)
-    while i > 1 do
+fun std_path_extname(p: str): str
+    base = std_path_basename(p)
+    i = string.len(base)
+    while i > 1
         if string.sub(base, i, i) == "." then
             return string.sub(base, i, string.len(base))
         end
@@ -63,7 +63,7 @@ function std_path_extname(p: str): str
     return ""
 end
 
-local M = {}
+M = {}
 M.join = std_path_join
 M.basename = std_path_basename
 M.dirname = std_path_dirname

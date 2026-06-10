@@ -1,7 +1,7 @@
 -- Typed fibonacci exports for WAST testing.
 
 @export
-function fib(n: int): int
+fun fib(n: int): int
     if n <= 1 then
         return n
     end
@@ -9,14 +9,14 @@ function fib(n: int): int
 end
 
 @export
-function fib_iter(n: int): int
+fun fib_iter(n: int): int
     if n <= 1 then
         return n
     end
-    local a: int = 0
-    local b: int = 1
-    for i = 2, n do
-        local c: int = a + b
+    a: int = 0
+    b: int = 1
+    for i = 2, n
+        c: int = a + b
         a = b
         b = c
     end
@@ -24,7 +24,7 @@ function fib_iter(n: int): int
 end
 
 @export
-function factorial(n: int): int
+fun factorial(n: int): int
     if n <= 1 then
         return 1
     end
@@ -32,9 +32,9 @@ function factorial(n: int): int
 end
 
 @export
-function gcd(a: int, b: int): int
-    while b ~= 0 do
-        local t: int = b
+fun gcd(a: int, b: int): int
+    while b ~= 0
+        t: int = b
         b = a % b
         a = t
     end
@@ -42,14 +42,14 @@ function gcd(a: int, b: int): int
 end
 
 @export
-function lcm(a: int, b: int): int
+fun lcm(a: int, b: int): int
     return (a // gcd(a, b)) * b
 end
 
 @export
-function pow_int(base: int, exp: int): int
-    local result: int = 1
-    while exp > 0 do
+fun pow_int(base: int, exp: int): int
+    result: int = 1
+    while exp > 0
         if exp % 2 == 1 then
             result = result * base
         end

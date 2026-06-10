@@ -3,13 +3,13 @@
 
 const LIMIT: i32 = 10000
 
-function count_primes(limit: i32): i32
-    local count: i32 = 0
-    local n: i32 = 2
-    while n <= limit do
-        local is_prime: bool = true
-        local d: i32 = 2
-        while d * d <= n do
+fun count_primes(limit: i32): i32
+    count: i32 = 0
+    n: i32 = 2
+    while n <= limit
+        is_prime: bool = true
+        d: i32 = 2
+        while d * d <= n
             if n % d == 0 then
                 is_prime = false
             end

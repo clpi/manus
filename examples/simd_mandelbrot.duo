@@ -1,19 +1,19 @@
 -- Duo SIMD Mandelbrot Benchmark
 -- Processes 4 pixels at once using v4f64 with masked early exit
 
-function mandel_v4(cx: v4f64, cy: v4f64): v4i64
-    local zx: v4f64 = simd.v4f64(0.0, 0.0, 0.0, 0.0)
-    local zy: v4f64 = simd.v4f64(0.0, 0.0, 0.0, 0.0)
-    local iters: v4i64 = simd.v4i64(0, 0, 0, 0)
-    local four: v4f64 = simd.v4f64(4.0, 4.0, 4.0, 4.0)
-    local active: v4i64 = simd.v4i64(1, 1, 1, 1)
+fun mandel_v4(cx: v4f64, cy: v4f64): v4i64
+    zx: v4f64 = simd.v4f64(0.0, 0.0, 0.0, 0.0)
+    zy: v4f64 = simd.v4f64(0.0, 0.0, 0.0, 0.0)
+    iters: v4i64 = simd.v4i64(0, 0, 0, 0)
+    four: v4f64 = simd.v4f64(4.0, 4.0, 4.0, 4.0)
+    active: v4i64 = simd.v4i64(1, 1, 1, 1)
 
-    local i: i32 = 0
-    while i < 1000 do
-        local zx2: v4f64 = zx * zx
-        local zy2: v4f64 = zy * zy
-        local mag2: v4f64 = zx2 + zy2
-        local still: v4i64 = simd.le(mag2, four)
+    i: i32 = 0
+    while i < 1000
+        zx2: v4f64 = zx * zx
+        zy2: v4f64 = zy * zy
+        mag2: v4f64 = zx2 + zy2
+        still: v4i64 = simd.le(mag2, four)
         active = active & still
         if not simd.any(active) then
             return iters
@@ -27,22 +27,22 @@ function mandel_v4(cx: v4f64, cy: v4f64): v4i64
 end
 
 print("Starting SIMD Mandelbrot...")
-local t_start = os.clock()
+t_start = os.clock()
 
-local sum: i64 = 0
-local y: f64 = -1.0
-while y <= 1.0 do
-    local x: f64 = -1.0
-    while x <= 1.0 do
-        local cxs: v4f64 = simd.v4f64(x, x + 0.01, x + 0.02, x + 0.03)
-        local cys: v4f64 = simd.v4f64(y, y, y, y)
-        local res: v4i64 = mandel_v4(cxs, cys)
+sum: i64 = 0
+y: f64 = -1.0
+while y <= 1.0
+    x: f64 = -1.0
+    while x <= 1.0
+        cxs: v4f64 = simd.v4f64(x, x + 0.01, x + 0.02, x + 0.03)
+        cys: v4f64 = simd.v4f64(y, y, y, y)
+        res: v4i64 = mandel_v4(cxs, cys)
         sum = sum + simd.sum(res)
         x = x + 0.04
     end
     y = y + 0.01
 end
 
-local t_end = os.clock()
+t_end = os.clock()
 print("SIMD Mandelbrot Sum:", sum)
 print("SIMD Mandelbrot Time:", t_end - t_start, "seconds")

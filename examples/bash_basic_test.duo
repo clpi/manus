@@ -1,7 +1,6 @@
--- Test basic bash-style function calls
+-- Test basic bash-style fun calls
 
--- Define a simple function
-fun greet(name: str): str
+-- Define a simple fun fun greet(name: str): str
     return "Hello, " .. name
 end
 

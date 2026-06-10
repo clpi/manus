@@ -1,4 +1,4 @@
--- Demo of bash-style function calls
+-- Demo of bash-style fun calls
 
 fun greet(name: str): str
     return "Hello, " .. name
@@ -8,7 +8,7 @@ end
 print greet "World"
 
 -- Bash-style call with name variable
-local name: str = "Duo"
+name: str = "Duo"
 print greet name
 
 -- Bash-style call with number

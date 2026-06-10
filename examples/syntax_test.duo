@@ -2,7 +2,7 @@
 --
 -- Note: Duo has no `struct` or `class` keyword. Typed records are declared
 -- via inline type-literal annotations on bindings:
---   local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+--   p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
 -- OO-style objects are just table literals with method fields. Concept
 -- satisfaction is declared via `@implements(...)` on the binding.
 
@@ -14,12 +14,12 @@ fun add<T>(a: T, b: T): T
     return a + b
 end
 
-local result: i64 = ##1 + 2
+result: i64 = ##1 + 2
 global counter: i64 = 0
 
 fun calculate(): void
-    local x: i64 = 10
-    local y: i64 = 20
+    x: i64 = 10
+    y: i64 = 20
 
     if x > y then
         print("x is greater")
@@ -27,11 +27,11 @@ fun calculate(): void
         print("y is greater")
     end
 
-    while x < 100 do
+    while x < 100
         x = x + 1
     end
 
-    for i = 1, 10 do
+    for i = 1, 10
         print(i)
     end
 end

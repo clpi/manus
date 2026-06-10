@@ -1,4 +1,4 @@
--- Test traditional function calls
+-- Test traditional fun calls
 
 fun greet(name: str): str
     return "Hello, " .. name

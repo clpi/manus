@@ -1,4 +1,4 @@
-function foo(a: str, b: str): str
+fun foo(a: str, b: str): str
     if a == "" then
         return b
     end

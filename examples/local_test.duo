@@ -1,10 +1,10 @@
 -- Test local-by-default scoping in .duo files
 
--- This should create a local variable automatically
+-- This should create a variable automatically
 x = 10
 print(x)
 
--- This should also create a local variable
+-- This should also create a variable
 y = 20
 print(y)
 
@@ -12,6 +12,6 @@ print(y)
 global z = 30
 print(z)
 
--- Test that explicit local still works
-local explicit_local = 40
+-- Test that explicit still works
+explicit_local = 40
 print(explicit_local)

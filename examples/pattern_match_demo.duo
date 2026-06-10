@@ -8,7 +8,7 @@ enum Shape
 end
 
 fun area(s: Shape): f64
-    local a: f64 = 0.0
+    a: f64 = 0.0
     match s
         Shape.Circle(r) => a = 3.14159265 * r * r
         Shape.Rect(w, h) => a = w * h
@@ -19,7 +19,7 @@ fun area(s: Shape): f64
 end
 
 fun tag_of(s: Shape): i64
-    local tag: i64 = -1
+    tag: i64 = -1
     match s
         Shape.Circle(_) => tag = 0
         Shape.Rect(_, _) => tag = 1
@@ -30,7 +30,7 @@ fun tag_of(s: Shape): i64
 end
 
 fun is_unit_square(s: Shape): bool
-    local yes: bool = false
+    yes: bool = false
     match s
         Shape.Rect(1.0, 1.0) => yes = true
         _ => yes = false
@@ -39,7 +39,7 @@ fun is_unit_square(s: Shape): bool
 end
 
 fun sum3(nums: any): f64
-    local result: f64 = 0.0
+    result: f64 = 0.0
     match nums
         [a, b, c] => result = a + b + c
         _ => result = -1.0
@@ -48,7 +48,7 @@ fun sum3(nums: any): f64
 end
 
 fun head(xs: any): any
-    local h: any = nil
+    h: any = nil
     match xs
         [first, _] => h = first
         [only] => h = only
@@ -57,14 +57,14 @@ fun head(xs: any): any
     return h
 end
 
-local circ: Shape = Shape.Circle(2.0)
-local rect: Shape = Shape.Rect(3.0, 4.0)
-local unit: Shape = Shape.Rect(1.0, 1.0)
+circ: Shape = Shape.Circle(2.0)
+rect: Shape = Shape.Rect(3.0, 4.0)
+unit: Shape = Shape.Rect(1.0, 1.0)
 print(area(circ))
 print(area(rect))
 print(tag_of(Shape.Point))
 print(is_unit_square(rect))
 print(is_unit_square(unit))
-local v3 = {10, 20, 30}
+v3 = {10, 20, 30}
 print(sum3(v3))
 print(head(v3))

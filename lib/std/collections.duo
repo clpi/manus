@@ -1,98 +1,98 @@
 -- std.collections — basic data structures over Duo tables
 
-function std_collections_list_new()
+fun std_collections_list_new()
     return {}
 end
 
-function std_collections_list_push(list, value)
+fun std_collections_list_push(list, value)
     table.insert(list, value)
 end
 
-function std_collections_list_pop(list)
+fun std_collections_list_pop(list)
     return table.remove(list)
 end
 
-function std_collections_list_get(list, index)
+fun std_collections_list_get(list, index)
     return list[index]
 end
 
-function std_collections_list_len(list)
+fun std_collections_list_len(list)
     return #list
 end
 
-function std_collections_stack_new()
+fun std_collections_stack_new()
     return {}
 end
 
-function std_collections_stack_push(stack, value)
+fun std_collections_stack_push(stack, value)
     table.insert(stack, value)
 end
 
-function std_collections_stack_pop(stack)
+fun std_collections_stack_pop(stack)
     return table.remove(stack)
 end
 
-function std_collections_queue_new()
+fun std_collections_queue_new()
     return {}
 end
 
-function std_collections_queue_enqueue(q, value)
+fun std_collections_queue_enqueue(q, value)
     table.insert(q, value)
 end
 
-function std_collections_queue_dequeue(q)
-    local n = #q
+fun std_collections_queue_dequeue(q)
+    n = #q
     if n == 0 then
         return nil
     end
     return table.remove(q, 1)
 end
 
-function std_collections_map_new()
+fun std_collections_map_new()
     return {}
 end
 
-function std_collections_map_set(m, key, value)
+fun std_collections_map_set(m, key, value)
     m[key] = value
 end
 
-function std_collections_map_get(m, key)
+fun std_collections_map_get(m, key)
     return m[key]
 end
 
-function std_collections_map_has(m, key)
+fun std_collections_map_has(m, key)
     return m[key] ~= nil
 end
 
-function std_collections_set_new()
+fun std_collections_set_new()
     return {}
 end
 
-function std_collections_set_add(s, value)
+fun std_collections_set_add(s, value)
     s[value] = true
 end
 
-function std_collections_set_has(s, value)
+fun std_collections_set_has(s, value)
     return s[value] ~= nil
 end
 
-function std_collections_is_array(t)
+fun std_collections_is_array(t)
     if type(t) ~= "table" then return false end
     if t[1] == nil then return true end
-    local i = 2
-    while t[i] ~= nil do i = i + 1 end
-    for k, _ in pairs(t) do
+    i = 2
+    while t[i] ~= nil i = i + 1 end
+    for k, _ in pairs(t)
         if type(k) ~= "number" then return false end
         if k < 1 then return false end
     end
     return true
 end
 
-function std_collections_remove_at(list, index)
+fun std_collections_remove_at(list, index)
     return table.remove(list, index)
 end
 
-local M = {}
+M = {}
 M.list_new = std_collections_list_new
 M.list_push = std_collections_list_push
 M.list_pop = std_collections_list_pop

@@ -1,22 +1,22 @@
-function std_memo_table_new()
+fun std_memo_table_new()
     return {}
 end
 
-function std_memo_table_get(m, key)
+fun std_memo_table_get(m, key)
     return m[key]
 end
 
-function std_memo_table_set(m, key, value)
+fun std_memo_table_set(m, key, value)
     m[key] = value
 end
 
-function std_memo_table_has(m, key)
+fun std_memo_table_has(m, key)
     return m[key] ~= nil
 end
 
-function std_memo_wrap(fn)
-    local cache = {}
-    return function(x)
+fun std_memo_wrap(fn)
+    cache = {}
+    return fun(x)
         if cache[x] == nil then
             cache[x] = fn(x)
         end
@@ -24,13 +24,13 @@ function std_memo_wrap(fn)
     end
 end
 
-function std_memo_clear(m)
-    for k, _ in pairs(m) do
+fun std_memo_clear(m)
+    for k, _ in pairs(m)
         m[k] = nil
     end
 end
 
-local M = {}
+M = {}
 M.table_new = std_memo_table_new
 M.table_get = std_memo_table_get
 M.table_set = std_memo_table_set

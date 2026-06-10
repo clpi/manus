@@ -1,17 +1,17 @@
-local log = require("std.log")
-local memo = require("std.memo")
-local json = require("std.json")
-local hash = require("std.hash")
-local fmt = require("std.fmt")
-local atomic = require("std.atomic")
-local crypto = require("std.crypto")
-local test = require("std.test")
-local meta = require("std.meta")
+log = req "std.log"
+memo = req "std.memo"
+json = req "std.json"
+hash = req "std.hash"
+fmt = req "std.fmt"
+atomic = req "std.atomic"
+crypto = req "std.crypto"
+test = req "std.test"
+meta = req "std.meta"
 
-local total_passes = 0
-local total_fails = 0
+total_passes = 0
+total_fails = 0
 
-function count_result(p)
+fun count_result(p)
     if p then total_passes = total_passes + 1 else total_fails = total_fails + 1 end
 end
 
@@ -24,22 +24,22 @@ count_result(not meta.is_func(1))
 
 count_result(hash.simple("hello") == hash.simple("hello"))
 
-local b64 = crypto.base64_encode("Hey!")
+b64 = crypto.base64_encode("Hey!")
 count_result(b64 == "SGV5IA==")
 
 count_result(fmt.pad("x", 5) == "x    ")
 count_result(#json.encode({1, 2, 3}) > 3)
 
-local mem = memo.table_new()
+mem = memo.table_new()
 memo.table_set(mem, "k", 1)
 count_result(memo.table_get(mem, "k") == 1)
 count_result(not memo.table_has(mem, "nope"))
 
-local a = atomic.mutex_new()
+a = atomic.mutex_new()
 a.locked = true
 count_result(a.locked)
 
-count_result(memo.wrap(function(x) return x * 2 end)(21) == 42)
+count_result(memo.wrap(fun(x) return x * 2 end)(21) == 42)
 
 test.start("stdlib smoke")
 test.assert_eq(total_fails, 0, "no failures expected")

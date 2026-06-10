@@ -4,25 +4,25 @@
 -- Otherwise, this Lua fallback uses curl for HTTP and stubs for raw sockets.
 
 -- Parse a URL into {scheme, host, port, path}
-local function parse_url(url)
-    local scheme = "http"
-    local rest = url
+fun parse_url(url)
+    scheme = "http"
+    rest = url
     if string.sub(rest, 1, 7) == "http://" then
         rest = string.sub(rest, 8)
     elseif string.sub(rest, 1, 8) == "https://" then
         scheme = "https"
         rest = string.sub(rest, 9)
     end
-    local default_port = (scheme == "https") and 443 or 80
-    local host = rest
-    local path = "/"
-    local slash_pos = string.find(rest, "/")
+    default_port = (scheme == "https") and 443 or 80
+    host = rest
+    path = "/"
+    slash_pos = string.find(rest, "/")
     if slash_pos then
         host = string.sub(rest, 1, slash_pos - 1)
         path = string.sub(rest, slash_pos)
     end
-    local colon_pos = string.find(host, ":")
-    local port = default_port
+    colon_pos = string.find(host, ":")
+    port = default_port
     if colon_pos then
         port = tonumber(string.sub(host, colon_pos + 1)) or default_port
         host = string.sub(host, 1, colon_pos - 1)
@@ -31,115 +31,115 @@ local function parse_url(url)
 end
 
 -- HTTP GET via curl (fallback when variable not named "net")
-local function http_get(url)
-    local f = io.popen("curl -sL --max-time 30 -- " .. url, "r")
+fun http_get(url)
+    f = io.popen("curl -sL --max-time 30 -- " .. url, "r")
     if f == nil then return "" end
-    local body = f:read("*a") or ""
+    body = f:read("*a") or ""
     f:close()
     return body
 end
 
 -- HTTP POST via curl (fallback)
-local function http_post(url, body, content_type)
-    local ct = content_type or "application/x-www-form-urlencoded"
-    local escaped = string.gsub(body or "", "'", "'\\''")
-    local cmd = "curl -sL --max-time 30 -X POST"
+fun http_post(url, body, content_type)
+    ct = content_type or "application/x-www-form-urlencoded"
+    escaped = string.gsub(body or "", "'", "'\\''")
+    cmd = "curl -sL --max-time 30 -X POST"
         .. " -H 'Content-Type: " .. ct .. "'"
         .. " --data '" .. escaped .. "' -- " .. url
-    local f = io.popen(cmd, "r")
+    f = io.popen(cmd, "r")
     if f == nil then return "" end
-    local resp = f:read("*a") or ""
+    resp = f:read("*a") or ""
     f:close()
     return resp
 end
 
 -- HTTP request returning {body, status} via curl
-local function http_request(method, url, body, headers)
-    local cmd = "curl -si --max-time 30 -X " .. method
+fun http_request(method, url, body, headers)
+    cmd = "curl -si --max-time 30 -X " .. method
     if headers then
-        for k, v in pairs(headers) do
+        for k, v in pairs(headers)
             cmd = cmd .. " -H '" .. k .. ": " .. v .. "'"
         end
     end
     if body and body ~= "" then
-        local escaped = string.gsub(body, "'", "'\\''")
+        escaped = string.gsub(body, "'", "'\\''")
         cmd = cmd .. " --data '" .. escaped .. "'"
     end
     cmd = cmd .. " -- " .. url
-    local f = io.popen(cmd, "r")
+    f = io.popen(cmd, "r")
     if f == nil then return {body = "", status = 0} end
-    local raw = f:read("*a") or ""
+    raw = f:read("*a") or ""
     f:close()
-    local status = tonumber(string.match(raw, "HTTP/%d+%.%d+ (%d+)")) or 0
-    local sep = string.find(raw, "\r\n\r\n", 1, true)
-    local resp_body = sep and string.sub(raw, sep + 4) or raw
+    status = tonumber(string.match(raw, "HTTP/%d+%.%d+ (%d+)")) or 0
+    sep = string.find(raw, "\r\n\r\n", 1, true)
+    resp_body = sep and string.sub(raw, sep + 4) or raw
     return {body = resp_body, status = status}
 end
 
 -- Raw TCP connect — stub (real impl via codegen interception when var = "net")
-local function connect(host, port)
+fun connect(host, port)
     return nil  -- intercepted: duo_net_tcp_connect(host, port)
 end
 
 -- TCP listen — stub
-local function listen(host, port, backlog)
+fun listen(host, port, backlog)
     return nil  -- intercepted: duo_net_tcp_listen(host, port, backlog)
 end
 
 -- TCP accept — stub
-local function accept(srv_fd)
+fun accept(srv_fd)
     return nil  -- intercepted: duo_net_tcp_accept(srv_fd)
 end
 
 -- TCP send — stub
-local function send(fd, data)
+fun send(fd, data)
     return -1   -- intercepted: duo_net_tcp_send(fd, data)
 end
 
 -- TCP recv — stub
-local function recv(fd, maxlen)
+fun recv(fd, maxlen)
     return nil  -- intercepted: duo_net_tcp_recv(fd, maxlen)
 end
 
 -- TCP close — stub
-local function close(fd)
+fun close(fd)
     -- intercepted: duo_net_tcp_close(fd)
 end
 
 -- UDP socket — stub
-local function udp_socket(host, port)
+fun udp_socket(host, port)
     return nil  -- intercepted: duo_net_udp_socket_open(host, port)
 end
 
 -- UDP sendto — stub
-local function udp_sendto(fd, data, host, port)
+fun udp_sendto(fd, data, host, port)
     return -1   -- intercepted: duo_net_udp_sendto(fd, data, host, port)
 end
 
 -- UDP recvfrom — stub
-local function udp_recvfrom(fd, maxlen)
+fun udp_recvfrom(fd, maxlen)
     return nil  -- intercepted: duo_net_udp_recvfrom(fd, maxlen)
 end
 
 -- Simple blocking HTTP server (requires native socket support via codegen path)
 -- handler(method, path, raw_request) -> response_body string
-local function http_serve(port, handler)
-    local srv = listen("0.0.0.0", port, 128)
+fun http_serve(port, handler)
+    srv = listen("0.0.0.0", port, 128)
     if srv == nil then
         io.write("net.http_serve: listen failed on port " .. tostring(port) .. "\n")
         return
     end
     io.write("net: listening on :" .. tostring(port) .. "\n")
-    while true do
-        local cli = accept(srv)
+    while true
+        cli = accept(srv)
         if cli == nil then break end
-        local raw = recv(cli, 16384)
+        raw = recv(cli, 16384)
         if raw ~= nil then
-            local method, req_path = string.match(raw, "^(%u+) (/[^ ]*)")
+            method, req_path = string.match(raw, "^(%u+) (/[^ ]*)")
             if method == nil then method = "GET" end
             if req_path == nil then req_path = "/" end
-            local resp_body = handler(method, req_path, raw) or ""
-            local response = "HTTP/1.0 200 OK\r\n"
+            resp_body = handler(method, req_path, raw) or ""
+            response = "HTTP/1.0 200 OK\r\n"
                 .. "Content-Type: text/plain\r\n"
                 .. "Content-Length: " .. tostring(#resp_body) .. "\r\n"
                 .. "Connection: close\r\n\r\n"
@@ -151,7 +151,7 @@ local function http_serve(port, handler)
     close(srv)
 end
 
-local M = {}
+M = {}
 M.parse_url    = parse_url
 M.http_get     = http_get
 M.http_post    = http_post

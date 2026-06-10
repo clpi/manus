@@ -1,4 +1,4 @@
--- Test both traditional and bash-style function calls
+-- Test both traditional and bash-style fun calls
 
 fun greet(name: str): str
     return "Hello, " .. name

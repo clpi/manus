@@ -1,7 +1,7 @@
 -- Boolean predicate exports for WAST testing.
 
 @export
-function is_even(n: int): int
+fun is_even(n: int): int
     if n % 2 == 0 then
         return 1
     end
@@ -9,7 +9,7 @@ function is_even(n: int): int
 end
 
 @export
-function is_odd(n: int): int
+fun is_odd(n: int): int
     if n % 2 ~= 0 then
         return 1
     end
@@ -17,7 +17,7 @@ function is_odd(n: int): int
 end
 
 @export
-function is_positive(n: int): int
+fun is_positive(n: int): int
     if n > 0 then
         return 1
     end
@@ -25,7 +25,7 @@ function is_positive(n: int): int
 end
 
 @export
-function is_negative(n: int): int
+fun is_negative(n: int): int
     if n < 0 then
         return 1
     end
@@ -33,7 +33,7 @@ function is_negative(n: int): int
 end
 
 @export
-function sign(n: int): int
+fun sign(n: int): int
     if n > 0 then
         return 1
     elseif n < 0 then
@@ -43,7 +43,7 @@ function sign(n: int): int
 end
 
 @export
-function clamp(val: int, lo: int, hi: int): int
+fun clamp(val: int, lo: int, hi: int): int
     if val < lo then
         return lo
     elseif val > hi then
@@ -53,7 +53,7 @@ function clamp(val: int, lo: int, hi: int): int
 end
 
 @export
-function in_range(val: int, lo: int, hi: int): int
+fun in_range(val: int, lo: int, hi: int): int
     if val >= lo and val <= hi then
         return 1
     end

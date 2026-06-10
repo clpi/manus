@@ -1,4 +1,4 @@
--- Test minimal bash-style function call
+-- Test minimal bash-style fun call
 
 fun greet(name: str): str
     return "Hello, " .. name

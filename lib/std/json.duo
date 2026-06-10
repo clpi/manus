@@ -1,4 +1,4 @@
-function std_json_encode(val)
+fun std_json_encode(val)
     if val == nil then return "null" end
     if type(val) == "boolean" then
         if val then return "true" else return "false" end
@@ -10,7 +10,7 @@ function std_json_encode(val)
         return tostring(val)
     end
     if type(val) == "string" then
-        local s = string.gsub(val, "\\", "\\\\")
+        s = string.gsub(val, "\\", "\\\\")
         s = string.gsub(s, "\"", "\\\"")
         s = string.gsub(s, "\n", "\\n")
         s = string.gsub(s, "\t", "\\t")
@@ -19,16 +19,16 @@ function std_json_encode(val)
     end
     if type(val) == "table" then
         if std_collections_is_array(val) then
-            local parts = {}
-            for i = 1, #val do
+            parts = {}
+            for i = 1, #val
                 table.insert(parts, std_json_encode(val[i]))
             end
             return "[" .. table.concat(parts, ",") .. "]"
         else
-            local parts = {}
-            for k, v in pairs(val) do
+            parts = {}
+            for k, v in pairs(val)
                 if type(k) == "string" then
-                    local key_str = std_json_encode(k)
+                    key_str = std_json_encode(k)
                     table.insert(parts, key_str .. ":" .. std_json_encode(v))
                 end
             end
@@ -38,16 +38,16 @@ function std_json_encode(val)
     return "null"
 end
 
-function std_json_has_key(val, key)
+fun std_json_has_key(val, key)
     if type(val) ~= "table" then return false end
     return val[key] ~= nil
 end
 
-function std_json_decode(s)
+fun std_json_decode(s)
     return nil
 end
 
-function std_json_pretty(val, indent)
+fun std_json_pretty(val, indent)
     if indent == nil then indent = 2 end
     if type(indent) ~= "number" then indent = 2 end
     if val == nil then return "null" end
@@ -63,23 +63,23 @@ function std_json_pretty(val, indent)
     if type(val) == "table" then
         if std_collections_is_array(val) then
             if #val == 0 then return "[]" end
-            local pad = string.rep(" ", indent)
-            local parts = {}
-            for i = 1, #val do
+            pad = string.rep(" ", indent)
+            parts = {}
+            for i = 1, #val
                 table.insert(parts, pad .. std_json_pretty(val[i], indent))
             end
             return "[\n" .. table.concat(parts, ",\n") .. "\n]"
         else
-            local keys = {}
-            for k, _ in pairs(val) do
+            keys = {}
+            for k, _ in pairs(val)
                 if type(k) == "string" then
                     table.insert(keys, k)
                 end
             end
             if #keys == 0 then return "{}" end
-            local pad = string.rep(" ", indent)
-            local parts = {}
-            for _, k in ipairs(keys) do
+            pad = string.rep(" ", indent)
+            parts = {}
+            for _, k in ipairs(keys)
                 table.insert(parts, pad .. std_json_encode(k) .. ": " .. std_json_pretty(val[k], indent))
             end
             return "{\n" .. table.concat(parts, ",\n") .. "\n}"
@@ -88,7 +88,7 @@ function std_json_pretty(val, indent)
     return "null"
 end
 
-local M = {}
+M = {}
 M.encode = std_json_encode
 M.decode = std_json_decode
 M.pretty = std_json_pretty

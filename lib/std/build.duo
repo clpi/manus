@@ -1,4 +1,4 @@
-function std_build_info()
+fun std_build_info()
     return {
         compiler = "duo",
         version = "0.1.0",
@@ -7,28 +7,28 @@ function std_build_info()
     }
 end
 
-function std_build_platform()
+fun std_build_platform()
     return os.getenv("OSTYPE") or "unknown"
 end
 
-function std_build_arch()
-    local arch = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
+fun std_build_arch()
+    arch = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
     return arch
 end
 
-function std_build_target()
+fun std_build_target()
     return string.format("%s-%s", std_build_arch(), std_build_platform())
 end
 
-function std_build_is_debug()
+fun std_build_is_debug()
     return os.getenv("DEBUG") == "1"
 end
 
-function std_build_env()
+fun std_build_env()
     return os.getenv("BUILD_ENV") or "development"
 end
 
-local M = {}
+M = {}
 M.info = std_build_info
 M.platform = std_build_platform
 M.arch = std_build_arch

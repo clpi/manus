@@ -1,2 +1,2 @@
-local mod = require("test_mod")
+mod = req "test_mod"
 print(mod.foo("hello", "world"))

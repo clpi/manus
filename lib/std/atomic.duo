@@ -1,11 +1,11 @@
-function std_atomic_store(t, key, value)
-    local old = t[key]
+fun std_atomic_store(t, key, value)
+    old = t[key]
     t[key] = value
     return old
 end
 
-function std_atomic_compare_swap(t, key, expected, new_value)
-    local old = t[key]
+fun std_atomic_compare_swap(t, key, expected, new_value)
+    old = t[key]
     if old == expected then
         t[key] = new_value
         return true, new_value
@@ -13,8 +13,8 @@ function std_atomic_compare_swap(t, key, expected, new_value)
     return false, old
 end
 
-function std_atomic_fetch_add(t, key, delta)
-    local old = t[key]
+fun std_atomic_fetch_add(t, key, delta)
+    old = t[key]
     if type(old) == "number" then
         t[key] = old + delta
     else
@@ -23,8 +23,8 @@ function std_atomic_fetch_add(t, key, delta)
     return old
 end
 
-function std_atomic_fetch_sub(t, key, delta)
-    local old = t[key]
+fun std_atomic_fetch_sub(t, key, delta)
+    old = t[key]
     if type(old) == "number" then
         t[key] = old - delta
     else
@@ -33,8 +33,8 @@ function std_atomic_fetch_sub(t, key, delta)
     return old
 end
 
-function std_atomic_inc(t, key)
-    local old = t[key]
+fun std_atomic_inc(t, key)
+    old = t[key]
     if type(old) == "number" then
         t[key] = old + 1
     else
@@ -43,8 +43,8 @@ function std_atomic_inc(t, key)
     return old
 end
 
-function std_atomic_dec(t, key)
-    local old = t[key]
+fun std_atomic_dec(t, key)
+    old = t[key]
     if type(old) == "number" then
         t[key] = old - 1
     else
@@ -53,26 +53,26 @@ function std_atomic_dec(t, key)
     return old
 end
 
-function std_atomic_mutex_new()
+fun std_atomic_mutex_new()
     return { locked = false }
 end
 
-function std_atomic_lock(m)
-    while m.locked do
+fun std_atomic_lock(m)
+    while m.locked
         m.locked = true
     end
 end
 
-function std_atomic_unlock(m)
+fun std_atomic_unlock(m)
     m.locked = false
 end
 
-function std_atomic_signal(sp)
+fun std_atomic_signal(sp)
     if sp == nil then return end
     sp.notify = true
 end
 
-local M = {}
+M = {}
 M.store = std_atomic_store
 M.compare_swap = std_atomic_compare_swap
 M.fetch_add = std_atomic_fetch_add

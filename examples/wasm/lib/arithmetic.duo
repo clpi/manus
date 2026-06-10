@@ -1,62 +1,62 @@
 -- Typed arithmetic exports for WAST testing.
 
 @export
-function add(a: int, b: int): int
+fun add(a: int, b: int): int
     return a + b
 end
 
 @export
-function sub(a: int, b: int): int
+fun sub(a: int, b: int): int
     return a - b
 end
 
 @export
-function mul(a: int, b: int): int
+fun mul(a: int, b: int): int
     return a * b
 end
 
 @export
-function idiv(a: int, b: int): int
+fun idiv(a: int, b: int): int
     return a // b
 end
 
 @export
-function imod(a: int, b: int): int
+fun imod(a: int, b: int): int
     return a % b
 end
 
 @export
-function neg(a: int): int
+fun neg(a: int): int
     return -a
 end
 
 @export
-function band(a: int, b: int): int
+fun band(a: int, b: int): int
     return a & b
 end
 
 @export
-function bor(a: int, b: int): int
+fun bor(a: int, b: int): int
     return a | b
 end
 
 @export
-function bxor(a: int, b: int): int
+fun bxor(a: int, b: int): int
     return a ~ b
 end
 
 @export
-function lshift(a: int, b: int): int
+fun lshift(a: int, b: int): int
     return a << b
 end
 
 @export
-function rshift(a: int, b: int): int
+fun rshift(a: int, b: int): int
     return a >> b
 end
 
 @export
-function abs_val(a: int): int
+fun abs_val(a: int): int
     if a < 0 then
         return -a
     end
@@ -64,7 +64,7 @@ function abs_val(a: int): int
 end
 
 @export
-function max_val(a: int, b: int): int
+fun max_val(a: int, b: int): int
     if a > b then
         return a
     end
@@ -72,7 +72,7 @@ function max_val(a: int, b: int): int
 end
 
 @export
-function min_val(a: int, b: int): int
+fun min_val(a: int, b: int): int
     if a < b then
         return a
     end
