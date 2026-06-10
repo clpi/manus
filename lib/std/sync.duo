@@ -5,19 +5,19 @@
 _run_queue = {}  -- list of {co=coroutine} ready to run
 
 -- Spawn a task (coroutine). Returns immediately; call run() to drive it.
-fun spawn(fn, ...)
-    args = {...}
-    co = coroutine.create(fun() return fn(table.unpack(args)) end)
+fun spawn(fn: any, ...args: any): void
+    args_list = {args}
+    co = coroutine.create(fun() return fn(table.unpack(args_list)) end)
     _run_queue[#_run_queue + 1] = {co = co}
 end
 
 -- Yield the current coroutine back to the scheduler.
-fun yield()
+fun yield(): void
     coroutine.yield()
 end
 
 -- Run all spawned tasks to completion (cooperative round-robin).
-fun run()
+fun run(): void
     while #_run_queue > 0
         task = table.remove(_run_queue, 1)
         ok, err = coroutine.resume(task.co)
@@ -30,7 +30,7 @@ fun run()
 end
 
 -- Run a single step of the scheduler. Returns true if tasks remain.
-fun step()
+fun step(): bool
     if #_run_queue == 0 then return false end
     task = table.remove(_run_queue, 1)
     ok, err = coroutine.resume(task.co)
@@ -43,7 +43,7 @@ fun step()
 end
 
 -- Create a channel with optional capacity (0 = unbounded).
-fun channel(capacity)
+fun channel(capacity: i64): any
     return {
         _cap          = capacity or 0,
         _queue        = {},
@@ -54,7 +54,7 @@ fun channel(capacity)
 end
 
 -- Send a value; blocks (yields) if channel is full.
-fun channel_send(ch, val)
+fun channel_send(ch: any, val: any): void
     if ch._closed then error("send on closed channel") end
     -- Wake a waiting receiver directly.
     if #ch._recv_waiters > 0 then
@@ -75,7 +75,7 @@ fun channel_send(ch, val)
 end
 
 -- Receive a value; blocks (yields) if channel is empty.
-fun channel_recv(ch)
+fun channel_recv(ch: any): any
     -- Data ready.
     if #ch._queue > 0 then
         val = table.remove(ch._queue, 1)
@@ -98,7 +98,7 @@ fun channel_recv(ch)
 end
 
 -- Non-blocking receive; returns nil immediately if empty.
-fun channel_try_recv(ch)
+fun channel_try_recv(ch: any): any
     if #ch._queue > 0 then
         val = table.remove(ch._queue, 1)
         if #ch._send_waiters > 0 then
@@ -112,7 +112,7 @@ fun channel_try_recv(ch)
 end
 
 -- Close a channel; wakes all waiting receivers with nil.
-fun channel_close(ch)
+fun channel_close(ch: any): void
     ch._closed = true
     for _, w in ipairs(ch._recv_waiters)
         w._slot._val = nil
@@ -122,7 +122,7 @@ fun channel_close(ch)
 end
 
 -- Drain: receive all pending values without blocking.
-fun channel_drain(ch)
+fun channel_drain(ch: any): any
     out = {}
     while #ch._queue > 0
         out[#out + 1] = table.remove(ch._queue, 1)

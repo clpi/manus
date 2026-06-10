@@ -12,10 +12,11 @@ const usage =
     \\usage: duo <command> [options] <file>
     \\
     \\commands:
-    \\  compile  <file>   compile .duo/.lua to a native binary
-    \\  run      <file>   compile and run immediately
-    \\  check    <file>   type-check only, no output
-    \\  dump-c   <file>   print generated C to stdout
+    \\  compile    <file>   compile .duo/.lua to a native binary
+    \\  run        <file>   compile and run immediately
+    \\  check      <file>   type-check only, no output
+    \\  dump-c     <file>   print generated C to stdout
+    \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
     \\options:
     \\  -o <name>         output binary name (default: <stem>.out or <stem>.wasm)
@@ -42,7 +43,9 @@ pub fn main(init: std.process.Init) !void {
         (std.mem.eql(u8, args[1], "compile") or
             std.mem.eql(u8, args[1], "run") or
             std.mem.eql(u8, args[1], "check") or
-            std.mem.eql(u8, args[1], "dump-c"));
+            std.mem.eql(u8, args[1], "dump-c") or
+            std.mem.eql(u8, args[1], "completion") or
+            std.mem.eql(u8, args[1], "help"));
     const cmd: []const u8 = if (known_cmd) args[1] else "run";
     const start: usize = if (known_cmd) 2 else 1;
     var input_file: ?[]const u8 = null;
@@ -107,6 +110,10 @@ pub fn main(init: std.process.Init) !void {
         try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
+    } else if (std.mem.eql(u8, cmd, "completion")) {
+        try do_completion(io, args[start..]);
+    } else if (std.mem.eql(u8, cmd, "help")) {
+        std.debug.print("{s}", .{usage});
     } else {
         std.debug.print("error: unknown command '{s}'\n{s}", .{ cmd, usage });
         std.process.exit(1);
@@ -324,7 +331,7 @@ fn do_compile(
     };
     defer base_cc_flags.deinit(alloc);
 
-    const silent = run_after and !verbose;
+        const silent = run_after and !verbose;
     // PGO two-pass compile (skipped for wasm, load_chunk, or run_after).
     if (pgo and !is_wasm and !load_chunk) {
         const stem = std.fs.path.stem(src_path);
@@ -390,6 +397,12 @@ fn do_compile(
             },
         }
     }
+}
+
+fn do_completion(io: Io, args: []const [:0]const u8) !void {
+    _ = io;
+    _ = args;
+    std.debug.print("completion: not yet implemented\n", .{});
 }
 
 fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []const u8) !void {

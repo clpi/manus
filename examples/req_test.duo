@@ -1,9 +1,25 @@
--- Test 'req' as a regular identifier
--- 'req' can be used as a fun name and provided by the standard library
--- as an alias for 'require'
+-- Test 'req' as the module import mechanism
+-- 'req' is a regular identifier, NOT a keyword
+-- It supports destructured imports for pulling out named exports
 
-req = fun(module: str): str
+-- Define req locally for standalone use
+-- (In the full runtime, req is provided by the standard library)
+fun req(module: str)
+    _loaded = "loaded: " .. module
+    {}
+end
+
+-- Standard require pattern
+sync = req "std.sync"
+print("sync module loaded: " .. tostring(type(sync)))
+
+-- req can be used as a function name
+fun my_req(module: str): str
     "loaded: " .. module
 end
 
-print(req("mylib"))
+print(my_req("custom_module"))
+
+-- Note: 'import' is never a keyword in Duo; always use 'req'
+-- Destructured imports: { name1, name2 } = req "module"
+-- This pulls specific exports from the returned module table

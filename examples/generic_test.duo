@@ -1,12 +1,58 @@
--- Test generics with angle bracket syntax
+-- Test generics with angle bracket syntax, multi-param generics, and early returns
 
--- Basic generic type annotation (simplified - just parses for now)
+-- Basic generic identity
 fun identity<T>(value: T): T
     value
 end
 
--- Using the fun result = identity(42)
-print(result)
+-- Multi-param generic
+fun pair<A, B>(first: A, second: B)
+    { first = first, second = second }
+end
+
+-- Generic with early return in conditional
+-- Early returns in conditionals ARE allowed and supported
+fun safe_div<T>(a: T, b: T): T
+    if b == 0 then
+        return a
+    end
+    a // b
+end
+
+-- Generic swap with explicit multi-return
+fun swap<T>(a: T, b: T): any
+    return b, a
+end
+
+-- Generic function with type constraints via runtime checks
+fun print_if_str<T>(val: T): void
+    if type(val) == "string" then
+        print("str value: " .. val)
+        return
+    end
+    if type(val) == "number" then
+        print("num value: " .. tostring(val))
+        return
+    end
+    print("other type")
+end
+
+-- Test
+result = identity(42)
+print("identity(42): " .. tostring(result))
 
 result2 = identity("hello")
-print(result2)
+print("identity('hello'): " .. result2)
+
+p = pair(1, "one")
+print("pair: " .. tostring(p.first) .. " => " .. p.second)
+
+print("safe_div(10, 2): " .. tostring(safe_div(10, 2)))
+print("safe_div(10, 0): " .. tostring(safe_div(10, 0)))
+
+x, y = swap(100, 200)
+print("swap(100, 200): " .. tostring(x) .. ", " .. tostring(y))
+
+print_if_str("hello")
+print_if_str(42)
+print_if_str(true)

@@ -835,7 +835,7 @@ pub const Parser = struct {
     fn parse_while(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         const cond = try self.parse_expr();
-        _ = try self.expect(.kw_do);
+        _ = try self.eat(.kw_do); // do is optional in Duo
         const body = try self.parse_block();
         _ = try self.expect(.kw_end);
         return ast.Stmt{ .while_loop = .{ .loc = l, .cond = cond, .body = body } };
@@ -861,7 +861,7 @@ pub const Parser = struct {
             const stop = try self.parse_expr();
             var step: ?*ast.Expr = null;
             if (try self.eat(.comma) != null) step = try self.parse_expr();
-            _ = try self.expect(.kw_do);
+            _ = try self.eat(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .num_for = .{
@@ -885,7 +885,7 @@ pub const Parser = struct {
             try iters.append(self.alloc, try self.parse_expr());
             while (try self.eat(.comma) != null)
                 try iters.append(self.alloc, try self.parse_expr());
-            _ = try self.expect(.kw_do);
+            _ = try self.eat(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .gen_for = .{
@@ -1349,6 +1349,31 @@ pub const Parser = struct {
         // If the next token continues the expression (binary op, etc.),
         // parse the full expression.
         const nxt = try self.pk();
+
+        // Typed-binding without 'local': name : Type = value
+        // parse_suffixed_expr breaks on ':' when followed by a type-like token.
+        if (first.* == .name and nxt.kind == .colon) {
+            _ = try self.adv(); // consume ':'
+            const typ = try self.parse_type();
+            var inits: std.ArrayList(*ast.Expr) = .empty;
+            if (try self.eat(.assign) != null) {
+                try inits.append(self.alloc, try self.parse_expr());
+            }
+            var names: std.ArrayList(ast.LocalName) = .empty;
+            try names.append(self.alloc, ast.LocalName{
+                .ident = first.name.ident,
+                .typ = typ,
+                .attrib = null,
+                .attributes = &.{},
+                .loc = first.loc(),
+            });
+            return ast.Stmt{ .local_decl = .{
+                .loc = first.loc(),
+                .names = try names.toOwnedSlice(self.alloc),
+                .inits = try inits.toOwnedSlice(self.alloc),
+            } };
+        }
+
         if (infix_prec(nxt.kind) != null) {
             // Save state, re-parse as full expression with precedence climbing.
             // We already consumed the prefix via parse_suffixed_expr, so we
@@ -1641,7 +1666,31 @@ pub const Parser = struct {
                     e = try self.new_expr(.{ .index = .{ .loc = tok.loc, .obj = e, .key = key } });
                 },
                 .colon => {
-                    _ = try self.adv();
+                    // Peek ahead to distinguish type annotation from method call.
+                    // Type annotation: name : Type = value
+                    // Method call:     obj : method ( args )
+                    const saved = self.lex.saveState();
+                    _ = try self.lex.next(); // consume ':'
+                    const after_colon = try self.lex.peek();
+                    if (Lexer.isTypeKeyword(after_colon.kind)) {
+                        // name : i64 = ...  —  this is a typed binding; don't consume
+                        self.lex.restoreState(saved);
+                        break;
+                    }
+                    if (after_colon.kind == .name) {
+                        // Could be name : UserType = ... or obj : method ( args )
+                        _ = try self.lex.next(); // consume the name
+                        const after_name = try self.lex.peek();
+                        self.lex.restoreState(saved);
+                        if (after_name.kind == .assign) {
+                            // name : TypeName = ...  —  typed binding; don't consume
+                            break;
+                        }
+                    } else {
+                        self.lex.restoreState(saved);
+                    }
+                    // Not a typed binding — treat as method call
+                    _ = try self.adv(); // consume ':'
                     const method = try self.expect(.name);
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .method_call = .{

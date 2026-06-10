@@ -1,6 +1,4 @@
--- std.proc — process utilities
-
-fun std_proc_exec(cmd: str)
+fun exec(cmd: str): i64
     rc = os.execute(cmd)
     if rc == nil then
         -1
@@ -8,7 +6,7 @@ fun std_proc_exec(cmd: str)
     rc
 end
 
-fun std_proc_capture(cmd: str): str
+fun capture(cmd: str): str
     f = io.popen(cmd, "r")
     if f == nil then
         ""
@@ -24,6 +22,6 @@ fun std_proc_capture(cmd: str): str
 end
 
 M = {}
-M.exec = std_proc_exec
-M.capture = std_proc_capture
+M.exec = exec
+M.capture = capture
 M

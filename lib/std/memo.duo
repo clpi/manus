@@ -1,22 +1,24 @@
-fun std_memo_table_new()
+-- std.memo — memoization utilities
+
+fun table_new(): any
     {}
 end
 
-fun std_memo_table_get(m, key)
+fun table_get(m: any, key: any): any
     m[key]
 end
 
-fun std_memo_table_set(m, key, value)
+fun table_set(m: any, key: any, value: any): void
     m[key] = value
 end
 
-fun std_memo_table_has(m, key)
+fun table_has(m: any, key: any): bool
     m[key] ~= nil
 end
 
-fun std_memo_wrap(fn)
+fun wrap(fn: any): any
     cache = {}
-    return fun(x)
+    return fun(x: any): any
         if cache[x] == nil then
             cache[x] = fn(x)
         end
@@ -24,17 +26,17 @@ fun std_memo_wrap(fn)
     end
 end
 
-fun std_memo_clear(m)
+fun clear(m: any): void
     for k, _ in pairs(m)
         m[k] = nil
     end
 end
 
 M = {}
-M.table_new = std_memo_table_new
-M.table_get = std_memo_table_get
-M.table_set = std_memo_table_set
-M.table_has = std_memo_table_has
-M.wrap = std_memo_wrap
-M.clear = std_memo_clear
+M.table_new = table_new
+M.table_get = table_get
+M.table_set = table_set
+M.table_has = table_has
+M.wrap = wrap
+M.clear = clear
 M

@@ -1,0 +1,10 @@
+tools:
+    shell:
+        allow:
+            - ls *
+            - rm *
+            - wc *
+            - which mdbook
+            - mdbook build *
+            - echo *
+            - cd *

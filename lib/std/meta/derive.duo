@@ -1,0 +1,189 @@
+-- std.meta.derive — derivable concepts for the Duo standard library
+-- Concepts define interfaces that types can satisfy via @implements.
+-- These are used with meta blocks for compile-time derivation.
+
+concept Clone
+    fun clone(self): any
+end
+
+concept Eq
+    fun eq(self, other): bool
+end
+
+concept Ord
+    fun compare(self, other): i64
+end
+
+concept Hash
+    fun hash(self): u64
+end
+
+concept Display
+    fun to_string(self): str
+end
+
+concept Default
+    fun default(): any
+end
+
+concept Iterable
+    fun iter(self): any
+    fun next(self): any
+end
+
+concept Index
+    fun at(self, index: i64): any
+    fun len(self): i64
+end
+
+concept Into
+    fun into(self, T: str): any
+end
+
+concept From
+    fun from(src: any): any
+end
+
+concept Add
+    fun add(self, other): any
+end
+
+concept Sub
+    fun sub(self, other): any
+end
+
+concept Mul
+    fun mul(self, other): any
+end
+
+concept Div
+    fun div(self, other): any
+end
+
+concept Rem
+    fun rem(self, other): any
+end
+
+concept Pow
+    fun pow(self, other): any
+end
+
+concept Neg
+    fun neg(self): any
+end
+
+concept BitAnd
+    fun bit_and(self, other): any
+end
+
+concept BitOr
+    fun bit_or(self, other): any
+end
+
+concept BitXor
+    fun bit_xor(self, other): any
+end
+
+concept BitNot
+    fun bit_not(self): any
+end
+
+concept Shl
+    fun shl(self, other): any
+end
+
+concept Shr
+    fun shr(self, other): any
+end
+
+concept Concat
+    fun concat(self, other): any
+end
+
+concept Len
+    fun len(self): i64
+end
+
+concept Call
+    fun call(self, ...args: any): any
+end
+
+concept Contains
+    fun contains(self, value: any): bool
+end
+
+concept Try
+    fun try(self): bool, any, any
+end
+
+concept Unwrap
+    fun unwrap(self): any
+end
+
+concept Tag
+    fun tag(self): str
+end
+
+concept Close
+    fun close(self): void
+end
+
+concept Iter
+    fun iter(self): any
+end
+
+concept Format
+    fun fmt(self, spec: str): str
+end
+
+concept Serialize
+    fun serialize(self): str
+end
+
+concept Deserialize
+    fun deserialize(src: str): any
+end
+
+concept DeepClone
+    fun deep_clone(self): any
+end
+
+-- Derive module table
+M = {}
+M.Clone = Clone
+M.Eq = Eq
+M.Ord = Ord
+M.Hash = Hash
+M.Display = Display
+M.Default = Default
+M.Iterable = Iterable
+M.Index = Index
+M.Into = Into
+M.From = From
+M.Add = Add
+M.Sub = Sub
+M.Mul = Mul
+M.Div = Div
+M.Rem = Rem
+M.Pow = Pow
+M.Neg = Neg
+M.BitAnd = BitAnd
+M.BitOr = BitOr
+M.BitXor = BitXor
+M.BitNot = BitNot
+M.Shl = Shl
+M.Shr = Shr
+M.Concat = Concat
+M.Len = Len
+M.Call = Call
+M.Contains = Contains
+M.Try = Try
+M.Unwrap = Unwrap
+M.Tag = Tag
+M.Close = Close
+M.Iter = Iter
+M.Format = Format
+M.Serialize = Serialize
+M.Deserialize = Deserialize
+M.DeepClone = DeepClone
+M

@@ -1,8 +1,8 @@
-fun std_test_start(msg)
+fun start(msg: str): void
     io.write(string.format("=== %s ===\n", msg))
 end
 
-fun std_test_assert_eq(actual, expected, msg)
+fun assert_eq(actual: any, expected: any, msg: str): void
     if actual == expected then
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
@@ -10,7 +10,7 @@ fun std_test_assert_eq(actual, expected, msg)
     end
 end
 
-fun std_test_assert_ne(actual, not_expected, msg)
+fun assert_ne(actual: any, not_expected: any, msg: str): void
     if actual ~= not_expected then
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
@@ -18,7 +18,7 @@ fun std_test_assert_ne(actual, not_expected, msg)
     end
 end
 
-fun std_test_assert_true(val, msg)
+fun assert_true(val: any, msg: str): void
     if val == true then
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
@@ -26,7 +26,7 @@ fun std_test_assert_true(val, msg)
     end
 end
 
-fun std_test_assert_false(val, msg)
+fun assert_false(val: any, msg: str): void
     if val == false then
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
@@ -34,7 +34,7 @@ fun std_test_assert_false(val, msg)
     end
 end
 
-fun std_test_assert_nil(val, msg)
+fun assert_nil(val: any, msg: str): void
     if val == nil then
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
@@ -42,7 +42,7 @@ fun std_test_assert_nil(val, msg)
     end
 end
 
-fun std_test_assert_not_nil(val, msg)
+fun assert_not_nil(val: any, msg: str): void
     if val ~= nil then
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
@@ -50,17 +50,17 @@ fun std_test_assert_not_nil(val, msg)
     end
 end
 
-fun std_test_done()
+fun done(): void
     io.write("=== tests done ===\n")
 end
 
 M = {}
-M.start = std_test_start
-M.assert_eq = std_test_assert_eq
-M.assert_ne = std_test_assert_ne
-M.assert_true = std_test_assert_true
-M.assert_false = std_test_assert_false
-M.assert_nil = std_test_assert_nil
-M.assert_not_nil = std_test_assert_not_nil
-M.done = std_test_done
+M.start = start
+M.assert_eq = assert_eq
+M.assert_ne = assert_ne
+M.assert_true = assert_true
+M.assert_false = assert_false
+M.assert_nil = assert_nil
+M.assert_not_nil = assert_not_nil
+M.done = done
 M

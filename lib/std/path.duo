@@ -1,6 +1,6 @@
 -- std.path — path manipulation utilities (POSIX-style)
 
-fun std_path_join(a: str, b: str): str
+fun join(a: str, b: str): str
     if a == "" then
         b
     end
@@ -16,7 +16,7 @@ fun std_path_join(a: str, b: str): str
     a .. "/" .. b
 end
 
-fun std_path_basename(p: str): str
+fun basename(p: str): str
     if p == "" then
         ""
     end
@@ -31,7 +31,7 @@ fun std_path_basename(p: str): str
     string.sub(p, i, last)
 end
 
-fun std_path_dirname(p: str): str
+fun dirname(p: str): str
     if p == "" then
         "."
     end
@@ -51,8 +51,8 @@ fun std_path_dirname(p: str): str
     string.sub(p, 1, i - 1)
 end
 
-fun std_path_extname(p: str): str
-    base = std_path_basename(p)
+fun extname(p: str): str
+    base = basename(p)
     i = string.len(base)
     while i > 1
         if string.sub(base, i, i) == "." then
@@ -64,8 +64,8 @@ fun std_path_extname(p: str): str
 end
 
 M = {}
-M.join = std_path_join
-M.basename = std_path_basename
-M.dirname = std_path_dirname
-M.extname = std_path_extname
+M.join = join
+M.basename = basename
+M.dirname = dirname
+M.extname = extname
 M

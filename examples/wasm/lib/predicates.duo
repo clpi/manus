@@ -37,7 +37,7 @@ fun sign(n: int): int
     if n > 0 then
         return 1
     elseif n < 0 then
-        -1
+        0 - 1
     end
     0
 end

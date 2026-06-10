@@ -1,4 +1,6 @@
-fun std_json_encode(val)
+col = req "std.collections"
+
+fun encode(val: any): str
     if val == nil then return "null" end
     if type(val) == "boolean" then
         if val then return "true" else return "false" end
@@ -18,18 +20,18 @@ fun std_json_encode(val)
         return string.format("\"%s\"", s)
     end
     if type(val) == "table" then
-        if std_collections_is_array(val) then
+        if col.is_array(val) then
             parts = {}
             for i = 1, #val
-                table.insert(parts, std_json_encode(val[i]))
+                table.insert(parts, encode(val[i]))
             end
             return "[" .. table.concat(parts, ",") .. "]"
         else
             parts = {}
             for k, v in pairs(val)
                 if type(k) == "string" then
-                    key_str = std_json_encode(k)
-                    table.insert(parts, key_str .. ":" .. std_json_encode(v))
+                    key_str = encode(k)
+                    table.insert(parts, key_str .. ":" .. encode(v))
                 end
             end
             return "{" .. table.concat(parts, ",") .. "}"
@@ -38,16 +40,16 @@ fun std_json_encode(val)
     "null"
 end
 
-fun std_json_has_key(val, key)
+fun has_key(val: any, key: str): bool
     if type(val) ~= "table" then return false end
     val[key] ~= nil
 end
 
-fun std_json_decode(s)
+fun decode(s: str): any
     nil
 end
 
-fun std_json_pretty(val, indent)
+fun pretty(val: any, indent: i64): str
     if indent == nil then indent = 2 end
     if type(indent) ~= "number" then indent = 2 end
     if val == nil then return "null" end
@@ -58,15 +60,15 @@ fun std_json_pretty(val, indent)
         return tostring(val)
     end
     if type(val) == "string" then
-        return std_json_encode(val)
+        return encode(val)
     end
     if type(val) == "table" then
-        if std_collections_is_array(val) then
+        if col.is_array(val) then
             if #val == 0 then return "[]" end
             pad = string.rep(" ", indent)
             parts = {}
             for i = 1, #val
-                table.insert(parts, pad .. std_json_pretty(val[i], indent))
+                table.insert(parts, pad .. pretty(val[i], indent))
             end
             return "[\n" .. table.concat(parts, ",\n") .. "\n]"
         else
@@ -80,7 +82,7 @@ fun std_json_pretty(val, indent)
             pad = string.rep(" ", indent)
             parts = {}
             for _, k in ipairs(keys)
-                table.insert(parts, pad .. std_json_encode(k) .. ": " .. std_json_pretty(val[k], indent))
+                table.insert(parts, pad .. encode(k) .. ": " .. pretty(val[k], indent))
             end
             return "{\n" .. table.concat(parts, ",\n") .. "\n}"
         end
@@ -89,7 +91,7 @@ fun std_json_pretty(val, indent)
 end
 
 M = {}
-M.encode = std_json_encode
-M.decode = std_json_decode
-M.pretty = std_json_pretty
+M.encode = encode
+M.decode = decode
+M.pretty = pretty
 M

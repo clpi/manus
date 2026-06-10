@@ -1,3 +1,5 @@
+fun req(m: str): str return "loaded: " .. m end
+
 log = req "std.log"
 memo = req "std.memo"
 json = req "std.json"

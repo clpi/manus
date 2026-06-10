@@ -1,6 +1,7 @@
 -- Test bash-style fun calls with literals
 
--- Define a simple fun fun greet(name: str): str
+-- Define a simple fun
+fun greet(name: str): str
     return "Hello, " .. name
 end
 

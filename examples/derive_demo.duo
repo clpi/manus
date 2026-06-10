@@ -1,0 +1,49 @@
+-- Derive demo: demonstrates concepts from std.meta.derive and reflection
+
+-- Define a concept for equality
+concept Equatable
+    fun eq(self, other): bool
+end
+
+-- Create a point that satisfies Equatable
+point = {}
+point.x = 10.0
+point.y = 20.0
+point.clone = fun(self)
+    c = {}
+    c.x = self.x
+    c.y = self.y
+    c
+end
+point.eq = fun(self, other): bool
+    if other == nil then return false end
+    self.x == other.x and self.y == other.y
+end
+point.to_string = fun(self): str
+    "Point(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+end
+
+-- Use derive patterns
+cloned = point.clone(point)
+print("Original: " .. point.to_string(point))
+print("Cloned:   " .. point.to_string(cloned))
+print("Eq:       " .. tostring(point.eq(point, cloned)))
+
+-- Reflection: inspect what methods a type has
+print("\nPoint fields:")
+fields = {}
+for k, _ in pairs(point) do
+    fields[#fields + 1] = k
+end
+for _, name in ipairs(fields) do
+    print("  " .. name .. ": " .. type(point[name]))
+end
+
+-- Type sizes (conceptual from std.meta.macros)
+print("\nType sizes (bytes):")
+print("  i64: 8")
+print("  f64: 8")
+print("  i32: 4")
+print("  f32: 4")
+print("  bool: 1")
+print("  str pointer: 8")

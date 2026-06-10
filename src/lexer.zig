@@ -68,6 +68,9 @@ pub const TokenKind = enum {
     kw_async,
     kw_await,
     kw_concept,
+    kw_alias,
+    kw_private,
+    kw_extends,
 
     // Single-char punctuation
     lparen,
@@ -166,6 +169,9 @@ pub const TokenKind = enum {
             .kw_async => "async",
             .kw_await => "await",
             .kw_concept => "concept",
+            .kw_alias => "alias",
+            .kw_private => "private",
+            .kw_extends => "extends",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -573,7 +579,8 @@ pub const Lexer = struct {
             "const",  "enum",     "i8",    "i16",     "i32",
             "i64",    "u8",     "u16",      "u32",   "u64",     "f32",
             "f64",    "bool",   "void",     "str",   "match",   "try",
-            "catch",  "defer",  "async",    "await", "concept",
+            "catch",  "defer",  "async",    "await", "concept", "alias",
+            "private","extends",
         };
         const kinds = [_]TokenKind{
             .kw_and,    .kw_break,  .kw_do,       .kw_else,  .kw_elseif,  .kw_end,
@@ -583,7 +590,8 @@ pub const Lexer = struct {
             .kw_const,  .kw_enum,     .kw_i8,    .kw_i16,     .kw_i32,
             .kw_i64,    .kw_u8,     .kw_u16,      .kw_u32,   .kw_u64,     .kw_f32,
             .kw_f64,    .kw_bool,   .kw_void,     .kw_str,   .kw_match,   .kw_try,
-            .kw_catch,  .kw_defer,  .kw_async,    .kw_await, .kw_concept,
+            .kw_catch,  .kw_defer,  .kw_async,    .kw_await, .kw_concept, .kw_alias,
+            .kw_private,.kw_extends,
         };
         for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
         return null;
@@ -711,6 +719,31 @@ pub const Lexer = struct {
     pub fn peek(self: *Lexer) LexError!Token {
         if (self.peeked == null) self.peeked = try self.next_tok();
         return self.peeked.?;
+    }
+
+    /// Save lexer state for speculative parsing / look-ahead.
+    pub const State = struct { pos: usize, line: u32, col: u32, peeked: ?Token };
+    pub fn saveState(self: *const Lexer) State {
+        return .{ .pos = self.pos, .line = self.line, .col = self.col, .peeked = self.peeked };
+    }
+
+    /// Restore lexer state from a saved snapshot.
+    pub fn restoreState(self: *Lexer, state: State) void {
+        self.pos = state.pos;
+        self.line = state.line;
+        self.col = state.col;
+        self.peeked = state.peeked;
+    }
+
+    /// Check whether a token kind is a primitive type keyword (i8..f64, bool, void, str).
+    pub fn isTypeKeyword(kind: TokenKind) bool {
+        return switch (kind) {
+            .kw_i8, .kw_i16, .kw_i32, .kw_i64,
+            .kw_u8, .kw_u16, .kw_u32, .kw_u64,
+            .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str,
+            => true,
+            else => false,
+        };
     }
 };
 

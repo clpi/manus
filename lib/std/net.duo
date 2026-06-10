@@ -4,7 +4,7 @@
 -- Otherwise, this Lua fallback uses curl for HTTP and stubs for raw sockets.
 
 -- Parse a URL into {scheme, host, port, path}
-fun parse_url(url)
+fun parse_url(url: str): any
     scheme = "http"
     rest = url
     if string.sub(rest, 1, 7) == "http://" then
@@ -31,7 +31,7 @@ fun parse_url(url)
 end
 
 -- HTTP GET via curl (fallback when variable not named "net")
-fun http_get(url)
+fun http_get(url: str): str
     f = io.popen("curl -sL --max-time 30 -- " .. url, "r")
     if f == nil then return "" end
     body = f:read("*a") or ""
@@ -40,7 +40,7 @@ fun http_get(url)
 end
 
 -- HTTP POST via curl (fallback)
-fun http_post(url, body, content_type)
+fun http_post(url: str, body: str, content_type: str): str
     ct = content_type or "application/x-www-form-urlencoded"
     escaped = string.gsub(body or "", "'", "'\\''")
     cmd = "curl -sL --max-time 30 -X POST"
@@ -54,7 +54,7 @@ fun http_post(url, body, content_type)
 end
 
 -- HTTP request returning {body, status} via curl
-fun http_request(method, url, body, headers)
+fun http_request(method: str, url: str, body: str, headers: any): any
     cmd = "curl -si --max-time 30 -X " .. method
     if headers then
         for k, v in pairs(headers)
@@ -77,53 +77,53 @@ fun http_request(method, url, body, headers)
 end
 
 -- Raw TCP connect — stub (real impl via codegen interception when var = "net")
-fun connect(host, port)
+fun connect(host: str, port: i64): any
     nil  -- intercepted: duo_net_tcp_connect(host, port)
 end
 
 -- TCP listen — stub
-fun listen(host, port, backlog)
+fun listen(host: str, port: i64, backlog: i64): any
     nil  -- intercepted: duo_net_tcp_listen(host, port, backlog)
 end
 
 -- TCP accept — stub
-fun accept(srv_fd)
+fun accept(srv_fd: any): any
     nil  -- intercepted: duo_net_tcp_accept(srv_fd)
 end
 
 -- TCP send — stub
-fun send(fd, data)
+fun send(fd: any, data: str): i64
     -1   -- intercepted: duo_net_tcp_send(fd, data)
 end
 
 -- TCP recv — stub
-fun recv(fd, maxlen)
+fun recv(fd: any, maxlen: i64): any
     nil  -- intercepted: duo_net_tcp_recv(fd, maxlen)
 end
 
 -- TCP close — stub
-fun close(fd)
+fun close(fd: any): void
     -- intercepted: duo_net_tcp_close(fd)
 end
 
 -- UDP socket — stub
-fun udp_socket(host, port)
+fun udp_socket(host: str, port: i64): any
     nil  -- intercepted: duo_net_udp_socket_open(host, port)
 end
 
 -- UDP sendto — stub
-fun udp_sendto(fd, data, host, port)
+fun udp_sendto(fd: any, data: str, host: str, port: i64): i64
     -1   -- intercepted: duo_net_udp_sendto(fd, data, host, port)
 end
 
 -- UDP recvfrom — stub
-fun udp_recvfrom(fd, maxlen)
+fun udp_recvfrom(fd: any, maxlen: i64): any
     nil  -- intercepted: duo_net_udp_recvfrom(fd, maxlen)
 end
 
 -- Simple blocking HTTP server (requires native socket support via codegen path)
 -- handler(method, path, raw_request) -> response_body string
-fun http_serve(port, handler)
+fun http_serve(port: i64, handler: any): void
     srv = listen("0.0.0.0", port, 128)
     if srv == nil then
         io.write("net.http_serve: listen failed on port " .. tostring(port) .. "\n")

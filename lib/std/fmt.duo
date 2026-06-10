@@ -1,9 +1,11 @@
-fun std_fmt_int(v)
+-- std.fmt — formatting utilities
+
+fun int(v: any): str
     if v == nil then return "nil" end
     tostring(v)
 end
 
-fun std_fmt_float(v, precision)
+fun float(v: any, precision: i64): str
     if v == nil then return "nil" end
     if precision == nil then
         string.format("%g", v)
@@ -11,22 +13,22 @@ fun std_fmt_float(v, precision)
     string.format("%." .. tostring(precision) .. "f", v)
 end
 
-fun std_fmt_str(v)
+fun str(v: any): str
     if v == nil then return "nil" end
     v
 end
 
-fun std_fmt_bool(v)
+fun bool(v: any): str
     if v == nil then return "false" end
     if v then return "true" else return "false" end
 end
 
-fun std_fmt_hex(v)
+fun hex(v: any): str
     if v == nil then return "nil" end
     string.format("0x%X", v)
 end
 
-fun std_fmt_bin(v)
+fun bin(v: any): str
     if v == nil then return "nil" end
     digits = {}
     n = v
@@ -40,7 +42,7 @@ fun std_fmt_bin(v)
     "0b" .. table.concat(digits)
 end
 
-fun std_fmt_trim(s, chars)
+fun trim(s: str, chars: str): str
     if s == nil then return "" end
     if chars == nil then
         string.match(s, "^%s*(.-)%s*$")
@@ -48,7 +50,7 @@ fun std_fmt_trim(s, chars)
     string.match(s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
 end
 
-fun std_fmt_pad(s, width, pad_char)
+fun pad(s: str, width: i64, pad_char: str): str
     if s == nil then s = "" end
     if pad_char == nil then pad_char = " " end
     len = string.len(s)
@@ -58,7 +60,7 @@ fun std_fmt_pad(s, width, pad_char)
     s .. pad
 end
 
-fun std_fmt_trunc(s, width)
+fun trunc(s: str, width: i64): str
     if s == nil then return "" end
     if width == nil then return s end
     len = string.len(s)
@@ -67,13 +69,13 @@ fun std_fmt_trunc(s, width)
 end
 
 M = {}
-M.int = std_fmt_int
-M.float = std_fmt_float
-M.str = std_fmt_str
-M.bool = std_fmt_bool
-M.hex = std_fmt_hex
-M.bin = std_fmt_bin
-M.trim = std_fmt_trim
-M.pad = std_fmt_pad
-M.trunc = std_fmt_trunc
+M.int = int
+M.float = float
+M.str = str
+M.bool = bool
+M.hex = hex
+M.bin = bin
+M.trim = trim
+M.pad = pad
+M.trunc = trunc
 M

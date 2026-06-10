@@ -1,4 +1,18 @@
-fun std_meta_typeof(x)
+-- std.meta — reflection, type introspection, and meta utilities
+-- Re-exports derivable concepts from std.meta.derive and meta blocks from std.meta.macros
+
+-- Destructured imports from std.meta.derive
+derive = req "std.meta.derive"
+
+-- Destructured imports from std.meta.macros
+macros = req "std.meta.macros"
+
+-- ─────────────────────────────────────────────────────────────
+-- Reflection: runtime type introspection
+-- ─────────────────────────────────────────────────────────────
+
+-- Get the type kind of a value as a string
+fun typeof(x): str
     if x == nil then return "nil" end
     if type(x) ~= "table" then return type(x) end
     if getmetatable(x) ~= nil then
@@ -8,59 +22,152 @@ fun std_meta_typeof(x)
     "table"
 end
 
-fun std_meta_is(x, kind)
-    std_meta_typeof(x) == kind
+-- Check if a value is of a specific type kind
+fun is(x, kind: str): bool
+    typeof(x) == kind
 end
 
-fun std_meta_is_nil(x)
+fun is_nil(x): bool
     x == nil
 end
 
-fun std_meta_is_bool(x)
+fun is_bool(x): bool
     type(x) == "boolean"
 end
 
-fun std_meta_is_number(x)
+fun is_number(x): bool
     type(x) == "number"
 end
 
-fun std_meta_is_str(x)
+fun is_str(x): bool
     type(x) == "string"
 end
 
-fun std_meta_is_table(x)
+fun is_table(x): bool
     type(x) == "table"
 end
 
-fun std_meta_is_func(x)
+fun is_func(x): bool
     type(x) == "function"
 end
 
-fun std_meta_len(x)
-    #x
+fun is_integer(x): bool
+    if type(x) ~= "number" then return false end
+    x == math.floor(x)
 end
 
-fun std_meta_keys(t)
-    ks = std.collections.list_new()
+fun is_float(x): bool
+    if type(x) ~= "number" then return false end
+    x ~= math.floor(x)
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Reflection: field and method introspection
+-- ─────────────────────────────────────────────────────────────
+
+-- Get all keys of a table (both array and hash parts)
+fun fields(t: any)
+    ks = {}
     for k, _ in pairs(t)
-        std.collections.list_push(ks, k)
+        ks[#ks + 1] = k
     end
     ks
 end
 
-fun std_meta_values(t)
-    vs = std.collections.list_new()
+-- Get field names (string keys only)
+fun field_names(t: any)
+    ks = {}
+    for k, _ in pairs(t)
+        if type(k) == "string" then
+            ks[#ks + 1] = k
+        end
+    end
+    ks
+end
+
+-- Get method names (function-valued fields)
+fun method_names(t: any)
+    ms = {}
+    for k, v in pairs(t)
+        if type(k) == "string" and type(v) == "function" then
+            ms[#ms + 1] = k
+        end
+    end
+    ms
+end
+
+-- Check if a table has a field
+fun has_field(t: any, name: str): bool
+    if type(t) ~= "table" then return false end
+    t[name] ~= nil
+end
+
+-- Check if a table has a method (function-valued field)
+fun has_method(t: any, name: str): bool
+    if type(t) ~= "table" then return false end
+    type(t[name]) == "function"
+end
+
+-- Get the metatable type name
+fun type_name(t: any): str
+    if t == nil then return "nil" end
+    mt = getmetatable(t)
+    if mt ~= nil and mt.type ~= nil then return mt.type end
+    type(t)
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Reflection: callable and concept introspection
+-- ─────────────────────────────────────────────────────────────
+
+-- Check if a value satisfies a concept (has required fields/methods)
+-- concept_def is a concept table with required_methods and required_fields
+fun satisfies_concept(val: any, concept_def: any): bool
+    if val == nil or concept_def == nil then return false end
+    if concept_def.required_fields ~= nil then
+        for _, f in ipairs(concept_def.required_fields)
+            if val[f.name] == nil then return false end
+        end
+    end
+    if concept_def.required_methods ~= nil then
+        for _, m in ipairs(concept_def.required_methods)
+            if type(val[m.name]) ~= "function" then return false end
+        end
+    end
+    true
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- General table utilities
+-- ─────────────────────────────────────────────────────────────
+
+fun len(t: any): i64
+    #t
+end
+
+fun keys(t: any)
+    ks = {}
+    for k, _ in pairs(t)
+        ks[#ks + 1] = k
+    end
+    ks
+end
+
+fun values(t: any)
+    vs = {}
     for _, v in pairs(t)
-        std.collections.list_push(vs, v)
+        vs[#vs + 1] = v
     end
     vs
 end
 
-fun std_meta_has_key(t, key)
+fun has_key(t: any, key: any): bool
+    if type(t) ~= "table" then return false end
     t[key] ~= nil
 end
 
-fun std_meta_clone(t)
+fun clone(t: any)
+    if type(t) ~= "table" then return t end
     c = {}
     for k, v in pairs(t)
         c[k] = v
@@ -68,26 +175,270 @@ fun std_meta_clone(t)
     c
 end
 
-fun std_meta_merge(dst, src)
+fun merge(dst: any, src: any): any
     for k, v in pairs(src)
         dst[k] = v
     end
     dst
 end
 
+fun deep_clone(t: any)
+    if type(t) ~= "table" then return t end
+    c = {}
+    for k, v in pairs(t)
+        if type(v) == "table" then
+            c[k] = deep_clone(v)
+        else
+            c[k] = v
+        end
+    end
+    c
+end
+
+-- Compare two tables for shallow equality
+fun shallow_eq(a: any, b: any): bool
+    if a == b then return true end
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for k, v in pairs(a)
+        if b[k] ~= v then return false end
+    end
+    for k, _ in pairs(b)
+        if a[k] == nil then return false end
+    end
+    true
+end
+
+-- Collect garbage (if available) — triggers cycle collector in ARC mode
+fun collect(): void
+    collectgarbage("collect")
+end
+
+-- Get memory usage stats
+fun memory_stats(): any
+    {
+        total = collectgarbage("count"),
+        step = collectgarbage("step"),
+    }
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Derive helpers: check/bind concept satisfaction
+-- ─────────────────────────────────────────────────────────────
+
+-- Verify that a table-type binding satisfies a concept
+-- returns true if satisfied, errors with details if not
+fun derive_clone(val: any): any
+    if type(val) ~= "table" then return val end
+    clone(val)
+end
+
+fun derive_eq(a: any, b: any): bool
+    if a == nil and b == nil then return true end
+    if a == nil or b == nil then return false end
+    if type(a) == "table" and type(b) == "table" then
+        return shallow_eq(a, b)
+    end
+    a == b
+end
+
+fun derive_display(val: any): str
+    if val == nil then return "nil" end
+    if type(val) == "boolean" then
+        if val then return "true" else return "false" end
+    end
+    if type(val) == "number" then return tostring(val) end
+    if type(val) == "string" then return val end
+    if type(val) == "table" then
+        parts = {}
+        for k, v in pairs(val)
+            if type(k) == "string" then
+                parts[#parts + 1] = k .. ": " .. derive_display(v)
+            end
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    end
+    tostring(val)
+end
+
+fun derive_deep_clone(val: any): any
+    if type(val) ~= "table" then return val end
+    c = {}
+    for k, v in pairs(val)
+        if type(v) == "table" then
+            c[k] = derive_deep_clone(v)
+        else
+            c[k] = v
+        end
+    end
+    c
+end
+
+fun derive_default(): any
+    {}
+end
+
+fun derive_hash(val: any): u64
+    if val == nil then return 0 end
+    if type(val) == "number" then
+        i = math.floor(val)
+        return i % 4294967296
+    end
+    if type(val) == "string" then
+        h = 5381
+        for i = 1, #val
+            h = (h * 33 + string.byte(val, i)) % 4294967296
+        end
+        return h
+    end
+    if type(val) == "table" then
+        h = 0
+        for _, v in pairs(val)
+            h = (h + derive_hash(v)) % 4294967296
+        end
+        return h
+    end
+    tostring(val):len()
+end
+
+fun derive_ord(a: any, b: any): i64
+    if a == b then return 0 end
+    if a == nil then return -1 end
+    if b == nil then return 1 end
+    if type(a) == "number" and type(b) == "number" then
+        if a < b then return -1 else return 1 end
+    end
+    sa = tostring(a)
+    sb = tostring(b)
+    if sa < sb then return -1 else return 1 end
+end
+
+fun derive_format(val: any, spec: str): str
+    if spec == "d" or spec == "i" then
+        return tostring(math.floor(val))
+    end
+    if spec == "f" then
+        return string.format("%f", val)
+    end
+    if spec == "x" then
+        return string.format("%x", math.floor(val))
+    end
+    if spec == "s" then
+        return tostring(val)
+    end
+    if spec == "t" then
+        return derive_display(val)
+    end
+    tostring(val)
+end
+
+fun derive_len(val: any): i64
+    if val == nil then return 0 end
+    if type(val) == "string" then return #val end
+    if type(val) == "table" then return #val end
+    0
+end
+
+fun derive_contains(val: any, elem: any): bool
+    if type(val) == "table" then
+        for _, v in pairs(val)
+            if v == elem then return true end
+        end
+    end
+    false
+end
+
+fun derive_iter(val: any): any
+    if type(val) ~= "table" then return fun(): any, any return nil end end
+    i = 0
+    return fun(): any, any
+        i = i + 1
+        if val[i] ~= nil then return i, val[i] end
+        nil
+    end
+end
+
+-- Module table — everything exported
 M = {}
-M.typeof = std_meta_typeof
-M.is = std_meta_is
-M.is_nil = std_meta_is_nil
-M.is_bool = std_meta_is_bool
-M.is_number = std_meta_is_number
-M.is_str = std_meta_is_str
-M.is_table = std_meta_is_table
-M.is_func = std_meta_is_func
-M.len = std_meta_len
-M.keys = std_meta_keys
-M.values = std_meta_values
-M.has_key = std_meta_has_key
-M.clone = std_meta_clone
-M.merge = std_meta_merge
+-- Reflection
+M.typeof = typeof
+M.is = is
+M.is_nil = is_nil
+M.is_bool = is_bool
+M.is_number = is_number
+M.is_str = is_str
+M.is_table = is_table
+M.is_func = is_func
+M.is_integer = is_integer
+M.is_float = is_float
+-- Field introspection
+M.fields = fields
+M.field_names = field_names
+M.method_names = method_names
+M.has_field = has_field
+M.has_method = has_method
+M.type_name = type_name
+M.satisfies_concept = satisfies_concept
+-- Table utilities
+M.len = len
+M.keys = keys
+M.values = values
+M.has_key = has_key
+M.clone = clone
+M.merge = merge
+M.deep_clone = deep_clone
+M.shallow_eq = shallow_eq
+-- Memory
+M.collect = collect
+M.memory_stats = memory_stats
+-- Derive helpers
+M.derive_clone = derive_clone
+M.derive_eq = derive_eq
+M.derive_display = derive_display
+M.derive_deep_clone = derive_deep_clone
+M.derive_default = derive_default
+M.derive_hash = derive_hash
+M.derive_ord = derive_ord
+M.derive_format = derive_format
+M.derive_len = derive_len
+M.derive_contains = derive_contains
+M.derive_iter = derive_iter
+-- Re-export derive concepts
+M.derive = derive
+M.macros = macros
+M.Clone = derive.Clone
+M.Eq = derive.Eq
+M.Ord = derive.Ord
+M.Hash = derive.Hash
+M.Display = derive.Display
+M.Default = derive.Default
+M.Iterable = derive.Iterable
+M.Index = derive.Index
+M.Into = derive.Into
+M.From = derive.From
+M.Add = derive.Add
+M.Sub = derive.Sub
+M.Mul = derive.Mul
+M.Div = derive.Div
+M.Rem = derive.Rem
+M.Pow = derive.Pow
+M.Neg = derive.Neg
+M.BitAnd = derive.BitAnd
+M.BitOr = derive.BitOr
+M.BitXor = derive.BitXor
+M.BitNot = derive.BitNot
+M.Shl = derive.Shl
+M.Shr = derive.Shr
+M.Concat = derive.Concat
+M.Len = derive.Len
+M.Call = derive.Call
+M.Contains = derive.Contains
+M.Try = derive.Try
+M.Unwrap = derive.Unwrap
+M.Tag = derive.Tag
+M.Close = derive.Close
+M.Iter = derive.Iter
+M.Format = derive.Format
+M.Serialize = derive.Serialize
+M.Deserialize = derive.Deserialize
+M.DeepClone = derive.DeepClone
 M

@@ -1,23 +1,25 @@
-fun std_proc_pid()
+-- std.mproc — multi-process utilities
+
+fun pid(): str
     os.getenv("$$")
 end
 
-fun std_proc_spawn(cmd)
+fun spawn(cmd: str): i64
     rc = os.execute(cmd .. " &")
     rc
 end
 
-fun std_proc_kill(pid)
+fun kill(pid: str): void
     os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
 end
 
-fun std_proc_wait(pid)
+fun wait(pid: str): void
     os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
 end
 
 M = {}
-M.pid = std_proc_pid
-M.spawn = std_proc_spawn
-M.kill = std_proc_kill
-M.wait = std_proc_wait
+M.pid = pid
+M.spawn = spawn
+M.kill = kill
+M.wait = wait
 M

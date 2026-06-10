@@ -1,4 +1,15 @@
 [book]
-title = "duo docs"
+title = "Duo Language Documentation"
+description = "A Lua-like language that compiles to native C"
 authors = ["Chris Pecunies"]
-language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+
+[output.html.search]
+enable = true

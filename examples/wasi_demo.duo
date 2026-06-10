@@ -1,0 +1,128 @@
+-- WASI type system demo: WebAssembly System Interface types
+-- Demonstrates WASI type constants and bindings
+
+-- WASI errno constants
+fun errno_success(): u16    0 end
+fun errno_badf(): u16       8 end
+fun errno_exist(): u16      20 end
+fun errno_noent(): u16      44 end
+fun errno_perm(): u16       63 end
+fun errno_inval(): u16      28 end
+fun errno_notdir(): u16     54 end
+fun errno_overflow(): u16   61 end
+
+-- WASI file descriptor types
+fun fd_stdin(): i32    0 end
+fun fd_stdout(): i32   1 end
+fun fd_stderr(): i32   2 end
+
+-- WASI rights
+fun right_fd_read(): u64        1 end
+fun right_fd_write(): u64       2 end
+fun right_fd_seek(): u64        4 end
+fun right_fd_fdstat_get(): u64  16 end
+fun right_poll_oneoff(): u64    256 end
+fun right_sock_accept(): u64    65536 end
+
+-- WASI open flags
+fun oflags_creat(): u16      1 end
+fun oflags_directory(): u16  2 end
+fun oflags_excl(): u16       4 end
+fun oflags_trunc(): u16      8 end
+
+-- WASI file types
+fun filetype_unknown(): u8            0 end
+fun filetype_block_device(): u8       1 end
+fun filetype_character_device(): u8   2 end
+fun filetype_directory(): u8          3 end
+fun filetype_regular_file(): u8       4 end
+fun filetype_socket_dgram(): u8       5 end
+fun filetype_socket_stream(): u8      6 end
+fun filetype_symlink(): u8            7 end
+
+-- WASI clock IDs
+fun clockid_realtime(): u32               0 end
+fun clockid_monotonic(): u32              1 end
+fun clockid_process_cputime_id(): u32     2 end
+fun clockid_thread_cputime_id(): u32      3 end
+
+-- WASI event types
+fun eventtype_clock(): u8     0 end
+fun eventtype_fd_read(): u8   1 end
+fun eventtype_fd_write(): u8  2 end
+
+-- WASI whence (seek origin)
+fun whence_set(): u8  0 end
+fun whence_cur(): u8  1 end
+fun whence_end(): u8  2 end
+
+-- WASI signal constants
+fun signal_hup(): u8   1 end
+fun signal_int(): u8   2 end
+fun signal_quit(): u8  3 end
+fun signal_kill(): u8  9 end
+fun signal_term(): u8  15 end
+
+-- WASI exit codes
+fun exit_success(): u32  0 end
+fun exit_failure(): u32  1 end
+
+-- WASI timestamp helpers
+fun timestamp_second(): u64      1000000000 end
+fun timestamp_millisecond(): u64 1000000 end
+fun timestamp_microsecond(): u64 1000 end
+
+print("=== WASI File Descriptors ===")
+print("stdin:  " .. tostring(fd_stdin()))
+print("stdout: " .. tostring(fd_stdout()))
+print("stderr: " .. tostring(fd_stderr()))
+
+print("\n=== WASI Rights ===")
+print("fd_read:  " .. tostring(right_fd_read()))
+print("fd_write: " .. tostring(right_fd_write()))
+print("fd_seek:  " .. tostring(right_fd_seek()))
+print("poll_one: " .. tostring(right_poll_oneoff()))
+print("sock_accept: " .. tostring(right_sock_accept()))
+
+print("\n=== WASI Open Flags ===")
+print("oflags_creat: " .. tostring(oflags_creat()))
+print("oflags_dir:   " .. tostring(oflags_directory()))
+print("oflags_excl:  " .. tostring(oflags_excl()))
+print("oflags_trunc: " .. tostring(oflags_trunc()))
+
+print("\n=== WASI File Types ===")
+print("regular_file: " .. tostring(filetype_regular_file()))
+print("directory:     " .. tostring(filetype_directory()))
+print("symlink:       " .. tostring(filetype_symlink()))
+print("sock_stream:   " .. tostring(filetype_socket_stream()))
+
+print("\n=== WASI Clock IDs ===")
+print("realtime:   " .. tostring(clockid_realtime()))
+print("monotonic:  " .. tostring(clockid_monotonic()))
+
+print("\n=== WASI Whence (Seek) ===")
+print("set: " .. tostring(whence_set()))
+print("cur: " .. tostring(whence_cur()))
+print("end: " .. tostring(whence_end()))
+
+print("\n=== WASI Signals ===")
+print("SIGHUP:  " .. tostring(signal_hup()))
+print("SIGINT:  " .. tostring(signal_int()))
+print("SIGTERM: " .. tostring(signal_term()))
+print("SIGKILL: " .. tostring(signal_kill()))
+
+print("\n=== WASI Exit Codes ===")
+print("success: " .. tostring(exit_success()))
+print("failure: " .. tostring(exit_failure()))
+
+print("\n=== WASI Timestamps ===")
+print("1 second in ns: " .. tostring(timestamp_second()))
+print("1 ms in ns:     " .. tostring(timestamp_millisecond()))
+print("1 us in ns:     " .. tostring(timestamp_microsecond()))
+
+print("\n=== WASI Errnos ===")
+print("success:  " .. tostring(errno_success()))
+print("noent:    " .. tostring(errno_noent()))
+print("perm:     " .. tostring(errno_perm()))
+print("inval:    " .. tostring(errno_inval()))
+print("overflow: " .. tostring(errno_overflow()))

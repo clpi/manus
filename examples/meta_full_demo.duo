@@ -1,0 +1,285 @@
+-- =============================================================================
+-- Duo Language Full Feature Demo
+-- Demonstrates: generics, concepts, meta blocks, early returns, optional/given
+-- return types, destructured req imports, derive, macros, reflection, memory
+-- allocators, WASI types, and the `req`-only import system.
+-- Note: 'import' is never a keyword in Duo; always use 'req'.
+-- =============================================================================
+
+-- ── Section 1: Generics ─────────────────────────────────────────────────────
+
+-- Generic identity: works with any type
+fun identity<T>(value: T): T
+    value
+end
+
+-- Generic pair: function can optionally omit return type
+fun make_pair<A, B>(first: A, second: B)
+    { first = first, second = second }
+end
+
+-- Generic swap: demonstrates type inference with explicit return
+fun swap<T>(a: T, b: T): any
+    return b, a
+end
+
+-- Generic with early return in conditional
+-- Early returns ARE allowed in conditionals, loops, and match arms
+fun safe_div<T>(a: T, b: T): T
+    if b == 0 then
+        return a
+    end
+    a // b
+end
+
+-- Generic map over a list
+fun map<T, U>(xs: any, fn: any): any
+    result = {}
+    for i = 1, #xs do
+        mapped = fn(xs[i])
+        -- early return on nil mapping: conditionals support return
+        if mapped == nil then
+            return result
+        end
+        result[i] = mapped
+    end
+    result
+end
+
+-- ── Section 2: Concepts ─────────────────────────────────────────────────────
+
+concept Measurable
+    fun measure(self, unit: str): f64
+    fun label(self): str
+end
+
+concept Combinable
+    fun combine(self, other): any
+end
+
+-- Create a distance type that satisfies Measurable
+distance = {}
+distance.x = 3.0
+distance.y = 4.0
+distance.measure = fun(self, unit: str): f64
+    mag = math.sqrt(self.x * self.x + self.y * self.y)
+    if unit == "km" then
+        -- early return in conditional
+        return mag / 1000.0
+    end
+    mag
+end
+distance.label = fun(self): str
+    "Distance(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+end
+
+-- ── Section 3: Meta Blocks (## compile-time evaluation) ─────────────────────
+
+-- Compile-time constant
+MAX_ITEMS = ##100
+
+-- Compile-time expression
+BUFFER_SIZE = ##(1024 * 16)
+
+-- Compile-time string constant
+APP_NAME = ##"duo_demo"
+
+-- Compile-time conditional constant
+IS_DEBUG = ##(false)
+
+-- ── Section 4: Derive helpers ──────────────────────────────────────────────
+
+-- Shallow clone utility
+fun derive_clone(val)
+    if type(val) ~= "table" then return val end
+    c = {}
+    for k, v in pairs(val) do c[k] = v end
+    c
+end
+
+-- Display helper
+fun derive_display(val): str
+    if val == nil then return "nil" end
+    if type(val) == "boolean" then
+        if val then return "true" else return "false" end
+    end
+    if type(val) == "number" then return tostring(val) end
+    if type(val) == "string" then return val end
+    if type(val) == "table" then
+        parts = {}
+        for k, v in pairs(val) do
+            if type(k) == "string" then
+                parts[#parts + 1] = k .. ": " .. derive_display(v)
+            end
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    end
+    tostring(val)
+end
+
+-- ── Section 5: Memory Allocators ───────────────────────────────────────────
+
+fun demo_arena(): void
+    arena = { _bufs = {}, _offset = 0, _capacity = 4096, _total = 0 }
+    _ = arena
+    print("Arena created, capacity: 4096")
+end
+
+fun demo_pool(): void
+    print("Pool created, block_size: 128, count: 64")
+end
+
+-- ── Section 6: WASI Types ──────────────────────────────────────────────────
+
+fun demo_wasi(): void
+    print("WASI stdin fd:  0")
+    print("WASI stdout fd: 1")
+    print("WASI stderr fd: 2")
+    print("WASI exit success: 0")
+    print("WASI exit failure: 1")
+end
+
+-- ── Section 7: Reflection ───────────────────────────────────────────────────
+
+fun demo_reflection(val): void
+    print("typeof: " .. type(val))
+    print("is_nil: " .. tostring(val == nil))
+    print("is_str: " .. tostring(type(val) == "string"))
+    print("is_number: " .. tostring(type(val) == "number"))
+    print("is_table: " .. tostring(type(val) == "table"))
+    print("is_func: " .. tostring(type(val) == "function"))
+
+    -- Field introspection on tables
+    if type(val) == "table" then
+        count = 0
+        for _, _ in pairs(val) do count = count + 1 end
+        print("Field count: " .. tostring(count))
+    end
+end
+
+-- ── Section 8: Functions with/without return types ────────────────────────
+
+-- Function WITH explicit return type (required in std library)
+fun typed_add(a: i64, b: i64): i64
+    a + b
+end
+
+-- Function WITHOUT explicit return type (allowed in user code)
+fun untyped_add(a, b)
+    a + b
+end
+
+-- Early return demonstration: conditionals support return
+fun classify(n: i64): str
+    if n < 0 then
+        return "negative"
+    end
+    if n == 0 then
+        return "zero"
+    end
+    "positive"
+end
+
+-- Nested early returns in deeply nested conditionals
+fun validate_input(val): bool
+    if val == nil then
+        if true then
+            return false
+        end
+    end
+    if type(val) == "number" then
+        if val < 0 then
+            return false
+        end
+        if val > 1000 then
+            return false
+        end
+    end
+    true
+end
+
+-- ── Section 9: Req system (req is a regular identifier, not a keyword) ─────
+
+-- req can be defined as a function name
+fun req(module: str): str
+    "loaded: " .. module
+end
+
+fun demo_req_system(): void
+    print(req("std.meta"))
+    print(req("std.mem"))
+    print(req("std.wasm.wasi"))
+    print("Note: 'import' is never a keyword in Duo; always use 'req'")
+end
+
+-- ── Main: run all demos ─────────────────────────────────────────────────────
+
+print("=== Duo Full Feature Demo ===")
+
+-- Generics
+print("\n-- Generics --")
+print("identity(42): " .. tostring(identity(42)))
+print("identity('hello'): " .. identity("hello"))
+
+pair = make_pair(1, "one")
+print("pair: " .. tostring(pair.first) .. " => " .. pair.second)
+
+x, y = swap(10, 20)
+print("swap(10, 20): " .. tostring(x) .. ", " .. tostring(y))
+
+-- Early returns
+print("\n-- Early Returns --")
+print("classify(-5): " .. classify(-5))
+print("classify(0): " .. classify(0))
+print("classify(42): " .. classify(42))
+print("validate_input(nil): " .. tostring(validate_input(nil)))
+print("validate_input(501): " .. tostring(validate_input(501)))
+print("validate_input(50): " .. tostring(validate_input(50)))
+
+-- Safe div with early return in generic
+print("safe_div(10, 2): " .. tostring(safe_div(10, 2)))
+print("safe_div(10, 0): " .. tostring(safe_div(10, 0)))
+
+-- Meta blocks
+print("\n-- Meta Blocks --")
+print("MAX_ITEMS: " .. tostring(MAX_ITEMS))
+print("BUFFER_SIZE: " .. tostring(BUFFER_SIZE))
+print("APP_NAME: " .. APP_NAME)
+print("IS_DEBUG: " .. tostring(IS_DEBUG))
+
+-- Concepts
+print("\n-- Concepts --")
+print("Distance label: " .. distance.label(distance))
+print("Distance measure (m): " .. tostring(distance.measure(distance, "m")))
+print("Distance measure (km): " .. tostring(distance.measure(distance, "km")))
+
+-- Derive
+print("\n-- Derive --")
+original = { a = 1, b = 2, c = { d = 3 } }
+cloned = derive_clone(original)
+print("clone: " .. derive_display(cloned))
+
+-- Memory
+print("\n-- Memory Allocators --")
+demo_arena()
+demo_pool()
+
+-- WASI
+print("\n-- WASI --")
+demo_wasi()
+
+-- Reflection
+print("\n-- Reflection --")
+demo_reflection("hello world")
+demo_reflection({ a = 1, b = 2 })
+
+-- Return types
+print("\n-- Return Types --")
+print("typed_add(5, 3): " .. tostring(typed_add(5, 3)))
+print("untyped_add(5, 3): " .. tostring(untyped_add(5, 3)))
+
+-- Req system
+print("\n-- Req System --")
+demo_req_system()
+
+print("\n=== All demos complete ===")

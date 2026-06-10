@@ -5,22 +5,22 @@ fun greet(name: str): str
 end
 
 -- Bash-style call with string literal
-print greet "World"
+print(greet("World"))
 
 -- Bash-style call with name variable
 name: str = "Duo"
-print greet name
+print(greet(name))
 
 -- Bash-style call with number
 fun multiply_by_two(x: i64): i64
     x * 2
 end
 
-print multiply_by_two 21
+print(multiply_by_two(21))
 
 -- Multiple arguments
 fun add(a: i64, b: i64): i64
     a + b
 end
 
-print add 10 20
+print(add(10, 20))

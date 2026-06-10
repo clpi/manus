@@ -1,29 +1,31 @@
-fun std_log_level_new(name)
+-- std.log — structured logging
+
+fun level_new(name: str): any
     { name = name, value = nil }
 end
 
-fun std_log_level_set_value(level, value)
+fun level_set_value(level: any, value: any): any
     level.value = value
     level
 end
 
-fun std_log_debug(msg)
+fun debug(msg: str): void
     io.write(string.format("[DEBUG] %s\n", msg))
 end
 
-fun std_log_info(msg)
+fun info(msg: str): void
     io.write(string.format("[INFO] %s\n", msg))
 end
 
-fun std_log_warn(msg)
+fun warn(msg: str): void
     io.write(string.format("[WARN] %s\n", msg))
 end
 
-fun std_log_error(msg)
+fun error(msg: str): void
     io.write(string.format("[ERROR] %s\n", msg))
 end
 
-fun std_log_print(level, msg)
+fun print(level: str, msg: str): void
     if level == nil then
         io.write(string.format("%s\n", msg))
     else
@@ -32,11 +34,11 @@ fun std_log_print(level, msg)
 end
 
 M = {}
-M.level_new = std_log_level_new
-M.level_set_value = std_log_level_set_value
-M.debug = std_log_debug
-M.info = std_log_info
-M.warn = std_log_warn
-M.error = std_log_error
-M.print = std_log_print
+M.level_new = level_new
+M.level_set_value = level_set_value
+M.debug = debug
+M.info = info
+M.warn = warn
+M.error = error
+M.print = print
 M

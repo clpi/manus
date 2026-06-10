@@ -1,10 +1,12 @@
-fun std_atomic_store(t, key, value)
+-- std.atomic — atomic operations on table-backed memory
+
+fun store(t: any, key: any, value: any): any
     old = t[key]
     t[key] = value
     old
 end
 
-fun std_atomic_compare_swap(t, key, expected, new_value)
+fun compare_swap(t: any, key: any, expected: any, new_value: any): bool, any
     old = t[key]
     if old == expected then
         t[key] = new_value
@@ -13,7 +15,7 @@ fun std_atomic_compare_swap(t, key, expected, new_value)
     false, old
 end
 
-fun std_atomic_fetch_add(t, key, delta)
+fun fetch_add(t: any, key: any, delta: any): any
     old = t[key]
     if type(old) == "number" then
         t[key] = old + delta
@@ -23,7 +25,7 @@ fun std_atomic_fetch_add(t, key, delta)
     old
 end
 
-fun std_atomic_fetch_sub(t, key, delta)
+fun fetch_sub(t: any, key: any, delta: any): any
     old = t[key]
     if type(old) == "number" then
         t[key] = old - delta
@@ -33,7 +35,7 @@ fun std_atomic_fetch_sub(t, key, delta)
     old
 end
 
-fun std_atomic_inc(t, key)
+fun inc(t: any, key: any): any
     old = t[key]
     if type(old) == "number" then
         t[key] = old + 1
@@ -43,7 +45,7 @@ fun std_atomic_inc(t, key)
     old
 end
 
-fun std_atomic_dec(t, key)
+fun dec(t: any, key: any): any
     old = t[key]
     if type(old) == "number" then
         t[key] = old - 1
@@ -53,34 +55,34 @@ fun std_atomic_dec(t, key)
     old
 end
 
-fun std_atomic_mutex_new()
+fun mutex_new(): any
     { locked = false }
 end
 
-fun std_atomic_lock(m)
+fun lock(m: any): void
     while m.locked
         m.locked = true
     end
 end
 
-fun std_atomic_unlock(m)
+fun unlock(m: any): void
     m.locked = false
 end
 
-fun std_atomic_signal(sp)
+fun signal(sp: any): void
     if sp == nil then return end
     sp.notify = true
 end
 
 M = {}
-M.store = std_atomic_store
-M.compare_swap = std_atomic_compare_swap
-M.fetch_add = std_atomic_fetch_add
-M.fetch_sub = std_atomic_fetch_sub
-M.inc = std_atomic_inc
-M.dec = std_atomic_dec
-M.mutex_new = std_atomic_mutex_new
-M.lock = std_atomic_lock
-M.unlock = std_atomic_unlock
-M.signal = std_atomic_signal
+M.store = store
+M.compare_swap = compare_swap
+M.fetch_add = fetch_add
+M.fetch_sub = fetch_sub
+M.inc = inc
+M.dec = dec
+M.mutex_new = mutex_new
+M.lock = lock
+M.unlock = unlock
+M.signal = signal
 M

@@ -1,0 +1,64 @@
+-- Memory allocator demo: arena, pool, and stack allocators
+-- Demonstrates memory primitives and allocators (std.mem)
+
+-- Define a simple arena allocator
+fun arena_new(size: i64)
+    return {
+        _bufs = {},
+        _offset = 0,
+        _capacity = size or 65536,
+        _total = 0,
+    }
+end
+
+fun arena_alloc(self, bytes: i64)
+    if self._offset + bytes > self._capacity then
+        self._bufs[#self._bufs + 1] = string.rep(".", bytes)
+        self._offset = 0
+    end
+    ptr = { addr = self._total + self._offset, size = bytes }
+    self._offset = self._offset + bytes
+    ptr
+end
+
+fun arena_used(self): i64
+    self._total + self._offset
+end
+
+fun arena_free_all(self): void
+    self._bufs = {}
+    self._offset = 0
+    self._total = 0
+end
+
+-- Test arena
+arena = arena_new(4096)
+ptr1 = arena_alloc(arena, 256)
+ptr2 = arena_alloc(arena, 512)
+print("Arena used: " .. tostring(arena_used(arena)))
+arena_free_all(arena)
+print("Arena after free: " .. tostring(arena_used(arena)))
+
+-- Alignment utilities
+fun align_up(n: i64, alignment: i64): i64
+    if n % alignment == 0 then return n end
+    n + alignment - (n % alignment)
+end
+
+fun align_down(n: i64, alignment: i64): i64
+    n - (n % alignment)
+end
+
+fun is_power_of_two(n: i64): bool
+    if n <= 0 then return false end
+    while n > 1 do
+        if n % 2 ~= 0 then return false end
+        n = n // 2
+    end
+    true
+end
+
+print("align_up(13, 8): " .. tostring(align_up(13, 8)))
+print("align_down(13, 8): " .. tostring(align_down(13, 8)))
+print("is_power_of_two(16): " .. tostring(is_power_of_two(16)))
+print("is_power_of_two(15): " .. tostring(is_power_of_two(15)))

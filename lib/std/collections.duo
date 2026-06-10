@@ -1,46 +1,46 @@
 -- std.collections — basic data structures over Duo tables
 
-fun std_collections_list_new()
+fun list_new(): any
     {}
 end
 
-fun std_collections_list_push(list, value)
+fun list_push(list: any, value: any): void
     table.insert(list, value)
 end
 
-fun std_collections_list_pop(list)
+fun list_pop(list: any): any
     table.remove(list)
 end
 
-fun std_collections_list_get(list, index)
+fun list_get(list: any, index: i64): any
     list[index]
 end
 
-fun std_collections_list_len(list)
+fun list_len(list: any): i64
     #list
 end
 
-fun std_collections_stack_new()
+fun stack_new(): any
     {}
 end
 
-fun std_collections_stack_push(stack, value)
+fun stack_push(stack: any, value: any): void
     table.insert(stack, value)
 end
 
-fun std_collections_stack_pop(stack)
+fun stack_pop(stack: any): any
     table.remove(stack)
 end
 
-fun std_collections_queue_new()
+fun queue_new(): any
     {}
 end
 
-fun std_collections_queue_enqueue(q, value)
+fun queue_enqueue(q: any, value: any): void
     table.insert(q, value)
 end
 
-fun std_collections_queue_dequeue(q)
+fun queue_dequeue(q: any): any
     n = #q
     if n == 0 then
         nil
@@ -48,35 +48,35 @@ fun std_collections_queue_dequeue(q)
     table.remove(q, 1)
 end
 
-fun std_collections_map_new()
+fun map_new(): any
     {}
 end
 
-fun std_collections_map_set(m, key, value)
+fun map_set(m: any, key: any, value: any): void
     m[key] = value
 end
 
-fun std_collections_map_get(m, key)
+fun map_get(m: any, key: any): any
     m[key]
 end
 
-fun std_collections_map_has(m, key)
+fun map_has(m: any, key: any): bool
     m[key] ~= nil
 end
 
-fun std_collections_set_new()
+fun set_new(): any
     {}
 end
 
-fun std_collections_set_add(s, value)
+fun set_add(s: any, value: any): void
     s[value] = true
 end
 
-fun std_collections_set_has(s, value)
+fun set_has(s: any, value: any): bool
     s[value] ~= nil
 end
 
-fun std_collections_is_array(t)
+fun is_array(t: any): bool
     if type(t) ~= "table" then return false end
     if t[1] == nil then return true end
     i = 2
@@ -88,29 +88,29 @@ fun std_collections_is_array(t)
     true
 end
 
-fun std_collections_remove_at(list, index)
+fun remove_at(list: any, index: i64): any
     table.remove(list, index)
 end
 
 M = {}
-M.list_new = std_collections_list_new
-M.list_push = std_collections_list_push
-M.list_pop = std_collections_list_pop
-M.list_get = std_collections_list_get
-M.list_len = std_collections_list_len
-M.stack_new = std_collections_stack_new
-M.stack_push = std_collections_stack_push
-M.stack_pop = std_collections_stack_pop
-M.queue_new = std_collections_queue_new
-M.queue_enqueue = std_collections_queue_enqueue
-M.queue_dequeue = std_collections_queue_dequeue
-M.map_new = std_collections_map_new
-M.map_set = std_collections_map_set
-M.map_get = std_collections_map_get
-M.map_has = std_collections_map_has
-M.set_new = std_collections_set_new
-M.set_add = std_collections_set_add
-M.set_has = std_collections_set_has
-M.is_array = std_collections_is_array
-M.remove_at = std_collections_remove_at
+M.list_new = list_new
+M.list_push = list_push
+M.list_pop = list_pop
+M.list_get = list_get
+M.list_len = list_len
+M.stack_new = stack_new
+M.stack_push = stack_push
+M.stack_pop = stack_pop
+M.queue_new = queue_new
+M.queue_enqueue = queue_enqueue
+M.queue_dequeue = queue_dequeue
+M.map_new = map_new
+M.map_set = map_set
+M.map_get = map_get
+M.map_has = map_has
+M.set_new = set_new
+M.set_add = set_add
+M.set_has = set_has
+M.is_array = is_array
+M.remove_at = remove_at
 M

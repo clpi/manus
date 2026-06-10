@@ -1,15 +1,19 @@
-fun std_crypto_sha1(s)
-    std_hash_simple(s)
+-- std.crypto — cryptographic hash and encoding utilities
+
+h = req "std.hash"
+
+fun sha1(s: str): i64
+    h.simple(s)
 end
 
-fun std_crypto_sha256(s)
-    h1 = std_hash_simple(s)
-    h2 = std_hash_fnv1a(s)
+fun sha256(s: str): str
+    h1 = h.simple(s)
+    h2 = h.fnv1a(s)
     return string.format("%08x%08x%08x%08x%08x%08x%08x%08x",
         h1, h2, h1 + h2, h1 * h2, h1 - h2, h1 % h2, h2 * 31, h1 + 12345)
 end
 
-fun std_crypto_base64_encode(s)
+fun base64_encode(s: str): str
     b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     padded = s
     while string.len(padded) % 3 ~= 0
@@ -30,7 +34,7 @@ fun std_crypto_base64_encode(s)
     table.concat(out)
 end
 
-fun std_crypto_base64_decode(s)
+fun base64_decode(s: str): str
     b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     out = {}
     clean = string.gsub(s, "[^A-Za-z0-9+/=]", "")
@@ -52,7 +56,7 @@ fun std_crypto_base64_decode(s)
     table.concat(out)
 end
 
-fun std_crypto_xor_encrypt(s, key)
+fun xor_encrypt(s: str, key: str): str
     out = ""
     key_len = string.len(key)
     for i = 1, string.len(s)
@@ -63,7 +67,7 @@ fun std_crypto_xor_encrypt(s, key)
     out
 end
 
-fun std_crypto_hex_encode(s)
+fun hex_encode(s: str): str
     out = ""
     for i = 1, string.len(s)
         out = out .. string.format("%02X", string.byte(s, i))
@@ -72,10 +76,10 @@ fun std_crypto_hex_encode(s)
 end
 
 M = {}
-M.sha1 = std_crypto_sha1
-M.sha256 = std_crypto_sha256
-M.base64_encode = std_crypto_base64_encode
-M.base64_decode = std_crypto_base64_decode
-M.xor_encrypt = std_crypto_xor_encrypt
-M.hex_encode = std_crypto_hex_encode
+M.sha1 = sha1
+M.sha256 = sha256
+M.base64_encode = base64_encode
+M.base64_decode = base64_decode
+M.xor_encrypt = xor_encrypt
+M.hex_encode = hex_encode
 M

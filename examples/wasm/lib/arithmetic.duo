@@ -27,7 +27,7 @@ end
 
 @export
 fun neg(a: int): int
-    -a
+    0 - a
 end
 
 @export
@@ -58,7 +58,7 @@ end
 @export
 fun abs_val(a: int): int
     if a < 0 then
-        -a
+        0 - a
     end
     a
 end

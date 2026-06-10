@@ -8,7 +8,7 @@ fun mandel_v4(cx: v4f64, cy: v4f64): v4i64
     four: v4f64 = simd.v4f64(4.0, 4.0, 4.0, 4.0)
     active: v4i64 = simd.v4i64(1, 1, 1, 1)
 
-    i: i32 = 0
+    i: i64 = 0
     while i < 1000
         zx2: v4f64 = zx * zx
         zy2: v4f64 = zy * zy

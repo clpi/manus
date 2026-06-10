@@ -1,0 +1,201 @@
+-- std.mem — memory primitives, allocators, and low-level memory operations
+-- Provides arena, pool, and stack allocators as well as raw memory utilities.
+
+-- Memory size constants
+fun page_size(): u64
+    4096
+end
+
+fun megabyte(): u64
+    1048576
+end
+
+fun gigabyte(): u64
+    1073741824
+end
+
+-- Arena allocator: bump-allocate, free all at once
+-- Wraps a table of byte buffers for conceptual arena semantics.
+fun arena_new(size: i64): any
+    {
+        _bufs = {},
+        _offset = 0,
+        _capacity = size or 65536,
+        _total = 0,
+        alloc = fun(self: any, bytes: i64): any
+            if self._offset + bytes > self._capacity then
+                new_buf = "alloc(" .. tostring(bytes) .. " bytes)"
+                self._bufs[#self._bufs + 1] = new_buf
+                self._offset = 0
+            end
+            ptr = { addr = self._total + self._offset, size = bytes }
+            self._offset = self._offset + bytes
+            ptr
+        end,
+        free_all = fun(self: any): void
+            self._bufs = {}
+            self._offset = 0
+            self._total = 0
+        end,
+        used = fun(self: any): i64
+            self._total + self._offset
+        end,
+    }
+end
+
+-- Pool allocator: fixed-size block allocation, O(1) alloc/free
+fun pool_new(block_size: i64, count: i64): any
+    {
+        _block_size = block_size or 64,
+        _free_list = {},
+        _allocated = {},
+        -- Pre-populate free list
+        _init = fun(self: any): void
+            for i = 1, count or 1024
+                self._free_list[#self._free_list + 1] = { addr = i * self._block_size, data = {} }
+            end
+        end,
+        alloc = fun(self: any): any
+            if #self._free_list == 0 then return nil end
+            block = table.remove(self._free_list)
+            self._allocated[block.addr] = block
+            block
+        end,
+        free = fun(self: any, block: any): void
+            if block == nil then return end
+            self._allocated[block.addr] = nil
+            self._free_list[#self._free_list + 1] = block
+        end,
+        available = fun(self: any): i64
+            #self._free_list
+        end,
+        in_use = fun(self: any): i64
+            count - #self._free_list
+        end,
+    }
+end
+
+-- Stack allocator: LIFO bump allocator with checkpoint/restore
+fun stack_new(capacity: i64): any
+    {
+        _buf = "alloc(" .. tostring(capacity or 65536) .. " bytes)",
+        _top = 0,
+        _capacity = capacity or 65536,
+        _markers = {},
+        checkpoint = fun(self: any): i64
+            self._markers[#self._markers + 1] = self._top
+            self._top
+        end,
+        restore = fun(self: any, marker: i64): void
+            while #self._markers > 0 and self._markers[#self._markers] > marker
+                self._markers[#self._markers] = nil
+            end
+            self._top = marker
+        end,
+        alloc = fun(self: any, bytes: i64): any
+            ptr = self._top
+            self._top = self._top + bytes
+            if self._top > self._capacity then return nil end
+            { addr = ptr, size = bytes }
+        end,
+        used = fun(self: any): i64
+            self._top
+        end,
+        remaining = fun(self: any): i64
+            self._capacity - self._top
+        end,
+        reset = fun(self: any): void
+            self._top = 0
+            self._markers = {}
+        end,
+    }
+end
+
+-- General-purpose allocator interface
+concept Allocator
+    fun alloc(self, bytes: i64): any
+    fun free(self, ptr: any): void
+    fun realloc(self, ptr: any, new_bytes: i64): any
+    fun total_allocated(self): i64
+end
+
+-- Fixed-size buffer allocator (like C alloca but tracked)
+fun fixed_buffer_new(size: i64): any
+    {
+        _buf = "alloc(" .. tostring(size) .. " bytes)",
+        _offset = 0,
+        _size = size,
+        alloc = fun(self: any, bytes: i64): any
+            if self._offset + bytes > self._size then return nil end
+            ptr = self._offset
+            self._offset = self._offset + bytes
+            { addr = ptr, size = bytes }
+        end,
+        remaining = fun(self: any): i64
+            self._size - self._offset
+        end,
+    }
+end
+
+-- Raw memory operations (for native targets with WASM/C codegen)
+fun mem_copy(dst: any, src: any, bytes: i64): void
+    for i = 0, bytes - 1
+        dst[i] = src[i]
+    end
+end
+
+fun mem_set(dst: any, val: u8, bytes: i64): void
+    for i = 0, bytes - 1
+        dst[i] = val
+    end
+end
+
+fun mem_compare(a: any, b: any, bytes: i64)
+    for i = 0, bytes - 1
+        if a[i] ~= b[i] then return a[i] - b[i] end
+    end
+    0
+end
+
+fun mem_zero(dst: any, bytes: i64): void
+    for i = 0, bytes - 1
+        dst[i] = 0
+    end
+end
+
+-- Standard allocators
+fun default_allocator(): any
+    arena_new(65536)
+end
+
+-- Utility: calculate aligned size
+fun align_up(n: i64, alignment: i64): i64
+    if n % alignment == 0 then return n end
+    n + alignment - (n % alignment)
+end
+
+fun align_down(n: i64, alignment: i64): i64
+    n - (n % alignment)
+end
+
+fun is_power_of_two(n: i64): bool
+    n > 0 and (bit.band(n, n - 1) == 0)
+end
+
+M = {}
+M.page_size = page_size
+M.megabyte = megabyte
+M.gigabyte = gigabyte
+M.arena_new = arena_new
+M.pool_new = pool_new
+M.stack_new = stack_new
+M.fixed_buffer_new = fixed_buffer_new
+M.default_allocator = default_allocator
+M.mem_copy = mem_copy
+M.mem_set = mem_set
+M.mem_compare = mem_compare
+M.mem_zero = mem_zero
+M.align_up = align_up
+M.align_down = align_down
+M.is_power_of_two = is_power_of_two
+M

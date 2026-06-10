@@ -1,0 +1,81 @@
+-- Reflection demo: runtime type introspection using Duo's type system
+
+-- Test basic type introspection
+fun typeof_str(x): str
+    if x == nil then return "nil" end
+    if type(x) ~= "table" then return type(x) end
+    mt = getmetatable(x)
+    if mt ~= nil and mt.type ~= nil then return mt.type end
+    "table"
+end
+
+fun is_nil(x): bool    x == nil end
+fun is_bool(x): bool   type(x) == "boolean" end
+fun is_number(x): bool type(x) == "number" end
+fun is_str(x): bool    type(x) == "string" end
+fun is_table(x): bool  type(x) == "table" end
+fun is_func(x): bool   type(x) == "function" end
+fun is_integer(x): bool
+    if type(x) ~= "number" then return false end
+    x == math.floor(x)
+end
+
+-- Test values
+values = { nil, true, false, 42, 3.14, "hello", {}, print }
+for i = 1, #values do
+    v = values[i]
+    print("typeof(" .. tostring(v) .. "): " .. typeof_str(v))
+end
+
+-- Detailed checks
+print("\nDetailed checks:")
+print("is_nil(nil):        " .. tostring(is_nil(nil)))
+print("is_bool(true):      " .. tostring(is_bool(true)))
+print("is_number(42):      " .. tostring(is_number(42)))
+print("is_integer(42):     " .. tostring(is_integer(42)))
+print("is_float(3.14):     " .. tostring(not is_integer(3.14)))
+print("is_str('hi'):       " .. tostring(is_str("hi")))
+print("is_table({}):       " .. tostring(is_table({})))
+print("is_func(print):     " .. tostring(is_func(print)))
+
+-- Field introspection on a table
+person = {
+    name = "Alice",
+    age = 30,
+    greet = fun(self): str
+        "Hi, I'm " .. self.name
+    end,
+}
+
+print("\nPerson introspection:")
+print("has field 'name': " .. tostring(person.name ~= nil))
+print("has field 'email': " .. tostring(person.email ~= nil))
+print("is method 'greet': " .. tostring(type(person.greet) == "function"))
+
+-- Table utilities
+fun clone(t)
+    if type(t) ~= "table" then return t end
+    c = {}
+    for k, v in pairs(t) do c[k] = v end
+    c
+end
+
+fun shallow_eq(a, b): bool
+    if a == b then return true end
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for k, v in pairs(a) do
+        if b[k] ~= v then return false end
+    end
+    for k, _ in pairs(b) do
+        if a[k] == nil then return false end
+    end
+    true
+end
+
+t = { a = 1, b = 2, c = 3 }
+print("\nTable utils:")
+print("len: " .. tostring(#t))
+print("has 'b': " .. tostring(t.b ~= nil))
+
+shallow = clone(t)
+print("shallow_eq: " .. tostring(shallow_eq(t, shallow)))
