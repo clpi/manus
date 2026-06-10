@@ -1,0 +1,123 @@
+-- std.concurrent — high-level concurrency primitives (Requirement 20.9)
+-- Builds on std.sync's scheduler.  Provides go/await/select/all patterns.
+
+local sync = require "std.sync"
+
+-- Spawn a task and return a future channel (capacity 1) for its result.
+-- result shape: {ok=bool, val=any, err=any}
+local function go(fn, ...)
+    local fut = sync.channel(1)
+    local args = {...}
+    sync.spawn(function()
+        local ok, result = pcall(fn, table.unpack(args))
+        if ok then
+            sync.channel_send(fut, {ok = true, val = result})
+        else
+            sync.channel_send(fut, {ok = false, err = result})
+        end
+    end)
+    return fut
+end
+
+-- Await a future (blocks/yields until result available).
+local function await(fut)
+    local r = sync.channel_recv(fut)
+    if r == nil then return nil end
+    if r.ok then
+        return r.val
+    else
+        error(r.err, 2)
+    end
+end
+
+-- Run N tasks concurrently; return table of results in order.
+local function all(tasks, ...)
+    local futs = {}
+    -- tasks can be a list, or varargs
+    if type(tasks) == "function" then
+        local args_list = {...}
+        futs[1] = go(tasks, table.unpack(args_list))
+    else
+        for _, t in ipairs(tasks) do
+            if type(t) == "function" then
+                futs[#futs + 1] = go(t)
+            elseif type(t) == "table" and t[1] then
+                futs[#futs + 1] = go(t[1], table.unpack(t, 2))
+            end
+        end
+    end
+    sync.run()
+    local results = {}
+    for _, fut in ipairs(futs) do
+        results[#results + 1] = await(fut)
+    end
+    return results
+end
+
+-- Race: return the first completed future's result.
+local function race(futs)
+    local winner = sync.channel(1)
+    for i, fut in ipairs(futs) do
+        sync.spawn(function()
+            local val = sync.channel_recv(fut)
+            sync.channel_try_recv(winner)  -- drain if already won
+            sync.channel_send(winner, {idx = i, val = val})
+        end)
+    end
+    sync.run()
+    return sync.channel_try_recv(winner)
+end
+
+-- Select: poll channels round-robin until one has data.
+-- cases = {{ch=channel, fn=handler_fn}, ...}
+-- Returns when one case fires; calls its fn with the value.
+local function select(cases)
+    while true do
+        for _, c in ipairs(cases) do
+            local val = sync.channel_try_recv(c.ch)
+            if val ~= nil then
+                if c.fn then c.fn(val) end
+                return val, c.ch
+            end
+        end
+        sync.yield()
+    end
+end
+
+-- Semaphore: counting semaphore built on a buffered channel.
+local function semaphore(n)
+    local s = sync.channel(n)
+    for _ = 1, n do sync.channel_send(s, true) end
+    return {
+        acquire = function() sync.channel_recv(s) end,
+        release = function() sync.channel_send(s, true) end,
+        try_acquire = function() return sync.channel_try_recv(s) ~= nil end,
+    }
+end
+
+-- WaitGroup: wait for N tasks to complete.
+local function waitgroup(n)
+    local ch = sync.channel(n)
+    return {
+        done = function() sync.channel_send(ch, true) end,
+        wait = function()
+            for _ = 1, n do sync.channel_recv(ch) end
+        end,
+    }
+end
+
+local M = {}
+M.go         = go
+M.await      = await
+M.all        = all
+M.race       = race
+M.select     = select
+M.semaphore  = semaphore
+M.waitgroup  = waitgroup
+M.spawn      = sync.spawn
+M.run        = sync.run
+M.yield      = sync.yield
+M.channel    = sync.channel
+M.channel_send  = sync.channel_send
+M.channel_recv  = sync.channel_recv
+return M

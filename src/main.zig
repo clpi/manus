@@ -24,6 +24,7 @@ const usage =
     \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
+    \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\
 ;
@@ -53,6 +54,7 @@ pub fn main(init: std.process.Init) !void {
     var load_chunk = false;
     var lib_mode = false;
     var pgo = false;
+    var shared_mem = false;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -75,6 +77,8 @@ pub fn main(init: std.process.Init) !void {
             lib_mode = true;
         } else if (std.mem.eql(u8, arg, "--pgo")) {
             pgo = true;
+        } else if (std.mem.eql(u8, arg, "--shared-memory")) {
+            shared_mem = true;
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
         } else if (arg.len > 0 and arg[0] != '-') {
@@ -96,11 +100,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode, shared_mem);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
     } else {
@@ -185,6 +189,7 @@ fn do_compile(
     load_chunk: bool,
     pgo: bool,
     lib_mode: bool,
+    shared_mem: bool,
 ) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
@@ -278,6 +283,9 @@ fn do_compile(
                 try args.append(alloc, "-Wl,--export-dynamic");
             } else {
                 try args.append(alloc, "-Wl,--export=main");
+            }
+            if (shared_mem) {
+                try args.appendSlice(alloc, &.{ "-matomics", "-mbulk-memory", "-mmutable-globals" });
             }
         } else {
             try args.appendSlice(alloc, &.{

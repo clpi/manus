@@ -307,9 +307,9 @@ pub const CodeGen = struct {
 
     fn is_runtime_global(name: []const u8) bool {
         const runtime_globals = [_][]const u8{
-            "package",  "math", "utf8", "debug", "coroutine",   "string",        "table",
-            "io",       "os",   "jit",  "ffi",   "duo_modules", "current_input", "current_output",
-            "_VERSION",
+            "package",  "math",  "utf8",   "debug",  "coroutine",   "string",        "table",
+            "io",       "os",    "jit",    "ffi",    "duo_modules", "current_input", "current_output",
+            "_VERSION", "net",
         };
         for (runtime_globals) |g| {
             if (std.mem.eql(u8, name, g)) return true;
@@ -666,6 +666,9 @@ pub const CodeGen = struct {
         }
         self.pl("jit = lua_jit_init();", .{});
         self.pl("ffi = lua_ffi_init();", .{});
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.pl("net = duo_net_init();", .{});
+        }
         self.pl("duo_modules = lua_table_new();", .{});
         self.pl("duo_register_modules();", .{});
         self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
@@ -4764,6 +4767,37 @@ pub const CodeGen = struct {
             }
             self.p(")", .{});
             return true;
+        } else if (std.mem.eql(u8, mod, "net")) {
+            const mapped = if (std.mem.eql(u8, fname, "connect")) "duo_net_tcp_connect"
+                else if (std.mem.eql(u8, fname, "listen")) "duo_net_tcp_listen"
+                else if (std.mem.eql(u8, fname, "accept")) "duo_net_tcp_accept"
+                else if (std.mem.eql(u8, fname, "send")) "duo_net_tcp_send"
+                else if (std.mem.eql(u8, fname, "recv")) "duo_net_tcp_recv"
+                else if (std.mem.eql(u8, fname, "close")) "duo_net_tcp_close"
+                else if (std.mem.eql(u8, fname, "udp_socket")) "duo_net_udp_socket_open"
+                else if (std.mem.eql(u8, fname, "udp_sendto")) "duo_net_udp_sendto"
+                else if (std.mem.eql(u8, fname, "udp_recvfrom")) "duo_net_udp_recvfrom"
+                else if (std.mem.eql(u8, fname, "http_get")) "duo_net_http_get"
+                else if (std.mem.eql(u8, fname, "http_post")) "duo_net_http_post"
+                else return false;
+
+            const expected: usize =
+                if (std.mem.eql(u8, fname, "accept") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "http_get")) @as(usize, 1)
+                else if (std.mem.eql(u8, fname, "udp_sendto") or std.mem.eql(u8, fname, "http_post")) @as(usize, 3)
+                else @as(usize, 2);
+
+            self.p("{s}(", .{mapped});
+            var i: usize = 0;
+            while (i < expected) : (i += 1) {
+                if (i > 0) self.p(", ", .{});
+                if (i < args.len) {
+                    try self.emit_as_lua_value(args[i]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+            }
+            self.p(")", .{});
+            return true;
         }
 
         return false;
@@ -5832,6 +5866,7 @@ const duo_runtime =
     \\static lua_Value current_input;
     \\static lua_Value current_output;
     \\static lua_Value _VERSION;
+    \\static lua_Value net;
     \\
     \\static inline uint32_t lua_hash_value(lua_Value v) {
     \\    switch (v.type) {
@@ -8990,6 +9025,214 @@ const duo_runtime =
     \\    lua_table_set(m, lua_val_from_str("gc"), lua_val_from_func((lua_Value (*)(lua_Value))lua_ffi_gc));
     \\    return m;
     \\}
+    \\/* ── Network (TCP, UDP, HTTP) ── */
+    \\#ifndef __wasm__
+    \\static lua_Value duo_net_tcp_connect(lua_Value host_v, lua_Value port_v) {
+    \\    const char* h = (host_v.type == VAL_STRING) ? host_v.as.sval : "127.0.0.1";
+    \\    char port_s[8];
+    \\    snprintf(port_s, sizeof(port_s), "%d", (port_v.type == VAL_NUMBER) ? (int)(int64_t)port_v.as.nval : 80);
+    \\    struct addrinfo hints, *res; memset(&hints, 0, sizeof(hints));
+    \\    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    \\    if (getaddrinfo(h, port_s, &hints, &res) != 0) return lua_val_nil();
+    \\    int fd = -1;
+    \\    for (struct addrinfo* r = res; r; r = r->ai_next) {
+    \\        fd = socket(r->ai_family, r->ai_socktype, r->ai_protocol);
+    \\        if (fd >= 0 && connect(fd, r->ai_addr, r->ai_addrlen) == 0) break;
+    \\        if (fd >= 0) { close(fd); fd = -1; }
+    \\    }
+    \\    freeaddrinfo(res);
+    \\    return (fd >= 0) ? lua_val_from_int((int64_t)fd) : lua_val_nil();
+    \\}
+    \\static lua_Value duo_net_tcp_listen(lua_Value host_v, lua_Value port_v) {
+    \\    int port = (port_v.type == VAL_NUMBER) ? (int)(int64_t)port_v.as.nval : 8080;
+    \\    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    \\    if (fd < 0) return lua_val_nil();
+    \\    int yes = 1; setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    \\    struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
+    \\    addr.sin_family = AF_INET; addr.sin_port = htons((uint16_t)port);
+    \\    addr.sin_addr.s_addr = INADDR_ANY;
+    \\    if (host_v.type == VAL_STRING) inet_pton(AF_INET, host_v.as.sval, &addr.sin_addr);
+    \\    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0 || listen(fd, 128) < 0) { close(fd); return lua_val_nil(); }
+    \\    return lua_val_from_int((int64_t)fd);
+    \\}
+    \\static lua_Value duo_net_tcp_accept(lua_Value srv_v) {
+    \\    if (srv_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int srv = (int)(int64_t)srv_v.as.nval;
+    \\    struct sockaddr_in addr; socklen_t len = sizeof(addr);
+    \\    int fd = accept(srv, (struct sockaddr*)&addr, &len);
+    \\    return (fd >= 0) ? lua_val_from_int((int64_t)fd) : lua_val_nil();
+    \\}
+    \\static lua_Value duo_net_tcp_send(lua_Value fd_v, lua_Value data_v) {
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    const char* data = (data_v.type == VAL_STRING) ? data_v.as.sval : "";
+    \\    ssize_t sent = send(fd, data, strlen(data), 0);
+    \\    return lua_val_from_int((int64_t)sent);
+    \\}
+    \\static lua_Value duo_net_tcp_recv(lua_Value fd_v, lua_Value maxlen_v) {
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    int maxlen = (maxlen_v.type == VAL_NUMBER) ? (int)(int64_t)maxlen_v.as.nval : 4096;
+    \\    char* buf = (char*)malloc((size_t)maxlen + 1);
+    \\    if (!buf) return lua_val_nil();
+    \\    ssize_t n = recv(fd, buf, (size_t)maxlen, 0);
+    \\    if (n <= 0) { free(buf); return lua_val_nil(); }
+    \\    buf[n] = '\0';
+    \\    lua_Value r = lua_val_from_str(buf); free(buf); return r;
+    \\}
+    \\static lua_Value duo_net_tcp_close(lua_Value fd_v) {
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    close((int)(int64_t)fd_v.as.nval);
+    \\    return lua_val_nil();
+    \\}
+    \\static lua_Value duo_net_udp_socket_open(lua_Value host_v, lua_Value port_v) {
+    \\    (void)host_v;
+    \\    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    \\    if (fd < 0) return lua_val_nil();
+    \\    if (port_v.type == VAL_NUMBER) {
+    \\        struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
+    \\        addr.sin_family = AF_INET;
+    \\        addr.sin_port = htons((uint16_t)(int)(int64_t)port_v.as.nval);
+    \\        addr.sin_addr.s_addr = INADDR_ANY;
+    \\        bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+    \\    }
+    \\    return lua_val_from_int((int64_t)fd);
+    \\}
+    \\static lua_Value duo_net_udp_sendto(lua_Value fd_v, lua_Value data_v, lua_Value host_v) {
+    \\    (void)host_v;
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    const char* data = (data_v.type == VAL_STRING) ? data_v.as.sval : "";
+    \\    (void)fd; (void)data;
+    \\    return lua_val_nil();
+    \\}
+    \\static lua_Value duo_net_udp_recvfrom(lua_Value fd_v, lua_Value maxlen_v) {
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    int maxlen = (maxlen_v.type == VAL_NUMBER) ? (int)(int64_t)maxlen_v.as.nval : 4096;
+    \\    char* buf = (char*)malloc((size_t)maxlen + 1);
+    \\    if (!buf) return lua_val_nil();
+    \\    struct sockaddr_in from; socklen_t flen = sizeof(from);
+    \\    ssize_t n = recvfrom(fd, buf, (size_t)maxlen, 0, (struct sockaddr*)&from, &flen);
+    \\    if (n <= 0) { free(buf); return lua_val_nil(); }
+    \\    buf[n] = '\0';
+    \\    lua_Value r = lua_val_from_str(buf); free(buf); return r;
+    \\}
+    \\static lua_Value duo_net_http_get(lua_Value url_v) {
+    \\    if (url_v.type != VAL_STRING) return lua_val_nil();
+    \\    const char* url = url_v.as.sval;
+    \\    const char* p = url;
+    \\    if (strncmp(p, "http://", 7) == 0) p += 7;
+    \\    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    \\    char host[256]; int port = 80;
+    \\    const char* slash = strchr(p, '/');
+    \\    size_t hlen = slash ? (size_t)(slash - p) : strlen(p);
+    \\    if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
+    \\    memcpy(host, p, hlen); host[hlen] = '\0';
+    \\    char* colon = strchr(host, ':');
+    \\    if (colon) { port = atoi(colon + 1); *colon = '\0'; }
+    \\    const char* path = slash ? slash : "/";
+    \\    lua_Value fd_v = duo_net_tcp_connect(lua_val_from_str(host), lua_val_from_int((int64_t)port));
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    char req[2048];
+    \\    snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
+    \\    send(fd, req, strlen(req), 0);
+    \\    char* resp = NULL; size_t total = 0;
+    \\    char tmp[4096]; ssize_t n;
+    \\    while ((n = recv(fd, tmp, sizeof(tmp), 0)) > 0) {
+    \\        resp = (char*)realloc(resp, total + (size_t)n + 1);
+    \\        if (!resp) { close(fd); return lua_val_nil(); }
+    \\        memcpy(resp + total, tmp, (size_t)n); total += (size_t)n;
+    \\    }
+    \\    close(fd);
+    \\    if (!resp) return lua_val_from_str("");
+    \\    resp[total] = '\0';
+    \\    const char* body = strstr(resp, "\r\n\r\n");
+    \\    lua_Value r = lua_val_from_str(body ? body + 4 : resp);
+    \\    free(resp); return r;
+    \\}
+    \\static lua_Value duo_net_http_post(lua_Value url_v, lua_Value body_v, lua_Value ctype_v) {
+    \\    if (url_v.type != VAL_STRING) return lua_val_nil();
+    \\    const char* url = url_v.as.sval;
+    \\    const char* body = (body_v.type == VAL_STRING) ? body_v.as.sval : "";
+    \\    const char* ctype = (ctype_v.type == VAL_STRING) ? ctype_v.as.sval : "application/octet-stream";
+    \\    const char* p = url;
+    \\    if (strncmp(p, "http://", 7) == 0) p += 7;
+    \\    else if (strncmp(p, "https://", 8) == 0) p += 8;
+    \\    char host[256]; int port = 80;
+    \\    const char* slash = strchr(p, '/');
+    \\    size_t hlen = slash ? (size_t)(slash - p) : strlen(p);
+    \\    if (hlen >= sizeof(host)) hlen = sizeof(host) - 1;
+    \\    memcpy(host, p, hlen); host[hlen] = '\0';
+    \\    char* colon = strchr(host, ':');
+    \\    if (colon) { port = atoi(colon + 1); *colon = '\0'; }
+    \\    const char* path = slash ? slash : "/";
+    \\    lua_Value fd_v = duo_net_tcp_connect(lua_val_from_str(host), lua_val_from_int((int64_t)port));
+    \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
+    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    char req[4096];
+    \\    snprintf(req, sizeof(req),
+    \\        "POST %s HTTP/1.0\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+    \\        path, host, ctype, strlen(body));
+    \\    send(fd, req, strlen(req), 0);
+    \\    send(fd, body, strlen(body), 0);
+    \\    char* resp = NULL; size_t total = 0;
+    \\    char tmp[4096]; ssize_t n;
+    \\    while ((n = recv(fd, tmp, sizeof(tmp), 0)) > 0) {
+    \\        resp = (char*)realloc(resp, total + (size_t)n + 1);
+    \\        if (!resp) { close(fd); return lua_val_nil(); }
+    \\        memcpy(resp + total, tmp, (size_t)n); total += (size_t)n;
+    \\    }
+    \\    close(fd);
+    \\    if (!resp) return lua_val_from_str("");
+    \\    resp[total] = '\0';
+    \\    const char* rbody = strstr(resp, "\r\n\r\n");
+    \\    lua_Value r = lua_val_from_str(rbody ? rbody + 4 : resp);
+    \\    free(resp); return r;
+    \\}
+    \\static lua_Value duo_net_init(void) {
+    \\    lua_Value m = lua_table_new();
+    \\    lua_table_set(m, lua_val_from_str("connect"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_connect));
+    \\    lua_table_set(m, lua_val_from_str("listen"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_listen));
+    \\    lua_table_set(m, lua_val_from_str("accept"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_accept));
+    \\    lua_table_set(m, lua_val_from_str("send"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_send));
+    \\    lua_table_set(m, lua_val_from_str("recv"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_recv));
+    \\    lua_table_set(m, lua_val_from_str("close"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_close));
+    \\    lua_table_set(m, lua_val_from_str("http_get"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_http_get));
+    \\    lua_table_set(m, lua_val_from_str("http_post"), lua_val_from_func((lua_Value (*)(lua_Value))duo_net_http_post));
+    \\    return m;
+    \\}
+    \\#else
+    \\static lua_Value duo_net_tcp_connect(lua_Value h, lua_Value p) { (void)h; (void)p; return lua_val_nil(); }
+    \\static lua_Value duo_net_tcp_listen(lua_Value h, lua_Value p) { (void)h; (void)p; return lua_val_nil(); }
+    \\static lua_Value duo_net_tcp_accept(lua_Value fd) { (void)fd; return lua_val_nil(); }
+    \\static lua_Value duo_net_tcp_send(lua_Value fd, lua_Value d) { (void)fd; (void)d; return lua_val_from_int(0); }
+    \\static lua_Value duo_net_tcp_recv(lua_Value fd, lua_Value n) { (void)fd; (void)n; return lua_val_nil(); }
+    \\static lua_Value duo_net_tcp_close(lua_Value fd) { (void)fd; return lua_val_nil(); }
+    \\static lua_Value duo_net_udp_socket_open(lua_Value h, lua_Value p) { (void)h; (void)p; return lua_val_nil(); }
+    \\static lua_Value duo_net_udp_sendto(lua_Value fd, lua_Value d, lua_Value h) { (void)fd; (void)d; (void)h; return lua_val_nil(); }
+    \\static lua_Value duo_net_udp_recvfrom(lua_Value fd, lua_Value n) { (void)fd; (void)n; return lua_val_nil(); }
+    \\static lua_Value duo_net_http_get(lua_Value u) { (void)u; return lua_val_nil(); }
+    \\static lua_Value duo_net_http_post(lua_Value u, lua_Value b, lua_Value c) { (void)u; (void)b; (void)c; return lua_val_nil(); }
+    \\static lua_Value duo_net_init(void) { return lua_val_nil(); }
+    \\#endif
+    \\/* ── Shared-memory atomics ── */
+    \\#ifndef DUO_ATOMIC_DEFINED
+    \\#define DUO_ATOMIC_DEFINED
+    \\#if defined(__wasm__) && defined(__wasm_atomics__)
+    \\#include <stdatomic.h>
+    \\#define duo_atomic_add(ptr,val) atomic_fetch_add((_Atomic int*)(ptr),(int)(val))
+    \\#define duo_atomic_load(ptr)    atomic_load((_Atomic int*)(ptr))
+    \\#define duo_atomic_store(ptr,v) atomic_store((_Atomic int*)(ptr),(int)(v))
+    \\#define duo_atomic_cas(ptr,e,d) atomic_compare_exchange_strong((_Atomic int*)(ptr),(int*)(e),(int)(d))
+    \\#else
+    \\#define duo_atomic_add(ptr,val) (*(volatile int*)(ptr) += (val), *(volatile int*)(ptr) - (val))
+    \\#define duo_atomic_load(ptr)    (*(volatile int*)(ptr))
+    \\#define duo_atomic_store(ptr,v) (*(volatile int*)(ptr) = (v))
+    \\#define duo_atomic_cas(ptr,e,d) (*(volatile int*)(ptr)==*(int*)(e) ? (*(volatile int*)(ptr)=(d),1) : (*(int*)(e)=*(volatile int*)(ptr),0))
+    \\#endif
+    \\#endif
     \\/* --------------------------- */
     \\
 ;

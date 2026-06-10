@@ -1,32 +1,146 @@
--- std.sync — concurrency helpers (coroutine-based channels)
+-- std.sync — cooperative scheduler and typed channels (Requirement 19.7)
+-- Implements a round-robin coroutine scheduler with bounded/unbounded channels.
+-- All operations are single-threaded; for multi-core use std.concurrent.
 
-function std_sync_channel_new()
-    return { queue = {} }
+local _run_queue = {}  -- list of {co=coroutine} ready to run
+
+-- Spawn a task (coroutine). Returns immediately; call run() to drive it.
+local function spawn(fn, ...)
+    local args = {...}
+    local co = coroutine.create(function() return fn(table.unpack(args)) end)
+    _run_queue[#_run_queue + 1] = {co = co}
 end
 
-function std_sync_channel_send(ch, value)
-    table.insert(ch.queue, value)
+-- Yield the current coroutine back to the scheduler.
+local function yield()
+    coroutine.yield()
 end
 
-function std_sync_channel_recv(ch)
-    local n = #ch.queue
-    if n == 0 then
-        return nil
+-- Run all spawned tasks to completion (cooperative round-robin).
+local function run()
+    while #_run_queue > 0 do
+        local task = table.remove(_run_queue, 1)
+        local ok, err = coroutine.resume(task.co)
+        if not ok then
+            io.write("sync: task error: " .. tostring(err) .. "\n")
+        elseif coroutine.status(task.co) == "suspended" then
+            _run_queue[#_run_queue + 1] = task
+        end
     end
-    return table.remove(ch.queue, 1)
 end
 
-function std_sync_channel_try_recv(ch)
-    local n = #ch.queue
-    if n == 0 then
-        return nil
+-- Run a single step of the scheduler. Returns true if tasks remain.
+local function step()
+    if #_run_queue == 0 then return false end
+    local task = table.remove(_run_queue, 1)
+    local ok, err = coroutine.resume(task.co)
+    if not ok then
+        io.write("sync: task error: " .. tostring(err) .. "\n")
+    elseif coroutine.status(task.co) == "suspended" then
+        _run_queue[#_run_queue + 1] = task
     end
-    return table.remove(ch.queue, 1)
+    return #_run_queue > 0
+end
+
+-- Create a channel with optional capacity (0 = unbounded).
+local function channel(capacity)
+    return {
+        _cap          = capacity or 0,
+        _queue        = {},
+        _send_waiters = {},   -- {co, _val} suspended senders
+        _recv_waiters = {},   -- {co, _slot} suspended receivers
+        _closed       = false,
+    }
+end
+
+-- Send a value; blocks (yields) if channel is full.
+local function channel_send(ch, val)
+    if ch._closed then error("send on closed channel") end
+    -- Wake a waiting receiver directly.
+    if #ch._recv_waiters > 0 then
+        local w = table.remove(ch._recv_waiters, 1)
+        w._slot._val = val
+        _run_queue[#_run_queue + 1] = w
+        return
+    end
+    -- Buffer has space (or unbounded).
+    if ch._cap == 0 or #ch._queue < ch._cap then
+        ch._queue[#ch._queue + 1] = val
+        return
+    end
+    -- Full: suspend sender.
+    local co = coroutine.running()
+    local entry = {co = co, _val = val}
+    ch._send_waiters[#ch._send_waiters + 1] = entry
+    coroutine.yield()
+end
+
+-- Receive a value; blocks (yields) if channel is empty.
+local function channel_recv(ch)
+    -- Data ready.
+    if #ch._queue > 0 then
+        local val = table.remove(ch._queue, 1)
+        -- Wake a pending sender.
+        if #ch._send_waiters > 0 then
+            local w = table.remove(ch._send_waiters, 1)
+            ch._queue[#ch._queue + 1] = w._val
+            _run_queue[#_run_queue + 1] = w
+        end
+        return val
+    end
+    if ch._closed then return nil end
+    -- Empty: suspend receiver.
+    local co = coroutine.running()
+    local slot = {_val = nil}
+    local entry = {co = co, _slot = slot}
+    ch._recv_waiters[#ch._recv_waiters + 1] = entry
+    coroutine.yield()
+    return slot._val
+end
+
+-- Non-blocking receive; returns nil immediately if empty.
+local function channel_try_recv(ch)
+    if #ch._queue > 0 then
+        local val = table.remove(ch._queue, 1)
+        if #ch._send_waiters > 0 then
+            local w = table.remove(ch._send_waiters, 1)
+            ch._queue[#ch._queue + 1] = w._val
+            _run_queue[#_run_queue + 1] = w
+        end
+        return val
+    end
+    return nil
+end
+
+-- Close a channel; wakes all waiting receivers with nil.
+local function channel_close(ch)
+    ch._closed = true
+    for _, w in ipairs(ch._recv_waiters) do
+        w._slot._val = nil
+        _run_queue[#_run_queue + 1] = w
+    end
+    ch._recv_waiters = {}
+end
+
+-- Drain: receive all pending values without blocking.
+local function channel_drain(ch)
+    local out = {}
+    while #ch._queue > 0 do
+        out[#out + 1] = table.remove(ch._queue, 1)
+    end
+    return out
 end
 
 local M = {}
-M.channel_new = std_sync_channel_new
-M.channel_send = std_sync_channel_send
-M.channel_recv = std_sync_channel_recv
-M.channel_try_recv = std_sync_channel_try_recv
+M.spawn         = spawn
+M.yield         = yield
+M.run           = run
+M.step          = step
+M.channel       = channel
+M.channel_new   = channel   -- legacy compat
+M.channel_send  = channel_send
+M.channel_recv  = channel_recv
+M.channel_try_recv = channel_try_recv
+M.channel_close = channel_close
+M.channel_drain = channel_drain
 return M
