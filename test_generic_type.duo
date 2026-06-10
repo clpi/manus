@@ -4,7 +4,7 @@ enum Box[T]
 end
 
 fun make_box(x: i64): <i64> Box
-    return Box.Full({ val = x })
+    Box.Full({ val = x })
 end
 
 fun get_box(b: <i64> Box): i64
@@ -16,5 +16,5 @@ end
 
 fun main(): i64
     b = make_box(42)
-    return get_box(b)
+    get_box(b)
 end

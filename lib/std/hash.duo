@@ -3,7 +3,7 @@ fun std_hash_md5(s)
     for i = 1, string.len(s)
         sum = (sum + string.byte(s, i)) % (2^32)
     end
-    return string.format("%08x%08x%08x%08x", sum, sum * 2, sum * 3, sum * 4)
+    string.format("%08x%08x%08x%08x", sum, sum * 2, sum * 3, sum * 4)
 end
 
 fun std_hash_crc32(s)
@@ -19,7 +19,7 @@ fun std_hash_crc32(s)
         end
         crc = crc % (2^32)
     end
-    return string.format("%08x", bit.bnot(crc))
+    string.format("%08x", bit.bnot(crc))
 end
 
 fun std_hash_fnv1a(s)
@@ -28,7 +28,7 @@ fun std_hash_fnv1a(s)
         hash = bit.bxor(hash, string.byte(s, i))
         hash = (hash * 0x01000193) % (2^32)
     end
-    return string.format("%08x", hash)
+    string.format("%08x", hash)
 end
 
 fun std_hash_simple(s)
@@ -36,7 +36,7 @@ fun std_hash_simple(s)
     for i = 1, string.len(s)
         h = ((h << 5) - h + string.byte(s, i)) % (2^32)
     end
-    return math.abs(h)
+    math.abs(h)
 end
 
 M = {}
@@ -44,4 +44,4 @@ M.md5 = std_hash_md5
 M.crc32 = std_hash_crc32
 M.fnv1a = std_hash_fnv1a
 M.simple = std_hash_simple
-return M
+M

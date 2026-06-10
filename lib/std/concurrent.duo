@@ -16,7 +16,7 @@ fun go(fn, ...)
             sync.channel_send(fut, {ok = false, err = result})
         end
     end)
-    return fut
+    fut
 end
 
 -- Await a future (blocks/yields until result available).
@@ -51,7 +51,7 @@ fun all(tasks, ...)
     for _, fut in ipairs(futs)
         results[#results + 1] = await(fut)
     end
-    return results
+    results
 end
 
 -- Race: return the first completed future's result.
@@ -65,7 +65,7 @@ fun race(futs)
         end)
     end
     sync.run()
-    return sync.channel_try_recv(winner)
+    sync.channel_try_recv(winner)
 end
 
 -- Select: poll channels round-robin until one has data.
@@ -77,7 +77,7 @@ fun select(cases)
             val = sync.channel_try_recv(c.ch)
             if val ~= nil then
                 if c.fn then c.fn(val) end
-                return val, c.ch
+                val, c.ch
             end
         end
         sync.yield()
@@ -98,7 +98,7 @@ end
 -- WaitGroup: wait for N tasks to complete.
 fun waitgroup(n)
     ch = sync.channel(n)
-    return {
+    {
         done = fun() sync.channel_send(ch, true) end,
         wait = fun()
             for _ = 1, n sync.channel_recv(ch) end
@@ -120,4 +120,4 @@ M.yield      = sync.yield
 M.channel    = sync.channel
 M.channel_send  = sync.channel_send
 M.channel_recv  = sync.channel_recv
-return M
+M

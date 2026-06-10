@@ -288,8 +288,12 @@ fn do_compile(
                 try args.appendSlice(alloc, &.{ "-matomics", "-mbulk-memory", "-mmutable-globals" });
             }
         } else {
+            if (comptime @import("builtin").os.tag == .macos) {
+                try args.appendSlice(alloc, &.{ "xcrun", cc });
+            } else {
+                try args.append(alloc, cc);
+            }
             try args.appendSlice(alloc, &.{
-                cc,
                 opt,
                 "-ffast-math",
                 "-march=native",

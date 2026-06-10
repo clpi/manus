@@ -432,6 +432,7 @@ pub const PrettyPrinter = struct {
                 }
             },
             .call_stmt => |cs| try self.printExpr(cs.expr, 0),
+            .expr_stmt => |es| try self.printExpr(es.expr, 0),
             .do_block => |db| {
                 try self.write("do");
                 try self.printBlock(&db.body);

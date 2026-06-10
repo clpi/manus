@@ -394,6 +394,7 @@ pub const Sema = struct {
     fn check_block(self: *Sema, blk: *ast.Block) SemaError!void {
         try self.scope.push();
         for (blk.stmts) |*stmt| try self.check_stmt(stmt);
+        if (blk.tail_expr) |e| _ = try self.check_expr(e);
         self.scope.pop();
     }
 
@@ -516,6 +517,7 @@ pub const Sema = struct {
                 }
             },
             .call_stmt => |*cs| _ = try self.check_expr(cs.expr),
+            .expr_stmt => |*es| _ = try self.check_expr(es.expr),
             .ret => |*r| {
                 for (r.vals) |v| _ = try self.check_expr(v);
             },
@@ -952,6 +954,7 @@ pub const Sema = struct {
                 return func_body_has_func_expr_block(&fg.body);
             },
             .call_stmt => |*cs| expr_has_func_expr(cs.expr),
+            .expr_stmt => |*es| expr_has_func_expr(es.expr),
             .do_block => |*db| func_body_has_func_expr_block(&db.body),
             .func_decl => |*fd| func_body_has_func_expr(&fd.func),
             else => false,
@@ -1074,6 +1077,7 @@ pub const Sema = struct {
                 try collect_upvalue_names_block(&fg.body, params, names, flags, sema);
             },
             .call_stmt => |*cs| try collect_upvalue_names_expr(cs.expr, params, names, flags, sema),
+            .expr_stmt => |*es| try collect_upvalue_names_expr(es.expr, params, names, flags, sema),
             .do_block => |*db| try collect_upvalue_names_block(&db.body, params, names, flags, sema),
             else => {},
         }
@@ -3733,6 +3737,7 @@ pub const Sema = struct {
 
         fn infer_block(self: *NativeInfer, blk: *const ast.Block) SemaError!void {
             for (blk.stmts) |*stmt| try self.infer_stmt(stmt);
+            if (blk.tail_expr) |e| _ = self.infer_expr(e, .any);
         }
 
         fn infer_stmt(self: *NativeInfer, stmt: *const ast.Stmt) SemaError!void {
@@ -3787,6 +3792,7 @@ pub const Sema = struct {
                     try self.infer_block(&nf.body);
                 },
                 .call_stmt => |*cs| _ = self.infer_expr(cs.expr, .any),
+                .expr_stmt => |*es| _ = self.infer_expr(es.expr, .any),
                 .do_block => |*db| try self.infer_block(&db.body),
                 else => self.ok = false,
             }

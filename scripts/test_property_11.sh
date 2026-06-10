@@ -22,6 +22,10 @@ end
 DUO
 
 ./zig-out/bin/duo dump-c tests/.tmp_prop11.duo > tests/.tmp_prop11.c
-clang -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable -Wno-strict-prototypes -fsyntax-only tests/.tmp_prop11.c
+if [[ "$(uname)" == "Darwin" ]]; then
+    xcrun clang -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable -Wno-strict-prototypes -fsyntax-only tests/.tmp_prop11.c
+else
+    clang -Wall -Wextra -pedantic -std=c11 -Wno-unused-variable -Wno-strict-prototypes -fsyntax-only tests/.tmp_prop11.c
+fi
 echo "[Property 11] SUCCESS"
 rm -f tests/.tmp_prop11.*

@@ -1,18 +1,18 @@
 fun std_proc_pid()
-    return os.getenv("$$")
+    os.getenv("$$")
 end
 
 fun std_proc_spawn(cmd)
     rc = os.execute(cmd .. " &")
-    return rc
+    rc
 end
 
 fun std_proc_kill(pid)
-    return os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
+    os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
 end
 
 fun std_proc_wait(pid)
-    return os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
+    os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
 end
 
 M = {}
@@ -20,4 +20,4 @@ M.pid = std_proc_pid
 M.spawn = std_proc_spawn
 M.kill = std_proc_kill
 M.wait = std_proc_wait
-return M
+M

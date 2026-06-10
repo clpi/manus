@@ -431,6 +431,7 @@ pub const Stmt = union(enum) {
         values: []*Expr,
     },
     call_stmt: struct { loc: Loc, expr: *Expr },
+    expr_stmt: struct { loc: Loc, expr: *Expr },
     do_block: struct { loc: Loc, body: Block },
     while_loop: struct { loc: Loc, cond: *Expr, body: Block },
     repeat_loop: struct { loc: Loc, body: Block, cond: *Expr },
@@ -491,6 +492,7 @@ pub const TableLitField = struct {
 pub const Block = struct {
     loc: Loc,
     stmts: []Stmt,
+    tail_expr: ?*Expr = null,
 };
 
 pub const Module = struct {

@@ -1,8 +1,8 @@
 fun foo(a: str, b: str): str
     if a == "" then
-        return b
+        b
     end
-    return a .. b
+    a .. b
 end
 
 print(foo("hello", "world"))

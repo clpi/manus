@@ -39,7 +39,7 @@ fun step()
     elseif coroutine.status(task.co) == "suspended" then
         _run_queue[#_run_queue + 1] = task
     end
-    return #_run_queue > 0
+    #_run_queue > 0
 end
 
 -- Create a channel with optional capacity (0 = unbounded).
@@ -61,7 +61,6 @@ fun channel_send(ch, val)
         w = table.remove(ch._recv_waiters, 1)
         w._slot._val = val
         _run_queue[#_run_queue + 1] = w
-        return
     end
     -- Buffer has space (or unbounded).
     if ch._cap == 0 or #ch._queue < ch._cap then
@@ -95,7 +94,7 @@ fun channel_recv(ch)
     entry = {co = co, _slot = slot}
     ch._recv_waiters[#ch._recv_waiters + 1] = entry
     coroutine.yield()
-    return slot._val
+    slot._val
 end
 
 -- Non-blocking receive; returns nil immediately if empty.
@@ -109,7 +108,7 @@ fun channel_try_recv(ch)
         end
         return val
     end
-    return nil
+    nil
 end
 
 -- Close a channel; wakes all waiting receivers with nil.
@@ -128,7 +127,7 @@ fun channel_drain(ch)
     while #ch._queue > 0
         out[#out + 1] = table.remove(ch._queue, 1)
     end
-    return out
+    out
 end
 
 M = {}
@@ -143,4 +142,4 @@ M.channel_recv  = channel_recv
 M.channel_try_recv = channel_try_recv
 M.channel_close = channel_close
 M.channel_drain = channel_drain
-return M
+M

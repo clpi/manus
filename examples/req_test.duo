@@ -3,7 +3,7 @@
 -- as an alias for 'require'
 
 req = fun(module: str): str
-    return "loaded: " .. module
+    "loaded: " .. module
 end
 
 print(req("mylib"))

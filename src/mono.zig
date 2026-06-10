@@ -201,6 +201,7 @@ pub const Monomorphizer = struct {
 
     fn collectSitesBlock(self: *Self, block: *const ast.Block, env: Env) Error!void {
         for (block.stmts) |*stmt| try self.collectSitesStmt(stmt, env);
+        if (block.tail_expr) |e| try self.collectSitesExpr(e, env);
     }
 
     fn collectSitesStmt(self: *Self, stmt: *const ast.Stmt, env: Env) Error!void {
@@ -213,6 +214,7 @@ pub const Monomorphizer = struct {
                 for (a.values) |e| try self.collectSitesExpr(e, env);
             },
             .call_stmt => |c| try self.collectSitesExpr(c.expr, env),
+            .expr_stmt => |e| try self.collectSitesExpr(e.expr, env),
             .do_block => |d| try self.collectSitesBlock(&d.body, env),
             .while_loop => |w| {
                 try self.collectSitesExpr(w.cond, env);

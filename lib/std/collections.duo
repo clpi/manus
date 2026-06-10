@@ -1,7 +1,7 @@
 -- std.collections — basic data structures over Duo tables
 
 fun std_collections_list_new()
-    return {}
+    {}
 end
 
 fun std_collections_list_push(list, value)
@@ -9,19 +9,19 @@ fun std_collections_list_push(list, value)
 end
 
 fun std_collections_list_pop(list)
-    return table.remove(list)
+    table.remove(list)
 end
 
 fun std_collections_list_get(list, index)
-    return list[index]
+    list[index]
 end
 
 fun std_collections_list_len(list)
-    return #list
+    #list
 end
 
 fun std_collections_stack_new()
-    return {}
+    {}
 end
 
 fun std_collections_stack_push(stack, value)
@@ -29,11 +29,11 @@ fun std_collections_stack_push(stack, value)
 end
 
 fun std_collections_stack_pop(stack)
-    return table.remove(stack)
+    table.remove(stack)
 end
 
 fun std_collections_queue_new()
-    return {}
+    {}
 end
 
 fun std_collections_queue_enqueue(q, value)
@@ -43,13 +43,13 @@ end
 fun std_collections_queue_dequeue(q)
     n = #q
     if n == 0 then
-        return nil
+        nil
     end
-    return table.remove(q, 1)
+    table.remove(q, 1)
 end
 
 fun std_collections_map_new()
-    return {}
+    {}
 end
 
 fun std_collections_map_set(m, key, value)
@@ -57,15 +57,15 @@ fun std_collections_map_set(m, key, value)
 end
 
 fun std_collections_map_get(m, key)
-    return m[key]
+    m[key]
 end
 
 fun std_collections_map_has(m, key)
-    return m[key] ~= nil
+    m[key] ~= nil
 end
 
 fun std_collections_set_new()
-    return {}
+    {}
 end
 
 fun std_collections_set_add(s, value)
@@ -73,7 +73,7 @@ fun std_collections_set_add(s, value)
 end
 
 fun std_collections_set_has(s, value)
-    return s[value] ~= nil
+    s[value] ~= nil
 end
 
 fun std_collections_is_array(t)
@@ -85,11 +85,11 @@ fun std_collections_is_array(t)
         if type(k) ~= "number" then return false end
         if k < 1 then return false end
     end
-    return true
+    true
 end
 
 fun std_collections_remove_at(list, index)
-    return table.remove(list, index)
+    table.remove(list, index)
 end
 
 M = {}
@@ -113,4 +113,4 @@ M.set_add = std_collections_set_add
 M.set_has = std_collections_set_has
 M.is_array = std_collections_is_array
 M.remove_at = std_collections_remove_at
-return M
+M

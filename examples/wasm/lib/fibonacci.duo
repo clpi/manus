@@ -3,15 +3,15 @@
 @export
 fun fib(n: int): int
     if n <= 1 then
-        return n
+        n
     end
-    return fib(n - 1) + fib(n - 2)
+    fib(n - 1) + fib(n - 2)
 end
 
 @export
 fun fib_iter(n: int): int
     if n <= 1 then
-        return n
+        n
     end
     a: int = 0
     b: int = 1
@@ -20,15 +20,15 @@ fun fib_iter(n: int): int
         a = b
         b = c
     end
-    return b
+    b
 end
 
 @export
 fun factorial(n: int): int
     if n <= 1 then
-        return 1
+        1
     end
-    return n * factorial(n - 1)
+    n * factorial(n - 1)
 end
 
 @export
@@ -38,12 +38,12 @@ fun gcd(a: int, b: int): int
         b = a % b
         a = t
     end
-    return a
+    a
 end
 
 @export
 fun lcm(a: int, b: int): int
-    return (a // gcd(a, b)) * b
+    (a // gcd(a, b)) * b
 end
 
 @export
@@ -56,5 +56,5 @@ fun pow_int(base: int, exp: int): int
         base = base * base
         exp = exp >> 1
     end
-    return result
+    result
 end

@@ -63,4 +63,4 @@ M.assert_false = std_test_assert_false
 M.assert_nil = std_test_assert_nil
 M.assert_not_nil = std_test_assert_not_nil
 M.done = std_test_done
-return M
+M

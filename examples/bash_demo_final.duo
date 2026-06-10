@@ -1,7 +1,7 @@
 -- Demo of bash-style fun calls
 
 fun greet(name: str): str
-    return "Hello, " .. name
+    "Hello, " .. name
 end
 
 -- Bash-style call with string literal
@@ -13,14 +13,14 @@ print greet name
 
 -- Bash-style call with number
 fun multiply_by_two(x: i64): i64
-    return x * 2
+    x * 2
 end
 
 print multiply_by_two 21
 
 -- Multiple arguments
 fun add(a: i64, b: i64): i64
-    return a + b
+    a + b
 end
 
 print add 10 20

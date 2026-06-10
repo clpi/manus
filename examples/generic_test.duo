@@ -2,7 +2,7 @@
 
 -- Basic generic type annotation (simplified - just parses for now)
 fun identity<T>(value: T): T
-    return value
+    value
 end
 
 -- Using the fun result = identity(42)

@@ -12,7 +12,7 @@ print greet "Duo" "Welcome to"
 
 -- Multiple arguments
 fun add(a: i64, b: i64, c: i64): i64
-    return a + b + c
+    a + b + c
 end
 
 -- Bash-style call with multiple arguments
@@ -20,7 +20,7 @@ print add 1 2 3
 
 -- Mixed style in the same program
 fun multiply(x: i64, y: i64): i64
-    return x * y
+    x * y
 end
 
 print multiply 5 6

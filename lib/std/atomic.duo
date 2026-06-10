@@ -1,16 +1,16 @@
 fun std_atomic_store(t, key, value)
     old = t[key]
     t[key] = value
-    return old
+    old
 end
 
 fun std_atomic_compare_swap(t, key, expected, new_value)
     old = t[key]
     if old == expected then
         t[key] = new_value
-        return true, new_value
+        true, new_value
     end
-    return false, old
+    false, old
 end
 
 fun std_atomic_fetch_add(t, key, delta)
@@ -20,7 +20,7 @@ fun std_atomic_fetch_add(t, key, delta)
     else
         t[key] = delta
     end
-    return old
+    old
 end
 
 fun std_atomic_fetch_sub(t, key, delta)
@@ -30,7 +30,7 @@ fun std_atomic_fetch_sub(t, key, delta)
     else
         t[key] = -delta
     end
-    return old
+    old
 end
 
 fun std_atomic_inc(t, key)
@@ -40,7 +40,7 @@ fun std_atomic_inc(t, key)
     else
         t[key] = 1
     end
-    return old
+    old
 end
 
 fun std_atomic_dec(t, key)
@@ -50,11 +50,11 @@ fun std_atomic_dec(t, key)
     else
         t[key] = -1
     end
-    return old
+    old
 end
 
 fun std_atomic_mutex_new()
-    return { locked = false }
+    { locked = false }
 end
 
 fun std_atomic_lock(m)
@@ -83,4 +83,4 @@ M.mutex_new = std_atomic_mutex_new
 M.lock = std_atomic_lock
 M.unlock = std_atomic_unlock
 M.signal = std_atomic_signal
-return M
+M

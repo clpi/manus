@@ -1,19 +1,19 @@
 fun std_fmt_int(v)
     if v == nil then return "nil" end
-    return tostring(v)
+    tostring(v)
 end
 
 fun std_fmt_float(v, precision)
     if v == nil then return "nil" end
     if precision == nil then
-        return string.format("%g", v)
+        string.format("%g", v)
     end
-    return string.format("%." .. tostring(precision) .. "f", v)
+    string.format("%." .. tostring(precision) .. "f", v)
 end
 
 fun std_fmt_str(v)
     if v == nil then return "nil" end
-    return v
+    v
 end
 
 fun std_fmt_bool(v)
@@ -23,7 +23,7 @@ end
 
 fun std_fmt_hex(v)
     if v == nil then return "nil" end
-    return string.format("0x%X", v)
+    string.format("0x%X", v)
 end
 
 fun std_fmt_bin(v)
@@ -31,21 +31,21 @@ fun std_fmt_bin(v)
     digits = {}
     n = v
     if n == 0 then
-        return "0b0"
+        "0b0"
     end
     while n > 0
         table.insert(digits, 1, tostring(n % 2))
         n = math.floor(n / 2)
     end
-    return "0b" .. table.concat(digits)
+    "0b" .. table.concat(digits)
 end
 
 fun std_fmt_trim(s, chars)
     if s == nil then return "" end
     if chars == nil then
-        return string.match(s, "^%s*(.-)%s*$")
+        string.match(s, "^%s*(.-)%s*$")
     end
-    return string.match(s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
+    string.match(s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
 end
 
 fun std_fmt_pad(s, width, pad_char)
@@ -55,7 +55,7 @@ fun std_fmt_pad(s, width, pad_char)
     w = width
     if w == nil or w <= len then return s end
     pad = string.rep(pad_char, w - len)
-    return s .. pad
+    s .. pad
 end
 
 fun std_fmt_trunc(s, width)
@@ -63,7 +63,7 @@ fun std_fmt_trunc(s, width)
     if width == nil then return s end
     len = string.len(s)
     if len <= width then return s end
-    return string.sub(s, 1, width)
+    string.sub(s, 1, width)
 end
 
 M = {}
@@ -76,4 +76,4 @@ M.bin = std_fmt_bin
 M.trim = std_fmt_trim
 M.pad = std_fmt_pad
 M.trunc = std_fmt_trunc
-return M
+M

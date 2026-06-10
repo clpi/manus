@@ -17,7 +17,7 @@ fun mandel(cx: f64, cy: f64): i32
         x = x2 - y2 + cx
         i = i + 1
     end
-    return MAX_ITER
+    MAX_ITER
 end
 
 fun render(): void

@@ -5,7 +5,7 @@
   B(value: i32)
 end
 fun add(a: i64, b: i64) -> i64
-  return a + b
+  a + b
 end
 fun main() -> void
   z = add(P.x, P.y)

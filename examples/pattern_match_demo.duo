@@ -15,7 +15,7 @@ fun area(s: Shape): f64
         Shape.Triangle(b, h) => a = 0.5 * b * h
         Shape.Point => a = 0.0
     end
-    return a
+    a
 end
 
 fun tag_of(s: Shape): i64
@@ -26,7 +26,7 @@ fun tag_of(s: Shape): i64
         Shape.Triangle(_, _) => tag = 2
         Shape.Point => tag = 3
     end
-    return tag
+    tag
 end
 
 fun is_unit_square(s: Shape): bool
@@ -35,7 +35,7 @@ fun is_unit_square(s: Shape): bool
         Shape.Rect(1.0, 1.0) => yes = true
         _ => yes = false
     end
-    return yes
+    yes
 end
 
 fun sum3(nums: any): f64
@@ -44,7 +44,7 @@ fun sum3(nums: any): f64
         [a, b, c] => result = a + b + c
         _ => result = -1.0
     end
-    return result
+    result
 end
 
 fun head(xs: any): any
@@ -54,7 +54,7 @@ fun head(xs: any): any
         [only] => h = only
         _ => h = nil
     end
-    return h
+    h
 end
 
 circ: Shape = Shape.Circle(2.0)

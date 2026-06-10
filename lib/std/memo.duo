@@ -1,9 +1,9 @@
 fun std_memo_table_new()
-    return {}
+    {}
 end
 
 fun std_memo_table_get(m, key)
-    return m[key]
+    m[key]
 end
 
 fun std_memo_table_set(m, key, value)
@@ -11,7 +11,7 @@ fun std_memo_table_set(m, key, value)
 end
 
 fun std_memo_table_has(m, key)
-    return m[key] ~= nil
+    m[key] ~= nil
 end
 
 fun std_memo_wrap(fn)
@@ -20,7 +20,7 @@ fun std_memo_wrap(fn)
         if cache[x] == nil then
             cache[x] = fn(x)
         end
-        return cache[x]
+        cache[x]
     end
 end
 
@@ -37,4 +37,4 @@ M.table_set = std_memo_table_set
 M.table_has = std_memo_table_has
 M.wrap = std_memo_wrap
 M.clear = std_memo_clear
-return M
+M

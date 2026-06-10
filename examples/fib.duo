@@ -4,7 +4,7 @@
 
 fun fib(n: i64): i64
     if n <= 1 then return n end
-    return fib(n - 1) + fib(n - 2)
+    fib(n - 1) + fib(n - 2)
 end
 
 print(fib(40))

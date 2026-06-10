@@ -16,14 +16,14 @@ fun mandel_v4(cx: v4f64, cy: v4f64): v4i64
         still: v4i64 = simd.le(mag2, four)
         active = active & still
         if not simd.any(active) then
-            return iters
+            iters
         end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
         iters = iters + active
         i = i + 1
     end
-    return iters
+    iters
 end
 
 print("Starting SIMD Mandelbrot...")

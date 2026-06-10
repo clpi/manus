@@ -7,11 +7,11 @@
 -- satisfaction is declared via `@implements(...)` on the binding.
 
 fun greet(name: str): str
-    return "Hello, " .. name
+    "Hello, " .. name
 end
 
 fun add<T>(a: T, b: T): T
-    return a + b
+    a + b
 end
 
 result: i64 = ##1 + 2

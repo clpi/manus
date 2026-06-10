@@ -703,6 +703,13 @@ pub const CodeGen = struct {
 
         self.current_ret = prev_ret;
         self.pop_local_scope();
+        // Emit module-level tail expression as a regular statement (main()
+        // always returns 0, so we don't use emit_implicit_return here).
+        if (mod.body.tail_expr) |expr| {
+            self.ind();
+            try self.emit_expr(expr);
+            self.p(";\n", .{});
+        }
         if (self.load_chunk) {
             self.pl("return lua_val_nil();", .{});
         } else {
@@ -1071,6 +1078,7 @@ pub const CodeGen = struct {
                 for (a.values) |v| try self.collect_records_in_expr(v);
             },
             .call_stmt => |c| try self.collect_records_in_expr(c.expr),
+            .expr_stmt => |e| try self.collect_records_in_expr(e.expr),
             .do_block => |*d| for (d.body.stmts) |*s2| try self.collect_records_in_stmt(s2),
             .while_loop => |*w| {
                 try self.collect_records_in_expr(w.cond);
@@ -2571,6 +2579,25 @@ pub const CodeGen = struct {
         }
         // Run this scope's pending defers in LIFO order on fall-through exit.
         try self.emit_top_defers();
+        // Emit implicit return for tail expression (after defers).
+        if (blk.tail_expr) |expr| {
+            try self.emit_implicit_return(expr);
+        }
+    }
+
+    fn emit_implicit_return(self: *CodeGen, expr: *const ast.Expr) E!void {
+        if (self.has_pending_defers()) try self.emit_all_pending_defers();
+        self.ind();
+        if (self.dense_table) |dt| {
+            self.pl("free(__dt_{s});", .{dt});
+        }
+        self.p("return ", .{});
+        if (self.closure_ctx != null or self.current_ret == .any) {
+            try self.emit_as_lua_value(expr);
+        } else {
+            try self.emit_expr(expr);
+        }
+        self.p(";\n", .{});
     }
 
     fn expr_is_int(self: *CodeGen, e: *const ast.Expr, val: i64) bool {
@@ -2957,6 +2984,11 @@ pub const CodeGen = struct {
                     }
                 }
                 try self.emit_expr(cs.expr);
+                self.p(";\n", .{});
+            },
+            .expr_stmt => |*es| {
+                self.ind();
+                try self.emit_expr(es.expr);
                 self.p(";\n", .{});
             },
             .ret => |*r| {
@@ -4913,6 +4945,7 @@ pub const CodeGen = struct {
                 try self.collect_closures_block(&gf.body, list);
             },
             .call_stmt => |*cs| try self.collect_closures_expr(cs.expr, list),
+            .expr_stmt => |*es| try self.collect_closures_expr(es.expr, list),
             .do_block => |*db| try self.collect_closures_block(&db.body, list),
             .func_decl => |*fd| try self.collect_closures_block(&fd.func.body, list),
             else => {},
@@ -5159,6 +5192,7 @@ pub const CodeGen = struct {
                     try self.collect_require_names_block(&gf.body, names);
                 },
                 .call_stmt => |*cs| try self.collect_require_names(cs.expr, names),
+                .expr_stmt => |*es| try self.collect_require_names(es.expr, names),
                 .do_block => |*db| try self.collect_require_names_block(&db.body, names),
                 .func_decl => |*fd| try self.collect_require_names_block(&fd.func.body, names),
                 else => {},

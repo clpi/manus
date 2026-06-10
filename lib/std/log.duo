@@ -1,10 +1,10 @@
 fun std_log_level_new(name)
-    return { name = name, value = nil }
+    { name = name, value = nil }
 end
 
 fun std_log_level_set_value(level, value)
     level.value = value
-    return level
+    level
 end
 
 fun std_log_debug(msg)
@@ -39,4 +39,4 @@ M.info = std_log_info
 M.warn = std_log_warn
 M.error = std_log_error
 M.print = std_log_print
-return M
+M

@@ -1,7 +1,7 @@
 -- Test bash-style calls with strings only
 
 fun greet(name: str): str
-    return "Hello, " .. name
+    "Hello, " .. name
 end
 
 -- Bash-style call with string
@@ -9,7 +9,7 @@ print greet "World"
 
 -- Multiple string arguments
 fun concat(a: str, b: str): str
-    return a .. b
+    a .. b
 end
 
 print concat "Hello" "Duo"

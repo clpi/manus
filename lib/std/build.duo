@@ -8,24 +8,24 @@ fun std_build_info()
 end
 
 fun std_build_platform()
-    return os.getenv("OSTYPE") or "unknown"
+    os.getenv("OSTYPE") or "unknown"
 end
 
 fun std_build_arch()
     arch = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
-    return arch
+    arch
 end
 
 fun std_build_target()
-    return string.format("%s-%s", std_build_arch(), std_build_platform())
+    string.format("%s-%s", std_build_arch(), std_build_platform())
 end
 
 fun std_build_is_debug()
-    return os.getenv("DEBUG") == "1"
+    os.getenv("DEBUG") == "1"
 end
 
 fun std_build_env()
-    return os.getenv("BUILD_ENV") or "development"
+    os.getenv("BUILD_ENV") or "development"
 end
 
 M = {}
@@ -35,4 +35,4 @@ M.arch = std_build_arch
 M.target = std_build_target
 M.is_debug = std_build_is_debug
 M.env = std_build_env
-return M
+M

@@ -5,39 +5,39 @@ fun std_meta_typeof(x)
         mt = getmetatable(x)
         if mt.type ~= nil then return mt.type end
     end
-    return "table"
+    "table"
 end
 
 fun std_meta_is(x, kind)
-    return std_meta_typeof(x) == kind
+    std_meta_typeof(x) == kind
 end
 
 fun std_meta_is_nil(x)
-    return x == nil
+    x == nil
 end
 
 fun std_meta_is_bool(x)
-    return type(x) == "boolean"
+    type(x) == "boolean"
 end
 
 fun std_meta_is_number(x)
-    return type(x) == "number"
+    type(x) == "number"
 end
 
 fun std_meta_is_str(x)
-    return type(x) == "string"
+    type(x) == "string"
 end
 
 fun std_meta_is_table(x)
-    return type(x) == "table"
+    type(x) == "table"
 end
 
 fun std_meta_is_func(x)
-    return type(x) == "function"
+    type(x) == "function"
 end
 
 fun std_meta_len(x)
-    return #x
+    #x
 end
 
 fun std_meta_keys(t)
@@ -45,7 +45,7 @@ fun std_meta_keys(t)
     for k, _ in pairs(t)
         std.collections.list_push(ks, k)
     end
-    return ks
+    ks
 end
 
 fun std_meta_values(t)
@@ -53,11 +53,11 @@ fun std_meta_values(t)
     for _, v in pairs(t)
         std.collections.list_push(vs, v)
     end
-    return vs
+    vs
 end
 
 fun std_meta_has_key(t, key)
-    return t[key] ~= nil
+    t[key] ~= nil
 end
 
 fun std_meta_clone(t)
@@ -65,14 +65,14 @@ fun std_meta_clone(t)
     for k, v in pairs(t)
         c[k] = v
     end
-    return c
+    c
 end
 
 fun std_meta_merge(dst, src)
     for k, v in pairs(src)
         dst[k] = v
     end
-    return dst
+    dst
 end
 
 M = {}
@@ -90,4 +90,4 @@ M.values = std_meta_values
 M.has_key = std_meta_has_key
 M.clone = std_meta_clone
 M.merge = std_meta_merge
-return M
+M

@@ -98,6 +98,7 @@ pub const AsyncLower = struct {
 
     fn discoverBlock(self: *Self, block: *const ast.Block, enclosing_name: []const u8) Error!void {
         for (block.stmts) |*stmt| try self.discoverStmt(stmt, enclosing_name);
+        if (block.tail_expr) |e| try self.discoverExpr(e, enclosing_name);
     }
 
     fn discoverStmt(self: *Self, stmt: *const ast.Stmt, enclosing_name: []const u8) Error!void {
@@ -115,6 +116,7 @@ pub const AsyncLower = struct {
                 for (a.targets) |e| try self.discoverExpr(e, enclosing_name);
             },
             .call_stmt => |c| try self.discoverExpr(c.expr, enclosing_name),
+            .expr_stmt => |e| try self.discoverExpr(e.expr, enclosing_name),
             .do_block => |d| try self.discoverBlock(&d.body, enclosing_name),
             .while_loop => |w| {
                 try self.discoverExpr(w.cond, enclosing_name);
@@ -259,6 +261,7 @@ pub const AsyncLower = struct {
     /// descend into nested function bodies — those get their own lowering.
     fn scanBlock(self: *Self, block: *const ast.Block, ctx: *LowerCtx) Error!void {
         for (block.stmts) |*stmt| try self.scanStmt(stmt, ctx);
+        if (block.tail_expr) |e| try self.scanExpr(e, ctx);
     }
 
     fn scanStmt(self: *Self, stmt: *const ast.Stmt, ctx: *LowerCtx) Error!void {
@@ -277,6 +280,7 @@ pub const AsyncLower = struct {
                 for (a.targets) |e| try self.scanExpr(e, ctx);
             },
             .call_stmt => |c| try self.scanExpr(c.expr, ctx),
+            .expr_stmt => |e| try self.scanExpr(e.expr, ctx),
             .do_block => |d| try self.scanBlock(&d.body, ctx),
             .while_loop => |w| {
                 try self.scanExpr(w.cond, ctx);

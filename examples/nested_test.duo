@@ -1,6 +1,6 @@
 -- Test nested call
 fun greet(name: str): str
-    return "Hello, " .. name
+    "Hello, " .. name
 end
 
 print(greet("World"))

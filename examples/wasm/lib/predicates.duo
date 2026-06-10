@@ -3,33 +3,33 @@
 @export
 fun is_even(n: int): int
     if n % 2 == 0 then
-        return 1
+        1
     end
-    return 0
+    0
 end
 
 @export
 fun is_odd(n: int): int
     if n % 2 ~= 0 then
-        return 1
+        1
     end
-    return 0
+    0
 end
 
 @export
 fun is_positive(n: int): int
     if n > 0 then
-        return 1
+        1
     end
-    return 0
+    0
 end
 
 @export
 fun is_negative(n: int): int
     if n < 0 then
-        return 1
+        1
     end
-    return 0
+    0
 end
 
 @export
@@ -37,9 +37,9 @@ fun sign(n: int): int
     if n > 0 then
         return 1
     elseif n < 0 then
-        return -1
+        -1
     end
-    return 0
+    0
 end
 
 @export
@@ -47,15 +47,15 @@ fun clamp(val: int, lo: int, hi: int): int
     if val < lo then
         return lo
     elseif val > hi then
-        return hi
+        hi
     end
-    return val
+    val
 end
 
 @export
 fun in_range(val: int, lo: int, hi: int): int
     if val >= lo and val <= hi then
-        return 1
+        1
     end
-    return 0
+    0
 end

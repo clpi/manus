@@ -2,7 +2,7 @@
 
 fun std_path_join(a: str, b: str): str
     if a == "" then
-        return b
+        b
     end
     if b == "" then
         return a
@@ -13,12 +13,12 @@ fun std_path_join(a: str, b: str): str
     if string.sub(a, -1, -1) == "/" then
         return a .. b
     end
-    return a .. "/" .. b
+    a .. "/" .. b
 end
 
 fun std_path_basename(p: str): str
     if p == "" then
-        return ""
+        ""
     end
     i = string.len(p)
     while i > 1 and string.sub(p, i, i) == "/"
@@ -28,12 +28,12 @@ fun std_path_basename(p: str): str
     while i > 1 and string.sub(p, i - 1, i - 1) ~= "/"
         i = i - 1
     end
-    return string.sub(p, i, last)
+    string.sub(p, i, last)
 end
 
 fun std_path_dirname(p: str): str
     if p == "" then
-        return "."
+        "."
     end
     i = string.len(p)
     while i > 1 and string.sub(p, i, i) == "/"
@@ -48,7 +48,7 @@ fun std_path_dirname(p: str): str
         end
         return "."
     end
-    return string.sub(p, 1, i - 1)
+    string.sub(p, 1, i - 1)
 end
 
 fun std_path_extname(p: str): str
@@ -56,11 +56,11 @@ fun std_path_extname(p: str): str
     i = string.len(base)
     while i > 1
         if string.sub(base, i, i) == "." then
-            return string.sub(base, i, string.len(base))
+            string.sub(base, i, string.len(base))
         end
         i = i - 1
     end
-    return ""
+    ""
 end
 
 M = {}
@@ -68,4 +68,4 @@ M.join = std_path_join
 M.basename = std_path_basename
 M.dirname = std_path_dirname
 M.extname = std_path_extname
-return M
+M

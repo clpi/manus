@@ -145,6 +145,7 @@ pub const ArcPass = struct {
     fn processBlock(self: *Self, block: *const ast.Block) Error!void {
         try self.pushScope();
         for (block.stmts) |*stmt| try self.processStmt(stmt);
+        if (block.tail_expr) |e| try self.processExpr(e);
         try self.popScope();
     }
 
@@ -192,6 +193,7 @@ pub const ArcPass = struct {
                 }
             },
             .call_stmt => |c| try self.processExpr(c.expr),
+            .expr_stmt => |e| try self.processExpr(e.expr),
             .do_block => |d| try self.processBlock(&d.body),
             .while_loop => |w| {
                 try self.processExpr(w.cond);

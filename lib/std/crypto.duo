@@ -1,5 +1,5 @@
 fun std_crypto_sha1(s)
-    return std_hash_simple(s)
+    std_hash_simple(s)
 end
 
 fun std_crypto_sha256(s)
@@ -27,7 +27,7 @@ fun std_crypto_base64_encode(s)
         c4 = string.sub(b64chars, (triple % 64) + 1, (triple % 64) + 1)
         table.insert(out, c1 .. c2 .. c3 .. c4)
     end
-    return table.concat(out)
+    table.concat(out)
 end
 
 fun std_crypto_base64_decode(s)
@@ -49,7 +49,7 @@ fun std_crypto_base64_decode(s)
         if c4 ~= -1 then table.insert(out, string.char(b2)) end
         if c4 ~= 0 then table.insert(out, string.char(b3)) end
     end
-    return table.concat(out)
+    table.concat(out)
 end
 
 fun std_crypto_xor_encrypt(s, key)
@@ -60,7 +60,7 @@ fun std_crypto_xor_encrypt(s, key)
         kc = string.byte(key, ((i - 1) % key_len) + 1)
         out = out .. string.char(bit.bxor(sc, kc))
     end
-    return out
+    out
 end
 
 fun std_crypto_hex_encode(s)
@@ -68,7 +68,7 @@ fun std_crypto_hex_encode(s)
     for i = 1, string.len(s)
         out = out .. string.format("%02X", string.byte(s, i))
     end
-    return out
+    out
 end
 
 M = {}
@@ -78,4 +78,4 @@ M.base64_encode = std_crypto_base64_encode
 M.base64_decode = std_crypto_base64_decode
 M.xor_encrypt = std_crypto_xor_encrypt
 M.hex_encode = std_crypto_hex_encode
-return M
+M

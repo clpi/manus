@@ -20,7 +20,7 @@ fun count_primes(limit: i32): i32
         end
         n = n + 1
     end
-    return count
+    count
 end
 
 print(count_primes(LIMIT))

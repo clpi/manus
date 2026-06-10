@@ -238,7 +238,20 @@ pub const Parser = struct {
                 else => try stmts.append(self.alloc, try self.parse_stmt()),
             }
         }
-        return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc) };
+        // Extract implicit tail expression: if the last statement is an
+        // expression-stmt or call_stmt, promote it to the block's tail_expr.
+        var tail_expr: ?*ast.Expr = null;
+        if (stmts.items.len > 0) {
+            const last = &stmts.items[stmts.items.len - 1];
+            if (last.* == .call_stmt) {
+                tail_expr = last.call_stmt.expr;
+                stmts.items.len -= 1;
+            } else if (last.* == .expr_stmt) {
+                tail_expr = last.expr_stmt.expr;
+                stmts.items.len -= 1;
+            }
+        }
+        return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc), .tail_expr = tail_expr };
     }
 
     fn parse_return(self: *Parser) ParseError!ast.Stmt {
@@ -911,7 +924,19 @@ pub const Parser = struct {
                 else => try stmts.append(self.alloc, try self.parse_stmt()),
             }
         }
-        return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc) };
+        // Extract implicit tail expression.
+        var tail_expr: ?*ast.Expr = null;
+        if (stmts.items.len > 0) {
+            const last = &stmts.items[stmts.items.len - 1];
+            if (last.* == .call_stmt) {
+                tail_expr = last.call_stmt.expr;
+                stmts.items.len -= 1;
+            } else if (last.* == .expr_stmt) {
+                tail_expr = last.expr_stmt.expr;
+                stmts.items.len -= 1;
+            }
+        }
+        return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc), .tail_expr = tail_expr };
     }
 
     /// Parse `try ... catch ... end` statement.
@@ -1320,7 +1345,26 @@ pub const Parser = struct {
 
     fn parse_expr_stmt(self: *Parser) ParseError!ast.Stmt {
         const first = try self.parse_suffixed_expr();
+
+        // If the next token continues the expression (binary op, etc.),
+        // parse the full expression.
         const nxt = try self.pk();
+        if (infix_prec(nxt.kind) != null) {
+            // Save state, re-parse as full expression with precedence climbing.
+            // We already consumed the prefix via parse_suffixed_expr, so we
+            // need to continue from here.  Reconstruct by re-parsing from the
+            // start of the expression using parse_prec.
+            // Simpler: save the lexer position and re-parse.  But we don't
+            // have lexer save/restore.  Instead, we use a different approach:
+            // the suffix_expr already consumed the base, so we just continue
+            // the precedence climb manually.
+            // Actually the simplest: when we detect an infix operator,
+            // we know this isn't an assignment or bash call, so it's an
+            // expression statement.  We already have the base parsed; we
+            // just need to continue with the rest.
+            // But we can't easily go back.  Instead, we'll let the case
+            // after the bash-call check handle this.
+        }
 
         if (nxt.kind == .assign or nxt.kind == .comma) {
             var targets: std.ArrayList(*ast.Expr) = .empty;
@@ -1379,18 +1423,43 @@ pub const Parser = struct {
                 } };
                 return ast.Stmt{ .call_stmt = .{ .loc = name_info.loc, .expr = call_expr } };
             }
-            std.debug.print("{}: expression is not a statement\n", .{first.loc()});
-            return ParseError.UnexpectedToken;
         }
 
-        switch (first.*) {
+        // Expression statement: the remaining case for any expression that
+        // isn't an assignment, bash call, or a specific statement form.
+        // If the expression continues with binary/infix operators, complete it.
+        var expr = first;
+        if (infix_prec(nxt.kind) != null) {
+            // Continue precedence climbing from the base expression.
+            // We've already parsed the LHS; just continue with the infix loop.
+            expr = try self.finish_prec(expr, 0);
+        }
+        switch (expr.*) {
             .call, .method_call => {},
             else => {
-                std.debug.print("{}: expression is not a statement\n", .{first.loc()});
-                return ParseError.UnexpectedToken;
+                return ast.Stmt{ .expr_stmt = .{ .loc = expr.loc(), .expr = expr } };
             },
         }
-        return ast.Stmt{ .call_stmt = .{ .loc = first.loc(), .expr = first } };
+        return ast.Stmt{ .call_stmt = .{ .loc = expr.loc(), .expr = expr } };
+    }
+
+    /// Continue precedence climbing from an already-parsed LHS expression.
+    fn finish_prec(self: *Parser, lhs: *ast.Expr, min_prec: u8) ParseError!*ast.Expr {
+        var e = lhs;
+        while (true) {
+            const tok = try self.pk();
+            const inf = infix_prec(tok.kind) orelse break;
+            if (inf.left <= min_prec) break;
+            _ = try self.adv();
+            const rhs = try self.parse_prec(inf.right);
+            e = try self.new_expr(.{ .binop = .{
+                .loc = e.loc(),
+                .op = inf.op,
+                .lhs = e,
+                .rhs = rhs,
+            } });
+        }
+        return e;
     }
 
     fn is_expr_start(_: *Parser, kind: TK) bool {

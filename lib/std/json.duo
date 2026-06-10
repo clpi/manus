@@ -35,16 +35,16 @@ fun std_json_encode(val)
             return "{" .. table.concat(parts, ",") .. "}"
         end
     end
-    return "null"
+    "null"
 end
 
 fun std_json_has_key(val, key)
     if type(val) ~= "table" then return false end
-    return val[key] ~= nil
+    val[key] ~= nil
 end
 
 fun std_json_decode(s)
-    return nil
+    nil
 end
 
 fun std_json_pretty(val, indent)
@@ -85,11 +85,11 @@ fun std_json_pretty(val, indent)
             return "{\n" .. table.concat(parts, ",\n") .. "\n}"
         end
     end
-    return "null"
+    "null"
 end
 
 M = {}
 M.encode = std_json_encode
 M.decode = std_json_decode
 M.pretty = std_json_pretty
-return M
+M

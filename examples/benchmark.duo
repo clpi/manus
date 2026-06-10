@@ -4,7 +4,7 @@
 -- 1. Recursive Fibonacci (lowered to iterative by the compiler)
 fun fib(n)
     if n <= 1 then return n end
-    return fib(n - 1) + fib(n - 2)
+    fib(n - 1) + fib(n - 2)
 end
 
 -- 2. Prime counting (trial division in source; Eratosthenes sieve in codegen)
@@ -25,7 +25,7 @@ fun count_primes(limit)
         end
         n = n + 1
     end
-    return count
+    count
 end
 
 -- 3. Mandelbrot core iteration
@@ -37,18 +37,18 @@ fun mandel_iter(cx: f64, cy: f64): i64
         zx2: f64 = zx * zx
         zy2: f64 = zy * zy
         if zx2 + zy2 > 4.0 then
-            return i
+            i
         end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
         i = i + 1
     end
-    return i
+    i
 end
 
 -- 4. Spectral-norm style grid
 fun eval_A(i: i64, j: i64): f64
-    return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
+    1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
 end
 
 fun compute_grid_sum(size: i64): f64
@@ -62,7 +62,7 @@ fun compute_grid_sum(size: i64): f64
         end
         i = i + 1
     end
-    return total
+    total
 end
 
 -- 5. N-body physics
@@ -111,7 +111,7 @@ fun simulate_nbody(steps: i64): f64
         y3 = y3 + vy3 * dt
         i = i + 1
     end
-    return x1 + y1 + x2 + y2 + x3 + y3
+    x1 + y1 + x2 + y2 + x3 + y3
 end
 
 -- 6. String stdlib: rep + len + byte checksum
@@ -124,7 +124,7 @@ fun string_byte_sum(n)
         sum = sum + string.byte(s, i)
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 7. Table stdlib pattern: fill indexed table and sum (dense array lowering)
@@ -141,7 +141,7 @@ fun table_array_sum(n)
         sum = sum + t[i]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 8. Math stdlib: sin/cos accumulation
@@ -152,7 +152,7 @@ fun trig_sum(n)
         sum = sum + math.sin(i) * math.cos(i)
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 9. String stdlib chain: len + rep in a hot loop
@@ -164,7 +164,7 @@ fun string_len_chain(n)
         total = total + string.len(s) + string.len(string.rep("b", (i % 10) + 1))
         i = i + 1
     end
-    return total
+    total
 end
 
 -- 10. Integer hash using string.byte on a long literal
@@ -177,7 +177,7 @@ fun string_hash_roll(n)
         h = (h * 31 + string.byte(s, i)) % 1000000007
         i = i + 1
     end
-    return h
+    h
 end
 
 -- 11. Math stdlib mix: floor + max (common game / layout logic)
@@ -191,7 +191,7 @@ fun math_floor_max(n)
         peak = math.max(peak, v)
         i = i + 1
     end
-    return acc + peak
+    acc + peak
 end
 
 -- 12. Dense table scan: max value (table-as-array pattern)
@@ -210,7 +210,7 @@ fun table_max_scan(n)
         end
         i = i + 1
     end
-    return mx
+    mx
 end
 
 -- 13. Math stdlib: pow + sqrt accumulation
@@ -221,7 +221,7 @@ fun math_pow_sqrt(n)
         sum = sum + math.sqrt(math.pow(i % 997, 0.25))
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 14. Sorted-array binary search (config lookup / game entity ID)
@@ -251,7 +251,7 @@ fun binary_search_scan(n)
         end
         q = q + 1
     end
-    return hits
+    hits
 end
 
 -- 15. Filter / predicate count (analytics, log filtering)
@@ -265,7 +265,7 @@ fun filter_count(n)
         end
         i = i + 1
     end
-    return count
+    count
 end
 
 -- 16. Dot product of two vectors (ML features, physics, graphics)
@@ -284,7 +284,7 @@ fun dot_product(n)
         sum = sum + a[i] * b[i]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 17. Clamp / saturate accumulation (color, audio, game stats)
@@ -295,7 +295,7 @@ fun clamp_sum(n)
         sum = sum + math.min(255, math.max(0, i % 1000))
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 18. Bucket / histogram key hash (sharding, metrics tags)
@@ -306,7 +306,7 @@ fun bucket_hash(n)
         sum = sum + (i * 31) % 256
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 19. Exponential moving average (metrics, smoothing)
@@ -317,7 +317,7 @@ fun ema_smooth(n)
         avg = avg * 0.95 + (i % 100) * 0.05
         i = i + 1
     end
-    return avg
+    avg
 end
 
 -- 20. Token / word count (log parsing, CSV fields)
@@ -332,7 +332,7 @@ fun token_count(n)
         end
         i = i + 1
     end
-    return count
+    count
 end
 
 -- 21. Config / JSON-ish delimiter scan
@@ -348,7 +348,7 @@ fun config_parse_sum(n)
         end
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 22. Indexed table lookup accumulation (cache / entity table)
@@ -366,7 +366,7 @@ fun table_lookup_sum(n)
         sum = sum + t[idx]
         q = q + 1
     end
-    return sum
+    sum
 end
 
 -- 23. Table insert churn then aggregate (metrics buffers)
@@ -383,7 +383,7 @@ fun table_insert_churn(n)
         sum = sum + t[i]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 24. Small matrix multiply (nested loop + indexed table access)
@@ -424,7 +424,7 @@ fun matmul(n)
         total = total + c[i]
         i = i + 1
     end
-    return total
+    total
 end
 
 -- 25. Prefix sum scan (serial scan pattern)
@@ -440,7 +440,7 @@ fun prefix_sum(n)
         t[i] = t[i] + t[i - 1]
         i = i + 1
     end
-    return t[n]
+    t[n]
 end
 
 -- 26. GCD reduction (Euclidean algorithm, branch-heavy)
@@ -458,7 +458,7 @@ fun gcd_reduce(n)
         sum = sum + a
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 27. Collatz chain length accumulation (unpredictable branching)
@@ -479,7 +479,7 @@ fun collatz_sum(n: i64): i64
         total = total + steps
         i = i + 1
     end
-    return total
+    total
 end
 
 -- 28. XOR fold / bit manipulation reduction
@@ -490,7 +490,7 @@ fun xor_fold(n)
         acc = acc ~ (i * 2654435761)
         i = i + 1
     end
-    return acc
+    acc
 end
 
 -- 29. Ring buffer write/read simulation (modulo indexing)
@@ -510,7 +510,7 @@ fun ring_buffer(n)
         sum = sum + buf[((i + size - 7) % size) + 1]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 30. Conditional swap reduce (sorting-kernel pattern)
@@ -541,14 +541,14 @@ fun cond_swap(n)
         sum = sum + t[i]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 31. Ackermann-like (bounded recursion stress)
 fun ack(m, n)
     if m == 0 then return n + 1 end
     if n == 0 then return ack(m - 1, 1) end
-    return ack(m - 1, ack(m, n - 1))
+    ack(m - 1, ack(m, n - 1))
 end
 
 -- 32. Levenshtein distance (2D DP table)
@@ -591,7 +591,7 @@ fun leven(n)
         sum = sum + prev[len_b]
         rep = rep + 1
     end
-    return sum
+    sum
 end
 
 -- 33. Sieve of Eratosthenes (boolean array)
@@ -621,7 +621,7 @@ fun sieve(n)
         if is_prime[i] then count = count + 1 end
         i = i + 1
     end
-    return count
+    count
 end
 
 -- 34. Fenwick tree (point update + prefix query)
@@ -652,7 +652,7 @@ fun fenwick(n)
         end
         q = q + 1
     end
-    return sum
+    sum
 end
 
 -- 35. Linear interpolation table lookup
@@ -673,7 +673,7 @@ fun interp(n)
         sum = sum + tbl[idx] * (1.0 - frac) + tbl[idx + 1] * frac
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 36. Run-length encoding count (byte comparison)
@@ -688,7 +688,7 @@ fun run_len(n)
         end
         i = i + 1
     end
-    return count + 1
+    count + 1
 end
 
 -- 37. Population count / Hamming weight reduction
@@ -705,7 +705,7 @@ fun bitcount(n)
         sum = sum + c
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 38. CORDIC-style sin approximation (shift+add, no math.sin)
@@ -725,7 +725,7 @@ fun cordic(n)
         sum = sum + s
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 39. Sparse vector dot (stride access pattern)
@@ -754,7 +754,7 @@ fun sparse_dot(n)
         sum = sum + a[idx] * b[idx]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 -- 40. Game of Life step (2D grid neighbor count)
@@ -797,7 +797,7 @@ fun life(steps)
         sum = sum + grid[i]
         i = i + 1
     end
-    return sum
+    sum
 end
 
 print("========================================")

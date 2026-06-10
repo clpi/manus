@@ -1,10 +1,10 @@
 -- Test the new 'fun' keyword
 fun add(a: i64, b: i64): i64
-    return a + b
+    a + b
 end
 
 fun greet(name: str): str
-    return "Hello, " .. name
+    "Hello, " .. name
 end
 
 print(add(5, 3))
