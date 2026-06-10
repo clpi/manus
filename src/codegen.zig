@@ -421,9 +421,7 @@ pub const CodeGen = struct {
         self.p("#include <stdarg.h>\n", .{});
         self.p("#include <math.h>\n", .{});
         self.p("#include <time.h>\n", .{});
-        self.p("#ifndef __wasm__\n", .{});
         self.p("#include <sys/time.h>\n", .{});
-        self.p("#endif\n", .{});
         self.p("#include <ctype.h>\n", .{});
         self.p("#include <limits.h>\n", .{});
         if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
@@ -443,17 +441,28 @@ pub const CodeGen = struct {
             self.p("static inline int close(int fd) {{ (void)fd; return 0; }}\n", .{});
             self.p("static inline int unlink(const char* p) {{ (void)p; return 0; }}\n", .{});
             self.p("#define L_tmpnam 256\n", .{});
+            // file access stubs (access/X_OK/R_OK not in WASI unistd.h which is guarded)
+            self.p("#define X_OK 1\n", .{});
+            self.p("#define R_OK 4\n", .{});
+            self.p("static inline int access(const char* p, int m) {{ (void)p; (void)m; return -1; }}\n", .{});
+            // dynamic loading stubs (no dlopen in WASM)
+            self.p("#define RTLD_NOW  2\n", .{});
+            self.p("#define RTLD_LOCAL 0\n", .{});
+            self.p("static inline void* dlopen(const char* p, int m) {{ (void)p; (void)m; return NULL; }}\n", .{});
+            self.p("static inline void* dlsym(void* h, const char* s) {{ (void)h; (void)s; return NULL; }}\n", .{});
+            self.p("static inline const char* dlerror(void) {{ return \"dlopen not supported in WASM\"; }}\n", .{});
+            self.p("static inline int dlclose(void* h) {{ (void)h; return 0; }}\n", .{});
             self.p("#endif\n", .{});
         } else {
             self.p("#include <setjmp.h>\n", .{});
             self.p("#include <ucontext.h>\n", .{});
         }
-        self.p("#ifndef __wasm__\n", .{});
-        self.p("#include <unistd.h>\n", .{});
-        self.p("#include <dlfcn.h>\n", .{});
-        self.p("#include <fcntl.h>\n", .{});
-        self.p("#include <sys/stat.h>\n", .{});
-        self.p("#endif\n", .{});
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.p("#include <unistd.h>\n", .{});
+            self.p("#include <dlfcn.h>\n", .{});
+            self.p("#include <fcntl.h>\n", .{});
+            self.p("#include <sys/stat.h>\n", .{});
+        }
         self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
         self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
         self.p("    size_t len = strlen(s);\n", .{});

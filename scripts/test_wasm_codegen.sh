@@ -13,7 +13,7 @@ fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 
 assert_contains() {
     local label="$1" text="$2" pattern="$3"
-    if echo "$text" | grep -qF "$pattern"; then
+    if grep -qF "$pattern" <<< "$text"; then
         pass "$label"
     else
         fail "$label — expected to find: $pattern"
@@ -22,7 +22,7 @@ assert_contains() {
 
 assert_not_contains() {
     local label="$1" text="$2" pattern="$3"
-    if echo "$text" | grep -qF "$pattern"; then
+    if grep -qF "$pattern" <<< "$text"; then
         fail "$label — expected NOT to find: $pattern"
     else
         pass "$label"
@@ -68,13 +68,13 @@ echo "--- 2. WASM target preamble ---"
 
 WASM_C=$(dump_wasm "$HELLO")
 
-assert_not_contains "wasm: _XOPEN_SOURCE is NOT defined"       "$WASM_C" "#define _XOPEN_SOURCE 600"
-assert_not_contains "wasm: setjmp.h is NOT directly included"  "$WASM_C" "#include <setjmp.h>"
-assert_not_contains "wasm: ucontext.h is NOT directly included" "$WASM_C" "#include <ucontext.h>"
-assert_contains     "wasm: sys/time.h is guarded"              "$WASM_C" "#ifndef __wasm__"
-assert_not_contains "wasm: dlfcn.h NOT included unguarded"     "$WASM_C" "#include <dlfcn.h>"
-assert_not_contains "wasm: fcntl.h NOT included unguarded"     "$WASM_C" "#include <fcntl.h>"
-assert_not_contains "wasm: sys/stat.h NOT included unguarded"  "$WASM_C" "#include <sys/stat.h>"
+assert_not_contains "wasm: _XOPEN_SOURCE is NOT defined"        "$WASM_C" "#define _XOPEN_SOURCE 600"
+assert_not_contains "wasm: setjmp.h is NOT directly included"   "$WASM_C" "#include <setjmp.h>"
+assert_not_contains "wasm: ucontext.h is NOT directly included"  "$WASM_C" "#include <ucontext.h>"
+assert_contains     "wasm: sys/time.h is included (gettimeofday)" "$WASM_C" "#include <sys/time.h>"
+assert_not_contains "wasm: dlfcn.h NOT included in WASM"        "$WASM_C" "#include <dlfcn.h>"
+assert_not_contains "wasm: fcntl.h NOT included in WASM"        "$WASM_C" "#include <fcntl.h>"
+assert_not_contains "wasm: sys/stat.h NOT included in WASM"     "$WASM_C" "#include <sys/stat.h>"
 
 echo ""
 echo "--- 3. WASM POSIX stubs ---"
