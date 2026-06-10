@@ -6,7 +6,7 @@ fun store(t: any, key: any, value: any): any
     old
 end
 
-fun compare_swap(t: any, key: any, expected: any, new_value: any): bool, any
+fun compare_swap(t: any, key: any, expected: any, new_value: any): any
     old = t[key]
     if old == expected then
         t[key] = new_value

@@ -5,7 +5,7 @@
 _run_queue = {}  -- list of {co=coroutine} ready to run
 
 -- Spawn a task (coroutine). Returns immediately; call run() to drive it.
-fun spawn(fn: any, ...args: any): void
+fun spawn(fn: any, ...args): void
     args_list = {args}
     co = coroutine.create(fun() return fn(table.unpack(args_list)) end)
     _run_queue[#_run_queue + 1] = {co = co}
@@ -39,7 +39,7 @@ fun step(): bool
     elseif coroutine.status(task.co) == "suspended" then
         _run_queue[#_run_queue + 1] = task
     end
-    #_run_queue > 0
+    return #_run_queue > 0
 end
 
 -- Create a channel with optional capacity (0 = unbounded).

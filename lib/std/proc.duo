@@ -1,7 +1,7 @@
 fun exec(cmd: str): i64
     rc = os.execute(cmd)
     if rc == nil then
-        -1
+        return -1
     end
     rc
 end

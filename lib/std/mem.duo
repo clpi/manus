@@ -67,7 +67,7 @@ fun pool_new(block_size: i64, count: i64): any
             self._free_list[#self._free_list + 1] = block
         end,
         available = fun(self: any): i64
-            #self._free_list
+            return #self._free_list
         end,
         in_use = fun(self: any): i64
             count - #self._free_list
@@ -179,7 +179,7 @@ fun align_down(n: i64, alignment: i64): i64
 end
 
 fun is_power_of_two(n: i64): bool
-    n > 0 and (bit.band(n, n - 1) == 0)
+    n > 0 and ((n & (n - 1)) == 0)
 end
 
 M = {}

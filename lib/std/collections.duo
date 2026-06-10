@@ -17,7 +17,7 @@ fun list_get(list: any, index: i64): any
 end
 
 fun list_len(list: any): i64
-    #list
+    return #list
 end
 
 fun stack_new(): any

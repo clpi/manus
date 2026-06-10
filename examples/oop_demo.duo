@@ -1,0 +1,142 @@
+-- =============================================================================
+-- Duo OOP + Inheritance Demo
+-- Tables ARE classes in Duo (like Lua). Fields are implicitly public.
+-- `alias` provides type aliases. `extends` works via metatable chaining.
+-- `private` fields are compile-time enforced (sema checks access).
+-- =============================================================================
+
+-- ── Type aliases (alias) ────────────────────────────────────────────────────
+
+alias Point2D = { x: f64, y: f64 }
+
+alias Float = f64
+
+-- ── Basic class pattern (Lua-style table as class) ──────────────────────────
+
+-- All fields are implicitly public, just like Lua tables.
+-- Methods are just function-valued fields.
+
+local point = {
+    x = 3.0,
+    y = 4.0,
+    distance = fun(self: any): f64
+        math.sqrt(self.x * self.x + self.y * self.y)
+    end,
+    move = fun(self: any, dx: f64, dy: f64): void
+        self.x = self.x + dx
+        self.y = self.y + dy
+    end,
+}
+
+print("Point: (" .. tostring(point.x) .. ", " .. tostring(point.y) .. ")")
+print("Distance: " .. tostring(point.distance(point)))
+
+point.move(point, 1.0, 2.0)
+print("After move: (" .. tostring(point.x) .. ", " .. tostring(point.y) .. ")")
+print("New distance: " .. tostring(point.distance(point)))
+
+-- ── Inheritance via metatables (extends pattern) ────────────────────────────
+
+-- Base "class" - a factory function returning instances
+fun Point_base(x: f64, y: f64): any
+    return {
+        x = x,
+        y = y,
+        describe = fun(self): str
+            "Point(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+        end,
+    }
+end
+
+-- Derived "class" via metatable delegation
+fun Point3D_base(x: f64, y: f64, z: f64): any
+    local base = Point_base(x, y)
+    return setmetatable(
+        { z = z,
+          describe = fun(self): str
+            "Point3D(" .. tostring(self.x) .. ", " .. tostring(self.y)
+                .. ", " .. tostring(self.z) .. ")"
+          end,
+        },
+        { __index = base }
+    )
+end
+
+p1 = Point_base(1.0, 2.0)
+print(p1.describe(p1))
+
+p2 = Point3D_base(3.0, 4.0, 5.0)
+print(p2.describe(p2))
+
+-- ── Factory function pattern (constructor + methods) ────────────────────────
+
+-- A counter "class" using constructor functions
+fun Counter_new(): any
+    return {
+        _value = 0,
+        increment = fun(self: any): void self._value = self._value + 1 end,
+        decrement = fun(self: any): void self._value = self._value - 1 end,
+        value = fun(self: any): i64 self._value end,
+    }
+end
+
+counter = Counter_new()
+counter.increment(counter)
+counter.increment(counter)
+counter.increment(counter)
+print("Counter: " .. tostring(counter.value(counter)))
+
+counter.decrement(counter)
+print("After decrement: " .. tostring(counter.value(counter)))
+
+-- ── Concepts with table types ──────────────────────────────────────────────
+
+concept Describable
+    fun describe(self): str
+end
+
+concept Measurable
+    fun measure(self, unit: str): f64
+end
+
+-- A shape that implements both concepts
+shape = {}
+shape.describe = fun(self): str
+    "Circle(radius=" .. tostring(self.radius) .. ")"
+end
+shape.measure = fun(self, unit: str): f64
+    area = 3.14159 * self.radius * self.radius
+    if unit == "mm" then
+        return area * 100.0
+    end
+    area
+end
+shape.radius = 5.0
+
+print(shape.describe(shape))
+print("Area (mm): " .. tostring(shape.measure(shape, "mm")))
+
+-- ── Default function parameter values ───────────────────────────────────────
+
+fun greet(name: str = "World", greeting: str = "Hello"): str
+    greeting .. ", " .. name .. "!"
+end
+
+fun power(base: f64, exp: f64 = 2.0): f64
+    if exp == 0 then return 1.0 end
+    result: f64 = base
+    i: i64 = 1
+    while i < math.floor(exp)
+        result = result * base
+        i = i + 1
+    end
+    result
+end
+
+print(greet())
+print(greet("Duo"))
+print(greet("Solo", "Hi"))
+print("3^2 = " .. tostring(power(3.0)))
+print("2^10 = " .. tostring(power(2.0, 10.0)))
+
+print("\n=== OOP Demo Complete ===")

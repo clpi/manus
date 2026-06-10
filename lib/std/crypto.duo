@@ -1,6 +1,6 @@
 -- std.crypto — cryptographic hash and encoding utilities
 
-h = req "std.hash"
+h = require "std.hash"
 
 fun sha1(s: str): i64
     h.simple(s)
@@ -16,7 +16,7 @@ end
 fun base64_encode(s: str): str
     b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     padded = s
-    while string.len(padded) % 3 ~= 0
+    while #padded % 3 ~= 0
         padded = padded .. "\0"
     end
     out = {}
@@ -38,7 +38,9 @@ fun base64_decode(s: str): str
     b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     out = {}
     clean = string.gsub(s, "[^A-Za-z0-9+/=]", "")
-    while string.len(clean) % 4 ~= 0 clean = clean .. "=" end
+    while #clean % 4 ~= 0
+        clean = clean .. "="
+    end
     for i = 1, string.len(clean), 4
         c1 = string.find(b64chars, string.sub(clean, i, i)) - 1
         c2 = string.find(b64chars, string.sub(clean, i + 1, i + 1)) - 1
@@ -62,7 +64,7 @@ fun xor_encrypt(s: str, key: str): str
     for i = 1, string.len(s)
         sc = string.byte(s, i)
         kc = string.byte(key, ((i - 1) % key_len) + 1)
-        out = out .. string.char(bit.bxor(sc, kc))
+        out = out .. string.char(sc ~ kc)
     end
     out
 end

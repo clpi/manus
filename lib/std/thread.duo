@@ -4,7 +4,7 @@
 -- In single-threaded mode these use coroutine-based cooperative scheduling.
 -- When @concurrent("threaded") is enabled, they map to pthread.
 
-sync = req "std.sync"
+sync = require "std.sync"
 
 -- ─────────────────────────────────────────────────────────────
 -- Mutex: blocking mutual exclusion lock
@@ -282,7 +282,7 @@ end
 -- Spawn a function in a new thread.  Returns a thread handle.
 -- In cooperative mode this creates a coroutine and yields to the scheduler.
 -- In threaded mode this creates a real OS thread.
-fun spawn(fn: any, ...args: any): any
+fun spawn(fn: any, ...args): any
     args_list = {args}
     result_ch = sync.channel(1)
     co = coroutine.create(fun()

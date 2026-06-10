@@ -3312,7 +3312,7 @@ pub const CodeGen = struct {
                 try self.note_defer(&defer_stmt.body);
             },
             .enum_def => {}, // handled at module level
-            .concept_def => {}, // concepts are compile-time only, no codegen
+            .concept_def, .alias_def => {}, // concepts are compile-time only, no codegen
             .brk => {
                 if (self.has_pending_defers()) {
                     try self.emit_pending_defers_from(self.current_break_scope_base());

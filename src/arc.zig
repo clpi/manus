@@ -231,7 +231,7 @@ pub const ArcPass = struct {
                 for (t.defers) |d| try self.processBlock(&d.body);
             },
             .defer_stmt => |d| try self.processBlock(&d.body),
-            .brk, .goto_stmt, .label_stmt, .enum_def, .concept_def => {},
+            .brk, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def => {},
         }
     }
 

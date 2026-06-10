@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-bbf5339a.js";
+            window.path_to_searchindex_js = "searchindex-d51b2424.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cbb4eca2.js"></script>
@@ -279,14 +279,14 @@ end
 <h2 id="simd-types"><a class="header" href="#simd-types">SIMD Types</a></h2>
 <p>Duo supports SIMD vector types:</p>
 <pre><code class="language-duo">-- SIMD vector types
-local v1: v2f64 = simd.v2f64(1.0, 2.0)
-local v2: v2f64 = simd.v2f64(3.0, 4.0)
+local v1: v4f64 = simd.v4f64(1.0, 2.0, 3.0, 4.0)
+local v2: v4i64 = simd.v4i64(10, 20, 30, 40)
 
 -- Operations compile to native SIMD
-local v3: v2f64 = v1 + v2
+local v3: v4f64 = v1 + v2
 local sum: f64 = simd.sum(v3)
 </code></pre>
-<p>Available SIMD types: <code>v2f32</code>, <code>v4f32</code>, <code>v2f64</code>, <code>v4f64</code>, <code>v2i64</code>, <code>v4i64</code>, <code>v2i32</code>, <code>v4i32</code>.</p>
+<p>Available SIMD types: <code>v4f64</code>, <code>v4i64</code>, <code>v8f32</code>, <code>v8i32</code>.</p>
 
                     </main>
 

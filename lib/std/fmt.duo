@@ -13,7 +13,7 @@ fun float(v: any, precision: i64): str
     string.format("%." .. tostring(precision) .. "f", v)
 end
 
-fun str(v: any): str
+fun to_str(v: any): str
     if v == nil then return "nil" end
     v
 end
@@ -45,9 +45,9 @@ end
 fun trim(s: str, chars: str): str
     if s == nil then return "" end
     if chars == nil then
-        string.match(s, "^%s*(.-)%s*$")
+        string["match"](s, "^%s*(.-)%s*$")
     end
-    string.match(s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
+    string["match"](s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
 end
 
 fun pad(s: str, width: i64, pad_char: str): str
@@ -71,7 +71,7 @@ end
 M = {}
 M.int = int
 M.float = float
-M.str = str
+M.to_str = to_str
 M.bool = bool
 M.hex = hex
 M.bin = bin

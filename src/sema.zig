@@ -604,6 +604,10 @@ pub const Sema = struct {
             .concept_def => |*cd| {
                 try self.check_concept_def(cd);
             },
+            .alias_def => |*ad| {
+                // Alias types are compile-time declarations; type-check fields and methods.
+                _ = ad;
+            },
         }
     }
 

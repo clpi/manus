@@ -156,6 +156,7 @@ pub const TableField = union(enum) {
 pub const FuncParam = struct {
     name: []const u8,
     typ: TypeExpr,
+    default_val: ?*Expr = null,
     loc: Loc,
 };
 
@@ -470,6 +471,29 @@ pub const Stmt = union(enum) {
     defer_stmt: DeferStmt,
     enum_def: EnumDef,
     concept_def: ConceptDef,
+    alias_def: AliasDef,
+};
+
+/// A user-defined table type (like a class/struct), declared with `alias`.
+pub const AliasDef = struct {
+    loc: Loc,
+    name: []const u8,
+    /// Optional parent alias for single inheritance (extends Parent).
+    parent: ?[]const u8 = null,
+    /// Fields: name, type, and whether private.
+    fields: []AliasField,
+    /// Methods defined on this alias.
+    methods: []FuncDecl,
+    /// Attributes (@packed, @align, etc.)
+    attributes: []Attribute = &.{},
+};
+
+pub const AliasField = struct {
+    name: []const u8,
+    typ: TypeExpr,
+    is_private: bool,
+    default_val: ?*Expr = null,
+    loc: Loc,
 };
 
 /// One field of an inline record type literal: `{ name: T, name2: U, ... }`.

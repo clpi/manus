@@ -1,11 +1,11 @@
 -- std.concurrent — high-level concurrency primitives (Requirement 20.9)
 -- Builds on std.sync's scheduler.  Provides go/await/select/all patterns.
 
-sync = req "std.sync"
+sync = require "std.sync"
 
 -- Spawn a task and return a future channel (capacity 1) for its result.
 -- result shape: {ok=bool, val=any, err=any}
-fun go(fn: any, ...args: any): any
+fun go(fn: any, ...args): any
     fut = sync.channel(1)
     args_list = {args}
     sync.spawn(fun(): void

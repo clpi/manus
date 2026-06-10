@@ -284,6 +284,7 @@ pub const Parser = struct {
             .kw_async => self.parse_async_func_decl_with_attrs(&.{}),
             .kw_enum => self.parse_enum_def_with_attrs(&.{}),
             .kw_concept => self.parse_concept_def_with_attrs(&.{}),
+            .kw_alias => self.parse_alias_def_with_attrs(&.{}),
             .kw_if => self.parse_if(),
             .kw_while => self.parse_while(),
             .kw_repeat => self.parse_repeat(),
@@ -323,6 +324,7 @@ pub const Parser = struct {
             // NOTE: there is no `.kw_struct` case.
             .kw_enum => self.parse_enum_def_with_attrs(attrs_slice),
             .kw_concept => self.parse_concept_def_with_attrs(attrs_slice),
+            .kw_alias => self.parse_alias_def_with_attrs(attrs_slice),
             .kw_local, .kw_global => self.parse_local_or_global_with_attrs(attrs_slice),
             else => {
                 std.debug.print("{}: expected declaration after attribute(s), got '{s}'\n", .{
@@ -590,6 +592,24 @@ pub const Parser = struct {
         } };
     }
 
+    /// Parse `alias Name [extends Parent] ... end` — a simple type alias or struct.
+    /// For now, alias is a simple type alias: `alias Name = Type`.
+    fn parse_alias_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        _ = try self.expect(.kw_alias);
+        const l = (try self.pk()).loc;
+        const nm = try self.expect(.name);
+        _ = try self.expect(.assign);
+        _ = try self.parse_type(); // type alias target — stored for future use
+        return ast.Stmt{ .alias_def = .{
+            .loc = l,
+            .name = nm.text,
+            .parent = null,
+            .fields = &.{},
+            .methods = &.{},
+            .attributes = attrs,
+        } };
+    }
+
     fn parse_global(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         if (try self.eat(.star) != null) {
@@ -801,7 +821,11 @@ pub const Parser = struct {
     fn parse_param(self: *Parser) ParseError!ast.FuncParam {
         const nm = try self.expect(.name);
         const typ = try self.maybe_type_ann();
-        return ast.FuncParam{ .name = nm.text, .typ = typ, .loc = nm.loc };
+        var default_val: ?*ast.Expr = null;
+        if (try self.eat(.assign) != null) {
+            default_val = try self.parse_expr();
+        }
+        return ast.FuncParam{ .name = nm.text, .typ = typ, .default_val = default_val, .loc = nm.loc };
     }
 
     fn parse_if(self: *Parser) ParseError!ast.Stmt {

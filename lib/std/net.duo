@@ -70,7 +70,7 @@ fun http_request(method: str, url: str, body: str, headers: any): any
     if f == nil then return {body = "", status = 0} end
     raw = f:read("*a") or ""
     f:close()
-    status = tonumber(string.match(raw, "HTTP/%d+%.%d+ (%d+)")) or 0
+    status = tonumber(string["match"](raw, "HTTP/%d+%.%d+ (%d+)")) or 0
     sep = string.find(raw, "\r\n\r\n", 1, true)
     resp_body = sep and string.sub(raw, sep + 4) or raw
     {body = resp_body, status = status}
@@ -134,7 +134,7 @@ fun http_serve(port: i64, handler: any): void
         if cli == nil then break end
         raw = recv(cli, 16384)
         if raw ~= nil then
-            method, req_path = string.match(raw, "^(%u+) (/[^ ]*)")
+            method, req_path = string["match"](raw, "^(%u+) (/[^ ]*)")
             if method == nil then method = "GET" end
             if req_path == nil then req_path = "/" end
             resp_body = handler(method, req_path, raw) or ""

@@ -1,4 +1,4 @@
-col = req "std.collections"
+col = require "std.collections"
 
 fun encode(val: any): str
     if val == nil then return "null" end

@@ -11,23 +11,23 @@ end
 fun crc32(s: str): str
     crc = 0xFFFFFFFF
     for i = 1, string.len(s)
-        crc = bit.bxor(crc, string.byte(s, i))
+        crc = crc ~ string.byte(s, i)
         for _ = 1, 8
             if crc % 2 == 1 then
-                crc = bit.rshift(crc, 1) ~ 0xEDB88320
+                crc = crc >> 1 ~ 0xEDB88320
             else
-                crc = bit.rshift(crc, 1)
+                crc = crc >> 1
             end
         end
         crc = crc % (2^32)
     end
-    string.format("%08x", bit.bnot(crc))
+    string.format("%08x", ~crc)
 end
 
 fun fnv1a(s: str): str
     hash = 0x811C9DC5
     for i = 1, string.len(s)
-        hash = bit.bxor(hash, string.byte(s, i))
+        hash = hash ~ string.byte(s, i)
         hash = (hash * 0x01000193) % (2^32)
     end
     string.format("%08x", hash)

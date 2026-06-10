@@ -126,12 +126,12 @@ Duo supports SIMD vector types:
 
 ```duo
 -- SIMD vector types
-local v1: v2f64 = simd.v2f64(1.0, 2.0)
-local v2: v2f64 = simd.v2f64(3.0, 4.0)
+local v1: v4f64 = simd.v4f64(1.0, 2.0, 3.0, 4.0)
+local v2: v4i64 = simd.v4i64(10, 20, 30, 40)
 
 -- Operations compile to native SIMD
-local v3: v2f64 = v1 + v2
+local v3: v4f64 = v1 + v2
 local sum: f64 = simd.sum(v3)
 ```
 
-Available SIMD types: `v2f32`, `v4f32`, `v2f64`, `v4f64`, `v2i64`, `v4i64`, `v2i32`, `v4i32`.
+Available SIMD types: `v4f64`, `v4i64`, `v8f32`, `v8i32`.

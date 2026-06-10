@@ -14,8 +14,8 @@ fun platform(): str
 end
 
 fun arch(): str
-    arch = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
-    arch
+    a = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
+    a
 end
 
 fun target(): str

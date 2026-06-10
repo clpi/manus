@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-bbf5339a.js";
+            window.path_to_searchindex_js = "searchindex-d51b2424.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cbb4eca2.js"></script>
@@ -184,14 +184,10 @@
 <tr><th>Type</th><th>Elements</th><th>Element Type</th></tr>
 </thead>
 <tbody>
-<tr><td><code>v2f32</code></td><td>2</td><td>f32 (float)</td></tr>
-<tr><td><code>v4f32</code></td><td>4</td><td>f32 (float)</td></tr>
-<tr><td><code>v2f64</code></td><td>2</td><td>f64 (double)</td></tr>
 <tr><td><code>v4f64</code></td><td>4</td><td>f64 (double)</td></tr>
-<tr><td><code>v2i32</code></td><td>2</td><td>i32 (integer)</td></tr>
-<tr><td><code>v4i32</code></td><td>4</td><td>i32 (integer)</td></tr>
-<tr><td><code>v2i64</code></td><td>2</td><td>i64 (integer)</td></tr>
 <tr><td><code>v4i64</code></td><td>4</td><td>i64 (integer)</td></tr>
+<tr><td><code>v8f32</code></td><td>8</td><td>f32 (float)</td></tr>
+<tr><td><code>v8i32</code></td><td>8</td><td>i32 (integer)</td></tr>
 </tbody>
 </table>
 </div>
@@ -235,11 +231,9 @@ any_true: bool = simd.any(mask)
 all_true: bool = simd.all(mask)
 </code></pre>
 <h2 id="element-access"><a class="header" href="#element-access">Element Access</a></h2>
-<p>Access individual elements with indexing:</p>
+<p>Access individual elements with indexing (0-indexed, following C convention):</p>
 <pre><code class="language-duo">print(v1[0])  -- 1.0
 print(v1[3])  -- 4.0
-
--- Note: Index 0 maps to first element, following C convention
 </code></pre>
 <h2 id="example-mandelbrot-render"><a class="header" href="#example-mandelbrot-render">Example: Mandelbrot Render</a></h2>
 <pre><code class="language-duo">-- SIMD-accelerated Mandelbrot rendering
@@ -267,10 +261,14 @@ end
 </code></pre>
 <h2 id="performance"><a class="header" href="#performance">Performance</a></h2>
 <p>SIMD operations compile to native instructions:</p>
-<pre><code class="language-c">// v4f64 + v4f64 compiles to:
-__m256d a = _mm256_set_pd(4.0, 3.0, 2.0, 1.0);
-__m256d b = _mm256_set_pd(40.0, 30.0, 20.0, 10.0);
-__m256d c = _mm256_add_pd(a, b);
+<pre><code class="language-c">// Duo types compile to clang extended vector types:
+typedef double v4f64 __attribute__((ext_vector_type(4)));
+typedef int64_t v4i64 __attribute__((ext_vector_type(4)));
+
+// v4f64 + v4f64 compiles to:
+v4f64 a = (v4f64){1.0, 2.0, 3.0, 4.0};
+v4f64 b = (v4f64){10.0, 20.0, 30.0, 40.0};
+v4f64 c = a + b;  // Vectorized addition
 </code></pre>
 
                     </main>

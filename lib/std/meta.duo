@@ -2,10 +2,10 @@
 -- Re-exports derivable concepts from std.meta.derive and meta blocks from std.meta.macros
 
 -- Destructured imports from std.meta.derive
-derive = req "std.meta.derive"
+derive = require "std.meta.derive"
 
 -- Destructured imports from std.meta.macros
-macros = req "std.meta.macros"
+macros = require "std.meta.macros"
 
 -- ─────────────────────────────────────────────────────────────
 -- Reflection: runtime type introspection
@@ -142,7 +142,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 fun len(t: any): i64
-    #t
+    return #t
 end
 
 fun keys(t: any)
@@ -297,7 +297,7 @@ fun derive_hash(val: any): u64
         end
         return h
     end
-    tostring(val):len()
+    string.len(tostring(val))
 end
 
 fun derive_ord(a: any, b: any): i64
@@ -348,9 +348,9 @@ fun derive_contains(val: any, elem: any): bool
 end
 
 fun derive_iter(val: any): any
-    if type(val) ~= "table" then return fun(): any, any return nil end end
+    if type(val) ~= "table" then return fun() return nil end end
     i = 0
-    return fun(): any, any
+    return fun()
         i = i + 1
         if val[i] ~= nil then return i, val[i] end
         nil

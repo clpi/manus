@@ -70,11 +70,11 @@ all_true: bool = simd.all(mask)
 
 ## Element Access
 
-Access individual elements with indexing (1-indexed, following Lua convention):
+Access individual elements with indexing (0-indexed, following C convention):
 
 ```duo
-print(v1[1])  -- 1.0
-print(v1[4])  -- 4.0
+print(v1[0])  -- 1.0
+print(v1[3])  -- 4.0
 ```
 
 ## Example: Mandelbrot Render
