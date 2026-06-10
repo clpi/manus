@@ -20,6 +20,8 @@ duo compile <file>              compile to native binary
 duo run     <file>              compile and run immediately
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
+duo completion <shell>           generate shell completions (bash, zsh, fish, nu)
+duo help                         show help message
 ```
 
 ## Options

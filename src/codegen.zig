@@ -3570,6 +3570,11 @@ pub const CodeGen = struct {
                     }
                 }
                 if (ft == .any) {
+                    // Special-case print in expression position
+                    if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "print")) {
+                        try self.emit_print_call(c.args);
+                        return;
+                    }
                     self.p("({{\n", .{});
                     self.indent += 1;
                     self.ind();

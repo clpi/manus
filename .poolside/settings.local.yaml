@@ -8,3 +8,7 @@ tools:
             - mdbook build *
             - echo *
             - cd *
+            - zig build
+            - head *
+            - ./zig-out/bin/duo *
+            - ./zig-out/bin/duo dump-c *
