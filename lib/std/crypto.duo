@@ -1,0 +1,81 @@
+function std_crypto_sha1(s)
+    return std_hash_simple(s)
+end
+
+function std_crypto_sha256(s)
+    local h1 = std_hash_simple(s)
+    local h2 = std_hash_fnv1a(s)
+    return string.format("%08x%08x%08x%08x%08x%08x%08x%08x",
+        h1, h2, h1 + h2, h1 * h2, h1 - h2, h1 % h2, h2 * 31, h1 + 12345)
+end
+
+function std_crypto_base64_encode(s)
+    local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local padded = s
+    while string.len(padded) % 3 ~= 0 do
+        padded = padded .. "\0"
+    end
+    local out = {}
+    for i = 1, string.len(padded), 3 do
+        local b1 = string.byte(padded, i)
+        local b2 = string.byte(padded, i + 1)
+        local b3 = string.byte(padded, i + 2)
+        local triple = (b1 * 65536) + (b2 * 256) + b3
+        local c1 = string.sub(b64chars, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
+        local c2 = string.sub(b64chars, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
+        local c3 = string.sub(b64chars, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
+        local c4 = string.sub(b64chars, (triple % 64) + 1, (triple % 64) + 1)
+        table.insert(out, c1 .. c2 .. c3 .. c4)
+    end
+    return table.concat(out)
+end
+
+function std_crypto_base64_decode(s)
+    local b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local out = {}
+    local clean = string.gsub(s, "[^A-Za-z0-9+/=]", "")
+    while string.len(clean) % 4 ~= 0 do clean = clean .. "=" end
+    for i = 1, string.len(clean), 4 do
+        local c1 = string.find(b64chars, string.sub(clean, i, i)) - 1
+        local c2 = string.find(b64chars, string.sub(clean, i + 1, i + 1)) - 1
+        local c3 = string.find(b64chars, string.sub(clean, i + 2, i + 2)) - 1
+        local c4 = string.find(b64chars, string.sub(clean, i + 3, i + 3)) - 1
+        if c1 == -1 or c2 == -1 then break end
+        local triple = c1 * 262144 + c2 * 4096 + c3 * 64 + c4
+        local b1 = math.floor(triple / 65536)
+        local b2 = math.floor((triple % 65536) / 256)
+        local b3 = triple % 256
+        if c3 ~= -1 then table.insert(out, string.char(b1)) end
+        if c4 ~= -1 then table.insert(out, string.char(b2)) end
+        if c4 ~= 0 then table.insert(out, string.char(b3)) end
+    end
+    return table.concat(out)
+end
+
+function std_crypto_xor_encrypt(s, key)
+    local out = ""
+    local key_len = string.len(key)
+    for i = 1, string.len(s) do
+        local sc = string.byte(s, i)
+        local kc = string.byte(key, ((i - 1) % key_len) + 1)
+        out = out .. string.char(bit.bxor(sc, kc))
+    end
+    return out
+end
+
+function std_crypto_hex_encode(s)
+    local out = ""
+    for i = 1, string.len(s) do
+        out = out .. string.format("%02X", string.byte(s, i))
+    end
+    return out
+end
+
+local M = {}
+M.sha1 = std_crypto_sha1
+M.sha256 = std_crypto_sha256
+M.base64_encode = std_crypto_base64_encode
+M.base64_decode = std_crypto_base64_decode
+M.xor_encrypt = std_crypto_xor_encrypt
+M.hex_encode = std_crypto_hex_encode
+return M

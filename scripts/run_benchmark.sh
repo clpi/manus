@@ -11,7 +11,7 @@ cd "$ROOT"
 zig build
 
 # Compile Duo benchmark with PGO (two-pass: instrument, profile, optimise).
-"$DUO" compile --pgo examples/benchmark.lua -o /tmp/duo_bench.out &
+"$DUO" compile --pgo -Ofast examples/benchmark.lua -o /tmp/duo_bench.out &
 DUO_COMP_PID=$!
 
 # Compile reference C benchmark with PGO.

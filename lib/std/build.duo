@@ -1,0 +1,38 @@
+function std_build_info()
+    return {
+        compiler = "duo",
+        version = "0.1.0",
+        host = os.getenv("HOSTNAME") or "unknown",
+        timestamp = os.date("%Y-%m-%dT%H:%M:%S"),
+    }
+end
+
+function std_build_platform()
+    return os.getenv("OSTYPE") or "unknown"
+end
+
+function std_build_arch()
+    local arch = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
+    return arch
+end
+
+function std_build_target()
+    return string.format("%s-%s", std_build_arch(), std_build_platform())
+end
+
+function std_build_is_debug()
+    return os.getenv("DEBUG") == "1"
+end
+
+function std_build_env()
+    return os.getenv("BUILD_ENV") or "development"
+end
+
+local M = {}
+M.info = std_build_info
+M.platform = std_build_platform
+M.arch = std_build_arch
+M.target = std_build_target
+M.is_debug = std_build_is_debug
+M.env = std_build_env
+return M

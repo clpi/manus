@@ -1,0 +1,23 @@
+function std_proc_pid()
+    return os.getenv("$$")
+end
+
+function std_proc_spawn(cmd)
+    local rc = os.execute(cmd .. " &")
+    return rc
+end
+
+function std_proc_kill(pid)
+    return os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
+end
+
+function std_proc_wait(pid)
+    return os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
+end
+
+local M = {}
+M.pid = std_proc_pid
+M.spawn = std_proc_spawn
+M.kill = std_proc_kill
+M.wait = std_proc_wait
+return M

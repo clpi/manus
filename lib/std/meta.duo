@@ -1,0 +1,93 @@
+function std_meta_typeof(x)
+    if x == nil then return "nil" end
+    if type(x) ~= "table" then return type(x) end
+    if getmetatable(x) ~= nil then
+        local mt = getmetatable(x)
+        if mt.type ~= nil then return mt.type end
+    end
+    return "table"
+end
+
+function std_meta_is(x, kind)
+    return std_meta_typeof(x) == kind
+end
+
+function std_meta_is_nil(x)
+    return x == nil
+end
+
+function std_meta_is_bool(x)
+    return type(x) == "boolean"
+end
+
+function std_meta_is_number(x)
+    return type(x) == "number"
+end
+
+function std_meta_is_str(x)
+    return type(x) == "string"
+end
+
+function std_meta_is_table(x)
+    return type(x) == "table"
+end
+
+function std_meta_is_func(x)
+    return type(x) == "function"
+end
+
+function std_meta_len(x)
+    return #x
+end
+
+function std_meta_keys(t)
+    local ks = std.collections.list_new()
+    for k, _ in pairs(t) do
+        std.collections.list_push(ks, k)
+    end
+    return ks
+end
+
+function std_meta_values(t)
+    local vs = std.collections.list_new()
+    for _, v in pairs(t) do
+        std.collections.list_push(vs, v)
+    end
+    return vs
+end
+
+function std_meta_has_key(t, key)
+    return t[key] ~= nil
+end
+
+function std_meta_clone(t)
+    local c = {}
+    for k, v in pairs(t) do
+        c[k] = v
+    end
+    return c
+end
+
+function std_meta_merge(dst, src)
+    for k, v in pairs(src) do
+        dst[k] = v
+    end
+    return dst
+end
+
+local M = {}
+M.typeof = std_meta_typeof
+M.is = std_meta_is
+M.is_nil = std_meta_is_nil
+M.is_bool = std_meta_is_bool
+M.is_number = std_meta_is_number
+M.is_str = std_meta_is_str
+M.is_table = std_meta_is_table
+M.is_func = std_meta_is_func
+M.len = std_meta_len
+M.keys = std_meta_keys
+M.values = std_meta_values
+M.has_key = std_meta_has_key
+M.clone = std_meta_clone
+M.merge = std_meta_merge
+return M

@@ -76,6 +76,22 @@ function std_collections_set_has(s, value)
     return s[value] ~= nil
 end
 
+function std_collections_is_array(t)
+    if type(t) ~= "table" then return false end
+    if t[1] == nil then return true end
+    local i = 2
+    while t[i] ~= nil do i = i + 1 end
+    for k, _ in pairs(t) do
+        if type(k) ~= "number" then return false end
+        if k < 1 then return false end
+    end
+    return true
+end
+
+function std_collections_remove_at(list, index)
+    return table.remove(list, index)
+end
+
 local M = {}
 M.list_new = std_collections_list_new
 M.list_push = std_collections_list_push
@@ -95,4 +111,6 @@ M.map_has = std_collections_map_has
 M.set_new = std_collections_set_new
 M.set_add = std_collections_set_add
 M.set_has = std_collections_set_has
+M.is_array = std_collections_is_array
+M.remove_at = std_collections_remove_at
 return M

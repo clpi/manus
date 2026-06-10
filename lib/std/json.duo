@@ -1,0 +1,95 @@
+function std_json_encode(val)
+    if val == nil then return "null" end
+    if type(val) == "boolean" then
+        if val then return "true" else return "false" end
+    end
+    if type(val) == "number" then
+        if val ~= val then return "null" end
+        if val == math.huge then return "1.7976931348623157e+308" end
+        if val == -math.huge then return "-1.7976931348623157e+308" end
+        return tostring(val)
+    end
+    if type(val) == "string" then
+        local s = string.gsub(val, "\\", "\\\\")
+        s = string.gsub(s, "\"", "\\\"")
+        s = string.gsub(s, "\n", "\\n")
+        s = string.gsub(s, "\t", "\\t")
+        s = string.gsub(s, "\r", "\\r")
+        return string.format("\"%s\"", s)
+    end
+    if type(val) == "table" then
+        if std_collections_is_array(val) then
+            local parts = {}
+            for i = 1, #val do
+                table.insert(parts, std_json_encode(val[i]))
+            end
+            return "[" .. table.concat(parts, ",") .. "]"
+        else
+            local parts = {}
+            for k, v in pairs(val) do
+                if type(k) == "string" then
+                    local key_str = std_json_encode(k)
+                    table.insert(parts, key_str .. ":" .. std_json_encode(v))
+                end
+            end
+            return "{" .. table.concat(parts, ",") .. "}"
+        end
+    end
+    return "null"
+end
+
+function std_json_has_key(val, key)
+    if type(val) ~= "table" then return false end
+    return val[key] ~= nil
+end
+
+function std_json_decode(s)
+    return nil
+end
+
+function std_json_pretty(val, indent)
+    if indent == nil then indent = 2 end
+    if type(indent) ~= "number" then indent = 2 end
+    if val == nil then return "null" end
+    if type(val) == "boolean" then
+        if val then return "true" else return "false" end
+    end
+    if type(val) == "number" then
+        return tostring(val)
+    end
+    if type(val) == "string" then
+        return std_json_encode(val)
+    end
+    if type(val) == "table" then
+        if std_collections_is_array(val) then
+            if #val == 0 then return "[]" end
+            local pad = string.rep(" ", indent)
+            local parts = {}
+            for i = 1, #val do
+                table.insert(parts, pad .. std_json_pretty(val[i], indent))
+            end
+            return "[\n" .. table.concat(parts, ",\n") .. "\n]"
+        else
+            local keys = {}
+            for k, _ in pairs(val) do
+                if type(k) == "string" then
+                    table.insert(keys, k)
+                end
+            end
+            if #keys == 0 then return "{}" end
+            local pad = string.rep(" ", indent)
+            local parts = {}
+            for _, k in ipairs(keys) do
+                table.insert(parts, pad .. std_json_encode(k) .. ": " .. std_json_pretty(val[k], indent))
+            end
+            return "{\n" .. table.concat(parts, ",\n") .. "\n}"
+        end
+    end
+    return "null"
+end
+
+local M = {}
+M.encode = std_json_encode
+M.decode = std_json_decode
+M.pretty = std_json_pretty
+return M

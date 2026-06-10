@@ -1,0 +1,86 @@
+function std_atomic_store(t, key, value)
+    local old = t[key]
+    t[key] = value
+    return old
+end
+
+function std_atomic_compare_swap(t, key, expected, new_value)
+    local old = t[key]
+    if old == expected then
+        t[key] = new_value
+        return true, new_value
+    end
+    return false, old
+end
+
+function std_atomic_fetch_add(t, key, delta)
+    local old = t[key]
+    if type(old) == "number" then
+        t[key] = old + delta
+    else
+        t[key] = delta
+    end
+    return old
+end
+
+function std_atomic_fetch_sub(t, key, delta)
+    local old = t[key]
+    if type(old) == "number" then
+        t[key] = old - delta
+    else
+        t[key] = -delta
+    end
+    return old
+end
+
+function std_atomic_inc(t, key)
+    local old = t[key]
+    if type(old) == "number" then
+        t[key] = old + 1
+    else
+        t[key] = 1
+    end
+    return old
+end
+
+function std_atomic_dec(t, key)
+    local old = t[key]
+    if type(old) == "number" then
+        t[key] = old - 1
+    else
+        t[key] = -1
+    end
+    return old
+end
+
+function std_atomic_mutex_new()
+    return { locked = false }
+end
+
+function std_atomic_lock(m)
+    while m.locked do
+        m.locked = true
+    end
+end
+
+function std_atomic_unlock(m)
+    m.locked = false
+end
+
+function std_atomic_signal(sp)
+    if sp == nil then return end
+    sp.notify = true
+end
+
+local M = {}
+M.store = std_atomic_store
+M.compare_swap = std_atomic_compare_swap
+M.fetch_add = std_atomic_fetch_add
+M.fetch_sub = std_atomic_fetch_sub
+M.inc = std_atomic_inc
+M.dec = std_atomic_dec
+M.mutex_new = std_atomic_mutex_new
+M.lock = std_atomic_lock
+M.unlock = std_atomic_unlock
+M.signal = std_atomic_signal
+return M

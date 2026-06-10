@@ -1,0 +1,79 @@
+function std_fmt_int(v)
+    if v == nil then return "nil" end
+    return tostring(v)
+end
+
+function std_fmt_float(v, precision)
+    if v == nil then return "nil" end
+    if precision == nil then
+        return string.format("%g", v)
+    end
+    return string.format("%." .. tostring(precision) .. "f", v)
+end
+
+function std_fmt_str(v)
+    if v == nil then return "nil" end
+    return v
+end
+
+function std_fmt_bool(v)
+    if v == nil then return "false" end
+    if v then return "true" else return "false" end
+end
+
+function std_fmt_hex(v)
+    if v == nil then return "nil" end
+    return string.format("0x%X", v)
+end
+
+function std_fmt_bin(v)
+    if v == nil then return "nil" end
+    local digits = {}
+    local n = v
+    if n == 0 then
+        return "0b0"
+    end
+    while n > 0 do
+        table.insert(digits, 1, tostring(n % 2))
+        n = math.floor(n / 2)
+    end
+    return "0b" .. table.concat(digits)
+end
+
+function std_fmt_trim(s, chars)
+    if s == nil then return "" end
+    if chars == nil then
+        return string.match(s, "^%s*(.-)%s*$")
+    end
+    return string.match(s, "^[" .. chars .. "]*(.-)[" .. chars .. "]*$")
+end
+
+function std_fmt_pad(s, width, pad_char)
+    if s == nil then s = "" end
+    if pad_char == nil then pad_char = " " end
+    local len = string.len(s)
+    local w = width
+    if w == nil or w <= len then return s end
+    local pad = string.rep(pad_char, w - len)
+    return s .. pad
+end
+
+function std_fmt_trunc(s, width)
+    if s == nil then return "" end
+    if width == nil then return s end
+    local len = string.len(s)
+    if len <= width then return s end
+    return string.sub(s, 1, width)
+end
+
+local M = {}
+M.int = std_fmt_int
+M.float = std_fmt_float
+M.str = std_fmt_str
+M.bool = std_fmt_bool
+M.hex = std_fmt_hex
+M.bin = std_fmt_bin
+M.trim = std_fmt_trim
+M.pad = std_fmt_pad
+M.trunc = std_fmt_trunc
+return M

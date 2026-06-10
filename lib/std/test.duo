@@ -1,0 +1,66 @@
+function std_test_start(msg)
+    io.write(string.format("=== %s ===\n", msg))
+end
+
+function std_test_assert_eq(actual, expected, msg)
+    if actual == expected then
+        io.write(string.format("  PASS: %s\n", msg or ""))
+    else
+        io.write(string.format("  FAIL: %s (expected %s, got %s)\n", msg or "", tostring(expected), tostring(actual)))
+    end
+end
+
+function std_test_assert_ne(actual, not_expected, msg)
+    if actual ~= not_expected then
+        io.write(string.format("  PASS: %s\n", msg or ""))
+    else
+        io.write(string.format("  FAIL: %s (expected not %s)\n", msg or "", tostring(not_expected)))
+    end
+end
+
+function std_test_assert_true(val, msg)
+    if val == true then
+        io.write(string.format("  PASS: %s\n", msg or ""))
+    else
+        io.write(string.format("  FAIL: %s\n", msg or ""))
+    end
+end
+
+function std_test_assert_false(val, msg)
+    if val == false then
+        io.write(string.format("  PASS: %s\n", msg or ""))
+    else
+        io.write(string.format("  FAIL: %s\n", msg or ""))
+    end
+end
+
+function std_test_assert_nil(val, msg)
+    if val == nil then
+        io.write(string.format("  PASS: %s\n", msg or ""))
+    else
+        io.write(string.format("  FAIL: %s (expected nil, got %s)\n", msg or "", tostring(val)))
+    end
+end
+
+function std_test_assert_not_nil(val, msg)
+    if val ~= nil then
+        io.write(string.format("  PASS: %s\n", msg or ""))
+    else
+        io.write(string.format("  FAIL: %s (expected not nil)\n", msg or ""))
+    end
+end
+
+function std_test_done()
+    io.write("=== tests done ===\n")
+end
+
+local M = {}
+M.start = std_test_start
+M.assert_eq = std_test_assert_eq
+M.assert_ne = std_test_assert_ne
+M.assert_true = std_test_assert_true
+M.assert_false = std_test_assert_false
+M.assert_nil = std_test_assert_nil
+M.assert_not_nil = std_test_assert_not_nil
+M.done = std_test_done
+return M
