@@ -475,7 +475,8 @@ pub const CodeGen = struct {
         self.p("#include <netinet/in.h>\n", .{});
         self.p("#include <arpa/inet.h>\n", .{});
         self.p("#include <netdb.h>\n", .{});
-        self.p("#endif\n", .{});        self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
+        self.p("#endif\n", .{});
+        self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
         self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
         self.p("    size_t len = strlen(s);\n", .{});
         self.p("    size_t total = len * (size_t)n;\n", .{});
