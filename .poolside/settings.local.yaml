@@ -12,3 +12,5 @@ tools:
             - head *
             - ./zig-out/bin/duo *
             - ./zig-out/bin/duo dump-c *
+            - awk *
+            - xargs *
