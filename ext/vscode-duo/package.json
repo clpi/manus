@@ -1,0 +1,73 @@
+{
+  "name": "duo",
+  "displayName": "Duo",
+  "description": "Duo language support — syntax highlighting, snippets, and language server integration",
+  "version": "0.1.0",
+  "publisher": "duo-lang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "activationEvents": [
+    "onLanguage:duo"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "duo",
+        "extensions": [
+          ".duo"
+        ],
+        "aliases": [
+          "Duo",
+          "duo"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "duo",
+        "scopeName": "source.duo",
+        "path": "./syntaxes/duo.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "duo",
+        "path": "./snippets/duo.json"
+      }
+    ],
+    "configuration": {
+      "title": "Duo Language Server",
+      "properties": {
+        "duo-lsp.path": {
+          "type": "string",
+          "default": "duo-lsp",
+          "description": "Path to the Duo language server binary."
+        },
+        "duo-lsp.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace level for LSP communication."
+        },
+        "duo-lsp.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Duo language server."
+        }
+      }
+    }
+  },
+  "dependencies": {}
+}

@@ -1,6 +1,5 @@
 [book]
-title = "Duo Language Documentation"
-description = "A Lua-like language that compiles to native C"
+description = "A Lua-like language that compiles to native C with optional static typing"
 authors = ["Chris Pecunies"]
 src = "src"
 

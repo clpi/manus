@@ -3,12 +3,12 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Compiler Usage - Duo Language Documentation</title>
+        <title>Compiler Usage</title>
 
 
         <!-- Custom HTML head -->
 
-        <meta name="description" content="A Lua-like language that compiles to native C">
+        <meta name="description" content="A Lua-like language that compiles to native C with optional static typing">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-b1e3e603.js";
+            window.path_to_searchindex_js = "searchindex-005f88f7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cbb4eca2.js"></script>
@@ -137,7 +137,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Duo Language Documentation</h1>
+                    <h1 class="menu-title"></h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
@@ -185,11 +185,14 @@ zig build
 </code></pre>
 <h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
 <pre><code>duo compile &lt;file&gt;              compile to native binary
-duo run     &lt;file&gt;              compile and run immediately
+duo init    [name]              create build.duo and src/main.duo
+duo build   [target]            build the default or named build.duo target
+duo run     [file|target]       compile and run a file, or run a build target
 duo check   &lt;file&gt;              type-check only
 duo dump-c  &lt;file&gt;              print generated C to stdout
 duo completion &lt;shell&gt;           generate shell completions (bash, zsh, fish, nu)
 duo help                         show help message
+
 </code></pre>
 <h2 id="options"><a class="header" href="#options">Options</a></h2>
 <div class="table-wrapper">
@@ -203,9 +206,9 @@ duo help                         show help message
 <tr><td><code>--cc &lt;path&gt;</code></td><td>C compiler path (default: clang)</td></tr>
 <tr><td><code>--target &lt;triple&gt;</code></td><td>Cross-compilation target</td></tr>
 <tr><td><code>--load-chunk</code></td><td>Compile as shared library for runtime <code>load()</code></td></tr>
-<tr><td><code>--pgo</code></td><td>Enable profile-guided optimization</td></tr>
-<tr><td><code>--shared-memory</code></td><td>Enable WASM shared memory (wasm32-wasi only)</td></tr>
-<tr><td><code>-v, --verbose</code></td><td>Show C compiler warnings</td></tr>
+<tr><td><code>--pgo</code></td><td>Enable profile-guided optimization (two-pass compile)</td></tr>
+<tr><td><code>--shared-memory</code></td><td>Enable WASM shared memory (<code>-matomics -mbulk-memory</code>; wasm32-wasi only)</td></tr>
+<tr><td><code>--lib</code></td><td>Library mode: compile <code>@export</code> functions as WASM exports, skip <code>_start</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -224,6 +227,11 @@ duo help                         show help message
 <h2 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h2>
 <pre><code class="language-bash"># Compile and run
 duo run script.duo
+
+# Create and build a project
+duo init app
+duo build
+duo run
 
 # Compile only
 duo compile script.duo -o my_program
@@ -245,7 +253,7 @@ duo dump-c script.duo
 <tr><td><code>-O0</code></td><td>No optimization</td></tr>
 <tr><td><code>-O1</code></td><td>Basic optimizations</td></tr>
 <tr><td><code>-O2</code></td><td>Standard optimizations</td></tr>
-<tr><td><code>-O3</code></td><td>Aggressive optimizations (default)</td></tr>
+<tr><td><code>-O3</code></td><td>Aggressive optimizations (default, paired with fast-math/LTO/native-code flags)</td></tr>
 </tbody>
 </table>
 </div>

@@ -61,9 +61,15 @@ Compile as a shared library for dynamic loading:
 
 ```bash
 duo compile module.duo --target wasm32-wasi --load-chunk -o module.wasm
+```
 
-# Use with wasmtime component model
-wasmtime module.wasm --invoke main
+## Library Mode (WAST Testing)
+
+Compile with `--lib` to export `@export`-annotated functions and skip the `_start` entry point. This is useful for WASM component testing with WAST files:
+
+```bash
+duo compile module.duo --target wasm32-wasi --lib -o module.wasm
+wasmtime module.wasm --invoke my_exported_function
 ```
 
 ## Shared Memory (Experimental)

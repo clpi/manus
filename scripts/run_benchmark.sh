@@ -4,14 +4,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DUO="$ROOT/zig-out/bin/duo"
 CC="${CC:-clang}"
-CFLAGS="-O3 -Ofast -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections -fdata-sections -Wl,-dead_strip -std=c99 -lm"
+CFLAGS="-O3 -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections -fdata-sections -Wl,-dead_strip -std=c99 -lm"
 export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)}"
 
 cd "$ROOT"
 zig build
 
 # Compile Duo benchmark with PGO (two-pass: instrument, profile, optimise).
-"$DUO" compile --pgo -Ofast examples/benchmark.lua -o /tmp/duo_bench.out &
+"$DUO" compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out &
 DUO_COMP_PID=$!
 
 # Compile reference C benchmark with PGO.

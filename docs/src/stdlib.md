@@ -9,6 +9,10 @@ Modules are imported with `require("std.module")` or the shorthand `req "std.mod
 ```duo
 -- Import modules
 log = req "std.log"
+str = req "std.string"
+num = req "std.math"
+tbl = req "std.table"
+fs = req "std.fs"
 json = req "std.json"
 hash = req "std.hash"
 fmt = req "std.fmt"
@@ -17,6 +21,7 @@ test = req "std.test"
 atomic = req "std.atomic"
 crypto = req "std.crypto"
 memo = req "std.memo"
+build = req "std.build"
 ```
 
 ## Logging Module (`std.log`)
@@ -144,6 +149,100 @@ test = req "std.test"
 test.start("test suite name")
 test.assert_eq(actual, expected, "error message")
 test.done()
+```
+
+## Build Module (`std.build`)
+
+Project build helpers:
+
+```duo
+build = req "std.build"
+
+build.project({ name = "app", version = "0.1.0", default = "app" })
+
+build.exe({
+    name = "app",
+    src = "src/main.duo",
+    out = "zig-out/bin/app",
+    opt = "-O3",
+})
+```
+
+The CLI reads this shape from `build.duo` for `duo build` and `duo run`.
+
+## String Helpers (`std.string`)
+
+Convenience wrappers for common string tasks:
+
+```duo
+str = req "std.string"
+
+str.starts_with("duo-lang", "duo")  -- true
+str.ends_with("duo-lang", "lang")   -- true
+str.contains("duo-lang", "-")       -- true
+str.trim("  duo  ")                 -- "duo"
+parts = str.split("a,b,c", ",")
+joined = str.join(parts, "|")       -- "a|b|c"
+str.replace_all("a-b-c", "-", ":")  -- "a:b:c"
+str.repeat_str("ha", 3)             -- "hahaha"
+lines = str.lines("one\ntwo")
+```
+
+## Math Helpers (`std.math`)
+
+Small numeric helpers:
+
+```duo
+num = req "std.math"
+
+num.clamp(12, 1, 10)        -- 10
+num.min(3, 7)               -- 3
+num.max(3, 7)               -- 7
+num.sign(-4)                -- -1
+num.round(2.6)              -- 3
+num.lerp(0, 10, 0.5)        -- 5
+num.remap(5, 0, 10, 0, 100) -- 50
+num.sum({1, 2, 3})          -- 6
+num.mean({2, 4, 6})         -- 4
+num.is_even(4)              -- true
+num.is_odd(5)               -- true
+```
+
+## Table Helpers (`std.table`)
+
+Table and array helpers:
+
+```duo
+tbl = req "std.table"
+
+xs = {1, 2, 3}
+tbl.len(xs)                         -- 3
+tbl.contains(xs, 2)                 -- true
+tbl.index_of(xs, 3)                 -- 3
+tbl.reverse(xs)                     -- {3, 2, 1}
+tbl.map(xs, fun(v) return v * 2 end)
+tbl.filter(xs, fun(v) return v > 1 end)
+tbl.reduce(xs, fun(acc, v) return acc + v end, 0)
+keys = tbl.keys({a = 1, b = 2})
+values = tbl.values({a = 1, b = 2})
+copy = tbl.clone({a = 1})
+merged = tbl.merge({a = 1}, {b = 2})
+```
+
+## File-System Helpers (`std.fs`)
+
+Simple file helpers built on `io` and `os`:
+
+```duo
+fs = req "std.fs"
+
+fs.write_file("/tmp/example.txt", "one\ntwo\n")
+fs.append_file("/tmp/example.txt", "three\n")
+fs.exists("/tmp/example.txt")       -- true
+text = fs.read_file("/tmp/example.txt")
+lines = fs.read_lines("/tmp/example.txt")
+fs.rename("/tmp/example.txt", "/tmp/example2.txt")
+fs.remove("/tmp/example2.txt")
 ```
 
 ## String Library

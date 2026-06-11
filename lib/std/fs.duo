@@ -1,0 +1,71 @@
+-- std.fs — simple file-system helpers
+
+fun std_fs_exists(path: any): bool
+    if path == nil then return false end
+    f = io.open(path, "r")
+    if f == nil then return false end
+    f:close()
+    true
+end
+
+fun std_fs_read_file(path: any): any
+    f = io.open(path, "r")
+    if f == nil then return "" end
+    data = ""
+    line = f:read()
+    while line ~= nil
+        data = data .. line .. "\n"
+        line = f:read()
+    end
+    f:close()
+    data
+end
+
+fun std_fs_write_file(path: any, data: any): bool
+    f = io.open(path, "w")
+    if f == nil then return false end
+    if data == nil then data = "" end
+    f:write(data)
+    f:close()
+    true
+end
+
+fun std_fs_append_file(path: any, data: any): bool
+    f = io.open(path, "a")
+    if f == nil then return false end
+    if data == nil then data = "" end
+    f:write(data)
+    f:close()
+    true
+end
+
+fun std_fs_read_lines(path: any): any
+    out = {}
+    f = io.open(path, "r")
+    if f == nil then return out end
+    line = f:read()
+    while line ~= nil
+        out[rawlen(out) + 1] = line
+        line = f:read()
+    end
+    f:close()
+    out
+end
+
+fun std_fs_remove(path: any): bool
+    os.remove(path) ~= nil
+end
+
+fun std_fs_rename(old_path: any, new_path: any): bool
+    os.rename(old_path, new_path) ~= nil
+end
+
+M = {}
+M.exists = std_fs_exists
+M.read_file = std_fs_read_file
+M.write_file = std_fs_write_file
+M.append_file = std_fs_append_file
+M.read_lines = std_fs_read_lines
+M.remove = std_fs_remove
+M.rename = std_fs_rename
+M

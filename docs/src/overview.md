@@ -180,4 +180,6 @@ duo compile <file>        # Compile to native binary
 duo run <file>            # Compile and run
 duo check <file>          # Type-check only
 duo dump-c <file>         # Print generated C code
+duo init [name]           # Create a new Duo project
+duo build [target]        # Build from build.duo
 ```

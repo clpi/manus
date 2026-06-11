@@ -18,9 +18,12 @@ The compiler binary is installed to `zig-out/bin/duo`.
 
 ```
 duo compile <file>              compile to native binary
-duo run     <file>              compile and run immediately
+duo init    [name]              create build.duo and src/main.duo
+duo build   [target]            build the default or named build.duo target
+duo run     [file|target]       compile and run a file, or run a build target
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
+duo completion <shell>          generate shell completions (bash, zsh, fish, nu)
 
 Options:
   -o <name>          output binary name
@@ -28,6 +31,9 @@ Options:
   --cc <path>        C compiler (default: clang)
   --target <triple>  cross-compilation target (e.g. wasm32-wasi)
   --load-chunk       compile as shared library for runtime load()
+  --pgo              profile-guided optimisation (two-pass compile)
+  --shared-memory    enable WASM shared memory (wasm32-wasi only)
+  --lib              library mode: export @export functions, skip _start
   -v, --verbose      show C compiler warnings
 ```
 
@@ -89,12 +95,14 @@ Many benchmarks show 0.000000s because Duo's constant-folding and dead-code elim
 Every push runs:
 
 - `zig build` — compiler build
-- `zig build unit-test` — all 111 unit tests
+- `zig build unit-test` — all 345 unit tests
 - `zig build test` — compile-fail tests
-- WASM cross-compilation smoke test
+- WASM compilation smoke test
+- WASM codegen compatibility tests
+- WASI execution tests (wasmtime + wabt)
 - Full benchmark suite (on push to main, macOS runner)
 
-Tagged releases (`v*`) produce a GitHub Release with the `duo` binary.
+Tagged releases (`v*`) produce GitHub Releases with `duo` binaries for Linux and macOS.
 
 ## Benchmark suite (Duo vs C)
 

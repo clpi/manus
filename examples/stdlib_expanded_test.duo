@@ -1,0 +1,36 @@
+s = req "std.string"
+num = req "std.math"
+tbl = req "std.table"
+fs = req "std.fs"
+
+assert(s.starts_with("duo-lang", "duo"), "starts_with")
+assert(s.ends_with("duo-lang", "lang"), "ends_with")
+assert(s.contains("duo-lang", "-"), "contains")
+assert(s.trim("  duo  ") == "duo", "trim")
+parts = s.split("a,b,c", ",")
+assert(rawlen(parts) == 3, "split count")
+assert(s.join(parts, "|") == "a|b|c", "join")
+assert(s.replace_all("a-b-c", "-", ":") == "a:b:c", "replace_all")
+
+assert(num.clamp(12, 1, 10) == 10, "clamp high")
+assert(num.round(2.6) == 3, "round")
+assert(num.remap(5, 0, 10, 0, 100) == 50, "remap")
+assert(num.sum({1, 2, 3}) == 6, "sum")
+assert(num.mean({2, 4, 6}) == 4, "mean")
+
+xs = {1, 2, 3}
+ys = tbl.map(xs, fun(v) return v * 2 end)
+assert(ys[2] == 4, "map")
+zs = tbl.filter(ys, fun(v) return v > 2 end)
+assert(rawlen(zs) == 2, "filter")
+assert(tbl.reduce(xs, fun(acc, v) return acc + v end, 0) == 6, "reduce")
+assert(tbl.contains(xs, 2), "contains")
+assert(tbl.index_of(xs, 3) == 3, "index_of")
+
+tmp = "/tmp/duo_stdlib_expanded_test.txt"
+assert(fs.write_file(tmp, "one\ntwo\n"), "write_file")
+assert(fs.exists(tmp), "exists")
+assert(fs.read_file(tmp) == "one\ntwo\n", "read_file")
+lines = fs.read_lines(tmp)
+assert(rawlen(lines) == 2, "read_lines")
+fs.remove(tmp)

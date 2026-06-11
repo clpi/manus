@@ -1,4 +1,7 @@
--- std.build — build system and environment info
+-- std.build — build system helpers and environment info
+
+_project = { name = "duo-app", version = "0.1.0", default = "app" }
+_targets = {}
 
 fun info(): any
     return {
@@ -30,6 +33,68 @@ fun env(): str
     os.getenv("BUILD_ENV") or "development"
 end
 
+fun project(cfg: any): any
+    if cfg == nil then
+        return _project
+    end
+    if cfg.name ~= nil then _project.name = cfg.name end
+    if cfg.version ~= nil then _project.version = cfg.version end
+    if cfg.default ~= nil then _project.default = cfg.default end
+    _project
+end
+
+fun exe(cfg: any): any
+    if cfg.name == nil then cfg.name = "app" end
+    if cfg.src == nil then cfg.src = "src/main.duo" end
+    if cfg.out == nil then cfg.out = "zig-out/bin/" .. cfg.name end
+    if cfg.opt == nil then cfg.opt = "-O3" end
+    if cfg.target == nil then cfg.target = "native" end
+    cfg.kind = "exe"
+    _targets[#_targets + 1] = cfg
+    cfg
+end
+
+fun lib(cfg: any): any
+    t = exe(cfg)
+    t.kind = "lib"
+    t.lib = true
+    t
+end
+
+fun targets(): any
+    _targets
+end
+
+fun default_target(): str
+    _project.default
+end
+
+fun find(name: str): any
+    for _, t in ipairs(_targets)
+        if t.name == name then
+            return t
+        end
+    end
+    nil
+end
+
+fun command(t: any): str
+    cmd = "duo compile " .. t.src
+    if t.out ~= nil then cmd = cmd .. " -o " .. t.out end
+    if t.opt ~= nil then cmd = cmd .. " " .. t.opt end
+    if t.target ~= nil and t.target ~= "native" then cmd = cmd .. " --target " .. t.target end
+    if t.cc ~= nil then cmd = cmd .. " --cc " .. t.cc end
+    if t.pgo then cmd = cmd .. " --pgo" end
+    if t.shared_memory then cmd = cmd .. " --shared-memory" end
+    if t.load_chunk then cmd = cmd .. " --load-chunk" end
+    if t.lib then cmd = cmd .. " --lib" end
+    cmd
+end
+
+fun clean(): i64
+    os.execute("rm -rf zig-out/bin")
+end
+
 M = {}
 M.info = info
 M.platform = platform
@@ -37,4 +102,12 @@ M.arch = arch
 M.target = target
 M.is_debug = is_debug
 M.env = env
+M.project = project
+M.exe = exe
+M.lib = lib
+M.targets = targets
+M.default_target = default_target
+M.find = find
+M.command = command
+M.clean = clean
 M

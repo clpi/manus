@@ -14,12 +14,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Zig
-        run: |
-          ZIG_TARBALL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
-          curl -fsSL "$ZIG_TARBALL" -o /tmp/zig.tar.xz
-          tar -xJf /tmp/zig.tar.xz -C /tmp
-          ZIG_DIR=$(ls -d /tmp/zig-*linux-* | head -1)
-          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev
 
       - name: Build
         run: zig build
@@ -30,22 +27,20 @@ jobs:
       - name: Compile-fail tests
         run: bash scripts/run_compile_fail_tests.sh
 
-      - name: WASM compilation test
+      - name: WASM compilation smoke test
         run: |
           ./zig-out/bin/duo compile examples/hello.lua --target wasm32-wasi -o /tmp/hello.wasm
           file /tmp/hello.wasm | grep -q "WebAssembly"
           echo "WASM OK"
 
-      - name: WASM codegen compatibility tests
-        run: bash scripts/test_wasm_codegen.sh
-
       - name: Install WASI runtime and WABT
         run: |
-          # wabt provides wasm-validate, wasm-objdump, wasm2wat
           sudo apt-get install -y wabt
-          # wasmtime: the reference WASI runtime
           curl https://wasmtime.dev/install.sh -sSf | bash
           echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      - name: WASM codegen compatibility tests
+        run: bash scripts/test_wasm_codegen.sh
 
       - name: WASI execution tests
         run: bash scripts/test_wasm_execution.sh
@@ -57,12 +52,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Zig
-        run: |
-          ZIG_TARBALL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."aarch64-macos".tarball')
-          curl -fsSL "$ZIG_TARBALL" -o /tmp/zig.tar.xz
-          tar -xJf /tmp/zig.tar.xz -C /tmp
-          ZIG_DIR=$(ls -d /tmp/zig-*macos-* | head -1)
-          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev
 
       - name: Build
         run: zig build
@@ -73,20 +65,32 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: native
+            artifact: duo
+          - os: macos-latest
+            target: native
+            artifact: duo
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Zig
-        run: |
-          ZIG_TARBALL=$(curl -s https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball')
-          curl -fsSL "$ZIG_TARBALL" -o /tmp/zig.tar.xz
-          tar -xJf /tmp/zig.tar.xz -C /tmp
-          ZIG_DIR=$(ls -d /tmp/zig-*linux-* | head -1)
-          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0-dev
 
       - name: Build release binary
         run: zig build -Doptimize=ReleaseFast
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: duo-${{ matrix.os }}
+          path: zig-out/bin/duo
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

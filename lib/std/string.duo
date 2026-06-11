@@ -1,0 +1,123 @@
+-- std.string — string helper utilities
+
+fun std_string_is_empty(s: any): bool
+    s == nil or string.len(s) == 0
+end
+
+fun std_string_starts_with(s: any, prefix: any): bool
+    if s == nil or prefix == nil then return false end
+    string.sub(s, 1, string.len(prefix)) == prefix
+end
+
+fun std_string_ends_with(s: any, suffix: any): bool
+    if s == nil or suffix == nil then return false end
+    n = string.len(suffix)
+    if n == 0 then return true end
+    if n > string.len(s) then return false end
+    string.sub(s, -n, -1) == suffix
+end
+
+fun std_string_contains(s: any, needle: any): bool
+    if s == nil or needle == nil then return false end
+    string.find(s, needle, 1, true) ~= nil
+end
+
+fun std_string_is_space(ch: any): bool
+    ch == " " or ch == "\t" or ch == "\n" or ch == "\r"
+end
+
+fun std_string_trim(s: any): any
+    if s == nil then return "" end
+    first = 1
+    last = string.len(s)
+    while first <= last and std_string_is_space(string.sub(s, first, first))
+        first = first + 1
+    end
+    while last >= first and std_string_is_space(string.sub(s, last, last))
+        last = last - 1
+    end
+    if last < first then return "" end
+    string.sub(s, first, last)
+end
+
+fun std_string_ltrim(s: any): any
+    if s == nil then return "" end
+    first = 1
+    last = string.len(s)
+    while first <= last and std_string_is_space(string.sub(s, first, first))
+        first = first + 1
+    end
+    string.sub(s, first)
+end
+
+fun std_string_rtrim(s: any): any
+    if s == nil then return "" end
+    last = string.len(s)
+    while last >= 1 and std_string_is_space(string.sub(s, last, last))
+        last = last - 1
+    end
+    if last < 1 then return "" end
+    string.sub(s, 1, last)
+end
+
+fun std_string_split(s: any, sep: any): any
+    out = {}
+    if s == nil then return out end
+    if sep == nil or sep == "" then
+        for i = 1, string.len(s)
+            out[rawlen(out) + 1] = string.sub(s, i, i)
+        end
+        return out
+    end
+    rest = s
+    while true
+        pos = string.find(rest, sep)
+        if pos == nil then
+            out[rawlen(out) + 1] = rest
+            break
+        end
+        out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
+        rest = string.sub(rest, pos + string.len(sep))
+    end
+    out
+end
+
+fun std_string_join(parts: any, sep: any): any
+    if sep == nil then sep = "" end
+    table.concat(parts, sep)
+end
+
+fun std_string_replace_all(s: any, needle: any, repl: any): any
+    if s == nil then return "" end
+    if needle == nil or needle == "" then return s end
+    if repl == nil then repl = "" end
+    parts = std_string_split(s, needle)
+    table.concat(parts, repl)
+end
+
+fun std_string_repeat_str(s: any, n: any): any
+    if s == nil then return "" end
+    if n == nil or n <= 0 then return "" end
+    string.rep(s, n)
+end
+
+fun std_string_lines(s: any): any
+    if s == nil or s == "" then return {} end
+    std_string_split(s, "\n")
+end
+
+M = {}
+M.is_empty = std_string_is_empty
+M.starts_with = std_string_starts_with
+M.ends_with = std_string_ends_with
+M.contains = std_string_contains
+M.is_space = std_string_is_space
+M.trim = std_string_trim
+M.ltrim = std_string_ltrim
+M.rtrim = std_string_rtrim
+M.split = std_string_split
+M.join = std_string_join
+M.replace_all = std_string_replace_all
+M.repeat_str = std_string_repeat_str
+M.lines = std_string_lines
+M

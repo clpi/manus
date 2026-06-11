@@ -1,0 +1,128 @@
+-- std.table — table and array helper utilities
+
+fun std_table_len(t: any): any
+    if t == nil then return 0 end
+    rawlen(t)
+end
+
+fun std_table_keys(t: any): any
+    out = {}
+    if t == nil then return out end
+    for k, _ in pairs(t)
+        out[rawlen(out) + 1] = k
+    end
+    out
+end
+
+fun std_table_values(t: any): any
+    out = {}
+    if t == nil then return out end
+    for _, v in pairs(t)
+        out[rawlen(out) + 1] = v
+    end
+    out
+end
+
+fun std_table_clone(t: any): any
+    out = {}
+    if t == nil then return out end
+    for k, v in pairs(t)
+        out[k] = v
+    end
+    out
+end
+
+fun std_table_merge(a: any, b: any): any
+    out = std_table_clone(a)
+    if b ~= nil then
+        for k, v in pairs(b)
+            out[k] = v
+        end
+    end
+    out
+end
+
+fun std_table_contains(list: any, value: any): bool
+    if list == nil then return false end
+    i = 1
+    while i <= rawlen(list)
+        v = list[i]
+        if v == value then return true end
+        i = i + 1
+    end
+    false
+end
+
+fun std_table_index_of(list: any, value: any): any
+    if list == nil then return 0 end
+    i = 1
+    while i <= rawlen(list)
+        v = list[i]
+        if v == value then return i end
+        i = i + 1
+    end
+    0
+end
+
+fun std_table_reverse(list: any): any
+    out = {}
+    if list == nil then return out end
+    i = rawlen(list)
+    while i >= 1
+        out[rawlen(out) + 1] = list[i]
+        i = i - 1
+    end
+    out
+end
+
+fun std_table_map(list: any, fn: any): any
+    out = {}
+    if list == nil then return out end
+    i = 1
+    while i <= rawlen(list)
+        v = list[i]
+        out[i] = fn(v, i)
+        i = i + 1
+    end
+    out
+end
+
+fun std_table_filter(list: any, fn: any): any
+    out = {}
+    if list == nil then return out end
+    i = 1
+    while i <= rawlen(list)
+        v = list[i]
+        if fn(v, i) then
+            out[rawlen(out) + 1] = v
+        end
+        i = i + 1
+    end
+    out
+end
+
+fun std_table_reduce(list: any, fn: any, init: any): any
+    acc = init
+    if list == nil then return acc end
+    i = 1
+    while i <= rawlen(list)
+        v = list[i]
+        acc = fn(acc, v, i)
+        i = i + 1
+    end
+    acc
+end
+
+M = {}
+M.len = std_table_len
+M.keys = std_table_keys
+M.values = std_table_values
+M.clone = std_table_clone
+M.merge = std_table_merge
+M.contains = std_table_contains
+M.index_of = std_table_index_of
+M.reverse = std_table_reverse
+M.map = std_table_map
+M.filter = std_table_filter
+M.reduce = std_table_reduce
+M

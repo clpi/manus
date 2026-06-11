@@ -1,0 +1,16 @@
+[language-server.duo-lsp]
+command = "duo-lsp"
+
+[[language]]
+name = "duo"
+scope = "source.duo"
+file-types = ["duo"]
+roots = ["build.duo"]
+comment-token = "--"
+injection-regex = "duo"
+indent = { tab-width = 4, unit = "    " }
+language-servers = ["duo-lsp"]
+
+[[grammar]]
+name = "duo"
+source = { path = "../tree-sitter-duo" }

@@ -17,11 +17,14 @@ zig build
 
 ```
 duo compile <file>              compile to native binary
-duo run     <file>              compile and run immediately
+duo init    [name]              create build.duo and src/main.duo
+duo build   [target]            build the default or named build.duo target
+duo run     [file|target]       compile and run a file, or run a build target
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
 duo completion <shell>           generate shell completions (bash, zsh, fish, nu)
 duo help                         show help message
+
 ```
 
 ## Options
@@ -33,9 +36,10 @@ duo help                         show help message
 | `--cc <path>` | C compiler path (default: clang) |
 | `--target <triple>` | Cross-compilation target |
 | `--load-chunk` | Compile as shared library for runtime `load()` |
-| `--pgo` | Enable profile-guided optimization |
-| `--shared-memory` | Enable WASM shared memory (wasm32-wasi only) |
-| `-v, --verbose` | Show C compiler warnings |
+| `--pgo` | Enable profile-guided optimization (two-pass compile) |
+| `--shared-memory` | Enable WASM shared memory (`-matomics -mbulk-memory`; wasm32-wasi only) |
+| `--lib` | Library mode: compile `@export` functions as WASM exports, skip `_start` |
+
 
 ## Target Triples
 
@@ -49,6 +53,11 @@ duo help                         show help message
 ```bash
 # Compile and run
 duo run script.duo
+
+# Create and build a project
+duo init app
+duo build
+duo run
 
 # Compile only
 duo compile script.duo -o my_program
@@ -68,7 +77,7 @@ duo dump-c script.duo
 | `-O0` | No optimization |
 | `-O1` | Basic optimizations |
 | `-O2` | Standard optimizations |
-| `-O3` | Aggressive optimizations (default) |
+| `-O3` | Aggressive optimizations (default, paired with fast-math/LTO/native-code flags) |
 
 ## Profile-Guided Optimization
 

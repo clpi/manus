@@ -30,7 +30,7 @@ Optional passes between semantic analysis and codegen:
 
 ## Status
 
-Duo is actively developed and used for high-performance computing tasks. The language is in active development with evolving features.
+Duo is actively developed with 345+ unit tests covering the lexer, parser, semantic analyzer, monomorphizer, ARC pass, async lowering, and property-based tests. The compiler produces native C and WebAssembly outputs.
 
 ## Quick Start
 

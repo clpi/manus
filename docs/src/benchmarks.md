@@ -10,6 +10,9 @@ zig build bench
 
 # Cross-language comparison (Duo + C + Lua + LuaJIT)
 zig build cross-bench
+
+# WASM runtime benchmarks (wasmtime, wasmer, wasm3, etc.)
+zig build wasm-bench
 ```
 
 ## Benchmark Suite

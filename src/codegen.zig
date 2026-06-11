@@ -728,7 +728,7 @@ pub const CodeGen = struct {
     // the first time the record type is referenced.
     fn ensure_instantiated_decl(self: *CodeGen, rt: RT) E!void {
         const inst = rt.instantiated;
-        std.debug.print("ensure_instantiated_decl!\n", .{}); if (self.emitted_specs.contains(inst.specialization_key)) return;
+        if (self.emitted_specs.contains(inst.specialization_key)) return;
         try self.emitted_specs.put(self.alloc, inst.specialization_key, {});
 
         if (inst.base.* != .enum_type and inst.base.* != .@"struct") return;
@@ -1496,6 +1496,8 @@ pub const CodeGen = struct {
             self.p("lua_val_from_str({s})", .{c_expr});
         } else if (rt == .bool) {
             self.p("lua_val_from_bool({s})", .{c_expr});
+        } else if (rt == .any) {
+            self.p("{s}", .{c_expr});
         } else if (rt.is_numeric()) {
             self.p("lua_val_from_num((double)({s}))", .{c_expr});
         } else if (self.enum_name_of(rt)) |ename| {
@@ -3380,6 +3382,12 @@ pub const CodeGen = struct {
     }
 
     fn emit_as_lua_value(self: *CodeGen, expr: *const ast.Expr) E!void {
+        if (expr.* == .name) {
+            if (self.vararg_funcs.get(expr.name.ident)) |argv_cname| {
+                self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
+                return;
+            }
+        }
         if (expr.* == .string_lit) {
             const hash = calc_lua_hash(expr.string_lit.val);
             self.p("lua_val_from_literal(\"", .{});
@@ -3400,12 +3408,24 @@ pub const CodeGen = struct {
             },
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
                 self.p("lua_val_from_int((int64_t)(", .{});
-                try self.emit_expr(expr);
+                if (self.expr_emits_lua_value(expr)) {
+                    self.p("lua_to_num(", .{});
+                    try self.emit_expr(expr);
+                    self.p(")", .{});
+                } else {
+                    try self.emit_expr(expr);
+                }
                 self.p("))", .{});
             },
             .f32, .f64 => {
                 self.p("lua_val_from_num((double)(", .{});
-                try self.emit_expr(expr);
+                if (self.expr_emits_lua_value(expr)) {
+                    self.p("lua_to_num(", .{});
+                    try self.emit_expr(expr);
+                    self.p(")", .{});
+                } else {
+                    try self.emit_expr(expr);
+                }
                 self.p("))", .{});
             },
             .bool => {
@@ -3531,7 +3551,7 @@ pub const CodeGen = struct {
             },
             .call => |c| {
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
-                if (try self.maybe_emit_math_call(c.func, c.args)) return;
+                if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
@@ -4143,7 +4163,8 @@ pub const CodeGen = struct {
         return true;
     }
 
-    fn maybe_emit_math_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+    fn maybe_emit_math_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        if (!result_rt.is_numeric()) return false;
         if (func.* != .field) return false;
         const f = &func.field;
         if (f.obj.* != .name) return false;
@@ -4153,12 +4174,12 @@ pub const CodeGen = struct {
         const lua_names = [_][]const u8{
             "sqrt", "abs",  "floor", "ceil", "sin", "cos",  "tan",
             "asin", "acos", "atan",  "exp",  "log", "fmod", "max",
-            "min",
+            "min",  "pow",
         };
         const c_names = [_][]const u8{
             "sqrt", "fabs", "floor", "ceil", "sin", "cos",  "tan",
             "asin", "acos", "atan",  "exp",  "log", "fmod", "fmax",
-            "fmin",
+            "fmin", "pow",
         };
         for (lua_names, c_names) |ln, cn| {
             if (std.mem.eql(u8, fname, ln)) {
@@ -4169,6 +4190,10 @@ pub const CodeGen = struct {
                     if (at.is_integer()) {
                         self.p("(double)(", .{});
                         try self.emit_expr(arg);
+                        self.p(")", .{});
+                    } else if (at == .any or self.expr_emits_lua_value(arg)) {
+                        self.p("lua_to_num(", .{});
+                        try self.emit_as_lua_value(arg);
                         self.p(")", .{});
                     } else {
                         try self.emit_expr(arg);
@@ -4201,7 +4226,7 @@ pub const CodeGen = struct {
             }
             self.p(")", .{});
             return true;
-        } else if (std.mem.eql(u8, name, "require")) {
+        } else if (std.mem.eql(u8, name, "require") or std.mem.eql(u8, name, "req")) {
             self.p("lua_require(", .{});
             if (args.len > 0) {
                 try self.emit_as_lua_value(args[0]);
@@ -4574,10 +4599,20 @@ pub const CodeGen = struct {
                 self.p(" - 1]))", .{});
                 return true;
             }
+            if (result_rt.is_integer()) {
+                self.p("((int64_t)lua_to_num(lua_str_byte(", .{});
+                try self.emit_as_lua_value(args[0]);
+                self.p(", ", .{});
+                try self.emit_as_lua_value(args[1]);
+                self.p(", ", .{});
+                if (args.len > 2) try self.emit_as_lua_value(args[2]) else self.p("lua_val_nil()", .{});
+                self.p(")))", .{});
+                return true;
+            }
             return false;
         }
         if (std.mem.eql(u8, fname, "rep") and result_rt == .str) {
-            if (args.len < 2 or args.len > 2) return false;
+            if (args.len < 2 or args.len > 3) return false;
             const pat_t = self.expr_type(args[0]);
             const cnt_t = self.expr_type(args[1]);
             if ((pat_t == .str or args[0].* == .string_lit) and cnt_t.is_integer()) {
@@ -5155,7 +5190,8 @@ pub const CodeGen = struct {
     fn collect_require_names(self: *CodeGen, expr: *const ast.Expr, names: *std.ArrayList([]const u8)) std.mem.Allocator.Error!void {
         switch (expr.*) {
             .call => |c| {
-                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "require") and
+                if (c.func.* == .name and
+                    (std.mem.eql(u8, c.func.name.ident, "require") or std.mem.eql(u8, c.func.name.ident, "req")) and
                     c.args.len == 1 and c.args[0].* == .string_lit)
                 {
                     try names.append(self.alloc, c.args[0].string_lit.val);
@@ -5432,7 +5468,17 @@ pub const CodeGen = struct {
                 },
             }
         }
-        self.pl("return lua_val_nil();", .{});
+        if (submod.body.tail_expr) |expr| {
+            self.ind();
+            self.p("return ", .{});
+            self.emit_as_lua_value(expr) catch |e| {
+                std.debug.print("emit_embedded_module: tail expr emit failed: {}\n", .{e});
+                return false;
+            };
+            self.p(";\n", .{});
+        } else {
+            self.pl("return lua_val_nil();", .{});
+        }
         self.indent = 0;
         self.current_ret = prev_ret;
         self.closure_ctx = prev_ctx;
@@ -7306,7 +7352,12 @@ const duo_runtime =
     \\    else if (strcmp(name, "os") == 0) mod = os;
     \\    else if (strcmp(name, "jit") == 0) mod = jit;
     \\    else if (strcmp(name, "ffi") == 0) mod = ffi;
-    \\    else mod = lua_table_get(duo_modules, name_val);
+    \\    else {
+    \\        mod = lua_table_get(duo_modules, name_val);
+    \\        if (mod.type == VAL_FUNC || mod.type == VAL_CLOSURE) {
+    \\            mod = lua_invoke(mod, 0, NULL);
+    \\        }
+    \\    }
     \\    if (mod.type == VAL_NIL) {
     \\        lua_Value path = lua_package_searchpath(name_val,
     \\            lua_table_get_raw(package, lua_val_from_str("path")),

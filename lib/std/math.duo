@@ -1,0 +1,79 @@
+-- std.math — numeric helper utilities
+
+fun std_math_clamp(x: any, lo: any, hi: any): any
+    if x < lo then return lo end
+    if x > hi then return hi end
+    x
+end
+
+fun std_math_min(a: any, b: any): any
+    if a < b then return a end
+    b
+end
+
+fun std_math_max(a: any, b: any): any
+    if a > b then return a end
+    b
+end
+
+fun std_math_sign(x: any): i64
+    if x > 0 then return 1 end
+    if x < 0 then return -1 end
+    0
+end
+
+fun std_math_round(x: any): i64
+    if x >= 0 then
+        return math.floor(x + 0.5)
+    end
+    return 0 - math.floor((0 - x) + 0.5)
+end
+
+fun std_math_lerp(a: any, b: any, t: any): any
+    a + (b - a) * t
+end
+
+fun std_math_remap(...args): any
+    x = args[1]
+    in_min = args[2]
+    in_max = args[3]
+    out_min = args[4]
+    out_max = args[5]
+    if in_max == in_min then return out_min end
+    out_min + (x - in_min) * (out_max - out_min) / (in_max - in_min)
+end
+
+fun std_math_sum(xs: any): any
+    total = 0
+    for _, v in ipairs(xs)
+        total = total + v
+    end
+    total
+end
+
+fun std_math_mean(xs: any): any
+    if xs == nil or rawlen(xs) == 0 then return 0 end
+    std_math_sum(xs) / rawlen(xs)
+end
+
+fun std_math_is_even(n: i64): bool
+    n % 2 == 0
+end
+
+fun std_math_is_odd(n: i64): bool
+    n % 2 ~= 0
+end
+
+M = {}
+M.clamp = std_math_clamp
+M.min = std_math_min
+M.max = std_math_max
+M.sign = std_math_sign
+M.round = std_math_round
+M.lerp = std_math_lerp
+M.remap = std_math_remap
+M.sum = std_math_sum
+M.mean = std_math_mean
+M.is_even = std_math_is_even
+M.is_odd = std_math_is_odd
+M

@@ -3,12 +3,12 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Standard Library - Duo Language Documentation</title>
+        <title>Standard Library</title>
 
 
         <!-- Custom HTML head -->
 
-        <meta name="description" content="A Lua-like language that compiles to native C">
+        <meta name="description" content="A Lua-like language that compiles to native C with optional static typing">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-b1e3e603.js";
+            window.path_to_searchindex_js = "searchindex-005f88f7.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-cbb4eca2.js"></script>
@@ -137,7 +137,7 @@
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Duo Language Documentation</h1>
+                    <h1 class="menu-title"></h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
@@ -188,6 +188,7 @@ test = req "std.test"
 atomic = req "std.atomic"
 crypto = req "std.crypto"
 memo = req "std.memo"
+build = req "std.build"
 </code></pre>
 <h2 id="logging-module-stdlog"><a class="header" href="#logging-module-stdlog">Logging Module (<code>std.log</code>)</a></h2>
 <p>Logging functions:</p>
@@ -280,6 +281,20 @@ test.start("test suite name")
 test.assert_eq(actual, expected, "error message")
 test.done()
 </code></pre>
+<h2 id="build-module-stdbuild"><a class="header" href="#build-module-stdbuild">Build Module (<code>std.build</code>)</a></h2>
+<p>Project build helpers:</p>
+<pre><code class="language-duo">build = req "std.build"
+
+build.project({ name = "app", version = "0.1.0", default = "app" })
+
+build.exe({
+    name = "app",
+    src = "src/main.duo",
+    out = "zig-out/bin/app",
+    opt = "-O3",
+})
+</code></pre>
+<p>The CLI reads this shape from <code>build.duo</code> for <code>duo build</code> and <code>duo run</code>.</p>
 <h2 id="string-library"><a class="header" href="#string-library">String Library</a></h2>
 <p>Lua-compatible string functions:</p>
 <pre><code class="language-duo">-- Length

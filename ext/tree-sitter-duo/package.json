@@ -1,0 +1,22 @@
+{
+  "name": "tree-sitter-duo",
+  "version": "0.1.0",
+  "description": "Duo grammar for tree-sitter",
+  "main": "src/parser.c",
+  "types": "src/parser.c",
+  "keywords": ["parser", "tree-sitter", "duo"],
+  "license": "MIT",
+  "dependencies": {
+    "nan": "^2.18.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.duo",
+      "file-types": ["duo"],
+      "injection-regex": "^duo$"
+    }
+  ]
+}
