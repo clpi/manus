@@ -488,13 +488,13 @@ pub const CodeGen = struct {
         self.p("    return out;\n", .{});
         self.p("}}\n", .{});
         // Floor division and floor modulo for typed int64 (Lua // and % semantics)
-        self.p("static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
+        self.p("__attribute__((always_inline)) static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
         self.p("    int64_t q = a / b, r = a % b;\n", .{});
-        self.p("    return q - ((r != 0) & ((a ^ b) < 0));\n", .{});
+        self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? q : (q - ((r != 0) & ((a ^ b) < 0)));\n", .{});
         self.p("}}\n", .{});
-        self.p("static inline int64_t lua_imod_i64(int64_t a, int64_t b) {{\n", .{});
+        self.p("__attribute__((always_inline)) static inline int64_t lua_imod_i64(int64_t a, int64_t b) {{\n", .{});
         self.p("    int64_t r = a % b;\n", .{});
-        self.p("    return r + (((r != 0) & ((a ^ b) < 0)) ? b : 0);\n", .{});
+        self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? r : (r + (((r != 0) & ((a ^ b) < 0)) ? b : 0));\n", .{});
         self.p("}}\n", .{});
         self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
@@ -3864,12 +3864,18 @@ pub const CodeGen = struct {
                         },
                         .idiv => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                // Lua floor division via runtime helper
-                                self.p("lua_idiv_i64((int64_t)(", .{});
-                                try self.emit_expr(b.lhs);
-                                self.p("), (int64_t)(", .{});
-                                try self.emit_expr(b.rhs);
-                                self.p("))", .{});
+                                // Fast path: direct C division when divisor is a positive literal
+                                if (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0) {
+                                    self.p("((int64_t)(", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p(") / {d})", .{b.rhs.int_lit.val});
+                                } else {
+                                    self.p("lua_idiv_i64((int64_t)(", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p("), (int64_t)(", .{});
+                                    try self.emit_expr(b.rhs);
+                                    self.p("))", .{});
+                                }
                             } else {
                                 var buf: [128]u8 = undefined;
                                 const t = self.expr_type(expr);
@@ -3882,12 +3888,18 @@ pub const CodeGen = struct {
                         },
                         .mod => {
                             if (lt.is_integer() and rt.is_integer()) {
-                                // Lua modulo via runtime helper (same sign as b)
-                                self.p("lua_imod_i64((int64_t)(", .{});
-                                try self.emit_expr(b.lhs);
-                                self.p("), (int64_t)(", .{});
-                                try self.emit_expr(b.rhs);
-                                self.p("))", .{});
+                                // Fast path: direct C modulo when divisor is a positive literal
+                                if (b.rhs.* == .int_lit and b.rhs.int_lit.val > 0) {
+                                    self.p("((int64_t)(", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p(") % {d})", .{b.rhs.int_lit.val});
+                                } else {
+                                    self.p("lua_imod_i64((int64_t)(", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p("), (int64_t)(", .{});
+                                    try self.emit_expr(b.rhs);
+                                    self.p("))", .{});
+                                }
                             } else {
                                 var buf: [128]u8 = undefined;
                                 const t = self.expr_type(expr);
@@ -4599,6 +4611,20 @@ pub const CodeGen = struct {
                     }
                     return true;
                 }
+            }
+            // 2. Handle std.xxx.yyy() — Duo standard library submodules
+            if (inner.obj.* == .name and std.mem.eql(u8, inner.obj.name.ident, "std")) {
+                const submod = inner.field;
+                const fnname = f.field;
+                // std.mem functions
+                if (std.mem.eql(u8, submod, "mem")) {
+                    if (std.mem.eql(u8, fnname, "page_size")) { self.p("4096", .{}); return true; }
+                    if (std.mem.eql(u8, fnname, "arena_new")) { self.p("lua_tbl_new()", .{}); return true; }
+                    if (std.mem.eql(u8, fnname, "pool_new")) { self.p("lua_tbl_new()", .{}); return true; }
+                    if (std.mem.eql(u8, fnname, "stack_new")) { self.p("lua_tbl_new()", .{}); return true; }
+                }
+                // std.meta functions — fall through to lua_invoke for now
+                // std.wasm.wasi functions — fall through to lua_invoke for now
             }
         }
 

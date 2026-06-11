@@ -199,6 +199,55 @@ pub const Sema = struct {
     /// When true, the current function has the @nopanic attribute.
     current_nopanic: bool = false,
 
+    /// Standard library function names that are known built-in globals.
+    fn is_builtin_global(_: *const Sema, name: []const u8) bool {
+        // Lua standard library globals
+        if (std.mem.eql(u8, name, "string") or
+            std.mem.eql(u8, name, "table") or
+            std.mem.eql(u8, name, "math") or
+            std.mem.eql(u8, name, "io") or
+            std.mem.eql(u8, name, "os") or
+            std.mem.eql(u8, name, "coroutine") or
+            std.mem.eql(u8, name, "package") or
+            std.mem.eql(u8, name, "debug") or
+            std.mem.eql(u8, name, "utf8") or
+            std.mem.eql(u8, name, "bit") or
+            std.mem.eql(u8, name, "arg") or
+            std.mem.eql(u8, name, "jit") or
+            std.mem.eql(u8, name, "ffi"))
+            return true;
+        // Duo standard library namespace
+        if (std.mem.eql(u8, name, "std")) return true;
+        // Lua built-in functions
+        if (std.mem.eql(u8, name, "print") or
+            std.mem.eql(u8, name, "assert") or
+            std.mem.eql(u8, name, "error") or
+            std.mem.eql(u8, name, "ipairs") or
+            std.mem.eql(u8, name, "pairs") or
+            std.mem.eql(u8, name, "next") or
+            std.mem.eql(u8, name, "pcall") or
+            std.mem.eql(u8, name, "xpcall") or
+            std.mem.eql(u8, name, "select") or
+            std.mem.eql(u8, name, "tostring") or
+            std.mem.eql(u8, name, "tonumber") or
+            std.mem.eql(u8, name, "type") or
+            std.mem.eql(u8, name, "rawget") or
+            std.mem.eql(u8, name, "rawset") or
+            std.mem.eql(u8, name, "rawlen") or
+            std.mem.eql(u8, name, "rawget") or
+            std.mem.eql(u8, name, "rawequal") or
+            std.mem.eql(u8, name, "setmetatable") or
+            std.mem.eql(u8, name, "getmetatable") or
+            std.mem.eql(u8, name, "collectgarbage") or
+            std.mem.eql(u8, name, "load") or
+            std.mem.eql(u8, name, "loadfile") or
+            std.mem.eql(u8, name, "dofile") or
+            std.mem.eql(u8, name, "require") or
+            std.mem.eql(u8, name, "req"))
+            return true;
+        return false;
+    }
+
     pub fn init(alloc: Allocator) Sema {
         return .{
             .alloc = alloc,
@@ -681,7 +730,7 @@ pub const Sema = struct {
                     }
                     return sym.typ;
                 }
-                if (self.scope.needs_explicit_global()) {
+                if (self.scope.needs_explicit_global() and !self.is_builtin_global(n.ident)) {
                     self.err(n.loc, "use of undeclared global '{s}'", .{n.ident});
                     return .any;
                 }
