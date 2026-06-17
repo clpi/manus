@@ -16,9 +16,12 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
   - [x] `unop` typing in `expr_type`: `not`→bool, `-x`/`~x`/`#x` stay native when the
     operand is native (`src/codegen.zig:367`). Previously every unary result was `.any`,
     boxing downstream consumers (`arr[-i]`, `(-x)+y`, `#s == n`).
-  - [ ] **Field access** (`.field`): `expr_type` returns `.any` for `rec.f` even on a
-    typed struct/record. Resolve the field's declared type from the struct's
-    `table_type`/`@"struct"` (`src/types.zig:54,68`) and return it.
+  - [x] **Field access** (`.field`): structural fallback in `expr_type` resolving a
+    field's type from the object's `table_type` when `type_map` misses
+    (`src/codegen.zig:428`). The common case (sema-typed record bindings) already
+    produced native `obj.field`; this closes the gap for monomorphized/generic bodies
+    where `type_map` is keyed on the unspecialized expr. Still TODO: named `.@"struct"`
+    field lookup (needs a name→fields registry, not just inline `table_type`).
   - [ ] **Builtin call results**: `expr_type` only types mono-specialized name calls
     (`:375`). Type known stdlib/math builtins (`math.floor`/`math.sqrt`/`math.abs` → f64
     or i64, `string.len` → i64, etc.) so chained math stays native.
@@ -56,6 +59,14 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
   vanish for non-async code; frames should only hold genuinely live captures/defers.
 - [ ] **Inline common math/numeric primitives.** Promote the most common kernel patterns
   (currently special-cased) into general lowering rules so ordinary code benefits.
+
+## Known correctness bugs (found while profiling)
+
+- [ ] **Record-typed function params break the `__lua` wrapper.** A `fun f(p: {x:i64,...})`
+  generates `dist__lua(lua_Value _a0)` with `lua_Value _p0 = _a0; int64_t _r = dist(_p0);`
+  — passing a `lua_Value` where the C struct param is expected, which fails to compile.
+  Repro: `fun dist(p: {x:i64,y:i64}): i64 ... end`. The dynamic-entry wrapper needs to
+  unbox the record (or skip generating `__lua` for non-native param types).
 
 ## Lower priority but useful
 

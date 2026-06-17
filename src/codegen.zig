@@ -425,7 +425,21 @@ pub const CodeGen = struct {
                 .compile => {},
             }
         }
-        return self.type_map.get(e) orelse .any;
+        if (self.type_map.get(e)) |t| return t;
+        // Field access on a statically-typed record: resolve the field's type
+        // structurally when sema didn't record it (e.g. inside monomorphized
+        // generic bodies, where type_map is keyed on the unspecialized expr).
+        // Strictly additive — only runs when type_map has no entry, so it can
+        // only turn an `.any` fallback into a concrete native type.
+        if (e.* == .field) {
+            const ot = self.expr_type(e.field.obj);
+            if (ot == .table_type) {
+                for (ot.table_type.fields) |fld| {
+                    if (std.mem.eql(u8, fld.name, e.field.field)) return fld.typ;
+                }
+            }
+        }
+        return .any;
     }
 
     fn resolve_type(self: *CodeGen, te: ast.TypeExpr) RT {
