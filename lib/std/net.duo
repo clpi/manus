@@ -13,7 +13,7 @@ fun parse_url(url: str): any
         scheme = "https"
         rest = string.sub(rest, 9)
     end
-    default_port = (scheme == "https") and 443 or 80
+    if scheme == "https" then default_port = 443 else default_port = 80 end
     host = rest
     path = "/"
     slash_pos = string.find(rest, "/")
@@ -41,8 +41,10 @@ end
 
 -- HTTP POST via curl (fallback)
 fun http_post(url: str, body: str, content_type: str): str
-    ct = content_type or "application/x-www-form-urlencoded"
-    escaped = string.gsub(body or "", "'", "'\\''")
+    ct = content_type
+    if ct == nil then ct = "application/x-www-form-urlencoded" end
+    if body == nil then body = "" end
+    escaped = string.gsub(body, "'", "'\\''")
     cmd = "curl -sL --max-time 30 -X POST"
         .. " -H 'Content-Type: " .. ct .. "'"
         .. " --data '" .. escaped .. "' -- " .. url
@@ -72,37 +74,40 @@ fun http_request(method: str, url: str, body: str, headers: any): any
     f:close()
     status = tonumber(string["match"](raw, "HTTP/%d+%.%d+ (%d+)")) or 0
     sep = string.find(raw, "\r\n\r\n", 1, true)
-    resp_body = sep and string.sub(raw, sep + 4) or raw
-    {body = resp_body, status = status}
+    resp_b = raw
+    if sep then
+        resp_b = string.sub(raw, sep + 4)
+    end
+    {body = resp_b, status = status}
 end
 
 -- Raw TCP connect — stub (real impl via codegen interception when var = "net")
-fun connect(host: str, port: i64): any
+fun std_net_connect(host: str, port: i64): any
     nil  -- intercepted: duo_net_tcp_connect(host, port)
 end
 
 -- TCP listen — stub
-fun listen(host: str, port: i64, backlog: i64): any
+fun std_net_listen(host: str, port: i64, backlog: i64): any
     nil  -- intercepted: duo_net_tcp_listen(host, port, backlog)
 end
 
 -- TCP accept — stub
-fun accept(srv_fd: any): any
+fun std_net_accept(srv_fd: any): any
     nil  -- intercepted: duo_net_tcp_accept(srv_fd)
 end
 
 -- TCP send — stub
-fun send(fd: any, data: str): i64
-    -1   -- intercepted: duo_net_tcp_send(fd, data)
+fun std_net_send(fd: any, data: str): i64
+    0 - 1   -- intercepted: duo_net_tcp_send(fd, data)
 end
 
 -- TCP recv — stub
-fun recv(fd: any, maxlen: i64): any
-    nil  -- intercepted: duo_net_tcp_recv(fd, maxlen)
+fun std_net_recv(fd: any, maxlen: i64): any
+    nil     -- intercepted: duo_net_tcp_recv(fd, maxlen)
 end
 
 -- TCP close — stub
-fun close(fd: any): void
+fun std_net_close(fd: any): void
     -- intercepted: duo_net_tcp_close(fd)
 end
 
@@ -113,7 +118,7 @@ end
 
 -- UDP sendto — stub
 fun udp_sendto(fd: any, data: str, host: str, port: i64): i64
-    -1   -- intercepted: duo_net_udp_sendto(fd, data, host, port)
+    0 - 1   -- intercepted: duo_net_udp_sendto(fd, data, host, port)
 end
 
 -- UDP recvfrom — stub
@@ -124,16 +129,18 @@ end
 -- Simple blocking HTTP server (requires native socket support via codegen path)
 -- handler(method, path, raw_request) -> response_body string
 fun http_serve(port: i64, handler: any): void
-    srv = listen("0.0.0.0", port, 128)
+    srv = std_net_listen("0.0.0.0", port, 128)
     if srv == nil then
         io.write("net.http_serve: listen failed on port " .. tostring(port) .. "\n")
     end
     io.write("net: listening on :" .. tostring(port) .. "\n")
     while true
-        cli = accept(srv)
+        cli = std_net_accept(srv)
         if cli == nil then break end
-        raw = recv(cli, 16384)
+        raw = std_net_recv(cli, 16384)
         if raw ~= nil then
+            method = ""
+            req_path = ""
             method, req_path = string["match"](raw, "^(%u+) (/[^ ]*)")
             if method == nil then method = "GET" end
             if req_path == nil then req_path = "/" end
@@ -143,24 +150,24 @@ fun http_serve(port: i64, handler: any): void
                 .. "Content-Length: " .. tostring(#resp_body) .. "\r\n"
                 .. "Connection: close\r\n\r\n"
                 .. resp_body
-            send(cli, response)
+            std_net_send(cli, response)
         end
-        close(cli)
+        std_net_close(cli)
     end
-    close(srv)
+    std_net_close(srv)
 end
 
 M = {}
-M.parse_url    = parse_url
-M.http_get     = http_get
-M.http_post    = http_post
+M.parse_url = parse_url
+M.http_get = http_get
+M.http_post = http_post
 M.http_request = http_request
-M.connect      = connect
-M.listen       = listen
-M.accept       = accept
-M.send         = send
-M.recv         = recv
-M.close        = close
+M.connect = std_net_connect
+M.listen = std_net_listen
+M.accept = std_net_accept
+M.send = std_net_send
+M.recv = std_net_recv
+M.close = std_net_close
 M.udp_socket   = udp_socket
 M.udp_sendto   = udp_sendto
 M.udp_recvfrom = udp_recvfrom

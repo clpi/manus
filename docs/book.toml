@@ -9,6 +9,7 @@ create-missing = false
 
 [output.html]
 default-theme = "light"
+additional-js = ["theme/custom.js"]
 
 [output.html.search]
 enable = true

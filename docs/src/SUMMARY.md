@@ -2,6 +2,7 @@
 
 - [Introduction](./introduction.md)
 - [Language Overview](./overview.md)
+- [Idiomatic Duo](./idiomatic_duo.md)
 - [Types and Type Annotations](./types.md)
 - [Functions](./functions.md)
   - [Typed Functions](./functions_typed.md)
@@ -17,3 +18,5 @@
 - [Compiler Usage](./compiler_usage.md)
 - [WASM Compilation](./wasm.md)
 - [Benchmarks](./benchmarks.md)
+- [Example Programs](./examples.md)
+- [Editor Setup](./editor_setup.md)

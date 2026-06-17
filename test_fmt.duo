@@ -1,0 +1,4 @@
+fun foo(a: int, b: int)
+  return a + b
+end
+foo(1, 2)

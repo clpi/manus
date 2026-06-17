@@ -1,11 +1,11 @@
 -- std.fmt — formatting utilities
 
-fun int(v: any): str
+fun std_fmt_int(v: any): str
     if v == nil then return "nil" end
     tostring(v)
 end
 
-fun float(v: any, precision: i64): str
+fun std_fmt_float(v: any, precision: i64): str
     if v == nil then return "nil" end
     if precision == nil then
         string.format("%g", v)
@@ -18,9 +18,9 @@ fun to_str(v: any): str
     v
 end
 
-fun bool(v: any): str
+fun boolean(v: any): str
     if v == nil then return "false" end
-    if v then return "true" else return "false" end
+    if v then "true" else "false" end
 end
 
 fun hex(v: any): str
@@ -56,11 +56,11 @@ fun pad(s: str, width: i64, pad_char: str): str
     len = string.len(s)
     w = width
     if w == nil or w <= len then return s end
-    pad = string.rep(pad_char, w - len)
-    s .. pad
+    pad_str = string.rep(pad_char, w - len)
+    s .. pad_str
 end
 
-fun trunc(s: str, width: i64): str
+fun std_fmt_trunc(s: str, width: i64): str
     if s == nil then return "" end
     if width == nil then return s end
     len = string.len(s)
@@ -69,13 +69,13 @@ fun trunc(s: str, width: i64): str
 end
 
 M = {}
-M.int = int
-M.float = float
+M.int = std_fmt_int
+M.float = std_fmt_float
 M.to_str = to_str
-M.bool = bool
+M.boolean = boolean
 M.hex = hex
 M.bin = bin
 M.trim = trim
 M.pad = pad
-M.trunc = trunc
+M.trunc = std_fmt_trunc
 M

@@ -1,5 +1,5 @@
 -- std.concurrent — high-level concurrency primitives (Requirement 20.9)
--- Builds on std.sync's scheduler.  Provides go/await/select/all patterns.
+-- Builds on std.sync's scheduler.  Provides go/wait/select/all patterns.
 
 sync = require "std.sync"
 
@@ -20,18 +20,18 @@ fun go(fn: any, ...args): any
 end
 
 -- Await a future (blocks/yields until result available).
-fun await(fut: any): any
+fun wait(fut: any): any
     r = sync.channel_recv(fut)
     if r == nil then return nil end
     if r.ok then
-        return r.val
+        r.val
     else
         error(r.err, 2)
     end
 end
 
 -- Run N tasks concurrently; return table of results in order.
-fun all(tasks: any, ...args: any): any
+fun all(tasks: any, ...args): any
     futs = {}
     -- tasks can be a list, or varargs
     if type(tasks) == "function" then
@@ -49,7 +49,7 @@ fun all(tasks: any, ...args: any): any
     sync.run()
     results = {}
     for _, fut in ipairs(futs)
-        results[#results + 1] = await(fut)
+        results[#results + 1] = wait(fut)
     end
     results
 end
@@ -71,7 +71,7 @@ end
 -- Select: poll channels round-robin until one has data.
 -- cases = {{ch=channel, fn=handler_fn}, ...}
 -- Returns when one case fires; calls its fn with the value.
-fun select(cases: any): any, any
+fun select(cases: any): any
     while true
         for _, c in ipairs(cases)
             val = sync.channel_try_recv(c.ch)
@@ -88,10 +88,10 @@ end
 fun semaphore(n: i64): any
     s = sync.channel(n)
     for _ = 1, n sync.channel_send(s, true) end
-    return {
-        acquire = fun(): any return sync.channel_recv(s) end,
+    {
+        acquire = fun(): any sync.channel_recv(s) end,
         release = fun(): void sync.channel_send(s, true) end,
-        try_acquire = fun(): bool return sync.channel_try_recv(s) ~= nil end,
+        try_acquire = fun(): bool sync.channel_try_recv(s) ~= nil end,
     }
 end
 
@@ -108,7 +108,7 @@ end
 
 M = {}
 M.go         = go
-M.await      = await
+M.wait       = wait
 M.all        = all
 M.race       = race
 M.select     = select

@@ -1,0 +1,24 @@
+-- std.os — operating system utilities
+
+fun execute(cmd: str): int
+    os.execute(cmd)
+end
+
+fun exit(code: int)
+    os.exit(code)
+end
+
+fun remove(path: str): bool
+    os.remove(path)
+end
+
+fun rename(old: str, new: str): bool
+    os.rename(old, new)
+end
+
+M = {}
+M.execute = execute
+M.exit = exit
+M.remove = remove
+M.rename = rename
+M

@@ -12,7 +12,7 @@ macros = require "std.meta.macros"
 -- ─────────────────────────────────────────────────────────────
 
 -- Get the type kind of a value as a string
-fun typeof(x): str
+fun std_meta_typeof(x): str
     if x == nil then return "nil" end
     if type(x) ~= "table" then return type(x) end
     if getmetatable(x) ~= nil then
@@ -24,7 +24,7 @@ end
 
 -- Check if a value is of a specific type kind
 fun is(x, kind: str): bool
-    typeof(x) == kind
+    std_meta_typeof(x) == kind
 end
 
 fun is_nil(x): bool
@@ -360,7 +360,7 @@ end
 -- Module table — everything exported
 M = {}
 -- Reflection
-M.typeof = typeof
+M.typeof = std_meta_typeof
 M.is = is
 M.is_nil = is_nil
 M.is_bool = is_bool

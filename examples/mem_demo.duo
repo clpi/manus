@@ -3,7 +3,7 @@
 
 -- Define a simple arena allocator
 fun arena_new(size: i64)
-    return {
+    {
         _bufs = {},
         _offset = 0,
         _capacity = size or 65536,

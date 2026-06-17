@@ -35,21 +35,23 @@ end
 @export
 fun sign(n: int): int
     if n > 0 then
-        return 1
+        1
     elseif n < 0 then
         0 - 1
+    else
+        0
     end
-    0
 end
 
 @export
 fun clamp(val: int, lo: int, hi: int): int
     if val < lo then
-        return lo
+        lo
     elseif val > hi then
         hi
+    else
+        val
     end
-    val
 end
 
 @export

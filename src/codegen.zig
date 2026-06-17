@@ -50,6 +50,7 @@ pub const CodeGen = struct {
     src_path: []const u8 = "",
     closure_ctx: ?*const ast.FuncBody = null,
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
+    all_closures: std.ArrayList(*ast.FuncBody) = .empty,
     mandel_native: bool = false,
     load_chunk: bool = false,
     lib_mode: bool = false,
@@ -81,6 +82,7 @@ pub const CodeGen = struct {
     /// structs and step functions for `async` functions (Task 12.4). Null when
     /// async analysis was not run.
     async_lower: ?*const async_lower.AsyncLower = null,
+    next_closure_id: u32 = 0,
 
     const ArcLocal = struct {
         name: []const u8,
@@ -96,9 +98,8 @@ pub const CodeGen = struct {
         }
         return h;
     }
-
-    pub fn init(alloc: Allocator, io: Io, type_map: *sema.TypeMap, module_globals: ?*const std.StringHashMapUnmanaged(RT), w: W) CodeGen {
-        return .{ .alloc = alloc, .io = io, .type_map = type_map, .module_globals = module_globals, .indent = 0, .w = w, .current_ret = .void };
+    pub fn init(alloc: Allocator, io: Io, type_map: *sema.TypeMap, module_globals: ?*const std.StringHashMapUnmanaged(RT), w: W, next_closure_id: u32) CodeGen {
+        return .{ .alloc = alloc, .io = io, .type_map = type_map, .module_globals = module_globals, .indent = 0, .w = w, .current_ret = .void, .next_closure_id = next_closure_id };
     }
 
     fn push_local_scope(self: *CodeGen) E!void {
@@ -651,7 +652,10 @@ pub const CodeGen = struct {
         // first so that every function's parameter / return record types
         // are defined before the function is forward-declared.
 
-        try self.emit_closure_functions(mod);
+        self.all_closures.clearRetainingCapacity();
+        self.emitted_closures.clearRetainingCapacity();
+        try self.collect_closures_module(mod, &self.all_closures);
+        try self.emit_closure_structs(self.all_closures.items);
         try self.emit_required_modules(mod);
 
         var local_funcs: std.ArrayList(*ast.FuncDecl) = .empty;
@@ -717,6 +721,8 @@ pub const CodeGen = struct {
             self.p("}}\n", .{});
             self.p("#pragma GCC pop_options\n\n", .{});
         }
+
+        try self.emit_closure_runtime(self.all_closures.items);
 
         // Library mode: no main()/entry point — only @export functions are
         // exposed.  Top-level statements are intentionally not executed.
@@ -2709,11 +2715,33 @@ pub const CodeGen = struct {
         if (self.dense_table) |dt| {
             self.pl("free(__dt_{s});", .{dt});
         }
-        self.p("return ", .{});
+        if (self.current_ret != .void) self.p("return ", .{});
         if (self.closure_ctx != null or self.current_ret == .any) {
             try self.emit_as_lua_value(expr);
         } else {
-            try self.emit_expr(expr);
+            const et = self.expr_type(expr);
+            if (et == .any and self.current_ret != .any) {
+                switch (self.current_ret) {
+                    .str => self.p("lua_to_str(", .{}),
+                    .bool => self.p("lua_to_bool(", .{}),
+                    .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
+                        var buf: [64]u8 = undefined;
+                        self.p("({s})lua_to_num(", .{self.current_ret.c_type(&buf)});
+                    },
+                    .f32, .f64 => {
+                        var buf: [64]u8 = undefined;
+                        self.p("({s})lua_to_num(", .{self.current_ret.c_type(&buf)});
+                    },
+                    else => {},
+                }
+                try self.emit_expr(expr);
+                switch (self.current_ret) {
+                    .str, .bool, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => self.p(")", .{}),
+                    else => {},
+                }
+            } else {
+                try self.emit_expr(expr);
+            }
         }
         self.p(";\n", .{});
     }
@@ -2982,7 +3010,9 @@ pub const CodeGen = struct {
                     // In duo mode, automatically declare local variables for simple name assignments
                     if (self.duo_mode and tgt.* == .name) {
                         const name = tgt.name.ident;
-                        if (!self.is_local_name(name) and !self.is_global_name(name)) {
+                        const is_loc = self.is_local_name(name);
+                        const is_glob = self.is_global_name(name);
+                        if (!is_loc and !is_glob) {
                             // This is an undeclared variable, declare it as local
                             try self.note_local(name);
                             if (tt == .any) {
@@ -3138,9 +3168,32 @@ pub const CodeGen = struct {
                         self.p(";\n", .{});
                     }
                 } else {
-                    self.p("return ", .{});
-                    try self.emit_expr(r.vals[0]);
-                    self.p(";\n", .{});
+                    const et = self.expr_type(r.vals[0]);
+                    if (et == .any and self.current_ret != .any) {
+                        self.p("return ", .{});
+                        switch (self.current_ret) {
+                            .str => self.p("lua_to_str(", .{}),
+                            .bool => self.p("lua_to_bool(", .{}),
+                            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
+                                var buf: [64]u8 = undefined;
+                                self.p("({s})lua_to_num(", .{self.current_ret.c_type(&buf)});
+                            },
+                            .f32, .f64 => {
+                                var buf: [64]u8 = undefined;
+                                self.p("({s})lua_to_num(", .{self.current_ret.c_type(&buf)});
+                            },
+                            else => {},
+                        }
+                        try self.emit_expr(r.vals[0]);
+                        switch (self.current_ret) {
+                            .str, .bool, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => self.p(");\n", .{}),
+                            else => self.p(";\n", .{}),
+                        }
+                    } else {
+                        self.p("return ", .{});
+                        try self.emit_expr(r.vals[0]);
+                        self.p(";\n", .{});
+                    }
                 }
             },
             .if_stmt => |*is| {
@@ -3579,6 +3632,18 @@ pub const CodeGen = struct {
         }
     }
 
+    /// True when the expression is the nil literal.
+    fn expr_is_nil_lit(self: *CodeGen, e: *const ast.Expr) bool {
+        _ = self;
+        return e.* == .nil;
+    }
+
+    /// True when a native (non-any, non-pointer) typed value can never hold nil.
+    fn expr_is_typed_non_nil(self: *CodeGen, e: *const ast.Expr) bool {
+        const t = self.expr_type(e);
+        return t != .any and t != .nil and t != .str and t != .func and t != .pointer;
+    }
+
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
             .nil => self.p("NULL", .{}),
@@ -3841,6 +3906,21 @@ pub const CodeGen = struct {
                 }
             },
             .binop => |b| {
+                // ── Typed-value vs nil comparison ─────────────────────────
+                // A value of a concrete native type (i64, f64, bool, ...) can
+                // never be nil, so `x == nil` is always false and `x ~= nil` is
+                // always true.  Emitting the literal avoids generating invalid C
+                // like `width == NULL` for an integer.
+                if (b.op == .eq or b.op == .neq) {
+                    const nil_side = if (self.expr_is_nil_lit(b.lhs)) b.rhs else if (self.expr_is_nil_lit(b.rhs)) b.lhs else null;
+                    if (nil_side) |side| {
+                        if (self.expr_is_typed_non_nil(side)) {
+                            self.p("{s}", .{if (b.op == .eq) "0" else "1"});
+                            return;
+                        }
+                    }
+                }
+
                 // ── Compile-time constant folding ─────────────────────────
                 // When both operands are integer literals, compute the result
                 // now and emit it as a plain C integer constant.  This avoids
@@ -4572,25 +4652,7 @@ pub const CodeGen = struct {
 
     fn expr_emits_lua_value(self: *CodeGen, e: *const ast.Expr) bool {
         if (self.expr_type(e) == .any) return true;
-        switch (e.*) {
-            .call => |c| {
-                if (c.func.* != .field) return false;
-                const f = &c.func.field;
-                if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return false;
-                const fname = f.field;
-                if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "byte")) return false;
-                if (std.mem.eql(u8, fname, "rep")) {
-                    if (c.args.len == 2) {
-                        const pat_t = self.expr_type(c.args[0]);
-                        const cnt_t = self.expr_type(c.args[1]);
-                        if ((pat_t == .str or c.args[0].* == .string_lit) and cnt_t.is_integer())
-                            return false;
-                    }
-                }
-                return true;
-            },
-            else => return false,
-        }
+        return false;
     }
 
     fn emit_lua_global_fn(self: *CodeGen, name: []const u8) bool {
@@ -4807,6 +4869,11 @@ pub const CodeGen = struct {
 
             const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse") or std.mem.eql(u8, fname, "packsize")) 1 else if (std.mem.eql(u8, fname, "find") or std.mem.eql(u8, fname, "match") or std.mem.eql(u8, fname, "dump")) 2 else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep") or std.mem.eql(u8, fname, "byte") or std.mem.eql(u8, fname, "gsub") or std.mem.eql(u8, fname, "pack") or std.mem.eql(u8, fname, "unpack") or std.mem.eql(u8, fname, "gmatch")) 3 else 4;
 
+            // These builtins return a lua_Value. When the surrounding context
+            // wants a native `str` (C `const char*`) — e.g. a typed local or
+            // return — unbox the result with lua_to_str so the C types match.
+            const want_cstr = result_rt == .str;
+            if (want_cstr) self.p("lua_to_str(", .{});
             self.p("{s}(", .{mapped});
             var i: usize = 0;
             while (i < expected) : (i += 1) {
@@ -4818,6 +4885,7 @@ pub const CodeGen = struct {
                 }
             }
             self.p(")", .{});
+            if (want_cstr) self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, mod, "table")) {
             const mapped = if (std.mem.eql(u8, fname, "insert")) "lua_tbl_insert" else if (std.mem.eql(u8, fname, "remove")) "lua_tbl_remove" else if (std.mem.eql(u8, fname, "concat")) "lua_tbl_concat" else if (std.mem.eql(u8, fname, "sort")) "lua_tbl_sort" else if (std.mem.eql(u8, fname, "new")) "lua_tbl_new" else if (std.mem.eql(u8, fname, "create")) "lua_tbl_new" else if (std.mem.eql(u8, fname, "clear")) "lua_tbl_clear" else if (std.mem.eql(u8, fname, "move")) "lua_tbl_move" else if (std.mem.eql(u8, fname, "unpack")) "lua_tbl_unpack" else if (std.mem.eql(u8, fname, "pack")) "lua_tbl_pack" else if (std.mem.eql(u8, fname, "freeze")) "lua_tbl_freeze" else if (std.mem.eql(u8, fname, "isfrozen")) "lua_tbl_isfrozen" else return false;
@@ -5192,22 +5260,8 @@ pub const CodeGen = struct {
         }
     }
 
-    fn emit_closure_functions(self: *CodeGen, mod: *ast.Module) E!void {
-        var list: std.ArrayList(*ast.FuncBody) = .empty;
-        defer list.deinit(self.alloc);
-        self.emitted_closures = .{};
-        defer self.emitted_closures.deinit(self.alloc);
-        try self.collect_closures_module(mod, &list);
-
-        if (list.items.len == 0) {
-            self.p("lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{});
-            self.p("    (void)id; (void)cl; (void)argc; (void)argv;\n", .{});
-            self.p("    return lua_val_nil();\n", .{});
-            self.p("}}\n\n", .{});
-            return;
-        }
-
-        for (list.items) |fb| {
+    fn emit_closure_structs(self: *CodeGen, list: []const *ast.FuncBody) E!void {
+        for (list) |fb| {
             const id = fb.closure_id orelse continue;
             self.p("typedef struct {{\n", .{});
             self.p("    duo_ObjHeader header;\n", .{});
@@ -5262,9 +5316,23 @@ pub const CodeGen = struct {
 
             self.p("static lua_Value duo_cl_{d}(lua_Closure* cl, int argc, lua_Value* argv);\n", .{id});
         }
+    }
+
+    fn emit_closure_runtime(self: *CodeGen, list: []const *ast.FuncBody) E!void {
+        if (list.len == 0) {
+            self.p("lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{});
+            self.p("    (void)id; (void)cl; (void)argc; (void)argv;\n", .{});
+            self.p("    return lua_val_nil();\n", .{});
+            self.p("}}\n\n", .{});
+            self.p("void duo_free_closure(lua_Closure* cl) {{\n", .{});
+            self.p("    (void)cl;\n", .{});
+            self.p("}}\n\n", .{});
+            return;
+        }
+
         self.p("lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{});
         self.p("    switch (id) {{\n", .{});
-        for (list.items) |fb| {
+        for (list) |fb| {
             if (fb.closure_id) |id| {
                 self.p("        case {d}: return duo_cl_{d}(cl, argc, argv);\n", .{ id, id });
             }
@@ -5275,7 +5343,7 @@ pub const CodeGen = struct {
 
         self.p("void duo_free_closure(lua_Closure* cl) {{\n", .{});
         self.p("    switch (cl->id) {{\n", .{});
-        for (list.items) |fb| {
+        for (list) |fb| {
             if (fb.closure_id) |id| {
                 self.p("        case {d}: duo_free_closure_{d}((duo_closure_{d}*)cl); return;\n", .{ id, id, id });
             }
@@ -5284,7 +5352,7 @@ pub const CodeGen = struct {
         self.p("    }}\n", .{});
         self.p("}}\n\n", .{});
 
-        for (list.items) |fb| {
+        for (list) |fb| {
             const id = fb.closure_id orelse continue;
             self.p("static lua_Value duo_cl_{d}(lua_Closure* cl_raw, int argc, lua_Value* argv) {{\n", .{id});
             self.indent = 1;
@@ -5342,7 +5410,15 @@ pub const CodeGen = struct {
                 try self.collect_require_names(mc.obj, names);
                 for (mc.args) |a| try self.collect_require_names(a, names);
             },
-            .field => |f| try self.collect_require_names(f.obj, names),
+            .field => |f| {
+                if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "std")) {
+                    var buf: [256]u8 = undefined;
+                    const mod_name = std.fmt.bufPrint(&buf, "std.{s}", .{f.field}) catch unreachable;
+                    try names.append(self.alloc, try self.alloc.dupe(u8, mod_name));
+                    try names.append(self.alloc, try self.alloc.dupe(u8, "std"));
+                }
+                try self.collect_require_names(f.obj, names);
+            },
             .index => |idx| {
                 try self.collect_require_names(idx.obj, names);
                 try self.collect_require_names(idx.key, names);
@@ -5423,10 +5499,22 @@ pub const CodeGen = struct {
             embedded.deinit(self.alloc);
         }
 
+        // If the source references the root `std` namespace (via `require "std"`
+        // or a bare `std` value), build a lightweight runtime table that re-exports
+        // only the std submodules that were actually requested.  This keeps std
+        // inclusion lazy: unused std submodules are not parsed, typed, or emitted.
+        const needs_std_root = blk: {
+            for (names.items) |n| {
+                if (std.mem.eql(u8, n, "std")) break :blk true;
+            }
+            break :blk false;
+        };
+
         for (names.items) |name| {
             if (seen.contains(name)) continue;
             try seen.put(self.alloc, name, {});
             if (self.src_path.len == 0) continue;
+            if (std.mem.eql(u8, name, "std")) continue;
 
             // Translate module name dots to path separators (std.path -> std/path)
             const mod_path_name = try self.alloc.dupe(u8, name);
@@ -5477,7 +5565,24 @@ pub const CodeGen = struct {
         for (embedded.items) |e| {
             self.p("    lua_table_set(duo_modules, lua_val_from_str(\"{s}\"), lua_val_from_func((lua_Value (*)(lua_Value))duo_mod_{s}));\n", .{ e.name, e.cname });
         }
+        if (needs_std_root) {
+            self.p("    lua_table_set(duo_modules, lua_val_from_str(\"std\"), lua_val_from_func((lua_Value (*)(lua_Value))duo_build_std_root));\n", .{});
+        }
         self.p("}}\n\n", .{});
+
+        if (needs_std_root) {
+            self.p("static lua_Value duo_build_std_root(lua_Value _unused) {{\n", .{});
+            self.p("    (void)_unused;\n", .{});
+            self.p("    lua_Value root = lua_table_new();\n", .{});
+            for (embedded.items) |e| {
+                if (std.mem.startsWith(u8, e.name, "std.")) {
+                    const sub = e.name[4..];
+                    self.p("    lua_table_set(root, lua_val_from_str(\"{s}\"), lua_require(lua_val_from_str(\"{s}\")));\n", .{ sub, e.name });
+                }
+            }
+            self.p("    return root;\n", .{});
+            self.p("}}\n\n", .{});
+        }
     }
 
     fn module_c_name(self: *CodeGen, name: []const u8) std.mem.Allocator.Error![]u8 {
@@ -5510,10 +5615,20 @@ pub const CodeGen = struct {
         defer subsem.deinit();
         subsem.lua55_mode = std.mem.endsWith(u8, path, ".lua");
         subsem.duo_mode = std.mem.endsWith(u8, path, ".duo");
+        subsem.next_closure_id = self.next_closure_id;
         subsem.check_module(&submod) catch |e| {
             std.debug.print("emit_embedded_module: sema failed for {s}: {}\n", .{ path, e });
             return false;
         };
+        self.next_closure_id = subsem.next_closure_id;
+        const old_duo_mode = self.duo_mode;
+        const old_module_globals = self.module_globals;
+        self.duo_mode = subsem.duo_mode;
+        self.module_globals = &subsem.module_globals;
+        defer {
+            self.duo_mode = old_duo_mode;
+            self.module_globals = old_module_globals;
+        }
         // Copy submodule type map into main type map so codegen can resolve types
         // for submodule expressions.
         var type_it = subsem.type_map.iterator();
@@ -5523,6 +5638,31 @@ pub const CodeGen = struct {
                 return false;
             };
         }
+
+        // Promote module-level mutable globals to static file-scope storage.
+        // Functions are emitted at file scope, so they cannot see locals that were
+        // declared inside the module-init function.  Static storage makes the
+        // shared module state visible to every function in the module.
+        if (self.module_globals) |globals| {
+            var globals_it = globals.iterator();
+            var any_global = false;
+            while (globals_it.next()) |entry| {
+                any_global = true;
+                const rt = entry.value_ptr.*;
+                if (rt == .any) {
+                    self.p("static lua_Value {s} = lua_val_nil();\n", .{entry.key_ptr.*});
+                } else {
+                    var buf: [128]u8 = undefined;
+                    self.p("static {s} {s};\n", .{ rt.c_type(&buf), entry.key_ptr.* });
+                }
+            }
+            if (any_global) self.p("\n", .{});
+        }
+
+        // Emit submodule closure structs
+        const start_idx = self.all_closures.items.len;
+        self.collect_closures_module(&submod, &self.all_closures) catch {};
+        self.emit_closure_structs(self.all_closures.items[start_idx..]) catch {};
 
         // Emit submodule constants at file scope
         for (submod.body.stmts) |*stmt| {

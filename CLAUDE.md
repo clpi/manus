@@ -83,3 +83,14 @@ this in mind when a benchmark's output looks suspiciously fast — verify correc
   `emit_module`, `TokenKind`).
 - Single-file modules; public API via `pub`.
 - Errors use Zig error unions; the CLI exits via `std.process.exit(1)` on failure.
+
+## Roadmap & Future Work
+
+To achieve the best performance and feature set, future milestones include:
+- **NaN-boxing** for `lua_Value` to keep dynamic types lightweight (64-bit).
+- **String interning** for fast pointer-based equality and hashing.
+- Integrating high-performance custom allocators (e.g. `mimalloc`).
+- Implementing **LTO & PGO** for final binary emission via clang.
+- Guaranteeing **SIMD auto-vectorization** for generated numeric array loops.
+- Adding true multithreading/concurrency support (e.g. worker threads).
+- Expanding the standard library and providing built-in tooling like `duo fmt`.

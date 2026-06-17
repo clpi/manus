@@ -1,0 +1,19 @@
+-- std.time — time utilities
+
+fun now(): int
+    os.time()
+end
+
+fun clock(): float
+    os.clock()
+end
+
+fun difftime(t2: int, t1: int): float
+    os.difftime(t2, t1)
+end
+
+M = {}
+M.now = now
+M.clock = clock
+M.difftime = difftime
+M

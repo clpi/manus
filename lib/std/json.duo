@@ -1,4 +1,4 @@
-col = require "std.collections"
+
 
 fun encode(val: any): str
     if val == nil then return "null" end
@@ -20,7 +20,7 @@ fun encode(val: any): str
         return string.format("\"%s\"", s)
     end
     if type(val) == "table" then
-        if col.is_array(val) then
+        if std.collections.is_array(val) then
             parts = {}
             for i = 1, #val
                 table.insert(parts, encode(val[i]))
@@ -40,7 +40,7 @@ fun encode(val: any): str
     "null"
 end
 
-fun has_key(val: any, key: str): bool
+fun std_json_has_key(val: any, key: str): bool
     if type(val) ~= "table" then return false end
     val[key] ~= nil
 end
@@ -50,8 +50,7 @@ fun decode(s: str): any
 end
 
 fun pretty(val: any, indent: i64): str
-    if indent == nil then indent = 2 end
-    if type(indent) ~= "number" then indent = 2 end
+    if indent <= 0 then indent = 2 end
     if val == nil then return "null" end
     if type(val) == "boolean" then
         if val then return "true" else return "false" end
@@ -63,7 +62,7 @@ fun pretty(val: any, indent: i64): str
         return encode(val)
     end
     if type(val) == "table" then
-        if col.is_array(val) then
+        if std.collections.is_array(val) then
             if #val == 0 then return "[]" end
             pad = string.rep(" ", indent)
             parts = {}

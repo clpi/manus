@@ -4,7 +4,7 @@ _project = { name = "duo-app", version = "0.1.0", default = "app" }
 _targets = {}
 
 fun info(): any
-    return {
+    {
         compiler = "duo",
         version = "0.1.0",
         host = os.getenv("HOSTNAME") or "unknown",
@@ -35,12 +35,13 @@ end
 
 fun project(cfg: any): any
     if cfg == nil then
-        return _project
+        _project
+    else
+        if cfg.name ~= nil then _project.name = cfg.name end
+        if cfg.version ~= nil then _project.version = cfg.version end
+        if cfg.default ~= nil then _project.default = cfg.default end
+        _project
     end
-    if cfg.name ~= nil then _project.name = cfg.name end
-    if cfg.version ~= nil then _project.version = cfg.version end
-    if cfg.default ~= nil then _project.default = cfg.default end
-    _project
 end
 
 fun exe(cfg: any): any
@@ -72,7 +73,7 @@ end
 fun find(name: str): any
     for _, t in ipairs(_targets)
         if t.name == name then
-            return t
+            t
         end
     end
     nil

@@ -2,7 +2,7 @@
 
 -- Define a simple fun
 fun greet(name: str): str
-    return "Hello, " .. name
+    "Hello, " .. name
 end
 
 -- Traditional Lua-style call

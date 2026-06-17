@@ -411,6 +411,7 @@ end
 
 -- Internal registry keyed by thread/coroutine id
 _tls_registry = {}
+_tls_stores = {}
 _tls_next_key = 0
 
 -- Create a new thread-local key with an optional default value factory.
@@ -418,6 +419,19 @@ fun tls_key(default_fn: any): i64
     _tls_next_key = _tls_next_key + 1
     _tls_registry[_tls_next_key] = default_fn
     _tls_next_key
+end
+
+-- Set the value for a thread-local key in the current thread.
+fun tls_set(key: i64, value: any): void
+    tid = tostring(id())
+    if _tls_stores == nil then
+        _tls_stores = {}
+    end
+    if _tls_stores[tid] == nil then
+        _tls_stores[tid] = {}
+    end
+    store = _tls_stores[tid]
+    store[key] = value
 end
 
 -- Get the value for a thread-local key in the current thread.
@@ -436,19 +450,6 @@ fun tls_get(key: i64): any
         return val
     end
     nil
-end
-
--- Set the value for a thread-local key in the current thread.
-fun tls_set(key: i64, value: any): void
-    tid = tostring(id())
-    if _tls_stores == nil then
-        _tls_stores = {}
-    end
-    if _tls_stores[tid] == nil then
-        _tls_stores[tid] = {}
-    end
-    store = _tls_stores[tid]
-    store[key] = value
 end
 
 -- Remove the value for a thread-local key.  Returns the old value.

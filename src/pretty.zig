@@ -559,11 +559,15 @@ pub const PrettyPrinter = struct {
     }
 
     fn printBlock(self: *PrettyPrinter, block: *const Block) Error!void {
-        if (block.stmts.len == 0) return;
+        if (block.stmts.len == 0 and block.tail_expr == null) return;
         self.indent();
         for (block.stmts) |*s| {
             try self.nl();
             try self.printStmt(s);
+        }
+        if (block.tail_expr) |te| {
+            try self.nl();
+            try self.printExpr(te, 0);
         }
         self.dedent();
     }
@@ -719,6 +723,10 @@ pub const PrettyPrinter = struct {
     pub fn printModule(self: *PrettyPrinter, mod: *const Module) !void {
         for (mod.body.stmts) |*stmt| {
             try self.printStmt(stmt);
+            try self.nl();
+        }
+        if (mod.body.tail_expr) |te| {
+            try self.printExpr(te, 0);
             try self.nl();
         }
     }

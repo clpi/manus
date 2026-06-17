@@ -114,3 +114,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
   optimizations into pattern-based compiler passes that apply to normal programs.
 - [ ] **Reduce symbol/runtime overhead in emitted C.** Fewer helper calls, flatter output,
   more direct native expressions — easier for clang to optimize.
+
+## Future architectural performance & features
+
+- [ ] **NaN-boxing:** Migrate `lua_Value` to NaN-boxing to keep all dynamic values in 64 bits, reducing memory overhead and improving CPU cache locality.
+- [ ] **String Interning:** Intern strings at runtime to allow `O(1)` pointer comparisons for string equality and faster table lookups.
+- [ ] **LTO & PGO:** Integrate Link-Time Optimization (`-flto`) and Profile-Guided Optimization passes into the clang emission pipeline for production builds.
+- [ ] **Custom Allocator:** Replace the system allocator with a high-performance one (e.g., `mimalloc` or `jemalloc`) to speed up dynamic memory churn.
+- [ ] **SIMD / Vectorization:** Emit `#pragma clang loop vectorize(enable)` annotations and `restrict` pointers in generated C arrays so Clang can reliably auto-vectorize numeric loops.
+- [ ] **Concurrency:** Introduce worker threads or an actor model for true parallel execution, leveraging Zig's threading capabilities without GIL contention.
+- [ ] **Standard Library & Tooling:** Expand the standard library (networking, regex, etc.) and add an official code formatter (`duo fmt`) to complete the developer experience.

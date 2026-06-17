@@ -7,6 +7,7 @@ const CodeGen = @import("codegen.zig").CodeGen;
 const Mono = @import("mono.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
+const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 
 const usage =
     \\usage: duo <command> [options] <file>
@@ -17,6 +18,7 @@ const usage =
     \\  compile    <file>   compile .duo/.lua to a native binary
     \\  run        [file]   compile and run immediately, or run build.duo target
     \\  check      <file>   type-check only, no output
+    \\  fmt        <file>   format a .duo/.lua file
     \\  dump-c     <file>   print generated C to stdout
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
@@ -47,6 +49,7 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "compile") or
             std.mem.eql(u8, args[1], "run") or
             std.mem.eql(u8, args[1], "check") or
+            std.mem.eql(u8, args[1], "fmt") or
             std.mem.eql(u8, args[1], "dump-c") or
             std.mem.eql(u8, args[1], "completion") or
             std.mem.eql(u8, args[1], "help") or
@@ -149,6 +152,8 @@ pub fn main(init: std.process.Init) !void {
         try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false);
     } else if (std.mem.eql(u8, cmd, "check")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false);
+    } else if (std.mem.eql(u8, cmd, "fmt")) {
+        try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
     } else {
@@ -524,7 +529,7 @@ fn do_compile(
 
         var buf: [65536]u8 = undefined;
         var fw: Io.File.Writer = .init(cf, io, &buf);
-        var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface);
+        var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id);
         cg.mono = &mono;
         cg.arc = &arc_pass;
         cg.async_lower = &async_pass;
@@ -867,7 +872,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     const stdout = Io.File.stdout();
     var buf: [65536]u8 = undefined;
     var fw: Io.File.Writer = .init(stdout, io, &buf);
-    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface);
+    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id);
     cg.mono = &mono;
     cg.arc = &arc_pass;
     cg.async_lower = &async_pass;
@@ -878,4 +883,31 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
         std.process.exit(1);
     };
     try fw.interface.flush();
+}
+
+fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+    const src = read_source(alloc, io, src_path) catch |err| {
+        std.debug.print("error: failed to read source file '{s}': {s}\n", .{ src_path, @errorName(err) });
+        std.process.exit(1);
+    };
+    var lex = Lexer.init(src, src_path);
+    var parser = Parser.init(&lex, alloc);
+    const mod = parser.parse_module() catch {
+        std.debug.print("error: failed to parse '{s}'\n", .{src_path});
+        std.process.exit(1);
+    };
+
+    var buf: std.ArrayList(u8) = .empty;
+    var pp = PrettyPrinter.init(alloc, &buf, .duo);
+    pp.printModule(&mod) catch {
+        std.debug.print("error: failed to format '{s}'\n", .{src_path});
+        std.process.exit(1);
+    };
+
+    const cwd = Io.Dir.cwd();
+    Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = buf.items }) catch |err| {
+        std.debug.print("error: failed to write formatted source to '{s}': {s}\n", .{ src_path, @errorName(err) });
+        std.process.exit(1);
+    };
+    std.debug.print("Formatted {s}\n", .{src_path});
 }

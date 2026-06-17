@@ -1,0 +1,1 @@
+print(std.fs.read_file("test_std_fs.duo"))

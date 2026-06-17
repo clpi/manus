@@ -39,7 +39,7 @@ print("New distance: " .. tostring(point.distance(point)))
 
 -- Base "class" - a factory function returning instances
 fun Point_base(x: f64, y: f64): any
-    return {
+    {
         x = x,
         y = y,
         describe = fun(self): str
@@ -51,7 +51,7 @@ end
 -- Derived "class" via metatable delegation
 fun Point3D_base(x: f64, y: f64, z: f64): any
     local base = Point_base(x, y)
-    return setmetatable(
+    setmetatable(
         { z = z,
           describe = fun(self): str
             "Point3D(" .. tostring(self.x) .. ", " .. tostring(self.y)
@@ -72,7 +72,7 @@ print(p2.describe(p2))
 
 -- A counter "class" using constructor functions
 fun Counter_new(): any
-    return {
+    {
         _value = 0,
         increment = fun(self: any): void self._value = self._value + 1 end,
         decrement = fun(self: any): void self._value = self._value - 1 end,
@@ -107,9 +107,10 @@ end
 shape.measure = fun(self, unit: str): f64
     area = 3.14159 * self.radius * self.radius
     if unit == "mm" then
-        return area * 100.0
+        area * 100.0
+    else
+        area
     end
-    area
 end
 shape.radius = 5.0
 

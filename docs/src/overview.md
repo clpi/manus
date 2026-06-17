@@ -36,7 +36,7 @@ y = 100  -- inferred as i64
 ### Functions
 
 ```duo
--- Typed function with explicit return
+-- Typed function (implicit return is preferred)
 fun add(a: i64, b: i64): i64
     a + b
 end
@@ -46,7 +46,14 @@ function greet(name)
     return "Hello, " .. name
 end
 
--- Short form (implicit return)
+-- Explicit return is fine for early exits
+fun clamp(x: i64, lo: i64, hi: i64): i64
+    if x < lo then return lo end
+    if x > hi then return hi end
+    x
+end
+
+-- Short form
 fun square(x: f64): f64
     x * x
 end
@@ -136,7 +143,7 @@ Without type annotations, Duo uses Lua's dynamic semantics:
 ```duo
 -- This works with any type
 function identity(x)
-    return x
+    x
 end
 
 identity(42)      -- works

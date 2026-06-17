@@ -9,19 +9,19 @@ fun level_set_value(level: any, value: any): any
     level
 end
 
-fun debug(msg: str): void
+fun std_log_debug(msg: str): void
     io.write(string.format("[DEBUG] %s\n", msg))
 end
 
-fun info(msg: str): void
+fun std_log_info(msg: str): void
     io.write(string.format("[INFO] %s\n", msg))
 end
 
-fun warn(msg: str): void
+fun std_log_warn(msg: str): void
     io.write(string.format("[WARN] %s\n", msg))
 end
 
-fun error(msg: str): void
+fun std_log_error(msg: str): void
     io.write(string.format("[ERROR] %s\n", msg))
 end
 
@@ -36,9 +36,9 @@ end
 M = {}
 M.level_new = level_new
 M.level_set_value = level_set_value
-M.debug = debug
-M.info = info
-M.warn = warn
-M.error = error
+M.debug = std_log_debug
+M.info = std_log_info
+M.warn = std_log_warn
+M.error = std_log_error
 M.print = print
 M
