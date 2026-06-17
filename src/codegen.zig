@@ -405,6 +405,26 @@ pub const CodeGen = struct {
         if (e.* == .await_expr)  return self.expr_type(e.await_expr.operand);
         // `x in y` is a boolean test — always produces bool.
         if (e.* == .contains_expr) return .bool;
+        // Unary operators: keep results in native typed C when the operand is
+        // native so downstream expressions (`arr[-i]`, `(-x)+y`, `#s == n`) stay
+        // off the dynamic lua_Value path. Mirrors the native emit in emit_expr.
+        if (e.* == .unop) {
+            const u = e.unop;
+            switch (u.op) {
+                // `not` lowers to a C `!` (or `!lua_to_bool(...)`) — always bool.
+                .not => return .bool,
+                // `#x` lowers to `strlen`/`(int64_t)strlen` when typed → i64.
+                .len => if (self.expr_type(u.operand).is_native()) return .i64,
+                // `-x` is `(-x)` for a native operand, preserving its type.
+                .neg => {
+                    const ot = self.expr_type(u.operand);
+                    if (ot.is_native()) return ot;
+                },
+                // `~x` is `(~x)` for integer operands → integer result.
+                .bnot => if (self.expr_type(u.operand).is_integer()) return .i64,
+                .compile => {},
+            }
+        }
         return self.type_map.get(e) orelse .any;
     }
 
