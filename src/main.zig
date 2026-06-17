@@ -12,8 +12,8 @@ const usage =
     \\usage: duo <command> [options] <file>
     \\
     \\commands:
-    \\  init      [name]   create a new Duo project
-    \\  build     [target] build the default or named target from build.duo
+    \\  init       [name]   create a new Duo project
+    \\  build      [target] build the default or named target from build.duo
     \\  compile    <file>   compile .duo/.lua to a native binary
     \\  run        [file]   compile and run immediately, or run build.duo target
     \\  check      <file>   type-check only, no output
