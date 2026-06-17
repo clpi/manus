@@ -1320,9 +1320,39 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// True if a value of type `t` can cross the dynamic lua_Value boundary,
+    /// i.e. `emit_native_param_from_lua` can unbox a lua_Value into a native
+    /// `t`. Aggregates (records/structs, results, options, arrays, ...) cannot
+    /// be reconstructed from a lua_Value, so a `__lua` thunk taking them as a
+    /// parameter would pass a lua_Value where a C struct is expected.
+    fn rt_is_lua_convertible(self: *CodeGen, t: RT) bool {
+        return switch (t) {
+            .str, .bool, .void, .any, .nil => true,
+            else => blk: {
+                if (t.is_numeric()) break :blk true;
+                if (self.enum_name_of(t)) |ename| break :blk self.enum_is_payload_free(ename);
+                break :blk false;
+            },
+        };
+    }
+
+    /// Whether a valid dynamic-entry (`__lua`) thunk can be generated for `fb`.
+    /// A thunk unboxes each lua_Value argument into the native parameter type,
+    /// so every parameter must be lua-convertible. Used to gate thunk decls,
+    /// thunk definitions, and first-class function-value references so we never
+    /// emit (or reference) a thunk that would fail to compile.
+    fn should_emit_lua_thunk(self: *CodeGen, fb: *const ast.FuncBody) bool {
+        if (self.has_payloaded_enum_param(fb)) return false;
+        for (fb.params) |param| {
+            const pt = types.resolve(param.typ, null, self.alloc) catch RT.any;
+            if (!self.rt_is_lua_convertible(pt)) return false;
+        }
+        return true;
+    }
+
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
-        if (self.has_payloaded_enum_param(fb)) return;
+        if (!self.should_emit_lua_thunk(fb)) return;
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
         const nparams = fb.params.len;
@@ -1549,7 +1579,7 @@ pub const CodeGen = struct {
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (!fb.is_typed) return;
-        if (self.has_payloaded_enum_param(fb)) return;
+        if (!self.should_emit_lua_thunk(fb)) return;
         const ret = self.resolve_type(fb.ret_type);
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
@@ -1865,11 +1895,21 @@ pub const CodeGen = struct {
             return;
         }
         const nparams = ft.func.params.len;
-        if (nparams == 0 or nparams == 1) {
+        // A thunk only exists when every parameter is lua-convertible (see
+        // should_emit_lua_thunk). If not, fall back to a direct function-pointer
+        // cast rather than referencing a thunk symbol that was never emitted.
+        var thunkable = true;
+        for (ft.func.params) |pt| {
+            if (!self.rt_is_lua_convertible(pt)) {
+                thunkable = false;
+                break;
+            }
+        }
+        if (thunkable and (nparams == 0 or nparams == 1)) {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value)){s}__lua)", .{cname});
-        } else if (nparams == 2) {
+        } else if (thunkable and nparams == 2) {
             self.p("lua_val_from_func((void*){s}__lua2)", .{cname});
-        } else if (nparams == 3) {
+        } else if (thunkable and nparams == 3) {
             self.p("lua_val_from_func((void*){s}__lua3)", .{cname});
         } else {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});

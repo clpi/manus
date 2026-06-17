@@ -62,11 +62,24 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
 ## Known correctness bugs (found while profiling)
 
-- [ ] **Record-typed function params break the `__lua` wrapper.** A `fun f(p: {x:i64,...})`
-  generates `dist__lua(lua_Value _a0)` with `lua_Value _p0 = _a0; int64_t _r = dist(_p0);`
-  — passing a `lua_Value` where the C struct param is expected, which fails to compile.
-  Repro: `fun dist(p: {x:i64,y:i64}): i64 ... end`. The dynamic-entry wrapper needs to
-  unbox the record (or skip generating `__lua` for non-native param types).
+- [x] **`__lua` dynamic-entry thunk emitted broken code for non-convertible params.**
+  Fixed: `should_emit_lua_thunk` / `rt_is_lua_convertible` (`src/codegen.zig:1323`) now
+  gate thunk decls, thunk defs, and first-class function-value references so a thunk is
+  only emitted/referenced when every parameter can cross the lua_Value boundary
+  (numbers/str/bool/any/payload-free enum). Previously a record/struct param produced
+  `lua_Value _p0 = _a0; f(_p0)` passing a lua_Value where a C struct was expected.
+
+- [ ] **Native record-typed params/locals are unimplemented end-to-end (feature, not a
+  one-line bug).** `fun dist(p: {x:i64,y:i64})` declares the struct (`duo_rec_<hash>`) and
+  the body uses native field access, but:
+  - call sites pass a `lua_Value` table literal where the C struct is expected
+    (`src/codegen.zig:3698` arg loop — needs table-literal→struct-literal coercion);
+  - named aliases (`alias Point = {...}`) resolve to an undeclared `duo_Point` C type
+    instead of the `duo_rec_<hash>` typedef;
+  - record-typed `local`s with table-literal initializers don't emit the struct.
+  Idiomatic duo uses `self: any` (dynamic) instead, so this is latent. Completing it is a
+  real perf win (native struct passing vs boxed tables) but spans type resolution, struct
+  emission, let-binding init, and call-site coercion.
 
 ## Lower priority but useful
 
