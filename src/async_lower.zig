@@ -618,4 +618,5 @@ test "async: validateTarget rejects wasm + threads" {
     try testing.expectError(error.WasmThreadsUnsupported, validateTarget(true, true));
     try validateTarget(true, false);
     try validateTarget(false, true);
+    try validateTarget(false, false);
 }
