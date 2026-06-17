@@ -22,13 +22,16 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
     produced native `obj.field`; this closes the gap for monomorphized/generic bodies
     where `type_map` is keyed on the unspecialized expr. Still TODO: named `.@"struct"`
     field lookup (needs a name→fields registry, not just inline `table_type`).
-  - [~] **Builtin call results**: `expr_type` now types transcendental `math.*` calls
-    (`sqrt`/`sin`/`cos`/`tan`/`asin`/`acos`/`atan`/`exp`/`log`/`pow`/`fmod`) as f64 in the
-    fallback (`is_transcendental_math_call`, `src/codegen.zig:428`), enabling the native
-    `maybe_emit_math_call` path (which is gated on `result_rt.is_numeric()`) when type_map
-    misses. Still TODO: `floor`/`ceil`/`abs`/`max`/`min` (need integer-consistent typing —
-    they can feed array indices, and the emit currently returns `double`), and
-    `string.len`/`string.byte` → i64, `tostring` → str, etc.
+  - [x] **Builtin call results — `math.*`**: `math_call_result_type` (`src/codegen.zig:456`)
+    types every recognized `math.*` builtin; `expr_type` uses it to recover a native type
+    when sema only tagged the call `.any`. `max`/`min`/`abs` are integer-typed when their
+    args are integers and emit native integer ops (`lua_imax_i64`/`lua_imin_i64`/`llabs`);
+    the rest are f64. This also **fixed a real codegen bug**: `math.max`/`min`/`abs` in a
+    typed integer function emitted a dynamic `lua_Value` (e.g. `lua_math_max`) and then
+    `return`ed it from an `int64_t` function — a C compile error. Canonical `clamp`/`imath`
+    now compile to clean native ops.
+  - [ ] **Builtin call results — string/other**: `string.len`/`string.byte` → i64,
+    `tostring` → str, `string.sub`/`string.rep` → str, etc. Same pattern as the math case.
   - [ ] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
     `:411`, the final `type_map.get(e) orelse .any`) and replace with explicit typed
     handling where the type is statically recoverable.

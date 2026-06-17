@@ -425,12 +425,16 @@ pub const CodeGen = struct {
                 .compile => {},
             }
         }
-        if (self.type_map.get(e)) |t| return t;
+        // Prefer a concrete sema type. When sema recorded only `.any` (or nothing),
+        // fall through to the structural recovery below, which can turn that
+        // dynamic fallback into a native type.
+        const tm = self.type_map.get(e);
+        if (tm) |t| {
+            if (t != .any) return t;
+        }
         // Field access on a statically-typed record: resolve the field's type
         // structurally when sema didn't record it (e.g. inside monomorphized
         // generic bodies, where type_map is keyed on the unspecialized expr).
-        // Strictly additive — only runs when type_map has no entry, so it can
-        // only turn an `.any` fallback into a concrete native type.
         if (e.* == .field) {
             const ot = self.expr_type(e.field.obj);
             if (ot == .table_type) {
@@ -439,29 +443,41 @@ pub const CodeGen = struct {
                 }
             }
         }
-        // Transcendental math builtins lower to double-returning C (`sqrt`,
-        // `sin`, ...; see maybe_emit_math_call). Typing them f64 here lets that
-        // native path fire and keeps chained math off the dynamic path when
-        // type_map misses (e.g. monomorphized bodies). Restricted to functions
-        // whose result is never a sensible integer array index, so we can't
-        // produce a `__dt[double]` index.
-        if (e.* == .call and is_transcendental_math_call(e.call.func)) return .f64;
-        return .any;
+        // Math builtins lower to native C (see maybe_emit_math_call). Typing the
+        // call here lets that native path fire (it is gated on a numeric result
+        // type) and keeps chained math off the dynamic path — including plain
+        // typed functions sema only tagged `.any`, where the dynamic lua_Value
+        // return otherwise fails to compile against a native return type.
+        if (e.* == .call) {
+            if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
+        }
+        return tm orelse .any;
     }
 
-    /// True for `math.<fn>` calls whose C lowering returns `double` and whose
-    /// result is non-integer by nature (excludes floor/ceil/abs/max/min, which
-    /// can legitimately feed an integer index).
-    fn is_transcendental_math_call(func: *const ast.Expr) bool {
-        if (func.* != .field) return false;
+    /// Result type of a `math.<fn>(...)` builtin call, or null if `func` is not
+    /// a recognized math builtin. `max`/`min`/`abs` are integer-typed when their
+    /// arguments are integers (matching the integer emit in maybe_emit_math_call);
+    /// everything else lowers through double-returning libm and is f64.
+    fn math_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        if (func.* != .field) return null;
         const f = &func.field;
-        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "math")) return false;
-        const names = [_][]const u8{
-            "sqrt", "sin",  "cos", "tan", "asin", "acos",
-            "atan", "exp",  "log", "pow", "fmod",
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "math")) return null;
+        const fname = f.field;
+        if ((std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) and args.len == 2) {
+            if (self.expr_type(args[0]).is_integer() and self.expr_type(args[1]).is_integer())
+                return .i64;
+            return .f64;
+        }
+        if (std.mem.eql(u8, fname, "abs") and args.len == 1) {
+            if (self.expr_type(args[0]).is_integer()) return .i64;
+            return .f64;
+        }
+        const f64_names = [_][]const u8{
+            "sqrt", "sin",   "cos",  "tan", "asin", "acos", "atan",
+            "exp",  "log",   "pow",  "fmod", "floor", "ceil",
         };
-        for (names) |n| if (std.mem.eql(u8, f.field, n)) return true;
-        return false;
+        for (f64_names) |n| if (std.mem.eql(u8, fname, n)) return .f64;
+        return null;
     }
 
     fn resolve_type(self: *CodeGen, te: ast.TypeExpr) RT {
@@ -552,6 +568,10 @@ pub const CodeGen = struct {
         self.p("    int64_t r = a % b;\n", .{});
         self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? r : (r + (((r != 0) & ((a ^ b) < 0)) ? b : 0));\n", .{});
         self.p("}}\n", .{});
+        // Integer max/min for typed int64 math.max/math.min (avoids the
+        // int->double->int round-trip and the lua_Value boxing path).
+        self.p("__attribute__((always_inline)) static inline int64_t lua_imax_i64(int64_t a, int64_t b) {{ return a > b ? a : b; }}\n", .{});
+        self.p("__attribute__((always_inline)) static inline int64_t lua_imin_i64(int64_t a, int64_t b) {{ return a < b ? a : b; }}\n", .{});
         self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
@@ -4267,6 +4287,24 @@ pub const CodeGen = struct {
         if (!std.mem.eql(u8, f.obj.name.ident, "math")) return false;
 
         const fname = f.field;
+        // Integer-typed max/min/abs: emit native integer ops instead of the
+        // double-returning libm path, avoiding the int->double->int round-trip.
+        if ((std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) and args.len == 2 and
+            self.expr_type(args[0]).is_integer() and self.expr_type(args[1]).is_integer())
+        {
+            self.p("{s}(", .{if (std.mem.eql(u8, fname, "max")) "lua_imax_i64" else "lua_imin_i64"});
+            try self.emit_expr(args[0]);
+            self.p(", ", .{});
+            try self.emit_expr(args[1]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "abs") and args.len == 1 and self.expr_type(args[0]).is_integer()) {
+            self.p("llabs(", .{});
+            try self.emit_expr(args[0]);
+            self.p(")", .{});
+            return true;
+        }
         const lua_names = [_][]const u8{
             "sqrt", "abs",  "floor", "ceil", "sin", "cos",  "tan",
             "asin", "acos", "atan",  "exp",  "log", "fmod", "max",
