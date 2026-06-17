@@ -22,9 +22,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
     produced native `obj.field`; this closes the gap for monomorphized/generic bodies
     where `type_map` is keyed on the unspecialized expr. Still TODO: named `.@"struct"`
     field lookup (needs a name→fields registry, not just inline `table_type`).
-  - [ ] **Builtin call results**: `expr_type` only types mono-specialized name calls
-    (`:375`). Type known stdlib/math builtins (`math.floor`/`math.sqrt`/`math.abs` → f64
-    or i64, `string.len` → i64, etc.) so chained math stays native.
+  - [~] **Builtin call results**: `expr_type` now types transcendental `math.*` calls
+    (`sqrt`/`sin`/`cos`/`tan`/`asin`/`acos`/`atan`/`exp`/`log`/`pow`/`fmod`) as f64 in the
+    fallback (`is_transcendental_math_call`, `src/codegen.zig:428`), enabling the native
+    `maybe_emit_math_call` path (which is gated on `result_rt.is_numeric()`) when type_map
+    misses. Still TODO: `floor`/`ceil`/`abs`/`max`/`min` (need integer-consistent typing —
+    they can feed array indices, and the emit currently returns `double`), and
+    `string.len`/`string.byte` → i64, `tostring` → str, etc.
   - [ ] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
     `:411`, the final `type_map.get(e) orelse .any`) and replace with explicit typed
     handling where the type is statically recoverable.

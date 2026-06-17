@@ -439,7 +439,29 @@ pub const CodeGen = struct {
                 }
             }
         }
+        // Transcendental math builtins lower to double-returning C (`sqrt`,
+        // `sin`, ...; see maybe_emit_math_call). Typing them f64 here lets that
+        // native path fire and keeps chained math off the dynamic path when
+        // type_map misses (e.g. monomorphized bodies). Restricted to functions
+        // whose result is never a sensible integer array index, so we can't
+        // produce a `__dt[double]` index.
+        if (e.* == .call and is_transcendental_math_call(e.call.func)) return .f64;
         return .any;
+    }
+
+    /// True for `math.<fn>` calls whose C lowering returns `double` and whose
+    /// result is non-integer by nature (excludes floor/ceil/abs/max/min, which
+    /// can legitimately feed an integer index).
+    fn is_transcendental_math_call(func: *const ast.Expr) bool {
+        if (func.* != .field) return false;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "math")) return false;
+        const names = [_][]const u8{
+            "sqrt", "sin",  "cos", "tan", "asin", "acos",
+            "atan", "exp",  "log", "pow", "fmod",
+        };
+        for (names) |n| if (std.mem.eql(u8, f.field, n)) return true;
+        return false;
     }
 
     fn resolve_type(self: *CodeGen, te: ast.TypeExpr) RT {
