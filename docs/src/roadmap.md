@@ -39,7 +39,7 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 ### Standard library
 
-- Core modules in `lib/std/`: `math`, `string`, `table`, `io`, `fs`, `os`, `path`, `time`, `env`, `proc`, `fmt`, `log`, `json`, `hash`, `crypto`, `base64`, `hex`, `url`, `uuid`, `utf8`, `regex`, `random`, `iter`, `collections`, `memo`, `test`, `build`, `package`, `argparse`, `debug`.
+- Core modules in `lib/std/`: `math`, `string`, `table`, `io`, `fs`, `os`, `path`, `time`, `env`, `proc`, `fmt`, `log`, `json`, `hash`, `crypto`, `base64`, `hex`, `url`, `uuid`, `utf8`, `regex`, `random`, `iter`, `collections`, `memo`, `test`, `build`, `package`, `argparse`, `debug`, `csv`, `html`, `http`.
 - Concurrency modules: `coroutine`, `sync`, `channel`, `concurrent`, `thread`, `mproc`, `atomic`.
 - Networking: `net` (HTTP and sockets; zero-overhead codegen when the module variable is named `net`).
 - Low-level/memory: `mem`, `wasm/wasi`.

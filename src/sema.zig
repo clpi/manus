@@ -789,11 +789,22 @@ pub const Sema = struct {
                                 return .str;
                         }
                         if (std.mem.eql(u8, mod, "math")) {
-                            if (std.mem.eql(u8, fname, "sqrt") or std.mem.eql(u8, fname, "abs") or
+                            if (std.mem.eql(u8, fname, "sqrt") or
                                 std.mem.eql(u8, fname, "sin") or std.mem.eql(u8, fname, "cos") or
                                 std.mem.eql(u8, fname, "tan") or std.mem.eql(u8, fname, "exp") or
-                                std.mem.eql(u8, fname, "log")) return .f64;
-                            if (std.mem.eql(u8, fname, "floor") or std.mem.eql(u8, fname, "ceil")) return .i64;
+                                std.mem.eql(u8, fname, "log") or std.mem.eql(u8, fname, "floor") or
+                                std.mem.eql(u8, fname, "ceil")) return .f64;
+                            if (std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) {
+                                if (c.args.len == 2) {
+                                    if ((try self.check_expr(c.args[0])).is_integer() and (try self.check_expr(c.args[1])).is_integer()) return .i64;
+                                    return .f64;
+                                }
+                                return .any;
+                            }
+                            if (std.mem.eql(u8, fname, "abs")) {
+                                if (c.args.len > 0 and (try self.check_expr(c.args[0])).is_integer()) return .i64;
+                                return .f64;
+                            }
                         }
                         if (std.mem.eql(u8, mod, "simd")) {
                             if (std.mem.eql(u8, fname, "v4f64")) return .v4f64;

@@ -4610,15 +4610,16 @@ pub const CodeGen = struct {
         const fname = f.field;
         // Integer-typed max/min/abs: emit native integer ops instead of the
         // double-returning libm path, avoiding the int->double->int round-trip.
-        if ((std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) and args.len == 2 and
-            self.expr_type(args[0]).is_integer() and self.expr_type(args[1]).is_integer())
-        {
-            self.p("{s}(", .{if (std.mem.eql(u8, fname, "max")) "lua_imax_i64" else "lua_imin_i64"});
-            try self.emit_expr(args[0]);
-            self.p(", ", .{});
-            try self.emit_expr(args[1]);
-            self.p(")", .{});
-            return true;
+        if (std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) {
+            if (args.len != 2) return false;
+            if (self.expr_type(args[0]).is_integer() and self.expr_type(args[1]).is_integer()) {
+                self.p("{s}(", .{if (std.mem.eql(u8, fname, "max")) "lua_imax_i64" else "lua_imin_i64"});
+                try self.emit_expr(args[0]);
+                self.p(", ", .{});
+                try self.emit_expr(args[1]);
+                self.p(")", .{});
+                return true;
+            }
         }
         if (std.mem.eql(u8, fname, "abs") and args.len == 1 and self.expr_type(args[0]).is_integer()) {
             self.p("llabs(", .{});
@@ -4631,6 +4632,7 @@ pub const CodeGen = struct {
             "asin", "acos", "atan",  "exp",  "log", "fmod", "max",
             "min",  "pow",
         };
+        if ((std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) and args.len != 2) return false;
         const c_names = [_][]const u8{
             "sqrt", "fabs", "floor", "ceil", "sin", "cos",  "tan",
             "asin", "acos", "atan",  "exp",  "log", "fmod", "fmax",

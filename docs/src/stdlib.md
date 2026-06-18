@@ -74,18 +74,21 @@ log.warn("Warning message")
 log.error("Error message")
 ```
 
-## JSON Module (`std.json`)
+## Encoding and Formatting (`std.json`, `std.csv`, `std.html`, `std.base64`, `std.hex`)
 
 ```duo
 json = req "std.json"
+csv = req "std.csv"
+html = req "std.html"
 
--- Encode/decode
-data = json.encode({name = "Duo", version = 1})
-object = json.decode(data)
+parsed_json = json.parse('{"a": 1}')
+str_json = json.stringify({a = 1})
 
--- Alternative names
-text = json.stringify({a = 1})
-obj = json.parse('{"b": 2}')
+parsed_csv = csv.parse("a,b,c\n1,2,3")
+str_csv = csv.format({{"a", "b", "c"}, {1, 2, 3}})
+
+escaped = html.escape("<script>alert(1)</script>")
+unescaped = html.unescape("&lt;div&gt;")
 ```
 
 ## Hash Module (`std.hash`)
@@ -480,16 +483,18 @@ ptr2 = stack.alloc(32)
 stack.restore(cp)
 ```
 
-## Networking (`std.net`)
+## Networking (`std.net`, `std.http`)
 
-`std.net` provides URL parsing, HTTP helpers, and TCP/UDP helpers. When the module variable is named `net`, the compiler emits direct C calls (`duo_net_http_get`, etc.) for zero-overhead networking. Otherwise it falls back to `curl`-based implementations.
+`std.net` provides URL parsing, TCP/UDP helpers, and core HTTP functions. When the module variable is named `net`, the compiler emits direct C calls (`duo_net_http_get`, etc.) for zero-overhead networking.
+`std.http` provides a convenient alias for high-level HTTP client and server functions.
 
 ```duo
 net = req "std.net"
+http = req "std.http"
 
 parsed = net.parse_url("https://example.com:8080/path")
-body = net.http_get("https://example.com")
-resp = net.http_post(url, "body", "application/json")
+body = http.get("https://example.com")
+resp = http.post(url, "body", "application/json")
 ```
 
 ## Coroutines and Concurrency

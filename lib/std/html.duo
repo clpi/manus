@@ -1,0 +1,26 @@
+-- std.html — basic HTML escaping and unescaping
+
+local string = import("std.string")
+
+fun escape(s: str): str
+    s = string.gsub(s, "&", "&amp;")
+    s = string.gsub(s, "<", "&lt;")
+    s = string.gsub(s, ">", "&gt;")
+    s = string.gsub(s, '"', "&quot;")
+    s = string.gsub(s, "'", "&#39;")
+    s
+end
+
+fun unescape(s: str): str
+    s = string.gsub(s, "&lt;", "<")
+    s = string.gsub(s, "&gt;", ">")
+    s = string.gsub(s, "&quot;", '"')
+    s = string.gsub(s, "&#39;", "'")
+    s = string.gsub(s, "&amp;", "&")
+    s
+end
+
+M = {}
+M.escape = escape
+M.unescape = unescape
+M

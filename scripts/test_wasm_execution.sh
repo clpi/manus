@@ -113,24 +113,23 @@ assert_module_structure() {
     fi
 
     local details
-    details=$("$WASM_OBJDUMP" -x "$wasm" 2>/dev/null)
+    details=$("$WASM_OBJDUMP" -x "$wasm")
 
-    # Must export `memory` (WASI requires it)
-    if echo "$details" | grep -q "memory"; then
+    if [[ "$details" == *"memory"* ]]; then
         pass "$label — exports memory"
     else
         fail "$label — missing memory export"
     fi
 
     # Must export `_start` (WASI entry point)
-    if echo "$details" | grep -q "_start"; then
+    if [[ "$details" == *"_start"* ]]; then
         pass "$label — exports _start"
     else
         fail "$label — missing _start export"
     fi
 
-    # Must import from wasi_snapshot_preview1
-    if echo "$details" | grep -q "wasi_snapshot_preview1"; then
+    # Must import wasi_snapshot_preview1
+    if [[ "$details" == *"wasi_snapshot_preview1"* ]]; then
         pass "$label — imports wasi_snapshot_preview1"
     else
         fail "$label — missing wasi_snapshot_preview1 imports"
@@ -161,7 +160,7 @@ echo "--- 2. arithmetic ---"
 
 assert_output "arithmetic.lua: basic ops" \
     examples/wasm/arithmetic.lua \
-    "$(printf '3\n12\n3\n5\n256.0\n2')"
+    "$(printf '3\n12\n3\n5\n256\n2')"
 
 # ── Section 3: string library ─────────────────────────────────────────────────
 echo ""
@@ -207,7 +206,7 @@ echo "--- 7. math library ---"
 
 assert_output "math_funcs.lua: math stdlib" \
     examples/wasm/math_funcs.lua \
-    "$(printf '42\n5\n2\n3\n4\n4.0\ninteger\nfloat')"
+    "$(printf '42\n5\n2\n3\n4\n4\ninteger\nfloat')"
 
 # ── Section 8: existing examples compile and run ──────────────────────────────
 echo ""
