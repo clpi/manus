@@ -581,6 +581,8 @@ test "resolve: primitive named types" {
     try testing.expectEqual(r(.void), try resolve(.{ .named = "void" }, null, alloc));
     try testing.expectEqual(r(.str), try resolve(.{ .named = "str" }, null, alloc));
     try testing.expectEqual(r(.any), try resolve(.{ .named = "any" }, null, alloc));
+    try testing.expectEqual(r(.any), try resolve(.{ .named = "Table" }, null, alloc));
+    try testing.expectEqual(r(.any), try resolve(.{ .named = "table" }, null, alloc));
     _ = ATE;
 }
 
@@ -603,6 +605,29 @@ test "resolve: pointer type" {
     defer alloc.destroy(result.pointer);
     try testing.expect(result == .pointer);
     try testing.expectEqual(r(.i32), result.pointer.*);
+}
+
+test "resolve: List generic aliases dynamic array type" {
+    const alloc = testing.allocator;
+    var base = @import("ast.zig").TypeExpr{ .named = "List" };
+    const elem = @import("ast.zig").TypeExpr{ .named = "i64" };
+    const params = [_]@import("ast.zig").TypeExpr{elem};
+    const result = try resolve(.{ .generic = .{ .base = &base, .params = @constCast(&params) } }, null, alloc);
+    defer alloc.destroy(result.array.elem);
+    try testing.expect(result == .array);
+    try testing.expect(result.array.size == null);
+    try testing.expectEqual(r(.i64), result.array.elem.*);
+}
+
+test "resolve: list generic aliases dynamic array type" {
+    const alloc = testing.allocator;
+    var base = @import("ast.zig").TypeExpr{ .named = "list" };
+    const elem = @import("ast.zig").TypeExpr{ .named = "str" };
+    const params = [_]@import("ast.zig").TypeExpr{elem};
+    const result = try resolve(.{ .generic = .{ .base = &base, .params = @constCast(&params) } }, null, alloc);
+    defer alloc.destroy(result.array.elem);
+    try testing.expect(result == .array);
+    try testing.expectEqual(r(.str), result.array.elem.*);
 }
 
 /// Map a native resolved type back to an annotation name (for inferred signatures).
@@ -660,6 +685,7 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             if (std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "integer")) return .i64;
             if (std.mem.eql(u8, n, "float") or std.mem.eql(u8, n, "number")) return .f64;
             if (std.mem.eql(u8, n, "string")) return .str;
+            if (std.mem.eql(u8, n, "Table") or std.mem.eql(u8, n, "table")) return .any;
             return ResolvedType{ .@"struct" = .{ .name = n } };
         },
         .pointer => |inner| {
@@ -691,16 +717,45 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             for (g.params, 0..) |p, i| {
                 args[i] = try resolve(p, sema, alloc);
             }
+            if (base.* == .@"struct" and
+                (std.mem.eql(u8, base.@"struct".name, "List") or
+                    std.mem.eql(u8, base.@"struct".name, "list")))
+            {
+                if (args.len != 1) {
+                    alloc.destroy(base);
+                    alloc.free(args);
+                    return .any;
+                }
+                const elem = try alloc.create(ResolvedType);
+                elem.* = args[0];
+                alloc.destroy(base);
+                alloc.free(args);
+                return ResolvedType{ .array = .{ .elem = elem, .size = null } };
+            }
             if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Result")) {
+                if (args.len != 2) {
+                    alloc.destroy(base);
+                    alloc.free(args);
+                    return .any;
+                }
                 const ok_ptr = try alloc.create(ResolvedType);
                 ok_ptr.* = args[0];
                 const err_ptr = try alloc.create(ResolvedType);
                 err_ptr.* = args[1];
+                alloc.destroy(base);
+                alloc.free(args);
                 return ResolvedType{ .result = .{ .ok = ok_ptr, .err = err_ptr } };
             }
             if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Option")) {
+                if (args.len != 1) {
+                    alloc.destroy(base);
+                    alloc.free(args);
+                    return .any;
+                }
                 const opt_ptr = try alloc.create(ResolvedType);
                 opt_ptr.* = args[0];
+                alloc.destroy(base);
+                alloc.free(args);
                 return ResolvedType{ .option = opt_ptr };
             }
             var key: u64 = std.hash.Wyhash.hash(0, "generic");

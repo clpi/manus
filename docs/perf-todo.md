@@ -8,6 +8,41 @@ benchmarks) and `zig build unit-test` at 345/345.
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 
+## Language roadmap status
+
+This section tracks language-surface work that affects performance and docs.
+Keep it in sync with `docs/src/roadmap.md`.
+
+- [x] **List/Table type unification.** `Table`/`table` now resolve to the dynamic
+  Lua table representation, and `List[T]`/`list[T]` resolve to the same dynamic
+  typed list shape as `[]T`.
+- [x] **Await instead of wait.** `await` is the supported async wait operator;
+  no separate `wait` keyword is planned.
+- [~] **`a = expr and x or y` semantics.** Lua short-circuit semantics exist;
+  typed narrowing/codegen recovery for this idiom still needs work.
+- [ ] **List comprehension.**
+- [~] **Macros / metaprogramming.** Compile-time `##(...)` and `std.meta`
+  helpers exist; hygienic macro syntax is still planned.
+- [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
+  expressions work; postfix conditional syntax is not implemented.
+- [~] **Concept metatable merging.** Concepts exist as structural checks, but
+  they are not yet unified with Lua metatables.
+- [~] **Allocator / memory management.** ARC exists; escape analysis, ARC
+  pruning, and custom allocator work remain open below.
+- [x] **`std.string = string`, `std.io = io`, etc.** Standard modules expose Lua
+  library wrappers via `req "std.module"` / `require("std.module")`.
+- [x] **`type` keyword instead of `alias`.** `type Name = ExistingType` is
+  supported; `alias` remains accepted as legacy syntax.
+- [ ] **`case ... do/then ...` instead of arrow.**
+- [x] **`?` and `!` operators.** Postfix propagation and unwrap parse and are
+  checked by sema.
+- [x] **Declare without `local` as standard local declaration.** `.duo` files
+  are local-by-default for bare assignments; `local` remains valid.
+- [~] **Merge concepts and metatables; remove syntax additions; make more Lua.**
+  Direction is documented, implementation remains partial.
+- [~] **Pointers / references.** Pointer types use `*T`; reference and ownership
+  semantics remain planned.
+
 ## Highest priority
 
 - [~] **Kill dynamic fallback on hot expressions.** Audit `expr_type` / `emit_expr`

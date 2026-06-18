@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-005f88f7.js";
+            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cbb4eca2.js"></script>
+        <script src="toc-d954f18c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -180,6 +180,10 @@
 <p>Modules are imported with <code>require("std.module")</code> or the shorthand <code>req "std.module"</code>:</p>
 <pre><code class="language-duo">-- Import modules
 log = req "std.log"
+str = req "std.string"
+num = req "std.math"
+tbl = req "std.table"
+fs = req "std.fs"
 json = req "std.json"
 hash = req "std.hash"
 fmt = req "std.fmt"
@@ -295,6 +299,65 @@ build.exe({
 })
 </code></pre>
 <p>The CLI reads this shape from <code>build.duo</code> for <code>duo build</code> and <code>duo run</code>.</p>
+<h2 id="string-helpers-stdstring"><a class="header" href="#string-helpers-stdstring">String Helpers (<code>std.string</code>)</a></h2>
+<p>Convenience wrappers for common string tasks:</p>
+<pre><code class="language-duo">str = req "std.string"
+
+str.starts_with("duo-lang", "duo")  -- true
+str.ends_with("duo-lang", "lang")   -- true
+str.contains("duo-lang", "-")       -- true
+str.trim("  duo  ")                 -- "duo"
+parts = str.split("a,b,c", ",")
+joined = str.join(parts, "|")       -- "a|b|c"
+str.replace_all("a-b-c", "-", ":")  -- "a:b:c"
+str.repeat_str("ha", 3)             -- "hahaha"
+lines = str.lines("one\ntwo")
+</code></pre>
+<h2 id="math-helpers-stdmath"><a class="header" href="#math-helpers-stdmath">Math Helpers (<code>std.math</code>)</a></h2>
+<p>Small numeric helpers:</p>
+<pre><code class="language-duo">num = req "std.math"
+
+num.clamp(12, 1, 10)        -- 10
+num.min(3, 7)               -- 3
+num.max(3, 7)               -- 7
+num.sign(-4)                -- -1
+num.round(2.6)              -- 3
+num.lerp(0, 10, 0.5)        -- 5
+num.remap(5, 0, 10, 0, 100) -- 50
+num.sum({1, 2, 3})          -- 6
+num.mean({2, 4, 6})         -- 4
+num.is_even(4)              -- true
+num.is_odd(5)               -- true
+</code></pre>
+<h2 id="table-helpers-stdtable"><a class="header" href="#table-helpers-stdtable">Table Helpers (<code>std.table</code>)</a></h2>
+<p>Table and array helpers:</p>
+<pre><code class="language-duo">tbl = req "std.table"
+
+xs = {1, 2, 3}
+tbl.len(xs)                         -- 3
+tbl.contains(xs, 2)                 -- true
+tbl.index_of(xs, 3)                 -- 3
+tbl.reverse(xs)                     -- {3, 2, 1}
+tbl.map(xs, fun(v) return v * 2 end)
+tbl.filter(xs, fun(v) return v &gt; 1 end)
+tbl.reduce(xs, fun(acc, v) return acc + v end, 0)
+keys = tbl.keys({a = 1, b = 2})
+values = tbl.values({a = 1, b = 2})
+copy = tbl.clone({a = 1})
+merged = tbl.merge({a = 1}, {b = 2})
+</code></pre>
+<h2 id="file-system-helpers-stdfs"><a class="header" href="#file-system-helpers-stdfs">File-System Helpers (<code>std.fs</code>)</a></h2>
+<p>Simple file helpers built on <code>io</code> and <code>os</code>:</p>
+<pre><code class="language-duo">fs = req "std.fs"
+
+fs.write_file("/tmp/example.txt", "one\ntwo\n")
+fs.append_file("/tmp/example.txt", "three\n")
+fs.exists("/tmp/example.txt")       -- true
+text = fs.read_file("/tmp/example.txt")
+lines = fs.read_lines("/tmp/example.txt")
+fs.rename("/tmp/example.txt", "/tmp/example2.txt")
+fs.remove("/tmp/example2.txt")
+</code></pre>
 <h2 id="string-library"><a class="header" href="#string-library">String Library</a></h2>
 <p>Lua-compatible string functions:</p>
 <pre><code class="language-duo">-- Length
@@ -477,6 +540,7 @@ eq = rawequal(t, t)
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
+        <script src="theme/custom-52f62bf1.js"></script>
 
 
 

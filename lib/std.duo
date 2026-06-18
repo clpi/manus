@@ -25,5 +25,11 @@ std.sync = req "std.sync"
 std.collections = req "std.collections"
 std.time = req "std.time"
 std.os = req "std.os"
+std.mem = req "std.mem"
+std.io = req "std.io"
+std.utf8 = req "std.utf8"
+std.debug = req "std.debug"
+std.coroutine = req "std.coroutine"
+std.package = req "std.package"
 
 std

@@ -16,7 +16,7 @@ jobs:
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0-dev
+          version: master
 
       - name: Build
         run: zig build
@@ -35,7 +35,7 @@ jobs:
 
       - name: Install WASI runtime and WABT
         run: |
-          sudo apt-get install -y wabt
+          sudo apt-get update && sudo apt-get install -y wabt
           curl https://wasmtime.dev/install.sh -sSf | bash
           echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
 
@@ -54,7 +54,7 @@ jobs:
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0-dev
+          version: master
 
       - name: Build
         run: zig build
@@ -75,24 +75,29 @@ jobs:
             target: native
             artifact: duo
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.17.0-dev
+          version: master
 
       - name: Build release binary
         run: zig build -Doptimize=ReleaseFast
+
+      - name: Rename binary for release
+        run: mv zig-out/bin/duo zig-out/bin/duo-${{ matrix.os }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: duo-${{ matrix.os }}
-          path: zig-out/bin/duo
+          path: zig-out/bin/duo-${{ matrix.os }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: zig-out/bin/duo
+          files: zig-out/bin/duo-${{ matrix.os }}

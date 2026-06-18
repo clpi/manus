@@ -100,6 +100,12 @@ print(point.x)  -- 10
 
 -- Typed table (anonymous record)
 local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+
+-- Dynamic Lua table annotation
+local dynamic: Table = { name = "duo" }
+
+-- Dynamic-size typed list
+local nums: List[i64] = {}
 ```
 
 ### Imports
@@ -160,7 +166,8 @@ identity("hi")    -- also works
 | `bool` | `bool` | Boolean (true/false) |
 | `any` | `lua_Value` | Dynamic value (tagged union) |
 | `nil` | `void*` | Null value |
-| `Table` | `duo_Table*` | Dynamic table (ARC-managed) |
+| `Table` / `table` | `lua_Value` table | Dynamic Lua-compatible table |
+| `List[T]` / `list[T]` / `[]T` | `T*` | Dynamic typed list |
 
 ## Compilation Pipeline
 

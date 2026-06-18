@@ -1089,9 +1089,9 @@ test "decode_lua_short_string error: incomplete unicode escape" {
 }
 
 test "lex: contextual keywords" {
-    var l = Lexer.init("match try catch defer async await concept", "test");
+    var l = Lexer.init("match try catch defer async await concept alias", "test");
     const expected = [_]TokenKind{
-        .kw_match, .kw_try, .kw_catch, .kw_defer, .kw_async, .kw_await, .kw_concept,
+        .kw_match, .kw_try, .kw_catch, .kw_defer, .kw_async, .kw_await, .kw_concept, .kw_alias,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
     try testing.expectEqual(TokenKind.eof, (try l.next()).kind);

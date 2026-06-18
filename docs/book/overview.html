@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-005f88f7.js";
+            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cbb4eca2.js"></script>
+        <script src="toc-d954f18c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -208,7 +208,7 @@ const PI: f64 = 3.14159
 y = 100  -- inferred as i64
 </code></pre>
 <h3 id="functions"><a class="header" href="#functions">Functions</a></h3>
-<pre><code class="language-duo">-- Typed function with explicit return
+<pre><code class="language-duo">-- Typed function (implicit return is preferred)
 fun add(a: i64, b: i64): i64
     a + b
 end
@@ -218,7 +218,14 @@ function greet(name)
     return "Hello, " .. name
 end
 
--- Short form (implicit return)
+-- Explicit return is fine for early exits
+fun clamp(x: i64, lo: i64, hi: i64): i64
+    if x &lt; lo then return lo end
+    if x &gt; hi then return hi end
+    x
+end
+
+-- Short form
 fun square(x: f64): f64
     x * x
 end
@@ -259,6 +266,12 @@ print(point.x)  -- 10
 
 -- Typed table (anonymous record)
 local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+
+-- Dynamic Lua table annotation
+local dynamic: Table = { name = "duo" }
+
+-- Dynamic-size typed list
+local nums: List[i64] = {}
 </code></pre>
 <h3 id="imports"><a class="header" href="#imports">Imports</a></h3>
 <pre><code class="language-duo">-- Require a module
@@ -288,7 +301,7 @@ end
 <p>Without type annotations, Duo uses Lua’s dynamic semantics:</p>
 <pre><code class="language-duo">-- This works with any type
 function identity(x)
-    return x
+    x
 end
 
 identity(42)      -- works
@@ -307,7 +320,8 @@ identity("hi")    -- also works
 <tr><td><code>bool</code></td><td><code>bool</code></td><td>Boolean (true/false)</td></tr>
 <tr><td><code>any</code></td><td><code>lua_Value</code></td><td>Dynamic value (tagged union)</td></tr>
 <tr><td><code>nil</code></td><td><code>void*</code></td><td>Null value</td></tr>
-<tr><td><code>Table</code></td><td><code>duo_Table*</code></td><td>Dynamic table (ARC-managed)</td></tr>
+<tr><td><code>Table</code> / <code>table</code></td><td><code>lua_Value</code> table</td><td>Dynamic Lua-compatible table</td></tr>
+<tr><td><code>List[T]</code> / <code>list[T]</code> / <code>[]T</code></td><td><code>T*</code></td><td>Dynamic typed list</td></tr>
 </tbody>
 </table>
 </div>
@@ -342,7 +356,7 @@ duo build [target]        # Build from build.duo
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="idiomatic_duo.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -356,7 +370,7 @@ duo build [target]        # Build from build.duo
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="idiomatic_duo.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -385,6 +399,7 @@ duo build [target]        # Build from build.duo
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
+        <script src="theme/custom-52f62bf1.js"></script>
 
 
 

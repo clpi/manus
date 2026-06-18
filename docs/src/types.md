@@ -14,6 +14,7 @@ Duo's type system combines static safety with zero runtime cost. When you annota
 | `bool` | `bool` | 8-bit | Boolean value |
 | `nil` | `NULL` | - | Null/none value |
 | `any` | `lua_Value` | Tagged union | Dynamic value |
+| `Table` / `table` | `lua_Value` table | dynamic | Lua-compatible table value |
 
 ### Type Annotations
 
@@ -52,15 +53,29 @@ local point: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
 local dynamic_table: Table = { a = 1, b = 2 }
 ```
 
-### Arrays
+`Table` and `table` are aliases for the same dynamic Lua table representation
+used by untyped table literals. Use them when a value should keep Lua table
+semantics instead of becoming a native record.
+
+### Lists and Arrays
 
 ```duo
 -- Arrays are tables with integer keys
 local numbers = {1, 2, 3, 4, 5}
 
--- Typed array (via table type)
-local vec3: { 1: f64, 2: f64, 3: f64 } = { 1.0, 2.0, 3.0 }
+-- Dynamic-size typed list
+local scores: List[i64] = {}
+
+-- Equivalent spellings
+local names: list[str] = {}
+local raw: []i64 = {}
+
+-- Fixed-size typed array
+local vec3: [3]f64 = { 1.0, 2.0, 3.0 }
 ```
+
+`List[T]`, `list[T]`, and `[]T` resolve to the same dynamic list type. Fixed
+arrays use `[N]T`.
 
 ## Type Inference
 
@@ -82,7 +97,7 @@ end
 
 ## Optional Types
 
-Duo supports Rust-style `Option[T]` for nullable values:
+Duo supports `Option[T]` for nullable values:
 
 ```duo
 -- Option type (no nil)

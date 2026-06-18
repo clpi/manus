@@ -1,0 +1,19 @@
+-- std.package — package utilities
+
+fun loadlib(libname: str, funcname: str): any
+    package.loadlib(libname, funcname)
+end
+
+fun searchpath(name: str, path: str, sep: str, rep: str): any
+    package.searchpath(name, path, sep, rep)
+end
+
+M = {}
+M.loadlib = loadlib
+M.searchpath = searchpath
+M.config = package.config
+M.cpath = package.cpath
+M.path = package.path
+M.loaded = package.loaded
+M.preload = package.preload
+M

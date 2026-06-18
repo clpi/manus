@@ -1,0 +1,34 @@
+-- std.debug — debugging utilities
+
+fun traceback(message: str, level: int): str
+    debug.traceback(message, level)
+end
+
+fun getinfo(f: any, what: str): any
+    debug.getinfo(f, what)
+end
+
+fun getlocal(f: any, local_: int): any
+    debug.getlocal(f, local_)
+end
+
+fun getupvalue(f: any, up: int): any
+    debug.getupvalue(f, up)
+end
+
+fun setlocal(thread: any, level: int, local_: int, value: any): any
+    debug.setlocal(thread, level, local_, value)
+end
+
+fun setupvalue(f: any, up: int, value: any): any
+    debug.setupvalue(f, up, value)
+end
+
+M = {}
+M.traceback = traceback
+M.getinfo = getinfo
+M.getlocal = getlocal
+M.getupvalue = getupvalue
+M.setlocal = setlocal
+M.setupvalue = setupvalue
+M

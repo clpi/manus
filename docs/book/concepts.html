@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-005f88f7.js";
+            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cbb4eca2.js"></script>
+        <script src="toc-d954f18c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -178,33 +178,30 @@
 <p>Concepts in Duo are structural interfaces that define required methods and fields. Types satisfy concepts automatically when they provide the required members.</p>
 <h2 id="concept-declaration"><a class="header" href="#concept-declaration">Concept Declaration</a></h2>
 <pre><code class="language-duo">concept Iterable
-    required_methods: {
-        __iter: () -&gt; fun(): any
-    }
+    fun __iter(self): any
 end
 
 concept Addable
-    required_methods: {
-        __add: (any, any) -&gt; any
-    }
+    fun add(self, other): any
 end
 </code></pre>
 <h2 id="implementing-concepts"><a class="header" href="#implementing-concepts">Implementing Concepts</a></h2>
-<p>Types satisfy concepts when they have matching methods/fields:</p>
-<pre><code class="language-duo">-- This table satisfies Iterable
-local my_iterable = {
-    data = {1, 2, 3},
-    __iter = function()
-        local i = 0
-        return function()
-            i = i + 1
-            return my_iterable.data[i]
-        end
-    end
-}
+<p>Concepts can require methods and fields. Record-typed bindings can opt into a
+compile-time satisfaction check with <code>@implements(...)</code>:</p>
+<pre><code class="language-duo">concept PointLike
+    x: f64
+    y: f64
+    fun len(self): f64
+end
 
--- Explicit annotation
-local it: Iterable = my_iterable
+@implements(PointLike)
+local p: { x: f64, y: f64, len: any } = {
+    x = 3.0,
+    y = 4.0,
+    len = fun(self): f64
+        math.sqrt(self.x * self.x + self.y * self.y)
+    end,
+}
 </code></pre>
 <h2 id="concept-constraints-on-generics"><a class="header" href="#concept-constraints-on-generics">Concept Constraints on Generics</a></h2>
 <p>Use concepts to constrain generic type parameters:</p>
@@ -220,35 +217,28 @@ end
 print(sum({1, 2, 3}))           -- i64 array
 print(sum({"a", "b", "c"}))       -- str array
 </code></pre>
+<p>Constraint syntax is parsed and tracked for generic functions. Deep concept
+dispatch and metatable unification are still roadmap work.</p>
 <h2 id="multiple-constraints"><a class="header" href="#multiple-constraints">Multiple Constraints</a></h2>
 <p>Combine multiple concepts:</p>
 <pre><code class="language-duo">concept Display
-    required_methods: {
-        __display: () -&gt; str
-    }
+    fun display(self): str
 end
 
 fun describe&lt;T: Iterable + Display&gt;(value: T): str
     -- T must satisfy both Iterable AND Display
 end
 </code></pre>
-<h2 id="anonymous-concepts"><a class="header" href="#anonymous-concepts">Anonymous Concepts</a></h2>
-<p>Use inline concept requirements:</p>
-<pre><code class="language-duo">fun process&lt;T: { __iter: () -&gt; fun(): any }&gt;(value: T): i64
-    count: i64 = 0
-    for item in value
-        count = count + 1
-    end
-    return count
-end
-</code></pre>
 <h2 id="concept-satisfaction-checking"><a class="header" href="#concept-satisfaction-checking">Concept Satisfaction Checking</a></h2>
 <p>The compiler verifies concept satisfaction at compile time:</p>
-<pre><code class="language-duo">-- This fails if MyType doesn't have __iter method
-fun count_items&lt;T: Iterable&gt;(container: T): i64
-    local iter = container.__iter()
-    -- ...
+<pre><code class="language-duo">concept Pair
+    first: i64
+    second: i64
 end
+
+-- ERROR: missing required field `second`
+@implements(Pair)
+local bad_pair: { first: i64 } = { first = 1 }
 </code></pre>
 <h2 id="built-in-concepts"><a class="header" href="#built-in-concepts">Built-in Concepts</a></h2>
 <p>Duo provides several built-in concepts:</p>
@@ -259,7 +249,7 @@ end
 </thead>
 <tbody>
 <tr><td><code>Iterable</code></td><td><code>__iter</code> method returning iterator function</td></tr>
-<tr><td><code>Addable</code></td><td><code>__add</code> method or <code>+</code> operator support</td></tr>
+<tr><td><code>Addable</code></td><td>Add/combine method or <code>+</code> operator support</td></tr>
 <tr><td><code>Closeable</code></td><td><code>__close</code> metamethod for cleanup</td></tr>
 <tr><td><code>Comparable</code></td><td><code>__lt</code>, <code>__gt</code>, etc. for comparison</td></tr>
 </tbody>
@@ -317,6 +307,7 @@ end
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
+        <script src="theme/custom-52f62bf1.js"></script>
 
 
 

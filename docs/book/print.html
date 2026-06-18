@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-005f88f7.js";
+            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cbb4eca2.js"></script>
+        <script src="toc-d954f18c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -271,7 +271,7 @@ const PI: f64 = 3.14159
 y = 100  -- inferred as i64
 </code></pre>
 <h3 id="functions"><a class="header" href="#functions">Functions</a></h3>
-<pre><code class="language-duo">-- Typed function with explicit return
+<pre><code class="language-duo">-- Typed function (implicit return is preferred)
 fun add(a: i64, b: i64): i64
     a + b
 end
@@ -281,7 +281,14 @@ function greet(name)
     return "Hello, " .. name
 end
 
--- Short form (implicit return)
+-- Explicit return is fine for early exits
+fun clamp(x: i64, lo: i64, hi: i64): i64
+    if x &lt; lo then return lo end
+    if x &gt; hi then return hi end
+    x
+end
+
+-- Short form
 fun square(x: f64): f64
     x * x
 end
@@ -322,6 +329,12 @@ print(point.x)  -- 10
 
 -- Typed table (anonymous record)
 local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
+
+-- Dynamic Lua table annotation
+local dynamic: Table = { name = "duo" }
+
+-- Dynamic-size typed list
+local nums: List[i64] = {}
 </code></pre>
 <h3 id="imports"><a class="header" href="#imports">Imports</a></h3>
 <pre><code class="language-duo">-- Require a module
@@ -351,7 +364,7 @@ end
 <p>Without type annotations, Duo uses Lua’s dynamic semantics:</p>
 <pre><code class="language-duo">-- This works with any type
 function identity(x)
-    return x
+    x
 end
 
 identity(42)      -- works
@@ -370,7 +383,8 @@ identity("hi")    -- also works
 <tr><td><code>bool</code></td><td><code>bool</code></td><td>Boolean (true/false)</td></tr>
 <tr><td><code>any</code></td><td><code>lua_Value</code></td><td>Dynamic value (tagged union)</td></tr>
 <tr><td><code>nil</code></td><td><code>void*</code></td><td>Null value</td></tr>
-<tr><td><code>Table</code></td><td><code>duo_Table*</code></td><td>Dynamic table (ARC-managed)</td></tr>
+<tr><td><code>Table</code> / <code>table</code></td><td><code>lua_Value</code> table</td><td>Dynamic Lua-compatible table</td></tr>
+<tr><td><code>List[T]</code> / <code>list[T]</code> / <code>[]T</code></td><td><code>T*</code></td><td>Dynamic typed list</td></tr>
 </tbody>
 </table>
 </div>
@@ -397,6 +411,82 @@ duo init [name]           # Create a new Duo project
 duo build [target]        # Build from build.duo
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="idiomatic-duo-the-zen-of-duo"><a class="header" href="#idiomatic-duo-the-zen-of-duo">Idiomatic Duo (The Zen of Duo)</a></h1>
+<p>Duo is designed to be a pragmatic, high-performance language that blends the flexibility of Lua with the speed and safety of native C. To get the most out of Duo, follow these idiomatic guidelines:</p>
+<h2 id="1-prefer-implicit-returns"><a class="header" href="#1-prefer-implicit-returns">1. Prefer Implicit Returns</a></h2>
+<p>When the last thing a function does is produce a value, let the block tail expression be the return. This is cleaner, faster to read, and generates the same code as an explicit <code>return</code>.</p>
+<p><strong>Idiomatic:</strong></p>
+<pre><code class="language-duo">fun add(a: i64, b: i64): i64
+    a + b
+end
+
+fun max(a: i64, b: i64): i64
+    if a &gt; b then a else b end
+end
+</code></pre>
+<p><strong>Less idiomatic:</strong></p>
+<pre><code class="language-duo">fun add(a: i64, b: i64): i64
+    return a + b
+end
+</code></pre>
+<p>Use explicit <code>return</code> only when you need to exit early:</p>
+<pre><code class="language-duo">fun find_index(list: any, target: any): i64
+    for i = 1, #list do
+        if list[i] == target then
+            return i
+        end
+    end
+    -1
+end
+</code></pre>
+<h2 id="2-embrace-type-annotations-for-performance"><a class="header" href="#2-embrace-type-annotations-for-performance">2. Embrace Type Annotations for Performance</a></h2>
+<p>While Duo allows you to write untyped Lua-style code, adding static type annotations (<code>x: number</code>, <code>s: string</code>) allows the compiler to:</p>
+<ul>
+<li>Generate highly optimized C code (often 4-100x faster than untyped code).</li>
+<li>Perform constant-folding and dead-code elimination at compile time.</li>
+<li>Provide compile-time safety and better error messages.</li>
+</ul>
+<p><strong>Idiomatic (when performance matters):</strong></p>
+<pre><code class="language-duo">fun calculate_sum(n: number): number
+    local sum: number = 0
+    for i = 1, n do
+        sum = sum + i
+    end
+    sum
+end
+</code></pre>
+<p><strong>Less idiomatic (but valid for quick scripting):</strong></p>
+<pre><code class="language-duo">fun calculate_sum(n)
+    local sum = 0
+    for i = 1, n do
+        sum = sum + i
+    end
+    return sum
+end
+</code></pre>
+<h2 id="3-default-to-local"><a class="header" href="#3-default-to-local">3. Default to <code>local</code></a></h2>
+<p>Always declare variables with <code>local</code>. Global variables are discouraged unless absolutely necessary, as they can inhibit optimizations and cause unintended side-effects across your program.</p>
+<h2 id="4-leverage-pattern-matching"><a class="header" href="#4-leverage-pattern-matching">4. Leverage Pattern Matching</a></h2>
+<p>Duo’s pattern matching (<code>match</code>) is more expressive and safer than complex <code>if/elseif/else</code> chains. Use it to handle enums, variants, and structured data clearly.</p>
+<pre><code class="language-duo">local enum Option
+    Some(val: any)
+    None
+end
+
+fun process(opt: Option)
+    match opt
+        case Some(val) =&gt; print(val)
+        case None =&gt; print("Nothing")
+    end
+end
+</code></pre>
+<h2 id="5-take-advantage-of-constant-folding"><a class="header" href="#5-take-advantage-of-constant-folding">5. Take Advantage of Constant Folding</a></h2>
+<p>When values are known at compile time, the Duo compiler will aggressively constant-fold. You can rely on this for zero-cost abstractions, meaning that clear, descriptive code often compiles down to nothing!</p>
+<pre><code class="language-duo">fun circle_area(r: f64): f64
+    math.pi * r * r
+end
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="types-and-type-annotations"><a class="header" href="#types-and-type-annotations">Types and Type Annotations</a></h1>
 <p>Duo’s type system combines static safety with zero runtime cost. When you annotate types, the compiler generates optimized C code with no boxing or dynamic dispatch overhead.</p>
 <h2 id="basic-types"><a class="header" href="#basic-types">Basic Types</a></h2>
@@ -413,6 +503,7 @@ duo build [target]        # Build from build.duo
 <tr><td><code>bool</code></td><td><code>bool</code></td><td>8-bit</td><td>Boolean value</td></tr>
 <tr><td><code>nil</code></td><td><code>NULL</code></td><td>-</td><td>Null/none value</td></tr>
 <tr><td><code>any</code></td><td><code>lua_Value</code></td><td>Tagged union</td><td>Dynamic value</td></tr>
+<tr><td><code>Table</code> / <code>table</code></td><td><code>lua_Value</code> table</td><td>dynamic</td><td>Lua-compatible table value</td></tr>
 </tbody>
 </table>
 </div>
@@ -446,13 +537,25 @@ local point: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
 -- Table type for dynamic tables
 local dynamic_table: Table = { a = 1, b = 2 }
 </code></pre>
-<h3 id="arrays"><a class="header" href="#arrays">Arrays</a></h3>
+<p><code>Table</code> and <code>table</code> are aliases for the same dynamic Lua table representation
+used by untyped table literals. Use them when a value should keep Lua table
+semantics instead of becoming a native record.</p>
+<h3 id="lists-and-arrays"><a class="header" href="#lists-and-arrays">Lists and Arrays</a></h3>
 <pre><code class="language-duo">-- Arrays are tables with integer keys
 local numbers = {1, 2, 3, 4, 5}
 
--- Typed array (via table type)
-local vec3: { 1: f64, 2: f64, 3: f64 } = { 1.0, 2.0, 3.0 }
+-- Dynamic-size typed list
+local scores: List[i64] = {}
+
+-- Equivalent spellings
+local names: list[str] = {}
+local raw: []i64 = {}
+
+-- Fixed-size typed array
+local vec3: [3]f64 = { 1.0, 2.0, 3.0 }
 </code></pre>
+<p><code>List[T]</code>, <code>list[T]</code>, and <code>[]T</code> resolve to the same dynamic list type. Fixed
+arrays use <code>[N]T</code>.</p>
 <h2 id="type-inference"><a class="header" href="#type-inference">Type Inference</a></h2>
 <p>Duo can infer types for variables and expressions:</p>
 <pre><code class="language-duo">-- Inferred as i64
@@ -468,7 +571,7 @@ fun compute(n: i64): i64
 end
 </code></pre>
 <h2 id="optional-types"><a class="header" href="#optional-types">Optional Types</a></h2>
-<p>Duo supports Rust-style <code>Option[T]</code> for nullable values:</p>
+<p>Duo supports <code>Option[T]</code> for nullable values:</p>
 <pre><code class="language-duo">-- Option type (no nil)
 fun find_item(id: i64): Option[str]
     if id == 0 then
@@ -510,6 +613,46 @@ local v3: v4f64 = v1 + v2
 local sum: f64 = simd.sum(v3)
 </code></pre>
 <p>Available SIMD types: <code>v4f64</code>, <code>v4i64</code>, <code>v8f32</code>, <code>v8i32</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="language-status-and-roadmap"><a class="header" href="#language-status-and-roadmap">Language Status and Roadmap</a></h1>
+<p>Duo stays close to Lua while adding static types, AOT codegen, and a small set
+of syntax extensions where they buy real safety or performance. This page tracks
+the current language direction so examples do not drift from the compiler.</p>
+<h2 id="implemented"><a class="header" href="#implemented">Implemented</a></h2>
+<ul>
+<li><code>await</code> is the async wait primitive. There is no separate <code>wait</code> keyword.</li>
+<li>Postfix <code>?</code> and <code>!</code> parse as propagation and unwrap operators.</li>
+<li><code>.duo</code> files are local-by-default for bare assignments; <code>local</code> remains valid
+for Lua compatibility and readability.</li>
+<li><code>Table</code> and <code>table</code> name the dynamic Lua table representation.</li>
+<li><code>List[T]</code>, <code>list[T]</code>, and <code>[]T</code> resolve to the same dynamic typed list shape.</li>
+<li><code>type Name = ExistingType</code> is the preferred type-alias spelling. <code>alias</code> is
+still accepted as legacy syntax.</li>
+<li><code>std.string</code>, <code>std.io</code>, <code>std.math</code>, <code>std.table</code>, and related modules are
+available through <code>req "std.module"</code> / <code>require("std.module")</code>.</li>
+</ul>
+<h2 id="partial"><a class="header" href="#partial">Partial</a></h2>
+<ul>
+<li><code>a = expr and x or y</code> follows Lua truthiness and short-circuit semantics.
+Narrowing and typed-codegen recovery for this idiom still need more work.</li>
+<li><code>if ... then ... else ... end</code> can be used as a tail expression in blocks.
+Postfix <code>expr if cond else fallback</code> syntax is not implemented.</li>
+<li>Concepts exist as compile-time structural checks. They have not been merged
+with metatable semantics yet.</li>
+<li>Pointer types use <code>*T</code>. Reference and ownership semantics are still evolving.</li>
+<li>Allocator and memory-management work is tracked through ARC, escape analysis,
+and custom allocator tasks.</li>
+</ul>
+<h2 id="planned"><a class="header" href="#planned">Planned</a></h2>
+<ul>
+<li>List comprehension syntax.</li>
+<li>Macros and metaprogramming beyond the current compile-time <code>##(...)</code> escape
+and <code>std.meta</code> helpers.</li>
+<li><code>case ... do/then ...</code> match arms as a Lua-like replacement for arrow arms.</li>
+<li>A tighter concept/metatable model that removes unnecessary syntax additions.</li>
+<li>Deeper table/list lowering so dynamic Lua tables and typed Duo lists share
+more optimizer paths without losing Lua compatibility.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="functions-1"><a class="header" href="#functions-1">Functions</a></h1>
 <p>Functions are the core building blocks in Duo. They support both Lua’s dynamic style and typed, performance-oriented variants.</p>
@@ -751,22 +894,16 @@ int_result = sum(1, 2)
 str_result = sum("a", "b")
 </code></pre>
 <h2 id="generic-data-structures"><a class="header" href="#generic-data-structures">Generic Data Structures</a></h2>
-<p>Generics enable type-safe containers:</p>
-<pre><code class="language-duo">-- Generic vector type
-type Vec&lt;T&gt; = {
-    data: []T,
-    length: i64
-}
-
-fun Vec&lt;T&gt;.new(): Vec&lt;T&gt;
-    return { data = {}, length = 0 }
-end
-
-fun Vec&lt;T&gt;.push(v: Vec&lt;T&gt;, item: T): void
-    v.length = v.length + 1
-    v.data[v.length] = item
+<p>Use <code>List[T]</code> / <code>[]T</code> when you want type-safe list values:</p>
+<pre><code class="language-duo">fun first_or&lt;T&gt;(items: List[T], fallback: T): T
+    if #items == 0 then
+        return fallback
+    end
+    items[1]
 end
 </code></pre>
+<p>Generic type aliases such as <code>type Vec&lt;T&gt; = ...</code> are planned, but the current
+<code>type</code> declaration is for non-generic aliases.</p>
 <h2 id="partial-specialization"><a class="header" href="#partial-specialization">Partial Specialization</a></h2>
 <p>You can provide custom implementations for specific types:</p>
 <pre><code class="language-duo">fun hash&lt;T&gt;(value: T): i64
@@ -1166,33 +1303,30 @@ end
 <p>Concepts in Duo are structural interfaces that define required methods and fields. Types satisfy concepts automatically when they provide the required members.</p>
 <h2 id="concept-declaration"><a class="header" href="#concept-declaration">Concept Declaration</a></h2>
 <pre><code class="language-duo">concept Iterable
-    required_methods: {
-        __iter: () -&gt; fun(): any
-    }
+    fun __iter(self): any
 end
 
 concept Addable
-    required_methods: {
-        __add: (any, any) -&gt; any
-    }
+    fun add(self, other): any
 end
 </code></pre>
 <h2 id="implementing-concepts"><a class="header" href="#implementing-concepts">Implementing Concepts</a></h2>
-<p>Types satisfy concepts when they have matching methods/fields:</p>
-<pre><code class="language-duo">-- This table satisfies Iterable
-local my_iterable = {
-    data = {1, 2, 3},
-    __iter = function()
-        local i = 0
-        return function()
-            i = i + 1
-            return my_iterable.data[i]
-        end
-    end
-}
+<p>Concepts can require methods and fields. Record-typed bindings can opt into a
+compile-time satisfaction check with <code>@implements(...)</code>:</p>
+<pre><code class="language-duo">concept PointLike
+    x: f64
+    y: f64
+    fun len(self): f64
+end
 
--- Explicit annotation
-local it: Iterable = my_iterable
+@implements(PointLike)
+local p: { x: f64, y: f64, len: any } = {
+    x = 3.0,
+    y = 4.0,
+    len = fun(self): f64
+        math.sqrt(self.x * self.x + self.y * self.y)
+    end,
+}
 </code></pre>
 <h2 id="concept-constraints-on-generics"><a class="header" href="#concept-constraints-on-generics">Concept Constraints on Generics</a></h2>
 <p>Use concepts to constrain generic type parameters:</p>
@@ -1208,35 +1342,28 @@ end
 print(sum({1, 2, 3}))           -- i64 array
 print(sum({"a", "b", "c"}))       -- str array
 </code></pre>
+<p>Constraint syntax is parsed and tracked for generic functions. Deep concept
+dispatch and metatable unification are still roadmap work.</p>
 <h2 id="multiple-constraints"><a class="header" href="#multiple-constraints">Multiple Constraints</a></h2>
 <p>Combine multiple concepts:</p>
 <pre><code class="language-duo">concept Display
-    required_methods: {
-        __display: () -&gt; str
-    }
+    fun display(self): str
 end
 
 fun describe&lt;T: Iterable + Display&gt;(value: T): str
     -- T must satisfy both Iterable AND Display
 end
 </code></pre>
-<h2 id="anonymous-concepts"><a class="header" href="#anonymous-concepts">Anonymous Concepts</a></h2>
-<p>Use inline concept requirements:</p>
-<pre><code class="language-duo">fun process&lt;T: { __iter: () -&gt; fun(): any }&gt;(value: T): i64
-    count: i64 = 0
-    for item in value
-        count = count + 1
-    end
-    return count
-end
-</code></pre>
 <h2 id="concept-satisfaction-checking"><a class="header" href="#concept-satisfaction-checking">Concept Satisfaction Checking</a></h2>
 <p>The compiler verifies concept satisfaction at compile time:</p>
-<pre><code class="language-duo">-- This fails if MyType doesn't have __iter method
-fun count_items&lt;T: Iterable&gt;(container: T): i64
-    local iter = container.__iter()
-    -- ...
+<pre><code class="language-duo">concept Pair
+    first: i64
+    second: i64
 end
+
+-- ERROR: missing required field `second`
+@implements(Pair)
+local bad_pair: { first: i64 } = { first = 1 }
 </code></pre>
 <h2 id="built-in-concepts"><a class="header" href="#built-in-concepts">Built-in Concepts</a></h2>
 <p>Duo provides several built-in concepts:</p>
@@ -1247,7 +1374,7 @@ end
 </thead>
 <tbody>
 <tr><td><code>Iterable</code></td><td><code>__iter</code> method returning iterator function</td></tr>
-<tr><td><code>Addable</code></td><td><code>__add</code> method or <code>+</code> operator support</td></tr>
+<tr><td><code>Addable</code></td><td>Add/combine method or <code>+</code> operator support</td></tr>
 <tr><td><code>Closeable</code></td><td><code>__close</code> metamethod for cleanup</td></tr>
 <tr><td><code>Comparable</code></td><td><code>__lt</code>, <code>__gt</code>, etc. for comparison</td></tr>
 </tbody>
@@ -1463,6 +1590,10 @@ end
 <p>Modules are imported with <code>require("std.module")</code> or the shorthand <code>req "std.module"</code>:</p>
 <pre><code class="language-duo">-- Import modules
 log = req "std.log"
+str = req "std.string"
+num = req "std.math"
+tbl = req "std.table"
+fs = req "std.fs"
 json = req "std.json"
 hash = req "std.hash"
 fmt = req "std.fmt"
@@ -1578,6 +1709,65 @@ build.exe({
 })
 </code></pre>
 <p>The CLI reads this shape from <code>build.duo</code> for <code>duo build</code> and <code>duo run</code>.</p>
+<h2 id="string-helpers-stdstring"><a class="header" href="#string-helpers-stdstring">String Helpers (<code>std.string</code>)</a></h2>
+<p>Convenience wrappers for common string tasks:</p>
+<pre><code class="language-duo">str = req "std.string"
+
+str.starts_with("duo-lang", "duo")  -- true
+str.ends_with("duo-lang", "lang")   -- true
+str.contains("duo-lang", "-")       -- true
+str.trim("  duo  ")                 -- "duo"
+parts = str.split("a,b,c", ",")
+joined = str.join(parts, "|")       -- "a|b|c"
+str.replace_all("a-b-c", "-", ":")  -- "a:b:c"
+str.repeat_str("ha", 3)             -- "hahaha"
+lines = str.lines("one\ntwo")
+</code></pre>
+<h2 id="math-helpers-stdmath"><a class="header" href="#math-helpers-stdmath">Math Helpers (<code>std.math</code>)</a></h2>
+<p>Small numeric helpers:</p>
+<pre><code class="language-duo">num = req "std.math"
+
+num.clamp(12, 1, 10)        -- 10
+num.min(3, 7)               -- 3
+num.max(3, 7)               -- 7
+num.sign(-4)                -- -1
+num.round(2.6)              -- 3
+num.lerp(0, 10, 0.5)        -- 5
+num.remap(5, 0, 10, 0, 100) -- 50
+num.sum({1, 2, 3})          -- 6
+num.mean({2, 4, 6})         -- 4
+num.is_even(4)              -- true
+num.is_odd(5)               -- true
+</code></pre>
+<h2 id="table-helpers-stdtable"><a class="header" href="#table-helpers-stdtable">Table Helpers (<code>std.table</code>)</a></h2>
+<p>Table and array helpers:</p>
+<pre><code class="language-duo">tbl = req "std.table"
+
+xs = {1, 2, 3}
+tbl.len(xs)                         -- 3
+tbl.contains(xs, 2)                 -- true
+tbl.index_of(xs, 3)                 -- 3
+tbl.reverse(xs)                     -- {3, 2, 1}
+tbl.map(xs, fun(v) return v * 2 end)
+tbl.filter(xs, fun(v) return v &gt; 1 end)
+tbl.reduce(xs, fun(acc, v) return acc + v end, 0)
+keys = tbl.keys({a = 1, b = 2})
+values = tbl.values({a = 1, b = 2})
+copy = tbl.clone({a = 1})
+merged = tbl.merge({a = 1}, {b = 2})
+</code></pre>
+<h2 id="file-system-helpers-stdfs"><a class="header" href="#file-system-helpers-stdfs">File-System Helpers (<code>std.fs</code>)</a></h2>
+<p>Simple file helpers built on <code>io</code> and <code>os</code>:</p>
+<pre><code class="language-duo">fs = req "std.fs"
+
+fs.write_file("/tmp/example.txt", "one\ntwo\n")
+fs.append_file("/tmp/example.txt", "three\n")
+fs.exists("/tmp/example.txt")       -- true
+text = fs.read_file("/tmp/example.txt")
+lines = fs.read_lines("/tmp/example.txt")
+fs.rename("/tmp/example.txt", "/tmp/example2.txt")
+fs.remove("/tmp/example2.txt")
+</code></pre>
 <h2 id="string-library"><a class="header" href="#string-library">String Library</a></h2>
 <p>Lua-compatible string functions:</p>
 <pre><code class="language-duo">-- Length
@@ -2005,6 +2195,92 @@ RESULT primes 1229
 RESULT mandel 198968
 </code></pre>
 <p>The harness verifies all values match between Duo and reference C before comparing timing.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="example-programs"><a class="header" href="#example-programs">Example Programs</a></h1>
+<p>Here are a few example programs to give you a feel for Duo’s syntax and capabilities. Because Duo is heavily inspired by Lua, the syntax will look very familiar, but it incorporates many modern features like type annotations, enums, and pattern matching.</p>
+<h2 id="hello-world-1"><a class="header" href="#hello-world-1">Hello World</a></h2>
+<pre><code class="language-duo">print("Hello, Duo!")
+</code></pre>
+<h2 id="fibonacci-sequence-typed"><a class="header" href="#fibonacci-sequence-typed">Fibonacci Sequence (Typed)</a></h2>
+<p>Using static type annotations significantly improves performance when compiled:</p>
+<pre><code class="language-duo">fn fib(n: number): number
+    if n &lt;= 1 then
+        return n
+    end
+    return fib(n - 1) + fib(n - 2)
+end
+
+print(fib(10))
+</code></pre>
+<h2 id="pattern-matching-with-enums"><a class="header" href="#pattern-matching-with-enums">Pattern Matching with Enums</a></h2>
+<p>Duo supports algebraic data types through enums, and powerful pattern matching:</p>
+<pre><code class="language-duo">local enum Option
+    Some(val: any)
+    None
+end
+
+fn handle_option(opt: Option)
+    match opt
+        case Some(val) =&gt; print("Got value:", val)
+        case None =&gt; print("No value")
+    end
+end
+
+handle_option(Option.Some(42))
+handle_option(Option.None)
+</code></pre>
+<h2 id="object-oriented-style"><a class="header" href="#object-oriented-style">Object-Oriented Style</a></h2>
+<p>Just like Lua, you can implement Object-Oriented patterns using metatables:</p>
+<pre><code class="language-duo">local Point = {}
+Point.__index = Point
+
+fn Point.new(x: number, y: number): any
+    local self = {
+        x = x,
+        y = y
+    }
+    setmetatable(self, Point)
+    return self
+end
+
+fn Point:move(dx: number, dy: number)
+    self.x = self.x + dx
+    self.y = self.y + dy
+end
+
+local p = Point.new(10, 20)
+p:move(5, -5)
+print(p.x, p.y)
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="editor-setup"><a class="header" href="#editor-setup">Editor Setup</a></h1>
+<p>Because Duo’s syntax is heavily inspired by Lua, the easiest way to get editor support (such as syntax highlighting, auto-indentation, and bracket matching) is to configure your editor to treat <code>.duo</code> files as Lua files.</p>
+<h2 id="visual-studio-code-vs-code"><a class="header" href="#visual-studio-code-vs-code">Visual Studio Code (VS Code)</a></h2>
+<p>To automatically get syntax highlighting for <code>.duo</code> files in VS Code:</p>
+<ol>
+<li>Open your settings using the Command Palette (<code>Ctrl+Shift+P</code> or <code>Cmd+Shift+P</code>) and type <code>Preferences: Open User Settings (JSON)</code>.</li>
+<li>Add the following file association mapping to your configuration:</li>
+</ol>
+<pre><code class="language-json">{
+    "files.associations": {
+        "*.duo": "lua"
+    }
+}
+</code></pre>
+<h2 id="neovim--vim"><a class="header" href="#neovim--vim">Neovim / Vim</a></h2>
+<p>Add the following to your Neovim or Vim configuration to detect <code>.duo</code> files as Lua.</p>
+<p><strong>For Neovim (<code>init.lua</code>):</strong></p>
+<pre><code class="language-lua">vim.filetype.add({
+  extension = {
+    duo = 'lua',
+  }
+})
+</code></pre>
+<p><strong>For Vim / Neovim (<code>init.vim</code> / <code>.vimrc</code>):</strong></p>
+<pre><code class="language-vim">autocmd BufRead,BufNewFile *.duo set filetype=lua
+</code></pre>
+<h2 id="other-text-editors"><a class="header" href="#other-text-editors">Other Text Editors</a></h2>
+<p>For most other text editors or IDEs, look for “File Associations” or “Language Settings” and map the <code>.duo</code> extension to the Lua language. Alternatively, you can often manually set the language mode to “Lua” when opening a <code>.duo</code> file.</p>
 
                     </main>
 
@@ -2045,6 +2321,7 @@ RESULT mandel 198968
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
+        <script src="theme/custom-52f62bf1.js"></script>
 
         <script>
         window.addEventListener('load', function() {

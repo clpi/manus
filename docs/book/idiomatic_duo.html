@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction</title>
+        <title>Idiomatic Duo</title>
 
 
         <!-- Custom HTML head -->
@@ -174,74 +174,91 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p>Duo is a Lua-like language that compiles to native C (ahead-of-time compilation). It combines the simplicity and expressiveness of Lua with optional static typing for performance-critical code.</p>
-<h2 id="key-features"><a class="header" href="#key-features">Key Features</a></h2>
-<ul>
-<li><strong>Lua-compatible syntax</strong>: Duo accepts both <code>.duo</code> files (typed mode, local-by-default) and <code>.lua</code> files (traditional Lua mode, global-by-default)</li>
-<li><strong>Static types, zero-cost</strong>: When you annotate types, Duo generates pure C code with no runtime overhead or boxing</li>
-<li><strong>Native performance</strong>: Fully-typed Duo code compiles to native C that beats C in many benchmarks due to aggressive optimizations</li>
-<li><strong>WASM target</strong>: Cross-compile to WebAssembly with WASI support</li>
-<li><strong>Pattern matching</strong>: Rust/Go-style match expressions with destructuring</li>
-<li><strong>Async/await</strong>: Cooperative concurrency built on stackless coroutines</li>
-<li><strong>Generics</strong>: Monomorphized generics (compile-time specialization)</li>
-<li><strong>Result and Option types</strong>: Rust-inspired error handling without runtime cost</li>
-</ul>
-<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
-<p>The Duo compiler has four main passes:</p>
-<ol>
-<li><strong>Lexer</strong> → Tokenizes source code</li>
-<li><strong>Parser</strong> → Builds an AST from tokens</li>
-<li><strong>Semantic Analysis</strong> → Type-checks and annotates the AST</li>
-<li><strong>Code Generation</strong> → Emits C code that clang compiles to native</li>
-</ol>
-<p>Optional passes between semantic analysis and codegen:</p>
-<ul>
-<li><strong>Monomorphizer</strong> → Expands generic functions into concrete specializations</li>
-<li><strong>ARC Pass</strong> → Analyzes reference counting for managed values</li>
-<li><strong>Async Lowering</strong> → Transforms async functions into state machines</li>
-</ul>
-<h2 id="status"><a class="header" href="#status">Status</a></h2>
-<p>Duo is actively developed with 345+ unit tests covering the lexer, parser, semantic analyzer, monomorphizer, ARC pass, async lowering, and property-based tests. The compiler produces native C and WebAssembly outputs.</p>
-<h2 id="quick-start"><a class="header" href="#quick-start">Quick Start</a></h2>
-<pre><code class="language-bash"># Install (requires Zig 0.17.0-dev)
-zig build
-
-# Run a Duo file
-./zig-out/bin/duo run examples/hello.lua
-
-# Compile to native binary
-./zig-out/bin/duo compile script.duo -o program
-
-# Compile to WASM
-./zig-out/bin/duo compile script.duo --target wasm32-wasi -o program.wasm
-</code></pre>
-<h2 id="hello-world"><a class="header" href="#hello-world">Hello World</a></h2>
-<pre><code class="language-duo">-- hello.duo
-fun main(): void
-    print("Hello, Duo!")
-end
-</code></pre>
-<pre><code class="language-bash">$ duo run hello.duo
-Hello, Duo!
-</code></pre>
-<h2 id="typed-example"><a class="header" href="#typed-example">Typed Example</a></h2>
-<pre><code class="language-duo">-- fib.duo
-fun fib(n: i64): i64
-    if n &lt;= 1 then return n end
-    fib(n - 1) + fib(n - 2)
+                        <h1 id="idiomatic-duo-the-zen-of-duo"><a class="header" href="#idiomatic-duo-the-zen-of-duo">Idiomatic Duo (The Zen of Duo)</a></h1>
+<p>Duo is designed to be a pragmatic, high-performance language that blends the flexibility of Lua with the speed and safety of native C. To get the most out of Duo, follow these idiomatic guidelines:</p>
+<h2 id="1-prefer-implicit-returns"><a class="header" href="#1-prefer-implicit-returns">1. Prefer Implicit Returns</a></h2>
+<p>When the last thing a function does is produce a value, let the block tail expression be the return. This is cleaner, faster to read, and generates the same code as an explicit <code>return</code>.</p>
+<p><strong>Idiomatic:</strong></p>
+<pre><code class="language-duo">fun add(a: i64, b: i64): i64
+    a + b
 end
 
-print(fib(40))
+fun max(a: i64, b: i64): i64
+    if a &gt; b then a else b end
+end
 </code></pre>
-<p>This compiles to pure C, running at native speed.</p>
+<p><strong>Less idiomatic:</strong></p>
+<pre><code class="language-duo">fun add(a: i64, b: i64): i64
+    return a + b
+end
+</code></pre>
+<p>Use explicit <code>return</code> only when you need to exit early:</p>
+<pre><code class="language-duo">fun find_index(list: any, target: any): i64
+    for i = 1, #list do
+        if list[i] == target then
+            return i
+        end
+    end
+    -1
+end
+</code></pre>
+<h2 id="2-embrace-type-annotations-for-performance"><a class="header" href="#2-embrace-type-annotations-for-performance">2. Embrace Type Annotations for Performance</a></h2>
+<p>While Duo allows you to write untyped Lua-style code, adding static type annotations (<code>x: number</code>, <code>s: string</code>) allows the compiler to:</p>
+<ul>
+<li>Generate highly optimized C code (often 4-100x faster than untyped code).</li>
+<li>Perform constant-folding and dead-code elimination at compile time.</li>
+<li>Provide compile-time safety and better error messages.</li>
+</ul>
+<p><strong>Idiomatic (when performance matters):</strong></p>
+<pre><code class="language-duo">fun calculate_sum(n: number): number
+    local sum: number = 0
+    for i = 1, n do
+        sum = sum + i
+    end
+    sum
+end
+</code></pre>
+<p><strong>Less idiomatic (but valid for quick scripting):</strong></p>
+<pre><code class="language-duo">fun calculate_sum(n)
+    local sum = 0
+    for i = 1, n do
+        sum = sum + i
+    end
+    return sum
+end
+</code></pre>
+<h2 id="3-default-to-local"><a class="header" href="#3-default-to-local">3. Default to <code>local</code></a></h2>
+<p>Always declare variables with <code>local</code>. Global variables are discouraged unless absolutely necessary, as they can inhibit optimizations and cause unintended side-effects across your program.</p>
+<h2 id="4-leverage-pattern-matching"><a class="header" href="#4-leverage-pattern-matching">4. Leverage Pattern Matching</a></h2>
+<p>Duo’s pattern matching (<code>match</code>) is more expressive and safer than complex <code>if/elseif/else</code> chains. Use it to handle enums, variants, and structured data clearly.</p>
+<pre><code class="language-duo">local enum Option
+    Some(val: any)
+    None
+end
+
+fun process(opt: Option)
+    match opt
+        case Some(val) =&gt; print(val)
+        case None =&gt; print("Nothing")
+    end
+end
+</code></pre>
+<h2 id="5-take-advantage-of-constant-folding"><a class="header" href="#5-take-advantage-of-constant-folding">5. Take Advantage of Constant Folding</a></h2>
+<p>When values are known at compile time, the Duo compiler will aggressively constant-fold. You can rely on this for zero-cost abstractions, meaning that clear, descriptive code often compiles down to nothing!</p>
+<pre><code class="language-duo">fun circle_area(r: f64): f64
+    math.pi * r * r
+end
+</code></pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="overview.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
 
-                            <a rel="next prefetch" href="overview.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -251,8 +268,11 @@ print(fib(40))
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="overview.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
 
-                    <a rel="next prefetch" href="overview.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

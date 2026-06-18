@@ -68,6 +68,24 @@ pub const Parser = struct {
     // ── Type parsing ─────────────────────────────────────────────────────────
 
     fn parse_type(self: *Parser) ParseError!ast.TypeExpr {
+        var base = try self.parse_type_primary();
+        while (try self.eat(.lbracket) != null) {
+            var params: std.ArrayList(ast.TypeExpr) = .empty;
+            if (!(try self.check(.rbracket))) {
+                try params.append(self.alloc, try self.parse_type());
+                while (try self.eat(.comma) != null) {
+                    try params.append(self.alloc, try self.parse_type());
+                }
+            }
+            _ = try self.expect(.rbracket);
+            const base_ptr = try self.alloc.create(ast.TypeExpr);
+            base_ptr.* = base;
+            base = .{ .generic = .{ .base = base_ptr, .params = try params.toOwnedSlice(self.alloc) } };
+        }
+        return base;
+    }
+
+    fn parse_type_primary(self: *Parser) ParseError!ast.TypeExpr {
         const tok = try self.pk();
         return switch (tok.kind) {
             .kw_i8 => {
@@ -271,6 +289,9 @@ pub const Parser = struct {
 
     fn parse_stmt(self: *Parser) ParseError!ast.Stmt {
         const tok = try self.pk();
+        if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
+            return self.parse_alias_def_with_attrs(&.{});
+        }
 
         return switch (tok.kind) {
             .at => self.parse_attributed_decl(),
@@ -318,6 +339,9 @@ pub const Parser = struct {
         const attrs_slice = try attrs.toOwnedSlice(self.alloc);
 
         const tok = try self.pk();
+        if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
+            return self.parse_alias_def_with_attrs(attrs_slice);
+        }
         return switch (tok.kind) {
             .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
             .kw_async => self.parse_async_func_decl_with_attrs(attrs_slice),
@@ -592,10 +616,12 @@ pub const Parser = struct {
         } };
     }
 
-    /// Parse `alias Name [extends Parent] ... end` — a simple type alias or struct.
-    /// For now, alias is a simple type alias: `alias Name = Type`.
+    /// Parse `type Name = Type` or legacy `alias Name = Type`.
     fn parse_alias_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
-        _ = try self.expect(.kw_alias);
+        const first = try self.adv();
+        if (first.kind != .kw_alias and !(first.kind == .name and std.mem.eql(u8, first.text, "type"))) {
+            return ParseError.ExpectedToken;
+        }
         const l = (try self.pk()).loc;
         const nm = try self.expect(.name);
         _ = try self.expect(.assign);
@@ -1823,6 +1849,41 @@ test "parse: empty module" {
     defer arena.deinit();
     const mod = try parseSource("", &arena);
     try testing.expectEqual(@as(usize, 0), mod.body.stmts.len);
+}
+
+test "parse: postfix generic type annotation" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local xs: List[i64] = {}
+    , &arena);
+    const typ = mod.body.stmts[0].local_decl.names[0].typ;
+    try testing.expect(typ == .generic);
+    try testing.expectEqualStrings("List", typ.generic.base.named);
+    try testing.expectEqual(@as(usize, 1), typ.generic.params.len);
+    try testing.expectEqualStrings("i64", typ.generic.params[0].named);
+}
+
+test "parse: type declaration spelling" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\type UserId = i64
+    , &arena);
+    try testing.expect(mod.body.stmts[0] == .alias_def);
+    try testing.expectEqualStrings("UserId", mod.body.stmts[0].alias_def.name);
+}
+
+test "parse: type builtin remains expression-call compatible" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local kind = type(value)
+    , &arena);
+    const init = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(init.* == .call);
+    try testing.expect(init.call.func.* == .name);
+    try testing.expectEqualStrings("type", init.call.func.name.ident);
 }
 
 test "parse: local declaration with integer initializer" {

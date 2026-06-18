@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-005f88f7.js";
+            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-cbb4eca2.js"></script>
+        <script src="toc-d954f18c.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -208,22 +208,16 @@ int_result = sum(1, 2)
 str_result = sum("a", "b")
 </code></pre>
 <h2 id="generic-data-structures"><a class="header" href="#generic-data-structures">Generic Data Structures</a></h2>
-<p>Generics enable type-safe containers:</p>
-<pre><code class="language-duo">-- Generic vector type
-type Vec&lt;T&gt; = {
-    data: []T,
-    length: i64
-}
-
-fun Vec&lt;T&gt;.new(): Vec&lt;T&gt;
-    return { data = {}, length = 0 }
-end
-
-fun Vec&lt;T&gt;.push(v: Vec&lt;T&gt;, item: T): void
-    v.length = v.length + 1
-    v.data[v.length] = item
+<p>Use <code>List[T]</code> / <code>[]T</code> when you want type-safe list values:</p>
+<pre><code class="language-duo">fun first_or&lt;T&gt;(items: List[T], fallback: T): T
+    if #items == 0 then
+        return fallback
+    end
+    items[1]
 end
 </code></pre>
+<p>Generic type aliases such as <code>type Vec&lt;T&gt; = ...</code> are planned, but the current
+<code>type</code> declaration is for non-generic aliases.</p>
 <h2 id="partial-specialization"><a class="header" href="#partial-specialization">Partial Specialization</a></h2>
 <p>You can provide custom implementations for specific types:</p>
 <pre><code class="language-duo">fun hash&lt;T&gt;(value: T): i64
@@ -321,6 +315,7 @@ end
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
+        <script src="theme/custom-52f62bf1.js"></script>
 
 
 

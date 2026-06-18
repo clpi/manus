@@ -1,0 +1,59 @@
+-- std.io — input/output utilities
+
+fun open(filename: str, mode: str): any
+    io.open(filename, mode)
+end
+
+fun popen(prog: str, mode: str): any
+    io.popen(prog, mode)
+end
+
+fun read(file: any, arg: any): any
+    file:read(arg)
+end
+
+fun write(file: any, arg: any): any
+    file:write(arg)
+end
+
+fun close(file: any): void
+    file:close()
+end
+
+fun flush(file: any): void
+    file:flush()
+end
+
+fun lines(filename: str): any
+    io.lines(filename)
+end
+
+fun input(file: any): any
+    io.input(file)
+end
+
+fun output(file: any): any
+    io.output(file)
+end
+
+fun tmpfile(): any
+    io.tmpfile()
+end
+
+fun type_(obj: any): any
+    io.type(obj)
+end
+
+M = {}
+M.open = open
+M.popen = popen
+M.read = read
+M.write = write
+M.close = close
+M.flush = flush
+M.lines = lines
+M.input = input
+M.output = output
+M.tmpfile = tmpfile
+M.type = type_
+M

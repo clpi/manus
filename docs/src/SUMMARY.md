@@ -4,6 +4,7 @@
 - [Language Overview](./overview.md)
 - [Idiomatic Duo](./idiomatic_duo.md)
 - [Types and Type Annotations](./types.md)
+- [Language Status and Roadmap](./roadmap.md)
 - [Functions](./functions.md)
   - [Typed Functions](./functions_typed.md)
   - [Generic Functions](./functions_generic.md)

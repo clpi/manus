@@ -6,37 +6,34 @@ Concepts in Duo are structural interfaces that define required methods and field
 
 ```duo
 concept Iterable
-    required_methods: {
-        __iter: () -> fun(): any
-    }
+    fun __iter(self): any
 end
 
 concept Addable
-    required_methods: {
-        __add: (any, any) -> any
-    }
+    fun add(self, other): any
 end
 ```
 
 ## Implementing Concepts
 
-Types satisfy concepts when they have matching methods/fields:
+Concepts can require methods and fields. Record-typed bindings can opt into a
+compile-time satisfaction check with `@implements(...)`:
 
 ```duo
--- This table satisfies Iterable
-local my_iterable = {
-    data = {1, 2, 3},
-    __iter = function()
-        local i = 0
-        return function()
-            i = i + 1
-            return my_iterable.data[i]
-        end
-    end
-}
+concept PointLike
+    x: f64
+    y: f64
+    fun len(self): f64
+end
 
--- Explicit annotation
-local it: Iterable = my_iterable
+@implements(PointLike)
+local p: { x: f64, y: f64, len: any } = {
+    x = 3.0,
+    y = 4.0,
+    len = fun(self): f64
+        math.sqrt(self.x * self.x + self.y * self.y)
+    end,
+}
 ```
 
 ## Concept Constraints on Generics
@@ -57,33 +54,20 @@ print(sum({1, 2, 3}))           -- i64 array
 print(sum({"a", "b", "c"}))       -- str array
 ```
 
+Constraint syntax is parsed and tracked for generic functions. Deep concept
+dispatch and metatable unification are still roadmap work.
+
 ## Multiple Constraints
 
 Combine multiple concepts:
 
 ```duo
 concept Display
-    required_methods: {
-        __display: () -> str
-    }
+    fun display(self): str
 end
 
 fun describe<T: Iterable + Display>(value: T): str
     -- T must satisfy both Iterable AND Display
-end
-```
-
-## Anonymous Concepts
-
-Use inline concept requirements:
-
-```duo
-fun process<T: { __iter: () -> fun(): any }>(value: T): i64
-    count: i64 = 0
-    for item in value
-        count = count + 1
-    end
-    return count
 end
 ```
 
@@ -92,11 +76,14 @@ end
 The compiler verifies concept satisfaction at compile time:
 
 ```duo
--- This fails if MyType doesn't have __iter method
-fun count_items<T: Iterable>(container: T): i64
-    local iter = container.__iter()
-    -- ...
+concept Pair
+    first: i64
+    second: i64
 end
+
+-- ERROR: missing required field `second`
+@implements(Pair)
+local bad_pair: { first: i64 } = { first = 1 }
 ```
 
 ## Built-in Concepts
@@ -106,6 +93,6 @@ Duo provides several built-in concepts:
 | Concept | Required Members |
 |---------|----------------|
 | `Iterable` | `__iter` method returning iterator function |
-| `Addable` | `__add` method or `+` operator support |
+| `Addable` | Add/combine method or `+` operator support |
 | `Closeable` | `__close` metamethod for cleanup |
 | `Comparable` | `__lt`, `__gt`, etc. for comparison |

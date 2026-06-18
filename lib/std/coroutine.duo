@@ -1,0 +1,44 @@
+-- std.coroutine — coroutine utilities
+
+fun create(f: any): any
+    coroutine.create(f)
+end
+
+fun resume(co: any, arg: any): any
+    coroutine.resume(co, arg)
+end
+
+fun yield(arg: any): any
+    coroutine.yield(arg)
+end
+
+fun status(co: any): str
+    coroutine.status(co)
+end
+
+fun running(): any
+    coroutine.running()
+end
+
+fun wrap(f: any): any
+    coroutine.wrap(f)
+end
+
+fun isyieldable(): bool
+    coroutine.isyieldable()
+end
+
+fun close(co: any): any
+    coroutine.close(co)
+end
+
+M = {}
+M.create = create
+M.resume = resume
+M.yield = yield
+M.status = status
+M.running = running
+M.wrap = wrap
+M.isyieldable = isyieldable
+M.close = close
+M

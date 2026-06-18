@@ -48,24 +48,19 @@ str_result = sum("a", "b")
 
 ## Generic Data Structures
 
-Generics enable type-safe containers:
+Use `List[T]` / `[]T` when you want type-safe list values:
 
 ```duo
--- Generic vector type
-type Vec<T> = {
-    data: []T,
-    length: i64
-}
-
-fun Vec<T>.new(): Vec<T>
-    return { data = {}, length = 0 }
-end
-
-fun Vec<T>.push(v: Vec<T>, item: T): void
-    v.length = v.length + 1
-    v.data[v.length] = item
+fun first_or<T>(items: List[T], fallback: T): T
+    if #items == 0 then
+        return fallback
+    end
+    items[1]
 end
 ```
+
+Generic type aliases such as `type Vec<T> = ...` are planned, but the current
+`type` declaration is for non-generic aliases.
 
 ## Partial Specialization
 

@@ -74,7 +74,7 @@ fn has_arc_attr(attributes: []const ast.Attribute) bool {
 
 fn is_table_binding_type(te: ast.TypeExpr, resolved: RT) bool {
     if (te == .record) return true;
-    if (te == .named and std.mem.eql(u8, te.named, "table")) return true;
+    if (te == .named and (std.mem.eql(u8, te.named, "table") or std.mem.eql(u8, te.named, "Table"))) return true;
     return resolved == .table_type;
 }
 
