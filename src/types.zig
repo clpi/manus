@@ -530,6 +530,9 @@ test "ResolvedType.vector_mask" {
     try testing.expectEqual(r(.v8i32), r(.v8i32).vector_mask().?);
     try testing.expect(r(.f64).vector_mask() == null);
     try testing.expect(r(.i32).vector_mask() == null);
+    try testing.expect(r(.bool).vector_mask() == null);
+    try testing.expect(r(.str).vector_mask() == null);
+    try testing.expect(r(.any).vector_mask() == null);
 }
 
 test "ResolvedType.is_native" {
