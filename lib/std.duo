@@ -23,6 +23,7 @@ std.sys = {
 
 -- Network & Concurrency
 std.net = req "std.net"
+std.http = req "std.http"
 std.sync = {
     atomic = req "std.atomic",
     thread = req "std.thread",
@@ -36,7 +37,17 @@ std.data = {
     json = req "std.json",
     url = req "std.url",
     base64 = req "std.base64",
-    hex = req "std.hex"
+    base32 = req "std.base32",
+    hex = req "std.hex",
+    csv = req "std.csv",
+    xml = req "std.xml",
+    toml = req "std.toml",
+    yaml = req "std.yaml",
+    ini = req "std.ini",
+    html = req "std.html",
+    sqlite = req "std.sqlite",
+    tar = req "std.tar",
+    zip = req "std.zip"
 }
 
 -- Cryptography
@@ -54,6 +65,7 @@ std.regex = req "std.regex"
 std.log = req "std.log"
 std.fmt = req "std.fmt"
 std.utf8 = req "std.utf8"
+std.datetime = req "std.datetime"
 
 -- Tooling
 std.tools = {
@@ -62,7 +74,8 @@ std.tools = {
     build = req "std.build",
     memo = req "std.memo",
     package = req "std.package",
-    debug = req "std.debug"
+    debug = req "std.debug",
+    color = req "std.color"
 }
 
 std

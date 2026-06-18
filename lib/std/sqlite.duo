@@ -1,0 +1,23 @@
+-- std.sqlite — basic SQLite DB wrapper stub
+
+local proc = import("std.proc")
+local string = import("std.string")
+
+-- NOTE: This is a shell-wrapper stub. A native integration is planned.
+
+fun execute(db_path: str, query: str): str
+    -- Uses the system sqlite3 command line tool
+    local cmd = "sqlite3 " .. db_path .. " " .. "'" .. string.gsub(query, "'", "''") .. "'"
+    proc.capture(cmd)
+end
+
+fun query_csv(db_path: str, query: str): str
+    -- Returns output as CSV
+    local cmd = "sqlite3 -csv -header " .. db_path .. " " .. "'" .. string.gsub(query, "'", "''") .. "'"
+    proc.capture(cmd)
+end
+
+M = {}
+M.execute = execute
+M.query_csv = query_csv
+M

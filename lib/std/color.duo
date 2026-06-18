@@ -1,0 +1,57 @@
+-- std.color — ANSI terminal color codes
+
+local string = import("std.string")
+
+M = {}
+
+M.RESET = "\x1b[0m"
+M.BOLD = "\x1b[1m"
+M.DIM = "\x1b[2m"
+M.ITALIC = "\x1b[3m"
+M.UNDERLINE = "\x1b[4m"
+
+M.BLACK = "\x1b[30m"
+M.RED = "\x1b[31m"
+M.GREEN = "\x1b[32m"
+M.YELLOW = "\x1b[33m"
+M.BLUE = "\x1b[34m"
+M.MAGENTA = "\x1b[35m"
+M.CYAN = "\x1b[36m"
+M.WHITE = "\x1b[37m"
+
+M.BG_BLACK = "\x1b[40m"
+M.BG_RED = "\x1b[41m"
+M.BG_GREEN = "\x1b[42m"
+M.BG_YELLOW = "\x1b[43m"
+M.BG_BLUE = "\x1b[44m"
+M.BG_MAGENTA = "\x1b[45m"
+M.BG_CYAN = "\x1b[46m"
+M.BG_WHITE = "\x1b[47m"
+
+fun red(text: str): str
+    M.RED .. text .. M.RESET
+end
+
+fun green(text: str): str
+    M.GREEN .. text .. M.RESET
+end
+
+fun yellow(text: str): str
+    M.YELLOW .. text .. M.RESET
+end
+
+fun blue(text: str): str
+    M.BLUE .. text .. M.RESET
+end
+
+fun bold(text: str): str
+    M.BOLD .. text .. M.RESET
+end
+
+M.red = red
+M.green = green
+M.yellow = yellow
+M.blue = blue
+M.bold = bold
+
+M

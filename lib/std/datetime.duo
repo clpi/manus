@@ -1,0 +1,27 @@
+-- std.datetime — high-level date and time utilities
+
+local time = import("std.time")
+local math = import("std.math")
+
+fun is_leap_year(year: i64): bool
+    if year % 400 == 0 then return true end
+    if year % 100 == 0 then return false end
+    if year % 4 == 0 then return true end
+    false
+end
+
+fun days_in_month(year: i64, month: i64): i64
+    if month == 2 then
+        if is_leap_year(year) then return 29 end
+        return 28
+    end
+    if month == 4 or month == 6 or month == 9 or month == 11 then
+        return 30
+    end
+    31
+end
+
+M = {}
+M.is_leap_year = is_leap_year
+M.days_in_month = days_in_month
+M

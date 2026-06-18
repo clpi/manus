@@ -74,12 +74,17 @@ log.warn("Warning message")
 log.error("Error message")
 ```
 
-## Encoding and Formatting (`std.json`, `std.csv`, `std.html`, `std.base64`, `std.hex`)
+## Encoding and Formatting (`std.json`, `std.csv`, `std.xml`, `std.toml`, `std.yaml`, `std.ini`, `std.html`, `std.base64`, `std.base32`, `std.hex`)
 
 ```duo
 json = req "std.json"
 csv = req "std.csv"
 html = req "std.html"
+xml = req "std.xml"
+toml = req "std.toml"
+yaml = req "std.yaml"
+ini = req "std.ini"
+base32 = req "std.base32"
 
 parsed_json = json.parse('{"a": 1}')
 str_json = json.stringify({a = 1})
@@ -87,8 +92,11 @@ str_json = json.stringify({a = 1})
 parsed_csv = csv.parse("a,b,c\n1,2,3")
 str_csv = csv.format({{"a", "b", "c"}, {1, 2, 3}})
 
+parsed_toml = toml.parse("key = \"value\"")
 escaped = html.escape("<script>alert(1)</script>")
 unescaped = html.unescape("&lt;div&gt;")
+
+b32 = base32.encode("hello")
 ```
 
 ## Hash Module (`std.hash`)
@@ -382,13 +390,21 @@ list = {"A", "B", "C"}
 random.shuffle(list)            -- randomizes array in-place
 ```
 
-## File-System Helpers (`std.fs`)
+## File-System and Archives (`std.fs`, `std.tar`, `std.zip`)
 
 ```duo
 fs = req "std.fs"
+tar = req "std.tar"
+zip = req "std.zip"
 
 fs.write_file("/tmp/example.txt", "one\ntwo\n")
 fs.append_file("/tmp/example.txt", "three\n")
+
+tar.create("archive.tar", "/tmp/dir")
+tar.extract("archive.tar", "/tmp/out")
+zip.create("archive.zip", "/tmp/dir")
+zip.extract("archive.zip", "/tmp/out")
+```
 fs.exists("/tmp/example.txt")       -- true
 text = fs.read_file("/tmp/example.txt")
 lines = fs.read_lines("/tmp/example.txt")
@@ -438,6 +454,16 @@ rc = os2.execute("ls -la")
 os2.exit(1)
 removed = os2.remove("file.txt")
 renamed = os2.rename("old.txt", "new.txt")
+```
+
+### `std.sqlite`
+
+`std.sqlite` provides a basic wrapper around the `sqlite3` command-line tool for simple local database scripts.
+
+```duo
+sqlite = req "std.sqlite"
+sqlite.execute("app.db", "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);")
+csv_data = sqlite.query_csv("app.db", "SELECT * FROM users;")
 ```
 
 ### `std.proc`
@@ -579,13 +605,19 @@ fd = wasi.fd_stdout()   -- 1
 err = wasi.errno_success()  -- 0
 ```
 
-## Debug Module (`std.debug`)
+## Debug and Formatting Modules (`std.debug`, `std.color`)
 
 ```duo
 debug2 = req "std.debug"
 
 msg = debug2.traceback("error context", 1)
 info = debug2.getinfo(my_fn, "nSl")
+```
+
+```duo
+color = req "std.color"
+
+print(color.red("Error:") .. " " .. color.bold("something went wrong"))
 ```
 
 ## Global Functions

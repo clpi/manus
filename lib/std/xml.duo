@@ -1,0 +1,26 @@
+-- std.xml — basic XML parsing and formatting stub
+
+local string = import("std.string")
+
+fun parse(data: str): any
+    -- Very basic stub for XML parsing
+    { tag = "root", children = [] }
+end
+
+fun format(doc: any): str
+    -- Stub for XML formatting
+    "<root></root>"
+end
+
+fun escape(s: str): str
+    s = string.gsub(s, "&", "&amp;")
+    s = string.gsub(s, "<", "&lt;")
+    s = string.gsub(s, ">", "&gt;")
+    s
+end
+
+M = {}
+M.parse = parse
+M.format = format
+M.escape = escape
+M

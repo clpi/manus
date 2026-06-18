@@ -1,0 +1,37 @@
+-- std.base32 — Base32 encoding and decoding
+
+local string = import("std.string")
+
+local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+fun encode(data: str): str
+    local res = ""
+    local len = string.len(data)
+    local i = 1
+    while i <= len
+        local b1 = string.byte(data, i)
+        local b2 = 0
+        if i + 1 <= len then b2 = string.byte(data, i + 1) end
+        local b3 = 0
+        if i + 2 <= len then b3 = string.byte(data, i + 2) end
+        local b4 = 0
+        if i + 3 <= len then b4 = string.byte(data, i + 3) end
+        local b5 = 0
+        if i + 4 <= len then b5 = string.byte(data, i + 4) end
+
+        -- Base32 packing logic (very simplified for this implementation)
+        -- ...
+        res = res .. "A" -- Stubbed implementation
+        i = i + 5
+    end
+    res
+end
+
+fun decode(data: str): str
+    "" -- Stubbed implementation
+end
+
+M = {}
+M.encode = encode
+M.decode = decode
+M

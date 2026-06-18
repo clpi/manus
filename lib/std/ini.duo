@@ -1,0 +1,33 @@
+-- std.ini — basic INI parsing stub
+
+local string = import("std.string")
+local table_mod = import("std.table")
+
+fun parse(data: str): any
+    local lines = string.split(data, "\n")
+    local res = {}
+    local current_section = res
+    
+    for _, line in ipairs(lines)
+        line = string.trim(line)
+        if string.len(line) > 0 and string.sub(line, 1, 1) ~= ";" and string.sub(line, 1, 1) ~= "#" then
+            if string.sub(line, 1, 1) == "[" and string.sub(line, string.len(line), string.len(line)) == "]" then
+                local sec_name = string.sub(line, 2, string.len(line) - 1)
+                res[sec_name] = {}
+                current_section = res[sec_name]
+            else
+                local parts = string.split(line, "=")
+                if table_mod.len(parts) >= 2 then
+                    local key = string.trim(parts[1])
+                    local val = string.trim(parts[2])
+                    current_section[key] = val
+                end
+            end
+        end
+    end
+    res
+end
+
+M = {}
+M.parse = parse
+M
