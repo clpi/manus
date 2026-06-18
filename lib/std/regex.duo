@@ -1,0 +1,24 @@
+-- std.regex — Pattern matching utilities (Lua patterns)
+
+fun match(s: str, pat: str): any
+    string.match(s, pat)
+end
+
+fun find(s: str, pat: str, init: int, plain: bool): any
+    string.find(s, pat, init, plain)
+end
+
+fun replace(s: str, pat: str, repl: any, n: int): any
+    string.gsub(s, pat, repl, n)
+end
+
+fun gmatch(s: str, pat: str): any
+    string.gmatch(s, pat)
+end
+
+M = {}
+M.match = match
+M.find = find
+M.replace = replace
+M.gmatch = gmatch
+M

@@ -60,6 +60,70 @@ fun std_fs_rename(old_path: any, new_path: any): bool
     os.rename(old_path, new_path) ~= nil
 end
 
+fun std_fs_mkdir(path: str): bool
+    if path == nil then return false end
+    os.execute("mkdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+end
+
+fun std_fs_mkdir_all(path: str): bool
+    if path == nil then return false end
+    os.execute("mkdir -p '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+end
+
+fun std_fs_copy(src: str, dest: str): bool
+    if src == nil or dest == nil then return false end
+    os.execute("cp '" .. string.gsub(src, "'", "'\\''") .. "' '" .. string.gsub(dest, "'", "'\\''") .. "' 2>/dev/null") == 0
+end
+
+fun std_fs_read_dir(path: str): any
+    out = {}
+    if path == nil then return out end
+    f = io.popen("ls -1A '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+    if f == nil then return out end
+    line = f:read()
+    while line ~= nil
+        out[rawlen(out) + 1] = line
+        line = f:read()
+    end
+    f:close()
+    out
+end
+
+fun std_fs_is_dir(path: str): bool
+    if path == nil then return false end
+    os.execute("test -d '" .. string.gsub(path, "'", "'\\''") .. "'") == 0
+end
+
+fun std_fs_is_file(path: str): bool
+    if path == nil then return false end
+    os.execute("test -f '" .. string.gsub(path, "'", "'\\''") .. "'") == 0
+end
+
+fun std_fs_rmdir(path: str): bool
+    if path == nil then return false end
+    os.execute("rmdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+end
+
+fun std_fs_chmod(path: str, mode: str): bool
+    if path == nil or mode == nil then return false end
+    os.execute("chmod " .. mode .. " '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+end
+
+fun std_fs_size(path: str): i64
+    if path == nil then return 0 - 1 end
+    f = io.popen("stat -c%s '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+    if f == nil then
+        f = io.popen("stat -f%z '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+        if f == nil then return 0 - 1 end
+    end
+    out = f:read("*a")
+    f:close()
+    if out == nil or out == "" then return 0 - 1 end
+    s = tonumber(out)
+    if s == nil then return 0 - 1 end
+    s
+end
+
 M = {}
 M.exists = std_fs_exists
 M.read_file = std_fs_read_file
@@ -68,4 +132,13 @@ M.append_file = std_fs_append_file
 M.read_lines = std_fs_read_lines
 M.remove = std_fs_remove
 M.rename = std_fs_rename
+M.mkdir = std_fs_mkdir
+M.mkdir_all = std_fs_mkdir_all
+M.copy = std_fs_copy
+M.read_dir = std_fs_read_dir
+M.is_dir = std_fs_is_dir
+M.is_file = std_fs_is_file
+M.rmdir = std_fs_rmdir
+M.chmod = std_fs_chmod
+M.size = std_fs_size
 M

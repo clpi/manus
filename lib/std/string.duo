@@ -106,6 +106,81 @@ fun std_string_lines(s: any): any
     std_string_split(s, "\n")
 end
 
+fun std_string_to_upper(s: any): any
+    if s == nil then return "" end
+    string.upper(s)
+end
+
+fun std_string_to_lower(s: any): any
+    if s == nil then return "" end
+    string.lower(s)
+end
+
+fun std_string_capitalize(s: any): any
+    if s == nil or s == "" then return "" end
+    string.upper(string.sub(s, 1, 1)) .. string.lower(string.sub(s, 2))
+end
+
+fun std_string_pad_left(s: any, width: any, pad: any): any
+    if s == nil then s = "" end
+    if pad == nil or pad == "" then pad = " " end
+    n = width - string.len(s)
+    if n <= 0 then return s end
+    string.rep(pad, n) .. s
+end
+
+fun std_string_pad_right(s: any, width: any, pad: any): any
+    if s == nil then s = "" end
+    if pad == nil or pad == "" then pad = " " end
+    n = width - string.len(s)
+    if n <= 0 then return s end
+    s .. string.rep(pad, n)
+end
+
+fun std_string_reverse(s: any): any
+    if s == nil then return "" end
+    string.reverse(s)
+end
+
+fun std_string_count(s: any, pat: any): i64
+    if s == nil or pat == nil or pat == "" then return 0 end
+    c = 0
+    start = 1
+    while true
+        pos = string.find(s, pat, start, true)
+        if pos == nil then break end
+        c = c + 1
+        start = pos + string.len(pat)
+    end
+    c
+end
+
+fun std_string_index_of(s: any, pat: any): any
+    if s == nil or pat == nil then return nil end
+    pos = string.find(s, pat, 1, true)
+    if pos == nil then return -1 end
+    pos
+end
+
+fun std_string_last_index_of(s: any, pat: any): any
+    if s == nil or pat == nil then return nil end
+    last = -1
+    start = 1
+    while true
+        pos = string.find(s, pat, start, true)
+        if pos == nil then break end
+        last = pos
+        start = pos + 1
+    end
+    last
+end
+
+fun std_string_char_at(s: any, index: any): any
+    if s == nil or index == nil then return "" end
+    if index < 1 or index > string.len(s) then return "" end
+    string.sub(s, index, index)
+end
+
 M = {}
 M.is_empty = std_string_is_empty
 M.starts_with = std_string_starts_with
@@ -120,4 +195,14 @@ M.join = std_string_join
 M.replace_all = std_string_replace_all
 M.repeat_str = std_string_repeat_str
 M.lines = std_string_lines
+M.to_upper = std_string_to_upper
+M.to_lower = std_string_to_lower
+M.capitalize = std_string_capitalize
+M.pad_left = std_string_pad_left
+M.pad_right = std_string_pad_right
+M.reverse = std_string_reverse
+M.count = std_string_count
+M.index_of = std_string_index_of
+M.last_index_of = std_string_last_index_of
+M.char_at = std_string_char_at
 M

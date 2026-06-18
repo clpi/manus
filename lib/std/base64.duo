@@ -1,0 +1,16 @@
+-- std.base64 — Base64 encoding and decoding utilities
+
+crypto = req "std.crypto"
+
+fun encode(s: str): str
+    crypto.base64_encode(s)
+end
+
+fun decode(s: str): str
+    crypto.base64_decode(s)
+end
+
+M = {}
+M.encode = encode
+M.decode = decode
+M

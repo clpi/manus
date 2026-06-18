@@ -62,6 +62,19 @@ async fun consumer(ch: Channel[str]): void
 end
 ```
 
+## Standard-Library Concurrency
+
+In addition to the `async`/`await` language primitives, the standard library provides cooperative and OS-level concurrency in `lib/std/`:
+
+- `std.coroutine` — Lua-style coroutine helpers (`create`, `resume`, `yield`, `status`, `wrap`, `close`).
+- `std.sync` — single-threaded cooperative scheduler and typed channels (`spawn`, `run`, `channel`, `channel_send`, `channel_recv`).
+- `std.concurrent` — high-level patterns (`go`, `wait`, `all`, `race`, `select`) built on `std.sync`.
+- `std.thread` — mutex, rwlock, condvar, semaphore, barrier, and thread spawn/join. Cooperative in single-threaded mode; maps to pthreads under `@concurrent("threaded")`.
+- `std.mproc` — multi-process helpers (`spawn`, `wait`, `kill`, `pid`).
+- `std.atomic` — atomic primitives and mutexes.
+
+See the [Standard Library](./stdlib.md) chapter for examples.
+
 ## Threaded Scheduler
 
 For CPU-bound work, use thread pools:

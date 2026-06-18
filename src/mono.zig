@@ -67,7 +67,7 @@ pub const Specialization = struct {
     pub fn resolveType(self: *const Specialization, te: ast.TypeExpr) RT {
         return self.resolveTypeRecursive(te);
     }
-    
+
     fn resolveTypeRecursive(self: *const Specialization, te: ast.TypeExpr) RT {
         switch (te) {
             .named => |n| {
@@ -296,6 +296,11 @@ pub const Monomorphizer = struct {
                 },
                 .named => |nv| try self.collectSitesExpr(nv.val, env),
                 .positional => |p| try self.collectSitesExpr(p, env),
+            },
+            .list_comp => |lc| {
+                try self.collectSitesExpr(lc.iter, env);
+                if (lc.filter) |filter| try self.collectSitesExpr(filter, env);
+                try self.collectSitesExpr(lc.value, env);
             },
             .try_expr => |t| try self.collectSitesExpr(t.operand, env),
             .unwrap_expr => |u| try self.collectSitesExpr(u.operand, env),

@@ -1,0 +1,42 @@
+-- std.random — Random number generation and utilities
+
+fun seed(s: int): void
+    math.randomseed(s)
+end
+
+fun float(): float
+    math.random()
+end
+
+fun int(min: int, max: int): int
+    if max == nil then
+        math.random(min)
+    else
+        math.random(min, max)
+    end
+end
+
+fun choice(list: any): any
+    if list == nil or #list == 0 then return nil end
+    list[math.random(1, #list)]
+end
+
+fun shuffle(list: any): void
+    if list == nil then return end
+    n = #list
+    while n > 1
+        k = math.random(1, n)
+        tmp = list[n]
+        list[n] = list[k]
+        list[k] = tmp
+        n = n - 1
+    end
+end
+
+M = {}
+M.seed = seed
+M.float = float
+M.int = int
+M.choice = choice
+M.shuffle = shuffle
+M

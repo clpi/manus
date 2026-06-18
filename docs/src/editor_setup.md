@@ -1,10 +1,23 @@
 # Editor Setup
 
-Because Duo's syntax is heavily inspired by Lua, the easiest way to get editor support (such as syntax highlighting, auto-indentation, and bracket matching) is to configure your editor to treat `.duo` files as Lua files.
+Duo has its own syntax highlighting, but because its grammar is a superset of Lua you can also fall back to Lua highlighting where a dedicated plugin is not available.
 
-## Visual Studio Code (VS Code)
+## Official Duo plugins / extensions
 
-To automatically get syntax highlighting for `.duo` files in VS Code:
+The repository contains editor support under `ext/`. These plugins provide full Duo syntax highlighting (including typed functions, type keywords, attributes, `match`, `async`/`await`, and more), file-type detection, indentation, and optional LSP integration.
+
+- **VS Code**: `ext/vscode-duo/` — TextMate grammar, snippets, and `duo-lsp` integration.
+- **Vim / Neovim**: `ext/vim-duo/` — syntax file, filetype detection, indent rules, and ftplugin.
+- **Helix**: `ext/helix/` — language registration, tree-sitter queries, and LSP config.
+- **Zed**: `ext/zed-duo/` — tree-sitter extension with outline, brackets, and LSP config.
+
+For installation details, see each extension's own `README.md`.
+
+## Fallback: associate `.duo` with Lua
+
+If you do not install an official plugin, configure your editor to treat `.duo` files as Lua. This gives you bracket matching, comments, strings, and most Lua keywords, but it will not highlight Duo-specific syntax such as `fun`, type annotations, `@attributes`, or `match`.
+
+### Visual Studio Code (VS Code)
 
 1. Open your settings using the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`) and type `Preferences: Open User Settings (JSON)`.
 2. Add the following file association mapping to your configuration:
@@ -17,7 +30,7 @@ To automatically get syntax highlighting for `.duo` files in VS Code:
 }
 ```
 
-## Neovim / Vim
+### Neovim / Vim
 
 Add the following to your Neovim or Vim configuration to detect `.duo` files as Lua.
 
@@ -35,6 +48,6 @@ vim.filetype.add({
 autocmd BufRead,BufNewFile *.duo set filetype=lua
 ```
 
-## Other Text Editors
+### Other Text Editors
 
 For most other text editors or IDEs, look for "File Associations" or "Language Settings" and map the `.duo` extension to the Lua language. Alternatively, you can often manually set the language mode to "Lua" when opening a `.duo` file.

@@ -18,9 +18,11 @@ Keep it in sync with `docs/src/roadmap.md`.
   typed list shape as `[]T`.
 - [x] **Await instead of wait.** `await` is the supported async wait operator;
   no separate `wait` keyword is planned.
-- [~] **`a = expr and x or y` semantics.** Lua short-circuit semantics exist;
-  typed narrowing/codegen recovery for this idiom still needs work.
-- [ ] **List comprehension.**
+- [x] **`a = expr and x or y` semantics.** Lua short-circuit expressions now
+  preserve operand-return semantics. `cond and x or y` recovers native typed C
+  when `x` and `y` share a safe non-boolean/non-nil branch type.
+- [x] **List comprehension.** `{expr for value in table}` and
+  `{expr for key, value in table if condition}` lower to dynamic array tables.
 - [~] **Macros / metaprogramming.** Compile-time `##(...)` and `std.meta`
   helpers exist; hygienic macro syntax is still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
@@ -158,4 +160,5 @@ Keep it in sync with `docs/src/roadmap.md`.
 - [ ] **Custom Allocator:** Replace the system allocator with a high-performance one (e.g., `mimalloc` or `jemalloc`) to speed up dynamic memory churn.
 - [ ] **SIMD / Vectorization:** Emit `#pragma clang loop vectorize(enable)` annotations and `restrict` pointers in generated C arrays so Clang can reliably auto-vectorize numeric loops.
 - [ ] **Concurrency:** Introduce worker threads or an actor model for true parallel execution, leveraging Zig's threading capabilities without GIL contention.
-- [ ] **Standard Library & Tooling:** Expand the standard library (networking, regex, etc.) and add an official code formatter (`duo fmt`) to complete the developer experience.
+- [x] **Standard Library & Tooling:** Expanded the standard library (regex, random, path, fs, collections, etc.).
+- [ ] **Official Formatter:** Add an official code formatter (`duo fmt`) to complete the developer experience.

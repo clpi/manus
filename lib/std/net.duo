@@ -5,24 +5,25 @@
 
 -- Parse a URL into {scheme, host, port, path}
 fun parse_url(url: str): any
-    scheme = "http"
-    rest = url
+    local scheme = "http"
+    local rest = url
     if string.sub(rest, 1, 7) == "http://" then
         rest = string.sub(rest, 8)
     elseif string.sub(rest, 1, 8) == "https://" then
         scheme = "https"
         rest = string.sub(rest, 9)
     end
-    if scheme == "https" then default_port = 443 else default_port = 80 end
-    host = rest
-    path = "/"
-    slash_pos = string.find(rest, "/")
+    local default_port = 80
+    if scheme == "https" then default_port = 443 end
+    local host = rest
+    local path = "/"
+    local slash_pos = string.find(rest, "/")
     if slash_pos then
         host = string.sub(rest, 1, slash_pos - 1)
         path = string.sub(rest, slash_pos)
     end
-    colon_pos = string.find(host, ":")
-    port = default_port
+    local colon_pos = string.find(host, ":")
+    local port = default_port
     if colon_pos then
         port = tonumber(string.sub(host, colon_pos + 1)) or default_port
         host = string.sub(host, 1, colon_pos - 1)
@@ -32,27 +33,27 @@ end
 
 -- HTTP GET via curl (fallback when variable not named "net")
 fun http_get(url: str): str
-    f = io.popen("curl -sL --max-time 30 -- " .. url, "r")
+    local f = io.popen("curl -sL --max-time 30 -- " .. url, "r")
     if f == nil then return "" end
-    body = f:read("*a") or ""
+    local body = f:read("*a") or ""
     f:close()
-    body
+    return body
 end
 
 -- HTTP POST via curl (fallback)
 fun http_post(url: str, body: str, content_type: str): str
-    ct = content_type
+    local ct = content_type
     if ct == nil then ct = "application/x-www-form-urlencoded" end
     if body == nil then body = "" end
-    escaped = string.gsub(body, "'", "'\\''")
-    cmd = "curl -sL --max-time 30 -X POST"
+    local escaped = string.gsub(body, "'", "'\\''")
+    local cmd = "curl -sL --max-time 30 -X POST"
         .. " -H 'Content-Type: " .. ct .. "'"
         .. " --data '" .. escaped .. "' -- " .. url
-    f = io.popen(cmd, "r")
+    local f = io.popen(cmd, "r")
     if f == nil then return "" end
-    resp = f:read("*a") or ""
+    local resp = f:read("*a") or ""
     f:close()
-    resp
+    return resp
 end
 
 -- HTTP request returning {body, status} via curl
@@ -145,7 +146,7 @@ fun http_serve(port: i64, handler: any): void
             if method == nil then method = "GET" end
             if req_path == nil then req_path = "/" end
             resp_body = handler(method, req_path, raw) or ""
-            response = "HTTP/1.0 200 OK\r\n"
+            local response: str = "HTTP/1.0 200 OK\r\n"
                 .. "Content-Type: text/plain\r\n"
                 .. "Content-Length: " .. tostring(#resp_body) .. "\r\n"
                 .. "Connection: close\r\n\r\n"

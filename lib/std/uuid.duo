@@ -1,0 +1,18 @@
+-- std.uuid — UUID generation utilities
+
+fun v4(): str
+    -- UUIDv4 pseudorandom generator
+    template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+    string.gsub(template, "[xy]", fun(c: str): str
+        v = math.random(0, 15)
+        if c == "x" then
+            string.format("%x", v)
+        else
+            string.format("%x", (v & 0x3) | 0x8)
+        end
+    end)
+end
+
+M = {}
+M.v4 = v4
+M

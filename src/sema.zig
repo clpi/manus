@@ -478,7 +478,7 @@ pub const Sema = struct {
                     }
                     const is_const = is_const_attrib(lname.attrib);
                     const is_close = is_close_attrib(lname.attrib);
-                    
+
                     if (t == .table_type) {
                         for (lname.attributes) |attr| {
                             if (std.mem.eql(u8, attr.name, "packed")) t.table_type.is_packed = true;
@@ -490,8 +490,8 @@ pub const Sema = struct {
                             if (std.mem.eql(u8, attr.name, "ffi")) {
                                 if (attr.args) |args_str| {
                                     // Remove quotes from "C_name"
-                                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len-1] == '"') {
-                                        t.table_type.ffi_name = args_str[1..args_str.len-1];
+                                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
+                                        t.table_type.ffi_name = args_str[1 .. args_str.len - 1];
                                     } else {
                                         t.table_type.ffi_name = args_str;
                                     }
@@ -840,6 +840,11 @@ pub const Sema = struct {
                 if (ft == .func and c.func.* == .name)
                     try self.record_generic_instantiation(c.func.name.loc, c.func.name.ident, ft.func, c.args);
 
+                if (c.func.* == .name) {
+                    if (std.mem.eql(u8, c.func.name.ident, "tostring") or
+                        std.mem.eql(u8, c.func.name.ident, "type")) return .str;
+                }
+
                 return switch (ft) {
                     .func => |f| f.ret.*,
                     else => .any,
@@ -873,6 +878,18 @@ pub const Sema = struct {
                         },
                     }
                 }
+                return .any;
+            },
+            .list_comp => |lc| {
+                _ = try self.check_expr(lc.iter);
+                try self.scope.push();
+                defer self.scope.pop();
+                if (lc.key_name) |key_name| {
+                    try self.scope.define(key_name, .{ .typ = .any, .is_const = true });
+                }
+                try self.scope.define(lc.value_name, .{ .typ = .any, .is_const = true });
+                if (lc.filter) |filter| _ = try self.check_expr(filter);
+                _ = try self.check_expr(lc.value);
                 return .any;
             },
             .try_expr => |te| {
@@ -931,6 +948,12 @@ pub const Sema = struct {
             };
         }
 
+        if (op == .@"or" and lhs.* == .binop and lhs.binop.op == .@"and") {
+            const then_t = self.type_map.get(lhs.binop.rhs) orelse .any;
+            if (then_t.eql(rt) and lua_and_or_value_type_is_native(then_t)) return then_t;
+            return .any;
+        }
+
         return switch (op) {
             .div, .pow => {
                 if (lt.is_numeric() and rt.is_numeric()) return .f64;
@@ -951,9 +974,13 @@ pub const Sema = struct {
             .concat => .str,
             .eq, .neq, .lt, .gt, .leq, .geq => .bool,
             .contains => .bool,
-            .@"and" => rt, // 'and' returns rhs type
-            .@"or" => lt, // 'or'  returns lhs type
+            .@"and" => if (lt.eql(rt)) rt else .any,
+            .@"or" => if (lt.eql(rt)) lt else .any,
         };
+    }
+
+    fn lua_and_or_value_type_is_native(t: RT) bool {
+        return t.is_numeric() or t == .str;
     }
 
     fn check_unop(self: *Sema, op: ast.UnOp, operand: *ast.Expr) SemaError!RT {
@@ -1056,6 +1083,11 @@ pub const Sema = struct {
                         },
                     }
                 }
+                return false;
+            },
+            .list_comp => |lc| {
+                if (expr_has_func_expr(lc.iter) or expr_has_func_expr(lc.value)) return true;
+                if (lc.filter) |filter| return expr_has_func_expr(filter);
                 return false;
             },
             else => false,
@@ -1219,6 +1251,18 @@ pub const Sema = struct {
                         .positional => |pos| try collect_upvalue_names_expr(pos, params, names, flags, sema),
                     }
                 }
+            },
+            .list_comp => |lc| {
+                try collect_upvalue_names_expr(lc.iter, params, names, flags, sema);
+                var comp_params: std.ArrayList(ast.FuncParam) = .empty;
+                defer comp_params.deinit(sema.alloc);
+                try comp_params.appendSlice(sema.alloc, params);
+                if (lc.key_name) |key_name| {
+                    try comp_params.append(sema.alloc, .{ .name = key_name, .typ = .inferred, .loc = lc.loc });
+                }
+                try comp_params.append(sema.alloc, .{ .name = lc.value_name, .typ = .inferred, .loc = lc.loc });
+                if (lc.filter) |filter| try collect_upvalue_names_expr(filter, comp_params.items, names, flags, sema);
+                try collect_upvalue_names_expr(lc.value, comp_params.items, names, flags, sema);
             },
             .func_expr => {},
             else => {},
@@ -1671,8 +1715,8 @@ pub const Sema = struct {
             }
             if (std.mem.eql(u8, attr.name, "ffi")) {
                 if (attr.args) |args_str| {
-                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len-1] == '"') {
-                        enum_t.enum_type.ffi_name = args_str[1..args_str.len-1];
+                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
+                        enum_t.enum_type.ffi_name = args_str[1 .. args_str.len - 1];
                     } else {
                         enum_t.enum_type.ffi_name = args_str;
                     }
@@ -3945,6 +3989,10 @@ pub const Sema = struct {
                     };
                 },
                 .table => self.infer_table_expr(expr),
+                .list_comp => blk: {
+                    self.ok = false;
+                    break :blk .any;
+                },
                 .func_expr => blk: {
                     self.ok = false;
                     break :blk .any;
@@ -4309,6 +4357,62 @@ test "sema: comparison yields bool" {
     const expr = mod.body.stmts[0].local_decl.inits[0];
     const t = s.type_map.get(expr);
     try testing.expectEqual(RT.bool, t.?);
+}
+
+test "sema: lua and/or ternary recovers safe branch type" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local flag: bool = true
+        \\local r = flag and 10 or 20
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(usize, 0), s.errors);
+    const expr = mod.body.stmts[1].local_decl.inits[0];
+    const t = s.type_map.get(expr);
+    try testing.expect(t != null);
+    try testing.expect(t.?.is_integer());
+}
+
+test "sema: bare lua and with mixed operand types is dynamic" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local flag: bool = true
+        \\local r = flag and 10
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(usize, 0), s.errors);
+    const expr = mod.body.stmts[1].local_decl.inits[0];
+    try testing.expectEqual(RT.any, s.type_map.get(expr).?);
+}
+
+test "sema: list comprehension is dynamic table expression" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local xs = {1, 2, 3}
+        \\local ys = {x * 2 for x in xs if x > 1}
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(usize, 0), s.errors);
+    const expr = mod.body.stmts[1].local_decl.inits[0];
+    try testing.expectEqual(RT.any, s.type_map.get(expr).?);
 }
 
 test "sema: try_expr (?) in void-returning function emits error" {

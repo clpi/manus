@@ -63,9 +63,27 @@ fun extname(p: str): str
     ""
 end
 
+fun is_absolute(p: str): bool
+    if p == nil or p == "" then return false end
+    string.sub(p, 1, 1) == "/"
+end
+
+fun normalize(p: str): str
+    if p == nil or p == "" then return "." end
+    while string.find(p, "//")
+        p = string.gsub(p, "//", "/")
+    end
+    if p ~= "/" and string.sub(p, -1, -1) == "/" then
+        p = string.sub(p, 1, -2)
+    end
+    p
+end
+
 M = {}
 M.join = join
 M.basename = basename
 M.dirname = dirname
 M.extname = extname
+M.is_absolute = is_absolute
+M.normalize = normalize
 M

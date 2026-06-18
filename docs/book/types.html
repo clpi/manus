@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
+            window.path_to_searchindex_js = "searchindex-da57a234.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -191,6 +191,7 @@
 <tr><td><code>nil</code></td><td><code>NULL</code></td><td>-</td><td>Null/none value</td></tr>
 <tr><td><code>any</code></td><td><code>lua_Value</code></td><td>Tagged union</td><td>Dynamic value</td></tr>
 <tr><td><code>Table</code> / <code>table</code></td><td><code>lua_Value</code> table</td><td>dynamic</td><td>Lua-compatible table value</td></tr>
+<tr><td><code>*T</code></td><td>pointer</td><td>machine word</td><td>Pointer to a value of type <code>T</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -213,6 +214,16 @@ fun divmod(a: i64, b: i64): (i64, i64)
     return q, r
 end
 </code></pre>
+<h2 id="type-aliases"><a class="header" href="#type-aliases">Type Aliases</a></h2>
+<p>Give an existing type a new name with <code>type</code>:</p>
+<pre><code class="language-duo">type Id = i64
+type Point = { x: f64, y: f64 }
+type StringList = []str
+
+local id: Id = 42
+local p: Point = { x = 1.0, y = 2.0 }
+</code></pre>
+<p><code>alias</code> is also accepted as legacy syntax, but <code>type</code> is preferred.</p>
 <h2 id="composite-types"><a class="header" href="#composite-types">Composite Types</a></h2>
 <h3 id="tables"><a class="header" href="#tables">Tables</a></h3>
 <pre><code class="language-duo">-- Untyped table (dynamic)
@@ -240,9 +251,18 @@ local raw: []i64 = {}
 
 -- Fixed-size typed array
 local vec3: [3]f64 = { 1.0, 2.0, 3.0 }
+
+-- List comprehension over array values
+local doubled = {x * 2 for x in numbers if x &gt; 2}
+
+-- Fixed-size typed array
+local vec3: [3]f64 = { 1.0, 2.0, 3.0 }
+
+-- Pointer to a typed value
+local p: *i64 = nil
 </code></pre>
 <p><code>List[T]</code>, <code>list[T]</code>, and <code>[]T</code> resolve to the same dynamic list type. Fixed
-arrays use <code>[N]T</code>.</p>
+arrays use <code>[N]T</code>. Pointer types use <code>*T</code>; their full ownership semantics are still evolving.</p>
 <h2 id="type-inference"><a class="header" href="#type-inference">Type Inference</a></h2>
 <p>Duo can infer types for variables and expressions:</p>
 <pre><code class="language-duo">-- Inferred as i64
@@ -352,7 +372,7 @@ local sum: f64 = simd.sum(v3)
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/custom-52f62bf1.js"></script>
+        <script src="theme/custom-6e847c62.js"></script>
 
 
 

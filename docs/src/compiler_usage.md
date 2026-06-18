@@ -1,6 +1,6 @@
 # Compiler Usage
 
-The Duo compiler compiles `.duo` and `.lua` files to native executables or WebAssembly modules.
+The Duo compiler compiles `.duo` and `.lua` files to native executables, shared libraries, or WebAssembly modules. It lowers source to C, then invokes `clang` (or `zig cc` for WASM) to produce the final binary.
 
 ## Installation
 

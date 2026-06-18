@@ -49,9 +49,10 @@ end
 Most standard library modules work in WASM, including:
 
 - `print` — Writes to WASI stdout
-- `fs` — Limited file system access
-- `json` — JSON parsing/stringification
-- `math` — Mathematical functions
+- `std.fs` — Limited file system access
+- `std.json` — JSON parsing/stringification
+- `std.math` — Mathematical functions
+- `std.wasm.wasi` — WASI constants and type bindings
 
 Network modules may require additional WASI capabilities.
 
@@ -63,14 +64,28 @@ Compile as a shared library for dynamic loading:
 duo compile module.duo --target wasm32-wasi --load-chunk -o module.wasm
 ```
 
-## Library Mode (WAST Testing)
+## Library Mode
 
-Compile with `--lib` to export `@export`-annotated functions and skip the `_start` entry point. This is useful for WASM component testing with WAST files:
+Compile with `--lib` to export `@export`-annotated functions as a WASI reactor
+module. The linker emits `_initialize` for runtime setup and exports each
+annotated function for the host to call:
+
+```duo
+-- module.duo
+@export
+fun add(a: i64, b: i64): i64
+    return a + b
+end
+```
 
 ```bash
 duo compile module.duo --target wasm32-wasi --lib -o module.wasm
-wasmtime module.wasm --invoke my_exported_function
+wasmtime run --invoke add module.wasm 3 4
 ```
+
+The runtime globals (`string`, `table`, `math`, `package`, ...) are initialized
+via a constructor before any export is invoked, so `print`, `table.new`, and
+other builtins work inside exported functions.
 
 ## Shared Memory (Experimental)
 

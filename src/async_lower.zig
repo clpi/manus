@@ -197,6 +197,11 @@ pub const AsyncLower = struct {
                 .named => |nv| try self.discoverExpr(nv.val, enclosing_name),
                 .positional => |p| try self.discoverExpr(p, enclosing_name),
             },
+            .list_comp => |lc| {
+                try self.discoverExpr(lc.iter, enclosing_name);
+                if (lc.filter) |filter| try self.discoverExpr(filter, enclosing_name);
+                try self.discoverExpr(lc.value, enclosing_name);
+            },
             .try_expr => |t| try self.discoverExpr(t.operand, enclosing_name),
             .unwrap_expr => |u| try self.discoverExpr(u.operand, enclosing_name),
             .match_expr => |m| try self.discoverMatch(m, enclosing_name),
@@ -377,6 +382,11 @@ pub const AsyncLower = struct {
                 },
                 .named => |nv| try self.scanExpr(nv.val, ctx),
                 .positional => |p| try self.scanExpr(p, ctx),
+            },
+            .list_comp => |lc| {
+                try self.scanExpr(lc.iter, ctx);
+                if (lc.filter) |filter| try self.scanExpr(filter, ctx);
+                try self.scanExpr(lc.value, ctx);
             },
             .try_expr => |t| try self.scanExpr(t.operand, ctx),
             .unwrap_expr => |u| try self.scanExpr(u.operand, ctx),

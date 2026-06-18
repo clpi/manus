@@ -153,6 +153,15 @@ pub const TableField = union(enum) {
     positional: *Expr, // expr
 };
 
+pub const ListComprehension = struct {
+    loc: Loc,
+    value: *Expr,
+    key_name: ?[]const u8,
+    value_name: []const u8,
+    iter: *Expr,
+    filter: ?*Expr = null,
+};
+
 pub const FuncParam = struct {
     name: []const u8,
     typ: TypeExpr,
@@ -263,6 +272,7 @@ pub const Expr = union(enum) {
     unop: struct { loc: Loc, op: UnOp, operand: *Expr },
     func_expr: *FuncBody,
     table: struct { loc: Loc, fields: []TableField },
+    list_comp: ListComprehension,
     try_expr: struct { loc: Loc, operand: *Expr }, // expr?
     unwrap_expr: struct { loc: Loc, operand: *Expr }, // expr!
     match_expr: *MatchExpr,
@@ -287,6 +297,7 @@ pub const Expr = union(enum) {
             .unop => |x| x.loc,
             .func_expr => |f| f.loc,
             .table => |x| x.loc,
+            .list_comp => |x| x.loc,
             .try_expr => |x| x.loc,
             .unwrap_expr => |x| x.loc,
             .match_expr => |m| m.loc,
@@ -610,6 +621,7 @@ test "Expr.loc returns correct location for all variants" {
         .{ .unop = .{ .loc = loc, .op = .neg, .operand = &dummy_expr } },
         .{ .func_expr = &dummy_func_body },
         .{ .table = .{ .loc = loc, .fields = &.{} } },
+        .{ .list_comp = .{ .loc = loc, .value = &dummy_expr, .key_name = null, .value_name = "x", .iter = &dummy_expr } },
         .{ .try_expr = .{ .loc = loc, .operand = &dummy_expr } },
         .{ .unwrap_expr = .{ .loc = loc, .operand = &dummy_expr } },
         .{ .match_expr = &dummy_match_expr },

@@ -303,6 +303,11 @@ pub const ArcPass = struct {
                 // cycle and must be registered with the cycle collector.
                 if (holds_ref) try self.cycle_candidates.append(self.alloc, expr);
             },
+            .list_comp => |lc| {
+                try self.processExpr(lc.iter);
+                if (lc.filter) |filter| try self.processExpr(filter);
+                try self.processExpr(lc.value);
+            },
             .try_expr => |t| try self.processExpr(t.operand),
             .unwrap_expr => |u| try self.processExpr(u.operand),
             .match_expr => |m| try self.processMatch(m),

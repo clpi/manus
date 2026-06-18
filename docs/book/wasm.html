@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
+            window.path_to_searchindex_js = "searchindex-da57a234.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -211,20 +211,32 @@ end
 <p>Most standard library modules work in WASM, including:</p>
 <ul>
 <li><code>print</code> — Writes to WASI stdout</li>
-<li><code>fs</code> — Limited file system access</li>
-<li><code>json</code> — JSON parsing/stringification</li>
-<li><code>math</code> — Mathematical functions</li>
+<li><code>std.fs</code> — Limited file system access</li>
+<li><code>std.json</code> — JSON parsing/stringification</li>
+<li><code>std.math</code> — Mathematical functions</li>
+<li><code>std.wasm.wasi</code> — WASI constants and type bindings</li>
 </ul>
 <p>Network modules may require additional WASI capabilities.</p>
 <h2 id="shared-library-mode"><a class="header" href="#shared-library-mode">Shared Library Mode</a></h2>
 <p>Compile as a shared library for dynamic loading:</p>
 <pre><code class="language-bash">duo compile module.duo --target wasm32-wasi --load-chunk -o module.wasm
 </code></pre>
-<h2 id="library-mode-wast-testing"><a class="header" href="#library-mode-wast-testing">Library Mode (WAST Testing)</a></h2>
-<p>Compile with <code>--lib</code> to export <code>@export</code>-annotated functions and skip the <code>_start</code> entry point. This is useful for WASM component testing with WAST files:</p>
-<pre><code class="language-bash">duo compile module.duo --target wasm32-wasi --lib -o module.wasm
-wasmtime module.wasm --invoke my_exported_function
+<h2 id="library-mode"><a class="header" href="#library-mode">Library Mode</a></h2>
+<p>Compile with <code>--lib</code> to export <code>@export</code>-annotated functions as a WASI reactor
+module. The linker emits <code>_initialize</code> for runtime setup and exports each
+annotated function for the host to call:</p>
+<pre><code class="language-duo">-- module.duo
+@export
+fun add(a: i64, b: i64): i64
+    return a + b
+end
 </code></pre>
+<pre><code class="language-bash">duo compile module.duo --target wasm32-wasi --lib -o module.wasm
+wasmtime run --invoke add module.wasm 3 4
+</code></pre>
+<p>The runtime globals (<code>string</code>, <code>table</code>, <code>math</code>, <code>package</code>, …) are initialized
+via a constructor before any export is invoked, so <code>print</code>, <code>table.new</code>, and
+other builtins work inside exported functions.</p>
 <h2 id="shared-memory-experimental"><a class="header" href="#shared-memory-experimental">Shared Memory (Experimental)</a></h2>
 <p>Enable shared memory for threading support:</p>
 <pre><code class="language-bash">duo compile script.duo --target wasm32-wasi --shared-memory -o program.wasm
@@ -308,7 +320,7 @@ wasmtime debug.wasm --invoke main
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/custom-52f62bf1.js"></script>
+        <script src="theme/custom-6e847c62.js"></script>
 
 
 

@@ -561,7 +561,10 @@ fn do_compile(
                 "-Wno-deprecated-declarations",
             });
             if (lib_mode) {
-                try args.append(alloc, "-Wl,--export-dynamic");
+                try args.appendSlice(alloc, &.{
+                    "-mexec-model=reactor",
+                    "-Wl,--export-dynamic",
+                });
             } else {
                 try args.append(alloc, "-Wl,--export=main");
             }

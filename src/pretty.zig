@@ -257,6 +257,21 @@ pub const PrettyPrinter = struct {
                 }
                 try self.write("}");
             },
+            .list_comp => |x| {
+                try self.write("{");
+                try self.printExpr(x.value, 0);
+                try self.write(" for ");
+                if (x.key_name) |key_name| {
+                    try self.print("{s}, ", .{key_name});
+                }
+                try self.print("{s} in ", .{x.value_name});
+                try self.printExpr(x.iter, 0);
+                if (x.filter) |filter| {
+                    try self.write(" if ");
+                    try self.printExpr(filter, 0);
+                }
+                try self.write("}");
+            },
             .try_expr => |x| {
                 try self.printExpr(x.operand, 0);
                 try self.write("?");

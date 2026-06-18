@@ -1,0 +1,5 @@
+fun g(): str
+    local a: str = tostring(42)
+    return a
+end
+print(g())

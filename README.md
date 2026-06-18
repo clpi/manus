@@ -4,6 +4,17 @@
 
 Duo is a Lua-like language that compiles to native C (AOT). This repository includes a 40-benchmark suite comparing Duo against hand-written reference C.
 
+## Editor support
+
+Official editor plugins for Duo live under `ext/`:
+
+- **VS Code** — `ext/vscode-duo/`
+- **Vim / Neovim** — `ext/vim-duo/`
+- **Helix** — `ext/helix/`
+- **Zed** — `ext/zed-duo/`
+
+They provide file-type detection, syntax highlighting for all Duo syntax, and optional `duo-lsp` integration.
+
 ## Build
 
 Requires Zig 0.17.0-dev.
@@ -39,11 +50,11 @@ Options:
 
 ## WASM compilation
 
-Compile any `.lua` or `.duo` file to WebAssembly:
+Compile any `.duo` or `.lua` file to WebAssembly:
 
 ```bash
-duo compile examples/hello.lua --target wasm32-wasi -o hello.wasm
-wasmtime hello.wasm
+duo compile examples/wasm/typed_fib.duo --target wasm32-wasi -o typed_fib.wasm
+wasmtime typed_fib.wasm
 ```
 
 Output defaults to `<stem>.wasm` when `--target wasm32-wasi` is set. The generated module exports `main` and uses WASI for I/O. Works with any WASI-compatible runtime (wasmtime, wasmer, Node.js `--experimental-wasi-unstable-preview1`).

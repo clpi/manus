@@ -1820,16 +1820,51 @@ pub const Parser = struct {
                 } else {
                     self.lex.* = saved;
                     const val = try self.parse_expr();
+                    if (try self.eat(.kw_for) != null) {
+                        const comp = try self.finish_list_comp(l, val);
+                        _ = try self.expect(.rbrace);
+                        return comp;
+                    }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
             } else {
                 const val = try self.parse_expr();
+                if (try self.eat(.kw_for) != null) {
+                    const comp = try self.finish_list_comp(l, val);
+                    _ = try self.expect(.rbrace);
+                    return comp;
+                }
                 try fields.append(self.alloc, .{ .positional = val });
             }
             if (try self.eat(.comma) == null and try self.eat(.semi) == null) break;
         }
         _ = try self.expect(.rbrace);
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
+    }
+
+    fn finish_list_comp(self: *Parser, loc: ast.Loc, value: *ast.Expr) ParseError!*ast.Expr {
+        const first_name = try self.expect(.name);
+        var key_name: ?[]const u8 = null;
+        var value_name = first_name.text;
+        if (try self.eat(.comma) != null) {
+            key_name = first_name.text;
+            const second_name = try self.expect(.name);
+            value_name = second_name.text;
+        }
+        _ = try self.expect(.kw_in);
+        const iter = try self.parse_expr();
+        var filter: ?*ast.Expr = null;
+        if (try self.eat(.kw_if) != null) {
+            filter = try self.parse_expr();
+        }
+        return self.new_expr(.{ .list_comp = .{
+            .loc = loc,
+            .value = value,
+            .key_name = key_name,
+            .value_name = value_name,
+            .iter = iter,
+            .filter = filter,
+        } });
     }
 };
 
@@ -2191,6 +2226,29 @@ test "parse: table constructor with named fields" {
     try testing.expectEqual(@as(usize, 2), expr.table.fields.len);
     try testing.expect(expr.table.fields[0] == .named);
     try testing.expectEqualStrings("x", expr.table.fields[0].named.key);
+}
+
+test "parse: list comprehension" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local ys = {x * 2 for x in xs if x > 1}", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .list_comp);
+    try testing.expectEqualStrings("x", expr.list_comp.value_name);
+    try testing.expect(expr.list_comp.key_name == null);
+    try testing.expect(expr.list_comp.value.* == .binop);
+    try testing.expect(expr.list_comp.filter != null);
+}
+
+test "parse: list comprehension with key and value" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("local ys = {k .. v for k, v in xs}", &arena);
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(expr.* == .list_comp);
+    try testing.expect(expr.list_comp.key_name != null);
+    try testing.expectEqualStrings("k", expr.list_comp.key_name.?);
+    try testing.expectEqualStrings("v", expr.list_comp.value_name);
 }
 
 test "parse: assignment statement" {

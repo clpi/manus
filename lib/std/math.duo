@@ -64,6 +64,34 @@ fun std_math_is_odd(n: i64): bool
     n % 2 ~= 0
 end
 
+fun std_math_distance_squared(x1: any, y1: any, x2: any, y2: any): any
+    dx = x2 - x1
+    dy = y2 - y1
+    dx * dx + dy * dy
+end
+
+fun std_math_distance(x1: any, y1: any, x2: any, y2: any): any
+    math.sqrt(std_math_distance_squared(x1, y1, x2, y2))
+end
+
+fun std_math_gcd(a: i64, b: i64): i64
+    if a < 0 then a = 0 - a end
+    if b < 0 then b = 0 - b end
+    while b ~= 0
+        temp = b
+        b = a % b
+        a = temp
+    end
+    a
+end
+
+fun std_math_lcm(a: i64, b: i64): i64
+    if a == 0 or b == 0 then return 0 end
+    n = a * b
+    if n < 0 then n = 0 - n end
+    n / std_math_gcd(a, b)
+end
+
 M = {}
 M.clamp = std_math_clamp
 M.min = std_math_min
@@ -76,4 +104,33 @@ M.sum = std_math_sum
 M.mean = std_math_mean
 M.is_even = std_math_is_even
 M.is_odd = std_math_is_odd
+M.distance = std_math_distance
+M.distance_squared = std_math_distance_squared
+M.gcd = std_math_gcd
+M.lcm = std_math_lcm
+
+-- Expose core Lua math utilities
+M.pi = math.pi
+M.huge = math.huge
+M.maxinteger = math.maxinteger
+M.mininteger = math.mininteger
+M.abs = math.abs
+M.acos = math.acos
+M.asin = math.asin
+M.atan = math.atan
+M.ceil = math.ceil
+M.cos = math.cos
+M.deg = math.deg
+M.exp = math.exp
+M.floor = math.floor
+M.fmod = math.fmod
+M.log = math.log
+M.modf = math.modf
+M.rad = math.rad
+M.random = math.random
+M.randomseed = math.randomseed
+M.sin = math.sin
+M.sqrt = math.sqrt
+M.tan = math.tan
+M.type = math.type
 M

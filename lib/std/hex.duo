@@ -1,0 +1,22 @@
+-- std.hex — Hexadecimal encoding and decoding utilities
+
+crypto = req "std.crypto"
+
+fun encode(s: str): str
+    crypto.hex_encode(s)
+end
+
+fun decode(s: str): str
+    if s == nil then return "" end
+    out = {}
+    for i = 1, string.len(s), 2
+        byte_str = string.sub(s, i, i + 1)
+        table.insert(out, string.char(tonumber(byte_str, 16)))
+    end
+    table.concat(out)
+end
+
+M = {}
+M.encode = encode
+M.decode = decode
+M

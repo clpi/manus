@@ -113,6 +113,82 @@ fun std_table_reduce(list: any, fn: any, init: any): any
     acc
 end
 
+fun std_table_clear(t: any): void
+    if t == nil then return end
+    for k, _ in pairs(t)
+        t[k] = nil
+    end
+end
+
+fun std_table_is_empty(t: any): bool
+    if t == nil then return true end
+    next(t) == nil
+end
+
+fun std_table_slice(t: any, start_idx: any, end_idx: any): any
+    out = {}
+    if t == nil then return out end
+    if start_idx == nil then start_idx = 1 end
+    if end_idx == nil then end_idx = rawlen(t) end
+    if start_idx < 1 then start_idx = 1 end
+    if end_idx > rawlen(t) then end_idx = rawlen(t) end
+    i = start_idx
+    while i <= end_idx
+        out[rawlen(out) + 1] = t[i]
+        i = i + 1
+    end
+    out
+end
+
+fun std_table_concat(t: any, sep: any): str
+    if t == nil then return "" end
+    if sep == nil then sep = "" end
+    table.concat(t, sep)
+end
+
+fun std_table_sort(list: any, cmp: any): void
+    if list == nil then return end
+    if cmp == nil then
+        table.sort(list)
+    else
+        table.sort(list, cmp)
+    end
+end
+
+fun std_table_unpack(list: any, i: any, j: any): any
+    if list == nil then return nil end
+    if i == nil then i = 1 end
+    if j == nil then j = rawlen(list) end
+    table.unpack(list, i, j)
+end
+
+fun std_table_insert(list: any, pos: any, value: any): void
+    if list == nil then return end
+    if value == nil then
+        table.insert(list, pos)
+    else
+        table.insert(list, pos, value)
+    end
+end
+
+fun std_table_remove(list: any, pos: any): any
+    if list == nil then return nil end
+    if pos == nil then pos = rawlen(list) end
+    table.remove(list, pos)
+end
+
+fun std_table_count(list: any, fn: any): i64
+    c = 0
+    if list == nil then return c end
+    if fn == nil then return rawlen(list) end
+    i = 1
+    while i <= rawlen(list)
+        if fn(list[i]) then c = c + 1 end
+        i = i + 1
+    end
+    c
+end
+
 M = {}
 M.len = std_table_len
 M.keys = std_table_keys
@@ -125,4 +201,13 @@ M.reverse = std_table_reverse
 M.map = std_table_map
 M.filter = std_table_filter
 M.reduce = std_table_reduce
+M.clear = std_table_clear
+M.is_empty = std_table_is_empty
+M.slice = std_table_slice
+M.concat = std_table_concat
+M.sort = std_table_sort
+M.unpack = std_table_unpack
+M.insert = std_table_insert
+M.remove = std_table_remove
+M.count = std_table_count
 M

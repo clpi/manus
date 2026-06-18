@@ -15,6 +15,7 @@ Duo's type system combines static safety with zero runtime cost. When you annota
 | `nil` | `NULL` | - | Null/none value |
 | `any` | `lua_Value` | Tagged union | Dynamic value |
 | `Table` / `table` | `lua_Value` table | dynamic | Lua-compatible table value |
+| `*T` | pointer | machine word | Pointer to a value of type `T` |
 
 ### Type Annotations
 
@@ -37,6 +38,21 @@ fun divmod(a: i64, b: i64): (i64, i64)
     return q, r
 end
 ```
+
+## Type Aliases
+
+Give an existing type a new name with `type`:
+
+```duo
+type Id = i64
+type Point = { x: f64, y: f64 }
+type StringList = []str
+
+local id: Id = 42
+local p: Point = { x = 1.0, y = 2.0 }
+```
+
+`alias` is also accepted as legacy syntax, but `type` is preferred.
 
 ## Composite Types
 
@@ -72,10 +88,19 @@ local raw: []i64 = {}
 
 -- Fixed-size typed array
 local vec3: [3]f64 = { 1.0, 2.0, 3.0 }
+
+-- List comprehension over array values
+local doubled = {x * 2 for x in numbers if x > 2}
+
+-- Fixed-size typed array
+local vec3: [3]f64 = { 1.0, 2.0, 3.0 }
+
+-- Pointer to a typed value
+local p: *i64 = nil
 ```
 
 `List[T]`, `list[T]`, and `[]T` resolve to the same dynamic list type. Fixed
-arrays use `[N]T`.
+arrays use `[N]T`. Pointer types use `*T`; their full ownership semantics are still evolving.
 
 ## Type Inference
 

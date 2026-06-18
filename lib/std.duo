@@ -1,35 +1,68 @@
-local std = {}
+-- std.duo - Standard Library Entry Point
 
-std.fs = req "std.fs"
+std = {}
+
+-- Core / Lang
 std.math = req "std.math"
 std.string = req "std.string"
 std.table = req "std.table"
-std.json = req "std.json"
-std.log = req "std.log"
-std.net = req "std.net"
-std.crypto = req "std.crypto"
-std.hash = req "std.hash"
 std.meta = req "std.meta"
-std.fmt = req "std.fmt"
-std.build = req "std.build"
-std.atomic = req "std.atomic"
-std.test = req "std.test"
-std.memo = req "std.memo"
-std.thread = req "std.thread"
-std.proc = req "std.proc"
-std.mproc = req "std.mproc"
-std.concurrent = req "std.concurrent"
-std.env = req "std.env"
-std.path = req "std.path"
-std.sync = req "std.sync"
-std.collections = req "std.collections"
-std.time = req "std.time"
-std.os = req "std.os"
-std.mem = req "std.mem"
-std.io = req "std.io"
-std.utf8 = req "std.utf8"
-std.debug = req "std.debug"
 std.coroutine = req "std.coroutine"
-std.package = req "std.package"
+std.mem = req "std.mem"
+
+-- System / OS
+std.sys = {
+    os = req "std.os",
+    fs = req "std.fs",
+    io = req "std.io",
+    env = req "std.env",
+    path = req "std.path",
+    proc = req "std.proc",
+    time = req "std.time"
+}
+
+-- Network & Concurrency
+std.net = req "std.net"
+std.sync = {
+    atomic = req "std.atomic",
+    thread = req "std.thread",
+    mproc = req "std.mproc",
+    concurrent = req "std.concurrent",
+    channel = req "std.sync"
+}
+
+-- Data & Encoding
+std.data = {
+    json = req "std.json",
+    url = req "std.url",
+    base64 = req "std.base64",
+    hex = req "std.hex"
+}
+
+-- Cryptography
+std.crypto = {
+    hash = req "std.hash",
+    algo = req "std.crypto",
+    uuid = req "std.uuid"
+}
+
+-- Utilities
+std.collections = req "std.collections"
+std.iter = req "std.iter"
+std.random = req "std.random"
+std.regex = req "std.regex"
+std.log = req "std.log"
+std.fmt = req "std.fmt"
+std.utf8 = req "std.utf8"
+
+-- Tooling
+std.tools = {
+    argparse = req "std.argparse",
+    test = req "std.test",
+    build = req "std.build",
+    memo = req "std.memo",
+    package = req "std.package",
+    debug = req "std.debug"
+}
 
 std

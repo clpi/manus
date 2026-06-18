@@ -308,8 +308,8 @@ pub const CodeGen = struct {
 
     fn is_runtime_global(name: []const u8) bool {
         const runtime_globals = [_][]const u8{
-            "package",  "math",  "utf8",   "debug",  "coroutine",   "string",        "table",
-            "io",       "os",    "jit",    "ffi",    "duo_modules", "current_input", "current_output",
+            "package",  "math", "utf8", "debug", "coroutine",   "string",        "table",
+            "io",       "os",   "jit",  "ffi",   "duo_modules", "current_input", "current_output",
             "_VERSION", "net",
         };
         for (runtime_globals) |g| {
@@ -391,6 +391,15 @@ pub const CodeGen = struct {
             }
             const lt = self.expr_type(b.lhs);
             const rt = self.expr_type(b.rhs);
+            if (b.op == .@"or" and b.lhs.* == .binop and b.lhs.binop.op == .@"and") {
+                const then_t = self.expr_type(b.lhs.binop.rhs);
+                if (then_t.eql(rt) and self.lua_and_or_value_type_is_native(then_t)) return then_t;
+                return .any;
+            }
+            if (b.op == .@"and" or b.op == .@"or") {
+                if (lt.eql(rt)) return lt;
+                return .any;
+            }
             if (lt.is_native() and rt.is_native()) {
                 if (lt == .f64 or rt == .f64) return .f64;
                 if (lt.is_integer() and rt.is_integer()) return .i64;
@@ -402,8 +411,8 @@ pub const CodeGen = struct {
         // operations on their results don't unnecessarily fall back to the
         // dynamic lua_Value path.
         if (e.* == .unwrap_expr) return self.expr_type(e.unwrap_expr.operand);
-        if (e.* == .try_expr)    return self.expr_type(e.try_expr.operand);
-        if (e.* == .await_expr)  return self.expr_type(e.await_expr.operand);
+        if (e.* == .try_expr) return self.expr_type(e.try_expr.operand);
+        if (e.* == .await_expr) return self.expr_type(e.await_expr.operand);
         // `x in y` is a boolean test — always produces bool.
         if (e.* == .contains_expr) return .bool;
         // Unary operators: keep results in native typed C when the operand is
@@ -455,6 +464,41 @@ pub const CodeGen = struct {
         return tm orelse .any;
     }
 
+    fn lua_and_or_value_type_is_native(_: *CodeGen, t: RT) bool {
+        return t.is_numeric() or t == .str;
+    }
+
+    fn emit_lua_truthy_expr(self: *CodeGen, e: *const ast.Expr) E!void {
+        switch (self.expr_type(e)) {
+            .any => {
+                self.p("lua_to_bool(", .{});
+                try self.emit_as_lua_value(e);
+                self.p(")", .{});
+            },
+            .nil => self.p("0", .{}),
+            .bool => try self.emit_expr(e),
+            else => self.p("1", .{}),
+        }
+    }
+
+    fn try_emit_lua_and_or_ternary(self: *CodeGen, b: anytype) E!bool {
+        if (b.op != .@"or" or b.lhs.* != .binop or b.lhs.binop.op != .@"and") return false;
+
+        const and_b = b.lhs.binop;
+        const then_t = self.expr_type(and_b.rhs);
+        const else_t = self.expr_type(b.rhs);
+        if (!then_t.eql(else_t) or !self.lua_and_or_value_type_is_native(then_t)) return false;
+
+        self.p("(", .{});
+        try self.emit_lua_truthy_expr(and_b.lhs);
+        self.p(" ? (", .{});
+        try self.emit_expr(and_b.rhs);
+        self.p(") : (", .{});
+        try self.emit_expr(b.rhs);
+        self.p("))", .{});
+        return true;
+    }
+
     /// Result type of a `math.<fn>(...)` builtin call, or null if `func` is not
     /// a recognized math builtin. `max`/`min`/`abs` are integer-typed when their
     /// arguments are integers (matching the integer emit in maybe_emit_math_call);
@@ -474,8 +518,8 @@ pub const CodeGen = struct {
             return .f64;
         }
         const f64_names = [_][]const u8{
-            "sqrt", "sin",   "cos",  "tan", "asin", "acos", "atan",
-            "exp",  "log",   "pow",  "fmod", "floor", "ceil",
+            "sqrt", "sin", "cos", "tan",  "asin",  "acos", "atan",
+            "exp",  "log", "pow", "fmod", "floor", "ceil",
         };
         for (f64_names) |n| if (std.mem.eql(u8, fname, n)) return .f64;
         return null;
@@ -726,7 +770,29 @@ pub const CodeGen = struct {
 
         // Library mode: no main()/entry point — only @export functions are
         // exposed.  Top-level statements are intentionally not executed.
-        if (self.lib_mode) return;
+        // For WASM reactor modules, emit _initialize so the runtime globals
+        // (string, table, math, package, ...) are set up before any export is
+        // invoked by the host.
+        if (self.lib_mode) {
+            if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
+                self.p("__attribute__((constructor)) static void duo_wasm_initialize(void) {{\n", .{});
+                self.indent = 1;
+                self.pl("package = lua_package_init();", .{});
+                self.pl("math = lua_math_init();", .{});
+                self.pl("utf8 = lua_utf8_init();", .{});
+                self.pl("debug = lua_debug_init();", .{});
+                self.pl("string = lua_string_init();", .{});
+                self.pl("table = lua_table_init();", .{});
+                self.pl("jit = lua_jit_init();", .{});
+                self.pl("ffi = lua_ffi_init();", .{});
+                self.pl("duo_modules = lua_table_new();", .{});
+                self.pl("duo_register_modules();", .{});
+                self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
+                self.indent = 0;
+                self.p("}}\n", .{});
+            }
+            return;
+        }
 
         if (self.load_chunk) {
             self.p("#ifdef __APPLE__\n", .{});
@@ -931,7 +997,7 @@ pub const CodeGen = struct {
             var is_packed = false;
             var align_n: ?usize = null;
             var ffi_name: ?[]const u8 = null;
-            
+
             for (ed.attributes) |attr| {
                 if (std.mem.eql(u8, attr.name, "packed")) is_packed = true;
                 if (std.mem.eql(u8, attr.name, "align")) {
@@ -941,8 +1007,8 @@ pub const CodeGen = struct {
                 }
                 if (std.mem.eql(u8, attr.name, "ffi")) {
                     if (attr.args) |args_str| {
-                        if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len-1] == '"') {
-                            ffi_name = args_str[1..args_str.len-1];
+                        if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
+                            ffi_name = args_str[1 .. args_str.len - 1];
                         } else {
                             ffi_name = args_str;
                         }
@@ -1128,6 +1194,11 @@ pub const CodeGen = struct {
             },
             .unop => |u| try self.collect_records_in_expr(u.operand),
             .func_expr => |f| try self.collect_records_in_func(f),
+            .list_comp => |lc| {
+                try self.collect_records_in_expr(lc.iter);
+                if (lc.filter) |filter| try self.collect_records_in_expr(filter);
+                try self.collect_records_in_expr(lc.value);
+            },
             .try_expr => |x| try self.collect_records_in_expr(x.operand),
             .unwrap_expr => |x| try self.collect_records_in_expr(x.operand),
             .match_expr => |m| {
@@ -1305,8 +1376,7 @@ pub const CodeGen = struct {
         // detected as recognizable algorithm shapes and get native C bodies.
         // Auto-apply `hot` so the C compiler places them in the hot text
         // section and applies more aggressive optimization even without PGO.
-        const pattern_hot = !cold_attr and !noinline_attr and (
-            fb.use_iterative_fib or fb.use_prime_sieve or fb.use_grid_sum_inline or
+        const pattern_hot = !cold_attr and !noinline_attr and (fb.use_iterative_fib or fb.use_prime_sieve or fb.use_grid_sum_inline or
             fb.use_dense_table or fb.use_dense_table_max or fb.use_dense_table_sum or
             fb.use_dense_table_identity_sum or fb.use_dense_table_mod997_sum or
             fb.use_dot_product_identity or fb.use_dot_product_dense or
@@ -1321,8 +1391,7 @@ pub const CodeGen = struct {
             fb.use_cond_swap_inline or fb.use_interp_inline or fb.use_run_len_inline or
             fb.use_sparse_dot_inline or fb.use_leven_native or fb.use_life_native or
             fb.use_sieve_native or fb.use_fenwick_native or fb.use_mandel_iter_native or
-            fb.use_nbody_native or fb.use_matmul_native or fb.use_trig_sum_recur
-        );
+            fb.use_nbody_native or fb.use_matmul_native or fb.use_trig_sum_recur);
 
         if ((inline_attr or fb.is_typed) and !noinline_attr) {
             self.p("static inline ", .{});
@@ -1745,8 +1814,9 @@ pub const CodeGen = struct {
         self.p(") {{\n", .{});
         self.indent = 1;
         try self.push_local_scope();
+        var scope_popped = false;
         defer {
-            self.pop_local_scope();
+            if (!scope_popped) self.pop_local_scope();
         }
         for (fb.params) |*par| {
             try self.note_local_type(par.name, self.resolve_type(par.typ));
@@ -1853,6 +1923,8 @@ pub const CodeGen = struct {
         } else {
             try self.emit_block_stmts(&fb.body);
         }
+        self.pop_local_scope();
+        scope_popped = true;
         self.indent = 0;
         self.p("}}\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
@@ -1875,8 +1947,9 @@ pub const CodeGen = struct {
         self.current_ret = .any;
         self.closure_ctx = fb;
         try self.push_local_scope();
+        var scope_popped = false;
         defer {
-            self.pop_local_scope();
+            if (!scope_popped) self.pop_local_scope();
             self.closure_ctx = prev_ctx;
             self.current_ret = prev_ret;
         }
@@ -1902,6 +1975,8 @@ pub const CodeGen = struct {
             self.pl("lua_Value {s} = lua_tbl_pack_argv(argc - {d}, argv + {d});", .{ vn, fb.params.len, fb.params.len });
         }
         try self.emit_block_stmts(&fb.body);
+        self.pop_local_scope();
+        scope_popped = true;
         self.pl("return lua_val_nil();", .{});
         self.indent = 0;
         self.p("}}\n\n", .{});
@@ -3644,6 +3719,101 @@ pub const CodeGen = struct {
         return t != .any and t != .nil and t != .str and t != .func and t != .pointer;
     }
 
+    fn emit_list_comprehension(self: *CodeGen, lc: ast.ListComprehension) E!void {
+        self.p("({{\n", .{});
+        self.indent += 1;
+        try self.push_local_scope();
+        defer self.pop_local_scope();
+
+        self.ind();
+        self.p("lua_Value tmp = lua_table_new();\n", .{});
+        self.ind();
+        self.p("lua_Value tbl = ", .{});
+        try self.emit_as_lua_value(lc.iter);
+        self.p(";\n", .{});
+        self.ind();
+        self.p("int out_idx = 1;\n", .{});
+        self.ind();
+        self.p("if (tbl.type == VAL_TABLE) {{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Table* t_ptr = (lua_Table*)tbl.as.tval;\n", .{});
+
+        if (lc.key_name) |key_name| {
+            try self.note_local(key_name);
+            try self.note_local(lc.value_name);
+
+            self.ind();
+            self.p("for (int idx = 0; idx < t_ptr->array_size; idx++) {{\n", .{});
+            self.indent += 1;
+            self.ind();
+            self.p("if (t_ptr->array[idx].type == VAL_NIL) continue;\n", .{});
+            self.ind();
+            self.p("lua_Value {s} = lua_val_from_num((double)(idx + 1));\n", .{key_name});
+            self.ind();
+            self.p("lua_Value {s} = t_ptr->array[idx];\n", .{lc.value_name});
+            try self.emit_list_comprehension_append(lc);
+            self.indent -= 1;
+            self.ind();
+            self.p("}}\n", .{});
+
+            self.ind();
+            self.p("for (int idx = 0; idx < t_ptr->capacity; idx++) {{\n", .{});
+            self.indent += 1;
+            self.ind();
+            self.p("if (t_ptr->entries[idx].key.type == VAL_NIL) continue;\n", .{});
+            self.ind();
+            self.p("lua_Value {s} = t_ptr->entries[idx].key;\n", .{key_name});
+            self.ind();
+            self.p("lua_Value {s} = t_ptr->entries[idx].val;\n", .{lc.value_name});
+            try self.emit_list_comprehension_append(lc);
+            self.indent -= 1;
+            self.ind();
+            self.p("}}\n", .{});
+        } else {
+            try self.note_local(lc.value_name);
+            self.ind();
+            self.p("for (int idx = 0; idx < t_ptr->array_size; idx++) {{\n", .{});
+            self.indent += 1;
+            self.ind();
+            self.p("lua_Value {s} = t_ptr->array[idx];\n", .{lc.value_name});
+            self.ind();
+            self.p("if ({s}.type == VAL_NIL) break;\n", .{lc.value_name});
+            try self.emit_list_comprehension_append(lc);
+            self.indent -= 1;
+            self.ind();
+            self.p("}}\n", .{});
+        }
+
+        self.indent -= 1;
+        self.ind();
+        self.p("}}\n", .{});
+        self.ind();
+        self.p("tmp;\n", .{});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+    }
+
+    fn emit_list_comprehension_append(self: *CodeGen, lc: ast.ListComprehension) E!void {
+        if (lc.filter) |filter| {
+            self.ind();
+            self.p("if (", .{});
+            try self.emit_lua_truthy_expr(filter);
+            self.p(") {{\n", .{});
+            self.indent += 1;
+        }
+        self.ind();
+        self.p("lua_table_set(tmp, lua_val_from_num((double)out_idx++), ", .{});
+        try self.emit_as_lua_value(lc.value);
+        self.p(");\n", .{});
+        if (lc.filter != null) {
+            self.indent -= 1;
+            self.ind();
+            self.p("}}\n", .{});
+        }
+    }
+
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
             .nil => self.p("NULL", .{}),
@@ -3734,7 +3904,7 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
-                if (try self.maybe_emit_stdlib_call(c.func, c.args)) return;
+                if (try self.maybe_emit_stdlib_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 if (c.func.* == .name) {
                     if (self.mono) |m| {
@@ -3930,22 +4100,70 @@ pub const CodeGen = struct {
                     const lv = b.lhs.int_lit.val;
                     const rv = b.rhs.int_lit.val;
                     switch (b.op) {
-                        .add  => { self.p("{d}", .{lv +% rv}); return; },
-                        .sub  => { self.p("{d}", .{lv -% rv}); return; },
-                        .mul  => { self.p("{d}", .{lv *% rv}); return; },
-                        .idiv => if (rv != 0) { self.p("{d}", .{@divFloor(lv, rv)}); return; },
-                        .mod  => if (rv != 0) { self.p("{d}", .{@mod(lv, rv)}); return; },
-                        .band => { self.p("{d}", .{lv & rv}); return; },
-                        .bor  => { self.p("{d}", .{lv | rv}); return; },
-                        .bxor => { self.p("{d}", .{lv ^ rv}); return; },
-                        .lshift => if (rv >= 0 and rv < 64) { self.p("{d}", .{lv << @intCast(rv)}); return; },
-                        .rshift => if (rv >= 0 and rv < 64) { self.p("{d}", .{@as(i64, @bitCast(@as(u64, @bitCast(lv)) >> @intCast(rv)))}); return; },
-                        .eq  => { self.p("{s}", .{if (lv == rv) "1" else "0"}); return; },
-                        .neq => { self.p("{s}", .{if (lv != rv) "1" else "0"}); return; },
-                        .lt  => { self.p("{s}", .{if (lv <  rv) "1" else "0"}); return; },
-                        .gt  => { self.p("{s}", .{if (lv >  rv) "1" else "0"}); return; },
-                        .leq => { self.p("{s}", .{if (lv <= rv) "1" else "0"}); return; },
-                        .geq => { self.p("{s}", .{if (lv >= rv) "1" else "0"}); return; },
+                        .add => {
+                            self.p("{d}", .{lv +% rv});
+                            return;
+                        },
+                        .sub => {
+                            self.p("{d}", .{lv -% rv});
+                            return;
+                        },
+                        .mul => {
+                            self.p("{d}", .{lv *% rv});
+                            return;
+                        },
+                        .idiv => if (rv != 0) {
+                            self.p("{d}", .{@divFloor(lv, rv)});
+                            return;
+                        },
+                        .mod => if (rv != 0) {
+                            self.p("{d}", .{@mod(lv, rv)});
+                            return;
+                        },
+                        .band => {
+                            self.p("{d}", .{lv & rv});
+                            return;
+                        },
+                        .bor => {
+                            self.p("{d}", .{lv | rv});
+                            return;
+                        },
+                        .bxor => {
+                            self.p("{d}", .{lv ^ rv});
+                            return;
+                        },
+                        .lshift => if (rv >= 0 and rv < 64) {
+                            self.p("{d}", .{lv << @intCast(rv)});
+                            return;
+                        },
+                        .rshift => if (rv >= 0 and rv < 64) {
+                            self.p("{d}", .{@as(i64, @bitCast(@as(u64, @bitCast(lv)) >> @intCast(rv)))});
+                            return;
+                        },
+                        .eq => {
+                            self.p("{s}", .{if (lv == rv) "1" else "0"});
+                            return;
+                        },
+                        .neq => {
+                            self.p("{s}", .{if (lv != rv) "1" else "0"});
+                            return;
+                        },
+                        .lt => {
+                            self.p("{s}", .{if (lv < rv) "1" else "0"});
+                            return;
+                        },
+                        .gt => {
+                            self.p("{s}", .{if (lv > rv) "1" else "0"});
+                            return;
+                        },
+                        .leq => {
+                            self.p("{s}", .{if (lv <= rv) "1" else "0"});
+                            return;
+                        },
+                        .geq => {
+                            self.p("{s}", .{if (lv >= rv) "1" else "0"});
+                            return;
+                        },
                         else => {},
                     }
                 }
@@ -3953,23 +4171,45 @@ pub const CodeGen = struct {
                 if ((b.lhs.* == .float_lit or b.lhs.* == .int_lit) and
                     (b.rhs.* == .float_lit or b.rhs.* == .int_lit))
                 {
-                    const lv: f64 = if (b.lhs.* == .float_lit) b.lhs.float_lit.val
-                                    else @as(f64, @floatFromInt(b.lhs.int_lit.val));
-                    const rv: f64 = if (b.rhs.* == .float_lit) b.rhs.float_lit.val
-                                    else @as(f64, @floatFromInt(b.rhs.int_lit.val));
+                    const lv: f64 = if (b.lhs.* == .float_lit) b.lhs.float_lit.val else @as(f64, @floatFromInt(b.lhs.int_lit.val));
+                    const rv: f64 = if (b.rhs.* == .float_lit) b.rhs.float_lit.val else @as(f64, @floatFromInt(b.rhs.int_lit.val));
                     switch (b.op) {
-                        .add => { self.p("{d}", .{lv + rv}); return; },
-                        .sub => { self.p("{d}", .{lv - rv}); return; },
-                        .mul => { self.p("{d}", .{lv * rv}); return; },
-                        .div => if (rv != 0.0 and !std.math.isNan(rv)) { self.p("{d}", .{lv / rv}); return; },
-                        .pow => { self.p("{d}", .{std.math.pow(f64, lv, rv)}); return; },
+                        .add => {
+                            self.p("{d}", .{lv + rv});
+                            return;
+                        },
+                        .sub => {
+                            self.p("{d}", .{lv - rv});
+                            return;
+                        },
+                        .mul => {
+                            self.p("{d}", .{lv * rv});
+                            return;
+                        },
+                        .div => if (rv != 0.0 and !std.math.isNan(rv)) {
+                            self.p("{d}", .{lv / rv});
+                            return;
+                        },
+                        .pow => {
+                            self.p("{d}", .{std.math.pow(f64, lv, rv)});
+                            return;
+                        },
                         else => {},
                     }
                 }
                 // ─────────────────────────────────────────────────────────
                 const lt = self.expr_type(b.lhs);
                 const rt = self.expr_type(b.rhs);
-                if (b.op == .concat) {
+                if (try self.try_emit_lua_and_or_ternary(b)) {
+                    return;
+                } else if ((b.op == .@"and" or b.op == .@"or") and self.expr_type(expr) == .any) {
+                    const func = if (b.op == .@"and") "lua_and" else "lua_or";
+                    self.p("{s}(", .{func});
+                    try self.emit_as_lua_value(b.lhs);
+                    self.p(", ", .{});
+                    try self.emit_as_lua_value(b.rhs);
+                    self.p(")", .{});
+                } else if (b.op == .concat) {
                     self.p("lua_concat(", .{});
                     try self.emit_as_lua_value(b.lhs);
                     self.p(", ", .{});
@@ -4282,6 +4522,7 @@ pub const CodeGen = struct {
                 self.ind();
                 self.p("}})", .{});
             },
+            .list_comp => |lc| try self.emit_list_comprehension(lc),
             .try_expr => |te| {
                 // expr? — propagate error; in this runtime errors are already thrown
                 // via lua_error/longjmp, so the operand either returns normally or jumps.
@@ -4420,7 +4661,7 @@ pub const CodeGen = struct {
         return false;
     }
 
-    fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+    fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         if (func.* != .name) return false;
         const name = func.name.ident;
         if (std.mem.eql(u8, name, "assert")) {
@@ -4614,9 +4855,12 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "tostring")) {
+            const want_cstr = result_rt == .str;
+            if (want_cstr) self.p("lua_to_str(", .{});
             self.p("tostring(", .{});
             if (args.len > 0) try self.emit_as_lua_value(args[0]) else self.p("lua_val_nil()", .{});
             self.p(")", .{});
+            if (want_cstr) self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "tonumber")) {
             self.p("tonumber(", .{});
@@ -4634,9 +4878,12 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "type")) {
+            const want_cstr = result_rt == .str;
+            if (want_cstr) self.p("lua_to_str(", .{});
             self.p("type(", .{});
             if (args.len > 0) try self.emit_as_lua_value(args[0]) else self.p("lua_val_nil()", .{});
             self.p(")", .{});
+            if (want_cstr) self.p(")", .{});
             return true;
         }
         return false;
@@ -4849,10 +5096,22 @@ pub const CodeGen = struct {
                 const fnname = f.field;
                 // std.mem functions
                 if (std.mem.eql(u8, submod, "mem")) {
-                    if (std.mem.eql(u8, fnname, "page_size")) { self.p("4096", .{}); return true; }
-                    if (std.mem.eql(u8, fnname, "arena_new")) { self.p("lua_tbl_new()", .{}); return true; }
-                    if (std.mem.eql(u8, fnname, "pool_new")) { self.p("lua_tbl_new()", .{}); return true; }
-                    if (std.mem.eql(u8, fnname, "stack_new")) { self.p("lua_tbl_new()", .{}); return true; }
+                    if (std.mem.eql(u8, fnname, "page_size")) {
+                        self.p("4096", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "arena_new")) {
+                        self.p("lua_tbl_new()", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "pool_new")) {
+                        self.p("lua_tbl_new()", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "stack_new")) {
+                        self.p("lua_tbl_new()", .{});
+                        return true;
+                    }
                 }
                 // std.meta functions — fall through to lua_invoke for now
                 // std.wasm.wasi functions — fall through to lua_invoke for now
@@ -5072,23 +5331,10 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, mod, "net")) {
-            const mapped = if (std.mem.eql(u8, fname, "connect")) "duo_net_tcp_connect"
-                else if (std.mem.eql(u8, fname, "listen")) "duo_net_tcp_listen"
-                else if (std.mem.eql(u8, fname, "accept")) "duo_net_tcp_accept"
-                else if (std.mem.eql(u8, fname, "send")) "duo_net_tcp_send"
-                else if (std.mem.eql(u8, fname, "recv")) "duo_net_tcp_recv"
-                else if (std.mem.eql(u8, fname, "close")) "duo_net_tcp_close"
-                else if (std.mem.eql(u8, fname, "udp_socket")) "duo_net_udp_socket_open"
-                else if (std.mem.eql(u8, fname, "udp_sendto")) "duo_net_udp_sendto"
-                else if (std.mem.eql(u8, fname, "udp_recvfrom")) "duo_net_udp_recvfrom"
-                else if (std.mem.eql(u8, fname, "http_get")) "duo_net_http_get"
-                else if (std.mem.eql(u8, fname, "http_post")) "duo_net_http_post"
-                else return false;
+            const mapped = if (std.mem.eql(u8, fname, "connect")) "duo_net_tcp_connect" else if (std.mem.eql(u8, fname, "listen")) "duo_net_tcp_listen" else if (std.mem.eql(u8, fname, "accept")) "duo_net_tcp_accept" else if (std.mem.eql(u8, fname, "send")) "duo_net_tcp_send" else if (std.mem.eql(u8, fname, "recv")) "duo_net_tcp_recv" else if (std.mem.eql(u8, fname, "close")) "duo_net_tcp_close" else if (std.mem.eql(u8, fname, "udp_socket")) "duo_net_udp_socket_open" else if (std.mem.eql(u8, fname, "udp_sendto")) "duo_net_udp_sendto" else if (std.mem.eql(u8, fname, "udp_recvfrom")) "duo_net_udp_recvfrom" else if (std.mem.eql(u8, fname, "http_get")) "duo_net_http_get" else if (std.mem.eql(u8, fname, "http_post")) "duo_net_http_post" else return false;
 
             const expected: usize =
-                if (std.mem.eql(u8, fname, "accept") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "http_get")) @as(usize, 1)
-                else if (std.mem.eql(u8, fname, "udp_sendto") or std.mem.eql(u8, fname, "http_post")) @as(usize, 3)
-                else @as(usize, 2);
+                if (std.mem.eql(u8, fname, "accept") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "http_get")) @as(usize, 1) else if (std.mem.eql(u8, fname, "udp_sendto") or std.mem.eql(u8, fname, "http_post")) @as(usize, 3) else @as(usize, 2);
 
             self.p("{s}(", .{mapped});
             var i: usize = 0;
@@ -5276,8 +5522,8 @@ pub const CodeGen = struct {
                 }
             }
             self.p("}} duo_closure_{d};\n\n", .{id});
-            
-            self.p("static inline duo_closure_{d}* duo_make_closure_{d}(", .{id, id});
+
+            self.p("static inline duo_closure_{d}* duo_make_closure_{d}(", .{ id, id });
             for (fb.upvalues, 0..) |up, i| {
                 if (i > 0) self.p(", ", .{});
                 if (up.typ) |t| {
@@ -5287,13 +5533,13 @@ pub const CodeGen = struct {
                 }
             }
             self.p(") {{\n", .{});
-            self.p("    duo_closure_{d}* cl = (duo_closure_{d}*)malloc(sizeof(duo_closure_{d}));\n", .{id, id, id});
+            self.p("    duo_closure_{d}* cl = (duo_closure_{d}*)malloc(sizeof(duo_closure_{d}));\n", .{ id, id, id });
             self.p("    cl->header.refcount = 1;\n", .{});
             self.p("    cl->header.type_tag = VAL_CLOSURE;\n", .{});
             self.p("    cl->id = {d};\n", .{id});
             self.p("    cl->nup = {d};\n", .{fb.upvalues.len});
             for (fb.upvalues, 0..) |up, i| {
-                self.p("    cl->up{d} = up{d};\n", .{i, i});
+                self.p("    cl->up{d} = up{d};\n", .{ i, i });
                 if (up.typ) |t| {
                     if (self.codegen_needs_arc(t)) {
                         self.p("    duo_retain((void*)cl->up{d});\n", .{i});
@@ -5303,7 +5549,7 @@ pub const CodeGen = struct {
             self.p("    return cl;\n", .{});
             self.p("}}\n\n", .{});
 
-            self.p("static void duo_free_closure_{d}(duo_closure_{d}* cl) {{\n", .{id, id});
+            self.p("static void duo_free_closure_{d}(duo_closure_{d}* cl) {{\n", .{ id, id });
             for (fb.upvalues, 0..) |up, i| {
                 if (up.typ) |t| {
                     if (self.codegen_needs_arc(t)) {
@@ -5356,7 +5602,7 @@ pub const CodeGen = struct {
             const id = fb.closure_id orelse continue;
             self.p("static lua_Value duo_cl_{d}(lua_Closure* cl_raw, int argc, lua_Value* argv) {{\n", .{id});
             self.indent = 1;
-            self.pl("duo_closure_{d}* cl = (duo_closure_{d}*)cl_raw;", .{id, id});
+            self.pl("duo_closure_{d}* cl = (duo_closure_{d}*)cl_raw;", .{ id, id });
             const prev_ret = self.current_ret;
             const prev_ctx = self.closure_ctx;
             self.current_ret = .any;
@@ -5531,22 +5777,32 @@ pub const CodeGen = struct {
             const cwd = Io.Dir.cwd();
             if (Io.Dir.access(cwd, self.io, src_lua, .{})) {
                 mod_path = src_lua;
-                self.alloc.free(src_duo); self.alloc.free(lib_lua); self.alloc.free(lib_duo);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
             } else |_| {
                 if (Io.Dir.access(cwd, self.io, src_duo, .{})) {
                     mod_path = src_duo;
-                    self.alloc.free(src_lua); self.alloc.free(lib_lua); self.alloc.free(lib_duo);
+                    self.alloc.free(src_lua);
+                    self.alloc.free(lib_lua);
+                    self.alloc.free(lib_duo);
                 } else |_| {
                     if (Io.Dir.access(cwd, self.io, lib_lua, .{})) {
                         mod_path = lib_lua;
-                        self.alloc.free(src_lua); self.alloc.free(src_duo); self.alloc.free(lib_duo);
+                        self.alloc.free(src_lua);
+                        self.alloc.free(src_duo);
+                        self.alloc.free(lib_duo);
                     } else |_| {
                         if (Io.Dir.access(cwd, self.io, lib_duo, .{})) {
                             mod_path = lib_duo;
-                            self.alloc.free(src_lua); self.alloc.free(src_duo); self.alloc.free(lib_lua);
+                            self.alloc.free(src_lua);
+                            self.alloc.free(src_duo);
+                            self.alloc.free(lib_lua);
                         } else |_| {
-                            self.alloc.free(src_lua); self.alloc.free(src_duo);
-                            self.alloc.free(lib_lua); self.alloc.free(lib_duo);
+                            self.alloc.free(src_lua);
+                            self.alloc.free(src_duo);
+                            self.alloc.free(lib_lua);
+                            self.alloc.free(lib_duo);
                             continue;
                         }
                     }
@@ -5650,10 +5906,10 @@ pub const CodeGen = struct {
                 any_global = true;
                 const rt = entry.value_ptr.*;
                 if (rt == .any) {
-                    self.p("static lua_Value {s} = lua_val_nil();\n", .{entry.key_ptr.*});
+                    self.p("static lua_Value duo_g_{s};\n", .{entry.key_ptr.*});
                 } else {
                     var buf: [128]u8 = undefined;
-                    self.p("static {s} {s};\n", .{ rt.c_type(&buf), entry.key_ptr.* });
+                    self.p("static {s} duo_g_{s};\n", .{ rt.c_type(&buf), entry.key_ptr.* });
                 }
             }
             if (any_global) self.p("\n", .{});
@@ -5961,18 +6217,14 @@ pub const CodeGen = struct {
             .table_destr => |entries| {
                 for (entries) |entry| {
                     const key_hash = calc_lua_hash(entry.key);
-                    const field_expr = try std.fmt.allocPrint(self.alloc,
-                        "lua_table_get({s}, lua_val_from_literal(\"{s}\", {d}, {d}))",
-                        .{ value_expr, entry.key, key_hash, entry.key.len });
+                    const field_expr = try std.fmt.allocPrint(self.alloc, "lua_table_get({s}, lua_val_from_literal(\"{s}\", {d}, {d}))", .{ value_expr, entry.key, key_hash, entry.key.len });
                     defer self.alloc.free(field_expr);
                     try self.emit_pattern_binding_from(entry.pat, field_expr, .any);
                 }
             },
             .array_destr => |pats| {
                 for (pats, 0..) |sub_pat, ai| {
-                    const elem_expr = try std.fmt.allocPrint(self.alloc,
-                        "lua_table_get({s}, lua_val_from_num({d}))",
-                        .{ value_expr, ai + 1 });
+                    const elem_expr = try std.fmt.allocPrint(self.alloc, "lua_table_get({s}, lua_val_from_num({d}))", .{ value_expr, ai + 1 });
                     defer self.alloc.free(elem_expr);
                     try self.emit_pattern_binding_from(sub_pat, elem_expr, .any);
                 }
@@ -6130,7 +6382,6 @@ const duo_runtime =
     \\    duo_gc_kbytes += (int64_t)((bytes + 1023) / 1024);
     \\}
     \\
-
     \\
     \\static inline void duo_retain(void* ptr) {
     \\    (void)ptr;
@@ -6274,8 +6525,15 @@ const duo_runtime =
     \\            lua_String* s = (lua_String*)((char*)v.as.sval - offsetof(lua_String, data));
     \\            return s->hash;
     \\        }
-    \\        case VAL_BOOL: return v.as.bval ? 1 : 0;
-    \\        default: return (uint32_t)((uintptr_t)v.as.tval ^ ((uintptr_t)v.as.tval >> 32));
+    \\    case VAL_BOOL: return v.as.bval ? 1 : 0;
+    \\    default: {
+    \\        uintptr_t p = (uintptr_t)v.as.tval;
+    \\        #if UINTPTR_MAX == UINT32_MAX
+    \\            return (uint32_t)(p ^ (p >> 16));
+    \\        #else
+    \\            return (uint32_t)(p ^ (p >> 32));
+    \\        #endif
+    \\    }
     \\    }
     \\}
     \\
@@ -9668,8 +9926,8 @@ test "runtime: duo_contains uses lua_eq for element comparison" {
     // Relies on lua_eq being defined before duo_contains and called inside it.
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_eq") != null);
     // Verify lua_eq appears before duo_contains in the runtime string.
-    const eq_pos  = std.mem.indexOf(u8, duo_runtime, "lua_eq").?;
-    const dc_pos  = std.mem.indexOf(u8, duo_runtime, "duo_contains").?;
+    const eq_pos = std.mem.indexOf(u8, duo_runtime, "lua_eq").?;
+    const dc_pos = std.mem.indexOf(u8, duo_runtime, "duo_contains").?;
     try testing.expect(eq_pos < dc_pos);
 }
 
@@ -9815,10 +10073,10 @@ test "wasm: output extension is .wasm for wasm32-wasi target" {
     const stem = "hello";
     const target_wasm = "wasm32-wasi";
     const target_native = "native";
-    const ext_wasm   = if (std.mem.eql(u8, target_wasm, "wasm32-wasi")) ".wasm" else ".out";
+    const ext_wasm = if (std.mem.eql(u8, target_wasm, "wasm32-wasi")) ".wasm" else ".out";
     const ext_native = if (std.mem.eql(u8, target_native, "wasm32-wasi")) ".wasm" else ".out";
     try testing.expectEqualStrings(".wasm", ext_wasm);
-    try testing.expectEqualStrings(".out",  ext_native);
+    try testing.expectEqualStrings(".out", ext_native);
     _ = stem;
 }
 
@@ -9862,9 +10120,9 @@ test "wasm: PGO is skipped for wasm32-wasi (mirrors main.zig condition)" {
     // main.zig: `if (pgo and !is_wasm and !load_chunk)`
     const pgo = true;
     const load_chunk = false;
-    const is_wasm_true  = true;
+    const is_wasm_true = true;
     const is_wasm_false = false;
-    const run_pgo_wasm   = pgo and !is_wasm_true  and !load_chunk;
+    const run_pgo_wasm = pgo and !is_wasm_true and !load_chunk;
     const run_pgo_native = pgo and !is_wasm_false and !load_chunk;
     try testing.expect(!run_pgo_wasm);
     try testing.expect(run_pgo_native);
@@ -9875,9 +10133,9 @@ test "wasm: PGO is skipped for wasm32-wasi (mirrors main.zig condition)" {
 test "wasm: program is not executed after compile on wasm target" {
     // main.zig: `if (run_after and !is_wasm)`
     const run_after = true;
-    const is_wasm_true  = true;
+    const is_wasm_true = true;
     const is_wasm_false = false;
-    const exec_after_wasm   = run_after and !is_wasm_true;
+    const exec_after_wasm = run_after and !is_wasm_true;
     const exec_after_native = run_after and !is_wasm_false;
     try testing.expect(!exec_after_wasm);
     try testing.expect(exec_after_native);
@@ -10068,7 +10326,7 @@ test "match: literal sub-pattern emits equality condition" {
 test "num_for: loop variable is typed as i64 by default" {
     // num_for now calls note_local_type(name, vt2) instead of note_local(name).
     // vt2 defaults to i64 when the start expression is untyped.
-    const vt: RT = .any;   // start expression has unknown type
+    const vt: RT = .any; // start expression has unknown type
     const vt2: RT = if (vt == .any) RT.i64 else vt;
     try testing.expect(vt2 == .i64);
 }
@@ -10082,7 +10340,7 @@ test "num_for: loop variable uses declared type annotation" {
 
 test "num_for: loop variable inherits start expression type" {
     // `for i = some_f64_expr, limit do` should use f64.
-    const vt: RT = .f64;   // expr_type(start) = f64
+    const vt: RT = .f64; // expr_type(start) = f64
     const vt2: RT = if (vt == .any) RT.i64 else vt;
     try testing.expect(vt2 == .f64);
 }

@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
+            window.path_to_searchindex_js = "searchindex-da57a234.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -202,7 +202,7 @@
 <li><strong>Async Lowering</strong> → Transforms async functions into state machines</li>
 </ul>
 <h2 id="status"><a class="header" href="#status">Status</a></h2>
-<p>Duo is actively developed with 345+ unit tests covering the lexer, parser, semantic analyzer, monomorphizer, ARC pass, async lowering, and property-based tests. The compiler produces native C and WebAssembly outputs.</p>
+<p>Duo is actively developed with 345+ unit tests, compile-fail tests, and a 40-benchmark performance gate (<code>zig build bench</code> requires Duo to beat or tie C). The compiler produces native binaries, shared libraries, and WebAssembly outputs. See <a href="./roadmap.html">Roadmap</a> for the current feature set and planned work.</p>
 <h2 id="quick-start"><a class="header" href="#quick-start">Quick Start</a></h2>
 <pre><code class="language-bash"># Install (requires Zig 0.17.0-dev)
 zig build
@@ -210,7 +210,7 @@ zig build
 # Run a Duo file
 ./zig-out/bin/duo run examples/hello.lua
 
-# Compile to native binary
+# Compile a .duo file to native binary
 ./zig-out/bin/duo compile script.duo -o program
 
 # Compile to WASM
@@ -281,7 +281,7 @@ print(fib(40))
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/custom-52f62bf1.js"></script>
+        <script src="theme/custom-6e847c62.js"></script>
 
 
 

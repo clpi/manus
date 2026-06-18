@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4845fbfa.js";
+            window.path_to_searchindex_js = "searchindex-da57a234.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -219,6 +219,17 @@ async fun consumer(ch: Channel[str]): void
     end
 end
 </code></pre>
+<h2 id="standard-library-concurrency"><a class="header" href="#standard-library-concurrency">Standard-Library Concurrency</a></h2>
+<p>In addition to the <code>async</code>/<code>await</code> language primitives, the standard library provides cooperative and OS-level concurrency in <code>lib/std/</code>:</p>
+<ul>
+<li><code>std.coroutine</code> — Lua-style coroutine helpers (<code>create</code>, <code>resume</code>, <code>yield</code>, <code>status</code>, <code>wrap</code>, <code>close</code>).</li>
+<li><code>std.sync</code> — single-threaded cooperative scheduler and typed channels (<code>spawn</code>, <code>run</code>, <code>channel</code>, <code>channel_send</code>, <code>channel_recv</code>).</li>
+<li><code>std.concurrent</code> — high-level patterns (<code>go</code>, <code>wait</code>, <code>all</code>, <code>race</code>, <code>select</code>) built on <code>std.sync</code>.</li>
+<li><code>std.thread</code> — mutex, rwlock, condvar, semaphore, barrier, and thread spawn/join. Cooperative in single-threaded mode; maps to pthreads under <code>@concurrent("threaded")</code>.</li>
+<li><code>std.mproc</code> — multi-process helpers (<code>spawn</code>, <code>wait</code>, <code>kill</code>, <code>pid</code>).</li>
+<li><code>std.atomic</code> — atomic primitives and mutexes.</li>
+</ul>
+<p>See the <a href="./stdlib.html">Standard Library</a> chapter for examples.</p>
 <h2 id="threaded-scheduler"><a class="header" href="#threaded-scheduler">Threaded Scheduler</a></h2>
 <p>For CPU-bound work, use thread pools:</p>
 <pre><code class="language-duo">@concurrent("threaded")
@@ -331,7 +342,7 @@ end
         <script src="book-c22b7243.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/custom-52f62bf1.js"></script>
+        <script src="theme/custom-6e847c62.js"></script>
 
 
 

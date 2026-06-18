@@ -17,7 +17,7 @@ fun list_get(list: any, index: i64): any
 end
 
 fun list_len(list: any): i64
-    #list
+    return #list
 end
 
 fun stack_new(): any
@@ -92,12 +92,91 @@ fun remove_at(list: any, index: i64): any
     table.remove(list, index)
 end
 
+fun list_insert(list: any, index: i64, value: any): void
+    table.insert(list, index, value)
+end
+
+fun list_clear(list: any): void
+    if list == nil then return end
+    i = #list
+    while i > 0
+        table.remove(list, i)
+        i = i - 1
+    end
+end
+
+fun map_delete(m: any, key: any): void
+    if m == nil then return end
+    m[key] = nil
+end
+
+fun map_keys(m: any): any
+    out = {}
+    if m == nil then return out end
+    for k, _ in pairs(m)
+        table.insert(out, k)
+    end
+    out
+end
+
+fun map_values(m: any): any
+    out = {}
+    if m == nil then return out end
+    for _, v in pairs(m)
+        table.insert(out, v)
+    end
+    out
+end
+
+fun set_remove(s: any, value: any): void
+    if s == nil then return end
+    s[value] = nil
+end
+
+fun set_clear(s: any): void
+    if s == nil then return end
+    for k, _ in pairs(s)
+        s[k] = nil
+    end
+end
+
+fun set_union(s1: any, s2: any): any
+    out = {}
+    if s1 ~= nil then
+        for k, _ in pairs(s1) out[k] = true end
+    end
+    if s2 ~= nil then
+        for k, _ in pairs(s2) out[k] = true end
+    end
+    out
+end
+
+fun set_intersection(s1: any, s2: any): any
+    out = {}
+    if s1 == nil or s2 == nil then return out end
+    for k, _ in pairs(s1)
+        if s2[k] ~= nil then out[k] = true end
+    end
+    out
+end
+
+fun set_difference(s1: any, s2: any): any
+    out = {}
+    if s1 == nil then return out end
+    for k, _ in pairs(s1)
+        if s2 == nil or s2[k] == nil then out[k] = true end
+    end
+    out
+end
+
 M = {}
 M.list_new = list_new
 M.list_push = list_push
 M.list_pop = list_pop
 M.list_get = list_get
 M.list_len = list_len
+M.list_insert = list_insert
+M.list_clear = list_clear
 M.stack_new = stack_new
 M.stack_push = stack_push
 M.stack_pop = stack_pop
@@ -108,9 +187,17 @@ M.map_new = map_new
 M.map_set = map_set
 M.map_get = map_get
 M.map_has = map_has
+M.map_delete = map_delete
+M.map_keys = map_keys
+M.map_values = map_values
 M.set_new = set_new
 M.set_add = set_add
 M.set_has = set_has
+M.set_remove = set_remove
+M.set_clear = set_clear
+M.set_union = set_union
+M.set_intersection = set_intersection
+M.set_difference = set_difference
 M.is_array = is_array
 M.remove_at = remove_at
 M

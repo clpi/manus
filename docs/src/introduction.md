@@ -30,7 +30,7 @@ Optional passes between semantic analysis and codegen:
 
 ## Status
 
-Duo is actively developed with 345+ unit tests covering the lexer, parser, semantic analyzer, monomorphizer, ARC pass, async lowering, and property-based tests. The compiler produces native C and WebAssembly outputs.
+Duo is actively developed with 345+ unit tests, compile-fail tests, and a 40-benchmark performance gate (`zig build bench` requires Duo to beat or tie C). The compiler produces native binaries, shared libraries, and WebAssembly outputs. See [Roadmap](./roadmap.md) for the current feature set and planned work.
 
 ## Quick Start
 
@@ -41,7 +41,7 @@ zig build
 # Run a Duo file
 ./zig-out/bin/duo run examples/hello.lua
 
-# Compile to native binary
+# Compile a .duo file to native binary
 ./zig-out/bin/duo compile script.duo -o program
 
 # Compile to WASM

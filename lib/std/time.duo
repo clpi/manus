@@ -12,8 +12,14 @@ fun difftime(t2: int, t1: int): float
     os.difftime(t2, t1)
 end
 
+fun sleep(seconds: any): void
+    if seconds == nil then return end
+    os.execute("sleep " .. tostring(seconds))
+end
+
 M = {}
 M.now = now
 M.clock = clock
 M.difftime = difftime
+M.sleep = sleep
 M

@@ -14,7 +14,7 @@ fun get_box(b: <i64> Box): i64
     end
 end
 
-fun main(): i64
-    b = make_box(42)
+fun my_main(): i64
+    local b: <i64> Box = make_box(42)
     get_box(b)
 end
