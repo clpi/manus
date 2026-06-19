@@ -1,0 +1,16 @@
+@packed
+@align(16)
+global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
+
+@packed
+@align(8)
+local p: { x: i8, y: i64 } = { x = 3, y = 4 }
+
+@packed
+@align(8)
+enum E
+  A
+  B(i64)
+end
+
+print(gp.y + p.y)

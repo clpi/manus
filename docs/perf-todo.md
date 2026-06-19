@@ -115,17 +115,14 @@ Keep it in sync with `docs/src/roadmap.md`.
   (numbers/str/bool/any/payload-free enum). Previously a record/struct param produced
   `lua_Value _p0 = _a0; f(_p0)` passing a lua_Value where a C struct was expected.
 
-- [ ] **Native record-typed params/locals are unimplemented end-to-end (feature, not a
+- [~] **Native record-typed params/locals are unimplemented end-to-end (feature, not a
   one-line bug).** `fun dist(p: {x:i64,y:i64})` declares the struct (`duo_rec_<hash>`) and
-  the body uses native field access, but:
-  - call sites pass a `lua_Value` table literal where the C struct is expected
-    (`src/codegen.zig:3698` arg loop — needs table-literal→struct-literal coercion);
-  - named aliases (`alias Point = {...}`) resolve to an undeclared `duo_Point` C type
-    instead of the `duo_rec_<hash>` typedef;
-  - record-typed `local`s with table-literal initializers don't emit the struct.
-  Idiomatic duo uses `self: any` (dynamic) instead, so this is latent. Completing it is a
-  real perf win (native struct passing vs boxed tables) but spans type resolution, struct
-  emission, let-binding init, and call-site coercion.
+  the body uses native field access. Fixed so table literals at record-typed call sites
+  lower to C struct literals, named record aliases (`type Point = {...}`) resolve to the
+  same `duo_rec_<hash>` typedef as inline records, and record-typed local/global
+  initializers emit native structs. Still pending: promotion to `duo_Table*`/ARC when
+  native records are passed to generic `table` parameters, plus `@implements` concept-tag
+  metatable emission.
 
 - [x] **String-returning builtins disagree between sema and emit.** Fixed: typed
   `string.sub(...)` and `tostring(...)` in native `str` contexts now compile and run,

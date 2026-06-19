@@ -489,6 +489,8 @@ pub const Stmt = union(enum) {
 pub const AliasDef = struct {
     loc: Loc,
     name: []const u8,
+    /// Type alias target for `type Name = Type` / `alias Name = Type`.
+    target: ?TypeExpr = null,
     /// Optional parent alias for single inheritance (extends Parent).
     parent: ?[]const u8 = null,
     /// Fields: name, type, and whether private.

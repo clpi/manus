@@ -53,6 +53,27 @@ fn get_deprecated_msg(attributes: []const ast.Attribute) ?[]const u8 {
     return null;
 }
 
+fn apply_record_layout_attrs(t: *RT, attributes: []const ast.Attribute) void {
+    if (t.* != .table_type) return;
+    for (attributes) |attr| {
+        if (std.mem.eql(u8, attr.name, "packed")) {
+            t.table_type.is_packed = true;
+        } else if (std.mem.eql(u8, attr.name, "align")) {
+            if (attr.args) |args_str| {
+                t.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+            }
+        } else if (std.mem.eql(u8, attr.name, "ffi")) {
+            if (attr.args) |args_str| {
+                if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
+                    t.table_type.ffi_name = args_str[1 .. args_str.len - 1];
+                } else {
+                    t.table_type.ffi_name = args_str;
+                }
+            }
+        }
+    }
+}
+
 /// Check whether attributes contain @arc(false) and validate the argument.
 /// Returns true if @arc attribute is present (valid or invalid).
 fn validate_arc_attr(attributes: []const ast.Attribute) ?bool {
@@ -479,26 +500,7 @@ pub const Sema = struct {
                     const is_const = is_const_attrib(lname.attrib);
                     const is_close = is_close_attrib(lname.attrib);
 
-                    if (t == .table_type) {
-                        for (lname.attributes) |attr| {
-                            if (std.mem.eql(u8, attr.name, "packed")) t.table_type.is_packed = true;
-                            if (std.mem.eql(u8, attr.name, "align")) {
-                                if (attr.args) |args_str| {
-                                    t.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
-                                }
-                            }
-                            if (std.mem.eql(u8, attr.name, "ffi")) {
-                                if (attr.args) |args_str| {
-                                    // Remove quotes from "C_name"
-                                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
-                                        t.table_type.ffi_name = args_str[1 .. args_str.len - 1];
-                                    } else {
-                                        t.table_type.ffi_name = args_str;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    apply_record_layout_attrs(&t, lname.attributes);
                     const has_init = i < ld.inits.len or (ld.inits.len == 1 and ld.names.len > 1 and i == 0);
                     if (is_const and !has_init) {
                         self.err(lname.loc, "const variable '{s}' must have an initializer", .{lname.ident});
@@ -543,6 +545,7 @@ pub const Sema = struct {
                         const ann = types.resolve(lname.typ, self, self.alloc) catch .any;
                         t = ann;
                     }
+                    apply_record_layout_attrs(&t, lname.attributes);
                     const is_const = is_const_attrib(lname.attrib);
                     const has_init = i < gd.inits.len or (gd.inits.len == 1 and gd.names.len > 1 and i == 0);
                     if (is_const and !has_init) {

@@ -359,11 +359,13 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
     - **Status**: content-hash dedup + struct typedef (`ensure_record_decl`) are in
       place, and record-typed bindings initialized from a table literal now emit a
       designated-initializer C struct literal (`emit_record_initializer`, wired at
-      the `local_decl` site) with field access lowering to plain `s.field`.
-      Verified: `local p: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }; print(p.x)`
-      emits a `duo_rec_<hash>` struct and runs. Pending (separate follow-ups):
-      promotion to `duo_Table*`/ARC when passed to a generic `table` parameter, and
-      `@implements` concept-tag metatable emission.
+      local/global declarations and record-typed call arguments) with field access
+      lowering to plain `s.field`. Named record aliases such as
+      `type Point = { x: i64, y: i64 }` lower to the same content-hashed record
+      typedef as inline record annotations. Verified by
+      `examples/native_record_params.duo` and `examples/layout_attrs_test.duo`.
+      Pending (separate follow-ups): promotion to `duo_Table*`/ARC when passed to a
+      generic `table` parameter, and `@implements` concept-tag metatable emission.
     - _Requirements: 3.7, 11.4, 15.4_
 
   - [x] 12.7 Implement closure representation in codegen
@@ -382,18 +384,27 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
     - **Status**: function declarations/definitions now emit `@inline`,
       `@noinline`, `@cold`, and `@hot` as GCC attributes, with `@noinline`
       suppressing the default typed-function `static inline`. `@ffi("C_name")`
-      now changes the generated C symbol and call sites consistently. Pending:
-      `@packed`/`@align(N)` for record/enum layout and type-level `@ffi`.
+      now changes the generated C symbol and call sites consistently.
+      `@packed`/`@align(N)` now lower onto record and enum typedefs, including
+      record-typed local/global bindings initialized from table literals.
+      Pending: type-level `@ffi`.
     - _Requirements: 18.1–18.8, 21.1_
 
-  - [ ] 12.9 Write property test for valid C output (Property 11)
+  - [x] 12.9 Write property test for valid C output (Property 11)
     - **Property 11: Codegen Produces Valid C**
     - Generate fully-typed Duo modules; verify generated C compiles under `clang -Wall -Wextra -pedantic -std=c11`
+    - **Status**: `scripts/test_property_11.sh` now generates multiple
+      fully-typed modules covering arithmetic, branches, loops, native strings,
+      record globals/locals, and bitwise expressions, then syntax-checks the
+      generated C with clang.
     - **Validates: Requirements 24.1, 24.6**
 
-  - [ ] 12.10 Write property test for bitwise operation correctness (Property 12)
+  - [x] 12.10 Write property test for bitwise operation correctness (Property 12)
     - **Property 12: Bitwise Operation Correctness**
     - Generate random i64 pairs; compile and run Duo bitwise ops; compare results with expected C semantics
+    - **Status**: `scripts/test_property_12.sh` generates deterministic random
+      signed `i64` pairs for `&`, `|`, binary `~`, unary `~`, and defined
+      shift cases, then diffs `duo run` output against a generated C oracle.
     - **Validates: Requirements 13.1, 13.2, 13.3**
 
 - [ ] 13. Checkpoint - Code Generator Extensions

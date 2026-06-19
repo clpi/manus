@@ -1,0 +1,14 @@
+type Point = { x: i64, y: i64 }
+
+fun inline_y(p: { x: i64, y: i64 }): i64
+  return p.y
+end
+
+fun alias_sum(p: Point): i64
+  return p.x + p.y
+end
+
+local p: Point = { x = 5, y = 7 }
+
+print(inline_y({ x = 3, y = 4 }))
+print(alias_sum(p))

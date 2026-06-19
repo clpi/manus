@@ -80,6 +80,8 @@ run_ok   examples/hello.lua
 run_ok   examples/fib.lua
 run_ok   examples/fib.duo
 run_output examples/typed_string_builtins.duo "abc\n42\nabc42\n"
+run_output examples/layout_attrs_test.duo "6\n"
+run_output examples/native_record_params.duo "4\n12\n"
 run_property_11() {
     local idx=$N; N=$((N + 1))
     (
@@ -93,6 +95,20 @@ run_property_11() {
     ) &
 }
 run_property_11
+
+run_property_12() {
+    local idx=$N; N=$((N + 1))
+    (
+        if out=$(bash scripts/test_property_12.sh 2>&1); then
+            echo OK > "$STATUS_DIR/$idx.status"
+            printf "OK:   Property 12 test passes\n" > "$STATUS_DIR/$idx.msg"
+        else
+            echo FAIL > "$STATUS_DIR/$idx.status"
+            printf "FAIL: Property 12 test failed:\n%s\n" "$out" > "$STATUS_DIR/$idx.msg"
+        fi
+    ) &
+}
+run_property_12
 
 TOTAL=$N
 
