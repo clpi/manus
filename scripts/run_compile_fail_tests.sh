@@ -79,6 +79,7 @@ run_ok   tests/test.lua
 run_ok   examples/hello.lua
 run_ok   examples/fib.lua
 run_ok   examples/fib.duo
+run_output examples/typed_string_builtins.duo "abc\n42\nabc42\n"
 run_property_11() {
     local idx=$N; N=$((N + 1))
     (
@@ -115,4 +116,3 @@ else
     echo "Some tests FAILED"
     exit 1
 fi
-

@@ -1,6 +1,9 @@
 [submodule "ext/duo.nvim"]
 	path = ext/duo.nvim
 	url = git@github.com:clpi/duo.nvim.git
+[submodule "ext/duo.el"]
+	path = ext/duo.el
+	url = git@github.com:clpi/duo.el.git
 [submodule "ext/duo.vim"]
 	path = ext/duo.vim
 	url = git@github.com:clpi/duo.vim.git

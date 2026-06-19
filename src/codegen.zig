@@ -453,13 +453,11 @@ pub const CodeGen = struct {
                 }
             }
         }
-        // Math builtins lower to native C (see maybe_emit_math_call). Typing the
-        // call here lets that native path fire (it is gated on a numeric result
-        // type) and keeps chained math off the dynamic path — including plain
-        // typed functions sema only tagged `.any`, where the dynamic lua_Value
-        // return otherwise fails to compile against a native return type.
+        // Builtin module calls can recover native result types even when sema
+        // recorded `.any` or no entry for this exact expression node.
         if (e.* == .call) {
             if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.string_call_result_type(e.call.func, e.call.args)) |t| return t;
         }
         return tm orelse .any;
     }
@@ -522,6 +520,30 @@ pub const CodeGen = struct {
             "exp",  "log", "pow", "fmod", "floor", "ceil",
         };
         for (f64_names) |n| if (std.mem.eql(u8, fname, n)) return .f64;
+        return null;
+    }
+
+    /// Result type of a `string.<fn>(...)` builtin call, or null if `func` is
+    /// not a recognized string builtin. This mirrors Sema's builtin typing and
+    /// lets emit choose native `str`/integer paths without relying on type_map.
+    fn string_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "string")) return null;
+        const fname = f.field;
+        if (std.mem.eql(u8, fname, "len") or
+            std.mem.eql(u8, fname, "byte") or
+            std.mem.eql(u8, fname, "packsize"))
+            return .i64;
+        if (std.mem.eql(u8, fname, "char") or
+            std.mem.eql(u8, fname, "rep") or
+            std.mem.eql(u8, fname, "sub") or
+            std.mem.eql(u8, fname, "lower") or
+            std.mem.eql(u8, fname, "upper") or
+            std.mem.eql(u8, fname, "reverse"))
+            return .str;
         return null;
     }
 
@@ -10372,6 +10394,17 @@ test "expr_type: contains_expr always produces bool" {
     const result_type: RT = .bool;
     try testing.expect(result_type == .bool);
     try testing.expect(result_type != .any);
+}
+
+test "expr_type: string returning builtins recover native str" {
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+    var string_name = ast.Expr{ .name = .{ .loc = loc, .ident = "string" } };
+    var sub_func = ast.Expr{ .field = .{ .loc = loc, .obj = &string_name, .field = "sub" } };
+    var len_func = ast.Expr{ .field = .{ .loc = loc, .obj = &string_name, .field = "len" } };
+    var cg: CodeGen = undefined;
+
+    try testing.expectEqual(RT.str, cg.string_call_result_type(&sub_func, &.{}).?);
+    try testing.expectEqual(RT.i64, cg.string_call_result_type(&len_func, &.{}).?);
 }
 
 test "ipairs: first loop variable is typed i64" {

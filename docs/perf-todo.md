@@ -67,10 +67,10 @@ Keep it in sync with `docs/src/roadmap.md`.
     typed integer function emitted a dynamic `lua_Value` (e.g. `lua_math_max`) and then
     `return`ed it from an `int64_t` function — a C compile error. Canonical `clamp`/`imath`
     now compile to clean native ops.
-  - [~] **Builtin call results — string/other**: `string.len`/`string.byte` already work
-    (sema types them i64 → native `strlen`/byte). But string-*returning* builtins have a
-    sema-vs-emit disagreement (see bug below); fix that first, then this item is moot for
-    them. Remaining clean adds: nothing pressing once the bug is fixed.
+  - [x] **Builtin call results — string/other**: `expr_type` now mirrors sema's
+    string builtin result typing so `string.len`/`string.byte` recover integer
+    results and `string.sub`/`string.rep`/case-conversion calls recover native
+    `str` results without falling back to `.any`.
   - [ ] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
     `:411`, the final `type_map.get(e) orelse .any`) and replace with explicit typed
     handling where the type is statically recoverable.
@@ -127,15 +127,11 @@ Keep it in sync with `docs/src/roadmap.md`.
   real perf win (native struct passing vs boxed tables) but spans type resolution, struct
   emission, let-binding init, and call-site coercion.
 
-- [ ] **String-returning builtins disagree between sema and emit.** In a typed context
-  (`local a = string.sub(s,1,3)` where `a`/return is `str`), sema types the result `str`
-  (C `const char*`) but emission lowers `string.sub` to `lua_str_sub(...)` which returns a
-  `lua_Value` → `const char* a = <lua_Value>` compile error. Also `tostring(x)` in the
-  typed path emits a bare `tostring(...)` (undefined C symbol) instead of the runtime call.
-  Repro: `fun f(s: str): str local a = string.sub(s,1,3); local b = tostring(42); return a .. b end`.
-  Fix options: make the string builtins emit `const char*` natively, or have sema type
-  them as the dynamic `lua_Value` type to match the emit. Affects heavily-used string code,
-  so needs care + the benchmark gate. (`string.len`/`string.byte`/`#` are unaffected.)
+- [x] **String-returning builtins disagree between sema and emit.** Fixed: typed
+  `string.sub(...)` and `tostring(...)` in native `str` contexts now compile and run,
+  including local assignment, return position, and string concatenation. The codegen
+  path unboxes Lua string results with `lua_to_str(...)` when the context expects
+  native `str`, and `expr_type` recovers string builtin result types directly.
 
 ## Lower priority but useful
 
