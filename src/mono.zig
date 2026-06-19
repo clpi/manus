@@ -166,9 +166,9 @@ pub const Monomorphizer = struct {
     /// Return the specialization selected for a concrete call site, if the
     /// callee is a known generic and the pass has already produced the matching
     /// specialization.
-    pub fn findSpecializationForCall(self: *Self, name: []const u8, args: []const *ast.Expr) ?*Specialization {
+    pub fn findSpecializationForCall(self: *Self, name: []const u8, args: []const *ast.Expr, env: Env) ?*Specialization {
         const template = self.generics.get(name) orelse return null;
-        const type_args = self.inferTypeArgs(template, args, null) catch return null;
+        const type_args = self.inferTypeArgs(template, args, env) catch return null;
         defer self.alloc.free(type_args);
         const key = SpecKey{
             .generic_id = @intFromPtr(template),
@@ -197,7 +197,7 @@ pub const Monomorphizer = struct {
 
     // ── Instantiation-site collection ───────────────────────────────────────
 
-    const Env = ?*const std.StringHashMapUnmanaged(RT);
+    pub const Env = ?*const std.StringHashMapUnmanaged(RT);
 
     fn collectSitesBlock(self: *Self, block: *const ast.Block, env: Env) Error!void {
         for (block.stmts) |*stmt| try self.collectSitesStmt(stmt, env);

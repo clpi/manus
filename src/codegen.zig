@@ -378,7 +378,8 @@ pub const CodeGen = struct {
             const c = e.call;
             if (c.func.* == .name) {
                 if (self.mono) |m| {
-                    if (m.findSpecializationForCall(c.func.name.ident, c.args)) |spec| {
+                    const env = if (self.current_mono_spec) |s| &s.substitutions else null;
+                    if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
                         return spec.resolveType(spec.template.ret_type);
                     }
                 }
@@ -4034,7 +4035,8 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 if (c.func.* == .name) {
                     if (self.mono) |m| {
-                        if (m.findSpecializationForCall(c.func.name.ident, c.args)) |spec| {
+                        const env = if (self.current_mono_spec) |s| &s.substitutions else null;
+                        if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
                             try self.emit_mono_call(spec, c.args);
                             return;
                         }
