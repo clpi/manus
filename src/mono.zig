@@ -320,18 +320,18 @@ pub const Monomorphizer = struct {
     /// declaration order of its `type_params`. Unbound parameters fall back to
     /// `.any`. The result slice is owned by the monomorphizer's allocator.
     fn inferTypeArgs(self: *Self, template: *const ast.FuncBody, args: []const *ast.Expr, env: Env) ![]const RT {
-        const params = template.type_params orelse &.{};
+        const type_params = template.type_params orelse &.{};
         var bindings: std.StringHashMapUnmanaged(RT) = .empty;
         defer bindings.deinit(self.alloc);
 
         const n = @min(template.params.len, args.len);
         for (template.params[0..n], args[0..n]) |p, arg| {
-            const arg_rt = self.argType(arg, env);
-            try unify(self.alloc, p.typ, arg_rt, params, &bindings);
+            const arg_rt = self.argType(arg, env, p.typ);
+            try unify(self.alloc, p.typ, arg_rt, type_params, &bindings);
         }
 
-        var out = try self.alloc.alloc(RT, params.len);
-        for (params, 0..) |tp, i| {
+        var out = try self.alloc.alloc(RT, type_params.len);
+        for (type_params, 0..) |tp, i| {
             const name = typeParamName(tp);
             out[i] = bindings.get(name) orelse .any;
         }
@@ -340,7 +340,7 @@ pub const Monomorphizer = struct {
 
     /// Static type of an argument expression, with the active substitution
     /// environment applied to any residual type-parameter type.
-    fn argType(self: *Self, arg: *const ast.Expr, env: Env) RT {
+    fn argType(self: *Self, arg: *const ast.Expr, env: Env, param_type: ?ast.TypeExpr) RT {
         const base = self.type_map.get(arg) orelse .any;
         if (env) |e| {
             // A nested generic call inside a specialized body: an argument that
@@ -350,6 +350,15 @@ pub const Monomorphizer = struct {
                 .@"struct" => |s| if (e.get(s.name)) |t| return t,
                 .generic_param => |g| if (e.get(g.name)) |t| return t,
                 else => {},
+            }
+            // Also check if the param_type itself is a type parameter (e.g.
+            // `v: T` where T is in the env). Sema may have typed v as .any
+            // (via the single-letter heuristic), but we can recover via the
+            // parameter's original type annotation.
+            if (param_type) |pt| {
+                if (pt == .named) {
+                    if (e.get(pt.named)) |t| return t;
+                }
             }
         }
         return base;
