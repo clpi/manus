@@ -14,3 +14,6 @@ tools:
             - ./zig-out/bin/duo dump-c *
             - awk *
             - xargs *
+            - zig build *
+            - tail *
+            - sleep 30
