@@ -1,0 +1,18 @@
+[submodule "ext/duo.nvim"]
+	path = ext/duo.nvim
+	url = git@github.com:clpi/duo.nvim.git
+[submodule "ext/duo.vim"]
+	path = ext/duo.vim
+	url = git@github.com:clpi/duo.vim.git
+[submodule "ext/duo-lsp"]
+  path = ext/duo-lsp
+  url = git@github.com:clpi/duo-lsp.git
+[submodule "ext/vscode-duo"]
+  path = ext/vscode-duo
+  url = git@github.com:clpi/vscode-duo.git
+[submodule "ext/zed-duo"]
+  path = ext/zed-duo
+  url = git@github.com:clpi/zed-duo.git
+[submodule "ext/tree-sitter-duo"]
+  path = ext/tree-sitter-duo
+  url = git@github.com:clpi/tree-sitter-duo.git
