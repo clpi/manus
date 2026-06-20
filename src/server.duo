@@ -445,6 +445,205 @@ fun word_prefix(text, line, col): str
     split_prefix_after_dot(string.sub(ln, start, col))
 end
 
+fun completion_matches(name, prefix): bool
+    if prefix == "" then return true end
+    if starts_with(name, prefix) then return true end
+    p = find_from(name, ":", 1)
+    while p ~= 0
+        if starts_with(string.sub(name, p + 1), prefix) then return true end
+        p = find_from(name, ":", p + 1)
+    end
+    p = find_from(name, ".", 1)
+    while p ~= 0
+        if starts_with(string.sub(name, p + 1), prefix) then return true end
+        p = find_from(name, ".", p + 1)
+    end
+    false
+end
+
+fun completion_kind_for_symbol(k): i64
+    if k == 12 then return 3 end
+    if k == 10 then return 10 end
+    if k == 11 then return 11 end
+    if k == 23 or k == 26 then return 7 end
+    if k == 14 then return 21 end
+    13
+end
+
+fun add_completion(out, seen, label, kind, detail, insert_text, sort_text): void
+    if label == nil or label == "" then return end
+    if seen[label] ~= nil then return end
+    seen[label] = true
+    item = {}
+    item.label = label
+    item.kind = kind
+    if detail ~= nil and detail ~= "" then item.detail = detail end
+    if insert_text ~= nil and insert_text ~= label then item.insertText = insert_text end
+    if sort_text ~= nil then item.sortText = sort_text end
+    out[rawlen(out) + 1] = item
+end
+
+fun add_keyword_completion(out, seen, label, prefix): void
+    if completion_matches(label, prefix) then
+        add_completion(out, seen, label, 14, "Duo keyword", nil, "k_" .. label)
+    end
+end
+
+fun add_snippet_completion(out, seen, label, detail, insert_text, prefix, sort_text): void
+    if completion_matches(label, prefix) then
+        item = {}
+        item.label = label
+        item.kind = 15
+        item.detail = detail
+        item.insertText = insert_text
+        item.insertTextFormat = 2
+        item.sortText = sort_text
+        out[rawlen(out) + 1] = item
+    end
+end
+
+fun add_builtin_completion(out, seen, label, prefix): void
+    if completion_matches(label, prefix) then
+        add_completion(out, seen, label, 3, "Duo builtin", nil, "b_" .. label)
+    end
+end
+
+fun add_std_completion(out, seen, label, prefix): void
+    if completion_matches(label, prefix) then
+        add_completion(out, seen, label, 9, "std module", nil, "m_" .. label)
+    end
+end
+
+fun add_type_completion(out, seen, label, prefix): void
+    if completion_matches(label, prefix) then
+        add_completion(out, seen, label, 7, "Duo type", nil, "t_" .. label)
+    end
+end
+
+fun add_static_completions(out, seen, prefix): void
+    add_keyword_completion(out, seen, "and", prefix)
+    add_keyword_completion(out, seen, "alias", prefix)
+    add_keyword_completion(out, seen, "async", prefix)
+    add_keyword_completion(out, seen, "break", prefix)
+    add_keyword_completion(out, seen, "case", prefix)
+    add_keyword_completion(out, seen, "catch", prefix)
+    add_keyword_completion(out, seen, "const", prefix)
+    add_keyword_completion(out, seen, "defer", prefix)
+    add_keyword_completion(out, seen, "do", prefix)
+    add_keyword_completion(out, seen, "else", prefix)
+    add_keyword_completion(out, seen, "elseif", prefix)
+    add_keyword_completion(out, seen, "end", prefix)
+    add_keyword_completion(out, seen, "false", prefix)
+    add_keyword_completion(out, seen, "for", prefix)
+    add_keyword_completion(out, seen, "fun", prefix)
+    add_keyword_completion(out, seen, "function", prefix)
+    add_keyword_completion(out, seen, "global", prefix)
+    add_keyword_completion(out, seen, "goto", prefix)
+    add_keyword_completion(out, seen, "if", prefix)
+    add_keyword_completion(out, seen, "in", prefix)
+    add_keyword_completion(out, seen, "local", prefix)
+    add_keyword_completion(out, seen, "match", prefix)
+    add_keyword_completion(out, seen, "nil", prefix)
+    add_keyword_completion(out, seen, "not", prefix)
+    add_keyword_completion(out, seen, "or", prefix)
+    add_keyword_completion(out, seen, "repeat", prefix)
+    add_keyword_completion(out, seen, "return", prefix)
+    add_keyword_completion(out, seen, "then", prefix)
+    add_keyword_completion(out, seen, "true", prefix)
+    add_keyword_completion(out, seen, "try", prefix)
+    add_keyword_completion(out, seen, "type", prefix)
+    add_keyword_completion(out, seen, "until", prefix)
+    add_keyword_completion(out, seen, "while", prefix)
+
+    add_type_completion(out, seen, "any", prefix)
+    add_type_completion(out, seen, "bool", prefix)
+    add_type_completion(out, seen, "f32", prefix)
+    add_type_completion(out, seen, "f64", prefix)
+    add_type_completion(out, seen, "i8", prefix)
+    add_type_completion(out, seen, "i16", prefix)
+    add_type_completion(out, seen, "i32", prefix)
+    add_type_completion(out, seen, "i64", prefix)
+    add_type_completion(out, seen, "str", prefix)
+    add_type_completion(out, seen, "u8", prefix)
+    add_type_completion(out, seen, "u16", prefix)
+    add_type_completion(out, seen, "u32", prefix)
+    add_type_completion(out, seen, "u64", prefix)
+    add_type_completion(out, seen, "void", prefix)
+
+    add_builtin_completion(out, seen, "assert", prefix)
+    add_builtin_completion(out, seen, "collectgarbage", prefix)
+    add_builtin_completion(out, seen, "error", prefix)
+    add_builtin_completion(out, seen, "ipairs", prefix)
+    add_builtin_completion(out, seen, "pairs", prefix)
+    add_builtin_completion(out, seen, "pcall", prefix)
+    add_builtin_completion(out, seen, "print", prefix)
+    add_builtin_completion(out, seen, "rawlen", prefix)
+    add_builtin_completion(out, seen, "req", prefix)
+    add_builtin_completion(out, seen, "require", prefix)
+    add_builtin_completion(out, seen, "tostring", prefix)
+    add_builtin_completion(out, seen, "tonumber", prefix)
+    add_builtin_completion(out, seen, "type", prefix)
+    add_builtin_completion(out, seen, "xpcall", prefix)
+
+    add_std_completion(out, seen, "argparse", prefix)
+    add_std_completion(out, seen, "base32", prefix)
+    add_std_completion(out, seen, "base64", prefix)
+    add_std_completion(out, seen, "build", prefix)
+    add_std_completion(out, seen, "collections", prefix)
+    add_std_completion(out, seen, "crypto", prefix)
+    add_std_completion(out, seen, "csv", prefix)
+    add_std_completion(out, seen, "debug", prefix)
+    add_std_completion(out, seen, "datetime", prefix)
+    add_std_completion(out, seen, "env", prefix)
+    add_std_completion(out, seen, "fmt", prefix)
+    add_std_completion(out, seen, "fs", prefix)
+    add_std_completion(out, seen, "hash", prefix)
+    add_std_completion(out, seen, "hex", prefix)
+    add_std_completion(out, seen, "html", prefix)
+    add_std_completion(out, seen, "http", prefix)
+    add_std_completion(out, seen, "ini", prefix)
+    add_std_completion(out, seen, "io", prefix)
+    add_std_completion(out, seen, "iter", prefix)
+    add_std_completion(out, seen, "json", prefix)
+    add_std_completion(out, seen, "log", prefix)
+    add_std_completion(out, seen, "math", prefix)
+    add_std_completion(out, seen, "memo", prefix)
+    add_std_completion(out, seen, "os", prefix)
+    add_std_completion(out, seen, "package", prefix)
+    add_std_completion(out, seen, "path", prefix)
+    add_std_completion(out, seen, "proc", prefix)
+    add_std_completion(out, seen, "random", prefix)
+    add_std_completion(out, seen, "regex", prefix)
+    add_std_completion(out, seen, "sqlite", prefix)
+    add_std_completion(out, seen, "string", prefix)
+    add_std_completion(out, seen, "table", prefix)
+    add_std_completion(out, seen, "tar", prefix)
+    add_std_completion(out, seen, "test", prefix)
+    add_std_completion(out, seen, "time", prefix)
+    add_std_completion(out, seen, "toml", prefix)
+    add_std_completion(out, seen, "uuid", prefix)
+    add_std_completion(out, seen, "xml", prefix)
+    add_std_completion(out, seen, "yaml", prefix)
+    add_std_completion(out, seen, "zip", prefix)
+    add_std_completion(out, seen, "color", prefix)
+
+    add_snippet_completion(out, seen, "fun", "function declaration",
+        "fun ${1:name}(${2:arg}: ${3:any}): ${4:any}\n    ${0}\nend",
+        prefix, "s_fun")
+    add_snippet_completion(out, seen, "if", "if statement",
+        "if ${1:cond} then\n    ${0}\nend",
+        prefix, "s_if")
+    add_snippet_completion(out, seen, "match", "match expression",
+        "match ${1:value}\n    case ${2:pattern} then\n        ${0}\nend",
+        prefix, "s_match")
+    add_snippet_completion(out, seen, "enum", "enum declaration",
+        "enum ${1:Name}\n    ${2:Variant}\nend",
+        prefix, "s_enum")
+    add_snippet_completion(out, seen, "concept", "concept declaration",
+        "concept ${1:Name}\n    ${2:method}(${3:arg}: ${4:any}): ${5:any}\nend",
+        prefix, "s_concept")
+end
+
 fun split_lines(text): any
     out = {}
     pos = 1
@@ -622,14 +821,8 @@ fun match_typed(code): any
     while i <= n and string.byte(code, i) == 32 do i = i + 1 end
     if i > n then return nil end
     if string.byte(code, i) ~= 58 then return nil end
-    -- there's a `:`; now look for `=` later on the line
-    has_eq = false
-    while i <= n
-        if string.byte(code, i) == 61 then has_eq = true break end
-        i = i + 1
-    end
-    if has_eq then return name end
-    nil
+    -- there's a `:`; this is a typed binding, with or without an initializer
+    name
 end
 
 fun match_plain_assign(code): any
@@ -731,10 +924,9 @@ fun symbol_at(syms, line, col): any
         s = syms[i]
         if s.line == line then
             name_len = string.len(s.name)
-            if col >= s.col and col <= s.col + name_len then
+            if col >= s.col and col < s.col + name_len then
                 return s
             end
-            return s
         end
         i = i + 1
     end

@@ -16,6 +16,8 @@ tools:
             - git show *
             - cat *
             - git status *
+            - git stash *
+            - mkdir *
 paths:
     allow:
         - path: /Users/clp/x/duo/**
