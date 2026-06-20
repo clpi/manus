@@ -1,0 +1,17 @@
+{
+  "name": "duo-lsp",
+  "version": "0.1.0",
+  "description": "Language Server Protocol implementation for the Duo language (diagnostics + outline via the duo compiler)",
+  "license": "MIT",
+  "main": "lib/server.js",
+  "bin": {
+    "duo-lsp": "bin/duo-lsp"
+  },
+  "scripts": {
+    "test": "node test/run-tests.js",
+    "smoke": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
