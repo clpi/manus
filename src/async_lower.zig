@@ -420,10 +420,43 @@ pub const AsyncLower = struct {
         );
     }
 
+    /// Emit the type-erased cooperative task ABI shared by all generated async
+    /// functions. Concrete result storage remains in the function frame.
+    pub fn emitTaskRuntime(writer: anytype) !void {
+        try writer.writeAll(
+            \\typedef enum { DUO_TASK_RUNNABLE = 0, DUO_TASK_READY = 1, DUO_TASK_ERROR = 2, DUO_TASK_CANCELLED = 3 } duo_TaskStatus;
+            \\typedef struct duo_Task duo_Task;
+            \\struct duo_Task {
+            \\    duo_TaskStatus status;
+            \\    bool cancel_requested;
+            \\    lua_Value error;
+            \\    void* frame;
+            \\    duo_Poll (*step)(void* frame);
+            \\    void (*destroy)(void* frame);
+            \\};
+            \\static inline void duo_task_cancel(duo_Task* task) {
+            \\    if (task && task->status == DUO_TASK_RUNNABLE) task->cancel_requested = true;
+            \\}
+            \\static inline duo_Poll duo_task_poll(duo_Task* task) {
+            \\    if (!task) return DUO_POLL_ERROR;
+            \\    if (task->status == DUO_TASK_READY) return DUO_POLL_READY;
+            \\    if (task->status == DUO_TASK_ERROR || task->status == DUO_TASK_CANCELLED) return DUO_POLL_ERROR;
+            \\    duo_Poll poll = task->step(task->frame);
+            \\    if (poll == DUO_POLL_READY) task->status = DUO_TASK_READY;
+            \\    else if (poll == DUO_POLL_ERROR) task->status = task->cancel_requested ? DUO_TASK_CANCELLED : DUO_TASK_ERROR;
+            \\    return poll;
+            \\}
+            \\
+        );
+    }
+
     /// Emit the frame struct for one lowered async function.
     pub fn emitFrameStruct(la: *const LoweredAsync, writer: anytype) !void {
         try writer.print("typedef struct {s} {{\n", .{la.frame_type_name});
         try writer.writeAll("    int state;\n");
+        try writer.writeAll("    bool cancel_requested;\n");
+        try writer.writeAll("    lua_Value error;\n");
+        try writer.writeAll("    duo_Task* child;\n");
         try writer.print("    {s} result;\n", .{cTypeName(la.ret_ty)});
         for (la.frame_fields) |fld| {
             try writer.print("    {s} {s};\n", .{ cTypeName(fld.ty), fld.name });
@@ -435,12 +468,27 @@ pub const AsyncLower = struct {
     /// per await point.
     pub fn emitStepFunc(la: *const LoweredAsync, writer: anytype) !void {
         try writer.print("static duo_Poll {s}({s}* frame) {{\n", .{ la.step_func_name, la.frame_type_name });
+        try writer.writeAll("    if (frame->cancel_requested) {\n");
+        try writer.writeAll("        if (frame->child) duo_task_cancel(frame->child);\n");
+        try emitCancelCleanup(la, writer);
+        try writer.print("        frame->state = {d};\n", .{cancelled_state});
+        try writer.writeAll("        return DUO_POLL_ERROR;\n");
+        try writer.writeAll("    }\n");
         try writer.writeAll("    switch (frame->state) {\n");
         try writer.writeAll("    case 0: /* start */\n");
         for (la.await_points) |ap| {
             try writer.print("    case {d}: /* await */\n", .{ap.state});
+            try writer.writeAll("        {\n");
+            try writer.writeAll("        duo_Poll child_poll = duo_task_poll(frame->child);\n");
+            try writer.writeAll("        if (child_poll == DUO_POLL_PENDING) return DUO_POLL_PENDING;\n");
+            try writer.writeAll("        if (child_poll == DUO_POLL_ERROR) {\n");
+            try writer.writeAll("            if (frame->child) frame->error = frame->child->error;\n");
+            try writer.writeAll("            return DUO_POLL_ERROR;\n");
+            try writer.writeAll("        }\n");
+            try writer.writeAll("        frame->child = NULL;\n");
             try writer.print("        frame->state = {d};\n", .{ap.state + 1});
-            try writer.writeAll("        return DUO_POLL_PENDING;\n");
+            try writer.writeAll("        break;\n");
+            try writer.writeAll("        }\n");
         }
         try writer.writeAll("    default:\n        return DUO_POLL_READY;\n");
         try writer.writeAll("    }\n}\n");
@@ -584,6 +632,35 @@ test "async: parameters and locals are captured into the frame" {
         if (std.mem.eql(u8, fld.name, "y")) has_y = true;
     }
     try testing.expect(has_x and has_y);
+}
+
+test "async: emitted runtime and frame carry task lifecycle state" {
+    var h = try Harness.run(
+        \\async fun g() -> i64
+        \\  return await h()
+        \\end
+    );
+    defer h.deinit();
+    var al = AsyncLower.init(h.arena.allocator(), &h.sema.type_map);
+    defer al.deinit();
+    try al.run(&h.mod);
+
+    var aw: std.Io.Writer.Allocating = .init(h.arena.allocator());
+    defer aw.deinit();
+    try AsyncLower.emitTaskRuntime(&aw.writer);
+    try AsyncLower.emitFrameStruct(&al.getAll()[0], &aw.writer);
+    try AsyncLower.emitStepFunc(&al.getAll()[0], &aw.writer);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "typedef struct duo_Task duo_Task;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_TaskStatus status;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool cancel_requested;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value error;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_Task* child;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (frame->cancel_requested)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_task_cancel(frame->child);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_task_poll(frame->child)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "frame->error = frame->child->error;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "DUO_POLL_ERROR") != null);
 }
 
 test "async: defers are collected for LIFO cancellation cleanup" {

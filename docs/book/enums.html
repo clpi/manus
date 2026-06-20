@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-da57a234.js";
+            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -186,9 +186,9 @@ end
 
 fun color_name(c: Color): str
     match c
-        Color.Red =&gt; "red"
-        Color.Green =&gt; "green"
-        Color.Blue =&gt; "blue"
+        case Color.Red then "red"
+        case Color.Green then "green"
+        case Color.Blue then "blue"
     end
 end
 </code></pre>
@@ -202,9 +202,9 @@ end
 
 fun area(s: Shape): f64
     match s
-        Shape.Circle(r) =&gt; 3.14159 * r * r
-        Shape.Rectangle(w, h) =&gt; w * h
-        Shape.Point =&gt; 0.0
+        case Shape.Circle(r) then 3.14159 * r * r
+        case Shape.Rectangle(w, h) then w * h
+        case Shape.Point then 0.0
     end
 end
 </code></pre>
@@ -217,9 +217,9 @@ rect: Shape = Shape.Rectangle(3.0, 4.0)
 <p>Pattern match on enum variants:</p>
 <pre><code class="language-duo">fun describe(s: Shape): str
     match s
-        Shape.Circle(r) =&gt; "Circle with radius " .. tostring(r)
-        Shape.Rectangle(w, h) =&gt; "Rectangle " .. tostring(w) .. "x" .. tostring(h)
-        Shape.Point =&gt; "Point at origin"
+        case Shape.Circle(r) then "Circle with radius " .. tostring(r)
+        case Shape.Rectangle(w, h) then "Rectangle " .. tostring(w) .. "x" .. tostring(h)
+        case Shape.Point then "Point at origin"
     end
 end
 </code></pre>
@@ -234,8 +234,8 @@ end
 -- Extension method (prefix function)
 fun Result&lt;T&gt;.is_ok(r: Result&lt;T&gt;): bool
     match r
-        Result.Success(_) =&gt; true
-        Result.Failure(_) =&gt; false
+        case Result.Success(_) then true
+        case Result.Failure(_) then false
     end
 end
 
@@ -254,8 +254,8 @@ end
 
 fun sum(t: Tree): i64
     match t
-        Tree.Leaf(v) =&gt; v
-        Tree.Branch(l, r) =&gt; sum(l) + sum(r)
+        case Tree.Leaf(v) then v
+        case Tree.Branch(l, r) then sum(l) + sum(r)
     end
 end
 </code></pre>
@@ -264,7 +264,7 @@ end
 <pre><code class="language-duo">-- ERROR: Missing Tree.Branch case
 -- fun Tree.count_leaves(t: Tree): i64
 --     match t
---         Tree.Leaf(_) =&gt; 1
+--         case Tree.Leaf(_) then 1
 --     end
 -- end
 </code></pre>

@@ -165,7 +165,7 @@
         },
         {
           "name": "keyword.control.duo",
-          "match": "\\b(match|try|catch|defer|async|await|enum|concept|alias|extends|private)\\b"
+          "match": "\\b(match|case|try|catch|defer|async|await|enum|concept|alias|extends|private)\\b"
         }
       ]
     },

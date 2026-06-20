@@ -96,8 +96,8 @@ end
 -- Generic options
 fun get_or_default<T>(opt: Option[T], default: T): T
     match opt
-        some(v) => v
-        none => default
+        case some(v) then v
+        case none then default
     end
 end
 ```

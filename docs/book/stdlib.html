@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-da57a234.js";
+            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -241,16 +241,27 @@ log.info("Information message")
 log.warn("Warning message")
 log.error("Error message")
 </code></pre>
-<h2 id="json-module-stdjson"><a class="header" href="#json-module-stdjson">JSON Module (<code>std.json</code>)</a></h2>
+<h2 id="encoding-and-formatting-stdjson-stdcsv-stdxml-stdtoml-stdyaml-stdini-stdhtml-stdbase64-stdbase32-stdhex"><a class="header" href="#encoding-and-formatting-stdjson-stdcsv-stdxml-stdtoml-stdyaml-stdini-stdhtml-stdbase64-stdbase32-stdhex">Encoding and Formatting (<code>std.json</code>, <code>std.csv</code>, <code>std.xml</code>, <code>std.toml</code>, <code>std.yaml</code>, <code>std.ini</code>, <code>std.html</code>, <code>std.base64</code>, <code>std.base32</code>, <code>std.hex</code>)</a></h2>
 <pre><code class="language-duo">json = req "std.json"
+csv = req "std.csv"
+html = req "std.html"
+xml = req "std.xml"
+toml = req "std.toml"
+yaml = req "std.yaml"
+ini = req "std.ini"
+base32 = req "std.base32"
 
--- Encode/decode
-data = json.encode({name = "Duo", version = 1})
-object = json.decode(data)
+parsed_json = json.parse('{"a": 1}')
+str_json = json.stringify({a = 1})
 
--- Alternative names
-text = json.stringify({a = 1})
-obj = json.parse('{"b": 2}')
+parsed_csv = csv.parse("a,b,c\n1,2,3")
+str_csv = csv.format({{"a", "b", "c"}, {1, 2, 3}})
+
+parsed_toml = toml.parse("key = \"value\"")
+escaped = html.escape("&lt;script&gt;alert(1)&lt;/script&gt;")
+unescaped = html.unescape("&amp;lt;div&amp;gt;")
+
+b32 = base32.encode("hello")
 </code></pre>
 <h2 id="hash-module-stdhash"><a class="header" href="#hash-module-stdhash">Hash Module (<code>std.hash</code>)</a></h2>
 <pre><code class="language-duo">hash = req "std.hash"
@@ -472,25 +483,34 @@ item = random.choice({"A", "B", "C"})
 list = {"A", "B", "C"}
 random.shuffle(list)            -- randomizes array in-place
 </code></pre>
-<h2 id="file-system-helpers-stdfs"><a class="header" href="#file-system-helpers-stdfs">File-System Helpers (<code>std.fs</code>)</a></h2>
+<h2 id="file-system-and-archives-stdfs-stdtar-stdzip"><a class="header" href="#file-system-and-archives-stdfs-stdtar-stdzip">File-System and Archives (<code>std.fs</code>, <code>std.tar</code>, <code>std.zip</code>)</a></h2>
 <pre><code class="language-duo">fs = req "std.fs"
+tar = req "std.tar"
+zip = req "std.zip"
 
 fs.write_file("/tmp/example.txt", "one\ntwo\n")
 fs.append_file("/tmp/example.txt", "three\n")
-fs.exists("/tmp/example.txt")       -- true
-text = fs.read_file("/tmp/example.txt")
-lines = fs.read_lines("/tmp/example.txt")
-fs.rename("/tmp/example.txt", "/tmp/example2.txt")
-fs.remove("/tmp/example2.txt")
 
-fs.mkdir_all("/tmp/nested/dir")
-fs.copy("/tmp/a.txt", "/tmp/b.txt")
-files = fs.read_dir("/tmp")
-is_dir = fs.is_dir("/tmp")
-size = fs.size("/tmp/a.txt")
+tar.create("archive.tar", "/tmp/dir")
+tar.extract("archive.tar", "/tmp/out")
+zip.create("archive.zip", "/tmp/dir")
+zip.extract("archive.zip", "/tmp/out")
 </code></pre>
-<h2 id="path-manipulations-stdpath"><a class="header" href="#path-manipulations-stdpath">Path Manipulations (<code>std.path</code>)</a></h2>
-<pre><code class="language-duo">path = req "std.path"
+<p>fs.exists(“/tmp/example.txt”)       – true
+text = fs.read_file(“/tmp/example.txt”)
+lines = fs.read_lines(“/tmp/example.txt”)
+fs.rename(“/tmp/example.txt”, “/tmp/example2.txt”)
+fs.remove(“/tmp/example2.txt”)</p>
+<p>fs.mkdir_all(“/tmp/nested/dir”)
+fs.copy(“/tmp/a.txt”, “/tmp/b.txt”)
+files = fs.read_dir(“/tmp”)
+is_dir = fs.is_dir(“/tmp”)
+size = fs.size(“/tmp/a.txt”)</p>
+<pre><code>
+## Path Manipulations (`std.path`)
+
+```duo
+path = req "std.path"
 
 path.join("a", "b/c")      -- "a/b/c"
 path.basename("/a/b.txt")  -- "b.txt"
@@ -515,6 +535,12 @@ rc = os2.execute("ls -la")
 os2.exit(1)
 removed = os2.remove("file.txt")
 renamed = os2.rename("old.txt", "new.txt")
+</code></pre>
+<h3 id="stdsqlite"><a class="header" href="#stdsqlite"><code>std.sqlite</code></a></h3>
+<p><code>std.sqlite</code> provides a basic wrapper around the <code>sqlite3</code> command-line tool for simple local database scripts.</p>
+<pre><code class="language-duo">sqlite = req "std.sqlite"
+sqlite.execute("app.db", "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);")
+csv_data = sqlite.query_csv("app.db", "SELECT * FROM users;")
 </code></pre>
 <h3 id="stdproc"><a class="header" href="#stdproc"><code>std.proc</code></a></h3>
 <pre><code class="language-duo">proc = req "std.proc"
@@ -546,13 +572,15 @@ cp = stack.checkpoint()
 ptr2 = stack.alloc(32)
 stack.restore(cp)
 </code></pre>
-<h2 id="networking-stdnet"><a class="header" href="#networking-stdnet">Networking (<code>std.net</code>)</a></h2>
-<p><code>std.net</code> provides URL parsing, HTTP helpers, and TCP/UDP helpers. When the module variable is named <code>net</code>, the compiler emits direct C calls (<code>duo_net_http_get</code>, etc.) for zero-overhead networking. Otherwise it falls back to <code>curl</code>-based implementations.</p>
+<h2 id="networking-stdnet-stdhttp"><a class="header" href="#networking-stdnet-stdhttp">Networking (<code>std.net</code>, <code>std.http</code>)</a></h2>
+<p><code>std.net</code> provides URL parsing, TCP/UDP helpers, and core HTTP functions. When the module variable is named <code>net</code>, the compiler emits direct C calls (<code>duo_net_http_get</code>, etc.) for zero-overhead networking.
+<code>std.http</code> provides a convenient alias for high-level HTTP client and server functions.</p>
 <pre><code class="language-duo">net = req "std.net"
+http = req "std.http"
 
 parsed = net.parse_url("https://example.com:8080/path")
-body = net.http_get("https://example.com")
-resp = net.http_post(url, "body", "application/json")
+body = http.get("https://example.com")
+resp = http.post(url, "body", "application/json")
 </code></pre>
 <h2 id="coroutines-and-concurrency"><a class="header" href="#coroutines-and-concurrency">Coroutines and Concurrency</a></h2>
 <h3 id="stdcoroutine"><a class="header" href="#stdcoroutine"><code>std.coroutine</code></a></h3>
@@ -613,11 +641,15 @@ mp.spawn("sleep 1 &amp;&amp; echo done")
 fd = wasi.fd_stdout()   -- 1
 err = wasi.errno_success()  -- 0
 </code></pre>
-<h2 id="debug-module-stddebug"><a class="header" href="#debug-module-stddebug">Debug Module (<code>std.debug</code>)</a></h2>
+<h2 id="debug-and-formatting-modules-stddebug-stdcolor"><a class="header" href="#debug-and-formatting-modules-stddebug-stdcolor">Debug and Formatting Modules (<code>std.debug</code>, <code>std.color</code>)</a></h2>
 <pre><code class="language-duo">debug2 = req "std.debug"
 
 msg = debug2.traceback("error context", 1)
 info = debug2.getinfo(my_fn, "nSl")
+</code></pre>
+<pre><code class="language-duo">color = req "std.color"
+
+print(color.red("Error:") .. " " .. color.bold("something went wrong"))
 </code></pre>
 <h2 id="global-functions"><a class="header" href="#global-functions">Global Functions</a></h2>
 <p>Duo also keeps Lua’s global functions available:</p>

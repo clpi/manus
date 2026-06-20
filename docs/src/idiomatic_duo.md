@@ -82,8 +82,8 @@ end
 
 fun process(opt: Option)
     match opt
-        case Some(val) => print(val)
-        case None => print("Nothing")
+        case Some(val) then print(val)
+        case None then print("Nothing")
     end
 end
 ```

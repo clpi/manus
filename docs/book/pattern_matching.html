@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-da57a234.js";
+            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -176,11 +176,16 @@
                     <main>
                         <h1 id="pattern-matching"><a class="header" href="#pattern-matching">Pattern Matching</a></h1>
 <p>Pattern matching in Duo lets you destructure and inspect values with Rust/Go-style <code>match</code> expressions.</p>
+<p>Each arm starts with <code>case</code>, followed by a pattern and optional <code>if</code> guard.
+Use either <code>then</code> or <code>do</code> before the arm’s statement. The older
+<code>pattern =&gt; statement</code> spelling remains accepted for compatibility, but
+<code>case ... then ...</code> is the canonical form emitted by the compiler’s
+pretty-printer.</p>
 <h2 id="basic-match"><a class="header" href="#basic-match">Basic Match</a></h2>
 <pre><code class="language-duo">match value
-    0 =&gt; "zero"
-    1 =&gt; "one"
-    _ =&gt; "other"  -- wildcard pattern
+    case 0 then "zero"
+    case 1 then "one"
+    case _ then "other"  -- wildcard pattern
 end
 </code></pre>
 <h2 id="enum-destructuring"><a class="header" href="#enum-destructuring">Enum Destructuring</a></h2>
@@ -193,9 +198,9 @@ end
 
 fun area(s: Shape): f64
     match s
-        Shape.Circle(r) =&gt; 3.14159 * r * r
-        Shape.Rect(w, h) =&gt; w * h
-        Shape.Point =&gt; 0.0
+        case Shape.Circle(r) then 3.14159 * r * r
+        case Shape.Rect(w, h) then w * h
+        case Shape.Point then 0.0
     end
 end
 </code></pre>
@@ -203,8 +208,8 @@ end
 <p>Destructure table patterns:</p>
 <pre><code class="language-duo">fun get_name(person: { name: str, age: i64 }): str
     match person
-        { name = n } =&gt; n
-        _ =&gt; "unknown"
+        case { name = n } then n
+        case _ then "unknown"
     end
 end
 </code></pre>
@@ -212,16 +217,16 @@ end
 <p>Pattern match on array-like tables:</p>
 <pre><code class="language-duo">fun head(xs: any): any
     match xs
-        [first, _] =&gt; first
-        [only] =&gt; only
-        _ =&gt; nil
+        case [first, _] then first
+        case [only] then only
+        case _ then nil
     end
 end
 
 fun sum3(nums: any): f64
     match nums
-        [a, b, c] =&gt; a + b + c
-        _ =&gt; -1.0
+        case [a, b, c] then a + b + c
+        case _ then -1.0
     end
 end
 </code></pre>
@@ -229,9 +234,9 @@ end
 <p>Add conditions to match arms:</p>
 <pre><code class="language-duo">fun classify(n: i64): str
     match n
-        x if x &lt; 0 =&gt; "negative"
-        x if x &gt; 0 =&gt; "positive"
-        0 =&gt; "zero"
+        case x if x &lt; 0 then "negative"
+        case x if x &gt; 0 then "positive"
+        case 0 then "zero"
     end
 end
 </code></pre>
@@ -240,16 +245,16 @@ end
 <pre><code class="language-duo">-- ERROR: Missing Shape.Point case
 -- fun area(s: Shape): f64
 --     match s
---         Shape.Circle(r) =&gt; 3.14 * r * r
---         Shape.Rect(w, h) =&gt; w * h
+--         case Shape.Circle(r) then 3.14 * r * r
+--         case Shape.Rect(w, h) then w * h
 --     end
 -- end
 </code></pre>
 <h2 id="wildcard-pattern"><a class="header" href="#wildcard-pattern">Wildcard Pattern</a></h2>
 <p>The <code>_</code> pattern matches anything and discards the value:</p>
 <pre><code class="language-duo">match result
-    ok(value) =&gt; process(value)
-    err(_) =&gt; print("error occurred")  -- Ignore error details
+    case ok(value) then process(value)
+    case err(_) then print("error occurred")  -- Ignore error details
 end
 </code></pre>
 

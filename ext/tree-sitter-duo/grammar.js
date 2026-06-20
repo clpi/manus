@@ -269,13 +269,25 @@ module.exports = grammar({
       'end',
     ),
 
-    match_arm: $ => seq(
-      $.pattern,
-      optional($.guard),
-      choice('=>', 'then'),
-      choice(
-        $.expression,
-        seq(repeat($.statement), 'end'),
+    match_arm: $ => choice(
+      seq(
+        'case',
+        $.pattern,
+        optional($.guard),
+        choice('then', 'do'),
+        choice(
+          $.expression,
+          seq(repeat($.statement), 'end'),
+        ),
+      ),
+      seq(
+        $.pattern,
+        optional($.guard),
+        '=>',
+        choice(
+          $.expression,
+          seq(repeat($.statement), 'end'),
+        ),
       ),
     ),
 

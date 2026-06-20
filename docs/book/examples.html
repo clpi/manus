@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-da57a234.js";
+            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -199,8 +199,8 @@ end
 
 fn handle_option(opt: Option)
     match opt
-        case Some(val) =&gt; print("Got value:", val)
-        case None =&gt; print("No value")
+        case Some(val) then print("Got value:", val)
+        case None then print("No value")
     end
 end
 

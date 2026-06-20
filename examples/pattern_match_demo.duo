@@ -10,10 +10,10 @@ end
 fun area(s: Shape): f64
     a: f64 = 0.0
     match s
-        Shape.Circle(r) => a = 3.14159265 * r * r
-        Shape.Rect(w, h) => a = w * h
-        Shape.Triangle(b, h) => a = 0.5 * b * h
-        Shape.Point => a = 0.0
+        case Shape.Circle(r) then a = 3.14159265 * r * r
+        case Shape.Rect(w, h) then a = w * h
+        case Shape.Triangle(b, h) then a = 0.5 * b * h
+        case Shape.Point then a = 0.0
     end
     a
 end
@@ -21,10 +21,10 @@ end
 fun tag_of(s: Shape): i64
     tag: i64 = -1
     match s
-        Shape.Circle(_) => tag = 0
-        Shape.Rect(_, _) => tag = 1
-        Shape.Triangle(_, _) => tag = 2
-        Shape.Point => tag = 3
+        case Shape.Circle(_) then tag = 0
+        case Shape.Rect(_, _) then tag = 1
+        case Shape.Triangle(_, _) then tag = 2
+        case Shape.Point then tag = 3
     end
     tag
 end
@@ -32,8 +32,8 @@ end
 fun is_unit_square(s: Shape): bool
     yes: bool = false
     match s
-        Shape.Rect(1.0, 1.0) => yes = true
-        _ => yes = false
+        case Shape.Rect(1.0, 1.0) then yes = true
+        case _ then yes = false
     end
     yes
 end
@@ -41,8 +41,8 @@ end
 fun sum3(nums: any): f64
     result: f64 = 0.0
     match nums
-        [a, b, c] => result = a + b + c
-        _ => result = -1.0
+        case [a, b, c] then result = a + b + c
+        case _ then result = -1.0
     end
     result
 end
@@ -50,9 +50,9 @@ end
 fun head(xs: any): any
     h: any = nil
     match xs
-        [first, _] => h = first
-        [only] => h = only
-        _ => h = nil
+        case [first, _] then h = first
+        case [only] then h = only
+        case _ then h = nil
     end
     h
 end

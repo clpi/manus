@@ -53,7 +53,8 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
 
 - [x] 3. Extend the Parser for Duo grammar
   - [x] 3.1 Implement `match` statement/expression parsing in `src/parser.zig`
-    - Parse `match expr` followed by pattern arms with `=>` and bodies
+    - Parse `match expr` followed by Lua-like `case pattern [if guard] then|do body` arms
+    - Continue accepting legacy `pattern [if guard] => body` arms for source compatibility
     - Parse patterns: literal, binding, variant, table/array destructuring, rest (`...name`), wildcard (`_`)
     - Parse optional guard expressions (`if cond`)
     - _Requirements: 6.1, 6.3, 6.6, 7.1, 7.2, 7.3, 23.4_
@@ -279,7 +280,7 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
   - [-] 12.1 Implement monomorphized generic emission in `src/codegen.zig`
     - Emit one C function per specialization with mangled name (e.g., `duo_Vec_i32_push`)
     - Emit one C struct per specialized generic type
-    - **Status**: generic function specializations are emitted and call sites dispatch to their mangled concrete functions; specialized generic type structs are still pending
+    - **Status**: generic function specializations are emitted and call sites dispatch to their mangled concrete functions. Structural substitution/unification now covers generic applications, functions, and records; nested and recursive calls inherit concrete parameter/local types without stray `any` specializations. Generic enum annotations emit one canonical, deduplicated concrete payload struct per type-argument tuple. Constructor/match coverage for every generic enum shape and constraint-driven specialization hooks remain pending.
     - _Requirements: 24.2, 4.1_
 
   - [x] 12.2 Implement `defer` lowering in codegen
@@ -313,8 +314,12 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
       async function, and a step-function skeleton with `switch
       (frame->state)`, await-state cases, `DUO_POLL_PENDING`, and
       `DUO_POLL_READY`. Normal function-body emission is skipped for async
-      declarations so `await` placeholders do not leak into C. Full await
-      resumption and scheduler integration remain pending.
+      declarations so `await` placeholders do not leak into C. Generated async
+      support now also has a type-erased task lifecycle ABI, cancellation/error
+      and owned-child frame state, idempotent cancellation propagation, and
+      child polling with pending/error/ready propagation. Creating child tasks,
+      executing body segments, result transfer, and scheduler integration remain
+      pending.
     - _Requirements: 19.1, 24.5_
 
   - [-] 12.5 Implement match compilation in codegen

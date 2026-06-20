@@ -33,6 +33,7 @@
 
 [
   "match"
+  "case"
   "catch"
   "try"
   "defer"

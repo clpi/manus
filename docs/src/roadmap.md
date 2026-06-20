@@ -20,7 +20,9 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 - Pointer types: `*T` parse and lower; reference/ownership semantics are still evolving.
 - Postfix `?` and `!` as propagation and unwrap operators.
 - `await` is the async wait primitive. There is no separate `wait` keyword.
-- `match` expressions and arrow arms (`| pattern => expr`).
+- `match` expressions with Lua-like `case pattern then expression` or
+  `case pattern do statement` arms. Legacy `pattern => expression` arms remain
+  accepted for source compatibility.
 - `try` / `catch` / `defer` for error handling and cleanup.
 - `enum`, `concept`, `alias`, `extends`, `private` for type-system extensions.
 - `const` bindings and attributes such as `@export`, `@inline`, and `@concurrent("threaded")`.
@@ -66,7 +68,6 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 ## Planned
 
 - Hygienic macro syntax and more complete metaprogramming.
-- `case ... do/then ...` match arms as a Lua-like replacement for arrow arms.
 - A tighter concept/metatable model that removes unnecessary syntax additions.
 - Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.
 - Escape analysis and stack allocation for non-escaping temporaries.

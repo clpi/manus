@@ -351,12 +351,13 @@ pub const PrettyPrinter = struct {
         self.indent();
         for (m.arms) |arm| {
             try self.nl();
+            try self.write("case ");
             try self.printPattern(arm.pattern);
-            try self.write(" =>");
             if (arm.guard) |g| {
                 try self.write(" if ");
                 try self.printExpr(g, 0);
             }
+            try self.write(" then");
             if (arm.body.stmts.len == 1) {
                 try self.write(" ");
                 try self.printStmt(&arm.body.stmts[0]);
@@ -814,8 +815,8 @@ test "pretty: match expression" {
     defer arena.deinit();
     try expectRoundTrip(arena.allocator(),
         \\match x
-        \\  1 => print(1)
-        \\  _ => print(0)
+        \\  case 1 then print(1)
+        \\  case _ then print(0)
         \\end
         \\
     );

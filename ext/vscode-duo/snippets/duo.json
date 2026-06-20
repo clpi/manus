@@ -68,8 +68,7 @@
     "prefix": "match",
     "body": [
       "match ${1:value}",
-      "\t${2:pattern} =>",
-      "\t\t$0",
+      "\tcase ${2:pattern} then $0",
       "end"
     ],
     "description": "Match expression"

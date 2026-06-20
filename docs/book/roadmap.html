@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-da57a234.js";
+            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -193,7 +193,9 @@
 <li>Pointer types: <code>*T</code> parse and lower; reference/ownership semantics are still evolving.</li>
 <li>Postfix <code>?</code> and <code>!</code> as propagation and unwrap operators.</li>
 <li><code>await</code> is the async wait primitive. There is no separate <code>wait</code> keyword.</li>
-<li><code>match</code> expressions and arrow arms (<code>| pattern =&gt; expr</code>).</li>
+<li><code>match</code> expressions with Lua-like <code>case pattern then expression</code> or
+<code>case pattern do statement</code> arms. Legacy <code>pattern =&gt; expression</code> arms remain
+accepted for source compatibility.</li>
 <li><code>try</code> / <code>catch</code> / <code>defer</code> for error handling and cleanup.</li>
 <li><code>enum</code>, <code>concept</code>, <code>alias</code>, <code>extends</code>, <code>private</code> for type-system extensions.</li>
 <li><code>const</code> bindings and attributes such as <code>@export</code>, <code>@inline</code>, and <code>@concurrent("threaded")</code>.</li>
@@ -212,7 +214,7 @@
 </ul>
 <h3 id="standard-library"><a class="header" href="#standard-library">Standard library</a></h3>
 <ul>
-<li>Core modules in <code>lib/std/</code>: <code>math</code>, <code>string</code>, <code>table</code>, <code>io</code>, <code>fs</code>, <code>os</code>, <code>path</code>, <code>time</code>, <code>env</code>, <code>proc</code>, <code>fmt</code>, <code>log</code>, <code>json</code>, <code>hash</code>, <code>crypto</code>, <code>base64</code>, <code>hex</code>, <code>url</code>, <code>uuid</code>, <code>utf8</code>, <code>regex</code>, <code>random</code>, <code>iter</code>, <code>collections</code>, <code>memo</code>, <code>test</code>, <code>build</code>, <code>package</code>, <code>argparse</code>, <code>debug</code>.</li>
+<li>Core modules in <code>lib/std/</code>: <code>math</code>, <code>string</code>, <code>table</code>, <code>io</code>, <code>fs</code>, <code>os</code>, <code>path</code>, <code>time</code>, <code>env</code>, <code>proc</code>, <code>fmt</code>, <code>log</code>, <code>json</code>, <code>hash</code>, <code>crypto</code>, <code>base64</code>, <code>base32</code>, <code>hex</code>, <code>url</code>, <code>uuid</code>, <code>utf8</code>, <code>regex</code>, <code>random</code>, <code>iter</code>, <code>collections</code>, <code>memo</code>, <code>test</code>, <code>build</code>, <code>package</code>, <code>argparse</code>, <code>debug</code>, <code>csv</code>, <code>xml</code>, <code>toml</code>, <code>yaml</code>, <code>ini</code>, <code>html</code>, <code>http</code>, <code>datetime</code>, <code>sqlite</code>, <code>tar</code>, <code>zip</code>, <code>color</code>.</li>
 <li>Concurrency modules: <code>coroutine</code>, <code>sync</code>, <code>channel</code>, <code>concurrent</code>, <code>thread</code>, <code>mproc</code>, <code>atomic</code>.</li>
 <li>Networking: <code>net</code> (HTTP and sockets; zero-overhead codegen when the module variable is named <code>net</code>).</li>
 <li>Low-level/memory: <code>mem</code>, <code>wasm/wasi</code>.</li>
@@ -239,7 +241,6 @@
 <h2 id="planned"><a class="header" href="#planned">Planned</a></h2>
 <ul>
 <li>Hygienic macro syntax and more complete metaprogramming.</li>
-<li><code>case ... do/then ...</code> match arms as a Lua-like replacement for arrow arms.</li>
 <li>A tighter concept/metatable model that removes unnecessary syntax additions.</li>
 <li>Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.</li>
 <li>Escape analysis and stack allocation for non-escaping temporaries.</li>

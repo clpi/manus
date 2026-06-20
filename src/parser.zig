@@ -1077,9 +1077,9 @@ pub const Parser = struct {
     ///
     /// ```
     /// match expr
-    ///   pattern1 => body1
-    ///   pattern2 if guard => body2
-    ///   _ => default_body
+    ///   case pattern1 then body1
+    ///   case pattern2 if guard do body2
+    ///   case _ then default_body
     /// end
     /// ```
     fn parse_match_inner(self: *Parser) ParseError!ast.MatchExpr {
@@ -1190,10 +1190,16 @@ pub const Parser = struct {
         return e;
     }
 
-    /// Parse a single match arm: `pattern [if guard] => body`
+    /// Parse a single match arm. The preferred spelling is
+    /// `case pattern [if guard] then|do body`; the original
+    /// `pattern [if guard] => body` spelling remains accepted.
     /// The body is either a single expression (as a return statement) or
     /// a block that terminates at the next arm or `end`.
     fn parse_match_arm(self: *Parser) ParseError!ast.MatchArm {
+        const first = try self.pk();
+        const case_syntax = first.kind == .name and std.mem.eql(u8, first.text, "case");
+        if (case_syntax) _ = try self.adv();
+
         const pattern = try self.parse_pattern();
 
         // Optional guard: `if cond`
@@ -1203,7 +1209,16 @@ pub const Parser = struct {
             guard = try self.parse_expr();
         }
 
-        _ = try self.expect(.fat_arrow);
+        if (case_syntax) {
+            const separator = try self.pk();
+            if (separator.kind != .kw_then and separator.kind != .kw_do) {
+                std.debug.print("{}: expected 'then' or 'do', got '{s}'\n", .{ separator.loc, separator.kind.spelling() });
+                return ParseError.ExpectedToken;
+            }
+            _ = try self.adv();
+        } else {
+            _ = try self.expect(.fat_arrow);
+        }
 
         // Parse arm body as a block that ends at next arm start or `end`.
         const body = try self.parse_match_arm_body();
@@ -2434,6 +2449,40 @@ test "parse: match statement with literal patterns" {
     try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
     try testing.expect(stmt.match_stmt.arms[1].pattern == .literal);
     try testing.expect(stmt.match_stmt.arms[2].pattern == .wildcard);
+}
+
+test "parse: match case arms accept then and do" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match n
+        \\  case 1 then return "one"
+        \\  case 2 do return "two"
+        \\  case _ then return "other"
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 3), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[1].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[2].pattern == .wildcard);
+}
+
+test "parse: match case arm accepts guard before then" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match value
+        \\  case x if x > 0 then return x
+        \\  case _ then return 0
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 2), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .binding);
+    try testing.expect(stmt.match_stmt.arms[0].guard != null);
 }
 
 test "parse: match with binding pattern" {

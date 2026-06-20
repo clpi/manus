@@ -15,9 +15,9 @@ end
 
 fun color_name(c: Color): str
     match c
-        Color.Red => "red"
-        Color.Green => "green"
-        Color.Blue => "blue"
+        case Color.Red then "red"
+        case Color.Green then "green"
+        case Color.Blue then "blue"
     end
 end
 ```
@@ -35,9 +35,9 @@ end
 
 fun area(s: Shape): f64
     match s
-        Shape.Circle(r) => 3.14159 * r * r
-        Shape.Rectangle(w, h) => w * h
-        Shape.Point => 0.0
+        case Shape.Circle(r) then 3.14159 * r * r
+        case Shape.Rectangle(w, h) then w * h
+        case Shape.Point then 0.0
     end
 end
 ```
@@ -58,9 +58,9 @@ Pattern match on enum variants:
 ```duo
 fun describe(s: Shape): str
     match s
-        Shape.Circle(r) => "Circle with radius " .. tostring(r)
-        Shape.Rectangle(w, h) => "Rectangle " .. tostring(w) .. "x" .. tostring(h)
-        Shape.Point => "Point at origin"
+        case Shape.Circle(r) then "Circle with radius " .. tostring(r)
+        case Shape.Rectangle(w, h) then "Rectangle " .. tostring(w) .. "x" .. tostring(h)
+        case Shape.Point then "Point at origin"
     end
 end
 ```
@@ -79,8 +79,8 @@ end
 -- Extension method (prefix function)
 fun Result<T>.is_ok(r: Result<T>): bool
     match r
-        Result.Success(_) => true
-        Result.Failure(_) => false
+        case Result.Success(_) then true
+        case Result.Failure(_) then false
     end
 end
 
@@ -103,8 +103,8 @@ end
 
 fun sum(t: Tree): i64
     match t
-        Tree.Leaf(v) => v
-        Tree.Branch(l, r) => sum(l) + sum(r)
+        case Tree.Leaf(v) then v
+        case Tree.Branch(l, r) then sum(l) + sum(r)
     end
 end
 ```
@@ -117,7 +117,7 @@ The compiler ensures all variants are handled:
 -- ERROR: Missing Tree.Branch case
 -- fun Tree.count_leaves(t: Tree): i64
 --     match t
---         Tree.Leaf(_) => 1
+--         case Tree.Leaf(_) then 1
 --     end
 -- end
 ```

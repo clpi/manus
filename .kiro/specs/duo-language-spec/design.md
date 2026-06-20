@@ -66,7 +66,7 @@ The compiler operates in two modes based on file extension:
 - `@` token for attributes
 - `?` and `!` postfix operators
 - `async`, `await`, `match`, `try`, `catch`, `defer`, `enum`, `concept` as contextual keywords (not reserved — only keyword when in declaration position)
-- `=>` for match arms
+- contextual `case` plus `then`/`do` for match arms; `=>` remains a legacy token accepted by the parser
 - `->` already supported for return type annotations
 
 ```zig

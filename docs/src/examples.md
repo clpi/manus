@@ -35,8 +35,8 @@ end
 
 fn handle_option(opt: Option)
     match opt
-        case Some(val) => print("Got value:", val)
-        case None => print("No value")
+        case Some(val) then print("Got value:", val)
+        case None then print("No value")
     end
 end
 

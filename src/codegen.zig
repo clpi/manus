@@ -360,6 +360,38 @@ pub const CodeGen = struct {
         self.p("{s}", .{rt.c_type(&buf)});
     }
 
+    /// Emit a C parameter declaration. Function and fixed-array types need the
+    /// identifier inside the declarator (`ret (*name)(args)`, `T name[N]`), so
+    /// they cannot use the ordinary `type` followed by `name` emission.
+    fn emit_param_decl(self: *CodeGen, rt: RT, name: ?[]const u8) void {
+        switch (rt) {
+            .func => |f| {
+                self.typ(f.ret.*);
+                self.p(" (*", .{});
+                if (name) |n| self.p("{s}", .{n});
+                self.p(")(", .{});
+                if (f.params.len == 0) {
+                    self.p("void", .{});
+                } else {
+                    for (f.params, 0..) |param, i| {
+                        if (i > 0) self.p(", ", .{});
+                        self.emit_param_decl(param, null);
+                    }
+                }
+                self.p(")", .{});
+            },
+            .array => |a| {
+                self.typ(a.elem.*);
+                if (name) |n| self.p(" {s}", .{n});
+                if (a.size) |size| self.p("[{d}]", .{size}) else self.p("[]", .{});
+            },
+            else => {
+                self.typ(rt);
+                if (name) |n| self.p(" {s}", .{n});
+            },
+        }
+    }
+
     fn uses_multi_return(self: *CodeGen, init_expr: *const ast.Expr, name_count: usize) bool {
         if (name_count <= 1) return false;
         if (init_expr.* == .call) return true;
@@ -373,12 +405,13 @@ pub const CodeGen = struct {
         if (e.* == .index) {
             const idx = e.index;
             if (self.is_dense_table_index(idx.obj)) return .i64;
+            if (self.indexed_element_type(self.expr_type(idx.obj))) |t| return t;
         }
         if (e.* == .call) {
             const c = e.call;
             if (c.func.* == .name) {
                 if (self.mono) |m| {
-                    const env = if (self.current_mono_spec) |s| &s.substitutions else null;
+                    const env = self.current_mono_spec;
                     if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
                         return spec.resolveType(spec.template.ret_type);
                     }
@@ -460,8 +493,25 @@ pub const CodeGen = struct {
         if (e.* == .call) {
             if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.string_call_result_type(e.call.func, e.call.args)) |t| return t;
+            const callee_type = self.expr_type(e.call.func);
+            if (callee_type == .func) return callee_type.func.ret.*;
         }
         return tm orelse .any;
+    }
+
+    /// Recover the result of native C indexing from the container type. Sema
+    /// intentionally leaves general indexing dynamic, but fixed arrays,
+    /// pointers, and SIMD vectors have statically-known element types.
+    fn indexed_element_type(_: *CodeGen, container: RT) ?RT {
+        return switch (container) {
+            .array => |a| a.elem.*,
+            .pointer => |ptr| ptr.*,
+            .v4f64 => .f64,
+            .v4i64 => .i64,
+            .v8f32 => .f32,
+            .v8i32 => .i32,
+            else => null,
+        };
     }
 
     fn lua_and_or_value_type_is_native(_: *CodeGen, t: RT) bool {
@@ -966,6 +1016,7 @@ pub const CodeGen = struct {
         var substitutions: std.StringHashMapUnmanaged(RT) = .{};
         defer substitutions.deinit(self.alloc);
         if (ed.type_params) |tparams| {
+            if (tparams.len != inst.args.len) return;
             for (tparams, 0..) |tparam, i| {
                 if (tparam == .named) {
                     try substitutions.put(self.alloc, tparam.named, inst.args[i]);
@@ -999,11 +1050,13 @@ pub const CodeGen = struct {
                     // We need to resolve the field type but substitute generic params.
                     // For a proper solution, we use a Specialization-like object.
                     var spec = mono.Specialization{
+                        .alloc = self.alloc,
                         .mangled_name = "",
                         .generic_name = enum_name,
                         .template = undefined,
                         .type_args = inst.args,
                         .substitutions = substitutions,
+                        .value_types = .empty,
                         .key = undefined,
                     };
                     const ft = spec.resolveType(field.typ);
@@ -1019,7 +1072,7 @@ pub const CodeGen = struct {
             }
         }
         self.p("    }} as;\n", .{});
-        self.p("}} duo_spec_{d};\n\n", .{inst.specialization_key});
+        self.p("}} duo_spec_{x};\n\n", .{inst.specialization_key});
     }
 
     fn ensure_record_decl(self: *CodeGen, rt: RT) E!void {
@@ -1119,6 +1172,15 @@ pub const CodeGen = struct {
                 // Tag constants.
                 for (ed.variants, 0..) |v, i| {
                     self.p("#define duo_{s}_tag_{s} {d}\n", .{ ed.name, v.name, i });
+                }
+                // Generic payload layouts are emitted lazily by
+                // `ensure_instantiated_decl` after all type parameters are
+                // concrete. Emitting the template here would create a third,
+                // dynamically typed C struct that is not a valid
+                // monomorphization.
+                if (ed.type_params != null and ed.type_params.?.len > 0) {
+                    self.p("\n", .{});
+                    continue;
                 }
                 self.p("typedef struct ", .{});
                 if (is_packed) self.p("__attribute__((packed)) ", .{});
@@ -1436,8 +1498,7 @@ pub const CodeGen = struct {
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
             const pt = self.resolve_type(par.typ);
-            self.typ(pt);
-            self.p(" {s}", .{par.name});
+            self.emit_param_decl(pt, par.name);
         }
         self.p(");\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
@@ -1649,8 +1710,7 @@ pub const CodeGen = struct {
         for (spec.template.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
             const pt = spec.resolveType(par.typ);
-            self.typ(pt);
-            self.p(" {s}", .{par.name});
+            self.emit_param_decl(pt, par.name);
         }
         self.p(")", .{});
     }
@@ -1681,6 +1741,7 @@ pub const CodeGen = struct {
         const al = self.async_lower orelse return;
         if (al.getAll().len == 0) return;
         try async_lower.AsyncLower.emitPollEnum(self.w);
+        try async_lower.AsyncLower.emitTaskRuntime(self.w);
         self.nl();
         for (al.getAll()) |*lowered| {
             try async_lower.AsyncLower.emitFrameStruct(lowered, self.w);
@@ -1927,8 +1988,7 @@ pub const CodeGen = struct {
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
             const pt = self.resolve_type(par.typ);
-            self.typ(pt);
-            self.p(" {s}", .{par.name});
+            self.emit_param_decl(pt, par.name);
         }
         self.p(") {{\n", .{});
         self.indent = 1;
@@ -4035,7 +4095,7 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 if (c.func.* == .name) {
                     if (self.mono) |m| {
-                        const env = if (self.current_mono_spec) |s| &s.substitutions else null;
+                        const env = self.current_mono_spec;
                         if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
                             try self.emit_mono_call(spec, c.args);
                             return;
@@ -4133,6 +4193,12 @@ pub const CodeGen = struct {
                     } else if (std.mem.eql(u8, mc.method, "get") or std.mem.eql(u8, mc.method, "tostring") or std.mem.eql(u8, mc.method, "read")) {
                         self.p("lua_file_read_method(", .{});
                         try self.emit_expr(mc.obj);
+                        self.p(", ", .{});
+                        if (mc.args.len > 0) {
+                            try self.emit_as_lua_value(mc.args[0]);
+                        } else {
+                            self.p("lua_val_nil()", .{});
+                        }
                         self.p(")", .{});
                     } else if (std.mem.eql(u8, mc.method, "reset")) {
                         self.p("lua_str_buf_reset(", .{});
@@ -7603,16 +7669,44 @@ const duo_runtime =
     \\    return lua_val_nil();
     \\}
     \\
-    \\static inline lua_Value lua_io_read(lua_Value fmt_val) {
-    \\    (void)fmt_val;
-    \\    FILE* f = get_input_file();
+    \\static inline lua_Value lua_read_fmt(FILE* f, lua_Value fmt_val) {
+    \\    if (fmt_val.type == VAL_STRING) {
+    \\        const char* mode = lua_to_str(fmt_val);
+    \\        if (mode[0] == 'a' || (mode[0] == '*' && mode[1] == 'a')) {
+    \\            size_t cap = 8192, len = 0;
+    \\            char* buf = (char*)malloc(cap);
+    \\            for (;;) {
+    \\                if (len + 1 >= cap) { cap *= 2; buf = (char*)realloc(buf, cap); }
+    \\                size_t got = fread(buf + len, 1, cap - len - 1, f);
+    \\                len += got;
+    \\                if (got == 0) break;
+    \\            }
+    \\            lua_Value v = lua_val_from_str_len(buf, len);
+    \\            free(buf);
+    \\            return v;
+    \\        }
+    \\    } else if (fmt_val.type == VAL_NUMBER) {
+    \\        size_t want = (size_t)lua_to_num(fmt_val);
+    \\        if (want == 0) return lua_val_from_str("");
+    \\        char* buf = (char*)malloc(want + 1);
+    \\        size_t got = fread(buf, 1, want, f);
+    \\        if (got == 0) { free(buf); return lua_val_nil(); }
+    \\        lua_Value v = lua_val_from_str_len(buf, got);
+    \\        free(buf);
+    \\        return v;
+    \\    }
     \\    char buf[4096];
     \\    if (fgets(buf, sizeof(buf), f)) {
     \\        size_t l = strlen(buf);
-    \\        if (l > 0 && buf[l - 1] == '\n') buf[l - 1] = '\0';
+    \\        if (l > 0 && buf[l - 1] == '\n') buf[--l] = '\0';
+    \\        if (l > 0 && buf[l - 1] == '\r') buf[--l] = '\0';
     \\        return lua_val_from_str(strdup(buf));
     \\    }
     \\    return lua_val_nil();
+    \\}
+    \\
+    \\static inline lua_Value lua_io_read(lua_Value fmt_val) {
+    \\    return lua_read_fmt(get_input_file(), fmt_val);
     \\}
     \\
     \\static inline lua_Value lua_io_flush(void) {
@@ -8594,17 +8688,10 @@ const duo_runtime =
     \\    return file_val;
     \\}
     \\
-    \\static inline lua_Value lua_file_read_method(lua_Value file_val) {
+    \\static inline lua_Value lua_file_read_method(lua_Value file_val, lua_Value fmt_val) {
     \\    if (file_val.type == VAL_FILE && file_val.as.tval) {
     \\        lua_File* lf = (lua_File*)file_val.as.tval;
-    \\        if (lf->f) {
-    \\            char buf[4096];
-    \\            if (fgets(buf, sizeof(buf), lf->f)) {
-    \\                size_t l = strlen(buf);
-    \\                if (l > 0 && buf[l - 1] == '\n') buf[l - 1] = '\0';
-    \\                return lua_val_from_str(strdup(buf));
-    \\            }
-    \\        }
+    \\        if (lf->f) return lua_read_fmt(lf->f, fmt_val);
     \\        return lua_val_nil();
     \\    } else if (file_val.type == VAL_BUFFER) {
     \\        return lua_str_buf_get(file_val);
@@ -10159,6 +10246,82 @@ test "runtime: async frame step function returns DUO_POLL_PENDING or READY" {
     try testing.expect(std.mem.indexOf(u8, aw.written(), "DUO_POLL_READY") != null);
 }
 
+test "generic enum specializations use canonical names and concrete payloads" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    defer cg.emitted_specs.deinit(alloc);
+    defer cg.enum_defs.deinit(alloc);
+
+    const tparams = try alloc.alloc(ast.TypeExpr, 1);
+    tparams[0] = .{ .named = "T" };
+    const payload = try alloc.alloc(ast.EnumVariant.PayloadField, 1);
+    payload[0] = .{ .name = "value", .typ = .{ .named = "T" } };
+    const variants = try alloc.alloc(ast.EnumVariant, 1);
+    variants[0] = .{ .name = "Some", .payload = payload };
+    const ed = try alloc.create(ast.EnumDef);
+    ed.* = .{
+        .loc = .{ .file = "test", .line = 1, .col = 1 },
+        .name = "Box",
+        .type_params = tparams,
+        .variants = variants,
+        .attributes = &.{},
+    };
+    try cg.enum_defs.put(alloc, "Box", ed);
+
+    const base = try alloc.create(RT);
+    base.* = .{ .@"struct" = .{ .name = "Box" } };
+    const i64_args = try alloc.alloc(RT, 1);
+    i64_args[0] = .i64;
+    const str_args = try alloc.alloc(RT, 1);
+    str_args[0] = .str;
+    const box_i64: RT = .{ .instantiated = .{ .base = base, .args = i64_args, .specialization_key = 0xabc } };
+    const box_str: RT = .{ .instantiated = .{ .base = base, .args = str_args, .specialization_key = 0xdef } };
+
+    try cg.ensure_instantiated_decl(box_i64);
+    try cg.ensure_instantiated_decl(box_i64);
+    try cg.ensure_instantiated_decl(box_str);
+    const output = aw.written();
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "} duo_spec_abc;"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "} duo_spec_def;"));
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t value;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* value;") != null);
+}
+
+test "generic enum annotations trigger distinct deduplicated declarations" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\enum Box[T]
+        \\    Some(value: T)
+        \\end
+        \\local a: Box[i64]
+        \\local b: Box[str]
+        \\local c: Box[i64]
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, output, "typedef struct {\n    int tag;\n    union {"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "int64_t value;"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "const char* value;"));
+}
+
 // ── WASM target validation ─────────────────────────────────────────────────
 
 test "wasm: validateTarget blocks threaded scheduler on wasm32-wasi" {
@@ -10496,6 +10659,60 @@ test "expr_type: contains_expr always produces bool" {
     const result_type: RT = .bool;
     try testing.expect(result_type == .bool);
     try testing.expect(result_type != .any);
+}
+
+test "expr_type: indexed native containers recover their element type" {
+    var elem_i32: RT = .i32;
+    var elem_f64: RT = .f64;
+    var type_map = sema.TypeMap.init(testing.allocator);
+    defer type_map.deinit();
+    var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0);
+    defer {
+        cg.local_scopes.deinit(testing.allocator);
+        cg.close_scopes.deinit(testing.allocator);
+        cg.arc_scopes.deinit(testing.allocator);
+        cg.defer_scopes.deinit(testing.allocator);
+    }
+    try cg.push_local_scope();
+    defer cg.pop_local_scope();
+
+    try testing.expectEqual(RT.i32, cg.indexed_element_type(.{ .array = .{ .elem = &elem_i32, .size = 8 } }).?);
+    try testing.expectEqual(RT.f64, cg.indexed_element_type(.{ .pointer = &elem_f64 }).?);
+    try testing.expectEqual(RT.f64, cg.indexed_element_type(.v4f64).?);
+    try testing.expectEqual(RT.i32, cg.indexed_element_type(.v8i32).?);
+    try testing.expect(cg.indexed_element_type(.any) == null);
+
+    try cg.note_local_type("xs", .{ .array = .{ .elem = &elem_i32, .size = 8 } });
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+    var xs = ast.Expr{ .name = .{ .loc = loc, .ident = "xs" } };
+    var key = ast.Expr{ .int_lit = .{ .loc = loc, .val = 0 } };
+    var index = ast.Expr{ .index = .{ .loc = loc, .obj = &xs, .key = &key } };
+    try testing.expectEqual(RT.i32, cg.expr_type(&index));
+}
+
+test "expr_type: statically typed callee recovers its return type" {
+    var ret_type: RT = .i32;
+    var type_map = sema.TypeMap.init(testing.allocator);
+    defer type_map.deinit();
+    var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0);
+    defer {
+        cg.local_scopes.deinit(testing.allocator);
+        cg.close_scopes.deinit(testing.allocator);
+        cg.arc_scopes.deinit(testing.allocator);
+        cg.defer_scopes.deinit(testing.allocator);
+    }
+    try cg.push_local_scope();
+    defer cg.pop_local_scope();
+    try cg.note_local_type("f", .{ .func = .{
+        .params = &.{},
+        .ret = &ret_type,
+        .is_native = true,
+    } });
+
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+    var callee = ast.Expr{ .name = .{ .loc = loc, .ident = "f" } };
+    var call = ast.Expr{ .call = .{ .loc = loc, .func = &callee, .args = &.{} } };
+    try testing.expectEqual(RT.i32, cg.expr_type(&call));
 }
 
 test "expr_type: string returning builtins recover native str" {

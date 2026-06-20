@@ -2,13 +2,19 @@
 
 Pattern matching in Duo lets you destructure and inspect values with Rust/Go-style `match` expressions.
 
+Each arm starts with `case`, followed by a pattern and optional `if` guard.
+Use either `then` or `do` before the arm's statement. The older
+`pattern => statement` spelling remains accepted for compatibility, but
+`case ... then ...` is the canonical form emitted by the compiler's
+pretty-printer.
+
 ## Basic Match
 
 ```duo
 match value
-    0 => "zero"
-    1 => "one"
-    _ => "other"  -- wildcard pattern
+    case 0 then "zero"
+    case 1 then "one"
+    case _ then "other"  -- wildcard pattern
 end
 ```
 
@@ -25,9 +31,9 @@ end
 
 fun area(s: Shape): f64
     match s
-        Shape.Circle(r) => 3.14159 * r * r
-        Shape.Rect(w, h) => w * h
-        Shape.Point => 0.0
+        case Shape.Circle(r) then 3.14159 * r * r
+        case Shape.Rect(w, h) then w * h
+        case Shape.Point then 0.0
     end
 end
 ```
@@ -39,8 +45,8 @@ Destructure table patterns:
 ```duo
 fun get_name(person: { name: str, age: i64 }): str
     match person
-        { name = n } => n
-        _ => "unknown"
+        case { name = n } then n
+        case _ then "unknown"
     end
 end
 ```
@@ -52,16 +58,16 @@ Pattern match on array-like tables:
 ```duo
 fun head(xs: any): any
     match xs
-        [first, _] => first
-        [only] => only
-        _ => nil
+        case [first, _] then first
+        case [only] then only
+        case _ then nil
     end
 end
 
 fun sum3(nums: any): f64
     match nums
-        [a, b, c] => a + b + c
-        _ => -1.0
+        case [a, b, c] then a + b + c
+        case _ then -1.0
     end
 end
 ```
@@ -73,9 +79,9 @@ Add conditions to match arms:
 ```duo
 fun classify(n: i64): str
     match n
-        x if x < 0 => "negative"
-        x if x > 0 => "positive"
-        0 => "zero"
+        case x if x < 0 then "negative"
+        case x if x > 0 then "positive"
+        case 0 then "zero"
     end
 end
 ```
@@ -88,8 +94,8 @@ The compiler checks that all cases are covered:
 -- ERROR: Missing Shape.Point case
 -- fun area(s: Shape): f64
 --     match s
---         Shape.Circle(r) => 3.14 * r * r
---         Shape.Rect(w, h) => w * h
+--         case Shape.Circle(r) then 3.14 * r * r
+--         case Shape.Rect(w, h) then w * h
 --     end
 -- end
 ```
@@ -100,7 +106,7 @@ The `_` pattern matches anything and discards the value:
 
 ```duo
 match result
-    ok(value) => process(value)
-    err(_) => print("error occurred")  -- Ignore error details
+    case ok(value) then process(value)
+    case err(_) then print("error occurred")  -- Ignore error details
 end
 ```

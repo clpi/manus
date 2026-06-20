@@ -125,4 +125,31 @@ end
 local n: i64 = bits(123456, 7890, 3)
 DUO
 
+check_module native_indexing <<'DUO'
+function pointer_read(xs: *i32, i: i64) -> i32
+  return xs[i]
+end
+DUO
+if ! grep -Fq 'return xs[i];' "$TMP_DIR/native_indexing.c"; then
+    echo "native pointer indexing did not remain a direct typed C index" >&2
+    exit 1
+fi
+
+check_module typed_function_values <<'DUO'
+function increment(x: i32) -> i32
+  return x + 1
+end
+
+function apply(f: (i32) -> i32, x: i32) -> i32
+  return f(x)
+end
+
+local result: i32 = apply(increment, 41)
+DUO
+if ! grep -Fq 'int32_t (*f)(int32_t)' "$TMP_DIR/typed_function_values.c" ||
+   ! grep -Fq 'return f(x);' "$TMP_DIR/typed_function_values.c"; then
+    echo "typed function parameter/call did not remain direct native C" >&2
+    exit 1
+fi
+
 echo "[Property 11] SUCCESS"

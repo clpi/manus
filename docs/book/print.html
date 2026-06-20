@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-da57a234.js";
+            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -477,8 +477,8 @@ end
 
 fun process(opt: Option)
     match opt
-        case Some(val) =&gt; print(val)
-        case None =&gt; print("Nothing")
+        case Some(val) then print(val)
+        case None then print("Nothing")
     end
 end
 </code></pre>
@@ -655,7 +655,9 @@ local sum: f64 = simd.sum(v3)
 <li>Pointer types: <code>*T</code> parse and lower; reference/ownership semantics are still evolving.</li>
 <li>Postfix <code>?</code> and <code>!</code> as propagation and unwrap operators.</li>
 <li><code>await</code> is the async wait primitive. There is no separate <code>wait</code> keyword.</li>
-<li><code>match</code> expressions and arrow arms (<code>| pattern =&gt; expr</code>).</li>
+<li><code>match</code> expressions with Lua-like <code>case pattern then expression</code> or
+<code>case pattern do statement</code> arms. Legacy <code>pattern =&gt; expression</code> arms remain
+accepted for source compatibility.</li>
 <li><code>try</code> / <code>catch</code> / <code>defer</code> for error handling and cleanup.</li>
 <li><code>enum</code>, <code>concept</code>, <code>alias</code>, <code>extends</code>, <code>private</code> for type-system extensions.</li>
 <li><code>const</code> bindings and attributes such as <code>@export</code>, <code>@inline</code>, and <code>@concurrent("threaded")</code>.</li>
@@ -674,7 +676,7 @@ local sum: f64 = simd.sum(v3)
 </ul>
 <h3 id="standard-library"><a class="header" href="#standard-library">Standard library</a></h3>
 <ul>
-<li>Core modules in <code>lib/std/</code>: <code>math</code>, <code>string</code>, <code>table</code>, <code>io</code>, <code>fs</code>, <code>os</code>, <code>path</code>, <code>time</code>, <code>env</code>, <code>proc</code>, <code>fmt</code>, <code>log</code>, <code>json</code>, <code>hash</code>, <code>crypto</code>, <code>base64</code>, <code>hex</code>, <code>url</code>, <code>uuid</code>, <code>utf8</code>, <code>regex</code>, <code>random</code>, <code>iter</code>, <code>collections</code>, <code>memo</code>, <code>test</code>, <code>build</code>, <code>package</code>, <code>argparse</code>, <code>debug</code>.</li>
+<li>Core modules in <code>lib/std/</code>: <code>math</code>, <code>string</code>, <code>table</code>, <code>io</code>, <code>fs</code>, <code>os</code>, <code>path</code>, <code>time</code>, <code>env</code>, <code>proc</code>, <code>fmt</code>, <code>log</code>, <code>json</code>, <code>hash</code>, <code>crypto</code>, <code>base64</code>, <code>base32</code>, <code>hex</code>, <code>url</code>, <code>uuid</code>, <code>utf8</code>, <code>regex</code>, <code>random</code>, <code>iter</code>, <code>collections</code>, <code>memo</code>, <code>test</code>, <code>build</code>, <code>package</code>, <code>argparse</code>, <code>debug</code>, <code>csv</code>, <code>xml</code>, <code>toml</code>, <code>yaml</code>, <code>ini</code>, <code>html</code>, <code>http</code>, <code>datetime</code>, <code>sqlite</code>, <code>tar</code>, <code>zip</code>, <code>color</code>.</li>
 <li>Concurrency modules: <code>coroutine</code>, <code>sync</code>, <code>channel</code>, <code>concurrent</code>, <code>thread</code>, <code>mproc</code>, <code>atomic</code>.</li>
 <li>Networking: <code>net</code> (HTTP and sockets; zero-overhead codegen when the module variable is named <code>net</code>).</li>
 <li>Low-level/memory: <code>mem</code>, <code>wasm/wasi</code>.</li>
@@ -701,7 +703,6 @@ local sum: f64 = simd.sum(v3)
 <h2 id="planned"><a class="header" href="#planned">Planned</a></h2>
 <ul>
 <li>Hygienic macro syntax and more complete metaprogramming.</li>
-<li><code>case ... do/then ...</code> match arms as a Lua-like replacement for arrow arms.</li>
 <li>A tighter concept/metatable model that removes unnecessary syntax additions.</li>
 <li>Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.</li>
 <li>Escape analysis and stack allocation for non-escaping temporaries.</li>
@@ -993,8 +994,8 @@ end
 -- Generic options
 fun get_or_default&lt;T&gt;(opt: Option[T], default: T): T
     match opt
-        some(v) =&gt; v
-        none =&gt; default
+        case some(v) then v
+        case none then default
     end
 end
 </code></pre>
@@ -1098,11 +1099,16 @@ end
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="pattern-matching"><a class="header" href="#pattern-matching">Pattern Matching</a></h1>
 <p>Pattern matching in Duo lets you destructure and inspect values with Rust/Go-style <code>match</code> expressions.</p>
+<p>Each arm starts with <code>case</code>, followed by a pattern and optional <code>if</code> guard.
+Use either <code>then</code> or <code>do</code> before the arm’s statement. The older
+<code>pattern =&gt; statement</code> spelling remains accepted for compatibility, but
+<code>case ... then ...</code> is the canonical form emitted by the compiler’s
+pretty-printer.</p>
 <h2 id="basic-match"><a class="header" href="#basic-match">Basic Match</a></h2>
 <pre><code class="language-duo">match value
-    0 =&gt; "zero"
-    1 =&gt; "one"
-    _ =&gt; "other"  -- wildcard pattern
+    case 0 then "zero"
+    case 1 then "one"
+    case _ then "other"  -- wildcard pattern
 end
 </code></pre>
 <h2 id="enum-destructuring"><a class="header" href="#enum-destructuring">Enum Destructuring</a></h2>
@@ -1115,9 +1121,9 @@ end
 
 fun area(s: Shape): f64
     match s
-        Shape.Circle(r) =&gt; 3.14159 * r * r
-        Shape.Rect(w, h) =&gt; w * h
-        Shape.Point =&gt; 0.0
+        case Shape.Circle(r) then 3.14159 * r * r
+        case Shape.Rect(w, h) then w * h
+        case Shape.Point then 0.0
     end
 end
 </code></pre>
@@ -1125,8 +1131,8 @@ end
 <p>Destructure table patterns:</p>
 <pre><code class="language-duo">fun get_name(person: { name: str, age: i64 }): str
     match person
-        { name = n } =&gt; n
-        _ =&gt; "unknown"
+        case { name = n } then n
+        case _ then "unknown"
     end
 end
 </code></pre>
@@ -1134,16 +1140,16 @@ end
 <p>Pattern match on array-like tables:</p>
 <pre><code class="language-duo">fun head(xs: any): any
     match xs
-        [first, _] =&gt; first
-        [only] =&gt; only
-        _ =&gt; nil
+        case [first, _] then first
+        case [only] then only
+        case _ then nil
     end
 end
 
 fun sum3(nums: any): f64
     match nums
-        [a, b, c] =&gt; a + b + c
-        _ =&gt; -1.0
+        case [a, b, c] then a + b + c
+        case _ then -1.0
     end
 end
 </code></pre>
@@ -1151,9 +1157,9 @@ end
 <p>Add conditions to match arms:</p>
 <pre><code class="language-duo">fun classify(n: i64): str
     match n
-        x if x &lt; 0 =&gt; "negative"
-        x if x &gt; 0 =&gt; "positive"
-        0 =&gt; "zero"
+        case x if x &lt; 0 then "negative"
+        case x if x &gt; 0 then "positive"
+        case 0 then "zero"
     end
 end
 </code></pre>
@@ -1162,16 +1168,16 @@ end
 <pre><code class="language-duo">-- ERROR: Missing Shape.Point case
 -- fun area(s: Shape): f64
 --     match s
---         Shape.Circle(r) =&gt; 3.14 * r * r
---         Shape.Rect(w, h) =&gt; w * h
+--         case Shape.Circle(r) then 3.14 * r * r
+--         case Shape.Rect(w, h) then w * h
 --     end
 -- end
 </code></pre>
 <h2 id="wildcard-pattern"><a class="header" href="#wildcard-pattern">Wildcard Pattern</a></h2>
 <p>The <code>_</code> pattern matches anything and discards the value:</p>
 <pre><code class="language-duo">match result
-    ok(value) =&gt; process(value)
-    err(_) =&gt; print("error occurred")  -- Ignore error details
+    case ok(value) then process(value)
+    case err(_) then print("error occurred")  -- Ignore error details
 end
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -1278,9 +1284,9 @@ end
 
 fun color_name(c: Color): str
     match c
-        Color.Red =&gt; "red"
-        Color.Green =&gt; "green"
-        Color.Blue =&gt; "blue"
+        case Color.Red then "red"
+        case Color.Green then "green"
+        case Color.Blue then "blue"
     end
 end
 </code></pre>
@@ -1294,9 +1300,9 @@ end
 
 fun area(s: Shape): f64
     match s
-        Shape.Circle(r) =&gt; 3.14159 * r * r
-        Shape.Rectangle(w, h) =&gt; w * h
-        Shape.Point =&gt; 0.0
+        case Shape.Circle(r) then 3.14159 * r * r
+        case Shape.Rectangle(w, h) then w * h
+        case Shape.Point then 0.0
     end
 end
 </code></pre>
@@ -1309,9 +1315,9 @@ rect: Shape = Shape.Rectangle(3.0, 4.0)
 <p>Pattern match on enum variants:</p>
 <pre><code class="language-duo">fun describe(s: Shape): str
     match s
-        Shape.Circle(r) =&gt; "Circle with radius " .. tostring(r)
-        Shape.Rectangle(w, h) =&gt; "Rectangle " .. tostring(w) .. "x" .. tostring(h)
-        Shape.Point =&gt; "Point at origin"
+        case Shape.Circle(r) then "Circle with radius " .. tostring(r)
+        case Shape.Rectangle(w, h) then "Rectangle " .. tostring(w) .. "x" .. tostring(h)
+        case Shape.Point then "Point at origin"
     end
 end
 </code></pre>
@@ -1326,8 +1332,8 @@ end
 -- Extension method (prefix function)
 fun Result&lt;T&gt;.is_ok(r: Result&lt;T&gt;): bool
     match r
-        Result.Success(_) =&gt; true
-        Result.Failure(_) =&gt; false
+        case Result.Success(_) then true
+        case Result.Failure(_) then false
     end
 end
 
@@ -1346,8 +1352,8 @@ end
 
 fun sum(t: Tree): i64
     match t
-        Tree.Leaf(v) =&gt; v
-        Tree.Branch(l, r) =&gt; sum(l) + sum(r)
+        case Tree.Leaf(v) then v
+        case Tree.Branch(l, r) then sum(l) + sum(r)
     end
 end
 </code></pre>
@@ -1356,7 +1362,7 @@ end
 <pre><code class="language-duo">-- ERROR: Missing Tree.Branch case
 -- fun Tree.count_leaves(t: Tree): i64
 --     match t
---         Tree.Leaf(_) =&gt; 1
+--         case Tree.Leaf(_) then 1
 --     end
 -- end
 </code></pre>
@@ -1724,16 +1730,27 @@ log.info("Information message")
 log.warn("Warning message")
 log.error("Error message")
 </code></pre>
-<h2 id="json-module-stdjson"><a class="header" href="#json-module-stdjson">JSON Module (<code>std.json</code>)</a></h2>
+<h2 id="encoding-and-formatting-stdjson-stdcsv-stdxml-stdtoml-stdyaml-stdini-stdhtml-stdbase64-stdbase32-stdhex"><a class="header" href="#encoding-and-formatting-stdjson-stdcsv-stdxml-stdtoml-stdyaml-stdini-stdhtml-stdbase64-stdbase32-stdhex">Encoding and Formatting (<code>std.json</code>, <code>std.csv</code>, <code>std.xml</code>, <code>std.toml</code>, <code>std.yaml</code>, <code>std.ini</code>, <code>std.html</code>, <code>std.base64</code>, <code>std.base32</code>, <code>std.hex</code>)</a></h2>
 <pre><code class="language-duo">json = req "std.json"
+csv = req "std.csv"
+html = req "std.html"
+xml = req "std.xml"
+toml = req "std.toml"
+yaml = req "std.yaml"
+ini = req "std.ini"
+base32 = req "std.base32"
 
--- Encode/decode
-data = json.encode({name = "Duo", version = 1})
-object = json.decode(data)
+parsed_json = json.parse('{"a": 1}')
+str_json = json.stringify({a = 1})
 
--- Alternative names
-text = json.stringify({a = 1})
-obj = json.parse('{"b": 2}')
+parsed_csv = csv.parse("a,b,c\n1,2,3")
+str_csv = csv.format({{"a", "b", "c"}, {1, 2, 3}})
+
+parsed_toml = toml.parse("key = \"value\"")
+escaped = html.escape("&lt;script&gt;alert(1)&lt;/script&gt;")
+unescaped = html.unescape("&amp;lt;div&amp;gt;")
+
+b32 = base32.encode("hello")
 </code></pre>
 <h2 id="hash-module-stdhash"><a class="header" href="#hash-module-stdhash">Hash Module (<code>std.hash</code>)</a></h2>
 <pre><code class="language-duo">hash = req "std.hash"
@@ -1955,25 +1972,34 @@ item = random.choice({"A", "B", "C"})
 list = {"A", "B", "C"}
 random.shuffle(list)            -- randomizes array in-place
 </code></pre>
-<h2 id="file-system-helpers-stdfs"><a class="header" href="#file-system-helpers-stdfs">File-System Helpers (<code>std.fs</code>)</a></h2>
+<h2 id="file-system-and-archives-stdfs-stdtar-stdzip"><a class="header" href="#file-system-and-archives-stdfs-stdtar-stdzip">File-System and Archives (<code>std.fs</code>, <code>std.tar</code>, <code>std.zip</code>)</a></h2>
 <pre><code class="language-duo">fs = req "std.fs"
+tar = req "std.tar"
+zip = req "std.zip"
 
 fs.write_file("/tmp/example.txt", "one\ntwo\n")
 fs.append_file("/tmp/example.txt", "three\n")
-fs.exists("/tmp/example.txt")       -- true
-text = fs.read_file("/tmp/example.txt")
-lines = fs.read_lines("/tmp/example.txt")
-fs.rename("/tmp/example.txt", "/tmp/example2.txt")
-fs.remove("/tmp/example2.txt")
 
-fs.mkdir_all("/tmp/nested/dir")
-fs.copy("/tmp/a.txt", "/tmp/b.txt")
-files = fs.read_dir("/tmp")
-is_dir = fs.is_dir("/tmp")
-size = fs.size("/tmp/a.txt")
+tar.create("archive.tar", "/tmp/dir")
+tar.extract("archive.tar", "/tmp/out")
+zip.create("archive.zip", "/tmp/dir")
+zip.extract("archive.zip", "/tmp/out")
 </code></pre>
-<h2 id="path-manipulations-stdpath"><a class="header" href="#path-manipulations-stdpath">Path Manipulations (<code>std.path</code>)</a></h2>
-<pre><code class="language-duo">path = req "std.path"
+<p>fs.exists(“/tmp/example.txt”)       – true
+text = fs.read_file(“/tmp/example.txt”)
+lines = fs.read_lines(“/tmp/example.txt”)
+fs.rename(“/tmp/example.txt”, “/tmp/example2.txt”)
+fs.remove(“/tmp/example2.txt”)</p>
+<p>fs.mkdir_all(“/tmp/nested/dir”)
+fs.copy(“/tmp/a.txt”, “/tmp/b.txt”)
+files = fs.read_dir(“/tmp”)
+is_dir = fs.is_dir(“/tmp”)
+size = fs.size(“/tmp/a.txt”)</p>
+<pre><code>
+## Path Manipulations (`std.path`)
+
+```duo
+path = req "std.path"
 
 path.join("a", "b/c")      -- "a/b/c"
 path.basename("/a/b.txt")  -- "b.txt"
@@ -1998,6 +2024,12 @@ rc = os2.execute("ls -la")
 os2.exit(1)
 removed = os2.remove("file.txt")
 renamed = os2.rename("old.txt", "new.txt")
+</code></pre>
+<h3 id="stdsqlite"><a class="header" href="#stdsqlite"><code>std.sqlite</code></a></h3>
+<p><code>std.sqlite</code> provides a basic wrapper around the <code>sqlite3</code> command-line tool for simple local database scripts.</p>
+<pre><code class="language-duo">sqlite = req "std.sqlite"
+sqlite.execute("app.db", "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);")
+csv_data = sqlite.query_csv("app.db", "SELECT * FROM users;")
 </code></pre>
 <h3 id="stdproc"><a class="header" href="#stdproc"><code>std.proc</code></a></h3>
 <pre><code class="language-duo">proc = req "std.proc"
@@ -2029,13 +2061,15 @@ cp = stack.checkpoint()
 ptr2 = stack.alloc(32)
 stack.restore(cp)
 </code></pre>
-<h2 id="networking-stdnet"><a class="header" href="#networking-stdnet">Networking (<code>std.net</code>)</a></h2>
-<p><code>std.net</code> provides URL parsing, HTTP helpers, and TCP/UDP helpers. When the module variable is named <code>net</code>, the compiler emits direct C calls (<code>duo_net_http_get</code>, etc.) for zero-overhead networking. Otherwise it falls back to <code>curl</code>-based implementations.</p>
+<h2 id="networking-stdnet-stdhttp"><a class="header" href="#networking-stdnet-stdhttp">Networking (<code>std.net</code>, <code>std.http</code>)</a></h2>
+<p><code>std.net</code> provides URL parsing, TCP/UDP helpers, and core HTTP functions. When the module variable is named <code>net</code>, the compiler emits direct C calls (<code>duo_net_http_get</code>, etc.) for zero-overhead networking.
+<code>std.http</code> provides a convenient alias for high-level HTTP client and server functions.</p>
 <pre><code class="language-duo">net = req "std.net"
+http = req "std.http"
 
 parsed = net.parse_url("https://example.com:8080/path")
-body = net.http_get("https://example.com")
-resp = net.http_post(url, "body", "application/json")
+body = http.get("https://example.com")
+resp = http.post(url, "body", "application/json")
 </code></pre>
 <h2 id="coroutines-and-concurrency"><a class="header" href="#coroutines-and-concurrency">Coroutines and Concurrency</a></h2>
 <h3 id="stdcoroutine"><a class="header" href="#stdcoroutine"><code>std.coroutine</code></a></h3>
@@ -2096,11 +2130,15 @@ mp.spawn("sleep 1 &amp;&amp; echo done")
 fd = wasi.fd_stdout()   -- 1
 err = wasi.errno_success()  -- 0
 </code></pre>
-<h2 id="debug-module-stddebug"><a class="header" href="#debug-module-stddebug">Debug Module (<code>std.debug</code>)</a></h2>
+<h2 id="debug-and-formatting-modules-stddebug-stdcolor"><a class="header" href="#debug-and-formatting-modules-stddebug-stdcolor">Debug and Formatting Modules (<code>std.debug</code>, <code>std.color</code>)</a></h2>
 <pre><code class="language-duo">debug2 = req "std.debug"
 
 msg = debug2.traceback("error context", 1)
 info = debug2.getinfo(my_fn, "nSl")
+</code></pre>
+<pre><code class="language-duo">color = req "std.color"
+
+print(color.red("Error:") .. " " .. color.bold("something went wrong"))
 </code></pre>
 <h2 id="global-functions"><a class="header" href="#global-functions">Global Functions</a></h2>
 <p>Duo also keeps Lua’s global functions available:</p>
@@ -2459,8 +2497,8 @@ end
 
 fn handle_option(opt: Option)
     match opt
-        case Some(val) =&gt; print("Got value:", val)
-        case None =&gt; print("No value")
+        case Some(val) then print("Got value:", val)
+        case None then print("No value")
     end
 end
 

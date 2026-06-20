@@ -49,6 +49,8 @@ pub const SpecKey = struct {
 
 /// A concrete instantiation of a generic function.
 pub const Specialization = struct {
+    /// Allocator used for recursively materialized resolved types.
+    alloc: Allocator,
     /// Mangled C name, e.g. `duo_id_i64`.
     mangled_name: []const u8,
     /// Source name of the generic function (e.g. `id`).
@@ -59,6 +61,9 @@ pub const Specialization = struct {
     type_args: []const RT,
     /// type-parameter name -> concrete type.
     substitutions: std.StringHashMapUnmanaged(RT),
+    /// Function parameter/local name -> concrete type while scanning/emitting
+    /// this specialization.
+    value_types: std.StringHashMapUnmanaged(RT),
     key: SpecKey,
 
     /// Resolve a type annotation from within this specialization's body to its
@@ -74,23 +79,81 @@ pub const Specialization = struct {
                 if (self.substitutions.get(n)) |t| return t;
             },
             .pointer => |inner| {
-                const p = std.heap.page_allocator.create(RT) catch unreachable;
+                const p = self.alloc.create(RT) catch unreachable;
                 p.* = self.resolveTypeRecursive(inner.*);
                 return .{ .pointer = p };
             },
             .optional => |inner| {
-                const p = std.heap.page_allocator.create(RT) catch unreachable;
+                const p = self.alloc.create(RT) catch unreachable;
                 p.* = self.resolveTypeRecursive(inner.*);
                 return .{ .option = p };
             },
             .array => |a| {
-                const p = std.heap.page_allocator.create(RT) catch unreachable;
+                const p = self.alloc.create(RT) catch unreachable;
                 p.* = self.resolveTypeRecursive(a.elem.*);
                 return .{ .array = .{ .elem = p, .size = a.size } };
             },
+            .func => |f| {
+                const params = self.alloc.alloc(RT, f.params.len) catch unreachable;
+                var is_native = true;
+                for (f.params, 0..) |param, i| {
+                    params[i] = self.resolveTypeRecursive(param);
+                    is_native = is_native and params[i].is_native();
+                }
+                const ret = self.alloc.create(RT) catch unreachable;
+                ret.* = self.resolveTypeRecursive(f.ret.*);
+                is_native = is_native and ret.is_native();
+                return .{ .func = .{ .params = params, .ret = ret, .is_native = is_native } };
+            },
+            .generic => |g| return self.resolveGeneric(g),
+            .record => |record| {
+                const fields = self.alloc.alloc(types.FieldType, record.fields.len) catch unreachable;
+                for (record.fields, 0..) |field, i| {
+                    fields[i] = .{ .name = field.name, .typ = self.resolveTypeRecursive(field.typ) };
+                }
+                return .{ .table_type = .{ .fields = fields } };
+            },
             else => {},
         }
-        return types.resolve(te, null, std.heap.page_allocator) catch .any;
+        return types.resolve(te, null, self.alloc) catch .any;
+    }
+
+    fn resolveGeneric(self: *const Specialization, g: ast.TypeExpr.GenericType) RT {
+        const base = self.alloc.create(RT) catch unreachable;
+        base.* = self.resolveTypeRecursive(g.base.*);
+        const args = self.alloc.alloc(RT, g.params.len) catch unreachable;
+        for (g.params, 0..) |param, i| args[i] = self.resolveTypeRecursive(param);
+
+        if (base.* == .@"struct" and
+            (std.mem.eql(u8, base.@"struct".name, "List") or
+                std.mem.eql(u8, base.@"struct".name, "list")) and args.len == 1)
+        {
+            const elem = self.alloc.create(RT) catch unreachable;
+            elem.* = args[0];
+            return .{ .array = .{ .elem = elem, .size = null } };
+        }
+        if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Option") and args.len == 1) {
+            const elem = self.alloc.create(RT) catch unreachable;
+            elem.* = args[0];
+            return .{ .option = elem };
+        }
+        if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Result") and args.len == 2) {
+            const ok = self.alloc.create(RT) catch unreachable;
+            ok.* = args[0];
+            const err = self.alloc.create(RT) catch unreachable;
+            err.* = args[1];
+            return .{ .result = .{ .ok = ok, .err = err } };
+        }
+
+        var key = std.hash.Wyhash.hash(0, "generic");
+        if (base.* == .enum_type) key = std.hash.Wyhash.hash(0, base.enum_type.name);
+        if (base.* == .@"struct") key = std.hash.Wyhash.hash(0, base.@"struct".name);
+        for (args) |arg| {
+            var buf: [128]u8 = undefined;
+            const rendered = std.fmt.bufPrint(&buf, "{}", .{arg}) catch "";
+            key ^= std.hash.Wyhash.hash(key, rendered);
+        }
+        return .{ .instantiated = .{ .base = base, .args = args, .specialization_key = key } };
     }
 };
 
@@ -127,6 +190,7 @@ pub const Monomorphizer = struct {
         var it = self.specializations.valueIterator();
         while (it.next()) |spec_ptr| {
             spec_ptr.*.substitutions.deinit(self.alloc);
+            spec_ptr.*.value_types.deinit(self.alloc);
             self.alloc.destroy(spec_ptr.*);
         }
         self.generics.deinit(self.alloc);
@@ -197,7 +261,7 @@ pub const Monomorphizer = struct {
 
     // ── Instantiation-site collection ───────────────────────────────────────
 
-    pub const Env = ?*const std.StringHashMapUnmanaged(RT);
+    pub const Env = ?*const Specialization;
 
     fn collectSitesBlock(self: *Self, block: *const ast.Block, env: Env) Error!void {
         for (block.stmts) |*stmt| try self.collectSitesStmt(stmt, env);
@@ -243,7 +307,13 @@ pub const Monomorphizer = struct {
                 for (f.iters) |e| try self.collectSitesExpr(e, env);
                 try self.collectSitesBlock(&f.body, env);
             },
-            .func_decl => |fd| try self.collectSitesBlock(&fd.func.body, env),
+            .func_decl => |fd| {
+                // A generic template has no concrete value/type environment.
+                // Its body is scanned only from `specialize`, after the request
+                // is cached and parameter bindings are concrete.
+                if (fd.func.type_params == null or fd.func.type_params.?.len == 0)
+                    try self.collectSitesBlock(&fd.func.body, env);
+            },
             .ret => |r| for (r.vals) |e| try self.collectSitesExpr(e, env),
             .match_stmt => |m| try self.collectSitesMatch(&m, env),
             .try_stmt => |t| {
@@ -343,12 +413,15 @@ pub const Monomorphizer = struct {
     fn argType(self: *Self, arg: *const ast.Expr, env: Env, param_type: ?ast.TypeExpr) RT {
         const base = self.type_map.get(arg) orelse .any;
         if (env) |e| {
+            if (arg.* == .name) {
+                if (e.value_types.get(arg.name.ident)) |t| return t;
+            }
             // A nested generic call inside a specialized body: an argument that
             // is itself a type parameter shows up as `.@"struct"{name=T}` (the
             // sema fallback for an unknown named type) or `.generic_param`.
             switch (base) {
-                .@"struct" => |s| if (e.get(s.name)) |t| return t,
-                .generic_param => |g| if (e.get(g.name)) |t| return t,
+                .@"struct" => |s| if (e.substitutions.get(s.name)) |t| return t,
+                .generic_param => |g| if (e.substitutions.get(g.name)) |t| return t,
                 else => {},
             }
             // Also check if the param_type itself is a type parameter (e.g.
@@ -357,7 +430,7 @@ pub const Monomorphizer = struct {
             // parameter's original type annotation.
             if (param_type) |pt| {
                 if (pt == .named) {
-                    if (e.get(pt.named)) |t| return t;
+                    if (e.substitutions.get(pt.named)) |t| return t;
                 }
             }
         }
@@ -390,6 +463,44 @@ pub const Monomorphizer = struct {
             },
             .array => |a| {
                 if (arg == .array) try unify(alloc, a.elem.*, arg.array.elem.*, type_params, bindings);
+            },
+            .func => |f| {
+                if (arg != .func or f.params.len != arg.func.params.len) return;
+                for (f.params, arg.func.params) |param_type, concrete|
+                    try unify(alloc, param_type, concrete, type_params, bindings);
+                try unify(alloc, f.ret.*, arg.func.ret.*, type_params, bindings);
+            },
+            .record => |record| {
+                if (arg != .table_type) return;
+                for (record.fields) |param_field| {
+                    for (arg.table_type.fields) |concrete_field| {
+                        if (std.mem.eql(u8, param_field.name, concrete_field.name)) {
+                            try unify(alloc, param_field.typ, concrete_field.typ, type_params, bindings);
+                            break;
+                        }
+                    }
+                }
+            },
+            .generic => |g| {
+                const base_name = if (g.base.* == .named) g.base.named else "";
+                if ((std.mem.eql(u8, base_name, "List") or std.mem.eql(u8, base_name, "list")) and
+                    g.params.len == 1 and arg == .array)
+                {
+                    try unify(alloc, g.params[0], arg.array.elem.*, type_params, bindings);
+                    return;
+                }
+                if (std.mem.eql(u8, base_name, "Option") and g.params.len == 1 and arg == .option) {
+                    try unify(alloc, g.params[0], arg.option.*, type_params, bindings);
+                    return;
+                }
+                if (std.mem.eql(u8, base_name, "Result") and g.params.len == 2 and arg == .result) {
+                    try unify(alloc, g.params[0], arg.result.ok.*, type_params, bindings);
+                    try unify(alloc, g.params[1], arg.result.err.*, type_params, bindings);
+                    return;
+                }
+                if (arg != .instantiated or g.params.len != arg.instantiated.args.len) return;
+                for (g.params, arg.instantiated.args) |param_type, concrete|
+                    try unify(alloc, param_type, concrete, type_params, bindings);
             },
             else => {},
         }
@@ -434,19 +545,68 @@ pub const Monomorphizer = struct {
 
         const spec = try self.alloc.create(Specialization);
         spec.* = .{
+            .alloc = self.alloc,
             .mangled_name = try self.mangleName(req.generic_name, req.type_args),
             .generic_name = req.generic_name,
             .template = req.template,
             .type_args = req.type_args,
             .substitutions = subs,
+            .value_types = .empty,
             .key = req.key,
         };
+        for (req.template.params) |param| {
+            try spec.value_types.put(self.alloc, param.name, spec.resolveType(param.typ));
+        }
+        try self.collectSpecializedValueTypes(spec, &req.template.body);
         try self.specializations.put(self.alloc, req.key, spec);
         try self.order.append(self.alloc, spec);
 
         // Fixed-point: scan the specialized body with this substitution active
         // to surface nested generic instantiations.
-        try self.collectSitesBlock(&req.template.body, &spec.substitutions);
+        try self.collectSitesBlock(&req.template.body, spec);
+    }
+
+    fn collectSpecializedValueTypes(self: *Self, spec: *Specialization, block: *const ast.Block) !void {
+        for (block.stmts) |*stmt| switch (stmt.*) {
+            .local_decl => |decl| {
+                for (decl.names, 0..) |local, i| {
+                    const concrete = if (local.typ != .inferred)
+                        spec.resolveType(local.typ)
+                    else if (i < decl.inits.len)
+                        self.argType(decl.inits[i], spec, null)
+                    else
+                        RT.any;
+                    try spec.value_types.put(self.alloc, local.ident, concrete);
+                }
+            },
+            .do_block => |nested| try self.collectSpecializedValueTypes(spec, &nested.body),
+            .while_loop => |loop| try self.collectSpecializedValueTypes(spec, &loop.body),
+            .repeat_loop => |loop| try self.collectSpecializedValueTypes(spec, &loop.body),
+            .if_stmt => |branch| {
+                try self.collectSpecializedValueTypes(spec, &branch.then);
+                for (branch.elseifs) |elseif| try self.collectSpecializedValueTypes(spec, &elseif.body);
+                if (branch.else_body) |else_body| try self.collectSpecializedValueTypes(spec, &else_body);
+            },
+            .num_for => |loop| {
+                try spec.value_types.put(self.alloc, loop.var_name, spec.resolveType(loop.var_typ));
+                try self.collectSpecializedValueTypes(spec, &loop.body);
+            },
+            .gen_for => |loop| {
+                for (loop.vars) |name| try spec.value_types.put(self.alloc, name, .any);
+                try self.collectSpecializedValueTypes(spec, &loop.body);
+            },
+            .match_stmt => |match| for (match.arms) |arm|
+                try self.collectSpecializedValueTypes(spec, &arm.body),
+            .try_stmt => |try_stmt| {
+                try self.collectSpecializedValueTypes(spec, &try_stmt.body);
+                for (try_stmt.catches) |catch_clause| try self.collectSpecializedValueTypes(spec, &catch_clause.body);
+                for (try_stmt.defers) |defer_stmt| try self.collectSpecializedValueTypes(spec, &defer_stmt.body);
+            },
+            .defer_stmt => |defer_stmt| try self.collectSpecializedValueTypes(spec, &defer_stmt.body),
+            // Nested functions have independent type parameters and scopes.
+            .func_decl => {},
+            else => {},
+        };
     }
 
     // ── Name mangling ───────────────────────────────────────────────────────
@@ -638,4 +798,174 @@ test "mono: substitution map resolves a type parameter to its concrete type" {
     try testing.expect(resolved == .i64);
     // A non-parameter annotation resolves normally.
     try testing.expect(specs[0].resolveType(.{ .named = "f64" }) == .f64);
+}
+
+test "mono: substitution resolves type parameters inside generic applications" {
+    var h = try Harness.run(
+        \\fun id<T>(x: T) -> T return x end
+        \\local a: i64 = id(1)
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+    const specs = try mono.getSpecializations("id");
+
+    const base = try h.arena.allocator().create(ast.TypeExpr);
+    base.* = .{ .named = "Container" };
+    const params = try h.arena.allocator().alloc(ast.TypeExpr, 1);
+    params[0] = .{ .named = "T" };
+
+    const resolved = specs[0].resolveType(.{ .generic = .{ .base = base, .params = params } });
+    try testing.expect(resolved == .instantiated);
+    try testing.expectEqual(@as(usize, 1), resolved.instantiated.args.len);
+    try testing.expect(resolved.instantiated.args[0] == .i64);
+}
+
+test "mono: substitution resolves type parameters inside function and record types" {
+    var h = try Harness.run(
+        \\fun id<T>(x: T) -> T return x end
+        \\local a: i64 = id(1)
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+    const specs = try mono.getSpecializations("id");
+    const alloc = h.arena.allocator();
+
+    const fn_params = try alloc.alloc(ast.TypeExpr, 1);
+    fn_params[0] = .{ .named = "T" };
+    const opt_inner = try alloc.create(ast.TypeExpr);
+    opt_inner.* = .{ .named = "T" };
+    const fn_ret = try alloc.create(ast.TypeExpr);
+    fn_ret.* = .{ .optional = opt_inner };
+    const resolved_fn = specs[0].resolveType(.{ .func = .{ .params = fn_params, .ret = fn_ret } });
+    try testing.expect(resolved_fn == .func);
+    try testing.expect(resolved_fn.func.params[0] == .i64);
+    try testing.expect(resolved_fn.func.ret.* == .option);
+    try testing.expect(resolved_fn.func.ret.option.* == .i64);
+
+    const fields = try alloc.alloc(ast.RecordField, 1);
+    fields[0] = .{ .name = "value", .typ = .{ .named = "T" }, .loc = .{ .file = "test", .line = 1, .col = 1 } };
+    const record = try alloc.create(ast.TypeExpr.RecordType);
+    record.* = .{ .fields = fields };
+    const resolved_record = specs[0].resolveType(.{ .record = record });
+    try testing.expect(resolved_record == .table_type);
+    try testing.expectEqual(@as(usize, 1), resolved_record.table_type.fields.len);
+    try testing.expect(resolved_record.table_type.fields[0].typ == .i64);
+}
+
+test "mono: unification infers parameters inside generic applications" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const base_te = try alloc.create(ast.TypeExpr);
+    base_te.* = .{ .named = "Container" };
+    const params_te = try alloc.alloc(ast.TypeExpr, 1);
+    params_te[0] = .{ .named = "T" };
+
+    const base_rt = try alloc.create(RT);
+    base_rt.* = .{ .@"struct" = .{ .name = "Container" } };
+    const args_rt = try alloc.alloc(RT, 1);
+    args_rt[0] = .i64;
+    const arg: RT = .{ .instantiated = .{ .base = base_rt, .args = args_rt, .specialization_key = 1 } };
+
+    var bindings: std.StringHashMapUnmanaged(RT) = .empty;
+    defer bindings.deinit(alloc);
+    const type_params = [_]ast.TypeExpr{.{ .named = "T" }};
+    try Monomorphizer.unify(alloc, .{ .generic = .{ .base = base_te, .params = params_te } }, arg, &type_params, &bindings);
+    try testing.expect(bindings.get("T") != null);
+    try testing.expect(bindings.get("T").? == .i64);
+}
+
+test "mono: unification infers parameters inside function and record types" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const type_params = [_]ast.TypeExpr{.{ .named = "T" }};
+
+    const fn_params = try alloc.alloc(ast.TypeExpr, 1);
+    fn_params[0] = .{ .named = "T" };
+    const fn_ret = try alloc.create(ast.TypeExpr);
+    fn_ret.* = .{ .named = "T" };
+    const rt_params = try alloc.alloc(RT, 1);
+    rt_params[0] = .str;
+    const rt_ret = try alloc.create(RT);
+    rt_ret.* = .str;
+
+    var fn_bindings: std.StringHashMapUnmanaged(RT) = .empty;
+    defer fn_bindings.deinit(alloc);
+    try Monomorphizer.unify(alloc, .{ .func = .{ .params = fn_params, .ret = fn_ret } }, .{ .func = .{ .params = rt_params, .ret = rt_ret, .is_native = true } }, &type_params, &fn_bindings);
+    try testing.expect(fn_bindings.get("T") != null);
+    try testing.expect(fn_bindings.get("T").? == .str);
+
+    const fields = try alloc.alloc(ast.RecordField, 1);
+    fields[0] = .{ .name = "value", .typ = .{ .named = "T" }, .loc = .{ .file = "test", .line = 1, .col = 1 } };
+    const record = try alloc.create(ast.TypeExpr.RecordType);
+    record.* = .{ .fields = fields };
+    const rt_fields = try alloc.alloc(types.FieldType, 1);
+    rt_fields[0] = .{ .name = "value", .typ = .bool };
+
+    var record_bindings: std.StringHashMapUnmanaged(RT) = .empty;
+    defer record_bindings.deinit(alloc);
+    try Monomorphizer.unify(alloc, .{ .record = record }, .{ .table_type = .{ .fields = rt_fields } }, &type_params, &record_bindings);
+    try testing.expect(record_bindings.get("T") != null);
+    try testing.expect(record_bindings.get("T").? == .bool);
+}
+
+test "mono: nested generic calls inherit the specialized parameter type" {
+    var h = try Harness.run(
+        \\fun inner<U>(x: U) -> U return x end
+        \\fun outer<T>(x: T) -> T return inner(x) end
+        \\local value: i64 = outer(1)
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+
+    const outer_specs = try mono.getSpecializations("outer");
+    const inner_specs = try mono.getSpecializations("inner");
+    try testing.expectEqual(@as(usize, 1), outer_specs.len);
+    try testing.expectEqual(@as(usize, 1), inner_specs.len);
+    try testing.expect(inner_specs[0].type_args[0] == .i64);
+}
+
+test "mono: recursive generic calls reuse the active specialization" {
+    var h = try Harness.run(
+        \\fun recurse<T>(x: T) -> T
+        \\    if false then return recurse(x) end
+        \\    return x
+        \\end
+        \\local value: i64 = recurse(1)
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+
+    const specs = try mono.getSpecializations("recurse");
+    try testing.expectEqual(@as(usize, 1), specs.len);
+    try testing.expect(specs[0].type_args[0] == .i64);
+}
+
+test "mono: nested generic calls inherit specialized local annotations" {
+    var h = try Harness.run(
+        \\fun inner<U>(x: U) -> U return x end
+        \\fun outer<T>(x: T) -> T
+        \\    local y: T = x
+        \\    return inner(y)
+        \\end
+        \\local value: str = outer("ok")
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+
+    const inner_specs = try mono.getSpecializations("inner");
+    try testing.expectEqual(@as(usize, 1), inner_specs.len);
+    try testing.expect(inner_specs[0].type_args[0] == .str);
 }
