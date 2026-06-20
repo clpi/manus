@@ -312,6 +312,28 @@ fun ends_with(s, suffix): bool
     string.sub(s, string.len(s) - string.len(suffix) + 1) == suffix
 end
 
+fun find_from(s: any, sub: any, start: any): i64
+    if s == nil then return 0 end
+    sn = string.len(s)
+    subn = string.len(sub)
+    if subn == 0 then return start end
+    i = start
+    while i + subn - 1 <= sn
+        is_match = true
+        j = 0
+        while j < subn
+            if string.byte(s, i + j) ~= string.byte(sub, j + 1) then
+                is_match = false
+                break
+            end
+            j = j + 1
+        end
+        if is_match then return i end
+        i = i + 1
+    end
+    0
+end
+
 fun contains_char(s, ch): bool
     if s == nil then return false end
     cb = string.byte(ch, 1)
@@ -341,8 +363,8 @@ fun split_lines(text): any
     pos = 1
     n = string.len(text)
     while pos <= n
-        nl = string.find(text, "\n", pos)
-        if nl == nil then
+        nl = find_from(text, "\n", pos)
+        if nl == 0 then
             out[rawlen(out) + 1] = string.sub(text, pos)
             break
         end
@@ -363,8 +385,8 @@ fun get_line(text, idx): any
     n = string.len(text)
     cur = 0
     while pos <= n
-        nl = string.find(text, "\n", pos)
-        if nl == nil then
+        nl = find_from(text, "\n", pos)
+        if nl == 0 then
             if cur == idx then return string.sub(text, pos) end
             return nil
         end
@@ -671,19 +693,19 @@ end
 fun parse_diag_line(line): any
     n = string.len(line)
     -- debug-dump form: locate ".line = "
-    p = string.find(line, "%.line = ")
-    if p ~= nil then
+    p = find_from(line, ".line = ", 1)
+    if p ~= 0 then
         i = p + 8
         ld = parse_digits(line, i)
         if ld == nil then return nil end
         lnum = ld.val
-        p2 = string.find(line, ", %.col = ")
-        if p2 == nil then return nil end
+        p2 = find_from(line, ", .col = ", p + 8)
+        if p2 == 0 then return nil end
         cd = parse_digits(line, p2 + 9)
         if cd == nil then return nil end
         cnum = cd.val
-        p3 = string.find(line, "}: ")
-        if p3 == nil then return nil end
+        p3 = find_from(line, "}: ", cd.next)
+        if p3 == 0 then return nil end
         rest = string.sub(line, p3 + 3)
         sev = 1
         msg = rest
@@ -702,16 +724,16 @@ fun parse_diag_line(line): any
         return r
     end
     -- clean form: <path>:<line>:<col>: (error|warning): msg
-    e = string.find(line, ": error: ")
-    w = string.find(line, ": warning: ")
+    e = find_from(line, ": error: ", 1)
+    w = find_from(line, ": warning: ", 1)
     marker = nil
     mlen = 0
     sev = 1
-    if e ~= nil then
+    if e ~= 0 then
         marker = e
         mlen = 9
         sev = 1
-    elseif w ~= nil then
+    elseif w ~= 0 then
         marker = w
         mlen = 11
         sev = 2
@@ -780,9 +802,9 @@ fun parse_diagnostics(out, text): any
     pos = 1
     n = string.len(out)
     while pos <= n
-        nl = string.find(out, "\n", pos)
+        nl = find_from(out, "\n", pos)
         line = ""
-        if nl == nil then
+        if nl == 0 then
             line = string.sub(out, pos)
             pos = n + 1
         else
@@ -897,8 +919,6 @@ fun reply_error(id, code, message): void
 end
 
 fun send_diagnostics(uri, diags): void
-    io.stderr:write("SEND_DIAG entry\n")
-    io.stderr:flush()
     params = {}
     params.uri = uri
     params.diagnostics = diags
@@ -917,8 +937,6 @@ io.lsp.shutdown = false
 io.lsp.do_exit = false
 
 fun run_check(uri): void
-    io.stderr:write("RUNCHECK " .. tostring(uri) .. " doc=" .. tostring(io.lsp.docs[uri]) .. "\n")
-    io.stderr:flush()
     doc = io.lsp.docs[uri]
     if doc == nil then return end
     if io.lsp.duo_bin == nil then
@@ -940,14 +958,8 @@ fun run_check(uri): void
     if p == nil then return end
     out = p:read("*a")
     p:close()
-    io.stderr:write("CLOSED ok\n")
-    io.stderr:flush()
     diags = parse_diagnostics(out, doc.text)
-    io.stderr:write("PARSED ndiags=" .. tostring(rawlen(diags)) .. "\n")
-    io.stderr:flush()
     send_diagnostics(uri, diags)
-    io.stderr:write("SENT\n")
-    io.stderr:flush()
 end
 
 -- ── LSP message framing ─────────────────────────────────────────────────────
@@ -971,8 +983,8 @@ fun read_message(): any
         line = read_line()
         if line == nil then return nil end
         if line == "" then break end
-        p = string.find(line, "Content%-Length:")
-        if p ~= nil then
+        p = find_from(line, "Content-Length:", 1)
+        if p ~= 0 then
             rest = trim(string.sub(line, p + 15))
             n = tonumber(rest)
             if n ~= nil then content_length = n end
@@ -1116,8 +1128,6 @@ end
 
 fun handle_message(msg: any): void
     method = msg.method
-    io.stderr:write("HND " .. tostring(method) .. "\n")
-    io.stderr:flush()
     id = msg.id
     params = msg.params
     if params == nil then params = {} end

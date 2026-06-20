@@ -119,7 +119,7 @@ async function run() {
     JSON.stringify(hover));
 
   // A clean .duo doc → no diagnostics, symbols found.
-  const duo = fs.readFileSync(path.resolve(__dirname, '..', '..', 'examples', 'pattern_match_demo.duo'), 'utf8');
+  const duo = fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'examples', 'pattern_match_demo.duo'), 'utf8');
   const duoUri = 'file:///tmp/duo_smoke_pm.duo';
   diagResult = null;
   notify('textDocument/didOpen', {
