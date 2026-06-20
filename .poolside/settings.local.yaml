@@ -1,0 +1,14 @@
+tools:
+    shell:
+        allow:
+            - ls *
+            - echo *
+            - file *
+            - cd *
+            - git log *
+            - node *
+            - sleep 3
+            - sleep 2
+paths:
+    allow:
+        - path: /Users/clp/x/duo/**
