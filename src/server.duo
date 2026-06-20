@@ -358,6 +358,93 @@ fun count_char(s, ch): i64
     c
 end
 
+fun count_keyword(s, word): i64
+    c = 0
+    if s == nil then return c end
+    n = string.len(s)
+    wn = string.len(word)
+    i = 1
+    while i <= n
+        b = string.byte(s, i)
+        if is_ident_start(b) then
+            j = i
+            while j <= n and is_ident_char(string.byte(s, j)) do
+                j = j + 1
+            end
+            if j - i == wn and string.sub(s, i, j - 1) == word then
+                c = c + 1
+            end
+            i = j
+        else
+            i = i + 1
+        end
+    end
+    c
+end
+
+fun count_end(s): i64
+    count_keyword(s, "end")
+end
+
+fun starts_keyword(s, kw): bool
+    r = trim(s)
+    if not starts_with(r, kw) then return false end
+    n = string.len(r)
+    k = string.len(kw)
+    if n == k then return true end
+    not is_ident_char(string.byte(r, k + 1))
+end
+
+fun trim_after_keyword(s, kw): any
+    r = trim(s)
+    if starts_keyword(r, kw) then
+        return trim(string.sub(r, string.len(kw) + 2))
+    end
+    r
+end
+
+fun name_after_keywords(rest): any
+    r = trim(rest)
+    if starts_keyword(r, "local") or starts_keyword(r, "global") then
+        r = trim_after_keyword(r, "local")
+        r = trim_after_keyword(r, "global")
+    end
+    if starts_keyword(r, "async") then
+        r = trim_after_keyword(r, "async")
+    end
+    if starts_keyword(r, "fun") then
+        r = trim_after_keyword(r, "fun")
+    end
+    if starts_keyword(r, "function") then
+        r = trim_after_keyword(r, "function")
+    end
+    first_ident(r)
+end
+
+fun split_prefix_after_dot(prefix): str
+    out = prefix
+    p = find_from(out, ".", 1)
+    while p ~= 0
+        out = string.sub(out, p + 1)
+        p = find_from(out, ".", 1)
+    end
+    out
+end
+
+fun word_prefix(text, line, col): str
+    ln = get_line(text, line)
+    if ln == nil then return "" end
+    n = string.len(ln)
+    if col < 0 then col = 0 end
+    if col > n then col = n end
+    start = col
+    while start > 1 and is_word_char_byte(string.byte(ln, start)) do
+        start = start - 1
+    end
+    if start >= col then return "" end
+    split_prefix_after_dot(string.sub(ln, start, col))
+end
+
 fun split_lines(text): any
     out = {}
     pos = 1
@@ -585,6 +672,7 @@ fun scan_symbols(text): any
         opens = count_char(code, "{")
         closes = count_char(code, "}")
         top = (depth == 0 and brace == 0)
+        ends = count_end(code)
         brace = brace + opens - closes
         if brace < 0 then brace = 0 end
         info = head_keyword(line)
@@ -592,30 +680,32 @@ fun scan_symbols(text): any
         rest = info.rest
         indent = info.indent
         if kw == "end" then
-            depth = depth - 1
+            depth = depth + ends - 1
             if depth < 0 then depth = 0 end
         elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
-            if top and (kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" or kw == "struct") then
+            if top and (kw == "fun" or kw == "function" or kw == "enum" or kw == "concept") then
                 id = first_ident(rest)
                 if id ~= nil then
                     syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent, line)
                 end
-            end
-            depth = depth + 1
-        elseif kw == "do" or kw == "begin" then
-            depth = depth + 1
-        elseif top and kw ~= "" then
-            if kw == "alias" then
-                id = first_ident(rest)
-                if id ~= nil and starts_with(trim(id.rest), "=") then
-                    syms[rawlen(syms) + 1] = mk_sym(id.name, 26, i - 1, indent, line)
+            elseif top and (kw == "local" or kw == "global") then
+                if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
+                    id = name_after_keywords(rest)
+                    if id ~= nil then
+                        syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent, line)
+                    end
+                else
+                    id = first_ident(rest)
+                    if id ~= nil then
+                        k = 13
+                        if kw == "global" or is_upper(id.name) then k = 14 end
+                        syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent, line)
+                    end
                 end
-            elseif kw == "local" or kw == "const" then
+            elseif kw == "const" then
                 id = first_ident(rest)
                 if id ~= nil then
-                    k = 13
-                    if kw == "const" or is_upper(id.name) then k = 14 end
-                    syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent, line)
+                    syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent, line)
                 end
             else
                 tb = match_typed(code)

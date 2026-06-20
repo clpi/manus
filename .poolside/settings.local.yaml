@@ -11,6 +11,11 @@ tools:
             - sleep 2
             - timeout 15 *
             - "true"
+            - git diff *
+            - head *
+            - git show *
+            - cat *
+            - git status *
 paths:
     allow:
         - path: /Users/clp/x/duo/**
