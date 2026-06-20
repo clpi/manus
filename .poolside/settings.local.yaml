@@ -17,3 +17,5 @@ tools:
             - zig build *
             - tail *
             - sleep 30
+            - "true"
+            - cat *
