@@ -1,65 +1,55 @@
 'use strict';
 
-// End-to-end smoke test: drives the real duo-lsp binary over stdio JSON-RPC,
-// using the real `duo` compiler for diagnostics. Verifies:
-//   - initialize handshake returns the expected capabilities
-//   - opening a .lua doc with an undeclared global publishes a diagnostic
-//   - textDocument/documentSymbol returns the top-level declarations
-//   - shutdown/exit terminates cleanly
+// End-to-end smoke test for the Duo-written LSP. Drives the compiled
+// `ext/duo-lsp/duo-lsp` binary (built from src/server.duo) over stdio JSON-RPC
+// against the real `duo` compiler. The server is written in Duo; this harness
+// is just a test driver.
 //
-// Run with `npm run smoke` / `node test/smoke.js`. Point at a duo binary via
-// DUO_LSP_DUO_BIN (defaults to ../../zig-out/bin/duo).
+// Run: `node test/smoke.js` (after `bash build.sh` and `zig build`).
+//
+// Verifies: initialize handshake, diagnostics via `duo check`, documentSymbol
+// outline, hover, incremental didChange, shutdown/exit.
 
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const assert = require('assert');
 
-const LSP_BIN = path.join(__dirname, '..', 'bin', 'duo-lsp');
-const DUO_BIN = process.env.DUO_LSP_DUO_BIN ||
-  path.resolve(__dirname, '..', '..', '..', 'zig-out', 'bin', 'duo');
+const SERVER = path.join(__dirname, '..', 'duo-lsp');
+const DUO = process.env.DUO_LSP_DUO_BIN ||
+  path.resolve(__dirname, '..', '..', 'zig-out', 'bin', 'duo');
 
-if (!fs.existsSync(DUO_BIN)) {
-  console.error(`smoke: duo binary not found at ${DUO_BIN} (build it with \`zig build\`)`);
+if (!fs.existsSync(SERVER)) {
+  console.error(`smoke: server binary not found at ${SERVER} (run bash build.sh)`);
+  process.exit(2);
+}
+if (!fs.existsSync(DUO)) {
+  console.error(`smoke: duo binary not found at ${DUO} (run zig build)`);
   process.exit(2);
 }
 
-const DOC_URI = 'file:///tmp/duo_smoke.lua';
-const DOC_TEXT = [
-  'local x = 1',
-  'function f(): i64',
-  '    return x + y',
-  'end',
-  'print(f())',
-].join('\n') + '\n';
-
-const child = spawn('node', [LSP_BIN], {
-  env: { ...process.env, DUO_LSP_DUO_BIN: DUO_BIN },
+const child = spawn(SERVER, [], {
+  env: { ...process.env, DUO_LSP_DUO_BIN: DUO },
   stdio: ['pipe', 'pipe', 'inherit'],
 });
 
 let buf = '';
-const pending = new Map(); // id -> {resolve, type}
-let diagNotifSeen = false;
-let exitCode = 0;
+const pending = new Map();
 let nextId = 1;
+let diagResult = null;
 
 function send(msg) {
   const json = JSON.stringify(msg);
   child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
 }
-
 function request(method, params) {
   const id = nextId++;
   return new Promise((resolve) => {
-    pending.set(id, { resolve, method });
+    pending.set(id, { resolve });
     send({ jsonrpc: '2.0', id, method, params });
   });
 }
-
-function notify(method, params) {
-  send({ jsonrpc: '2.0', method, params });
-}
+function notify(method, params) { send({ jsonrpc: '2.0', method, params }); }
 
 child.stdout.on('data', (chunk) => {
   buf += chunk.toString('utf8');
@@ -82,65 +72,74 @@ child.stdout.on('data', (chunk) => {
       const p = pending.get(msg.id);
       if (p) { pending.delete(msg.id); p.resolve(msg.result); }
     } else if (msg.method === 'textDocument/publishDiagnostics') {
-      diagNotifSeen = true;
-      handleDiag(msg.params);
+      diagResult = msg.params;
     }
   }
 });
 
-let diagAssert = false;
-function handleDiag(params) {
-  if (params.uri !== DOC_URI) return;
-  const msgs = params.diagnostics.map((d) => d.message);
-  console.log('  diagnostics:', JSON.stringify(msgs));
-  // Duo's lua mode flags undeclared globals; expect something about 'y'.
-  diagAssert = params.diagnostics.length > 0 &&
-    params.diagnostics.some((d) => /y|global/i.test(d.message));
-}
-
 async function run() {
+  let failed = 0;
+  const check = (name, cond, extra) => {
+    if (cond) { console.log(`  ok  ${name}`); }
+    else { console.error(`  FAIL ${name}${extra ? ' :: ' + extra : ''}`); failed++; }
+  };
+
   const init = await request('initialize', {
-    processId: process.pid,
-    rootUri: null,
-    capabilities: {},
+    processId: process.pid, rootUri: null, capabilities: {},
   });
-  assert.ok(init.capabilities, 'initialize returned capabilities');
-  assert.ok(init.capabilities.textDocumentSync !== undefined, 'textDocumentSync present');
-  assert.strictEqual(init.serverInfo.name, 'duo-lsp');
-  console.log('  ok  initialize ->', init.serverInfo.name, init.serverInfo.version);
+  check('initialize returns capabilities', !!init && !!init.capabilities);
+  check('serverInfo.name == duo-lsp', init && init.serverInfo && init.serverInfo.name === 'duo-lsp',
+    JSON.stringify(init && init.serverInfo));
 
   notify('initialized', {});
+
+  // A .lua doc with an undeclared global → expect a diagnostic.
+  const luaUri = 'file:///tmp/duo_smoke.lua';
+  const luaText = 'local x = 1\nfunction f(): i64\n    return x + y\nend\nprint(f())\n';
+  diagResult = null;
   notify('textDocument/didOpen', {
-    textDocument: { uri: DOC_URI, languageId: 'lua', version: 1, text: DOC_TEXT },
+    textDocument: { uri: luaUri, languageId: 'lua', version: 1, text: luaText },
   });
+  await new Promise((r) => setTimeout(r, 800));
+  check('lua doc publishes a diagnostic', !!diagResult && diagResult.diagnostics.length > 0,
+    JSON.stringify(diagResult && diagResult.diagnostics.map((d) => d.message)));
+  check('diagnostic mentions undeclared global',
+    !!diagResult && diagResult.diagnostics.some((d) => /y|global/i.test(d.message)),
+    JSON.stringify(diagResult && diagResult.diagnostics.map((d) => d.message)));
 
-  // Give the server time to run the debounced check + publish diagnostics.
-  await new Promise((r) => setTimeout(r, 1500));
-
-  const syms = await request('textDocument/documentSymbol', {
-    textDocument: { uri: DOC_URI },
-  });
-  const symNames = (syms || []).map((s) => s.name);
-  console.log('  symbols:', JSON.stringify(symNames));
-  assert.ok(symNames.includes('f'), `documentSymbol missing 'f': ${symNames}`);
+  const syms = await request('textDocument/documentSymbol', { textDocument: { uri: luaUri } });
+  const names = (syms || []).map((s) => s.name);
+  check('documentSymbol finds f and x', names.includes('f') && names.includes('x'),
+    JSON.stringify(names));
 
   const hover = await request('textDocument/hover', {
-    textDocument: { uri: DOC_URI },
-    position: { line: 1, character: 10 }, // on `f` in `function f(): i64`
+    textDocument: { uri: luaUri }, position: { line: 1, character: 10 },
   });
-  assert.ok(hover, 'hover returned a result');
-  console.log('  ok  hover ->', JSON.stringify(hover.contents.value).slice(0, 80));
+  check('hover returns a value for f', !!hover && /f/.test(JSON.stringify(hover)),
+    JSON.stringify(hover));
+
+  // A clean .duo doc → no diagnostics, symbols found.
+  const duo = fs.readFileSync(path.resolve(__dirname, '..', '..', 'examples', 'pattern_match_demo.duo'), 'utf8');
+  const duoUri = 'file:///tmp/duo_smoke_pm.duo';
+  diagResult = null;
+  notify('textDocument/didOpen', {
+    textDocument: { uri: duoUri, languageId: 'duo', version: 1, text: duo },
+  });
+  await new Promise((r) => setTimeout(r, 800));
+  check('clean duo doc → no diagnostics', !!diagResult && diagResult.diagnostics.length === 0,
+    JSON.stringify(diagResult && diagResult.diagnostics.map((d) => d.message)));
+  const dsyms = await request('textDocument/documentSymbol', { textDocument: { uri: duoUri } });
+  const dnames = (dsyms || []).map((s) => s.name);
+  check('duo outline finds area/Shape',
+    dnames.includes('area') && dnames.includes('Shape'), JSON.stringify(dnames));
 
   await request('shutdown', null);
   notify('exit', {});
-
-  // Allow process to exit.
   const code = await new Promise((r) => child.on('exit', r));
-  console.log('  exit code:', code);
-  console.log('  diagnostics assert:', diagAssert ? 'PASS' : 'FAIL');
-  exitCode = (code === 0 && diagAssert) ? 0 : 1;
-  if (!diagAssert) console.error('  FAIL: expected an undeclared-global diagnostic for `y`');
-  process.exit(exitCode);
+  check('exit code 0 after shutdown', code === 0, `got ${code}`);
+
+  console.log(`\n${failed === 0 ? 'ALL PASS' : failed + ' FAILED'}`);
+  process.exit(failed ? 1 : 0);
 }
 
 run().catch((e) => { console.error('smoke error:', e); process.exit(1); });

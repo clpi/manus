@@ -314,15 +314,23 @@ end
 
 fun contains_char(s, ch): bool
     if s == nil then return false end
-    string.find(s, ch, 1, true) ~= nil
+    cb = string.byte(ch, 1)
+    n = string.len(s)
+    i = 1
+    while i <= n
+        if string.byte(s, i) == cb then return true end
+        i = i + 1
+    end
+    false
 end
 
 fun count_char(s, ch): i64
     c = 0
-    i = 1
+    cb = string.byte(ch, 1)
     n = string.len(s)
+    i = 1
     while i <= n
-        if string.byte(s, i) == string.byte(ch, 1) then c = c + 1 end
+        if string.byte(s, i) == cb then c = c + 1 end
         i = i + 1
     end
     c
@@ -333,7 +341,7 @@ fun split_lines(text): any
     pos = 1
     n = string.len(text)
     while pos <= n
-        nl = string.find(text, "\n", pos, true)
+        nl = string.find(text, "\n", pos)
         if nl == nil then
             out[rawlen(out) + 1] = string.sub(text, pos)
             break
@@ -355,7 +363,7 @@ fun get_line(text, idx): any
     n = string.len(text)
     cur = 0
     while pos <= n
-        nl = string.find(text, "\n", pos, true)
+        nl = string.find(text, "\n", pos)
         if nl == nil then
             if cur == idx then return string.sub(text, pos) end
             return nil
@@ -460,7 +468,7 @@ fun is_block_opener(kw): bool
         kw == "do" or kw == "begin" or kw == "struct"
 end
 
-fun kind_of(kw: str): i64
+fun kind_of(kw: any): i64
     if kw == "fun" or kw == "function" then return 12 end
     if kw == "enum" then return 10 end
     if kw == "concept" then return 11 end
@@ -530,7 +538,7 @@ fun match_plain_assign(code): any
     nil
 end
 
-fun mk_sym(name, kind, line, col, raw_line): any
+fun mk_sym(name: any, kind: any, line: any, col: any, raw_line: any): any
     s = {}
     s.name = name
     s.kind = kind
@@ -663,18 +671,18 @@ end
 fun parse_diag_line(line): any
     n = string.len(line)
     -- debug-dump form: locate ".line = "
-    p = string.find(line, ".line = ", 1, true)
+    p = string.find(line, "%.line = ")
     if p ~= nil then
         i = p + 8
         ld = parse_digits(line, i)
         if ld == nil then return nil end
         lnum = ld.val
-        p2 = string.find(line, ", .col = ", ld.next, true)
+        p2 = string.find(line, ", %.col = ")
         if p2 == nil then return nil end
         cd = parse_digits(line, p2 + 9)
         if cd == nil then return nil end
         cnum = cd.val
-        p3 = string.find(line, "}: ", cd.next, true)
+        p3 = string.find(line, "}: ")
         if p3 == nil then return nil end
         rest = string.sub(line, p3 + 3)
         sev = 1
@@ -694,8 +702,8 @@ fun parse_diag_line(line): any
         return r
     end
     -- clean form: <path>:<line>:<col>: (error|warning): msg
-    e = string.find(line, ": error: ", 1, true)
-    w = string.find(line, ": warning: ", 1, true)
+    e = string.find(line, ": error: ")
+    w = string.find(line, ": warning: ")
     marker = nil
     mlen = 0
     sev = 1
@@ -772,7 +780,7 @@ fun parse_diagnostics(out, text): any
     pos = 1
     n = string.len(out)
     while pos <= n
-        nl = string.find(out, "\n", pos, true)
+        nl = string.find(out, "\n", pos)
         line = ""
         if nl == nil then
             line = string.sub(out, pos)
@@ -904,6 +912,7 @@ io.lsp.docs = {}
 io.lsp.duo_bin = nil
 io.lsp.counter = 0
 io.lsp.shutdown = false
+io.lsp.do_exit = false
 
 fun run_check(uri): void
     doc = io.lsp.docs[uri]
@@ -952,7 +961,7 @@ fun read_message(): any
         line = read_line()
         if line == nil then return nil end
         if line == "" then break end
-        p = string.find(line, "Content-Length:", 1, true)
+        p = string.find(line, "Content%-Length:")
         if p ~= nil then
             rest = trim(string.sub(line, p + 15))
             n = tonumber(rest)
@@ -966,6 +975,19 @@ fun read_message(): any
 end
 
 -- ── LSP handlers ─────────────────────────────────────────────────────────────
+fun flag_exit(): void
+    io.lsp.do_exit = true
+end
+
+fun do_shutdown(id: any): void
+    io.lsp.shutdown = true
+    reply(id, nil)
+end
+
+fun flag_nop(): void
+    nil
+end
+
 fun handle_initialize(params): any
     caps = {}
     caps.textDocumentSync = 2
@@ -1018,6 +1040,13 @@ fun handle_did_close(params): void
     end
     io.lsp.docs[uri] = nil
     send_diagnostics(uri, {})
+end
+
+fun handle_did_save(params: any): void
+    td = params.textDocument
+    if td == nil then flag_nop() return end
+    uri = td.uri
+    if io.lsp.docs[uri] ~= nil then run_check(uri) end
 end
 
 fun handle_document_symbol(params): any
@@ -1073,7 +1102,9 @@ fun handle_definition(params): any
     r
 end
 
-fun handle_message(msg): bool
+
+
+fun handle_message(msg: any): void
     method = msg.method
     id = msg.id
     params = msg.params
@@ -1081,12 +1112,11 @@ fun handle_message(msg): bool
     if method == "initialize" then
         reply(id, handle_initialize(params))
     elseif method == "shutdown" then
-        io.lsp.shutdown = true
-        reply(id, nil)
+        do_shutdown(id)
     elseif method == "exit" then
-        return false
+        flag_exit()
     elseif method == "initialized" then
-        -- noop
+        flag_nop()
     elseif method == "textDocument/didOpen" then
         handle_did_open(params)
     elseif method == "textDocument/didChange" then
@@ -1094,8 +1124,7 @@ fun handle_message(msg): bool
     elseif method == "textDocument/didClose" then
         handle_did_close(params)
     elseif method == "textDocument/didSave" then
-        uri = params.textDocument.uri
-        if io.lsp.docs[uri] ~= nil then run_check(uri) end
+        handle_did_save(params)
     elseif method == "textDocument/documentSymbol" then
         reply(id, handle_document_symbol(params))
     elseif method == "textDocument/hover" then
@@ -1105,17 +1134,17 @@ fun handle_message(msg): bool
     elseif id ~= nil then
         reply_error(id, -32601, "method not found: " .. tostring(method))
     end
-    true
 end
 
+
 -- ── main loop ────────────────────────────────────────────────────────────────
-fun main(): void
+fun lsp_main(): void
     io.lsp.duo_bin = resolve_duo_bin()
     while true
         msg = read_message()
         if msg == nil then break end
-        cont = handle_message(msg)
-        if cont == false then break end
+        handle_message(msg)
+        if io.lsp.do_exit then break end
     end
     if io.lsp.shutdown then
         os.exit(0)
@@ -1124,4 +1153,4 @@ fun main(): void
     end
 end
 
-main()
+lsp_main()
