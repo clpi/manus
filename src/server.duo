@@ -897,6 +897,8 @@ fun reply_error(id, code, message): void
 end
 
 fun send_diagnostics(uri, diags): void
+    io.stderr:write("SEND_DIAG entry\n")
+    io.stderr:flush()
     params = {}
     params.uri = uri
     params.diagnostics = diags
@@ -915,6 +917,8 @@ io.lsp.shutdown = false
 io.lsp.do_exit = false
 
 fun run_check(uri): void
+    io.stderr:write("RUNCHECK " .. tostring(uri) .. " doc=" .. tostring(io.lsp.docs[uri]) .. "\n")
+    io.stderr:flush()
     doc = io.lsp.docs[uri]
     if doc == nil then return end
     if io.lsp.duo_bin == nil then
@@ -936,8 +940,14 @@ fun run_check(uri): void
     if p == nil then return end
     out = p:read("*a")
     p:close()
+    io.stderr:write("CLOSED ok\n")
+    io.stderr:flush()
     diags = parse_diagnostics(out, doc.text)
+    io.stderr:write("PARSED ndiags=" .. tostring(rawlen(diags)) .. "\n")
+    io.stderr:flush()
     send_diagnostics(uri, diags)
+    io.stderr:write("SENT\n")
+    io.stderr:flush()
 end
 
 -- ── LSP message framing ─────────────────────────────────────────────────────
@@ -1106,6 +1116,8 @@ end
 
 fun handle_message(msg: any): void
     method = msg.method
+    io.stderr:write("HND " .. tostring(method) .. "\n")
+    io.stderr:flush()
     id = msg.id
     params = msg.params
     if params == nil then params = {} end
