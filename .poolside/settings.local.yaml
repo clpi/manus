@@ -9,6 +9,8 @@ tools:
             - node *
             - sleep 3
             - sleep 2
+            - timeout 15 *
+            - "true"
 paths:
     allow:
         - path: /Users/clp/x/duo/**
