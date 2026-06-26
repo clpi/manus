@@ -28,10 +28,12 @@ Use explicit `return` only when you need to exit early:
 
 ```duo
 fun find_index(list: any, target: any): i64
-    for i = 1, #list do
+    local i: i64 = 1
+    while i <= #list
         if list[i] == target then
             return i
         end
+        i = i + 1
     end
     -1
 end
@@ -39,17 +41,19 @@ end
 
 ## 2. Embrace Type Annotations for Performance
 
-While Duo allows you to write untyped Lua-style code, adding static type annotations (`x: number`, `s: string`) allows the compiler to:
+While Duo allows you to write untyped Lua-style code, adding static type annotations (`x: i64`, `s: str`) allows the compiler to:
 - Generate highly optimized C code (often 4-100x faster than untyped code).
 - Perform constant-folding and dead-code elimination at compile time.
 - Provide compile-time safety and better error messages.
 
 **Idiomatic (when performance matters):**
 ```duo
-fun calculate_sum(n: number): number
-    local sum: number = 0
-    for i = 1, n do
+fun calculate_sum(n: i64): i64
+    local sum: i64 = 0
+    local i: i64 = 1
+    while i <= n
         sum = sum + i
+        i = i + 1
     end
     sum
 end
@@ -59,8 +63,10 @@ end
 ```duo
 fun calculate_sum(n)
     local sum = 0
-    for i = 1, n do
+    local i = 1
+    while i <= n
         sum = sum + i
+        i = i + 1
     end
     return sum
 end
@@ -75,7 +81,7 @@ Always declare variables with `local`. Global variables are discouraged unless a
 Duo's pattern matching (`match`) is more expressive and safer than complex `if/elseif/else` chains. Use it to handle enums, variants, and structured data clearly.
 
 ```duo
-local enum Option
+enum Option
     Some(val: any)
     None
 end

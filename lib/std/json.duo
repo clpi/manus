@@ -1,4 +1,60 @@
+-- std.json — JSON encoder and decoder for Duo.
+--
+-- Pure Duo, no external module dependencies. Objects become tables with
+-- string keys; arrays become tables with integer keys 1..n; null becomes nil;
+-- booleans/numbers/strings map to the obvious Duo values.
+--
+-- `encode` is total (never errors): tables, arrays, scalars all round-trip.
+-- `decode` is a recursive-descent parser tolerant of standard JSON (strings
+-- with \uXXXX escapes, nested arrays/objects). Returns nil on malformed input.
 
+-- ── encode ──────────────────────────────────────────────────────────────────
+
+-- JSON arrays are tables whose every key is a positive integer. A table with
+-- only string keys (an object) is not an array; an empty table is treated as
+-- an empty array (matches Duo/Lua table usage where {} grows as a sequence).
+fun json_is_array(t: any): bool
+    if type(t) ~= "table" then return false end
+    for k, _ in pairs(t) do
+        if type(k) ~= "number" then return false end
+        if k < 1 then return false end
+    end
+    true
+end
+
+fun json_escape(s: any): str
+    if s == nil then return "" end
+    out = {}
+    n = string.len(s)
+    i = 1
+    hex = "0123456789abcdef"
+    while i <= n
+        b = string.byte(s, i)
+        if b == 34 then
+            out[rawlen(out) + 1] = "\\\""
+        elseif b == 92 then
+            out[rawlen(out) + 1] = "\\\\"
+        elseif b == 10 then
+            out[rawlen(out) + 1] = "\\n"
+        elseif b == 13 then
+            out[rawlen(out) + 1] = "\\r"
+        elseif b == 9 then
+            out[rawlen(out) + 1] = "\\t"
+        elseif b == 8 then
+            out[rawlen(out) + 1] = "\\b"
+        elseif b == 12 then
+            out[rawlen(out) + 1] = "\\f"
+        elseif b < 32 then
+            hi = math.floor(b / 16) + 1
+            lo = (b % 16) + 1
+            out[rawlen(out) + 1] = "\\u00" .. string.sub(hex, hi, hi) .. string.sub(hex, lo, lo)
+        else
+            out[rawlen(out) + 1] = string.sub(s, i, i)
+        end
+        i = i + 1
+    end
+    table.concat(out)
+end
 
 fun encode(val: any): str
     if val == nil then return "null" end
@@ -7,90 +63,237 @@ fun encode(val: any): str
     end
     if type(val) == "number" then
         if val ~= val then return "null" end
-        if val == math.huge then return "1.7976931348623157e+308" end
-        if val == -math.huge then return "-1.7976931348623157e+308" end
+        if val == math.huge then return "1e999" end
+        if val == -math.huge then return "-1e999" end
         return tostring(val)
     end
     if type(val) == "string" then
-        s = string.gsub(val, "\\", "\\\\")
-        s = string.gsub(s, "\"", "\\\"")
-        s = string.gsub(s, "\n", "\\n")
-        s = string.gsub(s, "\t", "\\t")
-        s = string.gsub(s, "\r", "\\r")
-        return string.format("\"%s\"", s)
+        return "\"" .. json_escape(val) .. "\""
     end
     if type(val) == "table" then
-        if std.collections.is_array(val) then
+        if json_is_array(val) then
             parts = {}
-            for i = 1, #val
-                table.insert(parts, encode(val[i]))
+            i = 1
+            while val[i] ~= nil
+                parts[rawlen(parts) + 1] = encode(val[i])
+                i = i + 1
             end
             return "[" .. table.concat(parts, ",") .. "]"
-        else
-            parts = {}
-            for k, v in pairs(val)
-                if type(k) == "string" then
-                    key_str = encode(k)
-                    table.insert(parts, key_str .. ":" .. encode(v))
-                end
-            end
-            return "{" .. table.concat(parts, ",") .. "}"
         end
+        parts = {}
+        for k, v in pairs(val) do
+            if type(k) == "string" then
+                parts[rawlen(parts) + 1] = encode(k) .. ":" .. encode(v)
+            end
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
     end
     "null"
 end
 
-fun std_json_has_key(val: any, key: str): bool
-    if type(val) ~= "table" then return false end
-    val[key] ~= nil
+
+
+-- ── decode ──────────────────────────────────────────────────────────────────
+-- Recursive-descent over a {s=string, i=index} cursor table. Passes the cursor
+-- explicitly to avoid nested-function codegen quirks.
+
+fun json_skip_ws(cur)
+    s = cur.s
+    n = string.len(s)
+    while cur.i <= n
+        b = string.byte(s, cur.i)
+        if b == 32 or b == 9 or b == 10 or b == 13 then
+            cur.i = cur.i + 1
+        else
+            break
+        end
+    end
+end
+
+fun json_hex4(s): i64
+    v = 0
+    i = 1
+    while i <= 4
+        b = string.byte(s, i)
+        d = 0
+        if b >= 48 and b <= 57 then
+            d = b - 48
+        elseif b >= 65 and b <= 70 then
+            d = b - 55
+        elseif b >= 97 and b <= 102 then
+            d = b - 87
+        end
+        v = v * 16 + d
+        i = i + 1
+    end
+    v
+end
+
+fun json_utf8_char(cp): str
+    if cp < 128 then
+        return string.char(cp)
+    end
+    if cp < 2048 then
+        b1 = math.floor(cp / 64) + 192
+        b2 = (cp % 64) + 128
+        return string.char(b1) .. string.char(b2)
+    end
+    b1 = math.floor(cp / 4096) + 224
+    b2 = math.floor((cp % 4096) / 64) + 128
+    b3 = (cp % 64) + 128
+    return string.char(b1) .. string.char(b2) .. string.char(b3)
+end
+
+fun json_string(cur): any
+    cur.i = cur.i + 1
+    s = cur.s
+    n = string.len(s)
+    out = {}
+    while cur.i <= n
+        b = string.byte(s, cur.i)
+        if b == 34 then
+            cur.i = cur.i + 1
+            return table.concat(out)
+        end
+        if b == 92 then
+            cur.i = cur.i + 1
+            e = string.byte(s, cur.i)
+            if e == 110 then
+                out[rawlen(out) + 1] = "\n"
+            elseif e == 116 then
+                out[rawlen(out) + 1] = "\t"
+            elseif e == 114 then
+                out[rawlen(out) + 1] = "\r"
+            elseif e == 34 then
+                out[rawlen(out) + 1] = "\""
+            elseif e == 92 then
+                out[rawlen(out) + 1] = "\\"
+            elseif e == 47 then
+                out[rawlen(out) + 1] = "/"
+            elseif e == 98 then
+                out[rawlen(out) + 1] = string.char(8)
+            elseif e == 102 then
+                out[rawlen(out) + 1] = string.char(12)
+            elseif e == 117 then
+                hex = string.sub(s, cur.i + 1, cur.i + 4)
+                cp = json_hex4(hex)
+                out[rawlen(out) + 1] = json_utf8_char(cp)
+                cur.i = cur.i + 4
+            else
+                out[rawlen(out) + 1] = string.char(e)
+            end
+            cur.i = cur.i + 1
+        else
+            out[rawlen(out) + 1] = string.sub(s, cur.i, cur.i)
+            cur.i = cur.i + 1
+        end
+    end
+    table.concat(out)
+end
+
+fun json_number(cur): any
+    s = cur.s
+    start = cur.i
+    n = string.len(s)
+    while cur.i <= n
+        b = string.byte(s, cur.i)
+        if (b >= 48 and b <= 57) or b == 45 or b == 43 or b == 46 or b == 101 or b == 69 then
+            cur.i = cur.i + 1
+        else
+            break
+        end
+    end
+    num_str = string.sub(s, start, cur.i - 1)
+    tonumber(num_str)
+end
+
+fun json_value(cur): any
+    json_skip_ws(cur)
+    s = cur.s
+    if cur.i > string.len(s) then return nil end
+    b = string.byte(s, cur.i)
+    if b == 123 then
+        cur.i = cur.i + 1
+        obj = {}
+        json_skip_ws(cur)
+        if string.byte(cur.s, cur.i) == 125 then
+            cur.i = cur.i + 1
+            return obj
+        end
+        while true
+            json_skip_ws(cur)
+            key = json_string(cur)
+            json_skip_ws(cur)
+            cur.i = cur.i + 1
+            val = json_value(cur)
+            obj[key] = val
+            json_skip_ws(cur)
+            b2 = string.byte(cur.s, cur.i)
+            if b2 == 44 then
+                cur.i = cur.i + 1
+            elseif b2 == 125 then
+                cur.i = cur.i + 1
+                break
+            else
+                break
+            end
+        end
+        return obj
+    end
+    if b == 91 then
+        cur.i = cur.i + 1
+        arr = {}
+        json_skip_ws(cur)
+        if string.byte(cur.s, cur.i) == 93 then
+            cur.i = cur.i + 1
+            return arr
+        end
+        while true
+            val = json_value(cur)
+            arr[rawlen(arr) + 1] = val
+            json_skip_ws(cur)
+            b2 = string.byte(cur.s, cur.i)
+            if b2 == 44 then
+                cur.i = cur.i + 1
+            elseif b2 == 93 then
+                cur.i = cur.i + 1
+                break
+            else
+                break
+            end
+        end
+        return arr
+    end
+    if b == 34 then
+        return json_string(cur)
+    end
+    if b == 116 then
+        cur.i = cur.i + 4
+        return true
+    end
+    if b == 102 then
+        cur.i = cur.i + 5
+        return false
+    end
+    if b == 110 then
+        cur.i = cur.i + 4
+        return nil
+    end
+    json_number(cur)
 end
 
 fun decode(s: str): any
-    nil
-end
-
-fun pretty(val: any, indent: i64): str
-    if indent <= 0 then indent = 2 end
-    if val == nil then return "null" end
-    if type(val) == "boolean" then
-        if val then return "true" else return "false" end
-    end
-    if type(val) == "number" then
-        return tostring(val)
-    end
-    if type(val) == "string" then
-        return encode(val)
-    end
-    if type(val) == "table" then
-        if std.collections.is_array(val) then
-            if #val == 0 then return "[]" end
-            pad = string.rep(" ", indent)
-            parts = {}
-            for i = 1, #val
-                table.insert(parts, pad .. pretty(val[i], indent))
-            end
-            return "[\n" .. table.concat(parts, ",\n") .. "\n]"
-        else
-            keys = {}
-            for k, _ in pairs(val)
-                if type(k) == "string" then
-                    table.insert(keys, k)
-                end
-            end
-            if #keys == 0 then return "{}" end
-            pad = string.rep(" ", indent)
-            parts = {}
-            for _, k in ipairs(keys)
-                table.insert(parts, pad .. encode(k) .. ": " .. pretty(val[k], indent))
-            end
-            return "{\n" .. table.concat(parts, ",\n") .. "\n}"
-        end
-    end
-    "null"
+    if s == nil or s == "" then return nil end
+    cur = {}
+    cur.s = s
+    cur.i = 1
+    json_skip_ws(cur)
+    json_value(cur)
 end
 
 M = {}
+M.is_array = json_is_array
+M.escape = json_escape
 M.encode = encode
 M.decode = decode
-M.pretty = pretty
 M

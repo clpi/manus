@@ -30,7 +30,7 @@ Optional passes between semantic analysis and codegen:
 
 ## Status
 
-Duo is actively developed with 345+ unit tests, compile-fail tests, and a 40-benchmark performance gate (`zig build bench` requires Duo to beat or tie C). The compiler produces native binaries, shared libraries, and WebAssembly outputs. See [Roadmap](./roadmap.md) for the current feature set and planned work.
+Duo is actively developed with 393+ unit tests, compile-fail tests, and a 40-benchmark performance gate (`zig build bench` requires Duo to beat or tie C). The compiler produces native binaries, shared libraries, and WebAssembly outputs. See [Roadmap](./roadmap.md) for the current feature set and planned work.
 
 ## Quick Start
 

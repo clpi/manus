@@ -61,9 +61,9 @@ fun marshal(v: any): str
         else
             -- object
             keys = {}
-            for k in pairs(v) do
-                if type(k) == "string" then
-                    keys[rawlen(keys) + 1] = k
+            for mk in pairs(v) do
+                if type(mk) == "string" then
+                    keys[rawlen(keys) + 1] = mk
                 end
             end
             if rawlen(keys) == 0 then return "{}" end
@@ -166,8 +166,7 @@ fun parse_value(p: any): any
                 return nil, "expected colon at position " .. tostring(p.pos)
             end
             p.pos = p.pos + 1
-            val, verr = parse_value(p)
-            if verr ~= nil then return nil, verr end
+            val = parse_value(p)
             obj[key] = val
             skip_ws(p)
             if p.pos > string.len(p.s) then return nil, "unterminated object" end
@@ -193,8 +192,7 @@ fun parse_value(p: any): any
             return arr, nil
         end
         while true
-            val, verr = parse_value(p)
-            if verr ~= nil then return nil, verr end
+            val = parse_value(p)
             arr[rawlen(arr) + 1] = val
             skip_ws(p)
             if p.pos > string.len(p.s) then return nil, "unterminated array" end
@@ -295,8 +293,7 @@ fun unmarshal(s: str): any
     s = string.gsub(s, "%s+$", "")
     if s == "" then return nil, "empty input" end
     parser = {s = s, pos = 1}
-    v, err = parse_value(parser)
-    if err ~= nil then return nil, err end
+    v = parse_value(parser)
     skip_ws(parser)
     if parser.pos <= string.len(s) then
         return nil, "trailing data at position " .. tostring(parser.pos)

@@ -4261,9 +4261,27 @@ pub const CodeGen = struct {
                     const hash = calc_lua_hash(f.field);
                     // Use raw access for local-variable table fields (avoids __index overhead)
                     const getter = if (f.obj.* == .name and self.is_local_name(f.obj.name.ident)) "lua_table_get_raw" else "lua_table_get";
-                    self.p("{s}(", .{getter});
-                    try self.emit_expr(f.obj);
-                    self.p(", lua_val_from_literal(\"{s}\", {d}, {d}))", .{ f.field, hash, f.field.len });
+                    const ft = self.expr_type(expr);
+                    // When field type is known, extract native value for downstream native ops
+                    if (ft.is_numeric()) {
+                        self.p("((", .{});
+                        self.typ(ft);
+                        self.p(")lua_to_num({s}(", .{getter});
+                        try self.emit_expr(f.obj);
+                        self.p(", lua_val_from_literal(\"{s}\", {d}, {d}))))", .{ f.field, hash, f.field.len });
+                    } else if (ft == .bool) {
+                        self.p("lua_to_bool({s}(", .{getter});
+                        try self.emit_expr(f.obj);
+                        self.p(", lua_val_from_literal(\"{s}\", {d}, {d})))", .{ f.field, hash, f.field.len });
+                    } else if (ft == .str) {
+                        self.p("lua_to_str({s}(", .{getter});
+                        try self.emit_expr(f.obj);
+                        self.p(", lua_val_from_literal(\"{s}\", {d}, {d})))", .{ f.field, hash, f.field.len });
+                    } else {
+                        self.p("{s}(", .{getter});
+                        try self.emit_expr(f.obj);
+                        self.p(", lua_val_from_literal(\"{s}\", {d}, {d}))", .{ f.field, hash, f.field.len });
+                    }
                 } else {
                     try self.emit_expr(f.obj);
                     self.p(".{s}", .{f.field});
@@ -4878,7 +4896,7 @@ pub const CodeGen = struct {
                     self.ind();
                     switch (fld) {
                         .indexed => |idx| {
-                            self.p("lua_table_set(tmp, ", .{});
+                            self.p("lua_table_set_raw(tmp, ", .{});
                             try self.emit_as_lua_value(idx.key);
                             self.p(", ", .{});
                             try self.emit_as_lua_value(idx.val);
@@ -4886,12 +4904,12 @@ pub const CodeGen = struct {
                         },
                         .named => |nmd| {
                             const hash = calc_lua_hash(nmd.key);
-                            self.p("lua_table_set(tmp, lua_val_from_literal(\"{s}\", {d}, {d}), ", .{ nmd.key, hash, nmd.key.len });
+                            self.p("lua_table_set_raw(tmp, lua_val_from_literal(\"{s}\", {d}, {d}), ", .{ nmd.key, hash, nmd.key.len });
                             try self.emit_as_lua_value(nmd.val);
                             self.p(");\n", .{});
                         },
                         .positional => |pos_expr| {
-                            self.p("lua_table_set(tmp, lua_val_from_num({d}), ", .{pos_idx});
+                            self.p("lua_table_set_raw(tmp, lua_val_from_num({d}), ", .{pos_idx});
                             try self.emit_as_lua_value(pos_expr);
                             self.p(");\n", .{});
                             pos_idx += 1.0;
@@ -7321,6 +7339,7 @@ const duo_runtime =
     \\        free(old_vals);
     \\    }
     \\    t->hash_inline = false;
+    \\    t->last_key = lua_val_nil();
     \\}
     \\
     \\static inline void lua_table_set_raw(lua_Value table, lua_Value key, lua_Value val) {
@@ -7369,11 +7388,15 @@ const duo_runtime =
     \\            }
     \\            t->hash_keys[idx] = cur_key;
     \\            t->hash_vals[idx] = cur_val;
+    \\            t->last_key = cur_key;
+    \\            t->last_idx = (int)idx;
     \\            t->count++;
     \\            return;
     \\        }
     \\        if (lua_eq(t->hash_keys[idx], cur_key)) {
     \\            t->hash_vals[idx] = cur_val;
+    \\            t->last_key = cur_key;
+    \\            t->last_idx = (int)idx;
     \\            return;
     \\        }
     \\        /* Robin Hood: steal from richer entries (those closer to their ideal position) */
@@ -8232,6 +8255,7 @@ const duo_runtime =
     \\            if (t->capacity > 0) memset(t->hash_keys, 0, t->capacity * sizeof(lua_Value));
     \\            memset(t->hash_vals, 0, t->capacity * sizeof(lua_Value));
     \\            t->count = 0;
+    \\            t->last_key = lua_val_nil();
     \\        }
     \\    }
     \\    return lua_val_nil();

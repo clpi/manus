@@ -197,6 +197,7 @@ duo compile <file>        # Compile to native binary or object
 duo run <file>            # Compile and run
 duo check <file>          # Type-check only
 duo dump-c <file>         # Print generated C code
+duo fmt <file>            # Format a .duo/.lua file
 duo init [name]           # Create a new Duo project
 duo build [target]        # Build from build.duo
 duo completion <shell>    # Shell completions (bash, zsh, fish, nushell)

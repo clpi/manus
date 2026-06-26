@@ -34,6 +34,7 @@ duo build   [target]            build the default or named build.duo target
 duo run     [file|target]       compile and run a file, or run a build target
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
+duo fmt     <file>              format a .duo/.lua file
 duo completion <shell>          generate shell completions (bash, zsh, fish, nu)
 
 Options:
@@ -106,7 +107,7 @@ Many benchmarks show 0.000000s because Duo's constant-folding and dead-code elim
 Every push runs:
 
 - `zig build` — compiler build
-- `zig build unit-test` — all 345 unit tests
+- `zig build unit-test` — all 393 unit tests
 - `zig build test` — compile-fail tests
 - WASM compilation smoke test
 - WASM codegen compatibility tests

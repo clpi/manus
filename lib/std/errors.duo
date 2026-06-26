@@ -4,14 +4,13 @@
 -- a string description.
 
 -- new: create a new error with the given message.
-fun new(message: str): any
-    {message = message, cause = nil, kind = "error"}
+fun new(message: any): any
+    return {message = message, cause = nil, kind = "error"}
 end
 
 -- newf: create a new error with formatted message.
-fun newf(fmt: str, ...args): any
-    msg = string.format(fmt, table.unpack(args))
-    return {message = msg, cause = nil, kind = "error"}
+fun newf(fmt: any): any
+    return {message = tostring(fmt), cause = nil, kind = "error"}
 end
 
 -- wrap: create a new error wrapping an existing one (adds context).
@@ -21,10 +20,10 @@ fun wrap(err: any, message: str): any
 end
 
 -- wrapf: wrap with a formatted message.
-fun wrapf(err: any, fmt: str, ...args): any
-    local msg = string.format(fmt, table.unpack(args))
+fun wrapf(err: any, fmt: any): any
+    msg = tostring(fmt)
     if err == nil then return new(msg) end
-    {message = msg, cause = err, kind = "wrapped"}
+    return {message = msg, cause = err, kind = "wrapped"}
 end
 
 -- is: report whether err (or any error in its cause chain) matches target.

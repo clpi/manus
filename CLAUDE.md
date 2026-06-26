@@ -26,7 +26,7 @@ zig build run -- <cmd> <file>  # run compiler without installing
 ```
 
 CLI (`duo <cmd>`): `compile`, `run`, `check` (type-check only), `dump-c` (print generated C),
-`build`, `init`, `completion`. WASM: `duo compile f.lua --target wasm32-wasi -o f.wasm`
+`build`, `init`, `fmt` (format), `completion`. WASM: `duo compile f.lua --target wasm32-wasi -o f.wasm`
 (uses `zig cc`, emits a WASI module exporting `main`).
 
 ## Tests

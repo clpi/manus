@@ -105,7 +105,7 @@ fun parse_int(s: str, base: i64): any
 end
 
 -- atoi: convenience for parse_int(s, 10).
-fun atoi(s: str): any
+fun parse_int_10(s: str): any
     parse_int(s, 10)
 end
 
@@ -228,7 +228,7 @@ M.format_int = format_int
 M.itoa = itoa
 M.format_float = format_float
 M.parse_int = parse_int
-M.atoi = atoi
+M.atoi = parse_int_10
 M.parse_float = parse_float
 M.parse_bool = parse_bool
 M.quote = quote

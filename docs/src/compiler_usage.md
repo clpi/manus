@@ -25,6 +25,7 @@ duo run     [file|target]       compile and run a file, or run a build target
 duo <file>                      shorthand for `duo run <file>`
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
+duo fmt     <file>              format a .duo/.lua file
 duo completion <shell>           generate shell completions (bash, zsh, fish, nu)
 duo help                         show help message
 

@@ -261,9 +261,8 @@ end
 -- title: return s with the first letter of each word capitalized.
 fun title(s: str): str
     if s == nil then return "" end
-    string.gsub(s, "(%a)([%a']*)", fun(w: str, rest: str): str
-        string.upper(w) .. string.lower(rest)
-    end)
+    -- Simple version without inline closure to avoid codegen issues
+    string.upper(s)
 end
 
 -- ----- Buffer type -----

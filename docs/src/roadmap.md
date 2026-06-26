@@ -6,7 +6,7 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 - **Compiler**: Zig-based, ahead-of-time compiler that lowers Duo/Lua source to C and shells out to `clang` (or `zig cc` for WASM).
 - **Source dialects**: `.duo` files (Duo mode, local-by-default, typed features) and `.lua` files (Lua 5.5 mode, global-by-default).
-- **Tests**: 345+ unit tests plus compile-fail tests and a 40-benchmark performance gate (`zig build bench` requires Duo to beat or tie C).
+- **Tests**: 393+ unit tests plus compile-fail tests and a 40-benchmark performance gate (`zig build bench` requires Duo to beat or tie C).
 - **Outputs**: native executables, shared libraries, and `wasm32-wasi` modules.
 
 ## Implemented
@@ -57,7 +57,7 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 - Profile-guided optimization (`--pgo`), shared-memory WASM (`--shared-memory`), library mode (`--lib`), and dynamic chunk loading (`--load-chunk`).
 - `duo` and `duo shell` start an interactive shell that compiles/runs one Duo
   line through the normal pipeline, supports `!command` host escapes, and
-  `.duo` scripts may start with a Unix shebang.
+  `.duo` scripts may start with a Unix shebang. Added `duo fmt` for formatting.
 - Shell completions for bash, zsh, fish, and nushell.
 
 ## Partial / in progress

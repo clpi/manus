@@ -1,9 +1,7 @@
 -- std.slices — slice helper utilities (mirrors Go 1.21 slices package)
--- Provides generic operations on array-like tables: sort, binary search,
--- clip, clone, compact, contains, index, insert, delete, grow, reverse.
+-- All functions prefixed with std_slices_ to avoid C name collisions.
 
--- clip: trim the array to length n (in-place).
-fun clip(arr: any, n: i64): any
+fun std_slices_clip(arr: any, n: i64): any
     if arr == nil then return arr end
     len = rawlen(arr)
     if n >= len then return arr end
@@ -16,8 +14,7 @@ fun clip(arr: any, n: i64): any
     arr
 end
 
--- clone: return a shallow copy of the array portion of arr.
-fun clone(arr: any): any
+fun std_slices_clone(arr: any): any
     if arr == nil then return {} end
     out = {}
     i = 1
@@ -28,11 +25,10 @@ fun clone(arr: any): any
     out
 end
 
--- compact: remove consecutive duplicate elements, returning a new slice.
-fun compact(arr: any, eq: any): any
+fun std_slices_compact(arr: any, eq: any): any
     if arr == nil then return {} end
     n = rawlen(arr)
-    if n <= 1 then return clone(arr) end
+    if n <= 1 then return std_slices_clone(arr) end
     out = {}
     out[1] = arr[1]
     j = 1
@@ -47,8 +43,7 @@ fun compact(arr: any, eq: any): any
     out
 end
 
--- contains: return true if v is found in arr (using ==).
-fun contains(arr: any, v: any): bool
+fun std_slices_contains(arr: any, v: any): bool
     if arr == nil then return false end
     i = 1
     while i <= rawlen(arr)
@@ -58,8 +53,7 @@ fun contains(arr: any, v: any): bool
     false
 end
 
--- index: return the 1-based index of the first occurrence of v, or -1.
-fun index(arr: any, v: any): i64
+fun std_slices_index(arr: any, v: any): i64
     if arr == nil then return 0 - 1 end
     i = 1
     while i <= rawlen(arr)
@@ -69,8 +63,7 @@ fun index(arr: any, v: any): i64
     0 - 1
 end
 
--- index_func: return the 1-based index of the first element where f(e) is true.
-fun index_func(arr: any, f: any): i64
+fun std_slices_index_func(arr: any, f: any): i64
     if arr == nil then return 0 - 1 end
     i = 1
     while i <= rawlen(arr)
@@ -80,8 +73,7 @@ fun index_func(arr: any, f: any): i64
     0 - 1
 end
 
--- insert: insert v at position i (1-based), shifting elements right. Returns a new slice.
-fun insert(arr: any, i: i64, v: any): any
+fun std_slices_insert(arr: any, i: i64, v: any): any
     if arr == nil then arr = {} end
     n = rawlen(arr)
     if i < 1 then i = 1 end
@@ -101,11 +93,10 @@ fun insert(arr: any, i: i64, v: any): any
     out
 end
 
--- delete: remove the element at index i (1-based), shifting elements left. Returns a new slice.
-fun delete(arr: any, i: i64): any
+fun std_slices_delete(arr: any, i: i64): any
     if arr == nil then return {} end
     n = rawlen(arr)
-    if i < 1 or i > n then return clone(arr) end
+    if i < 1 or i > n then return std_slices_clone(arr) end
     out = {}
     j = 1
     while j <= n
@@ -117,8 +108,7 @@ fun delete(arr: any, i: i64): any
     out
 end
 
--- delete_func: remove all elements where f(e) returns true. Returns a new slice.
-fun delete_func(arr: any, f: any): any
+fun std_slices_delete_func(arr: any, f: any): any
     if arr == nil then return {} end
     out = {}
     i = 1
@@ -131,8 +121,7 @@ fun delete_func(arr: any, f: any): any
     out
 end
 
--- reverse: reverse the array portion in-place (like Go's slices.Reverse).
-fun reverse(arr: any): void
+fun std_slices_reverse(arr: any): void
     if arr == nil then return end
     n = rawlen(arr)
     i = 1
@@ -144,8 +133,7 @@ fun reverse(arr: any): void
     end
 end
 
--- replace: replace elements from i..j with v (not full Go semantics; single-value insert).
-fun replace(arr: any, i: i64, j: i64, v: any): any
+fun std_slices_replace(arr: any, i: i64, j: i64, v: any): any
     if arr == nil then arr = {} end
     n = rawlen(arr)
     if i < 1 then i = 1 end
@@ -166,13 +154,11 @@ fun replace(arr: any, i: i64, j: i64, v: any): any
     out
 end
 
--- grow: ensure capacity by at least n (no-op in Duo since tables grow dynamically).
-fun grow(arr: any, n: i64): any
+fun std_slices_grow(arr: any, n: i64): any
     arr
 end
 
--- binary_search: find v in a sorted slice using less. Returns (index, found).
-fun binary_search(arr: any, v: any, less: any): any
+fun std_slices_binary_search(arr: any, v: any, less: any): any
     if arr == nil then return 0, false end
     lo = 0
     hi = rawlen(arr)
@@ -189,8 +175,7 @@ fun binary_search(arr: any, v: any, less: any): any
     return lo + 1, false
 end
 
--- max: return the maximum element using less (or nil for empty).
-fun max(arr: any, less: any): any
+fun std_slices_max(arr: any, less: any): any
     if arr == nil then return nil end
     n = rawlen(arr)
     if n == 0 then return nil end
@@ -203,8 +188,7 @@ fun max(arr: any, less: any): any
     m
 end
 
--- min: return the minimum element using less (or nil for empty).
-fun min(arr: any, less: any): any
+fun std_slices_min(arr: any, less: any): any
     if arr == nil then return nil end
     n = rawlen(arr)
     if n == 0 then return nil end
@@ -217,8 +201,7 @@ fun min(arr: any, less: any): any
     m
 end
 
--- sorted: check if arr is sorted according to less.
-fun sorted(arr: any, less: any): bool
+fun std_slices_sorted(arr: any, less: any): bool
     if arr == nil then return true end
     n = rawlen(arr)
     i = 2
@@ -229,8 +212,7 @@ fun sorted(arr: any, less: any): bool
     true
 end
 
--- chunk: split a slice into chunks of size n. Returns a table of slices.
-fun chunk(arr: any, n: i64): any
+fun std_slices_chunk(arr: any, n: i64): any
     if arr == nil then return {} end
     if n == nil or n < 1 then n = 1 end
     out = {}
@@ -249,21 +231,21 @@ fun chunk(arr: any, n: i64): any
 end
 
 M = {}
-M.clip = clip
-M.clone = clone
-M.compact = compact
-M.contains = contains
-M.index = index
-M.index_func = index_func
-M.insert = insert
-M.delete = delete
-M.delete_func = delete_func
-M.reverse = reverse
-M.replace = replace
-M.grow = grow
-M.binary_search = binary_search
-M.max = max
-M.min = min
-M.sorted = sorted
-M.chunk = chunk
+M.clip = std_slices_clip
+M.clone = std_slices_clone
+M.compact = std_slices_compact
+M.contains = std_slices_contains
+M.index = std_slices_index
+M.index_func = std_slices_index_func
+M.insert = std_slices_insert
+M.delete = std_slices_delete
+M.delete_func = std_slices_delete_func
+M.reverse = std_slices_reverse
+M.replace = std_slices_replace
+M.grow = std_slices_grow
+M.binary_search = std_slices_binary_search
+M.max = std_slices_max
+M.min = std_slices_min
+M.sorted = std_slices_sorted
+M.chunk = std_slices_chunk
 M

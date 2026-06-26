@@ -3,7 +3,7 @@
 
 -- type_of: return a type descriptor string for a value.
 -- Returns one of: "nil", "boolean", "number", "string", "table", "function".
-fun typeof(v: any): str
+fun std_reflect_typeof(v: any): str
     return type(v)
 end
 
@@ -94,7 +94,7 @@ fun to_bool(v: any): bool
 end
 
 -- fields: return the key-value pairs of a table as an array of {key, value, type}.
-fun fields(v: any): any
+fun std_reflect_fields(v: any): any
     if v == nil or type(v) ~= "table" then return {} end
     out = {}
     for k, val in pairs(v)
@@ -190,7 +190,7 @@ fun call(fn: any, args: any): any
 end
 
 M = {}
-M.typeof = typeof
+M.typeof = std_reflect_typeof
 M.kind = kind
 M.size = size
 M.is_nil = is_nil
@@ -200,7 +200,7 @@ M.to_int = to_int
 M.to_float = to_float
 M.to_string = to_string
 M.to_bool = to_bool
-M.fields = fields
+M.fields = std_reflect_fields
 M.field_names = field_names
 M.field_by_name = field_by_name
 M.set_field = set_field
