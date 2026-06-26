@@ -13,7 +13,7 @@ fun new_heap(less: any): any
 end
 
 -- heap_up: sift up the element at index i.
-fun heap_up(h: any, i: i64): void
+fun heap_up(h: any, i: any): void
     while i > 1
         parent = i / 2
         if h.less(h.data[i], h.data[parent]) then
@@ -26,7 +26,7 @@ fun heap_up(h: any, i: i64): void
 end
 
 -- heap_down: sift down the element at index i.
-fun heap_down(h: any, i: i64): void
+fun heap_down(h: any, i: any): void
     n = rawlen(h.data)
     while true
         left = i * 2
@@ -192,7 +192,7 @@ end
 -- ===== Ring (circular buffer) =====
 
 -- new_ring: create a ring with n slots.
-fun new_ring(n: i64): any
+fun new_ring(n: any): any
     if n == nil or n < 1 then n = 1 end
     -- create n linked nodes
     head = {value = nil, next = nil}
