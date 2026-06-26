@@ -1,4 +1,0 @@
-fun g(): str
-    return tostring(42)
-end
-print(g())

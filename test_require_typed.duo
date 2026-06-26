@@ -1,2 +1,0 @@
-mod = req "test_mod"
-print(mod.foo("hello", "world"))

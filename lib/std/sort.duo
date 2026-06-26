@@ -89,26 +89,37 @@ end
 
 -- Ascending integer sort.
 fun std_sort_less_int(a: any, b: any): bool
-    a < b
+    return a < b
 end
 
 -- Descending integer sort.
 fun std_sort_greater_int(a: any, b: any): bool
-    a > b
+    return a > b
 end
 
 fun ints(arr: any): void
-    sort(arr, std_sort_less_int)
+    if arr == nil then return end
+    n = rawlen(arr)
+    if n < 2 then return end
+    std_sort_quicksort(arr, 1, n, std_sort_less_int)
 end
 
 fun ints_desc(arr: any): void
-    sort(arr, std_sort_greater_int)
+    if arr == nil then return end
+    n = rawlen(arr)
+    if n < 2 then return end
+    std_sort_quicksort(arr, 1, n, std_sort_greater_int)
+end
+
+fun std_sort_less_str(a: any, b: any): bool
+    return tostring(a) < tostring(b)
 end
 
 fun strings(arr: any): void
-    sort(arr, fun(a: any, b: any): bool
-        tostring(a) < tostring(b)
-    end)
+    if arr == nil then return end
+    n = rawlen(arr)
+    if n < 2 then return end
+    std_sort_quicksort(arr, 1, n, std_sort_less_str)
 end
 
 -- is_sorted: returns true if arr is sorted according to less.
@@ -138,15 +149,22 @@ fun search(n: any, f: any): any
     lo
 end
 
--- search_sorted: binary search for value `v` in a sorted arr, return index or -1.
-fun search_sorted(arr: any, v: any, less: any): i64
+-- search_sorted: binary search for value v in a sorted arr.
+-- Returns 1-based index or -1. Uses iterative search (no closures).
+fun search_sorted(arr: any, v: any, less: any): any
     if arr == nil then return 0 - 1 end
     n = rawlen(arr)
-    idx = search(n, fun(i: i64): bool
-        less(v, arr[i])
-    end)
-    if idx < n and arr[idx + 1] == v then
-        return idx + 1
+    lo = 0
+    hi = n
+    while lo < hi
+        mid = lo + (hi - lo) / 2
+        if less(v, arr[mid + 1]) then
+            hi = mid
+        elseif less(arr[mid + 1], v) then
+            lo = mid + 1
+        else
+            return mid + 1
+        end
     end
     0 - 1
 end

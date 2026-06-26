@@ -46,27 +46,26 @@ handle_option(Option.None)
 
 ## Object-Oriented Style
 
-Just like Lua, you can implement Object-Oriented patterns using metatables:
+Just like Lua, you can implement Object-Oriented patterns using tables and metatables:
 
 ```duo
-local Point = {}
-Point.__index = Point
-
-fn Point.new(x: number, y: number): any
-    local self = {
+-- A simple Point "class" using factory function pattern
+fun Point.new(x: f64, y: f64)
+    {
         x = x,
-        y = y
+        y = y,
+        move = fun(self, dx: f64, dy: f64)
+            self.x = self.x + dx
+            self.y = self.y + dy
+        end,
+        describe = fun(self)
+            "Point(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+        end,
     }
-    setmetatable(self, Point)
-    return self
 end
 
-fn Point:move(dx: number, dy: number)
-    self.x = self.x + dx
-    self.y = self.y + dy
-end
-
-local p = Point.new(10, 20)
-p:move(5, -5)
-print(p.x, p.y)
+p = Point.new(10.0, 20.0)
+print(p.describe(p))
+p.move(p, 5.0, -5.0)
+print(p.describe(p))
 ```

@@ -1,6 +1,7 @@
 -- std.encoding_json — JSON encoder/decoder (mirrors Go's encoding/json)
 -- All recursive helpers are merged into single self-referencing functions
 -- because Duo does not support forward references between functions.
+-- Error handling uses p.err field instead of multi-return to avoid codegen issues.
 
 -- marshal: encode a Duo value as a JSON string.
 fun marshal(v: any): str
@@ -116,9 +117,14 @@ fun skip_ws(p: any): void
 end
 
 -- parse_value: parse a JSON value. Self-referencing for nested objects/arrays.
+-- Sets p.err to an error string on failure (nil on success).
 fun parse_value(p: any): any
+    if p.err ~= nil then return nil end
     skip_ws(p)
-    if p.pos > string.len(p.s) then return nil, "unexpected end of input" end
+    if p.pos > string.len(p.s) then
+        p.err = "unexpected end of input"
+        return nil
+    end
     ch = string.sub(p.s, p.pos, p.pos)
     if ch == "{" then
         -- parse object
@@ -127,13 +133,17 @@ fun parse_value(p: any): any
         skip_ws(p)
         if p.pos <= string.len(p.s) and string.sub(p.s, p.pos, p.pos) == "}" then
             p.pos = p.pos + 1
-            return obj, nil
+            return obj
         end
         while true
             skip_ws(p)
-            if p.pos > string.len(p.s) then return nil, "unterminated object" end
+            if p.pos > string.len(p.s) then
+                p.err = "unterminated object"
+                return nil
+            end
             if string.sub(p.s, p.pos, p.pos) ~= "\"" then
-                return nil, "expected string key at position " .. tostring(p.pos)
+                p.err = "expected string key"
+                return nil
             end
             -- parse key (inline string parse)
             p.pos = p.pos + 1
@@ -146,7 +156,10 @@ fun parse_value(p: any): any
                 end
                 if kch == "\\" then
                     p.pos = p.pos + 1
-                    if p.pos > string.len(p.s) then return nil, "unterminated string escape" end
+                    if p.pos > string.len(p.s) then
+                        p.err = "unterminated string escape"
+                        return nil
+                    end
                     esc = string.sub(p.s, p.pos, p.pos)
                     if esc == "n" then key_out[rawlen(key_out) + 1] = "\n"
                     elseif esc == "t" then key_out[rawlen(key_out) + 1] = "\t"
@@ -163,24 +176,30 @@ fun parse_value(p: any): any
             key = table.concat(key_out)
             skip_ws(p)
             if p.pos > string.len(p.s) or string.sub(p.s, p.pos, p.pos) ~= ":" then
-                return nil, "expected colon at position " .. tostring(p.pos)
+                p.err = "expected colon"
+                return nil
             end
             p.pos = p.pos + 1
             val = parse_value(p)
+            if p.err ~= nil then return nil end
             obj[key] = val
             skip_ws(p)
-            if p.pos > string.len(p.s) then return nil, "unterminated object" end
+            if p.pos > string.len(p.s) then
+                p.err = "unterminated object"
+                return nil
+            end
             och = string.sub(p.s, p.pos, p.pos)
             if och == "}" then
                 p.pos = p.pos + 1
-                return obj, nil
+                return obj
             end
             if och ~= "," then
-                return nil, "expected comma or closing brace at position " .. tostring(p.pos)
+                p.err = "expected comma or closing brace"
+                return nil
             end
             p.pos = p.pos + 1
         end
-        return nil, "unreachable"
+        return nil
     end
     if ch == "[" then
         -- parse array
@@ -189,24 +208,29 @@ fun parse_value(p: any): any
         skip_ws(p)
         if p.pos <= string.len(p.s) and string.sub(p.s, p.pos, p.pos) == "]" then
             p.pos = p.pos + 1
-            return arr, nil
+            return arr
         end
         while true
             val = parse_value(p)
+            if p.err ~= nil then return nil end
             arr[rawlen(arr) + 1] = val
             skip_ws(p)
-            if p.pos > string.len(p.s) then return nil, "unterminated array" end
+            if p.pos > string.len(p.s) then
+                p.err = "unterminated array"
+                return nil
+            end
             ach = string.sub(p.s, p.pos, p.pos)
             if ach == "]" then
                 p.pos = p.pos + 1
-                return arr, nil
+                return arr
             end
             if ach ~= "," then
-                return nil, "expected comma or closing bracket at position " .. tostring(p.pos)
+                p.err = "expected comma or closing bracket"
+                return nil
             end
             p.pos = p.pos + 1
         end
-        return nil, "unreachable"
+        return nil
     end
     if ch == "\"" then
         -- parse string
@@ -216,11 +240,14 @@ fun parse_value(p: any): any
             sch = string.sub(p.s, p.pos, p.pos)
             if sch == "\"" then
                 p.pos = p.pos + 1
-                return table.concat(out), nil
+                return table.concat(out)
             end
             if sch == "\\" then
                 p.pos = p.pos + 1
-                if p.pos > string.len(p.s) then return nil, "unterminated string escape" end
+                if p.pos > string.len(p.s) then
+                    p.err = "unterminated string escape"
+                    return nil
+                end
                 esc = string.sub(p.s, p.pos, p.pos)
                 if esc == "n" then out[rawlen(out) + 1] = "\n"
                 elseif esc == "r" then out[rawlen(out) + 1] = "\r"
@@ -233,7 +260,10 @@ fun parse_value(p: any): any
                 elseif esc == "u" then
                     hex = string.sub(p.s, p.pos + 1, p.pos + 4)
                     code = tonumber(hex, 16)
-                    if code == nil then return nil, "invalid unicode escape" end
+                    if code == nil then
+                        p.err = "invalid unicode escape"
+                        return nil
+                    end
                     out[rawlen(out) + 1] = string.char(code)
                     p.pos = p.pos + 4
                 else
@@ -244,28 +274,32 @@ fun parse_value(p: any): any
             end
             p.pos = p.pos + 1
         end
-        return nil, "unterminated string"
+        p.err = "unterminated string"
+        return nil
     end
     if ch == "t" then
         if string.sub(p.s, p.pos, p.pos + 3) == "true" then
             p.pos = p.pos + 4
-            return true, nil
+            return true
         end
-        return nil, "invalid boolean at position " .. tostring(p.pos)
+        p.err = "invalid boolean"
+        return nil
     end
     if ch == "f" then
         if string.sub(p.s, p.pos, p.pos + 4) == "false" then
             p.pos = p.pos + 5
-            return false, nil
+            return false
         end
-        return nil, "invalid boolean at position " .. tostring(p.pos)
+        p.err = "invalid boolean"
+        return nil
     end
     if ch == "n" then
         if string.sub(p.s, p.pos, p.pos + 3) == "null" then
             p.pos = p.pos + 4
-            return nil, nil
+            return nil
         end
-        return nil, "invalid null at position " .. tostring(p.pos)
+        p.err = "invalid null"
+        return nil
     end
     if ch == "-" or (ch >= "0" and ch <= "9") then
         start = p.pos
@@ -280,41 +314,44 @@ fun parse_value(p: any): any
         end
         num_str = string.sub(p.s, start, p.pos - 1)
         nv = tonumber(num_str)
-        if nv == nil then return nil, "invalid number at position " .. tostring(start) end
-        return nv, nil
+        if nv == nil then
+            p.err = "invalid number"
+            return nil
+        end
+        return nv
     end
-    return nil, "unexpected character '" .. ch .. "' at position " .. tostring(p.pos)
+    p.err = "unexpected character"
+    nil
 end
 
 -- unmarshal: decode a JSON string into a Duo value.
 fun unmarshal(s: str): any
-    if s == nil then return nil, "nil input" end
+    if s == nil then return nil end
     s = string.gsub(s, "^%s+", "")
     s = string.gsub(s, "%s+$", "")
-    if s == "" then return nil, "empty input" end
-    parser = {s = s, pos = 1}
+    if s == "" then return nil end
+    parser = {s = s, pos = 1, err = nil}
     v = parse_value(parser)
+    if parser.err ~= nil then return nil end
     skip_ws(parser)
-    if parser.pos <= string.len(s) then
-        return nil, "trailing data at position " .. tostring(parser.pos)
-    end
-    return v, nil
+    if parser.pos <= string.len(s) then return nil end
+    v
 end
 
 -- marshal_indent: encode a Duo value as indented JSON.
 fun marshal_indent(v: any, indent: str): str
     if indent == nil then indent = "  " end
-    json = marshal(v)
+    jstr = marshal(v)
     out = {}
     depth = 0
     i = 1
     in_string = false
-    while i <= string.len(json)
-        ch = string.sub(json, i, i)
+    while i <= string.len(jstr)
+        ch = string.sub(jstr, i, i)
         if in_string then
             out[rawlen(out) + 1] = ch
-            if ch == "\\" and i < string.len(json) then
-                out[rawlen(out) + 1] = string.sub(json, i + 1, i + 1)
+            if ch == "\\" and i < string.len(jstr) then
+                out[rawlen(out) + 1] = string.sub(jstr, i + 1, i + 1)
                 i = i + 2
             elseif ch == "\"" then
                 in_string = false

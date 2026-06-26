@@ -69,7 +69,7 @@ fun unlock(m: any): void
     m.locked = false
 end
 
-fun signal(sp: any): void
+fun std_atomic_signal(sp: any): void
     if sp == nil then return end
     sp.notify = true
 end
@@ -84,5 +84,5 @@ M.dec = dec
 M.mutex_new = mutex_new
 M.lock = lock
 M.unlock = unlock
-M.signal = signal
+M.signal = std_atomic_signal
 M

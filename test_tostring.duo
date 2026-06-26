@@ -1,3 +1,0 @@
-fun encode(val: any): str
-    return tostring(val)
-end

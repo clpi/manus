@@ -8,55 +8,60 @@ Define async functions with the `async` keyword:
 
 ```duo
 async fun fetch(url: str): str
-    response = await http.get(url)
+    response = await http_get(url)
     return response.body
 end
 ```
 
-Async functions return `Poll[T]` - they may complete immediately or need resumption.
+Async functions compile to C structs with a step function. The current path returns results directly while descriptors are emitted for the full scheduler path.
 
-## The Scheduler
+## The sync Module
 
-Duo uses a cooperative event loop:
+Use `std.sync` for cooperative scheduling:
 
 ```duo
--- Spawn creates a task
-task1 = spawn fetch("https://api.example.com/users")
-task2 = spawn fetch("https://api.example.com/posts")
+sync = req "std.sync"
 
--- Await collects results
-users = await task1
-posts = await task2
+-- Spawn creates a coroutine task
+sync.spawn(fun()
+    print("task 1")
+end)
+
+-- Run drives all spawned tasks to completion
+sync.run()
 ```
-
-The scheduler polls pending tasks and drives them to completion.
 
 ## Channels
 
 Typed channels enable communication between async tasks:
 
 ```duo
--- Channel with capacity
-ch: Channel[i64] = channel(10)
+sync = req "std.sync"
 
--- Sender blocks when full
--- Receiver blocks when empty
+-- Channel with capacity
+ch = sync.channel(10)
+
+-- Send and receive
+sync.channel_send(ch, "hello")
+msg = sync.channel_recv(ch)
 ```
 
 ## Producer-Consumer Pattern
 
 ```duo
-async fun producer(ch: Channel[str]): void
+sync = req "std.sync"
+
+fun producer(ch): void
     for i = 1, 100
-        await ch.send("item-" .. tostring(i))
+        sync.channel_send(ch, "item-" .. tostring(i))
     end
-    ch.close()
+    sync.channel_close(ch)
 end
 
-async fun consumer(ch: Channel[str]): void
+fun consumer(ch): void
     while true
-        msg: Option[str] = await ch.recv()
-        if not msg then break end
+        msg = sync.channel_recv(ch)
+        if msg == nil then break end
         print("Got: " .. msg)
     end
 end
@@ -67,7 +72,7 @@ end
 In addition to the `async`/`await` language primitives, the standard library provides cooperative and OS-level concurrency in `lib/std/`:
 
 - `std.coroutine` — Lua-style coroutine helpers (`create`, `resume`, `yield`, `status`, `wrap`, `close`).
-- `std.sync` — single-threaded cooperative scheduler and typed channels (`spawn`, `run`, `channel`, `channel_send`, `channel_recv`).
+- `std.sync` — single-threaded cooperative scheduler and typed channels (`spawn`, `run`, `yield`, `channel`, `channel_send`, `channel_recv`, `step`).
 - `std.concurrent` — high-level patterns (`go`, `wait`, `all`, `race`, `select`) built on `std.sync`.
 - `std.thread` — mutex, rwlock, condvar, semaphore, barrier, and thread spawn/join. Cooperative in single-threaded mode; maps to pthreads under `@concurrent("threaded")`.
 - `std.mproc` — multi-process helpers (`spawn`, `wait`, `kill`, `pid`).
@@ -92,27 +97,6 @@ end
 
 Note: Threaded mode not supported on WASM targets.
 
-## Task Groups
-
-Wait for multiple tasks concurrently:
-
-```duo
-async fun parallel_map<T, U>(items: []T, f: fun(T): U): []U
-    results: []U = {}
-    tasks: []Task[U] = {}
-    
-    for item in items
-        tasks[#tasks + 1] = spawn f(item)
-    end
-    
-    for i, task in ipairs(tasks)
-        results[i] = await task
-    end
-    
-    return results
-end
-```
-
 ## Cancellation
 
 Tasks can be cancelled with proper cleanup:
@@ -128,31 +112,18 @@ async fun with_timeout(): i64
 end
 ```
 
-## Await Points
-
-Every `await` is a yield point where other tasks can run:
-
-```duo
-async fun pipeline(): void
-    data1 = await stage1()    -- Yield point 1
-    data2 = await stage2(data1) -- Yield point 2
-    data3 = await stage3(data2) -- Yield point 3
-    return data3
-end
-```
-
 ## State Machine Compilation
 
 Async functions compile to C structs with explicit state:
 
 ```c
 typedef struct {
-    int state;
-    PollResult result;
+    int state;              // Current yield point
+    PollResult result;        // Return value when done
     // Captured locals
     int64_t i;
     void* ch;
 } duo_async_frame_pipeline;
 ```
 
-The scheduler resumes by calling the step function at the appropriate state.
+Each `await` becomes a yield point, and the scheduler (when complete) resumes execution by calling the step function.

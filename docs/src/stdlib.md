@@ -110,11 +110,15 @@ assert(hash.simple("hello") == hash.simple("hello"))  -- Deterministic
 
 ## Format Module (`std.fmt`)
 
+`std.fmt` provides formatting utilities using Lua's string module:
+
 ```duo
 fmt = req "std.fmt"
 
 padded = fmt.pad("x", 5)            -- "x    "
-msg = fmt.format("Hello, {}!", "world")
+trimmed = fmt.trim("  hello  ")       -- "hello"
+hex_val = fmt.hex(255)              -- "0xFF"
+bin_val = fmt.bin(5)                -- "0b101"
 ```
 
 ## Meta Module (`std.meta`)
