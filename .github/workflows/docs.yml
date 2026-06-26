@@ -7,17 +7,8 @@ on:
   pull_request:
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,18 +16,26 @@ jobs:
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: 'latest'
+          mdbook-version: '0.4.44'
       - name: Build book
         run: mdbook build docs
-      - name: Setup Pages
-        if: ${{ github.ref == 'refs/heads/main' }}
-        uses: actions/configure-pages@v4
       - name: Upload artifact
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs/book
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
-        if: ${{ github.ref == 'refs/heads/main' }}
         id: deployment
         uses: actions/deploy-pages@v4
