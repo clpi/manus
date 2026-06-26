@@ -6769,6 +6769,9 @@ const duo_runtime =
     \\    lua_Value inline_keys[LUA_TABLE_INLINE_CAP];
     \\    lua_Value inline_vals[LUA_TABLE_INLINE_CAP];
     \\    bool hash_inline;
+    \\    /* Last-access cache: avoids re-hashing on repeated access to the same key */
+    \\    lua_Value last_key;
+    \\    int last_idx;
     \\    lua_Value metatable;
     \\    bool frozen;
     \\} lua_Table;
@@ -7195,8 +7198,23 @@ const duo_runtime =
     \\    return lua_val_from_table(t);
     \\}
     \\
+    \\/* Fast key equality for cache lookups: pointer equality for strings/tables,
+    \\   value equality for numbers/bools, type+identity for everything else. */
+    \\static inline bool lua_key_fasteq(lua_Value a, lua_Value b) {
+    \\    if (a.type != b.type) return false;
+    \\    if (a.type == VAL_STRING) return a.as.sval == b.as.sval;
+    \\    if (a.type == VAL_NUMBER) return a.as.nval == b.as.nval;
+    \\    if (a.type == VAL_BOOL) return a.as.bval == b.as.bval;
+    \\    if (a.type == VAL_NIL) return true;
+    \\    return a.as.tval == b.as.tval;
+    \\}
+    \\
     \\static inline lua_Value lua_table_get_raw(lua_Value table, lua_Value key) {
     \\    lua_Table* t = (lua_Table*)table.as.tval;
+    \\    /* Last-access cache: O(1) fast path for repeated hash-table lookups */
+    \\    if (t->capacity > 0 && lua_key_fasteq(t->last_key, key)) {
+    \\        return t->hash_vals[t->last_idx];
+    \\    }
     \\    if (key.type == VAL_NUMBER) {
     \\        int idx = (int)key.as.nval;
     \\        if (LUA_LIKELY(idx >= 1 && idx <= t->array_size)) return t->array[idx-1];
@@ -7208,7 +7226,11 @@ const duo_runtime =
     \\    uint32_t idx = ideal;
     \\    uint32_t dist = 0;
     \\    while (t->hash_keys[idx].type != VAL_NIL) {
-    \\        if (lua_eq(t->hash_keys[idx], key)) return t->hash_vals[idx];
+    \\        if (lua_eq(t->hash_keys[idx], key)) {
+    \\            t->last_key = key;
+    \\            t->last_idx = (int)idx;
+    \\            return t->hash_vals[idx];
+    \\        }
     \\        /* Robin Hood early termination: richer entries would not have been displaced this far */
     \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[idx]) & mask;
     \\        uint32_t cur_dist = (idx - cur_ideal) & mask;

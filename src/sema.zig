@@ -745,14 +745,12 @@ pub const Sema = struct {
     fn track_table_field(self: *Sema, table_name: []const u8, field_name: []const u8, new_t: RT) void {
         if (new_t == .any) {
             const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return;
-            defer self.alloc.free(key);
             self.table_field_types.put(self.alloc, key, .any) catch {};
             return;
         }
         if (new_t == .nil) return;
         if (new_t == .str) return;
         const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return;
-        defer self.alloc.free(key);
         if (self.table_field_types.get(key)) |existing| {
             if (existing == .any) return;
             if (std.meta.activeTag(existing) != std.meta.activeTag(new_t)) {

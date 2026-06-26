@@ -13,7 +13,7 @@ print("Hello, Duo!")
 Using static type annotations significantly improves performance when compiled:
 
 ```duo
-fn fib(n: number): number
+fun fib(n: i64): i64
     if n <= 1 then
         return n
     end
@@ -28,12 +28,12 @@ print(fib(10))
 Duo supports algebraic data types through enums, and powerful pattern matching:
 
 ```duo
-local enum Option
+enum Option
     Some(val: any)
     None
 end
 
-fn handle_option(opt: Option)
+fun handle_option(opt: Option)
     match opt
         case Some(val) then print("Got value:", val)
         case None then print("No value")
