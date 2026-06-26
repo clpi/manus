@@ -357,7 +357,7 @@ fun is_block_opener(kw: any): bool
         kw == "do" or kw == "begin" or kw == "struct"
 end
 
-fun kind_of(kw: any)
+fun kind_of(kw: any): any
     if kw == "fun" or kw == "function" then return 12 end
     if kw == "enum" then return 10 end
     if kw == "concept" then return 11 end

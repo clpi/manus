@@ -17,7 +17,7 @@ const assert = require('assert');
 
 const SERVER = path.join(__dirname, '..', 'duo-lsp');
 const DUO = process.env.DUO_LSP_DUO_BIN ||
-  path.resolve(__dirname, '..', '..', 'zig-out', 'bin', 'duo');
+  path.resolve(__dirname, '..', '..', '..', 'zig-out', 'bin', 'duo');
 
 if (!fs.existsSync(SERVER)) {
   console.error(`smoke: server binary not found at ${SERVER} (run bash build.sh)`);
