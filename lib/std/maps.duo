@@ -1,0 +1,156 @@
+-- std.maps — map (table) helper utilities (mirrors Go 1.21 maps package)
+-- Provides generic operations on hash-map-like tables (the Lua/Duo table as
+-- a key-value map, not the array portion).
+
+-- clone: return a shallow copy of the map (non-integer-keyed entries).
+fun clone(m: any): any
+    if m == nil then return {} end
+    out = {}
+    for k, v in pairs(m)
+        out[k] = v
+    end
+    out
+end
+
+-- copy: copy all key-value pairs from src into dst (returns count of keys copied).
+fun copy(dst: any, src: any): i64
+    if dst == nil then return 0 end
+    if src == nil then return 0 end
+    count = 0
+    for k, v in pairs(src)
+        dst[k] = v
+        count = count + 1
+    end
+    count
+end
+
+-- delete: remove the key k from m. Returns the old value (or nil).
+fun delete_key(m: any, k: any): any
+    if m == nil then return nil end
+    v = m[k]
+    m[k] = nil
+    v
+end
+
+-- equal: report whether two maps have the same key-value pairs (using ==).
+fun equal(m1: any, m2: any): bool
+    if m1 == nil and m2 == nil then return true end
+    if m1 == nil or m2 == nil then return false end
+    -- count keys
+    c1 = 0
+    for _ in pairs(m1) do c1 = c1 + 1 end
+    c2 = 0
+    for _ in pairs(m2) do c2 = c2 + 1 end
+    if c1 ~= c2 then return false end
+    for k, v in pairs(m1)
+        if m2[k] ~= v then return false end
+    end
+    true
+end
+
+-- equal_func: report whether two maps are equal using a custom key+value comparator.
+fun equal_func(m1: any, m2: any, eq: any): bool
+    if m1 == nil and m2 == nil then return true end
+    if m1 == nil or m2 == nil then return false end
+    c1 = 0
+    for _ in pairs(m1) do c1 = c1 + 1 end
+    c2 = 0
+    for _ in pairs(m2) do c2 = c2 + 1 end
+    if c1 ~= c2 then return false end
+    for k, v in pairs(m1)
+        v2 = m2[k]
+        if v2 == nil then return false end
+        if not eq(v, v2) then return false end
+    end
+    true
+end
+
+-- keys: return all map keys as an array.
+fun keys(m: any): any
+    if m == nil then return {} end
+    out = {}
+    for k in pairs(m) do out[rawlen(out) + 1] = k end
+    out
+end
+
+-- values: return all map values as an array.
+fun values(m: any): any
+    if m == nil then return {} end
+    out = {}
+    for _, v in pairs(m) do out[rawlen(out) + 1] = v end
+    out
+end
+
+-- entries: return key-value pairs as an array of {key, value} tables.
+fun entries(m: any): any
+    if m == nil then return {} end
+    out = {}
+    for k, v in pairs(m) do out[rawlen(out) + 1] = {key = k, value = v} end
+    out
+end
+
+-- has: report whether key k exists in m.
+fun has(m: any, k: any): bool
+    if m == nil then return false end
+    m[k] ~= nil
+end
+
+-- get: return m[k] or default if key is absent.
+fun get(m: any, k: any, default: any): any
+    if m == nil then return default end
+    v = m[k]
+    if v == nil then return default end
+    v
+end
+
+-- set: assign m[k] = v (creates m if nil and returns it).
+fun set(m: any, k: any, v: any): any
+    if m == nil then m = {} end
+    m[k] = v
+    m
+end
+
+-- size: count the number of key-value pairs (non-array entries).
+fun size(m: any): i64
+    if m == nil then return 0 end
+    c = 0
+    for _ in pairs(m) do c = c + 1 end
+    c
+end
+
+-- merge: merge src into dst (dst wins on conflict). Returns dst.
+fun merge(dst: any, src: any): any
+    if dst == nil then dst = {} end
+    if src == nil then return dst end
+    for k, v in pairs(src)
+        if dst[k] == nil then dst[k] = v end
+    end
+    dst
+end
+
+-- merge_overwrite: like merge but src overwrites dst on conflict.
+fun merge_overwrite(dst: any, src: any): any
+    if dst == nil then dst = {} end
+    if src == nil then return dst end
+    for k, v in pairs(src)
+        dst[k] = v
+    end
+    dst
+end
+
+M = {}
+M.clone = clone
+M.copy = copy
+M.delete = delete_key
+M.equal = equal
+M.equal_func = equal_func
+M.keys = keys
+M.values = values
+M.entries = entries
+M.has = has
+M.get = get
+M.set = set
+M.size = size
+M.merge = merge
+M.merge_overwrite = merge_overwrite
+M

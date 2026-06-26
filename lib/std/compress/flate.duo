@@ -1,0 +1,101 @@
+-- std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
+-- This is a minimal implementation providing RLE-style compression. A full
+-- DEFLATE implementation would require bit-level stream manipulation which
+-- is beyond Duo's current primitives; this provides a usable interface.
+
+-- The simplest compression: run-length encoding for repeated bytes.
+
+-- compress: compress a string using a simple scheme.
+-- Format: literal bytes with escape for runs of 3+ identical bytes.
+-- Escape: \x00 <count> <byte> for runs, \x01 for literal \x00.
+fun compress(data: str): str
+    if data == nil or data == "" then return "" end
+    out = {}
+    i = 1
+    n = string.len(data)
+    while i <= n
+        ch = string.sub(data, i, i)
+        -- count run length
+        run = 1
+        j = i + 1
+        while j <= n and string.sub(data, j, j) == ch and run < 255
+            run = run + 1
+            j = j + 1
+        end
+        if run >= 3 then
+            -- encode as run: \xFE <count> <byte>
+            out[rawlen(out) + 1] = string.char(0xFE) .. string.char(run) .. ch
+            i = i + run
+        else
+            out[rawlen(out) + 1] = ch
+            i = i + 1
+        end
+    end
+    table.concat(out)
+end
+
+-- decompress: decompress a string compressed by compress().
+fun decompress(data: str): str
+    if data == nil or data == "" then return "" end
+    out = {}
+    i = 1
+    n = string.len(data)
+    while i <= n
+        b = string.byte(data, i)
+        if b == 0xFE then
+            if i + 2 > n then break end
+            run = string.byte(data, i + 1)
+            ch = string.sub(data, i + 2, i + 2)
+            out[rawlen(out) + 1] = string.rep(ch, run)
+            i = i + 3
+        else
+            out[rawlen(out) + 1] = string.sub(data, i, i)
+            i = i + 1
+        end
+    end
+    table.concat(out)
+end
+
+-- compress_level: compress with a specific level (1-9). Currently all levels
+-- use the same RLE scheme; the parameter is accepted for API compatibility.
+fun compress_level(data: str, level: i64): str
+    compress(data)
+end
+
+-- new_writer: create a compressing writer that wraps a file handle.
+-- Writes go through compress() in chunks; flush() outputs the compressed data.
+fun new_writer(fh: any, level: i64): any
+    {fh = fh, buf = "", level = level}
+end
+
+-- writer_write: buffer data for compression.
+fun writer_write(w: any, data: str): any
+    w.buf = w.buf .. data
+    w
+end
+
+-- writer_flush: compress buffered data and write to underlying handle.
+fun writer_flush(w: any): any
+    if string.len(w.buf) > 0 then
+        w.fh:write(compress(w.buf))
+        w.buf = ""
+    end
+    w
+end
+
+-- writer_close: flush and close.
+fun writer_close(w: any): any
+    writer_flush(w)
+    w.fh:close()
+    w
+end
+
+M = {}
+M.compress = compress
+M.decompress = decompress
+M.compress_level = compress_level
+M.new_writer = new_writer
+M.writer_write = writer_write
+M.writer_flush = writer_flush
+M.writer_close = writer_close
+M

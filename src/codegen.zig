@@ -17,6 +17,7 @@ const sema = @import("sema.zig");
 const mono = @import("mono.zig");
 const arc = @import("arc.zig");
 const async_lower = @import("async_lower.zig");
+const comptime_eval = @import("comptime.zig");
 
 pub const CodeGenError = error{
     Unsupported,
@@ -35,6 +36,7 @@ pub const CodeGen = struct {
     type_map: *sema.TypeMap,
     module_globals: ?*const std.StringHashMapUnmanaged(RT) = null,
     local_scopes: std.ArrayList(std.StringHashMapUnmanaged(RT)) = .empty,
+    comptime_scopes: std.ArrayList(std.StringHashMapUnmanaged(comptime_eval.Value)) = .empty,
     close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
     arc_scopes: std.ArrayList(std.ArrayListUnmanaged(ArcLocal)) = .empty,
     /// Per-scope stack of pending `defer` bodies, parallel to `local_scopes`.
@@ -105,6 +107,7 @@ pub const CodeGen = struct {
 
     fn push_local_scope(self: *CodeGen) E!void {
         try self.local_scopes.append(self.alloc, std.StringHashMapUnmanaged(RT).empty);
+        try self.comptime_scopes.append(self.alloc, std.StringHashMapUnmanaged(comptime_eval.Value).empty);
         try self.close_scopes.append(self.alloc, .empty);
         try self.arc_scopes.append(self.alloc, .empty);
         try self.defer_scopes.append(self.alloc, .empty);
@@ -141,6 +144,10 @@ pub const CodeGen = struct {
         if (self.local_scopes.items.len == 0) return;
         var m = self.local_scopes.pop().?;
         m.deinit(self.alloc);
+        if (self.comptime_scopes.items.len > 0) {
+            var cm = self.comptime_scopes.pop().?;
+            cm.deinit(self.alloc);
+        }
     }
 
     fn note_close_local(self: *CodeGen, name: []const u8) !void {
@@ -156,6 +163,21 @@ pub const CodeGen = struct {
     fn note_local_type(self: *CodeGen, name: []const u8, rt: RT) !void {
         if (self.local_scopes.items.len == 0) return;
         try self.local_scopes.items[self.local_scopes.items.len - 1].put(self.alloc, name, rt);
+    }
+
+    fn comptime_bindings(self: *const CodeGen) comptime_eval.Bindings {
+        return .{ .scopes = self.comptime_scopes.items };
+    }
+
+    fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
+        if (self.comptime_scopes.items.len == 0) return;
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{}) catch comptime_eval.Value.unavailable;
+        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
+    }
+
+    fn note_comptime_unavailable(self: *CodeGen, name: []const u8) !void {
+        if (self.comptime_scopes.items.len == 0) return;
+        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, .unavailable);
     }
 
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
@@ -309,9 +331,9 @@ pub const CodeGen = struct {
 
     fn is_runtime_global(name: []const u8) bool {
         const runtime_globals = [_][]const u8{
-            "package",  "math", "utf8", "debug", "coroutine",   "string",        "table",
-            "io",       "os",   "jit",  "ffi",   "duo_modules", "current_input", "current_output",
-            "_VERSION", "net",
+            "package",  "math", "utf8",        "debug", "coroutine",   "string",        "table",
+            "io",       "os",   "jit",         "ffi",   "duo_modules", "current_input", "current_output",
+            "_VERSION", "net",  "__constexpr",
         };
         for (runtime_globals) |g| {
             if (std.mem.eql(u8, name, g)) return true;
@@ -410,6 +432,9 @@ pub const CodeGen = struct {
         if (e.* == .call) {
             const c = e.call;
             if (c.func.* == .name) {
+                if (std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
+                    return self.expr_type(c.args[0]);
+                }
                 if (self.mono) |m| {
                     const env = self.current_mono_spec;
                     if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
@@ -467,7 +492,7 @@ pub const CodeGen = struct {
                 },
                 // `~x` is `(~x)` for integer operands → integer result.
                 .bnot => if (self.expr_type(u.operand).is_integer()) return .i64,
-                .compile => {},
+                .compile => return self.expr_type(u.operand),
             }
         }
         // Prefer a concrete sema type. When sema recorded only `.any` (or nothing),
@@ -793,6 +818,12 @@ pub const CodeGen = struct {
         self.p("{s}", .{duo_runtime});
         self.nl();
 
+        try self.comptime_scopes.append(self.alloc, std.StringHashMapUnmanaged(comptime_eval.Value).empty);
+        defer {
+            var module_comptime = self.comptime_scopes.pop().?;
+            module_comptime.deinit(self.alloc);
+        }
+
         try self.populate_record_aliases(mod);
         try self.populate_enum_defs(mod);
 
@@ -833,6 +864,7 @@ pub const CodeGen = struct {
                 self.p(" {s} = ", .{cd.ident});
                 try self.emit_expr(cd.val);
                 self.p(";\n", .{});
+                try self.note_comptime_binding(cd.ident, cd.val);
             }
         }
         self.nl();
@@ -1718,6 +1750,7 @@ pub const CodeGen = struct {
             defer self.pop_local_scope();
             for (spec.template.params) |*par| {
                 try self.note_local_type(par.name, spec.resolveType(par.typ));
+                try self.note_comptime_unavailable(par.name);
             }
             try self.emit_block_stmts(&spec.template.body);
             self.indent = 0;
@@ -2026,6 +2059,7 @@ pub const CodeGen = struct {
         }
         for (fb.params) |*par| {
             try self.note_local_type(par.name, self.resolve_type(par.typ));
+            try self.note_comptime_unavailable(par.name);
         }
         if (fb.use_dense_table and !fb.use_dense_table_max and !fb.use_dense_table_sum and
             !fb.use_dense_table_identity_sum and !fb.use_dot_product_identity and
@@ -2162,6 +2196,7 @@ pub const CodeGen = struct {
         for (fb.params, 0..) |par, i| {
             const pt = types.resolve(par.typ, null, self.alloc) catch .any;
             try self.note_local_type(par.name, pt);
+            try self.note_comptime_unavailable(par.name);
             if (pt == .any) {
                 self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
             } else if (pt.is_integer()) {
@@ -3154,17 +3189,20 @@ pub const CodeGen = struct {
                     self.p(";\n", .{});
                     if (ld.names[0].attrib != null and std.mem.eql(u8, ld.names[0].attrib.?, "close"))
                         try self.note_close_local(ld.names[0].ident);
+                    try self.note_comptime_unavailable(ld.names[0].ident);
                     for (ld.names[1..], 0..) |*lname, i| {
                         self.ind();
                         self.p("lua_Value {s} = lua_mret_get({d});\n", .{ lname.ident, i });
                         if (lname.attrib != null and std.mem.eql(u8, lname.attrib.?, "close"))
                             try self.note_close_local(lname.ident);
+                        try self.note_comptime_unavailable(lname.ident);
                     }
                 } else for (ld.names, 0..) |*lname, i| {
                     if (self.dense_table) |dt| {
                         if (std.mem.eql(u8, lname.ident, dt) and i < ld.inits.len and
                             ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0)
                         {
+                            try self.note_comptime_unavailable(lname.ident);
                             continue;
                         }
                     }
@@ -3211,6 +3249,11 @@ pub const CodeGen = struct {
                     try self.note_arc_local(lname.ident, rt, attr_is_close(lname.attrib));
                     if (lname.attrib != null and std.mem.eql(u8, lname.attrib.?, "close"))
                         try self.note_close_local(lname.ident);
+                    if (i < ld.inits.len) {
+                        try self.note_comptime_binding(lname.ident, ld.inits[i]);
+                    } else {
+                        try self.note_comptime_unavailable(lname.ident);
+                    }
                 }
             },
             .global_decl => |*gd| {
@@ -3266,6 +3309,7 @@ pub const CodeGen = struct {
                 self.p(" {s} = ", .{cd.ident});
                 try self.emit_expr(cd.val);
                 self.p(";\n", .{});
+                try self.note_comptime_binding(cd.ident, cd.val);
             },
             .assign => |*as| {
                 if (as.values.len == 1 and self.uses_multi_return(as.values[0], as.targets.len)) {
@@ -3295,6 +3339,7 @@ pub const CodeGen = struct {
                         try self.emit_as_lua_value(as.values[0]);
                     }
                     self.p(";\n", .{});
+                    if (as.targets[0].* == .name) try self.note_comptime_unavailable(as.targets[0].name.ident);
                     for (as.targets[1..], 0..) |tgt, i| {
                         self.ind();
                         const tt = self.expr_type(tgt);
@@ -3314,6 +3359,7 @@ pub const CodeGen = struct {
                             self.p("lua_mret_get({d})", .{i});
                         }
                         self.p(";\n", .{});
+                        if (tgt.* == .name) try self.note_comptime_unavailable(tgt.name.ident);
                     }
                 } else for (as.targets, 0..) |tgt, i| {
                     self.ind();
@@ -3351,6 +3397,11 @@ pub const CodeGen = struct {
                                 if (i < as.values.len) try self.emit_expr(as.values[i]) else self.p("lua_val_nil()", .{});
                             }
                             self.p(";\n", .{});
+                            if (i < as.values.len) {
+                                try self.note_comptime_binding(name, as.values[i]);
+                            } else {
+                                try self.note_comptime_unavailable(name);
+                            }
                             continue;
                         }
                     }
@@ -3360,7 +3411,9 @@ pub const CodeGen = struct {
                         const f = &tgt.field;
                         if (self.expr_type(f.obj) == .any) {
                             is_table_assign = true;
-                            self.p("lua_table_set(", .{});
+                            // Use raw set for local-variable table field access
+                            const setter = if (f.obj.* == .name and self.is_local_name(f.obj.name.ident)) "lua_table_set_raw" else "lua_table_set";
+                            self.p("{s}(", .{setter});
                             try self.emit_expr(f.obj);
                             self.p(", lua_val_from_str(\"{s}\"), ", .{f.field});
                             if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
@@ -3429,7 +3482,14 @@ pub const CodeGen = struct {
                         if (tgt.* == .name) {
                             const tt_for_retain = self.expr_type(tgt);
                             self.emit_arc_retain(tgt.name.ident, tt_for_retain);
+                            if (i < as.values.len) {
+                                try self.note_comptime_binding(tgt.name.ident, as.values[i]);
+                            } else {
+                                try self.note_comptime_unavailable(tgt.name.ident);
+                            }
                         }
+                    } else if (tgt.* == .name) {
+                        try self.note_comptime_unavailable(tgt.name.ident);
                     }
                 }
             },
@@ -3664,9 +3724,9 @@ pub const CodeGen = struct {
                         // Then hash part
                         self.pl("for (int idx = 0; idx < t_ptr->capacity; idx++) {{", .{});
                         self.indent += 1;
-                        self.pl("if (t_ptr->entries[idx].key.type == VAL_NIL) continue;", .{});
-                        if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->entries[idx].key;", .{gf.vars[0]});
-                        if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->entries[idx].val;", .{gf.vars[1]});
+                        self.pl("if (t_ptr->hash_keys[idx].type == VAL_NIL) continue;", .{});
+                        if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->hash_keys[idx];", .{gf.vars[0]});
+                        if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->hash_vals[idx];", .{gf.vars[1]});
                         {
                             try self.push_break_scope();
                             defer self.pop_break_scope();
@@ -4091,11 +4151,11 @@ pub const CodeGen = struct {
             self.p("for (int idx = 0; idx < t_ptr->capacity; idx++) {{\n", .{});
             self.indent += 1;
             self.ind();
-            self.p("if (t_ptr->entries[idx].key.type == VAL_NIL) continue;\n", .{});
+            self.p("if (t_ptr->hash_keys[idx].type == VAL_NIL) continue;\n", .{});
             self.ind();
-            self.p("lua_Value {s} = t_ptr->entries[idx].key;\n", .{key_name});
+            self.p("lua_Value {s} = t_ptr->hash_keys[idx];\n", .{key_name});
             self.ind();
-            self.p("lua_Value {s} = t_ptr->entries[idx].val;\n", .{lc.value_name});
+            self.p("lua_Value {s} = t_ptr->hash_vals[idx];\n", .{lc.value_name});
             try self.emit_list_comprehension_append(lc);
             self.indent -= 1;
             self.ind();
@@ -4199,7 +4259,9 @@ pub const CodeGen = struct {
                 }
                 if (self.expr_type(f.obj) == .any) {
                     const hash = calc_lua_hash(f.field);
-                    self.p("lua_table_get(", .{});
+                    // Use raw access for local-variable table fields (avoids __index overhead)
+                    const getter = if (f.obj.* == .name and self.is_local_name(f.obj.name.ident)) "lua_table_get_raw" else "lua_table_get";
+                    self.p("{s}(", .{getter});
                     try self.emit_expr(f.obj);
                     self.p(", lua_val_from_literal(\"{s}\", {d}, {d}))", .{ f.field, hash, f.field.len });
                 } else {
@@ -4231,6 +4293,10 @@ pub const CodeGen = struct {
                 }
             },
             .call => |c| {
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
+                    try self.emit_comptime_expr(c.args[0], self.expr_type(expr) == .any);
+                    return;
+                }
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
@@ -4748,17 +4814,7 @@ pub const CodeGen = struct {
                             self.p(")", .{});
                         },
                         .compile => {
-                            // For basic metaprogramming, try to evaluate constant expressions
-                            if (u.operand.* == .int_lit) {
-                                self.p("lua_val_from_int({d})", .{u.operand.int_lit.val});
-                            } else if (u.operand.* == .float_lit) {
-                                self.p("lua_val_from_num({d})", .{u.operand.float_lit.val});
-                            } else if (u.operand.* == .string_lit) {
-                                self.p("lua_val_from_str(\"{s}\")", .{u.operand.string_lit.val});
-                            } else {
-                                // If not constant, just emit the operand
-                                try self.emit_expr(u.operand);
-                            }
+                            try self.emit_comptime_expr(u.operand, true);
                         },
                     }
                 } else {
@@ -4790,14 +4846,7 @@ pub const CodeGen = struct {
                             self.p(")", .{});
                         },
                         .compile => {
-                            // For typed expressions, evaluate constants at compile time
-                            if (u.operand.* == .int_lit) {
-                                self.p("{d}", .{u.operand.int_lit.val});
-                            } else if (u.operand.* == .float_lit) {
-                                self.p("{d}", .{u.operand.float_lit.val});
-                            } else {
-                                try self.emit_expr(u.operand);
-                            }
+                            try self.emit_comptime_expr(u.operand, false);
                         },
                     }
                 }
@@ -4899,6 +4948,40 @@ pub const CodeGen = struct {
                 },
             }
         }
+    }
+
+    fn emit_comptime_value(self: *CodeGen, value: comptime_eval.Value, as_lua_value: bool) E!void {
+        switch (value) {
+            .unavailable => unreachable,
+            .nil => if (as_lua_value) self.p("lua_val_nil()", .{}) else self.p("0", .{}),
+            .bool => |v| if (as_lua_value) self.p("lua_val_from_bool({s})", .{if (v) "true" else "false"}) else self.p("{s}", .{if (v) "true" else "false"}),
+            .int => |v| if (as_lua_value) self.p("lua_val_from_int({d})", .{v}) else self.p("{d}", .{v}),
+            .float => |v| if (as_lua_value) self.p("lua_val_from_num({d})", .{v}) else self.p("{d}", .{v}),
+            .string => |v| {
+                if (as_lua_value) {
+                    const hash = calc_lua_hash(v);
+                    self.p("lua_val_from_literal(\"", .{});
+                    try self.emit_string_escaped(v);
+                    self.p("\", {d}, {d})", .{ hash, v.len });
+                } else {
+                    self.p("\"", .{});
+                    try self.emit_string_escaped(v);
+                    self.p("\"", .{});
+                }
+            },
+        }
+    }
+
+    fn emit_comptime_expr(self: *CodeGen, expr: *const ast.Expr, as_lua_value: bool) E!void {
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{}) catch {
+            if (as_lua_value) {
+                try self.emit_as_lua_value(expr);
+            } else {
+                try self.emit_expr(expr);
+            }
+            return;
+        };
+        try self.emit_comptime_value(value, as_lua_value);
     }
 
     fn exprs_same(_: *CodeGen, a: *const ast.Expr, b: *const ast.Expr) bool {
@@ -6671,18 +6754,21 @@ const duo_runtime =
     \\    char data[];
     \\} lua_String;
     \\
-    \\typedef struct {
-    \\    lua_Value key;
-    \\    lua_Value val;
-    \\} lua_TableEntry;
+    \\#define LUA_TABLE_INLINE_CAP 4
     \\
     \\typedef struct {
     \\    lua_Value* array;
     \\    int array_size;
     \\    int array_capacity;
-    \\    lua_TableEntry* entries;
+    \\    /* Robin-Hood hash part: struct-of-arrays for cache-efficient probing */
+    \\    lua_Value* hash_keys;
+    \\    lua_Value* hash_vals;
     \\    int capacity;
     \\    int count;
+    \\    /* Small-table optimization: embed inline storage for up to LUA_TABLE_INLINE_CAP entries */
+    \\    lua_Value inline_keys[LUA_TABLE_INLINE_CAP];
+    \\    lua_Value inline_vals[LUA_TABLE_INLINE_CAP];
+    \\    bool hash_inline;
     \\    lua_Value metatable;
     \\    bool frozen;
     \\} lua_Table;
@@ -6935,18 +7021,19 @@ const duo_runtime =
     \\    if (!string_pool) {
     \\        string_pool = malloc(sizeof(lua_Table));
     \\        string_pool->capacity = 64;
-    \\        string_pool->entries = calloc(string_pool->capacity, sizeof(lua_TableEntry));
+    \\        string_pool->hash_keys = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\    string_pool->hash_vals = calloc(string_pool->capacity, sizeof(lua_Value));
     \\        string_pool->count = 0;
     \\        string_pool->array_size = 0;
     \\        string_pool->array = NULL;
     \\    }
     \\    uint32_t h = calc_hash(s, len);
     \\    uint32_t idx = h & (string_pool->capacity - 1);
-    \\    while (string_pool->entries[idx].key.type != VAL_NIL) {
-    \\        const char* ks = string_pool->entries[idx].key.as.sval;
+    \\    while (string_pool->hash_keys[idx].type != VAL_NIL) {
+    \\        const char* ks = string_pool->hash_keys[idx].as.sval;
     \\        lua_String* kstr = (lua_String*)((char*)ks - offsetof(lua_String, data));
     \\        if (kstr->len == len && memcmp(ks, s, len) == 0) {
-    \\            return string_pool->entries[idx].key;
+    \\            return string_pool->hash_keys[idx];
     \\        }
     \\        idx = (idx + 1) & (string_pool->capacity - 1);
     \\    }
@@ -6959,26 +7046,30 @@ const duo_runtime =
     \\    lua_Value v;
     \\    v.type = VAL_STRING;
     \\    v.as.sval = ns->data;
-    \\    string_pool->entries[idx].key = v;
-    \\    string_pool->entries[idx].val = v;
+    \\    string_pool->hash_keys[idx] = v;
+    \\    string_pool->hash_vals[idx] = v;
     \\    string_pool->count++;
     \\    if (string_pool->count > string_pool->capacity * 0.7) {
     \\        int old_cap = string_pool->capacity;
-    \\        lua_TableEntry* old_entries = string_pool->entries;
+    \\        lua_Value* old_keys = string_pool->hash_keys;
+    \\    lua_Value* old_vals = string_pool->hash_vals;
     \\        string_pool->capacity *= 2;
-    \\        string_pool->entries = calloc(string_pool->capacity, sizeof(lua_TableEntry));
+    \\        string_pool->hash_keys = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\    string_pool->hash_vals = calloc(string_pool->capacity, sizeof(lua_Value));
     \\        string_pool->count = 0;
     \\        for (int i = 0; i < old_cap; i++) {
-    \\            if (old_entries[i].key.type != VAL_NIL) {
-    \\                const char* s2 = old_entries[i].key.as.sval;
+    \\            if (old_keys[i].type != VAL_NIL) {
+    \\                const char* s2 = old_keys[i].as.sval;
     \\                lua_String* s2h = (lua_String*)((char*)s2 - offsetof(lua_String, data));
     \\                uint32_t idx2 = s2h->hash & (string_pool->capacity - 1);
-    \\                while (string_pool->entries[idx2].key.type != VAL_NIL) idx2 = (idx2 + 1) & (string_pool->capacity - 1);
-    \\                string_pool->entries[idx2] = old_entries[i];
+    \\                while (string_pool->hash_keys[idx2].type != VAL_NIL) idx2 = (idx2 + 1) & (string_pool->capacity - 1);
+    \\                string_pool->hash_keys[idx2] = old_keys[i];
+    \\    string_pool->hash_vals[idx2] = old_vals[i];
     \\                string_pool->count++;
     \\            }
     \\        }
-    \\        free(old_entries);
+    \\        free(old_keys);
+    \\    free(old_vals);
     \\    }
     \\    return v;
     \\}
@@ -6991,14 +7082,15 @@ const duo_runtime =
     \\    if (!string_pool) {
     \\        string_pool = calloc(1, sizeof(lua_Table));
     \\        string_pool->capacity = 64;
-    \\        string_pool->entries = calloc(string_pool->capacity, sizeof(lua_TableEntry));
+    \\        string_pool->hash_keys = calloc(string_pool->capacity, sizeof(lua_Value));
+    \\    string_pool->hash_vals = calloc(string_pool->capacity, sizeof(lua_Value));
     \\    }
     \\    uint32_t idx = hash & (string_pool->capacity - 1);
-    \\    while (string_pool->entries[idx].key.type != VAL_NIL) {
-    \\        const char* ks = string_pool->entries[idx].key.as.sval;
+    \\    while (string_pool->hash_keys[idx].type != VAL_NIL) {
+    \\        const char* ks = string_pool->hash_keys[idx].as.sval;
     \\        lua_String* kstr = (lua_String*)((char*)ks - offsetof(lua_String, data));
     \\        if (kstr->hash == hash && kstr->len == len && memcmp(ks, s, len) == 0) {
-    \\            return string_pool->entries[idx].key;
+    \\            return string_pool->hash_keys[idx];
     \\        }
     \\        idx = (idx + 1) & (string_pool->capacity - 1);
     \\    }
@@ -7011,8 +7103,8 @@ const duo_runtime =
     \\    lua_Value v;
     \\    v.type = VAL_STRING;
     \\    v.as.sval = ns->data;
-    \\    string_pool->entries[idx].key = v;
-    \\    string_pool->entries[idx].val = v;
+    \\    string_pool->hash_keys[idx] = v;
+    \\    string_pool->hash_vals[idx] = v;
     \\    string_pool->count++;
     \\    return v;
     \\}
@@ -7094,11 +7186,11 @@ const duo_runtime =
     \\        t->array_capacity = array_cap;
     \\    }
     \\    if (hash_cap > 0) {
-    \\        /* Find next power of 2 for hash_cap */
     \\        int cap = 8;
     \\        while (cap < hash_cap * 1.5) cap *= 2;
     \\        t->capacity = cap;
-    \\        t->entries = calloc(t->capacity, sizeof(lua_TableEntry));
+    \\        t->hash_keys = calloc(cap, sizeof(lua_Value));
+    \\        t->hash_vals = calloc(cap, sizeof(lua_Value));
     \\    }
     \\    return lua_val_from_table(t);
     \\}
@@ -7111,11 +7203,18 @@ const duo_runtime =
     \\    }
     \\    if (t->capacity == 0) return lua_val_nil();
     \\    uint32_t h = lua_hash_value(key);
-    \\    uint32_t mask = t->capacity - 1;
-    \\    uint32_t idx = h & mask;
-    \\    while (t->entries[idx].key.type != VAL_NIL) {
-    \\        if (lua_eq(t->entries[idx].key, key)) return t->entries[idx].val;
+    \\    uint32_t mask = (uint32_t)t->capacity - 1;
+    \\    uint32_t ideal = h & mask;
+    \\    uint32_t idx = ideal;
+    \\    uint32_t dist = 0;
+    \\    while (t->hash_keys[idx].type != VAL_NIL) {
+    \\        if (lua_eq(t->hash_keys[idx], key)) return t->hash_vals[idx];
+    \\        /* Robin Hood early termination: richer entries would not have been displaced this far */
+    \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[idx]) & mask;
+    \\        uint32_t cur_dist = (idx - cur_ideal) & mask;
+    \\        if (cur_dist < dist) break;
     \\        idx = (idx + 1) & mask;
+    \\        dist++;
     \\    }
     \\    return lua_val_nil();
     \\}
@@ -7156,6 +7255,52 @@ const duo_runtime =
     \\    return lua_val_nil();
     \\}
     \\
+    \\static void lua_table_grow_hash(lua_Table* t) {
+    \\    int old_cap = t->capacity;
+    \\    lua_Value* old_keys = t->hash_keys;
+    \\    lua_Value* old_vals = t->hash_vals;
+    \\    t->capacity *= 2;
+    \\    t->hash_keys = calloc(t->capacity, sizeof(lua_Value));
+    \\    t->hash_vals = calloc(t->capacity, sizeof(lua_Value));
+    \\    t->count = 0;
+    \\    uint32_t mask = (uint32_t)t->capacity - 1;
+    \\    for (int i = 0; i < old_cap; i++) {
+    \\        if (old_keys[i].type == VAL_NIL) continue;
+    \\        uint32_t h = lua_hash_value(old_keys[i]);
+    \\        uint32_t ideal = h & mask;
+    \\        uint32_t idx = ideal;
+    \\        uint32_t dist = 0;
+    \\        lua_Value k = old_keys[i];
+    \\        lua_Value v = old_vals[i];
+    \\        while (1) {
+    \\            if (t->hash_keys[idx].type == VAL_NIL) {
+    \\                t->hash_keys[idx] = k;
+    \\                t->hash_vals[idx] = v;
+    \\                t->count++;
+    \\                break;
+    \\            }
+    \\            uint32_t cur_ideal = lua_hash_value(t->hash_keys[idx]) & mask;
+    \\            uint32_t cur_dist = (idx - cur_ideal) & mask;
+    \\            if (cur_dist < dist) {
+    \\                lua_Value tk = t->hash_keys[idx];
+    \\                lua_Value tv = t->hash_vals[idx];
+    \\                t->hash_keys[idx] = k;
+    \\                t->hash_vals[idx] = v;
+    \\                k = tk; v = tv;
+    \\                dist = cur_dist;
+    \\            }
+    \\            idx = (idx + 1) & mask;
+    \\            dist++;
+    \\        }
+    \\    }
+    \\    /* Free old heap storage; inline storage is embedded, not malloc'd */
+    \\    if (!t->hash_inline) {
+    \\        free(old_keys);
+    \\        free(old_vals);
+    \\    }
+    \\    t->hash_inline = false;
+    \\}
+    \\
     \\static inline void lua_table_set_raw(lua_Value table, lua_Value key, lua_Value val) {
     \\    if (LUA_UNLIKELY(table.type != VAL_TABLE)) return;
     \\    lua_Table* t = (lua_Table*)table.as.tval;
@@ -7180,41 +7325,49 @@ const duo_runtime =
     \\        }
     \\    }
     \\    if (t->capacity == 0) {
-    \\        t->capacity = 8;
-    \\        t->entries = calloc(t->capacity, sizeof(lua_TableEntry));
+    \\        t->hash_keys = t->inline_keys;
+    \\        t->hash_vals = t->inline_vals;
+    \\        t->capacity = LUA_TABLE_INLINE_CAP;
+    \\        t->hash_inline = true;
     \\    }
     \\    uint32_t h = lua_hash_value(key);
-    \\    uint32_t idx = h & (t->capacity - 1);
-    \\    while (t->entries[idx].key.type != VAL_NIL) {
-    \\        if (lua_eq(t->entries[idx].key, key)) {
-    \\            t->entries[idx].val = val;
+    \\    uint32_t mask = (uint32_t)t->capacity - 1;
+    \\    uint32_t ideal = h & mask;
+    \\    uint32_t idx = ideal;
+    \\    uint32_t dist = 0;
+    \\    lua_Value cur_key = key;
+    \\    lua_Value cur_val = val;
+    \\    while (1) {
+    \\        if (t->hash_keys[idx].type == VAL_NIL) {
+    \\            if (cur_val.type == VAL_NIL) return;
+    \\            if (t->count >= t->capacity * 0.7) {
+    \\                lua_table_grow_hash(t);
+    \\                lua_table_set_raw(table, cur_key, cur_val);
+    \\                return;
+    \\            }
+    \\            t->hash_keys[idx] = cur_key;
+    \\            t->hash_vals[idx] = cur_val;
+    \\            t->count++;
     \\            return;
     \\        }
-    \\        idx = (idx + 1) & (t->capacity - 1);
-    \\    }
-    \\    if (val.type == VAL_NIL) return;
-    \\    if (t->count >= t->capacity * 0.7) {
-    \\        int old_cap = t->capacity;
-    \\        lua_TableEntry* old_entries = t->entries;
-    \\        t->capacity *= 2;
-    \\        t->entries = calloc(t->capacity, sizeof(lua_TableEntry));
-    \\        t->count = 0;
-    \\        for (int i = 0; i < old_cap; i++) {
-    \\            if (old_entries[i].key.type != VAL_NIL) {
-    \\                uint32_t h2 = lua_hash_value(old_entries[i].key);
-    \\                uint32_t idx2 = h2 & (t->capacity - 1);
-    \\                while (t->entries[idx2].key.type != VAL_NIL) idx2 = (idx2 + 1) & (t->capacity - 1);
-    \\                t->entries[idx2] = old_entries[i];
-    \\                t->count++;
-    \\            }
+    \\        if (lua_eq(t->hash_keys[idx], cur_key)) {
+    \\            t->hash_vals[idx] = cur_val;
+    \\            return;
     \\        }
-    \\        free(old_entries);
-    \\        lua_table_set_raw(table, key, val);
-    \\        return;
+    \\        /* Robin Hood: steal from richer entries (those closer to their ideal position) */
+    \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[idx]) & mask;
+    \\        uint32_t cur_dist = (idx - cur_ideal) & mask;
+    \\        if (cur_dist < dist) {
+    \\            lua_Value tk = t->hash_keys[idx];
+    \\            lua_Value tv = t->hash_vals[idx];
+    \\            t->hash_keys[idx] = cur_key;
+    \\            t->hash_vals[idx] = cur_val;
+    \\            cur_key = tk; cur_val = tv;
+    \\            dist = cur_dist;
+    \\        }
+    \\        idx = (idx + 1) & mask;
+    \\        dist++;
     \\    }
-    \\    t->entries[idx].key = key;
-    \\    t->entries[idx].val = val;
-    \\    t->count++;
     \\}
     \\
     \\static inline void lua_table_set(lua_Value table, lua_Value key, lua_Value val) {
@@ -7439,7 +7592,7 @@ const duo_runtime =
     \\        if (lua_eq(t->array[i], item)) return true;
     \\    }
     \\    for (int i = 0; i < t->capacity; i++) {
-    \\        if (t->entries[i].key.type != VAL_NIL && lua_eq(t->entries[i].val, item)) return true;
+    \\        if (t->hash_keys[i].type != VAL_NIL && lua_eq(t->hash_vals[i], item)) return true;
     \\    }
     \\    return false;
     \\}
@@ -8054,7 +8207,8 @@ const duo_runtime =
     \\        if (t) {
     \\            for (int i = 0; i < t->array_capacity; i++) t->array[i] = lua_val_nil();
     \\            t->array_size = 0;
-    \\            if (t->capacity > 0) memset(t->entries, 0, t->capacity * sizeof(lua_TableEntry));
+    \\            if (t->capacity > 0) memset(t->hash_keys, 0, t->capacity * sizeof(lua_Value));
+    \\            memset(t->hash_vals, 0, t->capacity * sizeof(lua_Value));
     \\            t->count = 0;
     \\        }
     \\    }
@@ -9328,9 +9482,9 @@ const duo_runtime =
     \\            }
     \\        }
     \\        for (int i = 0; i < t->capacity; i++) {
-    \\            if (t->entries[i].key.type != VAL_NIL) {
-    \\                lua_mret_push(t->entries[i].val);
-    \\                return t->entries[i].key;
+    \\            if (t->hash_keys[i].type != VAL_NIL) {
+    \\                lua_mret_push(t->hash_vals[i]);
+    \\                return t->hash_keys[i];
     \\            }
     \\        }
     \\        return lua_val_nil();
@@ -9350,19 +9504,19 @@ const duo_runtime =
     \\        uint32_t mask = t->capacity - 1;
     \\        uint32_t idx = lua_hash_value(key) & mask;
     \\        int found = 0;
-    \\        while (t->entries[idx].key.type != VAL_NIL) {
-    \\            if (!found && lua_eq(t->entries[idx].key, key)) found = 1;
+    \\        while (t->hash_keys[idx].type != VAL_NIL) {
+    \\            if (!found && lua_eq(t->hash_keys[idx], key)) found = 1;
     \\            else if (found) {
-    \\                lua_mret_push(t->entries[idx].val);
-    \\                return t->entries[idx].key;
+    \\                lua_mret_push(t->hash_vals[idx]);
+    \\                return t->hash_keys[idx];
     \\            }
     \\            idx = (idx + 1) & mask;
     \\        }
     \\        if (!found) {
     \\            for (int i = 0; i < t->capacity; i++) {
-    \\                if (t->entries[i].key.type != VAL_NIL) {
-    \\                    lua_mret_push(t->entries[i].val);
-    \\                    return t->entries[i].key;
+    \\                if (t->hash_keys[i].type != VAL_NIL) {
+    \\                    lua_mret_push(t->hash_vals[i]);
+    \\                    return t->hash_keys[i];
     \\                }
     \\            }
     \\        }
@@ -9373,11 +9527,11 @@ const duo_runtime =
     \\    uint32_t mask = t->capacity - 1;
     \\    uint32_t idx = lua_hash_value(key) & mask;
     \\    int found = 0;
-    \\    while (t->entries[idx].key.type != VAL_NIL) {
-    \\        if (!found && lua_eq(t->entries[idx].key, key)) found = 1;
+    \\    while (t->hash_keys[idx].type != VAL_NIL) {
+    \\        if (!found && lua_eq(t->hash_keys[idx], key)) found = 1;
     \\        else if (found) {
-    \\            lua_mret_push(t->entries[idx].val);
-    \\            return t->entries[idx].key;
+    \\            lua_mret_push(t->hash_vals[idx]);
+    \\            return t->hash_keys[idx];
     \\        }
     \\        idx = (idx + 1) & mask;
     \\    }
@@ -10535,6 +10689,87 @@ test "concept declarations emit runtime meta descriptors" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_table_set(Drawable, lua_val_from_str(\"required_methods\"), Drawable_methods);") != null);
 }
 
+test "codegen: compile operator folds pure expressions through comptime evaluator" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local folded: i64 = ##(2 + 3 * 4)
+        \\print(folded)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 14;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "2 + 3") == null);
+}
+
+test "codegen: __constexpr folds pure expressions through comptime evaluator" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local folded: i64 = __constexpr(2 + 3 * 4)
+        \\local label: str = __constexpr("duo")
+        \\print(folded)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 14;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* label = \"duo\";") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: compile-time evaluator folds prior pure bindings" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local base: i64 = 10
+        \\local offset: i64 = 5
+        \\local folded: i64 = __constexpr(base + offset)
+        \\local via_hash: i64 = ##(base + offset + 1)
+        \\print(folded)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 15;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t via_hash = 16;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "base + offset") == null);
+}
+
 // ── WASM target validation ─────────────────────────────────────────────────
 
 test "wasm: validateTarget blocks threaded scheduler on wasm32-wasi" {
@@ -10882,6 +11117,7 @@ test "expr_type: indexed native containers recover their element type" {
     var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0);
     defer {
         cg.local_scopes.deinit(testing.allocator);
+        cg.comptime_scopes.deinit(testing.allocator);
         cg.close_scopes.deinit(testing.allocator);
         cg.arc_scopes.deinit(testing.allocator);
         cg.defer_scopes.deinit(testing.allocator);
@@ -10910,6 +11146,7 @@ test "expr_type: statically typed callee recovers its return type" {
     var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0);
     defer {
         cg.local_scopes.deinit(testing.allocator);
+        cg.comptime_scopes.deinit(testing.allocator);
         cg.close_scopes.deinit(testing.allocator);
         cg.arc_scopes.deinit(testing.allocator);
         cg.defer_scopes.deinit(testing.allocator);
@@ -10948,6 +11185,7 @@ test "expr_type: structural fallback recovers literal and function expression ty
     var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0);
     defer {
         cg.local_scopes.deinit(alloc);
+        cg.comptime_scopes.deinit(alloc);
         cg.close_scopes.deinit(alloc);
         cg.arc_scopes.deinit(alloc);
         cg.defer_scopes.deinit(alloc);

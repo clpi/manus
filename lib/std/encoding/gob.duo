@@ -1,0 +1,183 @@
+-- std.encoding_gob — simple gob-like encoding (mirrors Go's encoding/gob)
+-- Provides a simple binary serialization format for Duo tables.
+-- This is NOT Go's gob format; it is a Duo-specific binary serializer
+-- that can encode tables, arrays, strings, numbers, booleans, and nil.
+
+-- Type tags
+TAG_NIL = 0
+TAG_BOOL = 1
+TAG_INT = 2
+TAG_FLOAT = 3
+TAG_STRING = 4
+TAG_ARRAY = 5
+TAG_TABLE = 6
+
+-- marshal: encode a value as a binary string.
+fun marshal(v: any): str
+    out = {}
+    encode(v, out)
+    table.concat(out)
+end
+
+-- encode: internal encoder that appends to the out array.
+fun encode(v: any, out: any): void
+    if v == nil then
+        out[rawlen(out) + 1] = string.char(TAG_NIL)
+        return
+    end
+    t = type(v)
+    if t == "boolean" then
+        out[rawlen(out) + 1] = string.char(TAG_BOOL)
+        if v then
+            out[rawlen(out) + 1] = string.char(1)
+        else
+            out[rawlen(out) + 1] = string.char(0)
+        end
+        return
+    end
+    if t == "number" then
+        if math.floor(v) == v and math.abs(v) < 2^53 then
+            out[rawlen(out) + 1] = string.char(TAG_INT)
+            encode_int(v, out)
+        else
+            out[rawlen(out) + 1] = string.char(TAG_FLOAT)
+            out[rawlen(out) + 1] = string.format("%.17g", v)
+            out[rawlen(out) + 1] = string.char(0)  -- null terminator
+        end
+        return
+    end
+    if t == "string" then
+        out[rawlen(out) + 1] = string.char(TAG_STRING)
+        encode_int(string.len(v), out)
+        out[rawlen(out) + 1] = v
+        return
+    end
+    if t == "table" then
+        -- check if array
+        n = rawlen(v)
+        count = 0
+        for _ in pairs(v) do count = count + 1 end
+        if count == n and n > 0 then
+            out[rawlen(out) + 1] = string.char(TAG_ARRAY)
+            encode_int(n, out)
+            i = 1
+            while i <= n
+                encode(v[i], out)
+                i = i + 1
+            end
+        else
+            out[rawlen(out) + 1] = string.char(TAG_TABLE)
+            encode_int(count, out)
+            for k, val in pairs(v)
+                encode(tostring(k), out)
+                encode(val, out)
+            end
+        end
+        return
+    end
+    -- unsupported type
+    out[rawlen(out) + 1] = string.char(TAG_NIL)
+end
+
+-- encode_int: encode an integer as a variable-length string.
+fun encode_int(v: i64, out: any): void
+    if v == 0 then
+        out[rawlen(out) + 1] = string.char(0)
+        return
+    end
+    parts = {}
+    n = v
+    if n < 0 then
+        -- encode sign as complement
+        n = 0 - n
+    end
+    while n > 0
+        parts[rawlen(parts) + 1] = string.char(n % 256)
+        n = n / 256
+    end
+    i = rawlen(parts)
+    while i >= 1
+        out[rawlen(out) + 1] = parts[i]
+        i = i - 1
+    end
+end
+
+-- unmarshal: decode a binary string into a Duo value.
+-- Returns (value, bytes_consumed).
+fun unmarshal(data: str): any
+    if data == nil or data == "" then return nil, 0 end
+    parser = {s = data, pos = 1}
+    v = decode(parser)
+    return v, parser.pos - 1
+end
+
+-- decode: internal decoder.
+fun decode(p: any): any
+    if p.pos > string.len(p.s) then return nil end
+    tag = string.byte(p.s, p.pos)
+    p.pos = p.pos + 1
+    if tag == TAG_NIL then return nil end
+    if tag == TAG_BOOL then
+        b = string.byte(p.s, p.pos)
+        p.pos = p.pos + 1
+        return b ~= 0
+    end
+    if tag == TAG_INT then
+        return decode_int(p)
+    end
+    if tag == TAG_FLOAT then
+        start = p.pos
+        while p.pos <= string.len(p.s) and string.byte(p.s, p.pos) ~= 0
+            p.pos = p.pos + 1
+        end
+        s = string.sub(p.s, start, p.pos - 1)
+        p.pos = p.pos + 1  -- skip null terminator
+        return tonumber(s)
+    end
+    if tag == TAG_STRING then
+        len = decode_int(p)
+        s = string.sub(p.s, p.pos, p.pos + len - 1)
+        p.pos = p.pos + len
+        return s
+    end
+    if tag == TAG_ARRAY then
+        n = decode_int(p)
+        arr = {}
+        i = 1
+        while i <= n
+            arr[i] = decode(p)
+            i = i + 1
+        end
+        return arr
+    end
+    if tag == TAG_TABLE then
+        n = decode_int(p)
+        tbl = {}
+        i = 1
+        while i <= n
+            k = decode(p)
+            v = decode(p)
+            tbl[k] = v
+            i = i + 1
+        end
+        return tbl
+    end
+    nil
+end
+
+-- decode_int: decode a variable-length integer.
+fun decode_int(p: any): i64
+    v = 0
+    while p.pos <= string.len(p.s)
+        b = string.byte(p.s, p.pos)
+        p.pos = p.pos + 1
+        v = v * 256 + b
+        if b < 128 then break end
+    end
+    v
+end
+
+M = {}
+M.marshal = marshal
+M.unmarshal = unmarshal
+M

@@ -1,0 +1,99 @@
+-- std.io_util — I/O utilities (mirrors Go's io/ioutil)
+-- Provides convenience functions for reading all data from files/streams.
+
+io_mod = require "std.io"
+fs_mod = require "std.fs"
+
+-- read_all: read all data from a file handle until EOF.
+fun read_all(fh: any): str
+    if fh == nil then return "" end
+    out = {}
+    while true
+        chunk = fh:read(4096)
+        if chunk == nil then break end
+        out[rawlen(out) + 1] = chunk
+    end
+    table.concat(out)
+end
+
+-- read_file: read the entire contents of a file path.
+fun read_file(path: str): str
+    if path == nil then return "" end
+    f = io.open(path, "r")
+    if f == nil then return "", "file not found: " .. path end
+    data = read_all(f)
+    f:close()
+    return data, nil
+end
+
+-- write_file: write data to a file path (truncating if it exists).
+fun write_file(path: str, data: str): any
+    if path == nil then return false, "nil path" end
+    if data == nil then data = "" end
+    f = io.open(path, "w")
+    if f == nil then return false, "cannot open: " .. path end
+    f:write(data)
+    f:close()
+    return true, nil
+end
+
+-- append_file: append data to a file path (creating if it doesn't exist).
+fun append_file(path: str, data: str): any
+    if path == nil then return false, "nil path" end
+    if data == nil then data = "" end
+    f = io.open(path, "a")
+    if f == nil then return false, "cannot open: " .. path end
+    f:write(data)
+    f:close()
+    true, nil
+end
+
+-- read_dir: list directory entries.
+fun read_dir(dir: str): any
+    if dir == nil then return {} end
+    f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
+    if f == nil then return {} end
+    out = {}
+    for line in f:lines() do
+        out[rawlen(out) + 1] = line
+    end
+    f:close()
+    out
+end
+
+-- temp_file: create a temporary file and return its handle and path.
+fun temp_file(): any
+    path = "/tmp/duo_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
+    f = io.open(path, "w+")
+    {fh = f, path = path}
+end
+
+-- temp_dir: create a temporary directory and return its path.
+fun temp_dir(): str
+    path = "/tmp/duo_dir_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
+    os.execute("mkdir -p " .. path)
+    path
+end
+
+-- discard: a writer that discards all data (returns count written).
+fun discard(): any
+    {n = 0, write = fun(self: any, s: str): any self.n = self.n + string.len(s); self end}
+end
+
+-- nopCloser: wrap a reader so it has a no-op close method.
+fun nop_closer(fh: any): any
+    fh.close = fun(self: any): any nil end
+    fh
+end
+
+M = {}
+M.read_all = read_all
+M.read_file = read_file
+M.write_file = write_file
+M.append_file = append_file
+M.read_dir = read_dir
+M.temp_file = temp_file
+M.temp_dir = temp_dir
+M.discard = discard
+M.nop_closer = nop_closer
+M

@@ -1,0 +1,50 @@
+-- std.sync_waitgroup — WaitGroup (mirrors Go's sync.WaitGroup)
+-- In Duo (cooperative concurrency), a WaitGroup tracks pending tasks and
+-- allows waiting for all to complete. Since Duo has cooperative async, the
+-- "wait" is a busy-check loop yielding to the scheduler.
+
+-- new_waitgroup: create a new WaitGroup.
+fun new_waitgroup(): any
+    {count = 0}
+end
+
+-- add: increment the wait counter by delta (default 1).
+fun add(wg: any, delta: i64): void
+    if delta == nil then delta = 1 end
+    wg.count = wg.count + delta
+end
+
+-- done: decrement the wait counter by 1.
+fun done(wg: any): void
+    wg.count = wg.count - 1
+    if wg.count < 0 then wg.count = 0 end
+end
+
+-- wait: return true when all tasks are done (count == 0).
+-- In cooperative mode, this is non-blocking; the caller should check repeatedly.
+fun wait(wg: any): bool
+    wg.count == 0
+end
+
+-- wait_block: block until count == 0, yielding between checks.
+fun wait_block(wg: any): void
+    while wg.count > 0
+        -- yield to scheduler if available
+        co = require "std.coroutine"
+        co.yield_()
+    end
+end
+
+-- count: return the current pending count.
+fun count(wg: any): i64
+    wg.count
+end
+
+M = {}
+M.new_waitgroup = new_waitgroup
+M.add = add
+M.done = done
+M.wait = wait
+M.wait_block = wait_block
+M.count = count
+M

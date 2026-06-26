@@ -1,0 +1,363 @@
+-- std.encoding_json — JSON encoder/decoder (mirrors Go's encoding/json)
+-- All recursive helpers are merged into single self-referencing functions
+-- because Duo does not support forward references between functions.
+
+-- marshal: encode a Duo value as a JSON string.
+fun marshal(v: any): str
+    if v == nil then return "null" end
+    t = type(v)
+    if t == "nil" then return "null" end
+    if t == "boolean" then
+        if v then return "true" end
+        return "false"
+    end
+    if t == "number" then
+        if math.floor(v) == v and math.abs(v) < 1e15 then
+            return tostring(math.floor(v))
+        end
+        return string.format("%.17g", v)
+    end
+    if t == "string" then
+        out = {"\""}
+        i = 1
+        while i <= string.len(v)
+            ch = string.sub(v, i, i)
+            b = string.byte(v, i)
+            if ch == "\"" then
+                out[rawlen(out) + 1] = "\\\""
+            elseif ch == "\\" then
+                out[rawlen(out) + 1] = "\\\\"
+            elseif ch == "\n" then
+                out[rawlen(out) + 1] = "\\n"
+            elseif ch == "\r" then
+                out[rawlen(out) + 1] = "\\r"
+            elseif ch == "\t" then
+                out[rawlen(out) + 1] = "\\t"
+            elseif b < 32 then
+                out[rawlen(out) + 1] = string.format("\\u%04x", b)
+            else
+                out[rawlen(out) + 1] = ch
+            end
+            i = i + 1
+        end
+        out[rawlen(out) + 1] = "\""
+        return table.concat(out)
+    end
+    if t == "table" then
+        n = rawlen(v)
+        count = 0
+        for _ in pairs(v) do count = count + 1 end
+        if n > 0 and count == n then
+            -- array
+            out = {"["}
+            i = 1
+            while i <= n
+                out[rawlen(out) + 1] = marshal(v[i])
+                if i < n then out[rawlen(out) + 1] = "," end
+                i = i + 1
+            end
+            out[rawlen(out) + 1] = "]"
+            return table.concat(out)
+        else
+            -- object
+            keys = {}
+            for k in pairs(v) do
+                if type(k) == "string" then
+                    keys[rawlen(keys) + 1] = k
+                end
+            end
+            if rawlen(keys) == 0 then return "{}" end
+            table.sort(keys)
+            out = {"{"}
+            i = 1
+            while i <= rawlen(keys)
+                k = keys[i]
+                -- encode key as string
+                key_out = {"\""}
+                j = 1
+                while j <= string.len(k)
+                    ch = string.sub(k, j, j)
+                    b = string.byte(k, j)
+                    if ch == "\"" then
+                        key_out[rawlen(key_out) + 1] = "\\\""
+                    elseif ch == "\\" then
+                        key_out[rawlen(key_out) + 1] = "\\\\"
+                    elseif b < 32 then
+                        key_out[rawlen(key_out) + 1] = string.format("\\u%04x", b)
+                    else
+                        key_out[rawlen(key_out) + 1] = ch
+                    end
+                    j = j + 1
+                end
+                key_out[rawlen(key_out) + 1] = "\""
+                out[rawlen(out) + 1] = table.concat(key_out)
+                out[rawlen(out) + 1] = ":"
+                out[rawlen(out) + 1] = marshal(v[k])
+                if i < rawlen(keys) then out[rawlen(out) + 1] = "," end
+                i = i + 1
+            end
+            out[rawlen(out) + 1] = "}"
+            return table.concat(out)
+        end
+    end
+    "null"
+end
+
+-- skip_ws: skip whitespace in the parser.
+fun skip_ws(p: any): void
+    while p.pos <= string.len(p.s)
+        b = string.byte(p.s, p.pos)
+        if b == 32 or b == 9 or b == 10 or b == 13 then
+            p.pos = p.pos + 1
+        else
+            break
+        end
+    end
+end
+
+-- parse_value: parse a JSON value. Self-referencing for nested objects/arrays.
+fun parse_value(p: any): any
+    skip_ws(p)
+    if p.pos > string.len(p.s) then return nil, "unexpected end of input" end
+    ch = string.sub(p.s, p.pos, p.pos)
+    if ch == "{" then
+        -- parse object
+        p.pos = p.pos + 1
+        obj = {}
+        skip_ws(p)
+        if p.pos <= string.len(p.s) and string.sub(p.s, p.pos, p.pos) == "}" then
+            p.pos = p.pos + 1
+            return obj, nil
+        end
+        while true
+            skip_ws(p)
+            if p.pos > string.len(p.s) then return nil, "unterminated object" end
+            if string.sub(p.s, p.pos, p.pos) ~= "\"" then
+                return nil, "expected string key at position " .. tostring(p.pos)
+            end
+            -- parse key (inline string parse)
+            p.pos = p.pos + 1
+            key_out = {}
+            while p.pos <= string.len(p.s)
+                kch = string.sub(p.s, p.pos, p.pos)
+                if kch == "\"" then
+                    p.pos = p.pos + 1
+                    break
+                end
+                if kch == "\\" then
+                    p.pos = p.pos + 1
+                    if p.pos > string.len(p.s) then return nil, "unterminated string escape" end
+                    esc = string.sub(p.s, p.pos, p.pos)
+                    if esc == "n" then key_out[rawlen(key_out) + 1] = "\n"
+                    elseif esc == "t" then key_out[rawlen(key_out) + 1] = "\t"
+                    elseif esc == "r" then key_out[rawlen(key_out) + 1] = "\r"
+                    elseif esc == "\"" then key_out[rawlen(key_out) + 1] = "\""
+                    elseif esc == "\\" then key_out[rawlen(key_out) + 1] = "\\"
+                    else key_out[rawlen(key_out) + 1] = esc
+                    end
+                else
+                    key_out[rawlen(key_out) + 1] = kch
+                end
+                p.pos = p.pos + 1
+            end
+            key = table.concat(key_out)
+            skip_ws(p)
+            if p.pos > string.len(p.s) or string.sub(p.s, p.pos, p.pos) ~= ":" then
+                return nil, "expected colon at position " .. tostring(p.pos)
+            end
+            p.pos = p.pos + 1
+            val, verr = parse_value(p)
+            if verr ~= nil then return nil, verr end
+            obj[key] = val
+            skip_ws(p)
+            if p.pos > string.len(p.s) then return nil, "unterminated object" end
+            och = string.sub(p.s, p.pos, p.pos)
+            if och == "}" then
+                p.pos = p.pos + 1
+                return obj, nil
+            end
+            if och ~= "," then
+                return nil, "expected comma or closing brace at position " .. tostring(p.pos)
+            end
+            p.pos = p.pos + 1
+        end
+        return nil, "unreachable"
+    end
+    if ch == "[" then
+        -- parse array
+        p.pos = p.pos + 1
+        arr = {}
+        skip_ws(p)
+        if p.pos <= string.len(p.s) and string.sub(p.s, p.pos, p.pos) == "]" then
+            p.pos = p.pos + 1
+            return arr, nil
+        end
+        while true
+            val, verr = parse_value(p)
+            if verr ~= nil then return nil, verr end
+            arr[rawlen(arr) + 1] = val
+            skip_ws(p)
+            if p.pos > string.len(p.s) then return nil, "unterminated array" end
+            ach = string.sub(p.s, p.pos, p.pos)
+            if ach == "]" then
+                p.pos = p.pos + 1
+                return arr, nil
+            end
+            if ach ~= "," then
+                return nil, "expected comma or closing bracket at position " .. tostring(p.pos)
+            end
+            p.pos = p.pos + 1
+        end
+        return nil, "unreachable"
+    end
+    if ch == "\"" then
+        -- parse string
+        p.pos = p.pos + 1
+        out = {}
+        while p.pos <= string.len(p.s)
+            sch = string.sub(p.s, p.pos, p.pos)
+            if sch == "\"" then
+                p.pos = p.pos + 1
+                return table.concat(out), nil
+            end
+            if sch == "\\" then
+                p.pos = p.pos + 1
+                if p.pos > string.len(p.s) then return nil, "unterminated string escape" end
+                esc = string.sub(p.s, p.pos, p.pos)
+                if esc == "n" then out[rawlen(out) + 1] = "\n"
+                elseif esc == "r" then out[rawlen(out) + 1] = "\r"
+                elseif esc == "t" then out[rawlen(out) + 1] = "\t"
+                elseif esc == "\"" then out[rawlen(out) + 1] = "\""
+                elseif esc == "\\" then out[rawlen(out) + 1] = "\\"
+                elseif esc == "/" then out[rawlen(out) + 1] = "/"
+                elseif esc == "b" then out[rawlen(out) + 1] = string.char(8)
+                elseif esc == "f" then out[rawlen(out) + 1] = string.char(12)
+                elseif esc == "u" then
+                    hex = string.sub(p.s, p.pos + 1, p.pos + 4)
+                    code = tonumber(hex, 16)
+                    if code == nil then return nil, "invalid unicode escape" end
+                    out[rawlen(out) + 1] = string.char(code)
+                    p.pos = p.pos + 4
+                else
+                    out[rawlen(out) + 1] = esc
+                end
+            else
+                out[rawlen(out) + 1] = sch
+            end
+            p.pos = p.pos + 1
+        end
+        return nil, "unterminated string"
+    end
+    if ch == "t" then
+        if string.sub(p.s, p.pos, p.pos + 3) == "true" then
+            p.pos = p.pos + 4
+            return true, nil
+        end
+        return nil, "invalid boolean at position " .. tostring(p.pos)
+    end
+    if ch == "f" then
+        if string.sub(p.s, p.pos, p.pos + 4) == "false" then
+            p.pos = p.pos + 5
+            return false, nil
+        end
+        return nil, "invalid boolean at position " .. tostring(p.pos)
+    end
+    if ch == "n" then
+        if string.sub(p.s, p.pos, p.pos + 3) == "null" then
+            p.pos = p.pos + 4
+            return nil, nil
+        end
+        return nil, "invalid null at position " .. tostring(p.pos)
+    end
+    if ch == "-" or (ch >= "0" and ch <= "9") then
+        start = p.pos
+        if string.sub(p.s, p.pos, p.pos) == "-" then p.pos = p.pos + 1 end
+        while p.pos <= string.len(p.s)
+            nch = string.sub(p.s, p.pos, p.pos)
+            if (nch >= "0" and nch <= "9") or nch == "." or nch == "e" or nch == "E" or nch == "+" or nch == "-" then
+                p.pos = p.pos + 1
+            else
+                break
+            end
+        end
+        num_str = string.sub(p.s, start, p.pos - 1)
+        nv = tonumber(num_str)
+        if nv == nil then return nil, "invalid number at position " .. tostring(start) end
+        return nv, nil
+    end
+    return nil, "unexpected character '" .. ch .. "' at position " .. tostring(p.pos)
+end
+
+-- unmarshal: decode a JSON string into a Duo value.
+fun unmarshal(s: str): any
+    if s == nil then return nil, "nil input" end
+    s = string.gsub(s, "^%s+", "")
+    s = string.gsub(s, "%s+$", "")
+    if s == "" then return nil, "empty input" end
+    parser = {s = s, pos = 1}
+    v, err = parse_value(parser)
+    if err ~= nil then return nil, err end
+    skip_ws(parser)
+    if parser.pos <= string.len(s) then
+        return nil, "trailing data at position " .. tostring(parser.pos)
+    end
+    return v, nil
+end
+
+-- marshal_indent: encode a Duo value as indented JSON.
+fun marshal_indent(v: any, indent: str): str
+    if indent == nil then indent = "  " end
+    json = marshal(v)
+    out = {}
+    depth = 0
+    i = 1
+    in_string = false
+    while i <= string.len(json)
+        ch = string.sub(json, i, i)
+        if in_string then
+            out[rawlen(out) + 1] = ch
+            if ch == "\\" and i < string.len(json) then
+                out[rawlen(out) + 1] = string.sub(json, i + 1, i + 1)
+                i = i + 2
+            elseif ch == "\"" then
+                in_string = false
+                i = i + 1
+            else
+                i = i + 1
+            end
+        else
+            if ch == "\"" then
+                in_string = true
+                out[rawlen(out) + 1] = ch
+                i = i + 1
+            elseif ch == "{" or ch == "[" then
+                out[rawlen(out) + 1] = ch
+                depth = depth + 1
+                out[rawlen(out) + 1] = "\n" .. string.rep(indent, depth)
+                i = i + 1
+            elseif ch == "}" or ch == "]" then
+                depth = depth - 1
+                if depth < 0 then depth = 0 end
+                out[rawlen(out) + 1] = "\n" .. string.rep(indent, depth) .. ch
+                i = i + 1
+            elseif ch == "," then
+                out[rawlen(out) + 1] = ch
+                out[rawlen(out) + 1] = "\n" .. string.rep(indent, depth)
+                i = i + 1
+            elseif ch == ":" then
+                out[rawlen(out) + 1] = ": "
+                i = i + 1
+            else
+                out[rawlen(out) + 1] = ch
+                i = i + 1
+            end
+        end
+    end
+    table.concat(out)
+end
+
+M = {}
+M.marshal = marshal
+M.unmarshal = unmarshal
+M.marshal_indent = marshal_indent
+M

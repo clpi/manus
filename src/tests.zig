@@ -9,6 +9,7 @@ test {
     _ = @import("types.zig");
     _ = @import("parser.zig");
     _ = @import("sema.zig");
+    _ = @import("comptime.zig");
     _ = @import("mono.zig");
     _ = @import("arc.zig");
     _ = @import("async_lower.zig");

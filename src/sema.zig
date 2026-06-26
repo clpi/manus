@@ -209,6 +209,9 @@ pub const Sema = struct {
     overloads: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(FuncSignature)) = .{},
     /// Tracked generic instantiation sites for the monomorphizer (Requirement 4.1, 4.3).
     instantiation_sites: std.ArrayListUnmanaged(InstantiationRecord) = .empty,
+    /// Aggressive field-type tracking: maps "varname.fieldname" → inferred RT.
+    /// Updated on assignments, queried on field reads. Cleared per-function.
+    table_field_types: std.StringHashMapUnmanaged(RT) = .{},
     errors: u32,
     warnings: u32,
     current_ret: RT,
@@ -264,7 +267,8 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "loadfile") or
             std.mem.eql(u8, name, "dofile") or
             std.mem.eql(u8, name, "require") or
-            std.mem.eql(u8, name, "req"))
+            std.mem.eql(u8, name, "req") or
+            std.mem.eql(u8, name, "__constexpr"))
             return true;
         return false;
     }
@@ -442,6 +446,7 @@ pub const Sema = struct {
         }
         try self.check_block(&mod.body);
         self.scope.pop();
+        self.table_field_types.deinit(self.alloc);
     }
 
     fn seed_globals(self: *Sema) void {
@@ -570,6 +575,16 @@ pub const Sema = struct {
             },
             .assign => |*as| {
                 for (as.values) |v| _ = try self.check_expr(v);
+                // Pre-track field types so target type-check sees the inferred types
+                for (as.targets, 0..) |tgt, i| {
+                    if (tgt.* == .field and i < as.values.len) {
+                        const f = tgt.field;
+                        if (f.obj.* == .name) {
+                            const val_t = self.type_map.get(as.values[i]) orelse .any;
+                            self.track_table_field(f.obj.name.ident, f.field, val_t);
+                        }
+                    }
+                }
                 for (as.targets, 0..) |tgt, i| {
                     try self.check_assign_target(tgt);
                     _ = try self.check_expr(tgt);
@@ -693,6 +708,9 @@ pub const Sema = struct {
         }
         fb.is_typed = all_typed;
 
+        // Clear per-function field type tracking
+        self.table_field_types.clearRetainingCapacity();
+
         // Check body
         const prev_ret = self.current_ret;
         const prev_nopanic = self.current_nopanic;
@@ -721,6 +739,36 @@ pub const Sema = struct {
     }
 
     // ── Expressions ───────────────────────────────────────────────────────────
+
+    /// Record or update the inferred type of a dynamic table field.
+    /// On type mismatch, widens to .any (conservative).
+    fn track_table_field(self: *Sema, table_name: []const u8, field_name: []const u8, new_t: RT) void {
+        if (new_t == .any) {
+            const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return;
+            defer self.alloc.free(key);
+            self.table_field_types.put(self.alloc, key, .any) catch {};
+            return;
+        }
+        if (new_t == .nil) return;
+        if (new_t == .str) return;
+        const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return;
+        defer self.alloc.free(key);
+        if (self.table_field_types.get(key)) |existing| {
+            if (existing == .any) return;
+            if (std.meta.activeTag(existing) != std.meta.activeTag(new_t)) {
+                self.table_field_types.put(self.alloc, key, .any) catch {};
+            }
+        } else {
+            self.table_field_types.put(self.alloc, key, new_t) catch {};
+        }
+    }
+
+    /// Look up the tracked field type for a dynamic table field access.
+    fn lookup_table_field(self: *const Sema, table_name: []const u8, field_name: []const u8) ?RT {
+        const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return null;
+        defer self.alloc.free(key);
+        return self.table_field_types.get(key);
+    }
 
     fn check_expr(self: *Sema, expr: *ast.Expr) SemaError!RT {
         const t = try self.check_expr_inner(expr);
@@ -765,6 +813,14 @@ pub const Sema = struct {
                         }
                     }
                 }
+                // Aggressive field type tracking: if the object is a local
+                // dynamic table and we've seen a typed assignment to this
+                // field, return the tracked type instead of .any.
+                if (f.obj.* == .name) {
+                    if (self.lookup_table_field(f.obj.name.ident, f.field)) |ft| {
+                        return ft;
+                    }
+                }
                 return .any; // otherwise, field access is dynamic
             },
             .index => |idx| {
@@ -782,6 +838,9 @@ pub const Sema = struct {
                 return .any;
             },
             .call => |c| {
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
+                    return try self.check_expr(c.args[0]);
+                }
                 const ft = try self.check_expr(c.func);
                 for (c.args) |arg| _ = try self.check_expr(arg);
 
@@ -5394,6 +5453,23 @@ test "sema: @arc(false) on a record-typed binding is accepted" {
     var p = Parser.init(&lex, alloc);
     var mod = try p.parse_module();
     var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: __constexpr is accepted as a compiler intrinsic in duo mode" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\local base: i64 = 10
+        \\local folded: i64 = __constexpr(base + 5)
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
 }

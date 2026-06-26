@@ -1,0 +1,212 @@
+-- std.flag — command-line flag parsing (mirrors Go's flag package)
+-- Provides a simple flag parser supporting --name=value, --name value, and
+-- boolean flags. Sub-arguments after -- are treated as positional args.
+
+-- new_flag_set: create a new flag set with the given name.
+fun new_flag_set(name: str): any
+    {name = name, flags = {}, args = {}, parsed = false}
+end
+
+-- bool_flag: register a boolean flag.
+fun bool_flag(fs: any, name: str, default: bool, usage: str): any
+    f = {name = name, value = default, default = default, usage = usage, is_bool = true}
+    fs.flags[name] = f
+    f
+end
+
+-- string_flag: register a string flag.
+fun string_flag(fs: any, name: str, default: str, usage: str): any
+    f = {name = name, value = default, default = default, usage = usage, is_bool = false, kind = "string"}
+    fs.flags[name] = f
+    f
+end
+
+-- int_flag: register an integer flag.
+fun int_flag(fs: any, name: str, default: i64, usage: str): any
+    f = {name = name, value = default, default = default, usage = usage, is_bool = false, kind = "int"}
+    fs.flags[name] = f
+    f
+end
+
+-- float_flag: register a float flag.
+fun float_flag(fs: any, name: str, default: f64, usage: str): any
+    f = {name = name, value = default, default = default, usage = usage, is_bool = false, kind = "float"}
+    fs.flags[name] = f
+    f
+end
+
+-- parse: parse the given argument array (1-based).
+fun parse(fs: any, argv: any): any
+    if argv == nil then argv = {} end
+    i = 1
+    n = rawlen(argv)
+    while i <= n
+        arg = argv[i]
+        if arg == "--" then
+            -- all remaining are positional
+            i = i + 1
+            while i <= n
+                fs.args[rawlen(fs.args) + 1] = argv[i]
+                i = i + 1
+            end
+            break
+        end
+        -- long flag: --name or --name=value
+        if string.sub(arg, 1, 2) == "--" then
+            rest = string.sub(arg, 3)
+            eq = string.find(rest, "=", 1, true)
+            if eq ~= nil then
+                fname = string.sub(rest, 1, eq - 1)
+                fval = string.sub(rest, eq + 1)
+            else
+                fname = rest
+                fval = nil
+            end
+            f = fs.flags[fname]
+            if f == nil then
+                io.write("flag: unknown flag --" .. fname .. "\n")
+                return fs, false
+            end
+            if f.is_bool then
+                if fval ~= nil then
+                    f.value = (fval == "true" or fval == "1")
+                else
+                    f.value = true
+                end
+            else
+                if fval == nil then
+                    i = i + 1
+                    if i > n then
+                        io.write("flag: --" .. fname .. " requires a value\n")
+                        return fs, false
+                    end
+                    fval = argv[i]
+                end
+                if f.kind == "int" then
+                    f.value = tonumber(fval)
+                elseif f.kind == "float" then
+                    f.value = tonumber(fval)
+                else
+                    f.value = fval
+                end
+            end
+        elseif string.sub(arg, 1, 1) == "-" and string.len(arg) > 1 then
+            -- short flag: -name or -name=value
+            rest = string.sub(arg, 2)
+            eq = string.find(rest, "=", 1, true)
+            if eq ~= nil then
+                fname = string.sub(rest, 1, eq - 1)
+                fval = string.sub(rest, eq + 1)
+            else
+                fname = rest
+                fval = nil
+            end
+            f = fs.flags[fname]
+            if f == nil then
+                io.write("flag: unknown flag -" .. fname .. "\n")
+                return fs, false
+            end
+            if f.is_bool then
+                if fval ~= nil then
+                    f.value = (fval == "true" or fval == "1")
+                else
+                    f.value = true
+                end
+            else
+                if fval == nil then
+                    i = i + 1
+                    if i > n then
+                        io.write("flag: -" .. fname .. " requires a value\n")
+                        return fs, false
+                    end
+                    fval = argv[i]
+                end
+                if f.kind == "int" then
+                    f.value = tonumber(fval)
+                elseif f.kind == "float" then
+                    f.value = tonumber(fval)
+                else
+                    f.value = fval
+                end
+            end
+        else
+            -- positional argument
+            fs.args[rawlen(fs.args) + 1] = arg
+        end
+        i = i + 1
+    end
+    fs.parsed = true
+    return fs, true
+end
+
+-- get: return the value of a flag.
+fun get(fs: any, name: str): any
+    f = fs.flags[name]
+    if f == nil then return nil end
+    f.value
+end
+
+-- lookup: return the flag descriptor.
+fun lookup(fs: any, name: str): any
+    fs.flags[name]
+end
+
+-- args_: return the positional arguments (named args_ to avoid shadowing).
+fun positional_args(fs: any): any
+    fs.args
+end
+
+-- print_defaults: print usage information for all flags.
+fun print_defaults(fs: any): void
+    for name, f in pairs(fs.flags)
+        prefix = "  -" .. name
+        if not f.is_bool then
+            prefix = prefix .. " value"
+        end
+        io.write(prefix .. "\n        " .. tostring(f.usage) .. " (default: " .. tostring(f.default) .. ")\n")
+    end
+end
+
+-- ----- Global default flag set -----
+
+default_fs = new_flag_set("")
+
+-- global bool: register a bool on the default flag set.
+fun global_bool(name: str, default: bool, usage: str): any
+    bool_flag(default_fs, name, default, usage)
+end
+
+fun global_string(name: str, default: str, usage: str): any
+    string_flag(default_fs, name, default, usage)
+end
+
+fun global_int(name: str, default: i64, usage: str): any
+    int_flag(default_fs, name, default, usage)
+end
+
+fun global_parse(argv: any): any
+    parse(default_fs, argv)
+end
+
+fun global_get(name: str): any
+    get(default_fs, name)
+end
+
+M = {}
+M.new_flag_set = new_flag_set
+M.bool_flag = bool_flag
+M.string_flag = string_flag
+M.int_flag = int_flag
+M.float_flag = float_flag
+M.parse = parse
+M.get = get
+M.lookup = lookup
+M.args = positional_args
+M.print_defaults = print_defaults
+M.default_fs = default_fs
+M.bool = global_bool
+M.string = global_string
+M.int = global_int
+M.parse_argv = global_parse
+M.get_flag = global_get
+M

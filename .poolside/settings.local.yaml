@@ -19,3 +19,4 @@ tools:
             - sleep 30
             - "true"
             - cat *
+            - zig test *

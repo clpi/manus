@@ -23,8 +23,12 @@ Keep it in sync with `docs/src/roadmap.md`.
   when `x` and `y` share a safe non-boolean/non-nil branch type.
 - [x] **List comprehension.** `{expr for value in table}` and
   `{expr for key, value in table if condition}` lower to dynamic array tables.
-- [~] **Macros / metaprogramming.** Compile-time `##(...)` and `std.meta`
-  helpers exist; hygienic macro syntax is still planned.
+- [~] **Macros / metaprogramming.** Compile-time `##(...)` and the
+  `__constexpr(...)` intrinsic now share a small pure evaluator for literals,
+  unary/binary operators, and scoped local/const bindings; unsupported runtime
+  expressions still fall back to normal emission. `std.meta` helpers exist, but
+  hygienic macro syntax, quote/unquote, AST replacement, and macro expansion
+  are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
 - [~] **Concept metatable merging.** Concepts exist as structural checks and

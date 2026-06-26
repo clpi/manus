@@ -1,0 +1,136 @@
+-- std.net_mail — email address and message parsing (mirrors Go's net/mail)
+
+-- parse_address: parse a single email address string.
+fun parse_address(s: str): any
+    if s == nil or s == "" then return nil end
+    s = string.gsub(s, "^%s+", "")
+    s = string.gsub(s, "%s+$", "")
+    lt = string.find(s, "<", 1, true)
+    if lt ~= nil then
+        gt = string.find(s, ">", lt + 1, true)
+        if gt == nil then return nil end
+        addr = string.sub(s, lt + 1, gt - 1)
+        name = string.sub(s, 1, lt - 1)
+        name = string.gsub(name, "^%s+", "")
+        name = string.gsub(name, "%s+$", "")
+        if string.len(name) >= 2 and string.sub(name, 1, 1) == "\"" and string.sub(name, string.len(name), string.len(name)) == "\"" then
+            name = string.sub(name, 2, string.len(name) - 1)
+        end
+        return {name = name, address = addr}
+    end
+    at = string.find(s, "@", 1, true)
+    if at == nil then return nil end
+    {name = "", address = s}
+end
+
+-- parse_address_list: parse a comma-separated list of addresses.
+fun parse_address_list(s: str): any
+    if s == nil or s == "" then return {} end
+    out = {}
+    parts = {}
+    depth = 0
+    start = 1
+    i = 1
+    while i <= string.len(s)
+        ch = string.sub(s, i, i)
+        if ch == "<" then depth = depth + 1 end
+        if ch == ">" then depth = depth - 1 end
+        if ch == "," and depth == 0 then
+            parts[rawlen(parts) + 1] = string.sub(s, start, i - 1)
+            start = i + 1
+        end
+        i = i + 1
+    end
+    parts[rawlen(parts) + 1] = string.sub(s, start)
+    i = 1
+    while i <= rawlen(parts)
+        addr = parse_address(parts[i])
+        if addr ~= nil then out[rawlen(out) + 1] = addr end
+        i = i + 1
+    end
+    out
+end
+
+-- format_address: format an address table as "Name <addr>" or "addr".
+fun format_address(addr: any): str
+    if addr == nil then return "" end
+    if addr.name ~= nil and addr.name ~= "" then
+        return "\"" .. addr.name .. "\" <" .. addr.address .. ">"
+    end
+    addr.address
+end
+
+-- split_lines: helper to split a string on newlines.
+fun split_lines(s: str): any
+    if s == nil then return {} end
+    out = {}
+    start = 1
+    i = 1
+    while i <= string.len(s)
+        if string.byte(s, i) == 10 then
+            line = string.sub(s, start, i - 1)
+            if string.len(line) > 0 and string.byte(line, string.len(line)) == 13 then
+                line = string.sub(line, 1, string.len(line) - 1)
+            end
+            out[rawlen(out) + 1] = line
+            start = i + 1
+        end
+        i = i + 1
+    end
+    if start <= string.len(s) then
+        out[rawlen(out) + 1] = string.sub(s, start)
+    end
+    out
+end
+
+-- read_message: parse an RFC 5322 message into {headers = {...}, body = "..."}.
+fun read_message(raw: str): any
+    if raw == nil then return {headers = {}, body = ""} end
+    sep = string.find(raw, "\r\n\r\n", 1, true)
+    if sep == nil then
+        sep = string.find(raw, "\n\n", 1, true)
+        if sep == nil then
+            return {headers = {}, body = raw}
+        end
+        header_block = string.sub(raw, 1, sep - 1)
+        body = string.sub(raw, sep + 2)
+    else
+        header_block = string.sub(raw, 1, sep - 1)
+        body = string.sub(raw, sep + 4)
+    end
+    headers = {}
+    lines = split_lines(header_block)
+    cur_key = nil
+    cur_val = ""
+    i = 1
+    while i <= rawlen(lines)
+        line = lines[i]
+        if string.sub(line, 1, 1) == " " or string.sub(line, 1, 1) == "\t" then
+            cur_val = cur_val .. " " .. string.gsub(line, "^%s+", "")
+        else
+            if cur_key ~= nil then
+                headers[string.lower(cur_key)] = string.gsub(cur_val, "^%s+", "")
+            end
+            colon = string.find(line, ":", 1, true)
+            if colon ~= nil then
+                cur_key = string.sub(line, 1, colon - 1)
+                cur_val = string.sub(line, colon + 1)
+            else
+                cur_key = nil
+            end
+        end
+        i = i + 1
+    end
+    if cur_key ~= nil then
+        headers[string.lower(cur_key)] = string.gsub(cur_val, "^%s+", "")
+    end
+    {headers = headers, body = body}
+end
+
+M = {}
+M.parse_address = parse_address
+M.parse_address_list = parse_address_list
+M.format_address = format_address
+M.read_message = read_message
+M.split_lines = split_lines
+M

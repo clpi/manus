@@ -1,0 +1,121 @@
+-- std.context — cancellation and timeout (mirrors Go's context package)
+-- In Duo (single-threaded with cooperative async), context is a table carrying
+-- a deadline, a cancellation flag, and a parent chain. There are no real
+-- OS-level cancellation signals; cancellation propagates by checking the flag.
+
+-- background: the root context (never cancelled, no deadline).
+background = {deadline = nil, cancelled = false, parent = nil, key = "background", done = false}
+
+-- todo: a placeholder context for when no context is decided yet.
+todo = {deadline = nil, cancelled = false, parent = nil, key = "todo", done = false}
+
+-- with_cancel: create a child context that can be cancelled.
+fun with_cancel(parent: any): any
+    if parent == nil then parent = background end
+    {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
+end
+
+-- with_deadline: create a child context with a specific deadline (epoch seconds).
+fun with_deadline(parent: any, deadline: f64): any
+    if parent == nil then parent = background end
+    -- inherit the earlier deadline
+    d = deadline
+    if parent.deadline ~= nil and parent.deadline < d then d = parent.deadline end
+    {deadline = d, cancelled = false, parent = parent, done = false}
+end
+
+-- with_timeout: create a child context that times out after `timeout` seconds.
+fun with_timeout(parent: any, timeout: f64): any
+    -- get current time
+    t = require "std.time"
+    now = t.now()
+    with_deadline(parent, now + timeout)
+end
+
+-- with_value: create a child context carrying a key-value pair.
+fun with_value(parent: any, key: any, value: any): any
+    if parent == nil then parent = background end
+    child = {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
+    child[key] = value
+    child
+end
+
+-- cancel: cancel a context (and all its children via propagation).
+fun cancel(ctx: any): void
+    if ctx == nil then return end
+    ctx.cancelled = true
+    ctx.done = true
+end
+
+-- is_cancelled: report whether ctx (or any ancestor) has been cancelled.
+fun is_cancelled(ctx: any): bool
+    if ctx == nil then return false end
+    cur = ctx
+    while cur ~= nil
+        if cur.cancelled then return true end
+        cur = cur.parent
+    end
+    false
+end
+
+-- deadline: return the deadline (epoch seconds) or nil if none.
+fun deadline(ctx: any): any
+    if ctx == nil then return nil end
+    cur = ctx
+    while cur ~= nil
+        if cur.deadline ~= nil then return cur.deadline end
+        cur = cur.parent
+    end
+    nil
+end
+
+-- done: report whether the context's work is done (cancelled or deadline expired).
+fun done(ctx: any): bool
+    if ctx == nil then return false end
+    if is_cancelled(ctx) then return true end
+    d = deadline(ctx)
+    if d ~= nil then
+        t = require "std.time"
+        if t.now() >= d then return true end
+    end
+    false
+end
+
+-- err: return a description of why the context was done, or nil.
+fun err(ctx: any): str
+    if ctx == nil then return nil end
+    if is_cancelled(ctx) then return "context canceled" end
+    d = deadline(ctx)
+    if d ~= nil then
+        t = require "std.time"
+        if t.now() >= d then return "context deadline exceeded" end
+    end
+    nil
+end
+
+-- value: look up key in the context chain.
+fun value(ctx: any, key: any): any
+    if ctx == nil then return nil end
+    cur = ctx
+    while cur ~= nil
+        v = cur[key]
+        if v ~= nil then return v end
+        cur = cur.parent
+    end
+    nil
+end
+
+M = {}
+M.background = background
+M.todo = todo
+M.with_cancel = with_cancel
+M.with_deadline = with_deadline
+M.with_timeout = with_timeout
+M.with_value = with_value
+M.cancel = cancel
+M.is_cancelled = is_cancelled
+M.deadline = deadline
+M.done = done
+M.err = err
+M.value = value
+M

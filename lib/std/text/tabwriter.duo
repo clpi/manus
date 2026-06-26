@@ -1,0 +1,88 @@
+-- std.text_tabwriter — tab-separated column writer (mirrors Go's text/tabwriter)
+-- Aligns columns of text separated by tab characters into a neat table.
+
+-- new_writer: create a tabwriter with the given parameters.
+-- minwidth: minimum cell width, tabwidth: width of tab chars, padding: cell padding, padchar: fill char.
+fun new_writer(minwidth: i64, tabwidth: i64, padding: i64, padchar: str): any
+    if minwidth == nil then minwidth = 0 end
+    if tabwidth == nil then tabwidth = 8 end
+    if padding == nil then padding = 1 end
+    if padchar == nil then padchar = " " end
+    {rows = {}, minwidth = minwidth, tabwidth = tabwidth, padding = padding, padchar = padchar, cur_row = {}, col_widths = {}}
+end
+
+-- write: add a string to the current row. Tabs delimit columns.
+fun write(w: any, s: str): any
+    -- split on tabs
+    i = 1
+    start = 1
+    while i <= string.len(s)
+        if string.byte(s, i) == 9 then  -- tab
+            w.cur_row[rawlen(w.cur_row) + 1] = string.sub(s, start, i - 1)
+            start = i + 1
+        end
+        i = i + 1
+    end
+    w.cur_row[rawlen(w.cur_row) + 1] = string.sub(s, start)
+    w
+end
+
+-- write_col: add a single cell to the current row.
+fun write_col(w: any, s: str): any
+    w.cur_row[rawlen(w.cur_row) + 1] = s
+    w
+end
+
+-- newline: finalize the current row and start a new one.
+fun newline(w: any): any
+    -- update column widths
+    i = 1
+    while i <= rawlen(w.cur_row)
+        cell_len = string.len(tostring(w.cur_row[i]))
+        if w.col_widths[i] == nil or cell_len > w.col_widths[i] then
+            w.col_widths[i] = cell_len
+        end
+        i = i + 1
+    end
+    w.rows[rawlen(w.rows) + 1] = w.cur_row
+    w.cur_row = {}
+    w
+end
+
+-- flush: render the aligned table as a single string.
+fun flush(w: any): str
+    -- if there is a pending row, add it
+    if rawlen(w.cur_row) > 0 then
+        newline(w)
+    end
+    out = {}
+    r = 1
+    while r <= rawlen(w.rows)
+        row = w.rows[r]
+        line = ""
+        c = 1
+        while c <= rawlen(row)
+            cell = tostring(row[c])
+            width = w.col_widths[c] + w.padding
+            if width < w.minwidth then width = w.minwidth end
+            -- pad the cell
+            pad_len = width - string.len(cell)
+            if pad_len < 0 then pad_len = 0 end
+            line = line .. cell .. string.rep(w.padchar, pad_len)
+            c = c + 1
+        end
+        -- trim trailing pad
+        line = string.gsub(line, w.padchar .. "*$", "")
+        out[rawlen(out) + 1] = line
+        r = r + 1
+    end
+    table.concat(out, "\n")
+end
+
+M = {}
+M.new_writer = new_writer
+M.write = write
+M.write_col = write_col
+M.newline = newline
+M.flush = flush
+M

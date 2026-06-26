@@ -1,0 +1,237 @@
+-- std.strconv — string conversion utilities (mirrors Go's strconv package)
+-- Provides numeric-to-string and string-to-numeric conversions with base
+-- support, quote/unescape helpers, and boolean formatting.
+
+-- ----- Number to string -----
+
+-- format_int: format integer v as a string in the given base (2-36).
+fun format_int(v: i64, base: i64): str
+    if base == nil or base < 2 then base = 10 end
+    if base > 36 then base = 36 end
+    if v == 0 then return "0" end
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    neg = false
+    n = v
+    if n < 0 then
+        neg = true
+        n = 0 - n
+    end
+    out = {}
+    while n > 0
+        out[rawlen(out) + 1] = string.sub(digits, (n % base) + 1, (n % base) + 1)
+        n = n / base
+    end
+    s = ""
+    i = rawlen(out)
+    while i >= 1
+        s = s .. out[i]
+        i = i - 1
+    end
+    if neg then s = "-" .. s end
+    s
+end
+
+-- itoa: convenience for format_int(v, 10).
+fun itoa(v: i64): str
+    format_int(v, 10)
+end
+
+-- format_float: format float v with 'g', 'f', or 'e' verb and precision.
+fun format_float(v: f64, fmt: str, prec: i64): str
+    if v == nil then return "0" end
+    if fmt == nil then fmt = "g" end
+    if prec == nil or prec < 0 then prec = 0 - 1 end
+    if fmt == "e" then
+        if prec < 0 then
+            string.format("%e", v)
+        else
+            string.format("%." .. tostring(prec) .. "e", v)
+        end
+    elseif fmt == "f" then
+        if prec < 0 then
+            string.format("%f", v)
+        else
+            string.format("%." .. tostring(prec) .. "f", v)
+        end
+    else
+        -- 'g' or default
+        if prec < 0 then
+            string.format("%g", v)
+        else
+            string.format("%." .. tostring(prec) .. "g", v)
+        end
+    end
+end
+
+-- ----- String to number -----
+
+-- parse_int: interpret s as an integer in the given base. Returns (value, ok).
+fun parse_int(s: str, base: i64): any
+    if s == nil or s == "" then return 0, false end
+    s = string.gsub(s, "^%s+", "")
+    s = string.gsub(s, "%s+$", "")
+    neg = false
+    if string.sub(s, 1, 1) == "-" then
+        neg = true
+        s = string.sub(s, 2)
+    elseif string.sub(s, 1, 1) == "+" then
+        s = string.sub(s, 2)
+    end
+    if base == nil or base == 0 then
+        base = 10
+        if string.sub(s, 1, 2) == "0x" or string.sub(s, 1, 2) == "0X" then
+            base = 16
+            s = string.sub(s, 3)
+        elseif string.sub(s, 1, 1) == "0" and string.len(s) > 1 then
+            base = 8
+            s = string.sub(s, 2)
+        end
+    end
+    if base < 2 or base > 36 then return 0, false end
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    val = 0
+    i = 1
+    while i <= string.len(s)
+        ch = string.lower(string.sub(s, i, i))
+        pos = string.find(digits, ch, 1, true)
+        if pos == nil then return 0, false end
+        d = pos - 1
+        if d >= base then return 0, false end
+        val = val * base + d
+        i = i + 1
+    end
+    if neg then val = 0 - val end
+    return val, true
+end
+
+-- atoi: convenience for parse_int(s, 10).
+fun atoi(s: str): any
+    parse_int(s, 10)
+end
+
+-- parse_float: interpret s as a floating-point number. Returns (value, ok).
+fun parse_float(s: str): any
+    if s == nil or s == "" then return 0.0, false end
+    s = string.gsub(s, "^%s+", "")
+    s = string.gsub(s, "%s+$", "")
+    -- accept optional sign
+    neg = false
+    if string.sub(s, 1, 1) == "-" then
+        neg = true
+        s = string.sub(s, 2)
+    elseif string.sub(s, 1, 1) == "+" then
+        s = string.sub(s, 2)
+    end
+    -- match numeric pattern: digits . digits [eE [+-] digits]
+    -- Use Lua pattern to validate
+    m = string["match"](s, "^(%d+%.?%d*[eE]?[+-]?%d*)$")
+    if m == nil then
+        m = string["match"](s, "^(%d*%.%d+[eE]?[+-]?%d*)$")
+    end
+    if m == nil then return 0.0, false end
+    v = tonumber(s)
+    if v == nil then return 0.0, false end
+    if neg then v = 0 - v end
+    return v, true
+end
+
+-- parse_bool: interpret s as a boolean. Returns (value, ok).
+fun parse_bool(s: str): any
+    if s == nil then return false, false end
+    s = string.lower(s)
+    if s == "1" or s == "t" or s == "true" then return true, true end
+    if s == "0" or s == "f" or s == "false" then return false, true end
+    return false, false
+end
+
+-- ----- Quote / unquote -----
+
+-- quote: return a double-quoted, safely-escaped string literal.
+fun quote(s: str): str
+    if s == nil then return "\"\"" end
+    out = {"\""}
+    i = 1
+    while i <= string.len(s)
+        ch = string.sub(s, i, i)
+        b = string.byte(s, i)
+        if ch == "\\" then
+            out[rawlen(out) + 1] = "\\\\"
+        elseif ch == "\"" then
+            out[rawlen(out) + 1] = "\\\""
+        elseif ch == "\n" then
+            out[rawlen(out) + 1] = "\\n"
+        elseif ch == "\r" then
+            out[rawlen(out) + 1] = "\\r"
+        elseif ch == "\t" then
+            out[rawlen(out) + 1] = "\\t"
+        elseif b < 32 then
+            out[rawlen(out) + 1] = string.format("\\x%02X", b)
+        else
+            out[rawlen(out) + 1] = ch
+        end
+        i = i + 1
+    end
+    out[rawlen(out) + 1] = "\""
+    table.concat(out)
+end
+
+-- unquote: remove surrounding quotes and interpret escape sequences.
+fun unquote(s: str): str
+    if s == nil then return "" end
+    n = string.len(s)
+    if n < 2 then return s end
+    first = string.sub(s, 1, 1)
+    last = string.sub(s, n, n)
+    inner = s
+    if (first == "\"" and last == "\"") or (first == "'" and last == "'") then
+        inner = string.sub(s, 2, n - 1)
+    end
+    out = {}
+    i = 1
+    while i <= string.len(inner)
+        ch = string.sub(inner, i, i)
+        if ch == "\\" and i < string.len(inner) then
+            nxt = string.sub(inner, i + 1, i + 1)
+            if nxt == "n" then
+                out[rawlen(out) + 1] = "\n"
+            elseif nxt == "t" then
+                out[rawlen(out) + 1] = "\t"
+            elseif nxt == "r" then
+                out[rawlen(out) + 1] = "\r"
+            elseif nxt == "\\" then
+                out[rawlen(out) + 1] = "\\"
+            elseif nxt == "\"" then
+                out[rawlen(out) + 1] = "\""
+            elseif nxt == "'" then
+                out[rawlen(out) + 1] = "'"
+            elseif nxt == "0" then
+                out[rawlen(out) + 1] = string.char(0)
+            else
+                out[rawlen(out) + 1] = nxt
+            end
+            i = i + 2
+        else
+            out[rawlen(out) + 1] = ch
+            i = i + 1
+        end
+    end
+    table.concat(out)
+end
+
+-- append_bool: format a boolean as "true" or "false".
+fun format_bool(b: bool): str
+    if b then "true" else "false" end
+end
+
+M = {}
+M.format_int = format_int
+M.itoa = itoa
+M.format_float = format_float
+M.parse_int = parse_int
+M.atoi = atoi
+M.parse_float = parse_float
+M.parse_bool = parse_bool
+M.quote = quote
+M.unquote = unquote
+M.format_bool = format_bool
+M

@@ -1,0 +1,75 @@
+-- std.crypto_hmac — HMAC implementation (mirrors Go's crypto/hmac)
+-- Provides HMAC construction using any hash function that takes a string and
+-- returns a hex string.
+
+h = require "std.hash"
+
+-- hmac: compute HMAC of message m using key k and hash function hash_fn.
+-- hash_fn(s) should return a hex string. block_size is the hash's block size.
+fun hmac(hash_fn: any, key: str, message: str, block_size: i64): str
+    if block_size == nil then block_size = 64 end
+    -- if key is longer than block_size, hash it
+    if string.len(key) > block_size then
+        key = hash_fn(key)
+    end
+    -- pad key to block_size
+    while string.len(key) < block_size
+        key = key .. string.char(0)
+    end
+    -- create inner and outer pads
+    inner_pad = ""
+    outer_pad = ""
+    i = 1
+    while i <= block_size
+        k = string.byte(key, i)
+        inner_pad = inner_pad .. string.char(k ~ 0x36)
+        outer_pad = outer_pad .. string.char(k ~ 0x5C)
+        i = i + 1
+    end
+    -- compute inner hash
+    inner_hash = hash_fn(inner_pad .. message)
+    -- compute outer hash
+    hash_fn(outer_pad .. inner_hash)
+end
+
+-- hmac_sha256: HMAC-SHA-256 using the std.crypto sha256.
+fun hmac_sha256(key: str, message: str): str
+    crypto = require "std.crypto"
+    hmac(crypto.sha256, key, message, 64)
+end
+
+-- hmac_sha1: HMAC-SHA-1.
+fun hmac_sha1(key: str, message: str): str
+    hmac(h.simple, key, message, 64)
+end
+
+-- hmac_md5: HMAC-MD5.
+fun hmac_md5(key: str, message: str): str
+    hmac(h.md5, key, message, 64)
+end
+
+-- hmac_fnv1a: HMAC using FNV-1a (non-standard but available).
+fun hmac_fnv1a(key: str, message: str): str
+    hmac(h.fnv1a, key, message, 64)
+end
+
+-- equal: constant-time comparison of two hex strings (length-checked).
+fun equal(a: str, b: str): bool
+    if string.len(a) ~= string.len(b) then return false end
+    result = 0
+    i = 1
+    while i <= string.len(a)
+        result = result | (string.byte(a, i) ~ string.byte(b, i))
+        i = i + 1
+    end
+    result == 0
+end
+
+M = {}
+M.hmac = hmac
+M.hmac_sha256 = hmac_sha256
+M.hmac_sha1 = hmac_sha1
+M.hmac_md5 = hmac_md5
+M.hmac_fnv1a = hmac_fnv1a
+M.equal = equal
+M

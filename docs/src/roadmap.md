@@ -71,7 +71,11 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   constraint dispatch and syntax removal are still in progress.
 - Pointer types use `*T`. Reference and ownership semantics are still evolving.
 - Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.
-- Macros and metaprogramming beyond the current compile-time `##(...)` escape and `std.meta` helpers.
+- Compile-time `##(...)` and `__constexpr(...)` share a small pure evaluator
+  for literals, unary/binary operators, and scoped local/const bindings.
+  Unsupported runtime expressions still fall back to normal runtime emission.
+  Macro expansion, quote/unquote, AST replacement, and hygienic macro syntax
+  are still in progress.
 - Scheduler-backed async tasks, pending poll states, and async channels are still
   being completed; current async calls run synchronously while descriptors are
   emitted for the full runtime path.
@@ -80,7 +84,9 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 ## Planned
 
-- Hygienic macro syntax and more complete metaprogramming.
+- Hygienic macro syntax and more complete metaprogramming: quote/unquote,
+  conditional/loop/function evaluation, AST replacement, and expansion-time
+  diagnostics.
 - A tighter concept/metatable model that finishes compile-time dispatch through
   ordinary Lua metatables and removes unnecessary syntax additions.
 - Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.

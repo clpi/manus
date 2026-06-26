@@ -1,0 +1,339 @@
+-- std.bytes — byte buffer manipulation (mirrors Go's bytes package)
+-- Operates on strings (Duo's byte sequences) since Duo strings are immutable
+-- byte arrays. A Buffer type is provided for efficient append/concat.
+
+-- equal: report whether two byte strings are equal.
+fun equal(a: str, b: str): bool
+    a == b
+end
+
+-- compare: return -1, 0, or 1 by lexicographic comparison.
+fun compare(a: str, b: str): i64
+    if a == b then return 0 end
+    if a == nil then return 0 - 1 end
+    if b == nil then return 1 end
+    la = string.len(a)
+    lb = string.len(b)
+    m = la
+    if lb < m then m = lb end
+    i = 1
+    while i <= m
+        ba = string.byte(a, i)
+        bb = string.byte(b, i)
+        if ba < bb then return 0 - 1 end
+        if ba > bb then return 1 end
+        i = i + 1
+    end
+    if la < lb then return 0 - 1 end
+    if la > lb then return 1 end
+    0
+end
+
+-- contains: report whether b is contained in s.
+fun contains(s: str, b: str): bool
+    if s == nil or b == nil then return false end
+    string.find(s, b, 1, true) ~= nil
+end
+
+-- contains_any: report whether s contains any byte from the string chars.
+fun contains_any(s: str, chars: str): bool
+    if s == nil or chars == nil then return false end
+    i = 1
+    while i <= string.len(chars)
+        if string.find(s, string.sub(chars, i, i), 1, true) ~= nil then return true end
+        i = i + 1
+    end
+    false
+end
+
+-- contains_rune: report whether s contains the byte value b.
+fun contains_byte(s: str, b: i64): bool
+    if s == nil then return false end
+    string.find(s, string.char(b), 1, true) ~= nil
+end
+
+-- count: count non-overlapping occurrences of sep in s.
+fun count(s: str, sep: str): i64
+    if s == nil or sep == nil or sep == "" then return 0 end
+    c = 0
+    start = 1
+    while true
+        pos = string.find(s, sep, start, true)
+        if pos == nil then break end
+        c = c + 1
+        start = pos + string.len(sep)
+    end
+    c
+end
+
+-- fields: split s around runs of whitespace, returning an array.
+fun fields(s: str): any
+    if s == nil then return {} end
+    out = {}
+    i = 1
+    n = string.len(s)
+    while i <= n
+        -- skip whitespace
+        while i <= n and (string.sub(s, i, i) == " " or string.sub(s, i, i) == "\t" or string.sub(s, i, i) == "\n" or string.sub(s, i, i) == "\r")
+            i = i + 1
+        end
+        if i > n then break end
+        start = i
+        while i <= n and string.sub(s, i, i) ~= " " and string.sub(s, i, i) ~= "\t" and string.sub(s, i, i) ~= "\n" and string.sub(s, i, i) ~= "\r"
+            i = i + 1
+        end
+        out[rawlen(out) + 1] = string.sub(s, start, i - 1)
+    end
+    out
+end
+
+-- has_prefix: report whether s begins with prefix.
+fun has_prefix(s: str, prefix: str): bool
+    if s == nil or prefix == nil then return false end
+    string.sub(s, 1, string.len(prefix)) == prefix
+end
+
+-- has_suffix: report whether s ends with suffix.
+fun has_suffix(s: str, suffix: str): bool
+    if s == nil or suffix == nil then return false end
+    n = string.len(suffix)
+    if n == 0 then return true end
+    if n > string.len(s) then return false end
+    string.sub(s, 0 - n) == suffix
+end
+
+-- index: return 1-based index of first occurrence of sep, or -1.
+fun index(s: str, sep: str): i64
+    if s == nil or sep == nil then return 0 - 1 end
+    pos = string.find(s, sep, 1, true)
+    if pos == nil then return 0 - 1 end
+    pos
+end
+
+-- index_byte: return 1-based index of byte b, or -1.
+fun index_byte(s: str, b: i64): i64
+    if s == nil then return 0 - 1 end
+    pos = string.find(s, string.char(b), 1, true)
+    if pos == nil then return 0 - 1 end
+    pos
+end
+
+-- last_index: return 1-based index of last occurrence of sep, or -1.
+fun last_index(s: str, sep: str): i64
+    if s == nil or sep == nil or sep == "" then return 0 - 1 end
+    last = 0 - 1
+    start = 1
+    while true
+        pos = string.find(s, sep, start, true)
+        if pos == nil then break end
+        last = pos
+        start = pos + 1
+    end
+    last
+end
+
+-- map_func: apply fn to each byte of s, returning a new string.
+fun map_func(fn: any, s: str): str
+    if s == nil then return "" end
+    out = {}
+    i = 1
+    while i <= string.len(s)
+        b = fn(string.byte(s, i))
+        out[rawlen(out) + 1] = string.char(b)
+        i = i + 1
+    end
+    table.concat(out)
+end
+
+-- repeat_str: return a new string consisting of n copies of s.
+fun repeat_str(s: str, n: i64): str
+    if s == nil or n == nil or n <= 0 then return "" end
+    string.rep(s, n)
+end
+
+-- replace: replace the first n occurrences of old with new in s.
+fun replace(s: str, old: str, new: str, n: i64): str
+    if s == nil then return "" end
+    if old == nil or old == "" then return s end
+    if new == nil then new = "" end
+    if n == nil or n < 0 then n = 0 - 1 end
+    string.gsub(s, old, new, n)
+end
+
+-- replace_all: replace all occurrences of old with new.
+fun replace_all(s: str, old: str, new: str): str
+    replace(s, old, new, 0 - 1)
+end
+
+-- split: split s on sep, returning an array of substrings.
+fun split(s: str, sep: str): any
+    if s == nil then return {} end
+    if sep == nil or sep == "" then
+        out = {}
+        i = 1
+        while i <= string.len(s)
+            out[rawlen(out) + 1] = string.sub(s, i, i)
+            i = i + 1
+        end
+        return out
+    end
+    out = {}
+    rest = s
+    while true
+        pos = string.find(rest, sep, 1, true)
+        if pos == nil then
+            out[rawlen(out) + 1] = rest
+            break
+        end
+        out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
+        rest = string.sub(rest, pos + string.len(sep))
+    end
+    out
+end
+
+-- split_n: split s on sep into at most n substrings.
+fun split_n(s: str, sep: str, n: i64): any
+    if s == nil then return {} end
+    if n == nil or n <= 0 then return split(s, sep) end
+    out = {}
+    rest = s
+    cnt = 1
+    while cnt < n
+        pos = string.find(rest, sep, 1, true)
+        if pos == nil then break end
+        out[rawlen(out) + 1] = string.sub(rest, 1, pos - 1)
+        rest = string.sub(rest, pos + string.len(sep))
+        cnt = cnt + 1
+    end
+    out[rawlen(out) + 1] = rest
+    out
+end
+
+-- trim: trim leading and trailing bytes in cutset from s.
+fun trim(s: str, cutset: str): str
+    if s == nil then return "" end
+    if cutset == nil or cutset == "" then
+        string["match"](s, "^%s*(.-)%s*$")
+    else
+        string["match"](s, "^[" .. cutset .. "]*(.-)[" .. cutset .. "]*$")
+    end
+end
+
+-- trim_space: trim leading and trailing whitespace.
+fun trim_space(s: str): str
+    if s == nil then return "" end
+    string["match"](s, "^%s*(.-)%s*$")
+end
+
+-- trim_prefix: remove leading prefix if present.
+fun trim_prefix(s: str, prefix: str): str
+    if s == nil then return "" end
+    if prefix == nil then return s end
+    if string.sub(s, 1, string.len(prefix)) == prefix then
+        return string.sub(s, string.len(prefix) + 1)
+    end
+    s
+end
+
+-- trim_suffix: remove trailing suffix if present.
+fun trim_suffix(s: str, suffix: str): str
+    if s == nil then return "" end
+    if suffix == nil or suffix == "" then return s end
+    n = string.len(suffix)
+    if string.sub(s, 0 - n) == suffix then
+        return string.sub(s, 1, string.len(s) - n)
+    end
+    s
+end
+
+-- to_lower: return s with ASCII letters lowercased.
+fun to_lower(s: str): str
+    if s == nil then return "" end
+    string.lower(s)
+end
+
+-- to_upper: return s with ASCII letters uppercased.
+fun to_upper(s: str): str
+    if s == nil then return "" end
+    string.upper(s)
+end
+
+-- title: return s with the first letter of each word capitalized.
+fun title(s: str): str
+    if s == nil then return "" end
+    string.gsub(s, "(%a)([%a']*)", fun(w: str, rest: str): str
+        string.upper(w) .. string.lower(rest)
+    end)
+end
+
+-- ----- Buffer type -----
+
+-- new_buffer: create an empty byte buffer.
+fun new_buffer(): any
+    {parts = {}, len = 0}
+end
+
+-- buffer_write: append a string to the buffer.
+fun buffer_write(buf: any, s: str): any
+    buf.parts[rawlen(buf.parts) + 1] = s
+    buf.len = buf.len + string.len(s)
+    buf
+end
+
+-- buffer_write_byte: append a single byte.
+fun buffer_write_byte(buf: any, b: i64): any
+    buf.parts[rawlen(buf.parts) + 1] = string.char(b)
+    buf.len = buf.len + 1
+    buf
+end
+
+-- buffer_string: return the concatenated contents as a string.
+fun buffer_string(buf: any): str
+    table.concat(buf.parts)
+end
+
+-- buffer_len: return the total length of buffered bytes.
+fun buffer_len(buf: any): i64
+    buf.len
+end
+
+-- buffer_reset: reset the buffer to empty.
+fun buffer_reset(buf: any): any
+    buf.parts = {}
+    buf.len = 0
+    buf
+end
+
+M = {}
+M.equal = equal
+M.compare = compare
+M.contains = contains
+M.contains_any = contains_any
+M.contains_byte = contains_byte
+M.count = count
+M.fields = fields
+M.has_prefix = has_prefix
+M.has_suffix = has_suffix
+M.index = index
+M.index_byte = index_byte
+M.last_index = last_index
+M.map = map_func
+M.repeat_str = repeat_str
+M.replace = replace
+M.replace_all = replace_all
+M.split = split
+M.split_n = split_n
+M.trim = trim
+M.trim_space = trim_space
+M.trim_prefix = trim_prefix
+M.trim_suffix = trim_suffix
+M.to_lower = to_lower
+M.to_upper = to_upper
+M.title = title
+M.new_buffer = new_buffer
+M.buffer_write = buffer_write
+M.buffer_write_byte = buffer_write_byte
+M.buffer_string = buffer_string
+M.buffer_len = buffer_len
+M.buffer_reset = buffer_reset
+M

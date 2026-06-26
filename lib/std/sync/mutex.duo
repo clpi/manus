@@ -1,0 +1,76 @@
+-- std.sync_mutex — Mutex and RWMutex (mirrors Go's sync)
+-- In Duo (cooperative single-thread), a Mutex is a simple flag. Since there
+-- is no true OS-level preemption, these are advisory locks for coordinating
+-- coroutines rather than threads.
+
+-- new_mutex: create a new Mutex.
+fun new_mutex(): any
+    {locked = false}
+end
+
+-- lock: acquire the mutex. If already locked, yield until available.
+fun lock(m: any): void
+    while m.locked
+        co = require "std.coroutine"
+        co.yield_()
+    end
+    m.locked = true
+end
+
+-- unlock: release the mutex.
+fun unlock(m: any): void
+    m.locked = false
+end
+
+-- try_lock: attempt to acquire the mutex without blocking. Returns true if acquired.
+fun try_lock(m: any): bool
+    if m.locked then return false end
+    m.locked = true
+    true
+end
+
+-- new_rwmutex: create a new RWMutex.
+fun new_rwmutex(): any
+    {writers = 0, readers = 0, write_locked = false}
+end
+
+-- rlock: acquire a read lock.
+fun rlock(m: any): void
+    while m.write_locked
+        co = require "std.coroutine"
+        co.yield_()
+    end
+    m.readers = m.readers + 1
+end
+
+-- runlock: release a read lock.
+fun runlock(m: any): void
+    m.readers = m.readers - 1
+    if m.readers < 0 then m.readers = 0 end
+end
+
+-- wlock: acquire a write lock.
+fun wlock(m: any): void
+    while m.write_locked or m.readers > 0
+        co = require "std.coroutine"
+        co.yield_()
+    end
+    m.write_locked = true
+end
+
+-- wunlock: release a write lock.
+fun wunlock(m: any): void
+    m.write_locked = false
+end
+
+M = {}
+M.new_mutex = new_mutex
+M.lock = lock
+M.unlock = unlock
+M.try_lock = try_lock
+M.new_rwmutex = new_rwmutex
+M.rlock = rlock
+M.runlock = runlock
+M.wlock = wlock
+M.wunlock = wunlock
+M

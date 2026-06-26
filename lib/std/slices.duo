@@ -1,0 +1,269 @@
+-- std.slices — slice helper utilities (mirrors Go 1.21 slices package)
+-- Provides generic operations on array-like tables: sort, binary search,
+-- clip, clone, compact, contains, index, insert, delete, grow, reverse.
+
+-- clip: trim the array to length n (in-place).
+fun clip(arr: any, n: i64): any
+    if arr == nil then return arr end
+    len = rawlen(arr)
+    if n >= len then return arr end
+    if n < 0 then n = 0 end
+    i = n + 1
+    while i <= len
+        arr[i] = nil
+        i = i + 1
+    end
+    arr
+end
+
+-- clone: return a shallow copy of the array portion of arr.
+fun clone(arr: any): any
+    if arr == nil then return {} end
+    out = {}
+    i = 1
+    while i <= rawlen(arr)
+        out[i] = arr[i]
+        i = i + 1
+    end
+    out
+end
+
+-- compact: remove consecutive duplicate elements, returning a new slice.
+fun compact(arr: any, eq: any): any
+    if arr == nil then return {} end
+    n = rawlen(arr)
+    if n <= 1 then return clone(arr) end
+    out = {}
+    out[1] = arr[1]
+    j = 1
+    i = 2
+    while i <= n
+        if not eq(arr[i], out[j]) then
+            j = j + 1
+            out[j] = arr[i]
+        end
+        i = i + 1
+    end
+    out
+end
+
+-- contains: return true if v is found in arr (using ==).
+fun contains(arr: any, v: any): bool
+    if arr == nil then return false end
+    i = 1
+    while i <= rawlen(arr)
+        if arr[i] == v then return true end
+        i = i + 1
+    end
+    false
+end
+
+-- index: return the 1-based index of the first occurrence of v, or -1.
+fun index(arr: any, v: any): i64
+    if arr == nil then return 0 - 1 end
+    i = 1
+    while i <= rawlen(arr)
+        if arr[i] == v then return i end
+        i = i + 1
+    end
+    0 - 1
+end
+
+-- index_func: return the 1-based index of the first element where f(e) is true.
+fun index_func(arr: any, f: any): i64
+    if arr == nil then return 0 - 1 end
+    i = 1
+    while i <= rawlen(arr)
+        if f(arr[i]) then return i end
+        i = i + 1
+    end
+    0 - 1
+end
+
+-- insert: insert v at position i (1-based), shifting elements right. Returns a new slice.
+fun insert(arr: any, i: i64, v: any): any
+    if arr == nil then arr = {} end
+    n = rawlen(arr)
+    if i < 1 then i = 1 end
+    if i > n + 1 then i = n + 1 end
+    out = {}
+    j = 1
+    while j < i
+        out[j] = arr[j]
+        j = j + 1
+    end
+    out[i] = v
+    j = i
+    while j <= n
+        out[j + 1] = arr[j]
+        j = j + 1
+    end
+    out
+end
+
+-- delete: remove the element at index i (1-based), shifting elements left. Returns a new slice.
+fun delete(arr: any, i: i64): any
+    if arr == nil then return {} end
+    n = rawlen(arr)
+    if i < 1 or i > n then return clone(arr) end
+    out = {}
+    j = 1
+    while j <= n
+        if j ~= i then
+            out[rawlen(out) + 1] = arr[j]
+        end
+        j = j + 1
+    end
+    out
+end
+
+-- delete_func: remove all elements where f(e) returns true. Returns a new slice.
+fun delete_func(arr: any, f: any): any
+    if arr == nil then return {} end
+    out = {}
+    i = 1
+    while i <= rawlen(arr)
+        if not f(arr[i]) then
+            out[rawlen(out) + 1] = arr[i]
+        end
+        i = i + 1
+    end
+    out
+end
+
+-- reverse: reverse the array portion in-place (like Go's slices.Reverse).
+fun reverse(arr: any): void
+    if arr == nil then return end
+    n = rawlen(arr)
+    i = 1
+    j = n
+    while i < j
+        tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
+        i = i + 1
+        j = j - 1
+    end
+end
+
+-- replace: replace elements from i..j with v (not full Go semantics; single-value insert).
+fun replace(arr: any, i: i64, j: i64, v: any): any
+    if arr == nil then arr = {} end
+    n = rawlen(arr)
+    if i < 1 then i = 1 end
+    if j > n then j = n end
+    if j < i then j = i end
+    out = {}
+    k = 1
+    while k < i
+        out[k] = arr[k]
+        k = k + 1
+    end
+    out[i] = v
+    k = j + 1
+    while k <= n
+        out[rawlen(out) + 1] = arr[k]
+        k = k + 1
+    end
+    out
+end
+
+-- grow: ensure capacity by at least n (no-op in Duo since tables grow dynamically).
+fun grow(arr: any, n: i64): any
+    arr
+end
+
+-- binary_search: find v in a sorted slice using less. Returns (index, found).
+fun binary_search(arr: any, v: any, less: any): any
+    if arr == nil then return 0, false end
+    lo = 0
+    hi = rawlen(arr)
+    while lo < hi
+        mid = lo + (hi - lo) / 2
+        if less(v, arr[mid + 1]) then
+            hi = mid
+        elseif less(arr[mid + 1], v) then
+            lo = mid + 1
+        else
+            return mid + 1, true
+        end
+    end
+    return lo + 1, false
+end
+
+-- max: return the maximum element using less (or nil for empty).
+fun max(arr: any, less: any): any
+    if arr == nil then return nil end
+    n = rawlen(arr)
+    if n == 0 then return nil end
+    m = arr[1]
+    i = 2
+    while i <= n
+        if less(m, arr[i]) then m = arr[i] end
+        i = i + 1
+    end
+    m
+end
+
+-- min: return the minimum element using less (or nil for empty).
+fun min(arr: any, less: any): any
+    if arr == nil then return nil end
+    n = rawlen(arr)
+    if n == 0 then return nil end
+    m = arr[1]
+    i = 2
+    while i <= n
+        if less(arr[i], m) then m = arr[i] end
+        i = i + 1
+    end
+    m
+end
+
+-- sorted: check if arr is sorted according to less.
+fun sorted(arr: any, less: any): bool
+    if arr == nil then return true end
+    n = rawlen(arr)
+    i = 2
+    while i <= n
+        if less(arr[i], arr[i - 1]) then return false end
+        i = i + 1
+    end
+    true
+end
+
+-- chunk: split a slice into chunks of size n. Returns a table of slices.
+fun chunk(arr: any, n: i64): any
+    if arr == nil then return {} end
+    if n == nil or n < 1 then n = 1 end
+    out = {}
+    i = 1
+    while i <= rawlen(arr)
+        c = {}
+        j = 0
+        while j < n and i + j <= rawlen(arr)
+            c[j + 1] = arr[i + j]
+            j = j + 1
+        end
+        out[rawlen(out) + 1] = c
+        i = i + n
+    end
+    out
+end
+
+M = {}
+M.clip = clip
+M.clone = clone
+M.compact = compact
+M.contains = contains
+M.index = index
+M.index_func = index_func
+M.insert = insert
+M.delete = delete
+M.delete_func = delete_func
+M.reverse = reverse
+M.replace = replace
+M.grow = grow
+M.binary_search = binary_search
+M.max = max
+M.min = min
+M.sorted = sorted
+M.chunk = chunk
+M
