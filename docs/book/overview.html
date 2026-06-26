@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -340,7 +340,10 @@ identity("hi")    -- also works
     J --&gt; K[Native Binary / WASM]
 </code></pre>
 <h2 id="compiler-commands"><a class="header" href="#compiler-commands">Compiler Commands</a></h2>
-<pre><code class="language-bash">duo compile &lt;file&gt;        # Compile to native binary or object
+<pre><code class="language-bash">duo                        # Start the interactive shell
+duo shell                  # Start the interactive shell
+duo script.duo             # Compile and run a script
+duo compile &lt;file&gt;        # Compile to native binary or object
 duo run &lt;file&gt;            # Compile and run
 duo check &lt;file&gt;          # Type-check only
 duo dump-c &lt;file&gt;         # Print generated C code

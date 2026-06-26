@@ -1,6 +1,11 @@
-# Concepts (Interfaces)
+# Concepts and Meta Descriptors
 
 Concepts in Duo are structural interfaces that define required methods and fields. Types satisfy concepts automatically when they provide the required members.
+
+The runtime/metaprogramming path is moving toward ordinary meta-table
+descriptors. Prefer `std.meta.make_concept(...)` for reflection and dynamic
+checks; the `concept` keyword remains for compile-time `@implements` checks
+while that path is merged into metatables.
 
 ## Concept Declaration
 
@@ -86,9 +91,72 @@ end
 local bad_pair: { first: i64 } = { first = 1 }
 ```
 
+Concept declarations also produce runtime descriptor tables. The descriptor is
+ordinary Lua-shaped data, so reflection code can use the same metatable/table
+path as dynamic objects:
+
+```duo
+meta = req "std.meta"
+
+concept Drawable
+    id: i64
+    fun draw(self): str
+end
+
+shape = { id = 7, draw = fun(self): str return "shape" end }
+
+print(Drawable.name)                         -- Drawable
+print(meta.satisfies_concept(shape, Drawable)) -- true
+```
+
+The descriptor bridge is implemented; full metatable dispatch and replacing the
+`concept` declaration syntax with ordinary meta-table construction remain
+roadmap work.
+
+For runtime reflection, the same descriptor shape can be built without the
+keyword:
+
+```duo
+meta = req "std.meta"
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = {
+    id = 7,
+    draw = fun(self): str return "shape" end,
+}
+
+print(meta.satisfies_concept(shape, Drawable)) -- true
+print(getmetatable(Drawable).type)             -- concept
+```
+
+Literal `meta.make_concept(...)` descriptors are also recognized by
+`@implements`, so compile-time checks can use the same table declaration:
+
+```duo
+PointLike = meta.make_concept("PointLike", {
+    fields = { "x", "y" },
+    methods = { "len" },
+})
+
+@implements(PointLike)
+local p: { x: i64, y: i64, len: any } = {
+    x = 3,
+    y = 4,
+    len = fun(self): i64 return 5 end,
+}
+```
+
+`std.meta.derive` exports its built-in descriptors using this table form, so
+runtime code can use `derive.Display`, `derive.Clone`, and the other standard
+descriptors without declaring keyword concepts.
+
 ## Built-in Concepts
 
-Duo provides several built-in concepts:
+Derivable concept descriptors are available from `std.meta.derive`:
 
 | Concept | Required Members |
 |---------|----------------|

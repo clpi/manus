@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -282,11 +282,25 @@ msg = fmt.format("Hello, {}!", "world")
 meta.is_nil(nil)
 meta.is_bool(true)
 meta.is_number(42)
-meta.is_string("hi")
+meta.is_str("hi")
 meta.is_table({})
 meta.is_func(fun() end)
 
 type_name = meta.typeof(value)      -- "number", "string", etc.
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = { id = 7, draw = fun(self): str return "shape" end }
+meta.satisfies_concept(shape, Drawable) -- true
+</code></pre>
+<p>Derivable concept descriptors and macro helpers are separate submodules:</p>
+<pre><code class="language-duo">derive = req "std.meta.derive"
+macros = req "std.meta.macros"
+
+meta.satisfies_concept(shape, derive.Display)
 </code></pre>
 <h2 id="crypto-module-stdcrypto"><a class="header" href="#crypto-module-stdcrypto">Crypto Module (<code>std.crypto</code>)</a></h2>
 <pre><code class="language-duo">crypto = req "std.crypto"

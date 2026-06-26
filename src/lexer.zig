@@ -284,6 +284,9 @@ pub const Lexer = struct {
             const c = self.peek_char();
             if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
                 _ = self.adv();
+            } else if (c == '#' and self.peek_char2() == '!' and self.pos == 0) {
+                while (self.pos < self.src.len and self.peek_char() != '\n')
+                    _ = self.adv();
             } else if (c == '-' and self.peek_char2() == '-') {
                 self.pos += 2;
                 self.col += 2;
@@ -982,6 +985,14 @@ test "lex: whitespace skipped" {
     const tok = try l.next();
     try testing.expectEqual(TokenKind.int_lit, tok.kind);
     try testing.expectEqual(@as(i64, 42), tok.int_val);
+}
+
+test "lex: shebang line is skipped" {
+    var l = Lexer.init("#!/usr/bin/env duo\nprint(42)", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.name, tok.kind);
+    try testing.expectEqualStrings("print", tok.text);
+    try testing.expectEqual(@as(u32, 2), tok.loc.line);
 }
 
 test "lex error: unterminated double-quoted string" {

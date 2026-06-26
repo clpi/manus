@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -174,8 +174,12 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="concepts-interfaces"><a class="header" href="#concepts-interfaces">Concepts (Interfaces)</a></h1>
+                        <h1 id="concepts-and-meta-descriptors"><a class="header" href="#concepts-and-meta-descriptors">Concepts and Meta Descriptors</a></h1>
 <p>Concepts in Duo are structural interfaces that define required methods and fields. Types satisfy concepts automatically when they provide the required members.</p>
+<p>The runtime/metaprogramming path is moving toward ordinary meta-table
+descriptors. Prefer <code>std.meta.make_concept(...)</code> for reflection and dynamic
+checks; the <code>concept</code> keyword remains for compile-time <code>@implements</code> checks
+while that path is merged into metatables.</p>
 <h2 id="concept-declaration"><a class="header" href="#concept-declaration">Concept Declaration</a></h2>
 <pre><code class="language-duo">concept Iterable
     fun __iter(self): any
@@ -240,8 +244,60 @@ end
 @implements(Pair)
 local bad_pair: { first: i64 } = { first = 1 }
 </code></pre>
+<p>Concept declarations also produce runtime descriptor tables. The descriptor is
+ordinary Lua-shaped data, so reflection code can use the same metatable/table
+path as dynamic objects:</p>
+<pre><code class="language-duo">meta = req "std.meta"
+
+concept Drawable
+    id: i64
+    fun draw(self): str
+end
+
+shape = { id = 7, draw = fun(self): str return "shape" end }
+
+print(Drawable.name)                         -- Drawable
+print(meta.satisfies_concept(shape, Drawable)) -- true
+</code></pre>
+<p>The descriptor bridge is implemented; full metatable dispatch and replacing the
+<code>concept</code> declaration syntax with ordinary meta-table construction remain
+roadmap work.</p>
+<p>For runtime reflection, the same descriptor shape can be built without the
+keyword:</p>
+<pre><code class="language-duo">meta = req "std.meta"
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = {
+    id = 7,
+    draw = fun(self): str return "shape" end,
+}
+
+print(meta.satisfies_concept(shape, Drawable)) -- true
+print(getmetatable(Drawable).type)             -- concept
+</code></pre>
+<p>Literal <code>meta.make_concept(...)</code> descriptors are also recognized by
+<code>@implements</code>, so compile-time checks can use the same table declaration:</p>
+<pre><code class="language-duo">PointLike = meta.make_concept("PointLike", {
+    fields = { "x", "y" },
+    methods = { "len" },
+})
+
+@implements(PointLike)
+local p: { x: i64, y: i64, len: any } = {
+    x = 3,
+    y = 4,
+    len = fun(self): i64 return 5 end,
+}
+</code></pre>
+<p><code>std.meta.derive</code> exports its built-in descriptors using this table form, so
+runtime code can use <code>derive.Display</code>, <code>derive.Clone</code>, and the other standard
+descriptors without declaring keyword concepts.</p>
 <h2 id="built-in-concepts"><a class="header" href="#built-in-concepts">Built-in Concepts</a></h2>
-<p>Duo provides several built-in concepts:</p>
+<p>Derivable concept descriptors are available from <code>std.meta.derive</code>:</p>
 <div class="table-wrapper">
 <table>
 <thead>

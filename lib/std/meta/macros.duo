@@ -48,23 +48,39 @@ end
 
 -- Compile-time type size query
 fun sizeof(T: str): i64
-    sizes = {
-        i8 = 1, i16 = 2, i32 = 4, i64 = 8,
-        u8 = 1, u16 = 2, u32 = 4, u64 = 8,
-        f32 = 4, f64 = 8, bool = 1,
-        str = 8, ptr = 8,
-    }
+    sizes = {}
+    sizes["i8"] = 1
+    sizes["i16"] = 2
+    sizes["i32"] = 4
+    sizes["i64"] = 8
+    sizes["u8"] = 1
+    sizes["u16"] = 2
+    sizes["u32"] = 4
+    sizes["u64"] = 8
+    sizes["f32"] = 4
+    sizes["f64"] = 8
+    sizes["bool"] = 1
+    sizes["str"] = 8
+    sizes["ptr"] = 8
     sizes[T] or 0
 end
 
 -- Compile-time alignment query
 fun alignof(T: str): i64
-    aligns = {
-        i8 = 1, i16 = 2, i32 = 4, i64 = 8,
-        u8 = 1, u16 = 2, u32 = 4, u64 = 8,
-        f32 = 4, f64 = 8, bool = 1,
-        str = 8, ptr = 8,
-    }
+    aligns = {}
+    aligns["i8"] = 1
+    aligns["i16"] = 2
+    aligns["i32"] = 4
+    aligns["i64"] = 8
+    aligns["u8"] = 1
+    aligns["u16"] = 2
+    aligns["u32"] = 4
+    aligns["u64"] = 8
+    aligns["f32"] = 4
+    aligns["f64"] = 8
+    aligns["bool"] = 1
+    aligns["str"] = 8
+    aligns["ptr"] = 8
     aligns[T] or 1
 end
 

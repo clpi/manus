@@ -127,11 +127,28 @@ meta = req "std.meta"
 meta.is_nil(nil)
 meta.is_bool(true)
 meta.is_number(42)
-meta.is_string("hi")
+meta.is_str("hi")
 meta.is_table({})
 meta.is_func(fun() end)
 
 type_name = meta.typeof(value)      -- "number", "string", etc.
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = { id = 7, draw = fun(self): str return "shape" end }
+meta.satisfies_concept(shape, Drawable) -- true
+```
+
+Derivable concept descriptors and macro helpers are separate submodules:
+
+```duo
+derive = req "std.meta.derive"
+macros = req "std.meta.macros"
+
+meta.satisfies_concept(shape, derive.Display)
 ```
 
 ## Crypto Module (`std.crypto`)

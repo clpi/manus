@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -403,7 +403,10 @@ identity("hi")    -- also works
     J --&gt; K[Native Binary / WASM]
 </code></pre>
 <h2 id="compiler-commands"><a class="header" href="#compiler-commands">Compiler Commands</a></h2>
-<pre><code class="language-bash">duo compile &lt;file&gt;        # Compile to native binary or object
+<pre><code class="language-bash">duo                        # Start the interactive shell
+duo shell                  # Start the interactive shell
+duo script.duo             # Compile and run a script
+duo compile &lt;file&gt;        # Compile to native binary or object
 duo run &lt;file&gt;            # Compile and run
 duo check &lt;file&gt;          # Type-check only
 duo dump-c &lt;file&gt;         # Print generated C code
@@ -686,24 +689,38 @@ accepted for source compatibility.</li>
 <ul>
 <li>Monomorphizer (<code>src/mono.zig</code>) for generic specializations.</li>
 <li>ARC pass (<code>src/arc.zig</code>) for retain/release/close decisions.</li>
-<li>Async lowering (<code>src/async_lower.zig</code>) transforms async functions into stackless state machines.</li>
+<li>Async lowering (<code>src/async_lower.zig</code>) transforms async functions into stackless
+state-machine descriptors; async declarations also emit a direct callable body
+so simple async/await chains run today.</li>
 <li>Profile-guided optimization (<code>--pgo</code>), shared-memory WASM (<code>--shared-memory</code>), library mode (<code>--lib</code>), and dynamic chunk loading (<code>--load-chunk</code>).</li>
+<li><code>duo</code> and <code>duo shell</code> start an interactive shell that compiles/runs one Duo
+line through the normal pipeline, supports <code>!command</code> host escapes, and
+<code>.duo</code> scripts may start with a Unix shebang.</li>
 <li>Shell completions for bash, zsh, fish, and nushell.</li>
 </ul>
 <h2 id="partial--in-progress"><a class="header" href="#partial--in-progress">Partial / in progress</a></h2>
 <ul>
 <li><code>if ... then ... else ... end</code> can be used as a tail expression in blocks. Postfix <code>expr if cond else fallback</code> syntax is not implemented.</li>
-<li>Concepts exist as compile-time structural checks. They have not been merged with metatable semantics yet.</li>
+<li>Concepts exist as compile-time structural checks and now also emit runtime
+descriptor tables (<code>name</code>, <code>required_fields</code>, <code>required_methods</code>) that
+<code>std.meta.satisfies_concept</code> can inspect. <code>std.meta.make_concept(...)</code> and
+<code>std.meta.derive</code> now create the same descriptor shape as ordinary tables,
+and <code>@implements</code> accepts literal descriptor bindings. Full generic
+constraint dispatch and syntax removal are still in progress.</li>
 <li>Pointer types use <code>*T</code>. Reference and ownership semantics are still evolving.</li>
 <li>Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.</li>
 <li>Macros and metaprogramming beyond the current compile-time <code>##(...)</code> escape and <code>std.meta</code> helpers.</li>
+<li>Scheduler-backed async tasks, pending poll states, and async channels are still
+being completed; current async calls run synchronously while descriptors are
+emitted for the full runtime path.</li>
 <li>Native record passing end-to-end: record-typed parameters and locals work in many cases, but call-site coercion from table literals and named alias lowering are incomplete.</li>
 <li>String-returning builtins in typed contexts can disagree between sema and emit; <code>string.sub</code> and <code>tostring</code> in a typed <code>str</code> context need careful use until fixed.</li>
 </ul>
 <h2 id="planned"><a class="header" href="#planned">Planned</a></h2>
 <ul>
 <li>Hygienic macro syntax and more complete metaprogramming.</li>
-<li>A tighter concept/metatable model that removes unnecessary syntax additions.</li>
+<li>A tighter concept/metatable model that finishes compile-time dispatch through
+ordinary Lua metatables and removes unnecessary syntax additions.</li>
 <li>Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.</li>
 <li>Escape analysis and stack allocation for non-escaping temporaries.</li>
 <li>ARC pruning and custom allocator integration.</li>
@@ -1014,7 +1031,10 @@ end
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="async-functions"><a class="header" href="#async-functions">Async Functions</a></h1>
-<p>Async functions enable cooperative concurrency in Duo through stackless coroutines. They compile to state machines that can pause and resume without OS thread overhead.</p>
+<p>Async functions are parsed, type-checked, and lowered into stackless state
+machine descriptors. They also emit a direct callable body today, so async
+functions and simple <code>await</code> chains run through the normal compiled path while
+the cooperative scheduler is still being completed.</p>
 <h2 id="declaration-2"><a class="header" href="#declaration-2">Declaration</a></h2>
 <p>Use the <code>async</code> keyword to define an async function:</p>
 <pre><code class="language-duo">async fun fetch_data(url: str): str
@@ -1022,9 +1042,12 @@ end
     return response.body
 end
 </code></pre>
-<p>Async functions always return <code>Poll[T]</code> - a value that may be ready or pending.</p>
+<p>The current callable path returns <code>T</code> directly. The compiler still emits
+<code>duo_Poll</code> frame/step descriptors for async functions so the scheduler-backed
+<code>Poll[T]</code> path can take over as it is completed.</p>
 <h2 id="await"><a class="header" href="#await">Await</a></h2>
-<p>The <code>await</code> keyword pauses execution until a value is ready:</p>
+<p>The <code>await</code> keyword marks a yield point for lowering. In the current direct
+runtime path it evaluates the awaited expression synchronously:</p>
 <pre><code class="language-duo">async fun process_all(urls: []str): []str
     results: []str = {}
     for url in urls
@@ -1035,7 +1058,7 @@ end
 end
 </code></pre>
 <h2 id="scheduler"><a class="header" href="#scheduler">Scheduler</a></h2>
-<p>Duo uses a cooperative single-threaded scheduler by default:</p>
+<p>The cooperative single-threaded scheduler is still in progress:</p>
 <pre><code class="language-duo">-- Spawn a task
 task = spawn fetch_data("https://example.com")
 
@@ -1367,8 +1390,12 @@ end
 -- end
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="concepts-interfaces"><a class="header" href="#concepts-interfaces">Concepts (Interfaces)</a></h1>
+<h1 id="concepts-and-meta-descriptors"><a class="header" href="#concepts-and-meta-descriptors">Concepts and Meta Descriptors</a></h1>
 <p>Concepts in Duo are structural interfaces that define required methods and fields. Types satisfy concepts automatically when they provide the required members.</p>
+<p>The runtime/metaprogramming path is moving toward ordinary meta-table
+descriptors. Prefer <code>std.meta.make_concept(...)</code> for reflection and dynamic
+checks; the <code>concept</code> keyword remains for compile-time <code>@implements</code> checks
+while that path is merged into metatables.</p>
 <h2 id="concept-declaration"><a class="header" href="#concept-declaration">Concept Declaration</a></h2>
 <pre><code class="language-duo">concept Iterable
     fun __iter(self): any
@@ -1433,8 +1460,60 @@ end
 @implements(Pair)
 local bad_pair: { first: i64 } = { first = 1 }
 </code></pre>
+<p>Concept declarations also produce runtime descriptor tables. The descriptor is
+ordinary Lua-shaped data, so reflection code can use the same metatable/table
+path as dynamic objects:</p>
+<pre><code class="language-duo">meta = req "std.meta"
+
+concept Drawable
+    id: i64
+    fun draw(self): str
+end
+
+shape = { id = 7, draw = fun(self): str return "shape" end }
+
+print(Drawable.name)                         -- Drawable
+print(meta.satisfies_concept(shape, Drawable)) -- true
+</code></pre>
+<p>The descriptor bridge is implemented; full metatable dispatch and replacing the
+<code>concept</code> declaration syntax with ordinary meta-table construction remain
+roadmap work.</p>
+<p>For runtime reflection, the same descriptor shape can be built without the
+keyword:</p>
+<pre><code class="language-duo">meta = req "std.meta"
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = {
+    id = 7,
+    draw = fun(self): str return "shape" end,
+}
+
+print(meta.satisfies_concept(shape, Drawable)) -- true
+print(getmetatable(Drawable).type)             -- concept
+</code></pre>
+<p>Literal <code>meta.make_concept(...)</code> descriptors are also recognized by
+<code>@implements</code>, so compile-time checks can use the same table declaration:</p>
+<pre><code class="language-duo">PointLike = meta.make_concept("PointLike", {
+    fields = { "x", "y" },
+    methods = { "len" },
+})
+
+@implements(PointLike)
+local p: { x: i64, y: i64, len: any } = {
+    x = 3,
+    y = 4,
+    len = fun(self): i64 return 5 end,
+}
+</code></pre>
+<p><code>std.meta.derive</code> exports its built-in descriptors using this table form, so
+runtime code can use <code>derive.Display</code>, <code>derive.Clone</code>, and the other standard
+descriptors without declaring keyword concepts.</p>
 <h2 id="built-in-concepts"><a class="header" href="#built-in-concepts">Built-in Concepts</a></h2>
-<p>Duo provides several built-in concepts:</p>
+<p>Derivable concept descriptors are available from <code>std.meta.derive</code>:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1771,11 +1850,25 @@ msg = fmt.format("Hello, {}!", "world")
 meta.is_nil(nil)
 meta.is_bool(true)
 meta.is_number(42)
-meta.is_string("hi")
+meta.is_str("hi")
 meta.is_table({})
 meta.is_func(fun() end)
 
 type_name = meta.typeof(value)      -- "number", "string", etc.
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = { id = 7, draw = fun(self): str return "shape" end }
+meta.satisfies_concept(shape, Drawable) -- true
+</code></pre>
+<p>Derivable concept descriptors and macro helpers are separate submodules:</p>
+<pre><code class="language-duo">derive = req "std.meta.derive"
+macros = req "std.meta.macros"
+
+meta.satisfies_concept(shape, derive.Display)
 </code></pre>
 <h2 id="crypto-module-stdcrypto"><a class="header" href="#crypto-module-stdcrypto">Crypto Module (<code>std.crypto</code>)</a></h2>
 <pre><code class="language-duo">crypto = req "std.crypto"
@@ -2173,15 +2266,27 @@ zig build
 # Binary installed to zig-out/bin/duo
 </code></pre>
 <h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
-<pre><code>duo compile &lt;file&gt;              compile to native binary
+<pre><code>duo                              start the interactive shell
+duo shell                        start the interactive shell
+duo compile &lt;file&gt;              compile to native binary
 duo init    [name]              create build.duo and src/main.duo
 duo build   [target]            build the default or named build.duo target
 duo run     [file|target]       compile and run a file, or run a build target
+duo &lt;file&gt;                      shorthand for `duo run &lt;file&gt;`
 duo check   &lt;file&gt;              type-check only
 duo dump-c  &lt;file&gt;              print generated C to stdout
 duo completion &lt;shell&gt;           generate shell completions (bash, zsh, fish, nu)
 duo help                         show help message
 
+</code></pre>
+<p>The shell compiles and runs one Duo line at a time through the same pipeline as
+<code>duo run</code>. Bare expressions are printed automatically, so <code>1 + 2</code> is equivalent
+to <code>print(1 + 2)</code>. Use <code>!command</code> for a host shell command, and use <code>:help</code>,
+<code>:quit</code>, or <code>:exit</code> inside the shell.</p>
+<p>Scripts may start with a Unix shebang:</p>
+<pre><code class="language-duo">#!/usr/bin/env duo
+
+print("hello from a Duo script")
 </code></pre>
 <h2 id="options"><a class="header" href="#options">Options</a></h2>
 <div class="table-wrapper">

@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -184,15 +184,27 @@ zig build
 # Binary installed to zig-out/bin/duo
 </code></pre>
 <h2 id="commands"><a class="header" href="#commands">Commands</a></h2>
-<pre><code>duo compile &lt;file&gt;              compile to native binary
+<pre><code>duo                              start the interactive shell
+duo shell                        start the interactive shell
+duo compile &lt;file&gt;              compile to native binary
 duo init    [name]              create build.duo and src/main.duo
 duo build   [target]            build the default or named build.duo target
 duo run     [file|target]       compile and run a file, or run a build target
+duo &lt;file&gt;                      shorthand for `duo run &lt;file&gt;`
 duo check   &lt;file&gt;              type-check only
 duo dump-c  &lt;file&gt;              print generated C to stdout
 duo completion &lt;shell&gt;           generate shell completions (bash, zsh, fish, nu)
 duo help                         show help message
 
+</code></pre>
+<p>The shell compiles and runs one Duo line at a time through the same pipeline as
+<code>duo run</code>. Bare expressions are printed automatically, so <code>1 + 2</code> is equivalent
+to <code>print(1 + 2)</code>. Use <code>!command</code> for a host shell command, and use <code>:help</code>,
+<code>:quit</code>, or <code>:exit</code> inside the shell.</p>
+<p>Scripts may start with a Unix shebang:</p>
+<pre><code class="language-duo">#!/usr/bin/env duo
+
+print("hello from a Duo script")
 </code></pre>
 <h2 id="options"><a class="header" href="#options">Options</a></h2>
 <div class="table-wrapper">

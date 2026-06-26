@@ -1,0 +1,23 @@
+meta = req "std.meta"
+derive = req "std.meta.derive"
+
+Drawable = meta.make_concept("Drawable", {
+    fields = { "id" },
+    methods = { "draw" },
+})
+
+shape = {
+    id = 7,
+    draw = fun(self): str
+        "shape"
+    end,
+    to_string = fun(self): str
+        return "drawable"
+    end,
+}
+
+print(Drawable.name)
+print(getmetatable(Drawable).type)
+print(meta.satisfies_concept(shape, Drawable))
+print(meta.satisfies_concept(shape, derive.Display))
+print(shape.draw(shape))

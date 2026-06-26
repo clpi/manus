@@ -508,6 +508,9 @@ pub const Sema = struct {
                     if (is_close and !has_init) {
                         self.err(lname.loc, "to-be-closed variable '{s}' must have an initializer", .{lname.ident});
                     }
+                    if (i < ld.inits.len) {
+                        try self.maybe_register_meta_concept(lname.ident, ld.inits[i]);
+                    }
                     try self.check_binding_attributes(lname, t, if (i < ld.inits.len) ld.inits[i] else null);
                     try self.scope.define(lname.ident, .{
                         .typ = t,
@@ -521,6 +524,7 @@ pub const Sema = struct {
                 var t = try self.check_expr(cd.val);
                 if (cd.typ != .inferred)
                     t = types.resolve(cd.typ, self, self.alloc) catch .any;
+                try self.maybe_register_meta_concept(cd.ident, cd.val);
                 try self.scope.define(cd.ident, .{ .typ = t, .is_const = true });
             },
             .global_decl => |*gd| {
@@ -551,6 +555,9 @@ pub const Sema = struct {
                     if (is_const and !has_init) {
                         self.err(lname.loc, "const global '{s}' must have an initializer", .{lname.ident});
                     }
+                    if (i < gd.inits.len) {
+                        try self.maybe_register_meta_concept(lname.ident, gd.inits[i]);
+                    }
                     try self.check_binding_attributes(lname, t, if (i < gd.inits.len) gd.inits[i] else null);
                     try self.note_global(lname.ident, t);
                     try self.scope.define(lname.ident, .{
@@ -563,9 +570,12 @@ pub const Sema = struct {
             },
             .assign => |*as| {
                 for (as.values) |v| _ = try self.check_expr(v);
-                for (as.targets) |tgt| {
+                for (as.targets, 0..) |tgt, i| {
                     try self.check_assign_target(tgt);
                     _ = try self.check_expr(tgt);
+                    if (i < as.values.len and tgt.* == .name) {
+                        try self.maybe_register_meta_concept(tgt.name.ident, as.values[i]);
+                    }
                 }
             },
             .call_stmt => |*cs| _ = try self.check_expr(cs.expr),
@@ -1786,6 +1796,91 @@ pub const Sema = struct {
         });
     }
 
+    fn maybe_register_meta_concept(self: *Sema, binding_name: []const u8, expr: *const ast.Expr) SemaError!void {
+        if (expr.* != .call) return;
+        const call = expr.call;
+        if (!is_meta_make_concept_call(call.func)) return;
+        if (call.args.len < 2) return;
+        if (call.args[0].* != .string_lit) return;
+        const descriptor_name = call.args[0].string_lit.val;
+        const spec = call.args[1];
+        if (spec.* != .table) return;
+
+        const fields_expr = find_named_table_field(spec, &.{ "required_fields", "fields" });
+        const methods_expr = find_named_table_field(spec, &.{ "required_methods", "methods" });
+
+        const fields = try self.collect_meta_concept_fields(fields_expr);
+        const methods = try self.collect_meta_concept_methods(methods_expr);
+        const info = ConceptInfo{
+            .name = descriptor_name,
+            .required_methods = methods,
+            .required_fields = fields,
+        };
+        try self.concepts.put(self.alloc, binding_name, info);
+        if (!std.mem.eql(u8, binding_name, descriptor_name)) {
+            try self.concepts.put(self.alloc, descriptor_name, info);
+        }
+    }
+
+    fn is_meta_make_concept_call(func: *const ast.Expr) bool {
+        if (func.* == .field and std.mem.eql(u8, func.field.field, "make_concept")) return true;
+        if (func.* == .name and std.mem.eql(u8, func.name.ident, "make_concept")) return true;
+        return false;
+    }
+
+    fn find_named_table_field(spec: *const ast.Expr, keys: []const []const u8) ?*const ast.Expr {
+        if (spec.* != .table) return null;
+        for (spec.table.fields) |field| {
+            if (field != .named) continue;
+            for (keys) |key| {
+                if (std.mem.eql(u8, field.named.key, key)) return field.named.val;
+            }
+        }
+        return null;
+    }
+
+    fn concept_member_name_expr(member: *const ast.Expr) ?[]const u8 {
+        if (member.* == .string_lit) return member.string_lit.val;
+        if (member.* != .table) return null;
+        const name_expr = find_named_table_field(member, &.{"name"}) orelse return null;
+        if (name_expr.* != .string_lit) return null;
+        return name_expr.string_lit.val;
+    }
+
+    fn collect_meta_concept_fields(self: *Sema, maybe_expr: ?*const ast.Expr) SemaError![]ConceptInfo.FieldRequirement {
+        const expr = maybe_expr orelse return &[_]ConceptInfo.FieldRequirement{};
+        if (expr.* != .table) return &[_]ConceptInfo.FieldRequirement{};
+        var fields: std.ArrayList(ConceptInfo.FieldRequirement) = .empty;
+        for (expr.table.fields) |field| {
+            const member_expr: *const ast.Expr = switch (field) {
+                .positional => |p| p,
+                .named => |n| n.val,
+                .indexed => |idx| idx.val,
+            };
+            if (concept_member_name_expr(member_expr)) |name| {
+                try fields.append(self.alloc, .{ .name = name, .typ = .any });
+            }
+        }
+        return fields.toOwnedSlice(self.alloc);
+    }
+
+    fn collect_meta_concept_methods(self: *Sema, maybe_expr: ?*const ast.Expr) SemaError![]ConceptInfo.MethodRequirement {
+        const expr = maybe_expr orelse return &[_]ConceptInfo.MethodRequirement{};
+        if (expr.* != .table) return &[_]ConceptInfo.MethodRequirement{};
+        var methods: std.ArrayList(ConceptInfo.MethodRequirement) = .empty;
+        for (expr.table.fields) |field| {
+            const member_expr: *const ast.Expr = switch (field) {
+                .positional => |p| p,
+                .named => |n| n.val,
+                .indexed => |idx| idx.val,
+            };
+            if (concept_member_name_expr(member_expr)) |name| {
+                try methods.append(self.alloc, .{ .name = name, .param_count = 0, .ret_type = .any });
+            }
+        }
+        return methods.toOwnedSlice(self.alloc);
+    }
+
     /// Check that a binding annotated with `@implements(Concept)` provides all
     /// of the concept's required members. The binding's record-type annotation
     /// supplies the declared field set; the binding's initializer is also
@@ -2854,7 +2949,7 @@ pub const Sema = struct {
                         for (s.if_stmt.then.stmts) |*ts| {
                             if (ts.* == .assign) {
                                 for (ts.assign.values) |val| {
-                                    if (val.* == .binop and val.binop.op == .div) div2.* = true;
+                                    if (val.* == .binop and (val.binop.op == .div or val.binop.op == .idiv)) div2.* = true;
                                 }
                             }
                         }
@@ -3007,6 +3102,9 @@ pub const Sema = struct {
             else => false,
         };
         if (!is_int) return false;
+        for (fb.params) |param| {
+            if (!param.typ.is_integer()) return false;
+        }
         // Accept both single-if-with-elseif and two-separate-if form.
         var if_count: usize = 0;
         var has_elseif = false;
@@ -5034,6 +5132,55 @@ test "sema: @implements on a global record-typed binding is checked" {
     try testing.expect(s.errors > 0);
 }
 
+test "sema: @implements accepts meta.make_concept descriptor binding" {
+    const src =
+        \\meta = req "std.meta"
+        \\local PointLike = meta.make_concept("PointLike", {
+        \\    fields = { "x", "y" },
+        \\    methods = { "len" },
+        \\})
+        \\@implements(PointLike)
+        \\local p: { x: i64, y: i64, len: any } = {
+        \\    x = 3,
+        \\    y = 4,
+        \\    len = fun(self): i64 return 5 end,
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: @implements reports missing member from meta.make_concept descriptor" {
+    const src =
+        \\meta = req "std.meta"
+        \\local PointLike = meta.make_concept("PointLike", {
+        \\    fields = { "x", "y" },
+        \\    methods = { "len" },
+        \\})
+        \\@implements(PointLike)
+        \\local p: { x: i64, len: any } = {
+        \\    x = 3,
+        \\    len = fun(self): i64 return 5 end,
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
 test "sema: @arc(false) accepts record-typed binding" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -5180,6 +5327,41 @@ test "sema: overload resolution selects by argument types (no ambiguity)" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: collatz detector accepts integer division branch" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function collatz_sum(n: i64): i64
+        \\  local total: i64 = 0
+        \\  local i: i64 = 1
+        \\  while i <= n do
+        \\    local x: i64 = i
+        \\    local steps: i64 = 0
+        \\    while x ~= 1 do
+        \\      if x % 2 == 0 then
+        \\        x = x // 2
+        \\      else
+        \\        x = 3 * x + 1
+        \\      end
+        \\      steps = steps + 1
+        \\    end
+        \\    total = total + steps
+        \\    i = i + 1
+        \\  end
+        \\  return total
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expect(mod.body.stmts[0] == .func_decl);
+    try testing.expect(mod.body.stmts[0].func_decl.func.use_collatz_inline);
 }
 
 test "sema: @arc(false) on a primitive-typed binding is rejected" {

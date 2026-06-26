@@ -10,9 +10,10 @@ const AsyncLower = @import("async_lower.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 
 const usage =
-    \\usage: duo <command> [options] <file>
+    \\usage: duo [command] [options] [file]
     \\
     \\commands:
+    \\  shell              start the interactive Duo shell (default)
     \\  init       [name]   create a new Duo project
     \\  build      [target] build the default or named target from build.duo
     \\  compile    <file>   compile .duo/.lua to a native binary
@@ -40,11 +41,12 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(alloc);
 
     if (args.len < 2) {
-        std.debug.print("{s}", .{usage});
-        std.process.exit(1);
+        try do_shell(alloc, io, false);
+        return;
     }
     const known_cmd = args.len >= 2 and
-        (std.mem.eql(u8, args[1], "init") or
+        (std.mem.eql(u8, args[1], "shell") or
+            std.mem.eql(u8, args[1], "init") or
             std.mem.eql(u8, args[1], "build") or
             std.mem.eql(u8, args[1], "compile") or
             std.mem.eql(u8, args[1], "run") or
@@ -100,6 +102,11 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         std.debug.print("{s}", .{usage});
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "shell")) {
+        try do_shell(alloc, io, verbose);
         return;
     }
 
@@ -351,6 +358,144 @@ fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
     try writeNewFile(io, "src/main.duo", main_src);
     try writeNewFile(io, "build.duo", build_src);
     std.debug.print("created Duo project '{s}'\n", .{name});
+}
+
+fn startsWithWord(line: []const u8, word: []const u8) bool {
+    if (!std.mem.startsWith(u8, line, word)) return false;
+    if (line.len == word.len) return true;
+    const c = line[word.len];
+    return !std.ascii.isAlphanumeric(c) and c != '_';
+}
+
+fn shellLineIsStatement(line: []const u8) bool {
+    const keywords = [_][]const u8{
+        "print",
+        "local",
+        "global",
+        "fun",
+        "async",
+        "if",
+        "for",
+        "while",
+        "repeat",
+        "do",
+        "return",
+        "match",
+        "try",
+        "defer",
+        "concept",
+        "type",
+        "alias",
+        "enum",
+        "struct",
+        "impl",
+        "use",
+        "req",
+    };
+    if (line[0] == '@' or std.mem.startsWith(u8, line, "--")) return true;
+    for (keywords) |kw| {
+        if (startsWithWord(line, kw)) return true;
+    }
+    return false;
+}
+
+fn run_shell_binary(io: Io, out_path: []const u8) !void {
+    const run_argv = [_][]const u8{out_path};
+    var run_child = try std.process.spawn(io, .{
+        .argv = &run_argv,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const run_term = try run_child.wait(io);
+    switch (run_term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("program exited with code {}\n", .{code});
+        },
+        .signal => std.debug.print("program terminated by signal\n", .{}),
+        else => std.debug.print("program terminated abnormally\n", .{}),
+    }
+}
+
+fn run_host_shell_command(io: Io, command: []const u8) !void {
+    const argv = [_][]const u8{ "/bin/sh", "-c", command };
+    var child = try std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const term = try child.wait(io);
+    switch (term) {
+        .exited => |code| if (code != 0) {
+            std.debug.print("host command exited with code {}\n", .{code});
+        },
+        .signal => std.debug.print("host command terminated by signal\n", .{}),
+        else => std.debug.print("host command terminated abnormally\n", .{}),
+    }
+}
+
+fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counter: *usize, verbose: bool) !bool {
+    const line = std.mem.trim(u8, raw_line, " \t\r\n");
+    if (line.len == 0) return true;
+    if (std.mem.eql(u8, line, ":quit") or
+        std.mem.eql(u8, line, ":exit") or
+        std.mem.eql(u8, line, "quit") or
+        std.mem.eql(u8, line, "exit"))
+    {
+        return false;
+    }
+    if (std.mem.eql(u8, line, ":help")) {
+        std.debug.print("enter Duo code, expressions, !host-command, :quit, or :exit\n", .{});
+        return true;
+    }
+    if (line[0] == '!' and line.len > 1) {
+        try run_host_shell_command(io, std.mem.trim(u8, line[1..], " \t"));
+        return true;
+    }
+
+    const source = if (shellLineIsStatement(line))
+        try std.fmt.allocPrint(alloc, "{s}\n", .{line})
+    else
+        try std.fmt.allocPrint(alloc, "print({s})\n", .{line});
+    const src_path = try std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.duo", .{counter.*});
+    const out_path = try std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.out", .{counter.*});
+    counter.* += 1;
+
+    const cwd = Io.Dir.cwd();
+    try Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = source });
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false);
+    try run_shell_binary(io, out_path);
+    return true;
+}
+
+fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
+    std.debug.print("Duo shell (:help for help, :quit to exit)\n", .{});
+    var line: std.ArrayList(u8) = .empty;
+    defer line.deinit(alloc);
+    var counter: usize = 0;
+    var buf: [1024]u8 = undefined;
+
+    std.debug.print("duo> ", .{});
+    while (true) {
+        const n = try std.posix.read(std.posix.STDIN_FILENO, buf[0..]);
+        if (n == 0) {
+            if (line.items.len > 0) {
+                _ = try run_shell_line(alloc, io, line.items, &counter, verbose);
+            }
+            break;
+        }
+        for (buf[0..n]) |b| {
+            if (b == '\n') {
+                const keep_running = try run_shell_line(alloc, io, line.items, &counter, verbose);
+                line.clearRetainingCapacity();
+                if (!keep_running) return;
+                std.debug.print("duo> ", .{});
+            } else if (b != '\r') {
+                try line.append(alloc, b);
+            }
+        }
+    }
 }
 
 fn do_project_build(
@@ -713,7 +858,7 @@ const bash_completion =
     \\    cur="${COMP_WORDS[COMP_CWORD]}"
     \\    prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\
-    \\    local commands="init build compile run check dump-c completion help"
+    \\    local commands="shell init build compile run check dump-c completion help"
     \\    local options="-o -O0 -O1 -O2 -O3 --cc --target --load-chunk --lib --pgo --shared-memory -v --verbose -h --help"
     \\    local shells="bash zsh fish nu"
     \\    local targets="native wasm32-wasi"
@@ -747,6 +892,7 @@ const zsh_completion =
     \\_duo() {
     \\  local -a commands opts shells targets
     \\  commands=(
+    \\    'shell:start the interactive Duo shell'
     \\    'init:create a new Duo project'
     \\    'build:build the default or named build.duo target'
     \\    'compile:compile .duo/.lua to a native binary'
@@ -788,6 +934,7 @@ const zsh_completion =
 const fish_completion =
     \\# fish completion for duo
     \\complete -c duo -f
+    \\complete -c duo -n '__fish_use_subcommand' -a 'shell' -d 'Start the interactive Duo shell'
     \\complete -c duo -n '__fish_use_subcommand' -a 'init' -d 'Create a new Duo project'
     \\complete -c duo -n '__fish_use_subcommand' -a 'build' -d 'Build the default or named build.duo target'
     \\complete -c duo -n '__fish_use_subcommand' -a 'compile' -d 'Compile .duo/.lua to a native binary'
@@ -812,7 +959,7 @@ const fish_completion =
 const nu_completion =
     \\# nushell completion for duo
     \\def "nu-complete duo commands" [] {
-    \\  [init build compile run check dump-c completion help]
+    \\  [shell init build compile run check dump-c completion help]
     \\}
     \\def "nu-complete duo shells" [] {
     \\  [bash zsh fish nu]

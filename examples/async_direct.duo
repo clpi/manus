@@ -1,0 +1,10 @@
+async fun base(): i64
+    return 41
+end
+
+async fun plus_one(): i64
+    x = await base()
+    return x + 1
+end
+
+print(plus_one())

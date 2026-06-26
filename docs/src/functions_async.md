@@ -1,6 +1,9 @@
 # Async Functions
 
-Async functions enable cooperative concurrency in Duo through stackless coroutines. They compile to state machines that can pause and resume without OS thread overhead.
+Async functions are parsed, type-checked, and lowered into stackless state
+machine descriptors. They also emit a direct callable body today, so async
+functions and simple `await` chains run through the normal compiled path while
+the cooperative scheduler is still being completed.
 
 ## Declaration
 
@@ -13,11 +16,14 @@ async fun fetch_data(url: str): str
 end
 ```
 
-Async functions always return `Poll[T]` - a value that may be ready or pending.
+The current callable path returns `T` directly. The compiler still emits
+`duo_Poll` frame/step descriptors for async functions so the scheduler-backed
+`Poll[T]` path can take over as it is completed.
 
 ## Await
 
-The `await` keyword pauses execution until a value is ready:
+The `await` keyword marks a yield point for lowering. In the current direct
+runtime path it evaluates the awaited expression synchronously:
 
 ```duo
 async fun process_all(urls: []str): []str
@@ -32,7 +38,7 @@ end
 
 ## Scheduler
 
-Duo uses a cooperative single-threaded scheduler by default:
+The cooperative single-threaded scheduler is still in progress:
 
 ```duo
 -- Spawn a task

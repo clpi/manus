@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -224,24 +224,38 @@ accepted for source compatibility.</li>
 <ul>
 <li>Monomorphizer (<code>src/mono.zig</code>) for generic specializations.</li>
 <li>ARC pass (<code>src/arc.zig</code>) for retain/release/close decisions.</li>
-<li>Async lowering (<code>src/async_lower.zig</code>) transforms async functions into stackless state machines.</li>
+<li>Async lowering (<code>src/async_lower.zig</code>) transforms async functions into stackless
+state-machine descriptors; async declarations also emit a direct callable body
+so simple async/await chains run today.</li>
 <li>Profile-guided optimization (<code>--pgo</code>), shared-memory WASM (<code>--shared-memory</code>), library mode (<code>--lib</code>), and dynamic chunk loading (<code>--load-chunk</code>).</li>
+<li><code>duo</code> and <code>duo shell</code> start an interactive shell that compiles/runs one Duo
+line through the normal pipeline, supports <code>!command</code> host escapes, and
+<code>.duo</code> scripts may start with a Unix shebang.</li>
 <li>Shell completions for bash, zsh, fish, and nushell.</li>
 </ul>
 <h2 id="partial--in-progress"><a class="header" href="#partial--in-progress">Partial / in progress</a></h2>
 <ul>
 <li><code>if ... then ... else ... end</code> can be used as a tail expression in blocks. Postfix <code>expr if cond else fallback</code> syntax is not implemented.</li>
-<li>Concepts exist as compile-time structural checks. They have not been merged with metatable semantics yet.</li>
+<li>Concepts exist as compile-time structural checks and now also emit runtime
+descriptor tables (<code>name</code>, <code>required_fields</code>, <code>required_methods</code>) that
+<code>std.meta.satisfies_concept</code> can inspect. <code>std.meta.make_concept(...)</code> and
+<code>std.meta.derive</code> now create the same descriptor shape as ordinary tables,
+and <code>@implements</code> accepts literal descriptor bindings. Full generic
+constraint dispatch and syntax removal are still in progress.</li>
 <li>Pointer types use <code>*T</code>. Reference and ownership semantics are still evolving.</li>
 <li>Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.</li>
 <li>Macros and metaprogramming beyond the current compile-time <code>##(...)</code> escape and <code>std.meta</code> helpers.</li>
+<li>Scheduler-backed async tasks, pending poll states, and async channels are still
+being completed; current async calls run synchronously while descriptors are
+emitted for the full runtime path.</li>
 <li>Native record passing end-to-end: record-typed parameters and locals work in many cases, but call-site coercion from table literals and named alias lowering are incomplete.</li>
 <li>String-returning builtins in typed contexts can disagree between sema and emit; <code>string.sub</code> and <code>tostring</code> in a typed <code>str</code> context need careful use until fixed.</li>
 </ul>
 <h2 id="planned"><a class="header" href="#planned">Planned</a></h2>
 <ul>
 <li>Hygienic macro syntax and more complete metaprogramming.</li>
-<li>A tighter concept/metatable model that removes unnecessary syntax additions.</li>
+<li>A tighter concept/metatable model that finishes compile-time dispatch through
+ordinary Lua metatables and removes unnecessary syntax additions.</li>
 <li>Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.</li>
 <li>Escape analysis and stack allocation for non-escaping temporaries.</li>
 <li>ARC pruning and custom allocator integration.</li>

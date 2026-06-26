@@ -1,11 +1,7 @@
 -- std.meta — reflection, type introspection, and meta utilities
--- Re-exports derivable concepts from std.meta.derive and meta blocks from std.meta.macros
-
--- Destructured imports from std.meta.derive
-derive = require "std.meta.derive"
-
--- Destructured imports from std.meta.macros
-macros = require "std.meta.macros"
+-- Derivable concept descriptors live in std.meta.derive, and macro helpers live
+-- in std.meta.macros. Import those submodules directly when needed so the core
+-- reflection module stays lightweight.
 
 -- ─────────────────────────────────────────────────────────────
 -- Reflection: runtime type introspection
@@ -32,23 +28,23 @@ fun is_nil(x): bool
 end
 
 fun is_bool(x): bool
-    type(x) == "boolean"
+    return type(x) == "boolean"
 end
 
 fun is_number(x): bool
-    type(x) == "number"
+    return type(x) == "number"
 end
 
 fun is_str(x): bool
-    type(x) == "string"
+    return type(x) == "string"
 end
 
 fun is_table(x): bool
-    type(x) == "table"
+    return type(x) == "table"
 end
 
 fun is_func(x): bool
-    type(x) == "function"
+    return type(x) == "function"
 end
 
 fun is_integer(x): bool
@@ -105,7 +101,7 @@ end
 -- Check if a table has a method (function-valued field)
 fun has_method(t: any, name: str): bool
     if type(t) ~= "table" then return false end
-    type(t[name]) == "function"
+    return type(t[name]) == "function"
 end
 
 -- Get the metatable type name
@@ -113,7 +109,7 @@ fun type_name(t: any): str
     if t == nil then return "nil" end
     mt = getmetatable(t)
     if mt ~= nil and mt.type ~= nil then return mt.type end
-    type(t)
+    return type(t)
 end
 
 -- ─────────────────────────────────────────────────────────────
@@ -122,19 +118,62 @@ end
 
 -- Check if a value satisfies a concept (has required fields/methods)
 -- concept_def is a concept table with required_methods and required_fields
+fun concept_member_name(member: any): any
+    if type(member) == "string" then return member end
+    if type(member) == "table" then return member.name end
+    nil
+end
+
 fun satisfies_concept(val: any, concept_def: any): bool
     if val == nil or concept_def == nil then return false end
     if concept_def.required_fields ~= nil then
         for _, f in ipairs(concept_def.required_fields)
-            if val[f.name] == nil then return false end
+            name = concept_member_name(f)
+            if name == nil or val[name] == nil then return false end
         end
     end
     if concept_def.required_methods ~= nil then
         for _, m in ipairs(concept_def.required_methods)
-            if type(val[m.name]) ~= "function" then return false end
+            name = concept_member_name(m)
+            if name == nil or type(val[name]) ~= "function" then return false end
         end
     end
     true
+end
+
+fun concept_member(member: any): any
+    if type(member) == "string" then
+        return { name = member }
+    end
+    member
+end
+
+fun concept_member_list(items: any): any
+    out = {}
+    if items == nil then return out end
+    for _, item in ipairs(items)
+        out[#out + 1] = concept_member(item)
+    end
+    out
+end
+
+fun make_concept(name: str, spec: any): any
+    if spec == nil then spec = {} end
+    concept_fields = spec.required_fields
+    if concept_fields == nil then concept_fields = spec.fields end
+    concept_methods = spec.required_methods
+    if concept_methods == nil then concept_methods = spec.methods end
+    desc = {
+        __duo_kind = "concept",
+        name = name,
+        required_fields = concept_member_list(concept_fields),
+        required_methods = concept_member_list(concept_methods),
+    }
+    setmetatable(desc, {
+        __duo_kind = "concept_metatable",
+        type = "concept",
+    })
+    return desc
 end
 
 -- ─────────────────────────────────────────────────────────────
@@ -349,12 +388,7 @@ end
 
 fun derive_iter(val: any): any
     if type(val) ~= "table" then return fun() return nil end end
-    i = 0
-    return fun()
-        i = i + 1
-        if val[i] ~= nil then return i, val[i] end
-        nil
-    end
+    return pairs(val)
 end
 
 -- Module table — everything exported
@@ -378,6 +412,8 @@ M.has_field = has_field
 M.has_method = has_method
 M.type_name = type_name
 M.satisfies_concept = satisfies_concept
+M.make_concept = make_concept
+M["concept"] = make_concept
 -- Table utilities
 M.len = len
 M.keys = keys
@@ -402,43 +438,4 @@ M.derive_format = derive_format
 M.derive_len = derive_len
 M.derive_contains = derive_contains
 M.derive_iter = derive_iter
--- Re-export derive concepts
-M.derive = derive
-M.macros = macros
-M.Clone = derive.Clone
-M.Eq = derive.Eq
-M.Ord = derive.Ord
-M.Hash = derive.Hash
-M.Display = derive.Display
-M.Default = derive.Default
-M.Iterable = derive.Iterable
-M.Index = derive.Index
-M.Into = derive.Into
-M.From = derive.From
-M.Add = derive.Add
-M.Sub = derive.Sub
-M.Mul = derive.Mul
-M.Div = derive.Div
-M.Rem = derive.Rem
-M.Pow = derive.Pow
-M.Neg = derive.Neg
-M.BitAnd = derive.BitAnd
-M.BitOr = derive.BitOr
-M.BitXor = derive.BitXor
-M.BitNot = derive.BitNot
-M.Shl = derive.Shl
-M.Shr = derive.Shr
-M.Concat = derive.Concat
-M.Len = derive.Len
-M.Call = derive.Call
-M.Contains = derive.Contains
-M.Try = derive.Try
-M.Unwrap = derive.Unwrap
-M.Tag = derive.Tag
-M.Close = derive.Close
-M.Iter = derive.Iter
-M.Format = derive.Format
-M.Serialize = derive.Serialize
-M.Deserialize = derive.Deserialize
-M.DeepClone = derive.DeepClone
 M

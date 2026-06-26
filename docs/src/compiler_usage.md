@@ -16,15 +16,31 @@ zig build
 ## Commands
 
 ```
+duo                              start the interactive shell
+duo shell                        start the interactive shell
 duo compile <file>              compile to native binary
 duo init    [name]              create build.duo and src/main.duo
 duo build   [target]            build the default or named build.duo target
 duo run     [file|target]       compile and run a file, or run a build target
+duo <file>                      shorthand for `duo run <file>`
 duo check   <file>              type-check only
 duo dump-c  <file>              print generated C to stdout
 duo completion <shell>           generate shell completions (bash, zsh, fish, nu)
 duo help                         show help message
 
+```
+
+The shell compiles and runs one Duo line at a time through the same pipeline as
+`duo run`. Bare expressions are printed automatically, so `1 + 2` is equivalent
+to `print(1 + 2)`. Use `!command` for a host shell command, and use `:help`,
+`:quit`, or `:exit` inside the shell.
+
+Scripts may start with a Unix shebang:
+
+```duo
+#!/usr/bin/env duo
+
+print("hello from a Duo script")
 ```
 
 ## Options

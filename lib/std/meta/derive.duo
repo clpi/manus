@@ -1,152 +1,154 @@
--- std.meta.derive — derivable concepts for the Duo standard library
--- Concepts define interfaces that types can satisfy via @implements.
--- These are used with meta blocks for compile-time derivation.
+-- std.meta.derive — derivable concept descriptors for the Duo standard library
+-- These descriptors are ordinary Lua-shaped meta tables, not `concept`
+-- declarations. They are suitable for runtime reflection and
+-- meta.satisfies_concept checks today, while compile-time @implements support
+-- still uses parser-level concept declarations.
 
-concept Clone
-    fun clone(self): any
-end
+meta = req "std.meta"
 
-concept Eq
-    fun eq(self, other): bool
-end
+Clone = meta.make_concept("Clone", {
+    methods = { "clone" },
+})
 
-concept Ord
-    fun compare(self, other): i64
-end
+Eq = meta.make_concept("Eq", {
+    methods = { "eq" },
+})
 
-concept Hash
-    fun hash(self): u64
-end
+Ord = meta.make_concept("Ord", {
+    methods = { "compare" },
+})
 
-concept Display
-    fun to_string(self): str
-end
+Hash = meta.make_concept("Hash", {
+    methods = { "hash" },
+})
 
-concept Default
-    fun default(): any
-end
+Display = meta.make_concept("Display", {
+    methods = { "to_string" },
+})
 
-concept Iterable
-    fun iter(self): any
-    fun next(self): any
-end
+Default = meta.make_concept("Default", {
+    methods = { "default" },
+})
 
-concept Index
-    fun at(self, index: i64): any
-    fun len(self): i64
-end
+Iterable = meta.make_concept("Iterable", {
+    methods = { "iter", "next" },
+})
 
-concept Into
-    fun into(self, T: str): any
-end
+Index = meta.make_concept("Index", {
+    methods = { "at", "len" },
+})
 
-concept From
-    fun from(src: any): any
-end
+Into = meta.make_concept("Into", {
+    methods = { "into" },
+})
 
-concept Add
-    fun add(self, other): any
-end
+From = meta.make_concept("From", {
+    methods = { "from" },
+})
 
-concept Sub
-    fun sub(self, other): any
-end
+Add = meta.make_concept("Add", {
+    methods = { "add" },
+})
 
-concept Mul
-    fun mul(self, other): any
-end
+Sub = meta.make_concept("Sub", {
+    methods = { "sub" },
+})
 
-concept Div
-    fun div(self, other): any
-end
+Mul = meta.make_concept("Mul", {
+    methods = { "mul" },
+})
 
-concept Rem
-    fun rem(self, other): any
-end
+Div = meta.make_concept("Div", {
+    methods = { "div" },
+})
 
-concept Pow
-    fun pow(self, other): any
-end
+Rem = meta.make_concept("Rem", {
+    methods = { "rem" },
+})
 
-concept Neg
-    fun neg(self): any
-end
+Pow = meta.make_concept("Pow", {
+    methods = { "pow" },
+})
 
-concept BitAnd
-    fun bit_and(self, other): any
-end
+Neg = meta.make_concept("Neg", {
+    methods = { "neg" },
+})
 
-concept BitOr
-    fun bit_or(self, other): any
-end
+BitAnd = meta.make_concept("BitAnd", {
+    methods = { "bit_and" },
+})
 
-concept BitXor
-    fun bit_xor(self, other): any
-end
+BitOr = meta.make_concept("BitOr", {
+    methods = { "bit_or" },
+})
 
-concept BitNot
-    fun bit_not(self): any
-end
+BitXor = meta.make_concept("BitXor", {
+    methods = { "bit_xor" },
+})
 
-concept Shl
-    fun shl(self, other): any
-end
+BitNot = meta.make_concept("BitNot", {
+    methods = { "bit_not" },
+})
 
-concept Shr
-    fun shr(self, other): any
-end
+Shl = meta.make_concept("Shl", {
+    methods = { "shl" },
+})
 
-concept Concat
-    fun concat(self, other): any
-end
+Shr = meta.make_concept("Shr", {
+    methods = { "shr" },
+})
 
-concept Len
-    fun len(self): i64
-end
+Concat = meta.make_concept("Concat", {
+    methods = { "concat" },
+})
 
-concept Call
-    fun call(self, ...args): any
-end
+Len = meta.make_concept("Len", {
+    methods = { "len" },
+})
 
-concept Contains
-    fun contains(self, value: any): bool
-end
+Call = meta.make_concept("Call", {
+    methods = { "call" },
+})
 
-concept Try
-    fun try(self): bool, any, any
-end
+Contains = meta.make_concept("Contains", {
+    methods = { "contains" },
+})
 
-concept Unwrap
-    fun unwrap(self): any
-end
+Try = meta.make_concept("Try", {
+    methods = { "attempt" },
+})
 
-concept Tag
-    fun tag(self): str
-end
+Unwrap = meta.make_concept("Unwrap", {
+    methods = { "unwrap" },
+})
 
-concept Close
-    fun close(self): void
-end
+Tag = meta.make_concept("Tag", {
+    methods = { "tag" },
+})
 
-concept Iter
-    fun iter(self): any
-end
+Close = meta.make_concept("Close", {
+    methods = { "close" },
+})
 
-concept Format
-    fun fmt(self, spec: str): str
-end
+Iter = meta.make_concept("Iter", {
+    methods = { "iter" },
+})
 
-concept Serialize
-    fun serialize(self): str
-end
+Format = meta.make_concept("Format", {
+    methods = { "fmt" },
+})
 
-concept Deserialize
-    fun deserialize(src: str): any
-end
+Serialize = meta.make_concept("Serialize", {
+    methods = { "serialize" },
+})
 
-concept DeepClone
-    fun deep_clone(self): any
-end
+Deserialize = meta.make_concept("Deserialize", {
+    methods = { "deserialize" },
+})
+
+DeepClone = meta.make_concept("DeepClone", {
+    methods = { "deep_clone" },
+})
 
 -- Derive module table
 M = {}

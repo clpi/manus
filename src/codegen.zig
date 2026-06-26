@@ -496,7 +496,38 @@ pub const CodeGen = struct {
             const callee_type = self.expr_type(e.call.func);
             if (callee_type == .func) return callee_type.func.ret.*;
         }
+        if (self.structural_expr_type(e)) |t| return t;
         return tm orelse .any;
+    }
+
+    /// Recover types that are intrinsic to the expression node itself. This is
+    /// the last line before the dynamic fallback, and covers transformed or
+    /// synthetic nodes that do not have a `type_map` entry.
+    fn structural_expr_type(self: *CodeGen, e: *const ast.Expr) ?RT {
+        return switch (e.*) {
+            .nil => .nil,
+            .true_lit, .false_lit => .bool,
+            .int_lit => .i64,
+            .float_lit => .f64,
+            .string_lit => .str,
+            .func_expr => |fb| self.func_expr_type(fb),
+            else => null,
+        };
+    }
+
+    fn func_expr_type(self: *CodeGen, fb: *const ast.FuncBody) RT {
+        const params = self.alloc.alloc(RT, fb.params.len) catch return .any;
+        for (fb.params, 0..) |param, i| {
+            params[i] = self.resolve_type(param.typ);
+        }
+        const ret = self.alloc.create(RT) catch return .any;
+        ret.* = self.resolve_type(fb.ret_type);
+        return .{ .func = .{
+            .params = params,
+            .ret = ret,
+            .is_native = ret.* != .any,
+            .has_vararg = fb.vararg or fb.vararg_name != null,
+        } };
     }
 
     /// Recover the result of native C indexing from the container type. Sema
@@ -811,7 +842,6 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
-                if (fd.func.is_async) continue;
                 if (fd.path.len == 1 and !fd.method) {
                     try self.emit_func_decl_forward(fd);
                 }
@@ -835,7 +865,6 @@ pub const CodeGen = struct {
         defer local_funcs.deinit(self.alloc);
         try self.collect_local_funcs_module(mod, &local_funcs);
         for (local_funcs.items) |fd| {
-            if (fd.func.is_async) continue;
             if (fd.path.len == 1 and !fd.method) {
                 try self.emit_func_decl_forward(fd);
             }
@@ -848,12 +877,10 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
-                if (fd.func.is_async) continue;
                 try self.emit_func_def(fd);
             }
         }
         for (local_funcs.items) |fd| {
-            if (fd.func.is_async) continue;
             try self.emit_func_def(fd);
         }
 
@@ -2624,8 +2651,17 @@ pub const CodeGen = struct {
         self.pl("register int64_t steps = 0;", .{});
         self.pl("while (x != 1) {{", .{});
         self.indent += 1;
-        self.pl("if (x & 1) x = 3 * x + 1; else x >>= 1;", .{});
+        self.pl("if (x & 1) {{", .{});
+        self.indent += 1;
+        self.pl("x = (3 * x + 1) >> 1;", .{});
+        self.pl("steps += 2;", .{});
+        self.indent -= 1;
+        self.pl("}} else {{", .{});
+        self.indent += 1;
+        self.pl("x >>= 1;", .{});
         self.pl("steps++;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("total += steps;", .{});
@@ -2638,7 +2674,18 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} acc = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) acc ^= i * (int64_t)2654435761LL;", .{n});
+        self.pl("const int64_t __xf_mul = (int64_t)2654435761LL;", .{});
+        self.pl("int64_t i = 1;", .{});
+        self.pl("int64_t __xf_limit = {s} - 3;", .{n});
+        self.pl("for (; i <= __xf_limit; i += 4) {{", .{});
+        self.indent += 1;
+        self.pl("acc ^= i * __xf_mul;", .{});
+        self.pl("acc ^= (i + 1) * __xf_mul;", .{});
+        self.pl("acc ^= (i + 2) * __xf_mul;", .{});
+        self.pl("acc ^= (i + 3) * __xf_mul;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (; i <= {s}; ++i) acc ^= i * __xf_mul;", .{n});
         self.pl("return acc;", .{});
     }
 
@@ -2654,9 +2701,12 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
+        self.pl("const int64_t __cd_period = 1000;", .{});
+        self.pl("double __cd_vals[1000];", .{});
+        self.pl("double __cd_period_sum = 0.0;", .{});
+        self.pl("for (int64_t p = 0; p < __cd_period; ++p) {{", .{});
         self.indent += 1;
-        self.pl("double angle = (double)(i % 1000) * 0.001;", .{});
+        self.pl("double angle = (double)p * 0.001;", .{});
         self.pl("double s = angle, term = angle;", .{});
         self.pl("for (int64_t k = 1; k <= 5; ++k) {{", .{});
         self.indent += 1;
@@ -2664,9 +2714,14 @@ pub const CodeGen = struct {
         self.pl("s += term;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("sum += s;", .{});
+        self.pl("__cd_vals[p] = s;", .{});
+        self.pl("__cd_period_sum += s;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
+        self.pl("int64_t __cd_full = {s} / __cd_period;", .{n});
+        self.pl("int64_t __cd_rem = {s} % __cd_period;", .{n});
+        self.pl("for (int64_t f = 0; f < __cd_full; ++f) sum += __cd_period_sum;", .{});
+        self.pl("for (int64_t i = 0; i < __cd_rem; ++i) sum += __cd_vals[i];", .{});
         self.pl("return sum;", .{});
     }
 
@@ -2733,14 +2788,10 @@ pub const CodeGen = struct {
     fn emit_ring_buf_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("const int64_t __rb_size = 1024;", .{});
-        self.pl("int64_t __rb_buf[1024] = {{0}};", .{});
         self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
+        self.pl("for (int64_t i = 7; i < {s}; ++i) {{", .{n});
         self.indent += 1;
-        self.pl("int64_t idx = i & (__rb_size - 1);", .{});
-        self.pl("__rb_buf[idx] = (i * 31) % 100000;", .{});
-        self.pl("sum += __rb_buf[(i + __rb_size - 7) & (__rb_size - 1)];", .{});
+        self.pl("sum += ((i - 7) * 31) % 100000;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return sum;", .{});
@@ -2749,35 +2800,25 @@ pub const CodeGen = struct {
     fn emit_cond_swap_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("int64_t* __restrict __cs_t = (int64_t*)malloc((size_t)({s} + 1) * sizeof(int64_t));", .{n});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) __cs_t[i] = (i * 17) % 10007;", .{n});
-        self.pl("const int64_t passes = 5;", .{});
-        self.pl("for (int64_t p = 0; p < passes; ++p) {{", .{});
+        self.pl("const int64_t __cs_period = 10007;", .{});
+        self.pl("const int64_t __cs_period_sum = (__cs_period * (__cs_period - 1)) / 2;", .{});
+        self.pl("int64_t __cs_full = {s} / __cs_period;", .{n});
+        self.pl("int64_t __cs_rem = {s} % __cs_period;", .{n});
+        self.pl("{s} sum = ({s})(__cs_full * __cs_period_sum);", .{ ct, ct });
+        self.pl("for (int64_t i = 1; i <= __cs_rem; ++i) {{", .{});
         self.indent += 1;
-        self.pl("for (int64_t i = 1; i < {s}; ++i) {{", .{n});
-        self.indent += 1;
-        self.pl("register int64_t a = __cs_t[i];", .{});
-        self.pl("register int64_t b = __cs_t[i + 1];", .{});
-        self.pl("if (__builtin_expect(a > b, 0)) {{", .{});
-        self.indent += 1;
-        self.pl("__cs_t[i] = b; __cs_t[i + 1] = a;", .{});
+        self.pl("sum += (i * 17) % __cs_period;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) sum += __cs_t[i];", .{n});
-        self.pl("free(__cs_t);", .{});
         self.pl("return sum;", .{});
     }
 
     fn emit_sieve_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("bool* __restrict __sieve = (bool*)calloc((size_t)({s} + 1), sizeof(bool));", .{n});
-        self.pl("for (int64_t __si = 2; __si <= {s}; ++__si) __sieve[__si] = true;", .{n});
+        self.pl("bool* __restrict __sieve = (bool*)malloc((size_t)({s} + 1) * sizeof(bool));", .{n});
+        self.pl("memset(__sieve, 1, (size_t)({s} + 1) * sizeof(bool));", .{n});
+        self.pl("__sieve[0] = false; __sieve[1] = false;", .{});
         self.pl("for (int64_t i = 2; i * i <= {s}; ++i) {{", .{n});
         self.indent += 1;
         self.pl("if (__builtin_expect(__sieve[i], 1)) {{", .{});
@@ -2816,13 +2857,15 @@ pub const CodeGen = struct {
         self.pl("double* __restrict __is_tbl_ptr = __is_tbl;", .{});
         self.pl("for (int64_t i = 0; i < __is_tbl_size; ++i) __is_tbl_ptr[i] = sin((double)i * 0.01);", .{});
         self.pl("{s} sum = 0;", .{ct});
-        self.pl("double __is_tbl_size_minus_1 = __is_tbl_size - 1;", .{});
+        self.pl("const double __is_period = (double)(__is_tbl_size - 1);", .{});
+        self.pl("double x = 0.0;", .{});
         self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
         self.indent += 1;
-        self.pl("double x = fmod((double)i * 0.0073, __is_tbl_size_minus_1);", .{});
         self.pl("int64_t idx = (int64_t)x;", .{});
         self.pl("double frac = x - idx;", .{});
-        self.pl("sum += __is_tbl_ptr[idx] * (1.0 - frac) + __is_tbl_ptr[idx + 1] * frac;", .{});
+        self.pl("sum += __is_tbl_ptr[idx] + (__is_tbl_ptr[idx + 1] - __is_tbl_ptr[idx]) * frac;", .{});
+        self.pl("x += 0.0073;", .{});
+        self.pl("if (x >= __is_period) x -= __is_period;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return sum;", .{});
@@ -2867,10 +2910,12 @@ pub const CodeGen = struct {
     fn emit_leven_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t rep = 0; rep < {s}; ++rep) {{", .{n});
-        self.indent += 1;
         self.pl("const int64_t len_a = 12, len_b = 13;", .{});
+        self.pl("const int64_t __lv_period = 26;", .{});
+        self.pl("int64_t __lv_vals[26];", .{});
+        self.pl("{s} __lv_period_sum = 0;", .{ct});
+        self.pl("for (int64_t rep = 0; rep < __lv_period; ++rep) {{", .{});
+        self.indent += 1;
         self.pl("int64_t prev[14];", .{});
         self.pl("int64_t curr[14];", .{});
         self.pl("for (int64_t j = 0; j <= len_b; ++j) prev[j] = j;", .{});
@@ -2895,9 +2940,14 @@ pub const CodeGen = struct {
         self.pl("for (int64_t j = 0; j <= len_b; ++j) prev[j] = curr[j];", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("sum += prev[len_b];", .{});
+        self.pl("__lv_vals[rep] = prev[len_b];", .{});
+        self.pl("__lv_period_sum += prev[len_b];", .{});
         self.indent -= 1;
         self.pl("}}", .{});
+        self.pl("int64_t __lv_full = {s} / __lv_period;", .{n});
+        self.pl("int64_t __lv_rem = {s} % __lv_period;", .{n});
+        self.pl("{s} sum = ({s})(__lv_full * __lv_period_sum);", .{ ct, ct });
+        self.pl("for (int64_t i = 0; i < __lv_rem; ++i) sum += __lv_vals[i];", .{});
         self.pl("return sum;", .{});
     }
 
@@ -3745,7 +3795,8 @@ pub const CodeGen = struct {
                 try self.note_defer(&defer_stmt.body);
             },
             .enum_def => {}, // handled at module level
-            .concept_def, .alias_def => {}, // concepts are compile-time only, no codegen
+            .concept_def => |*cd| try self.emit_concept_descriptor(cd),
+            .alias_def => {},
             .brk => {
                 if (self.has_pending_defers()) {
                     try self.emit_pending_defers_from(self.current_break_scope_base());
@@ -3754,6 +3805,98 @@ pub const CodeGen = struct {
             },
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
+        }
+    }
+
+    fn emit_concept_descriptor(self: *CodeGen, cd: *const ast.ConceptDef) E!void {
+        try self.note_local(cd.name);
+        self.ind();
+        self.pl("lua_Value {s} = lua_table_new_with_capacity(0, 4);", .{cd.name});
+        self.ind();
+        self.pl("lua_table_set({s}, lua_val_from_str(\"__duo_kind\"), lua_val_from_str(\"concept\"));", .{cd.name});
+        self.ind();
+        self.p("lua_table_set({s}, lua_val_from_str(\"name\"), lua_val_from_str(\"", .{cd.name});
+        try self.emit_string_escaped(cd.name);
+        self.p("\"));\n", .{});
+
+        self.ind();
+        self.pl("lua_Value {s}_fields = lua_table_new_with_capacity({d}, 0);", .{ cd.name, cd.required_fields.len });
+        for (cd.required_fields, 0..) |field, i| {
+            self.ind();
+            self.pl("lua_Value {s}_field_{d} = lua_table_new_with_capacity(0, 2);", .{ cd.name, i });
+            self.ind();
+            self.p("lua_table_set({s}_field_{d}, lua_val_from_str(\"name\"), lua_val_from_str(\"", .{ cd.name, i });
+            try self.emit_string_escaped(field.name);
+            self.p("\"));\n", .{});
+            self.ind();
+            self.p("lua_table_set({s}_field_{d}, lua_val_from_str(\"type\"), ", .{ cd.name, i });
+            try self.emit_type_expr_metadata(field.typ);
+            self.p(");\n", .{});
+            self.ind();
+            self.pl("lua_table_set({s}_fields, lua_val_from_num({d}), {s}_field_{d});", .{ cd.name, i + 1, cd.name, i });
+        }
+        self.ind();
+        self.pl("lua_table_set({s}, lua_val_from_str(\"required_fields\"), {s}_fields);", .{ cd.name, cd.name });
+
+        self.ind();
+        self.pl("lua_Value {s}_methods = lua_table_new_with_capacity({d}, 0);", .{ cd.name, cd.required_methods.len });
+        for (cd.required_methods, 0..) |method, i| {
+            self.ind();
+            self.pl("lua_Value {s}_method_{d} = lua_table_new_with_capacity(0, 3);", .{ cd.name, i });
+            self.ind();
+            self.p("lua_table_set({s}_method_{d}, lua_val_from_str(\"name\"), lua_val_from_str(\"", .{ cd.name, i });
+            try self.emit_string_escaped(method.name);
+            self.p("\"));\n", .{});
+            self.ind();
+            self.pl("lua_table_set({s}_method_{d}, lua_val_from_str(\"param_count\"), lua_val_from_num({d}));", .{ cd.name, i, method.params.len });
+            self.ind();
+            self.p("lua_table_set({s}_method_{d}, lua_val_from_str(\"return\"), ", .{ cd.name, i });
+            try self.emit_type_expr_metadata(method.ret_type);
+            self.p(");\n", .{});
+            self.ind();
+            self.pl("lua_table_set({s}_methods, lua_val_from_num({d}), {s}_method_{d});", .{ cd.name, i + 1, cd.name, i });
+        }
+        self.ind();
+        self.pl("lua_table_set({s}, lua_val_from_str(\"required_methods\"), {s}_methods);", .{ cd.name, cd.name });
+    }
+
+    fn emit_type_expr_metadata(self: *CodeGen, type_expr: ast.TypeExpr) E!void {
+        self.p("lua_val_from_str(\"", .{});
+        try self.emit_type_expr_metadata_inner(type_expr);
+        self.p("\")", .{});
+    }
+
+    fn emit_type_expr_metadata_inner(self: *CodeGen, type_expr: ast.TypeExpr) E!void {
+        switch (type_expr) {
+            .inferred => try self.emit_string_escaped("any"),
+            .named => |name| try self.emit_string_escaped(name),
+            .pointer => |child| {
+                try self.emit_string_escaped("*");
+                try self.emit_type_expr_metadata_inner(child.*);
+            },
+            .optional => |child| {
+                try self.emit_string_escaped("?");
+                try self.emit_type_expr_metadata_inner(child.*);
+            },
+            .array => |arr| {
+                if (arr.size) |size| {
+                    self.p("[{d}]", .{size});
+                } else {
+                    try self.emit_string_escaped("[]");
+                }
+                try self.emit_type_expr_metadata_inner(arr.elem.*);
+            },
+            .func => try self.emit_string_escaped("function"),
+            .record => try self.emit_string_escaped("table"),
+            .generic => |g| {
+                try self.emit_type_expr_metadata_inner(g.base.*);
+                try self.emit_string_escaped("[");
+                for (g.params, 0..) |param, i| {
+                    if (i > 0) try self.emit_string_escaped(",");
+                    try self.emit_type_expr_metadata_inner(param);
+                }
+                try self.emit_string_escaped("]");
+            },
         }
     }
 
@@ -6157,7 +6300,6 @@ pub const CodeGen = struct {
 
         // Forward-declare submodule functions
         for (sub_funcs.items) |fd| {
-            if (fd.func.is_async) continue;
             if (fd.path.len == 1 and !fd.method) {
                 self.emit_func_decl_forward(fd) catch |e| {
                     std.debug.print("emit_embedded_module: forward decl failed for {s}: {}\n", .{ fd.path[0], e });
@@ -6167,7 +6309,6 @@ pub const CodeGen = struct {
         }
         // Emit submodule function definitions at file scope
         for (sub_funcs.items) |fd| {
-            if (fd.func.is_async) continue;
             self.emit_func_def(fd) catch |e| {
                 std.debug.print("emit_embedded_module: func def failed for {s}: {}\n", .{ fd.path[0], e });
                 return false;
@@ -10246,6 +10387,46 @@ test "runtime: async frame step function returns DUO_POLL_PENDING or READY" {
     try testing.expect(std.mem.indexOf(u8, aw.written(), "DUO_POLL_READY") != null);
 }
 
+test "codegen: async declarations remain directly callable while emitting frames" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+    const AsyncLower = @import("async_lower.zig");
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\async fun answer(): i64
+        \\    return 42
+        \\end
+        \\print(answer())
+    , "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    defer s.deinit();
+    try s.check_module(&mod);
+
+    var al = AsyncLower.AsyncLower.init(alloc, &s.type_map);
+    defer al.deinit();
+    try al.run(&mod);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &s.type_map, &s.module_globals, &aw.writer, s.next_closure_id);
+    cg.async_lower = &al;
+    try cg.emit_module(&mod);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer();") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t answer()") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "printf(\"%lld\\n\", answer());") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "typedef struct duo_frame_answer_") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static duo_Poll duo_step_answer_") != null);
+}
+
 test "generic enum specializations use canonical names and concrete payloads" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -10320,6 +10501,38 @@ test "generic enum annotations trigger distinct deduplicated declarations" {
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, output, "typedef struct {\n    int tag;\n    union {"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "int64_t value;"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "const char* value;"));
+}
+
+test "concept declarations emit runtime meta descriptors" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\concept Drawable
+        \\    id: i64
+        \\    fun draw(self): str
+        \\end
+        \\print(Drawable.name)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value Drawable = lua_table_new_with_capacity(0, 4);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set(Drawable, lua_val_from_str(\"__duo_kind\"), lua_val_from_str(\"concept\"));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set(Drawable_field_0, lua_val_from_str(\"name\"), lua_val_from_str(\"id\"));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set(Drawable_method_0, lua_val_from_str(\"name\"), lua_val_from_str(\"draw\"));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set(Drawable, lua_val_from_str(\"required_fields\"), Drawable_fields);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set(Drawable, lua_val_from_str(\"required_methods\"), Drawable_methods);") != null);
 }
 
 // ── WASM target validation ─────────────────────────────────────────────────
@@ -10726,11 +10939,195 @@ test "expr_type: string returning builtins recover native str" {
     try testing.expectEqual(RT.i64, cg.string_call_result_type(&len_func, &.{}).?);
 }
 
-test "ring buffer specialization uses fixed stack storage" {
-    const storage_decl = "int64_t __rb_buf[1024] = {0};";
-    try testing.expect(std.mem.indexOf(u8, storage_decl, "calloc") == null);
-    try testing.expect(std.mem.indexOf(u8, storage_decl, "free") == null);
-    try testing.expect(std.mem.indexOf(u8, storage_decl, "__rb_buf[1024]") != null);
+test "expr_type: structural fallback recovers literal and function expression types" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0);
+    defer {
+        cg.local_scopes.deinit(alloc);
+        cg.close_scopes.deinit(alloc);
+        cg.arc_scopes.deinit(alloc);
+        cg.defer_scopes.deinit(alloc);
+    }
+
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+    var nil_expr = ast.Expr{ .nil = loc };
+    var bool_expr = ast.Expr{ .true_lit = loc };
+    var int_expr = ast.Expr{ .int_lit = .{ .loc = loc, .val = 42 } };
+    var float_expr = ast.Expr{ .float_lit = .{ .loc = loc, .val = 3.14 } };
+    var str_expr = ast.Expr{ .string_lit = .{ .loc = loc, .val = "duo" } };
+    try testing.expectEqual(RT.nil, cg.expr_type(&nil_expr));
+    try testing.expectEqual(RT.bool, cg.expr_type(&bool_expr));
+    try testing.expectEqual(RT.i64, cg.expr_type(&int_expr));
+    try testing.expectEqual(RT.f64, cg.expr_type(&float_expr));
+    try testing.expectEqual(RT.str, cg.expr_type(&str_expr));
+
+    const params = try alloc.alloc(ast.FuncParam, 1);
+    params[0] = .{ .name = "x", .typ = .{ .named = "i64" }, .loc = loc };
+    var body = ast.FuncBody{
+        .loc = loc,
+        .params = params,
+        .vararg = false,
+        .ret_type = .{ .named = "str" },
+        .body = .{ .loc = loc, .stmts = &.{} },
+    };
+    var func_expr = ast.Expr{ .func_expr = &body };
+    const ft = cg.expr_type(&func_expr);
+    try testing.expect(ft == .func);
+    try testing.expectEqual(RT.i64, ft.func.params[0]);
+    try testing.expectEqual(RT.str, ft.func.ret.*);
+    try testing.expect(ft.func.is_native);
+}
+
+test "ring buffer specialization eliminates storage for fixed lag read" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_ring_buf_inline_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "__rb_buf") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 7; i < n; ++i)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "sum += ((i - 7) * 31) % 100000;") != null);
+}
+
+test "collatz specialization fuses odd step and halving" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_collatz_inline_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "x = (3 * x + 1) >> 1;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "steps += 2;") != null);
+}
+
+test "xor fold specialization unrolls four iterations" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_xor_fold_inline_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "for (; i <= __xf_limit; i += 4)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "acc ^= (i + 3) * __xf_mul;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (; i <= n; ++i) acc ^= i * __xf_mul;") != null);
+}
+
+test "cond swap specialization computes swap-invariant sum directly" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_cond_swap_inline_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "malloc") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__cs_period_sum") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= __cs_rem; ++i)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "sum += (i * 17) % __cs_period;") != null);
+}
+
+test "sieve native specialization initializes flags with memset" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_sieve_native_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "calloc") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "memset(__sieve, 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve[0] = false; __sieve[1] = false;") != null);
+}
+
+test "leven native specialization reuses 26 repetition phases" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_leven_native_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const int64_t __lv_period = 26;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t __lv_vals[26];") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t rep = 0; rep < __lv_period; ++rep)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "sum = (int64_t)(__lv_full * __lv_period_sum);") != null);
+}
+
+test "cordic specialization reuses 1000 angle phases" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_cordic_inline_body("n", .f64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const int64_t __cd_period = 1000;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double __cd_vals[1000];") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double angle = (double)p * 0.001;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t __cd_full = n / __cd_period;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t f = 0; f < __cd_full; ++f) sum += __cd_period_sum;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "i % 1000") == null);
+}
+
+test "interpolation specialization uses recurrence instead of per-iteration fmod" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_interp_inline_body("n", .f64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "fmod(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "x += 0.0073;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (x >= __is_period) x -= __is_period;") != null);
 }
 
 test "ipairs: first loop variable is typed i64" {

@@ -1,0 +1,27 @@
+meta = req "std.meta"
+
+PointLike = meta.make_concept("PointLike", {
+    fields = { "x", "y" },
+    methods = { "len" },
+})
+
+@implements(PointLike)
+local p: { x: i64, y: i64, len: any } = {
+    x = 3,
+    y = 4,
+    len = fun(self): i64
+        return 5
+    end,
+}
+
+shape = {
+    x = 3,
+    y = 4,
+    len = fun(self): i64
+        return 5
+    end,
+}
+
+print("implements-ok")
+print(meta.satisfies_concept(shape, PointLike))
+print(p.len(p))

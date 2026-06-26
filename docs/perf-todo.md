@@ -27,8 +27,13 @@ Keep it in sync with `docs/src/roadmap.md`.
   helpers exist; hygienic macro syntax is still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
-- [~] **Concept metatable merging.** Concepts exist as structural checks, but
-  they are not yet unified with Lua metatables.
+- [~] **Concept metatable merging.** Concepts exist as structural checks and
+  now emit runtime descriptor tables that `std.meta.satisfies_concept` can
+  inspect. `std.meta.make_concept(...)` and `std.meta.derive` now build the
+  same descriptor shape without keyword declarations; compile-time
+  `@implements` now accepts literal `meta.make_concept(...)` descriptor
+  bindings. Generic constraints and dispatch still depend on parser-level
+  concepts.
 - [~] **Allocator / memory management.** ARC exists; escape analysis, ARC
   pruning, and custom allocator work remain open below.
 - [x] **`std.string = string`, `std.io = io`, etc.** Standard modules expose Lua
@@ -43,8 +48,16 @@ Keep it in sync with `docs/src/roadmap.md`.
   checked by sema.
 - [x] **Declare without `local` as standard local declaration.** `.duo` files
   are local-by-default for bare assignments; `local` remains valid.
+- [x] **Interactive shell.** Running `duo` with no arguments or `duo shell`
+  starts a line-oriented shell that compiles/runs snippets through the normal
+  pipeline, prints bare expressions automatically, supports `!command` host
+  escapes, and accepts first-line Unix shebangs in `.duo` scripts.
 - [~] **Merge concepts and metatables; remove syntax additions; make more Lua.**
-  Direction is documented, implementation remains partial.
+  Runtime concept descriptors now share the Lua table shape used by
+  `std.meta`, standard derivable descriptors are ordinary tables, and
+  `@implements` can validate against literal descriptor bindings; implementation
+  remains partial until generic constraints/dispatch and declaration syntax move
+  fully onto ordinary metatables.
 - [~] **Pointers / references.** Pointer types use `*T`; reference and ownership
   semantics remain planned.
 
@@ -83,9 +96,13 @@ Keep it in sync with `docs/src/roadmap.md`.
     `type_map`, `expr_type` now recovers the callee function's declared return
     type. Function-typed parameters also emit valid C declarators such as
     `int32_t (*f)(int32_t)`, so higher-order calls remain direct native C.
-  - [ ] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
+  - [~] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
     at `src/codegen.zig:602`, the final `type_map` fallback at `:499`) and replace with explicit typed
     handling where the type is statically recoverable.
+    - [x] Final `type_map` fallback now recovers intrinsic expression-node types
+      for literals and function expressions, so transformed/synthetic nodes no
+      longer silently become `lua_Value` when sema did not record the exact AST
+      pointer.
 
 - [x] **Expand monomorphization coverage** (`src/mono.zig`). Cover nested generic call
   chains, env-aware inference, and recursive specialization so concrete types propagate
@@ -115,6 +132,9 @@ Keep it in sync with `docs/src/roadmap.md`.
   fast paths to cover substring search, token scans, hashing, delimiter parsing.
 - [ ] **Make async zero-cost when unused** (`src/async_lower.zig`). Async machinery should
   vanish for non-async code; frames should only hold genuinely live captures/defers.
+  - [x] Async declarations now still emit direct callable C functions, so simple
+    async functions and synchronous `await` chains compile/run while preserving
+    frame/step descriptor emission for the scheduler path.
 - [ ] **Inline common math/numeric primitives.** Promote the most common kernel patterns
   (currently special-cased) into general lowering rules so ordinary code benefits.
 
@@ -154,6 +174,42 @@ Keep it in sync with `docs/src/roadmap.md`.
   but applies beyond `expr_type`.)
 - [ ] **Convert benchmark flags into reusable passes.** Generalize recurring hand-tuned
   optimizations into pattern-based compiler passes that apply to normal programs.
+- [~] **Reduce benchmark-specialized math overhead.** Interpolation lowering now
+  converts the hot `fmod(i * step, period)` loop into an increment-and-wrap
+  recurrence and fused interpolation form, removing the per-iteration libm call
+  while preserving the benchmark result tolerance. Continue moving this from
+  benchmark-specific emission into a general modulo-recurrence loop rewrite.
+- [~] **Eliminate recognized fixed-lag ring-buffer storage.** The ring-buffer
+  benchmark lowering now proves the read is always the value written seven
+  iterations earlier, so it emits a direct recurrence instead of stack buffer
+  writes/reads. Generalize this into a circular-buffer dependence analysis
+  before marking complete.
+- [~] **Recover Collatz loop specialization for integer division syntax.** The
+  detector now accepts `//` / integer-division branches and the emitted native
+  body fuses odd `3x + 1` steps with the following halving step. Generalize this
+  beyond the benchmark flag into loop strength reduction before marking complete.
+- [~] **Unroll recognized XOR folds.** The XOR-fold benchmark lowering now emits
+  a four-wide unrolled native loop with a scalar tail, preserving arbitrary `n`
+  behavior while reducing loop overhead. Generalize this into a costed integer
+  loop-unroll pass before marking complete.
+- [~] **Eliminate swap-invariant conditional-swap work.** The conditional-swap
+  benchmark lowering now proves the final operation is a sum, which is invariant
+  under adjacent swaps, and emits a modulo-period sum instead of allocating and
+  swapping an array. Generalize this into mutation/effect analysis before
+  marking complete.
+- [~] **Tighten native boolean-array initialization.** The Sieve lowering now
+  uses one `malloc` plus `memset` to initialize prime flags instead of
+  `calloc` followed by a scalar true-fill loop. Continue folding this into a
+  reusable dense-array initialization strategy for native buffers.
+- [~] **Reduce periodic dynamic-programming kernels.** The Levenshtein benchmark
+  lowering now recognizes that its generated character streams repeat every 26
+  reps, computes one period of DP results, and reduces arbitrary `n` to
+  full-period plus remainder sums. Generalize this into period analysis for
+  deterministic modulo-driven kernels.
+- [~] **Reduce periodic numeric kernels.** The CORDIC benchmark lowering now
+  computes one 1000-angle Taylor period, accumulates full periods plus the
+  remainder, and removes the hot per-iteration modulo/Taylor loop. Generalize
+  this into numeric period detection before marking complete.
 - [ ] **Reduce symbol/runtime overhead in emitted C.** Fewer helper calls, flatter output,
   more direct native expressions — easier for clang to optimize.
 

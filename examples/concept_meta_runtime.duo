@@ -1,0 +1,17 @@
+meta = req "std.meta"
+
+concept Drawable
+    id: i64
+    fun draw(self): str
+end
+
+shape = {
+    id = 7,
+    draw = fun(self): str
+        "shape-" .. tostring(self.id)
+    end,
+}
+
+print(Drawable.name)
+print(meta.satisfies_concept(shape, Drawable))
+print(shape.draw(shape))

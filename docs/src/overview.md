@@ -190,6 +190,9 @@ graph LR
 ## Compiler Commands
 
 ```bash
+duo                        # Start the interactive shell
+duo shell                  # Start the interactive shell
+duo script.duo             # Compile and run a script
 duo compile <file>        # Compile to native binary or object
 duo run <file>            # Compile and run
 duo check <file>          # Type-check only

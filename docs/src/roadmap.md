@@ -51,24 +51,38 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 - Monomorphizer (`src/mono.zig`) for generic specializations.
 - ARC pass (`src/arc.zig`) for retain/release/close decisions.
-- Async lowering (`src/async_lower.zig`) transforms async functions into stackless state machines.
+- Async lowering (`src/async_lower.zig`) transforms async functions into stackless
+  state-machine descriptors; async declarations also emit a direct callable body
+  so simple async/await chains run today.
 - Profile-guided optimization (`--pgo`), shared-memory WASM (`--shared-memory`), library mode (`--lib`), and dynamic chunk loading (`--load-chunk`).
+- `duo` and `duo shell` start an interactive shell that compiles/runs one Duo
+  line through the normal pipeline, supports `!command` host escapes, and
+  `.duo` scripts may start with a Unix shebang.
 - Shell completions for bash, zsh, fish, and nushell.
 
 ## Partial / in progress
 
 - `if ... then ... else ... end` can be used as a tail expression in blocks. Postfix `expr if cond else fallback` syntax is not implemented.
-- Concepts exist as compile-time structural checks. They have not been merged with metatable semantics yet.
+- Concepts exist as compile-time structural checks and now also emit runtime
+  descriptor tables (`name`, `required_fields`, `required_methods`) that
+  `std.meta.satisfies_concept` can inspect. `std.meta.make_concept(...)` and
+  `std.meta.derive` now create the same descriptor shape as ordinary tables,
+  and `@implements` accepts literal descriptor bindings. Full generic
+  constraint dispatch and syntax removal are still in progress.
 - Pointer types use `*T`. Reference and ownership semantics are still evolving.
 - Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.
 - Macros and metaprogramming beyond the current compile-time `##(...)` escape and `std.meta` helpers.
+- Scheduler-backed async tasks, pending poll states, and async channels are still
+  being completed; current async calls run synchronously while descriptors are
+  emitted for the full runtime path.
 - Native record passing end-to-end: record-typed parameters and locals work in many cases, but call-site coercion from table literals and named alias lowering are incomplete.
 - String-returning builtins in typed contexts can disagree between sema and emit; `string.sub` and `tostring` in a typed `str` context need careful use until fixed.
 
 ## Planned
 
 - Hygienic macro syntax and more complete metaprogramming.
-- A tighter concept/metatable model that removes unnecessary syntax additions.
+- A tighter concept/metatable model that finishes compile-time dispatch through
+  ordinary Lua metatables and removes unnecessary syntax additions.
 - Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.
 - Escape analysis and stack allocation for non-escaping temporaries.
 - ARC pruning and custom allocator integration.

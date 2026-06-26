@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ab2e99e5.js";
+            window.path_to_searchindex_js = "searchindex-a7cb5ac8.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-d954f18c.js"></script>
@@ -175,7 +175,10 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="async-functions"><a class="header" href="#async-functions">Async Functions</a></h1>
-<p>Async functions enable cooperative concurrency in Duo through stackless coroutines. They compile to state machines that can pause and resume without OS thread overhead.</p>
+<p>Async functions are parsed, type-checked, and lowered into stackless state
+machine descriptors. They also emit a direct callable body today, so async
+functions and simple <code>await</code> chains run through the normal compiled path while
+the cooperative scheduler is still being completed.</p>
 <h2 id="declaration"><a class="header" href="#declaration">Declaration</a></h2>
 <p>Use the <code>async</code> keyword to define an async function:</p>
 <pre><code class="language-duo">async fun fetch_data(url: str): str
@@ -183,9 +186,12 @@
     return response.body
 end
 </code></pre>
-<p>Async functions always return <code>Poll[T]</code> - a value that may be ready or pending.</p>
+<p>The current callable path returns <code>T</code> directly. The compiler still emits
+<code>duo_Poll</code> frame/step descriptors for async functions so the scheduler-backed
+<code>Poll[T]</code> path can take over as it is completed.</p>
 <h2 id="await"><a class="header" href="#await">Await</a></h2>
-<p>The <code>await</code> keyword pauses execution until a value is ready:</p>
+<p>The <code>await</code> keyword marks a yield point for lowering. In the current direct
+runtime path it evaluates the awaited expression synchronously:</p>
 <pre><code class="language-duo">async fun process_all(urls: []str): []str
     results: []str = {}
     for url in urls
@@ -196,7 +202,7 @@ end
 end
 </code></pre>
 <h2 id="scheduler"><a class="header" href="#scheduler">Scheduler</a></h2>
-<p>Duo uses a cooperative single-threaded scheduler by default:</p>
+<p>The cooperative single-threaded scheduler is still in progress:</p>
 <pre><code class="language-duo">-- Spawn a task
 task = spawn fetch_data("https://example.com")
 
