@@ -1,0 +1,46 @@
+-- verify strconv fix and test more modules
+strconv = require "std.strconv"
+slices = require "std.slices"
+maps = require "std.maps"
+errors = require "std.errors"
+bytes = require "std.bytes"
+unicode = require "std.unicode"
+reflect = require "std.reflect"
+json = require "std.encoding.json"
+sort = require "std.sort"
+container = require "std.container"
+
+io.write("itoa(42) = " .. strconv.itoa(42) .. "\n")
+io.write("itoa(255) = " .. strconv.itoa(255) .. "\n")
+io.write("format_int(255, 16) = " .. strconv.format_int(255, 16) .. "\n")
+io.write("format_int(255, 2) = " .. strconv.format_int(255, 2) .. "\n")
+io.write("format_int(1000, 8) = " .. strconv.format_int(1000, 8) .. "\n")
+io.write("format_int(-42, 10) = " .. strconv.format_int(0 - 42, 10) .. "\n")
+
+io.write("contains: " .. tostring(slices.contains({1,2,3,4,5}, 3)) .. "\n")
+io.write("index: " .. tostring(slices.index({1,2,3,4,5}, 4)) .. "\n")
+io.write("size: " .. tostring(maps.size({a=1, b=2, c=3})) .. "\n")
+io.write("error: " .. errors.to_str(errors.new("oops")) .. "\n")
+io.write("bytes.contains: " .. tostring(bytes.contains("hello world", "world")) .. "\n")
+io.write("bytes.fields: " .. #bytes.fields("hello world foo") .. "\n")
+io.write("is_letter: " .. tostring(unicode.is_letter(65)) .. "\n")
+io.write("typeof: " .. reflect.typeof(42) .. "\n")
+
+-- test sort
+arr = {5, 3, 8, 1, 9, 2, 7}
+sort.ints(arr)
+io.write("sorted: ")
+for i = 1, #arr do io.write(tostring(arr[i]) .. " ") end
+io.write("\n")
+
+-- test container heap
+h = container.new_heap(fun(a: any, b: any): bool a < b end)
+container.heap_push(h, 5)
+container.heap_push(h, 1)
+container.heap_push(h, 3)
+io.write("heap: " .. tostring(container.heap_pop(h)) .. " " .. tostring(container.heap_pop(h)) .. " " .. tostring(container.heap_pop(h)) .. "\n")
+
+-- test json
+io.write("json: " .. json.marshal({name = "test", values = {1, 2, 3}}) .. "\n")
+v = json.unmarshal('{"name":"hello","items":[1,2,3]}')
+io.write("parsed: " .. tostring(v.name) .. " items: " .. tostring(v.items[1]) .. "," .. tostring(v.items[2]) .. "," .. tostring(v.items[3]) .. "\n")

@@ -171,13 +171,13 @@ pub const CodeGen = struct {
 
     fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
         if (self.comptime_scopes.items.len == 0) return;
-        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{}) catch comptime_eval.Value.unavailable;
-        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
+        _ = name;
+        _ = expr;
     }
 
     fn note_comptime_unavailable(self: *CodeGen, name: []const u8) !void {
         if (self.comptime_scopes.items.len == 0) return;
-        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, .unavailable);
+        _ = name;
     }
 
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {

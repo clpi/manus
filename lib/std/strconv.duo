@@ -5,7 +5,7 @@
 -- ----- Number to string -----
 
 -- format_int: format integer v as a string in the given base (2-36).
-fun format_int(v: i64, base: i64): str
+fun format_int(v: any, base: any): str
     if base == nil or base < 2 then base = 10 end
     if base > 36 then base = 36 end
     if v == 0 then return "0" end
@@ -19,7 +19,7 @@ fun format_int(v: i64, base: i64): str
     out = {}
     while n > 0
         out[rawlen(out) + 1] = string.sub(digits, (n % base) + 1, (n % base) + 1)
-        n = n / base
+        n = math.floor(n / base)
     end
     s = ""
     i = rawlen(out)
@@ -32,12 +32,12 @@ fun format_int(v: i64, base: i64): str
 end
 
 -- itoa: convenience for format_int(v, 10).
-fun itoa(v: i64): str
+fun itoa(v: any): str
     format_int(v, 10)
 end
 
 -- format_float: format float v with 'g', 'f', or 'e' verb and precision.
-fun format_float(v: f64, fmt: str, prec: i64): str
+fun format_float(v: any, fmt: str, prec: any): str
     if v == nil then return "0" end
     if fmt == nil then fmt = "g" end
     if prec == nil or prec < 0 then prec = 0 - 1 end
@@ -66,7 +66,7 @@ end
 -- ----- String to number -----
 
 -- parse_int: interpret s as an integer in the given base. Returns (value, ok).
-fun parse_int(s: str, base: i64): any
+fun parse_int(s: str, base: any): any
     if s == nil or s == "" then return 0, false end
     s = string.gsub(s, "^%s+", "")
     s = string.gsub(s, "%s+$", "")

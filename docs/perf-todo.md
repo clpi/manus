@@ -4,7 +4,7 @@ Tracking for the codegen/optimization work. Ordered by priority. Each item notes
 relevant code locations so future work can start without re-deriving them.
 
 **Hard constraint:** every change must keep `zig build bench` green (Duo ≥ C on all 40
-benchmarks) and the full test gate at 360/360 or better.
+benchmarks) and the full test gate at 393+/393+ or better.
 
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 

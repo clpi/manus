@@ -20,3 +20,4 @@ tools:
             - "true"
             - cat *
             - zig test *
+            - grep *
