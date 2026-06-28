@@ -1,1338 +1,1407 @@
--- duo-lsp — Language Server Protocol implementation for the Duo language.
---
--- Written in Duo, speaking LSP over stdio (JSON-RPC with Content-Length
--- framing). Diagnostics come from shelling out to the `duo` compiler's
--- `check` command; symbol outline / hover / go-to-definition / completion
--- come from a fast line-oriented scanner with per-document caching.
---
--- JSON-RPC is delegated to std.json (from the Duo standard library) —
--- the server pulls std.json in via require rather than rolling its own
--- encoder/parser. String helpers here are small and self-contained because
--- the std.string module's split/lines path currently triggers a sema bug
--- when re-checked; we avoid that dependency for a self-contained server.
---
--- Build:  duo compile -o duo-lsp src/server.duo
--- Run:    DUO_LSP_DUO_BIN=/path/to/duo ./duo-lsp   (reads LSP on stdin/stdout)
---
--- Performance notes
---   * Per-document line-offset table is computed once per text version and
---     reused by get_line / offset_at / word_end — O(log|text|) per lookup
---     instead of O(|text|) over a fresh scan.
---   *.scan_symbols result is cached per document version; hover / definition /
---     documentSymbol all share one scan.
---   * `duo check` is debounced to at most one invocation per second per
---     document (keyed on os.time), with a trailing flush on the next loop
---     iteration so editors that spam didChange never fork the compiler on
---     every keystroke.
-
--- ── standard library: JSON ──────────────────────────────────────────────────
--- Stored as a field on the io.lsp state table because module-level bindings
--- are not visible by name inside `fun` bodies in the current codegen.
 io.lsp = {}
-io.lsp.json = require "std.json"
-
--- ── byte predicates ─────────────────────────────────────────────────────────
-fun is_ident_start(b: any): bool
-    return (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 95
+io.lsp.json = require("std.json")
+fun is_ident_start(b: any) -> bool
+  return b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95
 end
-
-fun is_ident_char(b: any): bool
-    return (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 95
+fun is_ident_char(b: any) -> bool
+  return b >= 65 and b <= 90 or b >= 97 and b <= 122 or b >= 48 and b <= 57 or b == 95
 end
-
-fun is_word_char_byte(b: any): bool
-    return (b >= 48 and b <= 57) or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or
-        b == 95 or b == 46 or b == 36 or b == 64
+fun is_word_char_byte(b: any) -> bool
+  return b >= 48 and b <= 57 or b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95 or b == 46 or b == 36 or b == 64
 end
-
-fun is_space_byte(b: any): bool
-    return b == 32 or b == 9 or b == 10 or b == 13
+fun is_space_byte(b: any) -> bool
+  return b == 32 or b == 9 or b == 10 or b == 13
 end
-
--- ── string search ──────────────────────────────────────────────────────────
-fun find_from(s, sub, start): i64
-    if s == nil then return 0 end
-    sn = string.len(s)
-    subn = string.len(sub)
-    if subn == 0 then return start end
-    i = start
-    while i + subn - 1 <= sn
-        is_match = true
-        j = 0
-        while j < subn
-            if string.byte(s, i + j) ~= string.byte(sub, j + 1) then
-                is_match = false
-                break
-            end
-            j = j + 1
-        end
-        if is_match then return i end
-        i = i + 1
+fun find_from(s, sub, start) -> i64
+  if s == nil then
+    return 0
+  end
+  sn = string.len(s)
+  subn = string.len(sub)
+  if subn == 0 then
+    return start
+  end
+  i = start
+  while i + subn - 1 <= sn
+    is_match = true
+    j = 0
+    while j < subn
+      if string.byte(s, i + j) ~= string.byte(sub, j + 1) then
+        is_match = false
+        break
+      end
+      j = j + 1
     end
-    0
-end
-
-fun find_last(s, ch): i64
-    n = string.len(s)
-    cb = string.byte(ch, 1)
-    j = n
-    while j >= 1
-        if string.byte(s, j) == cb then return j end
-        j = j - 1
+    if is_match then
+      return i
     end
-    0
+    i = i + 1
+  end
+  0
 end
-
-fun starts_with(s, prefix): bool
-    if s == nil then return false end
-    return string.sub(s, 1, string.len(prefix)) == prefix
-end
-
-fun ends_with(s, suffix): bool
-    if s == nil then return false end
-    if string.len(suffix) > string.len(s) then return false end
-    return string.sub(s, string.len(s) - string.len(suffix) + 1) == suffix
-end
-
-fun trim(s): str
-    if s == nil then return "" end
-    n = string.len(s)
-    i = 1
-    while i <= n and is_space_byte(string.byte(s, i)) do
-        i = i + 1
+fun find_last(s, ch) -> i64
+  n = string.len(s)
+  cb = string.byte(ch, 1)
+  j = n
+  while j >= 1
+    if string.byte(s, j) == cb then
+      return j
     end
-    j = n
-    while j >= i and is_space_byte(string.byte(s, j)) do
-        j = j - 1
+    j = j - 1
+  end
+  0
+end
+fun starts_with(s, prefix) -> bool
+  if s == nil then
+    return false
+  end
+  return string.sub(s, 1, string.len(prefix)) == prefix
+end
+fun ends_with(s, suffix) -> bool
+  if s == nil then
+    return false
+  end
+  if string.len(suffix) > string.len(s) then
+    return false
+  end
+  return string.sub(s, string.len(s) - string.len(suffix) + 1) == suffix
+end
+fun trim(s) -> str
+  if s == nil then
+    return ""
+  end
+  n = string.len(s)
+  i = 1
+  while i <= n and is_space_byte(string.byte(s, i))
+    i = i + 1
+  end
+  j = n
+  while j >= i and is_space_byte(string.byte(s, j))
+    j = j - 1
+  end
+  if j < i then
+    return ""
+  end
+  string.sub(s, i, j)
+end
+fun contains_char(s, ch) -> bool
+  if s == nil then
+    return false
+  end
+  cb = string.byte(ch, 1)
+  n = string.len(s)
+  i = 1
+  while i <= n
+    if string.byte(s, i) == cb then
+      return true
     end
-    if j < i then return "" end
-    string.sub(s, i, j)
+    i = i + 1
+  end
+  false
 end
-
-fun contains_char(s, ch): bool
-    if s == nil then return false end
-    cb = string.byte(ch, 1)
-    n = string.len(s)
-    i = 1
-    while i <= n
-        if string.byte(s, i) == cb then return true end
-        i = i + 1
+fun count_char(s, ch) -> i64
+  c = 0
+  cb = string.byte(ch, 1)
+  n = string.len(s)
+  i = 1
+  while i <= n
+    if string.byte(s, i) == cb then
+      c = c + 1
     end
-    false
+    i = i + 1
+  end
+  c
 end
-
-fun count_char(s, ch): i64
-    c = 0
-    cb = string.byte(ch, 1)
-    n = string.len(s)
-    i = 1
-    while i <= n
-        if string.byte(s, i) == cb then c = c + 1 end
-        i = i + 1
+fun compute_line_offs(text) -> any
+  lo = {}
+  lo[rawlen(lo) + 1] = 1
+  n = string.len(text)
+  pos = 1
+  while pos <= n
+    if string.byte(text, pos) == 10 then
+      lo[rawlen(lo) + 1] = pos + 1
     end
-    c
+    pos = pos + 1
+  end
+  lo
 end
-
--- ── line-offset table ──────────────────────────────────────────────────────
--- compute_line_offs(text) returns an array `lo` where lo[i] is the 1-based
--- start byte index of logical line i-1 (0-based line indexing). Building it
--- is O(|text|) and done once per text version; every line/offset lookup after
--- that is O(1). This is the single biggest perf lever for the scanner.
-
-fun compute_line_offs(text): any
-    lo = {}
-    lo[rawlen(lo) + 1] = 1
-    n = string.len(text)
-    pos = 1
-    while pos <= n
-        if string.byte(text, pos) == 10 then
-            lo[rawlen(lo) + 1] = pos + 1
-        end
-        pos = pos + 1
-    end
-    lo
+fun get_line_lo(text, lo, idx) -> any
+  if idx < 0 then
+    return nil
+  end
+  hi = idx + 1
+  if hi > rawlen(lo) then
+    return nil
+  end
+  start = lo[hi]
+  n = string.len(text)
+  ende = n
+  if hi + 1 <= rawlen(lo) then
+    ende = lo[hi + 1] - 2
+  end
+  if ende < start - 1 then
+    return ""
+  end
+  line = string.sub(text, start, ende)
+  ln = string.len(line)
+  if ln > 0 and string.byte(line, ln) == 13 then
+    line = string.sub(line, 1, ln - 1)
+  end
+  line
 end
-
--- get_line_lo(text, lo, idx) — idx is 0-based; returns the line w/o newline
--- and w/o trailing CR, or nil if out of range.
-fun get_line_lo(text, lo, idx): any
-    if idx < 0 then return nil end
-    hi = idx + 1
-    if hi > rawlen(lo) then return nil end
-    start = lo[hi]
-    n = string.len(text)
-    ende = n
-    if hi + 1 <= rawlen(lo) then
-        ende = lo[hi + 1] - 2
-    end
-    if ende < start - 1 then return "" end
-    line = string.sub(text, start, ende)
-    ln = string.len(line)
-    if ln > 0 and string.byte(line, ln) == 13 then
-        line = string.sub(line, 1, ln - 1)
-    end
-    line
+fun offset_at_lo(text, lo, pos) -> i64
+  line = pos.line
+  chcol = pos.character
+  if line < 0 then
+    line = 0
+  end
+  n = string.len(text)
+  hi = line + 1
+  if hi > rawlen(lo) then
+    return n
+  end
+  start = lo[hi]
+  off = start - 1 + chcol
+  if off < 0 then
+    off = 0
+  end
+  if off > n then
+    off = n
+  end
+  off
 end
-
--- offset_at_lo(text, lo, pos) — returns a 0-based byte offset into text, in
--- the same coordinate space as string.sub(text, off+1, ...).
-fun offset_at_lo(text, lo, pos): i64
-    line = pos.line
-    chcol = pos.character
-    if line < 0 then line = 0 end
-    n = string.len(text)
-    hi = line + 1
-    if hi > rawlen(lo) then return n end
-    start = lo[hi]
-    off = start - 1 + chcol
-    if off < 0 then off = 0 end
-    if off > n then off = n end
-    off
+fun first_ident(s) -> any
+  if s == nil then
+    return nil
+  end
+  s = trim(s)
+  n = string.len(s)
+  if n == 0 then
+    return nil
+  end
+  b = string.byte(s, 1)
+  if not is_ident_start(b) then
+    return nil
+  end
+  i = 1
+  while i <= n and is_ident_char(string.byte(s, i))
+    i = i + 1
+  end
+  r = {}
+  r.name = string.sub(s, 1, i - 1)
+  r.rest = string.sub(s, i)
+  r
 end
-
--- ── identifier / keyword helpers ────────────────────────────────────────────
-fun first_ident(s): any
-    if s == nil then return nil end
-    s = trim(s)
-    n = string.len(s)
-    if n == 0 then return nil end
-    b = string.byte(s, 1)
-    if not is_ident_start(b) then return nil end
-    i = 1
-    while i <= n and is_ident_char(string.byte(s, i)) do
-        i = i + 1
-    end
-    r = {}
-    r.name = string.sub(s, 1, i - 1)
-    r.rest = string.sub(s, i)
-    r
-end
-
-fun count_keyword(s, word): i64
-    c = 0
-    if s == nil then return c end
-    n = string.len(s)
-    wn = string.len(word)
-    i = 1
-    while i <= n
-        b = string.byte(s, i)
-        if is_ident_start(b) then
-            j = i
-            while j <= n and is_ident_char(string.byte(s, j)) do
-                j = j + 1
-            end
-            if j - i == wn and string.sub(s, i, j - 1) == word then
-                c = c + 1
-            end
-            i = j
-        else
-            i = i + 1
-        end
-    end
-    c
-end
-
-fun count_end(s): i64
-    return count_keyword(s, "end")
-end
-
-fun starts_keyword(s, kw): bool
-    r = trim(s)
-    if not starts_with(r, kw) then return false end
-    n = string.len(r)
-    k = string.len(kw)
-    if n == k then return true end
-    return not is_ident_char(string.byte(r, k + 1))
-end
-
-fun trim_after_keyword(s, kw): any
-    r = trim(s)
-    if starts_keyword(r, kw) then
-        return trim(string.sub(r, string.len(kw) + 2))
-    end
-    r
-end
-
-fun name_after_keywords(rest): any
-    r = trim(rest)
-    if starts_keyword(r, "local") or starts_keyword(r, "global") then
-        r = trim_after_keyword(r, "local")
-        r = trim_after_keyword(r, "global")
-    end
-    if starts_keyword(r, "async") then
-        r = trim_after_keyword(r, "async")
-    end
-    if starts_keyword(r, "fun") then
-        r = trim_after_keyword(r, "fun")
-    end
-    if starts_keyword(r, "function") then
-        r = trim_after_keyword(r, "function")
-    end
-    first_ident(r)
-end
-
-fun split_prefix_after_dot(prefix): str
-    out = prefix
-    p = find_from(out, ".", 1)
-    while p ~= 0
-        out = string.sub(out, p + 1)
-        p = find_from(out, ".", 1)
-    end
-    out
-end
-
-fun word_prefix_lo(text, lo, line, col): str
-    ln = get_line_lo(text, lo, line)
-    if ln == nil then return "" end
-    n = string.len(ln)
-    if col < 0 then col = 0 end
-    if col > n then col = n end
-    if col == 0 then return "" end
-    start = col
-    while start > 1 and is_word_char_byte(string.byte(ln, start - 1)) do
-        start = start - 1
-    end
-    if start >= col then return "" end
-    split_prefix_after_dot(string.sub(ln, start, col - 1))
-end
-
--- ── comment stripping + head-keyword analysis ───────────────────────────────
-fun strip_comment(line): str
-    n = string.len(line)
-    i = 1
-    in_str = false
-    str_ch = 0
-    while i <= n
-        b = string.byte(line, i)
-        if in_str then
-            if b == str_ch then in_str = false end
-        elseif b == 34 or b == 39 then
-            in_str = true
-            str_ch = b
-        elseif b == 45 and i < n and string.byte(line, i + 1) == 45 then
-            return string.sub(line, 1, i - 1)
-        end
-        i = i + 1
-    end
-    line
-end
-
-fun head_keyword(line): any
-    code = strip_comment(line)
-    ctrim = trim(code)
-    indent = 0
-    while indent < string.len(line) and string.byte(line, indent + 1) == 32 do
-        indent = indent + 1
-    end
-    if ctrim == "" then
-        r = {}
-        r.kw = ""
-        r.rest = ""
-        r.indent = indent
-        return r
-    end
-    b = string.byte(ctrim, 1)
-    if not is_ident_start(b) then
-        r = {}
-        r.kw = ""
-        r.rest = ctrim
-        r.indent = indent
-        return r
-    end
-    i = 1
-    n = string.len(ctrim)
-    while i <= n and is_ident_char(string.byte(ctrim, i)) do
-        i = i + 1
-    end
-    r = {}
-    r.kw = string.sub(ctrim, 1, i - 1)
-    r.rest = string.sub(ctrim, i)
-    r.indent = indent
-    r
-end
-
-fun is_block_opener(kw: any): bool
-    return kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" or
-        kw == "match" or kw == "if" or kw == "while" or kw == "for" or
-        kw == "do" or kw == "begin" or kw == "struct"
-end
-
-fun kind_of(kw: any): any
-    if kw == "fun" or kw == "function" then return 12 end
-    if kw == "enum" then return 10 end
-    if kw == "concept" then return 11 end
-    return 23
-end
-
-fun kind_label(k): str
-    if k == 12 then return "function" end
-    if k == 10 then return "enum" end
-    if k == 11 then return "concept" end
-    if k == 23 then return "struct" end
-    if k == 26 then return "alias" end
-    if k == 14 then return "constant" end
-    "variable"
-end
-
-fun is_upper(name): bool
-    n = string.len(name)
-    if n == 0 then return false end
-    i = 1
-    while i <= n
-        b = string.byte(name, i)
-        if not ((b >= 65 and b <= 90) or b == 95 or (b >= 48 and b <= 57)) then
-            return false
-        end
-        i = i + 1
-    end
-    true
-end
-
-fun match_typed(code): any
-    n = string.len(code)
-    if n == 0 then return nil end
-    i = 1
-    b = string.byte(code, i)
-    if not is_ident_start(b) then return nil end
-    while i <= n and is_ident_char(string.byte(code, i)) do
-        i = i + 1
-    end
-    name = string.sub(code, 1, i - 1)
-    while i <= n and string.byte(code, i) == 32 do i = i + 1 end
-    if i > n then return nil end
-    if string.byte(code, i) ~= 58 then return nil end
-    name
-end
-
-fun match_plain_assign(code): any
-    n = string.len(code)
-    if n == 0 then return nil end
-    i = 1
-    b = string.byte(code, i)
-    if not is_ident_start(b) then return nil end
-    while i <= n and is_ident_char(string.byte(code, i)) do
-        i = i + 1
-    end
-    name = string.sub(code, 1, i - 1)
-    while i <= n and string.byte(code, i) == 32 do i = i + 1 end
-    if i > n then return nil end
-    if string.byte(code, i) == 61 then return name end
-    nil
-end
-
-fun mk_sym(name, kind, line, col, raw_line): any
-    s = {}
-    s.name = name
-    s.kind = kind
-    s.line = line
-    s.col = col
-    s.endLine = line
-    s.endCol = string.len(raw_line)
-    s.detail = trim(raw_line)
-    s
-end
-
--- ── symbol scanner ──────────────────────────────────────────────────────────
--- scan_symbols_lo(text, lo) iterates logical lines via the cached line-offset
--- table (no per-line O(n) scans, no array materialisation of every line).
-fun scan_symbols_lo(text, lo): any
-    syms = {}
-    depth = 0
-    brace = 0
-    n = rawlen(lo)
-    i = 1
-    while i <= n
-        raw = get_line_lo(text, lo, i - 1)
-        if raw == nil then break end
-        code = strip_comment(raw)
-        opens = count_char(code, "{")
-        closes = count_char(code, "}")
-        top = (depth == 0 and brace == 0)
-        ends = count_end(code)
-        brace = brace + opens - closes
-        if brace < 0 then brace = 0 end
-        info = head_keyword(raw)
-        kw = info.kw
-        rest = info.rest
-        indent = info.indent
-        if kw == "end" then
-            depth = depth + ends - 1
-            if depth < 0 then depth = 0 end
-        elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
-            if top and (kw == "fun" or kw == "function" or kw == "enum" or kw == "concept") then
-                id = first_ident(rest)
-                if id ~= nil then
-                    syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent, raw)
-                end
-            elseif top and (kw == "local" or kw == "global") then
-                if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
-                    id = name_after_keywords(rest)
-                    if id ~= nil then
-                        syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent, raw)
-                    end
-                else
-                    id = first_ident(rest)
-                    if id ~= nil then
-                        k = 13
-                        if kw == "global" or is_upper(id.name) then k = 14 end
-                        syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent, raw)
-                    end
-                end
-            elseif kw == "const" then
-                id = first_ident(rest)
-                if id ~= nil then
-                    syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent, raw)
-                end
-            else
-                tb = match_typed(code)
-                if tb ~= nil then
-                    syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, raw)
-                else
-                    pa = match_plain_assign(code)
-                    if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
-                        syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, raw)
-                    end
-                end
-            end
-        end
-        i = i + 1
-    end
-    syms
-end
-
-fun symbol_at(syms, line, col): any
-    n = rawlen(syms)
-    i = 1
-    while i <= n
-        s = syms[i]
-        if s.line == line then
-            name_len = string.len(s.name)
-            if col >= s.col and col < s.col + name_len then
-                return s
-            end
-        end
-        i = i + 1
-    end
-    nil
-end
-
-fun word_end_lo(text, lo, line, col): i64
-    ln = get_line_lo(text, lo, line)
-    if ln == nil then return col + 1 end
-    n = string.len(ln)
-    e = col
-    while e < n
-        b = string.byte(ln, e + 1)
-        if is_word_char_byte(b) then
-            e = e + 1
-        else
-            break
-        end
-    end
-    if e == col then return col + 1 end
-    e
-end
-
--- ── LSP position / range ────────────────────────────────────────────────────
-fun mk_pos(line, ch): any
-    p = {}
-    p.line = line
-    p.character = ch
-    p
-end
-
-fun mk_range(sl, sc, ec): any
-    r = {}
-    r.start = mk_pos(sl, sc)
-    r["end"] = mk_pos(sl, ec)
-    r
-end
-
--- ── diagnostic parsing ──────────────────────────────────────────────────────
--- duo's compiler emits locations as a debug struct dump:
---   .{ .file = {bytes}, .line = L, .col = C }: error: msg
--- We also accept the clean `path:L:C: error: msg` form.
-
-fun parse_digits(s, i): any
-    n = string.len(s)
-    v = 0
-    any = false
-    while i <= n
-        b = string.byte(s, i)
-        if b >= 48 and b <= 57 then
-            v = v * 10 + (b - 48)
-            any = true
-            i = i + 1
-        else
-            break
-        end
-    end
-    if not any then return nil end
-    r = {}
-    r.val = v
-    r.next = i
-    r
-end
-
-fun parse_diag_line(line): any
-    n = string.len(line)
-    p = find_from(line, ".line = ", 1)
-    if p ~= 0 then
-        i = p + 8
-        ld = parse_digits(line, i)
-        if ld == nil then return nil end
-        lnum = ld.val
-        p2 = find_from(line, ", .col = ", p + 8)
-        if p2 == 0 then return nil end
-        cd = parse_digits(line, p2 + 9)
-        if cd == nil then return nil end
-        cnum = cd.val
-        p3 = find_from(line, "}: ", cd.next)
-        if p3 == 0 then return nil end
-        rest = string.sub(line, p3 + 3)
-        sev = 1
-        msg = rest
-        if starts_with(rest, "error: ") then
-            sev = 1
-            msg = string.sub(rest, 8)
-        elseif starts_with(rest, "warning: ") then
-            sev = 2
-            msg = string.sub(rest, 10)
-        end
-        r = {}
-        r.line = lnum - 1
-        r.col = cnum - 1
-        r.severity = sev
-        r.message = msg
-        return r
-    end
-    e = find_from(line, ": error: ", 1)
-    w = find_from(line, ": warning: ", 1)
-    marker = 0
-    mlen = 0
-    sev = 1
-    if e ~= 0 then
-        marker = e
-        mlen = 9
-        sev = 1
-    elseif w ~= 0 then
-        marker = w
-        mlen = 11
-        sev = 2
+fun count_keyword(s, word) -> i64
+  c = 0
+  if s == nil then
+    return c
+  end
+  n = string.len(s)
+  wn = string.len(word)
+  i = 1
+  while i <= n
+    b = string.byte(s, i)
+    if is_ident_start(b) then
+      j = i
+      while j <= n and is_ident_char(string.byte(s, j))
+        j = j + 1
+      end
+      if j - i == wn and string.sub(s, i, j - 1) == word then
+        c = c + 1
+      end
+      i = j
     else
-        return nil
+      i = i + 1
     end
-    msg = string.sub(line, marker + mlen)
-    prefix = string.sub(line, 1, marker - 1)
-    c1 = find_last(prefix, ":")
-    if c1 == 0 then return nil end
-    cnum_str = string.sub(prefix, c1 + 1)
-    prefix2 = string.sub(prefix, 1, c1 - 1)
-    c2 = find_last(prefix2, ":")
-    if c2 == 0 then return nil end
-    lnum_str = string.sub(prefix2, c2 + 1)
-    lnum = tonumber(lnum_str)
-    cnum = tonumber(cnum_str)
-    if lnum == nil or cnum == nil then return nil end
+  end
+  c
+end
+fun count_end(s) -> i64
+  return count_keyword(s, "end")
+end
+fun starts_keyword(s, kw) -> bool
+  r = trim(s)
+  if not starts_with(r, kw) then
+    return false
+  end
+  n = string.len(r)
+  k = string.len(kw)
+  if n == k then
+    return true
+  end
+  return not is_ident_char(string.byte(r, k + 1))
+end
+fun trim_after_keyword(s, kw) -> any
+  r = trim(s)
+  if starts_keyword(r, kw) then
+    return trim(string.sub(r, string.len(kw) + 2))
+  end
+  r
+end
+fun name_after_keywords(rest) -> any
+  r = trim(rest)
+  if starts_keyword(r, "local") or starts_keyword(r, "global") then
+    r = trim_after_keyword(r, "local")
+    r = trim_after_keyword(r, "global")
+  end
+  if starts_keyword(r, "async") then
+    r = trim_after_keyword(r, "async")
+  end
+  if starts_keyword(r, "fun") then
+    r = trim_after_keyword(r, "fun")
+  end
+  if starts_keyword(r, "function") then
+    r = trim_after_keyword(r, "function")
+  end
+  first_ident(r)
+end
+fun split_prefix_after_dot(prefix) -> str
+  out = prefix
+  p = find_from(out, ".", 1)
+  while p ~= 0
+    out = string.sub(out, p + 1)
+    p = find_from(out, ".", 1)
+  end
+  out
+end
+fun word_prefix_lo(text, lo, line, col) -> str
+  ln = get_line_lo(text, lo, line)
+  if ln == nil then
+    return ""
+  end
+  n = string.len(ln)
+  if col < 0 then
+    col = 0
+  end
+  if col > n then
+    col = n
+  end
+  if col == 0 then
+    return ""
+  end
+  start = col
+  while start > 1 and is_word_char_byte(string.byte(ln, start - 1))
+    start = start - 1
+  end
+  if start >= col then
+    return ""
+  end
+  split_prefix_after_dot(string.sub(ln, start, col - 1))
+end
+fun strip_comment(line) -> str
+  n = string.len(line)
+  i = 1
+  in_str = false
+  str_ch = 0
+  while i <= n
+    b = string.byte(line, i)
+    if in_str then
+      if b == str_ch then
+        in_str = false
+      end
+    elseif b == 34 or b == 39 then
+      in_str = true
+      str_ch = b
+    elseif b == 45 and i < n and string.byte(line, i + 1) == 45 then
+      return string.sub(line, 1, i - 1)
+    end
+    i = i + 1
+  end
+  line
+end
+fun head_keyword(line) -> any
+  code = strip_comment(line)
+  ctrim = trim(code)
+  indent = 0
+  while indent < string.len(line) and string.byte(line, indent + 1) == 32
+    indent = indent + 1
+  end
+  if ctrim == "" then
+    r = {}
+    r.kw = ""
+    r.rest = ""
+    r.indent = indent
+    return r
+  end
+  b = string.byte(ctrim, 1)
+  if not is_ident_start(b) then
+    r = {}
+    r.kw = ""
+    r.rest = ctrim
+    r.indent = indent
+    return r
+  end
+  i = 1
+  n = string.len(ctrim)
+  while i <= n and is_ident_char(string.byte(ctrim, i))
+    i = i + 1
+  end
+  r = {}
+  r.kw = string.sub(ctrim, 1, i - 1)
+  r.rest = string.sub(ctrim, i)
+  r.indent = indent
+  r
+end
+fun is_block_opener(kw: any) -> bool
+  return kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" or kw == "match" or kw == "if" or kw == "while" or kw == "for" or kw == "do" or kw == "begin" or kw == "struct"
+end
+fun kind_of(kw: any) -> any
+  if kw == "fun" or kw == "function" then
+    return 12
+  end
+  if kw == "enum" then
+    return 10
+  end
+  if kw == "concept" then
+    return 11
+  end
+  return 23
+end
+fun kind_label(k) -> str
+  if k == 12 then
+    return "function"
+  end
+  if k == 10 then
+    return "enum"
+  end
+  if k == 11 then
+    return "concept"
+  end
+  if k == 23 then
+    return "struct"
+  end
+  if k == 26 then
+    return "alias"
+  end
+  if k == 14 then
+    return "constant"
+  end
+  "variable"
+end
+fun is_upper(name) -> bool
+  n = string.len(name)
+  if n == 0 then
+    return false
+  end
+  i = 1
+  while i <= n
+    b = string.byte(name, i)
+    if not (b >= 65 and b <= 90 or b == 95 or b >= 48 and b <= 57) then
+      return false
+    end
+    i = i + 1
+  end
+  true
+end
+fun match_typed(code) -> any
+  n = string.len(code)
+  if n == 0 then
+    return nil
+  end
+  i = 1
+  b = string.byte(code, i)
+  if not is_ident_start(b) then
+    return nil
+  end
+  while i <= n and is_ident_char(string.byte(code, i))
+    i = i + 1
+  end
+  name = string.sub(code, 1, i - 1)
+  while i <= n and string.byte(code, i) == 32
+    i = i + 1
+  end
+  if i > n then
+    return nil
+  end
+  if string.byte(code, i) ~= 58 then
+    return nil
+  end
+  name
+end
+fun match_plain_assign(code) -> any
+  n = string.len(code)
+  if n == 0 then
+    return nil
+  end
+  i = 1
+  b = string.byte(code, i)
+  if not is_ident_start(b) then
+    return nil
+  end
+  while i <= n and is_ident_char(string.byte(code, i))
+    i = i + 1
+  end
+  name = string.sub(code, 1, i - 1)
+  while i <= n and string.byte(code, i) == 32
+    i = i + 1
+  end
+  if i > n then
+    return nil
+  end
+  if string.byte(code, i) == 61 then
+    return name
+  end
+  nil
+end
+fun mk_sym(name, kind, line, col, raw_line) -> any
+  s = {}
+  s.name = name
+  s.kind = kind
+  s.line = line
+  s.col = col
+  s.endLine = line
+  s.endCol = string.len(raw_line)
+  s.detail = trim(raw_line)
+  s
+end
+fun scan_symbols_lo(text, lo) -> any
+  syms = {}
+  depth = 0
+  brace = 0
+  n = rawlen(lo)
+  i = 1
+  while i <= n
+    raw = get_line_lo(text, lo, i - 1)
+    if raw == nil then
+      break
+    end
+    code = strip_comment(raw)
+    opens = count_char(code, "{")
+    closes = count_char(code, "}")
+    top = depth == 0 and brace == 0
+    ends = count_end(code)
+    brace = brace + opens - closes
+    if brace < 0 then
+      brace = 0
+    end
+    info = head_keyword(raw)
+    kw = info.kw
+    rest = info.rest
+    indent = info.indent
+    if kw == "end" then
+      depth = depth + ends - 1
+      if depth < 0 then
+        depth = 0
+      end
+    elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
+      if top and (kw == "fun" or kw == "function" or kw == "enum" or kw == "concept") then
+        id = first_ident(rest)
+        if id ~= nil then
+          syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent, raw)
+        end
+      elseif top and (kw == "local" or kw == "global") then
+        if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
+          id = name_after_keywords(rest)
+          if id ~= nil then
+            syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent, raw)
+          end
+        else
+          id = first_ident(rest)
+          if id ~= nil then
+            k = 13
+            if kw == "global" or is_upper(id.name) then
+              k = 14
+            end
+            syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent, raw)
+          end
+        end
+      elseif kw == "const" then
+        id = first_ident(rest)
+        if id ~= nil then
+          syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent, raw)
+        end
+      else
+        tb = match_typed(code)
+        if tb ~= nil then
+          syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, raw)
+        else
+          pa = match_plain_assign(code)
+          if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
+            syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, raw)
+          end
+        end
+      end
+    end
+    i = i + 1
+  end
+  syms
+end
+fun symbol_at(syms, line, col) -> any
+  n = rawlen(syms)
+  i = 1
+  while i <= n
+    s = syms[i]
+    if s.line == line then
+      name_len = string.len(s.name)
+      if col >= s.col and col < s.col + name_len then
+        return s
+      end
+    end
+    i = i + 1
+  end
+  nil
+end
+fun word_end_lo(text, lo, line, col) -> i64
+  ln = get_line_lo(text, lo, line)
+  if ln == nil then
+    return col + 1
+  end
+  n = string.len(ln)
+  e = col
+  while e < n
+    b = string.byte(ln, e + 1)
+    if is_word_char_byte(b) then
+      e = e + 1
+    else
+      break
+    end
+  end
+  if e == col then
+    return col + 1
+  end
+  e
+end
+fun mk_pos(line, ch) -> any
+  p = {}
+  p.line = line
+  p.character = ch
+  p
+end
+fun mk_range(sl, sc, ec) -> any
+  r = {}
+  r.start = mk_pos(sl, sc)
+  r["end"] = mk_pos(sl, ec)
+  r
+end
+fun parse_digits(s, i) -> any
+  n = string.len(s)
+  v = 0
+  any = false
+  while i <= n
+    b = string.byte(s, i)
+    if b >= 48 and b <= 57 then
+      v = v * 10 + b - 48
+      any = true
+      i = i + 1
+    else
+      break
+    end
+  end
+  if not any then
+    return nil
+  end
+  r = {}
+  r.val = v
+  r.next = i
+  r
+end
+fun parse_diag_line(line) -> any
+  n = string.len(line)
+  p = find_from(line, ".line = ", 1)
+  if p ~= 0 then
+    i = p + 8
+    ld = parse_digits(line, i)
+    if ld == nil then
+      return nil
+    end
+    lnum = ld.val
+    p2 = find_from(line, ", .col = ", p + 8)
+    if p2 == 0 then
+      return nil
+    end
+    cd = parse_digits(line, p2 + 9)
+    if cd == nil then
+      return nil
+    end
+    cnum = cd.val
+    p3 = find_from(line, "}: ", cd.next)
+    if p3 == 0 then
+      return nil
+    end
+    rest = string.sub(line, p3 + 3)
+    sev = 1
+    msg = rest
+    if starts_with(rest, "error: ") then
+      sev = 1
+      msg = string.sub(rest, 8)
+    elseif starts_with(rest, "warning: ") then
+      sev = 2
+      msg = string.sub(rest, 10)
+    end
     r = {}
     r.line = lnum - 1
     r.col = cnum - 1
     r.severity = sev
     r.message = msg
-    r
+    return r
+  end
+  e = find_from(line, ": error: ", 1)
+  w = find_from(line, ": warning: ", 1)
+  marker = 0
+  mlen = 0
+  sev = 1
+  if e ~= 0 then
+    marker = e
+    mlen = 9
+    sev = 1
+  elseif w ~= 0 then
+    marker = w
+    mlen = 11
+    sev = 2
+  else
+    return nil
+  end
+  msg = string.sub(line, marker + mlen)
+  prefix = string.sub(line, 1, marker - 1)
+  c1 = find_last(prefix, ":")
+  if c1 == 0 then
+    return nil
+  end
+  cnum_str = string.sub(prefix, c1 + 1)
+  prefix2 = string.sub(prefix, 1, c1 - 1)
+  c2 = find_last(prefix2, ":")
+  if c2 == 0 then
+    return nil
+  end
+  lnum_str = string.sub(prefix2, c2 + 1)
+  lnum = tonumber(lnum_str)
+  cnum = tonumber(cnum_str)
+  if lnum == nil or cnum == nil then
+    return nil
+  end
+  r = {}
+  r.line = lnum - 1
+  r.col = cnum - 1
+  r.severity = sev
+  r.message = msg
+  r
 end
-
-fun parse_diagnostics(out, lo, text): any
-    diags = {}
-    if out == nil then return diags end
-    pos = 1
-    n = string.len(out)
-    while pos <= n
-        nl = find_from(out, "\n", pos)
-        line = ""
-        if nl == 0 then
-            line = string.sub(out, pos)
-            pos = n + 1
-        else
-            line = string.sub(out, pos, nl - 1)
-            pos = nl + 1
-        end
-        d = parse_diag_line(line)
-        if d ~= nil then
-            ec = word_end_lo(text, lo, d.line, d.col)
-            diag = {}
-            diag.range = mk_range(d.line, d.col, ec)
-            diag.severity = d.severity
-            diag.source = "duo"
-            diag.message = d.message
-            diags[rawlen(diags) + 1] = diag
-        end
+fun parse_diagnostics(out, lo, text) -> any
+  diags = {}
+  if out == nil then
+    return diags
+  end
+  pos = 1
+  n = string.len(out)
+  while pos <= n
+    nl = find_from(out, "\n", pos)
+    line = ""
+    if nl == 0 then
+      line = string.sub(out, pos)
+      pos = n + 1
+    else
+      line = string.sub(out, pos, nl - 1)
+      pos = nl + 1
     end
-    diags
-end
-
--- out_of_text_for_diag sentinel removed: parse_diagnostics now takes the doc
--- text explicitly, avoiding any mutable-module-global.
-
--- ── text sync ───────────────────────────────────────────────────────────────
--- offset_at is only used by apply_changes (which receives a fresh text with no
--- cached line table); we scan by line the simple way there.
-fun offset_at(text, pos): i64
-    line = pos.line
-    chcol = pos.character
-    n = string.len(text)
-    i = 1
-    cur_line = 0
-    while i <= n and cur_line < line
-        if string.byte(text, i) == 10 then
-            cur_line = cur_line + 1
-        end
-        i = i + 1
+    d = parse_diag_line(line)
+    if d ~= nil then
+      ec = word_end_lo(text, lo, d.line, d.col)
+      diag = {}
+      diag.range = mk_range(d.line, d.col, ec)
+      diag.severity = d.severity
+      diag.source = "duo"
+      diag.message = d.message
+      diags[rawlen(diags) + 1] = diag
     end
-    off = i - 1 + chcol
-    if off < 0 then off = 0 end
-    off
+  end
+  diags
 end
-
-fun apply_changes(text, changes): str
-    out = text
-    n = rawlen(changes)
-    i = 1
-    while i <= n
-        ch = changes[i]
-        txt = ch.text
-        if txt == nil then txt = "" end
-        if ch.range ~= nil then
-            s = offset_at(out, ch.range.start)
-            e = offset_at(out, ch.range["end"])
-            if s < 0 then s = 0 end
-            if e < s then e = s end
-            out = string.sub(out, 1, s) .. txt .. string.sub(out, e + 1)
-        else
-            out = txt
-        end
-        i = i + 1
+fun offset_at(text, pos) -> i64
+  line = pos.line
+  chcol = pos.character
+  n = string.len(text)
+  i = 1
+  cur_line = 0
+  while i <= n and cur_line < line
+    if string.byte(text, i) == 10 then
+      cur_line = cur_line + 1
     end
-    out
+    i = i + 1
+  end
+  off = i - 1 + chcol
+  if off < 0 then
+    off = 0
+  end
+  off
 end
-
--- ── completion ─────────────────────────────────────────────────────────────
-fun completion_matches(name, prefix): bool
-    if prefix == "" then return true end
-    if starts_with(name, prefix) then return true end
-    p = find_from(name, ":", 1)
-    while p ~= 0
-        if starts_with(string.sub(name, p + 1), prefix) then return true end
-        p = find_from(name, ":", p + 1)
+fun apply_changes(text, changes) -> str
+  out = text
+  n = rawlen(changes)
+  i = 1
+  while i <= n
+    ch = changes[i]
+    txt = ch.text
+    if txt == nil then
+      txt = ""
     end
-    p = find_from(name, ".", 1)
-    while p ~= 0
-        if starts_with(string.sub(name, p + 1), prefix) then return true end
-        p = find_from(name, ".", p + 1)
+    if ch.range ~= nil then
+      s = offset_at(out, ch.range.start)
+      e = offset_at(out, ch.range["end"])
+      if s < 0 then
+        s = 0
+      end
+      if e < s then
+        e = s
+      end
+      out = string.sub(out, 1, s) .. txt .. string.sub(out, e + 1)
+    else
+      out = txt
     end
-    false
+    i = i + 1
+  end
+  out
 end
-
-fun completion_kind_for_symbol(k): i64
-    if k == 12 then return 3 end
-    if k == 10 then return 10 end
-    if k == 11 then return 11 end
-    if k == 23 or k == 26 then return 7 end
-    if k == 14 then return 21 end
-    return 13
+fun completion_matches(name, prefix) -> bool
+  if prefix == "" then
+    return true
+  end
+  if starts_with(name, prefix) then
+    return true
+  end
+  p = find_from(name, ":", 1)
+  while p ~= 0
+    if starts_with(string.sub(name, p + 1), prefix) then
+      return true
+    end
+    p = find_from(name, ":", p + 1)
+  end
+  p = find_from(name, ".", 1)
+  while p ~= 0
+    if starts_with(string.sub(name, p + 1), prefix) then
+      return true
+    end
+    p = find_from(name, ".", p + 1)
+  end
+  false
 end
-
-fun add_completion(out, seen, label, kind, detail, insert_text, sort_text): void
-    if label == nil or label == "" then return end
-    if seen[label] ~= nil then return end
-    seen[label] = true
+fun completion_kind_for_symbol(k) -> i64
+  if k == 12 then
+    return 3
+  end
+  if k == 10 then
+    return 10
+  end
+  if k == 11 then
+    return 11
+  end
+  if k == 23 or k == 26 then
+    return 7
+  end
+  if k == 14 then
+    return 21
+  end
+  return 13
+end
+fun add_completion(out, seen, label, kind, detail, insert_text, sort_text) -> void
+  if label == nil or label == "" then
+    return
+  end
+  if seen[label] ~= nil then
+    return
+  end
+  seen[label] = true
+  item = {}
+  item.label = label
+  item.kind = kind
+  if detail ~= nil and detail ~= "" then
+    item.detail = detail
+  end
+  if insert_text ~= nil and insert_text ~= label then
+    item.insertText = insert_text
+  end
+  if sort_text ~= nil then
+    item.sortText = sort_text
+  end
+  out[rawlen(out) + 1] = item
+end
+fun add_keyword_completion(out, seen, label, prefix) -> void
+  if completion_matches(label, prefix) then
+    add_completion(out, seen, label, 14, "Duo keyword", nil, "k_" .. label)
+  end
+end
+fun add_snippet_completion(out, seen, label, detail, insert_text, prefix, sort_text) -> void
+  if completion_matches(label, prefix) then
     item = {}
     item.label = label
-    item.kind = kind
-    if detail ~= nil and detail ~= "" then item.detail = detail end
-    if insert_text ~= nil and insert_text ~= label then item.insertText = insert_text end
-    if sort_text ~= nil then item.sortText = sort_text end
+    item.kind = 15
+    item.detail = detail
+    item.insertText = insert_text
+    item.insertTextFormat = 2
+    item.sortText = sort_text
     out[rawlen(out) + 1] = item
+  end
 end
-
-fun add_keyword_completion(out, seen, label, prefix): void
-    if completion_matches(label, prefix) then
-        add_completion(out, seen, label, 14, "Duo keyword", nil, "k_" .. label)
+fun add_builtin_completion(out, seen, label, prefix) -> void
+  if completion_matches(label, prefix) then
+    add_completion(out, seen, label, 3, "Duo builtin", nil, "b_" .. label)
+  end
+end
+fun add_std_completion(out, seen, label, prefix) -> void
+  if completion_matches(label, prefix) then
+    add_completion(out, seen, label, 9, "std module", nil, "m_" .. label)
+  end
+end
+fun add_type_completion(out, seen, label, prefix) -> void
+  if completion_matches(label, prefix) then
+    add_completion(out, seen, label, 7, "Duo type", nil, "t_" .. label)
+  end
+end
+fun add_static_completions(out, seen, prefix) -> void
+  add_keyword_completion(out, seen, "and", prefix)
+  add_keyword_completion(out, seen, "alias", prefix)
+  add_keyword_completion(out, seen, "async", prefix)
+  add_keyword_completion(out, seen, "break", prefix)
+  add_keyword_completion(out, seen, "case", prefix)
+  add_keyword_completion(out, seen, "catch", prefix)
+  add_keyword_completion(out, seen, "const", prefix)
+  add_keyword_completion(out, seen, "defer", prefix)
+  add_keyword_completion(out, seen, "do", prefix)
+  add_keyword_completion(out, seen, "else", prefix)
+  add_keyword_completion(out, seen, "elseif", prefix)
+  add_keyword_completion(out, seen, "end", prefix)
+  add_keyword_completion(out, seen, "false", prefix)
+  add_keyword_completion(out, seen, "for", prefix)
+  add_keyword_completion(out, seen, "fun", prefix)
+  add_keyword_completion(out, seen, "function", prefix)
+  add_keyword_completion(out, seen, "global", prefix)
+  add_keyword_completion(out, seen, "goto", prefix)
+  add_keyword_completion(out, seen, "if", prefix)
+  add_keyword_completion(out, seen, "in", prefix)
+  add_keyword_completion(out, seen, "local", prefix)
+  add_keyword_completion(out, seen, "match", prefix)
+  add_keyword_completion(out, seen, "nil", prefix)
+  add_keyword_completion(out, seen, "not", prefix)
+  add_keyword_completion(out, seen, "or", prefix)
+  add_keyword_completion(out, seen, "repeat", prefix)
+  add_keyword_completion(out, seen, "return", prefix)
+  add_keyword_completion(out, seen, "then", prefix)
+  add_keyword_completion(out, seen, "true", prefix)
+  add_keyword_completion(out, seen, "try", prefix)
+  add_keyword_completion(out, seen, "type", prefix)
+  add_keyword_completion(out, seen, "until", prefix)
+  add_keyword_completion(out, seen, "while", prefix)
+  add_type_completion(out, seen, "any", prefix)
+  add_type_completion(out, seen, "bool", prefix)
+  add_type_completion(out, seen, "f32", prefix)
+  add_type_completion(out, seen, "f64", prefix)
+  add_type_completion(out, seen, "i8", prefix)
+  add_type_completion(out, seen, "i16", prefix)
+  add_type_completion(out, seen, "i32", prefix)
+  add_type_completion(out, seen, "i64", prefix)
+  add_type_completion(out, seen, "str", prefix)
+  add_type_completion(out, seen, "u8", prefix)
+  add_type_completion(out, seen, "u16", prefix)
+  add_type_completion(out, seen, "u32", prefix)
+  add_type_completion(out, seen, "u64", prefix)
+  add_type_completion(out, seen, "void", prefix)
+  add_builtin_completion(out, seen, "assert", prefix)
+  add_builtin_completion(out, seen, "collectgarbage", prefix)
+  add_builtin_completion(out, seen, "error", prefix)
+  add_builtin_completion(out, seen, "ipairs", prefix)
+  add_builtin_completion(out, seen, "pairs", prefix)
+  add_builtin_completion(out, seen, "pcall", prefix)
+  add_builtin_completion(out, seen, "print", prefix)
+  add_builtin_completion(out, seen, "rawlen", prefix)
+  add_builtin_completion(out, seen, "req", prefix)
+  add_builtin_completion(out, seen, "require", prefix)
+  add_builtin_completion(out, seen, "tostring", prefix)
+  add_builtin_completion(out, seen, "tonumber", prefix)
+  add_builtin_completion(out, seen, "type", prefix)
+  add_builtin_completion(out, seen, "xpcall", prefix)
+  add_std_completion(out, seen, "argparse", prefix)
+  add_std_completion(out, seen, "base32", prefix)
+  add_std_completion(out, seen, "base64", prefix)
+  add_std_completion(out, seen, "build", prefix)
+  add_std_completion(out, seen, "collections", prefix)
+  add_std_completion(out, seen, "crypto", prefix)
+  add_std_completion(out, seen, "csv", prefix)
+  add_std_completion(out, seen, "debug", prefix)
+  add_std_completion(out, seen, "datetime", prefix)
+  add_std_completion(out, seen, "env", prefix)
+  add_std_completion(out, seen, "fmt", prefix)
+  add_std_completion(out, seen, "fs", prefix)
+  add_std_completion(out, seen, "hash", prefix)
+  add_std_completion(out, seen, "hex", prefix)
+  add_std_completion(out, seen, "html", prefix)
+  add_std_completion(out, seen, "http", prefix)
+  add_std_completion(out, seen, "ini", prefix)
+  add_std_completion(out, seen, "io", prefix)
+  add_std_completion(out, seen, "iter", prefix)
+  add_std_completion(out, seen, "json", prefix)
+  add_std_completion(out, seen, "log", prefix)
+  add_std_completion(out, seen, "math", prefix)
+  add_std_completion(out, seen, "memo", prefix)
+  add_std_completion(out, seen, "os", prefix)
+  add_std_completion(out, seen, "package", prefix)
+  add_std_completion(out, seen, "path", prefix)
+  add_std_completion(out, seen, "proc", prefix)
+  add_std_completion(out, seen, "random", prefix)
+  add_std_completion(out, seen, "regex", prefix)
+  add_std_completion(out, seen, "sqlite", prefix)
+  add_std_completion(out, seen, "string", prefix)
+  add_std_completion(out, seen, "table", prefix)
+  add_std_completion(out, seen, "tar", prefix)
+  add_std_completion(out, seen, "test", prefix)
+  add_std_completion(out, seen, "time", prefix)
+  add_std_completion(out, seen, "toml", prefix)
+  add_std_completion(out, seen, "uuid", prefix)
+  add_std_completion(out, seen, "xml", prefix)
+  add_std_completion(out, seen, "yaml", prefix)
+  add_std_completion(out, seen, "zip", prefix)
+  add_std_completion(out, seen, "color", prefix)
+  add_snippet_completion(out, seen, "fun", "function declaration", "fun ${1:name}(${2:arg}: ${3:any}): ${4:any}\n    ${0}\nend", prefix, "s_fun")
+  add_snippet_completion(out, seen, "if", "if statement", "if ${1:cond} then\n    ${0}\nend", prefix, "s_if")
+  add_snippet_completion(out, seen, "match", "match expression", "match ${1:value}\n    case ${2:pattern} then\n        ${0}\nend", prefix, "s_match")
+  add_snippet_completion(out, seen, "enum", "enum declaration", "enum ${1:Name}\n    ${2:Variant}\nend", prefix, "s_enum")
+  add_snippet_completion(out, seen, "concept", "concept declaration", "concept ${1:Name}\n    ${2:method}(${3:arg}: ${4:any}): ${5:any}\nend", prefix, "s_concept")
+end
+fun shell_quote(s) -> str
+  return "'" .. string.gsub(s, "'", "'\\''") .. "'"
+end
+fun resolve_duo_bin() -> any
+  b = os.getenv("DUO_LSP_DUO_BIN")
+  if b ~= nil and b ~= "" then
+    return b
+  end
+  b = os.getenv("DUO_BIN")
+  if b ~= nil and b ~= "" then
+    return b
+  end
+  f = io.popen("which duo 2>/dev/null", "r")
+  if f ~= nil then
+    out = f:read("*a")
+    f:close()
+    out = trim(out)
+    if out ~= "" then
+      return out
     end
+  end
+  nil
 end
-
-fun add_snippet_completion(out, seen, label, detail, insert_text, prefix, sort_text): void
-    if completion_matches(label, prefix) then
-        item = {}
-        item.label = label
-        item.kind = 15
-        item.detail = detail
-        item.insertText = insert_text
-        item.insertTextFormat = 2
-        item.sortText = sort_text
-        out[rawlen(out) + 1] = item
-    end
+fun doc_ext(uri) -> str
+  if ends_with(uri, ".duo") then
+    return ".duo"
+  end
+  if ends_with(uri, ".lua") then
+    return ".lua"
+  end
+  ".duo"
 end
-
-fun add_builtin_completion(out, seen, label, prefix): void
-    if completion_matches(label, prefix) then
-        add_completion(out, seen, label, 3, "Duo builtin", nil, "b_" .. label)
-    end
+fun send_message(t) -> void
+  body = io.lsp.json.encode(t)
+  header = string.format("Content-Length: %d\r\n\r\n", string.len(body))
+  io.write(header, body)
+  io.flush()
 end
-
-fun add_std_completion(out, seen, label, prefix): void
-    if completion_matches(label, prefix) then
-        add_completion(out, seen, label, 9, "std module", nil, "m_" .. label)
-    end
+fun reply(id, result) -> void
+  m = {}
+  m.jsonrpc = "2.0"
+  m.id = id
+  m.result = result
+  send_message(m)
 end
-
-fun add_type_completion(out, seen, label, prefix): void
-    if completion_matches(label, prefix) then
-        add_completion(out, seen, label, 7, "Duo type", nil, "t_" .. label)
-    end
+fun reply_error(id, code, message) -> void
+  e = {}
+  e.code = code
+  e.message = message
+  m = {}
+  m.jsonrpc = "2.0"
+  m.id = id
+  m.error = e
+  send_message(m)
 end
-
-fun add_static_completions(out, seen, prefix): void
-    add_keyword_completion(out, seen, "and", prefix)
-    add_keyword_completion(out, seen, "alias", prefix)
-    add_keyword_completion(out, seen, "async", prefix)
-    add_keyword_completion(out, seen, "break", prefix)
-    add_keyword_completion(out, seen, "case", prefix)
-    add_keyword_completion(out, seen, "catch", prefix)
-    add_keyword_completion(out, seen, "const", prefix)
-    add_keyword_completion(out, seen, "defer", prefix)
-    add_keyword_completion(out, seen, "do", prefix)
-    add_keyword_completion(out, seen, "else", prefix)
-    add_keyword_completion(out, seen, "elseif", prefix)
-    add_keyword_completion(out, seen, "end", prefix)
-    add_keyword_completion(out, seen, "false", prefix)
-    add_keyword_completion(out, seen, "for", prefix)
-    add_keyword_completion(out, seen, "fun", prefix)
-    add_keyword_completion(out, seen, "function", prefix)
-    add_keyword_completion(out, seen, "global", prefix)
-    add_keyword_completion(out, seen, "goto", prefix)
-    add_keyword_completion(out, seen, "if", prefix)
-    add_keyword_completion(out, seen, "in", prefix)
-    add_keyword_completion(out, seen, "local", prefix)
-    add_keyword_completion(out, seen, "match", prefix)
-    add_keyword_completion(out, seen, "nil", prefix)
-    add_keyword_completion(out, seen, "not", prefix)
-    add_keyword_completion(out, seen, "or", prefix)
-    add_keyword_completion(out, seen, "repeat", prefix)
-    add_keyword_completion(out, seen, "return", prefix)
-    add_keyword_completion(out, seen, "then", prefix)
-    add_keyword_completion(out, seen, "true", prefix)
-    add_keyword_completion(out, seen, "try", prefix)
-    add_keyword_completion(out, seen, "type", prefix)
-    add_keyword_completion(out, seen, "until", prefix)
-    add_keyword_completion(out, seen, "while", prefix)
-
-    add_type_completion(out, seen, "any", prefix)
-    add_type_completion(out, seen, "bool", prefix)
-    add_type_completion(out, seen, "f32", prefix)
-    add_type_completion(out, seen, "f64", prefix)
-    add_type_completion(out, seen, "i8", prefix)
-    add_type_completion(out, seen, "i16", prefix)
-    add_type_completion(out, seen, "i32", prefix)
-    add_type_completion(out, seen, "i64", prefix)
-    add_type_completion(out, seen, "str", prefix)
-    add_type_completion(out, seen, "u8", prefix)
-    add_type_completion(out, seen, "u16", prefix)
-    add_type_completion(out, seen, "u32", prefix)
-    add_type_completion(out, seen, "u64", prefix)
-    add_type_completion(out, seen, "void", prefix)
-
-    add_builtin_completion(out, seen, "assert", prefix)
-    add_builtin_completion(out, seen, "collectgarbage", prefix)
-    add_builtin_completion(out, seen, "error", prefix)
-    add_builtin_completion(out, seen, "ipairs", prefix)
-    add_builtin_completion(out, seen, "pairs", prefix)
-    add_builtin_completion(out, seen, "pcall", prefix)
-    add_builtin_completion(out, seen, "print", prefix)
-    add_builtin_completion(out, seen, "rawlen", prefix)
-    add_builtin_completion(out, seen, "req", prefix)
-    add_builtin_completion(out, seen, "require", prefix)
-    add_builtin_completion(out, seen, "tostring", prefix)
-    add_builtin_completion(out, seen, "tonumber", prefix)
-    add_builtin_completion(out, seen, "type", prefix)
-    add_builtin_completion(out, seen, "xpcall", prefix)
-
-    add_std_completion(out, seen, "argparse", prefix)
-    add_std_completion(out, seen, "base32", prefix)
-    add_std_completion(out, seen, "base64", prefix)
-    add_std_completion(out, seen, "build", prefix)
-    add_std_completion(out, seen, "collections", prefix)
-    add_std_completion(out, seen, "crypto", prefix)
-    add_std_completion(out, seen, "csv", prefix)
-    add_std_completion(out, seen, "debug", prefix)
-    add_std_completion(out, seen, "datetime", prefix)
-    add_std_completion(out, seen, "env", prefix)
-    add_std_completion(out, seen, "fmt", prefix)
-    add_std_completion(out, seen, "fs", prefix)
-    add_std_completion(out, seen, "hash", prefix)
-    add_std_completion(out, seen, "hex", prefix)
-    add_std_completion(out, seen, "html", prefix)
-    add_std_completion(out, seen, "http", prefix)
-    add_std_completion(out, seen, "ini", prefix)
-    add_std_completion(out, seen, "io", prefix)
-    add_std_completion(out, seen, "iter", prefix)
-    add_std_completion(out, seen, "json", prefix)
-    add_std_completion(out, seen, "log", prefix)
-    add_std_completion(out, seen, "math", prefix)
-    add_std_completion(out, seen, "memo", prefix)
-    add_std_completion(out, seen, "os", prefix)
-    add_std_completion(out, seen, "package", prefix)
-    add_std_completion(out, seen, "path", prefix)
-    add_std_completion(out, seen, "proc", prefix)
-    add_std_completion(out, seen, "random", prefix)
-    add_std_completion(out, seen, "regex", prefix)
-    add_std_completion(out, seen, "sqlite", prefix)
-    add_std_completion(out, seen, "string", prefix)
-    add_std_completion(out, seen, "table", prefix)
-    add_std_completion(out, seen, "tar", prefix)
-    add_std_completion(out, seen, "test", prefix)
-    add_std_completion(out, seen, "time", prefix)
-    add_std_completion(out, seen, "toml", prefix)
-    add_std_completion(out, seen, "uuid", prefix)
-    add_std_completion(out, seen, "xml", prefix)
-    add_std_completion(out, seen, "yaml", prefix)
-    add_std_completion(out, seen, "zip", prefix)
-    add_std_completion(out, seen, "color", prefix)
-
-    add_snippet_completion(out, seen, "fun", "function declaration",
-        "fun ${1:name}(${2:arg}: ${3:any}): ${4:any}\n    ${0}\nend",
-        prefix, "s_fun")
-    add_snippet_completion(out, seen, "if", "if statement",
-        "if ${1:cond} then\n    ${0}\nend",
-        prefix, "s_if")
-    add_snippet_completion(out, seen, "match", "match expression",
-        "match ${1:value}\n    case ${2:pattern} then\n        ${0}\nend",
-        prefix, "s_match")
-    add_snippet_completion(out, seen, "enum", "enum declaration",
-        "enum ${1:Name}\n    ${2:Variant}\nend",
-        prefix, "s_enum")
-    add_snippet_completion(out, seen, "concept", "concept declaration",
-        "concept ${1:Name}\n    ${2:method}(${3:arg}: ${4:any}): ${5:any}\nend",
-        prefix, "s_concept")
+fun send_diagnostics(uri, diags) -> void
+  params = {}
+  params.uri = uri
+  params.diagnostics = diags
+  m = {}
+  m.jsonrpc = "2.0"
+  m.method = "textDocument/publishDiagnostics"
+  m.params = params
+  send_message(m)
 end
-
--- ── shell + io ────────────────────────────────────────────────────────────
-fun shell_quote(s): str
-    return "'" .. string.gsub(s, "'", "'\\''") .. "'"
-end
-
-fun resolve_duo_bin(): any
-    b = os.getenv("DUO_LSP_DUO_BIN")
-    if b ~= nil and b ~= "" then return b end
-    b = os.getenv("DUO_BIN")
-    if b ~= nil and b ~= "" then return b end
-    f = io.popen("which duo 2>/dev/null", "r")
-    if f ~= nil then
-        out = f:read("*a")
-        f:close()
-        out = trim(out)
-        if out ~= "" then return out end
-    end
-    nil
-end
-
-fun doc_ext(uri): str
-    if ends_with(uri, ".duo") then return ".duo" end
-    if ends_with(uri, ".lua") then return ".lua" end
-    ".duo"
-end
-
--- ── JSON-RPC transport (uses std.json.encode) ───────────────────────────────
-fun send_message(t): void
-    body = io.lsp.json.encode(t)
-    header = string.format("Content-Length: %d\r\n\r\n", string.len(body))
-    io.write(header, body)
-    io.flush()
-end
-
-fun reply(id, result): void
-    m = {}
-    m.jsonrpc = "2.0"
-    m.id = id
-    m.result = result
-    send_message(m)
-end
-
-fun reply_error(id, code, message): void
-    e = {}
-    e.code = code
-    e.message = message
-    m = {}
-    m.jsonrpc = "2.0"
-    m.id = id
-    m.error = e
-    send_message(m)
-end
-
-fun send_diagnostics(uri, diags): void
-    params = {}
-    params.uri = uri
-    params.diagnostics = diags
-    m = {}
-    m.jsonrpc = "2.0"
-    m.method = "textDocument/publishDiagnostics"
-    m.params = params
-    send_message(m)
-end
-
--- ── server state ────────────────────────────────────────────────────────────
 io.lsp.docs = {}
 io.lsp.duo_bin = nil
 io.lsp.counter = 0
 io.lsp.shutdown = false
 io.lsp.do_exit = false
-
-fun now_secs(): i64
-    return os.time()
+fun now_secs() -> i64
+  return os.time()
 end
-
-fun doc_for(uri): any
-    d = io.lsp.docs[uri]
-    if d == nil then
-        d = {}
-        d.text = ""
-        d.version = 0
-        d.tmp = nil
-        d.lo = nil
-        d.syms = nil
-        d.syms_version = -1
-        d.dirty = false
-        d.last_t = 0
-        io.lsp.docs[uri] = d
-    end
-    d
-end
-
--- Ensure d.lo matches d.text (recompute lazily on use).
-fun ensure_lo(d): void
-    if d.lo == nil then
-        d.lo = compute_line_offs(d.text)
-    end
-end
-
--- Ensure d.syms matches d.text (cached per version).
-fun ensure_syms(d): void
-    ensure_lo(d)
-    if d.syms == nil or d.syms_version ~= d.version then
-        d.syms = scan_symbols_lo(d.text, d.lo)
-        d.syms_version = d.version
-    end
-end
-
-fun invalidate(d): void
+fun doc_for(uri) -> any
+  d = io.lsp.docs[uri]
+  if d == nil then
+    d = {}
+    d.text = ""
+    d.version = 0
+    d.tmp = nil
     d.lo = nil
     d.syms = nil
+    d.syms_version = -1
+    d.dirty = false
+    d.last_t = 0
+    io.lsp.docs[uri] = d
+  end
+  d
 end
-
-fun run_check(uri): void
-    d = io.lsp.docs[uri]
-    if d == nil then return end
-    if io.lsp.duo_bin == nil then
-        send_diagnostics(uri, {})
-        return
-    end
-    ext = doc_ext(uri)
-    if d.tmp == nil then
-        io.lsp.counter = io.lsp.counter + 1
-        d.tmp = os.tmpname() .. "_" .. tostring(io.lsp.counter) .. ext
-    end
-    f = io.open(d.tmp, "w")
-    if f ~= nil then
-        f:write(d.text)
-        f:close()
-    end
-    cmd = shell_quote(io.lsp.duo_bin) .. " check " .. shell_quote(d.tmp) .. " 2>&1"
-    p = io.popen(cmd, "r")
-    if p == nil then return end
-    out = p:read("*a")
-    p:close()
-    ensure_lo(d)
-    diags = parse_diagnostics(out, d.lo, d.text)
-    send_diagnostics(uri, diags)
+fun ensure_lo(d) -> void
+  if d.lo == nil then
+    d.lo = compute_line_offs(d.text)
+  end
 end
-
-fun schedule_check(uri): void
-    d = io.lsp.docs[uri]
-    if d == nil then return end
-    if io.lsp.duo_bin == nil then
-        send_diagnostics(uri, {})
-        return
-    end
-    t = now_secs()
-    if d.last_t == 0 or t > d.last_t then
+fun ensure_syms(d) -> void
+  ensure_lo(d)
+  if d.syms == nil or d.syms_version ~= d.version then
+    d.syms = scan_symbols_lo(d.text, d.lo)
+    d.syms_version = d.version
+  end
+end
+fun invalidate(d) -> void
+  d.lo = nil
+  d.syms = nil
+end
+fun run_check(uri) -> void
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return
+  end
+  if io.lsp.duo_bin == nil then
+    send_diagnostics(uri, {})
+    return
+  end
+  ext = doc_ext(uri)
+  if d.tmp == nil then
+    io.lsp.counter = io.lsp.counter + 1
+    d.tmp = os.tmpname() .. "_" .. tostring(io.lsp.counter) .. ext
+  end
+  f = io.open(d.tmp, "w")
+  if f ~= nil then
+    f:write(d.text)
+    f:close()
+  end
+  cmd = shell_quote(io.lsp.duo_bin) .. " check " .. shell_quote(d.tmp) .. " 2>&1"
+  p = io.popen(cmd, "r")
+  if p == nil then
+    return
+  end
+  out = p:read("*a")
+  p:close()
+  ensure_lo(d)
+  diags = parse_diagnostics(out, d.lo, d.text)
+  send_diagnostics(uri, diags)
+end
+fun schedule_check(uri) -> void
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return
+  end
+  if io.lsp.duo_bin == nil then
+    send_diagnostics(uri, {})
+    return
+  end
+  t = now_secs()
+  if d.last_t == 0 or t > d.last_t then
+    run_check(uri)
+    d.last_t = t
+    d.dirty = false
+  else
+    d.dirty = true
+  end
+end
+fun flush_dirty() -> void
+  docs = io.lsp.docs
+  t = now_secs()
+  for uri, d in pairs(docs)
+    if d.dirty then
+      if t > d.last_t then
         run_check(uri)
         d.last_t = t
         d.dirty = false
-    else
-        d.dirty = true
+      end
     end
+  end
 end
-
-fun flush_dirty(): void
-    docs = io.lsp.docs
-    t = now_secs()
-    for uri, d in pairs(docs) do
-        if d.dirty then
-            if t > d.last_t then
-                run_check(uri)
-                d.last_t = t
-                d.dirty = false
-            end
-        end
+fun read_line() -> any
+  out = {}
+  while true
+    c = io.read(1)
+    if c == nil then
+      if rawlen(out) == 0 then
+        return nil
+      end
+      break
     end
-end
-
--- ── LSP message framing (uses std.json.decode) ─────────────────────────────
-fun read_line(): any
-    out = {}
-    while true
-        c = io.read(1)
-        if c == nil then
-            if rawlen(out) == 0 then return nil end
-            break
-        end
-        if c == "\n" then break end
-        if c ~= "\r" then out[rawlen(out) + 1] = c end
+    if c == "\n" then
+      break
     end
-    table.concat(out)
-end
-
-fun read_message(): any
-    content_length = -1
-    while true
-        line = read_line()
-        if line == nil then return nil end
-        if line == "" then break end
-        p = find_from(line, "Content-Length:", 1)
-        if p ~= 0 then
-            rest = trim(string.sub(line, p + 15))
-            n = tonumber(rest)
-            if n ~= nil then content_length = n end
-        end
+    if c ~= "\r" then
+      out[rawlen(out) + 1] = c
     end
-    if content_length < 0 then return nil end
-    body = io.read(content_length)
-    if body == nil then return nil end
-    io.lsp.json.decode(body)
+  end
+  table.concat(out)
 end
-
--- ── LSP handlers ─────────────────────────────────────────────────────────────
-fun handle_initialize(params): any
-    caps = {}
-    caps.textDocumentSync = 2
-    caps.documentSymbolProvider = true
-    caps.hoverProvider = true
-    caps.definitionProvider = true
-    cp = {}
-    cp.resolveProvider = false
-    triggers = {}
-    triggers[rawlen(triggers) + 1] = "."
-    triggers[rawlen(triggers) + 1] = ":"
-    cp.triggerCharacters = triggers
-    caps.completionProvider = cp
-    info = {}
-    info.name = "duo-lsp"
-    info.version = "0.2.0"
-    r = {}
-    r.capabilities = caps
-    r.serverInfo = info
-    r
+fun read_message() -> any
+  content_length = -1
+  while true
+    line = read_line()
+    if line == nil then
+      return nil
+    end
+    if line == "" then
+      break
+    end
+    p = find_from(line, "Content-Length:", 1)
+    if p ~= 0 then
+      rest = trim(string.sub(line, p + 15))
+      n = tonumber(rest)
+      if n ~= nil then
+        content_length = n
+      end
+    end
+  end
+  if content_length < 0 then
+    return nil
+  end
+  body = io.read(content_length)
+  if body == nil then
+    return nil
+  end
+  io.lsp.json.decode(body)
 end
-
-fun handle_did_open(params): void
-    td = params.textDocument
-    if td == nil then return end
-    uri = td.uri
-    if not (ends_with(uri, ".duo") or ends_with(uri, ".lua")) then return end
+fun handle_initialize(params) -> any
+  caps = {}
+  caps.textDocumentSync = 2
+  caps.documentSymbolProvider = true
+  caps.hoverProvider = true
+  caps.definitionProvider = true
+  cp = {}
+  cp.resolveProvider = false
+  triggers = {}
+  triggers[rawlen(triggers) + 1] = "."
+  triggers[rawlen(triggers) + 1] = ":"
+  cp.triggerCharacters = triggers
+  caps.completionProvider = cp
+  info = {}
+  info.name = "duo-lsp"
+  info.version = "0.2.0"
+  r = {}
+  r.capabilities = caps
+  r.serverInfo = info
+  r
+end
+fun handle_did_open(params) -> void
+  td = params.textDocument
+  if td == nil then
+    return
+  end
+  uri = td.uri
+  if not (ends_with(uri, ".duo") or ends_with(uri, ".lua")) then
+    return
+  end
+  d = doc_for(uri)
+  d.text = td.text
+  if d.text == nil then
+    d.text = ""
+  end
+  d.version = td.version
+  if d.version == nil then
+    d.version = 0
+  end
+  invalidate(d)
+  schedule_check(uri)
+end
+fun handle_did_change(params) -> void
+  td = params.textDocument
+  if td == nil then
+    return
+  end
+  uri = td.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
     d = doc_for(uri)
-    d.text = td.text
-    if d.text == nil then d.text = "" end
-    d.version = td.version
-    if d.version == nil then d.version = 0 end
-    invalidate(d)
-    schedule_check(uri)
+  end
+  new_version = td.version
+  if new_version == nil then
+    new_version = d.version + 1
+  end
+  d.version = new_version
+  d.text = apply_changes(d.text, params.contentChanges)
+  invalidate(d)
+  schedule_check(uri)
 end
-
-fun handle_did_change(params): void
-    td = params.textDocument
-    if td == nil then return end
-    uri = td.uri
+fun handle_did_close(params) -> void
+  td = params.textDocument
+  if td == nil then
+    return
+  end
+  uri = td.uri
+  d = io.lsp.docs[uri]
+  if d ~= nil and d.tmp ~= nil then
+    os.remove(d.tmp)
+  end
+  io.lsp.docs[uri] = nil
+  send_diagnostics(uri, {})
+end
+fun handle_did_save(params) -> void
+  td = params.textDocument
+  if td == nil then
+    return
+  end
+  uri = td.uri
+  if io.lsp.docs[uri] ~= nil then
     d = io.lsp.docs[uri]
-    if d == nil then
-        d = doc_for(uri)
+    if params.text ~= nil then
+      d.text = params.text
+      invalidate(d)
     end
-    new_version = td.version
-    if new_version == nil then new_version = d.version + 1 end
-    d.version = new_version
-    d.text = apply_changes(d.text, params.contentChanges)
-    invalidate(d)
-    schedule_check(uri)
+    run_check(uri)
+    d.last_t = now_secs()
+    d.dirty = false
+  end
 end
-
-fun handle_did_close(params): void
-    td = params.textDocument
-    if td == nil then return end
-    uri = td.uri
-    d = io.lsp.docs[uri]
-    if d ~= nil and d.tmp ~= nil then
-        os.remove(d.tmp)
+fun handle_document_symbol(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return {}
+  end
+  ensure_syms(d)
+  syms = d.syms
+  out = {}
+  n = rawlen(syms)
+  i = 1
+  while i <= n
+    s = syms[i]
+    o = {}
+    o.name = s.name
+    o.kind = s.kind
+    o.range = mk_range(s.line, s.col, s.endCol)
+    o.selectionRange = mk_range(s.line, s.col, s.col + string.len(s.name))
+    out[rawlen(out) + 1] = o
+    i = i + 1
+  end
+  out
+end
+fun handle_hover(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return nil
+  end
+  ensure_syms(d)
+  s = symbol_at(d.syms, params.position.line, params.position.character)
+  if s == nil then
+    return nil
+  end
+  ensure_lo(d)
+  ln = get_line_lo(d.text, d.lo, s.line)
+  sig = ""
+  if ln ~= nil then
+    sig = trim(ln)
+  end
+  c = {}
+  c.kind = "markdown"
+  c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
+  r = {}
+  r.contents = c
+  r.range = mk_range(s.line, s.col, s.col + string.len(s.name))
+  r
+end
+fun handle_definition(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return nil
+  end
+  ensure_syms(d)
+  s = symbol_at(d.syms, params.position.line, params.position.character)
+  if s == nil then
+    return nil
+  end
+  r = {}
+  r.uri = uri
+  r.range = mk_range(s.line, s.col, s.col + string.len(s.name))
+  r
+end
+fun handle_completion(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return {}
+  end
+  ensure_lo(d)
+  ensure_syms(d)
+  line = params.position.line
+  col = params.position.character
+  prefix = word_prefix_lo(d.text, d.lo, line, col)
+  out = {}
+  seen = {}
+  n = rawlen(d.syms)
+  i = 1
+  while i <= n
+    s = d.syms[i]
+    if completion_matches(s.name, prefix) then
+      add_completion(out, seen, s.name, completion_kind_for_symbol(s.kind), kind_label(s.kind), nil, "z_" .. s.name)
     end
-    io.lsp.docs[uri] = nil
-    send_diagnostics(uri, {})
+    i = i + 1
+  end
+  add_static_completions(out, seen, prefix)
+  out
 end
-
-fun handle_did_save(params): void
-    td = params.textDocument
-    if td == nil then return end
-    uri = td.uri
-    if io.lsp.docs[uri] ~= nil then
-        d = io.lsp.docs[uri]
-        if params.text ~= nil then
-            d.text = params.text
-            invalidate(d)
-        end
-        run_check(uri)
-        d.last_t = now_secs()
-        d.dirty = false
+fun handle_message(msg) -> void
+  method = msg.method
+  id = msg.id
+  params = msg.params
+  if params == nil then
+    params = {}
+  end
+  if method == "initialize" then
+    reply(id, handle_initialize(params))
+  elseif method == "shutdown" then
+    io.lsp.shutdown = true
+    reply(id, nil)
+  elseif method == "exit" then
+    io.lsp.do_exit = true
+  elseif method == "initialized" then
+    nil
+  elseif method == "textDocument/didOpen" then
+    handle_did_open(params)
+  elseif method == "textDocument/didChange" then
+    handle_did_change(params)
+  elseif method == "textDocument/didClose" then
+    handle_did_close(params)
+  elseif method == "textDocument/didSave" then
+    handle_did_save(params)
+  elseif method == "textDocument/documentSymbol" then
+    reply(id, handle_document_symbol(params))
+  elseif method == "textDocument/hover" then
+    reply(id, handle_hover(params))
+  elseif method == "textDocument/definition" then
+    reply(id, handle_definition(params))
+  elseif method == "textDocument/completion" then
+    reply(id, handle_completion(params))
+  elseif id ~= nil then
+    reply_error(id, -32601, "method not found: " .. tostring(method))
+  end
+end
+fun lsp_main() -> void
+  io.lsp.duo_bin = resolve_duo_bin()
+  while true
+    msg = read_message()
+    if msg == nil then
+      break
     end
-end
-
-fun handle_document_symbol(params): any
-    uri = params.textDocument.uri
-    d = io.lsp.docs[uri]
-    if d == nil then return {} end
-    ensure_syms(d)
-    syms = d.syms
-    out = {}
-    n = rawlen(syms)
-    i = 1
-    while i <= n
-        s = syms[i]
-        o = {}
-        o.name = s.name
-        o.kind = s.kind
-        o.range = mk_range(s.line, s.col, s.endCol)
-        o.selectionRange = mk_range(s.line, s.col, s.col + string.len(s.name))
-        out[rawlen(out) + 1] = o
-        i = i + 1
+    handle_message(msg)
+    flush_dirty()
+    if io.lsp.do_exit then
+      break
     end
-    out
+  end
+  if io.lsp.shutdown then
+    os.exit(0)
+  else
+    os.exit(1)
+  end
 end
-
-fun handle_hover(params): any
-    uri = params.textDocument.uri
-    d = io.lsp.docs[uri]
-    if d == nil then return nil end
-    ensure_syms(d)
-    s = symbol_at(d.syms, params.position.line, params.position.character)
-    if s == nil then return nil end
-    ensure_lo(d)
-    ln = get_line_lo(d.text, d.lo, s.line)
-    sig = ""
-    if ln ~= nil then sig = trim(ln) end
-    c = {}
-    c.kind = "markdown"
-    c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
-    r = {}
-    r.contents = c
-    r.range = mk_range(s.line, s.col, s.col + string.len(s.name))
-    r
-end
-
-fun handle_definition(params): any
-    uri = params.textDocument.uri
-    d = io.lsp.docs[uri]
-    if d == nil then return nil end
-    ensure_syms(d)
-    s = symbol_at(d.syms, params.position.line, params.position.character)
-    if s == nil then return nil end
-    r = {}
-    r.uri = uri
-    r.range = mk_range(s.line, s.col, s.col + string.len(s.name))
-    r
-end
-
-fun handle_completion(params): any
-    uri = params.textDocument.uri
-    d = io.lsp.docs[uri]
-    if d == nil then return {} end
-    ensure_lo(d)
-    ensure_syms(d)
-    line = params.position.line
-    col = params.position.character
-    prefix = word_prefix_lo(d.text, d.lo, line, col)
-    out = {}
-    seen = {}
-    -- Document symbols as completion candidates.
-    n = rawlen(d.syms)
-    i = 1
-    while i <= n
-        s = d.syms[i]
-        if completion_matches(s.name, prefix) then
-            add_completion(out, seen, s.name, completion_kind_for_symbol(s.kind),
-                kind_label(s.kind), nil, "z_" .. s.name)
-        end
-        i = i + 1
-    end
-    add_static_completions(out, seen, prefix)
-    out
-end
-
-fun handle_message(msg): void
-    method = msg.method
-    id = msg.id
-    params = msg.params
-    if params == nil then params = {} end
-    if method == "initialize" then
-        reply(id, handle_initialize(params))
-    elseif method == "shutdown" then
-        io.lsp.shutdown = true
-        reply(id, nil)
-    elseif method == "exit" then
-        io.lsp.do_exit = true
-    elseif method == "initialized" then
-        nil
-    elseif method == "textDocument/didOpen" then
-        handle_did_open(params)
-    elseif method == "textDocument/didChange" then
-        handle_did_change(params)
-    elseif method == "textDocument/didClose" then
-        handle_did_close(params)
-    elseif method == "textDocument/didSave" then
-        handle_did_save(params)
-    elseif method == "textDocument/documentSymbol" then
-        reply(id, handle_document_symbol(params))
-    elseif method == "textDocument/hover" then
-        reply(id, handle_hover(params))
-    elseif method == "textDocument/definition" then
-        reply(id, handle_definition(params))
-    elseif method == "textDocument/completion" then
-        reply(id, handle_completion(params))
-    elseif id ~= nil then
-        reply_error(id, -32601, "method not found: " .. tostring(method))
-    end
-end
-
--- ── main loop ───────────────────────────────────────────────────────────────
-fun lsp_main(): void
-    io.lsp.duo_bin = resolve_duo_bin()
-    while true
-        msg = read_message()
-        if msg == nil then break end
-        handle_message(msg)
-        flush_dirty()
-        if io.lsp.do_exit then break end
-    end
-    if io.lsp.shutdown then
-        os.exit(0)
-    else
-        os.exit(1)
-    end
-end
-
 lsp_main()
