@@ -72,10 +72,12 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 - Pointer types use `*T`. Reference and ownership semantics are still evolving.
 - Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.
 - Compile-time `##(...)` and `__constexpr(...)` share a small pure evaluator
-  for literals, unary/binary operators, and scoped local/const bindings.
+  for literals, unary/binary operators, string concatenation, table literals,
+  table field/index lookups, pure `match` conditionals, and scoped local/const
+  bindings.
   Unsupported runtime expressions still fall back to normal runtime emission.
-  Macro expansion, quote/unquote, AST replacement, and hygienic macro syntax
-  are still in progress.
+  Compile-time loops/functions, macro expansion, quote/unquote, AST replacement,
+  and hygienic macro syntax are still in progress.
 - Scheduler-backed async tasks, pending poll states, and async channels are still
   being completed; current async calls run synchronously while descriptors are
   emitted for the full runtime path.

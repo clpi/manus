@@ -4,7 +4,7 @@ Duo has its own syntax highlighting, but because its grammar is a superset of Lu
 
 ## Official Duo plugins / extensions
 
-The repository contains editor support under `ext/`. These plugins provide full Duo syntax highlighting (including typed functions, type keywords, attributes, `match`, `async`/`await`, and more), file-type detection, indentation, and optional LSP integration.
+The repository contains editor support under `ext/`. These plugins provide full Duo syntax highlighting (including typed functions, type keywords, attributes, `match`, `async`/`await`, and more), file-type detection, indentation, and LSP integration.
 
 - **VS Code**: `ext/vscode-duo/` — TextMate grammar, snippets, and `duo-lsp` integration.
 - **Vim / Neovim**: `ext/vim-duo/` — syntax file, filetype detection, indent rules, and ftplugin.
@@ -12,6 +12,26 @@ The repository contains editor support under `ext/`. These plugins provide full 
 - **Zed**: `ext/zed-duo/` — tree-sitter extension with outline, brackets, and LSP config.
 
 For installation details, see each extension's own `README.md`.
+
+## LSP Setup
+
+The `duo-lsp` server (in `ext/duo-lsp/`) provides:
+
+- **Diagnostics** — Type-checking errors from `duo check`
+- **Document symbols** — Outline view of top-level declarations
+- **Hover** — Symbol information on mouse-over
+- **Go-to-definition** — Jump to declaration
+- **Completions** — Keywords, types, builtins, std modules, and snippets
+
+To use LSP manually:
+
+```sh
+# Build the LSP binary
+duo compile ext/duo-lsp/src/server.duo -o duo-lsp
+export DUO_LSP_DUO_BIN="$PWD/zig-out/bin/duo"
+
+# Then configure your editor to spawn the `duo-lsp` binary
+```
 
 ## Fallback: associate `.duo` with Lua
 

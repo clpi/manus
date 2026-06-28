@@ -8,12 +8,12 @@ Duo is a Lua-like language that compiles to native C (AOT). This repository incl
 
 Official editor plugins for Duo live under `ext/`:
 
-- **VS Code** — `ext/vscode-duo/`
+- **VS Code** — `ext/vscode-duo/` — Includes LSP integration with `duo-lsp`
 - **Vim / Neovim** — `ext/vim-duo/`
-- **Helix** — `ext/helix/`
-- **Zed** — `ext/zed-duo/`
+- **Helix** — `ext/helix/` (linked from `ext/`)
+- **Zed** — `ext/zed-duo/` — Tree-sitter + LSP config
 
-They provide file-type detection, syntax highlighting for all Duo syntax, and optional `duo-lsp` integration.
+The editor plugins provide file-type detection, syntax highlighting for all Duo syntax, and LSP integration. The LSP server (`ext/duo-lsp/src/server.duo`) is written in Duo and provides diagnostics, document symbols, hover, go-to-definition, and completions.
 
 ## Build
 

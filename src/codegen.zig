@@ -171,13 +171,13 @@ pub const CodeGen = struct {
 
     fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
         if (self.comptime_scopes.items.len == 0) return;
-        _ = name;
-        _ = expr;
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{ .alloc = self.alloc }) catch comptime_eval.Value.unavailable;
+        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
     }
 
     fn note_comptime_unavailable(self: *CodeGen, name: []const u8) !void {
         if (self.comptime_scopes.items.len == 0) return;
-        _ = name;
+        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, .unavailable);
     }
 
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
@@ -420,6 +420,17 @@ pub const CodeGen = struct {
         return self.expr_type(init_expr) == .any;
     }
 
+    fn comptime_value_type(self: *CodeGen, e: *const ast.Expr) ?RT {
+        const value = comptime_eval.evalWithBindings(e, self.comptime_bindings(), .{ .alloc = self.alloc }) catch return null;
+        return switch (value) {
+            .bool => .bool,
+            .int => .i64,
+            .float => .f64,
+            .string => .str,
+            .nil, .table, .unavailable => .any,
+        };
+    }
+
     fn expr_type(self: *CodeGen, e: *const ast.Expr) RT {
         if (e.* == .name) {
             if (self.local_type(e.name.ident)) |rt| return rt;
@@ -433,6 +444,7 @@ pub const CodeGen = struct {
             const c = e.call;
             if (c.func.* == .name) {
                 if (std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
+                    if (self.comptime_value_type(c.args[0])) |rt| return rt;
                     return self.expr_type(c.args[0]);
                 }
                 if (self.mono) |m| {
@@ -4987,11 +4999,50 @@ pub const CodeGen = struct {
                     self.p("\"", .{});
                 }
             },
+            .table => |entries| {
+                var array_count: usize = 0;
+                var hash_count: usize = 0;
+                for (entries) |entry| {
+                    if (entry.name != null) {
+                        hash_count += 1;
+                    } else if (entry.key) |key| {
+                        if (key == .int and key.int >= 1) {
+                            array_count += 1;
+                        } else {
+                            hash_count += 1;
+                        }
+                    }
+                }
+                self.p("({{\n", .{});
+                self.indent += 1;
+                self.ind();
+                self.p("lua_Value tmp = lua_table_new_with_capacity({d}, {d});\n", .{ array_count, hash_count });
+                for (entries) |entry| {
+                    self.ind();
+                    self.p("lua_table_set_raw(tmp, ", .{});
+                    if (entry.name) |name| {
+                        const hash = calc_lua_hash(name);
+                        self.p("lua_val_from_literal(\"{s}\", {d}, {d})", .{ name, hash, name.len });
+                    } else if (entry.key) |key| {
+                        try self.emit_comptime_value(key, true);
+                    } else {
+                        self.p("lua_val_nil()", .{});
+                    }
+                    self.p(", ", .{});
+                    try self.emit_comptime_value(entry.val, true);
+                    self.p(");\n", .{});
+                }
+                self.ind();
+                self.p("tmp;\n", .{});
+                self.indent -= 1;
+                self.ind();
+                self.p("}})", .{});
+            },
         }
     }
 
     fn emit_comptime_expr(self: *CodeGen, expr: *const ast.Expr, as_lua_value: bool) E!void {
-        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{}) catch {
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
             if (as_lua_value) {
                 try self.emit_as_lua_value(expr);
             } else {
@@ -10814,6 +10865,95 @@ test "codegen: compile-time evaluator folds prior pure bindings" {
     try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 15;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t via_hash = 16;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "base + offset") == null);
+}
+
+test "codegen: __constexpr emits pure table literals and table bindings" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local base = __constexpr({1, 2, name = "duo", ["answer"] = 42})
+        \\local copy = __constexpr(base)
+        \\print(copy.name)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value base = ({") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value copy = ({") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_new_with_capacity(2, 2)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_val_from_int(42)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_val_from_literal(\"duo\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: __constexpr folds table lookup and string concat" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local base = __constexpr({name = "duo", suffix = "lang", [1] = "first"})
+        \\local label: str = __constexpr(base.name .. "-" .. base["suffix"])
+        \\local first: str = __constexpr(base[1])
+        \\print(label)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* label = \"duo-lang\";") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* first = \"first\";") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_get(base") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: __constexpr folds pure match expressions" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local label: str = __constexpr(match 2
+        \\  case 1 then "one"
+        \\  case n if n > 1 then "many"
+        \\  case _ then "other"
+        \\end)
+        \\print(label)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* label = \"many\";") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__match_s") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
 }
 
 // ── WASM target validation ─────────────────────────────────────────────────

@@ -21,3 +21,13 @@ tools:
             - cat *
             - zig test *
             - grep *
+            - file *
+            - du *
+            - node *
+            - ./ext/duo-lsp/duo-lsp
+            - sleep 1
+            - strings *
+            - ./ext/duo-lsp/duo-lsp *
+            - pwd
+            - sleep *
+            - sed *

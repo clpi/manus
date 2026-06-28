@@ -25,10 +25,11 @@ Keep it in sync with `docs/src/roadmap.md`.
   `{expr for key, value in table if condition}` lower to dynamic array tables.
 - [~] **Macros / metaprogramming.** Compile-time `##(...)` and the
   `__constexpr(...)` intrinsic now share a small pure evaluator for literals,
-  unary/binary operators, and scoped local/const bindings; unsupported runtime
-  expressions still fall back to normal emission. `std.meta` helpers exist, but
-  hygienic macro syntax, quote/unquote, AST replacement, and macro expansion
-  are still planned.
+  unary/binary operators, string concatenation, table literals, table
+  field/index lookups, pure `match` conditionals, and scoped local/const bindings;
+  unsupported runtime expressions still fall back to normal emission. `std.meta`
+  helpers exist, but compile-time loops/functions, hygienic macro syntax,
+  quote/unquote, AST replacement, and macro expansion are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
 - [~] **Concept metatable merging.** Concepts exist as structural checks and
