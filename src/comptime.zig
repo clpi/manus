@@ -20,6 +20,16 @@ pub const Value = union(enum) {
         val: Value,
     };
 
+    pub const CapturedBinding = struct {
+        name: []const u8,
+        value: Value,
+    };
+
+    pub const Func = struct {
+        body: *const ast.FuncBody,
+        captures: []const CapturedBinding = &.{},
+    };
+
     unavailable,
     nil,
     bool: bool,
@@ -27,6 +37,7 @@ pub const Value = union(enum) {
     float: f64,
     string: []const u8,
     table: []const TableEntry,
+    func: Func,
 
     fn truthy(self: Value) bool {
         return switch (self) {
@@ -44,7 +55,7 @@ pub const Value = union(enum) {
             .int => |v| other == .int and other.int == v,
             .float => |v| other == .float and other.float == v,
             .string => |v| other == .string and std.mem.eql(u8, other.string, v),
-            .table => false,
+            .table, .func => false,
         };
     }
 };
@@ -65,6 +76,11 @@ pub const Bindings = struct {
 pub const Evaluator = struct {
     const LocalBinding = struct {
         name: []const u8,
+        value: Value,
+    };
+
+    const BlockResult = union(enum) {
+        none,
         value: Value,
     };
 
@@ -99,6 +115,18 @@ pub const Evaluator = struct {
         self.locals.shrinkRetainingCapacity(mark);
     }
 
+    fn setLocal(self: *Evaluator, name: []const u8, value: Value) EvalError!void {
+        var i = self.locals.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (std.mem.eql(u8, self.locals.items[i].name, name)) {
+                self.locals.items[i].value = value;
+                return;
+            }
+        }
+        return error.UnsupportedExpression;
+    }
+
     pub fn eval(self: *Evaluator, expr: *const ast.Expr) EvalError!Value {
         try self.step();
         return switch (expr.*) {
@@ -117,7 +145,7 @@ pub const Evaluator = struct {
                 if (call.func.* == .name and std.mem.eql(u8, call.func.name.ident, "__constexpr") and call.args.len == 1) {
                     break :blk try self.eval(call.args[0]);
                 }
-                return error.UnsupportedExpression;
+                break :blk try self.evalCall(call.func, call.args);
             },
             .index => |index| blk: {
                 const obj = try self.eval(index.obj);
@@ -131,9 +159,62 @@ pub const Evaluator = struct {
             .unop => |unop| try self.evalUnop(unop.op, unop.operand),
             .binop => |binop| try self.evalBinop(binop.op, binop.lhs, binop.rhs),
             .table => |table| try self.evalTable(table.fields),
+            .func_expr => |func| try self.makeFunc(func),
             .match_expr => |match_expr| try self.evalMatch(match_expr),
             else => error.UnsupportedExpression,
         };
+    }
+
+    fn makeFunc(self: *Evaluator, func: *const ast.FuncBody) EvalError!Value {
+        const captures = try self.snapshotCaptures();
+        return .{ .func = .{ .body = func, .captures = captures } };
+    }
+
+    fn snapshotCaptures(self: *Evaluator) EvalError![]const Value.CapturedBinding {
+        const alloc = self.options.alloc orelse return &.{};
+        var count = self.locals.items.len;
+        for (self.bindings.scopes) |*scope| count += scope.count();
+        if (count == 0) return &.{};
+
+        const captures = alloc.alloc(Value.CapturedBinding, count) catch return error.UnsupportedExpression;
+        var out_i: usize = 0;
+        for (self.bindings.scopes) |*scope| {
+            var it = scope.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.* == .unavailable) continue;
+                captures[out_i] = .{ .name = entry.key_ptr.*, .value = entry.value_ptr.* };
+                out_i += 1;
+            }
+        }
+        for (self.locals.items) |local| {
+            if (local.value == .unavailable) continue;
+            captures[out_i] = .{ .name = local.name, .value = local.value };
+            out_i += 1;
+        }
+        return captures[0..out_i];
+    }
+
+    fn evalCall(self: *Evaluator, func_expr: *const ast.Expr, args: []const *ast.Expr) EvalError!Value {
+        const callee = try self.eval(func_expr);
+        if (callee != .func) return error.UnsupportedExpression;
+        const func = callee.func.body;
+        if (func.vararg or args.len > func.params.len) return error.UnsupportedExpression;
+
+        const mark = self.locals.items.len;
+        defer self.popLocals(mark);
+        for (callee.func.captures) |capture| {
+            _ = try self.pushLocal(capture.name, capture.value);
+        }
+        for (func.params, 0..) |param, i| {
+            const value = if (i < args.len)
+                try self.eval(args[i])
+            else if (param.default_val) |default_val|
+                try self.eval(default_val)
+            else
+                Value.nil;
+            _ = try self.pushLocal(param.name, value);
+        }
+        return try self.evalBlockValue(&func.body);
     }
 
     fn evalTable(self: *Evaluator, fields: []const ast.TableField) EvalError!Value {
@@ -225,7 +306,7 @@ pub const Evaluator = struct {
                     continue;
                 }
             }
-            const result = self.evalBlockResult(&arm.body);
+            const result = self.evalBlockValue(&arm.body);
             self.popLocals(mark);
             return result;
         }
@@ -295,20 +376,107 @@ pub const Evaluator = struct {
         return .{ .table = entries };
     }
 
-    fn evalBlockResult(self: *Evaluator, block: *const ast.Block) EvalError!Value {
-        if (block.tail_expr) |expr| return self.eval(expr);
-        if (block.stmts.len != 1) return error.UnsupportedExpression;
-        return switch (block.stmts[0]) {
+    fn evalBlockValue(self: *Evaluator, block: *const ast.Block) EvalError!Value {
+        const result = try self.evalBlockScoped(block);
+        return switch (result) {
+            .value => |value| value,
+            .none => error.UnsupportedExpression,
+        };
+    }
+
+    fn evalBlockScoped(self: *Evaluator, block: *const ast.Block) EvalError!BlockResult {
+        const mark = self.locals.items.len;
+        defer self.popLocals(mark);
+        return self.evalBlock(block);
+    }
+
+    fn evalBlock(self: *Evaluator, block: *const ast.Block) EvalError!BlockResult {
+        for (block.stmts) |stmt| {
+            const result = try self.evalStmt(stmt);
+            if (result == .value) return result;
+        }
+        if (block.tail_expr) |expr| return .{ .value = try self.eval(expr) };
+        return .none;
+    }
+
+    fn evalStmt(self: *Evaluator, stmt: ast.Stmt) EvalError!BlockResult {
+        try self.step();
+        return switch (stmt) {
+            .local_decl => |decl| blk: {
+                for (decl.names, 0..) |name, i| {
+                    const value = if (i < decl.inits.len) try self.eval(decl.inits[i]) else Value.nil;
+                    _ = try self.pushLocal(name.ident, value);
+                }
+                break :blk .none;
+            },
+            .const_decl => |decl| blk: {
+                _ = try self.pushLocal(decl.ident, try self.eval(decl.val));
+                break :blk .none;
+            },
+            .assign => |assign| blk: {
+                for (assign.targets, 0..) |target, i| {
+                    if (target.* != .name) return error.UnsupportedExpression;
+                    const value = if (i < assign.values.len) try self.eval(assign.values[i]) else Value.nil;
+                    try self.setLocal(target.name.ident, value);
+                }
+                break :blk .none;
+            },
             .ret => |ret| blk: {
                 if (ret.vals.len != 1) return error.UnsupportedExpression;
-                break :blk try self.eval(ret.vals[0]);
+                break :blk .{ .value = try self.eval(ret.vals[0]) };
             },
-            .expr_stmt => |expr_stmt| self.eval(expr_stmt.expr),
-            .call_stmt => |call_stmt| self.eval(call_stmt.expr),
+            .expr_stmt => |expr_stmt| .{ .value = try self.eval(expr_stmt.expr) },
+            .call_stmt => |call_stmt| .{ .value = try self.eval(call_stmt.expr) },
+            .do_block => |do_block| try self.evalBlockScoped(&do_block.body),
+            .if_stmt => |if_stmt| try self.evalIf(if_stmt),
+            .while_loop => |while_loop| try self.evalWhile(while_loop),
+            .num_for => |num_for| try self.evalNumFor(num_for),
             else => error.UnsupportedExpression,
         };
     }
+
+    fn evalIf(self: *Evaluator, if_stmt: anytype) EvalError!BlockResult {
+        if ((try self.eval(if_stmt.cond)).truthy()) return self.evalBlockScoped(&if_stmt.then);
+        for (if_stmt.elseifs) |elseif| {
+            if ((try self.eval(elseif.cond)).truthy()) return self.evalBlockScoped(&elseif.body);
+        }
+        if (if_stmt.else_body) |*else_body| return self.evalBlockScoped(else_body);
+        return .none;
+    }
+
+    fn evalWhile(self: *Evaluator, while_loop: anytype) EvalError!BlockResult {
+        while ((try self.eval(while_loop.cond)).truthy()) {
+            try self.step();
+            const result = try self.evalBlockScoped(&while_loop.body);
+            if (result == .value) return result;
+        }
+        return .none;
+    }
+
+    fn evalNumFor(self: *Evaluator, num_for: anytype) EvalError!BlockResult {
+        const start = numericAsInt(try self.eval(num_for.start)) orelse return error.UnsupportedOperator;
+        const stop = numericAsInt(try self.eval(num_for.stop)) orelse return error.UnsupportedOperator;
+        const step_value = if (num_for.step) |step_expr| numericAsInt(try self.eval(step_expr)) orelse return error.UnsupportedOperator else 1;
+        if (step_value == 0) return error.UnsupportedOperator;
+        const mark = self.locals.items.len;
+        defer self.popLocals(mark);
+        _ = try self.pushLocal(num_for.var_name, .{ .int = start });
+        var i = start;
+        while (if (step_value > 0) i <= stop else i >= stop) : (i += step_value) {
+            try self.step();
+            try self.setLocal(num_for.var_name, .{ .int = i });
+            const result = try self.evalBlockScoped(&num_for.body);
+            if (result == .value) return result;
+        }
+        return .none;
+    }
 };
+
+pub fn funcValue(func: *const ast.FuncBody, bindings: Bindings, options: Options) EvalError!Value {
+    var evaluator: Evaluator = .{ .bindings = bindings, .options = options };
+    defer if (options.alloc) |alloc| evaluator.locals.deinit(alloc);
+    return evaluator.makeFunc(func);
+}
 
 fn tableFieldLookup(obj: Value, field: []const u8) EvalError!Value {
     if (obj != .table) return error.UnsupportedOperator;
@@ -557,6 +725,168 @@ test "comptime eval: match expression with literal and guarded binding arms" {
     var expr = ast.Expr{ .match_expr = &match_expr };
 
     try std.testing.expectEqual(Value{ .int = 44 }, try evalWithBindings(&expr, .{}, .{ .alloc = alloc }));
+}
+
+test "comptime eval: match expression with table and array destructuring" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+
+    var kind_key = ast.Expr{ .string_lit = .{ .loc = loc, .val = "kind" } };
+    var kind_val = ast.Expr{ .string_lit = .{ .loc = loc, .val = "pair" } };
+    var left_val = ast.Expr{ .int_lit = .{ .loc = loc, .val = 2 } };
+    var right_val = ast.Expr{ .int_lit = .{ .loc = loc, .val = 3 } };
+    const table_fields = try alloc.alloc(ast.TableField, 3);
+    table_fields[0] = .{ .indexed = .{ .key = &kind_key, .val = &kind_val } };
+    table_fields[1] = .{ .named = .{ .key = "left", .val = &left_val } };
+    table_fields[2] = .{ .named = .{ .key = "right", .val = &right_val } };
+    var table = ast.Expr{ .table = .{ .loc = loc, .fields = table_fields } };
+
+    var literal_pair = ast.Expr{ .string_lit = .{ .loc = loc, .val = "pair" } };
+    const table_entries = try alloc.alloc(ast.Pattern.TableDestrEntry, 3);
+    table_entries[0] = .{ .key = "kind", .pat = .{ .literal = &literal_pair } };
+    table_entries[1] = .{ .key = "left", .pat = .{ .binding = .{ .name = "a", .typ = null } } };
+    table_entries[2] = .{ .key = "right", .pat = .{ .binding = .{ .name = "b", .typ = null } } };
+    var a_name = ast.Expr{ .name = .{ .loc = loc, .ident = "a" } };
+    var b_name = ast.Expr{ .name = .{ .loc = loc, .ident = "b" } };
+    var sum = ast.Expr{ .binop = .{ .loc = loc, .op = .add, .lhs = &a_name, .rhs = &b_name } };
+    const table_body = try alloc.alloc(ast.Stmt, 1);
+    table_body[0] = .{ .ret = .{ .loc = loc, .vals = try alloc.dupe(*ast.Expr, &.{&sum}) } };
+    const table_arms = try alloc.alloc(ast.MatchArm, 1);
+    table_arms[0] = .{
+        .pattern = .{ .table_destr = table_entries },
+        .guard = null,
+        .body = .{ .loc = loc, .stmts = table_body },
+    };
+    var table_match = ast.MatchExpr{ .loc = loc, .scrutinee = &table, .arms = table_arms };
+    var table_expr = ast.Expr{ .match_expr = &table_match };
+    try std.testing.expectEqual(Value{ .int = 5 }, try evalWithBindings(&table_expr, .{}, .{ .alloc = alloc }));
+
+    var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
+    var two = ast.Expr{ .int_lit = .{ .loc = loc, .val = 2 } };
+    var three = ast.Expr{ .int_lit = .{ .loc = loc, .val = 3 } };
+    const array_fields = try alloc.alloc(ast.TableField, 3);
+    array_fields[0] = .{ .positional = &one };
+    array_fields[1] = .{ .positional = &two };
+    array_fields[2] = .{ .positional = &three };
+    var array = ast.Expr{ .table = .{ .loc = loc, .fields = array_fields } };
+    const array_patterns = try alloc.alloc(ast.Pattern, 2);
+    array_patterns[0] = .{ .binding = .{ .name = "head", .typ = null } };
+    array_patterns[1] = .{ .rest = "tail" };
+    var head_name = ast.Expr{ .name = .{ .loc = loc, .ident = "head" } };
+    var tail_name = ast.Expr{ .name = .{ .loc = loc, .ident = "tail" } };
+    var tail_first_key = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
+    var tail_first = ast.Expr{ .index = .{ .loc = loc, .obj = &tail_name, .key = &tail_first_key } };
+    var array_sum = ast.Expr{ .binop = .{ .loc = loc, .op = .add, .lhs = &head_name, .rhs = &tail_first } };
+    const array_body = try alloc.alloc(ast.Stmt, 1);
+    array_body[0] = .{ .ret = .{ .loc = loc, .vals = try alloc.dupe(*ast.Expr, &.{&array_sum}) } };
+    const array_arms = try alloc.alloc(ast.MatchArm, 1);
+    array_arms[0] = .{
+        .pattern = .{ .array_destr = array_patterns },
+        .guard = null,
+        .body = .{ .loc = loc, .stmts = array_body },
+    };
+    var array_match = ast.MatchExpr{ .loc = loc, .scrutinee = &array, .arms = array_arms };
+    var array_expr = ast.Expr{ .match_expr = &array_match };
+    try std.testing.expectEqual(Value{ .int = 3 }, try evalWithBindings(&array_expr, .{}, .{ .alloc = alloc }));
+}
+
+test "comptime eval: do blocks with bounded loops and local mutation" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\local for_total = __constexpr(match true
+        \\  case _ then do
+        \\    local acc = 0
+        \\    for i = 1, 4 do
+        \\      acc = acc + i
+        \\    end
+        \\    acc
+        \\  end
+        \\end)
+        \\local while_total = __constexpr(match true
+        \\  case _ then do
+        \\    local n = 4
+        \\    local acc = 0
+        \\    while n > 0 do
+        \\      acc = acc + n
+        \\      n = n - 1
+        \\    end
+        \\    acc
+        \\  end
+        \\end)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+    const first = module.body.stmts[0].local_decl.inits[0];
+    const second = module.body.stmts[1].local_decl.inits[0];
+
+    try std.testing.expectEqual(Value{ .int = 10 }, try evalWithBindings(first, .{}, .{ .alloc = alloc }));
+    try std.testing.expectEqual(Value{ .int = 10 }, try evalWithBindings(second, .{}, .{ .alloc = alloc }));
+}
+
+test "comptime eval: pure function calls and recursion" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\function fact(n: i64): i64
+        \\  if n <= 1 then
+        \\    return 1
+        \\  end
+        \\  return n * fact(n - 1)
+        \\end
+        \\local folded = __constexpr(fact(5))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+    const func = &module.body.stmts[0].func_decl.func;
+    var scope: std.StringHashMapUnmanaged(Value) = .empty;
+    defer scope.deinit(alloc);
+    try scope.put(alloc, "fact", try funcValue(func, .{}, .{ .alloc = alloc }));
+    const scopes = [_]std.StringHashMapUnmanaged(Value){scope};
+    const init = module.body.stmts[1].local_decl.inits[0];
+
+    try std.testing.expectEqual(Value{ .int = 120 }, try evalWithBindings(init, .{ .scopes = &scopes }, .{ .alloc = alloc }));
+}
+
+test "comptime eval: function values snapshot lexical captures" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\local base = 10
+        \\local add = function(n: i64): i64
+        \\  return base + n
+        \\end
+        \\local folded = __constexpr(add(5))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+    const base_init = module.body.stmts[0].local_decl.inits[0];
+    const add_init = module.body.stmts[1].local_decl.inits[0];
+    const folded_init = module.body.stmts[2].local_decl.inits[0];
+
+    var scope: std.StringHashMapUnmanaged(Value) = .empty;
+    defer scope.deinit(alloc);
+    try scope.put(alloc, "base", try evalWithBindings(base_init, .{}, .{ .alloc = alloc }));
+    const scopes = [_]std.StringHashMapUnmanaged(Value){scope};
+    const add_value = try evalWithBindings(add_init, .{ .scopes = &scopes }, .{ .alloc = alloc });
+    try scope.put(alloc, "add", add_value);
+    try scope.put(alloc, "base", .{ .int = 20 });
+
+    try std.testing.expectEqual(Value{ .int = 15 }, try evalWithBindings(folded_init, .{ .scopes = &scopes }, .{ .alloc = alloc }));
 }
 
 test "comptime eval: step limit" {

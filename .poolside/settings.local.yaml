@@ -31,3 +31,9 @@ tools:
             - pwd
             - sleep *
             - sed *
+            - otool *
+            - timeout 2 *
+            - timeout 1 nc localhost *
+            - kill $PID
+            - git diff HEAD *
+            - git status *

@@ -549,10 +549,13 @@ Duo deliberately omits the `struct` and `class` keywords. All composite data is 
 - [ ] 19. Checkpoint - Full Pipeline Integration
   - [~] Metaprogramming first slice: `##(...)` and `__constexpr(...)` fold
     pure literals/operators/string concatenation/table literals/table lookups
-    and pure `match` conditionals through scoped local/const bindings in
-    codegen.
+    and pure `match` conditionals with table/array destructuring through scoped
+    local/const bindings in codegen. Bounded pure `do` blocks with local
+    mutation and numeric `for`/`while` loops also fold under the evaluator step
+    limit, and pure function calls, including simple recursion, fold through
+    compile-time function bindings with capture snapshots.
     Pending: macro expansion, quote/unquote, AST replacement, richer
-    expansion diagnostics, and compile-time loops/functions.
+    expansion diagnostics, and generic/repeat loop forms.
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 20. Integration Tests and Final Validation

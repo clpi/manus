@@ -73,10 +73,12 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 - Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.
 - Compile-time `##(...)` and `__constexpr(...)` share a small pure evaluator
   for literals, unary/binary operators, string concatenation, table literals,
-  table field/index lookups, pure `match` conditionals, and scoped local/const
-  bindings.
+  table field/index lookups, pure `match` conditionals with table/array
+  destructuring, scoped local/const bindings, and bounded pure `do` blocks
+  with local mutation plus numeric `for`/`while` loops and pure function calls,
+  including simple recursion and compile-time capture snapshots.
   Unsupported runtime expressions still fall back to normal runtime emission.
-  Compile-time loops/functions, macro expansion, quote/unquote, AST replacement,
+  Generic/repeat loop forms, macro expansion, quote/unquote, AST replacement,
   and hygienic macro syntax are still in progress.
 - Scheduler-backed async tasks, pending poll states, and async channels are still
   being completed; current async calls run synchronously while descriptors are

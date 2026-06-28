@@ -180,6 +180,12 @@ pub const CodeGen = struct {
         try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, .unavailable);
     }
 
+    fn note_comptime_func(self: *CodeGen, name: []const u8, func: *const ast.FuncBody) !void {
+        if (self.comptime_scopes.items.len == 0) return;
+        const value = comptime_eval.funcValue(func, self.comptime_bindings(), .{ .alloc = self.alloc }) catch comptime_eval.Value.unavailable;
+        try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
+    }
+
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
         if (self.arc_scopes.items.len == 0 or !self.codegen_needs_arc(rt)) return;
         try self.arc_scopes.items[self.arc_scopes.items.len - 1].append(self.alloc, .{
@@ -427,7 +433,7 @@ pub const CodeGen = struct {
             .int => .i64,
             .float => .f64,
             .string => .str,
-            .nil, .table, .unavailable => .any,
+            .nil, .table, .func, .unavailable => .any,
         };
     }
 
@@ -839,6 +845,15 @@ pub const CodeGen = struct {
         try self.populate_record_aliases(mod);
         try self.populate_enum_defs(mod);
 
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) {
+                const fd = &stmt.func_decl;
+                if (fd.path.len == 1 and !fd.method) {
+                    try self.note_comptime_func(fd.path[0], &fd.func);
+                }
+            }
+        }
+
         // Walk the module to find every record-type annotation (function
         // parameters, return types, local/global decls, struct fields) and
         // emit the corresponding C struct typedefs at file scope. This must
@@ -1034,7 +1049,13 @@ pub const CodeGen = struct {
         var i: usize = 0;
         while (i < mod.body.stmts.len) {
             switch (mod.body.stmts[i]) {
-                .func_decl, .const_decl => {
+                .func_decl => |fd| {
+                    if (fd.is_local) {} else {
+                        i += 1;
+                        continue;
+                    }
+                },
+                .const_decl => {
                     i += 1;
                     continue;
                 },
@@ -3844,6 +3865,9 @@ pub const CodeGen = struct {
                 self.pl("}}", .{});
             },
             .func_decl => |*fd| {
+                if (fd.path.len == 1 and !fd.method) {
+                    try self.note_comptime_func(fd.path[0], &fd.func);
+                }
                 if (fd.is_local) {
                     // Hoisted to file scope in emit_module.
                 }
@@ -5038,6 +5062,7 @@ pub const CodeGen = struct {
                 self.ind();
                 self.p("}})", .{});
             },
+            .func => unreachable,
         }
     }
 
@@ -10953,6 +10978,151 @@ test "codegen: __constexpr folds pure match expressions" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "const char* label = \"many\";") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__match_s") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: __constexpr folds structural match patterns" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local table_sum: i64 = __constexpr(match {kind = "pair", left = 2, right = 3}
+        \\  case {kind: "pair", left: a, right: b} then a + b
+        \\  case _ then 0
+        \\end)
+        \\local array_sum: i64 = __constexpr(match {1, 2, 3}
+        \\  case [head, ...tail] then head + tail[1]
+        \\  case _ then 0
+        \\end)
+        \\print(table_sum + array_sum)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t table_sum = 5;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t array_sum = 3;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__match_s") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: __constexpr folds bounded loop blocks" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local for_total: i64 = __constexpr(match true
+        \\  case _ then do
+        \\    local acc = 0
+        \\    for i = 1, 4 do
+        \\      acc = acc + i
+        \\    end
+        \\    acc
+        \\  end
+        \\end)
+        \\local while_total: i64 = __constexpr(match true
+        \\  case _ then do
+        \\    local n = 4
+        \\    local acc = 0
+        \\    while n > 0 do
+        \\      acc = acc + n
+        \\      n = n - 1
+        \\    end
+        \\    acc
+        \\  end
+        \\end)
+        \\print(for_total + while_total)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t for_total = 10;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t while_total = 10;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__match_s") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: __constexpr folds pure function calls" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\function fact(n: i64): i64
+        \\  if n <= 1 then
+        \\    return 1
+        \\  end
+        \\  return n * fact(n - 1)
+        \\end
+        \\local function bump(n: i64): i64
+        \\  return n + 1
+        \\end
+        \\local folded: i64 = __constexpr(fact(5))
+        \\local local_folded: i64 = __constexpr(bump(40))
+        \\print(folded + local_folded)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 120;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t local_folded = 41;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: __constexpr folds function calls with captured constants" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\const base: i64 = 10
+        \\function add(n: i64): i64
+        \\  return base + n
+        \\end
+        \\local folded: i64 = __constexpr(add(5))
+        \\print(folded)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 15;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
 }
 

@@ -26,9 +26,12 @@ Keep it in sync with `docs/src/roadmap.md`.
 - [~] **Macros / metaprogramming.** Compile-time `##(...)` and the
   `__constexpr(...)` intrinsic now share a small pure evaluator for literals,
   unary/binary operators, string concatenation, table literals, table
-  field/index lookups, pure `match` conditionals, and scoped local/const bindings;
+  field/index lookups, pure `match` conditionals with table/array
+  destructuring, scoped local/const bindings, and bounded pure `do` blocks
+  with local mutation plus numeric `for`/`while` loops and pure function calls,
+  including simple recursion and compile-time capture snapshots;
   unsupported runtime expressions still fall back to normal emission. `std.meta`
-  helpers exist, but compile-time loops/functions, hygienic macro syntax,
+  helpers exist, but generic/repeat loop forms, hygienic macro syntax,
   quote/unquote, AST replacement, and macro expansion are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
