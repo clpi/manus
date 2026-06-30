@@ -1,5 +1,5 @@
+-- std.json is loaded in lsp_main() after duo_modules is initialized
 io.lsp = {}
-io.lsp.json = require("std.json")
 fun is_ident_start(b: any) -> bool
   return b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95
 end
@@ -174,22 +174,31 @@ fun first_ident(s) -> any
   if s == nil then
     return nil
   end
-  s = trim(s)
+  -- Find the position of the first identifier in the untrimmed string
   n = string.len(s)
   if n == 0 then
     return nil
   end
-  b = string.byte(s, 1)
+  start_pos = 1
+  -- Skip leading spaces/tabs to get actual column
+  while start_pos <= n and is_space_byte(string.byte(s, start_pos))
+    start_pos = start_pos + 1
+  end
+  if start_pos > n then
+    return nil
+  end
+  b = string.byte(s, start_pos)
   if not is_ident_start(b) then
     return nil
   end
-  i = 1
+  i = start_pos
   while i <= n and is_ident_char(string.byte(s, i))
     i = i + 1
   end
   r = {}
-  r.name = string.sub(s, 1, i - 1)
+  r.name = string.sub(s, start_pos, i - 1)
   r.rest = string.sub(s, i)
+  r.col_offset = start_pos - 1  -- 0-based column offset
   r
 end
 fun count_keyword(s, word) -> i64
@@ -240,21 +249,53 @@ fun trim_after_keyword(s, kw) -> any
   r
 end
 fun name_after_keywords(rest) -> any
-  r = trim(rest)
+  -- Track column offset through keyword stripping
+  offset = 0
+  r = rest
+  
+  -- Skip leading spaces and track
+  while string.len(r) > 0 and r[1] == " "
+    offset = offset + 1
+    r = string.sub(r, 2)
+  end
+  
   if starts_keyword(r, "local") or starts_keyword(r, "global") then
-    r = trim_after_keyword(r, "local")
-    r = trim_after_keyword(r, "global")
+    kw_len = string.len("local")
+    if starts_keyword(r, "global") then kw_len = string.len("global") end
+    r = string.sub(r, kw_len + 1)
+    -- Skip space after keyword
+    while string.len(r) > 0 and r[1] == " "
+      offset = offset + 1
+      r = string.sub(r, 2)
+    end
   end
+  
   if starts_keyword(r, "async") then
-    r = trim_after_keyword(r, "async")
+    r = string.sub(r, string.len("async") + 1)
+    while string.len(r) > 0 and r[1] == " "
+      offset = offset + 1
+      r = string.sub(r, 2)
+    end
   end
-  if starts_keyword(r, "fun") then
-    r = trim_after_keyword(r, "fun")
+  
+  kw_len = 0
+  if starts_keyword(r, "fun") then kw_len = string.len("fun")
+  elseif starts_keyword(r, "function") then kw_len = string.len("function")
   end
-  if starts_keyword(r, "function") then
-    r = trim_after_keyword(r, "function")
+  if kw_len > 0 then
+    r = string.sub(r, kw_len + 1)
+    while string.len(r) > 0 and r[1] == " "
+      offset = offset + 1
+      r = string.sub(r, 2)
+    end
   end
-  first_ident(r)
+  
+  -- Now find the identifier in the remaining string
+  result = first_ident(r)
+  if result ~= nil then
+    result.col_offset = result.col_offset + offset
+  end
+  result
 end
 fun split_prefix_after_dot(prefix) -> str
   out = prefix
@@ -328,7 +369,7 @@ fun head_keyword(line) -> any
   if not is_ident_start(b) then
     r = {}
     r.kw = ""
-    r.rest = ctrim
+    r.rest = code  -- Return untrimmed code for position calculation
     r.indent = indent
     return r
   end
@@ -339,7 +380,9 @@ fun head_keyword(line) -> any
   end
   r = {}
   r.kw = string.sub(ctrim, 1, i - 1)
-  r.rest = string.sub(ctrim, i)
+  -- Find the untrimmed rest for position calculation
+  kw_len = string.len(r.kw)
+  r.rest = string.sub(code, kw_len + 1)  -- Untrimmed after keyword
   r.indent = indent
   r
 end
@@ -484,42 +527,42 @@ fun scan_symbols_lo(text, lo) -> any
       if depth < 0 then
         depth = 0
       end
-    elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
-      if top and (kw == "fun" or kw == "function" or kw == "enum" or kw == "concept") then
-        id = first_ident(rest)
+    elseif top and (kw == "local" or kw == "global") then
+      if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
+        id = name_after_keywords(rest)
         if id ~= nil then
-          syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent, raw)
-        end
-      elseif top and (kw == "local" or kw == "global") then
-        if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
-          id = name_after_keywords(rest)
-          if id ~= nil then
-            syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent, raw)
-          end
-        else
-          id = first_ident(rest)
-          if id ~= nil then
-            k = 13
-            if kw == "global" or is_upper(id.name) then
-              k = 14
-            end
-            syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent, raw)
-          end
-        end
-      elseif kw == "const" then
-        id = first_ident(rest)
-        if id ~= nil then
-          syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent, raw)
+          syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent + string.len(kw) + id.col_offset, raw)
         end
       else
-        tb = match_typed(code)
-        if tb ~= nil then
-          syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, raw)
-        else
-          pa = match_plain_assign(code)
-          if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
-            syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, raw)
+        id = first_ident(rest)
+        if id ~= nil then
+          k = 13
+          if kw == "global" or is_upper(id.name) then
+            k = 14
           end
+          syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent + string.len(kw) + id.col_offset, raw)
+        end
+      end
+    elseif kw == "const" then
+      id = first_ident(rest)
+      if id ~= nil then
+        syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent + string.len(kw) + id.col_offset, raw)
+      end
+    elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
+      if kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" then
+        id = first_ident(rest)
+        if id ~= nil then
+          syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent + string.len(kw) + id.col_offset, raw)
+        end
+      end
+    else
+      tb = match_typed(code)
+      if tb ~= nil then
+        syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, raw)
+      else
+        pa = match_plain_assign(code)
+        if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
+          syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, raw)
         end
       end
     end
@@ -1387,6 +1430,7 @@ fun handle_message(msg) -> void
 end
 fun lsp_main() -> void
   io.lsp.duo_bin = resolve_duo_bin()
+  io.lsp.json = require("std.json")
   while true
     msg = read_message()
     if msg == nil then
