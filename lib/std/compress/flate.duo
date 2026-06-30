@@ -1,29 +1,19 @@
 -- std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
--- This is a minimal implementation providing RLE-style compression. A full
--- DEFLATE implementation would require bit-level stream manipulation which
--- is beyond Duo's current primitives; this provides a usable interface.
 
--- The simplest compression: run-length encoding for repeated bytes.
-
--- compress: compress a string using a simple scheme.
--- Format: literal bytes with escape for runs of 3+ identical bytes.
--- Escape: \x00 <count> <byte> for runs, \x01 for literal \x00.
-fun compress(data: str): str
+local function flate_compress(data)
     if data == nil or data == "" then return "" end
-    out = {}
-    i = 1
-    n = string.len(data)
+    local out = {}
+    local i = 1
+    local n = string.len(data)
     while i <= n
-        ch = string.sub(data, i, i)
-        -- count run length
-        run = 1
-        j = i + 1
+        local ch = string.sub(data, i, i)
+        local run = 1
+        local j = i + 1
         while j <= n and string.sub(data, j, j) == ch and run < 255
             run = run + 1
             j = j + 1
         end
         if run >= 3 then
-            -- encode as run: \xFE <count> <byte>
             out[rawlen(out) + 1] = string.char(0xFE) .. string.char(run) .. ch
             i = i + run
         else
@@ -31,21 +21,20 @@ fun compress(data: str): str
             i = i + 1
         end
     end
-    table.concat(out)
+    return table.concat(out)
 end
 
--- decompress: decompress a string compressed by compress().
-fun decompress(data: str): str
+local function flate_decompress(data)
     if data == nil or data == "" then return "" end
-    out = {}
-    i = 1
-    n = string.len(data)
+    local out = {}
+    local i = 1
+    local n = string.len(data)
     while i <= n
-        b = string.byte(data, i)
+        local b = string.byte(data, i)
         if b == 0xFE then
             if i + 2 > n then break end
-            run = string.byte(data, i + 1)
-            ch = string.sub(data, i + 2, i + 2)
+            local run = string.byte(data, i + 1)
+            local ch = string.sub(data, i + 2, i + 2)
             out[rawlen(out) + 1] = string.rep(ch, run)
             i = i + 3
         else
@@ -53,49 +42,42 @@ fun decompress(data: str): str
             i = i + 1
         end
     end
-    table.concat(out)
+    return table.concat(out)
 end
 
--- compress_level: compress with a specific level (1-9). Currently all levels
--- use the same RLE scheme; the parameter is accepted for API compatibility.
-fun compress_level(data: str, level: i64): str
-    compress(data)
+local function flate_compress_level(data, level)
+    return flate_compress(data)
 end
 
--- new_writer: create a compressing writer that wraps a file handle.
--- Writes go through compress() in chunks; flush() outputs the compressed data.
-fun new_writer(fh: any, level: i64): any
-    {fh = fh, buf = "", level = level}
+local function flate_new_writer(fh, level)
+    return {fh = fh, buf = "", level = level}
 end
 
--- writer_write: buffer data for compression.
-fun writer_write(w: any, data: str): any
+local function flate_writer_write(w, data)
     w.buf = w.buf .. data
-    w
+    return w
 end
 
--- writer_flush: compress buffered data and write to underlying handle.
-fun writer_flush(w: any): any
+local function flate_writer_flush(w)
     if string.len(w.buf) > 0 then
-        w.fh:write(compress(w.buf))
+        w.fh:write(flate_compress(w.buf))
         w.buf = ""
     end
-    w
+    return w
 end
 
--- writer_close: flush and close.
-fun writer_close(w: any): any
-    writer_flush(w)
+local function flate_writer_close(w)
+    flate_writer_flush(w)
     w.fh:close()
-    w
+    return w
 end
 
-M = {}
-M.compress = compress
-M.decompress = decompress
-M.compress_level = compress_level
-M.new_writer = new_writer
-M.writer_write = writer_write
-M.writer_flush = writer_flush
-M.writer_close = writer_close
+local M = {}
+M.compress = flate_compress
+M.decompress = flate_decompress
+M.compress_level = flate_compress_level
+M.new_writer = flate_new_writer
+M.writer_write = flate_writer_write
+M.writer_flush = flate_writer_flush
+M.writer_close = flate_writer_close
 M

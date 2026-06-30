@@ -8,9 +8,11 @@ CFLAGS="-O3 -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops 
 export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path 2>/dev/null)}"
 
 cd "$ROOT"
-zig build
+if [ ! -x "$DUO" ]; then
+  "${ZIG:-zig}" build
+fi
 
-# Compile Duo benchmark with PGO (two-pass: instrument, profile, optimise).
+# Compile Lua-flavoured Duo benchmark with PGO (two-pass: instrument, profile, optimise).
 "$DUO" compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out &
 DUO_COMP_PID=$!
 
@@ -27,6 +29,10 @@ CC_COMP_PID=$!
 
 wait $DUO_COMP_PID
 wait $CC_COMP_PID
+
+# The PGO implementation uses a fixed temporary profile path, so compile the
+# .duo mirror after the .lua driver has finished profiling.
+"$DUO" compile --pgo -O3 examples/benchmark.duo -o /tmp/duo_bench_duo.out
 
 BENCHES=40
 
@@ -137,19 +143,23 @@ collect_min_times() {
 
 echo "=== Correctness (RESULT lines) ==="
 "$DUO" run examples/benchmark.lua > /tmp/duo_bench_results.txt 2>/dev/null
+"$DUO" run examples/benchmark.duo > /tmp/duo_bench_duo_results.txt 2>/dev/null
 /tmp/c_bench.out > /tmp/c_bench_results.txt 2>/dev/null
 
 RESULT_FAIL=0
 if ! compare_results /tmp/duo_bench_results.txt /tmp/c_bench_results.txt; then
   RESULT_FAIL=1
 fi
+if ! compare_results /tmp/duo_bench_duo_results.txt /tmp/c_bench_results.txt; then
+  RESULT_FAIL=1
+fi
 
 if [ "$RESULT_FAIL" -ne 0 ]; then
   echo
-  echo "Benchmark failed: Duo results must match reference C."
+  echo "Benchmark failed: Duo .lua and .duo results must match reference C."
   exit 1
 fi
-echo "All $BENCHES benchmark results match reference C."
+echo "All $BENCHES benchmark results match reference C for .lua and .duo."
 
 # Compile timer.so for high resolution timing in Lua 5.5 and LuaJIT
 cat << 'EOF' > /tmp/timer.c
@@ -179,6 +189,9 @@ local ok, t = pcall(require, "timer"); if ok and type(t) == "function" then os.c
 echo
 echo "=== Duo (Lua AOT) ==="
 DUO_TIMES=$(collect_min_times "/tmp/duo_bench.out")
+
+echo "=== Duo (.duo AOT) ==="
+DUO_FILE_TIMES=$(collect_min_times "/tmp/duo_bench_duo.out")
 
 echo "=== Reference C ==="
 C_TIMES=$(collect_min_times "/tmp/c_bench.out")
@@ -238,37 +251,39 @@ NAMES=(
 
 FAIL=0
 echo
-printf "%-16s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "Duo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
-printf "%-16s %12s %12s %12s %12s %12s %8s\n" "----------------" "------------" "------------" "------------" "------------" "------------" "--------"
+printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "DuoLua(s)" "DuoDuo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
+printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "----------------" "------------" "------------" "------------" "------------" "------------" "------------" "--------"
 
 idx=0
-while IFS='|' read -r d c lj l5 n; do
+while IFS='|' read -r d duo_file c lj l5 n; do
   idx=$((idx + 1))
   name="${NAMES[$((idx - 1))]:-bench-$idx}"
-  winner=$(awk -v d="$d" -v c="$c" 'BEGIN {
+  winner=$(awk -v d="$d" -v duo_file="$duo_file" -v c="$c" 'BEGIN {
     eps = (c > 0 ? c * 0.05 : 1e-7)
     if (c < 0.01) eps = (eps > 5e-5 ? eps : 5e-5)
-    if (d + 0 <= c + eps) print "Duo"; else print "C"
+    if (d + 0 <= c + eps && duo_file + 0 <= c + eps) print "Duo"; else print "C"
   }')
   if [ "$winner" = "C" ]; then FAIL=1; fi
   # If a compiler fails, its time might be empty. Format gracefully.
   d_fmt=$(printf "%g" "$d" 2>/dev/null || echo "N/A")
+  duo_file_fmt=$(printf "%g" "$duo_file" 2>/dev/null || echo "N/A")
   c_fmt=$(printf "%g" "$c" 2>/dev/null || echo "N/A")
   lj_fmt=$(printf "%g" "$lj" 2>/dev/null || echo "N/A")
   l5_fmt=$(printf "%g" "$l5" 2>/dev/null || echo "N/A")
   n_fmt=$(printf "%g" "$n" 2>/dev/null || echo "N/A")
+  if [ -z "$duo_file" ]; then duo_file_fmt="N/A"; fi
   if [ -z "$lj" ]; then lj_fmt="N/A"; fi
   if [ -z "$l5" ]; then l5_fmt="N/A"; fi
   if [ -z "$n" ]; then n_fmt="N/A"; fi
 
-  printf "%-16s %12s %12s %12s %12s %12s %8s\n" "$name" "$d_fmt" "$c_fmt" "$lj_fmt" "$l5_fmt" "$n_fmt" "$winner"
-done < <(paste -d '|' <(echo "$DUO_TIMES") <(echo "$C_TIMES") <(echo "$LUAJIT_TIMES") <(echo "$LUA55_TIMES") <(echo "$NELUA_TIMES"))
+  printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "$name" "$d_fmt" "$duo_file_fmt" "$c_fmt" "$lj_fmt" "$l5_fmt" "$n_fmt" "$winner"
+done < <(paste -d '|' <(echo "$DUO_TIMES") <(echo "$DUO_FILE_TIMES") <(echo "$C_TIMES") <(echo "$LUAJIT_TIMES") <(echo "$LUA55_TIMES") <(echo "$NELUA_TIMES"))
 
 if [ "$FAIL" -ne 0 ]; then
   echo
-  echo "Benchmark failed: Duo must beat or tie reference C on every test."
+  echo "Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test."
   exit 1
 fi
 
 echo
-echo "All benchmarks: results match and Duo >= C"
+echo "All benchmarks: results match and Duo .lua/.duo >= C"

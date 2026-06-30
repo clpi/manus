@@ -1,0 +1,32 @@
+-- std.database.sql — Generic SQL interface (mirrors Go's database/sql)
+-- Provides a registry of drivers and a generic DB handle.
+-- Actual drivers (sqlite, postgres, mysql) register themselves.
+
+local function new()
+    return {drivers = {}}
+end
+
+local function register_driver(db, name, driver)
+    db.drivers[name] = driver
+end
+
+local function open_driver(db, driver_name, dsn)
+    local d = db.drivers[driver_name]
+    if d == nil then return nil, "unknown driver: " .. driver_name end
+    return d.open(dsn)
+end
+
+local function list_databases(db)
+    local out = {}
+    for k in pairs(db.drivers)
+        out[rawlen(out) + 1] = k
+    end
+    return out
+end
+
+M = {}
+M.new = new
+M.register = register_driver
+M.open = open_driver
+M.databases = list_databases
+M

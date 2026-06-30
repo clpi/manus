@@ -1,0 +1,5 @@
+-- std.hash.fnv — FNV-1/FNV-1a hash (stub)
+
+local M = {}
+M
+

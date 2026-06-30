@@ -1,0 +1,5 @@
+-- std.hash.maphash — DoS-resistant hash for tables (stub)
+
+local M = {}
+M
+

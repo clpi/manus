@@ -102,6 +102,59 @@ local p: *i64 = nil
 `List[T]`, `list[T]`, and `[]T` resolve to the same dynamic list type. Fixed
 arrays use `[N]T`. Pointer types use `*T`; their full ownership semantics are still evolving.
 
+### Raw Memory And Pointers
+
+Typed Duo code has a compiler-recognized `mem` namespace for C-style machine
+access. These calls lower directly to C and are available as either `mem.*` or
+`std.mem.*` when written with that qualified name.
+
+```duo
+function checksum(): i64
+    local raw: *u8 = mem.alloc(64)
+    mem.zero(raw, 64)
+
+    local ints: *i64 = mem.cast("i64", raw)
+    mem.store("i64", ints, 42)
+    local second: *i64 = mem.add(ints, 1)
+    mem.volatile_store("i64", second, 7)
+
+    local addr: u64 = mem.addr(raw)
+    local again: *u8 = mem.ptr_from_addr("u8", addr)
+    local value: i64 = mem.load("i64", mem.cast("i64", again))
+
+    mem.free(raw)
+    return value
+end
+```
+
+Available low-level operations:
+
+| Operation | Lowers To | Result |
+|-----------|-----------|--------|
+| `mem.alloc(bytes)` | `malloc` | `*u8` |
+| `mem.calloc(count, bytes)` | `calloc` | `*u8` |
+| `mem.realloc(ptr, bytes)` | `realloc` | same pointer type |
+| `mem.free(ptr)` | `free` | `void` |
+| `mem.cast("T", ptr)` / `mem.ptr_cast("T", ptr)` | typed pointer cast | `*T` |
+| `mem.ptr_from_addr("T", addr)` | `uintptr_t` to pointer | `*T` |
+| `mem.addr(ptr)` | pointer to `uintptr_t` | `u64` |
+| `mem.is_null(ptr)` | null pointer test | `bool` |
+| `mem.add(ptr, n)` | typed pointer arithmetic | same pointer type |
+| `mem.byte_add(ptr, n)` | byte pointer arithmetic | `*u8` |
+| `mem.load("T", ptr)` / `mem.store("T", ptr, value)` | typed load/store | `T` / `void` |
+| `mem.volatile_load("T", ptr)` / `mem.volatile_store("T", ptr, value)` | volatile access | `T` / `void` |
+| `mem.copy(dst, src, bytes)` | `memcpy` | `void` |
+| `mem.move(dst, src, bytes)` | `memmove` | `void` |
+| `mem.set(dst, byte, bytes)` / `mem.zero(dst, bytes)` | `memset` | `void` |
+| `mem.compare(a, b, bytes)` | `memcmp` | `i64` |
+| `mem.sizeof("T")` / `mem.alignof("T")` | `sizeof` / compiler alignment query | `u64` |
+| `mem.fence()` / `mem.compiler_fence()` | hardware/compiler memory barrier | `void` |
+
+The type argument is a string literal naming a primitive Duo type such as
+`"u8"`, `"i64"`, `"f64"`, `"bool"`, `"usize"`, `"ptr"`, or a pointer spelling
+like `"*i64"`. Pointer indexing is native in typed code: `p[i]` emits C
+pointer indexing and has the pointee type.
+
 ## Type Inference
 
 Duo can infer types for variables and expressions:

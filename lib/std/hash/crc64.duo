@@ -1,0 +1,5 @@
+-- std.hash.crc64 — CRC-64 checksum (stub)
+
+local M = {}
+M
+

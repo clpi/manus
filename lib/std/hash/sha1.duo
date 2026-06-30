@@ -1,0 +1,11 @@
+-- std.hash.sha1 — SHA-1 hash placeholder
+-- Pure-Duo SHA-1 implementation requires typed mode for efficient codegen.
+-- Use string.sha1() or the C runtime for production use.
+
+fun hash_string(s: str): str
+    string.format("%040x", 0)
+end
+
+M = {}
+M.hash_string = hash_string
+M

@@ -1,0 +1,57 @@
+-- std.go — Go compatibility wrapper
+-- Provides Go-standard function names mapping to Duo std implementations.
+-- Import with: local go = req("std.go")
+
+local std = req("std")
+
+go = {}
+
+go.io = std.io
+go.os = std.os
+go.path = std.path
+go.bufio = std.bufio
+go.fmt = std.fmt
+go.strings = std.string
+go.bytes = std.bytes
+go.strconv = std.strconv
+go.unicode = std.unicode
+go.utf8 = std.utf8
+go.regexp = std.regex
+go.json = std.json
+go.xml = std.xml
+go.csv = std.csv
+go.base64 = std.base64
+go.hex = std.hex
+go.crypto = std.crypto
+go.hash = std.hash
+go.mime = std.mime
+go.sort = std.sort
+go.container = std.container
+go.slices = std.slices
+go.maps = std.maps
+go.exec = std.proc
+go.env = std.env
+go.flag = std.flag
+go.runtime = std.runtime
+go.sync = std.sync
+go.atomic = std.atomic
+go.context = std.context
+go.time = std.time
+go.math = std.math
+go.rand = std.random
+go.image = std.image
+go.log = std.log
+go.testing = std.test
+go.reflect = std.reflect
+go.errors = std.errors
+go.net = std.net
+go.http = std.http
+go.url = std.url
+go.database = req "std.database.sql"
+go.multipart = req "std.mime.multipart"
+go.gzip = req "std.compress.gzip"
+go.zlib = req "std.compress.zlib"
+go.mail = req "std.net.mail"
+go.smtp = req "std.net.smtp"
+
+go

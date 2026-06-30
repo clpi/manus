@@ -18,7 +18,7 @@ run_fail() {
         if out=$("$DUO" check "$file" 2>&1); then
             echo FAIL > "$STATUS_DIR/$idx.status"
             printf 'FAIL: %s should not compile\n%s\n' "$file" "$out" > "$STATUS_DIR/$idx.msg"
-        elif echo "$out" | grep -qF "$pattern"; then
+        elif grep -qF "$pattern" <<< "$out"; then
             echo OK > "$STATUS_DIR/$idx.status"
             printf 'OK:   %s  (expected error found)\n' "$file" > "$STATUS_DIR/$idx.msg"
         else

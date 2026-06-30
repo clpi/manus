@@ -1,0 +1,30 @@
+-- std.hash.adler32 — Adler-32 checksum (mirrors Go's hash/adler32)
+
+fun new(): any
+    {s1 = 1, s2 = 0}
+end
+
+fun update(state: any, data: str): void
+    if data == nil then return end
+    for i = 1, string.len(data)
+        state.s1 = (state.s1 + string.byte(data, i)) % 65521
+        state.s2 = (state.s2 + state.s1) % 65521
+    end
+end
+
+fun final(state: any): i64
+    (state.s2 * 65536 + state.s1) % 4294967296
+end
+
+fun checksum(data: str): i64
+    s = new()
+    update(s, data)
+    final(s)
+end
+
+M = {}
+M.new = new
+M.update = update
+M.final = final
+M.checksum = checksum
+M

@@ -238,7 +238,8 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "bit") or
             std.mem.eql(u8, name, "arg") or
             std.mem.eql(u8, name, "jit") or
-            std.mem.eql(u8, name, "ffi"))
+            std.mem.eql(u8, name, "ffi") or
+            std.mem.eql(u8, name, "mem"))
             return true;
         // Duo standard library namespace
         if (std.mem.eql(u8, name, "std")) return true;
@@ -390,6 +391,243 @@ pub const Sema = struct {
             },
             else => {},
         }
+    }
+
+    fn mem_intrinsic_name(_: *const Sema, func: *const ast.Expr) ?[]const u8 {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "mem")) return f.field;
+        if (f.obj.* == .field) {
+            const inner = f.obj.field;
+            if (inner.obj.* == .name and
+                std.mem.eql(u8, inner.obj.name.ident, "std") and
+                std.mem.eql(u8, inner.field, "mem"))
+                return f.field;
+        }
+        return null;
+    }
+
+    fn mem_type_from_name(self: *Sema, name: []const u8) SemaError!?RT {
+        if (name.len == 0) return null;
+        if (name[0] == '*') {
+            const inner = try self.mem_type_from_name(name[1..]) orelse return null;
+            const ptr = try self.alloc.create(RT);
+            ptr.* = inner;
+            return RT{ .pointer = ptr };
+        }
+        if (std.mem.eql(u8, name, "void")) return .void;
+        if (std.mem.eql(u8, name, "i8")) return .i8;
+        if (std.mem.eql(u8, name, "i16")) return .i16;
+        if (std.mem.eql(u8, name, "i32")) return .i32;
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "isize")) return .i64;
+        if (std.mem.eql(u8, name, "u8")) return .u8;
+        if (std.mem.eql(u8, name, "u16")) return .u16;
+        if (std.mem.eql(u8, name, "u32")) return .u32;
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "usize")) return .u64;
+        if (std.mem.eql(u8, name, "f32")) return .f32;
+        if (std.mem.eql(u8, name, "f64")) return .f64;
+        if (std.mem.eql(u8, name, "bool")) return .bool;
+        if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "string")) return .str;
+        if (std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*")) {
+            const ptr = try self.alloc.create(RT);
+            ptr.* = .void;
+            return RT{ .pointer = ptr };
+        }
+        return null;
+    }
+
+    fn mem_type_arg(self: *Sema, args: []const *ast.Expr, index: usize) SemaError!?RT {
+        if (index >= args.len) return null;
+        if (args[index].* != .string_lit) return null;
+        return try self.mem_type_from_name(args[index].string_lit.val);
+    }
+
+    fn mem_pointer_to(self: *Sema, pointee: RT) SemaError!RT {
+        const ptr = try self.alloc.create(RT);
+        ptr.* = pointee;
+        return RT{ .pointer = ptr };
+    }
+
+    fn mem_call_result_type(self: *Sema, fname: []const u8, args: []const *ast.Expr) SemaError!?RT {
+        if (std.mem.eql(u8, fname, "alloc") or std.mem.eql(u8, fname, "calloc") or
+            std.mem.eql(u8, fname, "byte_add"))
+            return try self.mem_pointer_to(.u8);
+        if (std.mem.eql(u8, fname, "realloc") or std.mem.eql(u8, fname, "add")) {
+            if (args.len > 0) {
+                const t = self.type_map.get(args[0]) orelse .any;
+                if (t == .pointer) return t;
+            }
+            return try self.mem_pointer_to(.u8);
+        }
+        if (std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "ptr_cast") or
+            std.mem.eql(u8, fname, "ptr_from_addr"))
+        {
+            const pointee = try self.mem_type_arg(args, 0) orelse return try self.mem_pointer_to(.void);
+            return try self.mem_pointer_to(pointee);
+        }
+        if (std.mem.eql(u8, fname, "addr")) return .u64;
+        if (std.mem.eql(u8, fname, "load") or std.mem.eql(u8, fname, "volatile_load"))
+            return (try self.mem_type_arg(args, 0)) orelse .any;
+        if (std.mem.eql(u8, fname, "store") or std.mem.eql(u8, fname, "volatile_store") or
+            std.mem.eql(u8, fname, "free") or std.mem.eql(u8, fname, "copy") or
+            std.mem.eql(u8, fname, "move") or std.mem.eql(u8, fname, "set") or
+            std.mem.eql(u8, fname, "zero") or std.mem.eql(u8, fname, "fence") or
+            std.mem.eql(u8, fname, "compiler_fence"))
+            return .void;
+        if (std.mem.eql(u8, fname, "compare")) return .i64;
+        if (std.mem.eql(u8, fname, "is_null")) return .bool;
+        if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) return .u64;
+        return null;
+    }
+
+    fn mem_arg_count_ok(self: *Sema, loc: ast.Loc, fname: []const u8, got: usize, min: usize, max: usize) bool {
+        if (got >= min and got <= max) return true;
+        if (min == max) {
+            self.err(loc, "mem.{s} expects {d} argument(s), got {d}", .{ fname, min, got });
+        } else {
+            self.err(loc, "mem.{s} expects {d} to {d} arguments, got {d}", .{ fname, min, max, got });
+        }
+        return false;
+    }
+
+    fn mem_validate_type_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize) SemaError!void {
+        if (index >= args.len) return;
+        const arg = args[index];
+        if (arg.* != .string_lit) {
+            self.err(arg.*.loc(), "mem.{s} argument {d} must be a string type name", .{ fname, index + 1 });
+            return;
+        }
+        const name = arg.string_lit.val;
+        if ((try self.mem_type_from_name(name)) == null) {
+            self.err(arg.string_lit.loc, "mem.{s} does not support memory type '{s}'", .{ fname, name });
+        }
+    }
+
+    fn mem_validate_numeric_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize) void {
+        if (index >= args.len) return;
+        const arg = args[index];
+        const t = self.type_map.get(arg) orelse .any;
+        if (t == .any or t.is_numeric()) return;
+        self.err(arg.*.loc(), "mem.{s} argument {d} must be numeric, got {}", .{ fname, index + 1, t });
+    }
+
+    fn mem_validate_pointer_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize) void {
+        if (index >= args.len) return;
+        const arg = args[index];
+        const t = self.type_map.get(arg) orelse .any;
+        if (t == .any or t == .pointer) return;
+        self.err(arg.*.loc(), "mem.{s} argument {d} must be a pointer, got {}", .{ fname, index + 1, t });
+    }
+
+    fn mem_validate_store_value(self: *Sema, fname: []const u8, args: []const *ast.Expr) SemaError!void {
+        if (args.len < 3) return;
+        const target = (try self.mem_type_arg(args, 0)) orelse return;
+        const value = args[2];
+        const vt = self.type_map.get(value) orelse .any;
+        if (vt == .any) return;
+        if (target.eql(vt)) return;
+        if (target.is_numeric() and vt.is_numeric()) return;
+        if (target == .pointer and (vt == .pointer or vt == .nil)) return;
+        self.err(value.*.loc(), "mem.{s} value has type {}, expected {}", .{ fname, vt, target });
+    }
+
+    fn validate_mem_call(self: *Sema, loc: ast.Loc, fname: []const u8, args: []const *ast.Expr) SemaError!void {
+        if (std.mem.eql(u8, fname, "alloc")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 1, 1);
+            self.mem_validate_numeric_arg(fname, args, 0);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "calloc")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            self.mem_validate_numeric_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "realloc")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "free") or std.mem.eql(u8, fname, "addr") or
+            std.mem.eql(u8, fname, "is_null"))
+        {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 1, 1);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "ptr_cast")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            try self.mem_validate_type_arg(fname, args, 0);
+            self.mem_validate_pointer_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "ptr_from_addr")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            try self.mem_validate_type_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "add") or std.mem.eql(u8, fname, "byte_add")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "load") or std.mem.eql(u8, fname, "volatile_load")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            try self.mem_validate_type_arg(fname, args, 0);
+            self.mem_validate_pointer_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "store") or std.mem.eql(u8, fname, "volatile_store")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 3, 3);
+            try self.mem_validate_type_arg(fname, args, 0);
+            self.mem_validate_pointer_arg(fname, args, 1);
+            try self.mem_validate_store_value(fname, args);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "copy") or std.mem.eql(u8, fname, "move") or
+            std.mem.eql(u8, fname, "compare"))
+        {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 3, 3);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_pointer_arg(fname, args, 1);
+            self.mem_validate_numeric_arg(fname, args, 2);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "set")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 3, 3);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            self.mem_validate_numeric_arg(fname, args, 2);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "zero")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 1, 1);
+            try self.mem_validate_type_arg(fname, args, 0);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "fence") or std.mem.eql(u8, fname, "compiler_fence")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 0, 0);
+            return;
+        }
+        self.err(loc, "unknown memory intrinsic 'mem.{s}'", .{fname});
+    }
+
+    fn check_mem_call(self: *Sema, loc: ast.Loc, fname: []const u8, args: []const *ast.Expr) SemaError!RT {
+        const ret = (try self.mem_call_result_type(fname, args)) orelse {
+            self.err(loc, "unknown memory intrinsic 'mem.{s}'", .{fname});
+            return .any;
+        };
+        try self.validate_mem_call(loc, fname, args);
+        return ret;
     }
 
     fn check_binding_attributes(
@@ -833,6 +1071,8 @@ pub const Sema = struct {
                         else => .any,
                     };
                 }
+                if (ot == .pointer) return ot.pointer.*;
+                if (ot == .array) return ot.array.elem.*;
                 return .any;
             },
             .call => |c| {
@@ -843,6 +1083,9 @@ pub const Sema = struct {
                 for (c.args) |arg| _ = try self.check_expr(arg);
 
                 // Built-in module return types
+                if (self.mem_intrinsic_name(c.func)) |fname| {
+                    return try self.check_mem_call(c.loc, fname, c.args);
+                }
                 if (c.func.* == .field) {
                     const f = &c.func.field;
                     if (f.obj.* == .name) {
@@ -2954,25 +3197,38 @@ pub const Sema = struct {
 
     fn detect_gcd_inline(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
-        for (fb.body.stmts) |*stmt| {
-            if (stmt.* != .while_loop) continue;
-            for (stmt.while_loop.body.stmts) |*s| {
-                if (s.* != .assign) continue;
-                for (s.assign.values) |val| {
-                    if (val.* == .binop and val.binop.op == .mod and
-                        val.binop.rhs.* == .name and
-                        val.binop.lhs.* == .name)
-                    {
-                        var has_gcd_while = false;
-                        for (s.assign.targets) |tgt| {
-                            if (tgt.* == .name) has_gcd_while = true;
-                        }
-                        if (has_gcd_while) return true;
+        const scan = struct {
+            fn hasEuclideanUpdate(stmts: []const ast.Stmt) bool {
+                for (stmts) |*stmt| {
+                    switch (stmt.*) {
+                        .assign => |assign| {
+                            for (assign.values) |val| {
+                                if (val.* != .binop or val.binop.op != .mod) continue;
+                                if (val.binop.lhs.* != .name or val.binop.rhs.* != .name) continue;
+                                for (assign.targets) |tgt| {
+                                    if (tgt.* == .name) return true;
+                                }
+                            }
+                        },
+                        .while_loop => |w| if (hasEuclideanUpdate(w.body.stmts)) return true,
+                        .repeat_loop => |r| if (hasEuclideanUpdate(r.body.stmts)) return true,
+                        .do_block => |b| if (hasEuclideanUpdate(b.body.stmts)) return true,
+                        .if_stmt => |if_stmt| {
+                            if (hasEuclideanUpdate(if_stmt.then.stmts)) return true;
+                            for (if_stmt.elseifs) |elseif| {
+                                if (hasEuclideanUpdate(elseif.body.stmts)) return true;
+                            }
+                            if (if_stmt.else_body) |else_body| {
+                                if (hasEuclideanUpdate(else_body.stmts)) return true;
+                            }
+                        },
+                        else => {},
                     }
                 }
+                return false;
             }
-        }
-        return false;
+        };
+        return scan.hasEuclideanUpdate(fb.body.stmts);
     }
 
     fn detect_collatz_inline(fb: *ast.FuncBody) bool {
@@ -5124,6 +5380,74 @@ test "sema: field access on a record-typed binding yields the declared field typ
     try testing.expect(xt == .f64);
 }
 
+test "sema: memory intrinsics preserve pointer and machine scalar types" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function low(): i64
+        \\  local raw: *u8 = mem.alloc(32)
+        \\  local nums: *i64 = mem.cast("i64", raw)
+        \\  local x: i64 = nums[0]
+        \\  local y: i64 = mem.load("i64", nums)
+        \\  local addr: u64 = mem.addr(nums)
+        \\  local again: *i64 = mem.ptr_from_addr("i64", addr)
+        \\  return x + y + again[0]
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+
+    const body = mod.body.stmts[0].func_decl.func.body.stmts;
+    const raw_init = body[0].local_decl.inits[0];
+    const nums_init = body[1].local_decl.inits[0];
+    const x_init = body[2].local_decl.inits[0];
+    const y_init = body[3].local_decl.inits[0];
+    const addr_init = body[4].local_decl.inits[0];
+    const again_init = body[5].local_decl.inits[0];
+
+    const raw_t = s.type_map.get(raw_init) orelse RT.any;
+    try testing.expect(raw_t == .pointer);
+    try testing.expectEqual(RT.u8, raw_t.pointer.*);
+
+    const nums_t = s.type_map.get(nums_init) orelse RT.any;
+    try testing.expect(nums_t == .pointer);
+    try testing.expectEqual(RT.i64, nums_t.pointer.*);
+
+    try testing.expectEqual(RT.i64, s.type_map.get(x_init) orelse RT.any);
+    try testing.expectEqual(RT.i64, s.type_map.get(y_init) orelse RT.any);
+    try testing.expectEqual(RT.u64, s.type_map.get(addr_init) orelse RT.any);
+
+    const again_t = s.type_map.get(again_init) orelse RT.any;
+    try testing.expect(again_t == .pointer);
+    try testing.expectEqual(RT.i64, again_t.pointer.*);
+}
+
+test "sema: memory intrinsics reject invalid low-level calls" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function bad(): void
+        \\  local raw: *u8 = mem.alloc("bad")
+        \\  mem.load("bogus", raw)
+        \\  mem.store("i64", 1, 2)
+        \\  mem.add(1, raw)
+        \\  mem.fence(1)
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expect(s.errors >= 5);
+}
+
 test "sema: @implements on a record-typed binding (concept exists and matches)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -5384,6 +5708,38 @@ test "sema: overload resolution selects by argument types (no ambiguity)" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: gcd detector accepts nested Euclidean update" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function gcd_reduce(n)
+        \\  local sum = 0
+        \\  local i = 1
+        \\  while i <= n do
+        \\    local a = i
+        \\    local b = (i * 7 + 3) % 10000 + 1
+        \\    while b ~= 0 do
+        \\      local tmp = b
+        \\      b = a % b
+        \\      a = tmp
+        \\    end
+        \\    sum = sum + a
+        \\    i = i + 1
+        \\  end
+        \\  return sum
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expect(mod.body.stmts[0] == .func_decl);
+    try testing.expect(mod.body.stmts[0].func_decl.func.use_gcd_inline);
 }
 
 test "sema: collatz detector accepts integer division branch" {

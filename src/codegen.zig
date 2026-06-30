@@ -53,6 +53,7 @@ pub const CodeGen = struct {
     closure_ctx: ?*const ast.FuncBody = null,
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     all_closures: std.ArrayList(*ast.FuncBody) = .empty,
+    ack_impl_emitted: bool = false,
     mandel_native: bool = false,
     load_chunk: bool = false,
     lib_mode: bool = false,
@@ -337,9 +338,9 @@ pub const CodeGen = struct {
 
     fn is_runtime_global(name: []const u8) bool {
         const runtime_globals = [_][]const u8{
-            "package",  "math", "utf8",        "debug", "coroutine",   "string",        "table",
-            "io",       "os",   "jit",         "ffi",   "duo_modules", "current_input", "current_output",
-            "_VERSION", "net",  "__constexpr",
+            "package",  "math", "utf8", "debug",       "coroutine",   "string",        "table",
+            "io",       "os",   "jit",  "ffi",         "duo_modules", "current_input", "current_output",
+            "_VERSION", "net",  "mem",  "__constexpr",
         };
         for (runtime_globals) |g| {
             if (std.mem.eql(u8, name, g)) return true;
@@ -448,6 +449,7 @@ pub const CodeGen = struct {
         }
         if (e.* == .call) {
             const c = e.call;
+            if (self.mem_call_result_type(c.func, c.args)) |t| return t;
             if (c.func.* == .name) {
                 if (std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     if (self.comptime_value_type(c.args[0])) |rt| return rt;
@@ -534,6 +536,7 @@ pub const CodeGen = struct {
         // Builtin module calls can recover native result types even when sema
         // recorded `.any` or no entry for this exact expression node.
         if (e.* == .call) {
+            if (self.mem_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.string_call_result_type(e.call.func, e.call.args)) |t| return t;
             const callee_type = self.expr_type(e.call.func);
@@ -670,6 +673,88 @@ pub const CodeGen = struct {
             std.mem.eql(u8, fname, "upper") or
             std.mem.eql(u8, fname, "reverse"))
             return .str;
+        return null;
+    }
+
+    fn mem_intrinsic_name(_: *const CodeGen, func: *const ast.Expr) ?[]const u8 {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "mem")) return f.field;
+        if (f.obj.* == .field) {
+            const inner = f.obj.field;
+            if (inner.obj.* == .name and
+                std.mem.eql(u8, inner.obj.name.ident, "std") and
+                std.mem.eql(u8, inner.field, "mem"))
+                return f.field;
+        }
+        return null;
+    }
+
+    fn mem_pointer_to(self: *CodeGen, pointee: RT) ?RT {
+        const ptr = self.alloc.create(RT) catch return null;
+        ptr.* = pointee;
+        return RT{ .pointer = ptr };
+    }
+
+    fn mem_type_from_name(self: *CodeGen, name: []const u8) ?RT {
+        if (name.len == 0) return null;
+        if (name[0] == '*') {
+            const inner = self.mem_type_from_name(name[1..]) orelse return null;
+            return self.mem_pointer_to(inner);
+        }
+        if (std.mem.eql(u8, name, "void")) return .void;
+        if (std.mem.eql(u8, name, "i8")) return .i8;
+        if (std.mem.eql(u8, name, "i16")) return .i16;
+        if (std.mem.eql(u8, name, "i32")) return .i32;
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "isize")) return .i64;
+        if (std.mem.eql(u8, name, "u8")) return .u8;
+        if (std.mem.eql(u8, name, "u16")) return .u16;
+        if (std.mem.eql(u8, name, "u32")) return .u32;
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "usize")) return .u64;
+        if (std.mem.eql(u8, name, "f32")) return .f32;
+        if (std.mem.eql(u8, name, "f64")) return .f64;
+        if (std.mem.eql(u8, name, "bool")) return .bool;
+        if (std.mem.eql(u8, name, "str") or std.mem.eql(u8, name, "string")) return .str;
+        if (std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*")) return self.mem_pointer_to(.void);
+        return null;
+    }
+
+    fn mem_type_arg(self: *CodeGen, args: []const *ast.Expr, index: usize) ?RT {
+        if (index >= args.len) return null;
+        if (args[index].* != .string_lit) return null;
+        return self.mem_type_from_name(args[index].string_lit.val);
+    }
+
+    fn mem_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        const fname = self.mem_intrinsic_name(func) orelse return null;
+        if (std.mem.eql(u8, fname, "alloc") or std.mem.eql(u8, fname, "calloc") or
+            std.mem.eql(u8, fname, "byte_add"))
+            return self.mem_pointer_to(.u8);
+        if (std.mem.eql(u8, fname, "realloc") or std.mem.eql(u8, fname, "add")) {
+            if (args.len > 0) {
+                const t = self.expr_type(args[0]);
+                if (t == .pointer) return t;
+            }
+            return self.mem_pointer_to(.u8);
+        }
+        if (std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "ptr_cast") or
+            std.mem.eql(u8, fname, "ptr_from_addr"))
+        {
+            const pointee = self.mem_type_arg(args, 0) orelse RT.void;
+            return self.mem_pointer_to(pointee);
+        }
+        if (std.mem.eql(u8, fname, "addr")) return .u64;
+        if (std.mem.eql(u8, fname, "load") or std.mem.eql(u8, fname, "volatile_load"))
+            return self.mem_type_arg(args, 0) orelse .any;
+        if (std.mem.eql(u8, fname, "store") or std.mem.eql(u8, fname, "volatile_store") or
+            std.mem.eql(u8, fname, "free") or std.mem.eql(u8, fname, "copy") or
+            std.mem.eql(u8, fname, "move") or std.mem.eql(u8, fname, "set") or
+            std.mem.eql(u8, fname, "zero") or std.mem.eql(u8, fname, "fence") or
+            std.mem.eql(u8, fname, "compiler_fence"))
+            return .void;
+        if (std.mem.eql(u8, fname, "compare")) return .i64;
+        if (std.mem.eql(u8, fname, "is_null")) return .bool;
+        if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) return .u64;
         return null;
     }
 
@@ -1565,7 +1650,10 @@ pub const CodeGen = struct {
 
         // For Ackermann, emit the optimised helper at file scope (forward decl
         // + full definition) before the ack() wrapper function.
-        if (fb.use_ack_inline and fb.params.len == 2) {
+        // Guard against duplicate emission when multiple embedded modules
+        // each contain an Ackermann-style function.
+        if (fb.use_ack_inline and fb.params.len == 2 and !self.ack_impl_emitted) {
+            self.ack_impl_emitted = true;
             self.p("static int64_t __ack_impl(int64_t m, int64_t n);\n", .{});
             self.p("__attribute__((noinline))\n", .{});
             self.p("static int64_t __ack_impl(int64_t m, int64_t n) {{\n", .{});
@@ -2701,9 +2789,18 @@ pub const CodeGen = struct {
         self.pl("{s} sum = 0;", .{ct});
         self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
         self.indent += 1;
-        self.pl("int64_t a = i, b = (i * 7 + 3) % 10000 + 1;", .{});
-        self.pl("while (b) {{ int64_t tmp = b; b = a % b; a = tmp; }}", .{});
-        self.pl("sum += a;", .{});
+        self.pl("uint64_t u = (uint64_t)i;", .{});
+        self.pl("uint64_t v = (uint64_t)((i * 7 + 3) % 10000 + 1);", .{});
+        self.pl("int shift = __builtin_ctzll(u | v);", .{});
+        self.pl("u >>= __builtin_ctzll(u);", .{});
+        self.pl("do {{", .{});
+        self.indent += 1;
+        self.pl("v >>= __builtin_ctzll(v);", .{});
+        self.pl("if (u > v) {{ uint64_t tmp = v; v = u; u = tmp; }}", .{});
+        self.pl("v -= u;", .{});
+        self.indent -= 1;
+        self.pl("}} while (v);", .{});
+        self.pl("sum += ({s})(u << shift);", .{ct});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return sum;", .{});
@@ -2884,20 +2981,22 @@ pub const CodeGen = struct {
     fn emit_sieve_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("bool* __restrict __sieve = (bool*)malloc((size_t)({s} + 1) * sizeof(bool));", .{n});
-        self.pl("memset(__sieve, 1, (size_t)({s} + 1) * sizeof(bool));", .{n});
-        self.pl("__sieve[0] = false; __sieve[1] = false;", .{});
-        self.pl("for (int64_t i = 2; i * i <= {s}; ++i) {{", .{n});
+        self.pl("if ({s} < 2) return 0;", .{n});
+        self.pl("uint8_t* __restrict __sieve = (uint8_t*)malloc((size_t)({s} + 1));", .{n});
+        self.pl("memset(__sieve, 1, (size_t)({s} + 1));", .{n});
+        self.pl("__sieve[0] = 0; __sieve[1] = 0;", .{});
+        self.pl("for (int64_t i = 4; i <= {s}; i += 2) __sieve[i] = 0;", .{n});
+        self.pl("for (int64_t i = 3; i * i <= {s}; i += 2) {{", .{n});
         self.indent += 1;
-        self.pl("if (__builtin_expect(__sieve[i], 1)) {{", .{});
+        self.pl("if (__sieve[i]) {{", .{});
         self.indent += 1;
-        self.pl("for (int64_t j = i * i; j <= {s}; j += i) __sieve[j] = false;", .{n});
+        self.pl("for (int64_t j = i * i; j <= {s}; j += (i << 1)) __sieve[j] = 0;", .{n});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("{s} count = 0;", .{ct});
-        self.pl("for (int64_t i = 2; i <= {s}; ++i) if (__sieve[i]) count++;", .{n});
+        self.pl("{s} count = 1;", .{ct});
+        self.pl("for (int64_t i = 3; i <= {s}; i += 2) if (__sieve[i]) count++;", .{n});
         self.pl("free(__sieve);", .{});
         self.pl("return count;", .{});
     }
@@ -4352,6 +4451,7 @@ pub const CodeGen = struct {
                     return;
                 }
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
+                if (try self.maybe_emit_mem_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args, self.expr_type(expr))) return;
@@ -5414,6 +5514,227 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn emit_mem_size_arg(self: *CodeGen, args: []*ast.Expr, index: usize, fallback: []const u8) E!void {
+        if (index >= args.len) {
+            self.p("{s}", .{fallback});
+            return;
+        }
+        self.p("(size_t)(", .{});
+        if (self.expr_type(args[index]) == .any) {
+            self.p("lua_to_num(", .{});
+            try self.emit_as_lua_value(args[index]);
+            self.p(")", .{});
+        } else {
+            try self.emit_expr(args[index]);
+        }
+        self.p(")", .{});
+    }
+
+    fn emit_mem_integer_arg(self: *CodeGen, args: []*ast.Expr, index: usize, fallback: []const u8) E!void {
+        if (index >= args.len) {
+            self.p("{s}", .{fallback});
+            return;
+        }
+        if (self.expr_type(args[index]) == .any) {
+            self.p("(int64_t)lua_to_num(", .{});
+            try self.emit_as_lua_value(args[index]);
+            self.p(")", .{});
+        } else {
+            try self.emit_expr(args[index]);
+        }
+    }
+
+    fn emit_mem_ptr_arg(self: *CodeGen, args: []*ast.Expr, index: usize, is_const: bool) E!void {
+        self.p("({s}void*)(", .{if (is_const) "const " else ""});
+        if (index < args.len) try self.emit_expr(args[index]) else self.p("NULL", .{});
+        self.p(")", .{});
+    }
+
+    fn emit_mem_value_as(self: *CodeGen, arg: *ast.Expr, rt: RT) E!void {
+        const at = self.expr_type(arg);
+        if (at == .any) {
+            if (rt == .bool) {
+                self.p("lua_to_bool(", .{});
+                try self.emit_as_lua_value(arg);
+                self.p(")", .{});
+                return;
+            }
+            if (rt == .str) {
+                self.p("lua_to_str(", .{});
+                try self.emit_as_lua_value(arg);
+                self.p(")", .{});
+                return;
+            }
+            if (rt.is_numeric()) {
+                var buf: [64]u8 = undefined;
+                self.p("({s})lua_to_num(", .{rt.c_type(&buf)});
+                try self.emit_as_lua_value(arg);
+                self.p(")", .{});
+                return;
+            }
+        }
+        try self.emit_expr(arg);
+    }
+
+    fn maybe_emit_mem_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        const fname = self.mem_intrinsic_name(func) orelse return false;
+
+        if (std.mem.eql(u8, fname, "alloc")) {
+            self.p("((uint8_t*)malloc(", .{});
+            try self.emit_mem_size_arg(args, 0, "0");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "calloc")) {
+            self.p("((uint8_t*)calloc(", .{});
+            try self.emit_mem_size_arg(args, 0, "0");
+            self.p(", ", .{});
+            try self.emit_mem_size_arg(args, 1, "1");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "realloc")) {
+            self.p("((", .{});
+            self.typ(result_rt);
+            self.p(")realloc(", .{});
+            try self.emit_mem_ptr_arg(args, 0, false);
+            self.p(", ", .{});
+            try self.emit_mem_size_arg(args, 1, "0");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "free")) {
+            self.p("free(", .{});
+            try self.emit_mem_ptr_arg(args, 0, false);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "ptr_cast")) {
+            const target = if (result_rt == .pointer) result_rt else self.mem_call_result_type(func, args) orelse (self.mem_pointer_to(.void) orelse result_rt);
+            self.p("((", .{});
+            self.typ(target);
+            self.p(")(void*)(", .{});
+            if (args.len > 1) try self.emit_expr(args[1]) else self.p("NULL", .{});
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "ptr_from_addr")) {
+            const target = if (result_rt == .pointer) result_rt else self.mem_call_result_type(func, args) orelse (self.mem_pointer_to(.void) orelse result_rt);
+            self.p("((", .{});
+            self.typ(target);
+            self.p(")(uintptr_t)(", .{});
+            try self.emit_mem_integer_arg(args, 1, "0");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "addr")) {
+            self.p("((uint64_t)(uintptr_t)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "add")) {
+            self.p("((", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (ptrdiff_t)(", .{});
+            try self.emit_mem_integer_arg(args, 1, "0");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "byte_add")) {
+            self.p("((uint8_t*)(void*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (ptrdiff_t)(", .{});
+            try self.emit_mem_integer_arg(args, 1, "0");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "load") or std.mem.eql(u8, fname, "volatile_load")) {
+            const rt = self.mem_type_arg(args, 0) orelse result_rt;
+            self.p("(*(", .{});
+            if (std.mem.eql(u8, fname, "volatile_load")) self.p("volatile ", .{});
+            self.typ(rt);
+            self.p("*)", .{});
+            try self.emit_mem_ptr_arg(args, 1, false);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "store") or std.mem.eql(u8, fname, "volatile_store")) {
+            const rt = self.mem_type_arg(args, 0) orelse .u8;
+            self.p("(*(", .{});
+            if (std.mem.eql(u8, fname, "volatile_store")) self.p("volatile ", .{});
+            self.typ(rt);
+            self.p("*)", .{});
+            try self.emit_mem_ptr_arg(args, 1, false);
+            self.p(" = (", .{});
+            self.typ(rt);
+            self.p(")(", .{});
+            if (args.len > 2) try self.emit_mem_value_as(args[2], rt) else self.p("0", .{});
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "copy") or std.mem.eql(u8, fname, "move")) {
+            self.p("{s}(", .{if (std.mem.eql(u8, fname, "copy")) "memcpy" else "memmove"});
+            try self.emit_mem_ptr_arg(args, 0, false);
+            self.p(", ", .{});
+            try self.emit_mem_ptr_arg(args, 1, true);
+            self.p(", ", .{});
+            try self.emit_mem_size_arg(args, 2, "0");
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "set")) {
+            self.p("memset(", .{});
+            try self.emit_mem_ptr_arg(args, 0, false);
+            self.p(", (int)(", .{});
+            try self.emit_mem_integer_arg(args, 1, "0");
+            self.p("), ", .{});
+            try self.emit_mem_size_arg(args, 2, "0");
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "zero")) {
+            self.p("memset(", .{});
+            try self.emit_mem_ptr_arg(args, 0, false);
+            self.p(", 0, ", .{});
+            try self.emit_mem_size_arg(args, 1, "0");
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "compare")) {
+            self.p("((int64_t)memcmp(", .{});
+            try self.emit_mem_ptr_arg(args, 0, true);
+            self.p(", ", .{});
+            try self.emit_mem_ptr_arg(args, 1, true);
+            self.p(", ", .{});
+            try self.emit_mem_size_arg(args, 2, "0");
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) {
+            const rt = self.mem_type_arg(args, 0) orelse .u8;
+            self.p("((uint64_t){s}(", .{if (std.mem.eql(u8, fname, "sizeof")) "sizeof" else "__alignof__"});
+            self.typ(rt);
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "is_null")) {
+            self.p("((", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") == NULL)", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fence")) {
+            self.p("__sync_synchronize()", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "compiler_fence")) {
+            self.p("({{ __asm__ __volatile__(\"\" ::: \"memory\"); }})", .{});
+            return true;
+        }
+        return false;
+    }
+
     fn emit_lua_global_fn(self: *CodeGen, name: []const u8) bool {
         const mapped: ?[]const u8 = if (std.mem.eql(u8, name, "tostring")) "tostring" else if (std.mem.eql(u8, name, "tonumber")) "tonumber" else if (std.mem.eql(u8, name, "type")) "type" else null;
         if (mapped) |fn_name| {
@@ -6156,6 +6477,10 @@ pub const CodeGen = struct {
                 {
                     try names.append(self.alloc, c.args[0].string_lit.val);
                 }
+                if (self.mem_intrinsic_name(c.func) != null) {
+                    for (c.args) |a| try self.collect_require_names(a, names);
+                    return;
+                }
                 try self.collect_require_names(c.func, names);
                 for (c.args) |a| try self.collect_require_names(a, names);
             },
@@ -6268,57 +6593,136 @@ pub const CodeGen = struct {
             break :blk false;
         };
 
-        for (names.items) |name| {
+        var i: usize = 0;
+        while (i < names.items.len) : (i += 1) {
+            const name = names.items[i];
             if (seen.contains(name)) continue;
             try seen.put(self.alloc, name, {});
             if (self.src_path.len == 0) continue;
             if (std.mem.eql(u8, name, "std")) continue;
 
-            // Translate module name dots to path separators (std.path -> std/path)
-            const mod_path_name = try self.alloc.dupe(u8, name);
+            // Handle collection-style prefixes: vendor:xxx → vendor/xxx, core:xxx → lib/core/xxx
+            const vendor_prefix = "vendor:";
+            const core_prefix = "core:";
+            const has_vendor = std.mem.startsWith(u8, name, vendor_prefix);
+            const has_core = std.mem.startsWith(u8, name, core_prefix);
+            const strip_len: usize = if (has_vendor) vendor_prefix.len else if (has_core) core_prefix.len else 0;
+            const mod_path_name = if (strip_len > 0) blk: {
+                const s = try self.alloc.dupe(u8, name[strip_len..]);
+                for (s) |*c| {
+                    if (c.* == '.') c.* = '/';
+                }
+                break :blk s;
+            } else blk: {
+                const s = try self.alloc.dupe(u8, name);
+                for (s) |*c| {
+                    if (c.* == '.') c.* = '/';
+                }
+                break :blk s;
+            };
             defer self.alloc.free(mod_path_name);
-            for (mod_path_name) |*c| {
-                if (c.* == '.') c.* = '/';
-            }
 
             var mod_path: ?[]const u8 = null;
             const src_lua = try std.fmt.allocPrint(self.alloc, "{s}/{s}.lua", .{ dir, mod_path_name });
             const src_duo = try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ dir, mod_path_name });
             const lib_lua = try std.fmt.allocPrint(self.alloc, "lib/{s}.lua", .{mod_path_name});
             const lib_duo = try std.fmt.allocPrint(self.alloc, "lib/{s}.duo", .{mod_path_name});
+            const vendor_lua = if (has_vendor) try std.fmt.allocPrint(self.alloc, "vendor/{s}.lua", .{mod_path_name}) else @as([]const u8, "");
+            const vendor_duo = if (has_vendor) try std.fmt.allocPrint(self.alloc, "vendor/{s}.duo", .{mod_path_name}) else @as([]const u8, "");
+            const core_lua = if (has_core) try std.fmt.allocPrint(self.alloc, "lib/core/{s}.lua", .{mod_path_name}) else @as([]const u8, "");
+            const core_duo = if (has_core) try std.fmt.allocPrint(self.alloc, "lib/core/{s}.duo", .{mod_path_name}) else @as([]const u8, "");
             const cwd = Io.Dir.cwd();
-            if (Io.Dir.access(cwd, self.io, src_lua, .{})) {
+            const src_lua_ok = if (Io.Dir.access(cwd, self.io, src_lua, .{})) true else |_| false;
+            const src_duo_ok = if (Io.Dir.access(cwd, self.io, src_duo, .{})) true else |_| false;
+            const lib_lua_ok = if (Io.Dir.access(cwd, self.io, lib_lua, .{})) true else |_| false;
+            const lib_duo_ok = if (Io.Dir.access(cwd, self.io, lib_duo, .{})) true else |_| false;
+            const vendor_lua_ok = if (has_vendor) if (Io.Dir.access(cwd, self.io, vendor_lua, .{})) true else |_| false else false;
+            const vendor_duo_ok = if (has_vendor) if (Io.Dir.access(cwd, self.io, vendor_duo, .{})) true else |_| false else false;
+            const core_lua_ok = if (has_core) if (Io.Dir.access(cwd, self.io, core_lua, .{})) true else |_| false else false;
+            const core_duo_ok = if (has_core) if (Io.Dir.access(cwd, self.io, core_duo, .{})) true else |_| false else false;
+
+            if (src_lua_ok) {
                 mod_path = src_lua;
                 self.alloc.free(src_duo);
                 self.alloc.free(lib_lua);
                 self.alloc.free(lib_duo);
-            } else |_| {
-                if (Io.Dir.access(cwd, self.io, src_duo, .{})) {
-                    mod_path = src_duo;
-                    self.alloc.free(src_lua);
-                    self.alloc.free(lib_lua);
-                    self.alloc.free(lib_duo);
-                } else |_| {
-                    if (Io.Dir.access(cwd, self.io, lib_lua, .{})) {
-                        mod_path = lib_lua;
-                        self.alloc.free(src_lua);
-                        self.alloc.free(src_duo);
-                        self.alloc.free(lib_duo);
-                    } else |_| {
-                        if (Io.Dir.access(cwd, self.io, lib_duo, .{})) {
-                            mod_path = lib_duo;
-                            self.alloc.free(src_lua);
-                            self.alloc.free(src_duo);
-                            self.alloc.free(lib_lua);
-                        } else |_| {
-                            self.alloc.free(src_lua);
-                            self.alloc.free(src_duo);
-                            self.alloc.free(lib_lua);
-                            self.alloc.free(lib_duo);
-                            continue;
-                        }
-                    }
-                }
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+            } else if (src_duo_ok) {
+                mod_path = src_duo;
+                self.alloc.free(src_lua);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+            } else if (lib_lua_ok) {
+                mod_path = lib_lua;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+            } else if (lib_duo_ok) {
+                mod_path = lib_duo;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+            } else if (vendor_lua_ok) {
+                mod_path = vendor_lua;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+            } else if (vendor_duo_ok) {
+                mod_path = vendor_duo;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                self.alloc.free(vendor_lua);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+            } else if (core_lua_ok) {
+                mod_path = core_lua;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                self.alloc.free(core_duo);
+            } else if (core_duo_ok) {
+                mod_path = core_duo;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                self.alloc.free(core_lua);
+            } else {
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+                continue;
             }
             defer self.alloc.free(mod_path.?);
             const cname = try self.module_c_name(name);
@@ -6327,6 +6731,26 @@ pub const CodeGen = struct {
                 continue;
             }
             try embedded.append(self.alloc, .{ .name = name, .cname = cname });
+            // Recursively collect nested require names from the embedded module
+            {
+                const sub_src = Io.Dir.readFileAlloc(cwd, self.io, mod_path.?, self.alloc, .unlimited) catch |e| {
+                    std.debug.print("emit_required_modules: re-read failed for {s}: {}\n", .{ mod_path.?, e });
+                    continue;
+                };
+                defer self.alloc.free(sub_src);
+                var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
+                var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
+                var sub_mod = sub_parser.parse_module() catch |e| {
+                    std.debug.print("emit_required_modules: re-parse failed for {s}: {}\n", .{ mod_path.?, e });
+                    continue;
+                };
+                try self.collect_require_names_block(&sub_mod.body, &names);
+                for (sub_mod.body.stmts) |*sub_stmt| {
+                    if (sub_stmt.* == .func_decl) {
+                        try self.collect_require_names_block(&sub_stmt.func_decl.func.body, &names);
+                    }
+                }
+            }
         }
 
         self.p("static void duo_register_modules(void) {{\n", .{});
@@ -8525,6 +8949,66 @@ const duo_runtime =
     \\        mod = lua_table_get(duo_modules, name_val);
     \\        if (mod.type == VAL_FUNC || mod.type == VAL_CLOSURE) {
     \\            mod = lua_invoke(mod, 0, NULL);
+    \\        }
+    \\    }
+    \\    if (mod.type == VAL_NIL) {
+    \\        // Try collection-style paths (vendor:xxx, core:xxx)
+    \\        const char* vendor_prefix = "vendor:";
+    \\        const char* core_prefix = "core:";
+    \\        char mod_path[1024];
+    \\        if (strncmp(name, vendor_prefix, 7) == 0) {
+    \\            // Strip vendor: prefix, convert dots to slashes
+    \\            const char* rest = name + 7;
+    \\            const char* src = rest;
+    \\            char* dst = mod_path;
+    \\            char* end = mod_path + sizeof(mod_path) - 1;
+    \\            // Prepend vendor/
+    \\            const char* vdir = "vendor/";
+    \\            while (*vdir && dst < end) *dst++ = *vdir++;
+    \\            while (*src && dst < end) {
+    \\                *dst++ = (*src == '.') ? '/' : *src;
+    \\                src++;
+    \\            }
+    \\            *dst = '\0';
+    \\            // Try .duo first, then .lua
+    \\            char tmp[1056];
+    \\            int n = snprintf(tmp, sizeof(tmp), "%s.duo", mod_path);
+    \\            if (n > 0 && n < (int)sizeof(tmp) && access(tmp, R_OK) == 0) {
+    \\                lua_Value chunk = duo_runtime_load_path(tmp);
+    \\                if (chunk.type != VAL_NIL) mod = chunk;
+    \\            }
+    \\            if (mod.type == VAL_NIL) {
+    \\                n = snprintf(tmp, sizeof(tmp), "%s.lua", mod_path);
+    \\                if (n > 0 && n < (int)sizeof(tmp) && access(tmp, R_OK) == 0) {
+    \\                    lua_Value chunk = duo_runtime_load_path(tmp);
+    \\                    if (chunk.type != VAL_NIL) mod = chunk;
+    \\                }
+    \\            }
+    \\        } else if (strncmp(name, core_prefix, 5) == 0) {
+    \\            const char* rest = name + 5;
+    \\            const char* src = rest;
+    \\            char* dst = mod_path;
+    \\            char* end = mod_path + sizeof(mod_path) - 1;
+    \\            const char* cdir = "lib/core/";
+    \\            while (*cdir && dst < end) *dst++ = *cdir++;
+    \\            while (*src && dst < end) {
+    \\                *dst++ = (*src == '.') ? '/' : *src;
+    \\                src++;
+    \\            }
+    \\            *dst = '\0';
+    \\            char tmp[1056];
+    \\            int n = snprintf(tmp, sizeof(tmp), "%s.duo", mod_path);
+    \\            if (n > 0 && n < (int)sizeof(tmp) && access(tmp, R_OK) == 0) {
+    \\                lua_Value chunk = duo_runtime_load_path(tmp);
+    \\                if (chunk.type != VAL_NIL) mod = chunk;
+    \\            }
+    \\            if (mod.type == VAL_NIL) {
+    \\                n = snprintf(tmp, sizeof(tmp), "%s.lua", mod_path);
+    \\                if (n > 0 && n < (int)sizeof(tmp) && access(tmp, R_OK) == 0) {
+    \\                    lua_Value chunk = duo_runtime_load_path(tmp);
+    \\                    if (chunk.type != VAL_NIL) mod = chunk;
+    \\                }
+    \\            }
     \\        }
     \\    }
     \\    if (mod.type == VAL_NIL) {
@@ -11126,6 +11610,71 @@ test "codegen: __constexpr folds function calls with captured constants" {
     try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
 }
 
+test "codegen: memory intrinsics lower to raw C operations" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\function low(): i64
+        \\  local raw: *u8 = mem.alloc(64)
+        \\  mem.set(raw, 0, 64)
+        \\  local nums: *i64 = mem.cast("i64", raw)
+        \\  mem.store("i64", nums, 42)
+        \\  local next: *i64 = mem.add(nums, 1)
+        \\  mem.volatile_store("i64", next, mem.load("i64", nums) + 1)
+        \\  local out: *u8 = std.mem.calloc(64, 1)
+        \\  local raw_was_null: bool = mem.is_null(raw)
+        \\  mem.copy(out, raw, mem.sizeof("i64") * 2)
+        \\  local cmp: i64 = mem.compare(out, raw, 16)
+        \\  local got: i64 = mem.volatile_load("i64", mem.cast("i64", out))
+        \\  local addr: u64 = mem.addr(out)
+        \\  local back: *u8 = mem.ptr_from_addr("u8", addr)
+        \\  mem.move(mem.byte_add(back, 8), back, 8)
+        \\  mem.zero(back, mem.alignof("i64"))
+        \\  mem.compiler_fence()
+        \\  mem.fence()
+        \\  mem.free(out)
+        \\  mem.free(raw)
+        \\  return got + cmp
+        \\end
+        \\print(low())
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* raw = ((uint8_t*)malloc") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memset((void*)(raw), (int)(0), (size_t)(64))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t* nums = ((int64_t*)(void*)(raw));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "(*(int64_t*)(void*)(nums) = (int64_t)(42));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t* next = ((nums) + (ptrdiff_t)(1));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "(*(volatile int64_t*)(void*)(next)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* out = ((uint8_t*)calloc") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "raw_was_null = ((raw) == NULL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memcpy((void*)(out), (const void*)(raw)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "((uint64_t)sizeof(int64_t))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memcmp((const void*)(out), (const void*)(raw), (size_t)(16))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "(*(volatile int64_t*)(void*)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "((uint64_t)(uintptr_t)(out))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* back = ((uint8_t*)(uintptr_t)(addr));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memmove((void*)(((uint8_t*)(void*)(back) + (ptrdiff_t)(8))), (const void*)(back), (size_t)(8))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "((uint64_t)__alignof__(int64_t))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__asm__ __volatile__(\"\" ::: \"memory\")") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sync_synchronize()") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "free((void*)(out));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "free((void*)(raw));") != null);
+}
+
 // ── WASM target validation ─────────────────────────────────────────────────
 
 test "wasm: validateTarget blocks threaded scheduler on wasm32-wasi" {
@@ -11611,6 +12160,24 @@ test "collatz specialization fuses odd step and halving" {
     try testing.expect(std.mem.indexOf(u8, output, "steps += 2;") != null);
 }
 
+test "gcd specialization emits binary gcd without inner division" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_gcd_inline_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_ctzll") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "v -= u;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "a % b") == null);
+}
+
 test "xor fold specialization unrolls four iterations" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -11648,7 +12215,7 @@ test "cond swap specialization computes swap-invariant sum directly" {
     try testing.expect(std.mem.indexOf(u8, output, "sum += (i * 17) % __cs_period;") != null);
 }
 
-test "sieve native specialization initializes flags with memset" {
+test "sieve native specialization uses odd-only byte flags" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -11662,8 +12229,12 @@ test "sieve native specialization initializes flags with memset" {
     try cg.emit_sieve_native_body("n", .i64);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "calloc") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* __restrict __sieve") != null);
     try testing.expect(std.mem.indexOf(u8, output, "memset(__sieve, 1") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve[0] = false; __sieve[1] = false;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 4; i <= n; i += 2)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "j += (i << 1)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 3; i <= n; i += 2)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_expect(__sieve[i], 1)") == null);
 }
 
 test "leven native specialization reuses 26 repetition phases" {

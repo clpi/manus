@@ -1,0 +1,10 @@
+-- std.crypto.tls — TLS stub (mirrors Go's crypto/tls)
+-- TLS is handled by the runtime/OS; this module provides configuration types.
+
+fun new_config(): any
+    {insecure_skip_verify = false, cert_file = nil, key_file = nil}
+end
+
+M = {}
+M.new_config = new_config
+M

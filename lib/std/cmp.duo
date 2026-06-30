@@ -1,0 +1,39 @@
+-- std.cmp — Ordered comparison utilities (mirrors Go 1.21 cmp package)
+-- Provides comparison functions for ordered types.
+
+fun compare(a: any, b: any): i64
+    if a < b then return -1 end
+    if a > b then return 1 end
+    0
+end
+
+fun less(a: any, b: any): bool
+    a < b
+end
+
+fun ordered(a: any, b: any): i64
+    compare(a, b)
+end
+
+fun min(a: any, b: any): any
+    if a < b then a else b end
+end
+
+fun max(a: any, b: any): any
+    if a > b then a else b end
+end
+
+fun clamp(val: any, lo: any, hi: any): any
+    if val < lo then return lo end
+    if val > hi then return hi end
+    val
+end
+
+M = {}
+M.compare = compare
+M.less = less
+M.ordered = ordered
+M.min = min
+M.max = max
+M.clamp = clamp
+M

@@ -1,0 +1,5 @@
+-- std.hash.crc32 — CRC-32 checksum (stub)
+
+local M = {}
+M
+

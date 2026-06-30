@@ -1,0 +1,5 @@
+-- std.image.jpeg — JPEG image stub
+
+local M = {}
+M
+

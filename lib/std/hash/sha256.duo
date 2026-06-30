@@ -1,0 +1,11 @@
+-- std.hash.sha256 — SHA-256 hash placeholder
+-- Pure-Duo SHA-256 implementation requires typed mode for efficient codegen.
+
+fun hash_string(s: str): str
+    string.format("%064x", 0)
+end
+
+M = {}
+M.hash_string = hash_string
+M.sha256 = hash_string
+M

@@ -1,0 +1,11 @@
+-- std.hash.sha512 — SHA-512 hash placeholder
+-- Pure-Duo SHA-512 implementation requires typed mode for efficient codegen.
+
+fun hash_string(s: str): str
+    string.format("%0128x", 0)
+end
+
+M = {}
+M.hash_string = hash_string
+M.sha512 = hash_string
+M
