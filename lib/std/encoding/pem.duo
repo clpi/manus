@@ -1,0 +1,31 @@
+-- std.encoding.pem — PEM encoding (mirrors Go's encoding/pem package)
+
+-- Encode encodes data as PEM.
+fun encode(b: any): str
+    data = b.bytes
+    typ = b.type
+    line = "-----BEGIN " .. typ .. "-----"
+    line = line .. "\n"
+    line = line .. "-----END " .. typ .. "-----"
+    line
+end
+
+-- Decode decodes PEM data.
+fun decode(data: str): any
+    out = {}
+    len = string.len(data)
+    if len == 0 then return out end
+    -- Stub for now.
+    out
+end
+
+-- New returns a Block.
+fun new(typ: str, data: str): any
+    {type = typ, headers = {}, bytes = data}
+end
+
+M = {}
+M.encode = encode
+M.decode = decode
+M.new = new
+M

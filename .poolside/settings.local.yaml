@@ -37,3 +37,13 @@ tools:
             - kill $PID
             - git diff HEAD *
             - git status *
+            - timeout 15 node *
+            - timeout 20 node *
+            - ps *
+            - wait $PID
+            - timeout 30 node *
+            - timeout 60 node *
+            - timeout 25 bash *
+            - timeout 12 node *
+            - timeout 60 bash *
+            - git diff *

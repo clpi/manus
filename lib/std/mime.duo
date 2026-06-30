@@ -1,0 +1,29 @@
+-- std.mime — MIME type detection (mirrors Go's mime package)
+
+-- Mapping of extensions to MIME types.
+defaults = {
+    [".txt"] = "text/plain",
+    [".html"] = "text/html",
+    [".htm"] = "text/html",
+    [".css"] = "text/css",
+    [".js"] = "text/javascript",
+    [".json"] = "application/json",
+}
+
+-- TypeByExtension returns the MIME type for the extension.
+fun type_by_extension(ext: str): str
+    t = defaults[ext]
+    if t == nil then return "application/octet-stream" end
+    t
+end
+
+-- AddExtension adds a MIME type for an extension.
+fun add_extension(ext: str, mime: str): void
+    defaults[ext] = mime
+end
+
+M = {}
+M.defaults = defaults
+M.type_by_extension = type_by_extension
+M.add_extension = add_extension
+M
