@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const RT = types.ResolvedType;
+const term = @import("term.zig");
 const sema = @import("sema.zig");
 const mono = @import("mono.zig");
 const arc = @import("arc.zig");
@@ -1731,6 +1732,9 @@ pub const CodeGen = struct {
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
         }
         try self.emit_func_storage_and_attrs(fd);
+        if (func_ffi_name(fd.attributes) != null) {
+            self.p("extern ", .{});
+        }
         self.typ(ret);
         self.p(" {s}(", .{cname});
         for (fb.params, 0..) |*par, i| {
@@ -1741,6 +1745,10 @@ pub const CodeGen = struct {
         self.p(");\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
         if (fb.is_typed) try self.emit_lua_thunk_decls(fd);
+    }
+
+    fn duo_func_name(fd: *const ast.FuncDecl) []const u8 {
+        return if (fd.path.len > 0) fd.path[fd.path.len - 1] else "anon";
     }
 
     fn emit_func_c_name(self: *CodeGen, fd: *const ast.FuncDecl, buf: []u8) []const u8 {
@@ -1785,6 +1793,10 @@ pub const CodeGen = struct {
             const export_name = if (fd.path.len > 0) fd.path[fd.path.len - 1] else "unknown";
             self.p("__attribute__((export_name(\"{s}\"), visibility(\"default\"))) ", .{export_name});
             return; // Skip static/inline/hot — these must be externally visible.
+        }
+        // `@ffi` functions are extern C symbols provided by a linked library.
+        if (func_ffi_name(fd.attributes) != null) {
+            return; // No static/inline — declaration will be `extern` via emit_proto_only.
         }
         const inline_attr = fb.use_force_always_inline or fb.use_fp_strict_always_inline or func_has_attr(fd.attributes, "inline");
         const noinline_attr = func_has_attr(fd.attributes, "noinline");
@@ -1888,17 +1900,16 @@ pub const CodeGen = struct {
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (!self.should_emit_lua_thunk(fb)) return;
-        var name_buf: [128]u8 = undefined;
-        const cname = self.emit_func_c_name(fd, &name_buf);
+        const dname = duo_func_name(fd);
         const nparams = fb.params.len;
         if (nparams == 0) {
-            self.p("static lua_Value {s}__lua(lua_Value _unused);\n", .{cname});
+            self.p("static lua_Value {s}__lua(lua_Value _unused);\n", .{dname});
         } else if (nparams == 1) {
-            self.p("static lua_Value {s}__lua(lua_Value _a0);\n", .{cname});
+            self.p("static lua_Value {s}__lua(lua_Value _a0);\n", .{dname});
         } else if (nparams == 2) {
-            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1);\n", .{cname});
+            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1);\n", .{dname});
         } else if (nparams == 3) {
-            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);\n", .{cname});
+            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);\n", .{dname});
         }
     }
 
@@ -2117,14 +2128,15 @@ pub const CodeGen = struct {
         if (!fb.is_typed) return;
         if (!self.should_emit_lua_thunk(fb)) return;
         const ret = self.resolve_type(fb.ret_type);
-        var name_buf: [128]u8 = undefined;
-        const cname = self.emit_func_c_name(fd, &name_buf);
+        const dname = duo_func_name(fd);
+        var cname_buf: [128]u8 = undefined;
+        const cname = self.emit_func_c_name(fd, &cname_buf);
         const nparams = fb.params.len;
         var ret_buf: [32]u8 = undefined;
         const ret_ct = ret.c_type(&ret_buf);
 
         if (nparams == 0) {
-            self.p("static lua_Value {s}__lua(lua_Value _unused) {{\n", .{cname});
+            self.p("static lua_Value {s}__lua(lua_Value _unused) {{\n", .{dname});
             self.pl("    (void)_unused;", .{});
             if (ret == .void) {
                 self.p("    {s}();\n    return lua_val_nil();\n", .{cname});
@@ -2138,7 +2150,7 @@ pub const CodeGen = struct {
         }
         if (nparams == 1) {
             const pt = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{cname});
+            self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{dname});
             self.ind();
             var pbuf: [32]u8 = undefined;
             const p0 = std.fmt.bufPrint(&pbuf, "_p0", .{}) catch "_p0";
@@ -2156,7 +2168,7 @@ pub const CodeGen = struct {
         if (nparams == 2) {
             const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
             const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{cname});
+            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{dname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
@@ -2175,7 +2187,7 @@ pub const CodeGen = struct {
             const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
             const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
             const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{cname});
+            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{dname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
@@ -2195,6 +2207,11 @@ pub const CodeGen = struct {
 
     fn emit_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        // `@ffi` functions are extern C symbols — emit only the lua thunk if typed.
+        if (func_ffi_name(fd.attributes) != null) {
+            if (fb.is_typed) try self.emit_lua_thunk(fd);
+            return;
+        }
         if (fb.use_mandel_iter_native) self.mandel_native = true;
         const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
         if ((fb.vararg_name != null or fb.vararg) and ret == .any) {
@@ -6873,21 +6890,21 @@ pub const CodeGen = struct {
             defer self.alloc.free(mod_path.?);
             const cname = try self.module_c_name(name);
             if (!self.emit_embedded_module(cname, mod_path.?)) {
-                std.debug.print("warning: failed to embed module '{s}' from {s}\n", .{ name, mod_path.? });
+                term.warn("failed to embed module '{s}' from {s}", .{ name, mod_path.? });
                 continue;
             }
             try embedded.append(self.alloc, .{ .name = name, .cname = cname });
             // Recursively collect nested require names from the embedded module
             {
                 const sub_src = Io.Dir.readFileAlloc(cwd, self.io, mod_path.?, self.alloc, .unlimited) catch |e| {
-                    std.debug.print("emit_required_modules: re-read failed for {s}: {}\n", .{ mod_path.?, e });
+                    term.err("emit_required_modules: re-read failed for {s}: {}", .{ mod_path.?, e });
                     continue;
                 };
                 defer self.alloc.free(sub_src);
                 var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
                 var sub_mod = sub_parser.parse_module() catch |e| {
-                    std.debug.print("emit_required_modules: re-parse failed for {s}: {}\n", .{ mod_path.?, e });
+                    term.err("emit_required_modules: re-parse failed for {s}: {}", .{ mod_path.?, e });
                     continue;
                 };
                 try self.collect_require_names_block(&sub_mod.body, &names);
@@ -6938,7 +6955,7 @@ pub const CodeGen = struct {
     fn emit_embedded_module(self: *CodeGen, cname: []const u8, path: []const u8) bool {
         const cwd = Io.Dir.cwd();
         const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch |e| {
-            std.debug.print("emit_embedded_module: readFileAlloc failed for {s}: {}\n", .{ path, e });
+            term.err("emit_embedded_module: readFileAlloc failed for {s}: {}", .{ path, e });
             return false;
         };
         defer self.alloc.free(src);
@@ -6946,7 +6963,7 @@ pub const CodeGen = struct {
         var lex = @import("lexer.zig").Lexer.init(src, path);
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
         var submod = parser.parse_module() catch |e| {
-            std.debug.print("emit_embedded_module: parse failed for {s}: {}\n", .{ path, e });
+            term.err("emit_embedded_module: parse failed for {s}: {}", .{ path, e });
             return false;
         };
         var subsem = sema.Sema.init(self.alloc);
@@ -6955,7 +6972,7 @@ pub const CodeGen = struct {
         subsem.duo_mode = std.mem.endsWith(u8, path, ".duo");
         subsem.next_closure_id = self.next_closure_id;
         subsem.check_module(&submod) catch |e| {
-            std.debug.print("emit_embedded_module: sema failed for {s}: {}\n", .{ path, e });
+            term.err("emit_embedded_module: sema failed for {s}: {}", .{ path, e });
             return false;
         };
         self.next_closure_id = subsem.next_closure_id;
@@ -6972,7 +6989,7 @@ pub const CodeGen = struct {
         var type_it = subsem.type_map.iterator();
         while (type_it.next()) |entry| {
             self.type_map.put(entry.key_ptr.*, entry.value_ptr.*) catch |e| {
-                std.debug.print("emit_embedded_module: type map merge failed: {}\n", .{e});
+                term.err("emit_embedded_module: type map merge failed: {}", .{e});
                 return false;
             };
         }
@@ -7014,7 +7031,7 @@ pub const CodeGen = struct {
                 self.typ(rt);
                 self.p(" {s} = ", .{cd.ident});
                 self.emit_expr(cd.val) catch |e| {
-                    std.debug.print("emit_embedded_module: expr emit failed for const {s}: {}\n", .{ cd.ident, e });
+                    term.err("emit_embedded_module: expr emit failed for const {s}: {}", .{ cd.ident, e });
                     return false;
                 };
                 self.p(";\n", .{});
@@ -7027,7 +7044,7 @@ pub const CodeGen = struct {
         for (submod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) {
                 sub_funcs.append(self.alloc, &stmt.func_decl) catch |e| {
-                    std.debug.print("emit_embedded_module: oom collecting funcs: {}\n", .{e});
+                    term.err("emit_embedded_module: oom collecting funcs: {}", .{e});
                     return false;
                 };
             }
@@ -7036,12 +7053,12 @@ pub const CodeGen = struct {
         defer nested.deinit(self.alloc);
         for (sub_funcs.items) |fd| {
             self.collect_local_funcs_block(&fd.func.body, &nested) catch |e| {
-                std.debug.print("emit_embedded_module: oom collecting nested funcs: {}\n", .{e});
+                term.err("emit_embedded_module: oom collecting nested funcs: {}", .{e});
                 return false;
             };
         }
         sub_funcs.appendSlice(self.alloc, nested.items) catch |e| {
-            std.debug.print("emit_embedded_module: oom appending nested funcs: {}\n", .{e});
+            term.err("emit_embedded_module: oom appending nested funcs: {}", .{e});
             return false;
         };
 
@@ -7049,7 +7066,7 @@ pub const CodeGen = struct {
         for (sub_funcs.items) |fd| {
             if (fd.path.len == 1 and !fd.method) {
                 self.emit_func_decl_forward(fd) catch |e| {
-                    std.debug.print("emit_embedded_module: forward decl failed for {s}: {}\n", .{ fd.path[0], e });
+                    term.err("emit_embedded_module: forward decl failed for {s}: {}", .{ fd.path[0], e });
                     return false;
                 };
             }
@@ -7057,7 +7074,7 @@ pub const CodeGen = struct {
         // Emit submodule function definitions at file scope
         for (sub_funcs.items) |fd| {
             self.emit_func_def(fd) catch |e| {
-                std.debug.print("emit_embedded_module: func def failed for {s}: {}\n", .{ fd.path[0], e });
+                term.err("emit_embedded_module: func def failed for {s}: {}", .{ fd.path[0], e });
                 return false;
             };
         }
@@ -7073,7 +7090,7 @@ pub const CodeGen = struct {
             switch (stmt.*) {
                 .func_decl, .const_decl => {},
                 else => self.emit_stmt(stmt) catch |e| {
-                    std.debug.print("emit_embedded_module: stmt emit failed: {}\n", .{e});
+                    term.err("emit_embedded_module: stmt emit failed: {}", .{e});
                     return false;
                 },
             }
@@ -7082,7 +7099,7 @@ pub const CodeGen = struct {
             self.ind();
             self.p("return ", .{});
             self.emit_as_lua_value(expr) catch |e| {
-                std.debug.print("emit_embedded_module: tail expr emit failed: {}\n", .{e});
+                term.err("emit_embedded_module: tail expr emit failed: {}", .{e});
                 return false;
             };
             self.p(";\n", .{});

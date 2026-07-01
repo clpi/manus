@@ -6,6 +6,7 @@ const Allocator = std.mem.Allocator;
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const RT = types.ResolvedType;
+const term = @import("term.zig");
 
 pub const SemaError = error{
     TypeMismatch,
@@ -325,12 +326,12 @@ pub const Sema = struct {
 
     fn err(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.errors += 1;
-        std.debug.print("{}: error: " ++ fmt ++ "\n", .{loc} ++ args);
+        term.locErr(loc, fmt, args);
     }
 
     fn warn_msg(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.warnings += 1;
-        std.debug.print("{}: warning: " ++ fmt ++ "\n", .{loc} ++ args);
+        term.locWarn(loc, fmt, args);
     }
 
     fn define_vararg_rest(self: *Sema, fb: *const ast.FuncBody) !void {
@@ -2218,12 +2219,12 @@ pub const Sema = struct {
         if (missing_count > 0) {
             // Emit error listing missing variants
             self.errors += 1;
-            std.debug.print("{}: error: non-exhaustive match on enum '{s}': missing variant(s): ", .{ me.loc, enum_name });
+            term.locErr(me.loc, "non-exhaustive match on enum '{s}': missing variant(s): ", .{enum_name});
             for (missing_buf[0..missing_count], 0..) |name, i| {
-                if (i > 0) std.debug.print(", ", .{});
-                std.debug.print("{s}", .{name});
+                if (i > 0) term.printRaw(", ", .{});
+                term.printRaw("{s}", .{name});
             }
-            std.debug.print("\n", .{});
+            term.printRaw("\n", .{});
         }
     }
 
@@ -2567,8 +2568,8 @@ pub const Sema = struct {
                     const rec_field_type = types.resolve(rec_field.typ, self, self.alloc) catch .any;
                     if (req_field.typ != .any and rec_field_type != .any and !req_field.typ.eql(rec_field_type)) {
                         self.errors += 1;
-                        std.debug.print("{}: error: binding '{s}' field '{s}' has type {}, but concept '{s}' requires type {}\n", .{
-                            loc, binding_name, req_field.name, rec_field_type, concept_name, req_field.typ,
+                        term.locErr(loc, "binding '{s}' field '{s}' has type {}, but concept '{s}' requires type {}", .{
+                            binding_name, req_field.name, rec_field_type, concept_name, req_field.typ,
                         });
                     }
                     found = true;
@@ -2609,21 +2610,19 @@ pub const Sema = struct {
         const total_missing = missing_methods.items.len + missing_fields.items.len;
         if (total_missing > 0) {
             self.errors += 1;
-            std.debug.print("{}: error: binding '{s}' does not satisfy concept '{s}': missing ", .{
-                loc, binding_name, concept_name,
-            });
+            term.locErr(loc, "binding '{s}' does not satisfy concept '{s}': missing ", .{ binding_name, concept_name });
             var first = true;
             for (missing_methods.items) |name| {
-                if (!first) std.debug.print(", ", .{});
-                std.debug.print("method '{s}'", .{name});
+                if (!first) term.printRaw(", ", .{});
+                term.printRaw("method '{s}'", .{name});
                 first = false;
             }
             for (missing_fields.items) |name| {
-                if (!first) std.debug.print(", ", .{});
-                std.debug.print("field '{s}'", .{name});
+                if (!first) term.printRaw(", ", .{});
+                term.printRaw("field '{s}'", .{name});
                 first = false;
             }
-            std.debug.print("\n", .{});
+            term.printRaw("\n", .{});
         }
     }
 

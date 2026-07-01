@@ -8,6 +8,7 @@ const Mono = @import("mono.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
+const term = @import("term.zig");
 
 const usage =
     \\usage: duo [command] [options] [file]
@@ -31,11 +32,13 @@ const usage =
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
+    \\  --link <lib>      link against a C library (e.g. --link raylib; repeatable)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\
 ;
 
 pub fn main(init: std.process.Init) !void {
+    term.init();
     const alloc = init.arena.allocator();
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
@@ -69,6 +72,7 @@ pub fn main(init: std.process.Init) !void {
     var lib_mode = false;
     var pgo = false;
     var shared_mem = false;
+    var link_flags: std.ArrayList([]const u8) = .empty;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -93,6 +97,9 @@ pub fn main(init: std.process.Init) !void {
             pgo = true;
         } else if (std.mem.eql(u8, arg, "--shared-memory")) {
             shared_mem = true;
+        } else if (std.mem.eql(u8, arg, "--link") and i + 1 < args.len) {
+            i += 1;
+            try link_flags.append(alloc, args[i]);
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
         } else if (arg.len > 0 and arg[0] != '-') {
@@ -101,7 +108,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
-        std.debug.print("{s}", .{usage});
+        term.printRaw("{s}", .{usage});
         return;
     }
 
@@ -122,26 +129,26 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (std.mem.eql(u8, cmd, "build")) {
-        try do_project_build(alloc, io, input_file, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, false);
+        try do_project_build(alloc, io, input_file, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, false);
         return;
     }
 
     if (std.mem.eql(u8, cmd, "run") and input_file == null) {
-        try do_project_build(alloc, io, null, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, true);
+        try do_project_build(alloc, io, null, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
         return;
     }
 
     if (std.mem.eql(u8, cmd, "run")) {
         if (input_file) |maybe_target| {
             if (!is_duo_source_path(maybe_target) and !is_lua_source_path(maybe_target)) {
-                try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, true);
+                try do_project_build(alloc, io, maybe_target, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, true);
                 return;
             }
         }
     }
 
     const file = input_file orelse {
-        std.debug.print("error: no input file\n", .{});
+        term.err("no input file", .{});
         std.process.exit(1);
     };
 
@@ -154,17 +161,18 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode, shared_mem);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false, link_flags.items);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false, &.{});
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
     } else {
-        std.debug.print("error: unknown command '{s}'\n{s}", .{ cmd, usage });
+        term.err("unknown command '{s}'", .{cmd});
+        term.printRaw("{s}", .{usage});
         std.process.exit(1);
     }
 }
@@ -185,6 +193,7 @@ const BuildTarget = struct {
     pgo: bool = false,
     lib_mode: bool = false,
     shared_mem: bool = false,
+    link: []const []const u8 = &.{},
 };
 
 fn firstStringField(src: []const u8, field: []const u8) ?[]const u8 {
@@ -258,7 +267,47 @@ fn matchingTable(src: []const u8, open: usize) ?[]const u8 {
     return null;
 }
 
-fn parseTargetBlock(block: []const u8, lib_mode: bool) ?BuildTarget {
+fn firstListField(alloc: std.mem.Allocator, src: []const u8, field: []const u8) ![]const []const u8 {
+    var at: usize = 0;
+    while (std.mem.indexOfPos(u8, src, at, field)) |pos| {
+        const before_ok = pos == 0 or !std.ascii.isAlphanumeric(src[pos - 1]) and src[pos - 1] != '_';
+        const after = pos + field.len;
+        const after_ok = after >= src.len or !std.ascii.isAlphanumeric(src[after]) and src[after] != '_';
+        if (before_ok and after_ok) {
+            var i = after;
+            while (i < src.len and std.ascii.isWhitespace(src[i])) : (i += 1) {}
+            if (i < src.len and src[i] == '=') {
+                i += 1;
+                while (i < src.len and std.ascii.isWhitespace(src[i])) : (i += 1) {}
+                if (i < src.len and src[i] == '{') {
+                    const body = matchingTable(src, i) orelse return &.{};
+                    var result: std.ArrayList([]const u8) = .empty;
+                    var j: usize = 0;
+                    while (j < body.len) {
+                        while (j < body.len and std.ascii.isWhitespace(body[j])) : (j += 1) {}
+                        if (j >= body.len) break;
+                        if (body[j] == '"') {
+                            j += 1;
+                            const start = j;
+                            while (j < body.len and body[j] != '"') : (j += 1) {}
+                            if (j < body.len) {
+                                try result.append(alloc, body[start..j]);
+                                j += 1;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    return result.items;
+                }
+            }
+        }
+        at = pos + field.len;
+    }
+    return &.{};
+}
+
+fn parseTargetBlock(alloc: std.mem.Allocator, block: []const u8, lib_mode: bool) ?BuildTarget {
     const src = firstStringField(block, "src") orelse return null;
     const name = firstStringField(block, "name") orelse std.fs.path.stem(src);
     return .{
@@ -272,12 +321,14 @@ fn parseTargetBlock(block: []const u8, lib_mode: bool) ?BuildTarget {
         .pgo = firstBoolField(block, "pgo", false),
         .lib_mode = lib_mode or firstBoolField(block, "lib", false),
         .shared_mem = firstBoolField(block, "shared_memory", false),
+        .link = firstListField(alloc, block, "link") catch &.{},
     };
 }
 
 fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !BuildTarget {
     const src = read_source(alloc, io, "build.duo") catch |e| {
-        std.debug.print("error: unable to read build.duo: {}\nrun `duo init` to create one\n", .{e});
+        term.err("unable to read build.duo: {}", .{e});
+        term.print("run `duo init` to create one", .{});
         std.process.exit(1);
     };
     const target_name = requested orelse firstStringField(src, "default");
@@ -293,7 +344,7 @@ fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !Bu
         const rel_open = std.mem.indexOfScalar(u8, src[pos..], '{') orelse break;
         const open = pos + rel_open;
         const block = matchingTable(src, open) orelse break;
-        if (parseTargetBlock(block, is_lib)) |t| {
+        if (parseTargetBlock(alloc, block, is_lib)) |t| {
             if (first == null) first = t;
             if (target_name) |want| {
                 if (std.mem.eql(u8, t.name, want)) return t;
@@ -302,11 +353,11 @@ fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !Bu
         at = open + block.len + 2;
     }
     if (target_name) |want| {
-        std.debug.print("error: target '{s}' not found in build.duo\n", .{want});
+        term.err("target '{s}' not found in build.duo", .{want});
         std.process.exit(1);
     }
     return first orelse {
-        std.debug.print("error: build.duo does not define build.exe({{ src = \"...\" }}) or build.lib({{ src = \"...\" }})\n", .{});
+        term.err("build.duo does not define build.exe({{ src = \"...\" }}) or build.lib({{ src = \"...\" }})", .{});
         std.process.exit(1);
     };
 }
@@ -323,7 +374,7 @@ fn writeNewFile(io: Io, path: []const u8, data: []const u8) !void {
     const cwd = Io.Dir.cwd();
     Io.Dir.writeFile(cwd, io, .{ .sub_path = path, .data = data, .flags = .{ .exclusive = true } }) catch |e| switch (e) {
         error.PathAlreadyExists => {
-            std.debug.print("error: refusing to overwrite existing {s}\n", .{path});
+            term.err("refusing to overwrite existing {s}", .{path});
             std.process.exit(1);
         },
         else => return e,
@@ -357,7 +408,7 @@ fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
     try run_child_process(io, &mkdir_argv, "mkdir", true);
     try writeNewFile(io, "src/main.duo", main_src);
     try writeNewFile(io, "build.duo", build_src);
-    std.debug.print("created Duo project '{s}'\n", .{name});
+    term.ok("created Duo project '{s}'", .{name});
 }
 
 fn startsWithWord(line: []const u8, word: []const u8) bool {
@@ -410,10 +461,10 @@ fn run_shell_binary(io: Io, out_path: []const u8) !void {
     const run_term = try run_child.wait(io);
     switch (run_term) {
         .exited => |code| if (code != 0) {
-            std.debug.print("program exited with code {}\n", .{code});
+            term.print("program exited with code {}", .{code});
         },
-        .signal => std.debug.print("program terminated by signal\n", .{}),
-        else => std.debug.print("program terminated abnormally\n", .{}),
+        .signal => term.print("program terminated by signal", .{}),
+        else => term.print("program terminated abnormally", .{}),
     }
 }
 
@@ -425,13 +476,13 @@ fn run_host_shell_command(io: Io, command: []const u8) !void {
         .stdout = .inherit,
         .stderr = .inherit,
     });
-    const term = try child.wait(io);
-    switch (term) {
+    const result = try child.wait(io);
+    switch (result) {
         .exited => |code| if (code != 0) {
-            std.debug.print("host command exited with code {}\n", .{code});
+            term.print("host command exited with code {}", .{code});
         },
-        .signal => std.debug.print("host command terminated by signal\n", .{}),
-        else => std.debug.print("host command terminated abnormally\n", .{}),
+        .signal => term.print("host command terminated by signal", .{}),
+        else => term.print("host command terminated abnormally", .{}),
     }
 }
 
@@ -446,7 +497,7 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
         return false;
     }
     if (std.mem.eql(u8, line, ":help")) {
-        std.debug.print("enter Duo code, expressions, !host-command, :quit, or :exit\n", .{});
+        term.print("enter Duo code, expressions, !host-command, :quit, or :exit", .{});
         return true;
     }
     if (line[0] == '!' and line.len > 1) {
@@ -464,19 +515,19 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
 
     const cwd = Io.Dir.cwd();
     try Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = source });
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false);
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false, &.{});
     try run_shell_binary(io, out_path);
     return true;
 }
 
 fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
-    std.debug.print("Duo shell (:help for help, :quit to exit)\n", .{});
+    term.print("Duo shell (:help for help, :quit to exit)", .{});
     var line: std.ArrayList(u8) = .empty;
     defer line.deinit(alloc);
     var counter: usize = 0;
     var buf: [1024]u8 = undefined;
 
-    std.debug.print("duo> ", .{});
+    term.printRaw("duo> ", .{});
     while (true) {
         const n = try std.posix.read(std.posix.STDIN_FILENO, buf[0..]);
         if (n == 0) {
@@ -490,7 +541,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
                 const keep_running = try run_shell_line(alloc, io, line.items, &counter, verbose);
                 line.clearRetainingCapacity();
                 if (!keep_running) return;
-                std.debug.print("duo> ", .{});
+                term.printRaw("duo> ", .{});
             } else if (b != '\r') {
                 try line.append(alloc, b);
             }
@@ -511,13 +562,14 @@ fn do_project_build(
     pgo_arg: bool,
     lib_mode_arg: bool,
     shared_mem_arg: bool,
+    link_flags_arg: []const []const u8,
     run_after: bool,
 ) !void {
     const t = try readBuildTarget(alloc, io, requested);
     const target = t.target orelse target_arg;
     const target_lib_mode = lib_mode_arg or t.lib_mode;
     if (run_after and target_lib_mode) {
-        std.debug.print("error: target '{s}' is a library and cannot be run\n", .{t.name});
+        term.err("target '{s}' is a library and cannot be run", .{t.name});
         std.process.exit(1);
     }
     const out = output_file orelse t.out orelse out: {
@@ -526,6 +578,13 @@ fn do_project_build(
         break :out try std.fmt.allocPrint(alloc, "zig-out/bin/{s}", .{stem});
     };
     try ensureDirForPath(io, out);
+    // Merge CLI link flags with link flags from build.duo
+    const merged_link = if (t.link.len > 0) blk: {
+        var m: std.ArrayList([]const u8) = .empty;
+        try m.appendSlice(alloc, link_flags_arg);
+        try m.appendSlice(alloc, t.link);
+        break :blk m.items;
+    } else link_flags_arg;
     try do_compile(
         alloc,
         io,
@@ -541,6 +600,7 @@ fn do_project_build(
         pgo_arg or t.pgo,
         target_lib_mode,
         shared_mem_arg or t.shared_mem,
+        merged_link,
     );
 }
 
@@ -563,7 +623,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     var lex = Lexer.init(src, src_path);
     var parser = Parser.init(&lex, alloc);
     var mod = parser.parse_module() catch |e| {
-        std.debug.print("parse error: {}\n", .{e});
+        term.err("parse error: {}", .{e});
         std.process.exit(1);
     };
 
@@ -571,11 +631,11 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     sem.lua55_mode = is_lua_source_path(src_path);
     sem.duo_mode = is_duo_source_path(src_path);
     sem.check_module(&mod) catch |e| {
-        std.debug.print("sema error: {}\n", .{e});
+        term.err("sema error: {}", .{e});
         std.process.exit(1);
     };
     if (sem.errors > 0) {
-        std.debug.print("{d} error(s)\n", .{sem.errors});
+        term.err("{d} error(s)", .{sem.errors});
         std.process.exit(1);
     }
     return .{ .mod = mod, .sem = sem };
@@ -588,14 +648,14 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
         .stdout = if (quiet) .ignore else .inherit,
         .stderr = if (quiet) .ignore else .inherit,
     });
-    const term = try child.wait(io);
-    switch (term) {
+    const result = try child.wait(io);
+    switch (result) {
         .exited => |code| if (code != 0) {
-            std.debug.print("{s} failed (exit {})\n", .{ label, code });
+            term.err("{s} failed (exit {})", .{ label, code });
             std.process.exit(1);
         },
         else => {
-            std.debug.print("{s} terminated abnormally\n", .{label});
+            term.err("{s} terminated abnormally", .{label});
             std.process.exit(1);
         },
     }
@@ -616,12 +676,13 @@ fn do_compile(
     pgo: bool,
     lib_mode: bool,
     shared_mem: bool,
+    link_flags: []const []const u8,
 ) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
 
     if (check_only) {
-        std.debug.print("OK\n", .{});
+        term.ok("OK", .{});
         return;
     }
 
@@ -631,7 +692,7 @@ fn do_compile(
     var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
     defer mono.deinit();
     mono.run(&ps.mod) catch |e| {
-        std.debug.print("monomorphization error: {}\n", .{e});
+        term.err("monomorphization error: {}", .{e});
         std.process.exit(1);
     };
 
@@ -640,7 +701,7 @@ fn do_compile(
     var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
     defer arc_pass.deinit();
     arc_pass.run(&ps.mod) catch |e| {
-        std.debug.print("ARC analysis error: {}\n", .{e});
+        term.err("ARC analysis error: {}", .{e});
         std.process.exit(1);
     };
 
@@ -651,13 +712,13 @@ fn do_compile(
     // wired in Task 17.1; for now no threaded mode is requested here.
     const threaded = false;
     AsyncLower.validateTarget(is_wasm_target, threaded) catch {
-        std.debug.print("error: the threaded scheduler is not supported on the wasm32-wasi target\n", .{});
+        term.err("the threaded scheduler is not supported on the wasm32-wasi target", .{});
         std.process.exit(1);
     };
     var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
     defer async_pass.deinit();
     async_pass.run(&ps.mod) catch |e| {
-        std.debug.print("async lowering error: {}\n", .{e});
+        term.err("async lowering error: {}", .{e});
         std.process.exit(1);
     };
 
@@ -684,7 +745,7 @@ fn do_compile(
         cg.lib_mode = lib_mode;
         cg.duo_mode = ps.sem.duo_mode;
         cg.emit_module(&ps.mod) catch |e| {
-            std.debug.print("codegen error: {}\n", .{e});
+            term.err("codegen error: {}", .{e});
             std.process.exit(1);
         };
         try fw.interface.flush();
@@ -741,6 +802,9 @@ fn do_compile(
                 "-std=gnu99",
                 "-lm",
             });
+            for (link_flags) |lib| {
+                try args.append(alloc, try std.fmt.allocPrint(alloc, "-l{s}", .{lib}));
+            }
             if (load_chunk or lib_mode) {
                 try args.append(alloc, "-fPIC");
                 if (@import("builtin").os.tag == .macos) {
@@ -816,7 +880,7 @@ fn do_compile(
             .exited => |code| std.process.exit(code),
             .signal => std.process.exit(128),
             else => {
-                std.debug.print("program terminated abnormally\n", .{});
+                term.print("program terminated abnormally", .{});
                 std.process.exit(1);
             },
         }
@@ -825,7 +889,7 @@ fn do_compile(
 
 fn do_completion(io: Io, args: []const [:0]const u8) !void {
     const shell = if (args.len > 0) args[0] else {
-        std.debug.print("error: completion requires a shell: bash, zsh, fish, or nu\n", .{});
+        term.err("completion requires a shell: bash, zsh, fish, or nu", .{});
         std.process.exit(2);
     };
 
@@ -838,7 +902,7 @@ fn do_completion(io: Io, args: []const [:0]const u8) !void {
     else if (std.mem.eql(u8, shell, "nu") or std.mem.eql(u8, shell, "nushell"))
         nu_completion
     else {
-        std.debug.print("error: unsupported shell '{s}' (expected bash, zsh, fish, or nu)\n", .{shell});
+        term.err("unsupported shell '{s}' (expected bash, zsh, fish, or nu)", .{shell});
         std.process.exit(2);
     };
 
@@ -995,27 +1059,27 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
     defer mono.deinit();
     mono.run(&ps.mod) catch |e| {
-        std.debug.print("monomorphization error: {}\n", .{e});
+        term.err("monomorphization error: {}", .{e});
         std.process.exit(1);
     };
 
     var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
     defer arc_pass.deinit();
     arc_pass.run(&ps.mod) catch |e| {
-        std.debug.print("ARC analysis error: {}\n", .{e});
+        term.err("ARC analysis error: {}", .{e});
         std.process.exit(1);
     };
 
     const is_wasm_target = std.mem.eql(u8, target, "wasm32-wasi");
     const threaded = false;
     AsyncLower.validateTarget(is_wasm_target, threaded) catch {
-        std.debug.print("error: the threaded scheduler is not supported on the wasm32-wasi target\n", .{});
+        term.err("the threaded scheduler is not supported on the wasm32-wasi target", .{});
         std.process.exit(1);
     };
     var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
     defer async_pass.deinit();
     async_pass.run(&ps.mod) catch |e| {
-        std.debug.print("async lowering error: {}\n", .{e});
+        term.err("async lowering error: {}", .{e});
         std.process.exit(1);
     };
 
@@ -1029,7 +1093,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.src_path = src_path;
     cg.target = target;
     cg.emit_module(&ps.mod) catch |e| {
-        std.debug.print("codegen error: {}\n", .{e});
+        term.err("codegen error: {}", .{e});
         std.process.exit(1);
     };
     try fw.interface.flush();
@@ -1037,27 +1101,27 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
 
 fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     const src = read_source(alloc, io, src_path) catch |err| {
-        std.debug.print("error: failed to read source file '{s}': {s}\n", .{ src_path, @errorName(err) });
+        term.err("failed to read source file '{s}': {s}", .{ src_path, @errorName(err) });
         std.process.exit(1);
     };
     var lex = Lexer.init(src, src_path);
     var parser = Parser.init(&lex, alloc);
     const mod = parser.parse_module() catch {
-        std.debug.print("error: failed to parse '{s}'\n", .{src_path});
+        term.err("failed to parse '{s}'", .{src_path});
         std.process.exit(1);
     };
 
     var buf: std.ArrayList(u8) = .empty;
     var pp = PrettyPrinter.init(alloc, &buf, .duo);
     pp.printModule(&mod) catch {
-        std.debug.print("error: failed to format '{s}'\n", .{src_path});
+        term.err("failed to format '{s}'", .{src_path});
         std.process.exit(1);
     };
 
     const cwd = Io.Dir.cwd();
     Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = buf.items }) catch |err| {
-        std.debug.print("error: failed to write formatted source to '{s}': {s}\n", .{ src_path, @errorName(err) });
+        term.err("failed to write formatted source to '{s}': {s}", .{ src_path, @errorName(err) });
         std.process.exit(1);
     };
-    std.debug.print("Formatted {s}\n", .{src_path});
+    term.ok("Formatted {s}", .{src_path});
 }

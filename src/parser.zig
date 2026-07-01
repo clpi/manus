@@ -4,6 +4,7 @@ const Lexer = @import("lexer.zig").Lexer;
 const Token = @import("lexer.zig").Token;
 const TK = @import("lexer.zig").TokenKind;
 const ast = @import("ast.zig");
+const term = @import("term.zig");
 
 pub const ParseError = error{
     UnexpectedToken,
@@ -35,8 +36,8 @@ pub const Parser = struct {
     fn expect(self: *Parser, kind: TK) ParseError!Token {
         const tok = try self.adv();
         if (tok.kind != kind) {
-            std.debug.print(">>> EXPECT FAILED at {}: expected '{s}', got '{s}'\n", .{
-                tok.loc, kind.spelling(), tok.kind.spelling(),
+            term.locBare(tok.loc, ">>> EXPECT FAILED: expected '{s}', got '{s}'", .{
+                kind.spelling(), tok.kind.spelling(),
             });
             // @panic("EXPECT FAILED");
             return ParseError.ExpectedToken;
@@ -220,7 +221,7 @@ pub const Parser = struct {
                 return .{ .record = rt };
             },
             else => {
-                std.debug.print("{}: expected type, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
+                term.locErr(tok.loc, "expected type, got '{s}'", .{tok.kind.spelling()});
                 return ParseError.ExpectedToken;
             },
         };
@@ -351,8 +352,8 @@ pub const Parser = struct {
             .kw_alias => self.parse_alias_def_with_attrs(attrs_slice),
             .kw_local, .kw_global => self.parse_local_or_global_with_attrs(attrs_slice),
             else => {
-                std.debug.print("{}: expected declaration after attribute(s), got '{s}'\n", .{
-                    tok.loc, tok.kind.spelling(),
+                term.locErr(tok.loc, "expected declaration after attribute(s), got '{s}'", .{
+                    tok.kind.spelling(),
                 });
                 return ParseError.UnexpectedToken;
             },
@@ -431,7 +432,7 @@ pub const Parser = struct {
         while (depth > 0) {
             const tok = try self.pk();
             if (tok.kind == .eof) {
-                std.debug.print("{}: unexpected EOF in attribute arguments\n", .{tok.loc});
+                term.locErr(tok.loc, "unexpected EOF in attribute arguments", .{});
                 return ParseError.UnexpectedToken;
             }
             if (tok.kind == .rparen) {
@@ -598,8 +599,8 @@ pub const Parser = struct {
                 });
             } else {
                 // Skip unexpected tokens to avoid infinite loops
-                std.debug.print("{}: unexpected token in concept body: '{s}'\n", .{
-                    (try self.pk()).loc, (try self.pk()).kind.spelling(),
+                term.locErr((try self.pk()).loc, "unexpected token in concept body: '{s}'", .{
+                    (try self.pk()).kind.spelling(),
                 });
                 return ParseError.UnexpectedToken;
             }
@@ -775,8 +776,8 @@ pub const Parser = struct {
         _ = try self.adv(); // consume `async`
         const nxt = try self.pk();
         if (nxt.kind != .kw_function and nxt.kind != .kw_fun) {
-            std.debug.print("{}: expected 'function' or 'fun' after 'async', got '{s}'\n", .{
-                nxt.loc, nxt.kind.spelling(),
+            term.locErr(nxt.loc, "expected 'function' or 'fun' after 'async', got '{s}'", .{
+                nxt.kind.spelling(),
             });
             return ParseError.ExpectedToken;
         }
@@ -1212,7 +1213,7 @@ pub const Parser = struct {
         if (case_syntax) {
             const separator = try self.pk();
             if (separator.kind != .kw_then and separator.kind != .kw_do) {
-                std.debug.print("{}: expected 'then' or 'do', got '{s}'\n", .{ separator.loc, separator.kind.spelling() });
+                term.locErr(separator.loc, "expected 'then' or 'do', got '{s}'", .{separator.kind.spelling()});
                 return ParseError.ExpectedToken;
             }
             _ = try self.adv();
@@ -1365,11 +1366,11 @@ pub const Parser = struct {
                     const neg_e = try self.new_expr(.{ .unop = .{ .loc = tok.loc, .op = .neg, .operand = e } });
                     return ast.Pattern{ .literal = neg_e };
                 }
-                std.debug.print("{}: expected number after '-' in pattern\n", .{tok.loc});
+                term.locErr(tok.loc, "expected number after '-' in pattern", .{});
                 return ParseError.UnexpectedToken;
             },
             else => {
-                std.debug.print("{}: expected pattern, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
+                term.locErr(tok.loc, "expected pattern, got '{s}'", .{tok.kind.spelling()});
                 return ParseError.UnexpectedToken;
             },
         }
@@ -1709,7 +1710,7 @@ pub const Parser = struct {
             .lbrace => self.parse_table(),
             .kw_match => self.parse_match_expr(),
             else => {
-                std.debug.print("{}: expected expression, got '{s}'\n", .{ tok.loc, tok.kind.spelling() });
+                term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
                 return ParseError.ExpectedToken;
             },
         };
@@ -1806,7 +1807,7 @@ pub const Parser = struct {
                 ));
             },
             else => {
-                std.debug.print("{}: expected function arguments\n", .{tok.loc});
+                term.locErr(tok.loc, "expected function arguments", .{});
                 return ParseError.UnexpectedToken;
             },
         }
