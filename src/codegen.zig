@@ -338,9 +338,9 @@ pub const CodeGen = struct {
 
     fn is_runtime_global(name: []const u8) bool {
         const runtime_globals = [_][]const u8{
-            "package",  "math", "utf8", "debug",       "coroutine",   "string",        "table",
-            "io",       "os",   "jit",  "ffi",         "duo_modules", "current_input", "current_output",
-            "_VERSION", "net",  "mem",  "__constexpr",
+            "package",  "math", "utf8", "debug",  "coroutine",   "string",        "table",
+            "io",       "os",   "jit",  "ffi",    "duo_modules", "current_input", "current_output",
+            "_VERSION", "net",  "mem",  "atomic", "__constexpr",
         };
         for (runtime_globals) |g| {
             if (std.mem.eql(u8, name, g)) return true;
@@ -450,6 +450,7 @@ pub const CodeGen = struct {
         if (e.* == .call) {
             const c = e.call;
             if (self.mem_call_result_type(c.func, c.args)) |t| return t;
+            if (self.atomic_call_result_type(c.func, c.args)) |t| return t;
             if (c.func.* == .name) {
                 if (std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     if (self.comptime_value_type(c.args[0])) |rt| return rt;
@@ -537,6 +538,7 @@ pub const CodeGen = struct {
         // recorded `.any` or no entry for this exact expression node.
         if (e.* == .call) {
             if (self.mem_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.atomic_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.string_call_result_type(e.call.func, e.call.args)) |t| return t;
             const callee_type = self.expr_type(e.call.func);
@@ -756,6 +758,62 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, fname, "is_null")) return .bool;
         if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) return .u64;
         return null;
+    }
+
+    fn atomic_intrinsic_name(_: *const CodeGen, func: *const ast.Expr) ?[]const u8 {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "atomic")) return f.field;
+        if (f.obj.* == .field) {
+            const inner = f.obj.field;
+            if (inner.obj.* == .name and
+                std.mem.eql(u8, inner.obj.name.ident, "std") and
+                std.mem.eql(u8, inner.field, "atomic"))
+                return f.field;
+        }
+        return null;
+    }
+
+    fn atomic_fetch_intrinsic(fname: []const u8) bool {
+        return std.mem.eql(u8, fname, "fetch_add") or
+            std.mem.eql(u8, fname, "fetch_sub") or
+            std.mem.eql(u8, fname, "fetch_and") or
+            std.mem.eql(u8, fname, "fetch_or") or
+            std.mem.eql(u8, fname, "fetch_xor");
+    }
+
+    fn atomic_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        const fname = self.atomic_intrinsic_name(func) orelse return null;
+        if (std.mem.eql(u8, fname, "load") or std.mem.eql(u8, fname, "exchange") or atomic_fetch_intrinsic(fname))
+            return self.mem_type_arg(args, 0) orelse .any;
+        if (std.mem.eql(u8, fname, "store") or std.mem.eql(u8, fname, "fence") or
+            std.mem.eql(u8, fname, "compiler_fence"))
+            return .void;
+        if (std.mem.eql(u8, fname, "compare_exchange")) return .bool;
+        return null;
+    }
+
+    fn atomic_order_literal(args: []const *ast.Expr, index: usize, default_order: []const u8) []const u8 {
+        if (index >= args.len or args[index].* != .string_lit) return default_order;
+        const order = args[index].string_lit.val;
+        if (std.mem.eql(u8, order, "relaxed")) return "__ATOMIC_RELAXED";
+        if (std.mem.eql(u8, order, "consume")) return "__ATOMIC_CONSUME";
+        if (std.mem.eql(u8, order, "acquire")) return "__ATOMIC_ACQUIRE";
+        if (std.mem.eql(u8, order, "release")) return "__ATOMIC_RELEASE";
+        if (std.mem.eql(u8, order, "acq_rel")) return "__ATOMIC_ACQ_REL";
+        if (std.mem.eql(u8, order, "seq_cst") or std.mem.eql(u8, order, "seqcst")) return "__ATOMIC_SEQ_CST";
+        return default_order;
+    }
+
+    fn atomic_compare_failure_order(args: []const *ast.Expr) []const u8 {
+        if (args.len > 5 and args[5].* == .string_lit) return atomic_order_literal(args, 5, "__ATOMIC_SEQ_CST");
+        if (args.len > 4 and args[4].* == .string_lit) {
+            const success = args[4].string_lit.val;
+            if (std.mem.eql(u8, success, "release") or std.mem.eql(u8, success, "acq_rel"))
+                return "__ATOMIC_ACQUIRE";
+            return atomic_order_literal(args, 4, "__ATOMIC_SEQ_CST");
+        }
+        return "__ATOMIC_SEQ_CST";
     }
 
     fn resolve_type(self: *CodeGen, te: ast.TypeExpr) RT {
@@ -4452,6 +4510,7 @@ pub const CodeGen = struct {
                 }
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
                 if (try self.maybe_emit_mem_call(c.func, c.args, self.expr_type(expr))) return;
+                if (try self.maybe_emit_atomic_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args, self.expr_type(expr))) return;
@@ -5735,6 +5794,89 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn emit_atomic_ptr_arg(self: *CodeGen, args: []*ast.Expr, index: usize, rt: RT) E!void {
+        self.p("((", .{});
+        self.typ(rt);
+        self.p("*)(void*)(", .{});
+        if (index < args.len) try self.emit_expr(args[index]) else self.p("NULL", .{});
+        self.p("))", .{});
+    }
+
+    fn emit_atomic_value_as(self: *CodeGen, args: []*ast.Expr, index: usize, rt: RT) E!void {
+        self.p("(", .{});
+        self.typ(rt);
+        self.p(")(", .{});
+        if (index < args.len) try self.emit_mem_value_as(args[index], rt) else self.p("0", .{});
+        self.p(")", .{});
+    }
+
+    fn atomic_fetch_builtin(fname: []const u8) ?[]const u8 {
+        if (std.mem.eql(u8, fname, "fetch_add")) return "__atomic_fetch_add";
+        if (std.mem.eql(u8, fname, "fetch_sub")) return "__atomic_fetch_sub";
+        if (std.mem.eql(u8, fname, "fetch_and")) return "__atomic_fetch_and";
+        if (std.mem.eql(u8, fname, "fetch_or")) return "__atomic_fetch_or";
+        if (std.mem.eql(u8, fname, "fetch_xor")) return "__atomic_fetch_xor";
+        return null;
+    }
+
+    fn maybe_emit_atomic_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        const fname = self.atomic_intrinsic_name(func) orelse return false;
+        const rt = self.mem_type_arg(args, 0) orelse result_rt;
+
+        if (std.mem.eql(u8, fname, "load")) {
+            self.p("__atomic_load_n(", .{});
+            try self.emit_atomic_ptr_arg(args, 1, rt);
+            self.p(", {s})", .{atomic_order_literal(args, 2, "__ATOMIC_SEQ_CST")});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "store")) {
+            self.p("__atomic_store_n(", .{});
+            try self.emit_atomic_ptr_arg(args, 1, rt);
+            self.p(", ", .{});
+            try self.emit_atomic_value_as(args, 2, rt);
+            self.p(", {s})", .{atomic_order_literal(args, 3, "__ATOMIC_SEQ_CST")});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "exchange")) {
+            self.p("__atomic_exchange_n(", .{});
+            try self.emit_atomic_ptr_arg(args, 1, rt);
+            self.p(", ", .{});
+            try self.emit_atomic_value_as(args, 2, rt);
+            self.p(", {s})", .{atomic_order_literal(args, 3, "__ATOMIC_SEQ_CST")});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "compare_exchange")) {
+            self.p("__atomic_compare_exchange_n(", .{});
+            try self.emit_atomic_ptr_arg(args, 1, rt);
+            self.p(", ", .{});
+            try self.emit_atomic_ptr_arg(args, 2, rt);
+            self.p(", ", .{});
+            try self.emit_atomic_value_as(args, 3, rt);
+            self.p(", false, {s}, {s})", .{
+                atomic_order_literal(args, 4, "__ATOMIC_SEQ_CST"),
+                atomic_compare_failure_order(args),
+            });
+            return true;
+        }
+        if (atomic_fetch_builtin(fname)) |builtin| {
+            self.p("{s}(", .{builtin});
+            try self.emit_atomic_ptr_arg(args, 1, rt);
+            self.p(", ", .{});
+            try self.emit_atomic_value_as(args, 2, rt);
+            self.p(", {s})", .{atomic_order_literal(args, 3, "__ATOMIC_SEQ_CST")});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fence")) {
+            self.p("__atomic_thread_fence({s})", .{atomic_order_literal(args, 0, "__ATOMIC_SEQ_CST")});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "compiler_fence")) {
+            self.p("__atomic_signal_fence({s})", .{atomic_order_literal(args, 0, "__ATOMIC_SEQ_CST")});
+            return true;
+        }
+        return false;
+    }
+
     fn emit_lua_global_fn(self: *CodeGen, name: []const u8) bool {
         const mapped: ?[]const u8 = if (std.mem.eql(u8, name, "tostring")) "tostring" else if (std.mem.eql(u8, name, "tonumber")) "tonumber" else if (std.mem.eql(u8, name, "type")) "type" else null;
         if (mapped) |fn_name| {
@@ -6481,6 +6623,10 @@ pub const CodeGen = struct {
                     for (c.args) |a| try self.collect_require_names(a, names);
                     return;
                 }
+                if (self.atomic_intrinsic_name(c.func) != null) {
+                    for (c.args) |a| try self.collect_require_names(a, names);
+                    return;
+                }
                 try self.collect_require_names(c.func, names);
                 for (c.args) |a| try self.collect_require_names(a, names);
             },
@@ -6601,9 +6747,9 @@ pub const CodeGen = struct {
             if (self.src_path.len == 0) continue;
             if (std.mem.eql(u8, name, "std")) continue;
 
-            // Handle collection-style prefixes: vendor:xxx → vendor/xxx, core:xxx → lib/core/xxx
-            const vendor_prefix = "vendor:";
-            const core_prefix = "core:";
+            // Handle collection-style namespaces: vendor.xxx → vendor/xxx, std.core.xxx → lib/core/xxx
+            const vendor_prefix = "vendor.";
+            const core_prefix = "std.core.";
             const has_vendor = std.mem.startsWith(u8, name, vendor_prefix);
             const has_core = std.mem.startsWith(u8, name, core_prefix);
             const strip_len: usize = if (has_vendor) vendor_prefix.len else if (has_core) core_prefix.len else 0;
@@ -8953,8 +9099,8 @@ const duo_runtime =
     \\    }
     \\    if (mod.type == VAL_NIL) {
     \\        // Try collection-style paths (vendor:xxx, core:xxx)
-    \\        const char* vendor_prefix = "vendor:";
-    \\        const char* core_prefix = "core:";
+    \\        const char* vendor_prefix = "vendor.";
+    \\        const char* core_prefix = "std.core.";
     \\        char mod_path[1024];
     \\        if (strncmp(name, vendor_prefix, 7) == 0) {
     \\            // Strip vendor: prefix, convert dots to slashes
@@ -8984,7 +9130,7 @@ const duo_runtime =
     \\                    if (chunk.type != VAL_NIL) mod = chunk;
     \\                }
     \\            }
-    \\        } else if (strncmp(name, core_prefix, 5) == 0) {
+    \\        } else if (strncmp(name, core_prefix, 9) == 0) {
     \\            const char* rest = name + 5;
     \\            const char* src = rest;
     \\            char* dst = mod_path;
@@ -11673,6 +11819,61 @@ test "codegen: memory intrinsics lower to raw C operations" {
     try testing.expect(std.mem.indexOf(u8, output, "__sync_synchronize()") != null);
     try testing.expect(std.mem.indexOf(u8, output, "free((void*)(out));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "free((void*)(raw));") != null);
+}
+
+test "codegen: atomic intrinsics lower to compiler atomic builtins" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\function low(): i64
+        \\  local raw: *u8 = mem.alloc(16)
+        \\  local slot: *i64 = mem.cast("i64", raw)
+        \\  local expected: *i64 = mem.add(slot, 1)
+        \\  atomic.store("i64", slot, 10, "release")
+        \\  local old_add: i64 = atomic.fetch_add("i64", slot, 5, "acq_rel")
+        \\  local old_sub: i64 = atomic.fetch_sub("i64", slot, 3, "acq_rel")
+        \\  local old_and: i64 = atomic.fetch_and("i64", slot, 14, "acq_rel")
+        \\  local old_or: i64 = atomic.fetch_or("i64", slot, 3, "acq_rel")
+        \\  local old_xor: i64 = atomic.fetch_xor("i64", slot, 6, "acq_rel")
+        \\  local old_exchange: i64 = std.atomic.exchange("i64", slot, 7, "acq_rel")
+        \\  mem.store("i64", expected, 7)
+        \\  local swapped: bool = atomic.compare_exchange("i64", slot, expected, 11, "acq_rel", "acquire")
+        \\  local final_value: i64 = atomic.load("i64", slot, "acquire")
+        \\  atomic.compiler_fence("acquire")
+        \\  atomic.fence("seq_cst")
+        \\  mem.free(raw)
+        \\  return old_add + old_sub + old_and + old_or + old_xor + old_exchange + final_value
+        \\end
+        \\print(low())
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+    try testing.expectEqual(@as(u32, 0), semantic.errors);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_store_n(((int64_t*)(void*)(slot)), (int64_t)(10), __ATOMIC_RELEASE)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_fetch_add(((int64_t*)(void*)(slot)), (int64_t)(5), __ATOMIC_ACQ_REL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_fetch_sub(((int64_t*)(void*)(slot)), (int64_t)(3), __ATOMIC_ACQ_REL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_fetch_and(((int64_t*)(void*)(slot)), (int64_t)(14), __ATOMIC_ACQ_REL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_fetch_or(((int64_t*)(void*)(slot)), (int64_t)(3), __ATOMIC_ACQ_REL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_fetch_xor(((int64_t*)(void*)(slot)), (int64_t)(6), __ATOMIC_ACQ_REL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_exchange_n(((int64_t*)(void*)(slot)), (int64_t)(7), __ATOMIC_ACQ_REL)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_compare_exchange_n(((int64_t*)(void*)(slot)), ((int64_t*)(void*)(expected)), (int64_t)(11), false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_load_n(((int64_t*)(void*)(slot)), __ATOMIC_ACQUIRE)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_signal_fence(__ATOMIC_ACQUIRE)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__atomic_thread_fence(__ATOMIC_SEQ_CST)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "std_atomic_signal") == null);
 }
 
 // ── WASM target validation ─────────────────────────────────────────────────

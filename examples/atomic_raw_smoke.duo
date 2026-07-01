@@ -1,0 +1,32 @@
+function atomic_demo(): i64
+    local raw: *u8 = mem.alloc(16)
+    mem.zero(raw, 16)
+
+    local slot: *i64 = mem.cast("i64", raw)
+    local expected: *i64 = mem.add(slot, 1)
+
+    atomic.store("i64", slot, 10, "release")
+    local old_add: i64 = atomic.fetch_add("i64", slot, 5, "acq_rel")
+    local old_sub: i64 = atomic.fetch_sub("i64", slot, 3, "acq_rel")
+    local old_or: i64 = atomic.fetch_or("i64", slot, 3, "acq_rel")
+    local old_and: i64 = atomic.fetch_and("i64", slot, 14, "acq_rel")
+    local old_xor: i64 = atomic.fetch_xor("i64", slot, 6, "acq_rel")
+    local old_exchange: i64 = std.atomic.exchange("i64", slot, 7, "acq_rel")
+
+    mem.store("i64", expected, 7)
+    local swapped: bool = atomic.compare_exchange("i64", slot, expected, 11, "acq_rel", "acquire")
+    local final_value: i64 = atomic.load("i64", slot, "acquire")
+    local expected_value: i64 = mem.load("i64", expected)
+    atomic.compiler_fence("acquire")
+    atomic.fence("seq_cst")
+
+    local bonus: i64 = 0
+    if swapped then
+        bonus = 1
+    end
+
+    mem.free(raw)
+    return old_add + old_sub + old_or + old_and + old_xor + old_exchange + final_value + expected_value + bonus
+end
+
+print(atomic_demo())

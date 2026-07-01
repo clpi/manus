@@ -155,6 +155,40 @@ The type argument is a string literal naming a primitive Duo type such as
 like `"*i64"`. Pointer indexing is native in typed code: `p[i]` emits C
 pointer indexing and has the pointee type.
 
+### Atomic Memory Operations
+
+The compiler also recognizes `atomic.*` and `std.atomic.*` calls for typed
+machine atomics over raw pointer storage. Atomic type names use the same string
+spelling as `mem.*`, but are limited to integer, boolean, and pointer storage.
+Calls lower to C `__atomic_*` builtins with sequential consistency by default.
+
+```duo
+function next_id(slot: *i64): i64
+    return atomic.fetch_add("i64", slot, 1, "acq_rel")
+end
+```
+
+Available atomic operations:
+
+| Operation | Lowers To | Result |
+|-----------|-----------|--------|
+| `atomic.load("T", ptr[, order])` | `__atomic_load_n` | `T` |
+| `atomic.store("T", ptr, value[, order])` | `__atomic_store_n` | `void` |
+| `atomic.exchange("T", ptr, value[, order])` | `__atomic_exchange_n` | `T` |
+| `atomic.compare_exchange("T", ptr, expected_ptr, desired[, success[, failure]])` | `__atomic_compare_exchange_n` | `bool` |
+| `atomic.fetch_add("T", ptr, delta[, order])` | `__atomic_fetch_add` | old `T` |
+| `atomic.fetch_sub("T", ptr, delta[, order])` | `__atomic_fetch_sub` | old `T` |
+| `atomic.fetch_and("T", ptr, mask[, order])` | `__atomic_fetch_and` | old `T` |
+| `atomic.fetch_or("T", ptr, mask[, order])` | `__atomic_fetch_or` | old `T` |
+| `atomic.fetch_xor("T", ptr, mask[, order])` | `__atomic_fetch_xor` | old `T` |
+| `atomic.fence([order])` | `__atomic_thread_fence` | `void` |
+| `atomic.compiler_fence([order])` | `__atomic_signal_fence` | `void` |
+
+Memory order strings are `"relaxed"`, `"consume"`, `"acquire"`, `"release"`,
+`"acq_rel"`, and `"seq_cst"` (`"seqcst"` is accepted as an alias). Load and
+compare-exchange failure orders cannot use release semantics; store orders
+cannot use acquire semantics.
+
 ## Type Inference
 
 Duo can infer types for variables and expressions:

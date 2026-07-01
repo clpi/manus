@@ -239,7 +239,8 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "arg") or
             std.mem.eql(u8, name, "jit") or
             std.mem.eql(u8, name, "ffi") or
-            std.mem.eql(u8, name, "mem"))
+            std.mem.eql(u8, name, "mem") or
+            std.mem.eql(u8, name, "atomic"))
             return true;
         // Duo standard library namespace
         if (std.mem.eql(u8, name, "std")) return true;
@@ -627,6 +628,225 @@ pub const Sema = struct {
             return .any;
         };
         try self.validate_mem_call(loc, fname, args);
+        return ret;
+    }
+
+    fn atomic_intrinsic_name(_: *const Sema, func: *const ast.Expr) ?[]const u8 {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "atomic")) return f.field;
+        if (f.obj.* == .field) {
+            const inner = f.obj.field;
+            if (inner.obj.* == .name and
+                std.mem.eql(u8, inner.obj.name.ident, "std") and
+                std.mem.eql(u8, inner.field, "atomic"))
+                return f.field;
+        }
+        return null;
+    }
+
+    fn atomic_type_arg(self: *Sema, args: []const *ast.Expr, index: usize) SemaError!?RT {
+        if (index >= args.len) return null;
+        if (args[index].* != .string_lit) return null;
+        return try self.mem_type_from_name(args[index].string_lit.val);
+    }
+
+    fn atomic_type_supported(t: RT) bool {
+        return t.is_integer() or t == .bool or t == .pointer;
+    }
+
+    fn atomic_fetch_intrinsic(fname: []const u8) bool {
+        return std.mem.eql(u8, fname, "fetch_add") or
+            std.mem.eql(u8, fname, "fetch_sub") or
+            std.mem.eql(u8, fname, "fetch_and") or
+            std.mem.eql(u8, fname, "fetch_or") or
+            std.mem.eql(u8, fname, "fetch_xor");
+    }
+
+    fn atomic_call_result_type(self: *Sema, fname: []const u8, args: []const *ast.Expr) SemaError!?RT {
+        if (std.mem.eql(u8, fname, "load") or std.mem.eql(u8, fname, "exchange") or atomic_fetch_intrinsic(fname))
+            return (try self.atomic_type_arg(args, 0)) orelse .any;
+        if (std.mem.eql(u8, fname, "store") or std.mem.eql(u8, fname, "fence") or
+            std.mem.eql(u8, fname, "compiler_fence"))
+            return .void;
+        if (std.mem.eql(u8, fname, "compare_exchange")) return .bool;
+        return null;
+    }
+
+    fn atomic_arg_count_ok(self: *Sema, loc: ast.Loc, fname: []const u8, got: usize, min: usize, max: usize) bool {
+        if (got >= min and got <= max) return true;
+        if (min == max) {
+            self.err(loc, "atomic.{s} expects {d} argument(s), got {d}", .{ fname, min, got });
+        } else {
+            self.err(loc, "atomic.{s} expects {d} to {d} arguments, got {d}", .{ fname, min, max, got });
+        }
+        return false;
+    }
+
+    fn atomic_validate_type_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize, fetch_only: bool) SemaError!?RT {
+        if (index >= args.len) return null;
+        const arg = args[index];
+        if (arg.* != .string_lit) {
+            self.err(arg.*.loc(), "atomic.{s} argument {d} must be a string type name", .{ fname, index + 1 });
+            return null;
+        }
+        const name = arg.string_lit.val;
+        const rt = (try self.mem_type_from_name(name)) orelse {
+            self.err(arg.string_lit.loc, "atomic.{s} does not support memory type '{s}'", .{ fname, name });
+            return null;
+        };
+        if (!atomic_type_supported(rt)) {
+            self.err(arg.string_lit.loc, "atomic.{s} type '{s}' is not an atomic scalar or pointer type", .{ fname, name });
+            return null;
+        }
+        if (fetch_only and !rt.is_integer()) {
+            self.err(arg.string_lit.loc, "atomic.{s} type '{s}' must be an integer type", .{ fname, name });
+            return null;
+        }
+        return rt;
+    }
+
+    fn atomic_validate_pointer_to_type(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize, target: RT) void {
+        if (index >= args.len) return;
+        const arg = args[index];
+        const t = self.type_map.get(arg) orelse .any;
+        if (t == .any) return;
+        if (t != .pointer) {
+            self.err(arg.*.loc(), "atomic.{s} argument {d} must be a pointer, got {}", .{ fname, index + 1, t });
+            return;
+        }
+        if (!t.pointer.*.eql(target)) {
+            self.err(arg.*.loc(), "atomic.{s} argument {d} must point to {}, got pointer to {}", .{ fname, index + 1, target, t.pointer.* });
+        }
+    }
+
+    fn atomic_validate_value(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize, target: RT) void {
+        if (index >= args.len) return;
+        const arg = args[index];
+        const t = self.type_map.get(arg) orelse .any;
+        if (t == .any) return;
+        if (target.eql(t)) return;
+        if (target.is_integer() and t.is_integer()) return;
+        if (target == .pointer and (t == .pointer or t == .nil)) return;
+        self.err(arg.*.loc(), "atomic.{s} argument {d} has type {}, expected {}", .{ fname, index + 1, t, target });
+    }
+
+    fn atomic_order_known(order: []const u8) bool {
+        return std.mem.eql(u8, order, "relaxed") or
+            std.mem.eql(u8, order, "consume") or
+            std.mem.eql(u8, order, "acquire") or
+            std.mem.eql(u8, order, "release") or
+            std.mem.eql(u8, order, "acq_rel") or
+            std.mem.eql(u8, order, "seq_cst") or
+            std.mem.eql(u8, order, "seqcst");
+    }
+
+    fn atomic_order_valid_for(kind: []const u8, order: []const u8) bool {
+        if (std.mem.eql(u8, kind, "load") or std.mem.eql(u8, kind, "failure")) {
+            return std.mem.eql(u8, order, "relaxed") or
+                std.mem.eql(u8, order, "consume") or
+                std.mem.eql(u8, order, "acquire") or
+                std.mem.eql(u8, order, "seq_cst") or
+                std.mem.eql(u8, order, "seqcst");
+        }
+        if (std.mem.eql(u8, kind, "store")) {
+            return std.mem.eql(u8, order, "relaxed") or
+                std.mem.eql(u8, order, "release") or
+                std.mem.eql(u8, order, "seq_cst") or
+                std.mem.eql(u8, order, "seqcst");
+        }
+        if (std.mem.eql(u8, kind, "rmw")) {
+            return std.mem.eql(u8, order, "relaxed") or
+                std.mem.eql(u8, order, "acquire") or
+                std.mem.eql(u8, order, "release") or
+                std.mem.eql(u8, order, "acq_rel") or
+                std.mem.eql(u8, order, "seq_cst") or
+                std.mem.eql(u8, order, "seqcst");
+        }
+        if (std.mem.eql(u8, kind, "fence")) {
+            return std.mem.eql(u8, order, "relaxed") or
+                std.mem.eql(u8, order, "acquire") or
+                std.mem.eql(u8, order, "release") or
+                std.mem.eql(u8, order, "acq_rel") or
+                std.mem.eql(u8, order, "seq_cst") or
+                std.mem.eql(u8, order, "seqcst");
+        }
+        return false;
+    }
+
+    fn atomic_validate_order_arg(self: *Sema, fname: []const u8, args: []const *ast.Expr, index: usize, kind: []const u8) void {
+        if (index >= args.len) return;
+        const arg = args[index];
+        if (arg.* != .string_lit) {
+            self.err(arg.*.loc(), "atomic.{s} memory order argument {d} must be a string literal", .{ fname, index + 1 });
+            return;
+        }
+        const order = arg.string_lit.val;
+        if (!atomic_order_known(order)) {
+            self.err(arg.string_lit.loc, "atomic.{s} memory order '{s}' is not recognized", .{ fname, order });
+            return;
+        }
+        if (!atomic_order_valid_for(kind, order)) {
+            self.err(arg.string_lit.loc, "atomic.{s} memory order '{s}' is invalid for {s}", .{ fname, order, kind });
+        }
+    }
+
+    fn validate_atomic_call(self: *Sema, loc: ast.Loc, fname: []const u8, args: []const *ast.Expr) SemaError!void {
+        if (std.mem.eql(u8, fname, "load")) {
+            _ = self.atomic_arg_count_ok(loc, fname, args.len, 2, 3);
+            const rt = (try self.atomic_validate_type_arg(fname, args, 0, false)) orelse return;
+            self.atomic_validate_pointer_to_type(fname, args, 1, rt);
+            self.atomic_validate_order_arg(fname, args, 2, "load");
+            return;
+        }
+        if (std.mem.eql(u8, fname, "store")) {
+            _ = self.atomic_arg_count_ok(loc, fname, args.len, 3, 4);
+            const rt = (try self.atomic_validate_type_arg(fname, args, 0, false)) orelse return;
+            self.atomic_validate_pointer_to_type(fname, args, 1, rt);
+            self.atomic_validate_value(fname, args, 2, rt);
+            self.atomic_validate_order_arg(fname, args, 3, "store");
+            return;
+        }
+        if (std.mem.eql(u8, fname, "exchange")) {
+            _ = self.atomic_arg_count_ok(loc, fname, args.len, 3, 4);
+            const rt = (try self.atomic_validate_type_arg(fname, args, 0, false)) orelse return;
+            self.atomic_validate_pointer_to_type(fname, args, 1, rt);
+            self.atomic_validate_value(fname, args, 2, rt);
+            self.atomic_validate_order_arg(fname, args, 3, "rmw");
+            return;
+        }
+        if (std.mem.eql(u8, fname, "compare_exchange")) {
+            _ = self.atomic_arg_count_ok(loc, fname, args.len, 4, 6);
+            const rt = (try self.atomic_validate_type_arg(fname, args, 0, false)) orelse return;
+            self.atomic_validate_pointer_to_type(fname, args, 1, rt);
+            self.atomic_validate_pointer_to_type(fname, args, 2, rt);
+            self.atomic_validate_value(fname, args, 3, rt);
+            self.atomic_validate_order_arg(fname, args, 4, "rmw");
+            self.atomic_validate_order_arg(fname, args, 5, "failure");
+            return;
+        }
+        if (atomic_fetch_intrinsic(fname)) {
+            _ = self.atomic_arg_count_ok(loc, fname, args.len, 3, 4);
+            const rt = (try self.atomic_validate_type_arg(fname, args, 0, true)) orelse return;
+            self.atomic_validate_pointer_to_type(fname, args, 1, rt);
+            self.atomic_validate_value(fname, args, 2, rt);
+            self.atomic_validate_order_arg(fname, args, 3, "rmw");
+            return;
+        }
+        if (std.mem.eql(u8, fname, "fence") or std.mem.eql(u8, fname, "compiler_fence")) {
+            _ = self.atomic_arg_count_ok(loc, fname, args.len, 0, 1);
+            self.atomic_validate_order_arg(fname, args, 0, "fence");
+            return;
+        }
+        self.err(loc, "unknown atomic intrinsic 'atomic.{s}'", .{fname});
+    }
+
+    fn check_atomic_call(self: *Sema, loc: ast.Loc, fname: []const u8, args: []const *ast.Expr) SemaError!RT {
+        const ret = (try self.atomic_call_result_type(fname, args)) orelse {
+            self.err(loc, "unknown atomic intrinsic 'atomic.{s}'", .{fname});
+            return .any;
+        };
+        try self.validate_atomic_call(loc, fname, args);
         return ret;
     }
 
@@ -1085,6 +1305,9 @@ pub const Sema = struct {
                 // Built-in module return types
                 if (self.mem_intrinsic_name(c.func)) |fname| {
                     return try self.check_mem_call(c.loc, fname, c.args);
+                }
+                if (self.atomic_intrinsic_name(c.func)) |fname| {
+                    return try self.check_atomic_call(c.loc, fname, c.args);
                 }
                 if (c.func.* == .field) {
                     const f = &c.func.field;
@@ -5446,6 +5669,61 @@ test "sema: memory intrinsics reject invalid low-level calls" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expect(s.errors >= 5);
+}
+
+test "sema: atomic intrinsics preserve scalar results and validate storage pointers" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function atomics(): i64
+        \\  local raw: *u8 = mem.alloc(16)
+        \\  local slot: *i64 = mem.cast("i64", raw)
+        \\  local expected: *i64 = mem.add(slot, 1)
+        \\  atomic.store("i64", slot, 1, "release")
+        \\  local old: i64 = std.atomic.fetch_add("i64", slot, 2, "acq_rel")
+        \\  local loaded: i64 = atomic.load("i64", slot, "acquire")
+        \\  local swapped: bool = atomic.compare_exchange("i64", slot, expected, 3)
+        \\  return old + loaded
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+
+    const body = mod.body.stmts[0].func_decl.func.body.stmts;
+    const old_init = body[4].local_decl.inits[0];
+    const loaded_init = body[5].local_decl.inits[0];
+    const swapped_init = body[6].local_decl.inits[0];
+
+    try testing.expectEqual(RT.i64, s.type_map.get(old_init) orelse RT.any);
+    try testing.expectEqual(RT.i64, s.type_map.get(loaded_init) orelse RT.any);
+    try testing.expectEqual(RT.bool, s.type_map.get(swapped_init) orelse RT.any);
+}
+
+test "sema: atomic intrinsics reject invalid order and storage types" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\function bad(): void
+        \\  local raw: *u8 = mem.alloc(16)
+        \\  local bytes: *u8 = mem.cast("u8", raw)
+        \\  atomic.load("i64", bytes)
+        \\  atomic.store("i64", bytes, "bad", "acquire")
+        \\  atomic.fetch_add("f64", bytes, 1)
+        \\  atomic.compare_exchange("i64", bytes, bytes, 2, "release", "release")
+        \\end
+    ;
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expect(s.errors >= 6);
 }
 
 test "sema: @implements on a record-typed binding (concept exists and matches)" {
