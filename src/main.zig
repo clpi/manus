@@ -38,8 +38,8 @@ const usage =
 ;
 
 pub fn main(init: std.process.Init) !void {
-    term.init();
     const alloc = init.arena.allocator();
+    term.init(init.io);
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
 

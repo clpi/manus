@@ -1,99 +1,112 @@
 const std = @import("std");
+const Io = std.Io;
+const File = Io.File;
 
+var stderr_file: File = undefined;
+var stderr_buf: [1024]u8 = undefined;
+var wtr: File.Writer = undefined;
+var initialized: bool = false;
 pub var color: bool = false;
 
-pub fn init() void {
-    color = std.posix.isatty(std.posix.STDERR_FILENO);
+pub fn init(io: Io) void {
+    stderr_file = File.stderr();
+    color = File.isTty(stderr_file, io) catch false;
+    wtr = File.Writer.initStreaming(stderr_file, io, &stderr_buf);
+    initialized = true;
 }
 
-fn wtr() std.fs.File.Writer {
-    return std.io.getStdErr().writer();
+fn wprint(comptime fmt: []const u8, args: anytype) void {
+    if (initialized) {
+        nosuspend (&wtr.interface).print(fmt, args) catch {};
+    } else {
+        nosuspend std.debug.print(fmt, args);
+    }
 }
 
 pub fn err(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[31merror:\x1b[0m " ++ fmt ++ "\n", args) catch {};
+        wprint("\x1b[31merror:\x1b[0m " ++ fmt ++ "\n", args);
     } else {
-        nosuspend wtr().print("error: " ++ fmt ++ "\n", args) catch {};
+        wprint("error: " ++ fmt ++ "\n", args);
     }
 }
 
 pub fn warn(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[33mwarning:\x1b[0m " ++ fmt ++ "\n", args) catch {};
+        wprint("\x1b[33mwarning:\x1b[0m " ++ fmt ++ "\n", args);
     } else {
-        nosuspend wtr().print("warning: " ++ fmt ++ "\n", args) catch {};
+        wprint("warning: " ++ fmt ++ "\n", args);
     }
 }
 
 pub fn hint(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[36mhint:\x1b[0m " ++ fmt ++ "\n", args) catch {};
+        wprint("\x1b[36mhint:\x1b[0m " ++ fmt ++ "\n", args);
     } else {
-        nosuspend wtr().print("hint: " ++ fmt ++ "\n", args) catch {};
+        wprint("hint: " ++ fmt ++ "\n", args);
     }
 }
 
 pub fn ok(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[32m" ++ fmt ++ "\x1b[0m\n", args) catch {};
+        wprint("\x1b[32m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
-        nosuspend wtr().print(fmt ++ "\n", args) catch {};
+        wprint(fmt ++ "\n", args);
     }
 }
 
 pub fn locErr(loc: anytype, comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[2m", .{}) catch {};
-        nosuspend wtr().print("{}", .{loc}) catch {};
-        nosuspend wtr().print("\x1b[0m \x1b[31merror:\x1b[0m ", .{}) catch {};
-        nosuspend wtr().print(fmt, args) catch {};
-        nosuspend wtr().print("\n", .{}) catch {};
+        wprint("\x1b[2m", .{});
+        wprint("{}", .{loc});
+        wprint("\x1b[0m \x1b[31merror:\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        nosuspend wtr().print("{}: error: " ++ fmt ++ "\n", .{loc} ++ args) catch {};
+        wprint("{}: error: " ++ fmt ++ "\n", .{loc} ++ args);
     }
 }
 
 pub fn locWarn(loc: anytype, comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[2m", .{}) catch {};
-        nosuspend wtr().print("{}", .{loc}) catch {};
-        nosuspend wtr().print("\x1b[0m \x1b[33mwarning:\x1b[0m ", .{}) catch {};
-        nosuspend wtr().print(fmt, args) catch {};
-        nosuspend wtr().print("\n", .{}) catch {};
+        wprint("\x1b[2m", .{});
+        wprint("{}", .{loc});
+        wprint("\x1b[0m \x1b[33mwarning:\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        nosuspend wtr().print("{}: warning: " ++ fmt ++ "\n", .{loc} ++ args) catch {};
+        wprint("{}: warning: " ++ fmt ++ "\n", .{loc} ++ args);
     }
 }
 
 pub fn locHint(loc: anytype, comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[2m", .{}) catch {};
-        nosuspend wtr().print("{}", .{loc}) catch {};
-        nosuspend wtr().print("\x1b[0m \x1b[36mhint:\x1b[0m ", .{}) catch {};
-        nosuspend wtr().print(fmt, args) catch {};
-        nosuspend wtr().print("\n", .{}) catch {};
+        wprint("\x1b[2m", .{});
+        wprint("{}", .{loc});
+        wprint("\x1b[0m \x1b[36mhint:\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        nosuspend wtr().print("{}: hint: " ++ fmt ++ "\n", .{loc} ++ args) catch {};
+        wprint("{}: hint: " ++ fmt ++ "\n", .{loc} ++ args);
     }
 }
 
 pub fn locBare(loc: anytype, comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        nosuspend wtr().print("\x1b[2m", .{}) catch {};
-        nosuspend wtr().print("{}", .{loc}) catch {};
-        nosuspend wtr().print("\x1b[0m: ", .{}) catch {};
-        nosuspend wtr().print(fmt, args) catch {};
-        nosuspend wtr().print("\n", .{}) catch {};
+        wprint("\x1b[2m", .{});
+        wprint("{}", .{loc});
+        wprint("\x1b[0m: ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        nosuspend wtr().print("{}: " ++ fmt ++ "\n", .{loc} ++ args) catch {};
+        wprint("{}: " ++ fmt ++ "\n", .{loc} ++ args);
     }
 }
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {
-    nosuspend wtr().print(fmt ++ "\n", args) catch {};
+    wprint(fmt ++ "\n", args);
 }
 
 pub fn printRaw(comptime fmt: []const u8, args: anytype) void {
-    nosuspend wtr().print(fmt, args) catch {};
+    wprint(fmt, args);
 }
