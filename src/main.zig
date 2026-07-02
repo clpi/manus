@@ -619,11 +619,16 @@ fn is_duo_source_path(path: []const u8) bool {
 
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
     const src = try read_source(alloc, io, src_path);
+    term.setSource(src_path, src);
 
     var lex = Lexer.init(src, src_path);
     var parser = Parser.init(&lex, alloc);
     var mod = parser.parse_module() catch |e| {
-        term.err("parse error: {}", .{e});
+        if (lex.last_error_loc) |loc| {
+            term.locErr(loc, "lexer failed with {s}", .{@errorName(e)});
+        } else {
+            term.err("parse failed: {s}", .{@errorName(e)});
+        }
         std.process.exit(1);
     };
 
@@ -1104,10 +1109,15 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
         term.err("failed to read source file '{s}': {s}", .{ src_path, @errorName(err) });
         std.process.exit(1);
     };
+    term.setSource(src_path, src);
     var lex = Lexer.init(src, src_path);
     var parser = Parser.init(&lex, alloc);
-    const mod = parser.parse_module() catch {
-        term.err("failed to parse '{s}'", .{src_path});
+    const mod = parser.parse_module() catch |err| {
+        if (lex.last_error_loc) |loc| {
+            term.locErr(loc, "lexer failed with {s}", .{@errorName(err)});
+        } else {
+            term.err("failed to parse '{s}': {s}", .{ src_path, @errorName(err) });
+        }
         std.process.exit(1);
     };
 

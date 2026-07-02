@@ -1,0 +1,26 @@
+x: int = 3
+y: i32 = 8
+exp: float = 99.3
+age: f32 = 29.0
+
+getAge = fun(self)
+    self.age
+end
+
+setAge = fun(self, age: num)
+    self.age = age
+end
+
+props = {
+    hobbies: [string] = {
+        "golf",
+        "table tennis",
+    },
+    hasHobby = fun(self, hobby: string)
+        self.hobbies:contains(hobby)
+    end,
+}
+
+incExp = fun(self)
+    self.age += 0.1
+end

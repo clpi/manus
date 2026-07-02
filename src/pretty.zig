@@ -540,6 +540,7 @@ pub const PrettyPrinter = struct {
                 }
             },
             .brk => try self.write("break"),
+            .cont => try self.write("continue"),
             .goto_stmt => |g| try self.print("goto {s}", .{g.label}),
             .label_stmt => |l| try self.print("::{s}::", .{l.label}),
             .match_stmt => |m| try self.printMatchExpr(&m),

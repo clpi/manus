@@ -591,6 +591,15 @@ test "resolve: inferred becomes any" {
     try testing.expectEqual(r(.any), try resolve(.inferred, null, alloc));
 }
 
+test "resolve: numeric family aliases" {
+    const alloc = testing.allocator;
+    try testing.expectEqual(r(.i64), try resolve(.{ .named = "int" }, null, alloc));
+    try testing.expectEqual(r(.u64), try resolve(.{ .named = "uint" }, null, alloc));
+    try testing.expectEqual(r(.f64), try resolve(.{ .named = "float" }, null, alloc));
+    try testing.expectEqual(r(.f64), try resolve(.{ .named = "num" }, null, alloc));
+    try testing.expectEqual(r(.f64), try resolve(.{ .named = "f128" }, null, alloc));
+}
+
 test "resolve: user struct" {
     const alloc = testing.allocator;
     const result = try resolve(.{ .named = "MyStruct" }, null, alloc);
@@ -683,7 +692,10 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             if (std.mem.eql(u8, n, "any")) return .any;
             // Common aliases
             if (std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "integer")) return .i64;
-            if (std.mem.eql(u8, n, "float") or std.mem.eql(u8, n, "number")) return .f64;
+            if (std.mem.eql(u8, n, "uint")) return .u64;
+            if (std.mem.eql(u8, n, "float") or std.mem.eql(u8, n, "number") or
+                std.mem.eql(u8, n, "num") or std.mem.eql(u8, n, "f128"))
+                return .f64;
             if (std.mem.eql(u8, n, "string")) return .str;
             if (std.mem.eql(u8, n, "Table") or std.mem.eql(u8, n, "table")) return .any;
             return ResolvedType{ .@"struct" = .{ .name = n } };

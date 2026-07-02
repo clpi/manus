@@ -1,0 +1,77 @@
+local concat_obj = setmetatable({}, {
+    __concat = fun(a: any, b: any): str
+        "concat"
+    end,
+})
+
+local lt_obj = setmetatable({}, {
+    __lt = fun(a: any, b: any): bool
+        true
+    end,
+})
+
+local le_obj = setmetatable({}, {
+    __le = fun(a: any, b: any): bool
+        true
+    end,
+})
+
+local unm_obj = setmetatable({}, {
+    __unm = fun(a: any): any
+        "unm"
+    end,
+})
+
+local idiv_obj = setmetatable({}, {
+    __idiv = fun(a: any, b: any): any
+        "idiv"
+    end,
+})
+
+local band_obj = setmetatable({}, {
+    __band = fun(a: any, b: any): any
+        "band"
+    end,
+})
+
+local bor_obj = setmetatable({}, {
+    __bor = fun(a: any, b: any): any
+        "bor"
+    end,
+})
+
+local bxor_obj = setmetatable({}, {
+    __bxor = fun(a: any, b: any): any
+        "bxor"
+    end,
+})
+
+local bnot_obj = setmetatable({}, {
+    __bnot = fun(a: any): any
+        "bnot"
+    end,
+})
+
+local shl_obj = setmetatable({}, {
+    __shl = fun(a: any, b: any): any
+        "shl"
+    end,
+})
+
+local shr_obj = setmetatable({}, {
+    __shr = fun(a: any, b: any): any
+        "shr"
+    end,
+})
+
+print(concat_obj .. "x")
+print(tostring(lt_obj < 1))
+print(tostring(le_obj <= 1))
+print(-unm_obj)
+print(idiv_obj // 1)
+print(band_obj & 1)
+print(bor_obj | 1)
+print(bxor_obj ~ 1)
+print(~bnot_obj)
+print(shl_obj << 1)
+print(shr_obj >> 1)

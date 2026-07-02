@@ -472,6 +472,7 @@ pub const Stmt = union(enum) {
     func_decl: FuncDecl,
     ret: struct { loc: Loc, vals: []*Expr },
     brk: Loc,
+    cont: Loc,
     goto_stmt: struct { loc: Loc, label: []const u8 },
     label_stmt: struct { loc: Loc, label: []const u8 },
     // NOTE: there is no `struct_def` variant. Typed records are expressed as

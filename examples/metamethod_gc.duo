@@ -1,0 +1,12 @@
+global finalized = 0
+
+local object = setmetatable({}, {
+    __gc = fun(self: any): void
+        finalized += 1
+    end,
+})
+
+collectgarbage("collect")
+collectgarbage("collect")
+
+print(finalized)

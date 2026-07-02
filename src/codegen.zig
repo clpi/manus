@@ -61,6 +61,7 @@ pub const CodeGen = struct {
     duo_mode: bool = false,
     target: []const u8 = "native",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
+    func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
     /// Set of anonymous record hashes for which we have already emitted a
     /// C `struct` typedef. Lets us emit the typedef exactly once per
     /// unique record shape, even if the shape is used at many sites.
@@ -186,6 +187,10 @@ pub const CodeGen = struct {
         if (self.comptime_scopes.items.len == 0) return;
         const value = comptime_eval.funcValue(func, self.comptime_bindings(), .{ .alloc = self.alloc }) catch comptime_eval.Value.unavailable;
         try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
+    }
+
+    fn note_func_body(self: *CodeGen, name: []const u8, func: *const ast.FuncBody) !void {
+        try self.func_bodies.put(self.alloc, name, func);
     }
 
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
@@ -357,6 +362,23 @@ pub const CodeGen = struct {
         } else {
             self.p("{s}", .{name});
         }
+    }
+
+    fn root_name(expr: *const ast.Expr) ?[]const u8 {
+        return switch (expr.*) {
+            .name => |n| n.ident,
+            .field => |f| root_name(f.obj),
+            .index => |idx| root_name(idx.obj),
+            else => null,
+        };
+    }
+
+    fn should_bind_field_call(self: *CodeGen, func: *const ast.Expr, arg_count: usize) bool {
+        if (!self.duo_mode or func.* != .field or arg_count > 1) return false;
+        if (root_name(func.field.obj)) |root| {
+            if (is_runtime_global(root)) return false;
+        }
+        return true;
     }
 
     fn emit_lvalue(self: *CodeGen, expr: *const ast.Expr) E!void {
@@ -753,7 +775,9 @@ pub const CodeGen = struct {
             std.mem.eql(u8, fname, "free") or std.mem.eql(u8, fname, "copy") or
             std.mem.eql(u8, fname, "move") or std.mem.eql(u8, fname, "set") or
             std.mem.eql(u8, fname, "zero") or std.mem.eql(u8, fname, "fence") or
-            std.mem.eql(u8, fname, "compiler_fence"))
+            std.mem.eql(u8, fname, "compiler_fence") or std.mem.eql(u8, fname, "prefetch") or
+            std.mem.eql(u8, fname, "assume") or std.mem.eql(u8, fname, "trap") or
+            std.mem.eql(u8, fname, "unreachable"))
             return .void;
         if (std.mem.eql(u8, fname, "compare")) return .i64;
         if (std.mem.eql(u8, fname, "is_null")) return .bool;
@@ -993,6 +1017,7 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.path.len == 1 and !fd.method) {
+                    try self.note_func_body(fd.path[0], &fd.func);
                     try self.note_comptime_func(fd.path[0], &fd.func);
                 }
             }
@@ -1069,6 +1094,7 @@ pub const CodeGen = struct {
         try self.collect_local_funcs_module(mod, &local_funcs);
         for (local_funcs.items) |fd| {
             if (fd.path.len == 1 and !fd.method) {
+                try self.note_func_body(fd.path[0], &fd.func);
                 try self.emit_func_decl_forward(fd);
             }
         }
@@ -1226,6 +1252,7 @@ pub const CodeGen = struct {
         if (self.load_chunk) {
             self.pl("return lua_val_nil();", .{});
         } else {
+            self.pl("duo_run_gc_finalizers();", .{});
             self.pl("return 0;", .{});
         }
         self.indent = 0;
@@ -1515,6 +1542,12 @@ pub const CodeGen = struct {
         } else {
             try self.emit_expr(arg);
         }
+    }
+
+    fn emit_default_for_param(self: *CodeGen, param: *const ast.FuncParam, param_type: RT) E!bool {
+        const default_val = param.default_val orelse return false;
+        try self.emit_arg_for_param(default_val, param_type);
+        return true;
     }
 
     /// Walk the entire module collecting every record-type annotation that
@@ -2394,17 +2427,59 @@ pub const CodeGen = struct {
             try self.note_local_type(par.name, pt);
             try self.note_comptime_unavailable(par.name);
             if (pt == .any) {
-                self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
+                self.ind();
+                self.p("lua_Value {s} = argc > {d} ? argv[{d}] : ", .{ par.name, i, i });
+                if (par.default_val) |default_val| {
+                    try self.emit_as_lua_value(default_val);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+                self.p(";\n", .{});
             } else if (pt.is_integer()) {
-                self.pl("int64_t {s} = (int64_t)lua_to_num(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+                self.ind();
+                self.p("int64_t {s} = argc > {d} ? (int64_t)lua_to_num(argv[{d}]) : (int64_t)(", .{ par.name, i, i });
+                if (par.default_val) |default_val| {
+                    try self.emit_arg_for_param(default_val, pt);
+                } else {
+                    self.p("0", .{});
+                }
+                self.p(");\n", .{});
             } else if (pt == .f64) {
-                self.pl("double {s} = lua_to_num(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+                self.ind();
+                self.p("double {s} = argc > {d} ? lua_to_num(argv[{d}]) : (double)(", .{ par.name, i, i });
+                if (par.default_val) |default_val| {
+                    try self.emit_arg_for_param(default_val, pt);
+                } else {
+                    self.p("0", .{});
+                }
+                self.p(");\n", .{});
             } else if (pt == .bool) {
-                self.pl("bool {s} = lua_to_bool(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+                self.ind();
+                self.p("bool {s} = argc > {d} ? lua_to_bool(argv[{d}]) : (bool)(", .{ par.name, i, i });
+                if (par.default_val) |default_val| {
+                    try self.emit_lua_truthy_expr(default_val);
+                } else {
+                    self.p("false", .{});
+                }
+                self.p(");\n", .{});
             } else if (pt == .str) {
-                self.pl("const char* {s} = lua_to_str(argc > {d} ? argv[{d}] : lua_val_nil());", .{ par.name, i, i });
+                self.ind();
+                self.p("const char* {s} = argc > {d} ? lua_to_str(argv[{d}]) : (", .{ par.name, i, i });
+                if (par.default_val) |default_val| {
+                    try self.emit_arg_for_param(default_val, pt);
+                } else {
+                    self.p("\"\"", .{});
+                }
+                self.p(");\n", .{});
             } else {
-                self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
+                self.ind();
+                self.p("lua_Value {s} = argc > {d} ? argv[{d}] : ", .{ par.name, i, i });
+                if (par.default_val) |default_val| {
+                    try self.emit_as_lua_value(default_val);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+                self.p(";\n", .{});
             }
         }
         if (fb.vararg_name) |vn| {
@@ -3618,9 +3693,7 @@ pub const CodeGen = struct {
                         const f = &tgt.field;
                         if (self.expr_type(f.obj) == .any) {
                             is_table_assign = true;
-                            // Use raw set for local-variable table field access
-                            const setter = if (f.obj.* == .name and self.is_local_name(f.obj.name.ident)) "lua_table_set_raw" else "lua_table_set";
-                            self.p("{s}(", .{setter});
+                            self.p("lua_table_set(", .{});
                             try self.emit_expr(f.obj);
                             self.p(", lua_val_from_str(\"{s}\"), ", .{f.field});
                             if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
@@ -3877,27 +3950,27 @@ pub const CodeGen = struct {
                 self.pl("}}", .{});
             },
             .gen_for => |*gf| {
-                // We support pairs(t) and ipairs(t) specifically
-                var is_pairs = true;
+                const IterMode = enum { generic, direct_table, explicit_pairs, explicit_ipairs };
+                var mode: IterMode = .generic;
                 var table_expr: ?*ast.Expr = null;
                 if (gf.iters.len > 0 and gf.iters[0].* == .call) {
                     const c = &gf.iters[0].call;
                     if (c.func.* == .name) {
                         const name = c.func.name.ident;
                         if (std.mem.eql(u8, name, "pairs") or std.mem.eql(u8, name, "ipairs")) {
-                            is_pairs = std.mem.eql(u8, name, "pairs");
+                            mode = if (std.mem.eql(u8, name, "pairs")) .explicit_pairs else .explicit_ipairs;
                             if (c.args.len > 0) table_expr = c.args[0];
                         }
                     }
                 }
+                if (mode == .generic and self.duo_mode and gf.iters.len == 1) {
+                    mode = .direct_table;
+                    table_expr = gf.iters[0];
+                }
 
                 if (table_expr) |tbl| {
-                    // For pairs/ipairs: the first loop variable is the key.
-                    // ipairs always produces a 1-based integer index, so
-                    // register vars[0] as i64 so inner expressions (e.g.
-                    // `arr[i]`, `i + 1`) take the typed path.
                     for (gf.vars, 0..) |vname, vi| {
-                        const is_ipairs_idx = !is_pairs and vi == 0;
+                        const is_ipairs_idx = mode == .explicit_ipairs and vi == 0;
                         if (is_ipairs_idx) {
                             try self.note_local_type(vname, .i64);
                         } else {
@@ -3907,6 +3980,8 @@ pub const CodeGen = struct {
                     self.pl("{{", .{});
                     self.indent += 1;
                     self.ind();
+                    self.pl("lua_mret_clear();", .{});
+                    self.ind();
                     self.p("lua_Value tbl = ", .{});
                     try self.emit_expr(tbl);
                     self.p(";\n", .{});
@@ -3914,49 +3989,146 @@ pub const CodeGen = struct {
                     self.indent += 1;
                     self.pl("lua_Table* t_ptr = (lua_Table*)tbl.as.tval;", .{});
 
-                    if (is_pairs) {
-                        // Iterate array part first
+                    if (mode != .explicit_ipairs) {
                         self.pl("for (int idx = 0; idx < t_ptr->array_size; idx++) {{", .{});
                         self.indent += 1;
                         self.pl("if (t_ptr->array[idx].type == VAL_NIL) continue;", .{});
-                        if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
-                        if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->array[idx];", .{gf.vars[1]});
+                        const value_name: ?[]const u8 = if (mode == .direct_table and gf.vars.len == 1)
+                            gf.vars[0]
+                        else if (gf.vars.len > 1)
+                            gf.vars[1]
+                        else
+                            null;
+                        if (mode == .direct_table and gf.vars.len == 1) {
+                            self.pl("lua_Value {s} = t_ptr->array[idx];", .{gf.vars[0]});
+                        } else {
+                            if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
+                            if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->array[idx];", .{gf.vars[1]});
+                        }
+                        if (gf.vars.len > 2) {
+                            for (gf.vars[2..]) |extra| self.pl("lua_Value {s} = lua_val_nil();", .{extra});
+                        }
                         {
                             try self.push_break_scope();
                             defer self.pop_break_scope();
                             try self.emit_block(&gf.body);
                         }
+                        if (value_name) |name| self.pl("t_ptr->array[idx] = {s};", .{name});
                         self.indent -= 1;
                         self.pl("}}", .{});
-                        // Then hash part
                         self.pl("for (int idx = 0; idx < t_ptr->capacity; idx++) {{", .{});
                         self.indent += 1;
                         self.pl("if (t_ptr->hash_keys[idx].type == VAL_NIL) continue;", .{});
-                        if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->hash_keys[idx];", .{gf.vars[0]});
-                        if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->hash_vals[idx];", .{gf.vars[1]});
+                        const hash_value_name: ?[]const u8 = if (mode == .direct_table and gf.vars.len == 1)
+                            gf.vars[0]
+                        else if (gf.vars.len > 1)
+                            gf.vars[1]
+                        else
+                            null;
+                        if (mode == .direct_table and gf.vars.len == 1) {
+                            self.pl("lua_Value {s} = t_ptr->hash_vals[idx];", .{gf.vars[0]});
+                        } else {
+                            if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->hash_keys[idx];", .{gf.vars[0]});
+                            if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->hash_vals[idx];", .{gf.vars[1]});
+                        }
+                        if (gf.vars.len > 2) {
+                            for (gf.vars[2..]) |extra| self.pl("lua_Value {s} = lua_val_nil();", .{extra});
+                        }
                         {
                             try self.push_break_scope();
                             defer self.pop_break_scope();
                             try self.emit_block(&gf.body);
                         }
+                        if (hash_value_name) |name| self.pl("t_ptr->hash_vals[idx] = {s};", .{name});
                         self.indent -= 1;
                         self.pl("}}", .{});
                     } else {
-                        // ipairs - optimized for array part
                         self.pl("for (int idx = 0; idx < t_ptr->array_size; idx++) {{", .{});
                         self.indent += 1;
                         self.pl("lua_Value _v_val = t_ptr->array[idx];", .{});
                         self.pl("if (_v_val.type == VAL_NIL) break;", .{});
                         if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
                         if (gf.vars.len > 1) self.pl("lua_Value {s} = _v_val;", .{gf.vars[1]});
+                        if (gf.vars.len > 2) {
+                            for (gf.vars[2..]) |extra| self.pl("lua_Value {s} = lua_val_nil();", .{extra});
+                        }
                         {
                             try self.push_break_scope();
                             defer self.pop_break_scope();
                             try self.emit_block(&gf.body);
                         }
+                        if (gf.vars.len > 1) self.pl("t_ptr->array[idx] = {s};", .{gf.vars[1]});
                         self.indent -= 1;
                         self.pl("}}", .{});
                     }
+                    self.indent -= 1;
+                    self.pl("}}", .{});
+                    self.pl("else {{", .{});
+                    self.indent += 1;
+                    if (mode != .direct_table) {
+                        self.ind();
+                        self.pl("lua_mret_clear();", .{});
+                    }
+                    self.ind();
+                    self.p("lua_Value _gf_tmp = ", .{});
+                    switch (mode) {
+                        .explicit_pairs => self.p("lua_pairs(tbl)", .{}),
+                        .explicit_ipairs => self.p("lua_ipairs(tbl)", .{}),
+                        else => self.p("tbl", .{}),
+                    }
+                    self.p(";\n", .{});
+                    self.ind();
+                    self.pl("lua_Value _gf_f, _gf_s, _gf_var;", .{});
+                    self.ind();
+                    self.w.writeAll("if (lua_mret_n >= 3) {\n") catch {};
+                    self.indent += 1;
+                    self.pl("_gf_f = lua_mret_get(0);", .{});
+                    self.pl("_gf_s = lua_mret_get(1);", .{});
+                    self.pl("_gf_var = lua_mret_get(2);", .{});
+                    self.indent -= 1;
+                    self.ind();
+                    self.w.writeAll("} else if (lua_mret_n >= 1) {\n") catch {};
+                    self.indent += 1;
+                    self.pl("_gf_f = lua_mret_get(0);", .{});
+                    self.pl("_gf_s = lua_mret_get(1);", .{});
+                    self.pl("_gf_var = lua_val_nil();", .{});
+                    self.indent -= 1;
+                    self.ind();
+                    self.w.writeAll("} else {\n") catch {};
+                    self.indent += 1;
+                    self.pl("_gf_f = _gf_tmp;", .{});
+                    self.pl("_gf_s = lua_val_nil();", .{});
+                    self.pl("_gf_var = lua_val_nil();", .{});
+                    self.indent -= 1;
+                    self.ind();
+                    self.w.writeAll("}\n") catch {};
+                    self.ind();
+                    self.pl("while (1) {{", .{});
+                    self.indent += 1;
+                    self.ind();
+                    self.pl("lua_Value _gf_argv[2] = {{ _gf_s, _gf_var }};", .{});
+                    self.ind();
+                    self.pl("lua_Value _gf_r0 = lua_invoke(_gf_f, 2, _gf_argv);", .{});
+                    self.ind();
+                    self.pl("_gf_var = _gf_r0;", .{});
+                    self.ind();
+                    self.pl("if (_gf_r0.type == VAL_NIL) break;", .{});
+                    for (gf.vars, 0..) |vname, vi| {
+                        self.ind();
+                        if (vi == 0) {
+                            self.pl("lua_Value {s} = _gf_r0;", .{vname});
+                        } else {
+                            self.pl("lua_Value {s} = lua_mret_get({d});", .{ vname, vi - 1 });
+                        }
+                    }
+                    {
+                        try self.push_break_scope();
+                        defer self.pop_break_scope();
+                        try self.emit_block(&gf.body);
+                    }
+                    self.indent -= 1;
+                    self.ind();
+                    self.pl("}}", .{});
                     self.indent -= 1;
                     self.pl("}}", .{});
                     self.indent -= 1;
@@ -4072,6 +4244,12 @@ pub const CodeGen = struct {
                     try self.emit_pending_defers_from(self.current_break_scope_base());
                 }
                 self.pl("break;", .{});
+            },
+            .cont => {
+                if (self.has_pending_defers()) {
+                    try self.emit_pending_defers_from(self.current_break_scope_base());
+                }
+                self.pl("continue;", .{});
             },
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
@@ -4227,6 +4405,20 @@ pub const CodeGen = struct {
 
     fn emit_as_lua_value(self: *CodeGen, expr: *const ast.Expr) E!void {
         if (expr.* == .name) {
+            if (self.closure_ctx) |fb| {
+                for (fb.params) |par| {
+                    if (std.mem.eql(u8, par.name, expr.name.ident)) {
+                        try self.emit_expr(expr);
+                        return;
+                    }
+                }
+                for (fb.upvalues) |uv| {
+                    if (std.mem.eql(u8, uv.name, expr.name.ident)) {
+                        try self.emit_expr(expr);
+                        return;
+                    }
+                }
+            }
             if (self.vararg_funcs.get(expr.name.ident)) |argv_cname| {
                 self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
                 return;
@@ -4291,6 +4483,31 @@ pub const CodeGen = struct {
                 self.p("lua_val_nil()", .{});
             },
         }
+    }
+
+    fn emit_bound_field_call(self: *CodeGen, c: anytype) E!void {
+        const f = c.func.field;
+        const hash = calc_lua_hash(f.field);
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Value __self = ", .{});
+        try self.emit_as_lua_value(f.obj);
+        self.p(";\n", .{});
+        self.ind();
+        self.p("lua_Value __fn = lua_table_get(__self, lua_val_from_literal(\"{s}\", {d}, {d}));\n", .{ f.field, hash, f.field.len });
+        self.ind();
+        self.p("lua_Value __argv[{d}] = {{__self", .{c.args.len + 1});
+        for (c.args) |arg| {
+            self.p(", ", .{});
+            try self.emit_as_lua_value(arg);
+        }
+        self.p("}};\n", .{});
+        self.ind();
+        self.p("lua_invoke(__fn, {d}, __argv);\n", .{c.args.len + 1});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
     }
 
     // ── Expressions ───────────────────────────────────────────────────────────
@@ -4469,26 +4686,24 @@ pub const CodeGen = struct {
                 }
                 if (self.expr_type(f.obj) == .any) {
                     const hash = calc_lua_hash(f.field);
-                    // Use raw access for local-variable table fields (avoids __index overhead)
-                    const getter = if (f.obj.* == .name and self.is_local_name(f.obj.name.ident)) "lua_table_get_raw" else "lua_table_get";
                     const ft = self.expr_type(expr);
                     // When field type is known, extract native value for downstream native ops
                     if (ft.is_numeric()) {
                         self.p("((", .{});
                         self.typ(ft);
-                        self.p(")lua_to_num({s}(", .{getter});
+                        self.p(")lua_to_num(lua_table_get(", .{});
                         try self.emit_expr(f.obj);
                         self.p(", lua_val_from_literal(\"{s}\", {d}, {d}))))", .{ f.field, hash, f.field.len });
                     } else if (ft == .bool) {
-                        self.p("lua_to_bool({s}(", .{getter});
+                        self.p("lua_to_bool(lua_table_get(", .{});
                         try self.emit_expr(f.obj);
                         self.p(", lua_val_from_literal(\"{s}\", {d}, {d})))", .{ f.field, hash, f.field.len });
                     } else if (ft == .str) {
-                        self.p("lua_to_str({s}(", .{getter});
+                        self.p("lua_to_str(lua_table_get(", .{});
                         try self.emit_expr(f.obj);
                         self.p(", lua_val_from_literal(\"{s}\", {d}, {d})))", .{ f.field, hash, f.field.len });
                     } else {
-                        self.p("{s}(", .{getter});
+                        self.p("lua_table_get(", .{});
                         try self.emit_expr(f.obj);
                         self.p(", lua_val_from_literal(\"{s}\", {d}, {d}))", .{ f.field, hash, f.field.len });
                     }
@@ -4568,6 +4783,10 @@ pub const CodeGen = struct {
                     }
                 }
                 if (ft == .any) {
+                    if (self.should_bind_field_call(c.func, c.args.len)) {
+                        try self.emit_bound_field_call(c);
+                        return;
+                    }
                     // Special-case print in expression position
                     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "print")) {
                         try self.emit_print_call(c.args);
@@ -4599,6 +4818,8 @@ pub const CodeGen = struct {
                 }
                 try self.emit_expr(c.func);
                 self.p("(", .{});
+                const callee_body: ?*const ast.FuncBody = if (c.func.* == .name) self.func_bodies.get(c.func.name.ident) else null;
+                var emitted_args: usize = 0;
                 for (c.args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
                     switch (ft) {
@@ -4612,6 +4833,21 @@ pub const CodeGen = struct {
                         else => {
                             try self.emit_as_lua_value(arg);
                         },
+                    }
+                    emitted_args += 1;
+                }
+                if (ft == .func and callee_body != null) {
+                    const f = ft.func;
+                    const body = callee_body.?;
+                    var i = c.args.len;
+                    while (i < f.params.len and i < body.params.len) : (i += 1) {
+                        if (body.params[i].default_val == null) break;
+                        if (emitted_args > 0) self.p(", ", .{});
+                        if (try self.emit_default_for_param(&body.params[i], f.params[i])) {
+                            emitted_args += 1;
+                        } else {
+                            break;
+                        }
                     }
                 }
                 self.p(")", .{});
@@ -4685,14 +4921,35 @@ pub const CodeGen = struct {
                         self.p(", ", .{});
                         if (mc.args.len > 1) try self.emit_as_lua_value(mc.args[1]) else self.p("lua_val_nil()", .{});
                         self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "contains")) {
+                        self.p("lua_val_from_bool(duo_contains(", .{});
+                        try self.emit_as_lua_value(mc.obj);
+                        self.p(", ", .{});
+                        if (mc.args.len > 0) try self.emit_as_lua_value(mc.args[0]) else self.p("lua_val_nil()", .{});
+                        self.p("))", .{});
                     } else {
-                        try self.emit_expr(mc.obj);
-                        self.p("__{s}(", .{mc.method});
+                        const hash = calc_lua_hash(mc.method);
+                        self.p("({{\n", .{});
+                        self.indent += 1;
+                        self.ind();
+                        self.p("lua_Value __self = ", .{});
+                        try self.emit_as_lua_value(mc.obj);
+                        self.p(";\n", .{});
+                        self.ind();
+                        self.p("lua_Value __fn = lua_table_get(__self, lua_val_from_literal(\"{s}\", {d}, {d}));\n", .{ mc.method, hash, mc.method.len });
+                        self.ind();
+                        self.p("lua_Value __argv[{d}] = {{__self", .{mc.args.len + 1});
                         for (mc.args, 0..) |arg, i| {
-                            if (i > 0) self.p(", ", .{});
-                            try self.emit_expr(arg);
+                            _ = i;
+                            self.p(", ", .{});
+                            try self.emit_as_lua_value(arg);
                         }
-                        self.p(")", .{});
+                        self.p("}};\n", .{});
+                        self.ind();
+                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{mc.args.len + 1});
+                        self.indent -= 1;
+                        self.ind();
+                        self.p("}})", .{});
                     }
                 } else {
                     try self.emit_expr(mc.obj);
@@ -4868,6 +5125,14 @@ pub const CodeGen = struct {
                     try self.emit_as_lua_value(b.rhs);
                     self.p(")", .{});
                 } else if (lt == .any or rt == .any) {
+                    if (b.op == .contains) {
+                        self.p("duo_contains(", .{});
+                        try self.emit_as_lua_value(b.rhs);
+                        self.p(", ", .{});
+                        try self.emit_as_lua_value(b.lhs);
+                        self.p(")", .{});
+                        return;
+                    }
                     const func = switch (b.op) {
                         .add => "lua_add",
                         .sub => "lua_sub",
@@ -4888,7 +5153,6 @@ pub const CodeGen = struct {
                         .geq => "lua_geq",
                         .@"or" => "lua_or",
                         .@"and" => "lua_and",
-                        .contains => "lua_contains",
                         else => null,
                     };
                     if (func) |f| {
@@ -5806,6 +6070,34 @@ pub const CodeGen = struct {
         }
         if (std.mem.eql(u8, fname, "compiler_fence")) {
             self.p("({{ __asm__ __volatile__(\"\" ::: \"memory\"); }})", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "prefetch")) {
+            self.p("__builtin_prefetch(", .{});
+            try self.emit_mem_ptr_arg(args, 0, true);
+            self.p(", ", .{});
+            try self.emit_mem_integer_arg(args, 1, "0");
+            self.p(", ", .{});
+            try self.emit_mem_integer_arg(args, 2, "3");
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "assume")) {
+            self.p("__builtin_assume(", .{});
+            if (args.len > 0) {
+                try self.emit_lua_truthy_expr(args[0]);
+            } else {
+                self.p("1", .{});
+            }
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "trap")) {
+            self.p("__builtin_trap()", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "unreachable")) {
+            self.p("__builtin_unreachable()", .{});
             return true;
         }
         return false;
@@ -6952,13 +7244,72 @@ pub const CodeGen = struct {
         return out.toOwnedSlice(self.alloc);
     }
 
+    fn add_module_export(
+        self: *CodeGen,
+        seen: *std.StringArrayHashMapUnmanaged(void),
+        names: *std.ArrayList([]const u8),
+        name: []const u8,
+    ) E!void {
+        if (name.len == 0 or name[0] == '_') return;
+        if (seen.contains(name)) return;
+        try seen.put(self.alloc, name, {});
+        try names.append(self.alloc, name);
+    }
+
+    fn collect_duo_module_exports(self: *CodeGen, mod: *const ast.Module, names: *std.ArrayList([]const u8)) E!void {
+        var seen: std.StringArrayHashMapUnmanaged(void) = .{};
+        defer seen.deinit(self.alloc);
+
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.names) |*lname| try self.add_module_export(&seen, names, lname.ident);
+                },
+                .global_decl => |*gd| {
+                    if (!gd.star) for (gd.names) |*lname| try self.add_module_export(&seen, names, lname.ident);
+                },
+                .const_decl => |*cd| try self.add_module_export(&seen, names, cd.ident),
+                .assign => |*as| {
+                    for (as.targets) |target| {
+                        if (target.* == .name) try self.add_module_export(&seen, names, target.name.ident);
+                    }
+                },
+                .func_decl => |*fd| {
+                    if (fd.path.len == 1 and !fd.method) try self.add_module_export(&seen, names, fd.path[0]);
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn emit_duo_module_return_table(self: *CodeGen, mod: *const ast.Module) E!void {
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        try self.collect_duo_module_exports(mod, &names);
+
+        self.ind();
+        self.p("lua_Value __duo_module = lua_table_new_with_capacity(0, {d});\n", .{names.items.len});
+        for (names.items) |name| {
+            const hash = calc_lua_hash(name);
+            var name_expr = ast.Expr{ .name = .{ .loc = mod.body.loc, .ident = name } };
+            self.ind();
+            self.p("lua_table_set_raw(__duo_module, lua_val_from_literal(\"{s}\", {d}, {d}), ", .{ name, hash, name.len });
+            try self.emit_as_lua_value(&name_expr);
+            self.p(");\n", .{});
+        }
+        self.ind();
+        self.p("return __duo_module;\n", .{});
+    }
+
     fn emit_embedded_module(self: *CodeGen, cname: []const u8, path: []const u8) bool {
         const cwd = Io.Dir.cwd();
         const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch |e| {
             term.err("emit_embedded_module: readFileAlloc failed for {s}: {}", .{ path, e });
             return false;
         };
-        defer self.alloc.free(src);
+        // The parser stores identifier/string slices into this buffer. Embedded
+        // closure bodies are emitted after this function returns, so the source
+        // must live for the duration of code generation.
 
         var lex = @import("lexer.zig").Lexer.init(src, path);
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
@@ -7065,6 +7416,10 @@ pub const CodeGen = struct {
         // Forward-declare submodule functions
         for (sub_funcs.items) |fd| {
             if (fd.path.len == 1 and !fd.method) {
+                self.note_func_body(fd.path[0], &fd.func) catch |e| {
+                    term.err("emit_embedded_module: func body registration failed for {s}: {}", .{ fd.path[0], e });
+                    return false;
+                };
                 self.emit_func_decl_forward(fd) catch |e| {
                     term.err("emit_embedded_module: forward decl failed for {s}: {}", .{ fd.path[0], e });
                     return false;
@@ -7086,6 +7441,10 @@ pub const CodeGen = struct {
         const prev_ctx = self.closure_ctx;
         self.current_ret = .any;
         self.closure_ctx = null;
+        self.push_local_scope() catch |e| {
+            term.err("emit_embedded_module: scope setup failed: {}", .{e});
+            return false;
+        };
         for (submod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl, .const_decl => {},
@@ -7103,9 +7462,15 @@ pub const CodeGen = struct {
                 return false;
             };
             self.p(";\n", .{});
+        } else if (subsem.duo_mode) {
+            self.emit_duo_module_return_table(&submod) catch |e| {
+                term.err("emit_embedded_module: auto module table emit failed: {}", .{e});
+                return false;
+            };
         } else {
             self.pl("return lua_val_nil();", .{});
         }
+        self.pop_local_scope();
         self.indent = 0;
         self.current_ret = prev_ret;
         self.closure_ctx = prev_ctx;
@@ -7481,6 +7846,9 @@ const duo_runtime =
     \\static inline lua_Value lua_table_get_raw(lua_Value table, lua_Value key);
     \\
     \\static int64_t duo_gc_kbytes = 0;
+    \\static lua_Value* duo_gc_finalizers = NULL;
+    \\static int duo_gc_finalizer_count = 0;
+    \\static int duo_gc_finalizer_cap = 0;
     \\static inline void duo_gc_note_alloc(size_t bytes) {
     \\    duo_gc_kbytes += (int64_t)((bytes + 1023) / 1024);
     \\}
@@ -7890,6 +8258,18 @@ const duo_runtime =
     \\    return a.as.tval == b.as.tval;
     \\}
     \\
+    \\static inline bool lua_raweq_value(lua_Value a, lua_Value b) {
+    \\    if (a.type != b.type) return false;
+    \\    switch (a.type) {
+    \\        case VAL_NIL: return true;
+    \\        case VAL_BOOL: return a.as.bval == b.as.bval;
+    \\        case VAL_NUMBER: return a.as.nval == b.as.nval;
+    \\        case VAL_STRING: return a.as.sval == b.as.sval;
+    \\        case VAL_FUNC: return a.as.fval == b.as.fval;
+    \\        default: return a.as.tval == b.as.tval;
+    \\    }
+    \\}
+    \\
     \\static inline lua_Value lua_table_get_raw(lua_Value table, lua_Value key) {
     \\    lua_Table* t = (lua_Table*)table.as.tval;
     \\    /* Last-access cache: O(1) fast path for repeated hash-table lookups */
@@ -7907,7 +8287,7 @@ const duo_runtime =
     \\    uint32_t idx = ideal;
     \\    uint32_t dist = 0;
     \\    while (t->hash_keys[idx].type != VAL_NIL) {
-    \\        if (lua_eq(t->hash_keys[idx], key)) {
+    \\        if (lua_raweq_value(t->hash_keys[idx], key)) {
     \\            t->last_key = key;
     \\            t->last_idx = (int)idx;
     \\            return t->hash_vals[idx];
@@ -7952,8 +8332,8 @@ const duo_runtime =
     \\    lua_Value idx = lua_get_metafield(table, "__index");
     \\    if (idx.type == VAL_TABLE) return lua_table_get(idx, key);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
-    \\        lua_Value args[1] = { key };
-    \\        return lua_invoke(idx, 1, args);
+    \\        lua_Value args[2] = { table, key };
+    \\        return lua_invoke(idx, 2, args);
     \\    }
     \\    return lua_val_nil();
     \\}
@@ -8056,7 +8436,7 @@ const duo_runtime =
     \\            t->count++;
     \\            return;
     \\        }
-    \\        if (lua_eq(t->hash_keys[idx], cur_key)) {
+    \\        if (lua_raweq_value(t->hash_keys[idx], cur_key)) {
     \\            t->hash_vals[idx] = cur_val;
     \\            t->last_key = cur_key;
     \\            t->last_idx = (int)idx;
@@ -8084,17 +8464,42 @@ const duo_runtime =
     \\        if (existing.type == VAL_NIL) {
     \\            lua_Value ni = lua_get_metafield(table, "__newindex");
     \\            if (ni.type == VAL_TABLE) {
-    \\                lua_table_set_raw(ni, key, val);
+    \\                lua_table_set(ni, key, val);
     \\                return;
     \\            }
     \\            if (ni.type == VAL_FUNC || ni.type == VAL_CLOSURE) {
-    \\                lua_Value args[2] = { key, val };
-    \\                lua_invoke(ni, 2, args);
+    \\                lua_Value args[3] = { table, key, val };
+    \\                lua_invoke(ni, 3, args);
     \\                return;
     \\            }
     \\        }
     \\    }
     \\    lua_table_set_raw(table, key, val);
+    \\}
+    \\
+    \\static inline void duo_register_gc_finalizer(lua_Value object) {
+    \\    if (object.type != VAL_TABLE) return;
+    \\    for (int i = 0; i < duo_gc_finalizer_count; i++) {
+    \\        if (lua_raweq_value(duo_gc_finalizers[i], object)) return;
+    \\    }
+    \\    if (duo_gc_finalizer_count >= duo_gc_finalizer_cap) {
+    \\        duo_gc_finalizer_cap = duo_gc_finalizer_cap == 0 ? 16 : duo_gc_finalizer_cap * 2;
+    \\        duo_gc_finalizers = (lua_Value*)realloc(duo_gc_finalizers, (size_t)duo_gc_finalizer_cap * sizeof(lua_Value));
+    \\    }
+    \\    duo_gc_finalizers[duo_gc_finalizer_count++] = object;
+    \\}
+    \\
+    \\static inline void duo_run_gc_finalizers(void) {
+    \\    for (int i = duo_gc_finalizer_count - 1; i >= 0; i--) {
+    \\        lua_Value object = duo_gc_finalizers[i];
+    \\        if (object.type == VAL_NIL) continue;
+    \\        duo_gc_finalizers[i] = lua_val_nil();
+    \\        lua_Value mm = lua_get_metafield(object, "__gc");
+    \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
+    \\            lua_Value args[1] = { object };
+    \\            lua_invoke(mm, 1, args);
+    \\        }
+    \\    }
     \\}
     \\
     \\static inline const char* lua_concat(lua_Value a, lua_Value b) {
@@ -8106,7 +8511,7 @@ const duo_runtime =
     \\    }
     \\    mm = lua_get_metafield(b, "__concat");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
-    \\        lua_Value args[2] = { b, a };
+    \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
     \\        return lua_to_str(res);
     \\    }
@@ -8261,20 +8666,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline bool lua_eq(lua_Value a, lua_Value b) {
-    \\    if (a.type == b.type) {
-    \\        switch (a.type) {
-    \\            case VAL_NIL: return true;
-    \\            case VAL_BOOL: return a.as.bval == b.as.bval;
-    \\            case VAL_NUMBER: return a.as.nval == b.as.nval;
-    \\            case VAL_STRING: return a.as.sval == b.as.sval;
-    \\            case VAL_TABLE: return a.as.tval == b.as.tval;
-    \\            case VAL_BUFFER: return a.as.tval == b.as.tval;
-    \\            case VAL_THREAD: return a.as.tval == b.as.tval;
-    \\            case VAL_FUNC: return a.as.fval == b.as.fval;
-    \\            case VAL_CLOSURE: return a.as.tval == b.as.tval;
-    \\            case VAL_FILE: return a.as.tval == b.as.tval;
-    \\        }
-    \\    }
+    \\    if (lua_raweq_value(a, b)) return true;
     \\    lua_Value mm = lua_get_metafield(a, "__eq");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
@@ -8282,7 +8674,7 @@ const duo_runtime =
     \\    }
     \\    mm = lua_get_metafield(b, "__eq");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
-    \\        lua_Value args[2] = { b, a };
+    \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
     \\    return false;
@@ -8293,6 +8685,11 @@ const duo_runtime =
     \\}
     \\
     \\static inline bool duo_contains(lua_Value container, lua_Value item) {
+    \\    lua_Value mm = lua_get_metafield(container, "__contains");
+    \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
+    \\        lua_Value args[2] = { container, item };
+    \\        return lua_to_bool(lua_invoke(mm, 2, args));
+    \\    }
     \\    if (container.type != VAL_TABLE) return false;
     \\    lua_Table* t = (lua_Table*)container.as.tval;
     \\    if (!t) return false;
@@ -8316,7 +8713,7 @@ const duo_runtime =
     \\    }
     \\    mm = lua_get_metafield(b, "__lt");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
-    \\        lua_Value args[2] = { b, a };
+    \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
     \\    return lua_to_num(a) < lua_to_num(b);
@@ -8340,7 +8737,7 @@ const duo_runtime =
     \\    }
     \\    mm = lua_get_metafield(b, "__le");
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
-    \\        lua_Value args[2] = { b, a };
+    \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
     \\    return lua_to_num(a) <= lua_to_num(b);
@@ -10360,8 +10757,19 @@ const duo_runtime =
     \\    if (table.type != VAL_TABLE) return table;
     \\    lua_Table* t = (lua_Table*)table.as.tval;
     \\    if (!t) return table;
+    \\    if (t->metatable.type == VAL_TABLE) {
+    \\        lua_Value protected_mt = lua_table_get_raw(t->metatable, lua_val_from_str("__metatable"));
+    \\        if (protected_mt.type != VAL_NIL) {
+    \\            lua_error(lua_val_from_str("cannot change a protected metatable"));
+    \\            return table;
+    \\        }
+    \\    }
     \\    if (metatable.type == VAL_NIL) t->metatable = lua_val_nil();
-    \\    else if (metatable.type == VAL_TABLE) t->metatable = metatable;
+    \\    else if (metatable.type == VAL_TABLE) {
+    \\        t->metatable = metatable;
+    \\        lua_Value gc = lua_table_get_raw(metatable, lua_val_from_str("__gc"));
+    \\        if (gc.type == VAL_FUNC || gc.type == VAL_CLOSURE) duo_register_gc_finalizer(table);
+    \\    }
     \\    return table;
     \\}
     \\
@@ -10369,6 +10777,10 @@ const duo_runtime =
     \\    if (object.type != VAL_TABLE) return lua_val_nil();
     \\    lua_Table* t = (lua_Table*)object.as.tval;
     \\    if (!t || t->metatable.type == VAL_NIL) return lua_val_nil();
+    \\    if (t->metatable.type == VAL_TABLE) {
+    \\        lua_Value protected_mt = lua_table_get_raw(t->metatable, lua_val_from_str("__metatable"));
+    \\        if (protected_mt.type != VAL_NIL) return protected_mt;
+    \\    }
     \\    return t->metatable;
     \\}
     \\
@@ -10385,20 +10797,27 @@ const duo_runtime =
     \\    if (v.type == VAL_STRING) {
     \\        return lua_val_from_num((double)strlen(v.as.sval));
     \\    } else if (v.type == VAL_TABLE) {
-    \\        return lua_val_from_num((double)lua_table_len(v));
+    \\        lua_Table* t = (lua_Table*)v.as.tval;
+    \\        if (!t) return lua_val_from_num(0.0);
+    \\        int i = 0;
+    \\        while (i < t->array_size && t->array[i].type != VAL_NIL) i++;
+    \\        return lua_val_from_num((double)i);
     \\    }
     \\    return lua_val_from_num(0.0);
     \\}
     \\
     \\static inline lua_Value lua_rawequal(lua_Value v1, lua_Value v2) {
-    \\    return lua_val_from_bool(lua_eq(v1, v2));
+    \\    return lua_val_from_bool(lua_raweq_value(v1, v2));
     \\}
     \\
     \\static inline lua_Value lua_collectgarbage(lua_Value opt, lua_Value arg) {
     \\    const char* o = (opt.type == VAL_STRING) ? opt.as.sval : "collect";
     \\    (void)arg;
     \\    if (strcmp(o, "count") == 0) return lua_val_from_num((double)duo_gc_kbytes);
-    \\    if (strcmp(o, "collect") == 0) return lua_val_from_num(0.0);
+    \\    if (strcmp(o, "collect") == 0) {
+    \\        duo_run_gc_finalizers();
+    \\        return lua_val_from_num(0.0);
+    \\    }
     \\    if (strcmp(o, "stop") == 0 || strcmp(o, "restart") == 0) return lua_val_from_bool(true);
     \\    return lua_val_from_num(0.0);
     \\}

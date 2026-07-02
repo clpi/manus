@@ -1,0 +1,50 @@
+const default_step: i64 = 3
+
+fun score(base: i64, step: i64 = default_step, factor: i64 = 2): i64
+    return base + step * factor
+end
+
+fun skipped_sum(limit: i64): i64
+    local total: i64 = 0
+    for i = 1, limit do
+        if i % 2 == 0 then
+            continue
+        end
+        total = total + i
+    end
+    return total
+end
+
+local block = [[alpha
+beta]]
+local bracket = [=[contains ]] without ending]=]
+
+if block ~= "alpha\nbeta" then
+    error("bad long string")
+end
+
+if bracket ~= "contains ]] without ending" then
+    error("bad equal-delimited long string")
+end
+
+local raw: *u8 = mem.alloc(16)
+mem.assume(not mem.is_null(raw))
+mem.prefetch(raw)
+
+local slot: *i64 = mem.cast("i64", raw)
+mem.store("i64", slot, score(4))
+local got: i64 = mem.load("i64", slot)
+
+if got ~= 10 then
+    mem.trap()
+end
+
+if got == 0 then
+    mem.unreachable()
+end
+
+mem.free(raw)
+
+print(score(4, 5))
+print(skipped_sum(7))
+print(got)

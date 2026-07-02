@@ -1,0 +1,69 @@
+global Vector = {}
+
+Vector.__index = Vector
+Vector.__metatable = "Vector"
+
+Vector.new = fun(x: i64, y: i64): any
+    setmetatable({ x = x, y = y }, Vector)
+end
+
+setmetatable(Vector, {
+    __call = fun(cls: any, x: i64, y: i64): any
+        cls.new(x, y)
+    end,
+})
+
+Vector.move = fun(self: any, dx: i64, dy: i64): any
+    self.x = self.x + dx
+    self.y = self.y + dy
+    self
+end
+
+Vector.__add = fun(a: any, b: any): any
+    Vector(a.x + b.x, a.y + b.y)
+end
+
+Vector.__eq = fun(a: any, b: any): bool
+    a.x == b.x and a.y == b.y
+end
+
+Vector.__len = fun(self: any): i64
+    2
+end
+
+Vector.__contains = fun(self: any, value: any): bool
+    self.x == value or self.y == value
+end
+
+Vector.__tostring = fun(self: any): str
+    "Vector(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+end
+
+local v = Vector(2, 3)
+v:move(1, 1)
+local w = Vector(3, 4)
+local sum = v + w
+
+global backing = {}
+local proxy = setmetatable({}, {
+    __index = backing,
+    __newindex = fun(self: any, key: any, value: any): void
+        rawset(backing, key, value * 2)
+    end,
+})
+proxy.answer = 21
+
+local fallback = setmetatable({}, {
+    __index = fun(self: any, key: any): any
+        "missing:" .. tostring(key)
+    end,
+})
+
+print(tostring(v))
+print(tostring(sum))
+print(tostring(v == w))
+print(tostring(#v))
+print(tostring(4 in v))
+print(tostring(proxy.answer))
+print(fallback.anything)
+print(tostring(getmetatable(v)))

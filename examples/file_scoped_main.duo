@@ -1,0 +1,11 @@
+guy = req "file_scoped_guy"
+
+assert(guy.x == 3)
+assert(guy.y == 8)
+assert(guy.exp == 99.3)
+assert(guy.getAge() == 29.0)
+assert(guy.props.hasHobby("golf"))
+assert(not guy.props.hasHobby("coding"))
+
+guy.setAge(31.0)
+assert(guy.getAge() == 31.0)

@@ -20,6 +20,7 @@ pub const TokenKind = enum {
     // Lua keywords
     kw_and,
     kw_break,
+    kw_continue,
     kw_do,
     kw_else,
     kw_elseif,
@@ -114,6 +115,12 @@ pub const TokenKind = enum {
     dcolon, // ::
     arrow, // ->
     fat_arrow, // =>
+    plus_assign, // +=
+    minus_assign, // -=
+    star_assign, // *=
+    slash_assign, // /=
+    percent_assign, // %=
+    caret_assign, // ^=
 
     eof,
 
@@ -125,6 +132,7 @@ pub const TokenKind = enum {
             .string_lit => "string",
             .kw_and => "and",
             .kw_break => "break",
+            .kw_continue => "continue",
             .kw_do => "do",
             .kw_else => "else",
             .kw_elseif => "elseif",
@@ -211,6 +219,12 @@ pub const TokenKind = enum {
             .dcolon => "::",
             .arrow => "->",
             .fat_arrow => "=>",
+            .plus_assign => "+=",
+            .minus_assign => "-=",
+            .star_assign => "*=",
+            .slash_assign => "/=",
+            .percent_assign => "%=",
+            .caret_assign => "^=",
             .eof => "<eof>",
         };
     }
@@ -240,6 +254,7 @@ pub const Lexer = struct {
     col: u32,
     file: []const u8,
     peeked: ?Token,
+    last_error_loc: ?Loc,
 
     pub fn init(src: []const u8, file: []const u8) Lexer {
         return .{
@@ -249,6 +264,7 @@ pub const Lexer = struct {
             .col = 1,
             .file = file,
             .peeked = null,
+            .last_error_loc = null,
         };
     }
 
@@ -575,26 +591,24 @@ pub const Lexer = struct {
     fn lookup_kw(text: []const u8) ?TokenKind {
         // Parallel arrays: word list and corresponding token kind.
         const words = [_][]const u8{
-            "and",     "break",   "do",        "else",    "elseif",   "end",
-            "false",   "for",     "function",  "fun",     "global",   "goto",
-            "if",      "in",      "local",     "nil",     "not",      "or",
-            "repeat",  "return",  "then",      "true",    "until",    "while",
-            "const",  "enum",     "i8",    "i16",     "i32",
-            "i64",    "u8",     "u16",      "u32",   "u64",     "f32",
-            "f64",    "bool",   "void",     "str",   "match",   "try",
-            "catch",  "defer",  "async",    "await", "concept", "alias",
-            "private","extends",
+            "and",     "break", "continue", "do",    "else",    "elseif", "end",
+            "false",   "for",   "function", "fun",   "global",  "goto",   "if",
+            "in",      "local", "nil",      "not",   "or",      "repeat", "return",
+            "then",    "true",  "until",    "while", "const",   "enum",   "i8",
+            "i16",     "i32",   "i64",      "u8",    "u16",     "u32",    "u64",
+            "f32",     "f64",   "bool",     "void",  "str",     "match",  "try",
+            "catch",   "defer", "async",    "await", "concept", "alias",  "private",
+            "extends",
         };
         const kinds = [_]TokenKind{
-            .kw_and,    .kw_break,  .kw_do,       .kw_else,  .kw_elseif,  .kw_end,
-            .kw_false,  .kw_for,    .kw_function, .kw_fun,   .kw_global,  .kw_goto,
-            .kw_if,     .kw_in,     .kw_local,    .kw_nil,   .kw_not,     .kw_or,
-            .kw_repeat, .kw_return, .kw_then,     .kw_true,  .kw_until,   .kw_while,
-            .kw_const,  .kw_enum,     .kw_i8,    .kw_i16,     .kw_i32,
-            .kw_i64,    .kw_u8,     .kw_u16,      .kw_u32,   .kw_u64,     .kw_f32,
-            .kw_f64,    .kw_bool,   .kw_void,     .kw_str,   .kw_match,   .kw_try,
-            .kw_catch,  .kw_defer,  .kw_async,    .kw_await, .kw_concept, .kw_alias,
-            .kw_private,.kw_extends,
+            .kw_and,     .kw_break, .kw_continue, .kw_do,    .kw_else,    .kw_elseif, .kw_end,
+            .kw_false,   .kw_for,   .kw_function, .kw_fun,   .kw_global,  .kw_goto,   .kw_if,
+            .kw_in,      .kw_local, .kw_nil,      .kw_not,   .kw_or,      .kw_repeat, .kw_return,
+            .kw_then,    .kw_true,  .kw_until,    .kw_while, .kw_const,   .kw_enum,   .kw_i8,
+            .kw_i16,     .kw_i32,   .kw_i64,      .kw_u8,    .kw_u16,     .kw_u32,    .kw_u64,
+            .kw_f32,     .kw_f64,   .kw_bool,     .kw_void,  .kw_str,     .kw_match,  .kw_try,
+            .kw_catch,   .kw_defer, .kw_async,    .kw_await, .kw_concept, .kw_alias,  .kw_private,
+            .kw_extends,
         };
         for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
         return null;
@@ -641,10 +655,22 @@ pub const Lexer = struct {
         _ = self.adv();
         const p = self.pos;
         return switch (c) {
-            '+' => Token{ .kind = .plus, .loc = l, .text = self.src[p - 1 .. p] },
-            '*' => Token{ .kind = .star, .loc = l, .text = self.src[p - 1 .. p] },
-            '%' => Token{ .kind = .percent, .loc = l, .text = self.src[p - 1 .. p] },
-            '^' => Token{ .kind = .caret, .loc = l, .text = self.src[p - 1 .. p] },
+            '+' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .plus_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .plus, .loc = l, .text = self.src[p - 1 .. p] },
+            '*' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .star_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .star, .loc = l, .text = self.src[p - 1 .. p] },
+            '%' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .percent_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .percent, .loc = l, .text = self.src[p - 1 .. p] },
+            '^' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .caret_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .caret, .loc = l, .text = self.src[p - 1 .. p] },
             '#' => if (self.peek_char() == '#') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .hash_hash, .loc = l, .text = self.src[p - 1 .. self.pos] };
@@ -659,11 +685,17 @@ pub const Lexer = struct {
             '}' => Token{ .kind = .rbrace, .loc = l, .text = self.src[p - 1 .. p] },
             ';' => Token{ .kind = .semi, .loc = l, .text = self.src[p - 1 .. p] },
             ',' => Token{ .kind = .comma, .loc = l, .text = self.src[p - 1 .. p] },
-            '-' => if (self.peek_char() == '>') blk: {
+            '-' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .minus_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else if (self.peek_char() == '>') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .arrow, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .minus, .loc = l, .text = self.src[p - 1 .. p] },
-            '/' => if (self.peek_char() == '/') blk: {
+            '/' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .slash_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else if (self.peek_char() == '/') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .idiv, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .slash, .loc = l, .text = self.src[p - 1 .. p] },
@@ -716,11 +748,19 @@ pub const Lexer = struct {
             self.peeked = null;
             return tok;
         }
-        return self.next_tok();
+        return self.next_tok() catch |err| {
+            self.last_error_loc = self.cur_loc();
+            return err;
+        };
     }
 
     pub fn peek(self: *Lexer) LexError!Token {
-        if (self.peeked == null) self.peeked = try self.next_tok();
+        if (self.peeked == null) {
+            self.peeked = self.next_tok() catch |err| {
+                self.last_error_loc = self.cur_loc();
+                return err;
+            };
+        }
         return self.peeked.?;
     }
 
@@ -741,9 +781,19 @@ pub const Lexer = struct {
     /// Check whether a token kind is a primitive type keyword (i8..f64, bool, void, str).
     pub fn isTypeKeyword(kind: TokenKind) bool {
         return switch (kind) {
-            .kw_i8, .kw_i16, .kw_i32, .kw_i64,
-            .kw_u8, .kw_u16, .kw_u32, .kw_u64,
-            .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str,
+            .kw_i8,
+            .kw_i16,
+            .kw_i32,
+            .kw_i64,
+            .kw_u8,
+            .kw_u16,
+            .kw_u32,
+            .kw_u64,
+            .kw_f32,
+            .kw_f64,
+            .kw_bool,
+            .kw_void,
+            .kw_str,
             => true,
             else => false,
         };
@@ -766,12 +816,12 @@ test "lex: identifiers" {
 }
 
 test "lex: standard keywords" {
-    var l = Lexer.init("and break do else elseif end false for function goto if in local nil not or repeat return then true until while", "test");
+    var l = Lexer.init("and break continue do else elseif end false for function goto if in local nil not or repeat return then true until while", "test");
     const expected = [_]TokenKind{
-        .kw_and,   .kw_break, .kw_do,       .kw_else,  .kw_elseif, .kw_end,
-        .kw_false, .kw_for,   .kw_function, .kw_goto,  .kw_if,     .kw_in,
-        .kw_local, .kw_nil,   .kw_not,      .kw_or,    .kw_repeat, .kw_return,
-        .kw_then,  .kw_true,  .kw_until,    .kw_while,
+        .kw_and,   .kw_break, .kw_continue, .kw_do,     .kw_else,   .kw_elseif, .kw_end,
+        .kw_false, .kw_for,   .kw_function, .kw_goto,   .kw_if,     .kw_in,     .kw_local,
+        .kw_nil,   .kw_not,   .kw_or,       .kw_repeat, .kw_return, .kw_then,   .kw_true,
+        .kw_until, .kw_while,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }
@@ -933,10 +983,11 @@ test "lex: single-char operators" {
 }
 
 test "lex: multi-char operators" {
-    var l = Lexer.init("== ~= <= >= << >> // .. ... ## -> ::", "test");
+    var l = Lexer.init("== ~= <= >= << >> // .. ... ## -> :: += -= *= /= %= ^=", "test");
     const expected = [_]TokenKind{
-        .eq,     .neq,  .leq,       .geq,   .lshift, .rshift, .idiv,
-        .concat, .dots, .hash_hash, .arrow, .dcolon,
+        .eq,          .neq,          .leq,            .geq,          .lshift, .rshift,      .idiv,
+        .concat,      .dots,         .hash_hash,      .arrow,        .dcolon, .plus_assign, .minus_assign,
+        .star_assign, .slash_assign, .percent_assign, .caret_assign,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }

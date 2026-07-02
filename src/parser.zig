@@ -36,10 +36,9 @@ pub const Parser = struct {
     fn expect(self: *Parser, kind: TK) ParseError!Token {
         const tok = try self.adv();
         if (tok.kind != kind) {
-            term.locBare(tok.loc, ">>> EXPECT FAILED: expected '{s}', got '{s}'", .{
+            term.locErr(tok.loc, "expected '{s}', got '{s}'", .{
                 kind.spelling(), tok.kind.spelling(),
             });
-            // @panic("EXPECT FAILED");
             return ParseError.ExpectedToken;
         }
         return tok;
@@ -82,6 +81,16 @@ pub const Parser = struct {
             const base_ptr = try self.alloc.create(ast.TypeExpr);
             base_ptr.* = base;
             base = .{ .generic = .{ .base = base_ptr, .params = try params.toOwnedSlice(self.alloc) } };
+        }
+        while (try self.eat(.pipe) != null) {
+            _ = try self.parse_type_primary();
+            while (try self.eat(.lbracket) != null) {
+                if (!(try self.check(.rbracket))) {
+                    _ = try self.parse_type();
+                    while (try self.eat(.comma) != null) _ = try self.parse_type();
+                }
+                _ = try self.expect(.rbracket);
+            }
         }
         return base;
     }
@@ -177,6 +186,14 @@ pub const Parser = struct {
                     const n = try self.adv();
                     size = @intCast(n.int_val);
                     _ = try self.expect(.rbracket);
+                    const elem = try self.alloc.create(ast.TypeExpr);
+                    elem.* = try self.parse_type();
+                    return .{ .array = .{ .elem = elem, .size = size } };
+                } else if (!(try self.check(.rbracket))) {
+                    const elem = try self.alloc.create(ast.TypeExpr);
+                    elem.* = try self.parse_type();
+                    _ = try self.expect(.rbracket);
+                    return .{ .array = .{ .elem = elem, .size = null } };
                 } else {
                     _ = try self.expect(.rbracket);
                 }
@@ -323,6 +340,10 @@ pub const Parser = struct {
             .kw_break => blk: {
                 _ = try self.adv();
                 break :blk ast.Stmt{ .brk = tok.loc };
+            },
+            .kw_continue => blk: {
+                _ = try self.adv();
+                break :blk ast.Stmt{ .cont = tok.loc };
             },
             .dcolon => self.parse_label(),
             else => self.parse_expr_stmt(),
@@ -1458,23 +1479,42 @@ pub const Parser = struct {
             // after the bash-call check handle this.
         }
 
-        if (nxt.kind == .assign or nxt.kind == .comma) {
+        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null or nxt.kind == .comma) {
             var targets: std.ArrayList(*ast.Expr) = .empty;
             try targets.append(self.alloc, first);
             while (try self.eat(.comma) != null)
                 try targets.append(self.alloc, try self.parse_suffixed_expr());
-            _ = try self.expect(.assign);
+            const assign_tok = try self.pk();
+            const compound_op = compound_assign_op(assign_tok.kind);
+            if (compound_op != null and targets.items.len != 1) {
+                term.locErr(assign_tok.loc, "compound assignment accepts one target", .{});
+                return ParseError.UnexpectedToken;
+            }
+            _ = try self.adv();
             var values: std.ArrayList(*ast.Expr) = .empty;
-            // Inside a match arm body, use the restricted scrutinee parser so
-            // that `[` at the start of the next arm isn't consumed as an index.
-            if (self.match_arm_depth > 0) {
-                try values.append(self.alloc, try self.parse_match_scrutinee());
-                while (try self.eat(.comma) != null)
-                    try values.append(self.alloc, try self.parse_match_scrutinee());
+            if (compound_op) |op| {
+                const rhs = if (self.match_arm_depth > 0)
+                    try self.parse_match_scrutinee()
+                else
+                    try self.parse_expr();
+                try values.append(self.alloc, try self.new_expr(.{ .binop = .{
+                    .loc = first.loc(),
+                    .op = op,
+                    .lhs = first,
+                    .rhs = rhs,
+                } }));
             } else {
-                try values.append(self.alloc, try self.parse_expr());
-                while (try self.eat(.comma) != null)
+                // Inside a match arm body, use the restricted scrutinee parser so
+                // that `[` at the start of the next arm isn't consumed as an index.
+                if (self.match_arm_depth > 0) {
+                    try values.append(self.alloc, try self.parse_match_scrutinee());
+                    while (try self.eat(.comma) != null)
+                        try values.append(self.alloc, try self.parse_match_scrutinee());
+                } else {
                     try values.append(self.alloc, try self.parse_expr());
+                    while (try self.eat(.comma) != null)
+                        try values.append(self.alloc, try self.parse_expr());
+                }
             }
             return ast.Stmt{ .assign = .{
                 .loc = first.loc(),
@@ -1587,6 +1627,18 @@ pub const Parser = struct {
             .idiv => .{ .op = .idiv, .left = 18, .right = 19 },
             .percent => .{ .op = .mod, .left = 18, .right = 19 },
             .caret => .{ .op = .pow, .left = 22, .right = 21 }, // right-assoc
+            else => null,
+        };
+    }
+
+    fn compound_assign_op(kind: TK) ?ast.BinOp {
+        return switch (kind) {
+            .plus_assign => .add,
+            .minus_assign => .sub,
+            .star_assign => .mul,
+            .slash_assign => .div,
+            .percent_assign => .mod,
+            .caret_assign => .pow,
             else => null,
         };
     }
@@ -1827,15 +1879,33 @@ pub const Parser = struct {
                 const val = try self.parse_expr();
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
             } else if (tok.kind == .name) {
-                // Speculate: name '=' means named field; otherwise positional
-                const saved = self.lex.*;
+                // Speculate: name '=' and name ':' Type '=' mean named fields;
+                // otherwise the entry is positional.
+                const saved = self.lex.saveState();
                 _ = try self.adv();
                 if (try self.check(.assign)) {
                     _ = try self.adv();
                     const val = try self.parse_expr();
                     try fields.append(self.alloc, .{ .named = .{ .key = tok.text, .val = val } });
+                } else if (try self.check(.colon)) {
+                    _ = try self.adv();
+                    _ = try self.parse_type();
+                    if (try self.check(.assign)) {
+                        _ = try self.adv();
+                        const val = try self.parse_expr();
+                        try fields.append(self.alloc, .{ .named = .{ .key = tok.text, .val = val } });
+                    } else {
+                        self.lex.restoreState(saved);
+                        const val = try self.parse_expr();
+                        if (try self.eat(.kw_for) != null) {
+                            const comp = try self.finish_list_comp(l, val);
+                            _ = try self.expect(.rbrace);
+                            return comp;
+                        }
+                        try fields.append(self.alloc, .{ .positional = val });
+                    }
                 } else {
-                    self.lex.* = saved;
+                    self.lex.restoreState(saved);
                     const val = try self.parse_expr();
                     if (try self.eat(.kw_for) != null) {
                         const comp = try self.finish_list_comp(l, val);
@@ -2276,6 +2346,31 @@ test "parse: assignment statement" {
     try testing.expect(stmt == .assign);
     try testing.expectEqual(@as(usize, 1), stmt.assign.targets.len);
     try testing.expectEqual(@as(usize, 1), stmt.assign.values.len);
+}
+
+test "parse: compound assignments lower to binary assignments" {
+    const cases = [_]struct {
+        src: []const u8,
+        op: ast.BinOp,
+    }{
+        .{ .src = "x += 2", .op = .add },
+        .{ .src = "x -= 2", .op = .sub },
+        .{ .src = "x *= 2", .op = .mul },
+        .{ .src = "x /= 2", .op = .div },
+        .{ .src = "x %= 2", .op = .mod },
+        .{ .src = "x ^= 2", .op = .pow },
+    };
+    for (cases) |case| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const mod = try parseSource(case.src, &arena);
+        const stmt = mod.body.stmts[0];
+        try testing.expect(stmt == .assign);
+        try testing.expectEqual(@as(usize, 1), stmt.assign.targets.len);
+        try testing.expectEqual(@as(usize, 1), stmt.assign.values.len);
+        try testing.expect(stmt.assign.values[0].* == .binop);
+        try testing.expectEqual(case.op, stmt.assign.values[0].binop.op);
+    }
 }
 
 test "parse: const declaration" {

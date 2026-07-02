@@ -324,6 +324,13 @@ pub const Sema = struct {
         }
     }
 
+    fn type_annotation_accepts_init(ann: RT, init_t: RT) bool {
+        if (ann.eql(init_t)) return true;
+        if (ann.is_integer() and init_t.is_integer()) return true;
+        if (ann.is_float() and init_t.is_float()) return true;
+        return false;
+    }
+
     fn err(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.errors += 1;
         term.locErr(loc, fmt, args);
@@ -474,7 +481,9 @@ pub const Sema = struct {
             std.mem.eql(u8, fname, "free") or std.mem.eql(u8, fname, "copy") or
             std.mem.eql(u8, fname, "move") or std.mem.eql(u8, fname, "set") or
             std.mem.eql(u8, fname, "zero") or std.mem.eql(u8, fname, "fence") or
-            std.mem.eql(u8, fname, "compiler_fence"))
+            std.mem.eql(u8, fname, "compiler_fence") or std.mem.eql(u8, fname, "prefetch") or
+            std.mem.eql(u8, fname, "assume") or std.mem.eql(u8, fname, "trap") or
+            std.mem.eql(u8, fname, "unreachable"))
             return .void;
         if (std.mem.eql(u8, fname, "compare")) return .i64;
         if (std.mem.eql(u8, fname, "is_null")) return .bool;
@@ -617,6 +626,21 @@ pub const Sema = struct {
             return;
         }
         if (std.mem.eql(u8, fname, "fence") or std.mem.eql(u8, fname, "compiler_fence")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 0, 0);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "prefetch")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 1, 3);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            self.mem_validate_numeric_arg(fname, args, 2);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "assume")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 1, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "trap") or std.mem.eql(u8, fname, "unreachable")) {
             _ = self.mem_arg_count_ok(loc, fname, args.len, 0, 0);
             return;
         }
@@ -955,7 +979,7 @@ pub const Sema = struct {
                         // annotation is known (not any), they must match
                         if (i < init_types.items.len) {
                             const init_t = init_types.items[i];
-                            if (ann != .any and init_t != .any and init_t != .nil and !ann.eql(init_t)) {
+                            if (ann != .any and init_t != .any and init_t != .nil and !type_annotation_accepts_init(ann, init_t)) {
                                 self.err(lname.loc, "type mismatch: variable '{s}' declared as {}, but initializer has type {}", .{ lname.ident, ann, init_t });
                             }
                         }
@@ -1093,11 +1117,14 @@ pub const Sema = struct {
             .gen_for => |*gf| {
                 for (gf.iters) |it| _ = try self.check_expr(it);
                 try self.scope.push();
-                for (gf.vars) |v| try self.scope.define(v, .{
-                    .typ = .any,
-                    .is_const = true,
-                    .is_for_control = true,
-                });
+                for (gf.vars, 0..) |v, i| {
+                    const is_key = gf.vars.len > 1 and i == 0;
+                    try self.scope.define(v, .{
+                        .typ = .any,
+                        .is_const = is_key,
+                        .is_for_control = is_key,
+                    });
+                }
                 try self.check_block(&gf.body);
                 self.scope.pop();
             },
@@ -1109,7 +1136,7 @@ pub const Sema = struct {
             // record-type annotations on bindings; their type-checking and
             // `@implements` concept satisfaction is done in the `local_decl`
             // and `global_decl` arms above.
-            .brk, .goto_stmt, .label_stmt => {},
+            .brk, .cont, .goto_stmt, .label_stmt => {},
             .match_stmt => |*ms| try self.check_match(ms),
             .enum_def => |*ed| try self.check_enum_def(ed),
             .try_stmt => |*ts| {
@@ -1177,6 +1204,9 @@ pub const Sema = struct {
         // Anonymous function expressions don't carry @nopanic;
         // reset to false so inner expressions aren't incorrectly flagged.
         self.current_nopanic = false;
+        for (fb.params) |*p| {
+            if (p.default_val) |default_val| _ = try self.check_expr(default_val);
+        }
         try self.scope.push();
         for (fb.params, 0..) |*p, i|
             try self.scope.define(p.name, .{ .typ = param_types[i], .is_const = false });
@@ -1299,6 +1329,12 @@ pub const Sema = struct {
             .call => |c| {
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     return try self.check_expr(c.args[0]);
+                }
+                if (self.duo_mode and c.func.* == .name) {
+                    const callee = c.func.name.ident;
+                    if (std.mem.eql(u8, callee, "pairs") or std.mem.eql(u8, callee, "ipairs")) {
+                        self.warn_msg(c.func.name.loc, "'{s}' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'", .{callee});
+                    }
                 }
                 const ft = try self.check_expr(c.func);
                 for (c.args) |arg| _ = try self.check_expr(arg);
@@ -1884,6 +1920,9 @@ pub const Sema = struct {
         self.current_ret = ret_t;
         // Check if this function has the @nopanic attribute
         self.current_nopanic = has_nopanic_attr(fd.attributes);
+        for (fb.params) |*p| {
+            if (p.default_val) |default_val| _ = try self.check_expr(default_val);
+        }
         try self.scope.push();
         for (fb.params, param_types) |*p, pt|
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
@@ -2008,6 +2047,9 @@ pub const Sema = struct {
         // Pass 3: re-check body with native types when specialized.
         if (fb.is_typed and !all_typed) {
             self.current_ret = ret_t;
+            for (fb.params) |*p| {
+                if (p.default_val) |default_val| _ = try self.check_expr(default_val);
+            }
             try self.scope.push();
             for (fb.params, param_types) |*p, pt|
                 try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
