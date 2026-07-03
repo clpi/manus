@@ -1,5 +1,113 @@
--- std.hash.fnv — FNV-1/FNV-1a hash (stub)
+-- std.hash.fnv — FNV-1/FNV-1a hash (mirrors Go's hash/fnv)
 
-local M = {}
+local fnv_offset32 = 0x811C9DC5
+local fnv_prime32 = 0x01000193
+
+-- 64-bit values as {hi, lo} pairs
+local fnv_offset64_hi = 0xCBF29CE4
+local fnv_offset64_lo = 0x84222325
+local fnv_prime64_hi = 0x00000100
+local fnv_prime64_lo = 0x000001B3
+
+fun new32(): any
+    {hash = fnv_offset32, bits = 32, kind = "fnv1"}
+end
+
+fun new32a(): any
+    {hash = fnv_offset32, bits = 32, kind = "fnv1a"}
+end
+
+fun new64(): any
+    {hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1"}
+end
+
+fun new64a(): any
+    {hash_hi = fnv_offset64_hi, hash_lo = fnv_offset64_lo, bits = 64, kind = "fnv1a"}
+end
+
+fun update(state: any, data: str): void
+    for i = 1, string.len(data)
+        b = string.byte(data, i)
+        if state.kind == "fnv1a" then
+            state.hash = (state.hash ~ b) % (2^32)
+            state.hash = (state.hash * fnv_prime32) % (2^32)
+        else
+            state.hash = (state.hash * fnv_prime32) % (2^32)
+            state.hash = (state.hash ~ b) % (2^32)
+        end
+    end
+end
+
+fun mul64(hi: i64, lo: i64, m_hi: i64, m_lo: i64): any
+    -- Multiply two 64-bit numbers stored as {hi, lo}, return {hi, lo}
+    lo_lo = lo * m_lo
+    hi_lo = hi * m_lo
+    lo_hi = lo * m_hi
+    hi_hi = hi * m_hi
+    lo_part = lo_lo % (2^32)
+    carry = (lo_lo >> 32) + (hi_lo % (2^32)) + (lo_hi % (2^32))
+    hi_part = (hi_hi + (hi_lo >> 32) + (lo_hi >> 32) + (carry >> 32)) % (2^32)
+    lo_part = ((carry % (2^32)) * (2^32) + lo_part) % (2^64)
+    {hi = hi_part, lo = lo_part}
+end
+
+fun update64(state: any, data: str): void
+    for i = 1, string.len(data)
+        b = string.byte(data, i)
+        if state.kind == "fnv1a" then
+            state.hash_lo = (state.hash_lo ~ b) % (2^32)
+        else
+            prod = mul64(state.hash_hi, state.hash_lo, fnv_prime64_hi, fnv_prime64_lo)
+            state.hash_hi = prod.hi
+            state.hash_lo = prod.lo
+            state.hash_lo = (state.hash_lo ~ b) % (2^32)
+        end
+    end
+end
+
+fun final(state: any): i64
+    state.hash % (2^state.bits)
+end
+
+fun final64(state: any): i64
+    (state.hash_hi * (2^32) + state.hash_lo) % (2^64)
+end
+
+fun sum32(data: str): i64
+    s = new32()
+    update(s, data)
+    final(s)
+end
+
+fun sum32a(data: str): i64
+    s = new32a()
+    update(s, data)
+    final(s)
+end
+
+fun sum64(data: str): i64
+    s = new64()
+    update64(s, data)
+    final64(s)
+end
+
+fun sum64a(data: str): i64
+    s = new64a()
+    update64(s, data)
+    final64(s)
+end
+
+M = {}
+M.new32 = new32
+M.new32a = new32a
+M.new64 = new64
+M.new64a = new64a
+M.update = update
+M.update64 = update64
+M.final = final
+M.final64 = final64
+M.sum32 = sum32
+M.sum32a = sum32a
+M.sum64 = sum64
+M.sum64a = sum64a
 M
-

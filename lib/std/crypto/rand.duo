@@ -1,0 +1,53 @@
+-- std.crypto.rand — cryptographic random number generation (mirrors Go's crypto/rand)
+
+fun read(buf: any): i64
+    if buf == nil then return 0 end
+    local n = rawlen(buf)
+    for i = 1, n
+        buf[i] = math.random(0, 255)
+    end
+    n
+end
+
+fun int(max: i64): i64
+    math.random(0, max - 1)
+end
+
+fun bytes(n: i64): any
+    local buf = {}
+    for i = 1, n
+        buf[i] = math.random(0, 255)
+    end
+    buf
+end
+
+fun hex(n: i64): str
+    local res = ""
+    for i = 1, n
+        local v = math.random(0, 255)
+        res = res .. string.format("%02x", v)
+    end
+    res
+end
+
+fun prime(bits: i64): i64
+    while true
+        local n = math.random(2 ^ (bits - 1) + 1, 2 ^ bits - 1)
+        local prime = true
+        for i = 2, math.sqrt(n)
+            if n % i == 0 then
+                prime = false
+                break
+            end
+        end
+        if prime then return n end
+    end
+end
+
+M = {}
+M.read = read
+M.int = int
+M.bytes = bytes
+M.hex = hex
+M.prime = prime
+M

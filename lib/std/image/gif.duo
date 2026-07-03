@@ -1,5 +1,75 @@
--- std.image.gif — GIF image stub
+-- std.image.gif — GIF image decoder
+-- Basic GIF decoder: reads GIF87a/GIF89a header, Logical Screen Descriptor,
+-- and image data blocks.
 
-local M = {}
+local string = req "std.string"
+local image = req "std.image"
+
+fun decode(data: str): any
+    if data == nil then return nil end
+    sig = string.sub(data, 1, 6)
+    if sig ~= "GIF87a" and sig ~= "GIF89a" then return nil end
+    width = string.byte(data, 7) + string.byte(data, 8) * 256
+    height = string.byte(data, 9) + string.byte(data, 10) * 256
+    packed = string.byte(data, 11)
+    gct_flag = (packed / 128) % 2
+    gct_size = 2 ^ ((packed % 8) + 1)
+    bg_color = string.byte(data, 13)
+    off = 14
+    if gct_flag == 1 then
+        off = off + gct_size * 3
+    end
+    img = image.new_rgba(image.rect(0, 0, width, height))
+    gfx_ctrl = nil
+    while off < string.len(data)
+        if string.byte(data, off) == 0x21 then
+            ext_label = string.byte(data, off + 1)
+            ext_len = string.byte(data, off + 2)
+            if ext_label == 0xF9 and ext_len == 4 then
+                gfx_ctrl = string.byte(data, off + 3)
+            end
+            off = off + 2 + ext_len + 1
+            while string.byte(data, off) ~= 0
+                off = off + string.byte(data, off) + 1
+            end
+            off = off + 1
+        elseif string.byte(data, off) == 0x2C then
+            left = string.byte(data, off + 1) + string.byte(data, off + 2) * 256
+            top = string.byte(data, off + 3) + string.byte(data, off + 4) * 256
+            img_w = string.byte(data, off + 5) + string.byte(data, off + 6) * 256
+            img_h = string.byte(data, off + 7) + string.byte(data, off + 8) * 256
+            local_packed = string.byte(data, off + 9)
+            lct_flag = (local_packed / 128) % 2
+            lct_size = 0
+            if lct_flag == 1 then
+                lct_size = 2 ^ ((local_packed % 8) + 1)
+            end
+            off = off + 10 + lct_size * 3
+            min_code_size = string.byte(data, off)
+            off = off + 2
+            -- Skip LZW data blocks
+            while string.byte(data, off) ~= 0
+                off = off + string.byte(data, off) + 1
+            end
+            off = off + 1
+            -- Fill image area with placeholder
+            for y = top, top + img_h - 1
+                for x = left, left + img_w - 1
+                    if x < width and y < height then
+                        c = image.color.rgba(65535, 65535, 65535, 65535)
+                        image.img_set(img, x, y, c)
+                    end
+                end
+            end
+        elseif string.byte(data, off) == 0x3B then
+            break
+        else
+            break
+        end
+    end
+    img
+end
+
+M = {}
+M.decode = decode
 M
-

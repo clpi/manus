@@ -1,16 +1,18 @@
 -- std.crypto — cryptographic hash and encoding utilities
 
-h = require "std.hash"
+local crypto_sha = req "std.crypto.sha"
+local hash_sha512 = req "std.hash.sha512"
 
-fun sha1(s: str): i64
-    h.simple(s)
+fun sha1(s: str): str
+    crypto_sha.sha1(s)
 end
 
 fun sha256(s: str): str
-    h1 = h.simple(s)
-    h2 = h.fnv1a(s)
-    return string.format("%08x%08x%08x%08x%08x%08x%08x%08x",
-        h1, h2, h1 + h2, h1 * h2, h1 - h2, h1 % h2, h2 * 31, h1 + 12345)
+    crypto_sha.sha256(s)
+end
+
+fun sha512(s: str): str
+    hash_sha512.sha512(s)
 end
 
 fun base64_encode(s: str): str
@@ -29,7 +31,7 @@ fun base64_encode(s: str): str
         c2 = string.sub(b64chars, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
         c3 = string.sub(b64chars, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
         c4 = string.sub(b64chars, (triple % 64) + 1, (triple % 64) + 1)
-        table.insert(out, c1 .. c2 .. c3 .. c4)
+        out[rawlen(out) + 1] = c1 .. c2 .. c3 .. c4
     end
     table.concat(out)
 end
@@ -42,18 +44,20 @@ fun base64_decode(s: str): str
         clean = clean .. "="
     end
     for i = 1, string.len(clean), 4
-        c1 = string.find(b64chars, string.sub(clean, i, i)) - 1
-        c2 = string.find(b64chars, string.sub(clean, i + 1, i + 1)) - 1
-        c3 = string.find(b64chars, string.sub(clean, i + 2, i + 2)) - 1
-        c4 = string.find(b64chars, string.sub(clean, i + 3, i + 3)) - 1
-        if c1 == -1 or c2 == -1 then break end
-        triple = c1 * 262144 + c2 * 4096 + c3 * 64 + c4
+        c1v = 0; c2v = 0; c3v = 0; c4v = 0
+        for j = 1, 64
+            if string.sub(b64chars, j, j) == string.sub(clean, i, i) then c1v = j - 1 end
+            if string.sub(b64chars, j, j) == string.sub(clean, i + 1, i + 1) then c2v = j - 1 end
+            if string.sub(b64chars, j, j) == string.sub(clean, i + 2, i + 2) then c3v = j - 1 end
+            if string.sub(b64chars, j, j) == string.sub(clean, i + 3, i + 3) then c4v = j - 1 end
+        end
+        triple = c1v * 262144 + c2v * 4096 + c3v * 64 + c4v
         b1 = math.floor(triple / 65536)
         b2 = math.floor((triple % 65536) / 256)
         b3 = triple % 256
-        if c3 ~= -1 then table.insert(out, string.char(b1)) end
-        if c4 ~= -1 then table.insert(out, string.char(b2)) end
-        if c4 ~= 0 then table.insert(out, string.char(b3)) end
+        if c3v ~= -1 and string.sub(clean, i + 2, i + 2) ~= "=" then out[rawlen(out) + 1] = string.char(b1) end
+        if c4v ~= -1 and string.sub(clean, i + 3, i + 3) ~= "=" then out[rawlen(out) + 1] = string.char(b2) end
+        if string.sub(clean, i + 4, i + 4) ~= "=" then out[rawlen(out) + 1] = string.char(b3) end
     end
     table.concat(out)
 end
@@ -80,6 +84,7 @@ end
 M = {}
 M.sha1 = sha1
 M.sha256 = sha256
+M.sha512 = sha512
 M.base64_encode = base64_encode
 M.base64_decode = base64_decode
 M.xor_encrypt = xor_encrypt

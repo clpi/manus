@@ -1,5 +1,68 @@
 -- std.image.color — Color models (mirrors Go's image/color)
 
-local M = {}
-M
+fun rgba(r: i64, g: i64, b: i64, a: i64): any
+    {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "rgba"}
+end
 
+fun nrgba(r: i64, g: i64, b: i64, a: i64): any
+    {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "nrgba"}
+end
+
+fun gray(y: i64): any
+    {y = y % 65536, kind = "gray"}
+end
+
+fun model_rgba(c: any): any
+    c.kind == "rgba"
+end
+
+fun model_nrgba(c: any): any
+    c.kind == "nrgba"
+end
+
+fun model_gray(c: any): any
+    c.kind == "gray"
+end
+
+fun to_rgba(c: any): any
+    if c.kind == "rgba" then return c end
+    if c.kind == "nrgba" then
+        return rgba(c.r, c.g, c.b, c.a)
+    end
+    if c.kind == "gray" then
+        return rgba(c.y, c.y, c.y, 65535)
+    end
+    rgba(0, 0, 0, 65535)
+end
+
+fun to_nrgba(c: any): any
+    if c.kind == "nrgba" then return c end
+    if c.kind == "rgba" then
+        return nrgba(c.r, c.g, c.b, c.a)
+    end
+    if c.kind == "gray" then
+        return nrgba(c.y, c.y, c.y, 65535)
+    end
+    nrgba(0, 0, 0, 65535)
+end
+
+fun to_gray(c: any): any
+    if c.kind == "gray" then return c end
+    if c.kind == "rgba" or c.kind == "nrgba" then
+        y = (299 * c.r + 587 * c.g + 114 * c.b) / 1000
+        return gray(y)
+    end
+    gray(0)
+end
+
+M = {}
+M.rgba = rgba
+M.nrgba = nrgba
+M.gray = gray
+M.model_rgba = model_rgba
+M.model_nrgba = model_nrgba
+M.model_gray = model_gray
+M.to_rgba = to_rgba
+M.to_nrgba = to_nrgba
+M.to_gray = to_gray
+M

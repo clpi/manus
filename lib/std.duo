@@ -4,6 +4,7 @@ std = {}
 
 -- Core / Lang
 std.math = req "std.math"
+std.math.cmplx = req "std.math.cmplx"
 std.string = req "std.string"
 std.table = req "std.table"
 std.meta = req "std.meta"
@@ -50,11 +51,30 @@ std.data = {
     zip = req "std.zip"
 }
 
+-- Compression
+std.compress = {
+    zlib = req "std.compress.zlib",
+    gzip = req "std.compress.gzip",
+    flate = req "std.compress.flate",
+    lzw = req "std.compress.lzw"
+}
+
+-- Encoding sub-packages
+std.encoding = {
+    json = req "std.encoding.json",
+    binary = req "std.encoding.binary",
+    gob = req "std.encoding.gob",
+    pem = req "std.encoding.pem",
+    ascii85 = req "std.encoding.ascii85"
+}
+
 -- Cryptography
 std.crypto = {
     hash = req "std.hash",
     algo = req "std.crypto",
-    uuid = req "std.uuid"
+    uuid = req "std.uuid",
+    rand = req "std.crypto.rand",
+    subtle = req "std.crypto.subtle"
 }
 
 -- Utilities
@@ -64,6 +84,7 @@ std.random = req "std.random"
 std.regex = req "std.regex"
 std.log = req "std.log"
 std.fmt = req "std.fmt"
+std.image = req "std.image"
 std.utf8 = req "std.utf8"
 std.datetime = req "std.datetime"
 
@@ -76,6 +97,18 @@ std.tools = {
     package = req "std.package",
     debug = req "std.debug",
     color = req "std.color"
+}
+
+-- Testing helpers
+std.testing = {
+    quick = req "std.testing.quick",
+    fstest = req "std.testing.fstest",
+    iotest = req "std.testing.iotest"
+}
+
+-- Index/data structures
+std.index = {
+    suffixarray = req "std.index.suffixarray"
 }
 
 std

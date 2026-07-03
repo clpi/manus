@@ -1,0 +1,106 @@
+-- std.testing.quick — property-based testing (mirrors Go's testing/quick)
+-- Generates random test values and checks that properties hold for all of them.
+
+local random = req "std.random"
+
+fun default_config(): any
+    {max_count = 100, max_count_scale = 10}
+end
+
+fun gen_bool(): bool
+    random.int(2) == 0
+end
+
+fun gen_int(max: i64): i64
+    random.int(-max, max)
+end
+
+fun gen_float(): any
+    random.float() * 1000
+end
+
+fun gen_string(max_len: i64): str
+    local len = random.int(0, max_len)
+    local s = ""
+    for i = 1, len
+        s = s .. string.char(random.int(32, 126))
+    end
+    s
+end
+
+fun gen_table(max_entries: i64): any
+    local t = {}
+    local n = random.int(0, max_entries)
+    for i = 1, n
+        t[random.int(0, 1000)] = random.int(-1000, 1000)
+    end
+    t
+end
+
+fun gen(typ: str, max: i64, gen_config: any): any
+    if typ == "bool" then
+        return gen_bool()
+    end
+    if typ == "int" or typ == "i64" then
+        return gen_int(max)
+    end
+    if typ == "float" then
+        return gen_float()
+    end
+    if typ == "str" or typ == "string" then
+        return gen_string(max)
+    end
+    if typ == "table" then
+        return gen_table(max)
+    end
+    nil
+end
+
+fun check(fn: any, config: any): bool
+    if config == nil then config = default_config() end
+    local max_count = config.max_count
+    if config.max_count_scale ~= nil then
+        max_count = max_count * config.max_count_scale
+    end
+    for i = 1, max_count
+        local ok, err = pcall(fn)
+        if not ok then
+            return false, err
+        end
+    end
+    true
+end
+
+fun check_equal(fn: any, ref: any, config: any): bool
+    if config == nil then config = default_config() end
+    local max_count = config.max_count * (config.max_count_scale or 1)
+    for i = 1, max_count
+        local args = {}
+        for j = 1, 10
+            args[j] = gen("int", 100, config)
+        end
+        local result = fn(args)
+        local expected = ref(args)
+        if result ~= expected then
+            return false, "mismatch at iteration " .. i
+        end
+    end
+    true
+end
+
+fun value(t: any): any
+    t
+end
+
+M = {}
+M.default_config = default_config
+M.gen = gen
+M.gen_bool = gen_bool
+M.gen_int = gen_int
+M.gen_float = gen_float
+M.gen_string = gen_string
+M.gen_table = gen_table
+M.check = check
+M.check_equal = check_equal
+M.value = value
+M

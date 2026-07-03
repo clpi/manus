@@ -1,26 +1,186 @@
--- std.xml — basic XML parsing and formatting stub
+-- std.xml — basic XML parsing and formatting
 
-local string = import("std.string")
-
-fun parse(data: str): any
-    -- Very basic stub for XML parsing
-    { tag = "root", children = [] }
-end
-
-fun format(doc: any): str
-    -- Stub for XML formatting
-    "<root></root>"
-end
+local string = req "std.string"
 
 fun escape(s: str): str
+    if s == nil then return "" end
     s = string.gsub(s, "&", "&amp;")
     s = string.gsub(s, "<", "&lt;")
     s = string.gsub(s, ">", "&gt;")
+    s = string.gsub(s, "\"", "&quot;")
+    s = string.gsub(s, "'", "&apos;")
     s
+end
+
+fun unescape(s: str): str
+    if s == nil then return "" end
+    s = string.gsub(s, "&amp;", "&")
+    s = string.gsub(s, "&lt;", "<")
+    s = string.gsub(s, "&gt;", ">")
+    s = string.gsub(s, "&quot;", "\"")
+    s = string.gsub(s, "&apos;", "'")
+    s = string.gsub(s, "&#(%d+);", fun(c) string.char(c) end)
+    s
+end
+
+fun parse_attributes(data: str, start: i64): any
+    local attrs = {}
+    local i = start
+    local len = string.len(data)
+    while i <= len
+        while i <= len and (string.byte(data, i) == 32 or string.byte(data, i) == 9 or string.byte(data, i) == 10 or string.byte(data, i) == 13)
+            i = i + 1
+        end
+        if i > len or string.byte(data, i) == 62 or string.byte(data, i) == 47 then
+            break
+        end
+        local key_start = i
+        while i <= len and string.byte(data, i) ~= 61 and string.byte(data, i) ~= 32 and string.byte(data, i) ~= 9 and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13 and string.byte(data, i) ~= 62 and string.byte(data, i) ~= 47
+            i = i + 1
+        end
+        local key = string.sub(data, key_start, i - 1)
+        if string.byte(data, i) == 61 then
+            i = i + 1
+            local delim = string.byte(data, i)
+            i = i + 1
+            local val_start = i
+            while i <= len and string.byte(data, i) ~= delim
+                i = i + 1
+            end
+            local val = string.sub(data, val_start, i - 1)
+            i = i + 1
+            attrs[key] = unescape(val)
+        end
+    end
+    return attrs, i
+end
+
+fun parse_elem(data: str, start: i64): any
+    i = start
+    len = string.len(data)
+    while i <= len and string.byte(data, i) ~= 60
+        i = i + 1
+    end
+    if i > len then return nil end
+    i = i + 1
+    if i <= len and string.byte(data, i) == 63 then
+        while i <= len
+            if string.byte(data, i) == 63 and i + 1 <= len and string.byte(data, i + 1) == 62 then
+                break
+            end
+            i = i + 1
+        end
+        if i <= len then i = i + 2 end
+        return parse_elem(data, i)
+    end
+    if i <= len and string.byte(data, i) == 33 then
+        while i <= len
+            if string.byte(data, i) == 93 and i + 2 <= len and string.byte(data, i + 1) == 93 and string.byte(data, i + 2) == 62 then
+                break
+            end
+            i = i + 1
+        end
+        if i <= len then i = i + 3 end
+        return parse_elem(data, i)
+    end
+    if i <= len and string.byte(data, i) == 47 then
+        return nil
+    end
+    tag_start = i
+    while i <= len and string.byte(data, i) ~= 32 and string.byte(data, i) ~= 9 and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13 and string.byte(data, i) ~= 62 and string.byte(data, i) ~= 47
+        i = i + 1
+    end
+    tag = string.sub(data, tag_start, i - 1)
+    attrs = {}
+    self_closing = false
+    if string.byte(data, i) == 47 or string.byte(data, i) == 32 or string.byte(data, i) == 9 or string.byte(data, i) == 10 or string.byte(data, i) == 13 then
+        attrs, i = parse_attributes(data, i)
+    end
+    if i <= len and string.byte(data, i) == 47 then
+        self_closing = true
+        i = i + 1
+    end
+    if i <= len and string.byte(data, i) == 62 then
+        i = i + 1
+    end
+    elem = {tag = tag, attrs = attrs, children = {}}
+    if not self_closing then
+        while true
+            sp = ""
+            while i <= len and string.byte(data, i) ~= 60
+                sp = sp .. string.sub(data, i, i)
+                i = i + 1
+            end
+            trimmed = string.trim(sp)
+            if string.len(trimmed) > 0 then
+                elem.children[rawlen(elem.children) + 1] = {kind = "text", text = unescape(sp)}
+            end
+            if i > len then break end
+            peek_byte = string.byte(data, i + 1)
+            if peek_byte == 47 then
+                i = i + 2
+                while i <= len and string.byte(data, i) ~= 62
+                    i = i + 1
+                end
+                if i <= len then i = i + 1 end
+                break
+            end
+            child = parse_elem(data, i)
+            if child == nil then break end
+            elem.children[rawlen(elem.children) + 1] = child
+            i = child._end
+        end
+    end
+    elem._end = i
+    return elem
+end
+
+fun parse(data: str): any
+    if data == nil then return nil end
+    i = 1
+    while i <= string.len(data) and string.byte(data, i) ~= 60
+        i = i + 1
+    end
+    if i > string.len(data) then return nil end
+    doc = parse_elem(data, i)
+    if doc ~= nil then
+        doc._end = nil
+    end
+    return doc
+end
+
+fun format_node(node: any, indent: i64): str
+    if node.kind == "text" then
+        return escape(node.text)
+    end
+    tag = node.tag
+    attr_str = ""
+    if node.attrs ~= nil then
+        for k, v in node.attrs
+            attr_str = attr_str .. " " .. k .. "=\"" .. escape(v) .. "\""
+        end
+    end
+    children = node.children
+    if children == nil or rawlen(children) == 0 then
+        return "<" .. tag .. attr_str .. " />"
+    end
+    inner = ""
+    pad = string.rep("  ", indent)
+    for _, child in children
+        inner = inner .. "\n" .. pad .. "  " .. format_node(child, indent + 1)
+    end
+    inner = inner .. "\n" .. pad
+    return "<" .. tag .. attr_str .. ">" .. inner .. "</" .. tag .. ">"
+end
+
+fun format(doc: any): str
+    if doc == nil then return "" end
+    return format_node(doc, 0)
 end
 
 M = {}
 M.parse = parse
 M.format = format
 M.escape = escape
+M.unescape = unescape
 M

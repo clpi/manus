@@ -1,5 +1,66 @@
--- std.hash.crc64 — CRC-64 checksum (stub)
+-- std.hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
+-- Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
 
-local M = {}
+local string = req "std.string"
+
+fun make_poly_hi(lo: i64): i64
+    -- ECMA-182 polynomial top 32 bits
+    0x42F0E1EB
+end
+
+fun make_poly_lo(lo: i64): i64
+    -- ECMA-182 polynomial bottom 32 bits
+    (0xA9EA3693 + lo) % (2^32)
+end
+
+local poly_hi = 0xC96C5795
+local poly_lo = 0xD7870F42
+
+local table = {}
+for i = 0, 255
+    crc_hi = 0
+    crc_lo = i
+    for j = 1, 8
+        if (crc_lo % 2) == 1 then
+            crc_lo = ((crc_lo >> 1) | (crc_hi << 31)) % (2^32)
+            crc_hi = crc_hi >> 1
+            crc_lo = crc_lo ~ poly_lo
+            crc_hi = (crc_hi ~ poly_hi) % (2^32)
+        else
+            crc_lo = ((crc_lo >> 1) | (crc_hi << 31)) % (2^32)
+            crc_hi = crc_hi >> 1
+        end
+    end
+    table[i + 1] = {hi = crc_hi, lo = crc_lo}
+end
+
+fun new(): any
+    {crc_hi = 0, crc_lo = 0}
+end
+
+fun update(state: any, data: str): void
+    for i = 1, string.len(data)
+        idx = (state.crc_lo ~ string.byte(data, i)) % 256
+        new_hi = state.crc_hi >> 8
+        new_lo = ((state.crc_hi & 0xFF) << 24) + (state.crc_lo >> 8)
+        state.crc_hi = (new_hi ~ table[idx + 1].hi) % (2^32)
+        state.crc_lo = (new_lo ~ table[idx + 1].lo) % (2^32)
+    end
+end
+
+fun final(state: any): i64
+    (state.crc_hi * (2^32) + state.crc_lo) % (2^64)
+end
+
+fun checksum(data: str): i64
+    s = new()
+    update(s, data)
+    final(s)
+end
+
+M = {}
+M.new = new
+M.update = update
+M.final = final
+M.checksum = checksum
 M
-

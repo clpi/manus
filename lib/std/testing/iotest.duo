@@ -1,0 +1,96 @@
+-- std.testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
+-- Provides readers/writers that simulate errors, slow reads, etc.
+
+local string = req "std.string"
+
+fun one_byte_reader(data: str): any
+    {data = data, pos = 1}
+end
+
+fun one_byte_read(r: any): str
+    if r.pos > string.len(r.data) then return nil end
+    local b = string.sub(r.data, r.pos, r.pos)
+    r.pos = r.pos + 1
+    b
+end
+
+fun half_reader(data: str): any
+    {data = data, pos = 1}
+end
+
+fun half_read(r: any): str
+    if r.pos > string.len(r.data) then return nil end
+    local remaining = string.len(r.data) - r.pos + 1
+    local chunk_size = math.max(1, math.floor(remaining / 2))
+    local chunk = string.sub(r.data, r.pos, r.pos + chunk_size - 1)
+    r.pos = r.pos + chunk_size
+    chunk
+end
+
+fun data_err_reader(data: str, err_at: i64): any
+    {data = data, pos = 1, err_at = err_at, erred = false}
+end
+
+fun data_err_read(r: any): str
+    if r.erred then return nil end
+    if r.pos >= r.err_at then
+        r.erred = true
+        return nil
+    end
+    if r.pos > string.len(r.data) then return nil end
+    local chunk = string.sub(r.data, r.pos, r.pos)
+    r.pos = r.pos + 1
+    chunk
+end
+
+fun timeout_reader(data: str, timeout_after: i64): any
+    {data = data, pos = 1, timeout_after = timeout_after, reads = 0}
+end
+
+fun timeout_read(r: any): str
+    r.reads = r.reads + 1
+    if r.reads > r.timeout_after then return nil end
+    if r.pos > string.len(r.data) then return nil end
+    local chunk = string.sub(r.data, r.pos, r.pos)
+    r.pos = r.pos + 1
+    chunk
+end
+
+fun trunc_writer(): any
+    {written = {}, max = 0, truncated = false}
+end
+
+fun trunc_write(w: any, data: str): i64
+    w.written[rawlen(w.written) + 1] = data
+    w.max = w.max + string.len(data)
+    string.len(data)
+end
+
+fun trunc_bytes(w: any): str
+    table.concat(w.written)
+end
+
+fun error_writer(): any
+    {erred = false}
+end
+
+fun error_write(w: any, data: str): any
+    w.erred = true
+    nil
+end
+
+M = {}
+M.new_one_byte_reader = one_byte_reader
+M.one_byte_read = one_byte_read
+M.new_half_reader = half_reader
+M.half_read = half_read
+M.new_data_err_reader = data_err_reader
+M.data_err_read = data_err_read
+M.new_timeout_reader = timeout_reader
+M.timeout_read = timeout_read
+M.new_trunc_writer = trunc_writer
+M.trunc_write = trunc_write
+M.trunc_bytes = trunc_bytes
+M.new_error_writer = error_writer
+M.error_write = error_write
+M

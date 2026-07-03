@@ -1,0 +1,130 @@
+-- std.encoding.ascii85 — Ascii85 (Adobe-style) encoding (mirrors Go's encoding/ascii85)
+
+local string = req "std.string"
+
+local alphabet = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+
+fun encode(src: str): str
+    if src == nil then return "" end
+    out = {}
+    i = 1
+    len = string.len(src)
+    while i <= len
+        available = math.min(4, len - i + 1)
+        chunk = string.sub(src, i, i + 3)
+        b1 = string.byte(chunk, 1)
+        b2 = 0
+        if available >= 2 then b2 = string.byte(chunk, 2) end
+        b3 = 0
+        if available >= 3 then b3 = string.byte(chunk, 3) end
+        b4 = 0
+        if available >= 4 then b4 = string.byte(chunk, 4) end
+        if available == 4 then
+            val = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
+            if val == 0 then
+                out[rawlen(out) + 1] = "z"
+            else
+                c1 = (val / 85^4) % 85
+                c2 = (val / 85^3) % 85
+                c3 = (val / 85^2) % 85
+                c4 = (val / 85) % 85
+                c5 = val % 85
+                out[rawlen(out) + 1] = string.sub(alphabet, c1 + 1, c1 + 1)
+                out[rawlen(out) + 1] = string.sub(alphabet, c2 + 1, c2 + 1)
+                out[rawlen(out) + 1] = string.sub(alphabet, c3 + 1, c3 + 1)
+                out[rawlen(out) + 1] = string.sub(alphabet, c4 + 1, c4 + 1)
+                out[rawlen(out) + 1] = string.sub(alphabet, c5 + 1, c5 + 1)
+            end
+        else
+            val = 0
+            if available >= 1 then val = val + b1 end
+            if available >= 2 then val = val * 256 + b2 end
+            if available >= 3 then val = val * 256 + b3 end
+            val = val * (256 ^ (4 - available))
+            c1 = (val / 85^4) % 85
+            c2 = (val / 85^3) % 85
+            c3 = (val / 85^2) % 85
+            c4 = (val / 85) % 85
+            c5 = val % 85
+            out[rawlen(out) + 1] = string.sub(alphabet, c1 + 1, c1 + 1)
+            out[rawlen(out) + 1] = string.sub(alphabet, c2 + 1, c2 + 1)
+            out[rawlen(out) + 1] = string.sub(alphabet, c3 + 1, c3 + 1)
+            out[rawlen(out) + 1] = string.sub(alphabet, c4 + 1, c4 + 1)
+            out[rawlen(out) + 1] = string.sub(alphabet, c5 + 1, c5 + 1)
+        end
+        i = i + 4
+    end
+    "~<" .. table.concat(out) .. "~>"
+end
+
+fun decode_word(w: str): any
+    if w == "z" then return {0, 0, 0, 0} end
+    v = 0
+    for j = 1, string.len(w)
+        c = string.byte(w, j)
+        v = v * 85 + (c - 33)
+    end
+    b1 = (v / 16777216) % 256
+    b2 = (v / 65536) % 256
+    b3 = (v / 256) % 256
+    b4 = v % 256
+    return {b1 % 256, b2 % 256, b3 % 256, b4 % 256}
+end
+
+fun decode(src: str): str
+    if src == nil then return "" end
+    out = {}
+    len = string.len(src)
+    i = 1
+    if string.sub(src, 1, 2) == "~<" then i = 3 end
+    while i <= len
+        c = string.byte(src, i)
+        if c == 126 then break end
+        if c == 32 or c == 9 or c == 10 or c == 13 then
+            i = i + 1
+        elseif c == 122 then
+            out[rawlen(out) + 1] = 0
+            out[rawlen(out) + 1] = 0
+            out[rawlen(out) + 1] = 0
+            out[rawlen(out) + 1] = 0
+            i = i + 1
+        elseif c >= 33 and c <= 117 then
+            word = ""
+            for j = 0, 4
+                if i + j <= len then
+                    nc = string.byte(src, i + j)
+                    if nc >= 33 and nc <= 117 then
+                        word = word .. string.sub(src, i + j, i + j)
+                    elseif nc == 122 then
+                        word = word .. "z"
+                        break
+                    else
+                        break
+                    end
+                end
+            end
+            bytes = decode_word(word)
+            for _, b in bytes
+                out[rawlen(out) + 1] = b
+            end
+            i = i + string.len(word)
+        else
+            i = i + 1
+        end
+    end
+    result = ""
+    for _, b in out
+        result = result .. string.char(b)
+    end
+    result
+end
+
+fun max_encoded_len(n: i64): i64
+    (n + 3) / 4 * 5 + 4
+end
+
+M = {}
+M.encode = encode
+M.decode = decode
+M.max_encoded_len = max_encoded_len
+M

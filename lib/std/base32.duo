@@ -1,11 +1,23 @@
--- std.base32 — Base32 encoding and decoding
+-- std.base32 — Base32 encoding and decoding (RFC 4648)
 
-local string = import("std.string")
+local string = req "std.string"
 
 local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+local hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
 
-fun encode(data: str): str
-    local res = ""
+local dec_table = {}
+for i = 1, 32
+    dec_table[string.byte(alphabet, i)] = i - 1
+end
+
+local hex_dec_table = {}
+for i = 1, 32
+    hex_dec_table[string.byte(hex_alphabet, i)] = i - 1
+end
+
+fun encode_with_alphabet(data: str, tab: str): str
+    if data == nil then return "" end
+    local res = {}
     local len = string.len(data)
     local i = 1
     while i <= len
@@ -18,20 +30,120 @@ fun encode(data: str): str
         if i + 3 <= len then b4 = string.byte(data, i + 3) end
         local b5 = 0
         if i + 4 <= len then b5 = string.byte(data, i + 4) end
-
-        -- Base32 packing logic (very simplified for this implementation)
-        -- ...
-        res = res .. "A" -- Stubbed implementation
+        local c1 = (b1 >> 3) + 1
+        local c2 = (((b1 & 0x07) << 2) | (b2 >> 6)) + 1
+        local c3 = ((b2 >> 1) & 0x1F) + 1
+        local c4 = (((b2 & 0x01) << 4) | (b3 >> 4)) + 1
+        local c5 = (((b3 & 0x0F) << 1) | (b4 >> 7)) + 1
+        local c6 = ((b4 >> 2) & 0x1F) + 1
+        local c7 = (((b4 & 0x03) << 3) | (b5 >> 5)) + 1
+        local c8 = (b5 & 0x1F) + 1
+        res[rawlen(res) + 1] = string.sub(tab, c1, c1)
+        res[rawlen(res) + 1] = string.sub(tab, c2, c2)
+        res[rawlen(res) + 1] = string.sub(tab, c3, c3)
+        if i + 1 > len then
+            res[rawlen(res) + 1] = "="
+            res[rawlen(res) + 1] = "="
+            res[rawlen(res) + 1] = "="
+            res[rawlen(res) + 1] = "="
+        elseif i + 2 > len then
+            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = "="
+            res[rawlen(res) + 1] = "="
+            res[rawlen(res) + 1] = "="
+        elseif i + 3 > len then
+            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = string.sub(tab, c5, c5)
+            res[rawlen(res) + 1] = "="
+            res[rawlen(res) + 1] = "="
+        elseif i + 4 > len then
+            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = string.sub(tab, c5, c5)
+            res[rawlen(res) + 1] = string.sub(tab, c6, c6)
+            res[rawlen(res) + 1] = "="
+        else
+            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = string.sub(tab, c5, c5)
+            res[rawlen(res) + 1] = string.sub(tab, c6, c6)
+            res[rawlen(res) + 1] = string.sub(tab, c7, c7)
+            res[rawlen(res) + 1] = string.sub(tab, c8, c8)
+        end
         i = i + 5
     end
-    res
+    table.concat(res)
+end
+
+fun encode(data: str): str
+    encode_with_alphabet(data, alphabet)
+end
+
+fun encode_hex(data: str): str
+    encode_with_alphabet(data, hex_alphabet)
+end
+
+fun decode_with_alphabet(data: str, tab: any): str
+    if data == nil then return "" end
+    local res = {}
+    local len = string.len(data)
+    local i = 1
+    while i <= len
+        local vals = {}
+        local pad_count = 0
+        for j = 0, 7
+            local pos = i + j
+            if pos > len then
+                vals[j + 1] = 0
+                pad_count = pad_count + 1
+            else
+                local c = string.byte(data, pos)
+                if c == 61 then
+                    vals[j + 1] = 0
+                    pad_count = pad_count + 1
+                else
+                    local v = tab[c]
+                    if v ~= nil then
+                        vals[j + 1] = v
+                    else
+                        vals[j + 1] = 0
+                        pad_count = pad_count + 1
+                    end
+                end
+            end
+        end
+        local b1 = (vals[1] << 3) | (vals[2] >> 2)
+        local b2 = ((vals[2] & 0x03) << 6) | (vals[3] << 1) | (vals[4] >> 4)
+        local b3 = ((vals[4] & 0x0F) << 4) | (vals[5] >> 1)
+        local b4 = ((vals[5] & 0x01) << 7) | (vals[6] << 2) | (vals[7] >> 3)
+        local b5 = ((vals[7] & 0x07) << 5) | vals[8]
+        res[rawlen(res) + 1] = string.char(b1)
+        if pad_count < 6 then
+            res[rawlen(res) + 1] = string.char(b2)
+        end
+        if pad_count < 4 then
+            res[rawlen(res) + 1] = string.char(b3)
+        end
+        if pad_count < 3 then
+            res[rawlen(res) + 1] = string.char(b4)
+        end
+        if pad_count < 1 then
+            res[rawlen(res) + 1] = string.char(b5)
+        end
+        i = i + 8
+    end
+    table.concat(res)
 end
 
 fun decode(data: str): str
-    "" -- Stubbed implementation
+    decode_with_alphabet(data, dec_table)
+end
+
+fun decode_hex(data: str): str
+    decode_with_alphabet(data, hex_dec_table)
 end
 
 M = {}
 M.encode = encode
 M.decode = decode
+M.encode_hex = encode_hex
+M.decode_hex = decode_hex
 M

@@ -1,8 +1,9 @@
--- std.hash.sha256 — SHA-256 hash placeholder
--- Pure-Duo SHA-256 implementation requires typed mode for efficient codegen.
+-- std.hash.sha256 — SHA-256 hash (re-exports from std.crypto.sha)
+
+local crypto_sha = req "std.crypto.sha"
 
 fun hash_string(s: str): str
-    string.format("%064x", 0)
+    crypto_sha.sha256(s)
 end
 
 M = {}
