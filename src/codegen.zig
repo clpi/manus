@@ -2525,16 +2525,24 @@ pub const CodeGen = struct {
                 return;
             },
         };
+        try self.emit_native_func_name_as_lua_value(cname, ft.func.params, ft.func.is_native);
+    }
+
+    fn emit_native_func_name_as_lua_value(self: *CodeGen, cname: []const u8, params: []types.ResolvedType, is_native: bool) E!void {
         if (self.vararg_funcs.get(cname)) |argv_cname| {
             self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
             return;
         }
-        const nparams = ft.func.params.len;
+        if (!is_native) {
+            self.p("lua_val_from_func((void*){s})", .{cname});
+            return;
+        }
+        const nparams = params.len;
         // A thunk only exists when every parameter is lua-convertible (see
         // should_emit_lua_thunk). If not, fall back to a direct function-pointer
         // cast rather than referencing a thunk symbol that was never emitted.
         var thunkable = true;
-        for (ft.func.params) |pt| {
+        for (params) |pt| {
             if (!self.rt_is_lua_convertible(pt)) {
                 thunkable = false;
                 break;
@@ -2548,7 +2556,7 @@ pub const CodeGen = struct {
             self.p("lua_val_from_func((void*){s}__lua3)", .{cname});
         } else {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
-            try self.emit_expr(expr);
+            self.p("{s}", .{cname});
             self.p(")", .{});
         }
     }
@@ -3985,7 +3993,16 @@ pub const CodeGen = struct {
                     self.p("lua_Value tbl = ", .{});
                     try self.emit_expr(tbl);
                     self.p(";\n", .{});
-                    self.pl("if (tbl.type == VAL_TABLE) {{", .{});
+                    self.ind();
+                    self.p("lua_Value _gf_mm = ", .{});
+                    switch (mode) {
+                        .direct_table => self.p("lua_get_metafield(tbl, \"__iter\")", .{}),
+                        .explicit_pairs => self.p("lua_get_metafield(tbl, \"__pairs\")", .{}),
+                        .explicit_ipairs => self.p("lua_get_metafield(tbl, \"__ipairs\")", .{}),
+                        else => self.p("lua_val_nil()", .{}),
+                    }
+                    self.p(";\n", .{});
+                    self.pl("if (tbl.type == VAL_TABLE && _gf_mm.type == VAL_NIL) {{", .{});
                     self.indent += 1;
                     self.pl("lua_Table* t_ptr = (lua_Table*)tbl.as.tval;", .{});
 
@@ -4074,6 +4091,7 @@ pub const CodeGen = struct {
                     switch (mode) {
                         .explicit_pairs => self.p("lua_pairs(tbl)", .{}),
                         .explicit_ipairs => self.p("lua_ipairs(tbl)", .{}),
+                        .direct_table => self.p("lua_iter(tbl)", .{}),
                         else => self.p("tbl", .{}),
                     }
                     self.p(";\n", .{});
@@ -4147,6 +4165,8 @@ pub const CodeGen = struct {
                         self.p("lua_val_nil()", .{});
                     }
                     self.p(";\n", .{});
+                    self.ind();
+                    self.pl("if (_gf_tmp.type == VAL_TABLE && lua_get_metafield(_gf_tmp, \"__iter\").type != VAL_NIL) _gf_tmp = lua_iter(_gf_tmp);", .{});
                     self.ind();
                     self.pl("lua_Value _gf_f, _gf_s, _gf_var;", .{});
                     self.ind();
@@ -5350,7 +5370,15 @@ pub const CodeGen = struct {
                 self.p("lua_val_from_closure((lua_Closure*)duo_make_closure_{d}(", .{id});
                 for (fb.upvalues, 0..) |uv, i| {
                     if (i > 0) self.p(", ", .{});
-                    self.emit_var_name(uv.name);
+                    if (uv.typ) |t| {
+                        if (t == .func) {
+                            try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_native);
+                        } else {
+                            self.emit_var_name(uv.name);
+                        }
+                    } else {
+                        self.emit_var_name(uv.name);
+                    }
                 }
                 self.p("))", .{});
             },
@@ -6800,7 +6828,11 @@ pub const CodeGen = struct {
             var buf: [256]u8 = undefined;
             for (fb.upvalues, 0..) |up, i| {
                 if (up.typ) |t| {
-                    self.p("    {s} up{d};\n", .{ t.c_type(&buf), i });
+                    if (t == .func) {
+                        self.p("    lua_Value up{d};\n", .{i});
+                    } else {
+                        self.p("    {s} up{d};\n", .{ t.c_type(&buf), i });
+                    }
                 } else {
                     self.p("    lua_Value up{d};\n", .{i});
                 }
@@ -6811,7 +6843,11 @@ pub const CodeGen = struct {
             for (fb.upvalues, 0..) |up, i| {
                 if (i > 0) self.p(", ", .{});
                 if (up.typ) |t| {
-                    self.p("{s} up{d}", .{ t.c_type(&buf), i });
+                    if (t == .func) {
+                        self.p("lua_Value up{d}", .{i});
+                    } else {
+                        self.p("{s} up{d}", .{ t.c_type(&buf), i });
+                    }
                 } else {
                     self.p("lua_Value up{d}", .{i});
                 }
@@ -6825,7 +6861,7 @@ pub const CodeGen = struct {
             for (fb.upvalues, 0..) |up, i| {
                 self.p("    cl->up{d} = up{d};\n", .{ i, i });
                 if (up.typ) |t| {
-                    if (self.codegen_needs_arc(t)) {
+                    if (t != .func and self.codegen_needs_arc(t)) {
                         self.p("    duo_retain((void*)cl->up{d});\n", .{i});
                     }
                 }
@@ -6836,7 +6872,7 @@ pub const CodeGen = struct {
             self.p("static void duo_free_closure_{d}(duo_closure_{d}* cl) {{\n", .{ id, id });
             for (fb.upvalues, 0..) |up, i| {
                 if (up.typ) |t| {
-                    if (self.codegen_needs_arc(t)) {
+                    if (t != .func and self.codegen_needs_arc(t)) {
                         self.p("    duo_release((void*)cl->up{d});\n", .{i});
                     }
                 }
@@ -7877,6 +7913,12 @@ const duo_runtime =
     \\static inline lua_Value lua_mret_get(int idx) {
     \\    if (idx >= 0 && idx < lua_mret_n) return lua_mret_buf[idx];
     \\    return lua_val_nil();
+    \\}
+    \\static inline void lua_mret_prepend(lua_Value v) {
+    \\    if (lua_mret_n >= LUA_MRET_MAX) return;
+    \\    for (int i = lua_mret_n; i > 0; i--) lua_mret_buf[i] = lua_mret_buf[i - 1];
+    \\    lua_mret_buf[0] = v;
+    \\    lua_mret_n++;
     \\}
     \\static inline void lua_mret_store(int n, ...) {
     \\    lua_mret_clear();
@@ -10709,7 +10751,8 @@ const duo_runtime =
     \\    lua_Value pp = lua_get_metafield(t, "__pairs");
     \\    if (pp.type == VAL_FUNC || pp.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { t };
-    \\        (void)lua_invoke(pp, 1, args);
+    \\        lua_Value r = lua_invoke(pp, 1, args);
+    \\        lua_mret_prepend(r);
     \\        return lua_mret_get(0);
     \\    }
     \\    lua_mret_push(lua_val_from_func((void*)lua_next));
@@ -10723,13 +10766,26 @@ const duo_runtime =
     \\    lua_Value pp = lua_get_metafield(t, "__ipairs");
     \\    if (pp.type == VAL_FUNC || pp.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { t };
-    \\        (void)lua_invoke(pp, 1, args);
+    \\        lua_Value r = lua_invoke(pp, 1, args);
+    \\        lua_mret_prepend(r);
     \\        return lua_mret_get(0);
     \\    }
     \\    lua_mret_push(lua_val_from_func((void*)lua_ipairs_iter));
     \\    lua_mret_push(t);
     \\    lua_mret_push(lua_val_from_num(0.0));
     \\    return lua_mret_get(0);
+    \\}
+    \\
+    \\static inline lua_Value lua_iter(lua_Value t) {
+    \\    lua_mret_clear();
+    \\    lua_Value it = lua_get_metafield(t, "__iter");
+    \\    if (it.type == VAL_FUNC || it.type == VAL_CLOSURE) {
+    \\        lua_Value args[1] = { t };
+    \\        lua_Value r = lua_invoke(it, 1, args);
+    \\        lua_mret_prepend(r);
+    \\        return lua_mret_get(0);
+    \\    }
+    \\    return lua_pairs(t);
     \\}
     \\
     \\static inline lua_Value lua_io_tmpfile(void) {

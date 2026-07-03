@@ -85,6 +85,8 @@ run_output examples/metatable_class_semantics.duo "Vector(3, 4)\nVector(6, 8)\nt
 run_output examples/compound_metamethods.duo "sub\nmul\ndiv\nmod\npow\n"
 run_output examples/metamethod_operator_compat.duo "concat\ntrue\ntrue\nunm\nidiv\nband\nbor\nbxor\nbnot\nshl\nshr\n"
 run_output examples/metamethod_gc.duo "1\n"
+run_output examples/metamethod_iter.duo "60\n"
+run_output examples/metamethod_pairs_ipairs.lua "15\n15\n"
 run_output examples/typed_string_builtins.duo "abc\n42\nabc42\n"
 run_output examples/layout_attrs_test.duo "6\n"
 run_output examples/native_record_params.duo "4\n12\n"
