@@ -248,8 +248,12 @@ pub const CodeGen = struct {
     fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
         _ = self;
         return switch (rt) {
-            .str, .pointer, .func => true,
-            else => false,
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => false,
+            .bool, .void, .nil, .never => false,
+            .v4f64, .v4i64, .v8f32, .v8i32 => false,
+            .any => false,
+            .str, .array, .pointer, .func, .@"struct" => true,
+            .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
         };
     }
 
