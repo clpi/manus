@@ -1480,6 +1480,18 @@ pub const CodeGen = struct {
             self.p(" {s};\n", .{f.name});
         }
         self.p("}} {s};\n\n", .{cname});
+
+        // Emit a named alias typedef for every user record alias whose
+        // underlying record type shares this content hash. This lets code
+        // that references the alias by name (e.g. `duo_Point`) compile
+        // without each call site needing to know the hashed struct name.
+        var alias_it = self.record_aliases.iterator();
+        while (alias_it.next()) |entry| {
+            const alias_rt = entry.value_ptr.*;
+            if (alias_rt != .table_type) continue;
+            if (record_content_hash(alias_rt.table_type) != hash) continue;
+            self.p("typedef {s} duo_{s};\n", .{ cname, entry.key_ptr.* });
+        }
     }
 
     fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
@@ -3989,6 +4001,15 @@ pub const CodeGen = struct {
                             .str, .bool, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => self.p(");\n", .{}),
                             else => self.p(";\n", .{}),
                         }
+                    } else if (self.current_ret == .table_type and r.vals[0].* == .table) {
+                        // Record-typed return initialized from a table
+                        // literal: emit as a C struct initializer, matching
+                        // emit_arg_for_param and local_decl.
+                        self.p("return (", .{});
+                        self.typ(self.current_ret);
+                        self.p(")", .{});
+                        try self.emit_record_initializer(self.current_ret.table_type.fields, r.vals[0]);
+                        self.p(";\n", .{});
                     } else {
                         self.p("return ", .{});
                         try self.emit_expr(r.vals[0]);
