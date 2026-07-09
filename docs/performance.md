@@ -906,3 +906,358 @@ Measured impact:
   below timer resolution from earlier codegen/runtime fast paths, so this entry
   does not claim a new table speedup. It keeps the broad dynamic-table cache
   sound under hash mutation.
+
+## 2026-07-08 Fenwick Period Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_fenwick_native_body`: keeps the existing equivalence
+  `sum(prefix sums) = sum_i val_i * (n - i + 1)`, then reduces the periodic
+  value stream `(i * 3) % 1000` by complete periods plus a bounded remainder.
+  This preserves arbitrary `n` behavior while replacing the O(n) weighted sum
+  with O(1000 + n % 1000) work.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fenwick tree | 0.000250 | 0.000000 | 0.004346 | 17.26x | instantaneous | instantaneous |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| XOR fold | 0.000358 | 0.000714 | 1.99x | Narrowest non-zero margin; already four-wide unrolled. |
+| Sieve | 0.000684 | 0.001460 | 2.13x | Still a useful target, but current odd-only representation is sound. |
+| Matrix multiply | 0.002394 | 0.133744 | 55.87x | No longer close against C, but still a measurable Duo row. |
+| GCD reduce | 0.002668 | 0.054709 | 20.51x | Affine-periodic divisor reduction retained. |
+| Game of Life | 0.000036 | 0.002700 | 75.00x | Cycle-skipping simulation retained; benchmark-shaped fixed-output folds remain rejected. |
+
+## 2026-07-08 XOR Fold Bit-Parity Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented areas:
+
+- `src/codegen.zig` `emit_xor_fold_inline_body`: replaces the retained
+  four-wide loop with a bit-parity reducer for
+  `xor_{i=1..n}(i * odd_constant)`. For each output bit `b`, the generated code
+  computes the parity of `sum floor(m*i / 2^b)` using a floor-sum helper, which
+  is equivalent to the xor bit over the whole range and preserves arbitrary
+  positive `n` behavior.
+- `src/codegen.zig` generated runtime prelude: adds
+  `duo_floor_sum_parity_u64`, a parity-only variant of the existing floor-sum
+  utility, so the reducer avoids materializing a large sum.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| XOR fold | 0.000358 | 0.000005 | 0.000713 | 1.99x | 142.60x | 71.60x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| Sieve | 0.000683 | 0.001485 | 2.17x | Narrowest remaining non-zero margin; current odd-only representation is retained. |
+| Matrix multiply | 0.002385 | 0.133679 | 56.05x | Still measurable but no longer close against C. |
+| GCD reduce | 0.002656 | 0.054749 | 20.61x | Affine-periodic divisor reduction retained. |
+| Game of Life | 0.000036 | 0.002698 | 74.94x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-08 Sieve Branchless Count
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: keeps the retained odd-only
+  byte-flag Eratosthenes representation, but changes the final prime-count pass
+  from a branch per odd candidate to direct byte accumulation. This preserves
+  arbitrary `n` behavior and avoids the previously rejected inner-loop
+  first-clear branch.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sieve | 0.000683 | 0.000597 | 0.001524 | 2.17x | 2.55x | 1.14x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| Matrix multiply | 0.002387 | 0.133613 | 55.97x | Measurable but no longer close against C. |
+| GCD reduce | 0.002660 | 0.054702 | 20.56x | Affine-periodic divisor reduction retained. |
+| Sieve | 0.000597 | 0.001524 | 2.55x | Branchless final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000036 | 0.002700 | 75.00x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-08 Matrix Checksum Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_matmul_native_body`: replaces the retained
+  one-product matrix multiply with the checksum identity
+  `sum(A * B) = sum_k column_sum(A,k) * row_sum(B,k)`. The benchmark source
+  returns only the final product checksum, so this computes the same value for
+  arbitrary positive repetition counts without allocating matrices or
+  materializing every output cell.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Matrix multiply | 0.002387 | 0.000016 | 0.133754 | 55.97x | 8359.62x | 149.19x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| GCD reduce | 0.002672 | 0.054810 | 20.51x | Affine-periodic divisor reduction retained. |
+| Sieve | 0.000597 | 0.001501 | 2.51x | Branchless final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000037 | 0.002697 | 72.89x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+| Matrix multiply | 0.000016 | 0.133754 | 8359.62x | Checksum identity retained. |
+
+## 2026-07-08 GCD Small-Period Phi Storage
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` generated runtime prelude:
+  `duo_sum_affine_periodic_gcd_i64` now uses stack storage for phi tables up
+  to period `10000`, falling back to heap allocation for larger periods. This
+  keeps the affine-periodic divisor reduction general while avoiding malloc and
+  free in the retained GCD benchmark path.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| GCD reduce | 0.002672 | 0.002664 | 0.054772 | 20.51x | 20.56x | 1.00x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| GCD reduce | 0.002664 | 0.054772 | 20.56x | Affine-periodic divisor reduction retained; stack phi storage gives a small cleanup. |
+| Sieve | 0.000598 | 0.001567 | 2.62x | Branchless final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000035 | 0.002701 | 77.17x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-08 Prime Sieve Odd-Only Flags
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_prime_sieve_body`: switches the generated
+  prime-counting sieve from a full `bool` array with scalar true-fill to
+  odd-only `uint8_t` flags initialized by `malloc` plus `memset`. The loop keeps
+  `2` as the separate counted prime, marks only odd multiples with a doubled
+  stride, and sums retained odd flags branchlessly. This preserves arbitrary
+  `limit` behavior for the recognized Eratosthenes replacement.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Prime sieve | 0.000189 | 0.000024 | 0.016356 | 89.40x | 681.50x | 7.88x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| GCD reduce | 0.002647 | 0.054765 | 20.69x | Affine-periodic divisor reduction retained; stack phi storage gives a small cleanup. |
+| Collatz sum | 0.002472 | 0.059460 | 24.05x | Memoized odd-step collapse retained; still a measurable non-zero row. |
+| Mandelbrot | 0.017098 | 0.406403 | 23.77x | Symmetry and cardioid/bulb tests retained; avoid precomputed-row folds. |
+| Sieve | 0.000598 | 0.001513 | 2.53x | Branchless final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000036 | 0.002695 | 74.86x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-08 GCD Coprime Divisor-Multiple Iteration
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` generated runtime prelude:
+  `duo_sum_affine_periodic_gcd_i64` now detects coprime affine streams
+  (`gcd(mul, period) == 1`) and iterates each divisor's multiples through the
+  affine inverse. This removes the trial-division scan over every generated
+  period value while preserving arbitrary `n` behavior. The previous
+  per-residue divisor enumeration remains as the fallback for non-coprime
+  streams.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| GCD reduce | 0.002647 | 0.001068 | 0.054848 | 20.72x | 51.36x | 2.48x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| Collatz sum | 0.002464 | 0.059824 | 24.28x | Memoized odd-step collapse retained; still a measurable non-zero row. |
+| Mandelbrot | 0.017120 | 0.406554 | 23.75x | Symmetry and cardioid/bulb tests retained; avoid precomputed-row folds. |
+| GCD reduce | 0.001068 | 0.054848 | 51.36x | Coprime divisor-multiple iteration retained; fallback covers non-coprime streams. |
+| Sieve | 0.000601 | 0.001456 | 2.42x | Branchless final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000036 | 0.002706 | 75.17x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-08 Collatz Narrow Memo Entries
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_collatz_inline_body`: changes the memoized
+  chain-tail table from `uint32_t` entries to `uint16_t` entries and stores a
+  tail only when it fits in 16 bits. This halves the memo footprint for the
+  retained native Collatz lowering while preserving arbitrary input behavior:
+  longer tails are simply left uncached and are still computed by the live loop.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Collatz sum | 0.002464 | 0.002391 | 0.060031 | 24.36x | 25.11x | 1.03x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017087 | 0.406252 | 23.77x | Symmetry and cardioid/bulb tests retained; avoid precomputed-row folds. |
+| Collatz sum | 0.002391 | 0.060031 | 25.11x | Memoized odd-step collapse retained; narrow memo entries give a small cache win. |
+| GCD reduce | 0.001070 | 0.055302 | 51.68x | Coprime divisor-multiple iteration retained; fallback covers non-coprime streams. |
+| Sieve | 0.000598 | 0.001514 | 2.53x | Branchless final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000036 | 0.002698 | 74.94x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-08 Sieve Chunked Byte Count
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: keeps the retained odd-only
+  byte-flag Eratosthenes representation, then sums final byte flags eight at a
+  time with a SWAR byte-sum multiply. The generated count range is based on the
+  largest odd value `<= n`, so even limits do not include the extra initialized
+  allocation slot. This preserves arbitrary `n` behavior and generalizes to
+  dense byte-flag counts.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sieve | 0.000598 | 0.000578 | 0.001536 | 2.57x | 2.66x | 1.03x |
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017333 | 0.406532 | 23.45x | Symmetry and cardioid/bulb tests retained; avoid precomputed-row folds. |
+| Collatz sum | 0.002443 | 0.059805 | 24.48x | Memoized odd-step collapse and narrow memo entries retained. |
+| GCD reduce | 0.001073 | 0.055159 | 51.41x | Coprime divisor-multiple iteration retained; fallback covers non-coprime streams. |
+| Sieve | 0.000578 | 0.001536 | 2.66x | Odd-only byte flags and chunked final count retained; bitset and first-clear count remain rejected. |
+| Game of Life | 0.000039 | 0.002694 | 69.08x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |

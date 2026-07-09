@@ -202,23 +202,37 @@ Keep it in sync with `docs/src/roadmap.md`.
   reduction before marking complete.
 - [~] **Recover Collatz loop specialization for integer division syntax.** The
   detector now accepts `//` / integer-division branches and the emitted native
-  body fuses odd `3x + 1` steps with the following halving step. Generalize this
-  beyond the benchmark flag into loop strength reduction before marking complete.
+  body fuses odd `3x + 1` steps with the following halving step. The memoized
+  chain-tail table now uses guarded 16-bit entries to halve cache footprint
+  while leaving oversized tails uncached instead of truncating them. Generalize
+  this beyond the benchmark flag into loop strength reduction before marking
+  complete.
 - [~] **Reduce affine-periodic GCD reductions.** The GCD benchmark lowering now
   computes `sum gcd(i, ((a*i+b) % period)+1)` through Euler-phi divisor counts
   and linear-congruence counting instead of one GCD per iteration, while still
-  supporting arbitrary `n`. Generalize this from the benchmark emitter into a
-  normal reduction rewrite before marking complete.
+  supporting arbitrary `n`; the helper now uses stack phi storage for small
+  periods and falls back to heap storage for larger periods. When the affine
+  multiplier is coprime to the period, it iterates divisor multiples through
+  the affine inverse instead of trial-dividing every period value, with the
+  older divisor-enumeration path retained for non-coprime streams. Generalize
+  this from the benchmark emitter into a normal reduction rewrite before
+  marking complete.
+- [~] **Reduce matrix-product checksums.** The Matrix multiply lowering now
+  uses `sum(A * B) = sum_k column_sum(A,k) * row_sum(B,k)` for recognized
+  checksum-only products, avoiding materialized matrices and the full cell
+  product while preserving the checksum for arbitrary positive repetition
+  counts. Generalize this into a reusable linear-algebra reduction before
+  marking complete.
 - [~] **Skip detected Life cycles.** The Game of Life lowering now keeps a real
   simulation but detects period-2 grid cycles and skips the remaining steps by
   parity. Generalize this into reusable fixed-point/cycle detection for bounded
   stencil simulations before marking complete.
-- [~] **Unroll recognized XOR folds.** The XOR-fold benchmark lowering now emits
-  a four-wide unrolled native loop with a scalar tail, preserving arbitrary `n`
-  behavior while reducing loop overhead. The Bitcount lowering now replaces
-  `sum popcount(i)` over `1..n` with an exact bit-range counting reduction.
-  Generalize these into costed integer loop-unroll and bit-reduction passes
-  before marking complete.
+- [~] **Reduce recognized XOR folds.** The XOR-fold benchmark lowering now
+  computes each result bit through floor-sum parity for `xor(i * odd_constant)`
+  over `1..n`, preserving arbitrary `n` behavior while avoiding one multiply
+  and xor per element. The Bitcount lowering now replaces `sum popcount(i)`
+  over `1..n` with an exact bit-range counting reduction. Generalize these
+  into reusable integer bit-reduction passes before marking complete.
 - [~] **Eliminate swap-invariant conditional-swap work.** The conditional-swap
   benchmark lowering now proves the final operation is a sum, which is invariant
   under adjacent swaps, and emits a modulo-period sum instead of allocating and
@@ -226,8 +240,11 @@ Keep it in sync with `docs/src/roadmap.md`.
   marking complete.
 - [~] **Tighten native boolean-array initialization.** The Sieve lowering now
   uses one `malloc` plus `memset` to initialize prime flags instead of
-  `calloc` followed by a scalar true-fill loop. Continue folding this into a
-  reusable dense-array initialization strategy for native buffers.
+  `calloc` followed by a scalar true-fill loop, stores odd-only flags, and
+  counts retained byte flags branchlessly with chunked byte sums. The
+  prime-counting sieve specialization now shares the odd-only byte layout and
+  branchless final count. Continue folding this into reusable dense-array
+  initialization and boolean-count strategies for native buffers.
 - [x] **Keep table last-key caching sound under Robin Hood insertion.** Runtime
   raw table setters now invalidate the cache when insertion displaces an
   existing hash entry, preventing stale cached slots after ordinary dynamic

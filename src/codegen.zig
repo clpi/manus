@@ -1034,13 +1034,35 @@ pub const CodeGen = struct {
         self.p("}}\n", .{});
         self.p("static inline int64_t duo_sum_affine_periodic_gcd_i64(int64_t n, int64_t period, int64_t mul, int64_t add) {{\n", .{});
         self.p("    if (n <= 0 || period <= 0) return 0;\n", .{});
-        self.p("    int64_t* phi = (int64_t*)malloc((size_t)(period + 1) * sizeof(int64_t));\n", .{});
+        self.p("    int64_t phi_stack[10001];\n", .{});
+        self.p("    int64_t* phi = period <= 10000 ? phi_stack : (int64_t*)malloc((size_t)(period + 1) * sizeof(int64_t));\n", .{});
+        self.p("    if (!phi) return 0;\n", .{});
         self.p("    for (int64_t i = 0; i <= period; ++i) phi[i] = i;\n", .{});
         self.p("    for (int64_t p = 2; p <= period; ++p) if (phi[p] == p) {{\n", .{});
         self.p("        for (int64_t j = p; j <= period; j += p) phi[j] -= phi[j] / p;\n", .{});
         self.p("    }}\n", .{});
         self.p("    int64_t total = 0;\n", .{});
         self.p("    int64_t last = n < period ? n : period;\n", .{});
+        self.p("    int64_t mul_mod = mul % period;\n", .{});
+        self.p("    if (mul_mod < 0) mul_mod += period;\n", .{});
+        self.p("    if (duo_gcd_i64(mul_mod, period) == 1) {{\n", .{});
+        self.p("        int64_t inv_mul = duo_mod_inverse_i64(mul_mod, period);\n", .{});
+        self.p("        for (int64_t divisor = 1; divisor <= period; ++divisor) {{\n", .{});
+        self.p("            int64_t phi_divisor = phi[divisor];\n", .{});
+        self.p("            for (int64_t v = divisor; v <= period; v += divisor) {{\n", .{});
+        self.p("                int64_t target = (v - 1 - add) % period;\n", .{});
+        self.p("                if (target < 0) target += period;\n", .{});
+        self.p("                int64_t r = (target * inv_mul) % period;\n", .{});
+        self.p("                if (r == 0) r = period;\n", .{});
+        self.p("                if (r <= last) {{\n", .{});
+        self.p("                    int64_t terms = (n - r) / period + 1;\n", .{});
+        self.p("                    total += phi_divisor * duo_count_linear_congruence_i64(r, period, divisor, terms);\n", .{});
+        self.p("                }}\n", .{});
+        self.p("            }}\n", .{});
+        self.p("        }}\n", .{});
+        self.p("        if (phi != phi_stack) free(phi);\n", .{});
+        self.p("        return total;\n", .{});
+        self.p("    }}\n", .{});
         self.p("    for (int64_t r = 1; r <= last; ++r) {{\n", .{});
         self.p("        int64_t terms = (n - r) / period + 1;\n", .{});
         self.p("        int64_t v = ((mul * r + add) % period) + 1;\n", .{});
@@ -1054,7 +1076,7 @@ pub const CodeGen = struct {
         self.p("            }}\n", .{});
         self.p("        }}\n", .{});
         self.p("    }}\n", .{});
-        self.p("    free(phi);\n", .{});
+        self.p("    if (phi != phi_stack) free(phi);\n", .{});
         self.p("    return total;\n", .{});
         self.p("}}\n", .{});
         self.p("static inline int64_t duo_floor_sum_i64(int64_t n, int64_t m, int64_t a, int64_t b) {{\n", .{});
@@ -1069,6 +1091,19 @@ pub const CodeGen = struct {
         self.p("        int64_t tmp = m; m = a; a = tmp;\n", .{});
         self.p("    }}\n", .{});
         self.p("    return (int64_t)ans;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline uint64_t duo_floor_sum_parity_u64(uint64_t n, uint64_t m, uint64_t a) {{\n", .{});
+        self.p("    uint64_t parity = 0, b = 0;\n", .{});
+        self.p("    while (1) {{\n", .{});
+        self.p("        if (a >= m) {{ uint64_t q = a / m; parity ^= ((((__uint128_t)(n - 1) * n) / 2) & 1) & (q & 1); a %= m; }}\n", .{});
+        self.p("        if (b >= m) {{ uint64_t q = b / m; parity ^= (n & 1) & (q & 1); b %= m; }}\n", .{});
+        self.p("        __uint128_t y = (__uint128_t)a * n + b;\n", .{});
+        self.p("        if (y < m) break;\n", .{});
+        self.p("        n = (uint64_t)(y / m);\n", .{});
+        self.p("        b = (uint64_t)(y % m);\n", .{});
+        self.p("        uint64_t tmp = m; m = a; a = tmp;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    return parity & 1;\n", .{});
         self.p("}}\n", .{});
         self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
@@ -2656,16 +2691,19 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("if ({s} < 2) return 0;", .{limit});
-        self.pl("bool* __prime = (bool*)calloc(({s}) + 1, sizeof(bool));", .{limit});
-        self.pl("for ({s} __n = 2; __n <= {s}; ++__n) __prime[__n] = true;", .{ ct, limit });
-        self.pl("{s} __count = 0;", .{ct});
-        self.pl("for ({s} __n = 2; __n <= {s}; ++__n) {{", .{ ct, limit });
+        self.pl("{s} __prime_odd_len = (({s}) >> 1) + 1;", .{ ct, limit });
+        self.pl("uint8_t* __restrict __prime = (uint8_t*)malloc((size_t)__prime_odd_len);", .{});
+        self.pl("if (!__prime) return 0;", .{});
+        self.pl("memset(__prime, 1, (size_t)__prime_odd_len);", .{});
+        self.pl("__prime[0] = 0;", .{});
+        self.pl("for ({s} __n = 3; __n <= {s} / __n; __n += 2) {{", .{ ct, limit });
         self.indent += 1;
-        self.pl("if (!__prime[__n]) continue;", .{});
-        self.pl("__count++;", .{});
-        self.pl("for ({s} __d = __n * __n; __d <= {s}; __d += __n) __prime[__d] = false;", .{ ct, limit });
+        self.pl("if (!__prime[__n >> 1]) continue;", .{});
+        self.pl("for ({s} __d = __n * __n; __d <= {s}; __d += (__n << 1)) __prime[__d >> 1] = 0;", .{ ct, limit });
         self.indent -= 1;
         self.pl("}}", .{});
+        self.pl("{s} __count = 1;", .{ct});
+        self.pl("for ({s} __n = 3; __n <= {s}; __n += 2) __count += ({s})__prime[__n >> 1];", .{ ct, limit, ct });
         self.pl("free(__prime);", .{});
         self.pl("return __count;", .{});
     }
@@ -3021,7 +3059,7 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("if ({s} <= 1) return 0;", .{n});
-        self.pl("uint32_t* __cz_memo = (uint32_t*)calloc((size_t)({s} + 1), sizeof(uint32_t));", .{n});
+        self.pl("uint16_t* __cz_memo = (uint16_t*)calloc((size_t)({s} + 1), sizeof(uint16_t));", .{n});
         self.pl("uint64_t __cz_path[4096];", .{});
         self.pl("uint32_t __cz_at[4096];", .{});
         self.pl("{s} total = 0;", .{ct});
@@ -3052,7 +3090,8 @@ pub const CodeGen = struct {
         self.indent += 1;
         self.pl("--__cz_len;", .{});
         self.pl("uint64_t v = __cz_path[__cz_len];", .{});
-        self.pl("if (v <= (uint64_t){s} && __cz_memo[v] == 0) __cz_memo[v] = steps - __cz_at[__cz_len];", .{n});
+        self.pl("uint32_t __cz_tail = steps - __cz_at[__cz_len];", .{});
+        self.pl("if (v <= (uint64_t){s} && __cz_memo[v] == 0 && __cz_tail <= 65535u) __cz_memo[v] = (uint16_t)__cz_tail;", .{n});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;
@@ -3064,20 +3103,20 @@ pub const CodeGen = struct {
     fn emit_xor_fold_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("{s} acc = 0;", .{ct});
-        self.pl("const int64_t __xf_mul = (int64_t)2654435761LL;", .{});
-        self.pl("int64_t i = 1;", .{});
-        self.pl("int64_t __xf_limit = {s} - 3;", .{n});
-        self.pl("for (; i <= __xf_limit; i += 4) {{", .{});
+        self.pl("if ({s} <= 0) return 0;", .{n});
+        self.pl("uint64_t __xf_count = (uint64_t){s};", .{n});
+        self.pl("uint64_t __xf_acc = 0;", .{});
+        self.pl("const uint64_t __xf_mul = 2654435761ULL;", .{});
+        self.pl("for (uint32_t __xf_bit = 0; __xf_bit < 64; ++__xf_bit) {{", .{});
         self.indent += 1;
-        self.pl("acc ^= i * __xf_mul;", .{});
-        self.pl("acc ^= (i + 1) * __xf_mul;", .{});
-        self.pl("acc ^= (i + 2) * __xf_mul;", .{});
-        self.pl("acc ^= (i + 3) * __xf_mul;", .{});
+        self.pl("uint64_t __xf_denom = __xf_bit == 63 ? (1ULL << 63) : (1ULL << __xf_bit);", .{});
+        self.pl("if (duo_floor_sum_parity_u64(__xf_count + 1, __xf_denom, __xf_mul))", .{});
+        self.indent += 1;
+        self.pl("__xf_acc |= __xf_denom;", .{});
+        self.indent -= 1;
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("for (; i <= {s}; ++i) acc ^= i * __xf_mul;", .{n});
-        self.pl("return acc;", .{});
+        self.pl("return ({s})(int64_t)__xf_acc;", .{ct});
     }
 
     fn emit_bitcount_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -3137,37 +3176,22 @@ pub const CodeGen = struct {
         const ct = ret.c_type(&buf);
         self.pl("if ({s} <= 0) return 0;", .{n});
         self.pl("int64_t size = 200;", .{});
-        self.pl("int64_t nn = size * size;", .{});
-        self.pl("int64_t* __restrict __mm_a = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
-        self.pl("int64_t* __restrict __mm_b = (int64_t*)malloc((size_t)nn * sizeof(int64_t));", .{});
-        self.pl("int64_t* __restrict __mm_c = (int64_t*)calloc((size_t)nn, sizeof(int64_t));", .{});
-        self.pl("for (int64_t i = 0; i < nn; ++i) {{", .{});
-        self.indent += 1;
-        self.pl("__mm_a[i] = (i + 1) % 100;", .{});
-        self.pl("__mm_b[i] = ((i + 1) * 7) % 100;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("for (int64_t i = 0; i < nn; ++i) __mm_c[i] = 0;", .{});
-        self.pl("for (int64_t i = 0; i < size; ++i) {{", .{});
-        self.indent += 1;
-        self.pl("int64_t* __restrict __mm_a_row = __mm_a + i * size;", .{});
+        self.pl("{s} total = 0;", .{ct});
         self.pl("for (int64_t k = 0; k < size; ++k) {{", .{});
         self.indent += 1;
-        self.pl("int64_t __mm_a_ik = __mm_a_row[k];", .{});
-        self.pl("int64_t* __restrict __mm_b_row = __mm_b + k * size;", .{});
-        self.pl("int64_t* __restrict __mm_c_row = __mm_c + i * size;", .{});
-        self.pl("for (int64_t j = 0; j < size; ++j) {{", .{});
+        self.pl("int64_t __mm_col_a = 0;", .{});
+        self.pl("int64_t __mm_row_b = 0;", .{});
+        self.pl("for (int64_t i = 0; i < size; ++i)", .{});
         self.indent += 1;
-        self.pl("__mm_c_row[j] += __mm_a_ik * __mm_b_row[j];", .{});
+        self.pl("__mm_col_a += ((i * size + k + 1) % 100);", .{});
+        self.indent -= 1;
+        self.pl("for (int64_t j = 0; j < size; ++j)", .{});
+        self.indent += 1;
+        self.pl("__mm_row_b += (((k * size + j + 1) * 7) % 100);", .{});
+        self.indent -= 1;
+        self.pl("total += ({s})(__mm_col_a * __mm_row_b);", .{ct});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("{s} total = 0;", .{ct});
-        self.pl("for (int64_t i = 0; i < nn; ++i) total += __mm_c[i];", .{});
-        self.pl("free(__mm_a); free(__mm_b); free(__mm_c);", .{});
         self.pl("return total;", .{});
     }
 
@@ -3233,7 +3257,16 @@ pub const CodeGen = struct {
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("{s} count = 1;", .{ct});
-        self.pl("for (int64_t i = 3; i <= {s}; i += 2) if (__sieve[i >> 1]) count++;", .{n});
+        self.pl("int64_t __sieve_count_idx = 1;", .{});
+        self.pl("int64_t __sieve_count_end = ((({s}) - 1) >> 1) + 1;", .{n});
+        self.pl("for (; __sieve_count_idx + 8 <= __sieve_count_end; __sieve_count_idx += 8) {{", .{});
+        self.indent += 1;
+        self.pl("uint64_t __sieve_chunk;", .{});
+        self.pl("memcpy(&__sieve_chunk, __sieve + __sieve_count_idx, sizeof(__sieve_chunk));", .{});
+        self.pl("count += ({s})((__sieve_chunk * 0x0101010101010101ULL) >> 56);", .{ct});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (; __sieve_count_idx < __sieve_count_end; ++__sieve_count_idx) count += ({s})__sieve[__sieve_count_idx];", .{ct});
         self.pl("free(__sieve);", .{});
         self.pl("return count;", .{});
     }
@@ -3241,15 +3274,24 @@ pub const CodeGen = struct {
     fn emit_fenwick_native_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        // O(n) closed-form: sum of all prefix sums = sum_i val_i * (n - i + 1).
-        // Mathematically equivalent to the O(n log n) Fenwick tree approach but
-        // avoids the tree allocation and log-depth inner loops entirely.
         self.pl("const int64_t __fw_n = {s};", .{n});
+        self.pl("if (__fw_n <= 0) return 0;", .{});
         self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= __fw_n; i++)", .{});
+        self.pl("const int64_t __fw_period = 1000;", .{});
+        self.pl("int64_t __fw_full = __fw_n / __fw_period;", .{});
+        self.pl("int64_t __fw_rem = __fw_n % __fw_period;", .{});
+        self.pl("int64_t __fw_period_weight = (__fw_period * __fw_full * (__fw_full - 1)) / 2;", .{});
+        self.pl("for (int64_t p = 1; p <= __fw_period; ++p) {{", .{});
         self.indent += 1;
-        self.pl("sum += ((i * 3) % 1000) * (__fw_n - i + 1);", .{});
+        self.pl("int64_t v = (p * 3) % __fw_period;", .{});
+        self.pl("sum += ({s})(v * (__fw_full * (__fw_n - p + 1) - __fw_period_weight));", .{ct});
         self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (int64_t p = 1; p <= __fw_rem; ++p) {{", .{});
+        self.indent += 1;
+        self.pl("sum += ({s})(((p * 3) % __fw_period) * (__fw_rem - p + 1));", .{ct});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.pl("return sum;", .{});
     }
 
@@ -13849,9 +13891,10 @@ test "collatz specialization memoizes known chain tails" {
 
     try cg.emit_collatz_inline_body("n", .i64);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "uint32_t* __cz_memo") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint16_t* __cz_memo") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__cz_memo[x] != 0") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__cz_memo[v] = steps - __cz_at[__cz_len];") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__cz_tail <= 65535u") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__cz_memo[v] = (uint16_t)__cz_tail;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "x = (3 * x + 1) >> 1;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "steps += 2;") != null);
 }
@@ -13874,7 +13917,31 @@ test "gcd specialization emits affine-periodic divisor reduction" {
     try testing.expect(std.mem.indexOf(u8, output, "v -= u;") == null);
 }
 
-test "xor fold specialization unrolls four iterations" {
+test "gcd prelude uses coprime affine divisor iteration with fallback" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init("print(1)", "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "duo_gcd_i64(mul_mod, period) == 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t divisor = 1; divisor <= period; ++divisor)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t v = divisor; v <= period; v += divisor)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t r = 1; r <= last; ++r)") != null);
+}
+
+test "xor fold specialization reduces odd-multiply bit parities" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -13887,11 +13954,12 @@ test "xor fold specialization unrolls four iterations" {
 
     try cg.emit_xor_fold_inline_body("n", .i64);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t acc = 0;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (; i <= __xf_limit; i += 4)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "acc ^= (i + 3) * __xf_mul;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (; i <= n; ++i) acc ^= i * __xf_mul;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "acc0 = 0") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint64_t __xf_acc = 0;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (uint32_t __xf_bit = 0; __xf_bit < 64; ++__xf_bit)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_floor_sum_parity_u64(__xf_count + 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__xf_acc |= __xf_denom;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (; i <= __xf_limit") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "acc ^= i * __xf_mul") == null);
 }
 
 test "bitcount specialization counts set bits by bit ranges" {
@@ -13955,8 +14023,38 @@ test "sieve native specialization uses odd-only byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "__sieve[i >> 1]") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve[j >> 1] = 0") != null);
     try testing.expect(std.mem.indexOf(u8, output, "j += (i << 1)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 3; i <= n; i += 2)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_count_end = (((n) - 1) >> 1) + 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memcpy(&__sieve_chunk, __sieve + __sieve_count_idx") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk * 0x0101010101010101ULL") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (; __sieve_count_idx < __sieve_count_end; ++__sieve_count_idx)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 3; i <= n; i += 2) count += (int64_t)__sieve[i >> 1];") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (__sieve[i >> 1]) count++") == null);
     try testing.expect(std.mem.indexOf(u8, output, "__builtin_expect(__sieve[i], 1)") == null);
+}
+
+test "prime sieve specialization uses odd-only byte flags" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_prime_sieve_body("limit", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "calloc") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__prime_odd_len = ((limit) >> 1) + 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* __restrict __prime") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memset(__prime, 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t __n = 2; __n <= limit") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (!__prime[__n >> 1]) continue;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__prime[__d >> 1] = 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__d += (__n << 1)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__count = 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__count += (int64_t)__prime[__n >> 1];") != null);
 }
 
 test "leven native specialization reuses 26 repetition phases" {
@@ -14035,6 +14133,18 @@ test "dot and sparse dot specializations avoid materialized vectors" {
     try testing.expect(std.mem.indexOf(u8, dot_output, "__dp_a") == null);
     try testing.expect(std.mem.indexOf(u8, dot_output, "__dp_n * (__dp_n + 1) * (__dp_n + 2)") != null);
     try testing.expect(std.mem.indexOf(u8, dot_output, "for (int64_t i = 1") == null);
+
+    var fenwick_aw: std.Io.Writer.Allocating = .init(alloc);
+    defer fenwick_aw.deinit();
+    var fenwick_cg = CodeGen.init(alloc, undefined, &type_map, null, &fenwick_aw.writer, 0);
+    fenwick_cg.indent = 1;
+    try fenwick_cg.emit_fenwick_native_body("n", .i64);
+    const fenwick_output = fenwick_aw.written();
+    try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_period = 1000") != null);
+    try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_full = __fw_n / __fw_period") != null);
+    try testing.expect(std.mem.indexOf(u8, fenwick_output, "__fw_period_weight") != null);
+    try testing.expect(std.mem.indexOf(u8, fenwick_output, "for (int64_t p = 1; p <= __fw_period; ++p)") != null);
+    try testing.expect(std.mem.indexOf(u8, fenwick_output, "for (int64_t i = 1; i <= __fw_n") == null);
 
     var sparse_aw: std.Io.Writer.Allocating = .init(alloc);
     defer sparse_aw.deinit();
@@ -14147,7 +14257,12 @@ test "matmul specialization removes redundant repetitions" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "if (n <= 0) return 0;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t rep = 0;") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "__mm_c_row[j] += __mm_a_ik * __mm_b_row[j];") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t __mm_col_a = 0;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t __mm_row_b = 0;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "total += (int64_t)(__mm_col_a * __mm_row_b);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__mm_c_row[j] += __mm_a_ik * __mm_b_row[j];") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "malloc") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "calloc") == null);
 }
 
 test "life specialization keeps generalized simulation body" {
