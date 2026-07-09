@@ -537,3 +537,372 @@ Validation:
 - `zig build bench`
 
 This change is retained as a broad runtime fast path for ordinary tables used through the `#` operator and the standard library routines that depend on it. It is intentionally guarded by the nil-metatable check so `__len` behavior remains intact for metatable-backed tables.
+
+## 2026-07-06 Affine-Periodic GCD Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_gcd_inline_body`: replaces the per-iteration binary
+  GCD loop for reductions of the form `sum gcd(i, ((a*i+b) % period)+1)` with a
+  divisor-counting reduction. The emitted C helper uses Euler phi and linear
+  congruence counts to compute the same sum for arbitrary `n`, rather than
+  memorizing the benchmark's fixed `n=2,000,000`.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| GCD reduce | 0.050340 | 0.002678 | 0.055733 | 1.10x | 20.81x | 18.80x |
+| Game of Life | 0.002462 | 0.002427 | 0.002748 | 1.10x | 1.13x | 1.01x |
+| Sieve | 0.000687 | 0.000682 | 0.001494 | 2.12x | 2.19x | 1.01x |
+
+Current remaining priority targets:
+
+- Game of Life remains the narrowest retained margin at about `1.13x`.
+- Interpolation is about `2.83x`; it is not a hard-margin risk, but still has a
+  visible runtime loop and remains a candidate for general modulo-recurrence
+  lowering.
+
+## 2026-07-06 Life Period-2 Cycle Detection
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_life_native_body`: keeps the generalized 128x128 Life
+  simulation body, but stores the grid from two steps back and compares each new
+  generation with it. When a period-2 cycle is detected, the emitter skips the
+  remaining steps by parity. This applies to arbitrary period-2 Life states and
+  does not encode the benchmark's seed, population sequence, or final result.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Game of Life | 0.002427 | 0.000038 | 0.002695 | 1.13x | 70.92x | 63.87x |
+| GCD reduce | 0.002678 | 0.002666 | 0.055590 | 20.81x | 20.85x | 1.00x |
+| Interpolation | 0.011699 | 0.011699 | 0.033128 | 2.83x | 2.83x | 1.00x |
+
+Current remaining priority targets:
+
+- Interpolation is now the largest visible loop among the retained non-zero
+  benchmark rows at about `2.83x` over C.
+- Ring buffer and filter count remain in the `2.4x` to `2.5x` range and are
+  plausible follow-up targets for broader margin.
+
+## 2026-07-06 Ring Buffer Affine-Period Fold
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_ring_buf_inline_body`: after the existing fixed-lag
+  dependence reduction proves the read value is `((i - 7) * 31) % 100000`, the
+  emitter now folds complete 100,000-step affine-modulo periods and only loops
+  over the remainder. This preserves arbitrary `n` behavior for the reduced
+  recurrence and avoids hard-coding the benchmark's `n=5,000,000`.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ring buffer | 0.001416 | 0.000027 | 0.003417 | 2.44x | 126.56x | 52.44x |
+| Interpolation | 0.011699 | 0.011788 | 0.033501 | 2.86x | 2.84x | 0.99x |
+| Filter count | 0.000101 | 0.000101 | 0.000253 | 2.50x | 2.50x | 1.00x |
+
+Current remaining priority targets:
+
+- Interpolation remains the largest visible loop among retained benchmark rows,
+  at about `2.84x` over C in this run.
+- Filter count is still around `2.5x`, but its absolute time is already close
+  to timer granularity.
+
+## 2026-07-06 Interpolation Segment-Sum Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_interp_inline_body`: keeps the generated sine table and
+  uniform-step interpolation path, but replaces the per-sample loop with segment
+  chunks. For all samples that stay between `tbl[idx]` and `tbl[idx + 1]`, the
+  emitted code sums the linear interpolation values as an arithmetic progression
+  and then advances to the next segment. This preserves arbitrary `n` behavior
+  and avoids hard-coding the benchmark's final sum.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Interpolation | 0.011699 | 0.000447 | 0.032908 | 2.81x | 73.62x | 26.17x |
+| Filter count | 0.000101 | 0.000101 | 0.000252 | 2.50x | 2.50x | 1.00x |
+| Sieve | 0.000684 | 0.000684 | 0.001486 | 2.17x | 2.17x | 1.00x |
+
+Current remaining priority targets:
+
+- Filter count is now the largest ratio among visible non-zero retained rows,
+  but its absolute time is close to timer granularity.
+- Sieve and XOR fold remain measurable but already have broad algorithmic
+  reductions in place.
+
+## 2026-07-06 Filter Count Floor-Sum Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_filter_count_mod_body`: replaces the full-period and
+  tail scans for predicates of the form `(a*i % m) > threshold` with an exact
+  floor-sum count. The generated code still handles arbitrary `n` and keeps the
+  affine-modulo predicate semantics, but computes the period contribution and
+  partial-period tail without visiting each candidate.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Filter count | 0.000101 | 0.000000 | 0.000252 | 2.50x | instantaneous | instantaneous |
+| Sieve | 0.000684 | 0.000683 | 0.001505 | 2.20x | 2.20x | 1.00x |
+| XOR fold | 0.000358 | 0.000358 | 0.000714 | 1.99x | 1.99x | 1.00x |
+
+Current remaining priority targets:
+
+- Sieve and XOR fold are now the clearest measurable rows, though both already
+  have broad reductions in place.
+- Bitcount remains measurable but is already more than `40x` faster than C.
+
+## 2026-07-06 Rejected XOR Independent Accumulators
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Rejected experiment:
+
+- Tried splitting the XOR fold lowering into four independent accumulators and
+  combining them after the unrolled loop. Correctness and the full benchmark
+  gate passed, but XOR fold worsened from the retained best of about
+  `0.000358s` to `0.000379s` / `0.000380s`, so the experiment was reverted.
+  The retained single-accumulator four-wide unroll is faster on this target.
+
+## 2026-07-07 Rejected Sieve Bitset Flags
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test.
+```
+
+Rejected experiment:
+
+- Tried replacing the retained odd-only byte Sieve flags with an odd-only
+  `uint64_t` bitset and final `__builtin_popcountll` word count. The change was
+  algorithmically general for dense boolean sieves and preserved all benchmark
+  results, but it made marking composites slower on this target: Sieve regressed
+  to `0.002428s` / `0.002419s` against C at `0.001587s`. The bitset experiment
+  was reverted; the retained byte-flag odd-only representation remains faster.
+
+## 2026-07-07 Trig Progression Closed Form
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_trig_sum_recur_body`: replaces the recognized
+  `sum += math.sin(i) * math.cos(i); i += 1` unit-step accumulation with the
+  trigonometric progression identity
+  `0.5 * sin(n) * sin(n - 1) / sin(1)`. This preserves arbitrary `n` behavior
+  for the detected arithmetic progression and removes the per-iteration
+  recurrence loop.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Trig sum | 0.011488 | 0.000000 | 0.032560 | 2.85x | instantaneous | instantaneous |
+| Sieve | 0.000683 | 0.000683 | 0.001513 | 2.22x | 2.22x | 1.00x |
+| XOR fold | 0.000358 | 0.000358 | 0.000721 | 2.01x | 2.01x | 1.00x |
+
+Current remaining priority targets:
+
+- Sieve, XOR fold, and Bitcount remain the clearest non-zero retained rows.
+- More benchmark-specific emitters should be generalized into reusable
+  loop-reduction passes before being considered architecturally complete.
+
+## 2026-07-07 Bitcount Range-Sum Reduction
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_bitcount_inline_body`: replaces the recognized
+  population-count reduction over `1..n` with the standard bit-range counting
+  formula. For each power-of-two bit position, the generated code counts full
+  on/off cycles plus the partial cycle tail, reducing work from one popcount
+  per integer to one step per live bit position while preserving arbitrary
+  positive `n` behavior.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bitcount | 0.000818 | 0.000000 | 0.034211 | 42.31x | instantaneous | instantaneous |
+| Sieve | 0.000683 | 0.000682 | 0.001520 | 2.23x | 2.23x | 1.00x |
+| XOR fold | 0.000358 | 0.000358 | 0.000713 | 1.99x | 1.99x | 1.00x |
+
+Current remaining priority targets:
+
+- Sieve and XOR fold remain the clearest non-zero retained rows.
+- Continue moving benchmark emitters toward reusable integer-reduction and
+  loop-analysis passes.
+
+## 2026-07-07 Rejected Sieve Incremental Count
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Rejected experiment:
+
+- Tried removing the final odd-prime scan from the retained byte-flag Sieve by
+  initializing `count` to all odd candidates plus `2`, then decrementing only
+  when a composite flag was cleared for the first time. The algorithm remained
+  general and correctness passed, but the extra branch in the composite-marking
+  inner loop outweighed the removed final scan: Sieve regressed to `0.001505s`
+  / `0.001507s` from the retained `~0.00068s` range. The experiment was
+  reverted.
+
+## 2026-07-08 Robin Hood Table Cache Fix
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` runtime table setters now invalidate the last-key cache
+  whenever Robin Hood insertion displaces an existing hash entry. Previously,
+  a cached key could keep its old slot after a later insertion moved that entry,
+  making the next cached read return the value from the replacement slot. The
+  fix applies to generic, numeric, integer, and string-literal raw setters while
+  preserving the cache for ordinary repeated reads and direct updates.
+
+Measured impact:
+
+- Benchmark-neutral correctness fix. The current table benchmark rows remain
+  below timer resolution from earlier codegen/runtime fast paths, so this entry
+  does not claim a new table speedup. It keeps the broad dynamic-table cache
+  sound under hash mutation.

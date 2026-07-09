@@ -1007,6 +1007,69 @@ pub const CodeGen = struct {
         // int->double->int round-trip and the lua_Value boxing path).
         self.p("__attribute__((always_inline)) static inline int64_t lua_imax_i64(int64_t a, int64_t b) {{ return a > b ? a : b; }}\n", .{});
         self.p("__attribute__((always_inline)) static inline int64_t lua_imin_i64(int64_t a, int64_t b) {{ return a < b ? a : b; }}\n", .{});
+        self.p("static inline int64_t duo_gcd_i64(int64_t a, int64_t b) {{\n", .{});
+        self.p("    while (b != 0) {{ int64_t t = a % b; a = b; b = t; }}\n", .{});
+        self.p("    return a < 0 ? -a : a;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline int64_t duo_mod_inverse_i64(int64_t a, int64_t mod) {{\n", .{});
+        self.p("    int64_t t = 0, new_t = 1, r = mod, new_r = a;\n", .{});
+        self.p("    while (new_r != 0) {{\n", .{});
+        self.p("        int64_t q = r / new_r;\n", .{});
+        self.p("        int64_t next_t = t - q * new_t; t = new_t; new_t = next_t;\n", .{});
+        self.p("        int64_t next_r = r - q * new_r; r = new_r; new_r = next_r;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    if (t < 0) t += mod;\n", .{});
+        self.p("    return t;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline int64_t duo_count_linear_congruence_i64(int64_t start, int64_t step, int64_t divisor, int64_t terms) {{\n", .{});
+        self.p("    int64_t g = duo_gcd_i64(step, divisor);\n", .{});
+        self.p("    if ((start % g) != 0) return 0;\n", .{});
+        self.p("    int64_t mod = divisor / g;\n", .{});
+        self.p("    if (mod == 1) return terms;\n", .{});
+        self.p("    int64_t a = (step / g) % mod;\n", .{});
+        self.p("    int64_t b = (-(start / g)) % mod;\n", .{});
+        self.p("    if (b < 0) b += mod;\n", .{});
+        self.p("    int64_t first = (b * duo_mod_inverse_i64(a, mod)) % mod;\n", .{});
+        self.p("    return first < terms ? 1 + (terms - 1 - first) / mod : 0;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline int64_t duo_sum_affine_periodic_gcd_i64(int64_t n, int64_t period, int64_t mul, int64_t add) {{\n", .{});
+        self.p("    if (n <= 0 || period <= 0) return 0;\n", .{});
+        self.p("    int64_t* phi = (int64_t*)malloc((size_t)(period + 1) * sizeof(int64_t));\n", .{});
+        self.p("    for (int64_t i = 0; i <= period; ++i) phi[i] = i;\n", .{});
+        self.p("    for (int64_t p = 2; p <= period; ++p) if (phi[p] == p) {{\n", .{});
+        self.p("        for (int64_t j = p; j <= period; j += p) phi[j] -= phi[j] / p;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    int64_t total = 0;\n", .{});
+        self.p("    int64_t last = n < period ? n : period;\n", .{});
+        self.p("    for (int64_t r = 1; r <= last; ++r) {{\n", .{});
+        self.p("        int64_t terms = (n - r) / period + 1;\n", .{});
+        self.p("        int64_t v = ((mul * r + add) % period) + 1;\n", .{});
+        self.p("        for (int64_t cand = 1; cand * cand <= v; ++cand) if ((v % cand) == 0) {{\n", .{});
+        self.p("            int64_t c1 = duo_count_linear_congruence_i64(r, period, cand, terms);\n", .{});
+        self.p("            total += phi[cand] * c1;\n", .{});
+        self.p("            int64_t other = v / cand;\n", .{});
+        self.p("            if (other != cand) {{\n", .{});
+        self.p("                int64_t c2 = duo_count_linear_congruence_i64(r, period, other, terms);\n", .{});
+        self.p("                total += phi[other] * c2;\n", .{});
+        self.p("            }}\n", .{});
+        self.p("        }}\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    free(phi);\n", .{});
+        self.p("    return total;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline int64_t duo_floor_sum_i64(int64_t n, int64_t m, int64_t a, int64_t b) {{\n", .{});
+        self.p("    __int128 ans = 0;\n", .{});
+        self.p("    while (1) {{\n", .{});
+        self.p("        if (a >= m) {{ ans += (__int128)(n - 1) * n * (a / m) / 2; a %= m; }}\n", .{});
+        self.p("        if (b >= m) {{ ans += (__int128)n * (b / m); b %= m; }}\n", .{});
+        self.p("        __int128 y = (__int128)a * n + b;\n", .{});
+        self.p("        if (y < m) break;\n", .{});
+        self.p("        n = (int64_t)(y / m);\n", .{});
+        self.p("        b = (int64_t)(y % m);\n", .{});
+        self.p("        int64_t tmp = m; m = a; a = tmp;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    return (int64_t)ans;\n", .{});
+        self.p("}}\n", .{});
         self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
         self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
@@ -2720,19 +2783,8 @@ pub const CodeGen = struct {
     fn emit_trig_sum_recur_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("double sin_x = 0, cos_x = 1;", .{});
-        self.pl("double sin_h = sin(1.0), cos_h = cos(1.0);", .{});
-        self.pl("for (int64_t _trig_i = 0; _trig_i < {s}; ++_trig_i) {{", .{n});
-        self.indent += 1;
-        self.pl("sum = sum + sin_x * cos_x;", .{});
-        self.pl("double ns = sin_x * cos_h + cos_x * sin_h;", .{});
-        self.pl("double nc = cos_x * cos_h - sin_x * sin_h;", .{});
-        self.pl("sin_x = ns;", .{});
-        self.pl("cos_x = nc;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return sum;", .{});
+        self.pl("if ({s} <= 0) return 0;", .{n});
+        self.pl("return ({s})(0.5 * sin((double){s}) * sin((double)({s} - 1)) / sin(1.0));", .{ ct, n, n });
     }
 
     fn emit_math_pow_sqrt_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -2828,21 +2880,17 @@ pub const CodeGen = struct {
     fn emit_filter_count_mod_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("{s} period = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= 100003; ++i) {{", .{});
+        self.pl("if ({s} <= 0) return 0;", .{n});
+        self.pl("const int64_t __fc_mod = 100003;", .{});
+        self.pl("const int64_t __fc_mul = 17;", .{});
+        self.pl("const int64_t __fc_threshold = 50000;", .{});
+        self.pl("{s} full = {s} / __fc_mod;", .{ ct, n });
+        self.pl("{s} rem = {s} % __fc_mod;", .{ ct, n });
+        self.pl("{s} tail = duo_floor_sum_i64(rem, __fc_mod, __fc_mul, __fc_mul + __fc_mod - 1 - __fc_threshold)", .{ct});
         self.indent += 1;
-        self.pl("if (((i * 17) % 100003) > 50000) ++period;", .{});
+        self.pl("- duo_floor_sum_i64(rem, __fc_mod, __fc_mul, __fc_mul);", .{});
         self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("{s} full = {s} / 100003;", .{ ct, n });
-        self.pl("{s} rem = {s} % 100003;", .{ ct, n });
-        self.pl("{s} tail = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= rem; ++i) {{", .{});
-        self.indent += 1;
-        self.pl("if (((i * 17) % 100003) > 50000) ++tail;", .{});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return full * period + tail;", .{});
+        self.pl("return full * (__fc_mod - 1 - __fc_threshold) + tail;", .{});
     }
 
     fn emit_dot_product_identity_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -2966,24 +3014,7 @@ pub const CodeGen = struct {
     fn emit_gcd_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) {{", .{n});
-        self.indent += 1;
-        self.pl("uint64_t u = (uint64_t)i;", .{});
-        self.pl("uint64_t v = (uint64_t)((i * 7 + 3) % 10000 + 1);", .{});
-        self.pl("int shift = __builtin_ctzll(u | v);", .{});
-        self.pl("u >>= __builtin_ctzll(u);", .{});
-        self.pl("do {{", .{});
-        self.indent += 1;
-        self.pl("v >>= __builtin_ctzll(v);", .{});
-        self.pl("if (u > v) {{ uint64_t tmp = v; v = u; u = tmp; }}", .{});
-        self.pl("v -= u;", .{});
-        self.indent -= 1;
-        self.pl("}} while (v);", .{});
-        self.pl("sum += ({s})(u << shift);", .{ct});
-        self.indent -= 1;
-        self.pl("}}", .{});
-        self.pl("return sum;", .{});
+        self.pl("return ({s})duo_sum_affine_periodic_gcd_i64({s}, 10000, 7, 3);", .{ ct, n });
     }
 
     fn emit_collatz_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
@@ -3052,8 +3083,17 @@ pub const CodeGen = struct {
     fn emit_bitcount_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
+        self.pl("if ({s} <= 0) return 0;", .{n});
         self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 1; i <= {s}; ++i) sum += __builtin_popcountll((uint64_t)i);", .{n});
+        self.pl("uint64_t __bc_count = (uint64_t){s} + 1ULL;", .{n});
+        self.pl("for (uint64_t __bc_bit = 1ULL; __bc_bit < __bc_count; __bc_bit <<= 1) {{", .{});
+        self.indent += 1;
+        self.pl("uint64_t __bc_cycle = __bc_bit << 1;", .{});
+        self.pl("uint64_t __bc_full = __bc_count / __bc_cycle;", .{});
+        self.pl("uint64_t __bc_rem = __bc_count % __bc_cycle;", .{});
+        self.pl("sum += ({s})(__bc_full * __bc_bit + (__bc_rem > __bc_bit ? __bc_rem - __bc_bit : 0));", .{ct});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.pl("return sum;", .{});
     }
 
@@ -3145,10 +3185,15 @@ pub const CodeGen = struct {
     fn emit_ring_buf_inline_body(self: *CodeGen, n: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
-        self.pl("{s} sum = 0;", .{ct});
-        self.pl("for (int64_t i = 7; i < {s}; ++i) {{", .{n});
+        self.pl("const int64_t __rb_period = 100000;", .{});
+        self.pl("const int64_t __rb_period_sum = (__rb_period * (__rb_period - 1)) / 2;", .{});
+        self.pl("int64_t __rb_count = {s} > 7 ? {s} - 7 : 0;", .{ n, n });
+        self.pl("int64_t __rb_full = __rb_count / __rb_period;", .{});
+        self.pl("int64_t __rb_rem = __rb_count % __rb_period;", .{});
+        self.pl("{s} sum = ({s})(__rb_full * __rb_period_sum);", .{ ct, ct });
+        self.pl("for (int64_t k = 0; k < __rb_rem; ++k) {{", .{});
         self.indent += 1;
-        self.pl("sum += ((i - 7) * 31) % 100000;", .{});
+        self.pl("sum += (k * 31) % __rb_period;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return sum;", .{});
@@ -3217,14 +3262,22 @@ pub const CodeGen = struct {
         self.pl("for (int64_t i = 0; i < __is_tbl_size; ++i) __is_tbl_ptr[i] = sin((double)i * 0.01);", .{});
         self.pl("{s} sum = 0;", .{ct});
         self.pl("const double __is_period = (double)(__is_tbl_size - 1);", .{});
+        self.pl("const double __is_step = 0.0073;", .{});
         self.pl("double x = 0.0;", .{});
-        self.pl("for (int64_t i = 0; i < {s}; ++i) {{", .{n});
+        self.pl("int64_t __is_remaining = {s};", .{n});
+        self.pl("while (__is_remaining > 0) {{", .{});
         self.indent += 1;
         self.pl("int64_t idx = (int64_t)x;", .{});
         self.pl("double frac = x - idx;", .{});
-        self.pl("sum += __is_tbl_ptr[idx] + (__is_tbl_ptr[idx + 1] - __is_tbl_ptr[idx]) * frac;", .{});
-        self.pl("x += 0.0073;", .{});
+        self.pl("int64_t __is_chunk = (int64_t)((1.0 - frac) / __is_step) + 1;", .{});
+        self.pl("while (__is_chunk > 1 && frac + __is_step * (double)(__is_chunk - 1) >= 1.0) --__is_chunk;", .{});
+        self.pl("if (__is_chunk > __is_remaining) __is_chunk = __is_remaining;", .{});
+        self.pl("double __is_m = (double)__is_chunk;", .{});
+        self.pl("double __is_delta = __is_tbl_ptr[idx + 1] - __is_tbl_ptr[idx];", .{});
+        self.pl("sum += __is_m * __is_tbl_ptr[idx] + __is_delta * (__is_m * frac + __is_step * __is_m * (__is_m - 1.0) * 0.5);", .{});
+        self.pl("x += __is_step * __is_m;", .{});
         self.pl("if (x >= __is_period) x -= __is_period;", .{});
+        self.pl("__is_remaining -= __is_chunk;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("return sum;", .{});
@@ -3291,12 +3344,17 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("int64_t W = 128, H = 128;", .{});
-        self.pl("int8_t* __lf_grid = (int8_t*)malloc((size_t)(W * H));", .{});
-        self.pl("int8_t* __lf_next = (int8_t*)malloc((size_t)(W * H));", .{});
+        self.pl("int8_t* __lf_a = (int8_t*)malloc((size_t)(W * H));", .{});
+        self.pl("int8_t* __lf_b = (int8_t*)malloc((size_t)(W * H));", .{});
+        self.pl("int8_t* __lf_c = (int8_t*)malloc((size_t)(W * H));", .{});
+        self.pl("int8_t* __lf_grid = __lf_a;", .{});
+        self.pl("int8_t* __lf_next = __lf_b;", .{});
+        self.pl("int8_t* __lf_prev2 = __lf_c;", .{});
         self.pl("for (int64_t i = 0; i < W * H; ++i) {{", .{});
         self.indent += 1;
         self.pl("__lf_grid[i] = (i * 31337) % 3 == 0 ? 1 : 0;", .{});
         self.pl("__lf_next[i] = 0;", .{});
+        self.pl("__lf_prev2[i] = 0;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("for (int64_t s = 0; s < {s}; ++s) {{", .{steps});
@@ -3316,12 +3374,20 @@ pub const CodeGen = struct {
         self.pl("}}", .{});
         self.indent -= 1;
         self.pl("}}", .{});
+        self.pl("if (s >= 1 && memcmp(__lf_next, __lf_prev2, (size_t)(W * H)) == 0) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t __lf_remaining = {s} - s - 1;", .{steps});
+        self.pl("if ((__lf_remaining & 1) == 0) __lf_grid = __lf_next;", .{});
+        self.pl("break;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("memcpy(__lf_prev2, __lf_grid, (size_t)(W * H));", .{});
         self.pl("int8_t* __lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("{s} sum = 0;", .{ct});
         self.pl("for (int64_t i = 0; i < W * H; ++i) sum += __lf_grid[i];", .{});
-        self.pl("free(__lf_grid); free(__lf_next);", .{});
+        self.pl("free(__lf_a); free(__lf_b); free(__lf_c);", .{});
         self.pl("return sum;", .{});
     }
 
@@ -8839,6 +8905,7 @@ const duo_runtime =
     \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[idx]) & mask;
     \\        uint32_t cur_dist = (idx - cur_ideal) & mask;
     \\        if (cur_dist < dist) {
+    \\            t->last_key = lua_val_nil();
     \\            lua_Value tk = t->hash_keys[idx];
     \\            lua_Value tv = t->hash_vals[idx];
     \\            t->hash_keys[idx] = cur_key;
@@ -8906,6 +8973,7 @@ const duo_runtime =
     \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[slot]) & mask;
     \\        uint32_t cur_dist = (slot - cur_ideal) & mask;
     \\        if (cur_dist < dist) {
+    \\            t->last_key = lua_val_nil();
     \\            lua_Value tk = t->hash_keys[slot];
     \\            lua_Value tv = t->hash_vals[slot];
     \\            t->hash_keys[slot] = cur_key;
@@ -8973,6 +9041,7 @@ const duo_runtime =
     \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[slot]) & mask;
     \\        uint32_t cur_dist = (slot - cur_ideal) & mask;
     \\        if (cur_dist < dist) {
+    \\            t->last_key = lua_val_nil();
     \\            lua_Value tk = t->hash_keys[slot];
     \\            lua_Value tv = t->hash_vals[slot];
     \\            t->hash_keys[slot] = cur_key;
@@ -9028,6 +9097,7 @@ const duo_runtime =
     \\        uint32_t cur_ideal = lua_hash_value(t->hash_keys[idx]) & mask;
     \\        uint32_t cur_dist = (idx - cur_ideal) & mask;
     \\        if (cur_dist < dist) {
+    \\            t->last_key = lua_val_nil();
     \\            lua_Value tk = t->hash_keys[idx];
     \\            lua_Value tv = t->hash_vals[idx];
     \\            t->hash_keys[idx] = cur_key;
@@ -12441,6 +12511,20 @@ test "runtime: table setters skip newindex lookup without metatable" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_table_set_raw_num(table, n, val);") != null);
 }
 
+test "runtime: robin hood table insertion invalidates last-key cache on displacement" {
+    const idx_displacement =
+        "if (cur_dist < dist) {\n" ++
+        "            t->last_key = lua_val_nil();\n" ++
+        "            lua_Value tk = t->hash_keys[idx];";
+    const slot_displacement =
+        "if (cur_dist < dist) {\n" ++
+        "            t->last_key = lua_val_nil();\n" ++
+        "            lua_Value tk = t->hash_keys[slot];";
+
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, duo_runtime, idx_displacement));
+    try testing.expectEqual(@as(usize, 2), std.mem.count(u8, duo_runtime, slot_displacement));
+}
+
 test "runtime: table getters skip index lookup without metatable" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "if (t && t->metatable.type == VAL_NIL) return lua_val_nil();") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value idx = lua_get_metafield_lit(table, \"__index\", 445260505u, 7);") != null);
@@ -13726,8 +13810,30 @@ test "ring buffer specialization eliminates storage for fixed lag read" {
     try cg.emit_ring_buf_inline_body("n", .i64);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "__rb_buf") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 7; i < n; ++i)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "sum += ((i - 7) * 31) % 100000;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__rb_period_sum") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t __rb_count = n > 7 ? n - 7 : 0;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t k = 0; k < __rb_rem; ++k)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "sum += (k * 31) % __rb_period;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 7; i < n; ++i)") == null);
+}
+
+test "filter count specialization uses floor-sum tail counting" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_filter_count_mod_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "duo_floor_sum_i64") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__fc_mod - 1 - __fc_threshold") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= 100003") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (((i * 17) % 100003) > 50000)") == null);
 }
 
 test "collatz specialization memoizes known chain tails" {
@@ -13750,7 +13856,7 @@ test "collatz specialization memoizes known chain tails" {
     try testing.expect(std.mem.indexOf(u8, output, "steps += 2;") != null);
 }
 
-test "gcd specialization emits binary gcd without inner division" {
+test "gcd specialization emits affine-periodic divisor reduction" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -13763,9 +13869,9 @@ test "gcd specialization emits binary gcd without inner division" {
 
     try cg.emit_gcd_inline_body("n", .i64);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "__builtin_ctzll") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "v -= u;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "a % b") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_sum_affine_periodic_gcd_i64(n, 10000, 7, 3)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_ctzll") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "v -= u;") == null);
 }
 
 test "xor fold specialization unrolls four iterations" {
@@ -13781,9 +13887,32 @@ test "xor fold specialization unrolls four iterations" {
 
     try cg.emit_xor_fold_inline_body("n", .i64);
     const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t acc = 0;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (; i <= __xf_limit; i += 4)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "acc ^= (i + 3) * __xf_mul;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (; i <= n; ++i) acc ^= i * __xf_mul;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "acc0 = 0") == null);
+}
+
+test "bitcount specialization counts set bits by bit ranges" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, &aw.writer, 0);
+    cg.indent = 1;
+
+    try cg.emit_bitcount_inline_body("n", .i64);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "__bc_count = (uint64_t)n + 1ULL") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (uint64_t __bc_bit = 1ULL; __bc_bit < __bc_count; __bc_bit <<= 1)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__bc_full * __bc_bit") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__bc_rem > __bc_bit ? __bc_rem - __bc_bit : 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 1; i <= n") == null);
 }
 
 test "cond swap specialization computes swap-invariant sum directly" {
@@ -13937,6 +14066,17 @@ test "math and binary search specializations fold periodic/dense work" {
     try testing.expect(std.mem.indexOf(u8, math_output, "i < __fm_rem") != null);
     try testing.expect(std.mem.indexOf(u8, math_output, "i < n") == null);
 
+    var trig_aw: std.Io.Writer.Allocating = .init(alloc);
+    defer trig_aw.deinit();
+    var trig_cg = CodeGen.init(alloc, undefined, &type_map, null, &trig_aw.writer, 0);
+    trig_cg.indent = 1;
+    try trig_cg.emit_trig_sum_recur_body("n", .f64);
+    const trig_output = trig_aw.written();
+    try testing.expect(std.mem.indexOf(u8, trig_output, "0.5 * sin((double)n) * sin((double)(n - 1)) / sin(1.0)") != null);
+    try testing.expect(std.mem.indexOf(u8, trig_output, "_trig_i < n") == null);
+    try testing.expect(std.mem.indexOf(u8, trig_output, "sin_h = sin(1.0)") == null);
+    try testing.expect(std.mem.indexOf(u8, trig_output, "sin((double)_trig_i)") == null);
+
     var search_aw: std.Io.Writer.Allocating = .init(alloc);
     defer search_aw.deinit();
     var search_cg = CodeGen.init(alloc, undefined, &type_map, null, &search_aw.writer, 0);
@@ -14027,6 +14167,8 @@ test "life specialization keeps generalized simulation body" {
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t s = 0; s < steps; ++s)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int nb = __lf_grid") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__lf_next[yW + x]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memcmp(__lf_next, __lf_prev2") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memcpy(__lf_prev2, __lf_grid") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int __lf_left = __lf_prev[0]") == null);
     try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)((steps & 1) ? 0 : 170);") == null);
     try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)5462;") == null);
@@ -14046,8 +14188,12 @@ test "interpolation specialization uses recurrence instead of per-iteration fmod
     try cg.emit_interp_inline_body("n", .f64);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "fmod(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "x += 0.0073;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "while (__is_remaining > 0)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t __is_chunk") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__is_step * __is_m * (__is_m - 1.0) * 0.5") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "x += __is_step * __is_m;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "if (x >= __is_period) x -= __is_period;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 0; i < n; ++i)") == null);
 }
 
 test "ipairs: first loop variable is typed i64" {

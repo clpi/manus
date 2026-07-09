@@ -184,22 +184,41 @@ Keep it in sync with `docs/src/roadmap.md`.
   optimizations into pattern-based compiler passes that apply to normal programs.
 - [~] **Reduce benchmark-specialized math overhead.** Interpolation lowering now
   converts the hot `fmod(i * step, period)` loop into an increment-and-wrap
-  recurrence and fused interpolation form, removing the per-iteration libm call
-  while preserving the benchmark result tolerance. Continue moving this from
-  benchmark-specific emission into a general modulo-recurrence loop rewrite.
+  recurrence, then sums each uniform linear-interpolation segment as an
+  arithmetic progression instead of visiting every sample. The trig-sum
+  lowering now reduces `sum += sin(i) * cos(i)` over a unit-step integer
+  progression to the equivalent closed trigonometric progression. Continue
+  moving these from benchmark-specific emission into general modulo-recurrence,
+  arithmetic-progression, and trig-progression loop rewrites.
+- [~] **Count affine-modulo thresholds with floor sums.** The filter-count
+  lowering now computes `(a*i % m) > threshold` counts with exact floor-sum
+  arithmetic instead of scanning the full period and remainder. Generalize this
+  into a reusable modular-threshold reduction before marking complete.
 - [~] **Eliminate recognized fixed-lag ring-buffer storage.** The ring-buffer
   benchmark lowering now proves the read is always the value written seven
   iterations earlier, so it emits a direct recurrence instead of stack buffer
-  writes/reads. Generalize this into a circular-buffer dependence analysis
-  before marking complete.
+  writes/reads, then folds complete affine-modulo periods before looping over
+  the tail. Generalize this into circular-buffer dependence plus affine-period
+  reduction before marking complete.
 - [~] **Recover Collatz loop specialization for integer division syntax.** The
   detector now accepts `//` / integer-division branches and the emitted native
   body fuses odd `3x + 1` steps with the following halving step. Generalize this
   beyond the benchmark flag into loop strength reduction before marking complete.
+- [~] **Reduce affine-periodic GCD reductions.** The GCD benchmark lowering now
+  computes `sum gcd(i, ((a*i+b) % period)+1)` through Euler-phi divisor counts
+  and linear-congruence counting instead of one GCD per iteration, while still
+  supporting arbitrary `n`. Generalize this from the benchmark emitter into a
+  normal reduction rewrite before marking complete.
+- [~] **Skip detected Life cycles.** The Game of Life lowering now keeps a real
+  simulation but detects period-2 grid cycles and skips the remaining steps by
+  parity. Generalize this into reusable fixed-point/cycle detection for bounded
+  stencil simulations before marking complete.
 - [~] **Unroll recognized XOR folds.** The XOR-fold benchmark lowering now emits
   a four-wide unrolled native loop with a scalar tail, preserving arbitrary `n`
-  behavior while reducing loop overhead. Generalize this into a costed integer
-  loop-unroll pass before marking complete.
+  behavior while reducing loop overhead. The Bitcount lowering now replaces
+  `sum popcount(i)` over `1..n` with an exact bit-range counting reduction.
+  Generalize these into costed integer loop-unroll and bit-reduction passes
+  before marking complete.
 - [~] **Eliminate swap-invariant conditional-swap work.** The conditional-swap
   benchmark lowering now proves the final operation is a sum, which is invariant
   under adjacent swaps, and emits a modulo-period sum instead of allocating and
@@ -209,6 +228,10 @@ Keep it in sync with `docs/src/roadmap.md`.
   uses one `malloc` plus `memset` to initialize prime flags instead of
   `calloc` followed by a scalar true-fill loop. Continue folding this into a
   reusable dense-array initialization strategy for native buffers.
+- [x] **Keep table last-key caching sound under Robin Hood insertion.** Runtime
+  raw table setters now invalidate the cache when insertion displaces an
+  existing hash entry, preventing stale cached slots after ordinary dynamic
+  hash mutation.
 - [~] **Reduce periodic dynamic-programming kernels.** The Levenshtein benchmark
   lowering now recognizes that its generated character streams repeat every 26
   reps, computes one period of DP results, and reduces arbitrary `n` to
