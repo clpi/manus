@@ -249,6 +249,10 @@ Keep it in sync with `docs/src/roadmap.md`.
   raw table setters now invalidate the cache when insertion displaces an
   existing hash entry, preventing stale cached slots after ordinary dynamic
   hash mutation.
+- [x] **Use inline storage for exact small hash capacity hints.** Runtime
+  `lua_table_new_with_capacity` now keeps `hash_cap == LUA_TABLE_INLINE_CAP`
+  in embedded table storage and records the table allocation in GC accounting,
+  covering small module/init tables without heap key/value arrays.
 - [~] **Reduce periodic dynamic-programming kernels.** The Levenshtein benchmark
   lowering now recognizes that its generated character streams repeat every 26
   reps, computes one period of DP results, and reduces arbitrary `n` to

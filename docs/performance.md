@@ -1261,3 +1261,38 @@ Current close-margin targets after this pass:
 | GCD reduce | 0.001073 | 0.055159 | 51.41x | Coprime divisor-multiple iteration retained; fallback covers non-coprime streams. |
 | Sieve | 0.000578 | 0.001536 | 2.66x | Odd-only byte flags and chunked final count retained; bitset and first-clear count remain rejected. |
 | Game of Life | 0.000039 | 0.002694 | 69.08x | Cycle-skipping simulation retained; fixed-output folds remain rejected. |
+
+## 2026-07-09 Exact Inline Table Capacity
+
+Command:
+
+```sh
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` runtime table allocation: `lua_table_new_with_capacity`
+  now uses the embedded hash storage when the requested hash capacity is exactly
+  `LUA_TABLE_INLINE_CAP`, not only when it is below that value. Several stdlib
+  module tables use an eight-entry hint, so this removes avoidable key/value
+  heap arrays on ordinary module initialization while preserving the existing
+  heap path for larger hints.
+- The same constructor now records `duo_gc_note_alloc(sizeof(lua_Table))`, just
+  like `lua_table_new`. This keeps `collectgarbage("count")` accounting
+  consistent for tables created from table literals, module builders, and other
+  capacity-hinted runtime paths.
+
+Measured impact:
+
+- Benchmark-neutral allocation/runtime correctness cleanup. The current table
+  benchmark rows are already below timer resolution, so this entry does not
+  claim a timing speedup. The practical win is fewer small heap allocations and
+  correct GC allocation accounting for capacity-created tables.

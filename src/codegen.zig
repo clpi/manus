@@ -8582,6 +8582,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_table_new_with_capacity(int array_cap, int hash_cap) {
     \\    lua_Table* t = calloc(1, sizeof(lua_Table));
+    \\    duo_gc_note_alloc(sizeof(lua_Table));
     \\    if (array_cap > 0) {
     \\        if (array_cap <= LUA_TABLE_INLINE_CAP) {
     \\            t->array = t->inline_array;
@@ -8593,7 +8594,7 @@ const duo_runtime =
     \\        }
     \\    }
     \\    if (hash_cap > 0) {
-    \\        if (hash_cap < LUA_TABLE_INLINE_CAP) {
+    \\        if (hash_cap <= LUA_TABLE_INLINE_CAP) {
     \\            t->hash_keys = t->inline_keys;
     \\            t->hash_vals = t->inline_vals;
     \\            t->capacity = LUA_TABLE_INLINE_CAP;
@@ -12525,11 +12526,20 @@ test "runtime: table stdlib uses integer index helpers" {
 }
 
 test "runtime: small capacity table hints use inline hash storage" {
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "if (hash_cap < LUA_TABLE_INLINE_CAP)") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "if (hash_cap <= LUA_TABLE_INLINE_CAP)") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "t->hash_keys = t->inline_keys;") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "t->hash_vals = t->inline_vals;") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "t->hash_inline = true;") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "while (cap < hash_cap * 1.5) cap *= 2;") != null);
+}
+
+test "runtime: capacity table creation records table allocation for gc count" {
+    const new_with_capacity =
+        "static inline lua_Value lua_table_new_with_capacity(int array_cap, int hash_cap) {\n" ++
+        "    lua_Table* t = calloc(1, sizeof(lua_Table));\n" ++
+        "    duo_gc_note_alloc(sizeof(lua_Table));";
+
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, new_with_capacity) != null);
 }
 
 test "runtime: small array tables use inline array storage" {
