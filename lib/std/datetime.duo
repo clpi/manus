@@ -1,7 +1,7 @@
 -- std.datetime — high-level date and time utilities
 
-local time = import("std.time")
-local math = import("std.math")
+local time = req "std.time"
+local math = req "std.math"
 
 fun is_leap_year(year: i64): bool
     if year % 400 == 0 then return true end

@@ -1,6 +1,6 @@
 -- std.html — basic HTML escaping and unescaping
 
-local string = import("std.string")
+local string = req "std.string"
 
 fun escape(s: str): str
     s = string.gsub(s, "&", "&amp;")

@@ -1,59 +1,59 @@
 -- std.io — input/output utilities
 
-fun open(filename: str, mode: str): any
+fun io_open(filename: str, mode: str): any
     io.open(filename, mode)
 end
 
-fun popen(prog: str, mode: str): any
+fun io_popen(prog: str, mode: str): any
     io.popen(prog, mode)
 end
 
-fun read(file: any, arg: any): any
+fun io_read(file: any, arg: any): any
     file:read(arg)
 end
 
-fun write(file: any, arg: any): any
+fun io_write(file: any, arg: any): any
     file:write(arg)
 end
 
-fun close(file: any): void
+fun io_close(file: any): void
     file:close()
 end
 
-fun flush(file: any): void
+fun io_flush(file: any): void
     file:flush()
 end
 
-fun lines(filename: str): any
+fun io_lines(filename: str): any
     io.lines(filename)
 end
 
-fun input(file: any): any
+fun io_input(file: any): any
     io.input(file)
 end
 
-fun output(file: any): any
+fun io_output(file: any): any
     io.output(file)
 end
 
-fun tmpfile(): any
+fun io_tmpfile(): any
     io.tmpfile()
 end
 
-fun type_(obj: any): any
+fun io_type(obj: any): any
     io.type(obj)
 end
 
 M = {}
-M.open = open
-M.popen = popen
-M.read = read
-M.write = write
-M.close = close
-M.flush = flush
-M.lines = lines
-M.input = input
-M.output = output
-M.tmpfile = tmpfile
-M.type = type_
+M.open = io_open
+M.popen = io_popen
+M.read = io_read
+M.write = io_write
+M.close = io_close
+M.flush = io_flush
+M.lines = io_lines
+M.input = io_input
+M.output = io_output
+M.tmpfile = io_tmpfile
+M.type = io_type
 M

@@ -1,17 +1,26 @@
 -- std.mime — MIME type detection (mirrors Go's mime package)
+--
+-- Note: `defaults` is constructed inside each function that needs it because
+-- the duo codegen does not yet expose module-level locals/globals to function
+-- bodies (it emits "use of undeclared identifier"). A shared mutable table
+-- cannot be expressed at module scope today; `add_extension` therefore
+-- rebuilds the table locally. Persistence of added extensions across calls
+-- will require module-level local support in the codegen.
 
--- Mapping of extensions to MIME types.
-defaults = {
-    [".txt"] = "text/plain",
-    [".html"] = "text/html",
-    [".htm"] = "text/html",
-    [".css"] = "text/css",
-    [".js"] = "text/javascript",
-    [".json"] = "application/json",
-}
+local function defaults_table()
+    {
+        [".txt"] = "text/plain",
+        [".html"] = "text/html",
+        [".htm"] = "text/html",
+        [".css"] = "text/css",
+        [".js"] = "text/javascript",
+        [".json"] = "application/json",
+    }
+end
 
 -- TypeByExtension returns the MIME type for the extension.
 fun type_by_extension(ext: str): str
+    local defaults = defaults_table()
     t = defaults[ext]
     if t == nil then return "application/octet-stream" end
     t
@@ -19,11 +28,12 @@ end
 
 -- AddExtension adds a MIME type for an extension.
 fun add_extension(ext: str, mime: str): void
+    local defaults = defaults_table()
     defaults[ext] = mime
 end
 
 M = {}
-M.defaults = defaults
+M.defaults = defaults_table()
 M.type_by_extension = type_by_extension
 M.add_extension = add_extension
 M

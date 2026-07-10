@@ -78,8 +78,15 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   with local mutation plus numeric `for`/`while` loops and pure function calls,
   including simple recursion and compile-time capture snapshots.
   Unsupported runtime expressions still fall back to normal runtime emission.
-  Generic/repeat loop forms, macro expansion, quote/unquote, AST replacement,
-  and hygienic macro syntax are still in progress.
+  Expression macros now support `macro name(args) \`expr`, `,arg` unquote
+  splicing, and `@name(args)` expansion before sema. Statement macros can use
+  `macro name(args) \`do ... end` and splice the generated block at statement
+  position. Macro output has hygienic renaming for introduced locals/parameters,
+  freshens free macro-introduced identifiers by default, and supports explicit
+  deliberate capture with `@capture(name)`. Nested macro expansion and
+  recursion/node limits are enforced. Generic/repeat loop forms, type-generating
+  macros, explicit AST replacement APIs, and reflection-backed derive expansion
+  are still in progress.
 - Scheduler-backed async tasks, pending poll states, and async channels are still
   being completed; current async calls run synchronously while descriptors are
   emitted for the full runtime path.
@@ -88,9 +95,9 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 ## Planned
 
-- Hygienic macro syntax and more complete metaprogramming: quote/unquote,
-  conditional/loop/function evaluation, AST replacement, and expansion-time
-  diagnostics.
+- More complete metaprogramming: type-generating macros, reflection-backed
+  derive expansion, explicit AST replacement APIs, and richer
+  expansion-time diagnostics.
 - A tighter concept/metatable model that finishes compile-time dispatch through
   ordinary Lua metatables and removes unnecessary syntax additions.
 - Deeper table/list lowering so dynamic Lua tables and typed Duo lists share more optimizer paths without losing Lua compatibility.

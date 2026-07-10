@@ -13,7 +13,7 @@ fun kill(pid: str): void
     os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
 end
 
-fun wait(pid: str): void
+fun mproc_wait(pid: str): void
     os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
 end
 
@@ -21,5 +21,5 @@ M = {}
 M.pid = pid
 M.spawn = spawn
 M.kill = kill
-M.wait = wait
+M.wait = mproc_wait
 M

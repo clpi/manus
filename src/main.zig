@@ -5,6 +5,7 @@ const Parser = @import("parser.zig").Parser;
 const Sema = @import("sema.zig").Sema;
 const CodeGen = @import("codegen.zig").CodeGen;
 const Mono = @import("mono.zig");
+const MacroExpand = @import("macro_expand.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
@@ -635,6 +636,12 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     var sem = Sema.init(alloc);
     sem.lua55_mode = is_lua_source_path(src_path);
     sem.duo_mode = is_duo_source_path(src_path);
+    var expander = MacroExpand.Expander.init(alloc);
+    defer expander.deinit();
+    expander.expandModule(&mod) catch |e| {
+        term.err("macro expansion error: {s}", .{@errorName(e)});
+        std.process.exit(1);
+    };
     sem.check_module(&mod) catch |e| {
         term.err("sema error: {}", .{e});
         std.process.exit(1);
@@ -761,14 +768,14 @@ fn do_compile(
         var args: std.ArrayList([]const u8) = .empty;
         if (is_wasm) {
             try args.appendSlice(alloc, &.{
-                "zig",                   "cc",
-                "--target=wasm32-wasi",  opt,
-                "-ffast-math",           "-flto",
-                "-fomit-frame-pointer",  "-funroll-loops",
-                "-ffp-contract=fast",    "-fno-trapping-math",
-                "-fno-math-errno",           "-Wl,--no-entry",
-                "-Wl,--gc-sections",         "-Wl,--strip-debug",
-                "-std=gnu99",                "-lm",
+                "zig",                          "cc",
+                "--target=wasm32-wasi",         opt,
+                "-ffast-math",                  "-flto",
+                "-fomit-frame-pointer",         "-funroll-loops",
+                "-ffp-contract=fast",           "-fno-trapping-math",
+                "-fno-math-errno",              "-Wl,--no-entry",
+                "-Wl,--gc-sections",            "-Wl,--strip-debug",
+                "-std=gnu99",                   "-lm",
                 "-Wno-deprecated-declarations",
             });
             if (lib_mode) {
@@ -824,7 +831,7 @@ fn do_compile(
     };
     defer base_cc_flags.deinit(alloc);
 
-        const silent = run_after and !verbose;
+    const silent = run_after and !verbose;
     // PGO two-pass compile (skipped for wasm, load_chunk, or run_after).
     if (pgo and !is_wasm and !load_chunk) {
         const stem = std.fs.path.stem(src_path);

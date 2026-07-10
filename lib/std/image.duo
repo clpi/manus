@@ -1,12 +1,12 @@
 -- std.image — Image root module (mirrors Go's image)
 
-color = req "std.image.color"
+global color = req "std.image.color"
 
-fun pt(x: i64, y: i64): any
+fun pt(x: any, y: any): any
     {x = x, y = y, kind = "point"}
 end
 
-fun rect(x0: i64, y0: i64, x1: i64, y1: i64): any
+fun rect(x0: any, y0: any, x1: any, y1: any): any
     {min = pt(x0, y0), max = pt(x1, y1), kind = "rect"}
 end
 

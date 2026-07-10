@@ -1,14 +1,14 @@
 -- std.image.color — Color models (mirrors Go's image/color)
 
-fun rgba(r: i64, g: i64, b: i64, a: i64): any
+fun rgba(r: any, g: any, b: any, a: any): any
     {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "rgba"}
 end
 
-fun nrgba(r: i64, g: i64, b: i64, a: i64): any
+fun nrgba(r: any, g: any, b: any, a: any): any
     {r = r % 65536, g = g % 65536, b = b % 65536, a = a % 65536, kind = "nrgba"}
 end
 
-fun gray(y: i64): any
+fun gray(y: any): any
     {y = y % 65536, kind = "gray"}
 end
 

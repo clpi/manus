@@ -1,7 +1,7 @@
 -- std.regex — Pattern matching utilities (Lua patterns)
 
-fun match(s: str, pat: str): any
-    string.match(s, pat)
+fun match_str(s: str, pat: str): any
+    string["match"](s, pat)
 end
 
 fun find(s: str, pat: str, init: int, plain: bool): any
@@ -17,7 +17,7 @@ fun gmatch(s: str, pat: str): any
 end
 
 M = {}
-M.match = match
+M["match"] = match_str
 M.find = find
 M.replace = replace
 M.gmatch = gmatch

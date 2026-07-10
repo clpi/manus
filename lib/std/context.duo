@@ -2,22 +2,31 @@
 -- In Duo (single-threaded with cooperative async), context is a table carrying
 -- a deadline, a cancellation flag, and a parent chain. There are no real
 -- OS-level cancellation signals; cancellation propagates by checking the flag.
+--
+-- Note: `background` and `todo` are not module-level locals because the duo
+-- codegen does not yet expose module-level locals/globals to function bodies
+-- (it emits "use of undeclared identifier"). The root contexts are defined
+-- inline where they are needed.
 
 -- background: the root context (never cancelled, no deadline).
-background = {deadline = nil, cancelled = false, parent = nil, key = "background", done = false}
+local function background_ctx()
+    {deadline = nil, cancelled = false, parent = nil, key = "background", done = false}
+end
 
 -- todo: a placeholder context for when no context is decided yet.
-todo = {deadline = nil, cancelled = false, parent = nil, key = "todo", done = false}
+local function todo_ctx()
+    {deadline = nil, cancelled = false, parent = nil, key = "todo", done = false}
+end
 
 -- with_cancel: create a child context that can be cancelled.
 fun with_cancel(parent: any): any
-    if parent == nil then parent = background end
+    if parent == nil then parent = background_ctx() end
     {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
 end
 
 -- with_deadline: create a child context with a specific deadline (epoch seconds).
-fun with_deadline(parent: any, deadline: f64): any
-    if parent == nil then parent = background end
+fun with_deadline(parent: any, deadline: any): any
+    if parent == nil then parent = background_ctx() end
     -- inherit the earlier deadline
     d = deadline
     if parent.deadline ~= nil and parent.deadline < d then d = parent.deadline end
@@ -25,7 +34,7 @@ fun with_deadline(parent: any, deadline: f64): any
 end
 
 -- with_timeout: create a child context that times out after `timeout` seconds.
-fun with_timeout(parent: any, timeout: f64): any
+fun with_timeout(parent: any, timeout: any): any
     -- get current time
     t = require "std.time"
     now = t.now()
@@ -34,7 +43,7 @@ end
 
 -- with_value: create a child context carrying a key-value pair.
 fun with_value(parent: any, key: any, value: any): any
-    if parent == nil then parent = background end
+    if parent == nil then parent = background_ctx() end
     child = {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
     child[key] = value
     child
@@ -106,8 +115,8 @@ fun value(ctx: any, key: any): any
 end
 
 M = {}
-M.background = background
-M.todo = todo
+M.background = background_ctx()
+M.todo = todo_ctx()
 M.with_cancel = with_cancel
 M.with_deadline = with_deadline
 M.with_timeout = with_timeout

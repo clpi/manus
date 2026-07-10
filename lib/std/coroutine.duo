@@ -28,7 +28,7 @@ fun isyieldable(): bool
     coroutine.isyieldable()
 end
 
-fun close(co: any): any
+fun co_close(co: any): any
     coroutine.close(co)
 end
 
@@ -40,5 +40,5 @@ M.status = status
 M.running = running
 M.wrap = wrap
 M.isyieldable = isyieldable
-M.close = close
+M.close = co_close
 M

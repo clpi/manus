@@ -4,11 +4,11 @@ fun seed(s: int): void
     math.randomseed(s)
 end
 
-fun float(): float
+fun rand_float(): float
     math.random()
 end
 
-fun int(min: int, max: int): int
+fun rand_int(min: int, max: int): int
     if max == nil then
         math.random(min)
     else
@@ -35,8 +35,8 @@ end
 
 M = {}
 M.seed = seed
-M.float = float
-M.int = int
+M.float = rand_float
+M.int = rand_int
 M.choice = choice
 M.shuffle = shuffle
 M

@@ -1,6 +1,6 @@
 -- std.hex — Hexadecimal encoding and decoding utilities
 
-crypto = req "std.crypto"
+global crypto = req "std.crypto"
 
 fun encode(s: str): str
     crypto.hex_encode(s)

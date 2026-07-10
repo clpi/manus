@@ -1,7 +1,7 @@
 -- std.ini — basic INI parsing stub
 
-local string = import("std.string")
-local table_mod = import("std.table")
+local string = req "std.string"
+local table_mod = req "std.table"
 
 fun parse(data: str): any
     local lines = string.split(data, "\n")

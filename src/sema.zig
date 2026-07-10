@@ -1171,6 +1171,7 @@ pub const Sema = struct {
                 // Alias types are compile-time declarations; type-check fields and methods.
                 _ = ad;
             },
+            .macro_def => {},
         }
     }
 
@@ -1270,6 +1271,10 @@ pub const Sema = struct {
             .float_lit => .f64,
             .string_lit => .str,
             .vararg => .any,
+            .quote, .unquote, .macro_call => {
+                self.err(expr.loc(), "unexpanded macro expression reached semantic analysis", .{});
+                return .any;
+            },
             .name => |n| {
                 if (self.scope.lookup(n.ident)) |sym| {
                     // Emit deprecation warning if symbol is @deprecated (Requirement 18.7)
@@ -4696,6 +4701,10 @@ pub const Sema = struct {
                     break :blk .any;
                 },
                 .contains_expr => .bool,
+                .quote, .unquote, .macro_call => blk: {
+                    self.ok = false;
+                    break :blk .any;
+                },
             };
             return result;
         }

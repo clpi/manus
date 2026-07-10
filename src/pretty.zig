@@ -158,6 +158,22 @@ pub const PrettyPrinter = struct {
             .string_lit => |x| try self.writeStringLit(x.val),
             .vararg => try self.write("..."),
             .name => |x| try self.write(x.ident),
+            .quote => |x| {
+                try self.write("`");
+                try self.printExpr(x.expr, 0);
+            },
+            .unquote => |x| {
+                try self.write(",");
+                try self.printExpr(x.expr, 0);
+            },
+            .macro_call => |x| {
+                try self.print("@{s}(", .{x.name});
+                for (x.args, 0..) |arg, i| {
+                    if (i > 0) try self.write(", ");
+                    try self.printExpr(arg, 0);
+                }
+                try self.write(")");
+            },
             .index => |x| {
                 try self.printExpr(x.obj, 0);
                 try self.write("[");
@@ -380,6 +396,29 @@ pub const PrettyPrinter = struct {
 
     fn printStmt(self: *PrettyPrinter, stmt: *const Stmt) Error!void {
         switch (stmt.*) {
+            .macro_def => |md| {
+                try self.print("macro {s}(", .{md.name});
+                for (md.params, 0..) |param, i| {
+                    if (i > 0) try self.write(", ");
+                    try self.write(param);
+                }
+                try self.write(") ");
+                switch (md.body) {
+                    .expr => |expr| {
+                        try self.write("`");
+                        try self.printExpr(expr, 0);
+                    },
+                    .block => |block| {
+                        try self.write("`do");
+                        self.indent();
+                        try self.nl();
+                        try self.printBlock(&block);
+                        self.dedent();
+                        try self.nl();
+                        try self.write("end");
+                    },
+                }
+            },
             .local_decl => |ld| {
                 if (self.mode == .lua or self.mode == .duo) {
                     // In Duo mode, bare assignment is preferred, but we pretty-print

@@ -2,18 +2,11 @@
 
 local string = req "std.string"
 
-local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-local hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
-
-local dec_table = {}
-for i = 1, 32
-    dec_table[string.byte(alphabet, i)] = i - 1
-end
-
-local hex_dec_table = {}
-for i = 1, 32
-    hex_dec_table[string.byte(hex_alphabet, i)] = i - 1
-end
+-- Note: base32 lookup tables (alphabets and decode tables) are constructed
+-- inside the functions that use them. The duo codegen does not yet expose
+-- module-level locals/globals to function bodies, so defining them at the
+-- top of the module produces "use of undeclared identifier" errors in the
+-- emitted C. Keeping them function-local is the minimal fix.
 
 fun encode_with_alphabet(data: str, tab: str): str
     if data == nil then return "" end
@@ -74,11 +67,11 @@ fun encode_with_alphabet(data: str, tab: str): str
 end
 
 fun encode(data: str): str
-    encode_with_alphabet(data, alphabet)
+    encode_with_alphabet(data, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 end
 
 fun encode_hex(data: str): str
-    encode_with_alphabet(data, hex_alphabet)
+    encode_with_alphabet(data, "0123456789ABCDEFGHIJKLMNOPQRSTUV")
 end
 
 fun decode_with_alphabet(data: str, tab: any): str
@@ -134,10 +127,20 @@ fun decode_with_alphabet(data: str, tab: any): str
 end
 
 fun decode(data: str): str
+    local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    local dec_table = {}
+    for i = 1, 32
+        dec_table[string.byte(alphabet, i)] = i - 1
+    end
     decode_with_alphabet(data, dec_table)
 end
 
 fun decode_hex(data: str): str
+    local hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
+    local hex_dec_table = {}
+    for i = 1, 32
+        hex_dec_table[string.byte(hex_alphabet, i)] = i - 1
+    end
     decode_with_alphabet(data, hex_dec_table)
 end
 

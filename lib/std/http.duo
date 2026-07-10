@@ -1,6 +1,6 @@
 -- std.http — high-level HTTP client and server (wraps net.duo)
 
-local net = import("std.net")
+local net = req "std.net"
 
 M = {}
 M.get = net.http_get

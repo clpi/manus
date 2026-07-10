@@ -1,7 +1,7 @@
 -- std.crypto — cryptographic hash and encoding utilities
 
-local crypto_sha = req "std.crypto.sha"
-local hash_sha512 = req "std.hash.sha512"
+global crypto_sha = req "std.crypto.sha"
+global hash_sha512 = req "std.hash.sha512"
 
 fun sha1(s: str): str
     crypto_sha.sha1(s)

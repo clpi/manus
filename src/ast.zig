@@ -162,6 +162,12 @@ pub const ListComprehension = struct {
     filter: ?*Expr = null,
 };
 
+pub const MacroCall = struct {
+    loc: Loc,
+    name: []const u8,
+    args: []*Expr,
+};
+
 pub const FuncParam = struct {
     name: []const u8,
     typ: TypeExpr,
@@ -278,6 +284,9 @@ pub const Expr = union(enum) {
     match_expr: *MatchExpr,
     await_expr: struct { loc: Loc, operand: *Expr },
     contains_expr: struct { loc: Loc, lhs: *Expr, rhs: *Expr }, // x in y
+    quote: struct { loc: Loc, expr: *Expr },
+    unquote: struct { loc: Loc, expr: *Expr },
+    macro_call: MacroCall,
 
     pub fn loc(self: Expr) Loc {
         return switch (self) {
@@ -303,6 +312,9 @@ pub const Expr = union(enum) {
             .match_expr => |m| m.loc,
             .await_expr => |x| x.loc,
             .contains_expr => |x| x.loc,
+            .quote => |x| x.loc,
+            .unquote => |x| x.loc,
+            .macro_call => |x| x.loc,
         };
     }
 };
@@ -390,6 +402,26 @@ pub const ConceptDef = struct {
     attributes: []Attribute = &.{},
 
     pub const RequiredField = struct { name: []const u8, typ: TypeExpr };
+};
+
+pub const MacroDef = struct {
+    loc: Loc,
+    name: []const u8,
+    params: []const []const u8,
+    body: MacroBody,
+    hygiene: bool = true,
+};
+
+pub const MacroBody = union(enum) {
+    expr: *Expr,
+    block: Block,
+
+    pub fn loc(self: MacroBody) Loc {
+        return switch (self) {
+            .expr => |expr| expr.loc(),
+            .block => |block| block.loc,
+        };
+    }
 };
 
 // ── Statements ────────────────────────────────────────────────────────────────
@@ -484,6 +516,7 @@ pub const Stmt = union(enum) {
     enum_def: EnumDef,
     concept_def: ConceptDef,
     alias_def: AliasDef,
+    macro_def: MacroDef,
 };
 
 /// A user-defined table type (like a class/struct), declared with `alias`.

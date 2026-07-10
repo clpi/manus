@@ -1,8 +1,8 @@
 -- std.color — ANSI terminal color codes
 
-local string = import("std.string")
+local string = req "std.string"
 
-M = {}
+global M = {}
 
 M.RESET = "\x1b[0m"
 M.BOLD = "\x1b[1m"

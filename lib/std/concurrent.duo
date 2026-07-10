@@ -8,14 +8,15 @@ sync = require "std.sync"
 fun go(fn: any, ...args): any
     fut = sync.channel(1)
     args_list = {args}
-    sync.spawn(fun(): void
+    closure = fun(): void
         ok, result = pcall(fn, table.unpack(args_list))
         if ok then
             sync.channel_send(fut, {ok = true, val = result})
         else
             sync.channel_send(fut, {ok = false, err = result})
         end
-    end)
+    end
+    sync.spawn(closure)
     fut
 end
 
@@ -58,11 +59,12 @@ end
 fun race(futs: any): any
     winner = sync.channel(1)
     for i, fut in ipairs(futs)
-        sync.spawn(fun(): void
+        race_closure = fun(): void
             val = sync.channel_recv(fut)
             sync.channel_try_recv(winner)  -- drain if already won
             sync.channel_send(winner, {idx = i, val = val})
-        end)
+        end
+        sync.spawn(race_closure)
     end
     sync.run()
     sync.channel_try_recv(winner)
@@ -77,7 +79,7 @@ fun select(cases: any): any
             val = sync.channel_try_recv(c.ch)
             if val ~= nil then
                 if c.fn then c.fn(val) end
-                val, c.ch
+                return val, c.ch
             end
         end
         sync.yield()

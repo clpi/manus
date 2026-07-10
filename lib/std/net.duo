@@ -1,7 +1,8 @@
--- std.net — TCP/UDP sockets + HTTP client/server (Requirement 20.5)
--- When the module variable is named "net", the codegen emits direct C calls
--- (duo_net_tcp_connect, duo_net_http_get, etc.) for zero-overhead networking.
--- Otherwise, this Lua fallback uses curl for HTTP and stubs for raw sockets.
+-- std.net — TCP/UDP sockets + HTTP client/server
+-- Architecture: When the module variable is named "net", the duo codegen emits
+-- direct C calls (duo_net_tcp_connect, duo_net_http_get, etc.) for zero-overhead
+-- networking. This fallback uses curl for HTTP and stubs for raw sockets.
+-- A native C binding via FFI is planned (see duo_gap_analysis.md).
 
 -- Parse a URL into {scheme, host, port, path}
 fun parse_url(url: str): any

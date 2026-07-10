@@ -16,98 +16,127 @@ end
 
 -- Arena allocator: bump-allocate, free all at once
 -- Wraps a table of byte buffers for conceptual arena semantics.
+fun arena_alloc(self: any, bytes: any): any
+    if self._offset + bytes > self._capacity then
+        new_buf = "alloc(" .. tostring(bytes) .. " bytes)"
+        self._bufs[#self._bufs + 1] = new_buf
+        self._offset = 0
+    end
+    ptr = { addr = self._total + self._offset, size = bytes }
+    self._offset = self._offset + bytes
+    ptr
+end
+
+fun arena_free_all(self: any): void
+    self._bufs = {}
+    self._offset = 0
+    self._total = 0
+end
+
+fun arena_used(self: any): i64
+    self._total + self._offset
+end
+
 fun arena_new(size: i64): any
     {
         _bufs = {},
         _offset = 0,
         _capacity = size or 65536,
         _total = 0,
-        alloc = fun(self: any, bytes: i64): any
-            if self._offset + bytes > self._capacity then
-                new_buf = "alloc(" .. tostring(bytes) .. " bytes)"
-                self._bufs[#self._bufs + 1] = new_buf
-                self._offset = 0
-            end
-            ptr = { addr = self._total + self._offset, size = bytes }
-            self._offset = self._offset + bytes
-            ptr
-        end,
-        free_all = fun(self: any): void
-            self._bufs = {}
-            self._offset = 0
-            self._total = 0
-        end,
-        used = fun(self: any): i64
-            self._total + self._offset
-        end,
+        alloc = arena_alloc,
+        free_all = arena_free_all,
+        used = arena_used,
     }
 end
 
 -- Pool allocator: fixed-size block allocation, O(1) alloc/free
+fun pool_init(self: any): void
+    count = self._count or 1024
+    for i = 1, count
+        self._free_list[#self._free_list + 1] = { addr = i * self._block_size, data = {} }
+    end
+end
+
+fun pool_alloc(self: any): any
+    if #self._free_list == 0 then return nil end
+    block = table.remove(self._free_list)
+    self._allocated[block.addr] = block
+    block
+end
+
+fun pool_free(self: any, block: any): void
+    if block == nil then return end
+    self._allocated[block.addr] = nil
+    self._free_list[#self._free_list + 1] = block
+end
+
+fun pool_available(self: any): i64
+    return #self._free_list
+end
+
+fun pool_in_use(self: any): i64
+    self._count - #self._free_list
+end
+
 fun pool_new(block_size: i64, count: i64): any
     {
         _block_size = block_size or 64,
         _free_list = {},
         _allocated = {},
-        -- Pre-populate free list
-        _init = fun(self: any): void
-            for i = 1, count or 1024
-                self._free_list[#self._free_list + 1] = { addr = i * self._block_size, data = {} }
-            end
-        end,
-        alloc = fun(self: any): any
-            if #self._free_list == 0 then return nil end
-            block = table.remove(self._free_list)
-            self._allocated[block.addr] = block
-            block
-        end,
-        free = fun(self: any, block: any): void
-            if block == nil then return end
-            self._allocated[block.addr] = nil
-            self._free_list[#self._free_list + 1] = block
-        end,
-        available = fun(self: any): i64
-            return #self._free_list
-        end,
-        in_use = fun(self: any): i64
-            count - #self._free_list
-        end,
+        _count = count or 1024,
+        _init = pool_init,
+        alloc = pool_alloc,
+        free = pool_free,
+        available = pool_available,
+        in_use = pool_in_use,
     }
 end
 
 -- Stack allocator: LIFO bump allocator with checkpoint/restore
+fun stack_checkpoint(self: any): i64
+    self._markers[#self._markers + 1] = self._top
+    self._top
+end
+
+fun stack_restore(self: any, marker: any): void
+    while #self._markers > 0 and self._markers[#self._markers] > marker
+        self._markers[#self._markers] = nil
+    end
+    self._top = marker
+end
+
+fun stack_alloc(self: any, bytes: any): any
+    ptr = self._top
+    self._top = self._top + bytes
+    if self._top > self._capacity then return nil end
+    { addr = ptr, size = bytes }
+end
+
+fun stack_used(self: any): i64
+    self._top
+end
+
+fun stack_remaining(self: any): i64
+    self._capacity - self._top
+end
+
+fun stack_reset(self: any): void
+    self._top = 0
+    self._markers = {}
+end
+
 fun stack_new(capacity: i64): any
     {
         _buf = "alloc(" .. tostring(capacity or 65536) .. " bytes)",
         _top = 0,
         _capacity = capacity or 65536,
         _markers = {},
-        checkpoint = fun(self: any): i64
-            self._markers[#self._markers + 1] = self._top
-            self._top
-        end,
-        restore = fun(self: any, marker: i64): void
-            while #self._markers > 0 and self._markers[#self._markers] > marker
-                self._markers[#self._markers] = nil
-            end
-            self._top = marker
-        end,
-        alloc = fun(self: any, bytes: i64): any
-            ptr = self._top
-            self._top = self._top + bytes
-            if self._top > self._capacity then return nil end
-            { addr = ptr, size = bytes }
-        end,
-        used = fun(self: any): i64
-            self._top
-        end,
-        remaining = fun(self: any): i64
-            self._capacity - self._top
-        end,
-        reset = fun(self: any): void
-            self._top = 0
-            self._markers = {}
-        end,
+        checkpoint = stack_checkpoint,
+        restore = stack_restore,
+        alloc = stack_alloc,
+        used = stack_used,
+        remaining = stack_remaining,
+        reset = stack_reset,
     }
 end
 
@@ -120,20 +149,24 @@ concept Allocator
 end
 
 -- Fixed-size buffer allocator (like C alloca but tracked)
+fun fixed_buffer_alloc(self: any, bytes: any): any
+    if self._offset + bytes > self._size then return nil end
+    ptr = self._offset
+    self._offset = self._offset + bytes
+    { addr = ptr, size = bytes }
+end
+
+fun fixed_buffer_remaining(self: any): i64
+    self._size - self._offset
+end
+
 fun fixed_buffer_new(size: i64): any
     {
         _buf = "alloc(" .. tostring(size) .. " bytes)",
         _offset = 0,
         _size = size,
-        alloc = fun(self: any, bytes: i64): any
-            if self._offset + bytes > self._size then return nil end
-            ptr = self._offset
-            self._offset = self._offset + bytes
-            { addr = ptr, size = bytes }
-        end,
-        remaining = fun(self: any): i64
-            self._size - self._offset
-        end,
+        alloc = fixed_buffer_alloc,
+        remaining = fixed_buffer_remaining,
     }
 end
 

@@ -157,6 +157,15 @@ fun new_writer(fh: any, size: i64): any
     {fh = fh, buf = "", size = size}
 end
 
+-- writer_flush: write all buffered data to the underlying handle.
+fun writer_flush(w: any): any
+    if string.len(w.buf) > 0 then
+        w.fh:write(w.buf)
+        w.buf = ""
+    end
+    w
+end
+
 -- writer_write: buffer a string for later flushing.
 fun writer_write(w: any, s: str): any
     w.buf = w.buf .. s
@@ -171,15 +180,6 @@ fun writer_write_byte(w: any, b: i64): any
     w.buf = w.buf .. string.char(b)
     if string.len(w.buf) >= w.size then
         writer_flush(w)
-    end
-    w
-end
-
--- writer_flush: write all buffered data to the underlying handle.
-fun writer_flush(w: any): any
-    if string.len(w.buf) > 0 then
-        w.fh:write(w.buf)
-        w.buf = ""
     end
     w
 end

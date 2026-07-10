@@ -8,29 +8,29 @@ fun new_flag_set(name: str): any
 end
 
 -- bool_flag: register a boolean flag.
-fun bool_flag(fs: any, name: str, default: bool, usage: str): any
-    f = {name = name, value = default, default = default, usage = usage, is_bool = true}
+fun bool_flag(fs: any, name: str, default_val: bool, usage: str): any
+    f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = true}
     fs.flags[name] = f
     f
 end
 
 -- string_flag: register a string flag.
-fun string_flag(fs: any, name: str, default: str, usage: str): any
-    f = {name = name, value = default, default = default, usage = usage, is_bool = false, kind = "string"}
+fun string_flag(fs: any, name: str, default_val: str, usage: str): any
+    f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "string"}
     fs.flags[name] = f
     f
 end
 
 -- int_flag: register an integer flag.
-fun int_flag(fs: any, name: str, default: i64, usage: str): any
-    f = {name = name, value = default, default = default, usage = usage, is_bool = false, kind = "int"}
+fun int_flag(fs: any, name: str, default_val: i64, usage: str): any
+    f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "int"}
     fs.flags[name] = f
     f
 end
 
 -- float_flag: register a float flag.
-fun float_flag(fs: any, name: str, default: f64, usage: str): any
-    f = {name = name, value = default, default = default, usage = usage, is_bool = false, kind = "float"}
+fun float_flag(fs: any, name: str, default_val: f64, usage: str): any
+    f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "float"}
     fs.flags[name] = f
     f
 end
@@ -40,6 +40,8 @@ fun parse(fs: any, argv: any): any
     if argv == nil then argv = {} end
     i = 1
     n = rawlen(argv)
+    local fname: any = nil
+    local fval: any = nil
     while i <= n
         arg = argv[i]
         if arg == "--" then
@@ -158,7 +160,7 @@ end
 
 -- print_defaults: print usage information for all flags.
 fun print_defaults(fs: any): void
-    for name, f in pairs(fs.flags)
+    for name, f in fs.flags
         prefix = "  -" .. name
         if not f.is_bool then
             prefix = prefix .. " value"
@@ -169,19 +171,19 @@ end
 
 -- ----- Global default flag set -----
 
-default_fs = new_flag_set("")
+global default_fs = new_flag_set("")
 
 -- global bool: register a bool on the default flag set.
-fun global_bool(name: str, default: bool, usage: str): any
-    bool_flag(default_fs, name, default, usage)
+fun global_bool(name: str, default_val: bool, usage: str): any
+    bool_flag(default_fs, name, default_val, usage)
 end
 
-fun global_string(name: str, default: str, usage: str): any
-    string_flag(default_fs, name, default, usage)
+fun global_string(name: str, default_val: str, usage: str): any
+    string_flag(default_fs, name, default_val, usage)
 end
 
-fun global_int(name: str, default: i64, usage: str): any
-    int_flag(default_fs, name, default, usage)
+fun global_int(name: str, default_val: i64, usage: str): any
+    int_flag(default_fs, name, default_val, usage)
 end
 
 fun global_parse(argv: any): any
@@ -204,7 +206,7 @@ M.lookup = lookup
 M.args = positional_args
 M.print_defaults = print_defaults
 M.default_fs = default_fs
-M.bool = global_bool
+M.bool_global = global_bool
 M.string = global_string
 M.int = global_int
 M.parse_argv = global_parse

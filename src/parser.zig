@@ -18,6 +18,7 @@ pub const Parser = struct {
     /// right-hand sides use the restricted scrutinee parser so that `[` at
     /// the start of the next arm is not greedily consumed as an index suffix.
     match_arm_depth: u32 = 0,
+    quote_depth: u32 = 0,
 
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
@@ -312,7 +313,15 @@ pub const Parser = struct {
         }
 
         return switch (tok.kind) {
-            .at => self.parse_attributed_decl(),
+            .at => blk: {
+                const saved = self.lex.saveState();
+                if (try self.parse_at_starts_attribute_decl()) {
+                    self.lex.restoreState(saved);
+                    break :blk self.parse_attributed_decl();
+                }
+                self.lex.restoreState(saved);
+                break :blk self.parse_expr_stmt();
+            },
             .kw_local => self.parse_local(),
             .kw_global => self.parse_global(),
             .kw_const => self.parse_const_decl(),
@@ -324,6 +333,7 @@ pub const Parser = struct {
             .kw_enum => self.parse_enum_def_with_attrs(&.{}),
             .kw_concept => self.parse_concept_def_with_attrs(&.{}),
             .kw_alias => self.parse_alias_def_with_attrs(&.{}),
+            .kw_macro => self.parse_macro_def(),
             .kw_if => self.parse_if(),
             .kw_while => self.parse_while(),
             .kw_repeat => self.parse_repeat(),
@@ -348,6 +358,90 @@ pub const Parser = struct {
             .dcolon => self.parse_label(),
             else => self.parse_expr_stmt(),
         };
+    }
+
+    fn parse_at_starts_attribute_decl(self: *Parser) ParseError!bool {
+        while ((try self.pk()).kind == .at) {
+            _ = try self.adv();
+            const attr_name = try self.expect(.name);
+            if (!is_known_attribute(attr_name.text)) return false;
+            if ((try self.pk()).kind == .lparen) {
+                var depth: u32 = 0;
+                while (true) {
+                    const tok = try self.adv();
+                    switch (tok.kind) {
+                        .lparen => depth += 1,
+                        .rparen => {
+                            depth -= 1;
+                            if (depth == 0) break;
+                        },
+                        .eof => return false,
+                        else => {},
+                    }
+                }
+            }
+        }
+        const tok = try self.pk();
+        return switch (tok.kind) {
+            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global => true,
+            .name => std.mem.eql(u8, tok.text, "type"),
+            else => false,
+        };
+    }
+
+    fn is_known_attribute(name: []const u8) bool {
+        const known = [_][]const u8{
+            "align",
+            "arc",
+            "cold",
+            "concurrent",
+            "deprecated",
+            "derive",
+            "export",
+            "ffi",
+            "hot",
+            "implements",
+            "inline",
+            "noinline",
+            "nopanic",
+            "packed",
+            "specialize",
+        };
+        for (known) |item| {
+            if (std.mem.eql(u8, name, item)) return true;
+        }
+        return false;
+    }
+
+    fn parse_macro_def(self: *Parser) ParseError!ast.Stmt {
+        const l = (try self.expect(.kw_macro)).loc;
+        const name = try self.expect(.name);
+        _ = try self.expect(.lparen);
+        var params: std.ArrayList([]const u8) = .empty;
+        if (!(try self.check(.rparen))) {
+            const first = try self.expect(.name);
+            try params.append(self.alloc, first.text);
+            while (try self.eat(.comma) != null) {
+                const param = try self.expect(.name);
+                try params.append(self.alloc, param.text);
+            }
+        }
+        _ = try self.expect(.rparen);
+        const quote_tok = try self.expect(.backtick);
+        self.quote_depth += 1;
+        defer self.quote_depth -= 1;
+        const body: ast.MacroBody = if (try self.eat(.kw_do) != null) blk: {
+            const block = try self.parse_block();
+            _ = try self.expect(.kw_end);
+            break :blk .{ .block = block };
+        } else .{ .expr = try self.parse_expr() };
+        _ = quote_tok;
+        return .{ .macro_def = .{
+            .loc = l,
+            .name = name.text,
+            .params = try params.toOwnedSlice(self.alloc),
+            .body = body,
+        } };
     }
 
     /// Parse one or more `@name` or `@name(args)` attributes, then the declaration
@@ -1596,7 +1690,7 @@ pub const Parser = struct {
 
     fn is_expr_start(_: *Parser, kind: TK) bool {
         return switch (kind) {
-            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_await => true,
+            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_await, .backtick, .comma, .at => true,
             else => false,
         };
     }
@@ -1651,7 +1745,17 @@ pub const Parser = struct {
         var lhs: *ast.Expr = undefined;
         {
             const tok = try self.pk();
-            if (tok.kind == .kw_await) {
+            if (tok.kind == .backtick) {
+                _ = try self.adv();
+                self.quote_depth += 1;
+                defer self.quote_depth -= 1;
+                const inner = try self.parse_prec(20);
+                lhs = try self.new_expr(.{ .quote = .{ .loc = tok.loc, .expr = inner } });
+            } else if (tok.kind == .comma and self.quote_depth > 0) {
+                _ = try self.adv();
+                const inner = try self.parse_prec(20);
+                lhs = try self.new_expr(.{ .unquote = .{ .loc = tok.loc, .expr = inner } });
+            } else if (tok.kind == .kw_await) {
                 _ = try self.adv(); // consume `await`
                 const operand = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
@@ -1753,6 +1857,7 @@ pub const Parser = struct {
                 const name_tok = try self.adv();
                 break :blk self.new_expr(.{ .name = .{ .loc = name_tok.loc, .ident = name_tok.text } });
             },
+            .at => self.parse_macro_call_expr(),
             .lparen => blk: {
                 _ = try self.adv();
                 const e = try self.parse_expr();
@@ -1766,6 +1871,25 @@ pub const Parser = struct {
                 return ParseError.ExpectedToken;
             },
         };
+    }
+
+    fn parse_macro_call_expr(self: *Parser) ParseError!*ast.Expr {
+        const l = (try self.expect(.at)).loc;
+        const name = try self.expect(.name);
+        _ = try self.expect(.lparen);
+        var args: std.ArrayList(*ast.Expr) = .empty;
+        if (!(try self.check(.rparen))) {
+            try args.append(self.alloc, try self.parse_expr());
+            while (try self.eat(.comma) != null) {
+                try args.append(self.alloc, try self.parse_expr());
+            }
+        }
+        _ = try self.expect(.rparen);
+        return self.new_expr(.{ .macro_call = .{
+            .loc = l,
+            .name = name.text,
+            .args = try args.toOwnedSlice(self.alloc),
+        } });
     }
 
     fn parse_suffixed_expr(self: *Parser) ParseError!*ast.Expr {
@@ -2021,6 +2145,66 @@ test "parse: local declaration with integer initializer" {
     const init_expr = stmt.local_decl.inits[0];
     try testing.expect(init_expr.* == .int_lit);
     try testing.expectEqual(@as(i64, 42), init_expr.int_lit.val);
+}
+
+test "parse: macro definition with quote and unquote" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("macro twice(x) `(,x + ,x)", &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .macro_def);
+    try testing.expectEqualStrings("twice", stmt.macro_def.name);
+    try testing.expectEqual(@as(usize, 1), stmt.macro_def.params.len);
+    try testing.expectEqualStrings("x", stmt.macro_def.params[0]);
+    try testing.expect(stmt.macro_def.body == .expr);
+    const body = stmt.macro_def.body.expr;
+    try testing.expect(body.* == .binop);
+    try testing.expect(body.binop.lhs.* == .unquote);
+    try testing.expect(body.binop.rhs.* == .unquote);
+}
+
+test "parse: macro definition with quoted statement block" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\macro init(x) `do
+        \\  local tmp = ,x
+        \\  print(tmp)
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .macro_def);
+    try testing.expectEqualStrings("init", stmt.macro_def.name);
+    try testing.expect(stmt.macro_def.body == .block);
+    try testing.expectEqual(@as(usize, 1), stmt.macro_def.body.block.stmts.len);
+    try testing.expect(stmt.macro_def.body.block.tail_expr != null);
+}
+
+test "parse: macro call expression statement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource("@twice(21)", &arena);
+    try testing.expect(mod.body.tail_expr != null);
+    const expr = mod.body.tail_expr.?;
+    try testing.expect(expr.* == .macro_call);
+    try testing.expectEqualStrings("twice", expr.macro_call.name);
+    try testing.expectEqual(@as(usize, 1), expr.macro_call.args.len);
+    try testing.expect(expr.macro_call.args[0].* == .int_lit);
+    try testing.expectEqual(@as(i64, 21), expr.macro_call.args[0].int_lit.val);
+}
+
+test "parse: macro call before declaration is not an attribute" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@declare_pair()
+        \\local p = 1
+    , &arena);
+    try testing.expectEqual(@as(usize, 2), mod.body.stmts.len);
+    try testing.expect(mod.body.stmts[0] == .expr_stmt);
+    try testing.expect(mod.body.stmts[0].expr_stmt.expr.* == .macro_call);
+    try testing.expectEqualStrings("declare_pair", mod.body.stmts[0].expr_stmt.expr.macro_call.name);
+    try testing.expect(mod.body.stmts[1] == .local_decl);
 }
 
 test "parse: local declaration with no initializer" {

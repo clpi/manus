@@ -253,7 +253,8 @@ pub const CodeGen = struct {
             .v4f64, .v4i64, .v8f32, .v8i32 => false,
             .any => false,
             .str, .array, .pointer, .func, .@"struct" => true,
-            .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
+            .result, .option, .enum_type, .channel, .instantiated, .generic_param => true,
+            .table_type => false,
         };
     }
 
@@ -3594,6 +3595,7 @@ pub const CodeGen = struct {
 
     fn emit_stmt(self: *CodeGen, stmt: *const ast.Stmt) E!void {
         switch (stmt.*) {
+            .macro_def => {},
             .local_decl => |*ld| {
                 for (ld.names) |*lname| try self.note_local(lname.ident);
                 // If any name in this declaration is annotated with a
@@ -4831,6 +4833,7 @@ pub const CodeGen = struct {
 
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
+            .quote, .unquote, .macro_call => self.p("/* unexpanded macro expression */ lua_val_nil()", .{}),
             .nil => self.p("NULL", .{}),
             .true_lit => self.p("true", .{}),
             .false_lit => self.p("false", .{}),

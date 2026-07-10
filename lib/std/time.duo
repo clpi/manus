@@ -4,22 +4,22 @@ fun now(): int
     os.time()
 end
 
-fun clock(): float
+fun time_clock(): float
     os.clock()
 end
 
-fun difftime(t2: int, t1: int): float
+fun time_difftime(t2: int, t1: int): float
     os.difftime(t2, t1)
 end
 
-fun sleep(seconds: any): void
+fun time_sleep(seconds: any): void
     if seconds == nil then return end
     os.execute("sleep " .. tostring(seconds))
 end
 
 M = {}
 M.now = now
-M.clock = clock
-M.difftime = difftime
-M.sleep = sleep
+M.clock = time_clock
+M.difftime = time_difftime
+M.sleep = time_sleep
 M

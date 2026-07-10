@@ -231,7 +231,7 @@ pub const ArcPass = struct {
                 for (t.defers) |d| try self.processBlock(&d.body);
             },
             .defer_stmt => |d| try self.processBlock(&d.body),
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def => {},
         }
     }
 
@@ -316,6 +316,7 @@ pub const ArcPass = struct {
                 try self.processExpr(c.lhs);
                 try self.processExpr(c.rhs);
             },
+            .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
         }
     }
@@ -355,7 +356,8 @@ pub fn needsArc(t: RT) bool {
         .v4f64, .v4i64, .v8f32, .v8i32 => false,
         .any => false, // dynamic values carry their own runtime header
         .str, .array, .pointer, .func, .@"struct" => true,
-        .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
+        .result, .option, .enum_type, .channel, .instantiated, .generic_param => true,
+        .table_type => false,
     };
 }
 
@@ -444,8 +446,9 @@ test "arc: retains and releases are always balanced (refcount returns to zero)" 
     defer arc.deinit();
     try arc.run(&h.mod);
 
-    // Three heap bindings → 3 retains, all released at block exit.
-    try testing.expectEqual(@as(usize, 3), arc.countOp(.retain));
+    // Strings are heap bindings; the inline record is a value struct and is
+    // intentionally not retained or released.
+    try testing.expectEqual(@as(usize, 2), arc.countOp(.retain));
     try testing.expectEqual(arc.countOp(.retain), arc.countOp(.release));
 }
 
@@ -481,7 +484,7 @@ test "arc: @arc(false) binding is skipped" {
 
 test "arc: to-be-closed binding emits close before release" {
     var h = try Harness.run(
-        \\local p: { x: i64 } <close> = { x = 1 }
+        \\local s: str <close> = "resource"
     );
     defer h.deinit();
 

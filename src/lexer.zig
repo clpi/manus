@@ -72,6 +72,7 @@ pub const TokenKind = enum {
     kw_alias,
     kw_private,
     kw_extends,
+    kw_macro,
 
     // Single-char punctuation
     lparen,
@@ -100,6 +101,7 @@ pub const TokenKind = enum {
     at, // @
     question, // ?
     bang, // !
+    backtick, // `
 
     // Multi-char operators
     concat, // ..
@@ -180,6 +182,7 @@ pub const TokenKind = enum {
             .kw_alias => "alias",
             .kw_private => "private",
             .kw_extends => "extends",
+            .kw_macro => "macro",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -206,6 +209,7 @@ pub const TokenKind = enum {
             .at => "@",
             .question => "?",
             .bang => "!",
+            .backtick => "`",
             .concat => "..",
             .dots => "...",
             .hash_hash => "##",
@@ -598,7 +602,7 @@ pub const Lexer = struct {
             "i16",     "i32",   "i64",      "u8",    "u16",     "u32",    "u64",
             "f32",     "f64",   "bool",     "void",  "str",     "match",  "try",
             "catch",   "defer", "async",    "await", "concept", "alias",  "private",
-            "extends",
+            "extends", "macro",
         };
         const kinds = [_]TokenKind{
             .kw_and,     .kw_break, .kw_continue, .kw_do,    .kw_else,    .kw_elseif, .kw_end,
@@ -608,7 +612,7 @@ pub const Lexer = struct {
             .kw_i16,     .kw_i32,   .kw_i64,      .kw_u8,    .kw_u16,     .kw_u32,    .kw_u64,
             .kw_f32,     .kw_f64,   .kw_bool,     .kw_void,  .kw_str,     .kw_match,  .kw_try,
             .kw_catch,   .kw_defer, .kw_async,    .kw_await, .kw_concept, .kw_alias,  .kw_private,
-            .kw_extends,
+            .kw_extends, .kw_macro,
         };
         for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
         return null;
@@ -739,6 +743,7 @@ pub const Lexer = struct {
             '@' => Token{ .kind = .at, .loc = l, .text = self.src[p - 1 .. p] },
             '?' => Token{ .kind = .question, .loc = l, .text = self.src[p - 1 .. p] },
             '!' => Token{ .kind = .bang, .loc = l, .text = self.src[p - 1 .. p] },
+            '`' => Token{ .kind = .backtick, .loc = l, .text = self.src[p - 1 .. p] },
             else => LexError.UnexpectedChar,
         };
     }
@@ -973,11 +978,11 @@ test "lex: block comment with level skipped" {
 }
 
 test "lex: single-char operators" {
-    var l = Lexer.init("+ - * / % ^ # & | < > = ~ ; : , .", "test");
+    var l = Lexer.init("+ - * / % ^ # & | < > = ~ ; : , . @ ? ! `", "test");
     const expected = [_]TokenKind{
-        .plus,  .minus, .star, .slash, .percent, .caret, .hash,
-        .amp,   .pipe,  .lt,   .gt,    .assign,  .tilde, .semi,
-        .colon, .comma, .dot,
+        .plus,  .minus, .star, .slash, .percent,  .caret, .hash,
+        .amp,   .pipe,  .lt,   .gt,    .assign,   .tilde, .semi,
+        .colon, .comma, .dot,  .at,    .question, .bang,  .backtick,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }
@@ -1068,7 +1073,7 @@ test "lex error: long string wrong closing level" {
 }
 
 test "lex error: unexpected character" {
-    var l = Lexer.init("`", "test");
+    var l = Lexer.init("$", "test");
     try testing.expectError(error.UnexpectedChar, l.next());
 }
 

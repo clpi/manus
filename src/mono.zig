@@ -322,7 +322,7 @@ pub const Monomorphizer = struct {
                 for (t.defers) |d| try self.collectSitesBlock(&d.body, env);
             },
             .defer_stmt => |d| try self.collectSitesBlock(&d.body, env),
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def => {},
         }
     }
 
@@ -380,6 +380,7 @@ pub const Monomorphizer = struct {
                 try self.collectSitesExpr(c.lhs, env);
                 try self.collectSitesExpr(c.rhs, env);
             },
+            .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
         }
     }

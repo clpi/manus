@@ -30,9 +30,14 @@ Keep it in sync with `docs/src/roadmap.md`.
   destructuring, scoped local/const bindings, and bounded pure `do` blocks
   with local mutation plus numeric `for`/`while` loops and pure function calls,
   including simple recursion and compile-time capture snapshots;
-  unsupported runtime expressions still fall back to normal emission. `std.meta`
-  helpers exist, but generic/repeat loop forms, hygienic macro syntax,
-  quote/unquote, AST replacement, and macro expansion are still planned.
+  unsupported runtime expressions still fall back to normal emission. Expression
+  macros now support quote/unquote and `@name(args)` expansion before sema;
+  statement macros can quote `do ... end` blocks and splice generated statements.
+  Macro output has hygienic renaming, freshens free macro-introduced identifiers
+  by default, supports explicit deliberate capture with `@capture(name)`, and
+  enforces nested expansion plus recursion/node limits. `std.meta` helpers
+  exist, but generic/repeat loop forms, type-generating macros, explicit AST
+  replacement APIs, and reflection-backed derive expansion are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
 - [~] **Concept metatable merging.** Concepts exist as structural checks and

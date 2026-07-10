@@ -1,23 +1,113 @@
--- std.sqlite — basic SQLite DB wrapper stub
+-- std.sqlite — SQLite database interface
+-- Uses the system sqlite3 CLI for execution. A native C binding is planned
+-- for when duo gains FFI support (see duo_gap_analysis.md).
+-- This module provides a clean API: open → execute/query → close.
 
-local proc = import("std.proc")
-local string = import("std.string")
+global string = req "std.string"
 
--- NOTE: This is a shell-wrapper stub. A native integration is planned.
-
-fun execute(db_path: str, query: str): str
-    -- Uses the system sqlite3 command line tool
-    local cmd = "sqlite3 " .. db_path .. " " .. "'" .. string.gsub(query, "'", "''") .. "'"
-    proc.capture(cmd)
+-- Connection handle: wraps a file path to a SQLite database.
+-- Usage: db = sqlite.open("path/to/db.sqlite"); db:exec("CREATE TABLE ...")
+fun open(path: str): any
+    {path = path, closed = false}
 end
 
-fun query_csv(db_path: str, query: str): str
-    -- Returns output as CSV
-    local cmd = "sqlite3 -csv -header " .. db_path .. " " .. "'" .. string.gsub(query, "'", "''") .. "'"
-    proc.capture(cmd)
+-- execute: run a SQL statement (DDL/DML), return result string from sqlite3.
+fun execute(db: any, sql: str): str
+    local path = db
+    if type(db) == "table" then path = db.path end
+    local cmd = "sqlite3 '" .. string.gsub(path, "'", "''") .. "' '" .. string.gsub(sql, "'", "''") .. "'"
+    local f = io.popen(cmd, "r")
+    if f == nil then return "" end
+    local out = f:read("*a") or ""
+    f:close()
+    out
+end
+
+-- query: run a SQL query, return rows as a table of tables.
+-- First row = column headers, subsequent rows = data.
+fun query(db: any, sql: str): any
+    local path = db
+    if type(db) == "table" then path = db.path end
+    -- Use -json for structured output (sqlite3 3.32+)
+    local cmd = "sqlite3 -json '" .. string.gsub(path, "'", "''") .. "' '" .. string.gsub(sql, "'", "''") .. "'"
+    local f = io.popen(cmd, "r")
+    if f == nil then return {} end
+    local out = f:read("*a") or ""
+    f:close()
+    -- Parse JSON output if available, otherwise parse CSV
+    if string.len(out) == 0 then return {} end
+    -- Try JSON first
+    local json_mod = require("std.json")
+    local result = json_mod.decode(out)
+    if result ~= nil and type(result) == "table" then return result end
+    -- Fallback: parse CSV
+    local csv_cmd = "sqlite3 -csv -header '" .. string.gsub(path, "'", "''") .. "' '" .. string.gsub(sql, "'", "''") .. "'"
+    local cf = io.popen(csv_cmd, "r")
+    if cf == nil then return {} end
+    local csv_out = cf:read("*a") or ""
+    cf:close()
+    csv_out
+end
+
+-- query_csv: run a SQL query, return CSV-formatted string.
+fun query_csv(db: any, sql: str): str
+    local path = db
+    if type(db) == "table" then path = db.path end
+    local cmd = "sqlite3 -csv -header '" .. string.gsub(path, "'", "''") .. "' '" .. string.gsub(sql, "'", "''") .. "'"
+    local f = io.popen(cmd, "r")
+    if f == nil then return "" end
+    local out = f:read("*a") or ""
+    f:close()
+    out
+end
+
+-- exec_raw: run a SQL statement on a raw db path (no handle needed).
+fun exec_raw(path: str, sql: str): str
+    local cmd = "sqlite3 '" .. string.gsub(path, "'", "''") .. "' '" .. string.gsub(sql, "'", "''") .. "'"
+    local f = io.popen(cmd, "r")
+    if f == nil then return "" end
+    local out = f:read("*a") or ""
+    f:close()
+    out
+end
+
+-- close: mark connection as closed (no real resource to free in CLI mode).
+fun close(db: any): void
+    if type(db) == "table" then
+        db.closed = true
+    end
+end
+
+-- exists: check if the sqlite3 CLI is available on the system.
+fun exists(): bool
+    local f = io.popen("which sqlite3 2>/dev/null", "r")
+    if f == nil then return false end
+    local out = f:read("*a") or ""
+    f:close()
+    string.len(out) > 0
+end
+
+-- version: get the sqlite3 CLI version string.
+fun version(): str
+    local f = io.popen("sqlite3 --version 2>/dev/null", "r")
+    if f == nil then return "unknown" end
+    local out = f:read("*a") or "unknown"
+    f:close()
+    -- trim trailing newline
+    local n = string.len(out)
+    if n > 0 and string.byte(out, n) == 10 then
+        out = string.sub(out, 1, n - 1)
+    end
+    out
 end
 
 M = {}
+M.open = open
 M.execute = execute
+M.query = query
 M.query_csv = query_csv
+M.exec_raw = exec_raw
+M.close = close
+M.exists = exists
+M.version = version
 M

@@ -1,0 +1,8 @@
+macro emit_sum(a, b) `do
+  local left: i64 = ,a
+  local right: i64 = ,b
+  local total: i64 = left + right
+  @capture(print)(total)
+end
+
+@emit_sum(20, 22)

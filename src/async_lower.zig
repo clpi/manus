@@ -153,7 +153,7 @@ pub const AsyncLower = struct {
                 for (t.defers) |d| try self.discoverBlock(&d.body, enclosing_name);
             },
             .defer_stmt => |d| try self.discoverBlock(&d.body, enclosing_name),
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def => {},
         }
     }
 
@@ -210,6 +210,7 @@ pub const AsyncLower = struct {
                 try self.discoverExpr(c.lhs, enclosing_name);
                 try self.discoverExpr(c.rhs, enclosing_name);
             },
+            .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
         }
     }
@@ -332,7 +333,7 @@ pub const AsyncLower = struct {
                 try ctx.defers.append(self.alloc, d);
                 try self.scanBlock(&d.body, ctx);
             },
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def => {},
         }
     }
 
@@ -395,6 +396,7 @@ pub const AsyncLower = struct {
                 try self.scanExpr(c.lhs, ctx);
                 try self.scanExpr(c.rhs, ctx);
             },
+            .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
         }
     }
