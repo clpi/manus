@@ -1,0 +1,12 @@
+macro declare_pair() `do
+  alias Pair = { x: i64, y: i64 }
+
+  fun sum_pair(p: Pair): i64
+    return p.x + p.y
+  end
+end
+
+@declare_pair()
+
+local p: Pair = { x = 20, y = 22 }
+print(sum_pair(p))

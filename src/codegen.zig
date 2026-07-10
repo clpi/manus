@@ -253,8 +253,7 @@ pub const CodeGen = struct {
             .v4f64, .v4i64, .v8f32, .v8i32 => false,
             .any => false,
             .str, .array, .pointer, .func, .@"struct" => true,
-            .result, .option, .enum_type, .channel, .instantiated, .generic_param => true,
-            .table_type => false,
+            .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
         };
     }
 

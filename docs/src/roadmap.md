@@ -81,12 +81,13 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   Expression macros now support `macro name(args) \`expr`, `,arg` unquote
   splicing, and `@name(args)` expansion before sema. Statement macros can use
   `macro name(args) \`do ... end` and splice the generated block at statement
-  position. Macro output has hygienic renaming for introduced locals/parameters,
-  freshens free macro-introduced identifiers by default, and supports explicit
-  deliberate capture with `@capture(name)`. Nested macro expansion and
-  recursion/node limits are enforced. Generic/repeat loop forms, type-generating
-  macros, explicit AST replacement APIs, and reflection-backed derive expansion
-  are still in progress.
+  position, including fixed alias/function/enum declarations that are then
+  type-checked normally. Macro output has hygienic renaming for introduced
+  locals/parameters, freshens free macro-introduced identifiers by default, and
+  supports explicit deliberate capture with `@capture(name)`. Nested macro
+  expansion and recursion/node limits are enforced. Generic/repeat loop forms,
+  parameterized type-fragment macros, explicit AST replacement APIs, and
+  reflection-backed derive expansion are still in progress.
 - Scheduler-backed async tasks, pending poll states, and async channels are still
   being completed; current async calls run synchronously while descriptors are
   emitted for the full runtime path.
@@ -95,8 +96,8 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 ## Planned
 
-- More complete metaprogramming: type-generating macros, reflection-backed
-  derive expansion, explicit AST replacement APIs, and richer
+- More complete metaprogramming: parameterized type-fragment macros,
+  reflection-backed derive expansion, explicit AST replacement APIs, and richer
   expansion-time diagnostics.
 - A tighter concept/metatable model that finishes compile-time dispatch through
   ordinary Lua metatables and removes unnecessary syntax additions.
