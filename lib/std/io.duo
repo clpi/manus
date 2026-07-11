@@ -1,59 +1,69 @@
 -- std.io — input/output utilities
+-- Binary I/O: io.read(n) reads exactly n bytes from stdin (LSP Content-Length framing)
+-- io.read("*l") reads a line, io.read("*a") reads all remaining input
 
-fun io_open(filename: str, mode: str): any
+fun open(filename: str, mode: str): any
     io.open(filename, mode)
 end
 
-fun io_popen(prog: str, mode: str): any
+fun popen(prog: str, mode: str): any
     io.popen(prog, mode)
 end
 
-fun io_read(file: any, arg: any): any
+fun read(file: any, arg: any): any
     file:read(arg)
 end
 
-fun io_write(file: any, arg: any): any
+fun write(file: any, arg: any): any
     file:write(arg)
 end
 
-fun io_close(file: any): void
+fun close(file: any): void
     file:close()
 end
 
-fun io_flush(file: any): void
+fun flush(file: any): void
     file:flush()
 end
 
-fun io_lines(filename: str): any
+fun lines(filename: str): any
     io.lines(filename)
 end
 
-fun io_input(file: any): any
+fun input(file: any): any
     io.input(file)
 end
 
-fun io_output(file: any): any
+fun output(file: any): any
     io.output(file)
 end
 
-fun io_tmpfile(): any
+fun tmpfile(): any
     io.tmpfile()
 end
 
-fun io_type(obj: any): any
+fun type(obj: any): any
     io.type(obj)
 end
 
-M = {}
-M.open = io_open
-M.popen = io_popen
-M.read = io_read
-M.write = io_write
-M.close = io_close
-M.flush = io_flush
-M.lines = io_lines
-M.input = io_input
-M.output = io_output
-M.tmpfile = io_tmpfile
-M.type = io_type
-M
+-- read_bytes: read exactly n bytes from a file or stdin.
+-- For LSP JSON-RPC: read header with read("*l"), extract Content-Length,
+-- then read_bytes(len) to get the body.
+fun read_bytes(file: any, n: int): str
+    file:read(n)
+end
+
+-- write_bytes: write a string/bytes to a file or stdout.
+fun write_bytes(file: any, data: str): void
+    file:write(data)
+end
+
+-- read_line: convenience to read one line from a file
+fun read_line(file: any): str
+    file:read("*l")
+end
+
+-- read_all: convenience to read all remaining input
+fun read_all(file: any): str
+    file:read("*a")
+end

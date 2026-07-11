@@ -3797,7 +3797,37 @@ pub const CodeGen = struct {
                         self.p(" {s}", .{lname.ident});
                         if (i < ld.inits.len) {
                             self.p(" = ", .{});
-                            try self.emit_expr(ld.inits[i]);
+                            // If init expression returns lua_Value (.any) but
+                            // target is a primitive type, wrap with converter.
+                            const init_rt = self.expr_type(ld.inits[i]);
+                            if (init_rt == .any and rt != .any) {
+                                switch (rt) {
+                                    .str => {
+                                        self.p("lua_to_str(", .{});
+                                        try self.emit_expr(ld.inits[i]);
+                                        self.p(")", .{});
+                                    },
+                                    .bool => {
+                                        self.p("lua_to_bool(", .{});
+                                        try self.emit_expr(ld.inits[i]);
+                                        self.p(")", .{});
+                                    },
+                                    .f32, .f64 => {
+                                        self.p("lua_to_num(", .{});
+                                        try self.emit_expr(ld.inits[i]);
+                                        self.p(")", .{});
+                                    },
+                                    .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
+                                        var tbuf: [16]u8 = undefined;
+                                        self.p("({s})lua_to_num(", .{rt.c_type(&tbuf)});
+                                        try self.emit_expr(ld.inits[i]);
+                                        self.p(")", .{});
+                                    },
+                                    else => try self.emit_expr(ld.inits[i]),
+                                }
+                            } else {
+                                try self.emit_expr(ld.inits[i]);
+                            }
                         }
                     }
                     self.p(";\n", .{});

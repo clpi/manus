@@ -1,93 +1,213 @@
 -- std.iter — functional iterators and higher-order functions
+-- This module delegates core operations to std.fn for consistency.
+-- Adds iterator-specific utilities (zip, enumerate, flat_map) that
+-- don't belong in the pure functional programming module.
 
-fun map(list: any, fn: any): any
+local fn = req "std.fn"
+
+-- map: apply a function to each element, return results.
+fun map(list: any, fn_ref: any): any
+    fn.map_filter(list, fn_ref)
+end
+
+-- filter: keep elements where the predicate returns true.
+fun filter(list: any, fn_ref: any): any
     out = {}
-    for i = 1, #list
-        out[i] = fn(list[i])
-    end
-    out
-end
-
-fun filter(list: any, fn: any): any
-    out = {}
-    for i = 1, #list
-        if fn(list[i]) then
-            table.insert(out, list[i])
-        end
-    end
-    out
-end
-
-fun reduce(list: any, init: any, fn: any): any
-    acc = init
-    for i = 1, #list
-        acc = fn(acc, list[i])
-    end
-    acc
-end
-
-fun any_(list: any, fn: any): bool
-    for i = 1, #list
-        if fn(list[i]) then return true end
-    end
-    false
-end
-
-fun all(list: any, fn: any): bool
-    for i = 1, #list
-        if not fn(list[i]) then return false end
-    end
-    true
-end
-
-fun find(list: any, fn: any): any
-    for i = 1, #list
-        if fn(list[i]) then return list[i] end
-    end
-    nil
-end
-
-fun zip(l1: any, l2: any): any
-    out = {}
-    if l1 == nil or l2 == nil then return out end
-    m = math.min(rawlen(l1), rawlen(l2))
+    if list == nil then return out end
     i = 1
-    while i <= m
-        out[rawlen(out) + 1] = {l1[i], l2[i]}
+    while i <= rawlen(list)
+        if fn_ref(list[i]) then
+            out[rawlen(out) + 1] = list[i]
+        end
         i = i + 1
     end
     out
 end
 
+-- reduce: fold a list with an accumulator.
+fun reduce(list: any, init: any, fn_ref: any): any
+    fn.foldl(list, init, fn_ref)
+end
+
+-- any_: return true if any element satisfies the predicate.
+fun any_(list: any, fn_ref: any): bool
+    if list == nil then return false end
+    i = 1
+    while i <= rawlen(list)
+        if fn_ref(list[i]) then return true end
+        i = i + 1
+    end
+    false
+end
+
+-- all: return true if all elements satisfy the predicate.
+fun all(list: any, fn_ref: any): bool
+    if list == nil then return true end
+    i = 1
+    while i <= rawlen(list)
+        if not fn_ref(list[i]) then return false end
+        i = i + 1
+    end
+    true
+end
+
+-- find: return the first element satisfying the predicate.
+fun find(list: any, fn_ref: any): any
+    if list == nil then return nil end
+    i = 1
+    while i <= rawlen(list)
+        if fn_ref(list[i]) then return list[i] end
+        i = i + 1
+    end
+    nil
+end
+
+-- find_index: return the 1-based index of the first matching element, or nil.
+fun find_index(list: any, fn_ref: any): i64
+    if list == nil then return nil end
+    i = 1
+    while i <= rawlen(list)
+        if fn_ref(list[i]) then return i end
+        i = i + 1
+    end
+    nil
+end
+
+-- count: count elements satisfying the predicate.
+fun count(list: any, fn_ref: any): i64
+    if list == nil then return 0 end
+    n = 0
+    i = 1
+    while i <= rawlen(list)
+        if fn_ref(list[i]) then n = n + 1 end
+        i = i + 1
+    end
+    n
+end
+
+-- zip: combine two lists into a list of pairs.
+fun zip(l1: any, l2: any): any
+    out = {}
+    if l1 == nil or l2 == nil then return out end
+    n = rawlen(l1)
+    if rawlen(l2) < n then n = rawlen(l2) end
+    i = 1
+    while i <= n
+        pair = {}
+        pair[1] = l1[i]
+        pair[2] = l2[i]
+        out[rawlen(out) + 1] = pair
+        i = i + 1
+    end
+    out
+end
+
+-- zip_with: combine two lists using a function.
+fun zip_with(l1: any, l2: any, fn_ref: any): any
+    out = {}
+    if l1 == nil or l2 == nil then return out end
+    n = rawlen(l1)
+    if rawlen(l2) < n then n = rawlen(l2) end
+    i = 1
+    while i <= n
+        out[rawlen(out) + 1] = fn_ref(l1[i], l2[i])
+        i = i + 1
+    end
+    out
+end
+
+-- enumerate: return a list of {index, value} pairs (1-based).
 fun enumerate(list: any): any
     out = {}
     if list == nil then return out end
     i = 1
     while i <= rawlen(list)
-        out[rawlen(out) + 1] = {i, list[i]}
+        pair = {}
+        pair[1] = i
+        pair[2] = list[i]
+        out[rawlen(out) + 1] = pair
         i = i + 1
     end
     out
 end
 
-fun flat_map(list: any, fn: any): any
+-- flat_map: apply a function that returns a list, then flatten.
+fun flat_map(list: any, fn_ref: any): any
+    fn.flatten(fn.map_filter(list, fn_ref))
+end
+
+-- sliding_window: return all contiguous sub-lists of size n.
+fun sliding_window(list: any, n: i64): any
     out = {}
-    if list == nil then return out end
+    if list == nil or n <= 0 then return out end
+    len = rawlen(list)
     i = 1
-    while i <= rawlen(list)
-        mapped = fn(list[i])
-        if type(mapped) == "table" then
-            j = 1
-            while j <= rawlen(mapped)
-                out[rawlen(out) + 1] = mapped[j]
-                j = j + 1
-            end
-        else
-            out[rawlen(out) + 1] = mapped
+    while i + n - 1 <= len
+        window = {}
+        j = 0
+        while j < n
+            window[rawlen(window) + 1] = list[i + j]
+            j = j + 1
         end
+        out[rawlen(out) + 1] = window
         i = i + 1
     end
     out
+end
+
+-- take: return the first n elements.
+fun take(list: any, n: i64): any
+    out = {}
+    if list == nil or n <= 0 then return out end
+    len = rawlen(list)
+    if n > len then n = len end
+    i = 1
+    while i <= n
+        out[rawlen(out) + 1] = list[i]
+        i = i + 1
+    end
+    out
+end
+
+-- drop: return everything except the first n elements.
+fun drop(list: any, n: i64): any
+    out = {}
+    if list == nil or n <= 0 then return list end
+    len = rawlen(list)
+    i = n + 1
+    while i <= len
+        out[rawlen(out) + 1] = list[i]
+        i = i + 1
+    end
+    out
+end
+
+-- unique: return list with duplicates removed (first occurrence wins).
+fun unique(list: any): any
+    fn.unique_by(list, fn.identity)
+end
+
+-- group_by: partition list into groups keyed by function result.
+fun group_by(list: any, fn_ref: any): any
+    fn.group_by(list, fn_ref)
+end
+
+-- min_by / max_by / sort_by: delegate to fn module.
+fun min_by(list: any, fn_ref: any): any
+    fn.min_by(list, fn_ref)
+end
+
+fun max_by(list: any, fn_ref: any): any
+    fn.max_by(list, fn_ref)
+end
+
+fun sort_by(list: any, fn_ref: any): void
+    fn.sort_by(list, fn_ref)
+end
+
+-- partition: split list by predicate into {yes, no}.
+fun partition(list: any, fn_ref: any): any
+    fn.partition(list, fn_ref)
 end
 
 M = {}
@@ -97,7 +217,19 @@ M.reduce = reduce
 M.any = any_
 M.all = all
 M.find = find
+M.find_index = find_index
+M.count = count
 M.zip = zip
+M.zip_with = zip_with
 M.enumerate = enumerate
 M.flat_map = flat_map
+M.sliding_window = sliding_window
+M.take = take
+M.drop = drop
+M.unique = unique
+M.group_by = group_by
+M.min_by = min_by
+M.max_by = max_by
+M.sort_by = sort_by
+M.partition = partition
 M

@@ -1,13 +1,17 @@
 -- std.random — Random number generation and utilities
 
+-- seed: seed the random number generator.
 fun seed(s: int): void
     math.randomseed(s)
 end
 
+-- float: return a random float in [0, 1).
 fun rand_float(): float
     math.random()
 end
 
+-- int: return a random integer in [min, max] (inclusive).
+-- If only one argument, returns random int in [1, max].
 fun rand_int(min: int, max: int): int
     if max == nil then
         math.random(min)
@@ -16,11 +20,110 @@ fun rand_int(min: int, max: int): int
     end
 end
 
+-- bool: return a random boolean (50/50).
+fun rand_bool(): bool
+    math.random() < 0.5
+end
+
+-- bool_weighted: return a random boolean with the given probability of true.
+fun bool_weighted(p: float): bool
+    math.random() < p
+end
+
+-- choice: return a random element from a list.
 fun choice(list: any): any
     if list == nil or #list == 0 then return nil end
     list[math.random(1, #list)]
 end
 
+-- sample: return n unique random elements from a list (without replacement).
+fun sample(list: any, n: i64): any
+    out = {}
+    if list == nil or n <= 0 then return out end
+    len = rawlen(list)
+    if n > len then n = len end
+    indices = {}
+    i = 1
+    while i <= len
+        indices[i] = i
+        i = i + 1
+    end
+    picked = 0
+    while picked < n
+        swap_idx = math.random(picked + 1, len)
+        tmp = indices[picked + 1]
+        indices[picked + 1] = indices[swap_idx]
+        indices[swap_idx] = tmp
+        out[rawlen(out) + 1] = list[indices[picked + 1]]
+        picked = picked + 1
+    end
+    out
+end
+
+-- pick_n: alias for sample (more idiomatic name).
+fun pick_n(list: any, n: i64): any
+    sample(list, n)
+end
+
+-- weighted_choice: choose from items with corresponding weights.
+-- items: list of values, weights: parallel list of numeric weights.
+fun weighted_choice(items: any, weights: any): any
+    if items == nil or weights == nil then return nil end
+    len = rawlen(items)
+    if len == 0 then return nil end
+    if rawlen(weights) ~= len then return nil end
+    total = 0
+    i = 1
+    while i <= len
+        total = total + weights[i]
+        i = i + 1
+    end
+    r = math.random() * total
+    cumulative = 0
+    i = 1
+    while i <= len
+        cumulative = cumulative + weights[i]
+        if r <= cumulative then return items[i] end
+        i = i + 1
+    end
+    items[len]
+end
+
+-- range: return a list of integers from start to stop (exclusive), with optional step.
+fun range(start: i64, stop: i64, step: i64): any
+    out = {}
+    if step == nil then step = 1 end
+    if step == 0 then return out end
+    if step > 0 then
+        i = start
+        while i < stop
+            out[rawlen(out) + 1] = i
+            i = i + step
+        end
+    else
+        i = start
+        while i > stop
+            out[rawlen(out) + 1] = i
+            i = i + step
+        end
+    end
+    out
+end
+
+-- gauss: return a random number from a normal distribution (Box-Muller).
+fun gauss(mean: float, stddev: float): float
+    if mean == nil then mean = 0 end
+    if stddev == nil then stddev = 1 end
+    u1 = math.random()
+    u2 = math.random()
+    while u1 == 0
+        u1 = math.random()
+    end
+    z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+    mean + stddev * z
+end
+
+-- shuffle: shuffle a list in-place (Fisher-Yates).
 fun shuffle(list: any): void
     if list == nil then return end
     n = #list
@@ -33,10 +136,56 @@ fun shuffle(list: any): void
     end
 end
 
+-- coin: flip a coin, return "heads" or "tails".
+fun coin(): str
+    if math.random() < 0.5 then return "heads" end
+    "tails"
+end
+
+-- uuid_v4ish: generate a random UUID-like string (not cryptographically secure).
+fun uuid_v4ish(): str
+    hex_chars = "0123456789abcdef"
+    parts = {}
+    i = 1
+    while i <= 36
+        if i == 9 or i == 14 or i == 19 or i == 24 then
+            parts[i] = "-"
+        elseif i == 15 then
+            parts[i] = "4"
+        elseif i == 20 then
+            idx = math.random(1, 4)
+            if idx == 1 then parts[i] = "8"
+            elseif idx == 2 then parts[i] = "9"
+            elseif idx == 3 then parts[i] = "a"
+            else parts[i] = "b"
+            end
+        else
+            parts[i] = string.sub(hex_chars, math.random(1, 16), math.random(1, 16))
+        end
+        i = i + 1
+    end
+    result = ""
+    i = 1
+    while i <= 36
+        result = result .. parts[i]
+        i = i + 1
+    end
+    result
+end
+
 M = {}
 M.seed = seed
 M.float = rand_float
 M.int = rand_int
+M.bool = rand_bool
+M.bool_weighted = bool_weighted
 M.choice = choice
+M.sample = sample
+M.pick_n = pick_n
+M.weighted_choice = weighted_choice
+M.range = range
+M.gauss = gauss
 M.shuffle = shuffle
+M.coin = coin
+M.uuid_v4ish = uuid_v4ish
 M

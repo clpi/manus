@@ -1,0 +1,240 @@
+-- std.config — structured configuration with defaults, merge, and validation
+-- Provides a config object that supports default schemas, deep merging,
+-- dot-path access, and environment variable overrides.
+
+-- ---- Constructors ----
+
+-- new: create a config from a table of defaults.
+fun config_new(defaults: any): any
+    if defaults == nil then defaults = {} end
+    {defaults = defaults, values = {}, env_prefix = ""}
+end
+
+-- ---- Access ----
+
+-- get: retrieve a value by dot-path key (e.g. "server.port").
+-- Falls back to defaults if not set.
+fun config_get(cfg: any, key: str): any
+    val = deep_get(cfg.values, key)
+    if val ~= nil then return val end
+    deep_get(cfg.defaults, key)
+end
+
+-- get_or: retrieve a value with a custom fallback.
+fun config_get_or(cfg: any, key: str, fallback: any): any
+    val = config_get(cfg, key)
+    if val ~= nil then return val end
+    fallback
+end
+
+-- set: set a value by dot-path key.
+fun config_set(cfg: any, key: str, value: any): void
+    deep_set(cfg.values, key, value)
+end
+
+-- has: check if a key exists (values or defaults).
+fun config_has(cfg: any, key: str): bool
+    if deep_has(cfg.values, key) then return true end
+    deep_has(cfg.defaults, key)
+end
+
+-- ---- Merge ----
+
+-- merge: deep-merge another config or table into this config's values.
+fun config_merge(cfg: any, overlay: any): void
+    deep_merge_into(cfg.values, overlay)
+end
+
+-- merge_defaults: merge overrides into the defaults schema.
+fun config_merge_defaults(cfg: any, overlay: any): void
+    deep_merge_into(cfg.defaults, overlay)
+end
+
+-- ---- Environment ----
+
+-- set_env_prefix: set a prefix for env var overrides (e.g. "APP").
+-- A key like "server.port" with prefix "APP" reads "APP_SERVER_PORT".
+fun set_env_prefix(cfg: any, prefix: str): void
+    cfg.env_prefix = prefix
+end
+
+-- load_env: populate config values from environment variables.
+fun load_env(cfg: any): void
+    env_data = os.getenv()
+    if env_data == nil then return end
+    prefix = cfg.env_prefix
+    if prefix ~= nil and string.len(prefix) > 0 then
+        prefix = prefix .. "_"
+    else
+        prefix = ""
+    end
+    prefix_len = string.len(prefix)
+    for k, v in env_data
+        if prefix_len > 0 then
+            if string.sub(k, 1, prefix_len) == prefix then
+                rest = string.sub(k, prefix_len + 1)
+                dot_key = string.lower(rest)
+                dot_key = string.gsub(dot_key, "_", ".")
+                deep_set(cfg.values, dot_key, v)
+            end
+        end
+    end
+end
+
+-- ---- Bulk Access ----
+
+-- keys: return a list of all defined keys (values + defaults).
+fun config_keys(cfg: any): any
+    seen = {}
+    out = {}
+    collect_keys(seen, out, cfg.values, "")
+    collect_keys(seen, out, cfg.defaults, "")
+    out
+end
+
+-- to_table: return the fully resolved config as a flat table.
+fun config_to_table(cfg: any): any
+    result = {}
+    deep_copy_flat(result, "", cfg.defaults)
+    deep_copy_flat(result, "", cfg.values)
+    result
+end
+
+-- ---- Validation ----
+
+-- require_keys: check that all dot-path keys are present; return missing keys.
+fun require_keys(cfg: any, keys: any): any
+    missing = {}
+    i = 1
+    while i <= rawlen(keys)
+        if not config_has(cfg, keys[i]) then
+            missing[rawlen(missing) + 1] = keys[i]
+        end
+        i = i + 1
+    end
+    missing
+end
+
+-- validate_not_nil: check that a key is not nil; return error message or nil.
+fun validate_not_nil(cfg: any, key: str): str
+    if config_get(cfg, key) ~= nil then return nil end
+    "missing required config key: " .. key
+end
+
+-- ---- Internal helpers ----
+
+-- deep_get: get a value from a nested table by dot-path.
+fun deep_get(t: any, key: str): any
+    if t == nil then return nil end
+    parts = string.split(key, ".")
+    current = t
+    i = 1
+    while i <= rawlen(parts)
+        if current == nil then return nil end
+        current = current[parts[i]]
+        i = i + 1
+    end
+    current
+end
+
+-- deep_has: check if a dot-path key exists.
+fun deep_has(t: any, key: str): bool
+    deep_get(t, key) ~= nil
+end
+
+-- deep_set: set a value in a nested table by dot-path.
+fun deep_set(t: any, key: str, value: any): void
+    parts = string.split(key, ".")
+    current = t
+    i = 1
+    while i < rawlen(parts)
+        if current[parts[i]] == nil then
+            current[parts[i]] = {}
+        end
+        current = current[parts[i]]
+        i = i + 1
+    end
+    current[parts[rawlen(parts)]] = value
+end
+
+-- deep_merge_into: recursively merge src into dst.
+fun deep_merge_into(dst: any, src: any): void
+    if src == nil then return end
+    for k, v in src
+        if type(v) == "table" and type(dst[k]) == "table" then
+            deep_merge_into(dst[k], v)
+        else
+            dst[k] = v
+        end
+    end
+end
+
+-- collect_keys: collect dot-path keys from a nested table.
+fun collect_keys(seen: any, out: any, t: any, prefix: str): void
+    if t == nil then return end
+    for k, v in t
+        full_key = k
+        if string.len(prefix) > 0 then
+            full_key = prefix .. "." .. k
+        end
+        if seen[full_key] == nil then
+            seen[full_key] = true
+            if type(v) ~= "table" then
+                out[rawlen(out) + 1] = full_key
+            else
+                collect_keys(seen, out, v, full_key)
+            end
+        end
+    end
+end
+
+-- deep_copy_flat: copy nested values as dot-path keys into a flat table.
+fun deep_copy_flat(dst: any, prefix: any, src: any): void
+    if src == nil then return end
+    for k, v in src
+        full_key = k
+        if string.len(prefix) > 0 then
+            full_key = prefix .. "." .. k
+        end
+        if type(v) == "table" then
+            deep_copy_flat(dst, full_key, v)
+        else
+            if dst[full_key] == nil then
+                dst[full_key] = v
+            end
+        end
+    end
+end
+
+-- ---- Serialization ----
+
+-- to_string: format config as a readable string.
+fun config_to_string(cfg: any): str
+    parts = {}
+    all_keys = config_keys(cfg)
+    i = 1
+    while i <= rawlen(all_keys)
+        val = config_get(cfg, all_keys[i])
+        parts[rawlen(parts) + 1] = all_keys[i] .. " = " .. tostring(val)
+        i = i + 1
+    end
+    table.sort(parts)
+    table.concat(parts, "\n")
+end
+
+M = {}
+M.new = config_new
+M.get = config_get
+M.get_or = config_get_or
+M.set = config_set
+M.has = config_has
+M.merge = config_merge
+M.merge_defaults = config_merge_defaults
+M.set_env_prefix = set_env_prefix
+M.load_env = load_env
+M.keys = config_keys
+M.to_table = config_to_table
+M.require_keys = require_keys
+M.validate_not_nil = validate_not_nil
+M.to_string = config_to_string
+M

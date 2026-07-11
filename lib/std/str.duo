@@ -1,0 +1,338 @@
+-- std.str — string building, interpolation, and advanced manipulation
+-- Complements std.string with builder patterns and template interpolation.
+
+local string = req "std.string"
+
+-- ---- Builder ----
+
+-- new_builder: create a string builder (a table of string parts).
+fun new_builder(): any
+    {parts = {}, count = 0}
+end
+
+-- bldr_write: append a string to the builder.
+fun bldr_write(b: any, s: str): void
+    if s == nil then s = "nil" end
+    b.count = b.count + 1
+    b.parts[b.count] = s
+end
+
+-- bldr_write_line: append a string and a newline.
+fun bldr_write_line(b: any, s: str): void
+    bldr_write(b, s)
+    bldr_write(b, "\n")
+end
+
+-- bldr_write_fmt: append a formatted string (using tostring on args).
+fun bldr_write_fmt(b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: any): void
+    result = fmt
+    if a1 ~= nil then result = string.gsub(result, "{1}", tostring(a1)) end
+    if a2 ~= nil then result = string.gsub(result, "{2}", tostring(a2)) end
+    if a3 ~= nil then result = string.gsub(result, "{3}", tostring(a3)) end
+    if a4 ~= nil then result = string.gsub(result, "{4}", tostring(a4)) end
+    if a5 ~= nil then result = string.gsub(result, "{5}", tostring(a5)) end
+    bldr_write(b, result)
+end
+
+-- bldr_len: return the total length of all parts.
+fun bldr_len(b: any): i64
+    total = 0
+    i = 1
+    while i <= b.count
+        total = total + string.len(b.parts[i])
+        i = i + 1
+    end
+    total
+end
+
+-- bldr_reset: clear the builder.
+fun bldr_reset(b: any): void
+    b.parts = {}
+    b.count = 0
+end
+
+-- bldr_to_string: concatenate all parts into a single string.
+fun bldr_to_string(b: any): str
+    table.concat(b.parts)
+end
+
+-- ---- Template Interpolation ----
+
+-- interp: replace {name} placeholders in template with values from a table.
+-- Example: interp("Hello {name}!", {name = "World"}) -> "Hello World!"
+fun interp(template: str, values: any): str
+    if values == nil then return template end
+    result = template
+    for key, val in values
+        result = string.gsub(result, "{" .. tostring(key) .. "}", tostring(val))
+    end
+    result
+end
+
+-- interp_indexed: replace {1}, {2}, ... placeholders with positional arguments.
+fun interp_indexed(template: str, a1: any, a2: any, a3: any, a4: any, a5: any): str
+    result = template
+    if a1 ~= nil then result = string.gsub(result, "{1}", tostring(a1)) end
+    if a2 ~= nil then result = string.gsub(result, "{2}", tostring(a2)) end
+    if a3 ~= nil then result = string.gsub(result, "{3}", tostring(a3)) end
+    if a4 ~= nil then result = string.gsub(result, "{4}", tostring(a4)) end
+    if a5 ~= nil then result = string.gsub(result, "{5}", tostring(a5)) end
+    result
+end
+
+-- ---- Case Conversion ----
+
+-- to_snake: convert "CamelCase" or "camelCase" to "camel_case".
+fun to_snake(s: str): str
+    if s == nil then return "" end
+    len = string.len(s)
+    result = ""
+    i = 1
+    while i <= len
+        c = string.sub(s, i, i)
+        if c >= "A" and c <= "Z" then
+            if i > 1 then
+                prev = string.sub(s, i - 1, i - 1)
+                if prev ~= "_" and prev >= "a" and prev <= "z" then
+                    result = result .. "_"
+                end
+            end
+            result = result .. string.lower(c)
+        elseif c == " " or c == "-" then
+            result = result .. "_"
+        else
+            result = result .. c
+        end
+        i = i + 1
+    end
+    result
+end
+
+-- to_camel: convert "snake_case" or "kebab-case" to "camelCase".
+fun to_camel(s: str): str
+    if s == nil then return "" end
+    result = ""
+    capitalize_next = false
+    len = string.len(s)
+    i = 1
+    while i <= len
+        c = string.sub(s, i, i)
+        if c == "_" or c == "-" then
+            capitalize_next = true
+        elseif capitalize_next then
+            result = result .. string.upper(c)
+            capitalize_next = false
+        else
+            result = result .. c
+        end
+        i = i + 1
+    end
+    result
+end
+
+-- to_pascal: like to_camel but first letter is also capitalized.
+fun to_pascal(s: str): str
+    camel = to_camel(s)
+    if string.len(camel) == 0 then return "" end
+    first = string.upper(string.sub(camel, 1, 1))
+    first .. string.sub(camel, 2)
+end
+
+-- to_kebab: convert "camelCase" or "snake_case" to "kebab-case".
+fun to_kebab(s: str): str
+    string.gsub(to_snake(s), "_", "-")
+end
+
+-- ---- Padding & Alignment ----
+
+-- center: center a string in a field of given width, padded with fill character.
+fun center(s: str, width: i64, fill: str): str
+    if fill == nil then fill = " " end
+    len = string.len(s)
+    if len >= width then return s end
+    pad = width - len
+    left = math.floor(pad / 2)
+    right = pad - left
+    result = ""
+    i = 0
+    while i < left
+        result = result .. fill
+        i = i + 1
+    end
+    result = result .. s
+    i = 0
+    while i < right
+        result = result .. fill
+        i = i + 1
+    end
+    result
+end
+
+-- repeat_char: repeat a character n times.
+fun repeat_char(c: str, n: i64): str
+    result = ""
+    i = 0
+    while i < n
+        result = result .. c
+        i = i + 1
+    end
+    result
+end
+
+-- ---- Wrapping ----
+
+-- word_wrap: wrap text at the given width, breaking at spaces.
+fun word_wrap(s: str, width: i64): str
+    if s == nil then return "" end
+    if width <= 0 then return s end
+    words = string.split(s, " ")
+    result = ""
+    line_len = 0
+    i = 1
+    while i <= rawlen(words)
+        word = words[i]
+        wlen = string.len(word)
+        if line_len == 0 then
+            result = result .. word
+            line_len = wlen
+        elseif line_len + 1 + wlen <= width then
+            result = result .. " " .. word
+            line_len = line_len + 1 + wlen
+        else
+            result = result .. "\n" .. word
+            line_len = wlen
+        end
+        i = i + 1
+    end
+    result
+end
+
+-- truncate_str: truncate string to max_len, appending suffix if truncated.
+fun truncate_str(s: str, max_len: i64, suffix: str): str
+    if suffix == nil then suffix = "..." end
+    if s == nil then return "" end
+    if string.len(s) <= max_len then return s end
+    cut = max_len - string.len(suffix)
+    if cut < 0 then cut = 0 end
+    string.sub(s, 1, cut) .. suffix
+end
+
+-- ---- Encoding Helpers ----
+
+-- is_empty: return true if the string is nil or has zero length.
+fun is_empty(s: str): bool
+    if s == nil then return true end
+    string.len(s) == 0
+end
+
+-- is_blank: return true if the string is nil or contains only whitespace.
+fun is_blank(s: str): bool
+    if s == nil then return true end
+    trimmed = string.gsub(s, "%s+", "")
+    string.len(trimmed) == 0
+end
+
+-- count_sub: count non-overlapping occurrences of substr in s.
+fun count_sub(s: str, substr: str): i64
+    if s == nil or substr == nil then return 0 end
+    count = 0
+    pos = 1
+    while true
+        start_idx = string.find(s, substr, pos, true)
+        if start_idx == nil then break end
+        count = count + 1
+        pos = start_idx + string.len(substr)
+    end
+    count
+end
+
+-- has_prefix: return true if s starts with prefix.
+fun has_prefix(s: str, prefix: str): bool
+    if s == nil or prefix == nil then return false end
+    string.sub(s, 1, string.len(prefix)) == prefix
+end
+
+-- has_suffix: return true if s ends with suffix.
+fun has_suffix(s: str, suffix: str): bool
+    if s == nil or suffix == nil then return false end
+    slen = string.len(s)
+    suffix_len = string.len(suffix)
+    if suffix_len > slen then return false end
+    string.sub(s, slen - suffix_len + 1) == suffix
+end
+
+-- ---- Quoting ----
+
+-- quote: wrap string in double quotes, escaping special characters.
+fun quote(s: str): str
+    if s == nil then return "\"\"" end
+    escaped = string.gsub(s, "\\", "\\\\")
+    escaped = string.gsub(escaped, "\"", "\\\"")
+    escaped = string.gsub(escaped, "\n", "\\n")
+    escaped = string.gsub(escaped, "\t", "\\t")
+    escaped = string.gsub(escaped, "\r", "\\r")
+    "\"" .. escaped .. "\""
+end
+
+-- single_quote: wrap string in single quotes, escaping as needed.
+fun single_quote(s: str): str
+    if s == nil then return "''" end
+    escaped = string.gsub(s, "\\", "\\\\")
+    escaped = string.gsub(escaped, "'", "\\'")
+    "'" .. escaped .. "'"
+end
+
+-- ---- Splitting ----
+
+-- split_lines: split a string into lines (handles \n, \r\n, \r).
+fun split_lines(s: str): any
+    if s == nil then return {} end
+    normalized = string.gsub(s, "\r\n", "\n")
+    normalized = string.gsub(normalized, "\r", "\n")
+    string.split(normalized, "\n")
+end
+
+-- split_trimmed: split and trim each part.
+fun split_trimmed(s: str, sep: str): any
+    parts = string.split(s, sep)
+    out = {}
+    i = 1
+    while i <= rawlen(parts)
+        trimmed = string.gsub(parts[i], "^%s+", "")
+        trimmed = string.gsub(trimmed, "%s+$", "")
+        if string.len(trimmed) > 0 then
+            out[rawlen(out) + 1] = trimmed
+        end
+        i = i + 1
+    end
+    out
+end
+
+M = {}
+M.new_builder = new_builder
+M.builder_write = bldr_write
+M.builder_write_line = bldr_write_line
+M.builder_write_fmt = bldr_write_fmt
+M.builder_len = bldr_len
+M.builder_reset = bldr_reset
+M.builder_to_string = bldr_to_string
+M.interp = interp
+M.interp_indexed = interp_indexed
+M.to_snake = to_snake
+M.to_camel = to_camel
+M.to_pascal = to_pascal
+M.to_kebab = to_kebab
+M.center = center
+M.repeat_char = repeat_char
+M.word_wrap = word_wrap
+M.truncate = truncate_str
+M.is_empty = is_empty
+M.is_blank = is_blank
+M.count_sub = count_sub
+M.has_prefix = has_prefix
+M.has_suffix = has_suffix
+M.quote = quote
+M.single_quote = single_quote
+M.split_lines = split_lines
+M.split_trimmed = split_trimmed
+M

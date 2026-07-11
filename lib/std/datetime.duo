@@ -1,8 +1,116 @@
--- std.datetime — high-level date and time utilities
+-- std.datetime — date and time parsing, formatting, and arithmetic
+-- Uses Lua's os.date/os.time as the underlying engine.
+-- A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
 
-local time = req "std.time"
 local math = req "std.math"
 
+-- ---- Constants ----
+
+MONTH_NAMES = {}
+MONTH_NAMES[1] = "January"
+MONTH_NAMES[2] = "February"
+MONTH_NAMES[3] = "March"
+MONTH_NAMES[4] = "April"
+MONTH_NAMES[5] = "May"
+MONTH_NAMES[6] = "June"
+MONTH_NAMES[7] = "July"
+MONTH_NAMES[8] = "August"
+MONTH_NAMES[9] = "September"
+MONTH_NAMES[10] = "October"
+MONTH_NAMES[11] = "November"
+MONTH_NAMES[12] = "December"
+
+MONTH_ABBR = {}
+MONTH_ABBR[1] = "Jan"
+MONTH_ABBR[2] = "Feb"
+MONTH_ABBR[3] = "Mar"
+MONTH_ABBR[4] = "Apr"
+MONTH_ABBR[5] = "May"
+MONTH_ABBR[6] = "Jun"
+MONTH_ABBR[7] = "Jul"
+MONTH_ABBR[8] = "Aug"
+MONTH_ABBR[9] = "Sep"
+MONTH_ABBR[10] = "Oct"
+MONTH_ABBR[11] = "Nov"
+MONTH_ABBR[12] = "Dec"
+
+DAY_NAMES = {}
+DAY_NAMES[1] = "Sunday"
+DAY_NAMES[2] = "Monday"
+DAY_NAMES[3] = "Tuesday"
+DAY_NAMES[4] = "Wednesday"
+DAY_NAMES[5] = "Thursday"
+DAY_NAMES[6] = "Friday"
+DAY_NAMES[7] = "Saturday"
+
+DAY_ABBR = {}
+DAY_ABBR[1] = "Sun"
+DAY_ABBR[2] = "Mon"
+DAY_ABBR[3] = "Tue"
+DAY_ABBR[4] = "Wed"
+DAY_ABBR[5] = "Thu"
+DAY_ABBR[6] = "Fri"
+DAY_ABBR[7] = "Sat"
+
+DAYS_PER_MONTH = {}
+DAYS_PER_MONTH[1] = 31
+DAYS_PER_MONTH[2] = 28
+DAYS_PER_MONTH[3] = 31
+DAYS_PER_MONTH[4] = 30
+DAYS_PER_MONTH[5] = 31
+DAYS_PER_MONTH[6] = 30
+DAYS_PER_MONTH[7] = 31
+DAYS_PER_MONTH[8] = 31
+DAYS_PER_MONTH[9] = 30
+DAYS_PER_MONTH[10] = 31
+DAYS_PER_MONTH[11] = 30
+DAYS_PER_MONTH[12] = 31
+
+SECS_PER_MINUTE = 60
+SECS_PER_HOUR = 3600
+SECS_PER_DAY = 86400
+SECS_PER_WEEK = 604800
+
+-- ---- Constructors ----
+
+-- new: create a datetime from components. Missing fields default to 0/1.
+fun new(year: i64, month: i64, day: i64, hour: i64, min: i64, sec: i64): any
+    dt = {}
+    dt.year = year
+    dt.month = month
+    dt.day = day
+    if hour ~= nil then dt.hour = hour else dt.hour = 0 end
+    if min ~= nil then dt.min = min else dt.min = 0 end
+    if sec ~= nil then dt.sec = sec else dt.sec = 0 end
+    dt.wday = 0
+    dt.yday = 0
+    dt.isdst = false
+    dt
+end
+
+-- now: return the current datetime.
+fun now(): any
+    os.date("*t")
+end
+
+-- utc: return the current datetime in UTC.
+fun utc(): any
+    os.date("!*t")
+end
+
+-- from_timestamp: create a datetime from a Unix timestamp.
+fun from_timestamp(ts: int): any
+    os.date("*t", ts)
+end
+
+-- to_timestamp: convert a datetime to a Unix timestamp.
+fun to_timestamp(dt: any): int
+    os.time(dt)
+end
+
+-- ---- Queries ----
+
+-- is_leap_year: return true if year is a leap year.
 fun is_leap_year(year: i64): bool
     if year % 400 == 0 then return true end
     if year % 100 == 0 then return false end
@@ -10,18 +118,433 @@ fun is_leap_year(year: i64): bool
     false
 end
 
+-- days_in_month: return the number of days in the given month.
 fun days_in_month(year: i64, month: i64): i64
-    if month == 2 then
-        if is_leap_year(year) then return 29 end
-        return 28
+    if month == 2 and is_leap_year(year) then return 29 end
+    DAYS_PER_MONTH[month]
+end
+
+-- days_in_year: return 366 for leap years, 365 otherwise.
+fun days_in_year(year: i64): i64
+    if is_leap_year(year) then return 366 end
+    365
+end
+
+-- weekday_name: return the full name of the day (e.g. "Monday").
+fun weekday_name(dt: any): str
+    DAY_NAMES[dt.wday]
+end
+
+-- weekday_abbr: return the abbreviated day name (e.g. "Mon").
+fun weekday_abbr(dt: any): str
+    DAY_ABBR[dt.wday]
+end
+
+-- month_name: return the full month name (e.g. "January").
+fun month_name(dt: any): str
+    MONTH_NAMES[dt.month]
+end
+
+-- month_abbr: return the abbreviated month name (e.g. "Jan").
+fun month_abbr(dt: any): str
+    MONTH_ABBR[dt.month]
+end
+
+-- is_weekend: return true if the datetime falls on Saturday or Sunday.
+fun is_weekend(dt: any): bool
+    dt.wday == 1 or dt.wday == 7
+end
+
+-- ---- Arithmetic ----
+
+-- add: add seconds to a datetime and return a new datetime.
+fun add(dt: any, secs: int): any
+    ts = os.time(dt)
+    os.date("*t", ts + secs)
+end
+
+-- add_days: add n days to a datetime.
+fun add_days(dt: any, n: i64): any
+    add(dt, n * SECS_PER_DAY)
+end
+
+-- add_hours: add n hours to a datetime.
+fun add_hours(dt: any, n: i64): any
+    add(dt, n * SECS_PER_HOUR)
+end
+
+-- add_minutes: add n minutes to a datetime.
+fun add_minutes(dt: any, n: i64): any
+    add(dt, n * SECS_PER_MINUTE)
+end
+
+-- add_months: add n months to a datetime (preserves day clamping).
+fun add_months(dt: any, n: i64): any
+    total_month = dt.month + n
+    new_year = dt.year + math.floor(total_month / 12)
+    new_month = total_month % 12
+    if new_month <= 0 then
+        new_month = new_month + 12
+        new_year = new_year - 1
     end
-    if month == 4 or month == 6 or month == 9 or month == 11 then
-        return 30
+    max_day = days_in_month(new_year, new_month)
+    new_day = dt.day
+    if new_day > max_day then new_day = max_day end
+    result = {}
+    result.year = new_year
+    result.month = new_month
+    result.day = new_day
+    result.hour = dt.hour
+    result.min = dt.min
+    result.sec = dt.sec
+    result.wday = 0
+    result.yday = 0
+    result.isdst = false
+    result
+end
+
+-- add_years: add n years to a datetime.
+fun add_years(dt: any, n: i64): any
+    add_months(dt, n * 12)
+end
+
+-- diff: return the difference in seconds between two datetimes.
+fun diff(a: any, b: any): int
+    ts_a = os.time(a)
+    ts_b = os.time(b)
+    ts_a - ts_b
+end
+
+-- diff_days: return the difference in whole days (a - b).
+fun diff_days(a: any, b: any): i64
+    secs = diff(a, b)
+    math.floor(secs / SECS_PER_DAY)
+end
+
+-- diff_hours: return the difference in whole hours (a - b).
+fun diff_hours(a: any, b: any): i64
+    secs = diff(a, b)
+    math.floor(secs / SECS_PER_HOUR)
+end
+
+-- ---- Formatting ----
+
+-- pad2: zero-pad a number to 2 digits.
+fun pad2(n: i64): str
+    if n < 10 then return "0" .. tostring(n) end
+    tostring(n)
+end
+
+-- format: format a datetime using a layout string.
+-- Supported tokens: YYYY, YY, MM, DD, HH, mm, ss, WW, WWWW, AMPM, ampm
+fun format(dt: any, layout: str): str
+    result = layout
+    -- year
+    year4 = tostring(dt.year)
+    year2 = string.sub(year4, string.len(year4) - 1)
+    result = string.gsub(result, "YYYY", year4)
+    result = string.gsub(result, "YY", year2)
+    -- month
+    result = string.gsub(result, "MM", pad2(dt.month))
+    -- day
+    result = string.gsub(result, "DD", pad2(dt.day))
+    -- hour (24h)
+    result = string.gsub(result, "HH", pad2(dt.hour))
+    -- minute
+    result = string.gsub(result, "mm", pad2(dt.min))
+    -- second
+    result = string.gsub(result, "ss", pad2(dt.sec))
+    -- abbreviated weekday
+    result = string.gsub(result, "WWW", DAY_ABBR[dt.wday])
+    -- full weekday
+    result = string.gsub(result, "WWWW", DAY_NAMES[dt.wday])
+    -- 12-hour with AM/PM
+    h12 = dt.hour % 12
+    if h12 == 0 then h12 = 12 end
+    if dt.hour < 12 then
+        result = string.gsub(result, "hh", pad2(h12))
+        result = string.gsub(result, "AMPM", "AM")
+        result = string.gsub(result, "ampm", "am")
+    else
+        result = string.gsub(result, "hh", pad2(h12))
+        result = string.gsub(result, "AMPM", "PM")
+        result = string.gsub(result, "ampm", "pm")
     end
-    31
+    result
+end
+
+-- iso8601: format as ISO 8601 (e.g. "2024-01-15T14:30:00Z").
+fun iso8601(dt: any): str
+    format(dt, "YYYY-MM-DDTHH:mm:ss")
+end
+
+-- date_only: format as "YYYY-MM-DD".
+fun date_only(dt: any): str
+    format(dt, "YYYY-MM-DD")
+end
+
+-- time_only: format as "HH:mm:ss".
+fun time_only(dt: any): str
+    format(dt, "HH:mm:ss")
+end
+
+-- rfc2822: format as RFC 2822 (e.g. "Mon, 15 Jan 2024 14:30:00 +0000").
+fun rfc2822(dt: any): str
+    day_part = DAY_ABBR[dt.wday] .. ", "
+    day_part = day_part .. tostring(dt.day) .. " "
+    day_part = day_part .. MONTH_ABBR[dt.month] .. " "
+    day_part = day_part .. tostring(dt.year) .. " "
+    day_part = day_part .. pad2(dt.hour) .. ":"
+    day_part = day_part .. pad2(dt.min) .. ":"
+    day_part = day_part .. pad2(dt.sec) .. " +0000"
+    day_part
+end
+
+-- human_relative: human-readable relative time (e.g. "2 hours ago", "in 3 days").
+fun human_relative(dt: any): str
+    secs = diff(now(), dt)
+    future = false
+    if secs < 0 then
+        secs = 0 - secs
+        future = true
+    end
+    if secs < 60 then return "just now" end
+    if secs < 3600 then
+        mins = math.floor(secs / 60)
+        if future then return "in " .. tostring(mins) .. " minutes" end
+        return tostring(mins) .. " minutes ago"
+    end
+    if secs < 86400 then
+        hrs = math.floor(secs / 3600)
+        if future then return "in " .. tostring(hrs) .. " hours" end
+        return tostring(hrs) .. " hours ago"
+    end
+    days = math.floor(secs / 86400)
+    if days == 1 then
+        if future then return "tomorrow" end
+        return "yesterday"
+    end
+    if days < 30 then
+        if future then return "in " .. tostring(days) .. " days" end
+        return tostring(days) .. " days ago"
+    end
+    months = math.floor(days / 30)
+    if months < 12 then
+        if future then return "in " .. tostring(months) .. " months" end
+        return tostring(months) .. " months ago"
+    end
+    years = math.floor(months / 12)
+    if future then return "in " .. tostring(years) .. " years" end
+    tostring(years) .. " years ago"
+end
+
+-- ---- Parsing ----
+
+-- parse_digit: parse a 1-2 digit number starting at position i in s.
+fun parse_digit(s: str, i: i64): any
+    c = string.sub(s, i, i)
+    if c >= "0" and c <= "9" then
+        return tonumber(c), i + 1
+    end
+    nil, i
+end
+
+-- parse_2digit: parse exactly 2 digits starting at position i.
+fun parse_2digit(s: str, i: i64): any
+    d1 = string.sub(s, i, i)
+    d2 = string.sub(s, i + 1, i + 1)
+    val = tonumber(d1) * 10 + tonumber(d2)
+    val, i + 2
+end
+
+-- parse_4digit: parse exactly 4 digits starting at position i.
+fun parse_4digit(s: str, i: i64): any
+    d1 = string.sub(s, i, i)
+    d2 = string.sub(s, i + 1, i + 1)
+    d3 = string.sub(s, i + 2, i + 2)
+    d4 = string.sub(s, i + 3, i + 3)
+    val = tonumber(d1) * 1000 + tonumber(d2) * 100 + tonumber(d3) * 10 + tonumber(d4)
+    val, i + 4
+end
+
+-- parse_int_at: parse an integer of given length starting at position i.
+fun parse_int_at(s: str, i: i64, len: i64): any
+    val = 0
+    j = 0
+    while j < len
+        c = string.sub(s, i + j, i + j)
+        val = val * 10 + tonumber(c)
+        j = j + 1
+    end
+    val, i + len
+end
+
+-- parse_iso8601: parse an ISO 8601 datetime string (YYYY-MM-DDTHH:mm:ss).
+-- Also accepts YYYY-MM-DD HH:mm:ss and YYYY-MM-DD.
+fun parse_iso8601(s: str): any
+    if string.len(s) < 10 then return nil end
+    year, pos = parse_4digit(s, 1)
+    if string.sub(s, pos, pos) ~= "-" then return nil end
+    month, pos = parse_2digit(s, pos + 1)
+    if string.sub(s, pos, pos) ~= "-" then return nil end
+    day, pos = parse_2digit(s, pos + 1)
+    hour = 0
+    minute = 0
+    second = 0
+    if string.len(s) >= pos + 2 then
+        sep = string.sub(s, pos, pos)
+        if sep == "T" or sep == " " then
+            hour, pos = parse_2digit(s, pos + 1)
+            if string.sub(s, pos, pos) == ":" then
+                minute, pos = parse_2digit(s, pos + 1)
+            end
+            if string.sub(s, pos, pos) == ":" then
+                second, pos = parse_2digit(s, pos + 1)
+            end
+        end
+    end
+    new(year, month, day, hour, minute, second)
+end
+
+-- parse_date: parse "YYYY-MM-DD" format.
+fun parse_date(s: str): any
+    parse_iso8601(s .. "T00:00:00")
+end
+
+-- parse_time: parse "HH:mm:ss" or "HH:mm" format.
+fun parse_time(s: str): any
+    hour, pos = parse_2digit(s, 1)
+    minute = 0
+    second = 0
+    if string.sub(s, pos, pos) == ":" then
+        minute, pos = parse_2digit(s, pos + 1)
+    end
+    if string.sub(s, pos, pos) == ":" then
+        second, pos = parse_2digit(s, pos + 1)
+    end
+    new(0, 1, 1, hour, minute, second)
+end
+
+-- ---- Comparison ----
+
+-- before: return true if a is before b.
+fun before(a: any, b: any): bool
+    os.time(a) < os.time(b)
+end
+
+-- after: return true if a is after b.
+fun after(a: any, b: any): bool
+    os.time(a) > os.time(b)
+end
+
+-- equal: return true if a and b represent the same instant.
+fun equal(a: any, b: any): bool
+    os.time(a) == os.time(b)
+end
+
+-- min: return the earlier of two datetimes.
+fun min_dt(a: any, b: any): any
+    if before(a, b) then return a end
+    b
+end
+
+-- max_dt: return the later of two datetimes.
+fun max_dt(a: any, b: any): any
+    if after(a, b) then return a end
+    b
+end
+
+-- ---- Range & Truncation ----
+
+-- start_of_day: return the datetime at midnight of the same day.
+fun start_of_day(dt: any): any
+    new(dt.year, dt.month, dt.day, 0, 0, 0)
+end
+
+-- end_of_day: return the datetime at 23:59:59 of the same day.
+fun end_of_day(dt: any): any
+    new(dt.year, dt.month, dt.day, 23, 59, 59)
+end
+
+-- start_of_month: return the datetime at midnight of the 1st of the month.
+fun start_of_month(dt: any): any
+    new(dt.year, dt.month, 1, 0, 0, 0)
+end
+
+-- end_of_month: return the datetime at 23:59:59 of the last day of the month.
+fun end_of_month(dt: any): any
+    last_day = days_in_month(dt.year, dt.month)
+    new(dt.year, dt.month, last_day, 23, 59, 59)
+end
+
+-- start_of_year: return the datetime at midnight of January 1st.
+fun start_of_year(dt: any): any
+    new(dt.year, 1, 1, 0, 0, 0)
+end
+
+-- end_of_year: return the datetime at 23:59:59 of December 31st.
+fun end_of_year(dt: any): any
+    new(dt.year, 12, 31, 23, 59, 59)
+end
+
+-- truncate: truncate datetime to the given precision.
+-- precision: "hour", "minute", "second"
+fun truncate(dt: any, precision: str): any
+    if precision == "hour" then
+        return new(dt.year, dt.month, dt.day, dt.hour, 0, 0)
+    end
+    if precision == "minute" then
+        return new(dt.year, dt.month, dt.day, dt.hour, dt.min, 0)
+    end
+    dt
 end
 
 M = {}
+M.new = new
+M.now = now
+M.utc = utc
+M.from_timestamp = from_timestamp
+M.to_timestamp = to_timestamp
 M.is_leap_year = is_leap_year
 M.days_in_month = days_in_month
+M.days_in_year = days_in_year
+M.weekday_name = weekday_name
+M.weekday_abbr = weekday_abbr
+M.month_name = month_name
+M.month_abbr = month_abbr
+M.is_weekend = is_weekend
+M.add = add
+M.add_days = add_days
+M.add_hours = add_hours
+M.add_minutes = add_minutes
+M.add_months = add_months
+M.add_years = add_years
+M.diff = diff
+M.diff_days = diff_days
+M.diff_hours = diff_hours
+M.format = format
+M.iso8601 = iso8601
+M.date_only = date_only
+M.time_only = time_only
+M.rfc2822 = rfc2822
+M.human_relative = human_relative
+M.parse_iso8601 = parse_iso8601
+M.parse_date = parse_date
+M.parse_time = parse_time
+M.before = before
+M.after = after
+M.equal = equal
+M.min = min_dt
+M.max = max_dt
+M.start_of_day = start_of_day
+M.end_of_day = end_of_day
+M.start_of_month = start_of_month
+M.end_of_month = end_of_month
+M.start_of_year = start_of_year
+M.end_of_year = end_of_year
+M.truncate = truncate
+M.SECS_PER_MINUTE = SECS_PER_MINUTE
+M.SECS_PER_HOUR = SECS_PER_HOUR
+M.SECS_PER_DAY = SECS_PER_DAY
+M.SECS_PER_WEEK = SECS_PER_WEEK
 M
