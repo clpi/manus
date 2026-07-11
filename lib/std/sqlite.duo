@@ -123,7 +123,7 @@ local function _const(name: str): int
     if name == "SQLITE_TEXT" then return SQLITE_TEXT end
     if name == "SQLITE_BLOB" then return SQLITE_BLOB end
     if name == "SQLITE_NULL" then return SQLITE_NULL end
-    -1
+    return -1
 end
 
 -- ===========================================================================

@@ -141,6 +141,7 @@ pub const Expander = struct {
             .alias_def => |x| .{ .alias_def = try self.cloneAliasDef(x, null) },
             .macro_def => stmt,
             .cinclude => stmt,
+            .directive => stmt,
         };
     }
 
@@ -503,6 +504,7 @@ pub const Expander = struct {
             .alias_def => |x| .{ .alias_def = try self.cloneAliasDef(x, ctx) },
             .macro_def => stmt,
             .cinclude => stmt,
+            .directive => stmt,
         };
     }
 

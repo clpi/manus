@@ -103,11 +103,13 @@ std.datetime = req "std.datetime"
 std.tools = {
     argparse = req "std.argparse",
     test = req "std.test",
+    bench = req "std.bench",
     build = req "std.build",
     memo = req "std.memo",
     package = req "std.package",
     debug = req "std.debug",
-    color = req "std.color"
+    color = req "std.color",
+    term = req "std.term"
 }
 
 -- Testing helpers

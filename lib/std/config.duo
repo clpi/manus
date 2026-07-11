@@ -5,7 +5,7 @@
 -- ---- Internal helpers (defined first for forward reference) ----
 
 -- deep_get: get a value from a nested table by dot-path.
-fun deep_get(t: any, key: str): any
+fun deep_get(t: any, key: any): any
     if t == nil then return nil end
     parts = string.split(key, ".")
     current = t
@@ -19,12 +19,12 @@ fun deep_get(t: any, key: str): any
 end
 
 -- deep_has: check if a dot-path key exists.
-fun deep_has(t: any, key: str): bool
+fun deep_has(t: any, key: any): bool
     deep_get(t, key) ~= nil
 end
 
 -- deep_set: set a value in a nested table by dot-path.
-fun deep_set(t: any, key: str, value: any): void
+fun deep_set(t: any, key: any, value: any): void
     parts = string.split(key, ".")
     current = t
     i = 1
@@ -51,7 +51,7 @@ fun deep_merge_into(dst: any, src: any): void
 end
 
 -- collect_keys: collect dot-path keys from a nested table.
-fun collect_keys(seen: any, out: any, t: any, prefix: str): void
+fun collect_keys(seen: any, out: any, t: any, prefix: any): void
     if t == nil then return end
     for k, v in t
         full_key = k
@@ -103,26 +103,26 @@ end
 
 -- get: retrieve a value by dot-path key (e.g. "server.port").
 -- Falls back to defaults if not set.
-fun config_get(cfg: any, key: str): any
+fun config_get(cfg: any, key: any): any
     val = deep_get(cfg.values, key)
     if val ~= nil then return val end
     deep_get(cfg.defaults, key)
 end
 
 -- get_or: retrieve a value with a custom fallback.
-fun config_get_or(cfg: any, key: str, fallback: any): any
+fun config_get_or(cfg: any, key: any, fallback: any): any
     val = config_get(cfg, key)
     if val ~= nil then return val end
     fallback
 end
 
 -- set: set a value by dot-path key.
-fun config_set(cfg: any, key: str, value: any): void
+fun config_set(cfg: any, key: any, value: any): void
     deep_set(cfg.values, key, value)
 end
 
 -- has: check if a key exists (values or defaults).
-fun config_has(cfg: any, key: str): bool
+fun config_has(cfg: any, key: any): bool
     if deep_has(cfg.values, key) then return true end
     deep_has(cfg.defaults, key)
 end
@@ -204,7 +204,7 @@ fun require_keys(cfg: any, keys: any): any
 end
 
 -- validate_not_nil: check that a key is not nil; return error message or nil.
-fun validate_not_nil(cfg: any, key: str): str
+fun validate_not_nil(cfg: any, key: any): str
     if config_get(cfg, key) ~= nil then return nil end
     "missing required config key: " .. key
 end

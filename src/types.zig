@@ -289,6 +289,58 @@ pub const ResolvedType = union(enum) {
     }
 
     /// Return the C type string for this type.
+    /// Returns a user-friendly Duo type name for diagnostics and error messages.
+    pub fn duo_name(self: ResolvedType, buf: []u8) []const u8 {
+        return switch (self) {
+            .i8 => "i8",
+            .i16 => "i16",
+            .i32 => "i32",
+            .i64 => "i64",
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+            .u64 => "u64",
+            .f32 => "f32",
+            .f64 => "f64",
+            .v4f64 => "v4f64",
+            .v4i64 => "v4i64",
+            .v8f32 => "v8f32",
+            .v8i32 => "v8i32",
+            .bool => "bool",
+            .void => "void",
+            .str => "str",
+            .any => "any",
+            .nil => "nil",
+            .never => "never",
+            .pointer => |p| {
+                const inner = p.duo_name(buf);
+                return std.fmt.bufPrint(buf, "*{s}", .{inner}) catch inner;
+            },
+            .@"struct" => |s| s.name,
+            .array => |a| {
+                const inner = a.elem.duo_name(buf);
+                if (a.size) |n| {
+                    return std.fmt.bufPrint(buf, "[{d}]{s}", .{ n, inner }) catch inner;
+                }
+                return std.fmt.bufPrint(buf, "[]{s}", .{inner}) catch inner;
+            },
+            .func => "function",
+            .result => "Result",
+            .option => |inner| {
+                const elem = inner.duo_name(buf);
+                return std.fmt.bufPrint(buf, "?{s}", .{elem}) catch "?";
+            },
+            .enum_type => |e| e.name,
+            .channel => "Channel",
+            .generic_param => |gp| gp.name,
+            .table_type => |t| {
+                if (t.fields.len == 0) return "{}";
+                return std.fmt.bufPrint(buf, "{{...{d} fields}}", .{t.fields.len}) catch "table";
+            },
+            .instantiated => "generic",
+        };
+    }
+
     pub fn c_type(self: ResolvedType, buf: []u8) []const u8 {
         return switch (self) {
             .i8 => "int8_t",
@@ -331,7 +383,7 @@ pub const ResolvedType = union(enum) {
                 _ = ok_str;
                 return "duo_Result";
             },
-            .option => "duo_Option",
+            .option => "lua_Value",
             .enum_type => |e| {
                 if (e.ffi_name) |cname| {
                     return std.fmt.bufPrint(buf, "{s}", .{cname}) catch cname;
@@ -699,6 +751,17 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                 return .f64;
             if (std.mem.eql(u8, n, "string")) return .str;
             if (std.mem.eql(u8, n, "Table") or std.mem.eql(u8, n, "table")) return .any;
+            // Self type: resolves to the enclosing type scope (enum, alias, concept)
+            if (std.mem.eql(u8, n, "Self")) {
+                if (sema) |s| {
+                    const sema_mod = @import("sema.zig");
+                    const self_ptr: *const sema_mod.Sema = @ptrCast(@alignCast(s));
+                    if (self_ptr.current_type_name) |type_name| {
+                        return ResolvedType{ .@"struct" = .{ .name = type_name } };
+                    }
+                }
+                return ResolvedType{ .@"struct" = .{ .name = n } };
+            }
             return ResolvedType{ .@"struct" = .{ .name = n } };
         },
         .pointer => |inner| {

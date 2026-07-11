@@ -104,48 +104,48 @@ local IN_INIT_NONBLOCK = 0x00004000
 -- ─────────────────────────────────────────────────────────────
 
 @ffi("kqueue")
-fun ffi_kqueue(): int end
+fun ffi_kqueue(): i64
 
 @ffi("kevent")
-fun ffi_kevent(kq: int, changelist: any, nchanges: int, eventlist: any, nevents: int, timeout: any): int end
+fun ffi_kevent(kq: i64, changelist: any, nchanges: i64, eventlist: any, nevents: i64, timeout: any): i64
 
 @ffi("open")
-fun ffi_open(path: str, flags: int): int end
+fun ffi_open(path: str, flags: i64): i64
 
 @ffi("close")
-fun ffi_close(fd: int): int end
+fun ffi_close(fd: i64): i64
 
 -- ─────────────────────────────────────────────────────────────
 -- FFI declarations — inotify path (Linux)
 -- ─────────────────────────────────────────────────────────────
 
 @ffi("inotify_init1")
-fun ffi_inotify_init1(flags: int): int end
+fun ffi_inotify_init1(flags: i64): i64
 
 @ffi("inotify_add_watch")
-fun ffi_inotify_add_watch(fd: int, path: str, mask: int): int end
+fun ffi_inotify_add_watch(fd: i64, path: str, mask: i64): i64
 
 @ffi("inotify_rm_watch")
-fun ffi_inotify_rm_watch(fd: int, wd: int): int end
+fun ffi_inotify_rm_watch(fd: i64, wd: i64): i64
 
 @ffi("read")
-fun ffi_read(fd: int, buf: any, count: int): int end
+fun ffi_read(fd: i64, buf: any, count: i64): i64
 
 -- ─────────────────────────────────────────────────────────────
 -- FFI declarations — shared
 -- ─────────────────────────────────────────────────────────────
 
 @ffi("malloc")
-fun ffi_malloc(size: int): any end
+fun ffi_malloc(size: i64): any
 
 @ffi("free")
-fun ffi_free(ptr: any): void end
+fun ffi_free(ptr: any): void
 
 @ffi("memset")
-fun ffi_memset(ptr: any, val: int, size: int): void end
+fun ffi_memset(ptr: any, val: i64, size: i64): void
 
 @ffi("memcpy")
-fun ffi_memcpy(dst: any, src: any, size: int): void end
+fun ffi_memcpy(dst: any, src: any, size: i64): void
 
 -- Write a uintptr-sized integer to a memory offset.
 -- We use memset to zero, then write byte-by-byte for small values.

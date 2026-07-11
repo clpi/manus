@@ -54,6 +54,13 @@ fun done(): void
     io.write("=== tests done ===\n")
 end
 
+-- Supported @test.* / @bench / @time attributes (see also std.bench.attrs).
+attrs = {
+    test = { "test", "test.unit", "test.integration", "test.e2e", "test.skip", "test.only", "test.flaky", "test.should_panic", "test.bench", "test.time" },
+    args = { "name", "tag", "message", "timeout", "timeout_ms", "iterations", "warmup" },
+    cli = { "duo test <file.duo>", "duo bench <file.duo>", "duo test <file> --filter <pat>" },
+}
+
 M = {}
 M.start = start
 M.assert_eq = assert_eq
@@ -63,4 +70,5 @@ M.assert_false = assert_false
 M.assert_nil = assert_nil
 M.assert_not_nil = assert_not_nil
 M.done = done
+M.attrs = attrs
 M

@@ -153,7 +153,7 @@ pub const AsyncLower = struct {
                 for (t.defers) |d| try self.discoverBlock(&d.body, enclosing_name);
             },
             .defer_stmt => |d| try self.discoverBlock(&d.body, enclosing_name),
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude, .directive => {},
         }
     }
 
@@ -333,7 +333,7 @@ pub const AsyncLower = struct {
                 try ctx.defers.append(self.alloc, d);
                 try self.scanBlock(&d.body, ctx);
             },
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude, .directive => {},
         }
     }
 
@@ -445,8 +445,91 @@ pub const AsyncLower = struct {
             \\    if (task->status == DUO_TASK_ERROR || task->status == DUO_TASK_CANCELLED) return DUO_POLL_ERROR;
             \\    duo_Poll poll = task->step(task->frame);
             \\    if (poll == DUO_POLL_READY) task->status = DUO_TASK_READY;
-            \\    else if (poll == DUO_POLL_ERROR) task->status = task->cancel_requested ? DUO_TASK_CANCELLED : DUO_TASK_ERROR;
+            \\    else if (poll == DUO_POLL_ERROR) { if (task->cancel_requested) task->status = DUO_TASK_CANCELLED; else task->status = DUO_TASK_ERROR; }
             \\    return poll;
+            \\}
+        );
+    }
+
+    /// Emit the cooperative event loop / run-queue runtime.  These functions
+    /// have external linkage (no `static`) so that duo stdlib modules can bind
+    /// to them via `@ffi`.  They depend on `duo_Task` / `duo_Poll` / `duo_task_poll`
+    /// emitted by `emitTaskRuntime`, so must be called after it.
+    pub fn emitEventLoopRuntime(writer: anytype) !void {
+        try writer.writeAll(
+            \\/* --- Cooperative event loop / run queue --- */
+            \\#include <time.h>
+            \\typedef struct {
+            \\    duo_Task** tasks;
+            \\    size_t count;
+            \\    size_t capacity;
+            \\} duo_RunQueue;
+            \\
+            \\duo_RunQueue duo_rq_create(void) {
+            \\    duo_RunQueue rq = { NULL, 0, 0 };
+            \\    return rq;
+            \\}
+            \\
+            \\void duo_rq_push(duo_RunQueue* rq, duo_Task* task) {
+            \\    if (rq->count >= rq->capacity) {
+            \\        rq->capacity = rq->capacity ? rq->capacity * 2 : 8;
+            \\        rq->tasks = (duo_Task**)realloc(rq->tasks, rq->capacity * sizeof(duo_Task*));
+            \\    }
+            \\    rq->tasks[rq->count++] = task;
+            \\}
+            \\
+            \\int duo_rq_remove(duo_RunQueue* rq, size_t idx) {
+            \\    if (idx >= rq->count) return -1;
+            \\    rq->tasks[idx] = rq->tasks[rq->count - 1];
+            \\    rq->count--;
+            \\    return 0;
+            \\}
+            \\
+            \\int duo_event_loop_run(duo_RunQueue* rq) {
+            \\    int completed = 0;
+            \\    while (rq->count > 0) {
+            \\        size_t i = 0;
+            \\        int round_completed = 0;
+            \\        while (i < rq->count) {
+            \\            duo_Poll poll = duo_task_poll(rq->tasks[i]);
+            \\            if (poll == DUO_POLL_READY || poll == DUO_POLL_ERROR) {
+            \\                round_completed++;
+            \\                duo_rq_remove(rq, i);
+            \\            } else {
+            \\                i++;
+            \\            }
+            \\        }
+            \\        completed += round_completed;
+            \\        if (round_completed == 0) {
+            \\#ifdef _WIN32
+            \\            Sleep(1);
+            \\#else
+            \\            struct timespec ts = { 0, 1000000 };
+            \\            nanosleep(&ts, NULL);
+            \\#endif
+            \\        }
+            \\    }
+            \\    return completed;
+            \\}
+            \\
+            \\int duo_event_loop_run_once(duo_RunQueue* rq) {
+            \\    int completed = 0;
+            \\    size_t i = 0;
+            \\    while (i < rq->count) {
+            \\        duo_Poll poll = duo_task_poll(rq->tasks[i]);
+            \\        if (poll == DUO_POLL_READY || poll == DUO_POLL_ERROR) {
+            \\            completed++;
+            \\            duo_rq_remove(rq, i);
+            \\        } else {
+            \\            i++;
+            \\        }
+            \\    }
+            \\    return completed;
+            \\}
+            \\
+            \\void duo_event_loop_spawn(duo_RunQueue* rq, duo_Task* task) {
+            \\    if (!task) return;
+            \\    duo_rq_push(rq, task);
             \\}
             \\
         );

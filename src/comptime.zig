@@ -9,7 +9,7 @@ pub const EvalError = error{
 };
 
 pub const Options = struct {
-    step_limit: usize = 10_000,
+    step_limit: usize = 100_000,
     alloc: ?std.mem.Allocator = null,
 };
 
@@ -63,7 +63,7 @@ pub const Value = union(enum) {
 pub const Bindings = struct {
     scopes: []const std.StringHashMapUnmanaged(Value) = &.{},
 
-    fn get(self: Bindings, name: []const u8) ?Value {
+    pub fn get(self: Bindings, name: []const u8) ?Value {
         var i = self.scopes.len;
         while (i > 0) {
             i -= 1;
@@ -195,6 +195,119 @@ pub const Evaluator = struct {
     }
 
     fn evalCall(self: *Evaluator, func_expr: *const ast.Expr, args: []const *ast.Expr) EvalError!Value {
+        // Handle math.* stdlib at compile time
+        if (func_expr.* == .field) {
+            const f = func_expr.field;
+            if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
+                return self.evalMathBuiltin(f.field, args);
+            }
+            if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
+                return self.evalStringBuiltin(f.field, args);
+            }
+        }
+        // Handle global builtins: type(), tostring(), tonumber()
+        if (func_expr.* == .name) {
+            const name = func_expr.name.ident;
+            if (std.mem.eql(u8, name, "__constexpr") and args.len == 1) {
+                return try self.eval(args[0]);
+            }
+            if (std.mem.eql(u8, name, "type") and args.len == 1) {
+                const val = try self.eval(args[0]);
+                return .{ .string = switch (val) {
+                    .nil, .unavailable => "nil",
+                    .bool => "boolean",
+                    .int, .float => "number",
+                    .string => "string",
+                    .table => "table",
+                    .func => "function",
+                } };
+            }
+            if (std.mem.eql(u8, name, "tonumber") and args.len == 1) {
+                const val = try self.eval(args[0]);
+                return switch (val) {
+                    .int => val,
+                    .float => val,
+                    else => error.UnsupportedExpression,
+                };
+            }
+            // __has_field / __has_method — compile-time structural queries
+            // At the comptime level these return bool based on table structure
+            if (std.mem.eql(u8, name, "__has_field") and args.len == 2) {
+                const tbl = try self.eval(args[0]);
+                const field_name = try self.eval(args[1]);
+                if (tbl == .table and field_name == .string) {
+                    for (tbl.table) |entry| {
+                        if (entry.name) |ename| {
+                            if (std.mem.eql(u8, ename, field_name.string)) return .{ .bool = true };
+                        }
+                    }
+                    return .{ .bool = false };
+                }
+                return error.UnsupportedExpression;
+            }
+            if (std.mem.eql(u8, name, "__type_name") and args.len == 1) {
+                const val = try self.eval(args[0]);
+                return .{ .string = switch (val) {
+                    .nil, .unavailable => "nil",
+                    .bool => "bool",
+                    .int => "i64",
+                    .float => "f64",
+                    .string => "str",
+                    .table => "table",
+                    .func => "function",
+                } };
+            }
+            if (std.mem.eql(u8, name, "__type_id") and args.len == 1) {
+                const val = try self.eval(args[0]);
+                const type_str: []const u8 = switch (val) {
+                    .nil, .unavailable => "nil",
+                    .bool => "bool",
+                    .int => "int64_t",
+                    .float => "double",
+                    .string => "const char*",
+                    .table => "lua_Value",
+                    .func => "lua_Value",
+                };
+                // FNV-1a hash for stable type ID
+                var hash: u64 = 14695981039346656037;
+                for (type_str) |byte| {
+                    hash ^= @as(u64, byte);
+                    hash *%= 1099511628211;
+                }
+                return .{ .int = @bitCast(hash) };
+            }
+            if (std.mem.eql(u8, name, "__is_type") and args.len == 2) {
+                const val = try self.eval(args[0]);
+                const expected = try self.eval(args[1]);
+                if (expected != .string) return error.UnsupportedExpression;
+                const actual: []const u8 = switch (val) {
+                    .nil, .unavailable => "nil",
+                    .bool => "bool",
+                    .int => "i64",
+                    .float => "f64",
+                    .string => "str",
+                    .table => "table",
+                    .func => "function",
+                };
+                return .{ .bool = std.mem.eql(u8, actual, expected.string) };
+            }
+            // __comptimeprint — compile-time debug printing (returns nil)
+            if (std.mem.eql(u8, name, "__comptimeprint") and args.len >= 1) {
+                const val = try self.eval(args[0]);
+                if (val == .string) {
+                    std.debug.print("[comptime] {s}\n", .{val.string});
+                }
+                return .nil;
+            }
+            // __comptimeerror — abort with message
+            if (std.mem.eql(u8, name, "__comptimeerror") and args.len >= 1) {
+                const val = try self.eval(args[0]);
+                if (val == .string) {
+                    std.debug.print("[comptime error] {s}\n", .{val.string});
+                }
+                return error.UnsupportedExpression;
+            }
+        }
         const callee = try self.eval(func_expr);
         if (callee != .func) return error.UnsupportedExpression;
         const func = callee.func.body;
@@ -215,6 +328,115 @@ pub const Evaluator = struct {
             _ = try self.pushLocal(param.name, value);
         }
         return try self.evalBlockValue(&func.body);
+    }
+
+    /// Evaluate string.* standard library functions at compile time.
+    fn evalStringBuiltin(self: *Evaluator, name: []const u8, args: []const *ast.Expr) EvalError!Value {
+        if (args.len >= 1) {
+            const a = try self.eval(args[0]);
+            if (a != .string) return error.UnsupportedExpression;
+            if (std.mem.eql(u8, name, "len")) return .{ .int = @intCast(a.string.len) };
+            if (std.mem.eql(u8, name, "upper")) {
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                const buf = alloc.alloc(u8, a.string.len) catch return error.UnsupportedExpression;
+                for (a.string, 0..) |c, i| buf[i] = std.ascii.toUpper(c);
+                return .{ .string = buf };
+            }
+            if (std.mem.eql(u8, name, "lower")) {
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                const buf = alloc.alloc(u8, a.string.len) catch return error.UnsupportedExpression;
+                for (a.string, 0..) |c, i| buf[i] = std.ascii.toLower(c);
+                return .{ .string = buf };
+            }
+            if (std.mem.eql(u8, name, "rev") or std.mem.eql(u8, name, "reverse")) {
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                const buf = alloc.alloc(u8, a.string.len) catch return error.UnsupportedExpression;
+                for (a.string, 0..) |c, i| buf[a.string.len - 1 - i] = c;
+                return .{ .string = buf };
+            }
+            if (std.mem.eql(u8, name, "byte") and args.len == 1) {
+                if (a.string.len == 0) return .nil;
+                return .{ .int = @intCast(a.string[0]) };
+            }
+            if (std.mem.eql(u8, name, "byte") and args.len >= 2) {
+                const idx_val = try self.eval(args[1]);
+                const idx = numericAsInt(idx_val) orelse return error.UnsupportedExpression;
+                if (idx < 1 or idx > @as(i64, @intCast(a.string.len))) return .nil;
+                return .{ .int = @intCast(a.string[@intCast(idx - 1)]) };
+            }
+            if (std.mem.eql(u8, name, "rep") and args.len == 2) {
+                const count_val = try self.eval(args[1]);
+                const count = numericAsInt(count_val) orelse return error.UnsupportedExpression;
+                if (count <= 0) return .{ .string = "" };
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                const n: usize = @intCast(count);
+                const buf = alloc.alloc(u8, a.string.len * n) catch return error.UnsupportedExpression;
+                var off: usize = 0;
+                for (0..n) |_| {
+                    @memcpy(buf[off .. off + a.string.len], a.string);
+                    off += a.string.len;
+                }
+                return .{ .string = buf };
+            }
+            if (std.mem.eql(u8, name, "sub") and args.len >= 2) {
+                const start_val = try self.eval(args[1]);
+                const start_raw = numericAsInt(start_val) orelse return error.UnsupportedExpression;
+                const len_i: i64 = @intCast(a.string.len);
+                const s: i64 = if (start_raw < 0) @max(len_i + start_raw + 1, 1) else @max(start_raw, 1);
+                var e: i64 = len_i;
+                if (args.len >= 3) {
+                    const end_val = try self.eval(args[2]);
+                    const end_raw = numericAsInt(end_val) orelse return error.UnsupportedExpression;
+                    e = if (end_raw < 0) len_i + end_raw + 1 else @min(end_raw, len_i);
+                }
+                if (s > e) return .{ .string = "" };
+                const si: usize = @intCast(s - 1);
+                const ei: usize = @intCast(e);
+                return .{ .string = a.string[si..ei] };
+            }
+        }
+        return error.UnsupportedExpression;
+    }
+
+    /// Evaluate math.* standard library functions at compile time.
+    fn evalMathBuiltin(self: *Evaluator, name: []const u8, args: []const *ast.Expr) EvalError!Value {
+        if (args.len == 1) {
+            const a = try self.eval(args[0]);
+            const v = numericAsFloat(a) orelse return error.UnsupportedExpression;
+            if (std.mem.eql(u8, name, "abs")) return if (a == .int) .{ .int = if (a.int < 0) -a.int else a.int } else .{ .float = @abs(v) };
+            if (std.mem.eql(u8, name, "floor")) return .{ .float = @floor(v) };
+            if (std.mem.eql(u8, name, "ceil")) return .{ .float = @ceil(v) };
+            if (std.mem.eql(u8, name, "sqrt")) return .{ .float = @sqrt(v) };
+            if (std.mem.eql(u8, name, "sin")) return .{ .float = @sin(v) };
+            if (std.mem.eql(u8, name, "cos")) return .{ .float = @cos(v) };
+            if (std.mem.eql(u8, name, "tan")) return .{ .float = std.math.tan(v) };
+            if (std.mem.eql(u8, name, "exp")) return .{ .float = @exp(v) };
+            if (std.mem.eql(u8, name, "log")) return .{ .float = @log(v) };
+            return error.UnsupportedExpression;
+        }
+        if (args.len == 2) {
+            const a = try self.eval(args[0]);
+            const b = try self.eval(args[1]);
+            if (std.mem.eql(u8, name, "max")) {
+                if (a == .int and b == .int) return .{ .int = if (a.int > b.int) a.int else b.int };
+                const av = numericAsFloat(a) orelse return error.UnsupportedExpression;
+                const bv = numericAsFloat(b) orelse return error.UnsupportedExpression;
+                return .{ .float = if (av > bv) av else bv };
+            }
+            if (std.mem.eql(u8, name, "min")) {
+                if (a == .int and b == .int) return .{ .int = if (a.int < b.int) a.int else b.int };
+                const av = numericAsFloat(a) orelse return error.UnsupportedExpression;
+                const bv = numericAsFloat(b) orelse return error.UnsupportedExpression;
+                return .{ .float = if (av < bv) av else bv };
+            }
+            if (std.mem.eql(u8, name, "pow")) {
+                const av = numericAsFloat(a) orelse return error.UnsupportedExpression;
+                const bv = numericAsFloat(b) orelse return error.UnsupportedExpression;
+                return .{ .float = std.math.pow(f64, av, bv) };
+            }
+            return error.UnsupportedExpression;
+        }
+        return error.UnsupportedExpression;
     }
 
     fn evalTable(self: *Evaluator, fields: []const ast.TableField) EvalError!Value {

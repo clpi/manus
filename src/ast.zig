@@ -180,6 +180,9 @@ pub const Upvalue = struct {
     /// true when captured from an enclosing local, false for globals
     is_local: bool,
     typ: ?RT = null,
+    /// true when this upvalue is assigned to inside the closure body or shared
+    /// between multiple closures. Requires heap-allocated cell for shared mutation.
+    mutable: bool = false,
 };
 
 pub const FuncBody = struct {
@@ -518,6 +521,8 @@ pub const Stmt = union(enum) {
     alias_def: AliasDef,
     macro_def: MacroDef,
     cinclude: struct { loc: Loc, header: []const u8 },
+    /// Module-level `@build.*` directive (e.g. `@build.exe({ name = "app", ... })`).
+    directive: struct { loc: Loc, attr: Attribute },
 };
 
 /// A user-defined table type (like a class/struct), declared with `alias`.

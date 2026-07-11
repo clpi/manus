@@ -8,7 +8,7 @@
 fun execute(tmpl: str, data: any): str
     if tmpl == nil then return "" end
     if data == nil then data = {} end
-    render(tmpl, data)
+    return render(tmpl, data)
 end
 
 -- render: internal recursive renderer.

@@ -10,7 +10,7 @@ fun simple_new(): any
 end
 
 -- simple_get: retrieve a value from the cache.
-fun simple_get(c: any, key: any): any
+fun simple_get(c: any, key: str): any
     if c == nil then return nil end
     val = c.data[key]
     if val ~= nil then
@@ -22,7 +22,7 @@ fun simple_get(c: any, key: any): any
 end
 
 -- simple_set: store a value in the cache.
-fun simple_set(c: any, key: any, value: any): void
+fun simple_set(c: any, key: str, value: any): void
     if c == nil then return end
     if c.data[key] == nil then
         c.order[rawlen(c.order) + 1] = key
@@ -31,13 +31,13 @@ fun simple_set(c: any, key: any, value: any): void
 end
 
 -- simple_has: check if a key exists in the cache.
-fun simple_has(c: any, key: any): bool
+fun simple_has(c: any, key: str): bool
     if c == nil then return false end
     c.data[key] ~= nil
 end
 
 -- simple_delete: remove a key from the cache.
-fun simple_delete(c: any, key: any): void
+fun simple_delete(c: any, key: str): void
     if c == nil then return end
     c.data[key] = nil
     new_order = {}
@@ -78,20 +78,20 @@ end
 -- ===== TTL cache =====
 
 -- ttl_new: create a TTL cache with the given default TTL in seconds.
-fun ttl_new(default_ttl: any): any
+fun ttl_new(default_ttl: i64): any
     if default_ttl == nil then default_ttl = 60 end
     {data = {}, timestamps = {}, ttl = default_ttl, hits = 0, misses = 0}
 end
 
 -- Internal: remove a key from the TTL cache.
-fun std_cache_ttl_delete(c: any, key: any): void
+fun std_cache_ttl_delete(c: any, key: str): void
     if c == nil then return end
     c.data[key] = nil
     c.timestamps[key] = nil
 end
 
 -- ttl_get: retrieve a value, returning nil if expired.
-fun ttl_get(c: any, key: any): any
+fun ttl_get(c: any, key: str): any
     if c == nil then return nil end
     val = c.data[key]
     if val == nil then
@@ -112,14 +112,14 @@ fun ttl_get(c: any, key: any): any
 end
 
 -- ttl_set: store a value with a custom TTL (seconds). nil uses default.
-fun ttl_set(c: any, key: any, value: any, custom_ttl: any): void
+fun ttl_set(c: any, key: str, value: any, custom_ttl: i64): void
     if c == nil then return end
     c.data[key] = value
     c.timestamps[key] = os.clock()
 end
 
 -- ttl_has: check if a key exists and is not expired.
-fun ttl_has(c: any, key: any): bool
+fun ttl_has(c: any, key: str): bool
     if c == nil then return false end
     val = c.data[key]
     if val == nil then return false end
@@ -132,7 +132,7 @@ fun ttl_has(c: any, key: any): bool
 end
 
 -- ttl_delete: remove a key from the cache.
-fun ttl_delete(c: any, key: any): void
+fun ttl_delete(c: any, key: str): void
     std_cache_ttl_delete(c, key)
 end
 
@@ -179,7 +179,7 @@ end
 -- ===== LRU cache =====
 
 -- Internal: move key to end of order list (mark as recently used).
-fun std_cache_lru_touch(c: any, key: any): void
+fun std_cache_lru_touch(c: any, key: str): void
     new_order = {}
     i = 1
     while i <= rawlen(c.order)
@@ -193,7 +193,7 @@ fun std_cache_lru_touch(c: any, key: any): void
 end
 
 -- Internal: remove key from order list.
-fun std_cache_lru_remove_order(c: any, key: any): void
+fun std_cache_lru_remove_order(c: any, key: str): void
     new_order = {}
     i = 1
     while i <= rawlen(c.order)
@@ -206,13 +206,13 @@ fun std_cache_lru_remove_order(c: any, key: any): void
 end
 
 -- lru_new: create an LRU cache with a maximum capacity.
-fun lru_new(capacity: any): any
+fun lru_new(capacity: i64): any
     if capacity == nil then capacity = 128 end
     {data = {}, order = {}, capacity = capacity, hits = 0, misses = 0}
 end
 
 -- lru_get: retrieve a value and mark it as recently used.
-fun lru_get(c: any, key: any): any
+fun lru_get(c: any, key: str): any
     if c == nil then return nil end
     val = c.data[key]
     if val ~= nil then
@@ -225,7 +225,7 @@ fun lru_get(c: any, key: any): any
 end
 
 -- lru_set: store a value, evicting LRU entry if at capacity.
-fun lru_set(c: any, key: any, value: any): void
+fun lru_set(c: any, key: str, value: any): void
     if c == nil then return end
     if c.data[key] ~= nil then
         c.data[key] = value
@@ -248,13 +248,13 @@ fun lru_set(c: any, key: any, value: any): void
 end
 
 -- lru_has: check if a key exists in the cache.
-fun lru_has(c: any, key: any): bool
+fun lru_has(c: any, key: str): bool
     if c == nil then return false end
     c.data[key] ~= nil
 end
 
 -- lru_delete: remove a key from the cache.
-fun lru_delete(c: any, key: any): void
+fun lru_delete(c: any, key: str): void
     if c == nil then return end
     c.data[key] = nil
     std_cache_lru_remove_order(c, key)

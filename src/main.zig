@@ -12,6 +12,48 @@ const escape = @import("escape.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 const term = @import("term.zig");
 
+fn env_value_truthy(value: []const u8) bool {
+    if (value.len == 0) return false;
+    if (std.ascii.eqlIgnoreCase(value, "0")) return false;
+    if (std.ascii.eqlIgnoreCase(value, "false")) return false;
+    if (std.ascii.eqlIgnoreCase(value, "no")) return false;
+    if (std.ascii.eqlIgnoreCase(value, "off")) return false;
+    return true;
+}
+
+fn apply_env_flags(init: std.process.Init) void {
+    const map = init.environ_map;
+    if (map.get("DUO_TRACE")) |v| {
+        if (env_value_truthy(v)) term.trace = true;
+    }
+    if (map.get("DUO_INFO")) |v| {
+        if (env_value_truthy(v)) term.info = true;
+    }
+    if (map.get("DUO_HINTS")) |v| {
+        if (env_value_truthy(v)) term.hints = true;
+    }
+    if (map.get("DUO_PLAIN_DIAG")) |v| {
+        if (env_value_truthy(v)) term.plain = true;
+    }
+}
+
+fn apply_cli_flags(trace_flag: bool, info_flag: bool, hints_flag: bool, plain_diag: bool) void {
+    if (trace_flag) term.trace = true;
+    if (info_flag) term.info = true;
+    if (hints_flag) term.hints = true;
+    if (plain_diag) term.plain = true;
+}
+
+fn start_trace_timer() ?u64 {
+    if (!term.trace) return null;
+    return std.time.nanoTimestamp();
+}
+
+fn trace_phase(start_ns: *const u64, label: []const u8, detail: ?[]const u8) void {
+    const elapsed_ms = @divTrunc(@as(u64, @intCast(std.time.nanoTimestamp() -% start_ns.*)), std.time.ns_per_ms);
+    term.traceDone(label, elapsed_ms, detail);
+}
+
 const usage =
     \\usage: duo [command] [options] [file]
     \\
@@ -23,7 +65,8 @@ const usage =
     \\  run        [file]   compile and run immediately, or run build.duo target
     \\  check      <file>   type-check only, no output
     \\  fmt        <file>   format a .duo/.lua file
-    \\  dump-c     <file>   print generated C to stdout
+    \\  test       <file>   run @test / @bench functions in a .duo file
+    \\  bench      <file>   run only @bench-marked functions
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
     \\options:
@@ -36,12 +79,17 @@ const usage =
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
     \\  --link <lib>      link against a C library (e.g. --link raylib; repeatable)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
+    \\  --trace           show compiler pipeline steps and timings
+    \\  --info            show informational compiler notes (opt-in)
+    \\  --hints           show compiler hints and suggestions (opt-in)
+    \\  --filter <pat>    run only tests whose name contains <pat>
     \\
 ;
 
 pub fn main(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
     term.init(init.io);
+    apply_env_flags(init);
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
 
@@ -58,6 +106,8 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "check") or
             std.mem.eql(u8, args[1], "fmt") or
             std.mem.eql(u8, args[1], "dump-c") or
+            std.mem.eql(u8, args[1], "test") or
+            std.mem.eql(u8, args[1], "bench") or
             std.mem.eql(u8, args[1], "completion") or
             std.mem.eql(u8, args[1], "help") or
             std.mem.eql(u8, args[1], "--help") or
@@ -70,10 +120,15 @@ pub fn main(init: std.process.Init) !void {
     var opt_level: []const u8 = "-O3";
     var target: []const u8 = "native";
     var verbose = false;
+    var trace_flag = false;
+    var info_flag = false;
+    var hints_flag = false;
+    var plain_diag = false;
     var load_chunk = false;
     var lib_mode = false;
     var pgo = false;
     var shared_mem = false;
+    var test_filter: ?[]const u8 = null;
     var link_flags: std.ArrayList([]const u8) = .empty;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
@@ -104,10 +159,23 @@ pub fn main(init: std.process.Init) !void {
             try link_flags.append(alloc, args[i]);
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
+        } else if (std.mem.eql(u8, arg, "--trace")) {
+            trace_flag = true;
+        } else if (std.mem.eql(u8, arg, "--info")) {
+            info_flag = true;
+        } else if (std.mem.eql(u8, arg, "--hints")) {
+            hints_flag = true;
+        } else if (std.mem.eql(u8, arg, "--plain-diagnostics")) {
+            plain_diag = true;
+        } else if (std.mem.eql(u8, arg, "--filter") and i + 1 < args.len) {
+            i += 1;
+            test_filter = args[i];
         } else if (arg.len > 0 and arg[0] != '-') {
             input_file = arg;
         }
     }
+
+    apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag);
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         term.printRaw("{s}", .{usage});
@@ -149,6 +217,22 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
+    if (std.mem.eql(u8, cmd, "test") or std.mem.eql(u8, cmd, "bench")) {
+        const file = input_file orelse {
+            term.err("no input file (duo {s} <file.duo>)", .{cmd});
+            std.process.exit(1);
+        };
+        const out = output_file orelse out: {
+            const stem = std.fs.path.stem(file);
+            break :out try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.test.out", .{stem});
+        };
+        const bench_only = std.mem.eql(u8, cmd, "bench");
+        term.banner(if (bench_only) "bench" else "test");
+        term.kv("source", file);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags.items);
+        return;
+    }
+
     const file = input_file orelse {
         term.err("no input file", .{});
         std.process.exit(1);
@@ -163,11 +247,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, false, null, link_flags.items);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false, link_flags.items);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false, false, false, null, link_flags.items);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false, &.{});
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false, false, false, null, &.{});
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -196,6 +280,8 @@ const BuildTarget = struct {
     lib_mode: bool = false,
     shared_mem: bool = false,
     link: []const []const u8 = &.{},
+    test_mode: bool = false,
+    bench_mode: bool = false,
 };
 
 fn firstStringField(src: []const u8, field: []const u8) ?[]const u8 {
@@ -309,9 +395,10 @@ fn firstListField(alloc: std.mem.Allocator, src: []const u8, field: []const u8) 
     return &.{};
 }
 
-fn parseTargetBlock(alloc: std.mem.Allocator, block: []const u8, lib_mode: bool) ?BuildTarget {
+fn parseTargetBlock(alloc: std.mem.Allocator, block: []const u8, kind: enum { exe, lib, test, bench }) ?BuildTarget {
     const src = firstStringField(block, "src") orelse return null;
     const name = firstStringField(block, "name") orelse std.fs.path.stem(src);
+    const lib_mode = kind == .lib;
     return .{
         .name = name,
         .src = src,
@@ -324,7 +411,27 @@ fn parseTargetBlock(alloc: std.mem.Allocator, block: []const u8, lib_mode: bool)
         .lib_mode = lib_mode or firstBoolField(block, "lib", false),
         .shared_mem = firstBoolField(block, "shared_memory", false),
         .link = firstListField(alloc, block, "link") catch &.{},
+        .test_mode = kind == .test,
+        .bench_mode = kind == .bench,
     };
+}
+
+fn readBuildProjectDefault(src: []const u8) ?[]const u8 {
+    var at: usize = 0;
+    while (std.mem.indexOfPos(u8, src, at, "build.project")) |pos| {
+        const rel_open = std.mem.indexOfScalar(u8, src[pos..], '{') orelse {
+            at = pos + "build.project".len;
+            continue;
+        };
+        const open = pos + rel_open;
+        const block = matchingTable(src, open) orelse {
+            at = pos + "build.project".len;
+            continue;
+        };
+        if (firstStringField(block, "default")) |d| return d;
+        at = open + block.len + 2;
+    }
+    return firstStringField(src, "default");
 }
 
 fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !BuildTarget {
@@ -333,20 +440,26 @@ fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !Bu
         term.print("run `duo init` to create one", .{});
         std.process.exit(1);
     };
-    const target_name = requested orelse firstStringField(src, "default");
+    const target_name = requested orelse readBuildProjectDefault(src);
     var first: ?BuildTarget = null;
     var at: usize = 0;
     while (std.mem.indexOfPos(u8, src, at, "build.")) |pos| {
-        const is_exe = std.mem.startsWith(u8, src[pos..], "build.exe");
-        const is_lib = std.mem.startsWith(u8, src[pos..], "build.lib");
-        if (!is_exe and !is_lib) {
+        const slice = src[pos..];
+        const kind: enum { exe, lib, test, bench, skip } = blk: {
+            if (std.mem.startsWith(u8, slice, "build.exe")) break :blk .exe;
+            if (std.mem.startsWith(u8, slice, "build.lib")) break :blk .lib;
+            if (std.mem.startsWith(u8, slice, "build.test")) break :blk .test;
+            if (std.mem.startsWith(u8, slice, "build.bench")) break :blk .bench;
+            break :blk .skip;
+        };
+        if (kind == .skip) {
             at = pos + "build.".len;
             continue;
         }
-        const rel_open = std.mem.indexOfScalar(u8, src[pos..], '{') orelse break;
+        const rel_open = std.mem.indexOfScalar(u8, slice, '{') orelse break;
         const open = pos + rel_open;
         const block = matchingTable(src, open) orelse break;
-        if (parseTargetBlock(alloc, block, is_lib)) |t| {
+        if (parseTargetBlock(alloc, block, kind)) |t| {
             if (first == null) first = t;
             if (target_name) |want| {
                 if (std.mem.eql(u8, t.name, want)) return t;
@@ -410,7 +523,17 @@ fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
     try run_child_process(io, &mkdir_argv, "mkdir", true);
     try writeNewFile(io, "src/main.duo", main_src);
     try writeNewFile(io, "build.duo", build_src);
-    term.ok("created Duo project '{s}'", .{name});
+    term.banner("Duo project created");
+    term.kv("name", name);
+    term.section("files");
+    term.kv("•", "src/main.duo");
+    term.kv("•", "build.duo");
+    term.kv("•", "zig-out/bin/");
+    term.divider();
+    term.dim("next: duo build   # compile default target", .{});
+    term.dim("       duo run    # build and run", .{});
+    term.dim("       duo shell  # interactive REPL", .{});
+    term.ok("ready — project '{s}'", .{name});
 }
 
 fn startsWithWord(line: []const u8, word: []const u8) bool {
@@ -499,7 +622,11 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
         return false;
     }
     if (std.mem.eql(u8, line, ":help")) {
-        term.print("enter Duo code, expressions, !host-command, :quit, or :exit", .{});
+        term.section("shell commands");
+        term.kv("expr", "evaluate and print (e.g. 1 + 2)");
+        term.kv("stmt", "compile and run Duo code");
+        term.kv("!cmd", "run a host shell command");
+        term.kv(":quit / :exit", "leave the shell");
         return true;
     }
     if (line[0] == '!' and line.len > 1) {
@@ -517,19 +644,24 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
 
     const cwd = Io.Dir.cwd();
     try Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = source });
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false, &.{});
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false, false, false, null, &.{});
     try run_shell_binary(io, out_path);
     return true;
 }
 
 fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
-    term.print("Duo shell (:help for help, :quit to exit)", .{});
+    term.banner("Duo shell");
+    term.dim("expressions print results · statements compile+run · :help for commands", .{});
     var line: std.ArrayList(u8) = .empty;
     defer line.deinit(alloc);
     var counter: usize = 0;
     var buf: [1024]u8 = undefined;
 
-    term.printRaw("duo> ", .{});
+    if (term.color) {
+        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+    } else {
+        term.printRaw("duo> ", .{});
+    }
     while (true) {
         const n = try std.posix.read(std.posix.STDIN_FILENO, buf[0..]);
         if (n == 0) {
@@ -543,7 +675,11 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
                 const keep_running = try run_shell_line(alloc, io, line.items, &counter, verbose);
                 line.clearRetainingCapacity();
                 if (!keep_running) return;
-                term.printRaw("duo> ", .{});
+                if (term.color) {
+                    term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                } else {
+                    term.printRaw("duo> ", .{});
+                }
             } else if (b != '\r') {
                 try line.append(alloc, b);
             }
@@ -579,6 +715,11 @@ fn do_project_build(
         if (std.mem.eql(u8, target, "wasm32-wasi")) break :out try std.fmt.allocPrint(alloc, "zig-out/bin/{s}.wasm", .{stem});
         break :out try std.fmt.allocPrint(alloc, "zig-out/bin/{s}", .{stem});
     };
+    term.banner("duo build");
+    term.kv("target", t.name);
+    term.kv("source", t.src);
+    term.kv("output", out);
+    if (term.trace) term.traceStep("reading build.duo target", .{});
     try ensureDirForPath(io, out);
     // Merge CLI link flags with link flags from build.duo
     const merged_link = if (t.link.len > 0) blk: {
@@ -602,6 +743,9 @@ fn do_project_build(
         pgo_arg or t.pgo,
         target_lib_mode,
         shared_mem_arg or t.shared_mem,
+        t.test_mode,
+        t.bench_mode,
+        null,
         merged_link,
     );
 }
@@ -625,6 +769,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
 
     var lex = Lexer.init(src, src_path);
     var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = is_duo_source_path(src_path);
     var mod = parser.parse_module() catch |e| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(e)});
@@ -637,6 +782,8 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     var sem = Sema.init(alloc);
     sem.lua55_mode = is_lua_source_path(src_path);
     sem.duo_mode = is_duo_source_path(src_path);
+    sem.hints_enabled = term.hints;
+    sem.info_enabled = term.info;
     var expander = MacroExpand.Expander.init(alloc);
     defer expander.deinit();
     expander.expandModule(&mod) catch |e| {
@@ -689,16 +836,41 @@ fn do_compile(
     pgo: bool,
     lib_mode: bool,
     shared_mem: bool,
+    test_mode: bool,
+    bench_mode: bool,
+    test_filter: ?[]const u8,
     link_flags: []const []const u8,
 ) !void {
+    const compile_started = if (term.trace) std.time.nanoTimestamp() else 0;
+
+    if (term.trace) {
+        term.banner("compile");
+        term.kv("source", src_path);
+        term.kv("output", out_path);
+        term.kv("target", target);
+        term.traceStep("parse + sema", .{});
+    }
+
+    var phase_timer = start_trace_timer();
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
+    if (phase_timer) |*t| trace_phase(t, "parse + sema", null);
 
     if (check_only) {
-        term.ok("OK", .{});
+        if (ps.sem.warnings == 0 and ps.sem.hints == 0 and ps.sem.infos == 0) {
+            term.ok("✓ checked — no errors", .{});
+        } else {
+            term.ok("✓ checked — {d} warning(s), {d} hint(s), {d} info(s)", .{
+                ps.sem.warnings,
+                ps.sem.hints,
+                ps.sem.infos,
+            });
+        }
         return;
     }
 
+    phase_timer = start_trace_timer();
+    if (term.trace) term.traceStep("monomorphize", .{});
     // Monomorphization: expand generic functions into concrete specializations
     // before codegen (Task 8.3). Runs on every compile so generic instantiation
     // is exercised even before codegen consumes the specializations (Task 12.1).
@@ -708,7 +880,14 @@ fn do_compile(
         term.err("monomorphization error: {}", .{e});
         std.process.exit(1);
     };
+    if (phase_timer) |*t| {
+        const detail = try std.fmt.allocPrint(alloc, "{d} specialization(s)", .{mono.count()});
+        defer alloc.free(detail);
+        trace_phase(t, "monomorphize", detail);
+    }
 
+    phase_timer = start_trace_timer();
+    if (term.trace) term.traceStep("ARC analysis", .{});
     // ARC insertion: decide retain/release/close points for heap values, after
     // monomorphization and before codegen (Task 9.4).
     var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
@@ -726,7 +905,14 @@ fn do_compile(
         term.err("ARC analysis error: {}", .{e});
         std.process.exit(1);
     };
+    if (phase_timer) |*t| {
+        const detail = try std.fmt.allocPrint(alloc, "{d} annotation(s)", .{arc_pass.annotations.items.len});
+        defer alloc.free(detail);
+        trace_phase(t, "ARC analysis", detail);
+    }
 
+    phase_timer = start_trace_timer();
+    if (term.trace) term.traceStep("async lower", .{});
     // Async lowering: describe each `async` function as a state machine, after
     // ARC and before codegen (Task 10.3).
     const is_wasm_target = std.mem.eql(u8, target, "wasm32-wasi");
@@ -743,6 +929,11 @@ fn do_compile(
         term.err("async lowering error: {}", .{e});
         std.process.exit(1);
     };
+    if (phase_timer) |*t| {
+        const detail = try std.fmt.allocPrint(alloc, "{d} async function(s)", .{async_pass.count()});
+        defer alloc.free(detail);
+        trace_phase(t, "async lower", detail);
+    }
 
     const is_wasm = std.mem.eql(u8, target, "wasm32-wasi");
 
@@ -750,6 +941,8 @@ fn do_compile(
         std.fs.path.stem(src_path),
     });
 
+    phase_timer = start_trace_timer();
+    if (term.trace) term.traceStep("codegen", .{});
     {
         const cwd = Io.Dir.cwd();
         const cf = try Io.Dir.createFile(cwd, io, c_path, .{});
@@ -766,12 +959,17 @@ fn do_compile(
         cg.load_chunk = load_chunk;
         cg.lib_mode = lib_mode;
         cg.duo_mode = ps.sem.duo_mode;
+        cg.test_mode = test_mode;
+        cg.bench_mode = bench_mode;
+        cg.test_filter = test_filter;
+        cg.test_entries = ps.sem.test_entries.items;
         cg.emit_module(&ps.mod) catch |e| {
             term.err("codegen error: {}", .{e});
             std.process.exit(1);
         };
         try fw.interface.flush();
     }
+    if (phase_timer) |*t| trace_phase(t, "codegen", c_path);
 
     // Build the base set of CC flags shared between all compile passes.
     var base_cc_flags = base: {
@@ -842,6 +1040,8 @@ fn do_compile(
     defer base_cc_flags.deinit(alloc);
 
     const silent = run_after and !verbose;
+    phase_timer = start_trace_timer();
+    if (term.trace) term.traceStep("link", .{});
     // PGO two-pass compile (skipped for wasm, load_chunk, or run_after).
     if (pgo and !is_wasm and !load_chunk) {
         const stem = std.fs.path.stem(src_path);
@@ -887,6 +1087,16 @@ fn do_compile(
         try cc_args.appendSlice(alloc, base_cc_flags.items);
         try cc_args.appendSlice(alloc, &.{ "-o", out_path, c_path });
         try run_child_process(io, cc_args.items, "C compiler", silent);
+    }
+    if (phase_timer) |*t| trace_phase(t, "link", out_path);
+
+    if (term.trace) {
+        const total_ms = @divTrunc(@as(u64, @intCast(std.time.nanoTimestamp() -% compile_started)), std.time.ns_per_ms);
+        term.traceSummary("total", "{d} ms", .{total_ms});
+    }
+
+    if (!run_after) {
+        term.ok("✓ {s}", .{out_path});
     }
 
     if (run_after and !is_wasm) {
@@ -944,8 +1154,8 @@ const bash_completion =
     \\    cur="${COMP_WORDS[COMP_CWORD]}"
     \\    prev="${COMP_WORDS[COMP_CWORD-1]}"
     \\
-    \\    local commands="shell init build compile run check dump-c completion help"
-    \\    local options="-o -O0 -O1 -O2 -O3 --cc --target --load-chunk --lib --pgo --shared-memory -v --verbose -h --help"
+    \\    local commands="shell init build compile run check test bench dump-c completion help"
+    \\    local options="-o -O0 -O1 -O2 -O3 --cc --target --load-chunk --lib --pgo --shared-memory --link --filter --trace --info --hints --plain-diagnostics -v --verbose -h --help"
     \\    local shells="bash zsh fish nu"
     \\    local targets="native wasm32-wasi"
     \\
@@ -961,7 +1171,7 @@ const bash_completion =
     \\    esac
     \\
     \\    case "${COMP_WORDS[1]}" in
-    \\        compile|run|check|dump-c)
+    \\        compile|run|check|test|bench|dump-c)
     \\            COMPREPLY=( $(compgen -f -X '!*.duo' -- "${cur}") $(compgen -f -X '!*.lua' -- "${cur}") $(compgen -W "${options}" -- "${cur}") )
     \\            ;;
     \\        *)
@@ -984,6 +1194,8 @@ const zsh_completion =
     \\    'compile:compile .duo/.lua to a native binary'
     \\    'run:compile and run a file or build target'
     \\    'check:type-check only'
+    \\    'test:run @test functions in a .duo file'
+    \\    'bench:run @bench functions only'
     \\    'dump-c:print generated C'
     \\    'completion:generate shell completions'
     \\    'help:show help'
@@ -1000,6 +1212,12 @@ const zsh_completion =
     \\    '--lib[compile as library]'
     \\    '--pgo[profile-guided optimization]'
     \\    '--shared-memory[enable WASM shared memory]'
+    \\    '--link[link against C library]:library:'
+    \\    '--filter[test name substring filter]:pattern:'
+    \\    '--trace[show compiler pipeline steps]'
+    \\    '--info[show informational compiler notes]'
+    \\    '--hints[show compiler hints]'
+    \\    '--plain-diagnostics[one-line diagnostics for LSP/CI]'
     \\    '(-v --verbose)'{-v,--verbose}'[show compiler warnings]'
     \\    '(-h --help)'{-h,--help}'[show help]'
     \\  )
@@ -1008,7 +1226,7 @@ const zsh_completion =
     \\  else
     \\    case "${words[2]}" in
     \\      completion) _values 'shell' bash zsh fish nu ;;
-    \\      compile|run|check|dump-c) _arguments $opts '*:source:_files -g "*.(duo|lua)"' ;;
+    \\      compile|run|check|test|bench|dump-c) _arguments $opts '*:source:_files -g "*.(duo|lua)"' ;;
     \\      *) _arguments $opts ;;
     \\    esac
     \\  fi
@@ -1026,6 +1244,8 @@ const fish_completion =
     \\complete -c duo -n '__fish_use_subcommand' -a 'compile' -d 'Compile .duo/.lua to a native binary'
     \\complete -c duo -n '__fish_use_subcommand' -a 'run' -d 'Compile and run a file or build target'
     \\complete -c duo -n '__fish_use_subcommand' -a 'check' -d 'Type-check only'
+    \\complete -c duo -n '__fish_use_subcommand' -a 'test' -d 'Run @test functions in a .duo file'
+    \\complete -c duo -n '__fish_use_subcommand' -a 'bench' -d 'Run @bench functions only'
     \\complete -c duo -n '__fish_use_subcommand' -a 'dump-c' -d 'Print generated C'
     \\complete -c duo -n '__fish_use_subcommand' -a 'completion' -d 'Generate shell completions'
     \\complete -c duo -n '__fish_use_subcommand' -a 'help' -d 'Show help'
@@ -1036,6 +1256,12 @@ const fish_completion =
     \\complete -c duo -l lib -d 'Compile as library'
     \\complete -c duo -l pgo -d 'Profile-guided optimization'
     \\complete -c duo -l shared-memory -d 'Enable WASM shared memory'
+    \\complete -c duo -l link -r -d 'Link against C library'
+    \\complete -c duo -l filter -r -d 'Run only tests whose name contains pattern'
+    \\complete -c duo -l trace -d 'Show compiler pipeline steps'
+    \\complete -c duo -l info -d 'Show informational compiler notes'
+    \\complete -c duo -l hints -d 'Show compiler hints'
+    \\complete -c duo -l plain-diagnostics -d 'One-line diagnostics for LSP/CI'
     \\complete -c duo -s v -l verbose -d 'Show compiler warnings'
     \\complete -c duo -s h -l help -d 'Show help'
     \\complete -c duo -n '__fish_seen_subcommand_from completion' -x -a 'bash zsh fish nu'
@@ -1045,7 +1271,7 @@ const fish_completion =
 const nu_completion =
     \\# nushell completion for duo
     \\def "nu-complete duo commands" [] {
-    \\  [shell init build compile run check dump-c completion help]
+    \\  [shell init build compile run check test bench dump-c completion help]
     \\}
     \\def "nu-complete duo shells" [] {
     \\  [bash zsh fish nu]
@@ -1063,6 +1289,11 @@ const nu_completion =
     \\  --lib
     \\  --pgo
     \\  --shared-memory
+    \\  --link: string
+    \\  --trace
+    \\  --info
+    \\  --hints
+    \\  --plain-diagnostics
     \\  -v
     \\  --verbose
     \\  -h
@@ -1135,6 +1366,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     term.setSource(src_path, src);
     var lex = Lexer.init(src, src_path);
     var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = is_duo_source_path(src_path);
     const mod = parser.parse_module() catch |err| {
         if (lex.last_error_loc) |loc| {
             term.locErr(loc, "lexer failed with {s}", .{@errorName(err)});

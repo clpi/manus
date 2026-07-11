@@ -258,30 +258,32 @@ end
 -- ===== Error assertions =====
 
 -- assert_errors: assert that fn raises an error.
-fun assert_errors(fn_ref: any, message: any): bool
-    ok, result = pcall(fn_ref)
+fun assert_errors(fn_ref: any, message: any): any
+    local ok = pcall(fn_ref)
     if not ok then return true end
-    msg = "expected fn to raise an error, but it returned " .. tostring(result)
+    msg = "expected fn to raise an error, but it returned"
     if message ~= nil then msg = message .. " — " .. msg end
     error(msg)
 end
 
 -- assert_no_errors: assert that fn does not raise an error.
-fun assert_no_errors(fn_ref: any, message: any): bool
-    ok, result = pcall(fn_ref)
+fun assert_no_errors(fn_ref: any, message: any): any
+    local result = {pcall(fn_ref)}
+    local ok = result[1]
     if ok then return true end
-    msg = "expected fn to not raise an error: " .. tostring(result)
+    msg = "expected fn to not raise an error: " .. tostring(result[2])
     if message ~= nil then msg = message .. " — " .. msg end
     error(msg)
 end
 
 -- assert_error_match: assert fn raises an error matching a pattern.
-fun assert_error_match(fn_ref: any, pattern: any, message: any): bool
-    ok, result = pcall(fn_ref)
+fun assert_error_match(fn_ref: any, pattern: any, message: any): any
+    local result = {pcall(fn_ref)}
+    local ok = result[1]
     if not ok then
-        found = string.find(tostring(result), pattern, 1)
+        found = string.find(tostring(result[2]), pattern, 1)
         if found ~= nil then return true end
-        msg = "error did not match pattern '" .. pattern .. "': " .. tostring(result)
+        msg = "error did not match pattern '" .. pattern .. "': " .. tostring(result[2])
         if message ~= nil then msg = message .. " — " .. msg end
         error(msg)
     end

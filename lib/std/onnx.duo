@@ -149,7 +149,7 @@ local function flatten_array(data: any): any
 
     -- Compute total element count
     local count = rawlen(out)
-    {data = out, len = count}
+    return {data = out, len = count}
 end
 
 -- ===========================================================================

@@ -7,6 +7,7 @@ const ast = @import("ast.zig");
 const types = @import("types.zig");
 const RT = types.ResolvedType;
 const term = @import("term.zig");
+const directives = @import("directives.zig");
 
 pub const SemaError = error{
     TypeMismatch,
@@ -228,8 +229,16 @@ pub const Sema = struct {
     /// Aggressive field-type tracking: maps "varname.fieldname" → inferred RT.
     /// Updated on assignments, queried on field reads. Cleared per-function.
     table_field_types: std.StringHashMapUnmanaged(RT) = .{},
+    /// Metatable type tracking: maps variable name → known metatable fields.
+    /// Populated when setmetatable(x, mt) is called and mt is a table literal
+    /// with known __index. Enables compile-time method resolution.
+    metatable_types: std.StringHashMapUnmanaged(RT) = .{},
     errors: u32,
     warnings: u32,
+    hints: u32,
+    infos: u32,
+    hints_enabled: bool = false,
+    info_enabled: bool = false,
     current_ret: RT,
     next_closure_id: u32 = 0,
     /// When true, module scope starts with implicit `global *` (plain .lua files).
@@ -238,9 +247,22 @@ pub const Sema = struct {
     duo_mode: bool = false,
     /// When true, the current function has the @nopanic attribute.
     current_nopanic: bool = false,
+    /// When inside an enum_def, alias_def, or concept_def, the name of the type
+    /// being defined. Used by types.resolve() to resolve `Self` to the enclosing type.
+    current_type_name: ?[]const u8 = null,
     /// Set of variable names that escape their scope (captured by closures).
     /// Populated during analysis; consumed by the ARC pass for pruning.
     escape_names: std.StringHashMapUnmanaged(void) = .{},
+    /// Collected `@test` / `@bench` functions for `duo test` / `duo bench`.
+    test_entries: std.ArrayListUnmanaged(TestEntry) = .empty,
+    /// Collected `@build.*` module directives from the current module.
+    build_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
+
+    pub const TestEntry = struct {
+        func_name: []const u8,
+        loc: ast.Loc,
+        options: directives.TestOptions,
+    };
 
     /// Standard library function names that are known built-in globals.
     fn is_builtin_global(_: *const Sema, name: []const u8) bool {
@@ -289,7 +311,66 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "dofile") or
             std.mem.eql(u8, name, "require") or
             std.mem.eql(u8, name, "req") or
-            std.mem.eql(u8, name, "__constexpr"))
+            std.mem.eql(u8, name, "__constexpr") or
+            std.mem.eql(u8, name, "__asm") or
+            std.mem.eql(u8, name, "__emit") or
+            std.mem.eql(u8, name, "__bitcast") or
+            std.mem.eql(u8, name, "__volatile") or
+            std.mem.eql(u8, name, "__sizeof") or
+            std.mem.eql(u8, name, "__alignof") or
+            std.mem.eql(u8, name, "__offsetof") or
+            std.mem.eql(u8, name, "__typeinfo") or
+            std.mem.eql(u8, name, "__comptimeif") or
+            std.mem.eql(u8, name, "__static_assert") or
+            std.mem.eql(u8, name, "__typeof") or
+            std.mem.eql(u8, name, "__likely") or
+            std.mem.eql(u8, name, "__unlikely") or
+            std.mem.eql(u8, name, "__prefetch") or
+            std.mem.eql(u8, name, "__assume") or
+            std.mem.eql(u8, name, "__unreachable") or
+            std.mem.eql(u8, name, "__trap") or
+            std.mem.eql(u8, name, "__comptimefold") or
+            std.mem.eql(u8, name, "__comptimefor") or
+            std.mem.eql(u8, name, "__select") or
+            std.mem.eql(u8, name, "__ctz") or
+            std.mem.eql(u8, name, "__clz") or
+            std.mem.eql(u8, name, "__popcount") or
+            std.mem.eql(u8, name, "__bswap") or
+            std.mem.eql(u8, name, "__rotl") or
+            std.mem.eql(u8, name, "__rotr") or
+            std.mem.eql(u8, name, "__fence") or
+            // Metaprogramming: type introspection & reflection
+            std.mem.eql(u8, name, "__fields") or
+            std.mem.eql(u8, name, "__methods") or
+            std.mem.eql(u8, name, "__variants") or
+            std.mem.eql(u8, name, "__has_field") or
+            std.mem.eql(u8, name, "__has_method") or
+            std.mem.eql(u8, name, "__field_type") or
+            // Metaprogramming: type construction & manipulation
+            std.mem.eql(u8, name, "__type_name") or
+            std.mem.eql(u8, name, "__type_id") or
+            std.mem.eql(u8, name, "__is_type") or
+            std.mem.eql(u8, name, "__as_type") or
+            // Metaprogramming: compile-time code gen & control
+            std.mem.eql(u8, name, "__comptimeprint") or
+            std.mem.eql(u8, name, "__comptimeerror") or
+            std.mem.eql(u8, name, "__comptimewarn") or
+            std.mem.eql(u8, name, "__embed_file") or
+            std.mem.eql(u8, name, "__embed_str") or
+            std.mem.eql(u8, name, "__make_type") or
+            // Metaprogramming: layout control
+            std.mem.eql(u8, name, "__bitfield") or
+            std.mem.eql(u8, name, "__union") or
+            std.mem.eql(u8, name, "__field_offset") or
+            std.mem.eql(u8, name, "__field_size") or
+            // Metaprogramming: metatable type tracking
+            std.mem.eql(u8, name, "__metatable_type") or
+            std.mem.eql(u8, name, "__has_metamethod") or
+            // Metaprogramming: compile-time dispatch control
+            std.mem.eql(u8, name, "__inline_always") or
+            std.mem.eql(u8, name, "__no_inline") or
+            std.mem.eql(u8, name, "__cold_path") or
+            std.mem.eql(u8, name, "__hot_path"))
             return true;
         return false;
     }
@@ -301,6 +382,8 @@ pub const Sema = struct {
             .type_map = TypeMap.init(alloc),
             .errors = 0,
             .warnings = 0,
+            .hints = 0,
+            .infos = 0,
             .current_ret = .void,
             .next_closure_id = 0,
         };
@@ -331,7 +414,10 @@ pub const Sema = struct {
         }
         self.overloads.deinit(self.alloc);
         self.instantiation_sites.deinit(self.alloc);
+        self.test_entries.deinit(self.alloc);
+        self.build_directives.deinit(self.alloc);
         self.escape_names.deinit(self.alloc);
+        self.metatable_types.deinit(self.alloc);
     }
 
     fn note_global(self: *Sema, name: []const u8, t: RT) !void {
@@ -347,6 +433,15 @@ pub const Sema = struct {
         if (ann.eql(init_t)) return true;
         if (ann.is_integer() and init_t.is_integer()) return true;
         if (ann.is_float() and init_t.is_float()) return true;
+        // ?T accepts T (optional accepts its inner type)
+        if (ann == .option) {
+            if (ann.option.eql(init_t)) return true;
+            if (ann.option.is_numeric() and init_t.is_numeric()) return true;
+        }
+        // Result[T, E] accepts T
+        if (ann == .result) {
+            if (ann.result.ok.eql(init_t)) return true;
+        }
         return false;
     }
 
@@ -358,6 +453,18 @@ pub const Sema = struct {
     fn warn_msg(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
         self.warnings += 1;
         term.locWarn(loc, fmt, args);
+    }
+
+    fn hint_msg(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
+        if (!self.hints_enabled) return;
+        self.hints += 1;
+        term.locHint(loc, fmt, args);
+    }
+
+    fn info_msg(self: *Sema, loc: ast.Loc, comptime fmt: []const u8, args: anytype) void {
+        if (!self.info_enabled) return;
+        self.infos += 1;
+        term.locInfo(loc, fmt, args);
     }
 
     fn define_vararg_rest(self: *Sema, fb: *const ast.FuncBody) !void {
@@ -941,14 +1048,36 @@ pub const Sema = struct {
     // ── Public entry ─────────────────────────────────────────────────────────
 
     pub fn check_module(self: *Sema, mod: *ast.Module) !void {
+        self.test_entries.clearRetainingCapacity();
+        self.build_directives.clearRetainingCapacity();
         try self.scope.push();
         self.seed_globals();
         if (self.lua55_mode or self.duo_mode) {
             self.scope.set_require_global(true);
         }
+        // Pre-register all top-level function names so forward references work.
+        // This allows functions to call each other regardless of declaration order.
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .func_decl => |fd| {
+                    if (fd.path.len >= 1) {
+                        self.scope.define(fd.path[0], .{ .typ = .any, .is_const = false }) catch {};
+                    }
+                },
+                .local_decl => |ld| {
+                    for (ld.names) |name| {
+                        self.scope.define(name.ident, .{ .typ = .any, .is_const = false }) catch {};
+                    }
+                },
+                else => {},
+            }
+        }
         try self.check_block(&mod.body);
         self.scope.pop();
         self.table_field_types.deinit(self.alloc);
+        if (self.info_enabled and self.instantiation_sites.items.len > 0) {
+            term.infoMsg("recorded {d} generic instantiation site(s) for monomorphization", .{self.instantiation_sites.items.len});
+        }
     }
 
     fn seed_globals(self: *Sema) void {
@@ -999,7 +1128,13 @@ pub const Sema = struct {
                         if (i < init_types.items.len) {
                             const init_t = init_types.items[i];
                             if (ann != .any and init_t != .any and init_t != .nil and !type_annotation_accepts_init(ann, init_t)) {
-                                self.err(lname.loc, "type mismatch: variable '{s}' declared as {}, but initializer has type {}", .{ lname.ident, ann, init_t });
+                            {
+                                var ann_buf: [128]u8 = undefined;
+                                var init_buf: [128]u8 = undefined;
+                                const ann_name = ann.duo_name(&ann_buf);
+                                const init_name = init_t.duo_name(&init_buf);
+                                self.err(lname.loc, "type mismatch: variable '{s}' declared as '{s}', but initializer has type '{s}'", .{ lname.ident, ann_name, init_name });
+                            }
                             }
                         }
                         t = ann;
@@ -1025,6 +1160,13 @@ pub const Sema = struct {
                         .is_close = is_close,
                         .deprecated_msg = get_deprecated_msg(lname.attributes),
                     });
+                    if (self.duo_mode and self.hints_enabled and lname.typ == .inferred and lname.attrib == null) {
+                        if (t == .i64 or t == .f64 or t == .str or t == .bool) {
+                            var tbuf: [32]u8 = undefined;
+                            const tname = t.duo_name(&tbuf);
+                            self.hint_msg(lname.loc, "local '{s}' inferred as '{s}'; add an explicit annotation to lock in native codegen", .{ lname.ident, tname });
+                        }
+                    }
                 }
             },
             .const_decl => |*cd| {
@@ -1092,6 +1234,12 @@ pub const Sema = struct {
                     _ = try self.check_expr(tgt);
                     if (i < as.values.len and tgt.* == .name) {
                         try self.maybe_register_meta_concept(tgt.name.ident, as.values[i]);
+                    }
+                    // Track reassignment for mutable upvalue detection
+                    if (tgt.* == .name) {
+                        if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
+                            sym.assigned_after_init = true;
+                        }
                     }
                 }
             },
@@ -1188,10 +1336,21 @@ pub const Sema = struct {
             },
             .alias_def => |*ad| {
                 // Alias types are compile-time declarations; type-check fields and methods.
-                _ = ad;
+                const prev_type_name = self.current_type_name;
+                self.current_type_name = ad.name;
+                defer self.current_type_name = prev_type_name;
+                // Register the alias name in scope as a constant struct type
+                try self.scope.define(ad.name, .{ .typ = .{ .@"struct" = .{ .name = ad.name } }, .is_const = true });
             },
             .macro_def => {},
             .cinclude => {},
+            .directive => |*dir| {
+                if (directives.validateModuleDirective(dir.attr)) |bad| {
+                    self.err(dir.loc, "unknown module directive '@{s}'", .{bad});
+                } else {
+                    try self.build_directives.append(self.alloc, dir.attr);
+                }
+            },
         }
     }
 
@@ -1365,6 +1524,119 @@ pub const Sema = struct {
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     return try self.check_expr(c.args[0]);
                 }
+                // Low-level builtins return known types
+                if (c.func.* == .name) {
+                    const bn = c.func.name.ident;
+                    if (std.mem.eql(u8, bn, "__sizeof") or
+                        std.mem.eql(u8, bn, "__alignof") or
+                        std.mem.eql(u8, bn, "__offsetof"))
+                    {
+                        return .i64;
+                    }
+                    if (std.mem.eql(u8, bn, "__typeinfo")) return .str;
+                    if (std.mem.eql(u8, bn, "__emit")) return .any;
+                    if (std.mem.eql(u8, bn, "__bitcast")) return .any;
+                    if (std.mem.eql(u8, bn, "__volatile")) return .any;
+                    if (std.mem.eql(u8, bn, "__comptimeif") and c.args.len == 3) {
+                        // Infer from then/else branches
+                        const t1 = try self.check_expr(c.args[1]);
+                        const t2 = try self.check_expr(c.args[2]);
+                        if (t1.eql(t2)) return t1;
+                        return .any;
+                    }
+                    // Branch prediction hints preserve type
+                    if (std.mem.eql(u8, bn, "__likely") or std.mem.eql(u8, bn, "__unlikely")) {
+                        if (c.args.len == 1) return .i64;
+                    }
+                    // Bit manipulation builtins return i64
+                    if (std.mem.eql(u8, bn, "__ctz") or
+                        std.mem.eql(u8, bn, "__clz") or
+                        std.mem.eql(u8, bn, "__popcount") or
+                        std.mem.eql(u8, bn, "__bswap") or
+                        std.mem.eql(u8, bn, "__rotl") or
+                        std.mem.eql(u8, bn, "__rotr"))
+                    {
+                        return .i64;
+                    }
+                    // These return i64 (value 0) but used as statements
+                    if (std.mem.eql(u8, bn, "__prefetch") or
+                        std.mem.eql(u8, bn, "__assume") or
+                        std.mem.eql(u8, bn, "__unreachable") or
+                        std.mem.eql(u8, bn, "__trap") or
+                        std.mem.eql(u8, bn, "__fence"))
+                    {
+                        return .i64;
+                    }
+                    if (std.mem.eql(u8, bn, "__comptimefold") or
+                        std.mem.eql(u8, bn, "__comptimefor"))
+                    {
+                        return .any;
+                    }
+                    if (std.mem.eql(u8, bn, "__static_assert")) return .any;
+                    if (std.mem.eql(u8, bn, "__typeof")) return .any;
+                    if (std.mem.eql(u8, bn, "__select") and c.args.len >= 2) {
+                        return try self.check_expr(c.args[1]);
+                    }
+                    // Metaprogramming: type introspection — return table of field/method info
+                    if (std.mem.eql(u8, bn, "__fields") or
+                        std.mem.eql(u8, bn, "__methods") or
+                        std.mem.eql(u8, bn, "__variants"))
+                    {
+                        return .any; // returns comptime table
+                    }
+                    // Metaprogramming: boolean type queries
+                    if (std.mem.eql(u8, bn, "__has_field") or
+                        std.mem.eql(u8, bn, "__has_method") or
+                        std.mem.eql(u8, bn, "__has_metamethod") or
+                        std.mem.eql(u8, bn, "__is_type"))
+                    {
+                        return .bool;
+                    }
+                    // Metaprogramming: type name / id
+                    if (std.mem.eql(u8, bn, "__type_name") or
+                        std.mem.eql(u8, bn, "__field_type"))
+                    {
+                        return .str;
+                    }
+                    if (std.mem.eql(u8, bn, "__type_id")) return .i64;
+                    // Metaprogramming: layout introspection
+                    if (std.mem.eql(u8, bn, "__field_offset") or
+                        std.mem.eql(u8, bn, "__field_size"))
+                    {
+                        return .i64;
+                    }
+                    // Metaprogramming: compile-time messages (void-like)
+                    if (std.mem.eql(u8, bn, "__comptimeprint") or
+                        std.mem.eql(u8, bn, "__comptimeerror") or
+                        std.mem.eql(u8, bn, "__comptimewarn"))
+                    {
+                        return .any;
+                    }
+                    // Metaprogramming: file embedding
+                    if (std.mem.eql(u8, bn, "__embed_file")) return .any; // returns table of bytes
+                    if (std.mem.eql(u8, bn, "__embed_str")) return .str;
+                    // Metaprogramming: type construction
+                    if (std.mem.eql(u8, bn, "__make_type")) return .any;
+                    // Metaprogramming: type cast (returns target type)
+                    if (std.mem.eql(u8, bn, "__as_type")) return .any;
+                    // Metaprogramming: layout
+                    if (std.mem.eql(u8, bn, "__bitfield") or
+                        std.mem.eql(u8, bn, "__union"))
+                    {
+                        return .any;
+                    }
+                    // Metaprogramming: metatable type tracking
+                    if (std.mem.eql(u8, bn, "__metatable_type")) return .any;
+                    // Metaprogramming: dispatch hints (pass-through)
+                    if (std.mem.eql(u8, bn, "__inline_always") or
+                        std.mem.eql(u8, bn, "__no_inline") or
+                        std.mem.eql(u8, bn, "__cold_path") or
+                        std.mem.eql(u8, bn, "__hot_path"))
+                    {
+                        if (c.args.len >= 1) return try self.check_expr(c.args[0]);
+                        return .any;
+                    }
+                }
                 if (self.duo_mode and c.func.* == .name) {
                     const callee = c.func.name.ident;
                     if (std.mem.eql(u8, callee, "pairs") or std.mem.eql(u8, callee, "ipairs")) {
@@ -1373,6 +1645,18 @@ pub const Sema = struct {
                 }
                 const ft = try self.check_expr(c.func);
                 for (c.args) |arg| _ = try self.check_expr(arg);
+
+                // Track metatable associations for compile-time method resolution
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "setmetatable") and c.args.len == 2) {
+                    // If first arg is a named variable, track its metatable type
+                    if (c.args[0].* == .name) {
+                        const var_name = c.args[0].name.ident;
+                        // If second arg is a table literal, extract __index info
+                        if (c.args[1].* == .table) {
+                            self.metatable_types.put(self.alloc, var_name, .any) catch {};
+                        }
+                    }
+                }
 
                 // Built-in module return types
                 if (self.mem_intrinsic_name(c.func)) |fname| {
@@ -1728,17 +2012,21 @@ pub const Sema = struct {
         fb.upvalues = try self.alloc.alloc(ast.Upvalue, names.items.len);
         for (names.items, flags.items, 0..) |nm, is_local, i| {
             var typ: ?RT = null;
+            var is_mutable = false;
             if (self.scope.lookupPtr(nm)) |sym| {
                 typ = sym.typ;
                 // Mark captured locals as escaping — they outlive their scope.
                 sym.captured_by_closure = true;
                 sym.escapes = true;
+                // If the variable is reassigned after declaration, it needs
+                // mutable capture (heap-allocated cell shared between closures).
+                is_mutable = sym.assigned_after_init;
                 // Record in the sema-level escape set for ARC pruning.
                 self.escape_names.put(self.alloc, nm, {}) catch {};
             } else if (self.module_globals.get(nm)) |g_typ| {
                 typ = g_typ;
             }
-            fb.upvalues[i] = .{ .name = nm, .is_local = is_local, .typ = typ };
+            fb.upvalues[i] = .{ .name = nm, .is_local = is_local, .typ = typ, .mutable = is_mutable };
         }
     }
 
@@ -1909,6 +2197,10 @@ pub const Sema = struct {
         if (fb.ret_type == .inferred) all_typed = false;
         fb.is_typed = all_typed;
 
+        if (self.duo_mode and self.hints_enabled and !all_typed and fd.path.len >= 1) {
+            self.hint_msg(fd.loc, "function '{s}' has untyped parameters or return; add types (e.g. i64, str) for faster native codegen", .{fd.path[0]});
+        }
+
         var param_types = try self.alloc.alloc(RT, fb.params.len);
         for (fb.params, 0..) |*p, i| {
             param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
@@ -1957,6 +2249,31 @@ pub const Sema = struct {
                 self.err(fd.loc, "@arc attribute requires argument 'false'", .{});
             } else {
                 self.err(fd.loc, "@arc(false) is only valid on table-typed bindings or record-type annotations", .{});
+            }
+        }
+
+        if (directives.validateFuncAttrs(fd.attributes)) |bad| {
+            self.err(fd.loc, "unknown or misplaced attribute '@{s}'", .{bad});
+        }
+
+        if (directives.attrsMarkTest(fd.attributes) and fd.path.len == 1 and !fd.method) {
+            const opts = directives.parseTestOptions(self.alloc, fd.attributes) catch {
+                self.err(fd.loc, "invalid @test/@bench attribute arguments", .{});
+                return;
+            };
+            if (fb.params.len > 0) {
+                self.warn_msg(fd.loc, "@test function '{s}' should take no parameters for the native test runner", .{fd.path[0]});
+            }
+            if (fb.ret_type != .inferred and types.resolve(fb.ret_type, self, self.alloc) catch .any != .void) {
+                self.warn_msg(fd.loc, "@test function '{s}' should return void", .{fd.path[0]});
+            }
+            try self.test_entries.append(self.alloc, .{
+                .func_name = fd.path[0],
+                .loc = fd.loc,
+                .options = opts,
+            });
+            if (opts.should_panic) {
+                self.warn_msg(fd.loc, "@test.should_panic on '{s}' is collected but not yet enforced by the test runner", .{fd.path[0]});
             }
         }
 
@@ -2320,6 +2637,10 @@ pub const Sema = struct {
 
     /// Register an enum type definition in the type registry and scope.
     fn check_enum_def(self: *Sema, ed: *const ast.EnumDef) SemaError!void {
+        const prev_type_name = self.current_type_name;
+        self.current_type_name = ed.name;
+        defer self.current_type_name = prev_type_name;
+
         // Build the list of EnumVariantType from the AST definition
         var variant_types = try self.alloc.alloc(types.EnumVariantType, ed.variants.len);
         for (ed.variants, 0..) |*v, i| {
@@ -4554,7 +4875,10 @@ pub const Sema = struct {
                             if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0) {
                                 continue; // dense table placeholder
                             }
-                            if (!t.is_native()) return false;
+                            // Skip non-native locals — they won't participate in
+                            // specialization but shouldn't block other locals/params
+                            // from being inferred as native types.
+                            if (!t.is_native()) continue;
                             self.local_tys.put(lname.ident, t) catch return false;
                         }
                     },
@@ -4563,7 +4887,7 @@ pub const Sema = struct {
                         if (cd.typ != .inferred) {
                             t = types.resolve(cd.typ, self.sema, self.sema.alloc) catch .any;
                         }
-                        if (!t.is_native()) return false;
+                        if (!t.is_native()) continue;
                         self.local_tys.put(cd.ident, t) catch return false;
                     },
                     .num_for => |*nf| {

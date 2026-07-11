@@ -19,6 +19,8 @@ const mono = @import("mono.zig");
 const arc = @import("arc.zig");
 const async_lower = @import("async_lower.zig");
 const comptime_eval = @import("comptime.zig");
+const directives = @import("directives.zig");
+const sema_mod = @import("sema.zig");
 
 pub const CodeGenError = error{
     Unsupported,
@@ -59,6 +61,10 @@ pub const CodeGen = struct {
     load_chunk: bool = false,
     lib_mode: bool = false,
     duo_mode: bool = false,
+    test_mode: bool = false,
+    bench_mode: bool = false,
+    test_filter: ?[]const u8 = null,
+    test_entries: []const sema_mod.Sema.TestEntry = &.{},
     target: []const u8 = "native",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
@@ -73,8 +79,12 @@ pub const CodeGen = struct {
     /// (matched on `.tag`). Populated by `emit_enum_decls` (Task 12.6).
     enum_has_payload: std.StringHashMapUnmanaged(bool) = .empty,
     enum_defs: std.StringHashMapUnmanaged(*const ast.EnumDef) = .empty,
+    alias_defs: std.StringHashMapUnmanaged(*const ast.AliasDef) = .empty,
     record_aliases: std.StringHashMapUnmanaged(RT) = .empty,
     function_c_names: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Methods associated with alias types (collected from `fun TypeName:method()` declarations).
+    /// Maps alias type name → list of method names (for zero-cost dispatch and auto-metatable).
+    alias_methods: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
     /// Monomorphized generic specializations produced by the mono pass, made
     /// available to codegen so it can emit one concrete C function per
     /// specialization (Task 12.1). Null when there are no generics.
@@ -212,6 +222,91 @@ pub const CodeGen = struct {
 
     fn note_func_body(self: *CodeGen, name: []const u8, func: *const ast.FuncBody) !void {
         try self.func_bodies.put(self.alloc, name, func);
+    }
+
+    /// Try to evaluate an expression's boolean condition at compile time.
+    /// Returns `true` (always true), `false` (always false), or `null` (unknown).
+    /// Used for dead-branch elimination in if/while/repeat.
+    fn try_eval_const_condition(self: *CodeGen, cond: *const ast.Expr) ?bool {
+        // Direct boolean literals
+        switch (cond.*) {
+            .true_lit => return true,
+            .false_lit => return false,
+            .nil => return false,
+            .int_lit => |v| return v.val != 0,
+            .float_lit => |v| return v.val != 0.0,
+            .string_lit => return true, // non-nil, non-false = truthy
+            .name => |n| {
+                // Check if name resolves to a comptime-known value
+                if (self.comptime_bindings().get(n.ident)) |val| {
+                    return switch (val) {
+                        .unavailable => null,
+                        .nil => false,
+                        .bool => |b| b,
+                        .int => |i| i != 0,
+                        .float => |f| f != 0.0,
+                        .string => true,
+                        .table => true,
+                        .func => true,
+                    };
+                }
+                return null;
+            },
+            .unop => |u| {
+                if (u.op == .not) {
+                    if (self.try_eval_const_condition(u.operand)) |inner| {
+                        return !inner;
+                    }
+                }
+                return null;
+            },
+            .binop => |*b| {
+                // Try constant folding for comparison/logical operators
+                if (b.op == .@"and") {
+                    const lhs = self.try_eval_const_condition(b.lhs);
+                    if (lhs != null and !lhs.?) return false;
+                    const rhs = self.try_eval_const_condition(b.rhs);
+                    if (lhs != null and lhs.? and rhs != null) return rhs.?;
+                    return null;
+                }
+                if (b.op == .@"or") {
+                    const lhs = self.try_eval_const_condition(b.lhs);
+                    if (lhs != null and lhs.?) return true;
+                    const rhs = self.try_eval_const_condition(b.rhs);
+                    if (lhs != null and !lhs.? and rhs != null) return rhs.?;
+                    return null;
+                }
+                // Integer comparison folding
+                if (b.lhs.* == .int_lit and b.rhs.* == .int_lit) {
+                    const lv = b.lhs.int_lit.val;
+                    const rv = b.rhs.int_lit.val;
+                    return switch (b.op) {
+                        .eq => lv == rv,
+                        .neq => lv != rv,
+                        .lt => lv < rv,
+                        .gt => lv > rv,
+                        .leq => lv <= rv,
+                        .geq => lv >= rv,
+                        else => null,
+                    };
+                }
+                return null;
+            },
+            else => {
+                // Try full comptime evaluation as last resort
+                const val = comptime_eval.evalWithBindings(cond, self.comptime_bindings(), .{ .alloc = self.alloc }) catch return null;
+                return switch (val) {
+                    .unavailable => null,
+                    .nil => false,
+                    .bool => |b| b,
+                    .int => |i| i != 0,
+                    .float => |f| f != 0.0,
+                    .string => true,
+                    .table => true,
+                    .func => true,
+                };
+            },
+        }
     }
 
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
@@ -410,10 +505,40 @@ pub const CodeGen = struct {
 
     fn emit_lvalue(self: *CodeGen, expr: *const ast.Expr) E!void {
         if (expr.* == .name) {
+            // Inside a closure, LOCAL upvalue writes go through the closure struct.
+            // Global upvalues are accessed directly via their C name.
+            if (self.closure_ctx) |fb| {
+                // Only redirect to closure struct if it's NOT a known global
+                const is_global = (!self.is_local_name(expr.name.ident) and self.global_type(expr.name.ident) != null);
+                if (!is_global) {
+                    for (fb.upvalues, 0..) |uv, i| {
+                        if (std.mem.eql(u8, uv.name, expr.name.ident)) {
+                            if (upvalue_uses_pointer(uv)) {
+                                self.p("(*cl->up{d})", .{i});
+                            } else {
+                                self.p("cl->up{d}", .{i});
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
             self.emit_var_name(expr.name.ident);
             return;
         }
         try self.emit_expr(expr);
+    }
+
+    /// Check if a mutable upvalue should use pointer indirection.
+    /// Only lua_Value (untyped) upvalues use the heap-cell pattern.
+    /// Typed native upvalues are captured by value (no mutation sharing).
+    fn upvalue_uses_pointer(uv: ast.Upvalue) bool {
+        if (!uv.mutable) return false;
+        // Only use pointer for untyped (lua_Value) upvalues
+        if (uv.typ) |t| {
+            if (t != .any) return false;
+        }
+        return true;
     }
 
     fn ind(self: *CodeGen) void {
@@ -967,6 +1092,13 @@ pub const CodeGen = struct {
         self.p("#include <math.h>\n", .{});
         self.p("#include <time.h>\n", .{});
         self.p("#include <sys/time.h>\n", .{});
+        if (self.test_mode) {
+            self.p("static double duo_time_now(void) {{\n", .{});
+            self.pl("struct timeval tv;", .{});
+            self.pl("gettimeofday(&tv, NULL);", .{});
+            self.pl("return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;", .{});
+            self.p("}}\n\n", .{});
+        }
         self.p("#include <ctype.h>\n", .{});
         self.p("#include <limits.h>\n", .{});
         if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
@@ -1160,6 +1292,7 @@ pub const CodeGen = struct {
 
         try self.populate_record_aliases(mod);
         try self.populate_enum_defs(mod);
+        try self.populate_alias_defs(mod);
 
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) {
@@ -1167,6 +1300,17 @@ pub const CodeGen = struct {
                 if (fd.path.len == 1 and !fd.method) {
                     try self.note_func_body(fd.path[0], &fd.func);
                     try self.note_comptime_func(fd.path[0], &fd.func);
+                }
+            }
+            // Pre-register module-level integer/float constants for comptime resolution.
+            // This allows typed functions to use `OP_ADD = 0x6A` as compile-time constants.
+            // Only register assignments (not locals inside functions which are mutable).
+            if (stmt.* == .assign) {
+                const as = &stmt.assign;
+                for (as.targets, 0..) |tgt, ti| {
+                    if (tgt.* == .name and ti < as.values.len) {
+                        try self.note_comptime_binding(tgt.name.ident, as.values[ti]);
+                    }
                 }
             }
         }
@@ -1181,6 +1325,12 @@ pub const CodeGen = struct {
         // Emit enum typedefs (and tag constants) before forward-declarations,
         // so function signatures can name `duo_<Enum>` types (Task 12.6).
         try self.emit_enum_decls(mod);
+
+        // Emit static metatable variable declarations for alias types with methods/@derive
+        try self.emit_alias_metatable_decls(mod);
+
+        // Emit @derive-generated functions for alias types
+        try self.emit_alias_derive_functions(mod);
 
         if (self.module_globals) |globals| {
             var it = globals.keyIterator();
@@ -1218,6 +1368,8 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
+                // In duo_mode, single-name functions are local (handled below)
+                if (self.duo_mode and fd.path.len == 1 and !fd.method) continue;
                 if (fd.path.len == 1 and !fd.method) {
                     try self.emit_func_decl_forward(fd);
                 }
@@ -1254,6 +1406,8 @@ pub const CodeGen = struct {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
                 if (fd.is_local) continue;
+                // In duo_mode, single-name functions are local (emitted below)
+                if (self.duo_mode and fd.path.len == 1 and !fd.method) continue;
                 try self.emit_func_def(fd);
             }
         }
@@ -1358,53 +1512,155 @@ pub const CodeGen = struct {
         self.pl("duo_register_modules();", .{});
         self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
 
+        // Initialize metatables for alias types with methods or @derive attributes
+        try self.emit_alias_metatable_init(mod);
+
         try self.push_local_scope();
 
         const prev_ret = self.current_ret;
         if (self.load_chunk) self.current_ret = .any;
 
         // Emit top-level statements (except function/struct/const definitions)
-        var i: usize = 0;
-        while (i < mod.body.stmts.len) {
-            switch (mod.body.stmts[i]) {
-                .func_decl => |fd| {
-                    if (fd.is_local) {} else {
+        if (!self.test_mode) {
+            var i: usize = 0;
+            while (i < mod.body.stmts.len) {
+                switch (mod.body.stmts[i]) {
+                    .func_decl => |fd| {
+                        // In duo_mode, treat single-name functions as local (file-scoped)
+                        // unless they are multi-path (M.method) which are module exports.
+                        const effectively_local = fd.is_local or (self.duo_mode and fd.path.len == 1 and !fd.method);
+                        if (effectively_local) {} else {
+                            i += 1;
+                            continue;
+                        }
+                    },
+                    .const_decl => {
                         i += 1;
                         continue;
-                    }
-                },
-                .const_decl => {
-                    i += 1;
+                    },
+                    else => {},
+                }
+                var rel: usize = 0;
+                if (!self.load_chunk and try self.try_emit_fused_mandel_benchmark(mod.body.stmts[i..], &rel)) {
+                    i += rel;
                     continue;
-                },
-                else => {},
+                }
+                try self.emit_stmt(&mod.body.stmts[i]);
+                i += 1;
             }
-            var rel: usize = 0;
-            if (!self.load_chunk and try self.try_emit_fused_mandel_benchmark(mod.body.stmts[i..], &rel)) {
-                i += rel;
-                continue;
-            }
-            try self.emit_stmt(&mod.body.stmts[i]);
-            i += 1;
+        } else {
+            try self.emit_test_runner(mod);
         }
 
         self.current_ret = prev_ret;
         self.pop_local_scope();
         // Emit module-level tail expression as a regular statement (main()
         // always returns 0, so we don't use emit_implicit_return here).
-        if (mod.body.tail_expr) |expr| {
-            self.ind();
-            try self.emit_expr(expr);
-            self.p(";\n", .{});
+        if (!self.test_mode) {
+            if (mod.body.tail_expr) |expr| {
+                self.ind();
+                try self.emit_expr(expr);
+                self.p(";\n", .{});
+            }
         }
         if (self.load_chunk) {
             self.pl("return lua_val_nil();", .{});
+        } else if (self.test_mode) {
+            self.pl("return (duo_tests_failed > 0) ? 1 : 0;", .{});
         } else {
             self.pl("duo_run_gc_finalizers();", .{});
             self.pl("return 0;", .{});
         }
         self.indent = 0;
         self.p("}}\n", .{});
+    }
+
+    fn find_top_level_func(mod: *const ast.Module, name: []const u8) ?*const ast.FuncDecl {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], name)) return fd;
+        }
+        return null;
+    }
+
+    fn test_entry_matches_filter(self: *const CodeGen, func_name: []const u8) bool {
+        const filter = self.test_filter orelse return true;
+        return std.mem.indexOf(u8, func_name, filter) != null;
+    }
+
+    fn emit_test_runner(self: *CodeGen, mod: *ast.Module) E!void {
+        var any_only = false;
+        for (self.test_entries) |entry| {
+            if (entry.options.only) {
+                any_only = true;
+                break;
+            }
+        }
+
+        self.pl("int duo_tests_failed = 0;", .{});
+        self.pl("int duo_tests_run = 0;", .{});
+        self.pl("int duo_tests_skipped = 0;", .{});
+
+        for (self.test_entries) |entry| {
+            if (!self.test_entry_matches_filter(entry.func_name)) continue;
+            if (self.bench_mode and !entry.options.bench) continue;
+            if (any_only and !entry.options.only) continue;
+
+            const fd = find_top_level_func(mod, entry.func_name) orelse continue;
+            var cname_buf: [128]u8 = undefined;
+            const cname = self.emit_func_c_name(fd, &cname_buf);
+            const opts = entry.options;
+
+            if (opts.skip) {
+                self.pl("fprintf(stderr, \"SKIP %s\\n\", \"{s}\");", .{entry.func_name});
+                self.pl("duo_tests_skipped++;", .{});
+                continue;
+            }
+
+            if (opts.should_panic) {
+                self.pl("fprintf(stderr, \"SKIP %s (@test.should_panic not yet enforced)\\n\", \"{s}\");", .{entry.func_name});
+                self.pl("duo_tests_skipped++;", .{});
+                continue;
+            }
+
+            self.pl("fprintf(stderr, \"RUN  %s\\n\", \"{s}\");", .{entry.func_name});
+            self.pl("duo_tests_run++;", .{});
+
+            if (opts.bench or opts.iterations > 1) {
+                const iters = opts.iterations;
+                const warmup = opts.warmup;
+                self.pl("{{", .{});
+                self.pl("double _t0 = duo_time_now();", .{});
+                if (warmup > 0) {
+                    self.pl("for (uint32_t _w = 0; _w < {d}; _w++) {{ (void){s}(); }}", .{ warmup, cname });
+                }
+                self.pl("double _t1 = duo_time_now();", .{});
+                self.pl("for (uint32_t _i = 0; _i < {d}; _i++) {{ (void){s}(); }}", .{ iters, cname });
+                self.pl("double _t2 = duo_time_now();", .{});
+                self.pl("double _elapsed = _t2 - _t1;", .{});
+                self.pl("fprintf(stderr, \"BENCH %s: warmup=%u iter=%u elapsed=%.6fs (%.3fus/iter)\\n\", \"{s}\", {d}, {d}, _elapsed, (_elapsed * 1e6) / (double){d});", .{ entry.func_name, warmup, iters, iters });
+                self.pl("(void)_t0;", .{});
+                self.pl("}}", .{});
+            } else if (opts.time) {
+                self.pl("{{", .{});
+                self.pl("double _t0 = duo_time_now();", .{});
+                self.pl("(void){s}();", .{cname});
+                self.pl("double _t1 = duo_time_now();", .{});
+                self.pl("fprintf(stderr, \"TIME %s: %.6fs\\n\", \"{s}\", _t1 - _t0);", .{entry.func_name});
+                self.pl("}}", .{});
+            } else {
+                self.pl("(void){s}();", .{cname});
+            }
+
+            if (opts.flaky) {
+                self.pl("fprintf(stderr, \"FLAKY %s (passed)\\n\", \"{s}\");", .{entry.func_name});
+            } else {
+                self.pl("fprintf(stderr, \"ok   %s\\n\", \"{s}\");", .{entry.func_name});
+            }
+        }
+
+        self.pl("fprintf(stderr, \"\\n%d run, %d skipped, %d failed\\n\", duo_tests_run, duo_tests_skipped, duo_tests_failed);", .{});
     }
 
     // ── Anonymous record (table-type literal) ──────────────────────────────────
@@ -1542,6 +1798,360 @@ pub const CodeGen = struct {
         }
     }
 
+    fn populate_alias_defs(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            const ad = &stmt.alias_def;
+            try self.alias_defs.put(self.alloc, ad.name, ad);
+        }
+        // Associate func_decl methods (fun TypeName:method or fun TypeName.method)
+        // with their alias type for zero-cost dispatch and auto-metatable generation.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len < 2) continue;
+            const type_name = fd.path[0];
+            if (!self.alias_defs.contains(type_name)) continue;
+            const method_name = fd.path[fd.path.len - 1];
+            const gop = try self.alias_methods.getOrPut(self.alloc, type_name);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = .empty;
+            }
+            try gop.value_ptr.append(self.alloc, method_name);
+        }
+    }
+
+    // ── Alias Metatables & @derive (trait system) ──────────────────────────────
+    //
+    // When an alias type has methods (via `fun TypeName:method()` declarations)
+    // or @derive attributes, the codegen:
+    //   1. Emits static C metatable variable declarations
+    //   2. Emits derive-generated method functions (Display, Eq, Ord, etc.)
+    //   3. In module init, builds the metatable table and populates it
+    //
+    // This gives zero-cost method dispatch for typed code (direct C calls)
+    // while allowing untyped code to use Lua-style metatable dispatch.
+    //
+    // Supported @derive traits on alias types:
+    //   Display  — __tostring metamethod, :to_string() method
+    //   Eq       — __eq metamethod, :eq() method
+    //   Ord      — __lt, __le metamethods, :lt(), :le(), :gt(), :ge() methods
+    //   Hash     — :hash() method (FNV-1a over fields)
+    //   Clone    — :clone() method (deep copy)
+    //   Default  — TypeName.default() constructor with zero values
+    //   Add      — __add metamethod
+    //   Sub      — __sub metamethod
+    //   Mul      — __mul metamethod
+    //   Neg      — __unm metamethod
+    //   AsInt    — :as_int() method
+    //   FromInt  — TypeName.from_int(n) constructor
+    //   Len      — __len metamethod (field count)
+
+    /// Emit metatable initialization code for alias types with methods or derives.
+    /// Called during module init (inside main()).
+    fn emit_alias_metatable_init(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            const ad = &stmt.alias_def;
+            const methods = self.alias_methods.get(ad.name);
+            const has_methods = methods != null and methods.?.items.len > 0;
+            const has_derives = alias_has_any_derive(ad.attributes);
+            if (!has_methods and !has_derives) continue;
+
+            // Emit: static lua_Value duo_mt_TypeName;
+            // (forward declared above main, populated here)
+            // The metatable is a table with __index = self (methods table)
+            self.ind();
+            self.pl("duo_mt_{s} = lua_table_new();", .{ad.name});
+
+            // Populate with user-defined methods (reference the lua wrapper if it exists)
+            if (methods) |m| {
+                for (m.items) |method_name| {
+                    const hash = calc_lua_hash(method_name);
+                    self.ind();
+                    // User methods are emitted with path-joined C names.
+                    // We reference them via the vararg lookup table or direct name.
+                    self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"{s}\", {d}, {d}, lua_val_from_func((lua_Value (*)(lua_Value)){s}__{s}));", .{ ad.name, method_name, hash, method_name.len, ad.name, method_name });
+                }
+            }
+
+            // Populate with @derive-generated metamethods
+            if (alias_has_derive(ad.attributes, "Display")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__tostring\", {d}, 10, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_tostring__lua));", .{ ad.name, calc_lua_hash("__tostring"), ad.name });
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"to_string\", {d}, 9, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_tostring__lua));", .{ ad.name, calc_lua_hash("to_string"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Eq")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__eq\", {d}, 4, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_eq__lua));", .{ ad.name, calc_lua_hash("__eq"), ad.name });
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"eq\", {d}, 2, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_eq__lua));", .{ ad.name, calc_lua_hash("eq"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Ord")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__lt\", {d}, 4, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_lt__lua));", .{ ad.name, calc_lua_hash("__lt"), ad.name });
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__le\", {d}, 4, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_le__lua));", .{ ad.name, calc_lua_hash("__le"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Add")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__add\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_add__lua));", .{ ad.name, calc_lua_hash("__add"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Sub")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__sub\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_sub__lua));", .{ ad.name, calc_lua_hash("__sub"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Mul")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__mul\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_mul__lua));", .{ ad.name, calc_lua_hash("__mul"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Neg")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__unm\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_neg__lua));", .{ ad.name, calc_lua_hash("__unm"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Len")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__len\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_len__lua));", .{ ad.name, calc_lua_hash("__len"), ad.name });
+            }
+
+            // Set __index = metatable itself (method lookup)
+            self.ind();
+            self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__index\", {d}, 7, duo_mt_{s});", .{ ad.name, calc_lua_hash("__index"), ad.name });
+        }
+    }
+
+    /// Emit static metatable variable declarations (before main).
+    /// Called during the forward-declaration phase.
+    fn emit_alias_metatable_decls(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            const ad = &stmt.alias_def;
+            const methods = self.alias_methods.get(ad.name);
+            const has_methods = methods != null and methods.?.items.len > 0;
+            const has_derives = alias_has_any_derive(ad.attributes);
+            if (!has_methods and !has_derives) continue;
+            self.p("static lua_Value duo_mt_{s};\n", .{ad.name});
+        }
+    }
+
+    /// Emit @derive-generated functions for alias types.
+    fn emit_alias_derive_functions(self: *CodeGen, mod: *ast.Module) E!void {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .alias_def) continue;
+            const ad = &stmt.alias_def;
+            if (!alias_has_any_derive(ad.attributes)) continue;
+
+            // Resolve the record type for field access
+            const rt = self.record_aliases.get(ad.name) orelse continue;
+            if (rt != .table_type) continue;
+            const fields = rt.table_type.fields;
+
+            if (alias_has_derive(ad.attributes, "Display")) {
+                try self.emit_derive_display(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Eq")) {
+                try self.emit_derive_eq(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Ord")) {
+                try self.emit_derive_ord(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Add")) {
+                try self.emit_derive_binop(ad.name, fields, "add", "+");
+            }
+            if (alias_has_derive(ad.attributes, "Sub")) {
+                try self.emit_derive_binop(ad.name, fields, "sub", "-");
+            }
+            if (alias_has_derive(ad.attributes, "Mul")) {
+                try self.emit_derive_binop(ad.name, fields, "mul", "*");
+            }
+            if (alias_has_derive(ad.attributes, "Neg")) {
+                try self.emit_derive_neg(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Len")) {
+                try self.emit_derive_len(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Default")) {
+                try self.emit_derive_default(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Hash")) {
+                try self.emit_derive_hash(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Clone")) {
+                try self.emit_derive_clone(ad.name, fields);
+            }
+        }
+    }
+
+    fn emit_derive_display(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        // Lua wrapper: takes self as lua_Value, returns string
+        self.p("static lua_Value duo_{s}_tostring__lua(lua_Value _self) {{\n", .{name});
+        self.p("    char buf[256];\n", .{});
+        self.p("    int n = snprintf(buf, sizeof(buf), \"{s}(", .{name});
+        for (fields, 0..) |f, i| {
+            if (i > 0) self.p(", ", .{});
+            if (f.typ.is_float()) {
+                self.p("{s}=%g", .{f.name});
+            } else if (f.typ.is_integer()) {
+                self.p("{s}=%lld", .{f.name});
+            } else {
+                self.p("{s}=%s", .{f.name});
+            }
+        }
+        self.p(")\"", .{});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            if (f.typ.is_float()) {
+                self.p(",\n        lua_to_num(lua_table_get_str_lit(_self, \"{s}\", {d}u, {d}))", .{ f.name, hash, f.name.len });
+            } else if (f.typ.is_integer()) {
+                self.p(",\n        (long long)lua_to_num(lua_table_get_str_lit(_self, \"{s}\", {d}u, {d}))", .{ f.name, hash, f.name.len });
+            } else {
+                self.p(",\n        lua_to_str(lua_table_get_str_lit(_self, \"{s}\", {d}u, {d}))", .{ f.name, hash, f.name.len });
+            }
+        }
+        self.p(");\n", .{});
+        self.p("    return lua_val_from_str(buf);\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_eq(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        self.p("static lua_Value duo_{s}_eq__lua(lua_Value _a) {{\n", .{name});
+        self.p("    lua_Value _b = lua_mret_get(0);\n", .{});
+        self.p("    if (_a.type != VAL_TABLE || _b.type != VAL_TABLE) return lua_val_from_bool(false);\n", .{});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    {{ lua_Value fa = lua_table_get_str_lit(_a, \"{s}\", {d}u, {d}); lua_Value fb = lua_table_get_str_lit(_b, \"{s}\", {d}u, {d});\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
+            if (f.typ.is_numeric()) {
+                self.p("      if (lua_to_num(fa) != lua_to_num(fb)) return lua_val_from_bool(false); }}\n", .{});
+            } else {
+                self.p("      if (!lua_raw_eq(fa, fb)) return lua_val_from_bool(false); }}\n", .{});
+            }
+        }
+        self.p("    return lua_val_from_bool(true);\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_ord(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        // __lt: lexicographic less-than
+        self.p("static lua_Value duo_{s}_lt__lua(lua_Value _a) {{\n", .{name});
+        self.p("    lua_Value _b = lua_mret_get(0);\n", .{});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    {{ lua_Value fa = lua_table_get_str_lit(_a, \"{s}\", {d}u, {d}); lua_Value fb = lua_table_get_str_lit(_b, \"{s}\", {d}u, {d});\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
+            self.p("      if (lua_lt(fa, fb).as.bval) return lua_val_from_bool(true);\n", .{});
+            self.p("      if (lua_lt(fb, fa).as.bval) return lua_val_from_bool(false); }}\n", .{});
+        }
+        self.p("    return lua_val_from_bool(false);\n", .{});
+        self.p("}}\n", .{});
+        // __le: lexicographic less-or-equal
+        self.p("static lua_Value duo_{s}_le__lua(lua_Value _a) {{\n", .{name});
+        self.p("    lua_Value _b = lua_mret_get(0);\n", .{});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    {{ lua_Value fa = lua_table_get_str_lit(_a, \"{s}\", {d}u, {d}); lua_Value fb = lua_table_get_str_lit(_b, \"{s}\", {d}u, {d});\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
+            self.p("      if (lua_lt(fa, fb).as.bval) return lua_val_from_bool(true);\n", .{});
+            self.p("      if (lua_lt(fb, fa).as.bval) return lua_val_from_bool(false); }}\n", .{});
+        }
+        self.p("    return lua_val_from_bool(true);\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_binop(self: *CodeGen, name: []const u8, fields: []const types.FieldType, op_name: []const u8, op: []const u8) E!void {
+        self.p("static lua_Value duo_{s}_{s}__lua(lua_Value _a) {{\n", .{ name, op_name });
+        self.p("    lua_Value _b = lua_mret_get(0);\n", .{});
+        self.p("    lua_Value _r = lua_table_new_with_capacity(0, {d});\n", .{fields.len});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(lua_to_num(lua_table_get_str_lit(_a, \"{s}\", {d}u, {d})) {s} lua_to_num(lua_table_get_str_lit(_b, \"{s}\", {d}u, {d}))));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len, op, f.name, hash, f.name.len });
+        }
+        self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
+        self.p("    return _r;\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_neg(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        self.p("static lua_Value duo_{s}_neg__lua(lua_Value _a) {{\n", .{name});
+        self.p("    lua_Value _r = lua_table_new_with_capacity(0, {d});\n", .{fields.len});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(-lua_to_num(lua_table_get_str_lit(_a, \"{s}\", {d}u, {d}))));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
+        }
+        self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
+        self.p("    return _r;\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_len(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        // __len returns field count
+        self.p("static lua_Value duo_{s}_len__lua(lua_Value _a) {{\n", .{name});
+        self.p("    (void)_a;\n", .{});
+        self.p("    return lua_val_from_int({d});\n", .{fields.len});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_default(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        self.p("static lua_Value duo_{s}_default(void) {{\n", .{name});
+        self.p("    lua_Value _r = lua_table_new_with_capacity(0, {d});\n", .{fields.len});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            if (f.typ.is_float() or f.typ.is_integer()) {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(0));\n", .{ f.name, hash, f.name.len });
+            } else if (f.typ == .bool) {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_bool(false));\n", .{ f.name, hash, f.name.len });
+            } else if (f.typ == .str) {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_str(\"\"));\n", .{ f.name, hash, f.name.len });
+            } else {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_nil());\n", .{ f.name, hash, f.name.len });
+            }
+        }
+        self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
+        self.p("    return _r;\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_hash(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        self.p("static lua_Value duo_{s}_hash__lua(lua_Value _self) {{\n", .{name});
+        self.p("    uint64_t h = 14695981039346656037ULL;\n", .{});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    {{ double v = lua_to_num(lua_table_get_str_lit(_self, \"{s}\", {d}u, {d})); uint64_t bits; memcpy(&bits, &v, 8); h ^= bits; h *= 1099511628211ULL; }}\n", .{ f.name, hash, f.name.len });
+        }
+        self.p("    return lua_val_from_int((int64_t)h);\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_clone(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        self.p("static lua_Value duo_{s}_clone__lua(lua_Value _self) {{\n", .{name});
+        self.p("    lua_Value _r = lua_table_new_with_capacity(0, {d});\n", .{fields.len});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_table_get_str_lit(_self, \"{s}\", {d}u, {d}));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
+        }
+        self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
+        self.p("    return _r;\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn alias_has_derive(attrs: []const ast.Attribute, derive_name: []const u8) bool {
+        for (attrs) |attr| {
+            if (!std.mem.eql(u8, attr.name, "derive")) continue;
+            const raw = attr.args orelse continue;
+            var it = std.mem.splitScalar(u8, raw, ',');
+            while (it.next()) |part| {
+                const trimmed = std.mem.trim(u8, part, " \t\"");
+                if (std.mem.eql(u8, trimmed, derive_name)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn alias_has_any_derive(attrs: []const ast.Attribute) bool {
+        for (attrs) |attr| {
+            if (std.mem.eql(u8, attr.name, "derive")) return true;
+        }
+        return false;
+    }
+
     // ── Enums (Task 12.6) ──────────────────────────────────────────────────────
     //
     // Payload-free enums lower to a plain C `enum` whose constants are named
@@ -1624,10 +2234,8 @@ pub const CodeGen = struct {
                     self.p("\n", .{});
                     continue;
                 }
-                self.p("typedef struct ", .{});
-                if (is_packed) self.p("__attribute__((packed)) ", .{});
-                if (align_n) |n| self.p("__attribute__((aligned({d}))) ", .{n});
-                self.p("{{\n", .{});
+                self.p("typedef struct duo_{s}_s", .{ed.name});
+                self.p(" {{\n", .{});
                 self.p("    int tag;\n", .{});
                 self.p("    union {{\n", .{});
                 for (ed.variants) |v| {
@@ -1636,8 +2244,22 @@ pub const CodeGen = struct {
                         self.p("        struct {{\n", .{});
                         for (fields, 0..) |field, fi| {
                             const ft = types.resolve(field.typ, null, self.alloc) catch .any;
+                            // Resolve Self to the enclosing enum type (as pointer for recursion)
+                            var is_self_ref = false;
+                            if (ft == .@"struct") {
+                                if (std.mem.eql(u8, ft.@"struct".name, "Self") or
+                                    std.mem.eql(u8, ft.@"struct".name, ed.name))
+                                {
+                                    is_self_ref = true;
+                                }
+                            }
                             self.p("            ", .{});
-                            self.typ(ft);
+                            if (is_self_ref) {
+                                // Self-referential: must be a pointer in C
+                                self.p("struct duo_{s}_s*", .{ed.name});
+                            } else {
+                                self.typ(ft);
+                            }
                             if (field.name) |nm| {
                                 self.p(" {s};\n", .{nm});
                             } else {
@@ -1648,7 +2270,10 @@ pub const CodeGen = struct {
                     }
                 }
                 self.p("    }} as;\n", .{});
-                self.p("}} duo_{s};\n\n", .{ed.name});
+                self.p("}}", .{});
+                if (is_packed) self.p(" __attribute__((packed))", .{});
+                if (align_n) |n| self.p(" __attribute__((aligned({d})))", .{n});
+                self.p(" duo_{s};\n\n", .{ed.name});
             }
         }
     }
@@ -1678,13 +2303,16 @@ pub const CodeGen = struct {
         init_expr: *const ast.Expr,
     ) E!void {
         const t = init_expr.table;
-        // Build a quick name -> value lookup from the user's fields.
-        // The user's table literal is `{ name = expr, ... }`, so each
-        // named field carries a `val` expression.
+        // Build a quick name -> value lookup from the user's named fields.
         var found: std.StringHashMapUnmanaged(*const ast.Expr) = .empty;
         defer found.deinit(self.alloc);
+        // Also collect positional fields for smart field initialization:
+        // `v: Vec = {1, 2}` → maps positional values to field order.
+        var positionals: std.ArrayList(*const ast.Expr) = .empty;
+        defer positionals.deinit(self.alloc);
         for (t.fields) |tf| switch (tf) {
             .named => |nf| found.put(self.alloc, nf.key, nf.val) catch {},
+            .positional => |pf| positionals.append(self.alloc, pf) catch {},
             else => {},
         };
 
@@ -1695,7 +2323,11 @@ pub const CodeGen = struct {
             self.ind();
             self.p(".{s} = ", .{rf.name});
             if (found.get(rf.name)) |val| {
+                // Named field: use directly
                 try self.emit_expr(val);
+            } else if (i < positionals.items.len) {
+                // Smart positional init: map position to field name
+                try self.emit_expr(positionals.items[i]);
             } else {
                 self.p("0", .{});
             }
@@ -2204,6 +2836,7 @@ pub const CodeGen = struct {
         if (al.getAll().len == 0) return;
         try async_lower.AsyncLower.emitPollEnum(self.w);
         try async_lower.AsyncLower.emitTaskRuntime(self.w);
+        try async_lower.AsyncLower.emitEventLoopRuntime(self.w);
         self.nl();
         for (al.getAll()) |*lowered| {
             try async_lower.AsyncLower.emitFrameStruct(lowered, self.w);
@@ -3607,6 +4240,19 @@ pub const CodeGen = struct {
         if (self.dense_table) |dt| {
             self.pl("free(__dt_{s});", .{dt});
         }
+        // error() is noreturn — emit lua_error directly without return
+        if (expr.* == .call and expr.call.func.* == .name and
+            std.mem.eql(u8, expr.call.func.name.ident, "error"))
+        {
+            self.p("lua_error(", .{});
+            if (expr.call.args.len > 0) {
+                try self.emit_as_lua_value(expr.call.args[0]);
+            } else {
+                self.p("lua_val_nil()", .{});
+            }
+            self.p(");\n", .{});
+            return;
+        }
         if (self.current_ret != .void) self.p("return ", .{});
         if (self.closure_ctx != null or self.current_ret == .any) {
             try self.emit_as_lua_value(expr);
@@ -3725,6 +4371,7 @@ pub const CodeGen = struct {
         switch (stmt.*) {
             .macro_def => {},
             .cinclude => {},
+            .directive => {},
             .local_decl => |*ld| {
                 for (ld.names) |*lname| try self.note_local(lname.ident);
                 // If any name in this declaration is annotated with a
@@ -3774,7 +4421,7 @@ pub const CodeGen = struct {
                         break :blk .any;
                     };
                     try self.note_local_type(lname.ident, rt);
-                    if (rt == .any) {
+                    if (rt == .any or rt == .option or rt == .result) {
                         self.p("lua_Value {s}", .{lname.ident});
                         if (i < ld.inits.len) {
                             self.p(" = ", .{});
@@ -3799,8 +4446,17 @@ pub const CodeGen = struct {
                             self.p(" = ", .{});
                             // If init expression returns lua_Value (.any) but
                             // target is a primitive type, wrap with converter.
+                            // Exception: __emit() already produces raw C — never wrap.
                             const init_rt = self.expr_type(ld.inits[i]);
-                            if (init_rt == .any and rt != .any) {
+                            const is_raw_c = ld.inits[i].* == .call and
+                                ld.inits[i].call.func.* == .name and
+                                (std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__emit") or
+                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__sizeof") or
+                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__alignof") or
+                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__offsetof") or
+                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__bitcast") or
+                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__volatile"));
+                            if (!is_raw_c and init_rt == .any and rt != .any) {
                                 switch (rt) {
                                     .str => {
                                         self.p("lua_to_str(", .{});
@@ -4122,6 +4778,18 @@ pub const CodeGen = struct {
                 }
                 if (r.vals.len == 0) {
                     self.p("return;\n", .{});
+                } else if (r.vals.len == 1 and r.vals[0].* == .call and
+                    r.vals[0].call.func.* == .name and
+                    std.mem.eql(u8, r.vals[0].call.func.name.ident, "error"))
+                {
+                    // error() is noreturn — emit lua_error directly without return
+                    self.p("lua_error(", .{});
+                    if (r.vals[0].call.args.len > 0) {
+                        try self.emit_as_lua_value(r.vals[0].call.args[0]);
+                    } else {
+                        self.p("lua_val_nil()", .{});
+                    }
+                    self.p(");\n", .{});
                 } else if (self.closure_ctx != null or self.current_ret == .any) {
                     if (r.vals.len == 1) {
                         self.p("return ", .{});
@@ -4179,60 +4847,129 @@ pub const CodeGen = struct {
                 }
             },
             .if_stmt => |*is| {
-                self.ind();
-                self.p("if (", .{});
-                if (self.expr_type(is.cond) == .any) {
-                    self.p("lua_to_bool(", .{});
-                    try self.emit_expr(is.cond);
-                    self.p(")", .{});
+                // Dead-branch elimination: if condition is compile-time known,
+                // emit only the taken branch (no if/else wrapper).
+                if (self.try_eval_const_condition(is.cond)) |known| {
+                    if (known) {
+                        // Condition always true — emit then-block directly
+                        try self.emit_block(&is.then);
+                    } else {
+                        // Condition always false — check elseifs then else
+                        var found_taken = false;
+                        for (is.elseifs) |*ei| {
+                            if (self.try_eval_const_condition(ei.cond)) |ei_known| {
+                                if (ei_known) {
+                                    try self.emit_block(&ei.body);
+                                    found_taken = true;
+                                    break;
+                                }
+                                // This elseif is also false, skip it
+                            } else {
+                                // Unknown elseif — must emit rest dynamically
+                                self.ind();
+                                self.p("if (", .{});
+                                if (self.expr_type(ei.cond) == .any) {
+                                    self.p("lua_to_bool(", .{});
+                                    try self.emit_expr(ei.cond);
+                                    self.p(")", .{});
+                                } else {
+                                    try self.emit_expr(ei.cond);
+                                }
+                                self.p(") {{\n", .{});
+                                self.indent += 1;
+                                try self.emit_block(&ei.body);
+                                self.indent -= 1;
+                                if (is.else_body) |*eb| {
+                                    self.ind();
+                                    self.p("}} else {{\n", .{});
+                                    self.indent += 1;
+                                    try self.emit_block(eb);
+                                    self.indent -= 1;
+                                }
+                                self.pl("}}", .{});
+                                found_taken = true;
+                                break;
+                            }
+                        }
+                        if (!found_taken) {
+                            if (is.else_body) |*eb| {
+                                try self.emit_block(eb);
+                            }
+                        }
+                    }
                 } else {
-                    try self.emit_expr(is.cond);
-                }
-                self.p(") {{\n", .{});
-                self.indent += 1;
-                try self.emit_block(&is.then);
-                self.indent -= 1;
-                for (is.elseifs) |*ei| {
+                    // Normal runtime if/else emission
                     self.ind();
-                    self.p("}} else if (", .{});
-                    if (self.expr_type(ei.cond) == .any) {
+                    self.p("if (", .{});
+                    if (self.expr_type(is.cond) == .any) {
                         self.p("lua_to_bool(", .{});
-                        try self.emit_expr(ei.cond);
+                        try self.emit_expr(is.cond);
                         self.p(")", .{});
                     } else {
-                        try self.emit_expr(ei.cond);
+                        try self.emit_expr(is.cond);
                     }
                     self.p(") {{\n", .{});
                     self.indent += 1;
-                    try self.emit_block(&ei.body);
+                    try self.emit_block(&is.then);
                     self.indent -= 1;
+                    for (is.elseifs) |*ei| {
+                        self.ind();
+                        self.p("}} else if (", .{});
+                        if (self.expr_type(ei.cond) == .any) {
+                            self.p("lua_to_bool(", .{});
+                            try self.emit_expr(ei.cond);
+                            self.p(")", .{});
+                        } else {
+                            try self.emit_expr(ei.cond);
+                        }
+                        self.p(") {{\n", .{});
+                        self.indent += 1;
+                        try self.emit_block(&ei.body);
+                        self.indent -= 1;
+                    }
+                    if (is.else_body) |*eb| {
+                        self.ind();
+                        self.p("}} else {{\n", .{});
+                        self.indent += 1;
+                        try self.emit_block(eb);
+                        self.indent -= 1;
+                    }
+                    self.pl("}}", .{});
                 }
-                if (is.else_body) |*eb| {
-                    self.ind();
-                    self.p("}} else {{\n", .{});
-                    self.indent += 1;
-                    try self.emit_block(eb);
-                    self.indent -= 1;
-                }
-                self.pl("}}", .{});
             },
             .while_loop => |*wl| {
-                self.ind();
-                self.p("while (", .{});
-                if (self.expr_type(wl.cond) == .any) {
-                    self.p("lua_to_bool(", .{});
-                    try self.emit_expr(wl.cond);
-                    self.p(")", .{});
+                // Dead-loop elimination: skip entirely if condition is always false
+                if (self.try_eval_const_condition(wl.cond)) |known| {
+                    if (!known) {
+                        // while false ... end → emit nothing (dead code)
+                    } else {
+                        // while true → emit infinite loop (let C handle it)
+                        self.pl("while (1) {{", .{});
+                        self.indent += 1;
+                        try self.push_break_scope();
+                        defer self.pop_break_scope();
+                        try self.emit_block(&wl.body);
+                        self.indent -= 1;
+                        self.pl("}}", .{});
+                    }
                 } else {
-                    try self.emit_expr(wl.cond);
+                    self.ind();
+                    self.p("while (", .{});
+                    if (self.expr_type(wl.cond) == .any) {
+                        self.p("lua_to_bool(", .{});
+                        try self.emit_expr(wl.cond);
+                        self.p(")", .{});
+                    } else {
+                        try self.emit_expr(wl.cond);
+                    }
+                    self.p(") {{\n", .{});
+                    self.indent += 1;
+                    try self.push_break_scope();
+                    defer self.pop_break_scope();
+                    try self.emit_block(&wl.body);
+                    self.indent -= 1;
+                    self.pl("}}", .{});
                 }
-                self.p(") {{\n", .{});
-                self.indent += 1;
-                try self.push_break_scope();
-                defer self.pop_break_scope();
-                try self.emit_block(&wl.body);
-                self.indent -= 1;
-                self.pl("}}", .{});
             },
             .repeat_loop => |*rl| {
                 self.pl("do {{", .{});
@@ -4263,6 +5000,12 @@ pub const CodeGen = struct {
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
                 try self.note_local_type(nf.var_name, vt2);
+                // Emit vectorization hint for simple counted loops in typed code.
+                // This helps clang auto-vectorize reduction/accumulation patterns.
+                if (self.current_ret.is_native()) {
+                    self.p("#pragma clang loop vectorize(enable) interleave(enable)\n", .{});
+                    self.ind();
+                }
                 self.p("for (", .{});
                 self.typ(vt2);
                 self.p(" {s} = ", .{nf.var_name});
@@ -5121,9 +5864,43 @@ pub const CodeGen = struct {
                         }
                     }
                     for (fb.upvalues, 0..) |uv, i| {
-                        if (std.mem.eql(u8, uv.name, n.ident)) {
-                            self.p("cl->up{d}", .{i});
-                            return;
+                        if (std.mem.eql(u8, uv.name, n.ident) and uv.is_local) {
+                            // Only use closure struct for local upvalues.
+                            // Skip if this name is a known global (accessed directly).
+                            const is_glob = (!self.is_local_name(n.ident) and self.global_type(n.ident) != null);
+                            if (!is_glob) {
+                                if (upvalue_uses_pointer(uv)) {
+                                    self.p("(*cl->up{d})", .{i});
+                                } else {
+                                    self.p("cl->up{d}", .{i});
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+                // Comptime constant folding: if the name has a known compile-time
+                // value (e.g., module-level OP_ADD = 0x6A), emit the literal directly.
+                // Only applies inside typed functions for non-local names (true constants).
+                if (self.current_ret != .any and self.current_ret != .void) {
+                    if (!self.is_local_name(n.ident)) {
+                        const bindings = self.comptime_bindings();
+                        if (bindings.get(n.ident)) |val| {
+                            switch (val) {
+                                .int => |v| {
+                                    self.p("{d}", .{v});
+                                    return;
+                                },
+                                .float => |v| {
+                                    self.p("{d}", .{v});
+                                    return;
+                                },
+                                .bool => |v| {
+                                    self.p("{s}", .{if (v) "1" else "0"});
+                                    return;
+                                },
+                                else => {},
+                            }
                         }
                     }
                 }
@@ -5217,6 +5994,425 @@ pub const CodeGen = struct {
             .call => |c| {
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     try self.emit_comptime_expr(c.args[0], self.expr_type(expr) == .any);
+                    return;
+                }
+                // __asm("template") or __asm("template", "constraints") — emit inline asm
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__asm")) {
+                    try self.emit_inline_asm(c.args);
+                    return;
+                }
+                // __bitcast(expr, "type") — emit reinterpret cast
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__bitcast") and c.args.len == 2) {
+                    if (c.args[1].* == .string_lit) {
+                        self.p("(*({s}*)&(", .{c.args[1].string_lit.val});
+                        try self.emit_expr(c.args[0]);
+                        self.p("))", .{});
+                        return;
+                    }
+                }
+                // __volatile(ptr) — volatile pointer dereference
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__volatile") and c.args.len == 1) {
+                    self.p("(*(volatile typeof(*(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p("))*)&(*(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")))", .{});
+                    return;
+                }
+                // __sizeof("type") or __sizeof(expr) — emit sizeof
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__sizeof") and c.args.len == 1) {
+                    if (c.args[0].* == .string_lit) {
+                        self.p("((int64_t)sizeof({s}))", .{c.args[0].string_lit.val});
+                    } else {
+                        self.p("((int64_t)sizeof(", .{});
+                        try self.emit_expr(c.args[0]);
+                        self.p("))", .{});
+                    }
+                    return;
+                }
+                // __alignof("type") — emit _Alignof
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__alignof") and c.args.len == 1) {
+                    if (c.args[0].* == .string_lit) {
+                        self.p("((int64_t)_Alignof({s}))", .{c.args[0].string_lit.val});
+                    } else {
+                        self.p("((int64_t)_Alignof(typeof(", .{});
+                        try self.emit_expr(c.args[0]);
+                        self.p(")))", .{});
+                    }
+                    return;
+                }
+                // __offsetof("struct_type", "field") — emit offsetof
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__offsetof") and c.args.len == 2) {
+                    if (c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
+                        self.p("((int64_t)__builtin_offsetof({s}, {s}))", .{ c.args[0].string_lit.val, c.args[1].string_lit.val });
+                        return;
+                    }
+                }
+                // __emit("raw C code") — inject raw C expression at compile time.
+                // Ultimate metaprogramming escape hatch — more powerful than any
+                // macro system because you can emit arbitrary C.
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__emit") and c.args.len >= 1) {
+                    if (c.args[0].* == .string_lit) {
+                        self.p("{s}", .{c.args[0].string_lit.val});
+                    } else {
+                        // Try comptime eval to get the string
+                        const val = comptime_eval.evalWithBindings(c.args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+                            self.p("/* __emit: arg must be comptime string */0", .{});
+                            return;
+                        };
+                        if (val == .string) {
+                            self.p("{s}", .{val.string});
+                        } else {
+                            self.p("/* __emit: arg must evaluate to string */0", .{});
+                        }
+                    }
+                    return;
+                }
+                // __typeinfo(expr) — returns string type name at compile time
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__typeinfo") and c.args.len == 1) {
+                    const rt = self.expr_type(c.args[0]);
+                    var buf: [128]u8 = undefined;
+                    const name = rt.c_type(&buf);
+                    self.p("\"{s}\"", .{name});
+                    return;
+                }
+                // __comptimeif(cond_expr, then_expr, else_expr) — compile-time conditional expression
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__comptimeif") and c.args.len == 3) {
+                    if (self.try_eval_const_condition(c.args[0])) |known| {
+                        if (known) {
+                            try self.emit_expr(c.args[1]);
+                        } else {
+                            try self.emit_expr(c.args[2]);
+                        }
+                        return;
+                    }
+                    // Fall through to runtime if condition is unknown
+                }
+                // __static_assert(cond_string, msg_string) — compile-time assertion
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__static_assert")) {
+                    if (c.args.len >= 1 and c.args[0].* == .string_lit) {
+                        const msg = if (c.args.len >= 2 and c.args[1].* == .string_lit) c.args[1].string_lit.val else "static assertion failed";
+                        self.p("_Static_assert({s}, \"{s}\")", .{ c.args[0].string_lit.val, msg });
+                    } else if (c.args.len >= 1) {
+                        // Try comptime eval for the condition
+                        if (self.try_eval_const_condition(c.args[0])) |known| {
+                            if (!known) {
+                                self.p("_Static_assert(0, \"compile-time assertion failed\")", .{});
+                            } else {
+                                self.p("((void)0)", .{});
+                            }
+                        } else {
+                            self.p("_Static_assert(", .{});
+                            try self.emit_expr(c.args[0]);
+                            const msg2 = if (c.args.len >= 2 and c.args[1].* == .string_lit) c.args[1].string_lit.val else "assertion failed";
+                            self.p(", \"{s}\")", .{msg2});
+                        }
+                    }
+                    return;
+                }
+                // __typeof(expr) — emit typeof(expr) for type-generic C programming
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__typeof") and c.args.len == 1) {
+                    if (c.args[0].* == .string_lit) {
+                        // String literal → use as raw type name
+                        self.p("{s}", .{c.args[0].string_lit.val});
+                    } else {
+                        self.p("typeof(", .{});
+                        try self.emit_expr(c.args[0]);
+                        self.p(")", .{});
+                    }
+                    return;
+                }
+                // __likely(expr) — branch prediction hint (likely true)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__likely") and c.args.len == 1) {
+                    self.p("(__builtin_expect(!!(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p("), 1))", .{});
+                    return;
+                }
+                // __unlikely(expr) — branch prediction hint (likely false)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__unlikely") and c.args.len == 1) {
+                    self.p("(__builtin_expect(!!(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p("), 0))", .{});
+                    return;
+                }
+                // __prefetch(ptr) or __prefetch(ptr, rw, locality) — cache prefetch
+                // rw: 0=read, 1=write. locality: 0-3 (3=keep in all caches)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__prefetch")) {
+                    if (c.args.len == 1) {
+                        self.p("(__builtin_prefetch((const void*)(", .{});
+                        try self.emit_expr(c.args[0]);
+                        self.p("), 0, 3), 0)", .{});
+                    } else if (c.args.len == 3) {
+                        self.p("(__builtin_prefetch((const void*)(", .{});
+                        try self.emit_expr(c.args[0]);
+                        self.p("), ", .{});
+                        try self.emit_expr(c.args[1]);
+                        self.p(", ", .{});
+                        try self.emit_expr(c.args[2]);
+                        self.p("), 0)", .{});
+                    }
+                    return;
+                }
+                // __assume(expr) — optimizer hint that expr is always true
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__assume") and c.args.len == 1) {
+                    self.p("(__builtin_assume(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p("), 0)", .{});
+                    return;
+                }
+                // __unreachable() — mark code path as unreachable for optimizer
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__unreachable") and c.args.len == 0) {
+                    self.p("(__builtin_unreachable(), 0)", .{});
+                    return;
+                }
+                // __trap() — cause immediate abort (for invariant violations)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__trap") and c.args.len == 0) {
+                    self.p("(__builtin_trap(), 0)", .{});
+                    return;
+                }
+                // __comptimefold(start, stop, step, "acc_init", "body_template")
+                // Unrolls a loop at compile time. Body template uses %i for index, %a for accumulator.
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__comptimefold")) {
+                    try self.emit_comptimefold(c.args);
+                    return;
+                }
+                // __comptimefor(start, stop, "body_template")
+                // Generates code for each iteration. Body template uses %i for the index.
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__comptimefor")) {
+                    try self.emit_comptimefor(c.args);
+                    return;
+                }
+                // __select(index, args...) — compile-time argument selection (like Zig's @field)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__select") and c.args.len >= 2) {
+                    if (c.args[0].* == .int_lit) {
+                        const idx: usize = @intCast(c.args[0].int_lit.val);
+                        if (idx < c.args.len - 1) {
+                            try self.emit_expr(c.args[idx + 1]);
+                            return;
+                        }
+                    }
+                }
+                // __ctz(expr) — count trailing zeros
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__ctz") and c.args.len == 1) {
+                    self.p("((int64_t)__builtin_ctzll((unsigned long long)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")))", .{});
+                    return;
+                }
+                // __clz(expr) — count leading zeros
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__clz") and c.args.len == 1) {
+                    self.p("((int64_t)__builtin_clzll((unsigned long long)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")))", .{});
+                    return;
+                }
+                // __popcount(expr) — population count (number of set bits)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__popcount") and c.args.len == 1) {
+                    self.p("((int64_t)__builtin_popcountll((unsigned long long)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")))", .{});
+                    return;
+                }
+                // __bswap(expr) — byte swap (endian conversion)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__bswap") and c.args.len == 1) {
+                    self.p("((int64_t)__builtin_bswap64((uint64_t)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")))", .{});
+                    return;
+                }
+                // __rotl(value, shift) — rotate left
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__rotl") and c.args.len == 2) {
+                    self.p("((int64_t)(((uint64_t)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(") << (", .{});
+                    try self.emit_expr(c.args[1]);
+                    self.p(")) | ((uint64_t)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(") >> (64 - (", .{});
+                    try self.emit_expr(c.args[1]);
+                    self.p(")))))", .{});
+                    return;
+                }
+                // __rotr(value, shift) — rotate right
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__rotr") and c.args.len == 2) {
+                    self.p("((int64_t)(((uint64_t)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(") >> (", .{});
+                    try self.emit_expr(c.args[1]);
+                    self.p(")) | ((uint64_t)(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(") << (64 - (", .{});
+                    try self.emit_expr(c.args[1]);
+                    self.p(")))))", .{});
+                    return;
+                }
+                // __fence() — memory fence / compiler barrier
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__fence") and c.args.len == 0) {
+                    self.p("(__atomic_thread_fence(__ATOMIC_SEQ_CST), 0)", .{});
+                    return;
+                }
+                // ═══════════════════════════════════════════════════════════════
+                // METAPROGRAMMING: Type introspection & reflection
+                // ═══════════════════════════════════════════════════════════════
+
+                // __fields(TypeOrExpr) — returns compile-time table of field descriptors
+                // Each entry: { name = "field_name", type = "c_type", offset = N, size = N }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__fields")) {
+                    try self.emit_fields_intrinsic(c.args);
+                    return;
+                }
+                // __methods(TypeOrExpr) — returns compile-time table of method names
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__methods")) {
+                    try self.emit_methods_intrinsic(c.args);
+                    return;
+                }
+                // __variants(EnumType) — returns compile-time table of variant descriptors
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__variants")) {
+                    try self.emit_variants_intrinsic(c.args);
+                    return;
+                }
+                // __has_field(TypeOrExpr, "field_name") — compile-time boolean check
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__has_field") and c.args.len == 2) {
+                    try self.emit_has_field_intrinsic(c.args);
+                    return;
+                }
+                // __has_method(TypeOrExpr, "method_name") — compile-time boolean check
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__has_method") and c.args.len == 2) {
+                    try self.emit_has_method_intrinsic(c.args);
+                    return;
+                }
+                // __has_metamethod(TypeOrExpr, "metamethod_name") — compile-time metamethod check
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__has_metamethod") and c.args.len == 2) {
+                    try self.emit_has_metamethod_intrinsic(c.args);
+                    return;
+                }
+                // __field_type(TypeOrExpr, "field_name") — returns C type name string
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__field_type") and c.args.len == 2) {
+                    try self.emit_field_type_intrinsic(c.args);
+                    return;
+                }
+                // __type_name(expr) — returns the Duo type name as a string literal
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__type_name") and c.args.len == 1) {
+                    try self.emit_type_name_intrinsic(c.args);
+                    return;
+                }
+                // __type_id(expr) — returns a stable compile-time integer type identifier
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__type_id") and c.args.len == 1) {
+                    try self.emit_type_id_intrinsic(c.args);
+                    return;
+                }
+                // __is_type(expr, "type_name") — compile-time type check
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__is_type") and c.args.len == 2) {
+                    try self.emit_is_type_intrinsic(c.args);
+                    return;
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // METAPROGRAMMING: Compile-time messages & errors
+                // ═══════════════════════════════════════════════════════════════
+
+                // __comptimeprint("msg") — print at compile time (debug aid)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__comptimeprint") and c.args.len >= 1) {
+                    try self.emit_comptime_message(c.args, .info);
+                    return;
+                }
+                // __comptimewarn("msg") — emit compile-time warning
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__comptimewarn") and c.args.len >= 1) {
+                    try self.emit_comptime_message(c.args, .warning);
+                    return;
+                }
+                // __comptimeerror("msg") — abort compilation with error
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__comptimeerror") and c.args.len >= 1) {
+                    try self.emit_comptime_message(c.args, .err);
+                    return;
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // METAPROGRAMMING: File embedding
+                // ═══════════════════════════════════════════════════════════════
+
+                // __embed_str("path") — embed file contents as string literal
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__embed_str") and c.args.len == 1) {
+                    try self.emit_embed_str(c.args[0]);
+                    return;
+                }
+                // __embed_file("path") — embed file as byte array (returns pointer + len)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__embed_file") and c.args.len == 1) {
+                    try self.emit_embed_file(c.args[0]);
+                    return;
+                }
+                // __make_type("name", "field1", "type1", "field2", "type2", ...) — define struct
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__make_type")) {
+                    try self.emit_make_type_intrinsic(c.args);
+                    return;
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // METAPROGRAMMING: Layout control
+                // ═══════════════════════════════════════════════════════════════
+
+                // __field_offset(TypeOrExpr, "field_name") — byte offset of field
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__field_offset") and c.args.len == 2) {
+                    try self.emit_field_offset_intrinsic(c.args);
+                    return;
+                }
+                // __field_size(TypeOrExpr, "field_name") — byte size of field
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__field_size") and c.args.len == 2) {
+                    try self.emit_field_size_intrinsic(c.args);
+                    return;
+                }
+                // __bitfield("struct_type", {field_name, bits}, ...) — define packed bitfield
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__bitfield")) {
+                    try self.emit_bitfield_intrinsic(c.args);
+                    return;
+                }
+                // __union("union_type", ...) — define C union type
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__union")) {
+                    try self.emit_union_intrinsic(c.args);
+                    return;
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // METAPROGRAMMING: Metatable type tracking
+                // ═══════════════════════════════════════════════════════════════
+
+                // __metatable_type(expr) — returns metatable type info as table
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__metatable_type") and c.args.len == 1) {
+                    try self.emit_metatable_type_intrinsic(c.args);
+                    return;
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // METAPROGRAMMING: Dispatch hints (zero-overhead wrappers)
+                // ═══════════════════════════════════════════════════════════════
+
+                // __inline_always(expr) — hint: inline the expression's function call
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__inline_always") and c.args.len == 1) {
+                    self.p("(__attribute__((always_inline)) ", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")", .{});
+                    return;
+                }
+                // __no_inline(expr) — hint: never inline this call
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__no_inline") and c.args.len == 1) {
+                    self.p("(__attribute__((noinline)) ", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p(")", .{});
+                    return;
+                }
+                // __cold_path(expr) — mark as cold (unlikely) code path
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__cold_path") and c.args.len == 1) {
+                    self.p("(__builtin_expect(!!(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p("), 0))", .{});
+                    return;
+                }
+                // __hot_path(expr) — mark as hot (likely) code path
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__hot_path") and c.args.len == 1) {
+                    self.p("(__builtin_expect(!!(", .{});
+                    try self.emit_expr(c.args[0]);
+                    self.p("), 1))", .{});
                     return;
                 }
                 if (try self.maybe_emit_enum_eq_call(c.func, c.args)) return;
@@ -5335,6 +6531,37 @@ pub const CodeGen = struct {
             },
             .method_call => |mc| {
                 const ot = self.expr_type(mc.obj);
+
+                // ═══════════════════════════════════════════════════════════
+                // Zero-cost metatable dispatch: if we know the object's type
+                // has a method defined in its alias_defs, emit a direct call
+                // instead of going through lua_table_get + lua_invoke.
+                // ═══════════════════════════════════════════════════════════
+                if (ot == .any and mc.obj.* == .name) {
+                    const obj_name = mc.obj.name.ident;
+                    // Check if this variable has a known type alias with methods
+                    if (self.record_aliases.get(obj_name)) |alias_rt| {
+                        if (alias_rt == .@"struct") {
+                            if (self.alias_defs.get(alias_rt.@"struct".name)) |alias_def| {
+                                for (alias_def.methods) |method| {
+                                    const mname = if (method.path.len > 0) method.path[method.path.len - 1] else "";
+                                    if (std.mem.eql(u8, mname, mc.method)) {
+                                        // Direct dispatch: emit TypeName__method(self, args...)
+                                        self.p("{s}__{s}(", .{ alias_rt.@"struct".name, mc.method });
+                                        try self.emit_as_lua_value(mc.obj);
+                                        for (mc.args) |arg| {
+                                            self.p(", ", .{});
+                                            try self.emit_as_lua_value(arg);
+                                        }
+                                        self.p(")", .{});
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (std.mem.eql(u8, mc.method, "eq")) {
                     if (self.enum_name_of(ot)) |enum_name| {
                         if (self.enum_has_derive(enum_name, "Eq") and self.enum_is_payload_free(enum_name) and mc.args.len >= 1) {
@@ -5628,6 +6855,29 @@ pub const CodeGen = struct {
                     try self.emit_as_lua_value(b.rhs);
                     self.p(")", .{});
                 } else if (lt == .any or rt == .any) {
+                    // Before falling through to dynamic dispatch, check if one side
+                    // is a typed integer and the other is a comptime constant.
+                    // This enables fast dispatch: `if op == OP_ADD` → `if (op == 106)`
+                    if ((b.op == .eq or b.op == .neq or b.op == .lt or b.op == .gt or b.op == .leq or b.op == .geq) and
+                        ((lt.is_integer() and self.comptime_value_type(b.rhs) != null) or
+                        (rt.is_integer() and self.comptime_value_type(b.lhs) != null)))
+                    {
+                        const op_str: []const u8 = switch (b.op) {
+                            .eq => " == ",
+                            .neq => " != ",
+                            .lt => " < ",
+                            .gt => " > ",
+                            .leq => " <= ",
+                            .geq => " >= ",
+                            else => " == ",
+                        };
+                        self.p("(", .{});
+                        try self.emit_expr(b.lhs);
+                        self.p("{s}", .{op_str});
+                        try self.emit_expr(b.rhs);
+                        self.p(")", .{});
+                        return;
+                    }
                     if (b.op == .contains) {
                         self.p("duo_contains(", .{});
                         try self.emit_as_lua_value(b.rhs);
@@ -5853,7 +7103,11 @@ pub const CodeGen = struct {
                 self.p("lua_val_from_closure((lua_Closure*)duo_make_closure_{d}(", .{id});
                 for (fb.upvalues, 0..) |uv, i| {
                     if (i > 0) self.p(", ", .{});
-                    if (uv.typ) |t| {
+                    if (upvalue_uses_pointer(uv)) {
+                        // Mutable upvalue: pass address of the variable
+                        self.p("&", .{});
+                        self.emit_var_name(uv.name);
+                    } else if (uv.typ) |t| {
                         if (t == .func) {
                             try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_native);
                         } else {
@@ -6036,6 +7290,148 @@ pub const CodeGen = struct {
         }
     }
 
+    /// Emit GCC-style inline assembly from __asm("template") or
+    /// __asm("template", "output_constraints", "input_constraints", "clobbers").
+    /// Uses existing Duo call syntax — no new keywords required.
+    /// Example: __asm("nop")
+    /// Example: __asm("mov %0, %1", "=r(result)", "r(input)", "memory")
+    fn emit_inline_asm(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len == 0) return;
+        if (args[0].* != .string_lit) {
+            self.p("/* __asm: first arg must be string literal */", .{});
+            return;
+        }
+        const template = args[0].string_lit.val;
+        self.p("__asm__ volatile(\"{s}\"", .{template});
+        // Output constraints
+        if (args.len >= 2 and args[1].* == .string_lit) {
+            self.p(" : \"{s}\"", .{args[1].string_lit.val});
+        } else {
+            self.p(" :", .{});
+        }
+        // Input constraints
+        if (args.len >= 3 and args[2].* == .string_lit) {
+            self.p(" : \"{s}\"", .{args[2].string_lit.val});
+        } else {
+            self.p(" :", .{});
+        }
+        // Clobbers
+        if (args.len >= 4 and args[3].* == .string_lit) {
+            self.p(" : \"{s}\"", .{args[3].string_lit.val});
+        }
+        self.p(")", .{});
+    }
+
+    /// __comptimefold(start, stop, step, "init", "body")
+    /// Unrolls a loop at compile time. In body: %i → index, %a → accumulator.
+    /// Example: __comptimefold(0, 4, 1, "0", "%a + arr[%i]")
+    /// → ((((0) + arr[0]) + arr[1]) + arr[2]) + arr[3])
+    fn emit_comptimefold(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 5) {
+            self.p("/* __comptimefold: needs 5 args (start, stop, step, init, body) */0", .{});
+            return;
+        }
+        // Evaluate start, stop, step at compile time
+        const start_val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+            self.p("/* __comptimefold: start must be comptime */0", .{});
+            return;
+        };
+        const stop_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+            self.p("/* __comptimefold: stop must be comptime */0", .{});
+            return;
+        };
+        const step_val = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+            self.p("/* __comptimefold: step must be comptime */0", .{});
+            return;
+        };
+        if (start_val != .int or stop_val != .int or step_val != .int) {
+            self.p("/* __comptimefold: bounds must be integers */0", .{});
+            return;
+        }
+        if (args[3].* != .string_lit or args[4].* != .string_lit) {
+            self.p("/* __comptimefold: init and body must be string literals */0", .{});
+            return;
+        }
+        const init_str = args[3].string_lit.val;
+        const body_tmpl = args[4].string_lit.val;
+        const start = start_val.int;
+        const stop = stop_val.int;
+        const step = step_val.int;
+        if (step == 0 or (step > 0 and start > stop) or (step < 0 and start < stop)) {
+            self.p("{s}", .{init_str});
+            return;
+        }
+        // Generate the unrolled fold
+        var acc_str: []const u8 = init_str;
+        var i = start;
+        var iterations: usize = 0;
+        while ((step > 0 and i < stop) or (step < 0 and i > stop)) : ({
+            i += step;
+            iterations += 1;
+        }) {
+            if (iterations > 1024) break; // Safety limit
+            // Substitute %i and %a in body template
+            var idx_buf: [24]u8 = undefined;
+            const idx_str = std.fmt.bufPrint(&idx_buf, "{d}", .{i}) catch break;
+            const with_i = std.mem.replaceOwned(u8, self.alloc, body_tmpl, "%i", idx_str) catch break;
+            acc_str = std.mem.replaceOwned(u8, self.alloc, with_i, "%a", acc_str) catch break;
+        }
+        self.p("({s})", .{acc_str});
+    }
+
+    /// __comptimefor(start, stop, "body_template")
+    /// Generates a sequence of statements at compile time. %i → index.
+    /// When used as an expression, generates a comma-expression.
+    /// Example: __comptimefor(0, 3, "arr[%i] = %i;")
+    /// → arr[0] = 0; arr[1] = 1; arr[2] = 2;
+    fn emit_comptimefor(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 3) {
+            self.p("/* __comptimefor: needs 3 args (start, stop, body) */0", .{});
+            return;
+        }
+        const start_val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+            self.p("/* __comptimefor: start must be comptime */0", .{});
+            return;
+        };
+        const stop_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+            self.p("/* __comptimefor: stop must be comptime */0", .{});
+            return;
+        };
+        if (start_val != .int or stop_val != .int) {
+            self.p("/* __comptimefor: bounds must be integers */0", .{});
+            return;
+        }
+        if (args[2].* != .string_lit) {
+            self.p("/* __comptimefor: body must be string literal */0", .{});
+            return;
+        }
+        const body_tmpl = args[2].string_lit.val;
+        const start = start_val.int;
+        const stop = stop_val.int;
+        if (start >= stop) {
+            self.p("0", .{});
+            return;
+        }
+        // Generate unrolled iterations as a compound expression
+        self.p("(", .{});
+        var first = true;
+        var i = start;
+        var iterations: usize = 0;
+        while (i < stop) : ({
+            i += 1;
+            iterations += 1;
+        }) {
+            if (iterations > 1024) break; // Safety limit
+            if (!first) self.p(", ", .{});
+            first = false;
+            var idx_buf: [24]u8 = undefined;
+            const idx_str = std.fmt.bufPrint(&idx_buf, "{d}", .{i}) catch break;
+            const expanded = std.mem.replaceOwned(u8, self.alloc, body_tmpl, "%i", idx_str) catch break;
+            self.p("{s}", .{expanded});
+        }
+        self.p(")", .{});
+    }
+
     fn emit_comptime_expr(self: *CodeGen, expr: *const ast.Expr, as_lua_value: bool) E!void {
         const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
             if (as_lua_value) {
@@ -6046,6 +7442,544 @@ pub const CodeGen = struct {
             return;
         };
         try self.emit_comptime_value(value, as_lua_value);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // METAPROGRAMMING HELPER FUNCTIONS
+    // ═══════════════════════════════════════════════════════════════════════
+
+    const MessageLevel = enum { info, warning, err };
+
+    /// __fields(T) — emit a comptime table of {name, type, offset, size} for each field
+    fn emit_fields_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1) {
+            self.p("lua_val_nil()", .{});
+            return;
+        }
+        const rt = self.expr_type(args[0]);
+        switch (rt) {
+            .table_type => |t| {
+                self.p("({{\n", .{});
+                self.indent += 1;
+                self.ind();
+                self.p("lua_Value __ft = lua_table_new_with_capacity({d}, 0);\n", .{t.fields.len});
+                for (t.fields, 0..) |field, i| {
+                    self.ind();
+                    self.p("lua_table_set_raw_i64(__ft, {d}, ({{\n", .{i + 1});
+                    self.indent += 1;
+                    self.ind();
+                    self.p("lua_Value __e = lua_table_new_with_capacity(0, 4);\n", .{});
+                    self.ind();
+                    const name_hash = calc_lua_hash(field.name);
+                    self.p("lua_table_set_raw_lit(__e, \"name\", {d}, 4, lua_val_from_str(\"{s}\"));\n", .{ calc_lua_hash("name"), field.name });
+                    self.ind();
+                    var buf: [128]u8 = undefined;
+                    const type_name = field.typ.c_type(&buf);
+                    self.p("lua_table_set_raw_lit(__e, \"type\", {d}, 4, lua_val_from_str(\"{s}\"));\n", .{ calc_lua_hash("type"), type_name });
+                    self.ind();
+                    self.p("lua_table_set_raw_lit(__e, \"index\", {d}, 5, lua_val_from_int({d}));\n", .{ calc_lua_hash("index"), i });
+                    self.ind();
+                    _ = name_hash;
+                    self.p("__e;\n", .{});
+                    self.indent -= 1;
+                    self.ind();
+                    self.p("}}));\n", .{});
+                }
+                self.ind();
+                self.p("__ft;\n", .{});
+                self.indent -= 1;
+                self.ind();
+                self.p("}})", .{});
+            },
+            .enum_type => |et| {
+                // For enums, return variant info as "fields"
+                self.p("({{\n", .{});
+                self.indent += 1;
+                self.ind();
+                self.p("lua_Value __ft = lua_table_new_with_capacity({d}, 0);\n", .{et.variants.len});
+                for (et.variants, 0..) |v, i| {
+                    self.ind();
+                    self.p("lua_table_set_raw_i64(__ft, {d}, ({{\n", .{i + 1});
+                    self.indent += 1;
+                    self.ind();
+                    self.p("lua_Value __e = lua_table_new_with_capacity(0, 3);\n", .{});
+                    self.ind();
+                    self.p("lua_table_set_raw_lit(__e, \"name\", {d}, 4, lua_val_from_str(\"{s}\"));\n", .{ calc_lua_hash("name"), v.name });
+                    self.ind();
+                    const has_payload: i64 = if (v.payload != null) 1 else 0;
+                    self.p("lua_table_set_raw_lit(__e, \"has_payload\", {d}, 11, lua_val_from_bool({s}));\n", .{ calc_lua_hash("has_payload"), if (has_payload == 1) "true" else "false" });
+                    self.ind();
+                    self.p("lua_table_set_raw_lit(__e, \"tag\", {d}, 3, lua_val_from_int({d}));\n", .{ calc_lua_hash("tag"), i });
+                    self.ind();
+                    self.p("__e;\n", .{});
+                    self.indent -= 1;
+                    self.ind();
+                    self.p("}}));\n", .{});
+                }
+                self.ind();
+                self.p("__ft;\n", .{});
+                self.indent -= 1;
+                self.ind();
+                self.p("}})", .{});
+            },
+            else => self.p("lua_val_nil()", .{}),
+        }
+    }
+
+    /// __methods(T) — emit comptime table of method names for a type
+    fn emit_methods_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1) {
+            self.p("lua_val_nil()", .{});
+            return;
+        }
+        // Look up the type name in alias_defs which tracks methods
+        const rt = self.expr_type(args[0]);
+        const type_name: ?[]const u8 = switch (rt) {
+            .@"struct" => |s| s.name,
+            .enum_type => |et| et.name,
+            else => if (args[0].* == .string_lit) args[0].string_lit.val else null,
+        };
+        if (type_name) |tname| {
+            if (self.alias_defs.get(tname)) |alias_def| {
+                self.p("({{\n", .{});
+                self.indent += 1;
+                self.ind();
+                self.p("lua_Value __mt = lua_table_new_with_capacity({d}, 0);\n", .{alias_def.methods.len});
+                for (alias_def.methods, 0..) |method, i| {
+                    self.ind();
+                    const mname = if (method.path.len > 0) method.path[method.path.len - 1] else "?";
+                    self.p("lua_table_set_raw_i64(__mt, {d}, lua_val_from_str(\"{s}\"));\n", .{ i + 1, mname });
+                }
+                self.ind();
+                self.p("__mt;\n", .{});
+                self.indent -= 1;
+                self.ind();
+                self.p("}})", .{});
+                return;
+            }
+        }
+        self.p("lua_val_nil()", .{});
+    }
+
+    /// __variants(EnumT) — emit comptime table of variant descriptors
+    fn emit_variants_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1) {
+            self.p("lua_val_nil()", .{});
+            return;
+        }
+        const rt = self.expr_type(args[0]);
+        if (rt == .enum_type) {
+            const et = rt.enum_type;
+            self.p("({{\n", .{});
+            self.indent += 1;
+            self.ind();
+            self.p("lua_Value __vt = lua_table_new_with_capacity({d}, 0);\n", .{et.variants.len});
+            for (et.variants, 0..) |v, i| {
+                self.ind();
+                self.p("lua_table_set_raw_i64(__vt, {d}, ({{\n", .{i + 1});
+                self.indent += 1;
+                self.ind();
+                self.p("lua_Value __v = lua_table_new_with_capacity(0, 3);\n", .{});
+                self.ind();
+                self.p("lua_table_set_raw_lit(__v, \"name\", {d}, 4, lua_val_from_str(\"{s}\"));\n", .{ calc_lua_hash("name"), v.name });
+                self.ind();
+                self.p("lua_table_set_raw_lit(__v, \"tag\", {d}, 3, lua_val_from_int({d}));\n", .{ calc_lua_hash("tag"), i });
+                self.ind();
+                if (v.payload) |payload| {
+                    self.p("lua_table_set_raw_lit(__v, \"arity\", {d}, 5, lua_val_from_int({d}));\n", .{ calc_lua_hash("arity"), payload.len });
+                } else {
+                    self.p("lua_table_set_raw_lit(__v, \"arity\", {d}, 5, lua_val_from_int(0));\n", .{calc_lua_hash("arity")});
+                }
+                self.ind();
+                self.p("__v;\n", .{});
+                self.indent -= 1;
+                self.ind();
+                self.p("}}));\n", .{});
+            }
+            self.ind();
+            self.p("__vt;\n", .{});
+            self.indent -= 1;
+            self.ind();
+            self.p("}})", .{});
+        } else {
+            self.p("lua_val_nil()", .{});
+        }
+    }
+
+    /// __has_field(T, "name") — compile-time check if type has a named field
+    fn emit_has_field_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+            self.p("false", .{});
+            return;
+        };
+        const found = switch (rt) {
+            .table_type => |t| blk: {
+                for (t.fields) |f| {
+                    if (std.mem.eql(u8, f.name, field_name)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
+        self.p("{s}", .{if (found) "true" else "false"});
+    }
+
+    /// __has_method(T, "name") — compile-time check if type has a named method
+    fn emit_has_method_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const method_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+            self.p("false", .{});
+            return;
+        };
+        const type_name: ?[]const u8 = switch (rt) {
+            .@"struct" => |s| s.name,
+            .enum_type => |et| et.name,
+            else => null,
+        };
+        if (type_name) |tname| {
+            if (self.alias_defs.get(tname)) |alias_def| {
+                for (alias_def.methods) |m| {
+                    const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
+                    if (std.mem.eql(u8, mname, method_name)) {
+                        self.p("true", .{});
+                        return;
+                    }
+                }
+            }
+        }
+        self.p("false", .{});
+    }
+
+    /// __has_metamethod(T, "__index") — compile-time check for metamethod presence
+    fn emit_has_metamethod_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        // At compile time we can check if the type is known to have a metatable
+        // For now, this is a runtime check emitted as C
+        if (args[1].* == .string_lit) {
+            const mm_name = args[1].string_lit.val;
+            const mm_hash = calc_lua_hash(mm_name);
+            self.p("(lua_get_metafield_lit(", .{});
+            try self.emit_as_lua_value(args[0]);
+            self.p(", \"{s}\", {d}u, {d}).type != VAL_NIL)", .{ mm_name, mm_hash, mm_name.len });
+        } else {
+            self.p("false", .{});
+        }
+    }
+
+    /// __field_type(T, "name") — returns C type name of a field as string literal
+    fn emit_field_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+            self.p("\"unknown\"", .{});
+            return;
+        };
+        switch (rt) {
+            .table_type => |t| {
+                for (t.fields) |f| {
+                    if (std.mem.eql(u8, f.name, field_name)) {
+                        var buf: [128]u8 = undefined;
+                        const ctype = f.typ.c_type(&buf);
+                        self.p("\"{s}\"", .{ctype});
+                        return;
+                    }
+                }
+            },
+            else => {},
+        }
+        self.p("\"unknown\"", .{});
+    }
+
+    /// __type_name(expr) — returns the Duo type name as a compile-time string
+    fn emit_type_name_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        var buf: [128]u8 = undefined;
+        const name = rt.c_type(&buf);
+        self.p("\"{s}\"", .{name});
+    }
+
+    /// __type_id(expr) — stable compile-time type identifier (FNV hash of type name)
+    fn emit_type_id_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        var buf: [128]u8 = undefined;
+        const name = rt.c_type(&buf);
+        // FNV-1a hash for stable type IDs
+        var hash: u64 = 14695981039346656037;
+        for (name) |byte| {
+            hash ^= @as(u64, byte);
+            hash *%= 1099511628211;
+        }
+        self.p("((int64_t){d}LL)", .{@as(i64, @bitCast(hash))});
+    }
+
+    /// __is_type(expr, "type_name") — compile-time type identity check
+    fn emit_is_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const expected = if (args[1].* == .string_lit) args[1].string_lit.val else {
+            self.p("false", .{});
+            return;
+        };
+        var buf: [128]u8 = undefined;
+        const actual = rt.c_type(&buf);
+        // Check both C type name and Duo type name
+        const matches = std.mem.eql(u8, actual, expected) or
+            (std.mem.eql(u8, expected, "i64") and std.mem.eql(u8, actual, "int64_t")) or
+            (std.mem.eql(u8, expected, "i32") and std.mem.eql(u8, actual, "int32_t")) or
+            (std.mem.eql(u8, expected, "f64") and std.mem.eql(u8, actual, "double")) or
+            (std.mem.eql(u8, expected, "f32") and std.mem.eql(u8, actual, "float")) or
+            (std.mem.eql(u8, expected, "str") and std.mem.eql(u8, actual, "const char*")) or
+            (std.mem.eql(u8, expected, "bool") and std.mem.eql(u8, actual, "bool")) or
+            (std.mem.eql(u8, expected, "any") and std.mem.eql(u8, actual, "lua_Value"));
+        self.p("{s}", .{if (matches) "true" else "false"});
+    }
+
+    /// __comptimeprint / __comptimewarn / __comptimeerror — compile-time messages
+    fn emit_comptime_message(self: *CodeGen, args: []const *ast.Expr, level: MessageLevel) E!void {
+        // Evaluate message at compile time
+        const val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+            if (args[0].* == .string_lit) {
+                const msg = args[0].string_lit.val;
+                switch (level) {
+                    .info => std.debug.print("[comptime] {s}\n", .{msg}),
+                    .warning => std.debug.print("[comptime warning] {s}\n", .{msg}),
+                    .err => {
+                        std.debug.print("[comptime error] {s}\n", .{msg});
+                        self.p("_Static_assert(0, \"{s}\")", .{msg});
+                        return;
+                    },
+                }
+                self.p("((void)0)", .{});
+                return;
+            }
+            self.p("((void)0)", .{});
+            return;
+        };
+        if (val == .string) {
+            switch (level) {
+                .info => std.debug.print("[comptime] {s}\n", .{val.string}),
+                .warning => std.debug.print("[comptime warning] {s}\n", .{val.string}),
+                .err => {
+                    std.debug.print("[comptime error] {s}\n", .{val.string});
+                    self.p("_Static_assert(0, \"{s}\")", .{val.string});
+                    return;
+                },
+            }
+        }
+        self.p("((void)0)", .{});
+    }
+
+    /// __embed_str("path") — embed file contents as a C string literal
+    fn emit_embed_str(self: *CodeGen, arg: *const ast.Expr) E!void {
+        if (arg.* == .string_lit) {
+            // Use C23 #embed or fall back to xxd-style inclusion
+            // For maximum portability, emit as a char literal via _Pragma or include
+            self.p("((const char[]){{", .{});
+            self.p("#embed \"{s}\"", .{arg.string_lit.val});
+            self.p(", 0}})", .{});
+        } else {
+            self.p("\"\"", .{});
+        }
+    }
+
+    /// __embed_file("path") — embed file as static byte array
+    fn emit_embed_file(self: *CodeGen, arg: *const ast.Expr) E!void {
+        if (arg.* == .string_lit) {
+            // Emit as a compound literal with the embedded data
+            self.p("({{\n", .{});
+            self.indent += 1;
+            self.ind();
+            self.p("static const unsigned char __embed_data[] = {{\n", .{});
+            self.ind();
+            self.p("    #embed \"{s}\"\n", .{arg.string_lit.val});
+            self.ind();
+            self.p("}};\n", .{});
+            self.ind();
+            self.p("lua_Value __et = lua_table_new_with_capacity(0, 2);\n", .{});
+            self.ind();
+            self.p("lua_table_set_raw_lit(__et, \"ptr\", {d}, 3, lua_val_from_int((int64_t)(uintptr_t)__embed_data));\n", .{calc_lua_hash("ptr")});
+            self.ind();
+            self.p("lua_table_set_raw_lit(__et, \"len\", {d}, 3, lua_val_from_int((int64_t)sizeof(__embed_data)));\n", .{calc_lua_hash("len")});
+            self.ind();
+            self.p("__et;\n", .{});
+            self.indent -= 1;
+            self.ind();
+            self.p("}})", .{});
+        } else {
+            self.p("lua_val_nil()", .{});
+        }
+    }
+
+    /// __field_offset(T, "field") — emit offsetof for a record field
+    fn emit_field_offset_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+            self.p("0", .{});
+            return;
+        };
+        switch (rt) {
+            .table_type => |t| {
+                // Calculate offset based on field position and type sizes
+                var offset: usize = 0;
+                for (t.fields) |f| {
+                    if (std.mem.eql(u8, f.name, field_name)) {
+                        self.p("{d}", .{offset});
+                        return;
+                    }
+                    // Approximate field sizes for native types
+                    offset += field_byte_size(f.typ);
+                }
+            },
+            else => {},
+        }
+        // Fall back to __builtin_offsetof if struct name is known
+        if (args[0].* == .string_lit) {
+            self.p("((int64_t)__builtin_offsetof({s}, {s}))", .{ args[0].string_lit.val, field_name });
+        } else {
+            self.p("0", .{});
+        }
+    }
+
+    /// __field_size(T, "field") — emit sizeof for a specific field's type
+    fn emit_field_size_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const field_name = if (args[1].* == .string_lit) args[1].string_lit.val else {
+            self.p("0", .{});
+            return;
+        };
+        switch (rt) {
+            .table_type => |t| {
+                for (t.fields) |f| {
+                    if (std.mem.eql(u8, f.name, field_name)) {
+                        self.p("{d}", .{field_byte_size(f.typ)});
+                        return;
+                    }
+                }
+            },
+            else => {},
+        }
+        self.p("0", .{});
+    }
+
+    /// Helper: approximate byte size of a resolved type
+    fn field_byte_size(rt: types.ResolvedType) usize {
+        return switch (rt) {
+            .i8, .u8, .bool => 1,
+            .i16, .u16 => 2,
+            .i32, .u32, .f32 => 4,
+            .i64, .u64, .f64 => 8,
+            .str, .pointer, .any => 8, // pointer-sized
+            .v4f64, .v4i64 => 32,
+            .v8f32, .v8i32 => 32,
+            else => 8, // default pointer-sized
+        };
+    }
+
+    /// __bitfield("name", ...) — define a packed bitfield struct
+    fn emit_bitfield_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1 or args[0].* != .string_lit) {
+            self.p("lua_val_from_int(0)", .{});
+            return;
+        }
+        const struct_name = args[0].string_lit.val;
+        // Emit a packed struct typedef with bitfield members
+        // Args after first: alternating "field_name" and bit_width (int literal)
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("typedef struct __attribute__((packed)) {{\n", .{});
+        var i: usize = 1;
+        while (i + 1 < args.len) : (i += 2) {
+            if (args[i].* == .string_lit and args[i + 1].* == .int_lit) {
+                self.ind();
+                self.p("    uint64_t {s} : {d};\n", .{ args[i].string_lit.val, args[i + 1].int_lit.val });
+            }
+        }
+        self.ind();
+        self.p("}} {s};\n", .{struct_name});
+        self.ind();
+        self.p("lua_val_from_int((int64_t)sizeof({s}));\n", .{struct_name});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+    }
+
+    /// __union("name", ...) — define a C union type
+    fn emit_union_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1 or args[0].* != .string_lit) {
+            self.p("lua_val_from_int(0)", .{});
+            return;
+        }
+        const union_name = args[0].string_lit.val;
+        // Args after first: alternating "field_name" and "c_type"
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("typedef union {{\n", .{});
+        var i: usize = 1;
+        while (i + 1 < args.len) : (i += 2) {
+            if (args[i].* == .string_lit and args[i + 1].* == .string_lit) {
+                self.ind();
+                self.p("    {s} {s};\n", .{ args[i + 1].string_lit.val, args[i].string_lit.val });
+            }
+        }
+        self.ind();
+        self.p("}} {s};\n", .{union_name});
+        self.ind();
+        self.p("lua_val_from_int((int64_t)sizeof({s}));\n", .{union_name});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+    }
+
+    /// __make_type("name", "field1", "type1", "field2", "type2", ...) — define a struct type
+    /// Returns sizeof(type) as an integer. The typedef is emitted inline.
+    fn emit_make_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1 or args[0].* != .string_lit) {
+            self.p("lua_val_from_int(0)", .{});
+            return;
+        }
+        const type_name = args[0].string_lit.val;
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("typedef struct {{\n", .{});
+        var i: usize = 1;
+        while (i + 1 < args.len) : (i += 2) {
+            if (args[i].* == .string_lit and args[i + 1].* == .string_lit) {
+                self.ind();
+                self.p("    {s} {s};\n", .{ args[i + 1].string_lit.val, args[i].string_lit.val });
+            }
+        }
+        self.ind();
+        self.p("}} {s};\n", .{type_name});
+        self.ind();
+        self.p("lua_val_from_int((int64_t)sizeof({s}));\n", .{type_name});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+    }
+
+    /// __metatable_type(expr) — returns type info about an expression's metatable
+    fn emit_metatable_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        // Emit a runtime query that returns metatable info as a table
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Value __obj = ", .{});
+        try self.emit_as_lua_value(args[0]);
+        self.p(";\n", .{});
+        self.ind();
+        self.p("lua_Value __mt_info = lua_table_new_with_capacity(0, 2);\n", .{});
+        self.ind();
+        self.p("lua_Value __mt = lua_getmetatable(__obj);\n", .{});
+        self.ind();
+        self.p("lua_table_set_raw_lit(__mt_info, \"has_metatable\", {d}, 13, lua_val_from_bool(__mt.type != VAL_NIL));\n", .{calc_lua_hash("has_metatable")});
+        self.ind();
+        self.p("lua_table_set_raw_lit(__mt_info, \"metatable\", {d}, 9, __mt);\n", .{calc_lua_hash("metatable")});
+        self.ind();
+        self.p("__mt_info;\n", .{});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
     }
 
     fn exprs_same(_: *CodeGen, a: *const ast.Expr, b: *const ast.Expr) bool {
@@ -7305,8 +9239,11 @@ pub const CodeGen = struct {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |*fd| {
-                    if (fd.is_local) try list.append(self.alloc, fd);
-                    try self.collect_local_funcs_block(&fd.func.body, list);
+                    // In duo_mode, single-name bare functions are effectively local
+                    const effectively_local = fd.is_local or (self.duo_mode and fd.path.len == 1 and !fd.method);
+                    if (effectively_local) try list.append(self.alloc, fd);
+                    // Do NOT recurse into function bodies — nested local functions
+                    // will be emitted when their parent's body is processed.
                 },
                 .if_stmt => |*is| {
                     try self.collect_local_funcs_block(&is.then, list);
@@ -7341,7 +9278,10 @@ pub const CodeGen = struct {
             self.p("    int nup;\n", .{});
             var buf: [256]u8 = undefined;
             for (fb.upvalues, 0..) |up, i| {
-                if (up.typ) |t| {
+                if (upvalue_uses_pointer(up)) {
+                    // Mutable upvalue: store pointer to shared cell
+                    self.p("    lua_Value* up{d};\n", .{i});
+                } else if (up.typ) |t| {
                     if (t == .func) {
                         self.p("    lua_Value up{d};\n", .{i});
                     } else {
@@ -7356,7 +9296,9 @@ pub const CodeGen = struct {
             self.p("static inline duo_closure_{d}* duo_make_closure_{d}(", .{ id, id });
             for (fb.upvalues, 0..) |up, i| {
                 if (i > 0) self.p(", ", .{});
-                if (up.typ) |t| {
+                if (upvalue_uses_pointer(up)) {
+                    self.p("lua_Value* up{d}", .{i});
+                } else if (up.typ) |t| {
                     if (t == .func) {
                         self.p("lua_Value up{d}", .{i});
                     } else {
@@ -7763,6 +9705,10 @@ pub const CodeGen = struct {
             if (std.mem.startsWith(u8, e.name, "std.")) std_root_count += 1;
         }
 
+        // Forward-declare duo_build_std_root if needed (defined after duo_register_modules)
+        if (needs_std_root) {
+            self.p("static lua_Value duo_build_std_root(lua_Value _unused);\n", .{});
+        }
         self.p("static void duo_register_modules(void) {{\n", .{});
         for (embedded.items) |e| {
             self.p("    lua_table_set_raw_lit(duo_modules, \"", .{});

@@ -4,7 +4,7 @@
 -- Supports array indices in paths: "users.0.name"
 
 -- Internal: split a dot-separated path string into parts.
-fun std_property_parse(path: any): any
+fun std_property_parse(path: str): any
     if path == nil then return {} end
     parts = {}
     current = ""
@@ -28,14 +28,14 @@ fun std_property_parse(path: any): any
 end
 
 -- Internal: try to convert a string to a number.
-fun std_property_to_num(s: any): any
+fun std_property_to_num(s: str): any
     if s == nil then return nil end
     num = tonumber(s)
     num
 end
 
 -- Internal: navigate to the parent of a dot-path, return {parent, last_key}.
-fun std_property_navigate(obj: any, path: any): any
+fun std_property_navigate(obj: any, path: str): any
     if obj == nil or path == nil then return nil end
     parts = std_property_parse(path)
     if rawlen(parts) == 0 then return nil end
@@ -84,13 +84,13 @@ fun std_property_ensure_path(obj: any, parts: any): any
 end
 
 -- parse_path: public alias for path parsing.
-fun parse_path(path: any): any
+fun parse_path(path: str): any
     std_property_parse(path)
 end
 
 -- get: retrieve a deeply nested value by dot-path.
 -- get({a = {b = {c = 42}}}, "a.b.c") => 42
-fun get(obj: any, path: any): any
+fun get(obj: any, path: str): any
     if obj == nil or path == nil then return nil end
     parts = std_property_parse(path)
     current = obj
@@ -112,7 +112,7 @@ end
 
 -- set: assign a value at a deeply nested dot-path, creating intermediate tables.
 -- set({}, "a.b.c", 42) => {a = {b = {c = 42}}}
-fun set(obj: any, path: any, value: any): void
+fun set(obj: any, path: str, value: any): void
     if obj == nil or path == nil then return end
     parts = std_property_parse(path)
     if rawlen(parts) == 0 then return end
@@ -144,7 +144,7 @@ fun set(obj: any, path: any, value: any): void
 end
 
 -- has: check if a dot-path exists in a nested table.
-fun has(obj: any, path: any): bool
+fun has(obj: any, path: str): bool
     if obj == nil or path == nil then return false end
     parts = std_property_parse(path)
     current = obj
@@ -165,7 +165,7 @@ fun has(obj: any, path: any): bool
 end
 
 -- delete: remove a deeply nested value by dot-path.
-fun delete(obj: any, path: any): any
+fun delete(obj: any, path: str): any
     nav = std_property_navigate(obj, path)
     if nav == nil then return nil end
     removed = nil
@@ -180,7 +180,7 @@ fun delete(obj: any, path: any): any
 end
 
 -- get_or: like get but returns a fallback if the path doesn't exist.
-fun get_or(obj: any, path: any, fallback: any): any
+fun get_or(obj: any, path: str, fallback: any): any
     result = get(obj, path)
     if result == nil then return fallback end
     result
@@ -250,7 +250,7 @@ fun std_property_values(obj: any): any
 end
 
 -- update: like set but only if the path already exists (no creation).
-fun update(obj: any, path: any, value: any): bool
+fun update(obj: any, path: str, value: any): bool
     if not has(obj, path) then return false end
     set(obj, path, value)
     true

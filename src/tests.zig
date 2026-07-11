@@ -18,4 +18,6 @@ test {
     _ = @import("property_tests.zig");
     _ = @import("pretty.zig");
     _ = @import("codegen.zig");
+    _ = @import("directives.zig");
+    _ = @import("term.zig");
 }

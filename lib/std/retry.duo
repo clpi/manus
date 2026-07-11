@@ -14,13 +14,13 @@ end
 -- ===== Backoff strategies =====
 
 -- constant_backoff: always wait the same interval.
-fun constant_backoff(interval: any): any
+fun constant_backoff(interval: float): any
     iv = interval
     return function(attempt: any): any iv end
 end
 
 -- linear_backoff: wait increases linearly with attempt number.
-fun linear_backoff(base: any, max_val: any): any
+fun linear_backoff(base: float, max_val: float): any
     if base == nil then base = 1 end
     if max_val == nil then max_val = 30 end
     base_c = base
@@ -33,7 +33,7 @@ fun linear_backoff(base: any, max_val: any): any
 end
 
 -- exponential_backoff: wait doubles each attempt (with optional jitter).
-fun exponential_backoff(base: any, max_val: any, jitter: any): any
+fun exponential_backoff(base: float, max_val: float, jitter: bool): any
     if base == nil then base = 0.5 end
     if max_val == nil then max_val = 30 end
     if jitter == nil then jitter = false end
@@ -59,7 +59,7 @@ end
 -- ===== Core retry =====
 
 -- do_retry: execute fn up to `max_attempts` times with a backoff strategy.
-fun do_retry(max_attempts: any, backoff_fn: any, fn_ref: any): any
+fun do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
     if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
     if backoff_fn == nil then backoff_fn = constant_backoff(1) end
     attempt = 1
@@ -82,7 +82,7 @@ fun do_retry(max_attempts: any, backoff_fn: any, fn_ref: any): any
 end
 
 -- do_retry_bool: like do_retry but fn returns true for success.
-fun do_retry_bool(max_attempts: any, backoff_fn: any, fn_ref: any): any
+fun do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
     if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
     if backoff_fn == nil then backoff_fn = constant_backoff(1) end
     attempt = 1
@@ -110,13 +110,13 @@ fun retry(fn_ref: any): any
 end
 
 -- retry_with_backoff: retry with exponential backoff, configurable attempts.
-fun retry_with_backoff(fn_ref: any, max_attempts: any): any
+fun retry_with_backoff(fn_ref: any, max_attempts: i64): any
     if max_attempts == nil then max_attempts = 5 end
     do_retry(max_attempts, exponential_backoff(0.5, 30, true), fn_ref)
 end
 
 -- retry_if: retry fn only if `condition` returns true for the error.
-fun retry_if(max_attempts: any, backoff_fn: any, condition: any, fn_ref: any): any
+fun retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
     if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
     if backoff_fn == nil then backoff_fn = constant_backoff(1) end
     attempt = 1
@@ -144,7 +144,7 @@ end
 -- ===== Circuit Breaker =====
 
 -- circuit_new: create a circuit breaker.
-fun circuit_new(failure_threshold: any, reset_timeout: any): any
+fun circuit_new(failure_threshold: i64, reset_timeout: i64): any
     if failure_threshold == nil then failure_threshold = 5 end
     if reset_timeout == nil then reset_timeout = 30 end
     {

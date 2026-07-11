@@ -87,6 +87,8 @@ end
 fun read_message(raw: str): any
     if raw == nil then return {headers = {}, body = ""} end
     sep = string.find(raw, "\r\n\r\n", 1, true)
+    local header_block = ""
+    local body = ""
     if sep == nil then
         sep = string.find(raw, "\n\n", 1, true)
         if sep == nil then
@@ -98,11 +100,11 @@ fun read_message(raw: str): any
         header_block = string.sub(raw, 1, sep - 1)
         body = string.sub(raw, sep + 4)
     end
-    headers = {}
-    lines = split_lines(header_block)
-    cur_key = nil
-    cur_val = ""
-    i = 1
+    local headers = {}
+    local lines = split_lines(header_block)
+    local cur_key = nil
+    local cur_val = ""
+    local i = 1
     while i <= rawlen(lines)
         line = lines[i]
         if string.sub(line, 1, 1) == " " or string.sub(line, 1, 1) == "\t" then
@@ -116,7 +118,7 @@ fun read_message(raw: str): any
                 cur_key = string.sub(line, 1, colon - 1)
                 cur_val = string.sub(line, colon + 1)
             else
-                cur_key = nil
+                local cur_key = nil
             end
         end
         i = i + 1
@@ -124,7 +126,7 @@ fun read_message(raw: str): any
     if cur_key ~= nil then
         headers[string.lower(cur_key)] = string.gsub(cur_val, "^%s+", "")
     end
-    {headers = headers, body = body}
+    return {headers = headers, body = body}
 end
 
 M = {}

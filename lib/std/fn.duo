@@ -119,7 +119,7 @@ fun drop_while(list: any, fn_ref: any): any
 end
 
 -- chunk: split list into sub-lists of size n.
-fun chunk(list: any, n: any): any
+fun chunk(list: any, n: i64): any
     out = {}
     if list == nil or n == nil or n < 1 then return out end
     i = 1
@@ -263,9 +263,23 @@ fun max_by(list: any, fn_ref: any): any
 end
 
 -- sort_by: sort list by fn's return value.
+-- Bubble sort to avoid closure capture issues in the codegen.
 fun sort_by(list: any, fn_ref: any): void
     if list == nil then return end
-    table.sort(list, function(a, b): bool fn_ref(a) < fn_ref(b) end)
+    n = rawlen(list)
+    i = 1
+    while i < n
+        j = 1
+        while j <= n - i
+            a = fn_ref(list[j])
+            b = fn_ref(list[j + 1])
+            if a > b then
+                list[j], list[j + 1] = list[j + 1], list[j]
+            end
+            j = j + 1
+        end
+        i = i + 1
+    end
 end
 
 M = {}

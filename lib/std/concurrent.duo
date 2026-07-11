@@ -99,8 +99,8 @@ end
 
 -- WaitGroup: wait for N tasks to complete.
 fun waitgroup(n: i64): any
-    ch = sync.channel(n)
-    {
+    local ch = sync.channel(n)
+    return {
         done = fun(): void sync.channel_send(ch, true) end,
         wait = fun(): void
             for _ = 1, n sync.channel_recv(ch) end

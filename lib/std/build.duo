@@ -1,5 +1,7 @@
 -- std.build — build system helpers and environment info
 
+local term = req "std.term"
+
 global _project = { name = "duo-app", version = "0.1.0", default = "app" }
 global _targets = {}
 
@@ -96,6 +98,21 @@ fun clean(): i64
     os.execute("rm -rf zig-out/bin")
 end
 
+fun log_target(t: any): void
+    print(term.banner("build target"))
+    print(term.kv("name", t.name))
+    print(term.kv("source", t.src))
+    if t.out ~= nil then print(term.kv("output", t.out)) end
+    print(term.kv("command", command(t)))
+end
+
+fun log_project(): void
+    print(term.banner("duo project"))
+    print(term.kv("name", _project.name))
+    print(term.kv("version", _project.version))
+    print(term.kv("default", _project.default))
+end
+
 M = {}
 M.info = info
 M.platform = platform
@@ -111,4 +128,6 @@ M.default_target = default_target
 M.find = find
 M.command = command
 M.clean = clean
+M.log_target = log_target
+M.log_project = log_project
 M

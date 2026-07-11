@@ -1,0 +1,32 @@
+-- Benchmark helpers and @bench / @time attribute documentation (runtime helpers).
+
+fun now(): float
+    -- Placeholder: native @bench uses compiler-injected timing in generated main.
+    return 0.0
+end
+
+fun format_ns(ns: float): str
+    if ns >= 1e9 then
+        return string.format("%.3fs", ns / 1e9)
+    elseif ns >= 1e6 then
+        return string.format("%.3fms", ns / 1e6)
+    elseif ns >= 1e3 then
+        return string.format("%.3fus", ns / 1e3)
+    end
+    return string.format("%.0fns", ns)
+end
+
+-- Registry of supported compiler directives (mirrors src/directives.zig).
+attrs = {
+    test = { "test", "test.unit", "test.integration", "test.e2e", "test.skip", "test.only", "test.flaky", "test.should_panic", "test.bench", "test.time" },
+    build = { "build.project", "build.exe", "build.lib", "build.test", "build.run", "build.bench", "build.check", "build.fmt", "build.clean" },
+    bench = { "bench", "bench(iterations=N,warmup=N)" },
+    time = { "time", "time(label=\"...\")" },
+    debug = { "trace", "debug", "debug.log" },
+}
+
+M = {}
+M.now = now
+M.format_ns = format_ns
+M.attrs = attrs
+M

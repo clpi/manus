@@ -1,0 +1,85 @@
+-- Metaprogramming test: type reflection on records and enums
+
+-- ═══════════════════════════════════════════════════════════════
+-- __fields on typed records
+-- ═══════════════════════════════════════════════════════════════
+
+local point: { x: f64, y: f64, z: f64 } = { x = 1.0, y = 2.0, z = 3.0 }
+
+-- __fields returns a table of field descriptors
+local fields = __fields(point)
+print("field count = " .. tostring(#fields))
+for i = 1, #fields do
+    print("  field " .. tostring(i) .. ": name=" .. fields[i].name .. " type=" .. fields[i].type)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- __has_field on typed records
+-- ═══════════════════════════════════════════════════════════════
+
+print("has x = " .. tostring(__has_field(point, "x")))
+print("has w = " .. tostring(__has_field(point, "w")))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __field_type on typed records
+-- ═══════════════════════════════════════════════════════════════
+
+print("field_type(x) = " .. __field_type(point, "x"))
+print("field_type(y) = " .. __field_type(point, "y"))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __field_offset and __field_size
+-- ═══════════════════════════════════════════════════════════════
+
+local off_x = __field_offset(point, "x")
+local off_y = __field_offset(point, "y")
+local off_z = __field_offset(point, "z")
+local sz_x = __field_size(point, "x")
+
+print("offset(x) = " .. tostring(off_x))
+print("offset(y) = " .. tostring(off_y))
+print("offset(z) = " .. tostring(off_z))
+print("size(x) = " .. tostring(sz_x))
+
+-- ═══════════════════════════════════════════════════════════════
+-- Enum reflection with __fields (returns variant info)
+-- ═══════════════════════════════════════════════════════════════
+
+enum Color
+    Red
+    Green
+    Blue
+end
+
+local c = Color.Red
+local color_fields = __fields(c)
+print("enum variant count = " .. tostring(#color_fields))
+for i = 1, #color_fields do
+    print("  variant " .. tostring(i) .. ": name=" .. color_fields[i].name)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- __variants on enums (more detailed)
+-- ═══════════════════════════════════════════════════════════════
+
+local variants = __variants(c)
+print("variants count = " .. tostring(#variants))
+for i = 1, #variants do
+    print("  " .. variants[i].name .. " tag=" .. tostring(variants[i].tag) .. " arity=" .. tostring(variants[i].arity))
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- __bitfield — packed bitfield definition
+-- ═══════════════════════════════════════════════════════════════
+
+local bf_size = __bitfield("Flags", "active", 1, "priority", 3, "mode", 4)
+print("bitfield size = " .. tostring(bf_size))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __union — union type definition
+-- ═══════════════════════════════════════════════════════════════
+
+local union_size = __union("NumericValue", "i", "int64_t", "f", "double", "p", "void*")
+print("union size = " .. tostring(union_size))
+
+print("ALL REFLECTION TESTS PASSED")

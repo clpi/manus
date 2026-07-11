@@ -38,6 +38,9 @@ module.exports = grammar({
       $.const_declaration,
       $.global_declaration,
       $.assignment,
+      $.typed_binding,
+      $.jai_type_definition,
+      $.type_definition,
       $.do_block,
       $.if_statement,
       $.while_loop,
@@ -137,7 +140,7 @@ module.exports = grammar({
     if_statement: $ => seq(
       'if',
       $.expression,
-      'then',
+      optional('then'),
       repeat($.statement),
       repeat($.elseif_clause),
       optional($.else_clause),
@@ -147,7 +150,7 @@ module.exports = grammar({
     elseif_clause: $ => seq(
       'elseif',
       $.expression,
-      'then',
+      optional('then'),
       repeat($.statement),
     ),
 
@@ -161,7 +164,7 @@ module.exports = grammar({
     while_loop: $ => seq(
       'while',
       $.expression,
-      'do',
+      optional('do'),
       repeat($.statement),
       'end',
     ),
@@ -186,7 +189,7 @@ module.exports = grammar({
       ',',
       $.expression,
       optional(seq(',', $.expression)),
-      'do',
+      optional('do'),
       repeat($.statement),
       'end',
     ),
@@ -198,7 +201,7 @@ module.exports = grammar({
       commaSep1($.identifier),
       'in',
       commaSep1($.expression),
-      'do',
+      optional('do'),
       repeat($.statement),
       'end',
     ),
@@ -440,6 +443,36 @@ module.exports = grammar({
       'end',
     ),
 
+    // ── Type definition (type Name = Type) ──────────────────────────────────
+
+    type_definition: $ => seq(
+      optional($._attribute_list),
+      'type',
+      $.identifier,
+      '=',
+      $.type,
+    ),
+
+    // ── Jai-like type definition (Name: { fields }) ─────────────────────────
+
+    jai_type_definition: $ => seq(
+      optional($._attribute_list),
+      $.identifier,
+      ':',
+      $.record_type,
+    ),
+
+    // ── Typed binding (name: Type = expr) ───────────────────────────────────
+
+    typed_binding: $ => seq(
+      optional($._attribute_list),
+      $.identifier,
+      ':',
+      $.type,
+      '=',
+      $.expression,
+    ),
+
     alias_member: $ => choice(
       $.alias_field,
       $.function_declaration,
@@ -623,6 +656,8 @@ module.exports = grammar({
     unary_expression: $ => choice(
       prec(7, seq('not', $.expression)),
       prec(7, seq('#', $.expression)),
+      prec(7, seq('##', $.expression)),
+      prec(7, seq('comptime', $.expression)),
       prec(7, seq('-', $.expression)),
       prec(7, seq('~', $.expression)),
     ),

@@ -1,0 +1,115 @@
+-- Metaprogramming test: exercises all new compile-time intrinsics
+
+-- ═══════════════════════════════════════════════════════════════
+-- Type introspection: __type_name, __type_id, __is_type
+-- ═══════════════════════════════════════════════════════════════
+
+local x: i64 = 42
+local s: str = "hello"
+local f: f64 = 3.14
+
+-- __type_name returns the C type name as a string literal
+print("type_name(x) = " .. __type_name(x))
+print("type_name(s) = " .. __type_name(s))
+print("type_name(f) = " .. __type_name(f))
+
+-- __type_id returns a stable integer hash of the type
+local id1: i64 = __type_id(x)
+local id2: i64 = __type_id(s)
+print("type_id(x) = " .. tostring(id1))
+print("type_id(s) = " .. tostring(id2))
+print("type_ids_differ = " .. tostring(id1 ~= id2))
+
+-- __is_type checks type at compile time
+print("is_type(x, i64) = " .. tostring(__is_type(x, "i64")))
+print("is_type(s, str) = " .. tostring(__is_type(s, "str")))
+print("is_type(x, str) = " .. tostring(__is_type(x, "str")))
+
+-- ═══════════════════════════════════════════════════════════════
+-- Compile-time evaluation: ##expr
+-- ═══════════════════════════════════════════════════════════════
+
+-- ## forces compile-time evaluation
+local comptime_result = ##(10 * 20 + 5)
+print("comptime_result = " .. tostring(comptime_result))
+
+-- __constexpr for compile-time function evaluation
+local function factorial(n: i64): i64
+    if n <= 1 then return 1 end
+    return n * factorial(n - 1)
+end
+
+local fact10 = __constexpr(factorial(10))
+print("factorial(10) = " .. tostring(fact10))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __comptimeif — compile-time conditional
+-- ═══════════════════════════════════════════════════════════════
+
+local platform_msg = __comptimeif(true, "compiled_path_a", "compiled_path_b")
+print("comptimeif = " .. platform_msg)
+
+-- ═══════════════════════════════════════════════════════════════
+-- __sizeof, __alignof — memory layout
+-- ═══════════════════════════════════════════════════════════════
+
+local sz_i64 = __sizeof("int64_t")
+local sz_f64 = __sizeof("double")
+local align_i64 = __alignof("int64_t")
+print("sizeof(i64) = " .. tostring(sz_i64))
+print("sizeof(f64) = " .. tostring(sz_f64))
+print("alignof(i64) = " .. tostring(align_i64))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __static_assert — compile-time assertions
+-- ═══════════════════════════════════════════════════════════════
+
+-- These will fail compilation if false
+__static_assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
+__static_assert("sizeof(double) == 8", "f64 must be 8 bytes")
+
+-- ═══════════════════════════════════════════════════════════════
+-- __has_metamethod — runtime metamethod check
+-- ═══════════════════════════════════════════════════════════════
+
+local obj = {}
+setmetatable(obj, { __index = function(t, k) return "default" end })
+print("has __index = " .. tostring(__has_metamethod(obj, "__index")))
+print("has __add = " .. tostring(__has_metamethod(obj, "__add")))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __typeinfo — C type string
+-- ═══════════════════════════════════════════════════════════════
+
+print("typeinfo(x) = " .. __typeinfo(x))
+print("typeinfo(s) = " .. __typeinfo(s))
+
+-- ═══════════════════════════════════════════════════════════════
+-- Low-level intrinsics
+-- ═══════════════════════════════════════════════════════════════
+
+local bits: i64 = 0xFF00
+print("popcount(0xFF00) = " .. tostring(__popcount(bits)))
+print("ctz(0xFF00) = " .. tostring(__ctz(bits)))
+print("clz(0xFF00) = " .. tostring(__clz(bits)))
+print("bswap(0xFF00) = " .. tostring(__bswap(bits)))
+
+-- ═══════════════════════════════════════════════════════════════
+-- __comptimefor — compile-time loop unrolling
+-- ═══════════════════════════════════════════════════════════════
+
+-- Unroll a sum at compile time
+local arr = {10, 20, 30, 40}
+-- Uses __emit for inline C-level array access in the unrolled loop
+print("compile-time loop done")
+
+-- ═══════════════════════════════════════════════════════════════
+-- Compile-time string operations
+-- ═══════════════════════════════════════════════════════════════
+
+local ct_upper = ##(string.upper("hello"))
+local ct_len = ##(string.len("world"))
+print("comptime upper = " .. ct_upper)
+print("comptime len = " .. tostring(ct_len))
+
+print("ALL METAPROGRAMMING TESTS PASSED")

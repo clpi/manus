@@ -142,7 +142,7 @@ fun measure(fn_ref: any): any
 end
 
 -- time_it: run fn `n` times and return {total, avg, min, max}.
-fun time_it(n: any, fn_ref: any): any
+fun time_it(n: i64, fn_ref: any): any
     if n == nil or n < 1 then n = 1 end
     times = {}
     i = 0
@@ -174,7 +174,7 @@ fun time_it(n: any, fn_ref: any): any
 end
 
 -- bench: run fn until at least `min_seconds` have elapsed, report stats.
-fun bench(fn_ref: any, min_seconds: any): any
+fun bench(fn_ref: any, min_seconds: float): any
     if min_seconds == nil then min_seconds = 0.1 end
     times = {}
     total = 0
@@ -207,7 +207,7 @@ fun bench(fn_ref: any, min_seconds: any): any
 end
 
 -- compare: run two functions and report which is faster.
-fun compare(name_a: any, fn_a: any, name_b: any, fn_b: any, n: any): any
+fun compare(name_a: str, fn_a: any, name_b: str, fn_b: any, n: i64): any
     if n == nil then n = 1000 end
     a = time_it(n, fn_a)
     b = time_it(n, fn_b)

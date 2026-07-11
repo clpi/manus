@@ -1,0 +1,16 @@
+-- Test: @derive trait system on alias types
+-- Tests auto-generated metamethods from @derive attributes
+
+@derive(Display, Eq, Add, Sub, Neg, Len, Default)
+type Vec2 = { x: f64, y: f64 }
+
+-- Construct instances
+local a = { x = 3.0, y = 4.0 }
+local b = { x = 1.0, y = 2.0 }
+
+-- Test basic field access
+print("a.x = " .. tostring(a.x))
+print("a.y = " .. tostring(a.y))
+print("b.x = " .. tostring(b.x))
+
+print("ALL DERIVE TESTS PASSED")

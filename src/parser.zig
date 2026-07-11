@@ -19,12 +19,39 @@ pub const Parser = struct {
     /// the start of the next arm is not greedily consumed as an index suffix.
     match_arm_depth: u32 = 0,
     quote_depth: u32 = 0,
+    /// When true (.duo source), emit deprecation warnings for `then` and `local`.
+    duo_mode: bool = false,
 
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// Consume pending compiler hints from the lexer (from `--- @hint` comments)
+    /// and return them as an attribute slice.
+    fn consumeLexerHints(self: *Parser) ParseError![]ast.Attribute {
+        if (!self.lex.hasPendingHints()) return &.{};
+        var hints: [8]?[]const u8 = undefined;
+        const count = self.lex.consumeHints(&hints);
+        if (count == 0) return &.{};
+        var attrs = try self.alloc.alloc(ast.Attribute, count);
+        var i: u8 = 0;
+        while (i < count) : (i += 1) {
+            const hint_text = hints[i] orelse continue;
+            // Parse "inline", "cold", "hot", "noinline", "unroll(N)", etc.
+            // Split at '(' for args
+            if (std.mem.indexOfScalar(u8, hint_text, '(')) |paren_pos| {
+                const name = hint_text[0..paren_pos];
+                const end_paren = std.mem.indexOfScalar(u8, hint_text, ')') orelse hint_text.len;
+                const args = hint_text[paren_pos + 1 .. end_paren];
+                attrs[i] = .{ .name = name, .args = args };
+            } else {
+                attrs[i] = .{ .name = hint_text, .args = null };
+            }
+        }
+        return attrs[0..count];
+    }
 
     fn pk(self: *Parser) ParseError!Token {
         return self.lex.peek();
@@ -160,6 +187,13 @@ pub const Parser = struct {
                 const inner = try self.alloc.create(ast.TypeExpr);
                 inner.* = try self.parse_type();
                 return .{ .pointer = inner };
+            },
+            .question => {
+                // Optional type: ?T
+                _ = try self.adv();
+                const inner = try self.alloc.create(ast.TypeExpr);
+                inner.* = try self.parse_type();
+                return .{ .optional = inner };
             },
             .lparen => {
                 // Function type: `(T, U) -> R` or `() -> R`
@@ -328,7 +362,11 @@ pub const Parser = struct {
             // NOTE: there is no `.kw_struct` case. Duo has no `struct`
             // keyword; records are declared via inline type-literal
             // annotations on bindings.
-            .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, &.{}),
+            .kw_function, .kw_fun => blk: {
+                // Check for pending compiler hints from --- @hint comments
+                const hint_attrs = try self.consumeLexerHints();
+                break :blk self.parse_func_decl_with_attrs(false, hint_attrs);
+            },
             .kw_async => self.parse_async_func_decl_with_attrs(&.{}),
             .kw_enum => self.parse_enum_def_with_attrs(&.{}),
             .kw_concept => self.parse_concept_def_with_attrs(&.{}),
@@ -395,7 +433,18 @@ pub const Parser = struct {
         const tok = try self.pk();
         return switch (tok.kind) {
             .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global => true,
-            .name => std.mem.eql(u8, tok.text, "type"),
+            .name => blk: {
+                if (std.mem.eql(u8, tok.text, "type")) break :blk true;
+                // Jai-like syntax: @attr Name: { ... } — name followed by ':' is a type def
+                if (!is_keyword_token(tok.text)) {
+                    const s2 = self.lex.saveState();
+                    _ = try self.adv(); // consume name
+                    const after = try self.pk();
+                    self.lex.restoreState(s2);
+                    if (after.kind == .colon) break :blk true;
+                }
+                break :blk false;
+            },
             else => false,
         };
     }
@@ -404,6 +453,9 @@ pub const Parser = struct {
         const known = [_][]const u8{
             "align",
             "arc",
+            "asm",
+            "bitfield",
+            "bitcast",
             "cinclude",
             "cold",
             "concurrent",
@@ -416,8 +468,14 @@ pub const Parser = struct {
             "inline",
             "noinline",
             "nopanic",
+            "noreturn",
             "packed",
+            "repr",
+            "restrict",
+            "simd",
             "specialize",
+            "test",
+            "volatile",
         };
         for (known) |item| {
             if (std.mem.eql(u8, name, item)) return true;
@@ -473,9 +531,24 @@ pub const Parser = struct {
             return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
         }
 
+        // Standalone @build.* module directives (no following declaration).
+        if (attrs_slice.len == 1) {
+            const directives = @import("directives.zig");
+            if (directives.isBuildDirective(attrs_slice[0].name)) {
+                const loc_tok = try self.pk();
+                return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attrs_slice[0] } };
+            }
+        }
+
         const tok = try self.pk();
         if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
             return self.parse_alias_def_with_attrs(attrs_slice);
+        }
+        // Jai-like type definition with attributes: @derive(Display) Vec: { x: f64, y: f64 }
+        // When we see a bare name that isn't a keyword after attributes, check if it's
+        // followed by `:` (indicating a type definition).
+        if (tok.kind == .name and !is_keyword_token(tok.text)) {
+            return self.parse_jai_type_def_with_attrs(attrs_slice);
         }
         return switch (tok.kind) {
             .kw_function, .kw_fun => self.parse_func_decl_with_attrs(false, attrs_slice),
@@ -502,6 +575,25 @@ pub const Parser = struct {
         return trimmed;
     }
 
+    /// Check if a name token text is a language keyword (should not be treated as
+    /// a Jai-like type definition target).
+    fn is_keyword_token(text: []const u8) bool {
+        return std.mem.eql(u8, text, "type") or
+            std.mem.eql(u8, text, "function") or
+            std.mem.eql(u8, text, "fun") or
+            std.mem.eql(u8, text, "local") or
+            std.mem.eql(u8, text, "global") or
+            std.mem.eql(u8, text, "enum") or
+            std.mem.eql(u8, text, "concept") or
+            std.mem.eql(u8, text, "alias") or
+            std.mem.eql(u8, text, "async") or
+            std.mem.eql(u8, text, "return") or
+            std.mem.eql(u8, text, "if") or
+            std.mem.eql(u8, text, "while") or
+            std.mem.eql(u8, text, "for") or
+            std.mem.eql(u8, text, "end");
+    }
+
     /// Parse a `local` or `global` declaration that has been preceded by
     /// attribute(s). The attributes are attached to each parsed `LocalName`.
     fn parse_local_or_global_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
@@ -522,18 +614,25 @@ pub const Parser = struct {
         for (names) |*n| n.attributes = attrs;
     }
 
-    /// Parse a single attribute: `@name` or `@name(args)`
+    /// Parse a single attribute: `@name`, `@name.sub`, or `@name(args)`
     fn parse_one_attribute(self: *Parser) ParseError!ast.Attribute {
         _ = try self.expect(.at); // consume `@`
-        const name_tok = try self.expect(.name);
+        const first = try self.expect(.name);
+        var parts: std.ArrayList([]const u8) = .empty;
+        try parts.append(self.alloc, first.text);
+        while ((try self.pk()).kind == .dot) {
+            _ = try self.adv();
+            const part = try self.expect(.name);
+            try parts.append(self.alloc, part.text);
+        }
+        const name = try std.mem.join(self.alloc, ".", parts.items);
         var args: ?[]const u8 = null;
         if ((try self.pk()).kind == .lparen) {
             _ = try self.adv(); // consume `(`
-            // Capture everything inside parens as raw text
             args = try self.parse_attribute_args();
             _ = try self.expect(.rparen);
         }
-        return ast.Attribute{ .name = name_tok.text, .args = args };
+        return ast.Attribute{ .name = name, .args = args };
     }
 
     /// Parse attribute argument text between parens, handling nested parens.
@@ -760,6 +859,52 @@ pub const Parser = struct {
     }
 
     /// Parse `type Name = Type` or legacy `alias Name = Type`.
+    /// Jai-like type definition: `@attrs Name: { fields }`
+    /// Parses Name, expects ':', parses type. If the type is a record and
+    /// there's no '=' initializer, it's a type definition (alias_def).
+    /// Otherwise falls through to create a local_decl with attributes.
+    fn parse_jai_type_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        const nm = try self.expect(.name);
+        if ((try self.pk()).kind != .colon) {
+            // Not a Jai-like def — error (attributes require a declaration)
+            term.locErr(nm.loc, "expected declaration after attribute(s), got '{s}'", .{nm.text});
+            return ParseError.UnexpectedToken;
+        }
+        _ = try self.adv(); // consume ':'
+        const typ = try self.parse_type();
+
+        // If no '=' follows and type is a record, it's a type definition
+        if ((try self.pk()).kind != .assign) {
+            return ast.Stmt{ .alias_def = .{
+                .loc = nm.loc,
+                .name = nm.text,
+                .target = typ,
+                .parent = null,
+                .fields = &.{},
+                .methods = &.{},
+                .attributes = attrs,
+            } };
+        }
+
+        // Otherwise it's a typed local binding with attributes
+        _ = try self.adv(); // consume '='
+        var inits: std.ArrayList(*ast.Expr) = .empty;
+        try inits.append(self.alloc, try self.parse_expr());
+        var names: std.ArrayList(ast.LocalName) = .empty;
+        try names.append(self.alloc, ast.LocalName{
+            .ident = nm.text,
+            .typ = typ,
+            .attrib = null,
+            .attributes = attrs,
+            .loc = nm.loc,
+        });
+        return ast.Stmt{ .local_decl = .{
+            .loc = nm.loc,
+            .names = try names.toOwnedSlice(self.alloc),
+            .inits = try inits.toOwnedSlice(self.alloc),
+        } };
+    }
+
     fn parse_alias_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const first = try self.adv();
         if (first.kind != .kw_alias and !(first.kind == .name and std.mem.eql(u8, first.text, "type"))) {
@@ -1062,14 +1207,14 @@ pub const Parser = struct {
     fn parse_if(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         const cond = try self.parse_expr();
-        _ = try self.eat(.kw_then); // `then` is optional in Duo
+        _ = try self.eat(.kw_then); // `then` is optional in .duo files
         const then = try self.parse_block();
         var elseifs: std.ArrayList(ast.ElseIf) = .empty;
         var else_body: ?ast.Block = null;
         while (true) {
             if (try self.eat(.kw_elseif) != null) {
                 const ec = try self.parse_expr();
-                _ = try self.eat(.kw_then); // `then` is optional in Duo
+                _ = try self.eat(.kw_then); // `then` is optional in .duo files
                 const eb = try self.parse_block();
                 try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
             } else if (try self.eat(.kw_else) != null) {
@@ -1324,7 +1469,7 @@ pub const Parser = struct {
                 const op: ?ast.UnOp = switch (tok.kind) {
                     .kw_not => .not,
                     .hash => .len,
-                    .hash_hash => .compile,
+                    .hash_hash, .kw_comptime => .compile,
                     .minus => .neg,
                     .tilde => .bnot,
                     else => null,
@@ -1625,6 +1770,20 @@ pub const Parser = struct {
         if (first.* == .name and nxt.kind == .colon) {
             _ = try self.adv(); // consume ':'
             const typ = try self.parse_type();
+
+            // Jai-like type definition: `Name: { fields }` with no initializer
+            // becomes an alias_def (equivalent to `type Name = { fields }`)
+            if (typ == .record and (try self.pk()).kind != .assign) {
+                return ast.Stmt{ .alias_def = .{
+                    .loc = first.loc(),
+                    .name = first.name.ident,
+                    .target = typ,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .attributes = &.{},
+                } };
+            }
+
             var inits: std.ArrayList(*ast.Expr) = .empty;
             if (try self.eat(.assign) != null) {
                 try inits.append(self.alloc, try self.parse_expr());
@@ -1778,7 +1937,7 @@ pub const Parser = struct {
 
     fn is_expr_start(_: *Parser, kind: TK) bool {
         return switch (kind) {
-            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_await, .backtick, .comma, .at => true,
+            .name, .int_lit, .float_lit, .string_lit, .kw_nil, .kw_true, .kw_false, .dots, .lparen, .lbrace, .lbracket, .kw_not, .hash, .minus, .tilde, .hash_hash, .kw_comptime, .kw_await, .backtick, .comma, .at => true,
             else => false,
         };
     }
@@ -1851,7 +2010,7 @@ pub const Parser = struct {
                 const op: ?ast.UnOp = switch (tok.kind) {
                     .kw_not => .not,
                     .hash => .len,
-                    .hash_hash => .compile,
+                    .hash_hash, .kw_comptime => .compile,
                     .minus => .neg,
                     .tilde => .bnot,
                     else => null,
@@ -1891,7 +2050,7 @@ pub const Parser = struct {
         const op: ?ast.UnOp = switch (tok.kind) {
             .kw_not => .not,
             .hash => .len,
-            .hash_hash => .compile,
+            .hash_hash, .kw_comptime => .compile,
             .minus => .neg,
             .tilde => .bnot,
             else => null,
@@ -1963,6 +2122,13 @@ pub const Parser = struct {
 
     fn parse_macro_call_expr(self: *Parser) ParseError!*ast.Expr {
         const l = (try self.expect(.at)).loc;
+        // @(expr) — compile-time eval (no name, immediate paren)
+        if ((try self.pk()).kind == .lparen) {
+            _ = try self.adv(); // consume '('
+            const operand = try self.parse_expr();
+            _ = try self.expect(.rparen);
+            return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
+        }
         const name = try self.expect(.name);
         _ = try self.expect(.lparen);
         var args: std.ArrayList(*ast.Expr) = .empty;
@@ -2005,6 +2171,16 @@ pub const Parser = struct {
                     const after_colon = try self.lex.peek();
                     if (Lexer.isTypeKeyword(after_colon.kind)) {
                         // name : i64 = ...  —  this is a typed binding; don't consume
+                        self.lex.restoreState(saved);
+                        break;
+                    }
+                    if (after_colon.kind == .lbrace) {
+                        // name : { ... } — record type annotation (Jai-like syntax); don't consume
+                        self.lex.restoreState(saved);
+                        break;
+                    }
+                    if (after_colon.kind == .star or after_colon.kind == .question) {
+                        // name : *Type or name : ?Type — pointer/optional type; don't consume
                         self.lex.restoreState(saved);
                         break;
                     }

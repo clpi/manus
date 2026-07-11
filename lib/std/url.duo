@@ -16,8 +16,8 @@ fun decode(s: str): str
 end
 
 fun parse(url: str): any
-    scheme = "http"
-    rest = url
+    local scheme = "http"
+    local rest = url
     if string.sub(rest, 1, 7) == "http://" then
         rest = string.sub(rest, 8)
     elseif string.sub(rest, 1, 8) == "https://" then
@@ -25,9 +25,10 @@ fun parse(url: str): any
         rest = string.sub(rest, 9)
     end
     
-    if scheme == "https" then default_port = 443 else default_port = 80 end
-    host = rest
-    path = "/"
+    local default_port = 80
+    if scheme == "https" then default_port = 443 end
+    local host = rest
+    local path = "/"
     
     slash_pos = string.find(rest, "/")
     if slash_pos then

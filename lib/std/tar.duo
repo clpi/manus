@@ -1,6 +1,6 @@
 -- std.tar — basic TAR archive wrapper
 
-local proc = import("std.proc")
+local proc = req("std.proc")
 
 fun create(archive_path: str, source_dir: str): bool
     local cmd = "tar -cf " .. archive_path .. " -C " .. source_dir .. " ."

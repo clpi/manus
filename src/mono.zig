@@ -322,7 +322,7 @@ pub const Monomorphizer = struct {
                 for (t.defers) |d| try self.collectSitesBlock(&d.body, env);
             },
             .defer_stmt => |d| try self.collectSitesBlock(&d.body, env),
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude => {},
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude, .directive => {},
         }
     }
 

@@ -612,6 +612,11 @@ pub const PrettyPrinter = struct {
             .concept_def => |cd| try self.printConceptDef(&cd),
             .alias_def => {}, // skip alias defs in pretty-print
             .cinclude => |ci| try self.print("@cinclude(\"{s}\")\n", .{ci.header}),
+            .directive => |dir| {
+                try self.print("@{s}", .{dir.attr.name});
+                if (dir.attr.args) |args| try self.print("({s})", .{args});
+                try self.nl();
+            },
         }
     }
 

@@ -29,7 +29,7 @@ end
 
 M = {}
 M.new_once = new_once
-M.do = do_fn
+M["do"] = do_fn
 M.do_with_result = do_once_with_result
 M.reset = reset
 M

@@ -44,6 +44,8 @@
   "alias"
   "extends"
   "private"
+  "comptime"
+  "type"
 ] @keyword
 
 ; ── Type keywords ─────────────────────────────────────────────────────────────

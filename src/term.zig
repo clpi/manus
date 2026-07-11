@@ -7,6 +7,14 @@ var stderr_buf: [1024]u8 = undefined;
 var wtr: File.Writer = undefined;
 var initialized: bool = false;
 pub var color: bool = false;
+/// When true, diagnostics use `file:line:col: severity: message` (for LSP/CI).
+pub var plain: bool = false;
+/// When true, emit pipeline step traces during compilation.
+pub var trace: bool = false;
+/// When true, emit informational compiler notes (opt-in).
+pub var info: bool = false;
+/// When true, emit compiler hints (opt-in).
+pub var hints: bool = false;
 
 const SourceView = struct {
     path: []const u8,
@@ -314,10 +322,18 @@ fn printDiagnosticHelp(comptime label: []const u8) void {
         printDiagnosticNote("help", "consider updating this location before relying on it long-term", true);
     } else if (std.mem.eql(u8, label, "hint")) {
         printDiagnosticNote("detail", "this note points at source that helps explain the preceding diagnostic", true);
+    } else if (std.mem.eql(u8, label, "info")) {
+        printDiagnosticNote("detail", "informational note from the compiler (enable with --info or DUO_INFO=1)", true);
     }
 }
 
 fn printLocDiagnostic(loc: anytype, comptime label: []const u8, color_code: []const u8, comptime fmt: []const u8, args: anytype) void {
+    if (plain) {
+        wprint("{s}:{}:{}: {s}: ", .{ loc.file, loc.line, loc.col, label });
+        wprint(fmt, args);
+        wprint("\n", .{});
+        return;
+    }
     if (color) {
         wprint("{s}● {s}\x1b[0m\x1b[1m at \x1b[0m", .{ color_code, label });
         printStyledLoc(loc);
@@ -396,4 +412,103 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 
 pub fn printRaw(comptime fmt: []const u8, args: anytype) void {
     wprint(fmt, args);
+}
+
+pub fn dim(comptime fmt: []const u8, args: anytype) void {
+    if (color) {
+        wprint("\x1b[2m" ++ fmt ++ "\x1b[0m\n", args);
+    } else {
+        wprint(fmt ++ "\n", args);
+    }
+}
+
+pub fn bold(comptime fmt: []const u8, args: anytype) void {
+    if (color) {
+        wprint("\x1b[1m" ++ fmt ++ "\x1b[0m\n", args);
+    } else {
+        wprint(fmt ++ "\n", args);
+    }
+}
+
+pub fn banner(title: []const u8) void {
+    if (color) {
+        wprint("\x1b[1;36m╭─ {s}\x1b[0m\n", .{title});
+    } else {
+        wprint("== {s} ==\n", .{title});
+    }
+}
+
+pub fn section(title: []const u8) void {
+    if (color) {
+        wprint("\x1b[1m{s}\x1b[0m\n", .{title});
+    } else {
+        wprint("{s}\n", .{title});
+    }
+}
+
+pub fn kv(key: []const u8, value: []const u8) void {
+    if (color) {
+        wprint("  \x1b[2m{s}\x1b[0m \x1b[36m{s}\x1b[0m\n", .{ key, value });
+    } else {
+        wprint("  {s} {s}\n", .{ key, value });
+    }
+}
+
+pub fn divider() void {
+    if (color) {
+        wprint("\x1b[2m────────────────────────────────────────\x1b[0m\n", .{});
+    } else {
+        wprint("----------------------------------------\n", .{});
+    }
+}
+
+pub fn infoMsg(comptime fmt: []const u8, args: anytype) void {
+    if (!info) return;
+    if (color) {
+        wprint("\x1b[34m● info\x1b[0m \x1b[2m→\x1b[0m " ++ fmt ++ "\n", args);
+    } else {
+        wprint("info: " ++ fmt ++ "\n", args);
+    }
+}
+
+pub fn locInfo(loc: anytype, comptime fmt: []const u8, args: anytype) void {
+    if (!info) return;
+    printLocDiagnostic(loc, "info", "\x1b[34m", fmt, args);
+}
+
+pub fn traceStep(comptime fmt: []const u8, args: anytype) void {
+    if (!trace) return;
+    if (color) {
+        wprint("\x1b[2m…\x1b[0m " ++ fmt ++ "\n", args);
+    } else {
+        wprint("… " ++ fmt ++ "\n", args);
+    }
+}
+
+pub fn traceDone(label: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
+    if (!trace) return;
+    if (detail) |d| {
+        if (color) {
+            wprint("\x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms — {s})\x1b[0m\n", .{ label, elapsed_ms, d });
+        } else {
+            wprint("✓ {s} ({d} ms — {s})\n", .{ label, elapsed_ms, d });
+        }
+    } else if (color) {
+        wprint("\x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms)\x1b[0m\n", .{ label, elapsed_ms });
+    } else {
+        wprint("✓ {s} ({d} ms)\n", .{ label, elapsed_ms });
+    }
+}
+
+pub fn traceSummary(label: []const u8, comptime fmt: []const u8, args: anytype) void {
+    if (!trace) return;
+    if (color) {
+        wprint("\x1b[1m{s}\x1b[0m \x1b[2m→\x1b[0m ", .{label});
+        wprint(fmt, args);
+        wprint("\n", .{});
+    } else {
+        wprint("{s}: ", .{label});
+        wprint(fmt, args);
+        wprint("\n", .{});
+    }
 }

@@ -45,13 +45,13 @@ fun append_file(path: str, data: str): any
     if f == nil then return false, "cannot open: " .. path end
     f:write(data)
     f:close()
-    true, nil
+    return true, nil
 end
 
 -- read_dir: list directory entries.
 fun read_dir(dir: str): any
     if dir == nil then return {} end
-    f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
+    local f = io.popen("ls -1 " .. dir .. " 2>/dev/null", "r")
     if f == nil then return {} end
     out = {}
     for line in f:lines() do
@@ -63,9 +63,9 @@ end
 
 -- temp_file: create a temporary file and return its handle and path.
 fun temp_file(): any
-    path = "/tmp/duo_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
-    f = io.open(path, "w+")
-    {fh = f, path = path}
+    local path = "/tmp/duo_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
+    local f = io.open(path, "w+")
+    return {fh = f, path = path}
 end
 
 -- temp_dir: create a temporary directory and return its path.

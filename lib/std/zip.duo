@@ -1,6 +1,6 @@
 -- std.zip — basic ZIP archive wrapper
 
-local proc = import("std.proc")
+local proc = req("std.proc")
 
 fun create(archive_path: str, source_dir: str): bool
     local cmd = "cd " .. source_dir .. " && zip -r -q " .. archive_path .. " ."

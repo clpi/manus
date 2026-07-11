@@ -1,0 +1,37 @@
+@test.unit
+fun test_add(): void
+    local t = req("std.test")
+    t.assert_eq(1 + 1, 2, "addition")
+end
+
+@test
+fun test_truth(): void
+    local t = req("std.test")
+    t.assert_true(true, "true is true")
+end
+
+@bench({ iterations = 100, warmup = 10 })
+fun bench_loop(): void
+    local sum: i64 = 0
+    local i: i64 = 0
+    while i < 1000
+        sum = sum + i
+        i = i + 1
+    end
+end
+
+@time
+fun timed_noop(): void
+end
+
+@test.integration({ name = "smoke" })
+fun test_integration_tag(): void
+    local t = req("std.test")
+    t.assert_true(true, "integration smoke")
+end
+
+@test({ iterations = 5 })
+fun test_with_iterations(): void
+    local t = req("std.test")
+    t.assert_eq(2 * 2, 4, "mul")
+end

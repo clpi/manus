@@ -77,7 +77,7 @@ local function read_ovector_pair(ovptr: any, pair_index: int): any
     local e_off = s_off + 1
     local s_val = duo_read_size_t(ovptr, s_off)
     local e_val = duo_read_size_t(ovptr, e_off)
-    {start = s_val, end_ = e_val}
+    return {start = s_val, end_ = e_val}
 end
 
 -- quote: escape special regex characters in s so it matches literally.
@@ -123,7 +123,7 @@ end
 -- match: match subject against compiled code starting at startoffset.
 -- Returns a table of {start=n, end_=m} pairs (one per capture group + whole),
 -- or nil if no match.
-local function match(code: any, subject: str, startoffset: int): any
+local function regex_match(code: any, subject: str, startoffset: int): any
     if code == nil then return nil end
     local md = pcre2_match_data_create_from_pattern_8(code, nil)
     if md == nil then return nil end
@@ -150,7 +150,7 @@ end
 
 -- match_str: convenience — returns the first matched substring or nil.
 local function match_str(code: any, subject: str): any
-    local m = match(code, subject, 0)
+    local m = regex_match(code, subject, 0)
     if m == nil then return nil end
     if rawlen(m) == 0 then return nil end
     local p = m[1]
@@ -170,7 +170,7 @@ local function find(code: any, subject: str, init: int): any
     -- Convert 1-based Lua init to 0-based PCRE2 startoffset
     local startoffset = init - 1
     if startoffset < 0 then startoffset = 0 end
-    local m = match(code, subject, startoffset)
+    local m = regex_match(code, subject, startoffset)
     if m == nil then return nil end
     if rawlen(m) == 0 then return nil end
     local p = m[1]
@@ -179,7 +179,7 @@ local function find(code: any, subject: str, init: int): any
     -- which equals inclusive end (1-based)
     local s = p.start + 1
     local e = p.end_
-    {start = s, end_ = e}
+    return {start = s, end_ = e}
 end
 
 -- find_all: find all non-overlapping matches in subject.
@@ -260,7 +260,7 @@ end
 
 M = {}
 M.compile = compile
-M.match = match
+M["match"] = regex_match
 M.match_str = match_str
 M.find = find
 M.find_all = find_all

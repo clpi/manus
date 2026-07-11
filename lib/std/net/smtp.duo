@@ -26,12 +26,12 @@ fun send_mail(addr: str, from: str, to: any, msg: str): any
     end
     f:write(msg)
     f:close()
-    true, nil
+    return true, nil
 end
 
 -- plain_auth: create a PLAIN SMTP auth credential.
 fun plain_auth(username: str, password: str): any
-    {mechanism = "PLAIN", username = username, password = password}
+    return {mechanism = "PLAIN", username = username, password = password}
 end
 
 -- send_mail_auth: send email with SMTP AUTH (using curl as transport).
@@ -65,7 +65,7 @@ fun send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
     end
     f:write(msg)
     result = f:close()
-    true, nil
+    return true, nil
 end
 
 -- new_message: build an RFC 5322 message from parts.

@@ -73,6 +73,7 @@ pub const TokenKind = enum {
     kw_private,
     kw_extends,
     kw_macro,
+    kw_comptime,
 
     // Single-char punctuation
     lparen,
@@ -183,6 +184,7 @@ pub const TokenKind = enum {
             .kw_private => "private",
             .kw_extends => "extends",
             .kw_macro => "macro",
+            .kw_comptime => "comptime",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -259,6 +261,10 @@ pub const Lexer = struct {
     file: []const u8,
     peeked: ?Token,
     last_error_loc: ?Loc,
+    /// Compiler hint directives accumulated from `--- @hint` comments.
+    /// Consumed by the parser when it encounters the next function declaration.
+    pending_hints: [8]?[]const u8 = .{ null, null, null, null, null, null, null, null },
+    pending_hint_count: u8 = 0,
 
     pub fn init(src: []const u8, file: []const u8) Lexer {
         return .{
@@ -274,6 +280,24 @@ pub const Lexer = struct {
 
     fn cur_loc(self: *Lexer) Loc {
         return .{ .file = self.file, .line = self.line, .col = self.col };
+    }
+
+    /// Consume pending compiler hints (from `--- @hint` comments).
+    /// Returns the count of consumed hints and fills the output slice.
+    pub fn consumeHints(self: *Lexer, out: []?[]const u8) u8 {
+        const count = self.pending_hint_count;
+        var i: u8 = 0;
+        while (i < count and i < out.len) : (i += 1) {
+            out[i] = self.pending_hints[i];
+        }
+        self.pending_hint_count = 0;
+        self.pending_hints = .{ null, null, null, null, null, null, null, null };
+        return count;
+    }
+
+    /// Check if there are pending compiler hints.
+    pub fn hasPendingHints(self: *const Lexer) bool {
+        return self.pending_hint_count > 0;
     }
 
     fn peek_char(self: *Lexer) u8 {
@@ -314,8 +338,23 @@ pub const Lexer = struct {
                 if (level >= 0) {
                     try self.skip_long(@intCast(level));
                 } else {
+                    // Check for triple-dash hint comment: --- @directive
+                    const is_triple_dash = self.pos < self.src.len and self.peek_char() == '-';
+                    if (is_triple_dash) {
+                        _ = self.adv(); // consume third '-'
+                    }
+                    const comment_start = self.pos;
                     while (self.pos < self.src.len and self.peek_char() != '\n')
                         _ = self.adv();
+                    // If triple-dash, check for @hint pattern
+                    if (is_triple_dash) {
+                        const comment_text = self.src[comment_start..self.pos];
+                        const trimmed = std.mem.trim(u8, comment_text, " \t");
+                        if (trimmed.len > 0 and trimmed[0] == '@' and self.pending_hint_count < 8) {
+                            self.pending_hints[self.pending_hint_count] = trimmed[1..]; // strip '@'
+                            self.pending_hint_count += 1;
+                        }
+                    }
                 }
             } else break;
         }
@@ -602,7 +641,7 @@ pub const Lexer = struct {
             "i16",     "i32",   "i64",      "u8",    "u16",     "u32",    "u64",
             "f32",     "f64",   "bool",     "void",  "str",     "match",  "try",
             "catch",   "defer", "async",    "await", "concept", "alias",  "private",
-            "extends", "macro",
+            "extends", "macro",  "comptime",
         };
         const kinds = [_]TokenKind{
             .kw_and,     .kw_break, .kw_continue, .kw_do,    .kw_else,    .kw_elseif, .kw_end,
@@ -612,7 +651,7 @@ pub const Lexer = struct {
             .kw_i16,     .kw_i32,   .kw_i64,      .kw_u8,    .kw_u16,     .kw_u32,    .kw_u64,
             .kw_f32,     .kw_f64,   .kw_bool,     .kw_void,  .kw_str,     .kw_match,  .kw_try,
             .kw_catch,   .kw_defer, .kw_async,    .kw_await, .kw_concept, .kw_alias,  .kw_private,
-            .kw_extends, .kw_macro,
+            .kw_extends, .kw_macro, .kw_comptime,
         };
         for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
         return null;

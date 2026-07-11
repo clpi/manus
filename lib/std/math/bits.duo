@@ -129,9 +129,9 @@ fun rotate_left_32(x: i64, k: i64): i64
     k = k % 32
     if k < 0 then k = k + 32 end
     if k == 0 then return x end
-    hi = (x << k) % (2^32)
-    lo = x >> (32 - k)
-    (hi | lo) % (2^32)
+    local hi = (x << k) % (2^32)
+    local lo = x >> (32 - k)
+    return (hi | lo) % (2^32)
 end
 
 -- rotate_left_64: rotate bits left by k positions (64-bit).
@@ -206,18 +206,18 @@ end
 
 -- mul_32: multiply two 32-bit values, returning (hi, lo) as a 64-bit result split.
 fun mul_32(x: i64, y: i64): any
-    p = x * y
-    lo = p % (2^32)
-    hi = p / (2^32)
-    {hi = hi, lo = lo}
+    local p = x * y
+    local lo = p % (2^32)
+    local hi = p / (2^32)
+    return {hi = hi, lo = lo}
 end
 
 -- add_32: add two 32-bit values, returning (sum, carry).
 fun add_32(x: i64, y: i64): any
-    s = x + y
-    lo = s % (2^32)
-    carry = s / (2^32)
-    {sum = lo, carry = carry}
+    local s = x + y
+    local lo = s % (2^32)
+    local carry = s / (2^32)
+    return {sum = lo, carry = carry}
 end
 
 -- sub_32: subtract y from x (32-bit), returning (diff, borrow).
