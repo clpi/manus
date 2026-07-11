@@ -17,7 +17,7 @@ pub const SemaError = error{
 } || Allocator.Error;
 
 /// A symbol in the scope chain.
-const Symbol = struct {
+pub const Symbol = struct {
     typ: RT,
     is_const: bool,
     is_for_control: bool = false,
@@ -26,6 +26,11 @@ const Symbol = struct {
     is_vararg_rest: bool = false,
     /// If non-null, using this symbol emits a deprecation warning.
     deprecated_msg: ?[]const u8 = null,
+    // Escape analysis fields (populated by analyze_closure_upvalues and checking passes)
+    escapes: bool = false,            // true if variable outlives its scope
+    address_taken: bool = false,      // true if &var is used or stored in table
+    captured_by_closure: bool = false, // true if referenced in a nested function
+    assigned_after_init: bool = false, // true if reassigned after declaration
 };
 
 fn is_const_attrib(attrib: ?[]const u8) bool {
@@ -150,6 +155,16 @@ pub const Scope = struct {
         while (i > 0) {
             i -= 1;
             if (self.maps.items[i].get(name)) |sym| return sym;
+        }
+        return null;
+    }
+
+    /// Like lookup but returns a mutable pointer to the stored Symbol.
+    pub fn lookupPtr(self: *Scope, name: []const u8) ?*Symbol {
+        var i = self.maps.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.maps.items[i].getPtr(name)) |sym| return sym;
         }
         return null;
     }
@@ -1709,8 +1724,11 @@ pub const Sema = struct {
         fb.upvalues = try self.alloc.alloc(ast.Upvalue, names.items.len);
         for (names.items, flags.items, 0..) |nm, is_local, i| {
             var typ: ?RT = null;
-            if (self.scope.lookup(nm)) |sym| {
+            if (self.scope.lookupPtr(nm)) |sym| {
                 typ = sym.typ;
+                // Mark captured locals as escaping — they outlive their scope.
+                sym.captured_by_closure = true;
+                sym.escapes = true;
             } else if (self.module_globals.get(nm)) |g_typ| {
                 typ = g_typ;
             }

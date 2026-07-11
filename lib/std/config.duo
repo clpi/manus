@@ -2,126 +2,7 @@
 -- Provides a config object that supports default schemas, deep merging,
 -- dot-path access, and environment variable overrides.
 
--- ---- Constructors ----
-
--- new: create a config from a table of defaults.
-fun config_new(defaults: any): any
-    if defaults == nil then defaults = {} end
-    {defaults = defaults, values = {}, env_prefix = ""}
-end
-
--- ---- Access ----
-
--- get: retrieve a value by dot-path key (e.g. "server.port").
--- Falls back to defaults if not set.
-fun config_get(cfg: any, key: str): any
-    val = deep_get(cfg.values, key)
-    if val ~= nil then return val end
-    deep_get(cfg.defaults, key)
-end
-
--- get_or: retrieve a value with a custom fallback.
-fun config_get_or(cfg: any, key: str, fallback: any): any
-    val = config_get(cfg, key)
-    if val ~= nil then return val end
-    fallback
-end
-
--- set: set a value by dot-path key.
-fun config_set(cfg: any, key: str, value: any): void
-    deep_set(cfg.values, key, value)
-end
-
--- has: check if a key exists (values or defaults).
-fun config_has(cfg: any, key: str): bool
-    if deep_has(cfg.values, key) then return true end
-    deep_has(cfg.defaults, key)
-end
-
--- ---- Merge ----
-
--- merge: deep-merge another config or table into this config's values.
-fun config_merge(cfg: any, overlay: any): void
-    deep_merge_into(cfg.values, overlay)
-end
-
--- merge_defaults: merge overrides into the defaults schema.
-fun config_merge_defaults(cfg: any, overlay: any): void
-    deep_merge_into(cfg.defaults, overlay)
-end
-
--- ---- Environment ----
-
--- set_env_prefix: set a prefix for env var overrides (e.g. "APP").
--- A key like "server.port" with prefix "APP" reads "APP_SERVER_PORT".
-fun set_env_prefix(cfg: any, prefix: str): void
-    cfg.env_prefix = prefix
-end
-
--- load_env: populate config values from environment variables.
-fun load_env(cfg: any): void
-    env_data = os.getenv()
-    if env_data == nil then return end
-    prefix = cfg.env_prefix
-    if prefix ~= nil and string.len(prefix) > 0 then
-        prefix = prefix .. "_"
-    else
-        prefix = ""
-    end
-    prefix_len = string.len(prefix)
-    for k, v in env_data
-        if prefix_len > 0 then
-            if string.sub(k, 1, prefix_len) == prefix then
-                rest = string.sub(k, prefix_len + 1)
-                dot_key = string.lower(rest)
-                dot_key = string.gsub(dot_key, "_", ".")
-                deep_set(cfg.values, dot_key, v)
-            end
-        end
-    end
-end
-
--- ---- Bulk Access ----
-
--- keys: return a list of all defined keys (values + defaults).
-fun config_keys(cfg: any): any
-    seen = {}
-    out = {}
-    collect_keys(seen, out, cfg.values, "")
-    collect_keys(seen, out, cfg.defaults, "")
-    out
-end
-
--- to_table: return the fully resolved config as a flat table.
-fun config_to_table(cfg: any): any
-    result = {}
-    deep_copy_flat(result, "", cfg.defaults)
-    deep_copy_flat(result, "", cfg.values)
-    result
-end
-
--- ---- Validation ----
-
--- require_keys: check that all dot-path keys are present; return missing keys.
-fun require_keys(cfg: any, keys: any): any
-    missing = {}
-    i = 1
-    while i <= rawlen(keys)
-        if not config_has(cfg, keys[i]) then
-            missing[rawlen(missing) + 1] = keys[i]
-        end
-        i = i + 1
-    end
-    missing
-end
-
--- validate_not_nil: check that a key is not nil; return error message or nil.
-fun validate_not_nil(cfg: any, key: str): str
-    if config_get(cfg, key) ~= nil then return nil end
-    "missing required config key: " .. key
-end
-
--- ---- Internal helpers ----
+-- ---- Internal helpers (defined first for forward reference) ----
 
 -- deep_get: get a value from a nested table by dot-path.
 fun deep_get(t: any, key: str): any
@@ -204,6 +85,128 @@ fun deep_copy_flat(dst: any, prefix: any, src: any): void
             end
         end
     end
+end
+
+-- ---- Constructors ----
+
+-- new: create a config from a table of defaults.
+fun config_new(defaults: any): any
+    if defaults == nil then defaults = {} end
+    cfg = {}
+    cfg.defaults = defaults
+    cfg.values = {}
+    cfg.env_prefix = ""
+    cfg
+end
+
+-- ---- Access ----
+
+-- get: retrieve a value by dot-path key (e.g. "server.port").
+-- Falls back to defaults if not set.
+fun config_get(cfg: any, key: str): any
+    val = deep_get(cfg.values, key)
+    if val ~= nil then return val end
+    deep_get(cfg.defaults, key)
+end
+
+-- get_or: retrieve a value with a custom fallback.
+fun config_get_or(cfg: any, key: str, fallback: any): any
+    val = config_get(cfg, key)
+    if val ~= nil then return val end
+    fallback
+end
+
+-- set: set a value by dot-path key.
+fun config_set(cfg: any, key: str, value: any): void
+    deep_set(cfg.values, key, value)
+end
+
+-- has: check if a key exists (values or defaults).
+fun config_has(cfg: any, key: str): bool
+    if deep_has(cfg.values, key) then return true end
+    deep_has(cfg.defaults, key)
+end
+
+-- ---- Merge ----
+
+-- merge: deep-merge another config or table into this config's values.
+fun config_merge(cfg: any, overlay: any): void
+    deep_merge_into(cfg.values, overlay)
+end
+
+-- merge_defaults: merge overrides into the defaults schema.
+fun config_merge_defaults(cfg: any, overlay: any): void
+    deep_merge_into(cfg.defaults, overlay)
+end
+
+-- ---- Environment ----
+
+-- set_env_prefix: set a prefix for env var overrides (e.g. "APP").
+fun set_env_prefix(cfg: any, prefix: str): void
+    cfg.env_prefix = prefix
+end
+
+-- load_env: populate config values from environment variables.
+fun load_env(cfg: any): void
+    env_data = os.getenv()
+    if env_data == nil then return end
+    prefix = cfg.env_prefix
+    if prefix ~= nil and string.len(prefix) > 0 then
+        prefix = prefix .. "_"
+    else
+        prefix = ""
+    end
+    prefix_len = string.len(prefix)
+    for k, v in env_data
+        if prefix_len > 0 then
+            if string.sub(k, 1, prefix_len) == prefix then
+                rest = string.sub(k, prefix_len + 1)
+                dot_key = string.lower(rest)
+                dot_key = string.gsub(dot_key, "_", ".")
+                deep_set(cfg.values, dot_key, v)
+            end
+        end
+    end
+end
+
+-- ---- Bulk Access ----
+
+-- keys: return a list of all defined keys (values + defaults).
+fun config_keys(cfg: any): any
+    seen = {}
+    out = {}
+    collect_keys(seen, out, cfg.values, "")
+    collect_keys(seen, out, cfg.defaults, "")
+    out
+end
+
+-- to_table: return the fully resolved config as a flat table.
+fun config_to_table(cfg: any): any
+    result = {}
+    deep_copy_flat(result, "", cfg.defaults)
+    deep_copy_flat(result, "", cfg.values)
+    result
+end
+
+-- ---- Validation ----
+
+-- require_keys: check that all dot-path keys are present; return missing keys.
+fun require_keys(cfg: any, keys: any): any
+    missing = {}
+    i = 1
+    while i <= rawlen(keys)
+        if not config_has(cfg, keys[i]) then
+            missing[rawlen(missing) + 1] = keys[i]
+        end
+        i = i + 1
+    end
+    missing
+end
+
+-- validate_not_nil: check that a key is not nil; return error message or nil.
+fun validate_not_nil(cfg: any, key: str): str
+    if config_get(cfg, key) ~= nil then return nil end
+    "missing required config key: " .. key
 end
 
 -- ---- Serialization ----

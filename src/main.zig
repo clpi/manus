@@ -8,6 +8,7 @@ const Mono = @import("mono.zig");
 const MacroExpand = @import("macro_expand.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
+const escape = @import("escape.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 const term = @import("term.zig");
 

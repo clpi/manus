@@ -340,8 +340,8 @@ end
 
 -- ---- Parsing ----
 
--- parse_digit: parse a 1-2 digit number starting at position i in s.
-fun parse_digit(s: str, i: i64): any
+-- dt_parse_digit: parse a 1-2 digit number starting at position i in s.
+fun dt_parse_digit(s: str, i: i64): any
     c = string.sub(s, i, i)
     if c >= "0" and c <= "9" then
         return tonumber(c), i + 1
@@ -349,16 +349,16 @@ fun parse_digit(s: str, i: i64): any
     nil, i
 end
 
--- parse_2digit: parse exactly 2 digits starting at position i.
-fun parse_2digit(s: str, i: i64): any
+-- dt_parse2: parse exactly 2 digits starting at position i.
+fun dt_parse2(s: str, i: i64): any
     d1 = string.sub(s, i, i)
     d2 = string.sub(s, i + 1, i + 1)
     val = tonumber(d1) * 10 + tonumber(d2)
     val, i + 2
 end
 
--- parse_4digit: parse exactly 4 digits starting at position i.
-fun parse_4digit(s: str, i: i64): any
+-- dt_parse4: parse exactly 4 digits starting at position i.
+fun dt_parse4(s: str, i: i64): any
     d1 = string.sub(s, i, i)
     d2 = string.sub(s, i + 1, i + 1)
     d3 = string.sub(s, i + 2, i + 2)
@@ -367,8 +367,8 @@ fun parse_4digit(s: str, i: i64): any
     val, i + 4
 end
 
--- parse_int_at: parse an integer of given length starting at position i.
-fun parse_int_at(s: str, i: i64, len: i64): any
+-- dt_parse_int: parse an integer of given length starting at position i.
+fun dt_parse_int(s: str, i: i64, len: i64): any
     val = 0
     j = 0
     while j < len
@@ -383,23 +383,23 @@ end
 -- Also accepts YYYY-MM-DD HH:mm:ss and YYYY-MM-DD.
 fun parse_iso8601(s: str): any
     if string.len(s) < 10 then return nil end
-    year, pos = parse_4digit(s, 1)
+    year, pos = dt_parse4(s, 1)
     if string.sub(s, pos, pos) ~= "-" then return nil end
-    month, pos = parse_2digit(s, pos + 1)
+    month, pos = dt_parse2(s, pos + 1)
     if string.sub(s, pos, pos) ~= "-" then return nil end
-    day, pos = parse_2digit(s, pos + 1)
+    day, pos = dt_parse2(s, pos + 1)
     hour = 0
     minute = 0
     second = 0
     if string.len(s) >= pos + 2 then
         sep = string.sub(s, pos, pos)
         if sep == "T" or sep == " " then
-            hour, pos = parse_2digit(s, pos + 1)
+            hour, pos = dt_parse2(s, pos + 1)
             if string.sub(s, pos, pos) == ":" then
-                minute, pos = parse_2digit(s, pos + 1)
+                minute, pos = dt_parse2(s, pos + 1)
             end
             if string.sub(s, pos, pos) == ":" then
-                second, pos = parse_2digit(s, pos + 1)
+                second, pos = dt_parse2(s, pos + 1)
             end
         end
     end
@@ -413,14 +413,14 @@ end
 
 -- parse_time: parse "HH:mm:ss" or "HH:mm" format.
 fun parse_time(s: str): any
-    hour, pos = parse_2digit(s, 1)
+    hour, pos = dt_parse2(s, 1)
     minute = 0
     second = 0
     if string.sub(s, pos, pos) == ":" then
-        minute, pos = parse_2digit(s, pos + 1)
+        minute, pos = dt_parse2(s, pos + 1)
     end
     if string.sub(s, pos, pos) == ":" then
-        second, pos = parse_2digit(s, pos + 1)
+        second, pos = dt_parse2(s, pos + 1)
     end
     new(0, 1, 1, hour, minute, second)
 end

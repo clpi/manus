@@ -14,6 +14,7 @@ test {
     _ = @import("mono.zig");
     _ = @import("arc.zig");
     _ = @import("async_lower.zig");
+    _ = @import("escape.zig");
     _ = @import("property_tests.zig");
     _ = @import("pretty.zig");
     _ = @import("codegen.zig");
