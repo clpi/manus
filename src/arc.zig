@@ -61,6 +61,10 @@ pub const ArcPass = struct {
     cycle_candidates: std.ArrayListUnmanaged(*const ast.Expr) = .empty,
     /// Lexical scope stack; each scope owns the bindings declared inside it.
     scopes: std.ArrayListUnmanaged(std.ArrayListUnmanaged(Tracked)) = .empty,
+    /// Set of variable names that escape their scope (captured by closures,
+    /// returned, stored in tables). Populated from sema escape analysis.
+    /// ARC retain/release is kept for these; non-escaping locals get pruned.
+    escaping: std.StringHashMapUnmanaged(void) = .{},
 
     const Self = @This();
     const Error = std.mem.Allocator.Error;
@@ -74,6 +78,21 @@ pub const ArcPass = struct {
         self.cycle_candidates.deinit(self.alloc);
         for (self.scopes.items) |*s| s.deinit(self.alloc);
         self.scopes.deinit(self.alloc);
+        self.escaping.deinit(self.alloc);
+    }
+
+    /// Mark a variable name as escaping (ARC must be kept).
+    pub fn markEscaping(self: *Self, name: []const u8) Error!void {
+        try self.escaping.put(self.alloc, name, {});
+    }
+
+    /// Check if a variable is escaping (ARC should be kept).
+    /// By default, all locals are treated as non-escaping (ARC pruned).
+    /// Only those in the escaping set get retain/release.
+    fn isEscaping(self: *const Self, name: []const u8) bool {
+        // If the escaping set is empty, keep all ARC (safe default).
+        if (self.escaping.count() == 0) return true;
+        return self.escaping.contains(name);
     }
 
     pub fn run(self: *Self, module: *const ast.Module) Error!void {
@@ -102,6 +121,7 @@ pub const ArcPass = struct {
 
     /// Release every binding in the current scope in reverse (LIFO) order,
     /// closing to-be-closed bindings first, then drop the scope.
+    /// Non-escaping locals skip release (ARC pruning).
     fn popScope(self: *Self) Error!void {
         if (self.scopes.items.len == 0) return;
         var scope = self.scopes.pop().?;
@@ -109,6 +129,7 @@ pub const ArcPass = struct {
         while (i > 0) {
             i -= 1;
             const t = scope.items[i];
+            if (!self.isEscaping(t.name)) continue; // ARC pruned (non-escaping)
             if (t.is_close) try self.emit(.close, t.name, t.loc, t.ty);
             try self.emit(.release, t.name, t.loc, t.ty);
         }
@@ -157,6 +178,16 @@ pub const ArcPass = struct {
                     if (hasArcFalse(lname.attributes)) continue;
                     const ty = self.bindingType(lname, if (idx < d.inits.len) d.inits[idx] else null);
                     if (!needsArc(ty)) continue;
+                    if (!self.isEscaping(lname.ident)) {
+                        // Non-escaping local: track but skip retain (ARC pruned).
+                        try self.track(.{
+                            .name = lname.ident,
+                            .loc = lname.loc,
+                            .ty = ty,
+                            .is_close = isClose(lname.attrib),
+                        });
+                        continue;
+                    }
                     try self.emit(.retain, lname.ident, lname.loc, ty);
                     try self.track(.{
                         .name = lname.ident,
@@ -181,10 +212,11 @@ pub const ArcPass = struct {
                 for (a.values) |e| try self.processExpr(e);
                 for (a.targets) |t| try self.processExpr(t);
                 // Reassignment of a tracked heap binding: release old, retain new.
+                // Non-escaping locals skip this (ARC pruned).
                 for (a.targets) |t| {
                     if (t.* == .name) {
                         if (self.lookup(t.name.ident)) |tracked| {
-                            if (needsArc(tracked.ty)) {
+                            if (needsArc(tracked.ty) and self.isEscaping(tracked.name)) {
                                 try self.emit(.release, tracked.name, t.name.loc, tracked.ty);
                                 try self.emit(.retain, tracked.name, t.name.loc, tracked.ty);
                             }

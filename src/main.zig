@@ -713,6 +713,15 @@ fn do_compile(
     // monomorphization and before codegen (Task 9.4).
     var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
     defer arc_pass.deinit();
+    // Populate escaping set from sema escape analysis.
+    // Only variables captured by closures are marked as escaping.
+    // All other locals are non-escaping and get ARC pruned.
+    {
+        var it = ps.sem.escape_names.iterator();
+        while (it.next()) |entry| {
+            arc_pass.markEscaping(entry.key_ptr.*) catch {};
+        }
+    }
     arc_pass.run(&ps.mod) catch |e| {
         term.err("ARC analysis error: {}", .{e});
         std.process.exit(1);
@@ -1078,6 +1087,12 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
 
     var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
     defer arc_pass.deinit();
+    {
+        var it = ps.sem.escape_names.iterator();
+        while (it.next()) |entry| {
+            arc_pass.markEscaping(entry.key_ptr.*) catch {};
+        }
+    }
     arc_pass.run(&ps.mod) catch |e| {
         term.err("ARC analysis error: {}", .{e});
         std.process.exit(1);

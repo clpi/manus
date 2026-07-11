@@ -238,6 +238,9 @@ pub const Sema = struct {
     duo_mode: bool = false,
     /// When true, the current function has the @nopanic attribute.
     current_nopanic: bool = false,
+    /// Set of variable names that escape their scope (captured by closures).
+    /// Populated during analysis; consumed by the ARC pass for pruning.
+    escape_names: std.StringHashMapUnmanaged(void) = .{},
 
     /// Standard library function names that are known built-in globals.
     fn is_builtin_global(_: *const Sema, name: []const u8) bool {
@@ -328,6 +331,7 @@ pub const Sema = struct {
         }
         self.overloads.deinit(self.alloc);
         self.instantiation_sites.deinit(self.alloc);
+        self.escape_names.deinit(self.alloc);
     }
 
     fn note_global(self: *Sema, name: []const u8, t: RT) !void {
@@ -1729,6 +1733,8 @@ pub const Sema = struct {
                 // Mark captured locals as escaping — they outlive their scope.
                 sym.captured_by_closure = true;
                 sym.escapes = true;
+                // Record in the sema-level escape set for ARC pruning.
+                self.escape_names.put(self.alloc, nm, {}) catch {};
             } else if (self.module_globals.get(nm)) |g_typ| {
                 typ = g_typ;
             }

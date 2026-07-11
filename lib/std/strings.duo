@@ -11,20 +11,20 @@ fun new_builder(): any
 end
 
 -- bldr_write: append a string to the builder.
-fun bldr_write(b: any, s: str): void
+fun bldr_write(b: any, s: any): void
     if s == nil then s = "nil" end
     b.count = b.count + 1
     b.parts[b.count] = s
 end
 
 -- bldr_write_line: append a string and a newline.
-fun bldr_write_line(b: any, s: str): void
+fun bldr_write_line(b: any, s: any): void
     bldr_write(b, s)
     bldr_write(b, "\n")
 end
 
 -- bldr_write_fmt: append a formatted string (using tostring on args).
-fun bldr_write_fmt(b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: any): void
+fun bldr_write_fmt(b: any, fmt: any, a1: any, a2: any, a3: any, a4: any, a5: any): void
     result = fmt
     if a1 ~= nil then result = string.gsub(result, "{1}", tostring(a1)) end
     if a2 ~= nil then result = string.gsub(result, "{2}", tostring(a2)) end
@@ -93,8 +93,14 @@ fun to_snake(s: str): str
         if c >= "A" and c <= "Z" then
             if i > 1 then
                 prev = string.sub(s, i - 1, i - 1)
-                if prev ~= "_" and prev >= "a" and prev <= "z" then
-                    result = result .. "_"
+                if prev ~= "_" and prev ~= " " and prev ~= "-" then
+                    next_char = ""
+                    if i < len then next_char = string.sub(s, i + 1, i + 1) end
+                    if prev >= "a" and prev <= "z" then
+                        result = result .. "_"
+                    elseif next_char ~= "" and next_char >= "a" and next_char <= "z" then
+                        result = result .. "_"
+                    end
                 end
             end
             result = result .. string.lower(c)

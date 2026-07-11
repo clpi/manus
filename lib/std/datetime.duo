@@ -346,7 +346,7 @@ fun dt_parse_digit(s: str, i: i64): any
     if c >= "0" and c <= "9" then
         return tonumber(c), i + 1
     end
-    nil, i
+    return nil, i
 end
 
 -- dt_parse2: parse exactly 2 digits starting at position i.
@@ -354,7 +354,7 @@ fun dt_parse2(s: str, i: i64): any
     d1 = string.sub(s, i, i)
     d2 = string.sub(s, i + 1, i + 1)
     val = tonumber(d1) * 10 + tonumber(d2)
-    val, i + 2
+    return val, i + 2
 end
 
 -- dt_parse4: parse exactly 4 digits starting at position i.
@@ -364,7 +364,7 @@ fun dt_parse4(s: str, i: i64): any
     d3 = string.sub(s, i + 2, i + 2)
     d4 = string.sub(s, i + 3, i + 3)
     val = tonumber(d1) * 1000 + tonumber(d2) * 100 + tonumber(d3) * 10 + tonumber(d4)
-    val, i + 4
+    return val, i + 4
 end
 
 -- dt_parse_int: parse an integer of given length starting at position i.
@@ -376,7 +376,7 @@ fun dt_parse_int(s: str, i: i64, len: i64): any
         val = val * 10 + tonumber(c)
         j = j + 1
     end
-    val, i + len
+    return val, i + len
 end
 
 -- parse_iso8601: parse an ISO 8601 datetime string (YYYY-MM-DDTHH:mm:ss).
