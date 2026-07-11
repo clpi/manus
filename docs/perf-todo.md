@@ -37,9 +37,11 @@ Keep it in sync with `docs/src/roadmap.md`.
   type-checked normally. Macro output has hygienic renaming, freshens free
   macro-introduced identifiers by default, supports explicit deliberate capture
   with `@capture(name)`, and enforces nested expansion plus recursion/node
-  limits. `std.meta` helpers exist, but generic/repeat loop forms, parameterized
-  type-fragment macros, explicit AST replacement APIs, and reflection-backed
-  derive expansion are still planned.
+  limits. Macro parameters can substitute type fragments through generated
+  declarations. `std.meta` helpers exist, and enum `@derive(...)` now emits
+  metadata plus payload-free `Display` stringification and `Eq` equality
+  methods, but generic/repeat loop forms, explicit AST replacement APIs, and
+  broader reflection-backed derive expansion are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
 - [~] **Concept metatable merging.** Concepts exist as structural checks and

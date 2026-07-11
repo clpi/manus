@@ -66,7 +66,7 @@ pub const Expander = struct {
             .const_decl => |x| .{ .const_decl = .{
                 .loc = x.loc,
                 .ident = x.ident,
-                .typ = x.typ,
+                .typ = try self.cloneTypeExpr(x.typ, null),
                 .val = try self.expandExpr(x.val),
             } },
             .global_decl => |x| .{ .global_decl = .{
@@ -103,7 +103,7 @@ pub const Expander = struct {
             .num_for => |x| .{ .num_for = .{
                 .loc = x.loc,
                 .var_name = x.var_name,
-                .var_typ = x.var_typ,
+                .var_typ = try self.cloneTypeExpr(x.var_typ, null),
                 .start = try self.expandExpr(x.start),
                 .stop = try self.expandExpr(x.stop),
                 .step = if (x.step) |expr| try self.expandExpr(expr) else null,
@@ -136,7 +136,9 @@ pub const Expander = struct {
                 .defers = try self.expandDefers(x.defers),
             } },
             .defer_stmt => |x| .{ .defer_stmt = .{ .loc = x.loc, .body = try self.expandBlock(x.body) } },
-            .enum_def, .concept_def, .alias_def => stmt,
+            .enum_def => |x| .{ .enum_def = try self.cloneEnumDef(x, null) },
+            .concept_def => |x| .{ .concept_def = try self.cloneConceptDef(x, null) },
+            .alias_def => |x| .{ .alias_def = try self.cloneAliasDef(x, null) },
             .macro_def => stmt,
         };
     }
@@ -204,6 +206,9 @@ pub const Expander = struct {
         defer macro_ctx.deinit();
         for (def.params, call.args) |param, arg| {
             try macro_ctx.bindings.put(self.alloc, param, try self.cloneExpr(arg, ctx));
+            if (try self.typeArgFromExpr(arg, ctx)) |type_arg| {
+                try macro_ctx.type_bindings.put(self.alloc, param, type_arg);
+            }
         }
         return self.cloneExpr(def.body.expr, &macro_ctx);
     }
@@ -221,6 +226,9 @@ pub const Expander = struct {
         defer macro_ctx.deinit();
         for (def.params, call.args) |param, arg| {
             try macro_ctx.bindings.put(self.alloc, param, try self.cloneExpr(arg, ctx));
+            if (try self.typeArgFromExpr(arg, ctx)) |type_arg| {
+                try macro_ctx.type_bindings.put(self.alloc, param, type_arg);
+            }
         }
         const block = try self.cloneBlockWithContext(def.body.block, &macro_ctx);
         if (block.tail_expr) |tail| {
@@ -333,9 +341,9 @@ pub const Expander = struct {
             .params = try self.cloneParams(func.params, &local_ctx),
             .vararg = func.vararg,
             .vararg_name = if (func.vararg_name) |name| try local_ctx.introduce(name) else null,
-            .ret_type = func.ret_type,
+            .ret_type = try self.cloneTypeExpr(func.ret_type, &local_ctx),
             .body = try self.cloneBlockWithContext(func.body, &local_ctx),
-            .type_params = func.type_params,
+            .type_params = if (func.type_params) |params| try self.cloneTypeExprSlice(params, &local_ctx) else null,
             .is_async = func.is_async,
             .is_typed = func.is_typed,
             .use_iterative_fib = func.use_iterative_fib,
@@ -430,7 +438,7 @@ pub const Expander = struct {
             .const_decl => |x| .{ .const_decl = .{
                 .loc = x.loc,
                 .ident = try ctx.introduce(x.ident),
-                .typ = x.typ,
+                .typ = try self.cloneTypeExpr(x.typ, ctx),
                 .val = try self.cloneExpr(x.val, ctx),
             } },
             .global_decl => |x| .{ .global_decl = .{
@@ -460,7 +468,7 @@ pub const Expander = struct {
             .num_for => |x| .{ .num_for = .{
                 .loc = x.loc,
                 .var_name = try ctx.introduce(x.var_name),
-                .var_typ = x.var_typ,
+                .var_typ = try self.cloneTypeExpr(x.var_typ, ctx),
                 .start = try self.cloneExpr(x.start, ctx),
                 .stop = try self.cloneExpr(x.stop, ctx),
                 .step = if (x.step) |expr| try self.cloneExpr(expr, ctx) else null,
@@ -489,7 +497,10 @@ pub const Expander = struct {
                 .defers = try self.cloneDefersWithContext(x.defers, ctx),
             } },
             .defer_stmt => |x| .{ .defer_stmt = .{ .loc = x.loc, .body = try self.cloneBlockWithContext(x.body, ctx) } },
-            .enum_def, .concept_def, .alias_def, .macro_def => stmt,
+            .enum_def => |x| .{ .enum_def = try self.cloneEnumDef(x, ctx) },
+            .concept_def => |x| .{ .concept_def = try self.cloneConceptDef(x, ctx) },
+            .alias_def => |x| .{ .alias_def = try self.cloneAliasDef(x, ctx) },
+            .macro_def => stmt,
         };
     }
 
@@ -511,7 +522,7 @@ pub const Expander = struct {
             const ident = if (ctx) |c| try c.introduce(name.ident) else name.ident;
             try out.append(self.alloc, .{
                 .ident = ident,
-                .typ = name.typ,
+                .typ = try self.cloneTypeExpr(name.typ, ctx),
                 .attrib = name.attrib,
                 .attributes = name.attributes,
                 .loc = name.loc,
@@ -526,13 +537,13 @@ pub const Expander = struct {
         return out.toOwnedSlice(self.alloc);
     }
 
-    fn cloneParams(self: *Expander, params: []ast.FuncParam, ctx: *HygieneContext) Error![]ast.FuncParam {
+    fn cloneParams(self: *Expander, params: []ast.FuncParam, ctx: ?*HygieneContext) Error![]ast.FuncParam {
         var out: std.ArrayList(ast.FuncParam) = .empty;
         for (params) |param| {
             try out.append(self.alloc, .{
-                .name = try ctx.introduce(param.name),
-                .typ = param.typ,
-                .default_val = if (param.default_val) |expr| try self.cloneExpr(expr, ctx) else null,
+                .name = if (ctx) |c| try c.introduce(param.name) else param.name,
+                .typ = try self.cloneTypeExpr(param.typ, ctx),
+                .default_val = if (param.default_val) |expr| if (ctx) |c| try self.cloneExpr(expr, c) else try self.expandExpr(expr) else null,
                 .loc = param.loc,
             });
         }
@@ -629,12 +640,164 @@ pub const Expander = struct {
             .arms = try arms.toOwnedSlice(self.alloc),
         };
     }
+
+    fn typeArgFromExpr(self: *Expander, expr: *ast.Expr, caller_ctx: *HygieneContext) Error!?ast.TypeExpr {
+        _ = self;
+        return switch (expr.*) {
+            .name => |name| caller_ctx.type_bindings.get(name.ident) orelse .{ .named = name.ident },
+            .string_lit => |lit| .{ .named = lit.val },
+            else => null,
+        };
+    }
+
+    fn cloneTypeExpr(self: *Expander, typ: ast.TypeExpr, ctx: ?*HygieneContext) Error!ast.TypeExpr {
+        return switch (typ) {
+            .inferred => .inferred,
+            .named => |name| blk: {
+                if (ctx) |c| {
+                    if (c.type_bindings.get(name)) |bound| break :blk try self.cloneTypeExpr(bound, null);
+                }
+                break :blk .{ .named = name };
+            },
+            .pointer => |child| blk: {
+                const out = try self.alloc.create(ast.TypeExpr);
+                out.* = try self.cloneTypeExpr(child.*, ctx);
+                break :blk .{ .pointer = out };
+            },
+            .optional => |child| blk: {
+                const out = try self.alloc.create(ast.TypeExpr);
+                out.* = try self.cloneTypeExpr(child.*, ctx);
+                break :blk .{ .optional = out };
+            },
+            .array => |arr| blk: {
+                const elem = try self.alloc.create(ast.TypeExpr);
+                elem.* = try self.cloneTypeExpr(arr.elem.*, ctx);
+                break :blk .{ .array = .{ .elem = elem, .size = arr.size } };
+            },
+            .func => |func| blk: {
+                const ret = try self.alloc.create(ast.TypeExpr);
+                ret.* = try self.cloneTypeExpr(func.ret.*, ctx);
+                break :blk .{ .func = .{
+                    .params = try self.cloneTypeExprSlice(func.params, ctx),
+                    .ret = ret,
+                } };
+            },
+            .generic => |generic| blk: {
+                const base = try self.alloc.create(ast.TypeExpr);
+                base.* = try self.cloneTypeExpr(generic.base.*, ctx);
+                break :blk .{ .generic = .{
+                    .base = base,
+                    .params = try self.cloneTypeExprSlice(generic.params, ctx),
+                } };
+            },
+            .record => |record| blk: {
+                const out = try self.alloc.create(ast.TypeExpr.RecordType);
+                out.* = .{ .fields = try self.cloneRecordFields(record.fields, ctx) };
+                break :blk .{ .record = out };
+            },
+        };
+    }
+
+    fn cloneTypeExprSlice(self: *Expander, items: []const ast.TypeExpr, ctx: ?*HygieneContext) Error![]ast.TypeExpr {
+        var out: std.ArrayList(ast.TypeExpr) = .empty;
+        for (items) |item| try out.append(self.alloc, try self.cloneTypeExpr(item, ctx));
+        return out.toOwnedSlice(self.alloc);
+    }
+
+    fn cloneRecordFields(self: *Expander, fields: []const ast.RecordField, ctx: ?*HygieneContext) Error![]ast.RecordField {
+        var out: std.ArrayList(ast.RecordField) = .empty;
+        for (fields) |field| try out.append(self.alloc, .{
+            .name = field.name,
+            .typ = try self.cloneTypeExpr(field.typ, ctx),
+            .loc = field.loc,
+        });
+        return out.toOwnedSlice(self.alloc);
+    }
+
+    fn cloneEnumDef(self: *Expander, ed: ast.EnumDef, ctx: ?*HygieneContext) Error!ast.EnumDef {
+        var variants: std.ArrayList(ast.EnumVariant) = .empty;
+        for (ed.variants) |variant| {
+            var payload: ?[]ast.EnumVariant.PayloadField = null;
+            if (variant.payload) |fields| {
+                var out_fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
+                for (fields) |field| try out_fields.append(self.alloc, .{
+                    .name = field.name,
+                    .typ = try self.cloneTypeExpr(field.typ, ctx),
+                });
+                payload = try out_fields.toOwnedSlice(self.alloc);
+            }
+            try variants.append(self.alloc, .{
+                .name = variant.name,
+                .payload = payload,
+            });
+        }
+        return .{
+            .loc = ed.loc,
+            .name = ed.name,
+            .type_params = if (ed.type_params) |params| try self.cloneTypeExprSlice(params, ctx) else null,
+            .variants = try variants.toOwnedSlice(self.alloc),
+            .attributes = ed.attributes,
+        };
+    }
+
+    fn cloneConceptDef(self: *Expander, cd: ast.ConceptDef, ctx: ?*HygieneContext) Error!ast.ConceptDef {
+        var methods: std.ArrayList(ast.FuncSignature) = .empty;
+        for (cd.required_methods) |method| try methods.append(self.alloc, .{
+            .name = method.name,
+            .params = try self.cloneParams(method.params, if (ctx) |c| c else null),
+            .ret_type = try self.cloneTypeExpr(method.ret_type, ctx),
+            .type_params = if (method.type_params) |params| try self.cloneTypeExprSlice(params, ctx) else null,
+        });
+        var fields: std.ArrayList(ast.ConceptDef.RequiredField) = .empty;
+        for (cd.required_fields) |field| try fields.append(self.alloc, .{
+            .name = field.name,
+            .typ = try self.cloneTypeExpr(field.typ, ctx),
+        });
+        return .{
+            .loc = cd.loc,
+            .name = cd.name,
+            .type_params = if (cd.type_params) |params| try self.cloneTypeExprSlice(params, ctx) else null,
+            .required_methods = try methods.toOwnedSlice(self.alloc),
+            .required_fields = try fields.toOwnedSlice(self.alloc),
+            .attributes = cd.attributes,
+        };
+    }
+
+    fn cloneAliasDef(self: *Expander, ad: ast.AliasDef, ctx: ?*HygieneContext) Error!ast.AliasDef {
+        var fields: std.ArrayList(ast.AliasField) = .empty;
+        for (ad.fields) |field| try fields.append(self.alloc, .{
+            .name = field.name,
+            .typ = try self.cloneTypeExpr(field.typ, ctx),
+            .is_private = field.is_private,
+            .default_val = if (field.default_val) |expr| if (ctx) |c| try self.cloneExpr(expr, c) else try self.expandExpr(expr) else null,
+            .loc = field.loc,
+        });
+        var methods: std.ArrayList(ast.FuncDecl) = .empty;
+        for (ad.methods) |method| try methods.append(self.alloc, .{
+            .loc = method.loc,
+            .path = method.path,
+            .method = method.method,
+            .is_local = method.is_local,
+            .func = try self.expandFuncBody(method.func, ctx),
+            .attributes = method.attributes,
+        });
+        return .{
+            .loc = ad.loc,
+            .name = ad.name,
+            .target = if (ad.target) |target| try self.cloneTypeExpr(target, ctx) else null,
+            .parent = ad.parent,
+            .fields = try fields.toOwnedSlice(self.alloc),
+            .methods = try methods.toOwnedSlice(self.alloc),
+            .attributes = ad.attributes,
+        };
+    }
 };
 
 const HygieneContext = struct {
     alloc: std.mem.Allocator,
     id: u64,
     bindings: std.StringHashMapUnmanaged(*ast.Expr) = .empty,
+    type_bindings: std.StringHashMapUnmanaged(ast.TypeExpr) = .empty,
     renames: std.StringHashMapUnmanaged([]const u8) = .empty,
 
     fn init(alloc: std.mem.Allocator, id: u64) HygieneContext {
@@ -643,6 +806,7 @@ const HygieneContext = struct {
 
     fn deinit(self: *HygieneContext) void {
         self.bindings.deinit(self.alloc);
+        self.type_bindings.deinit(self.alloc);
         self.renames.deinit(self.alloc);
     }
 
@@ -652,6 +816,8 @@ const HygieneContext = struct {
         while (rename_it.next()) |entry| try cloned.renames.put(self.alloc, entry.key_ptr.*, entry.value_ptr.*);
         var binding_it = self.bindings.iterator();
         while (binding_it.next()) |entry| try cloned.bindings.put(self.alloc, entry.key_ptr.*, entry.value_ptr.*);
+        var type_binding_it = self.type_bindings.iterator();
+        while (type_binding_it.next()) |entry| try cloned.type_bindings.put(self.alloc, entry.key_ptr.*, entry.value_ptr.*);
         return cloned;
     }
 
@@ -773,6 +939,50 @@ test "macro expansion splices type and function declarations" {
     try std.testing.expect(module.body.stmts[1] == .func_decl);
     try std.testing.expectEqualStrings("Pair", module.body.stmts[0].alias_def.name);
     try std.testing.expectEqualStrings("sum_pair", module.body.stmts[1].func_decl.path[0]);
+}
+
+test "macro expansion substitutes type parameters inside generated declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const module = try parseAndExpandForTest(
+        \\macro make_box(T) `do
+        \\  type Box = { value: T }
+        \\  local sample: { value: T } = { value = 1 }
+        \\  fun get_value(box: Box): T
+        \\    return box.value
+        \\  end
+        \\  enum Maybe
+        \\    Some(value: T)
+        \\    None
+        \\  end
+        \\  concept HasValue
+        \\    value: T
+        \\  end
+        \\end
+        \\@make_box("i64")
+    , &arena);
+
+    try std.testing.expectEqual(@as(usize, 5), module.body.stmts.len);
+    const alias_target = module.body.stmts[0].alias_def.target.?;
+    try std.testing.expect(alias_target == .record);
+    try std.testing.expect(alias_target.record.fields[0].typ == .named);
+    try std.testing.expectEqualStrings("i64", alias_target.record.fields[0].typ.named);
+
+    const local_type = module.body.stmts[1].local_decl.names[0].typ;
+    try std.testing.expect(local_type == .record);
+    try std.testing.expectEqualStrings("i64", local_type.record.fields[0].typ.named);
+
+    const func = module.body.stmts[2].func_decl.func;
+    try std.testing.expect(func.ret_type == .named);
+    try std.testing.expectEqualStrings("i64", func.ret_type.named);
+
+    const enum_payload = module.body.stmts[3].enum_def.variants[0].payload.?;
+    try std.testing.expect(enum_payload[0].typ == .named);
+    try std.testing.expectEqualStrings("i64", enum_payload[0].typ.named);
+
+    const concept_field = module.body.stmts[4].concept_def.required_fields[0];
+    try std.testing.expect(concept_field.typ == .named);
+    try std.testing.expectEqualStrings("i64", concept_field.typ.named);
 }
 
 test "macro expansion freshens free identifiers unless captured" {

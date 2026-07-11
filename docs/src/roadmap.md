@@ -69,6 +69,11 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   `std.meta.derive` now create the same descriptor shape as ordinary tables,
   and `@implements` accepts literal descriptor bindings. Full generic
   constraint dispatch and syntax removal are still in progress.
+- `@derive(...)` on enums emits a runtime descriptor table with the enum
+  `name`, `variants`, and requested `derives` while preserving the native enum
+  value layout. Payload-free enums that derive `Display` or `Eq` now get
+  generated `to_string`/`tostring` and `eq` support; broader derive method
+  generation is still in progress.
 - Pointer types use `*T`. Reference and ownership semantics are still evolving.
 - Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.
 - Compile-time `##(...)` and `__constexpr(...)` share a small pure evaluator
@@ -82,12 +87,14 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   splicing, and `@name(args)` expansion before sema. Statement macros can use
   `macro name(args) \`do ... end` and splice the generated block at statement
   position, including fixed alias/function/enum declarations that are then
-  type-checked normally. Macro output has hygienic renaming for introduced
+  type-checked normally. Macro parameters can also substitute type fragments
+  through generated aliases, annotations, function signatures, enum payloads,
+  and concept requirements. Macro output has hygienic renaming for introduced
   locals/parameters, freshens free macro-introduced identifiers by default, and
   supports explicit deliberate capture with `@capture(name)`. Nested macro
   expansion and recursion/node limits are enforced. Generic/repeat loop forms,
-  parameterized type-fragment macros, explicit AST replacement APIs, and
-  reflection-backed derive expansion are still in progress.
+  explicit AST replacement APIs, and reflection-backed derive expansion are
+  still in progress.
 - Scheduler-backed async tasks, pending poll states, and async channels are still
   being completed; current async calls run synchronously while descriptors are
   emitted for the full runtime path.
@@ -96,8 +103,8 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 ## Planned
 
-- More complete metaprogramming: parameterized type-fragment macros,
-  reflection-backed derive expansion, explicit AST replacement APIs, and richer
+- More complete metaprogramming: reflection-backed derive method expansion,
+  explicit AST replacement APIs, generic/repeat macro forms, and richer
   expansion-time diagnostics.
 - A tighter concept/metatable model that finishes compile-time dispatch through
   ordinary Lua metatables and removes unnecessary syntax additions.

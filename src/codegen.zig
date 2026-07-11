@@ -252,8 +252,9 @@ pub const CodeGen = struct {
             .bool, .void, .nil, .never => false,
             .v4f64, .v4i64, .v8f32, .v8i32 => false,
             .any => false,
+            .table_type, .enum_type => false,
             .str, .array, .pointer, .func, .@"struct" => true,
-            .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
+            .result, .option, .channel, .instantiated, .generic_param => true,
         };
     }
 
@@ -399,11 +400,12 @@ pub const CodeGen = struct {
     }
 
     fn should_bind_field_call(self: *CodeGen, func: *const ast.Expr, arg_count: usize) bool {
-        if (!self.duo_mode or func.* != .field or arg_count > 1) return false;
-        if (root_name(func.field.obj)) |root| {
-            if (is_runtime_global(root)) return false;
-        }
-        return true;
+        // Only colon calls bind an implicit receiver; dotted field calls use
+        // ordinary dispatch even in Duo mode.
+        _ = self;
+        _ = func;
+        _ = arg_count;
+        return false;
     }
 
     fn emit_lvalue(self: *CodeGen, expr: *const ast.Expr) E!void {
@@ -497,6 +499,8 @@ pub const CodeGen = struct {
         }
         if (e.* == .call) {
             const c = e.call;
+            if (self.enum_eq_call_result_type(c.func, c.args)) |t| return t;
+            if (self.enum_display_call_result_type(c.func, c.args)) |t| return t;
             if (self.mem_call_result_type(c.func, c.args)) |t| return t;
             if (self.atomic_call_result_type(c.func, c.args)) |t| return t;
             if (c.func.* == .name) {
@@ -509,6 +513,19 @@ pub const CodeGen = struct {
                     if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
                         return spec.resolveType(spec.template.ret_type);
                     }
+                }
+            }
+        }
+        if (e.* == .method_call) {
+            const mc = e.method_call;
+            if (std.mem.eql(u8, mc.method, "eq")) {
+                if (self.expr_enum_name(mc.obj)) |enum_name| {
+                    if (self.enum_has_derive(enum_name, "Eq") and self.enum_is_payload_free(enum_name)) return .bool;
+                }
+            }
+            if (std.mem.eql(u8, mc.method, "to_string")) {
+                if (self.expr_enum_name(mc.obj)) |enum_name| {
+                    if (self.enum_has_derive(enum_name, "Display") and self.enum_is_payload_free(enum_name)) return .str;
                 }
             }
         }
@@ -585,6 +602,8 @@ pub const CodeGen = struct {
         // Builtin module calls can recover native result types even when sema
         // recorded `.any` or no entry for this exact expression node.
         if (e.* == .call) {
+            if (self.enum_eq_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.enum_display_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.mem_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.atomic_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
@@ -1566,6 +1585,25 @@ pub const CodeGen = struct {
                     self.p("    duo_{s}_{s} = {d},\n", .{ ed.name, v.name, i });
                 }
                 self.p("}} duo_{s};\n\n", .{ed.name});
+                if (attrs_have_derive(ed.attributes, "Display")) {
+                    self.p("static const char* duo_{s}_to_string(duo_{s} value) {{\n", .{ ed.name, ed.name });
+                    self.p("    switch (value) {{\n", .{});
+                    for (ed.variants) |v| {
+                        self.p("        case duo_{s}_{s}: return \"", .{ ed.name, v.name });
+                        try self.emit_string_escaped(v.name);
+                        self.p("\";\n", .{});
+                    }
+                    self.p("    }}\n", .{});
+                    self.p("    return \"<invalid ", .{});
+                    try self.emit_string_escaped(ed.name);
+                    self.p(">\";\n", .{});
+                    self.p("}}\n\n", .{});
+                }
+                if (attrs_have_derive(ed.attributes, "Eq")) {
+                    self.p("static bool duo_{s}_eq(duo_{s} a, duo_{s} b) {{\n", .{ ed.name, ed.name, ed.name });
+                    self.p("    return a == b;\n", .{});
+                    self.p("}}\n\n", .{});
+                }
             } else {
                 // Tag constants.
                 for (ed.variants, 0..) |v, i| {
@@ -2194,6 +2232,91 @@ pub const CodeGen = struct {
             if (std.mem.eql(u8, variant.name, variant_name)) return variant;
         }
         return null;
+    }
+
+    fn enum_has_derive(self: *const CodeGen, enum_name: []const u8, derive_name: []const u8) bool {
+        const ed = self.enum_defs.get(enum_name) orelse return false;
+        return attrs_have_derive(ed.attributes, derive_name);
+    }
+
+    fn expr_enum_name(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
+        return self.enum_name_of(self.expr_type(expr));
+    }
+
+    fn maybe_emit_enum_display_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+        const target = self.enum_display_call_receiver(func, args) orelse return false;
+        const enum_name = self.expr_enum_name(target) orelse return false;
+        if (!self.enum_has_derive(enum_name, "Display")) return false;
+        if (!self.enum_is_payload_free(enum_name)) return false;
+
+        self.p("duo_{s}_to_string(", .{enum_name});
+        try self.emit_expr(target);
+        self.p(")", .{});
+        return true;
+    }
+
+    fn maybe_emit_enum_eq_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+        const pair = self.enum_eq_call_operands(func, args) orelse return false;
+        const enum_name = self.expr_enum_name(pair.lhs) orelse return false;
+        const rhs_enum_name = self.expr_enum_name(pair.rhs) orelse return false;
+        if (!std.mem.eql(u8, enum_name, rhs_enum_name)) return false;
+        if (!self.enum_has_derive(enum_name, "Eq")) return false;
+        if (!self.enum_is_payload_free(enum_name)) return false;
+
+        self.p("duo_{s}_eq(", .{enum_name});
+        try self.emit_expr(pair.lhs);
+        self.p(", ", .{});
+        try self.emit_expr(pair.rhs);
+        self.p(")", .{});
+        return true;
+    }
+
+    fn enum_display_call_receiver(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?*const ast.Expr {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (!std.mem.eql(u8, f.field, "to_string")) return null;
+        if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
+            return if (args.len > 0) args[0] else null;
+        }
+        return f.obj;
+    }
+
+    fn enum_display_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        const target = self.enum_display_call_receiver(func, args) orelse return null;
+        const enum_name = self.expr_enum_name(target) orelse return null;
+        if (!self.enum_has_derive(enum_name, "Display")) return null;
+        if (!self.enum_is_payload_free(enum_name)) return null;
+        return .str;
+    }
+
+    const EnumEqOperands = struct {
+        lhs: *const ast.Expr,
+        rhs: *const ast.Expr,
+    };
+
+    fn enum_eq_call_operands(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?EnumEqOperands {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (!std.mem.eql(u8, f.field, "eq")) return null;
+        if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
+            if (args.len < 2) return null;
+            return .{ .lhs = args[0], .rhs = args[1] };
+        }
+        if (args.len >= 2) {
+            return .{ .lhs = args[0], .rhs = args[1] };
+        }
+        if (args.len < 1) return null;
+        return .{ .lhs = f.obj, .rhs = args[0] };
+    }
+
+    fn enum_eq_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        const pair = self.enum_eq_call_operands(func, args) orelse return null;
+        const enum_name = self.expr_enum_name(pair.lhs) orelse return null;
+        const rhs_enum_name = self.expr_enum_name(pair.rhs) orelse return null;
+        if (!std.mem.eql(u8, enum_name, rhs_enum_name)) return null;
+        if (!self.enum_has_derive(enum_name, "Eq")) return null;
+        if (!self.enum_is_payload_free(enum_name)) return null;
+        return .bool;
     }
 
     fn maybe_emit_enum_variant_constructor(self: *CodeGen, expr: *const ast.Expr, func: *const ast.Expr, args: []*ast.Expr) E!bool {
@@ -4435,7 +4558,7 @@ pub const CodeGen = struct {
                 // points into the stable AST, so it stays valid.
                 try self.note_defer(&defer_stmt.body);
             },
-            .enum_def => {}, // handled at module level
+            .enum_def => |*ed| try self.emit_enum_descriptor(ed),
             .concept_def => |*cd| try self.emit_concept_descriptor(cd),
             .alias_def => {},
             .brk => {
@@ -4453,6 +4576,105 @@ pub const CodeGen = struct {
             .goto_stmt => |g| self.pl("goto {s};", .{g.label}),
             .label_stmt => |l| self.pl("{s}:;", .{l.label}),
         }
+    }
+
+    fn derive_arg_count(args: ?[]const u8) usize {
+        const raw = args orelse return 0;
+        var count: usize = 0;
+        var it = std.mem.splitScalar(u8, raw, ',');
+        while (it.next()) |part| {
+            if (std.mem.trim(u8, part, " \t\r\n").len != 0) count += 1;
+        }
+        return count;
+    }
+
+    fn enum_derive_count(attrs: []const ast.Attribute) usize {
+        var count: usize = 0;
+        for (attrs) |attr| {
+            if (!std.mem.eql(u8, attr.name, "derive")) continue;
+            count += derive_arg_count(attr.args);
+        }
+        return count;
+    }
+
+    fn strip_attribute_string(raw: []const u8) []const u8 {
+        const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+        if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+            return trimmed[1 .. trimmed.len - 1];
+        }
+        return trimmed;
+    }
+
+    fn attrs_have_derive(attrs: []const ast.Attribute, derive_name: []const u8) bool {
+        for (attrs) |attr| {
+            if (!std.mem.eql(u8, attr.name, "derive")) continue;
+            const raw = attr.args orelse continue;
+            var it = std.mem.splitScalar(u8, raw, ',');
+            while (it.next()) |part| {
+                if (std.mem.eql(u8, strip_attribute_string(part), derive_name)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn enum_has_derive_descriptor(self: *const CodeGen, enum_name: []const u8) bool {
+        const ed = self.enum_defs.get(enum_name) orelse return false;
+        return enum_derive_count(ed.attributes) > 0;
+    }
+
+    fn emit_enum_descriptor(self: *CodeGen, ed: *const ast.EnumDef) E!void {
+        const derive_count = enum_derive_count(ed.attributes);
+        if (derive_count == 0) return;
+
+        try self.note_local(ed.name);
+        self.ind();
+        self.pl("lua_Value {s} = lua_table_new_with_capacity(0, 4);", .{ed.name});
+        self.ind();
+        self.pl("lua_table_set_raw_lit({s}, \"__duo_kind\", {d}, 10, lua_val_lit(\"enum\"));", .{ ed.name, calc_lua_hash("__duo_kind") });
+        self.ind();
+        self.p("lua_table_set_raw_lit({s}, \"name\", {d}, 4, lua_val_lit(\"", .{ ed.name, calc_lua_hash("name") });
+        try self.emit_string_escaped(ed.name);
+        self.p("\"));\n", .{});
+
+        self.ind();
+        self.pl("lua_Value {s}_variants = lua_table_new_with_capacity({d}, 0);", .{ ed.name, ed.variants.len });
+        for (ed.variants, 0..) |variant, i| {
+            const has_payload = variant.payload != null and variant.payload.?.len > 0;
+            self.ind();
+            self.pl("lua_Value {s}_variant_{d} = lua_table_new_with_capacity(0, 3);", .{ ed.name, i });
+            self.ind();
+            self.p("lua_table_set_raw_lit({s}_variant_{d}, \"name\", {d}, 4, lua_val_lit(\"", .{ ed.name, i, calc_lua_hash("name") });
+            try self.emit_string_escaped(variant.name);
+            self.p("\"));\n", .{});
+            self.ind();
+            self.pl("lua_table_set_raw_lit({s}_variant_{d}, \"tag\", {d}, 3, lua_val_from_int({d}));", .{ ed.name, i, calc_lua_hash("tag"), i });
+            self.ind();
+            self.pl("lua_table_set_raw_lit({s}_variant_{d}, \"has_payload\", {d}, 11, lua_val_from_bool({s}));", .{ ed.name, i, calc_lua_hash("has_payload"), if (has_payload) "true" else "false" });
+            self.ind();
+            self.pl("lua_table_set_raw_i64({s}_variants, {d}, {s}_variant_{d});", .{ ed.name, i + 1, ed.name, i });
+        }
+        self.ind();
+        self.pl("lua_table_set_raw_lit({s}, \"variants\", {d}, 8, {s}_variants);", .{ ed.name, calc_lua_hash("variants"), ed.name });
+
+        self.ind();
+        self.pl("lua_Value {s}_derives = lua_table_new_with_capacity({d}, 0);", .{ ed.name, derive_count });
+        var derive_index: usize = 1;
+        for (ed.attributes) |attr| {
+            if (!std.mem.eql(u8, attr.name, "derive")) continue;
+            const raw = attr.args orelse continue;
+            var it = std.mem.splitScalar(u8, raw, ',');
+            while (it.next()) |part| {
+                const derive_name = strip_attribute_string(part);
+                if (derive_name.len == 0) continue;
+                self.ind();
+                self.p("lua_table_set_raw_i64({s}_derives, {d}, lua_val_lit(\"", .{ ed.name, derive_index });
+                try self.emit_string_escaped(derive_name);
+                self.p("\"));\n", .{});
+                derive_index += 1;
+            }
+        }
+        self.ind();
+        self.pl("lua_table_set_raw_lit({s}, \"derives\", {d}, 7, {s}_derives);", .{ ed.name, calc_lua_hash("derives"), ed.name });
     }
 
     fn emit_concept_descriptor(self: *CodeGen, cd: *const ast.ConceptDef) E!void {
@@ -4875,12 +5097,20 @@ pub const CodeGen = struct {
                 // `duo_Color_Green` (payload-free) or a tag value otherwise.
                 if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
                     const ename = f.obj.name.ident;
-                    if (self.enum_has_payload.get(ename).? == false) {
-                        self.p("duo_{s}_{s}", .{ ename, f.field });
+                    if (self.find_enum_variant_def(ename, f.field) != null) {
+                        if (self.enum_has_payload.get(ename).? == false) {
+                            self.p("duo_{s}_{s}", .{ ename, f.field });
+                        } else {
+                            // Payloaded enum referenced by bare variant: emit a
+                            // struct literal with just the tag set.
+                            self.p("((duo_{s}){{ .tag = duo_{s}_tag_{s} }})", .{ ename, ename, f.field });
+                        }
+                        return;
+                    }
+                    if (self.enum_has_derive_descriptor(ename)) {
+                        self.p("lua_table_get_str_lit({s}, \"{s}\", {d}u, {d})", .{ ename, f.field, calc_lua_hash(f.field), f.field.len });
                     } else {
-                        // Payloaded enum referenced by bare variant: emit a
-                        // struct literal with just the tag set.
-                        self.p("((duo_{s}){{ .tag = duo_{s}_tag_{s} }})", .{ ename, ename, f.field });
+                        self.p("lua_val_nil()", .{});
                     }
                     return;
                 }
@@ -4952,6 +5182,8 @@ pub const CodeGen = struct {
                     try self.emit_comptime_expr(c.args[0], self.expr_type(expr) == .any);
                     return;
                 }
+                if (try self.maybe_emit_enum_eq_call(c.func, c.args)) return;
+                if (try self.maybe_emit_enum_display_call(c.func, c.args)) return;
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
                 if (try self.maybe_emit_mem_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_atomic_call(c.func, c.args, self.expr_type(expr))) return;
@@ -5066,6 +5298,28 @@ pub const CodeGen = struct {
             },
             .method_call => |mc| {
                 const ot = self.expr_type(mc.obj);
+                if (std.mem.eql(u8, mc.method, "eq")) {
+                    if (self.enum_name_of(ot)) |enum_name| {
+                        if (self.enum_has_derive(enum_name, "Eq") and self.enum_is_payload_free(enum_name) and mc.args.len >= 1) {
+                            self.p("duo_{s}_eq(", .{enum_name});
+                            try self.emit_expr(mc.obj);
+                            self.p(", ", .{});
+                            try self.emit_expr(mc.args[0]);
+                            self.p(")", .{});
+                            return;
+                        }
+                    }
+                }
+                if (std.mem.eql(u8, mc.method, "to_string")) {
+                    if (self.enum_name_of(ot)) |enum_name| {
+                        if (self.enum_has_derive(enum_name, "Display") and self.enum_is_payload_free(enum_name)) {
+                            self.p("duo_{s}_to_string(", .{enum_name});
+                            try self.emit_expr(mc.obj);
+                            self.p(")", .{});
+                            return;
+                        }
+                    }
+                }
                 if (ot == .any) {
                     if (std.mem.eql(u8, mc.method, "put") or std.mem.eql(u8, mc.method, "write")) {
                         self.p("lua_file_write_method(", .{});
@@ -6046,6 +6300,18 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "tostring")) {
+            if (args.len > 0) {
+                if (self.expr_enum_name(args[0])) |enum_name| {
+                    if (self.enum_has_derive(enum_name, "Display") and self.enum_is_payload_free(enum_name)) {
+                        if (result_rt == .any) self.p("lua_val_lit(", .{});
+                        self.p("duo_{s}_to_string(", .{enum_name});
+                        try self.emit_expr(args[0]);
+                        self.p(")", .{});
+                        if (result_rt == .any) self.p(")", .{});
+                        return true;
+                    }
+                }
+            }
             const want_cstr = result_rt == .str;
             if (want_cstr) self.p("lua_to_str(", .{});
             self.p("tostring(", .{});
@@ -12963,6 +13229,60 @@ test "concept declarations emit runtime meta descriptors" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_lit(Drawable, \"required_methods\"") != null);
 }
 
+test "derived enum declarations emit runtime meta descriptors" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\@derive("Display", "Clone", "Eq")
+        \\enum Color
+        \\    Red
+        \\    Green
+        \\end
+        \\local red = Color.Red
+        \\local green = Color.Green
+        \\print(Color.name)
+        \\print(Color.variants[1].name)
+        \\print(tostring(red))
+        \\print(red:to_string())
+        \\print(Color.to_string(red))
+        \\print(red.to_string(red))
+        \\print(red:eq(green))
+        \\print(Color.eq(red, green))
+        \\print(red.eq(red, green))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value Color = lua_table_new_with_capacity(0, 4);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_lit(Color, \"__duo_kind\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_lit(Color, \"variants\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_lit(Color, \"derives\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_lit(Color_variant_0, \"name\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_lit(Color_variant_0, \"tag\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_i64(Color_derives, 1, lua_val_lit(\"Display\"));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_i64(Color_derives, 2, lua_val_lit(\"Clone\"));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_set_raw_i64(Color_derives, 3, lua_val_lit(\"Eq\"));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_get_str_lit(Color, \"name\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static const char* duo_Color_to_string(duo_Color value)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "case duo_Color_Red: return \"Red\";") != null);
+    try testing.expect(std.mem.count(u8, output, "duo_Color_to_string(red)") >= 4);
+    try testing.expect(std.mem.indexOf(u8, output, "static bool duo_Color_eq(duo_Color a, duo_Color b)") != null);
+    try testing.expect(std.mem.count(u8, output, "duo_Color_eq(red, green)") >= 3);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_Color_Red") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_Color_name") == null);
+}
+
 test "codegen: compile operator folds pure expressions through comptime evaluator" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -13873,6 +14193,31 @@ test "expr_type: structural fallback recovers literal and function expression ty
     try testing.expectEqual(RT.i64, ft.func.params[0]);
     try testing.expectEqual(RT.str, ft.func.ret.*);
     try testing.expect(ft.func.is_native);
+}
+
+test "arc: record and enum value types do not emit retain release hooks" {
+    const alloc = testing.allocator;
+    var type_map = sema.TypeMap.init(alloc);
+    defer type_map.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0);
+    defer {
+        cg.local_scopes.deinit(alloc);
+        cg.comptime_scopes.deinit(alloc);
+        cg.close_scopes.deinit(alloc);
+        cg.arc_scopes.deinit(alloc);
+        cg.defer_scopes.deinit(alloc);
+    }
+
+    var fields = [_]types.FieldType{.{ .name = "value", .typ = .i64 }};
+    const record = RT{ .table_type = .{ .fields = fields[0..] } };
+    var variants = [_]types.EnumVariantType{
+        .{ .name = "Red", .payload = null },
+        .{ .name = "Green", .payload = null },
+    };
+    const enum_rt = RT{ .enum_type = .{ .name = "Color", .variants = variants[0..] } };
+
+    try testing.expect(!cg.codegen_needs_arc(record));
+    try testing.expect(!cg.codegen_needs_arc(enum_rt));
 }
 
 test "ring buffer specialization eliminates storage for fixed lag read" {

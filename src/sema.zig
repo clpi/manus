@@ -1293,6 +1293,16 @@ pub const Sema = struct {
             },
             .field => |f| {
                 const ot = try self.check_expr(f.obj);
+                if (ot == .enum_type and self.find_enum_variant(ot.enum_type, f.field) != null) {
+                    return ot;
+                }
+                if (ot == .@"struct") {
+                    if (self.enum_types.get(ot.@"struct".name)) |et| {
+                        if (self.find_enum_variant(et.enum_type, f.field) != null) {
+                            return et;
+                        }
+                    }
+                }
                 // If the object is a statically-typed record (anonymous
                 // `{ field: T, ... }` annotation), return the declared
                 // field's type instead of `.any`. This lets `local x: f64
@@ -1440,8 +1450,14 @@ pub const Sema = struct {
                 };
             },
             .method_call => |mc| {
-                _ = try self.check_expr(mc.obj);
+                const ot = try self.check_expr(mc.obj);
                 for (mc.args) |arg| _ = try self.check_expr(arg);
+                if (std.mem.eql(u8, mc.method, "eq") and enum_type_has_derive(ot, "Eq")) {
+                    return .bool;
+                }
+                if (std.mem.eql(u8, mc.method, "to_string") and enum_type_has_derive(ot, "Display")) {
+                    return .str;
+                }
                 return .any;
             },
             .binop => |b| self.check_binop(b.op, b.lhs, b.rhs),
@@ -2299,6 +2315,7 @@ pub const Sema = struct {
         var enum_t = RT{ .enum_type = .{
             .name = ed.name,
             .variants = variant_types,
+            .derives = try enum_derive_names(self.alloc, ed.attributes),
         } };
 
         for (ed.attributes) |attr| {
@@ -2324,6 +2341,36 @@ pub const Sema = struct {
 
         // Define the enum name in scope as a constant type
         try self.scope.define(ed.name, .{ .typ = enum_t, .is_const = true });
+    }
+
+    fn strip_attribute_string(raw: []const u8) []const u8 {
+        const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+        if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+            return trimmed[1 .. trimmed.len - 1];
+        }
+        return trimmed;
+    }
+
+    fn enum_derive_names(alloc: std.mem.Allocator, attrs: []const ast.Attribute) SemaError![]const []const u8 {
+        var names: std.ArrayList([]const u8) = .empty;
+        for (attrs) |attr| {
+            if (!std.mem.eql(u8, attr.name, "derive")) continue;
+            const raw = attr.args orelse continue;
+            var it = std.mem.splitScalar(u8, raw, ',');
+            while (it.next()) |part| {
+                const name = strip_attribute_string(part);
+                if (name.len != 0) try names.append(alloc, name);
+            }
+        }
+        return names.toOwnedSlice(alloc);
+    }
+
+    fn enum_type_has_derive(rt: RT, derive_name: []const u8) bool {
+        if (rt != .enum_type) return false;
+        for (rt.enum_type.derives) |name| {
+            if (std.mem.eql(u8, name, derive_name)) return true;
+        }
+        return false;
     }
 
     // ── Concept definition and satisfaction checking ──────────────────────────
@@ -5839,6 +5886,29 @@ test "sema: @implements on a global record-typed binding is checked" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expect(s.errors > 0);
+}
+
+test "sema: derived enum display and eq methods have native result types" {
+    const src =
+        \\@derive("Display", "Eq")
+        \\enum Color
+        \\  Red
+        \\  Green
+        \\end
+        \\local red = Color.Red
+        \\local green = Color.Green
+        \\local label: str = red:to_string()
+        \\local same: bool = red:eq(green)
+    ;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
 test "sema: @implements accepts meta.make_concept descriptor binding" {

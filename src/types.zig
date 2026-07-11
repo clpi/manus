@@ -56,16 +56,17 @@ pub const ResolvedType = union(enum) {
     // Duo extended types
     result: struct { ok: *ResolvedType, err: *ResolvedType },
     option: *ResolvedType,
-    enum_type: struct { 
-        name: []const u8, 
+    enum_type: struct {
+        name: []const u8,
         variants: []EnumVariantType,
+        derives: []const []const u8 = &.{},
         is_packed: bool = false,
         align_n: ?usize = null,
         ffi_name: ?[]const u8 = null,
     },
     channel: struct { elem: *ResolvedType, capacity: ?usize },
     generic_param: struct { name: []const u8, constraint: ?[]const u8 },
-    table_type: struct { 
+    table_type: struct {
         fields: []FieldType,
         is_packed: bool = false,
         align_n: ?usize = null,
@@ -217,10 +218,10 @@ pub const ResolvedType = union(enum) {
                 else => false,
             },
             .enum_type => |ea| switch (b) {
-                .enum_type => |eb| std.mem.eql(u8, ea.name, eb.name) and 
-                                   ea.is_packed == eb.is_packed and
-                                   ea.align_n == eb.align_n and
-                                   eqlOptStr(ea.ffi_name, eb.ffi_name),
+                .enum_type => |eb| std.mem.eql(u8, ea.name, eb.name) and
+                    ea.is_packed == eb.is_packed and
+                    ea.align_n == eb.align_n and
+                    eqlOptStr(ea.ffi_name, eb.ffi_name),
                 else => false,
             },
             .channel => |ca| switch (b) {

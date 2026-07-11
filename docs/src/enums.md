@@ -91,6 +91,30 @@ if r.is_ok() then
 end
 ```
 
+## Derived Enum Metadata and Display
+
+`@derive(...)` records runtime metadata for enum declarations. Variant
+constructors keep the same enum representation, while `Enum.name`,
+`Enum.variants`, and `Enum.derives` expose descriptor fields. Payload-free
+enums that derive `Display` get a generated `to_string` method and participate
+in `tostring(...)`; payload-free enums that derive `Eq` get a generated `eq`
+method:
+
+```duo
+@derive("Display", "Clone", "Eq")
+enum Color
+    Red
+    Green
+end
+
+print(Color.name)             -- Color
+print(Color.variants[1].name) -- Red
+print(Color.derives[1])       -- Display
+print(Color.Red:to_string())  -- Red
+print(tostring(Color.Green))  -- Green
+print(Color.Red:eq(Color.Green)) -- false
+```
+
 ## Recursive Enums
 
 Enums can be recursive:
