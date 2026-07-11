@@ -1,0 +1,341 @@
+-- std.inspect — deep inspection, formatting, and debugging of values
+-- Provides rich pretty-printing, table diffing, and deep comparison
+-- for debugging complex data structures.
+
+-- Internal: sort string array in-place.
+fun std_inspect_sort_strings(arr: any): void
+    if arr == nil then return end
+    n = rawlen(arr)
+    i = 1
+    while i <= n
+        j = i
+        while j > 1 and arr[j] < arr[j - 1]
+            tmp = arr[j]; arr[j] = arr[j - 1]; arr[j - 1] = tmp
+            j = j - 1
+        end
+        i = i + 1
+    end
+end
+
+-- Internal: recursive deep hash.
+fun std_inspect_hash(value: any): str
+    if value == nil then return "nil" end
+    t = type(value)
+    if t ~= "table" then return t .. ":" .. tostring(value) end
+    parts = {}
+    ks = {}
+    for k, _ in value
+        ks[rawlen(ks) + 1] = tostring(k)
+    end
+    std_inspect_sort_strings(ks)
+    i = 1
+    while i <= rawlen(ks)
+        k = ks[i]
+        v = value[tonumber(k)]
+        if v == nil then v = value[k] end
+        parts[rawlen(parts) + 1] .. k .. "=" .. std_inspect_hash(v)
+        i = i + 1
+    end
+    "{" .. table.concat(parts, ",") .. "}"
+end
+
+-- Internal: recursive to_str with cycle detection.
+fun std_inspect_to_str(value: any, indent: any, seen: any): str
+    if indent == nil then indent = 0 end
+    if seen == nil then seen = {} end
+    if value == nil then return "nil" end
+    t = type(value)
+    if t == "string" then
+        return '"' .. value .. '"'
+    end
+    if t == "number" then
+        return tostring(value)
+    end
+    if t == "boolean" then
+        if value then return "true" end
+        return "false"
+    end
+    if t == "function" then
+        return "<function>"
+    end
+    if t ~= "table" then
+        return tostring(value)
+    end
+    ptr = tostring(value)
+    if seen[ptr] ~= nil then return "<circular>" end
+    seen[ptr] = true
+    n = rawlen(value)
+    if n > 0 then
+        parts = {}
+        i = 1
+        while i <= n
+            parts[rawlen(parts) + 1] = std_inspect_to_str(value[i], indent + 1, seen)
+            i = i + 1
+        end
+        prefix = string.rep("  ", indent)
+        inner_prefix = string.rep("  ", indent + 1)
+        if rawlen(parts) <= 4 and indent < 2 then
+            return "[" .. table.concat(parts, ", ") .. "]"
+        end
+        return "[\n" .. inner_prefix .. table.concat(parts, ",\n" .. inner_prefix) .. "\n" .. prefix .. "]"
+    end
+    pairs_list = {}
+    for k, v in value
+        pairs_list[rawlen(pairs_list) + 1] = {k = k, v = v}
+    end
+    if rawlen(pairs_list) == 0 then return "{}" end
+    parts = {}
+    i = 1
+    while i <= rawlen(pairs_list)
+        pair = pairs_list[i]
+        key_str = tostring(pair.k)
+        if type(pair.k) == "string" then
+            key_str = pair.k
+        end
+        val_str = std_inspect_to_str(pair.v, indent + 1, seen)
+        parts[rawlen(parts) + 1] = key_str .. " = " .. val_str
+        i = i + 1
+    end
+    prefix = string.rep("  ", indent)
+    inner_prefix = string.rep("  ", indent + 1)
+    if rawlen(parts) <= 3 and indent < 2 then
+        return "{" .. table.concat(parts, ", ") .. "}"
+    end
+    return "{\n" .. inner_prefix .. table.concat(parts, ",\n" .. inner_prefix) .. "\n" .. prefix .. "}"
+end
+
+-- Internal: recursive diff helper.
+fun std_inspect_diff(a: any, b: any, prefix: any, diffs: any): void
+    if a == nil and b == nil then return end
+    if a == nil or b == nil then
+        if a == nil then
+            diffs[rawlen(diffs) + 1] = {path = prefix, kind = "added", new = b}
+        else
+            diffs[rawlen(diffs) + 1] = {path = prefix, kind = "removed", old = a}
+        end
+        return
+    end
+    if type(a) ~= type(b) then
+        diffs[rawlen(diffs) + 1] = {path = prefix, kind = "changed", old = a, new = b}
+        return
+    end
+    if type(a) ~= "table" then
+        if a ~= b then
+            diffs[rawlen(diffs) + 1] = {path = prefix, kind = "changed", old = a, new = b}
+        end
+        return
+    end
+    for k, v in a
+        path = k
+        if prefix ~= "" then path = prefix .. "." .. tostring(k) end
+        if b[k] == nil then
+            diffs[rawlen(diffs) + 1] = {path = path, kind = "removed", old = v}
+        else
+            std_inspect_diff(v, b[k], path, diffs)
+        end
+    end
+    for k, v in b
+        if a[k] == nil then
+            path = k
+            if prefix ~= "" then path = prefix .. "." .. tostring(k) end
+            diffs[rawlen(diffs) + 1] = {path = path, kind = "added", new = v}
+        end
+    end
+end
+
+-- to_str: deep-convert any value to a human-readable string.
+fun to_str(value: any, indent: any, seen: any): str
+    std_inspect_to_str(value, indent, seen)
+end
+
+-- deep_equal: recursively compare two values for structural equality.
+fun deep_equal(a: any, b: any): bool
+    if a == b then return true end
+    if a == nil or b == nil then return false end
+    if type(a) ~= type(b) then return false end
+    if type(a) ~= "table" then return false end
+    na = rawlen(a)
+    nb = rawlen(b)
+    if na ~= nb then return false end
+    if na > 0 then
+        i = 1
+        while i <= na
+            if not deep_equal(a[i], b[i]) then return false end
+            i = i + 1
+        end
+        for k, _ in a
+            if type(k) ~= "number" then
+                if not deep_equal(a[k], b[k]) then return false end
+            end
+        end
+        for k, _ in b
+            if a[k] == nil then return false end
+        end
+        return true
+    end
+    for k, v in a
+        if not deep_equal(v, b[k]) then return false end
+    end
+    for k, _ in b
+        if a[k] == nil then return false end
+    end
+    true
+end
+
+-- deep_hash: produce a consistent hash of any value.
+fun deep_hash(value: any): str
+    std_inspect_hash(value)
+end
+
+-- diff: compare two tables and return a list of differences.
+fun diff(a: any, b: any, prefix: any): any
+    if prefix == nil then prefix = "" end
+    diffs = {}
+    std_inspect_diff(a, b, prefix, diffs)
+    diffs
+end
+
+-- diff_summary: return a human-readable summary of differences.
+fun diff_summary(a: any, b: any): str
+    diffs = diff(a, b)
+    if rawlen(diffs) == 0 then return "no differences" end
+    parts = {}
+    i = 1
+    while i <= rawlen(diffs)
+        d = diffs[i]
+        line = d.kind .. " " .. d.path
+        if d.kind == "changed" then
+            line = line .. ": " .. tostring(d.old) .. " -> " .. tostring(d.new)
+        elseif d.kind == "added" then
+            line = line .. ": " .. tostring(d.new)
+        elseif d.kind == "removed" then
+            line = line .. ": " .. tostring(d.old)
+        end
+        parts[rawlen(parts) + 1] = line
+        i = i + 1
+    end
+    tostring(rawlen(diffs)) .. " difference(s):\n" .. table.concat(parts, "\n")
+end
+
+-- type_name: get a descriptive type name for a value.
+fun type_name(value: any): str
+    if value == nil then return "nil" end
+    t = type(value)
+    if t == "table" then
+        n = rawlen(value)
+        if n > 0 then return "array[" .. tostring(n) .. "]" end
+        count = 0
+        for _, _ in value
+            count = count + 1
+        end
+        if count > 0 then return "table[" .. tostring(count) .. "]" end
+        return "table"
+    end
+    return t
+end
+
+-- size: return the "size" of a value.
+fun size(value: any): i64
+    if value == nil then return 0 end
+    t = type(value)
+    if t == "string" then return string.len(value) end
+    if t == "table" then
+        n = rawlen(value)
+        if n > 0 then return n end
+        count = 0
+        for _, _ in value
+            count = count + 1
+        end
+        return count
+    end
+    return 1
+end
+
+-- keys_of: return sorted list of keys of a table.
+fun keys_of(t: any): any
+    out = {}
+    if t == nil or type(t) ~= "table" then return out end
+    for k, _ in t
+        out[rawlen(out) + 1] = tostring(k)
+    end
+    std_inspect_sort_strings(out)
+    out
+end
+
+-- summary: return a compact summary of a value's structure.
+fun summary(value: any): str
+    if value == nil then return "nil" end
+    t = type(value)
+    if t ~= "table" then return t .. ": " .. tostring(value) end
+    n = rawlen(value)
+    if n > 0 then
+        return "array(" .. tostring(n) .. " elements)"
+    end
+    count = 0
+    first_key = nil
+    for k, _ in value
+        count = count + 1
+        if first_key == nil then first_key = tostring(k) end
+    end
+    if count == 0 then return "empty table" end
+    if count <= 3 then
+        return "table(" .. tostring(count) .. " keys: " .. first_key .. " ...)"
+    end
+    return "table(" .. tostring(count) .. " keys)"
+end
+
+-- caller_info: return info about the calling function.
+fun caller_info(level: any): any
+    if level == nil then level = 2 end
+    info = debug.getinfo(level)
+    if info == nil then return nil end
+    {
+        name = info.name,
+        source = info.source,
+        linedefined = info.linedefined,
+        currentline = info.currentline,
+        what = info.what
+    }
+end
+
+-- stack_trace: return a formatted stack trace string.
+fun stack_trace(level: any, max_depth: any): str
+    if level == nil then level = 2 end
+    if max_depth == nil then max_depth = 20 end
+    lines = {}
+    i = level
+    while i < level + max_depth
+        info = debug.getinfo(i)
+        if info == nil then break end
+        line = ""
+        if info.name ~= nil then
+            line = info.name .. "()"
+        else
+            line = "?"
+        end
+        if info.source ~= nil then
+            line = line .. " [" .. info.source
+            if info.currentline > 0 then
+                line = line .. ":" .. tostring(info.currentline)
+            end
+            line = line .. "]"
+        end
+        lines[rawlen(lines) + 1] = line
+        i = i + 1
+    end
+    table.concat(lines, "\n")
+end
+
+M = {}
+M.to_str = to_str
+M.deep_equal = deep_equal
+M.deep_hash = deep_hash
+M.diff = diff
+M.diff_summary = diff_summary
+M.type_name = type_name
+M.size = size
+M.keys_of = keys_of
+M.summary = summary
+M.caller_info = caller_info
+M.stack_trace = stack_trace
+M

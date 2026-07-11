@@ -1,0 +1,366 @@
+-- std.check — rich assertion library with context and messages
+-- Provides expressive assertions that print helpful diagnostics
+-- on failure. Ideal for tests, preconditions, and invariants.
+
+-- ===== Core assertions =====
+
+-- assert: basic assertion with optional message.
+fun assert(condition: any, message: any): bool
+    if condition then return true end
+    msg = "assertion failed"
+    if message ~= nil then msg = msg .. ": " .. tostring(message) end
+    error(msg)
+end
+
+-- assert_eq: assert two values are equal.
+fun assert_eq(actual: any, expected: any, message: any): bool
+    if actual == expected then return true end
+    msg = "expected " .. tostring(expected) .. ", got " .. tostring(actual)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_ne: assert two values are not equal.
+fun assert_ne(actual: any, expected: any, message: any): bool
+    if actual ~= expected then return true end
+    msg = "expected values to differ, both are " .. tostring(actual)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_true: assert value is truthy.
+fun assert_true(value: any, message: any): bool
+    if value ~= nil and value ~= false then return true end
+    msg = "expected truthy value, got " .. tostring(value)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_false: assert value is falsy.
+fun assert_false(value: any, message: any): bool
+    if value == nil or value == false then return true end
+    msg = "expected falsy value, got " .. tostring(value)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_nil: assert value is nil.
+fun assert_nil(value: any, message: any): bool
+    if value == nil then return true end
+    msg = "expected nil, got " .. tostring(value)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_not_nil: assert value is not nil.
+fun assert_not_nil(value: any, message: any): bool
+    if value ~= nil then return true end
+    msg = "expected non-nil value"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- ===== Numeric assertions =====
+
+-- assert_gt: assert a > b.
+fun assert_gt(actual: any, expected: any, message: any): bool
+    if actual > expected then return true end
+    msg = "expected " .. tostring(actual) .. " > " .. tostring(expected)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_gte: assert a >= b.
+fun assert_gte(actual: any, expected: any, message: any): bool
+    if actual >= expected then return true end
+    msg = "expected " .. tostring(actual) .. " >= " .. tostring(expected)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_lt: assert a < b.
+fun assert_lt(actual: any, expected: any, message: any): bool
+    if actual < expected then return true end
+    msg = "expected " .. tostring(actual) .. " < " .. tostring(expected)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_lte: assert a <= b.
+fun assert_lte(actual: any, expected: any, message: any): bool
+    if actual <= expected then return true end
+    msg = "expected " .. tostring(actual) .. " <= " .. tostring(expected)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_in_range: assert value is within [lo, hi].
+fun assert_in_range(value: any, lo: any, hi: any, message: any): bool
+    if value >= lo and value <= hi then return true end
+    msg = "expected " .. tostring(value) .. " in [" .. tostring(lo) .. ", " .. tostring(hi) .. "]"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- ===== String assertions =====
+
+-- assert_match: assert string matches a Lua pattern.
+fun assert_match(str_val: any, pattern: any, message: any): bool
+    if str_val == nil then str_val = "" end
+    found = string.find(str_val, pattern, 1)
+    if found ~= nil then return true end
+    msg = "expected string to match pattern '" .. pattern .. "', got '" .. tostring(str_val) .. "'"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_contains: assert string contains substring.
+fun assert_contains(haystack: any, needle: any, message: any): bool
+    if haystack == nil then haystack = "" end
+    if string.find(haystack, needle, 1, true) ~= nil then return true end
+    msg = "expected string to contain '" .. tostring(needle) .. "'"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_starts_with: assert string starts with prefix.
+fun assert_starts_with(str_val: any, prefix: any, message: any): bool
+    if str_val == nil then str_val = "" end
+    if prefix == nil then prefix = "" end
+    if string.sub(str_val, 1, string.len(prefix)) == prefix then return true end
+    msg = "expected string to start with '" .. prefix .. "'"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_ends_with: assert string ends with suffix.
+fun assert_ends_with(str_val: any, suffix: any, message: any): bool
+    if str_val == nil then str_val = "" end
+    if suffix == nil then suffix = "" end
+    n = string.len(suffix)
+    if n == 0 then return true end
+    if string.sub(str_val, -n) == suffix then return true end
+    msg = "expected string to end with '" .. suffix .. "'"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- ===== Type assertions =====
+
+-- assert_type: assert value has the expected Lua type.
+fun assert_type(value: any, expected_type: any, message: any): bool
+    actual = type(value)
+    if actual == expected_type then return true end
+    msg = "expected type '" .. expected_type .. "', got '" .. actual .. "'"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_is_array: assert value is a table with consecutive integer keys.
+fun assert_is_array(value: any, message: any): bool
+    if type(value) ~= "table" then
+        msg = "expected array, got " .. type(value)
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    if rawlen(value) == 0 then return true end
+    i = 2
+    while i <= rawlen(value)
+        if value[i] == nil then
+            msg = "expected array but found hole at index " .. tostring(i)
+            if message ~= nil then msg = message .. " — " .. msg end
+            error(msg)
+        end
+        i = i + 1
+    end
+    true
+end
+
+-- assert_is_table: assert value is a table.
+fun assert_is_table(value: any, message: any): bool
+    if type(value) == "table" then return true end
+    msg = "expected table, got " .. type(value)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- ===== Collection assertions =====
+
+-- assert_len: assert a table/string has the expected length.
+fun assert_len(value: any, expected_len: any, message: any): bool
+    actual = 0
+    if type(value) == "string" then
+        actual = string.len(value)
+    elseif type(value) == "table" then
+        actual = rawlen(value)
+    end
+    if actual == expected_len then return true end
+    msg = "expected length " .. tostring(expected_len) .. ", got " .. tostring(actual)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_empty: assert a table or string is empty.
+fun assert_empty(value: any, message: any): bool
+    if value == nil then return true end
+    if type(value) == "string" then
+        if string.len(value) == 0 then return true end
+        msg = "expected empty string, got length " .. tostring(string.len(value))
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    if type(value) == "table" then
+        if rawlen(value) == 0 and next(value) == nil then return true end
+        msg = "expected empty table"
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    true
+end
+
+-- assert_not_empty: assert a table or string is not empty.
+fun assert_not_empty(value: any, message: any): bool
+    if value == nil then
+        msg = "expected non-empty value, got nil"
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    if type(value) == "string" then
+        if string.len(value) > 0 then return true end
+        msg = "expected non-empty string"
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    if type(value) == "table" then
+        if rawlen(value) > 0 or next(value) ~= nil then return true end
+        msg = "expected non-empty table"
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    true
+end
+
+-- assert_in: assert a value exists in a list.
+fun assert_in(value: any, list: any, message: any): bool
+    if list == nil then
+        error("assert_in called on nil list")
+    end
+    i = 1
+    while i <= rawlen(list)
+        if list[i] == value then return true end
+        i = i + 1
+    end
+    msg = "expected " .. tostring(value) .. " to be in list"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- ===== Error assertions =====
+
+-- assert_errors: assert that fn raises an error.
+fun assert_errors(fn_ref: any, message: any): bool
+    ok, result = pcall(fn_ref)
+    if not ok then return true end
+    msg = "expected fn to raise an error, but it returned " .. tostring(result)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_no_errors: assert that fn does not raise an error.
+fun assert_no_errors(fn_ref: any, message: any): bool
+    ok, result = pcall(fn_ref)
+    if ok then return true end
+    msg = "expected fn to not raise an error: " .. tostring(result)
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- assert_error_match: assert fn raises an error matching a pattern.
+fun assert_error_match(fn_ref: any, pattern: any, message: any): bool
+    ok, result = pcall(fn_ref)
+    if not ok then
+        found = string.find(tostring(result), pattern, 1)
+        if found ~= nil then return true end
+        msg = "error did not match pattern '" .. pattern .. "': " .. tostring(result)
+        if message ~= nil then msg = message .. " — " .. msg end
+        error(msg)
+    end
+    msg = "expected fn to raise an error matching '" .. pattern .. "'"
+    if message ~= nil then msg = message .. " — " .. msg end
+    error(msg)
+end
+
+-- ===== Soft assertions (collect failures instead of throwing) =====
+
+-- soft_new: create a soft assertion collector.
+fun soft_new(): any
+    {failures = {}}
+end
+
+-- soft_assert: record a failure instead of throwing.
+fun soft_assert(collector: any, condition: any, message: any): void
+    if condition then return end
+    msg = "assertion failed"
+    if message ~= nil then msg = message end
+    collector.failures[rawlen(collector.failures) + 1] = msg
+end
+
+-- soft_assert_eq: record an equality failure.
+fun soft_assert_eq(collector: any, actual: any, expected: any, message: any): void
+    if actual == expected then return end
+    msg = "expected " .. tostring(expected) .. ", got " .. tostring(actual)
+    if message ~= nil then msg = message .. " — " .. msg end
+    collector.failures[rawlen(collector.failures) + 1] = msg
+end
+
+-- soft_check: returns true if no failures, otherwise throws with all messages.
+fun soft_check(collector: any): bool
+    if rawlen(collector.failures) == 0 then return true end
+    msg = tostring(rawlen(collector.failures)) .. " assertion(s) failed:\n"
+    i = 1
+    while i <= rawlen(collector.failures)
+        msg = msg .. "  - " .. collector.failures[i] .. "\n"
+        i = i + 1
+    end
+    error(msg)
+end
+
+-- soft_count: return the number of recorded failures.
+fun soft_count(collector: any): i64
+    if collector == nil then return 0 end
+    rawlen(collector.failures)
+end
+
+M = {}
+M.assert = assert
+M.assert_eq = assert_eq
+M.assert_ne = assert_ne
+M.assert_true = assert_true
+M.assert_false = assert_false
+M.assert_nil = assert_nil
+M.assert_not_nil = assert_not_nil
+M.assert_gt = assert_gt
+M.assert_gte = assert_gte
+M.assert_lt = assert_lt
+M.assert_lte = assert_lte
+M.assert_in_range = assert_in_range
+M.assert_match = assert_match
+M.assert_contains = assert_contains
+M.assert_starts_with = assert_starts_with
+M.assert_ends_with = assert_ends_with
+M.assert_type = assert_type
+M.assert_is_array = assert_is_array
+M.assert_is_table = assert_is_table
+M.assert_len = assert_len
+M.assert_empty = assert_empty
+M.assert_not_empty = assert_not_empty
+M.assert_in = assert_in
+M.assert_errors = assert_errors
+M.assert_no_errors = assert_no_errors
+M.assert_error_match = assert_error_match
+M.soft_new = soft_new
+M.soft_assert = soft_assert
+M.soft_assert_eq = soft_assert_eq
+M.soft_check = soft_check
+M.soft_count = soft_count
+M

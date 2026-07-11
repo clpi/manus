@@ -868,7 +868,12 @@ pub const Parser = struct {
                 break;
             } else break;
         }
-        const fb = try self.parse_func_body(l);
+        // @ffi functions are bodyless prototypes — parse signature only, no body/end.
+        const is_ffi = blk: {
+            for (attrs) |a| if (std.mem.eql(u8, a.name, "ffi")) break :blk true;
+            break :blk false;
+        };
+        const fb = if (is_ffi) try self.parse_func_signature(l) else try self.parse_func_body(l);
         return ast.Stmt{ .func_decl = .{
             .loc = l,
             .path = try path.toOwnedSlice(self.alloc),
@@ -957,6 +962,62 @@ pub const Parser = struct {
             .vararg_name = vararg_name,
             .ret_type = ret_type,
             .body = body,
+            .type_params = type_params,
+        };
+    }
+
+    /// Parse only the signature of a bodyless function (for @ffi declarations).
+    /// Same as parse_func_body but without the block body and `end` keyword.
+    fn parse_func_signature(self: *Parser, l: ast.Loc) ParseError!ast.FuncBody {
+        // Type parameters: <T, U>
+        var type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lt) != null) {
+            var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try tp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try tp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.gt);
+            type_params = try tp_list.toOwnedSlice(self.alloc);
+        }
+
+        _ = try self.expect(.lparen);
+        var params: std.ArrayList(ast.FuncParam) = .empty;
+        var vararg = false;
+        var vararg_name: ?[]const u8 = null;
+        if (!(try self.check(.rparen))) {
+            if (try self.eat(.dots) != null) {
+                vararg = true;
+                if (try self.check(.name)) {
+                    vararg_name = (try self.adv()).text;
+                }
+            } else {
+                try params.append(self.alloc, try self.parse_param());
+                while (try self.eat(.comma) != null) {
+                    if (try self.eat(.dots) != null) {
+                        vararg = true;
+                        if (try self.check(.name)) {
+                            vararg_name = (try self.adv()).text;
+                        }
+                        break;
+                    }
+                    try params.append(self.alloc, try self.parse_param());
+                }
+            }
+        }
+        _ = try self.expect(.rparen);
+        // Accept either `-> type` or `: type` for the return type.
+        var ret_type: ast.TypeExpr = .inferred;
+        if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+            ret_type = try self.parse_type();
+        // Bodyless function: empty body with no tail expression.
+        return ast.FuncBody{
+            .loc = l,
+            .params = try params.toOwnedSlice(self.alloc),
+            .vararg = vararg,
+            .vararg_name = vararg_name,
+            .ret_type = ret_type,
+            .body = .{ .loc = l, .stmts = &.{}, .tail_expr = null },
             .type_params = type_params,
         };
     }
@@ -3121,13 +3182,15 @@ test "parse: attribute with ffi string arg" {
     const mod = try parseSource(
         \\@ffi("my_c_func")
         \\fun wrapper()
-        \\end
     , &arena);
     const stmt = mod.body.stmts[0];
     try testing.expect(stmt == .func_decl);
     try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
     try testing.expectEqualStrings("ffi", stmt.func_decl.attributes[0].name);
     try testing.expectEqualStrings("\"my_c_func\"", stmt.func_decl.attributes[0].args.?);
+    // Bodyless: empty body, no tail expression
+    try testing.expectEqual(@as(usize, 0), stmt.func_decl.func.body.stmts.len);
+    try testing.expect(stmt.func_decl.func.body.tail_expr == null);
 }
 
 test "parse: async function declaration" {

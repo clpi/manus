@@ -1,0 +1,682 @@
+-- std.fs_watch — file system watching via kqueue (macOS), inotify (Linux),
+-- and a portable polling fallback.
+--
+-- Usage:
+--   local watch = req("std.fs_watch")
+--   local kq = watch.create()
+--   local fd = watch.add_watch(kq, "/tmp/foo.txt", watch.flags_from_mask("write|delete"))
+--   local events = watch.poll(kq, 5000)  -- 5s timeout
+--   if events ~= nil then
+--     for _, ev in ipairs(events) do
+--       print("fd=" .. tostring(ev.fd) .. " flags=" .. tostring(ev.flags))
+--     end
+--   end
+--   watch.close(kq)
+--
+-- Polling fallback:
+--   watch.poll_watch("/tmp/foo.txt", function(ev) print("changed!") end, 1000)
+
+-- ─────────────────────────────────────────────────────────────
+-- Platform detection
+-- ─────────────────────────────────────────────────────────────
+
+-- Detect the current platform by checking which syscalls are available.
+-- We use a runtime check: try to call kqueue(); if it fails, try inotify.
+-- For simplicity, we check the OS via os.execute.
+local _platform = "poll"
+
+local fun detect_platform(): str
+    -- macOS: kqueue available
+    local f = io.popen("uname -s 2>/dev/null", "r")
+    if f ~= nil then
+        local out = f:read("*a")
+        f:close()
+        if out ~= nil then
+            if string.find(out, "Darwin") ~= nil then
+                return "kqueue"
+            end
+            if string.find(out, "Linux") ~= nil then
+                return "inotify"
+            end
+        end
+    end
+    "poll"
+end
+
+_platform = detect_platform()
+
+-- ─────────────────────────────────────────────────────────────
+-- Constants — kqueue / kevent (macOS)
+-- ─────────────────────────────────────────────────────────────
+
+-- EVFILT_VNODE filter identifier
+local EVFILT_VNODE = 0 - 4
+
+-- Event actions
+local EV_ADD      = 0x0001
+local EV_DELETE   = 0x0002
+local EV_ENABLE   = 0x0004
+local EV_DISABLE  = 0x0008
+local EV_ONESHOT  = 0x0010
+local EV_CLEAR    = 0x0020
+
+-- NOTE_* flags for EVFILT_VNODE
+local NOTE_DELETE  = 0x0001
+local NOTE_WRITE   = 0x0002
+local NOTE_EXTEND  = 0x0004
+local NOTE_ATTRIB  = 0x0008
+local NOTE_LINK    = 0x0010
+local NOTE_RENAME  = 0x0020
+local NOTE_REVOKE  = 0x0040
+
+-- O_RDONLY for open()
+local O_RDONLY = 0
+
+-- ─────────────────────────────────────────────────────────────
+-- Constants — inotify (Linux)
+-- ─────────────────────────────────────────────────────────────
+
+local IN_ACCESS        = 0x00000001
+local IN_MODIFY        = 0x00000002
+local IN_ATTRIB        = 0x00000004
+local IN_CLOSE_WRITE   = 0x00000008
+local IN_CLOSE_NOWRITE = 0x00000010
+local IN_OPEN          = 0x00000020
+local IN_MOVED_FROM    = 0x00000040
+local IN_MOVED_TO      = 0x00000080
+local IN_CREATE        = 0x00000100
+local IN_DELETE        = 0x00000200
+local IN_DELETE_SELF   = 0x00000400
+local IN_MOVE_SELF     = 0x00000800
+local IN_UNMOUNT       = 0x00002000
+local IN_Q_OVERFLOW    = 0x00004000
+local IN_IGNORED       = 0x00008000
+local IN_ALL_EVENTS    = 0x00000FFF
+local IN_CLOEXEC       = 0x00080000
+local IN_NONBLOCK      = 0x00004000
+
+-- inotify_init1 flags
+local IN_INIT_CLOEXEC  = 0x00080000
+local IN_INIT_NONBLOCK = 0x00004000
+
+-- ─────────────────────────────────────────────────────────────
+-- FFI declarations — kqueue path (macOS)
+-- ─────────────────────────────────────────────────────────────
+
+@ffi("kqueue")
+fun ffi_kqueue(): int end
+
+@ffi("kevent")
+fun ffi_kevent(kq: int, changelist: any, nchanges: int, eventlist: any, nevents: int, timeout: any): int end
+
+@ffi("open")
+fun ffi_open(path: str, flags: int): int end
+
+@ffi("close")
+fun ffi_close(fd: int): int end
+
+-- ─────────────────────────────────────────────────────────────
+-- FFI declarations — inotify path (Linux)
+-- ─────────────────────────────────────────────────────────────
+
+@ffi("inotify_init1")
+fun ffi_inotify_init1(flags: int): int end
+
+@ffi("inotify_add_watch")
+fun ffi_inotify_add_watch(fd: int, path: str, mask: int): int end
+
+@ffi("inotify_rm_watch")
+fun ffi_inotify_rm_watch(fd: int, wd: int): int end
+
+@ffi("read")
+fun ffi_read(fd: int, buf: any, count: int): int end
+
+-- ─────────────────────────────────────────────────────────────
+-- FFI declarations — shared
+-- ─────────────────────────────────────────────────────────────
+
+@ffi("malloc")
+fun ffi_malloc(size: int): any end
+
+@ffi("free")
+fun ffi_free(ptr: any): void end
+
+@ffi("memset")
+fun ffi_memset(ptr: any, val: int, size: int): void end
+
+@ffi("memcpy")
+fun ffi_memcpy(dst: any, src: any, size: int): void end
+
+-- Write a uintptr-sized integer to a memory offset.
+-- We use memset to zero, then write byte-by-byte for small values.
+-- For the kevent struct, we need to write at specific offsets.
+
+-- ─────────────────────────────────────────────────────────────
+-- String flag parsing
+-- ─────────────────────────────────────────────────────────────
+
+-- Convert a string like "write|delete|rename" to a NOTE_* bitmask
+-- (for kqueue) or IN_* bitmask (for inotify).
+fun flags_from_mask(mask: str): int
+    if mask == nil or mask == "" then
+        return 0
+    end
+    local result = 0
+    -- Split on "|"
+    local rest = mask
+    while true do
+        local pos = string.find(rest, "|", 1, true)
+        local token
+        if pos == nil then
+            token = rest
+            rest = ""
+        else
+            token = string.sub(rest, 1, pos - 1)
+            rest = string.sub(rest, pos + 1)
+        end
+        -- Trim whitespace
+        token = string.gsub(token, "^%s+", "")
+        token = string.gsub(token, "%s+$", "")
+        if _platform == "kqueue" then
+            if token == "delete" then
+                result = result | NOTE_DELETE
+            elseif token == "write" then
+                result = result | NOTE_WRITE
+            elseif token == "extend" then
+                result = result | NOTE_EXTEND
+            elseif token == "attrib" then
+                result = result | NOTE_ATTRIB
+            elseif token == "link" then
+                result = result | NOTE_LINK
+            elseif token == "rename" then
+                result = result | NOTE_RENAME
+            elseif token == "revoke" then
+                result = result | NOTE_REVOKE
+            elseif token == "all" then
+                result = result | NOTE_DELETE | NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK | NOTE_RENAME | NOTE_REVOKE
+            end
+        elseif _platform == "inotify" then
+            if token == "access" then
+                result = result | IN_ACCESS
+            elseif token == "modify" or token == "write" then
+                result = result | IN_MODIFY
+            elseif token == "attrib" then
+                result = result | IN_ATTRIB
+            elseif token == "close_write" then
+                result = result | IN_CLOSE_WRITE
+            elseif token == "close_nowrite" then
+                result = result | IN_CLOSE_NOWRITE
+            elseif token == "open" then
+                result = result | IN_OPEN
+            elseif token == "moved_from" then
+                result = result | IN_MOVED_FROM
+            elseif token == "moved_to" then
+                result = result | IN_MOVED_TO
+            elseif token == "create" then
+                result = result | IN_CREATE
+            elseif token == "delete" then
+                result = result | IN_DELETE
+            elseif token == "delete_self" then
+                result = result | IN_DELETE_SELF
+            elseif token == "move_self" or token == "rename" then
+                result = result | IN_MOVE_SELF
+            elseif token == "all" then
+                result = result | IN_ALL_EVENTS
+            end
+        else
+            -- Polling: just use a sentinel
+            if token == "write" or token == "delete" or token == "rename" or token == "attrib" or token == "all" then
+                result = result | 1
+            end
+        end
+        if rest == "" then break end
+    end
+    result
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- kqueue implementation (macOS)
+-- ─────────────────────────────────────────────────────────────
+
+-- The kevent struct on macOS (64-bit) is:
+--   struct kevent {
+--     uintptr_t ident;       // offset 0, 8 bytes
+--     short      filter;      // offset 8, 2 bytes
+--     u_short    flags;       // offset 10, 2 bytes
+--     u_int      fflags;      // offset 12, 4 bytes
+--     intptr_t   data;        // offset 16, 8 bytes
+--     void       *udata;     // offset 24, 8 bytes
+--   };
+-- Total size: 32 bytes (with padding to 8-byte alignment)
+--
+-- On 64-bit macOS, sizeof(struct kevent) == 32.
+-- We write fields manually using memset/memcpy with a small helper.
+
+local KEVENT_SIZE = 32
+
+-- Write a 16-bit value at a byte offset (little-endian)
+local fun write_u16(buf: any, offset: int, val: int): void
+    local b0 = val & 0xFF
+    local b1 = (val >> 8) & 0xFF
+    -- Use byte array access through the any pointer
+    local ptr = buf
+    -- We store bytes via a small temp buffer and memcpy
+    -- Since we can't write individual bytes directly, use string.char + memcpy
+    local tmp = ffi_malloc(2)
+    if tmp ~= nil then
+        -- Build 2-byte LE value using memset to zero, then set bytes
+        ffi_memset(tmp, 0, 2)
+        -- Write bytes: we use a trick: create a small string and memcpy
+        -- Actually, since we don't have byte-write, we use string approach:
+        local s = string.char(b0, b1)
+        ffi_memcpy(tmp, s, 2)
+        ffi_memcpy(ptr + offset, tmp, 2)
+        ffi_free(tmp)
+    end
+end
+
+-- Write a 32-bit value at a byte offset (little-endian)
+local fun write_u32(buf: any, offset: int, val: int): void
+    local b0 = val & 0xFF
+    local b1 = (val >> 8) & 0xFF
+    local b2 = (val >> 16) & 0xFF
+    local b3 = (val >> 24) & 0xFF
+    local s = string.char(b0, b1, b2, b3)
+    ffi_memcpy(buf + offset, s, 4)
+end
+
+-- Write a 64-bit value at a byte offset (little-endian)
+-- val may be negative (e.g. EVFILT_VNODE = -4), handle as signed
+local fun write_u64(buf: any, offset: int, val: int): void
+    -- For negative values, write each byte using two's complement.
+    -- We write 8 bytes little-endian.
+    local bytes = {}
+    local v = val
+    if v < 0 then
+        -- Two's complement: for negative, each byte is (v >> (b*8)) & 0xFF
+        -- which naturally produces the correct unsigned representation.
+        for i = 0, 7 do
+            local byte_val = (v >> (i * 8)) & 0xFF
+            bytes[i + 1] = string.char(byte_val)
+        end
+    else
+        for i = 0, 7 do
+            local byte_val = (v >> (i * 8)) & 0xFF
+            bytes[i + 1] = string.char(byte_val)
+        end
+    end
+    local s = table.concat(bytes)
+    ffi_memcpy(buf + offset, s, 8)
+end
+
+-- Read a 32-bit value at a byte offset (little-endian)
+local fun read_u32(buf: any, offset: int): int
+    -- We can't read individual bytes from C memory directly.
+    -- Instead, we memcpy to a string and parse.
+    -- Since we can't read C memory to Lua easily, we use an alternative approach:
+    -- For kqueue, we read the event struct fields by copying to a Lua string.
+    -- Actually, without byte-read FFI, we need a helper C function.
+    -- For now, return 0 — the actual event reading will be done differently.
+    0
+end
+
+-- Build a kevent change struct in a malloc'd buffer.
+-- Returns a pointer to the allocated buffer (caller must free).
+local fun build_kevent(ident: int, filter: int, flags: int, fflags: int): any
+    local buf = ffi_malloc(KEVENT_SIZE)
+    if buf == nil then return nil end
+    ffi_memset(buf, 0, KEVENT_SIZE)
+    -- ident (uintptr_t, 8 bytes at offset 0)
+    write_u64(buf, 0, ident)
+    -- filter (short, 2 bytes at offset 8)
+    write_u16(buf, 8, filter)
+    -- flags (u_short, 2 bytes at offset 10)
+    write_u16(buf, 10, flags)
+    -- fflags (u_int, 4 bytes at offset 12)
+    write_u32(buf, 12, fflags)
+    -- data and udata remain zero
+    buf
+end
+
+-- Create a kqueue. Returns kq fd, or -1 on error.
+fun create(): int
+    if _platform == "kqueue" then
+        local kq = ffi_kqueue()
+        if kq < 0 then return -1 end
+        return kq
+    elseif _platform == "inotify" then
+        local fd = ffi_inotify_init1(IN_INIT_CLOEXEC)
+        if fd < 0 then return -1 end
+        return fd
+    else
+        -- Polling: return a table-based watcher id
+        -- We use a negative sentinel to distinguish from real fds
+        return 0
+    end
+end
+
+-- Add a file watch. Returns the watch descriptor (file fd for kqueue,
+-- watch id for inotify), or -1 on error.
+fun add_watch(kq: int, path: str, mask: int): int
+    if _platform == "kqueue" then
+        -- Open the file to get a file descriptor
+        local fd = ffi_open(path, O_RDONLY)
+        if fd < 0 then return -1 end
+        -- Build kevent change: EV_ADD | EV_CLEAR, EVFILT_VNODE, fflags=mask
+        local change = build_kevent(fd, EVFILT_VNODE, EV_ADD | EV_CLEAR, mask)
+        if change == nil then
+            ffi_close(fd)
+            return -1
+        end
+        -- Register the change: kevent(kq, changelist, 1, nil, 0, nil)
+        local ret = ffi_kevent(kq, change, 1, nil, 0, nil)
+        ffi_free(change)
+        if ret < 0 then
+            ffi_close(fd)
+            return -1
+        end
+        return fd
+    elseif _platform == "inotify" then
+        local wd = ffi_inotify_add_watch(kq, path, mask)
+        if wd < 0 then return -1 end
+        return wd
+    else
+        -- Polling: return a placeholder
+        return 0
+    end
+end
+
+-- Remove a watch.
+fun remove_watch(kq: int, fd: int): void
+    if _platform == "kqueue" then
+        -- Build kevent change: EV_DELETE for the vnode filter
+        local change = build_kevent(fd, EVFILT_VNODE, EV_DELETE, 0)
+        if change ~= nil then
+            ffi_kevent(kq, change, 1, nil, 0, nil)
+            ffi_free(change)
+        end
+        ffi_close(fd)
+    elseif _platform == "inotify" then
+        ffi_inotify_rm_watch(kq, fd)
+    end
+end
+
+-- Poll for events. Returns a table of {fd, flags} entries, or nil on timeout.
+-- For kqueue: fd is the file descriptor, flags are NOTE_* bits.
+-- For inotify: fd is the watch descriptor, flags are IN_* bits.
+fun poll(kq: int, timeout_ms: int): any
+    if _platform == "kqueue" then
+        -- Allocate space for up to 16 events
+        local max_events = 16
+        local eventlist = ffi_malloc(KEVENT_SIZE * max_events)
+        if eventlist == nil then return nil end
+        ffi_memset(eventlist, 0, KEVENT_SIZE * max_events)
+
+        -- Build a timespec for the timeout: {tv_sec, tv_nsec}
+        -- struct timespec is 16 bytes on 64-bit: 8 sec + 8 nsec
+        local ts = ffi_malloc(16)
+        if ts == nil then
+            ffi_free(eventlist)
+            return nil
+        end
+        ffi_memset(ts, 0, 16)
+        local sec = 0
+        if timeout_ms > 0 then
+            sec = timeout_ms / 1000
+            local nsec = (timeout_ms % 1000) * 1000000
+            write_u64(ts, 0, sec)
+            write_u64(ts, 8, nsec)
+        end
+
+        -- If timeout_ms == 0, use nil timeout for non-blocking
+        local timeout_ptr = ts
+        if timeout_ms == 0 then
+            timeout_ptr = nil
+        end
+
+        local n = ffi_kevent(kq, nil, 0, eventlist, max_events, timeout_ptr)
+        ffi_free(ts)
+
+        if n <= 0 then
+            ffi_free(eventlist)
+            return nil
+        end
+
+        -- Parse events from the eventlist buffer.
+        -- Each kevent is 32 bytes:
+        --   ident (8), filter (2), flags (2), fflags (4), data (8), udata (8)
+        -- We need to read ident and fflags from each event.
+        --
+        -- Since we can't read individual bytes from C memory directly,
+        -- we use a workaround: copy each event to a Lua string via memcpy,
+        -- then parse the string.
+        local events = {}
+        for i = 0, n - 1 do
+            local offset = i * KEVENT_SIZE
+            -- Copy 32 bytes to a Lua string
+            local tmp = string.rep("\0", KEVENT_SIZE)
+            ffi_memcpy(tmp, eventlist + offset, KEVENT_SIZE)
+
+            -- Parse ident (bytes 0-7, little-endian u64)
+            local ident = 0
+            for b = 0, 7 do
+                local byte_val = string.byte(tmp, b + 1)
+                ident = ident | (byte_val << (b * 8))
+            end
+
+            -- Parse fflags (bytes 12-15, little-endian u32)
+            local fflags = 0
+            for b = 0, 3 do
+                local byte_val = string.byte(tmp, 12 + b + 1)
+                fflags = fflags | (byte_val << (b * 8))
+            end
+
+            events[#events + 1] = {fd = ident, flags = fflags}
+        end
+        ffi_free(eventlist)
+        return events
+
+    elseif _platform == "inotify" then
+        -- Read inotify events from the fd.
+        -- struct inotify_event {
+        --   int      wd;       // 4 bytes
+        --   u_int    mask;     // 4 bytes
+        --   u_int    cookie;   // 4 bytes
+        --   u_int    len;      // 4 bytes
+        --   char     name[];   // variable
+        -- };
+        -- Total fixed size: 16 bytes
+
+        local buf_size = 4096
+        local buf = ffi_malloc(buf_size)
+        if buf == nil then return nil end
+        ffi_memset(buf, 0, buf_size)
+
+        local n = ffi_read(kq, buf, buf_size)
+        if n <= 0 then
+            ffi_free(buf)
+            return nil
+        end
+
+        -- Copy the read data to a Lua string for parsing
+        local data = string.rep("\0", n)
+        ffi_memcpy(data, buf, n)
+        ffi_free(buf)
+
+        -- Parse inotify events from the string
+        local events = {}
+        local pos = 1  -- 1-based for Lua strings
+        while pos <= n do
+            if pos + 15 > n then break end
+
+            -- wd (4 bytes, little-endian)
+            local wd = 0
+            for b = 0, 3 do
+                wd = wd | (string.byte(data, pos + b) << (b * 8))
+            end
+
+            -- mask (4 bytes, little-endian)
+            local mask = 0
+            for b = 0, 3 do
+                mask = mask | (string.byte(data, pos + 4 + b) << (b * 8))
+            end
+
+            -- len (4 bytes, offset 12, little-endian) — name length
+            local name_len = 0
+            for b = 0, 3 do
+                name_len = name_len | (string.byte(data, pos + 12 + b) << (b * 8))
+            end
+
+            if wd > 0 then
+                events[#events + 1] = {fd = wd, flags = mask}
+            end
+
+            -- Advance past event + name (16 + name_len, aligned to 16? No, name is padded)
+            -- Actually inotify events are not padded to 16; name is included inline.
+            -- The total event size is 16 + name_len.
+            pos = pos + 16 + name_len
+        end
+
+        if #events == 0 then return nil end
+        return events
+
+    else
+        -- Polling doesn't use this API
+        return nil
+    end
+end
+
+-- Close the watcher and release resources.
+fun close(kq: int): void
+    if _platform == "kqueue" then
+        ffi_close(kq)
+    elseif _platform == "inotify" then
+        ffi_close(kq)
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Polling fallback
+-- ─────────────────────────────────────────────────────────────
+
+-- Get the modification time of a file as a string (epoch seconds).
+-- Uses stat command for portability.
+local fun get_mtime(path: str): str
+    if path == nil then return "" end
+    local f = io.popen("stat -f%m '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+    if f == nil then
+        -- Try Linux stat
+        f = io.popen("stat -c %Y '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
+        if f == nil then return "" end
+    end
+    local out = f:read("*a")
+    f:close()
+    if out == nil then return "" end
+    -- Trim whitespace
+    out = string.gsub(out, "%s+$", "")
+    out = string.gsub(out, "^%s+", "")
+    out
+end
+
+-- Poll a file for changes. Calls callback on each detected change.
+-- The callback receives a table {path, event} where event is a string
+-- like "modified", "deleted", or "renamed".
+-- This function runs forever (blocking) until the callback returns false.
+fun poll_watch(path: str, callback: any, interval_ms: int): void
+    if path == nil then return end
+    if callback == nil then return end
+    if interval_ms == nil or interval_ms <= 0 then
+        interval_ms = 1000
+    end
+
+    local last_mtime = get_mtime(path)
+    local last_exists = last_mtime ~= ""
+
+    while true do
+        -- Sleep for interval
+        local sec = interval_ms / 1000.0
+        os.execute("sleep " .. tostring(sec))
+
+        local cur_mtime = get_mtime(path)
+        local cur_exists = cur_mtime ~= ""
+
+        if cur_exists and last_exists then
+            -- Check for modification
+            if cur_mtime ~= last_mtime then
+                local cont = callback({path = path, event = "modified"})
+                if cont == false then return end
+                last_mtime = cur_mtime
+            end
+        elseif cur_exists and not last_exists then
+            -- File was created
+            local cont = callback({path = path, event = "created"})
+            if cont == false then return end
+            last_mtime = cur_mtime
+        elseif not cur_exists and last_exists then
+            -- File was deleted
+            local cont = callback({path = path, event = "deleted"})
+            if cont == false then return end
+            last_mtime = ""
+        end
+
+        last_exists = cur_exists
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Platform info
+-- ─────────────────────────────────────────────────────────────
+
+fun platform(): str
+    _platform
+end
+
+-- Expose constants for users
+M = {}
+
+-- Constants
+M.NOTE_DELETE  = NOTE_DELETE
+M.NOTE_WRITE   = NOTE_WRITE
+M.NOTE_EXTEND  = NOTE_EXTEND
+M.NOTE_ATTRIB  = NOTE_ATTRIB
+M.NOTE_LINK    = NOTE_LINK
+M.NOTE_RENAME  = NOTE_RENAME
+M.NOTE_REVOKE  = NOTE_REVOKE
+
+M.EVFILT_VNODE = EVFILT_VNODE
+M.EV_ADD       = EV_ADD
+M.EV_DELETE    = EV_DELETE
+M.EV_ENABLE    = EV_ENABLE
+M.EV_DISABLE   = EV_DISABLE
+M.EV_ONESHOT   = EV_ONESHOT
+M.EV_CLEAR     = EV_CLEAR
+
+M.IN_ACCESS        = IN_ACCESS
+M.IN_MODIFY        = IN_MODIFY
+M.IN_ATTRIB        = IN_ATTRIB
+M.IN_CLOSE_WRITE   = IN_CLOSE_WRITE
+M.IN_CLOSE_NOWRITE = IN_CLOSE_NOWRITE
+M.IN_OPEN          = IN_OPEN
+M.IN_MOVED_FROM    = IN_MOVED_FROM
+M.IN_MOVED_TO      = IN_MOVED_TO
+M.IN_CREATE        = IN_CREATE
+M.IN_DELETE        = IN_DELETE
+M.IN_DELETE_SELF   = IN_DELETE_SELF
+M.IN_MOVE_SELF     = IN_MOVE_SELF
+M.IN_ALL_EVENTS    = IN_ALL_EVENTS
+
+-- API
+M.create         = create
+M.add_watch      = add_watch
+M.remove_watch   = remove_watch
+M.poll           = poll
+M.close          = close
+M.flags_from_mask = flags_from_mask
+
+-- Polling fallback
+M.poll_watch     = poll_watch
+
+-- Platform info
+M.platform       = platform
+
+M

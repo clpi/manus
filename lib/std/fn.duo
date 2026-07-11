@@ -1,0 +1,373 @@
+-- std.fn — functional programming utilities
+-- Composition, currying, partial application, negation, and
+-- higher-order function helpers for clean, point-free style code.
+
+-- identity: return its argument unchanged.
+fun identity(x: any): any
+    x
+end
+
+-- constant: return a function that always returns v, ignoring arguments.
+fun constant(v: any): any
+    return fun(): any v end
+end
+
+-- noop: a function that does nothing and returns nil.
+fun noop(): void
+end
+
+-- Internal: apply a list of functions left-to-right to an input.
+fun std_pipe_apply(fns: any, ...args): any
+    result = fns[1](args[1], args[2], args[3], args[4], args[5],
+                    args[6], args[7], args[8], args[9], args[10])
+    i = 2
+    while i <= rawlen(fns)
+        result = fns[i](result)
+        i = i + 1
+    end
+    result
+end
+
+-- Internal: apply a list of functions right-to-left to an input.
+fun std_compose_apply(fns: any, ...args): any
+    n = rawlen(fns)
+    result = fns[n](args[1], args[2], args[3], args[4], args[5],
+                    args[6], args[7], args[8], args[9], args[10])
+    i = n - 1
+    while i >= 1
+        result = fns[i](result)
+        i = i - 1
+    end
+    result
+end
+
+-- Internal: build combined args for partial.
+fun std_partial_build(fixed: any, args: any): any
+    call_args = {}
+    i = 1
+    while i <= rawlen(fixed)
+        call_args[rawlen(call_args) + 1] = fixed[i]
+        i = i + 1
+    end
+    j = 1
+    while j <= rawlen(args)
+        call_args[rawlen(call_args) + 1] = args[j]
+        j = j + 1
+    end
+    call_args
+end
+
+-- Internal: curried application.
+fun std_curry_apply(fn_ref: any, arity: any, ...args): any
+    if rawlen(args) >= arity then
+        return fn_ref(table.unpack(args))
+    end
+    captured_args = args
+    return function(...more): any
+        combined = {}
+        i = 1
+        while i <= rawlen(captured_args)
+            combined[rawlen(combined) + 1] = captured_args[i]
+            i = i + 1
+        end
+        j = 1
+        while j <= rawlen(more)
+            combined[rawlen(combined) + 1] = more[j]
+            j = j + 1
+        end
+        std_curry_apply(fn_ref, arity, table.unpack(combined))
+    end
+end
+
+-- Internal: shared implementation for group_by, unique_by, etc.
+fun std_fn_group_by_impl(list: any, fn_ref: any): any
+    groups = {}
+    if list == nil then return groups end
+    i = 1
+    while i <= rawlen(list)
+        key = fn_ref(list[i])
+        if groups[key] == nil then groups[key] = {} end
+        groups[key][rawlen(groups[key]) + 1] = list[i]
+        i = i + 1
+    end
+    groups
+end
+
+-- compose: right-to-left composition of functions.
+-- compose(f, g, h)(x) == f(g(h(x)))
+fun compose(...fns): any
+    fns_list = fns
+    return fun(...args): any std_compose_apply(fns_list, args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]) end
+end
+
+-- pipe: left-to-right composition of functions.
+-- pipe(f, g, h)(x) == h(g(f(x)))
+fun pipe(...fns): any
+    fns_list = fns
+    return fun(...args): any std_pipe_apply(fns_list, args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]) end
+end
+
+-- partial: fix some arguments of a function, returning a new function.
+-- partial(f, a, b)(x, y) == f(a, b, x, y)
+fun partial(fn_ref: any, ...fixed): any
+    fixed_list = fixed
+    fn_capture = fn_ref
+    return fun(...args): any
+        combined = std_partial_build(fixed_list, args)
+        fn_capture(table.unpack(combined))
+    end
+end
+
+-- curry: convert a multi-arg function to a chain of single-arg functions.
+-- curry(f, 2)(a)(b) == f(a, b)
+fun curry(fn_ref: any, arity: any): any
+    if arity == nil then arity = 2 end
+    fn_capture = fn_ref
+    arity_capture = arity
+    return fun(...args): any std_curry_apply(fn_capture, arity_capture, table.unpack(args)) end
+end
+
+-- flip: swap the first two arguments of a function.
+fun flip(fn_ref: any): any
+    fn_capture = fn_ref
+    return fun(a: any, b: any, ...rest): any fn_capture(b, a, table.unpack(rest)) end
+end
+
+-- negate: return a function that inverts the boolean result of fn.
+fun negate(fn_ref: any): any
+    fn_capture = fn_ref
+    return fun(...args): any
+        val = fn_capture(table.unpack(args))
+        if val then
+            false
+        else
+            true
+        end
+    end
+end
+
+-- once: ensure fn is called at most once; subsequent calls return cached result.
+fun once(fn_ref: any): any
+    called = false
+    once_result = nil
+    fn_capture = fn_ref
+    return fun(...args): any
+        if not called then
+            called = true
+            once_result = fn_capture(table.unpack(args))
+        end
+        once_result
+    end
+end
+
+-- throttle: ensure fn is called at most once per `interval` seconds.
+fun throttle(fn_ref: any, interval: any): any
+    last_call = 0
+    fn_capture = fn_ref
+    interval_capture = interval
+    return fun(...args): any
+        now = os.clock()
+        if now - last_call >= interval_capture then
+            last_call = now
+            return fn_capture(table.unpack(args))
+        end
+        nil
+    end
+end
+
+-- debounce: delay fn execution; only the last call within `delay` seconds fires.
+fun debounce(fn_ref: any, delay: any): any
+    fn_capture = fn_ref
+    delay_capture = delay
+    return fun(...args): any
+        fn_capture(table.unpack(args))
+    end
+end
+
+-- tap: call fn for side effects, but return the original value unchanged.
+fun tap(fn_ref: any): any
+    fn_capture = fn_ref
+    return function(value: any): any
+        fn_capture(value)
+        value
+    end
+end
+
+-- thrush (|>): apply x to f. The T combinator.
+fun thrush(x: any, fn_ref: any): any
+    fn_ref(x)
+end
+
+-- foldl: left fold over a list.
+fun foldl(list: any, init: any, fn_ref: any): any
+    acc = init
+    if list == nil then return acc end
+    i = 1
+    while i <= rawlen(list)
+        acc = fn_ref(acc, list[i])
+        i = i + 1
+    end
+    acc
+end
+
+-- foldr: right fold over a list.
+fun foldr(list: any, init: any, fn_ref: any): any
+    acc = init
+    if list == nil then return acc end
+    i = rawlen(list)
+    while i >= 1
+        acc = fn_ref(list[i], acc)
+        i = i - 1
+    end
+    acc
+end
+
+-- map_filter: apply fn and keep only non-nil results (map + filter in one pass).
+fun map_filter(list: any, fn_ref: any): any
+    out = {}
+    if list == nil then return out end
+    i = 1
+    while i <= rawlen(list)
+        result = fn_ref(list[i])
+        if result ~= nil then
+            out[rawlen(out) + 1] = result
+        end
+        i = i + 1
+    end
+    out
+end
+
+-- group_by: partition list into groups keyed by fn's return value.
+fun group_by(list: any, fn_ref: any): any
+    std_fn_group_by_impl(list, fn_ref)
+end
+
+-- unique_by: deduplicate list by fn's return value (first occurrence wins).
+fun unique_by(list: any, fn_ref: any): any
+    seen = {}
+    out = {}
+    if list == nil then return out end
+    i = 1
+    while i <= rawlen(list)
+        key = fn_ref(list[i])
+        if seen[key] == nil then
+            seen[key] = true
+            out[rawlen(out) + 1] = list[i]
+        end
+        i = i + 1
+    end
+    out
+end
+
+-- take_while: take elements from the front while predicate holds.
+fun take_while(list: any, fn_ref: any): any
+    out = {}
+    if list == nil then return out end
+    i = 1
+    while i <= rawlen(list)
+        if not fn_ref(list[i]) then break end
+        out[rawlen(out) + 1] = list[i]
+        i = i + 1
+    end
+    out
+end
+
+-- drop_while: drop elements from the front while predicate holds.
+fun drop_while(list: any, fn_ref: any): any
+    out = {}
+    if list == nil then return out end
+    dropping = true
+    i = 1
+    while i <= rawlen(list)
+        if dropping and fn_ref(list[i]) then
+            -- skip
+        else
+            dropping = false
+            out[rawlen(out) + 1] = list[i]
+        end
+        i = i + 1
+    end
+    out
+end
+
+-- chunk: split list into sub-lists of size n.
+fun chunk(list: any, n: any): any
+    out = {}
+    if list == nil or n == nil or n < 1 then return out end
+    i = 1
+    while i <= rawlen(list)
+        group = {}
+        j = 0
+        while j < n and i + j <= rawlen(list)
+            group[rawlen(group) + 1] = list[i + j]
+            j = j + 1
+        end
+        out[rawlen(out) + 1] = group
+        i = i + n
+    end
+    out
+end
+
+-- interleave: weave elements from two lists alternately.
+fun interleave(a: any, b: any): any
+    out = {}
+    if a == nil then a = {} end
+    if b == nil then b = {} end
+    n = rawlen(a)
+    if rawlen(b) > n then n = rawlen(b) end
+    i = 1
+    while i <= n
+        if i <= rawlen(a) then out[rawlen(out) + 1] = a[i] end
+        if i <= rawlen(b) then out[rawlen(out) + 1] = b[i] end
+        i = i + 1
+    end
+    out
+end
+
+-- transpose: transpose a list of lists (rows to columns).
+fun transpose(matrix: any): any
+    if matrix == nil or rawlen(matrix) == 0 then return {} end
+    cols = rawlen(matrix[1])
+    out = {}
+    c = 1
+    while c <= cols
+        col = {}
+        r = 1
+        while r <= rawlen(matrix)
+            if matrix[r] ~= nil and rawlen(matrix[r]) >= c then
+                col[rawlen(col) + 1] = matrix[r][c]
+            end
+            r = r + 1
+        end
+        out[rawlen(out) + 1] = col
+        c = c + 1
+    end
+    out
+end
+
+M = {}
+M.compose = compose
+M.pipe = pipe
+M.partial = partial
+M.curry = curry
+M.flip = flip
+M.negate = negate
+M.once = once
+M.throttle = throttle
+M.debounce = debounce
+M.tap = tap
+M.thrush = thrush
+M.identity = identity
+M.constant = constant
+M.noop = noop
+M.foldl = foldl
+M.foldr = foldr
+M.map_filter = map_filter
+M.group_by = group_by
+M.unique_by = unique_by
+M.take_while = take_while
+M.drop_while = drop_while
+M.chunk = chunk
+M.interleave = interleave
+M.transpose = transpose
+M

@@ -1,0 +1,239 @@
+-- std.retry — retry with configurable backoff strategies
+-- Provides retry, backoff, and circuit breaker patterns for
+-- resilient operations that may fail transiently.
+
+-- Internal: sleep for the given number of seconds.
+fun std_retry_sleep(seconds: any): void
+    if seconds == nil or seconds <= 0 then return end
+    start = os.clock()
+    while os.clock() - start < seconds
+        -- busy wait
+    end
+end
+
+-- ===== Backoff strategies =====
+
+-- constant_backoff: always wait the same interval.
+fun constant_backoff(interval: any): any
+    iv = interval
+    return function(attempt: any): any iv end
+end
+
+-- linear_backoff: wait increases linearly with attempt number.
+fun linear_backoff(base: any, max_val: any): any
+    if base == nil then base = 1 end
+    if max_val == nil then max_val = 30 end
+    base_c = base
+    max_c = max_val
+    return function(attempt: any): any
+        wait = base_c * attempt
+        if wait > max_c then wait = max_c end
+        wait
+    end
+end
+
+-- exponential_backoff: wait doubles each attempt (with optional jitter).
+fun exponential_backoff(base: any, max_val: any, jitter: any): any
+    if base == nil then base = 0.5 end
+    if max_val == nil then max_val = 30 end
+    if jitter == nil then jitter = false end
+    base_c = base
+    max_c = max_val
+    jitter_c = jitter
+    return function(attempt: any): any
+        wait = base_c
+        idx = 0
+        while idx < attempt
+            wait = wait * 2
+            idx = idx + 1
+        end
+        if wait > max_c then wait = max_c end
+        if jitter_c then
+            variation = wait * 0.25
+            wait = wait - variation + (math.random() * variation * 2)
+        end
+        wait
+    end
+end
+
+-- ===== Core retry =====
+
+-- do_retry: execute fn up to `max_attempts` times with a backoff strategy.
+fun do_retry(max_attempts: any, backoff_fn: any, fn_ref: any): any
+    if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
+    if backoff_fn == nil then backoff_fn = constant_backoff(1) end
+    attempt = 1
+    last_error = nil
+    while attempt <= max_attempts
+        ok, result = pcall(fn_ref)
+        if ok and result ~= nil then
+            return {ok = result, attempts = attempt}
+        end
+        if not ok then
+            last_error = tostring(result)
+        end
+        if attempt < max_attempts then
+            wait = backoff_fn(attempt)
+            std_retry_sleep(wait)
+        end
+        attempt = attempt + 1
+    end
+    {ok = nil, error = last_error, attempts = max_attempts}
+end
+
+-- do_retry_bool: like do_retry but fn returns true for success.
+fun do_retry_bool(max_attempts: any, backoff_fn: any, fn_ref: any): any
+    if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
+    if backoff_fn == nil then backoff_fn = constant_backoff(1) end
+    attempt = 1
+    last_error = nil
+    while attempt <= max_attempts
+        ok, result = pcall(fn_ref)
+        if ok and result == true then
+            return {ok = true, attempts = attempt}
+        end
+        if not ok then
+            last_error = tostring(result)
+        end
+        if attempt < max_attempts then
+            wait = backoff_fn(attempt)
+            std_retry_sleep(wait)
+        end
+        attempt = attempt + 1
+    end
+    {ok = false, error = last_error, attempts = max_attempts}
+end
+
+-- retry: simplified retry with defaults (3 attempts, 1s constant backoff).
+fun retry(fn_ref: any): any
+    do_retry(3, constant_backoff(1), fn_ref)
+end
+
+-- retry_with_backoff: retry with exponential backoff, configurable attempts.
+fun retry_with_backoff(fn_ref: any, max_attempts: any): any
+    if max_attempts == nil then max_attempts = 5 end
+    do_retry(max_attempts, exponential_backoff(0.5, 30, true), fn_ref)
+end
+
+-- retry_if: retry fn only if `condition` returns true for the error.
+fun retry_if(max_attempts: any, backoff_fn: any, condition: any, fn_ref: any): any
+    if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
+    if backoff_fn == nil then backoff_fn = constant_backoff(1) end
+    attempt = 1
+    last_error = nil
+    while attempt <= max_attempts
+        ok, result = pcall(fn_ref)
+        if ok and result ~= nil then
+            return {ok = result, attempts = attempt}
+        end
+        if not ok then
+            last_error = tostring(result)
+            if not condition(last_error) then
+                return {ok = nil, error = last_error, attempts = attempt}
+            end
+        end
+        if attempt < max_attempts then
+            wait = backoff_fn(attempt)
+            std_retry_sleep(wait)
+        end
+        attempt = attempt + 1
+    end
+    {ok = nil, error = last_error, attempts = max_attempts}
+end
+
+-- ===== Circuit Breaker =====
+
+-- circuit_new: create a circuit breaker.
+fun circuit_new(failure_threshold: any, reset_timeout: any): any
+    if failure_threshold == nil then failure_threshold = 5 end
+    if reset_timeout == nil then reset_timeout = 30 end
+    {
+        state = "closed",
+        failures = 0,
+        threshold = failure_threshold,
+        timeout = reset_timeout,
+        last_failure = 0,
+        success_count = 0,
+        total_calls = 0,
+        total_failures = 0
+    }
+end
+
+-- circuit_call: execute fn through the circuit breaker.
+fun circuit_call(cb: any, fn_ref: any): any
+    if cb == nil then return {ok = nil, error = "nil circuit breaker"} end
+    cb.total_calls = cb.total_calls + 1
+    if cb.state == "open" then
+        if os.clock() - cb.last_failure >= cb.timeout then
+            cb.state = "half_open"
+        else
+            return {ok = nil, circuit_open = true}
+        end
+    end
+    ok, result = pcall(fn_ref)
+    if ok then
+        if cb.state == "half_open" then
+            cb.success_count = cb.success_count + 1
+            if cb.success_count >= 2 then
+                cb.state = "closed"
+                cb.failures = 0
+                cb.success_count = 0
+            end
+        else
+            cb.failures = 0
+            cb.success_count = 0
+        end
+        return {ok = result}
+    end
+    cb.failures = cb.failures + 1
+    cb.total_failures = cb.total_failures + 1
+    cb.last_failure = os.clock()
+    cb.success_count = 0
+    if cb.failures >= cb.threshold then
+        cb.state = "open"
+    end
+    {ok = nil, error = tostring(result)}
+end
+
+-- circuit_state: return the current state of the circuit breaker.
+fun circuit_state(cb: any): str
+    if cb == nil then return "unknown" end
+    cb.state
+end
+
+-- circuit_reset: manually reset the circuit breaker to closed.
+fun circuit_reset(cb: any): void
+    if cb == nil then return end
+    cb.state = "closed"
+    cb.failures = 0
+    cb.last_failure = 0
+    cb.success_count = 0
+end
+
+-- circuit_stats: return circuit breaker statistics.
+fun circuit_stats(cb: any): any
+    if cb == nil then return {} end
+    {
+        state = cb.state,
+        failures = cb.failures,
+        threshold = cb.threshold,
+        total_calls = cb.total_calls,
+        total_failures = cb.total_failures
+    }
+end
+
+M = {}
+M.constant_backoff = constant_backoff
+M.linear_backoff = linear_backoff
+M.exponential_backoff = exponential_backoff
+M.do_retry = do_retry
+M.do_retry_bool = do_retry_bool
+M.retry = retry
+M.retry_with_backoff = retry_with_backoff
+M.retry_if = retry_if
+M.circuit_new = circuit_new
+M.circuit_call = circuit_call
+M.circuit_state = circuit_state
+M.circuit_reset = circuit_reset
+M.circuit_stats = circuit_stats
+M
