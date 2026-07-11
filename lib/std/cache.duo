@@ -151,10 +151,10 @@ fun ttl_purge_expired(c: any): i64
     removed = 0
     now = os.clock()
     keys_to_remove = {}
-    for k, _ in c.data
-        ts = c.timestamps[k]
+    for tk, _tv in c.data
+        ts = c.timestamps[tk]
         if ts ~= nil and (now - ts) > c.ttl then
-            keys_to_remove[rawlen(keys_to_remove) + 1] = k
+            keys_to_remove[rawlen(keys_to_remove) + 1] = tk
         end
     end
     i = 1
@@ -170,7 +170,7 @@ end
 fun ttl_size(c: any): i64
     if c == nil then return 0 end
     n = 0
-    for _, _ in c.data
+    for _ck, _cv in c.data
         n = n + 1
     end
     n

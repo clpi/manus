@@ -951,6 +951,12 @@ pub const CodeGen = struct {
         if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
             self.p("#define _XOPEN_SOURCE 600\n", .{});
         }
+        // Emit user @cinclude directives before standard headers so FFI
+        // declarations can use library types.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .cinclude) continue;
+            self.p("#include <{s}>\n", .{stmt.cinclude.header});
+        }
         self.p("#include <stddef.h>\n", .{});
         self.p("#include <stdint.h>\n", .{});
         self.p("#include <stdbool.h>\n", .{});
@@ -3718,6 +3724,7 @@ pub const CodeGen = struct {
     fn emit_stmt(self: *CodeGen, stmt: *const ast.Stmt) E!void {
         switch (stmt.*) {
             .macro_def => {},
+            .cinclude => {},
             .local_decl => |*ld| {
                 for (ld.names) |*lname| try self.note_local(lname.ident);
                 // If any name in this declaration is annotated with a

@@ -179,10 +179,10 @@ fun delete(obj: any, path: any): any
     removed
 end
 
--- get_or: like get but returns a default if the path doesn't exist.
-fun get_or(obj: any, path: any, default: any): any
+-- get_or: like get but returns a fallback if the path doesn't exist.
+fun get_or(obj: any, path: any, fallback: any): any
     result = get(obj, path)
-    if result == nil then return default end
+    if result == nil then return fallback end
     result
 end
 
@@ -233,8 +233,8 @@ end
 fun keys(obj: any): any
     flat = flatten(obj, "")
     out = {}
-    for k, _ in flat
-        out[rawlen(out) + 1] = k
+    for pk, _pv in flat
+        out[rawlen(out) + 1] = pk
     end
     out
 end

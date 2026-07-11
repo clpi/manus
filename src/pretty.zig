@@ -611,6 +611,7 @@ pub const PrettyPrinter = struct {
             .enum_def => |ed| try self.printEnumDef(&ed),
             .concept_def => |cd| try self.printConceptDef(&cd),
             .alias_def => {}, // skip alias defs in pretty-print
+            .cinclude => |ci| try self.print("@cinclude(\"{s}\")\n", .{ci.header}),
         }
     }
 

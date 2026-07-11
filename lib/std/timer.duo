@@ -135,7 +135,10 @@ fun measure(fn_ref: any): any
     t = new_timer()
     r = fn_ref()
     d = stop(t)
-    {result = r, elapsed = d}
+    out = {}
+    out.result = r
+    out.elapsed = d
+    out
 end
 
 -- time_it: run fn `n` times and return {total, avg, min, max}.
@@ -160,14 +163,14 @@ fun time_it(n: any, fn_ref: any): any
         total = total + times[j]
         j = j + 1
     end
-    {
-        iterations = n,
-        total = total,
-        avg = total / n,
-        min = min_val,
-        max = max_val,
-        times = times
-    }
+    out = {}
+    out.iterations = n
+    out.total = total
+    out.avg = total / n
+    out.min = min_val
+    out.max = max_val
+    out.times = times
+    out
 end
 
 -- bench: run fn until at least `min_seconds` have elapsed, report stats.
@@ -193,14 +196,14 @@ fun bench(fn_ref: any, min_seconds: any): any
         if times[i] > max_val then max_val = times[i] end
         i = i + 1
     end
-    {
-        iterations = count,
-        total = total,
-        avg = total / count,
-        min = min_val,
-        max = max_val,
-        ops_per_sec = count / total
-    }
+    out = {}
+    out.iterations = count
+    out.total = total
+    out.avg = total / count
+    out.min = min_val
+    out.max = max_val
+    out.ops_per_sec = count / total
+    out
 end
 
 -- compare: run two functions and report which is faster.
@@ -219,12 +222,12 @@ fun compare(name_a: any, fn_a: any, name_b: any, fn_b: any, n: any): any
         faster = name_b
         if a.avg > 0 then ratio = b.avg / a.avg end
     end
-    {
-        [name_a] = a,
-        [name_b] = b,
-        faster = faster,
-        ratio = ratio
-    }
+    out = {}
+    out[name_a] = a
+    out[name_b] = b
+    out.faster = faster
+    out.ratio = ratio
+    out
 end
 
 M = {}

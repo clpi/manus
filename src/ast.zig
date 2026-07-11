@@ -517,6 +517,7 @@ pub const Stmt = union(enum) {
     concept_def: ConceptDef,
     alias_def: AliasDef,
     macro_def: MacroDef,
+    cinclude: struct { loc: Loc, header: []const u8 },
 };
 
 /// A user-defined table type (like a class/struct), declared with `alias`.

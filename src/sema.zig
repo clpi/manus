@@ -1172,6 +1172,7 @@ pub const Sema = struct {
                 _ = ad;
             },
             .macro_def => {},
+            .cinclude => {},
         }
     }
 

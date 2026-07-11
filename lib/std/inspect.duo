@@ -24,7 +24,7 @@ fun std_inspect_hash(value: any): str
     if t ~= "table" then return t .. ":" .. tostring(value) end
     parts = {}
     ks = {}
-    for k, _ in value
+    for k, v in value
         ks[rawlen(ks) + 1] = tostring(k)
     end
     std_inspect_sort_strings(ks)
@@ -163,21 +163,21 @@ fun deep_equal(a: any, b: any): bool
             if not deep_equal(a[i], b[i]) then return false end
             i = i + 1
         end
-        for k, _ in a
-            if type(k) ~= "number" then
-                if not deep_equal(a[k], b[k]) then return false end
+        for ka, _va in a
+            if type(ka) ~= "number" then
+                if not deep_equal(a[ka], b[ka]) then return false end
             end
         end
-        for k, _ in b
-            if a[k] == nil then return false end
+        for kb, _vb in b
+            if a[kb] == nil then return false end
         end
         return true
     end
-    for k, v in a
-        if not deep_equal(v, b[k]) then return false end
+    for kc, vc in a
+        if not deep_equal(vc, b[kc]) then return false end
     end
-    for k, _ in b
-        if a[k] == nil then return false end
+    for kd, _vd in b
+        if a[kd] == nil then return false end
     end
     true
 end
@@ -225,7 +225,7 @@ fun type_name(value: any): str
         n = rawlen(value)
         if n > 0 then return "array[" .. tostring(n) .. "]" end
         count = 0
-        for _, _ in value
+        for _ck, _cv in value
             count = count + 1
         end
         if count > 0 then return "table[" .. tostring(count) .. "]" end
@@ -243,7 +243,7 @@ fun size(value: any): i64
         n = rawlen(value)
         if n > 0 then return n end
         count = 0
-        for _, _ in value
+        for _ck, _cv in value
             count = count + 1
         end
         return count
@@ -255,8 +255,8 @@ end
 fun keys_of(t: any): any
     out = {}
     if t == nil or type(t) ~= "table" then return out end
-    for k, _ in t
-        out[rawlen(out) + 1] = tostring(k)
+    for kk, _kv in t
+        out[rawlen(out) + 1] = tostring(kk)
     end
     std_inspect_sort_strings(out)
     out
@@ -273,7 +273,7 @@ fun summary(value: any): str
     end
     count = 0
     first_key = nil
-    for k, _ in value
+    for k, v in value
         count = count + 1
         if first_key == nil then first_key = tostring(k) end
     end

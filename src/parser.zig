@@ -361,6 +361,17 @@ pub const Parser = struct {
     }
 
     fn parse_at_starts_attribute_decl(self: *Parser) ParseError!bool {
+        // @cinclude is a standalone top-level statement, not attached to a decl.
+        // Check for it first before the normal attribute detection.
+        const saved = self.lex.saveState();
+        if ((try self.pk()).kind == .at) {
+            _ = try self.adv(); // consume @
+            if ((try self.pk()).kind == .name and std.mem.eql(u8, (try self.pk()).text, "cinclude")) {
+                self.lex.restoreState(saved);
+                return true;
+            }
+            self.lex.restoreState(saved);
+        }
         while ((try self.pk()).kind == .at) {
             _ = try self.adv();
             const attr_name = try self.expect(.name);
@@ -393,6 +404,7 @@ pub const Parser = struct {
         const known = [_][]const u8{
             "align",
             "arc",
+            "cinclude",
             "cold",
             "concurrent",
             "deprecated",
@@ -454,6 +466,13 @@ pub const Parser = struct {
         }
         const attrs_slice = try attrs.toOwnedSlice(self.alloc);
 
+        // Handle standalone @cinclude("header.h") as a top-level statement.
+        if (attrs_slice.len == 1 and std.mem.eql(u8, attrs_slice[0].name, "cinclude")) {
+            const raw = attrs_slice[0].args orelse "";
+            const header = strip_quotes(raw);
+            return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
+        }
+
         const tok = try self.pk();
         if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
             return self.parse_alias_def_with_attrs(attrs_slice);
@@ -473,6 +492,14 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             },
         };
+    }
+
+    fn strip_quotes(raw: []const u8) []const u8 {
+        const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+        if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+            return trimmed[1 .. trimmed.len - 1];
+        }
+        return trimmed;
     }
 
     /// Parse a `local` or `global` declaration that has been preceded by
