@@ -1,0 +1,386 @@
+-- std.ml.quant — Quantization helpers (f16, int8, int4, GPTQ-style)
+
+Tensor = req "std.ml.tensor"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Symmetric INT8 Quantization
+-- ═══════════════════════════════════════════════════════════════
+
+fun quantize_symmetric(t, bits): any
+    if bits == nil then bits = 8 end
+    max_abs = 0.0
+    for i = 1, t.size
+        v = math.abs(t.data[i])
+        if v > max_abs then max_abs = v end
+    end
+
+    if bits == 8 then
+        scale = max_abs / 127.0
+    elseif bits == 4 then
+        scale = max_abs / 7.0
+    else
+        scale = max_abs / ((2 ^ (bits - 1)) - 1)
+    end
+
+    if scale < 1e-8 then scale = 1.0 end
+
+    q = {}
+    q.rows = t.rows
+    q.cols = t.cols
+    q.size = t.size
+    q.scale = scale
+    q.zero_point = 0
+    q.bits = bits
+    q.dtype = "int" .. tostring(bits)
+    q.data = {}
+
+    if bits == 8 then
+        for i = 1, t.size
+            q.data[i] = math.floor(t.data[i] / scale + 0.5)
+            q.data[i] = math.max(-128, math.min(127, q.data[i]))
+        end
+    elseif bits == 4 then
+        -- Pack two 4-bit values per byte
+        for i = 1, t.size, 2
+            val1 = math.floor(t.data[i] / scale + 0.5)
+            val1 = math.max(-8, math.min(7, val1))
+            val2 = 0
+            if i + 1 <= t.size then
+                val2 = math.floor(t.data[i + 1] / scale + 0.5)
+                val2 = math.max(-8, math.min(7, val2))
+            end
+            -- Pack: val1 in low nibble, val2 in high nibble
+            q.data[math.floor((i - 1) / 2) + 1] = (val2 << 4) | (val1 & 0x0F)
+        end
+    end
+
+    q
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Asymmetric Quantization (zero-point)
+-- ═══════════════════════════════════════════════════════════════
+
+fun quantize_asymmetric(t, bits): any
+    if bits == nil then bits = 8 end
+
+    -- Find min/max
+    min_val = t.data[1]
+    max_val = t.data[1]
+    for i = 2, t.size
+        if t.data[i] < min_val then min_val = t.data[i] end
+        if t.data[i] > max_val then max_val = t.data[i] end
+    end
+
+    qmax = (2 ^ bits) - 1
+    range = max_val - min_val
+    if range < 1e-8 then range = 1.0 end
+
+    scale = range / qmax
+    zero_point = math.floor(-min_val / scale + 0.5)
+    zero_point = math.max(0, math.min(qmax, zero_point))
+
+    q = {}
+    q.rows = t.rows
+    q.cols = t.cols
+    q.size = t.size
+    q.scale = scale
+    q.zero_point = zero_point
+    q.bits = bits
+    q.dtype = "uint" .. tostring(bits)
+    q.data = {}
+
+    for i = 1, t.size
+        val = math.floor(t.data[i] / scale + zero_point + 0.5)
+        q.data[i] = math.max(0, math.min(qmax, val))
+    end
+
+    q
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Dequantization
+-- ═══════════════════════════════════════════════════════════════
+
+fun dequantize(q): any
+    result = {}
+    result.rows = q.rows
+    result.cols = q.cols
+    result.size = q.size
+    result.data = {}
+
+    if q.bits == 4 then
+        -- Unpack 4-bit values
+        idx = 1
+        for i = 1, #q.data
+            byte = q.data[i]
+            val1 = (byte & 0x0F)
+            if val1 >= 8 then val1 -= 16 end
+            result.data[idx] = val1 * q.scale
+            idx += 1
+
+            if idx <= q.size then
+                val2 = (byte >> 4) & 0x0F
+                if val2 >= 8 then val2 -= 16 end
+                result.data[idx] = val2 * q.scale
+                idx += 1
+            end
+        end
+    else
+        for i = 1, q.size
+            if q.dtype and string.sub(q.dtype, 1, 4) == "uint" then
+                result.data[i] = (q.data[i] - q.zero_point) * q.scale
+            else
+                result.data[i] = q.data[i] * q.scale
+            end
+        end
+    end
+
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- FP16 (Half Precision)
+-- ═══════════════════════════════════════════════════════════════
+
+fun fp16_encode(value: f64): i64
+    -- Simple IEEE 754 half-precision encoding
+    sign = 0
+    if value < 0 then
+        sign = 1
+        value = -value
+    end
+
+    if value == 0 then
+        return sign << 15
+    end
+
+    -- Find exponent
+    exp = 0
+    mantissa = value
+    while mantissa >= 2.0
+        mantissa /= 2.0
+        exp += 1
+    end
+    while mantissa < 1.0
+        mantissa *= 2.0
+        exp -= 1
+    end
+
+    -- Bias exponent
+    exp += 15
+    if exp <= 0 then
+        -- Denormalized
+        mantissa *= (2 ^ (1 - exp))
+        exp = 0
+    elseif exp >= 31 then
+        -- Overflow to infinity
+        return (sign << 15) | 0x7C00
+    end
+
+    -- Convert mantissa to 10-bit fraction
+    mantissa -= 1.0
+    mantissa = math.floor(mantissa * 1024 + 0.5)
+
+    return (sign << 15) | (exp << 10) | mantissa
+end
+
+fun fp16_decode(bits: i64): f64
+    sign = (bits >> 15) & 1
+    exp = (bits >> 10) & 0x1F
+    mantissa = bits & 0x3FF
+
+    if exp == 0 then
+        if mantissa == 0 then
+            return sign == 0 and 0.0 or -0.0
+        end
+        -- Denormalized
+        value = mantissa / 1024.0 * (2 ^ -14)
+    elseif exp == 31 then
+        if mantissa == 0 then
+            return sign == 0 and 1e30 or -1e30
+        end
+        return 0  -- NaN
+    else
+        value = (1.0 + mantissa / 1024.0) * (2 ^ (exp - 15))
+    end
+
+    if sign == 1 then value = -value end
+    value
+end
+
+fun tensor_to_fp16(t): any
+    result = {}
+    result.rows = t.rows
+    result.cols = t.cols
+    result.size = t.size
+    result.dtype = "f16"
+    result.data = {}
+
+    for i = 1, t.size
+        result.data[i] = fp16_encode(t.data[i])
+    end
+    result
+end
+
+fun tensor_from_fp16(t): any
+    result = {}
+    result.rows = t.rows
+    result.cols = t.cols
+    result.size = t.size
+    result.dtype = "f32"
+    result.data = {}
+
+    for i = 1, t.size
+        result.data[i] = fp16_decode(t.data[i])
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GPTQ-style Quantization (block-wise)
+-- ═══════════════════════════════════════════════════════════════
+
+fun gptq_quantize(t, bits, block_size): any
+    if bits == nil then bits = 4 end
+    if block_size == nil then block_size = 128 end
+
+    q = {}
+    q.rows = t.rows
+    q.cols = t.cols
+    q.size = t.size
+    q.bits = bits
+    q.dtype = "gptq_int" .. tostring(bits)
+    q.block_size = block_size
+    q.scales = {}
+    q.zeros = {}
+    q.data = {}
+
+    -- Process in blocks
+    num_blocks = math.ceil(t.size / block_size)
+    idx = 1
+    for b = 1, num_blocks
+        block_start = (b - 1) * block_size + 1
+        block_end = math.min(b * block_size, t.size)
+
+        -- Find block min/max
+        block_min = t.data[block_start]
+        block_max = t.data[block_start]
+        for i = block_start + 1, block_end
+            if t.data[i] < block_min then block_min = t.data[i] end
+            if t.data[i] > block_max then block_max = t.data[i] end
+        end
+
+        -- Compute scale and zero-point for block
+        qmax = (2 ^ bits) - 1
+        range = block_max - block_min
+        if range < 1e-8 then range = 1.0 end
+
+        scale = range / qmax
+        zero_point = math.floor(-block_min / scale + 0.5)
+        zero_point = math.max(0, math.min(qmax, zero_point))
+
+        q.scales[b] = scale
+        q.zeros[b] = zero_point
+
+        -- Quantize block
+        for i = block_start, block_end
+            val = math.floor(t.data[i] / scale + zero_point + 0.5)
+            val = math.max(0, math.min(qmax, val))
+            q.data[idx] = val
+            idx += 1
+        end
+    end
+
+    q
+end
+
+fun gptq_dequantize(q): any
+    result = {}
+    result.rows = q.rows
+    result.cols = q.cols
+    result.size = q.size
+    result.dtype = "f32"
+    result.data = {}
+
+    block_size = q.block_size
+    num_blocks = math.ceil(q.size / block_size)
+    idx = 1
+
+    for b = 1, num_blocks
+        scale = q.scales[b]
+        zero_point = q.zeros[b]
+        block_start = (b - 1) * block_size + 1
+        block_end = math.min(b * block_size, q.size)
+
+        for i = block_start, block_end
+            result.data[i] = (q.data[idx] - zero_point) * scale
+            idx += 1
+        end
+    end
+
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Mixed-precision policy (pairs with @precision in ai_ml_native.md)
+-- ═══════════════════════════════════════════════════════════════
+
+fun amp_policy(): any
+    {
+        forward = "f16",
+        reduce = "f32",
+        master_weights = "f32",
+        gradient_checkpointing = false,
+    }
+end
+
+fun quantization_stats(q): any
+    -- Calculate compression ratio
+    original_bits = 32
+    compressed_bits = q.bits
+
+    if q.bits == 4 then
+        -- Packed 4-bit
+        compressed_bits = 4
+    end
+
+    compression_ratio = original_bits / compressed_bits
+
+    -- Estimate size in bytes
+    if q.bits == 4 then
+        size_bytes = math.ceil(q.size / 2)
+    else
+        size_bytes = q.size * math.ceil(q.bits / 8)
+    end
+
+    {
+        bits = q.bits,
+        dtype = q.dtype,
+        size = q.size,
+        size_bytes = size_bytes,
+        compression_ratio = compression_ratio,
+        block_size = q.block_size or q.size,
+    }
+end
+
+M = {}
+-- Symmetric
+M.quantize_symmetric = quantize_symmetric
+-- Asymmetric
+M.quantize_asymmetric = quantize_asymmetric
+-- Dequantize
+M.dequantize = dequantize
+-- FP16
+M.fp16_encode = fp16_encode
+M.fp16_decode = fp16_decode
+M.tensor_to_fp16 = tensor_to_fp16
+M.tensor_from_fp16 = tensor_from_fp16
+-- GPTQ
+M.gptq_quantize = gptq_quantize
+M.gptq_dequantize = gptq_dequantize
+-- AMP
+M.amp_policy = amp_policy
+-- Stats
+M.stats = quantization_stats
+M

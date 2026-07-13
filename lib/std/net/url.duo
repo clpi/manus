@@ -14,7 +14,7 @@ fun escape(s: str): str
         else
             out[rawlen(out) + 1] = string.format("%%%02X", b)
         end
-        i = i + 1
+        i += 1
     end
     table.concat(out)
 end
@@ -31,7 +31,7 @@ fun path_escape(s: str): str
         else
             out[rawlen(out) + 1] = string.format("%%%02X", b)
         end
-        i = i + 1
+        i += 1
     end
     table.concat(out)
 end
@@ -51,13 +51,13 @@ fun unescape(s: str): str
             else
                 out[rawlen(out) + 1] = ch
             end
-            i = i + 3
+            i += 3
         elseif ch == "+" then
             out[rawlen(out) + 1] = " "
-            i = i + 1
+            i += 1
         else
             out[rawlen(out) + 1] = ch
-            i = i + 1
+            i += 1
         end
     end
     table.concat(out)
@@ -75,7 +75,7 @@ fun parse_query(query: str): any
             parts[rawlen(parts) + 1] = string.sub(query, start, i - 1)
             start = i + 1
         end
-        i = i + 1
+        i += 1
     end
     parts[rawlen(parts) + 1] = string.sub(query, start)
     j = 1
@@ -93,7 +93,7 @@ fun parse_query(query: str): any
         end
         if out[k] == nil then out[k] = {} end
         out[k][rawlen(out[k]) + 1] = v
-        j = j + 1
+        j += 1
     end
     out
 end
@@ -107,7 +107,7 @@ fun encode_query(params: any): str
             i = 1
             while i <= rawlen(vs)
                 out[rawlen(out) + 1] = escape(k) .. "=" .. escape(vs[i])
-                i = i + 1
+                i += 1
             end
         else
             out[rawlen(out) + 1] = escape(k) .. "=" .. escape(vs)

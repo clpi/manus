@@ -9,6 +9,11 @@ pub const ArgMap = struct {
     entries: std.StringHashMapUnmanaged([]const u8) = .{},
 
     pub fn deinit(self: *ArgMap, alloc: std.mem.Allocator) void {
+        var it = self.entries.iterator();
+        while (it.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            alloc.free(entry.value_ptr.*);
+        }
         self.entries.deinit(alloc);
     }
 
@@ -42,6 +47,30 @@ pub fn attrNameEq(attr: ast.Attribute, name: []const u8) bool {
     return std.mem.eql(u8, attr.name, name);
 }
 
+/// `@c.emit`, `@c.include`, etc. — C interface metaprogramming under the `@` prefix.
+pub fn isCInterfaceDirective(name: []const u8) bool {
+    return std.mem.eql(u8, name, "c.emit") or
+        std.mem.eql(u8, name, "c.include") or
+        std.mem.eql(u8, name, "c.export") or
+        std.mem.eql(u8, name, "c.type") or
+        std.mem.eql(u8, name, "c.call");
+}
+
+/// Strip delimiters from `@c.emit(...)` / `@c.include(...)` argument text.
+pub fn extractCRawCode(raw: []const u8) []const u8 {
+    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+    if (trimmed.len >= 4 and std.mem.startsWith(u8, trimmed, "[[") and std.mem.endsWith(u8, trimmed, "]]")) {
+        return std.mem.trim(u8, trimmed[2 .. trimmed.len - 2], " \t\r\n");
+    }
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
+        return trimmed[1 .. trimmed.len - 1];
+    }
+    if (trimmed.len >= 2 and trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\'') {
+        return trimmed[1 .. trimmed.len - 1];
+    }
+    return trimmed;
+}
+
 pub fn attrHasPrefix(attr: ast.Attribute, prefix: []const u8) bool {
     return std.mem.startsWith(u8, attr.name, prefix);
 }
@@ -62,10 +91,44 @@ pub fn isBenchDirective(name: []const u8) bool {
     return std.mem.eql(u8, name, "bench") or std.mem.startsWith(u8, name, "bench.");
 }
 
+pub fn isTraceDirective(name: []const u8) bool {
+    return std.mem.eql(u8, name, "trace") or std.mem.startsWith(u8, name, "trace.");
+}
+
 pub fn isDebugDirective(name: []const u8) bool {
-    return std.mem.eql(u8, name, "trace") or
-        std.mem.eql(u8, name, "debug") or
-        std.mem.startsWith(u8, name, "debug.");
+    return std.mem.eql(u8, name, "debug") or
+        std.mem.startsWith(u8, name, "debug.") or
+        isTraceDirective(name);
+}
+
+pub fn attrsHaveDebug(attrs: []const ast.Attribute) bool {
+    for (attrs) |attr| {
+        if (isDebugDirective(attr.name)) return true;
+    }
+    return false;
+}
+
+/// Parsed options from `@debug({ ... })` / `@trace({ ... })` module directives.
+pub const DebugOptions = struct {
+    channels: ?[]const u8 = null,
+    scopes: ?[]const u8 = null,
+    depth: ?u32 = null,
+    message: ?[]const u8 = null,
+};
+
+pub fn parseDebugOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) ParseError!DebugOptions {
+    var opts: DebugOptions = .{};
+    for (attrs) |attr| {
+        if (!isDebugDirective(attr.name)) continue;
+        var map = try parseAttrArgs(alloc, attr.args);
+        defer map.deinit(alloc);
+        if (map.get("channels")) |v| opts.channels = try alloc.dupe(u8, v);
+        if (map.get("scopes")) |v| opts.scopes = try alloc.dupe(u8, v);
+        if (map.get("depth")) |_| opts.depth = map.getU32("depth", 8);
+        if (map.get("message")) |v| opts.message = try alloc.dupe(u8, v);
+        if (map.get("msg")) |v| opts.message = try alloc.dupe(u8, v);
+    }
+    return opts;
 }
 
 /// Whether this attribute marks a function as a test case (including @bench on tests).
@@ -176,7 +239,7 @@ fn unquote(alloc: std.mem.Allocator, raw: []const u8) ParseError![]const u8 {
 }
 
 pub fn parseTestOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) ParseError!TestOptions {
-    var opts: TestOptions = .{ .name = "test" };
+    var opts: TestOptions = .{ .name = try alloc.dupe(u8, "test") };
     var args_map: ArgMap = .{};
     defer args_map.deinit(alloc);
 
@@ -208,9 +271,18 @@ pub fn parseTestOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) 
             args_map.deinit(alloc);
             args_map = .{};
             args_map = try parseAttrArgs(alloc, raw);
-            if (args_map.get("name")) |n| opts.name = n;
-            if (args_map.get("tag")) |t| opts.tag = t;
-            if (args_map.get("message")) |m| opts.message = m;
+            if (args_map.get("name")) |n| {
+                alloc.free(opts.name);
+                opts.name = try alloc.dupe(u8, n);
+            }
+            if (args_map.get("tag")) |t| {
+                if (opts.tag) |old| alloc.free(old);
+                opts.tag = try alloc.dupe(u8, t);
+            }
+            if (args_map.get("message")) |m| {
+                if (opts.message) |old| alloc.free(old);
+                opts.message = try alloc.dupe(u8, m);
+            }
             if (args_map.get("timeout")) |t| opts.timeout_ms = std.fmt.parseInt(u32, t, 10) catch null;
             if (args_map.get("timeout_ms")) |t| opts.timeout_ms = std.fmt.parseInt(u32, t, 10) catch null;
             opts.iterations = args_map.getU32("iterations", opts.iterations);
@@ -221,6 +293,57 @@ pub fn parseTestOptions(alloc: std.mem.Allocator, attrs: []const ast.Attribute) 
     if (opts.bench and opts.iterations == 1) opts.iterations = 1000;
     if (opts.bench) opts.time = true;
     return opts;
+}
+
+/// Parse `@device(.auto)` / `@device(.metal)` argument string.
+pub fn parseDeviceTarget(args: ?[]const u8) ast.DeviceTarget {
+    const raw = std.mem.trim(u8, args orelse "", " \t\r\n");
+    if (raw.len == 0) return .auto;
+    if (std.mem.indexOf(u8, raw, ".metal") != null) return .metal;
+    if (std.mem.indexOf(u8, raw, ".cuda") != null) return .cuda;
+    if (std.mem.indexOf(u8, raw, ".webgpu") != null) return .webgpu;
+    if (std.mem.indexOf(u8, raw, ".wasm") != null) return .wasm;
+    if (std.mem.indexOf(u8, raw, ".tpu") != null) return .tpu;
+    if (std.mem.indexOf(u8, raw, ".cpu") != null) return .cpu;
+    if (std.mem.indexOf(u8, raw, ".auto") != null) return .auto;
+    return .auto;
+}
+
+pub fn parseUnrollCount(args: ?[]const u8) ?u32 {
+    const raw = std.mem.trim(u8, args orelse "", " \t\r\n()");
+    if (raw.len == 0) return null;
+    return std.fmt.parseInt(u32, raw, 10) catch null;
+}
+
+/// Apply ML-related function attributes from `@device`, `@autodiff`, etc.
+pub fn applyMlFuncAttrs(attrs: []const ast.Attribute, fb: *ast.FuncBody) void {
+    for (attrs) |attr| {
+        if (std.mem.eql(u8, attr.name, "device")) {
+            fb.device_target = parseDeviceTarget(attr.args);
+        } else if (std.mem.eql(u8, attr.name, "autodiff")) {
+            fb.autodiff = true;
+        } else if (std.mem.eql(u8, attr.name, "differentiable")) {
+            fb.differentiable = true;
+            fb.autodiff = true;
+        } else if (std.mem.eql(u8, attr.name, "profile")) {
+            fb.profile_attr = true;
+        } else if (std.mem.eql(u8, attr.name, "unroll")) {
+            fb.unroll_count = parseUnrollCount(attr.args);
+        }
+    }
+}
+
+pub fn deviceTargetName(target: ast.DeviceTarget) []const u8 {
+    return switch (target) {
+        .none => "none",
+        .cpu => "cpu",
+        .auto => "auto",
+        .metal => "metal",
+        .cuda => "cuda",
+        .webgpu => "webgpu",
+        .wasm => "wasm",
+        .tpu => "tpu",
+    };
 }
 
 pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
@@ -240,6 +363,11 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
             std.mem.eql(u8, attr.name, "packed") or
             std.mem.eql(u8, attr.name, "align") or
             std.mem.eql(u8, attr.name, "deprecated") or
+            std.mem.eql(u8, attr.name, "device") or
+            std.mem.eql(u8, attr.name, "autodiff") or
+            std.mem.eql(u8, attr.name, "differentiable") or
+            std.mem.eql(u8, attr.name, "profile") or
+            std.mem.eql(u8, attr.name, "unroll") or
             std.mem.startsWith(u8, attr.name, "concurrent") or
             std.mem.startsWith(u8, attr.name, "implements"))
         {
@@ -254,18 +382,21 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
 }
 
 pub fn validateModuleDirective(attr: ast.Attribute) ?[]const u8 {
-    if (!isBuildDirective(attr.name)) return attr.name;
-    const known = std.mem.eql(u8, attr.name, "build.project") or
-        std.mem.eql(u8, attr.name, "build.exe") or
-        std.mem.eql(u8, attr.name, "build.lib") or
-        std.mem.eql(u8, attr.name, "build.test") or
-        std.mem.eql(u8, attr.name, "build.run") or
-        std.mem.eql(u8, attr.name, "build.clean") or
-        std.mem.eql(u8, attr.name, "build.bench") or
-        std.mem.eql(u8, attr.name, "build.fmt") or
-        std.mem.eql(u8, attr.name, "build.check");
-    if (!known) return attr.name;
-    return null;
+    if (isBuildDirective(attr.name)) {
+        const known = std.mem.eql(u8, attr.name, "build.project") or
+            std.mem.eql(u8, attr.name, "build.exe") or
+            std.mem.eql(u8, attr.name, "build.lib") or
+            std.mem.eql(u8, attr.name, "build.test") or
+            std.mem.eql(u8, attr.name, "build.run") or
+            std.mem.eql(u8, attr.name, "build.clean") or
+            std.mem.eql(u8, attr.name, "build.bench") or
+            std.mem.eql(u8, attr.name, "build.fmt") or
+            std.mem.eql(u8, attr.name, "build.check");
+        if (!known) return attr.name;
+        return null;
+    }
+    if (isDebugDirective(attr.name)) return null;
+    return attr.name;
 }
 
 /// Human-readable registry of supported directives (for docs / `--help`).
@@ -274,7 +405,8 @@ pub const registry_json =
     \\ "build":["build.project","build.exe","build.lib","build.test","build.run","build.bench","build.check","build.fmt","build.clean"],
     \\ "bench":["bench","bench(iterations=N,warmup=N)"],
     \\ "time":["time","time(label=\"...\")"],
-    \\ "debug":["trace","debug","debug.log"]}
+    \\ "ml":["device(.auto|.cpu|.metal|.cuda|.webgpu|.wasm|.tpu)","autodiff","differentiable","profile","unroll(N)"],
+    \\ "debug":["trace","debug","debug.sema","debug.codegen","debug.types","debug.parse","trace.mono"]}
 ;
 
 test "directives: parse table args" {
@@ -294,8 +426,9 @@ test "directives: dotted test names" {
 test "directives: test options bench defaults" {
     const alloc = std.testing.allocator;
     const attrs = [_]ast.Attribute{.{ .name = "bench", .args = "{ iterations = 5 }" }};
-    var opts = try parseTestOptions(alloc, &attrs);
+    const opts = try parseTestOptions(alloc, &attrs);
     defer {
+        alloc.free(opts.name);
         if (opts.tag) |t| alloc.free(t);
         if (opts.message) |m| alloc.free(m);
     }

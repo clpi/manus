@@ -12,6 +12,7 @@ pub const TypeExpr = union(enum) {
     func: FuncType,
     optional: *TypeExpr, // ?T
     generic: GenericType, // T<U, V>
+    tuple: []TypeExpr, // (T, U) — multi-return value type
     /// Inline record-type literal: `{ name: T, name2: U, ... }`. This is the
     /// only mechanism for declaring a typed record in Duo. Records are
     /// structural and anonymous (no name). The codegen mints a C `struct`
@@ -99,6 +100,16 @@ pub const TypeExpr = union(enum) {
             },
             .func => false,
             .generic => false,
+            .tuple => |ta| switch (b) {
+                .tuple => |tb| blk: {
+                    if (ta.len != tb.len) break :blk false;
+                    for (ta, tb) |ea, eb| {
+                        if (!ea.eql(eb)) break :blk false;
+                    }
+                    break :blk true;
+                },
+                else => false,
+            },
         };
     }
 
@@ -143,6 +154,10 @@ pub const BinOp = enum {
     @"and",
     @"or",
     contains,
+    /// Infix `@` — matrix multiply (`a @ b`), distinct from prefix `@macro`.
+    matmul,
+    /// Pipeline operator `|>` — `x |> f` desugars to `f(x)`.
+    pipeline,
 };
 
 pub const UnOp = enum { neg, not, len, bnot, compile };
@@ -183,6 +198,18 @@ pub const Upvalue = struct {
     /// true when this upvalue is assigned to inside the closure body or shared
     /// between multiple closures. Requires heap-allocated cell for shared mutation.
     mutable: bool = false,
+};
+
+/// Compile-time device target from `@device(...)` on functions.
+pub const DeviceTarget = enum {
+    none,
+    cpu,
+    auto,
+    metal,
+    cuda,
+    webgpu,
+    wasm,
+    tpu,
 };
 
 pub const FuncBody = struct {
@@ -259,6 +286,17 @@ pub const FuncBody = struct {
     use_run_len_inline: bool = false,
     use_sparse_dot_inline: bool = false,
     use_leven_native: bool = false,
+    /// set by sema: for-loop reduction pattern — stronger vectorize pragma in codegen
+    use_simd_reduction: bool = false,
+    /// `@device(.auto|.metal|…)` — backend selection hint for ML kernels
+    device_target: DeviceTarget = .none,
+    /// `@autodiff` / `@differentiable` — gradient companion generation (stdlib hooks)
+    autodiff: bool = false,
+    differentiable: bool = false,
+    /// `@profile` — emit timing hooks around the function body
+    profile_attr: bool = false,
+    /// `@unroll(N)` — loop unroll hint for typed numeric loops
+    unroll_count: ?u32 = null,
     // set by sema for anonymous/nested functions (func_expr)
     closure_id: ?u32 = null,
     upvalues: []Upvalue = &.{},
@@ -497,6 +535,7 @@ pub const Stmt = union(enum) {
         stop: *Expr,
         step: ?*Expr,
         body: Block,
+        unroll: ?u32 = null,
     },
     gen_for: struct {
         loc: Loc,

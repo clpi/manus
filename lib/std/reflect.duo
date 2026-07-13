@@ -18,7 +18,7 @@ fun kind(v: any): str
         n = rawlen(v)
         if n > 0 then
             count = 0
-            for _ in pairs(v) do count = count + 1 end
+            for _ in pairs(v) do count += 1 end
             if count == n then return "array" end
         end
         "map"
@@ -35,7 +35,7 @@ fun size(v: any): i64
         n = rawlen(v)
         if n > 0 then return n end
         count = 0
-        for _ in pairs(v) do count = count + 1 end
+        for _ in pairs(v) do count += 1 end
         return count
     end
     if t == "string" then return string.len(v) end
@@ -145,9 +145,9 @@ fun deep_equal(a: any, b: any): bool
     if type(a) ~= "table" then return a == b end
     -- compare table key counts
     ca = 0
-    for _ in pairs(a) do ca = ca + 1 end
+    for _ in pairs(a) do ca += 1 end
     cb = 0
-    for _ in pairs(b) do cb = cb + 1 end
+    for _ in pairs(b) do cb += 1 end
     if ca ~= cb then return false end
     for k, va in pairs(a)
         vb = b[k]

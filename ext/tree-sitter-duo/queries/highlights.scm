@@ -185,3 +185,23 @@
 ; ── Comments ──────────────────────────────────────────────────────────────────
 
 (comment) @comment @spell
+
+; ── Compile-time / Metaprogramming ───────────────────────────────────────────
+
+; @(expr) — compile-time evaluation
+; @inline, @hot, @cold, @raw, @packed — compiler directives
+; @derive(...) — type attributes
+; @c.include, @c.emit, @c.export — C interface
+; @device, @autodiff — ML/hardware directives
+(attribute) @attribute
+
+; ## prefix for comptime (legacy, still supported)
+"##" @keyword.operator
+
+; Compile-time builtins called with @name(...)
+; Highlighted as special function calls
+(call_expression
+  function: (field_expression
+    object: (identifier) @_obj
+    field: (identifier) @function.builtin)
+  (#match? @_obj "^@"))

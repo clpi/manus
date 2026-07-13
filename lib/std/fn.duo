@@ -24,7 +24,7 @@ fun foldl(list: any, init: any, fn_ref: any): any
     i = 1
     while i <= rawlen(list)
         acc = fn_ref(acc, list[i])
-        i = i + 1
+        i += 1
     end
     acc
 end
@@ -36,7 +36,7 @@ fun foldr(list: any, init: any, fn_ref: any): any
     i = rawlen(list)
     while i >= 1
         acc = fn_ref(list[i], acc)
-        i = i - 1
+        i -= 1
     end
     acc
 end
@@ -51,7 +51,7 @@ fun map_filter(list: any, fn_ref: any): any
         if result ~= nil then
             out[rawlen(out) + 1] = result
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -65,7 +65,7 @@ fun group_by(list: any, fn_ref: any): any
         key = fn_ref(list[i])
         if groups[key] == nil then groups[key] = {} end
         groups[key][rawlen(groups[key]) + 1] = list[i]
-        i = i + 1
+        i += 1
     end
     groups
 end
@@ -82,7 +82,7 @@ fun unique_by(list: any, fn_ref: any): any
             seen[key] = true
             out[rawlen(out) + 1] = list[i]
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -95,7 +95,7 @@ fun take_while(list: any, fn_ref: any): any
     while i <= rawlen(list)
         if not fn_ref(list[i]) then break end
         out[rawlen(out) + 1] = list[i]
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -113,7 +113,7 @@ fun drop_while(list: any, fn_ref: any): any
             dropping = false
             out[rawlen(out) + 1] = list[i]
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -128,10 +128,10 @@ fun chunk(list: any, n: i64): any
         j = 0
         while j < n and i + j <= rawlen(list)
             group[rawlen(group) + 1] = list[i + j]
-            j = j + 1
+            j += 1
         end
         out[rawlen(out) + 1] = group
-        i = i + n
+        i += n
     end
     out
 end
@@ -147,7 +147,7 @@ fun interleave(a: any, b: any): any
     while i <= n
         if i <= rawlen(a) then out[rawlen(out) + 1] = a[i] end
         if i <= rawlen(b) then out[rawlen(out) + 1] = b[i] end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -165,10 +165,10 @@ fun transpose(matrix: any): any
             if matrix[r] ~= nil and rawlen(matrix[r]) >= c then
                 col[rawlen(col) + 1] = matrix[r][c]
             end
-            r = r + 1
+            r += 1
         end
         out[rawlen(out) + 1] = col
-        c = c + 1
+        c += 1
     end
     out
 end
@@ -182,7 +182,7 @@ fun count_by(list: any, fn_ref: any): any
         key = fn_ref(list[i])
         if counts[key] == nil then counts[key] = 0 end
         counts[key] = counts[key] + 1
-        i = i + 1
+        i += 1
     end
     counts
 end
@@ -198,12 +198,12 @@ fun flatten(list: any): any
             j = 1
             while j <= rawlen(item)
                 out[rawlen(out) + 1] = item[j]
-                j = j + 1
+                j += 1
             end
         else
             out[rawlen(out) + 1] = item
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -220,7 +220,7 @@ fun partition(list: any, fn_ref: any): any
         else
             no[rawlen(no) + 1] = list[i]
         end
-        i = i + 1
+        i += 1
     end
     out = {}
     out[1] = yes
@@ -240,7 +240,7 @@ fun min_by(list: any, fn_ref: any): any
             best = list[i]
             best_val = val
         end
-        i = i + 1
+        i += 1
     end
     best
 end
@@ -257,7 +257,7 @@ fun max_by(list: any, fn_ref: any): any
             best = list[i]
             best_val = val
         end
-        i = i + 1
+        i += 1
     end
     best
 end
@@ -276,9 +276,9 @@ fun sort_by(list: any, fn_ref: any): void
             if a > b then
                 list[j], list[j + 1] = list[j + 1], list[j]
             end
-            j = j + 1
+            j += 1
         end
-        i = i + 1
+        i += 1
     end
 end
 

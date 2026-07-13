@@ -112,7 +112,7 @@ local function read_shape(session: any, idx: int, is_input: bool): any
     local i = 1
     while i <= rc
         shape[i] = dims_buf[i]
-        i = i + 1
+        i += 1
     end
     shape
 end
@@ -139,9 +139,9 @@ local function flatten_array(data: any): any
                 flatten(v)
             else
                 out[oi] = v
-                oi = oi + 1
+                oi += 1
             end
-            i = i + 1
+            i += 1
         end
     end
 
@@ -222,9 +222,9 @@ local function run(session: any, inputs: any): any
     while i <= rawlen(output_shape)
         local d = output_shape[i]
         if d > 0 then
-            output_size = output_size * d
+            output_size *= d
         end
-        i = i + 1
+        i += 1
     end
 
     -- Allocate output buffer
@@ -232,7 +232,7 @@ local function run(session: any, inputs: any): any
     local oi = 1
     while oi <= output_size
         output_data[oi] = 0.0
-        oi = oi + 1
+        oi += 1
     end
 
     -- output_len is passed as a table cell (output parameter)
@@ -252,7 +252,7 @@ local function run(session: any, inputs: any): any
     local ri = 1
     while ri <= actual_len
         result_data[ri] = output_data[ri]
-        ri = ri + 1
+        ri += 1
     end
 
     local result = {}
@@ -277,7 +277,7 @@ local function info(session: any): any
             local name = read_name(handle, i, true)
             local shape = read_shape(handle, i, true)
             result.inputs[i + 1] = {name = name, shape = shape}
-            i = i + 1
+            i += 1
         end
     end
 
@@ -289,7 +289,7 @@ local function info(session: any): any
             local name = read_name(handle, i, false)
             local shape = read_shape(handle, i, false)
             result.outputs[i + 1] = {name = name, shape = shape}
-            i = i + 1
+            i += 1
         end
     end
 
@@ -319,7 +319,7 @@ local function embedding(session: any, text: str): any
     local i = 1
     while i <= n
         token_ids[i] = tonumber(string.byte(text, i))
-        i = i + 1
+        i += 1
     end
 
     -- Build the input table with the input name

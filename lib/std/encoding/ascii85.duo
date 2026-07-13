@@ -37,10 +37,10 @@ fun encode(src: str): str
             end
         else
             val = 0
-            if available >= 1 then val = val + b1 end
+            if available >= 1 then val += b1 end
             if available >= 2 then val = val * 256 + b2 end
             if available >= 3 then val = val * 256 + b3 end
-            val = val * (256 ^ (4 - available))
+            val *= (256 ^ (4 - available))
             c1 = (val / 85^4) % 85
             c2 = (val / 85^3) % 85
             c3 = (val / 85^2) % 85
@@ -52,7 +52,7 @@ fun encode(src: str): str
             out[rawlen(out) + 1] = string.sub(alphabet, c4 + 1, c4 + 1)
             out[rawlen(out) + 1] = string.sub(alphabet, c5 + 1, c5 + 1)
         end
-        i = i + 4
+        i += 4
     end
     "~<" .. table.concat(out) .. "~>"
 end
@@ -81,13 +81,13 @@ fun decode(src: str): str
         c = string.byte(src, i)
         if c == 126 then break end
         if c == 32 or c == 9 or c == 10 or c == 13 then
-            i = i + 1
+            i += 1
         elseif c == 122 then
             out[rawlen(out) + 1] = 0
             out[rawlen(out) + 1] = 0
             out[rawlen(out) + 1] = 0
             out[rawlen(out) + 1] = 0
-            i = i + 1
+            i += 1
         elseif c >= 33 and c <= 117 then
             word = ""
             for j = 0, 4
@@ -107,9 +107,9 @@ fun decode(src: str): str
             for _, b in bytes
                 out[rawlen(out) + 1] = b
             end
-            i = i + string.len(word)
+            i += string.len(word)
         else
-            i = i + 1
+            i += 1
         end
     end
     result = ""

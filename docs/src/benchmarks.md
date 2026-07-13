@@ -1,18 +1,17 @@
 # Benchmarks
 
+> **Canonical performance reference:** [`docs/performance.md`](../performance.md) — agent protocol, gap analysis, modification roadmap, and full historical ledger. Update that file after any benchmark-affecting change.
+
 Duo includes a comprehensive benchmark suite comparing Duo against C, Lua, and LuaJIT.
 
 ## Running Benchmarks
 
 ```bash
-# Build and run Duo benchmark suite
-zig build bench
-
-# Cross-language comparison (Duo + C + Lua + LuaJIT)
-zig build cross-bench
-
-# WASM runtime benchmarks (wasmtime, wasmer, wasm3, etc.)
-zig build wasm-bench
+zig build bench          # Duo vs C (40 workloads, hard gate)
+zig build ml-bench       # ML kernels vs C (soft gate)
+zig build honest-bench   # Runtime-seeded, no precomputation
+zig build cross-bench    # Duo + C + Lua + LuaJIT (needs lua, luajit)
+zig build wasm-bench     # WASM runtime comparison
 ```
 
 ## Benchmark Suite

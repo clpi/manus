@@ -9,7 +9,7 @@ fun std_slices_clip(arr: any, n: i64): any
     i = n + 1
     while i <= len
         arr[i] = nil
-        i = i + 1
+        i += 1
     end
     arr
 end
@@ -20,7 +20,7 @@ fun std_slices_clone(arr: any): any
     i = 1
     while i <= rawlen(arr)
         out[i] = arr[i]
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -35,10 +35,10 @@ fun std_slices_compact(arr: any, eq: any): any
     i = 2
     while i <= n
         if not eq(arr[i], out[j]) then
-            j = j + 1
+            j += 1
             out[j] = arr[i]
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -48,7 +48,7 @@ fun std_slices_contains(arr: any, v: any): bool
     i = 1
     while i <= rawlen(arr)
         if arr[i] == v then return true end
-        i = i + 1
+        i += 1
     end
     false
 end
@@ -58,7 +58,7 @@ fun std_slices_index(arr: any, v: any): i64
     i = 1
     while i <= rawlen(arr)
         if arr[i] == v then return i end
-        i = i + 1
+        i += 1
     end
     0 - 1
 end
@@ -68,7 +68,7 @@ fun std_slices_index_func(arr: any, f: any): i64
     i = 1
     while i <= rawlen(arr)
         if f(arr[i]) then return i end
-        i = i + 1
+        i += 1
     end
     0 - 1
 end
@@ -82,13 +82,13 @@ fun std_slices_insert(arr: any, i: i64, v: any): any
     j = 1
     while j < i
         out[j] = arr[j]
-        j = j + 1
+        j += 1
     end
     out[i] = v
     j = i
     while j <= n
         out[j + 1] = arr[j]
-        j = j + 1
+        j += 1
     end
     out
 end
@@ -103,7 +103,7 @@ fun std_slices_delete(arr: any, i: i64): any
         if j ~= i then
             out[rawlen(out) + 1] = arr[j]
         end
-        j = j + 1
+        j += 1
     end
     out
 end
@@ -116,7 +116,7 @@ fun std_slices_delete_func(arr: any, f: any): any
         if not f(arr[i]) then
             out[rawlen(out) + 1] = arr[i]
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -128,8 +128,8 @@ fun std_slices_reverse(arr: any): void
     j = n
     while i < j
         tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
-        i = i + 1
-        j = j - 1
+        i += 1
+        j -= 1
     end
 end
 
@@ -143,13 +143,13 @@ fun std_slices_replace(arr: any, i: i64, j: i64, v: any): any
     k = 1
     while k < i
         out[k] = arr[k]
-        k = k + 1
+        k += 1
     end
     out[i] = v
     k = j + 1
     while k <= n
         out[rawlen(out) + 1] = arr[k]
-        k = k + 1
+        k += 1
     end
     out
 end
@@ -183,7 +183,7 @@ fun std_slices_max(arr: any, less: any): any
     i = 2
     while i <= n
         if less(m, arr[i]) then m = arr[i] end
-        i = i + 1
+        i += 1
     end
     m
 end
@@ -196,7 +196,7 @@ fun std_slices_min(arr: any, less: any): any
     i = 2
     while i <= n
         if less(arr[i], m) then m = arr[i] end
-        i = i + 1
+        i += 1
     end
     m
 end
@@ -207,7 +207,7 @@ fun std_slices_sorted(arr: any, less: any): bool
     i = 2
     while i <= n
         if less(arr[i], arr[i - 1]) then return false end
-        i = i + 1
+        i += 1
     end
     true
 end
@@ -222,10 +222,10 @@ fun std_slices_chunk(arr: any, n: i64): any
         j = 0
         while j < n and i + j <= rawlen(arr)
             c[j + 1] = arr[i + j]
-            j = j + 1
+            j += 1
         end
         out[rawlen(out) + 1] = c
-        i = i + n
+        i += n
     end
     out
 end

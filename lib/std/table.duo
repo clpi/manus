@@ -48,7 +48,7 @@ fun std_table_contains(list: any, value: any): bool
     while i <= rawlen(list)
         v = list[i]
         if v == value then return true end
-        i = i + 1
+        i += 1
     end
     false
 end
@@ -59,7 +59,7 @@ fun std_table_index_of(list: any, value: any): any
     while i <= rawlen(list)
         v = list[i]
         if v == value then return i end
-        i = i + 1
+        i += 1
     end
     0
 end
@@ -70,7 +70,7 @@ fun std_table_reverse(list: any): any
     i = rawlen(list)
     while i >= 1
         out[rawlen(out) + 1] = list[i]
-        i = i - 1
+        i -= 1
     end
     out
 end
@@ -82,7 +82,7 @@ fun std_table_map(list: any, fn: any): any
     while i <= rawlen(list)
         v = list[i]
         out[i] = fn(v, i)
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -96,7 +96,7 @@ fun std_table_filter(list: any, fn: any): any
         if fn(v, i) then
             out[rawlen(out) + 1] = v
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -108,7 +108,7 @@ fun std_table_reduce(list: any, fn: any, init: any): any
     while i <= rawlen(list)
         v = list[i]
         acc = fn(acc, v, i)
-        i = i + 1
+        i += 1
     end
     acc
 end
@@ -135,7 +135,7 @@ fun std_table_slice(t: any, start_idx: any, end_idx: any): any
     i = start_idx
     while i <= end_idx
         out[rawlen(out) + 1] = t[i]
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -183,8 +183,8 @@ fun std_table_count(list: any, fn: any): i64
     if fn == nil then return rawlen(list) end
     i = 1
     while i <= rawlen(list)
-        if fn(list[i]) then c = c + 1 end
-        i = i + 1
+        if fn(list[i]) then c += 1 end
+        i += 1
     end
     c
 end

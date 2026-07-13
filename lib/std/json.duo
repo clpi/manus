@@ -51,7 +51,7 @@ fun json_escape(s: any): str
         else
             out[rawlen(out) + 1] = string.sub(s, i, i)
         end
-        i = i + 1
+        i += 1
     end
     table.concat(out)
 end
@@ -76,7 +76,7 @@ fun encode(val: any): str
             i = 1
             while val[i] ~= nil
                 parts[rawlen(parts) + 1] = encode(val[i])
-                i = i + 1
+                i += 1
             end
             return "[" .. table.concat(parts, ",") .. "]"
         end
@@ -124,7 +124,7 @@ fun json_hex4(s): i64
             d = b - 87
         end
         v = v * 16 + d
-        i = i + 1
+        i += 1
     end
     v
 end

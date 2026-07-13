@@ -42,8 +42,8 @@ fun encode_u64_le(v: i64): str
     i = 0
     while i < 8
         parts[rawlen(parts) + 1] = string.char(v % 256)
-        v = v / 256
-        i = i + 1
+        v /= 256
+        i += 1
     end
     table.concat(parts)
 end
@@ -54,8 +54,8 @@ fun encode_u64_be(v: i64): str
     i = 0
     while i < 8
         parts[8 - i] = string.char(v % 256)
-        v = v / 256
-        i = i + 1
+        v /= 256
+        i += 1
     end
     table.concat(parts)
 end
@@ -96,7 +96,7 @@ fun decode_u64_le(s: str): i64
     i = 8
     while i >= 1
         v = v * 256 + string.byte(s, i)
-        i = i - 1
+        i -= 1
     end
     v
 end
@@ -107,7 +107,7 @@ fun decode_u64_be(s: str): i64
     i = 1
     while i <= 8
         v = v * 256 + string.byte(s, i)
-        i = i + 1
+        i += 1
     end
     v
 end
@@ -143,7 +143,7 @@ fun encode_varint(v: i64): str
     out = {}
     while v >= 128
         out[rawlen(out) + 1] = string.char((v % 128) + 128)
-        v = v / 128
+        v /= 128
     end
     out[rawlen(out) + 1] = string.char(v)
     table.concat(out)
@@ -158,12 +158,12 @@ fun decode_varint(s: str, offset: i64): any
     i = offset
     while i <= string.len(s)
         b = string.byte(s, i)
-        v = v + ((b % 128) << shift)
-        i = i + 1
+        v += ((b % 128) << shift)
+        i += 1
         if b < 128 then
             return v, i, true
         end
-        shift = shift + 7
+        shift += 7
     end
     return 0, offset, false
 end

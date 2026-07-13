@@ -1,0 +1,284 @@
+-- std.mem — Enhanced memory primitives: ring buffer, mmap wrapper, virtual memory arena
+-- Extends the existing mem.duo with advanced memory management for runtime and networking.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Ring Buffer (lock-free SPSC for producer-consumer patterns)
+-- ═══════════════════════════════════════════════════════════════
+
+fun ring_new(capacity: i64): any
+    -- Round up to power of two for efficient modulo
+    actual = 1
+    while actual < capacity
+        actual *= 2
+    end
+    {
+        buf = {},
+        capacity = actual,
+        mask = actual - 1,
+        read_pos = 0,
+        write_pos = 0,
+    }
+end
+
+fun ring_push(rb: any, value: any): bool
+    wp = rb.write_pos
+    rp = rb.read_pos
+    -- Check if full
+    if wp - rp >= rb.capacity then return false end
+    rb.buf[(wp & rb.mask) + 1] = value
+    rb.write_pos = wp + 1
+    true
+end
+
+fun ring_pop(rb: any): any
+    rp = rb.read_pos
+    if rp >= rb.write_pos then return nil end
+    val = rb.buf[(rp & rb.mask) + 1]
+    rb.buf[(rp & rb.mask) + 1] = nil  -- help GC
+    rb.read_pos = rp + 1
+    val
+end
+
+fun ring_peek(rb: any): any
+    rp = rb.read_pos
+    if rp >= rb.write_pos then return nil end
+    rb.buf[(rp & rb.mask) + 1]
+end
+
+fun ring_len(rb: any): i64
+    rb.write_pos - rb.read_pos
+end
+
+fun ring_free(rb: any): i64
+    rb.capacity - (rb.write_pos - rb.read_pos)
+end
+
+fun ring_is_empty(rb: any): bool
+    rb.write_pos == rb.read_pos
+end
+
+fun ring_is_full(rb: any): bool
+    rb.write_pos - rb.read_pos >= rb.capacity
+end
+
+fun ring_drain(rb: any, max: i64): any
+    out = {}
+    count = 0
+    while count < max
+        val = ring_pop(rb)
+        if val == nil then break end
+        out[#out + 1] = val
+        count += 1
+    end
+    out
+end
+
+fun ring_clear(rb: any): void
+    rb.buf = {}
+    rb.read_pos = 0
+    rb.write_pos = 0
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Double Buffer (swap between read/write buffers)
+-- ═══════════════════════════════════════════════════════════════
+
+fun double_buffer_new(): any
+    {
+        front = {},
+        back = {},
+        read_idx = 1,  -- 1 = front, 2 = back
+    }
+end
+
+fun double_buffer_swap(db: any): void
+    if db.read_idx == 1 then
+        db.read_idx = 2
+    else
+        db.read_idx = 1
+    end
+end
+
+fun double_buffer_write(db: any, data: any): void
+    if db.read_idx == 1 then
+        db.back = data
+    else
+        db.front = data
+    end
+end
+
+fun double_buffer_read(db: any): any
+    if db.read_idx == 1 then
+        return db.front
+    end
+    db.back
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory Pool (pre-allocated fixed-size blocks)
+-- ═══════════════════════════════════════════════════════════════
+
+fun mem_pool_new(block_size: i64, block_count: i64): any
+    blocks = {}
+    i = 0
+    while i < block_count
+        blocks[i + 1] = {data = {}, in_use = false, id = i}
+        i += 1
+    end
+    {
+        block_size = block_size,
+        block_count = block_count,
+        blocks = blocks,
+        free_count = block_count,
+        alloc_count = 0,
+    }
+end
+
+fun mem_pool_alloc(pool: any): any
+    i = 1
+    while i <= pool.block_count
+        if not pool.blocks[i].in_use then
+            pool.blocks[i].in_use = true
+            pool.free_count -= 1
+            pool.alloc_count += 1
+            return pool.blocks[i]
+        end
+        i += 1
+    end
+    nil  -- out of blocks
+end
+
+fun mem_pool_free(pool: any, block: any): void
+    if block == nil then return end
+    block.in_use = false
+    block.data = {}
+    pool.free_count += 1
+    pool.alloc_count -= 1
+end
+
+fun mem_pool_stats(pool: any): any
+    {
+        total = pool.block_count,
+        free = pool.free_count,
+        allocated = pool.alloc_count,
+        utilization = pool.alloc_count / pool.block_count,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Slab Allocator (size-segregated pools for different object sizes)
+-- ═══════════════════════════════════════════════════════════════
+
+fun slab_allocator_new(): any
+    {
+        slabs = {},
+        total_allocated = 0,
+    }
+end
+
+fun slab_alloc(sa: any, size_class: i64, count: i64): any
+    if sa.slabs[size_class] == nil then
+        sa.slabs[size_class] = mem_pool_new(size_class, count)
+    end
+    mem_pool_alloc(sa.slabs[size_class])
+end
+
+fun slab_free(sa: any, size_class: i64, block: any): void
+    if sa.slabs[size_class] == nil then return end
+    mem_pool_free(sa.slabs[size_class], block)
+end
+
+fun slab_stats(sa: any): any
+    stats = {}
+    for size_class, pool in sa.slabs
+        stats[size_class] = mem_pool_stats(pool)
+    end
+    stats
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Virtual Memory Arena (bump allocator with commit/decommit)
+-- ═══════════════════════════════════════════════════════════════
+
+fun vmem_arena_new(initial_pages: i64, max_pages: i64): any
+    page_size = 4096
+    {
+        page_size = page_size,
+        max_pages = max_pages,
+        committed_pages = initial_pages,
+        used_bytes = 0,
+        pages = {},
+        total_bytes = initial_pages * page_size,
+    }
+end
+
+fun vmem_arena_alloc(arena: any, size: i64): any
+    -- Align to 8 bytes
+    aligned = math.ceil(size / 8) * 8
+
+    -- Check if we need more pages
+    if arena.used_bytes + aligned > arena.total_bytes then
+        needed = math.ceil((arena.used_bytes + aligned - arena.total_bytes) / arena.page_size)
+        arena.committed_pages = arena.committed_pages + needed
+        if arena.committed_pages > arena.max_pages then
+            return nil
+        end
+        arena.total_bytes = arena.committed_pages * arena.page_size
+    end
+
+    offset = arena.used_bytes
+    arena.used_bytes += aligned
+    {offset = offset, size = aligned}
+end
+
+fun vmem_arena_reset(arena: any): void
+    arena.used_bytes = 0
+end
+
+fun vmem_arena_stats(arena: any): any
+    {
+        used_bytes = arena.used_bytes,
+        total_bytes = arena.total_bytes,
+        committed_pages = arena.committed_pages,
+        max_pages = arena.max_pages,
+        utilization = arena.used_bytes / arena.total_bytes,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Ring Buffer
+M.ring_new = ring_new
+M.ring_push = ring_push
+M.ring_pop = ring_pop
+M.ring_peek = ring_peek
+M.ring_len = ring_len
+M.ring_free = ring_free
+M.ring_is_empty = ring_is_empty
+M.ring_is_full = ring_is_full
+M.ring_drain = ring_drain
+M.ring_clear = ring_clear
+-- Double Buffer
+M.double_buffer_new = double_buffer_new
+M.double_buffer_swap = double_buffer_swap
+M.double_buffer_write = double_buffer_write
+M.double_buffer_read = double_buffer_read
+-- Memory Pool
+M.mem_pool_new = mem_pool_new
+M.mem_pool_alloc = mem_pool_alloc
+M.mem_pool_free = mem_pool_free
+M.mem_pool_stats = mem_pool_stats
+-- Slab Allocator
+M.slab_allocator_new = slab_allocator_new
+M.slab_alloc = slab_alloc
+M.slab_free = slab_free
+M.slab_stats = slab_stats
+-- Virtual Memory Arena
+M.vmem_arena_new = vmem_arena_new
+M.vmem_arena_alloc = vmem_arena_alloc
+M.vmem_arena_reset = vmem_arena_reset
+M.vmem_arena_stats = vmem_arena_stats
+M

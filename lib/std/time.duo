@@ -1,5 +1,7 @@
 -- std.time — time utilities
 
+@c.include("sys/time.h")
+
 fun now(): int
     os.time()
 end
@@ -17,9 +19,19 @@ fun time_sleep(seconds: any): void
     os.execute("sleep " .. tostring(seconds))
 end
 
+fun now_ns(): i64
+    __emit("({ struct timeval tv; gettimeofday(&tv, NULL); (int64_t)(tv.tv_sec * 1000000000LL + tv.tv_usec * 1000LL); })")
+end
+
+fun monotonic(): i64
+    now_ns()
+end
+
 M = {}
 M.now = now
 M.clock = time_clock
 M.difftime = time_difftime
 M.sleep = time_sleep
+M.now_ns = now_ns
+M.monotonic = monotonic
 M

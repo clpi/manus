@@ -56,17 +56,17 @@ print("is method 'greet': " .. tostring(type(person.greet) == "function"))
 fun clone(t)
     if type(t) ~= "table" then return t end
     c = {}
-    for k, v in pairs(t) do c[k] = v end
+    for k, v in t do c[k] = v end
     c
 end
 
 fun shallow_eq(a, b): bool
     if a == b then return true end
     if type(a) ~= "table" or type(b) ~= "table" then return false end
-    for k, v in pairs(a) do
+    for k, v in a do
         if b[k] ~= v then return false end
     end
-    for k, _ in pairs(b) do
+    for k, _ in b do
         if a[k] == nil then return false end
     end
     true

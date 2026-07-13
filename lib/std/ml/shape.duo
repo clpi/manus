@@ -1,0 +1,48 @@
+-- std.ml.shape — Compile-time-friendly shape helpers (const dims + runtime checks)
+--
+-- `Tensor[M,N,T]` types are resolved in the compiler; use these helpers for runtime bundles and asserts.
+
+fun assert_matmul(a_rows, a_cols, b_rows, b_cols)
+    assert(a_cols == b_rows, string.format(
+        "matmul shape mismatch: (%d,%d) @ (%d,%d)", a_rows, a_cols, b_rows, b_cols))
+end
+
+fun assert_broadcast(a_rows, a_cols, b_rows, b_cols)
+    ok = (a_rows == b_rows and a_cols == b_cols) or
+         (a_rows == 1 and a_cols == b_cols) or
+         (a_rows == b_rows and a_cols == 1) or
+         (a_rows == 1 and b_cols == 1)
+    assert(ok, "broadcast incompatible shapes")
+end
+
+fun numel(rows, cols): i64
+    return rows * cols
+end
+
+-- MNIST-style MLP shape bundle
+fun mnist_mlp(): any
+    return {
+        input = { rows = 784, cols = 1 },
+        hidden1 = { rows = 256, cols = 1 },
+        hidden2 = { rows = 128, cols = 1 },
+        output = { rows = 10, cols = 1 },
+    }
+end
+
+-- Transformer block shape template (batch, seq, dim)
+fun transformer_block(heads, dim): any
+    return {
+        heads = heads,
+        dim = dim,
+        head_dim = dim / heads,
+        ffn_dim = dim * 4,
+    }
+end
+
+M = {}
+M.assert_matmul = assert_matmul
+M.assert_broadcast = assert_broadcast
+M.numel = numel
+M.mnist_mlp = mnist_mlp
+M.transformer_block = transformer_block
+M

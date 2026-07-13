@@ -387,6 +387,7 @@ pub fn needsArc(t: RT) bool {
         .bool, .void, .nil, .never => false,
         .v4f64, .v4i64, .v8f32, .v8i32 => false,
         .any => false, // dynamic values carry their own runtime header
+        .tensor => false, // tensor is a value type (dims are compile-time)
         .str, .array, .pointer, .func, .@"struct" => true,
         .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
     };

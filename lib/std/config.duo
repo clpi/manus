@@ -13,7 +13,7 @@ fun deep_get(t: any, key: any): any
     while i <= rawlen(parts)
         if current == nil then return nil end
         current = current[parts[i]]
-        i = i + 1
+        i += 1
     end
     current
 end
@@ -33,7 +33,7 @@ fun deep_set(t: any, key: any, value: any): void
             current[parts[i]] = {}
         end
         current = current[parts[i]]
-        i = i + 1
+        i += 1
     end
     current[parts[rawlen(parts)]] = value
 end
@@ -198,7 +198,7 @@ fun require_keys(cfg: any, keys: any): any
         if not config_has(cfg, keys[i]) then
             missing[rawlen(missing) + 1] = keys[i]
         end
-        i = i + 1
+        i += 1
     end
     missing
 end
@@ -219,7 +219,7 @@ fun config_to_string(cfg: any): str
     while i <= rawlen(all_keys)
         val = config_get(cfg, all_keys[i])
         parts[rawlen(parts) + 1] = all_keys[i] .. " = " .. tostring(val)
-        i = i + 1
+        i += 1
     end
     table.sort(parts)
     table.concat(parts, "\n")

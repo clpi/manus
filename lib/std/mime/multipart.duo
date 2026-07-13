@@ -34,7 +34,7 @@ local function next_part(r)
             local d1, e = string.find(r.data, sep, pos, true)
             if e == nil then break end
             if string.sub(r.data, e + 1, e + 1) == "-" then break end
-            if string.sub(r.data, e + 1, e + 1) == "\r" then e = e + 2 else e = e + 1 end
+            if string.sub(r.data, e + 1, e + 1) == "\r" then e += 2 else e += 1 end
             local d2, hdr_end = string.find(r.data, "\r\n\r\n", e, true)
             if hdr_end == nil then d2, hdr_end = string.find(r.data, "\n\n", e, true) end
             if hdr_end == nil then break end

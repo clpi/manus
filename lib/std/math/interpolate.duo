@@ -1,0 +1,377 @@
+-- std.math.interpolate — Interpolation and easing functions
+-- For animations, transitions, and smooth value generation.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Linear Interpolation
+-- ═══════════════════════════════════════════════════════════════
+
+fun lerp(a: f64, b: f64, t: f64): f64
+    a + (b - a) * t
+end
+
+fun lerp_clamped(a: f64, b: f64, t: f64): f64
+    t = math.max(0, math.min(1, t))
+    a + (b - a) * t
+end
+
+fun inverse_lerp(a: f64, b: f64, value: f64): f64
+    if math.abs(b - a) < 1e-10 then return 0 end
+    (value - a) / (b - a)
+end
+
+fun remap(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64): f64
+    t = inverse_lerp(from_min, from_max, value)
+    lerp(to_min, to_max, t)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Vector Interpolation
+-- ═══════════════════════════════════════════════════════════════
+
+fun lerp_vec2(a: any, b: any, t: f64): any
+    {
+        x = lerp(a.x, b.x, t),
+        y = lerp(a.y, b.y, t),
+    }
+end
+
+fun lerp_vec3(a: any, b: any, t: f64): any
+    {
+        x = lerp(a.x, b.x, t),
+        y = lerp(a.y, b.y, t),
+        z = lerp(a.z, b.z, t),
+    }
+end
+
+fun lerp_vec4(a: any, b: any, t: f64): any
+    {
+        x = lerp(a.x, b.x, t),
+        y = lerp(a.y, b.y, t),
+        z = lerp(a.z, b.z, t),
+        w = lerp(a.w, b.w, t),
+    }
+end
+
+fun lerp_color(a: any, b: any, t: f64): any
+    {
+        r = math.floor(lerp(a.r, b.r, t)),
+        g = math.floor(lerp(a.g, b.g, t)),
+        b = math.floor(lerp(a.b, b.b, t)),
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Spline Interpolation
+-- ═══════════════════════════════════════════════════════════════
+
+fun cubic_lerp(a: f64, b: f64, c: f64, d: f64, t: f64): f64
+    t2 = t * t
+    t3 = t2 * t
+    a * (-0.5 * t3 + t2 - 0.5 * t)
+        + b * (1.5 * t3 - 2.5 * t2 + 1)
+        + c * (-1.5 * t3 + 2 * t2 + 0.5 * t)
+        + d * (0.5 * t3 - 0.5 * t2)
+end
+
+fun catmull_rom(points: any, t: f64): f64
+    n = #points
+    if n < 4 then return 0 end
+
+    segment = t * (n - 1)
+    idx = math.floor(segment)
+    frac = segment - idx
+
+    if idx < 0 then idx = 0 end
+    if idx > n - 4 then idx = n - 4 end
+
+    p0 = points[idx + 1]
+    p1 = points[idx + 2]
+    p2 = points[idx + 3]
+    p3 = points[idx + 4]
+
+    cubic_lerp(p0, p1, p2, p3, frac)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Easing Functions
+-- ═══════════════════════════════════════════════════════════════
+
+fun ease_linear(t: f64): f64
+    t
+end
+
+fun ease_in_quad(t: f64): f64
+    t * t
+end
+
+fun ease_out_quad(t: f64): f64
+    t * (2 - t)
+end
+
+fun ease_in_out_quad(t: f64): f64
+    if t < 0.5 then
+        2 * t * t
+    else
+        -1 + (4 - 2 * t) * t
+    end
+end
+
+fun ease_in_cubic(t: f64): f64
+    t * t * t
+end
+
+fun ease_out_cubic(t: f64): f64
+    t -= 1
+    t * t * t + 1
+end
+
+fun ease_in_out_cubic(t: f64): f64
+    if t < 0.5 then
+        4 * t * t * t
+    else
+        (t - 1) * (2 * t - 2) * (2 * t - 2) + 1
+    end
+end
+
+fun ease_in_quart(t: f64): f64
+    t * t * t * t
+end
+
+fun ease_out_quart(t: f64): f64
+    t -= 1
+    1 - t * t * t * t
+end
+
+fun ease_in_out_quart(t: f64): f64
+    if t < 0.5 then
+        8 * t * t * t * t
+    else
+        t -= 1
+        1 - 8 * t * t * t * t
+    end
+end
+
+fun ease_in_expo(t: f64): f64
+    if t == 0 then return 0 end
+    math.pow(2, 10 * (t - 1))
+end
+
+fun ease_out_expo(t: f64): f64
+    if t == 1 then return 1 end
+    1 - math.pow(2, -10 * t)
+end
+
+fun ease_in_out_expo(t: f64): f64
+    if t == 0 then return 0 end
+    if t == 1 then return 1 end
+    if t < 0.5 then
+        0.5 * math.pow(2, 20 * t - 10)
+    else
+        1 - 0.5 * math.pow(2, -20 * t + 10)
+    end
+end
+
+fun ease_in_sine(t: f64): f64
+    1 - math.cos(t * math.pi / 2)
+end
+
+fun ease_out_sine(t: f64): f64
+    math.sin(t * math.pi / 2)
+end
+
+fun ease_in_out_sine(t: f64): f64
+    -0.5 * (math.cos(math.pi * t) - 1)
+end
+
+fun ease_in_back(t: f64): f64
+    s = 1.70158
+    t * t * ((s + 1) * t - s)
+end
+
+fun ease_out_back(t: f64): f64
+    s = 1.70158
+    t -= 1
+    t * t * ((s + 1) * t + s) + 1
+end
+
+fun ease_in_out_back(t: f64): f64
+    s = 1.70158 * 1.525
+    if t < 0.5 then
+        0.5 * (2 * t) * (2 * t) * ((s + 1) * 2 * t - s)
+    else
+        t = 2 * t - 2
+        0.5 * (t * t * ((s + 1) * t + s) + 2)
+    end
+end
+
+fun ease_in_elastic(t: f64): f64
+    if t == 0 then return 0 end
+    if t == 1 then return 1 end
+    -math.pow(2, 10 * t - 10) * math.sin((t * 10 - 10.75) * (2 * math.pi / 3))
+end
+
+fun ease_out_elastic(t: f64): f64
+    if t == 0 then return 0 end
+    if t == 1 then return 1 end
+    math.pow(2, -10 * t) * math.sin((t * 10 - 0.75) * (2 * math.pi / 3)) + 1
+end
+
+fun ease_in_out_elastic(t: f64): f64
+    if t == 0 then return 0 end
+    if t == 1 then return 1 end
+    if t < 0.5 then
+        -0.5 * math.pow(2, 20 * t - 10) * math.sin((20 * t - 11.125) * (2 * math.pi / 4.5))
+    else
+        0.5 * math.pow(2, -20 * t + 10) * math.sin((20 * t - 11.125) * (2 * math.pi / 4.5)) + 1
+    end
+end
+
+fun ease_out_bounce(t: f64): f64
+    if t < 1 / 2.75 then
+        7.5625 * t * t
+    elseif t < 2 / 2.75 then
+        t -= 1.5 / 2.75
+        7.5625 * t * t + 0.75
+    elseif t < 2.5 / 2.75 then
+        t -= 2.25 / 2.75
+        7.5625 * t * t + 0.9375
+    else
+        t -= 2.625 / 2.75
+        7.5625 * t * t + 0.984375
+    end
+end
+
+fun ease_in_bounce(t: f64): f64
+    1 - ease_out_bounce(1 - t)
+end
+
+fun ease_in_out_bounce(t: f64): f64
+    if t < 0.5 then
+        0.5 * ease_in_bounce(2 * t)
+    else
+        0.5 * ease_out_bounce(2 * t - 1) + 0.5
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Spring Interpolation
+-- ═══════════════════════════════════════════════════════════════
+
+fun spring_interpolate(t: f64, damping: f64, frequency: f64): f64
+    if damping == nil then damping = 0.5 end
+    if frequency == nil then frequency = 3 end
+
+    decay = math.exp(-damping * t * 10)
+    oscillation = math.cos(frequency * t * math.pi * 2)
+    1 - decay * oscillation
+end
+
+fun spring_overshoot(t: f64, overshoot: f64): f64
+    if overshoot == nil then overshoot = 1.70158 end
+    t -= 1
+    t * t * ((overshoot + 1) * t + overshoot) + 1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Bezier Curves
+-- ═══════════════════════════════════════════════════════════════
+
+fun bezier_quadratic(p0: f64, p1: f64, p2: f64, t: f64): f64
+    mt = 1 - t
+    mt * mt * p0 + 2 * mt * t * p1 + t * t * p2
+end
+
+fun bezier_cubic(p0: f64, p1: f64, p2: f64, p3: f64, t: f64): f64
+    mt = 1 - t
+    mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Smooth Step
+-- ═══════════════════════════════════════════════════════════════
+
+fun smoothstep(edge0: f64, edge1: f64, x: f64): f64
+    t = math.max(0, math.min(1, (x - edge0) / (edge1 - edge0)))
+    t * t * (3 - 2 * t)
+end
+
+fun smootherstep(edge0: f64, edge1: f64, x: f64): f64
+    t = math.max(0, math.min(1, (x - edge0) / (edge1 - edge0)))
+    t * t * t * (t * (6 * t - 15) + 10)
+end
+
+fun smoothstep_derivative(edge0: f64, edge1: f64, x: f64): f64
+    t = math.max(0, math.min(1, (x - edge0) / (edge1 - edge0)))
+    6 * t * (1 - t) / (edge1 - edge0)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Noise Interpolation
+-- ═══════════════════════════════════════════════════════════════
+
+fun fade(t: f64): f64
+    t * t * t * (t * (t * 6 - 15) + 10)
+end
+
+fun lerp_noise(a: f64, b: f64, t: f64): f64
+    a + t * (b - a)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Linear
+M.lerp = lerp
+M.lerp_clamped = lerp_clamped
+M.inverse_lerp = inverse_lerp
+M.remap = remap
+-- Vector
+M.lerp_vec2 = lerp_vec2
+M.lerp_vec3 = lerp_vec3
+M.lerp_vec4 = lerp_vec4
+M.lerp_color = lerp_color
+-- Spline
+M.cubic_lerp = cubic_lerp
+M.catmull_rom = catmull_rom
+-- Easing
+M.ease_linear = ease_linear
+M.ease_in_quad = ease_in_quad
+M.ease_out_quad = ease_out_quad
+M.ease_in_out_quad = ease_in_out_quad
+M.ease_in_cubic = ease_in_cubic
+M.ease_out_cubic = ease_out_cubic
+M.ease_in_out_cubic = ease_in_out_cubic
+M.ease_in_quart = ease_in_quart
+M.ease_out_quart = ease_out_quart
+M.ease_in_out_quart = ease_in_out_quart
+M.ease_in_expo = ease_in_expo
+M.ease_out_expo = ease_out_expo
+M.ease_in_out_expo = ease_in_out_expo
+M.ease_in_sine = ease_in_sine
+M.ease_out_sine = ease_out_sine
+M.ease_in_out_sine = ease_in_out_sine
+M.ease_in_back = ease_in_back
+M.ease_out_back = ease_out_back
+M.ease_in_out_back = ease_in_out_back
+M.ease_in_elastic = ease_in_elastic
+M.ease_out_elastic = ease_out_elastic
+M.ease_in_out_elastic = ease_in_out_elastic
+M.ease_out_bounce = ease_out_bounce
+M.ease_in_bounce = ease_in_bounce
+M.ease_in_out_bounce = ease_in_out_bounce
+-- Spring
+M.spring_interpolate = spring_interpolate
+M.spring_overshoot = spring_overshoot
+-- Bezier
+M.bezier_quadratic = bezier_quadratic
+M.bezier_cubic = bezier_cubic
+-- Smooth
+M.smoothstep = smoothstep
+M.smootherstep = smootherstep
+M.smoothstep_derivative = smoothstep_derivative
+-- Noise
+M.fade = fade
+M.lerp_noise = lerp_noise
+M

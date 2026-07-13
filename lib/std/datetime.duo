@@ -168,8 +168,8 @@ fun dt_add_months(d: any, n: i64): any
     new_year = d.year + math.floor(total_month / 12)
     new_month = total_month % 12
     if new_month <= 0 then
-        new_month = new_month + 12
-        new_year = new_year - 1
+        new_month += 12
+        new_year -= 1
     end
     -- Inline leap year check to avoid passing lua_Value locals to i64 params.
     max_day = DT_DAYS_PER_MONTH[new_month]
@@ -330,9 +330,9 @@ end
 
 fun dt_parse_digit4(s: str, pos: any): any
     val = tonumber(string.sub(s, pos, pos)) * 1000
-    val = val + tonumber(string.sub(s, pos + 1, pos + 1)) * 100
-    val = val + tonumber(string.sub(s, pos + 2, pos + 2)) * 10
-    val = val + tonumber(string.sub(s, pos + 3, pos + 3))
+    val += tonumber(string.sub(s, pos + 1, pos + 1)) * 100
+    val += tonumber(string.sub(s, pos + 2, pos + 2)) * 10
+    val += tonumber(string.sub(s, pos + 3, pos + 3))
     return val, pos + 4
 end
 

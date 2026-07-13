@@ -62,4 +62,16 @@ pub fn build(b: *std.Build) void {
     wasm_bench_cmd.step.dependOn(b.getInstallStep());
     const wasm_bench_step = b.step("wasm-bench", "Run WASM runtime benchmark (wasmtime, wazero, wasm3, iwasm, wasmer, spin)");
     wasm_bench_step.dependOn(&wasm_bench_cmd.step);
+
+    const ml_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_ml_benchmark.sh" });
+    ml_bench_cmd.setCwd(b.path("."));
+    ml_bench_cmd.step.dependOn(b.getInstallStep());
+    const ml_bench_step = b.step("ml-bench", "Run ML benchmark suite (Duo vs C)");
+    ml_bench_step.dependOn(&ml_bench_cmd.step);
+
+    const honest_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_honest_benchmark.sh" });
+    honest_bench_cmd.setCwd(b.path("."));
+    honest_bench_cmd.step.dependOn(b.getInstallStep());
+    const honest_bench_step = b.step("honest-bench", "Run honest benchmark (no precomputation, runtime inputs)");
+    honest_bench_step.dependOn(&honest_bench_cmd.step);
 }

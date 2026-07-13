@@ -39,7 +39,7 @@ assert(scores.ada == 11)
 assert(scores.lua == 22)
 
 legacy = 0
-for _, v in ipairs(xs)
+for _, v in xs
     legacy += v
     v += 1
 end

@@ -1,0 +1,345 @@
+-- std.os.linux — Linux-specific APIs
+-- For epoll, inotify, and other Linux system calls.
+
+-- ═══════════════════════════════════════════════════════════════
+-- epoll Constants
+-- ═══════════════════════════════════════════════════════════════
+
+M.EPOLL_CTL_ADD = 1
+M.EPOLL_CTL_MOD = 2
+M.EPOLL_CTL_DEL = 3
+M.EPOLLIN = 0x001
+M.EPOLLPRI = 0x002
+M.EPOLLOUT = 0x004
+M.EPOLLERR = 0x008
+M.EPOLLHUP = 0x010
+M.EPOLLRDHUP = 0x2000
+M.EPOLLET = 0x80000000
+
+-- ═══════════════════════════════════════════════════════════════
+-- epoll
+-- ═══════════════════════════════════════════════════════════════
+
+fun epoll_new(): any
+    {
+        fd = -1,
+        events = {},
+        max_events = 64,
+    }
+end
+
+fun epoll_create(max_events: i64): any
+    {
+        fd = 0,  -- Would call epoll_create1
+        events = {},
+        max_events = max_events or 64,
+    }
+end
+
+fun epoll_add(epoll: any, fd: i64, events: i64, data: any): any
+    epoll.events[fd] = {
+        events = events,
+        data = data,
+    }
+    {
+        ok = true,
+    }
+end
+
+fun epoll_mod(epoll: any, fd: i64, events: i64): any
+    if epoll.events[fd] then
+        epoll.events[fd].events = events
+        return {ok = true}
+    end
+    {ok = false, error = "fd not found"}
+end
+
+fun epoll_del(epoll: any, fd: i64): any
+    epoll.events[fd] = nil
+    {ok = true}
+end
+
+fun epoll_wait(epoll: any, timeout_ms: i64): any
+    ready = {}
+    -- In production, would call epoll_wait syscall
+    -- For now, return empty list
+    {
+        ok = true,
+        events = ready,
+        count = 0,
+    }
+end
+
+fun epoll_close(epoll: any): void
+    epoll.fd = -1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- inotify
+-- ═══════════════════════════════════════════════════════════════
+
+M.IN_CREATE = 0x00000100
+M.IN_DELETE = 0x00000200
+M.IN_MODIFY = 0x00000002
+M.IN_MOVED_FROM = 0x00000040
+M.IN_MOVED_TO = 0x00000080
+M.IN_CLOSE_WRITE = 0x00000008
+M.IN_CLOSE_NOWRITE = 0x00000010
+M.IN_OPEN = 0x00000020
+
+fun inotify_new(): any
+    {
+        fd = -1,
+        watches = {},
+    }
+end
+
+fun inotify_add_watch(inotify: any, path: str, mask: i64): any
+    watch_id = #inotify.watches + 1
+    inotify.watches[watch_id] = {
+        path = path,
+        mask = mask,
+    }
+    {
+        ok = true,
+        watch_id = watch_id,
+    }
+end
+
+fun inotify_rm_watch(inotify: any, watch_id: i64): any
+    inotify.watches[watch_id] = nil
+    {ok = true}
+end
+
+fun inotify_read(inotify: any): any
+    events = {}
+    -- In production, would read from inotify fd
+    {
+        ok = true,
+        events = events,
+    }
+end
+
+fun inotify_close(inotify: any): void
+    inotify.fd = -1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory Mapping
+-- ═══════════════════════════════════════════════════════════════
+
+M.MAP_SHARED = 0x01
+M.MAP_PRIVATE = 0x02
+M.PROT_READ = 0x1
+M.PROT_WRITE = 0x2
+M.PROT_EXEC = 0x4
+
+fun mmap_new(path: str, size: i64, flags: i64): any
+    {
+        path = path,
+        size = size,
+        flags = flags or M.MAP_SHARED,
+        fd = -1,
+        data = {},
+    }
+end
+
+fun mmap_read(mmap: any, offset: i64, length: i64): any
+    -- In production, would read from mapped memory
+    {
+        ok = true,
+        data = {},
+        size = length,
+    }
+end
+
+fun mmap_write(mmap: any, offset: i64, data: any): any
+    -- In production, would write to mapped memory
+    {ok = true}
+end
+
+fun mmap_sync(mmap: any): any
+    -- In production, would call msync
+    {ok = true}
+end
+
+fun mmap_unmap(mmap: any): void
+    mmap.data = {}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Eventfd
+-- ═══════════════════════════════════════════════════════════════
+
+fun eventfd_new(initval: i64, flags: i64): any
+    {
+        fd = -1,
+        value = initval or 0,
+    }
+end
+
+fun eventfd_write(eventfd: any, value: i64): any
+    eventfd.value = eventfd.value + value
+    {ok = true}
+end
+
+fun eventfd_read(eventfd: any): any
+    value = eventfd.value
+    eventfd.value = 0
+    {
+        ok = true,
+        value = value,
+    }
+end
+
+fun eventfd_close(eventfd: any): void
+    eventfd.fd = -1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Timerfd
+-- ═══════════════════════════════════════════════════════════════
+
+M.TFD_TIMER_ABSTIME = 1
+M.TFD_CLOEXEC = 0x800
+
+fun timerfd_new(clock_id: i64, flags: i64): any
+    {
+        fd = -1,
+        interval = {sec = 0, nsec = 0},
+        initial = {sec = 0, nsec = 0},
+    }
+end
+
+fun timerfd_settime(timerfd: any, initial: any, interval: any): any
+    timerfd.initial = initial or {sec = 0, nsec = 0}
+    timerfd.interval = interval or {sec = 0, nsec = 0}
+    {ok = true}
+end
+
+fun timerfd_read(timerfd: any): any
+    -- In production, would read expiration count
+    {
+        ok = true,
+        expirations = 1,
+    }
+end
+
+fun timerfd_close(timerfd: any): void
+    timerfd.fd = -1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Signalfd
+-- ═══════════════════════════════════════════════════════════════
+
+fun signalfd_new(signals: any, flags: i64): any
+    {
+        fd = -1,
+        signals = signals or {},
+    }
+end
+
+fun signalfd_read(signalfd: any): any
+    {
+        ok = true,
+        signals = {},
+    }
+end
+
+fun signalfd_close(signalfd: any): void
+    signalfd.fd = -1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Timer Wheel
+-- ═══════════════════════════════════════════════════════════════
+
+fun timer_wheel_new(slot_count: i64, resolution_ms: i64): any
+    slots = {}
+    i = 1
+    while i <= slot_count
+        slots[i] = {}
+        i += 1
+    end
+    {
+        slots = slots,
+        slot_count = slot_count,
+        resolution_ms = resolution_ms,
+        current_slot = 1,
+    }
+end
+
+fun timer_wheel_add(wheel: any, timeout_ms: i64, callback: any): any
+    slots_forward = math.floor(timeout_ms / wheel.resolution_ms)
+    target_slot = ((wheel.current_slot - 1 + slots_forward) % wheel.slot_count) + 1
+
+    wheel.slots[target_slot][#wheel.slots[target_slot] + 1] = {
+        callback = callback,
+        timeout_ms = timeout_ms,
+        created_at = os.time() * 1000,
+    }
+
+    {
+        ok = true,
+        slot = target_slot,
+    }
+end
+
+fun timer_wheel_advance(wheel: any, elapsed_ms: i64): any
+    slots_to_advance = math.floor(elapsed_ms / wheel.resolution_ms)
+    fired = {}
+
+    i = 0
+    while i < slots_to_advance
+        wheel.current_slot = ((wheel.current_slot - 1) % wheel.slot_count) + 1
+        for entry in wheel.slots[wheel.current_slot]
+            fired[#fired + 1] = entry.callback
+        end
+        wheel.slots[wheel.current_slot] = {}
+        i += 1
+    end
+
+    {
+        ok = true,
+        fired = fired,
+        count = #fired,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M.epoll_new = epoll_new
+M.epoll_create = epoll_create
+M.epoll_add = epoll_add
+M.epoll_mod = epoll_mod
+M.epoll_del = epoll_del
+M.epoll_wait = epoll_wait
+M.epoll_close = epoll_close
+M.inotify_new = inotify_new
+M.inotify_add_watch = inotify_add_watch
+M.inotify_rm_watch = inotify_rm_watch
+M.inotify_read = inotify_read
+M.inotify_close = inotify_close
+M.mmap_new = mmap_new
+M.mmap_read = mmap_read
+M.mmap_write = mmap_write
+M.mmap_sync = mmap_sync
+M.mmap_unmap = mmap_unmap
+M.eventfd_new = eventfd_new
+M.eventfd_write = eventfd_write
+M.eventfd_read = eventfd_read
+M.eventfd_close = eventfd_close
+M.timerfd_new = timerfd_new
+M.timerfd_settime = timerfd_settime
+M.timerfd_read = timerfd_read
+M.timerfd_close = timerfd_close
+M.signalfd_new = signalfd_new
+M.signalfd_read = signalfd_read
+M.signalfd_close = signalfd_close
+M.timer_wheel_new = timer_wheel_new
+M.timer_wheel_add = timer_wheel_add
+M.timer_wheel_advance = timer_wheel_advance
+M

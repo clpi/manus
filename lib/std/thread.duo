@@ -416,7 +416,7 @@ _tls_next_key = 0
 
 -- Create a new thread-local key with an optional default value factory.
 fun tls_key(default_fn: any): i64
-    _tls_next_key = _tls_next_key + 1
+    _tls_next_key += 1
     _tls_registry[_tls_next_key] = default_fn
     _tls_next_key
 end

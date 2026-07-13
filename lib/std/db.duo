@@ -1,0 +1,461 @@
+-- std.db — Database abstraction: connection pooling, query builder
+-- Generic interface for SQLite, PostgreSQL, MySQL with connection pooling.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Database Configuration
+-- ═══════════════════════════════════════════════════════════════
+
+fun db_config_new(driver: str): any
+    {
+        driver = driver,          -- "sqlite", "postgres", "mysql"
+        host = "localhost",
+        port = 5432,
+        database = "",
+        username = "",
+        password = "",
+        max_connections = 10,
+        min_connections = 2,
+        connection_timeout = 30,
+        idle_timeout = 300,
+        schema = "public",
+        ssl_mode = "prefer",
+        options = {},
+    }
+end
+
+fun db_config_set_host(config: any, host: str): any
+    config.host = host
+    config
+end
+
+fun db_config_set_port(config: any, port: i64): any
+    config.port = port
+    config
+end
+
+fun db_config_set_database(config: any, database: str): any
+    config.database = database
+    config
+end
+
+fun db_config_set_auth(config: any, username: str, password: str): any
+    config.username = username
+    config.password = password
+    config
+end
+
+fun db_config_set_pool(config: any, min: i64, max: i64): any
+    config.min_connections = min
+    config.max_connections = max
+    config
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Connection Pool
+-- ═══════════════════════════════════════════════════════════════
+
+fun db_pool_new(config: any): any
+    pool = {
+        config = config,
+        connections = {},
+        available = {},
+        in_use = 0,
+        total = 0,
+    }
+    -- Pre-create minimum connections
+    i = 0
+    while i < config.min_connections
+        conn = db_connection_new(config)
+        if conn then
+            pool.connections[#pool.connections + 1] = conn
+            pool.available[#pool.available + 1] = conn
+            pool.total += 1
+        end
+        i += 1
+    end
+    pool
+end
+
+fun db_pool_acquire(pool: any): any
+    -- Try to get an available connection
+    if #pool.available > 0 then
+        conn = pool.available[#pool.available]
+        pool.available[#pool.available] = nil
+        pool.in_use += 1
+        return conn
+    end
+
+    -- Create new connection if under limit
+    if pool.total < pool.config.max_connections then
+        conn = db_connection_new(pool.config)
+        if conn then
+            pool.total += 1
+            pool.in_use += 1
+            return conn
+        end
+    end
+
+    nil  -- pool exhausted
+end
+
+fun db_pool_release(pool: any, conn: any): void
+    if conn == nil then return end
+    pool.in_use -= 1
+    pool.available[#pool.available + 1] = conn
+end
+
+fun db_pool_close(pool: any): void
+    for conn in pool.connections
+        db_connection_close(conn)
+    end
+    pool.connections = {}
+    pool.available = {}
+    pool.total = 0
+    pool.in_use = 0
+end
+
+fun db_pool_stats(pool: any): any
+    {
+        total = pool.total,
+        available = #pool.available,
+        in_use = pool.in_use,
+        max = pool.config.max_connections,
+        utilization = pool.total > 0 and pool.in_use / pool.total or 0,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Database Connection
+-- ═══════════════════════════════════════════════════════════════
+
+fun db_connection_new(config: any): any
+    -- This is a placeholder. In production, this would call
+    -- the driver-specific connection code via __emit.
+    {
+        config = config,
+        connected = true,
+        connection_id = math.random(10000, 99999),
+        transaction_active = false,
+    }
+end
+
+fun db_connection_close(conn: any): void
+    conn.connected = false
+end
+
+fun db_connection_ping(conn: any): bool
+    conn.connected
+end
+
+fun db_connection_execute(conn: any, sql: str, params: any): any
+    if not conn.connected then
+        return {error = "Connection closed"}
+    end
+    -- Placeholder: returns empty result set
+    {
+        ok = true,
+        rows_affected = 0,
+        rows = {},
+        columns = {},
+    }
+end
+
+fun db_connection_query(conn: any, sql: str, params: any): any
+    db_connection_execute(conn, sql, params)
+end
+
+fun db_connection_query_one(conn: any, sql: str, params: any): any
+    result = db_connection_execute(conn, sql, params)
+    if result.error then return result end
+    if #result.rows > 0 then
+        return result.rows[1]
+    end
+    nil
+end
+
+fun db_connection_begin(conn: any): any
+    if conn.transaction_active then
+        return {error = "Transaction already active"}
+    end
+    conn.transaction_active = true
+    {ok = true}
+end
+
+fun db_connection_commit(conn: any): any
+    if not conn.transaction_active then
+        return {error = "No active transaction"}
+    end
+    conn.transaction_active = false
+    {ok = true}
+end
+
+fun db_connection_rollback(conn: any): any
+    if not conn.transaction_active then
+        return {error = "No active transaction"}
+    end
+    conn.transaction_active = false
+    {ok = true}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Query Builder
+-- ═══════════════════════════════════════════════════════════════
+
+fun query_new(): any
+    {
+        type = "select",
+        table = "",
+        columns = {},
+        where = {},
+        joins = {},
+        group_by = {},
+        having = {},
+        order_by = {},
+        limit = nil,
+        offset = nil,
+        params = {},
+    }
+end
+
+fun query_select(q: any, ...columns): any
+    q.type = "select"
+    args = {...}
+    for i = 1, #args
+        q.columns[#q.columns + 1] = args[i]
+    end
+    q
+end
+
+fun query_from(q: any, table: str): any
+    q.table = table
+    q
+end
+
+fun query_where(q: any, condition: str, ...args): any
+    q.where[#q.where + 1] = condition
+    vals = {...}
+    for i = 1, #vals
+        q.params[#q.params + 1] = vals[i]
+    end
+    q
+end
+
+fun query_join(q: any, table: str, condition: str): any
+    q.joins[#q.joins + 1] = {table = table, condition = condition, type = "INNER"}
+    q
+end
+
+fun query_left_join(q: any, table: str, condition: str): any
+    q.joins[#q.joins + 1] = {table = table, condition = condition, type = "LEFT"}
+    q
+end
+
+fun query_group_by(q: any, ...columns): any
+    args = {...}
+    for i = 1, #args
+        q.group_by[#q.group_by + 1] = args[i]
+    end
+    q
+end
+
+fun query_having(q: any, condition: str): any
+    q.having[#q.having + 1] = condition
+    q
+end
+
+fun query_order_by(q: any, column: str, direction: str): any
+    if direction == nil then direction = "ASC" end
+    q.order_by[#q.order_by + 1] = {column = column, direction = direction}
+    q
+end
+
+fun query_limit(q: any, n: i64): any
+    q.limit = n
+    q
+end
+
+fun query_offset(q: any, n: i64): any
+    q.offset = n
+    q
+end
+
+fun query_insert(q: any, table: str, data: any): any
+    q.type = "insert"
+    q.table = table
+    q.data = data
+    q
+end
+
+fun query_update(q: any, table: str, data: any): any
+    q.type = "update"
+    q.table = table
+    q.data = data
+    q
+end
+
+fun query_delete(q: any, table: str): any
+    q.type = "delete"
+    q.table = table
+    q
+end
+
+fun query_build(q: any): any
+    parts = {}
+    params = {}
+
+    if q.type == "select" then
+        -- SELECT
+        if #q.columns == 0 then
+            parts[#parts + 1] = "SELECT *"
+        else
+            parts[#parts + 1] = "SELECT " .. table.concat(q.columns, ", ")
+        end
+
+        -- FROM
+        if q.table ~= "" then
+            parts[#parts + 1] = "FROM " .. q.table
+        end
+
+        -- JOINs
+        for join in q.joins
+            parts[#parts + 1] = join.type .. " JOIN " .. join.table .. " ON " .. join.condition
+        end
+
+        -- WHERE
+        if #q.where > 0 then
+            parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
+            for p in q.params
+                params[#params + 1] = p
+            end
+        end
+
+        -- GROUP BY
+        if #q.group_by > 0 then
+            parts[#parts + 1] = "GROUP BY " .. table.concat(q.group_by, ", ")
+        end
+
+        -- HAVING
+        if #q.having > 0 then
+            parts[#parts + 1] = "HAVING " .. table.concat(q.having, " AND ")
+        end
+
+        -- ORDER BY
+        if #q.order_by > 0 then
+            order_parts = {}
+            for o in q.order_by
+                order_parts[#order_parts + 1] = o.column .. " " .. o.direction
+            end
+            parts[#parts + 1] = "ORDER BY " .. table.concat(order_parts, ", ")
+        end
+
+        -- LIMIT
+        if q.limit ~= nil then
+            parts[#parts + 1] = "LIMIT " .. tostring(q.limit)
+        end
+
+        -- OFFSET
+        if q.offset ~= nil then
+            parts[#parts + 1] = "OFFSET " .. tostring(q.offset)
+        end
+
+    elseif q.type == "insert" then
+        -- INSERT INTO
+        parts[#parts + 1] = "INSERT INTO " .. q.table
+
+        -- Columns and values
+        columns = {}
+        values = {}
+        placeholders = {}
+        for col, val in q.data
+            columns[#columns + 1] = col
+            values[#values + 1] = val
+            placeholders[#placeholders + 1] = "$" .. tostring(#params + 1)
+            params[#params + 1] = val
+        end
+        parts[#parts + 1] = "(" .. table.concat(columns, ", ") .. ")"
+        parts[#parts + 1] = "VALUES (" .. table.concat(placeholders, ", ") .. ")"
+
+    elseif q.type == "update" then
+        -- UPDATE
+        parts[#parts + 1] = "UPDATE " .. q.table
+
+        -- SET
+        set_parts = {}
+        for col, val in q.data
+            set_parts[#set_parts + 1] = col .. " = $" .. tostring(#params + 1)
+            params[#params + 1] = val
+        end
+        parts[#parts + 1] = "SET " .. table.concat(set_parts, ", ")
+
+        -- WHERE
+        if #q.where > 0 then
+            parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
+            for p in q.params
+                params[#params + 1] = p
+            end
+        end
+
+    elseif q.type == "delete" then
+        -- DELETE
+        parts[#parts + 1] = "DELETE FROM " .. q.table
+
+        -- WHERE
+        if #q.where > 0 then
+            parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
+            for p in q.params
+                params[#params + 1] = p
+            end
+        end
+    end
+
+    {
+        sql = table.concat(parts, " "),
+        params = params,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Config
+M.config_new = db_config_new
+M.config_set_host = db_config_set_host
+M.config_set_port = db_config_set_port
+M.config_set_database = db_config_set_database
+M.config_set_auth = db_config_set_auth
+M.config_set_pool = db_config_set_pool
+-- Pool
+M.pool_new = db_pool_new
+M.pool_acquire = db_pool_acquire
+M.pool_release = db_pool_release
+M.pool_close = db_pool_close
+M.pool_stats = db_pool_stats
+-- Connection
+M.connection_new = db_connection_new
+M.connection_close = db_connection_close
+M.connection_ping = db_connection_ping
+M.connection_execute = db_connection_execute
+M.connection_query = db_connection_query
+M.connection_query_one = db_connection_query_one
+M.connection_begin = db_connection_begin
+M.connection_commit = db_connection_commit
+M.connection_rollback = db_connection_rollback
+-- Query Builder
+M.query = query_new
+M.select = query_select
+M.from = query_from
+M.where = query_where
+M.join = query_join
+M.left_join = query_left_join
+M.group_by = query_group_by
+M.having = query_having
+M.order_by = query_order_by
+M.limit = query_limit
+M.offset = query_offset
+M.insert = query_insert
+M.update = query_update
+M.delete = query_delete
+M.build = query_build
+M

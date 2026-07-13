@@ -73,6 +73,8 @@ pub const ResolvedType = union(enum) {
         ffi_name: ?[]const u8 = null,
     },
     instantiated: struct { base: *ResolvedType, args: []ResolvedType, specialization_key: u64 },
+    /// `Tensor[M,N,dtype]` — compile-time shape + element type for ML.
+    tensor: struct { dims: []ResolvedType, dtype: *const ResolvedType },
 
     pub fn is_integer(self: ResolvedType) bool {
         return switch (self) {
@@ -113,10 +115,159 @@ pub const ResolvedType = union(enum) {
     pub fn is_native(self: ResolvedType) bool {
         return switch (self) {
             .any, .nil, .never => false,
-            .result, .option, .enum_type, .channel, .generic_param, .table_type, .instantiated => false,
+            .result, .option, .enum_type, .channel, .generic_param, .table_type, .instantiated, .tensor => false,
             .func => |f| f.is_native,
             else => true,
         };
+    }
+
+    /// Numeric tensor dimension from a resolved dim (e.g. `Tensor[784, 256, f32]` → `784`).
+    pub fn tensor_dim_const(d: ResolvedType) ?usize {
+        if (d == .@"struct") {
+            const n = d.@"struct".name;
+            if (n.len == 0) return null;
+            for (n) |c| {
+                if (!std.ascii.isDigit(c)) return null;
+            }
+            return std.fmt.parseInt(usize, n, 10) catch null;
+        }
+        return null;
+    }
+
+    /// Label for a tensor dimension: numeric dims return null; symbolic names return the identifier.
+    pub fn tensor_dim_label(d: ResolvedType) ?[]const u8 {
+        if (d == .generic_param) return d.generic_param.name;
+        if (d == .@"struct") {
+            const n = d.@"struct".name;
+            if (tensor_dim_const(d) != null) return null;
+            return n;
+        }
+        return null;
+    }
+
+    /// True when both operands are 2-D tensors with known, mismatched inner (K) dimensions.
+    pub fn tensor_matmul_k_incompatible(a: ResolvedType, b: ResolvedType) bool {
+        const ta = switch (a) {
+            .tensor => |t| t,
+            else => return false,
+        };
+        const tb = switch (b) {
+            .tensor => |t| t,
+            else => return false,
+        };
+        if (ta.dims.len != 2 or tb.dims.len != 2) return false;
+        const k_lhs = tensor_dim_const(ta.dims[1]);
+        const k_rhs = tensor_dim_const(tb.dims[0]);
+        if (k_lhs != null and k_rhs != null) return k_lhs.? != k_rhs.?;
+        const k_lhs_l = tensor_dim_label(ta.dims[1]);
+        const k_rhs_l = tensor_dim_label(tb.dims[0]);
+        if (k_lhs_l != null and k_rhs_l != null and !std.mem.eql(u8, k_lhs_l.?, k_rhs_l.?)) return true;
+        return false;
+    }
+
+    /// `Tensor[M,K] @ Tensor[K,N]` → `Tensor[M,N]` when both operands are 2-D tensors.
+    pub fn tensor_matmul(a: ResolvedType, b: ResolvedType, alloc: std.mem.Allocator) std.mem.Allocator.Error!?ResolvedType {
+        const ta = switch (a) {
+            .tensor => |t| t,
+            else => return null,
+        };
+        const tb = switch (b) {
+            .tensor => |t| t,
+            else => return null,
+        };
+        if (ta.dims.len != 2 or tb.dims.len != 2) return null;
+        if (!ta.dtype.*.eql(tb.dtype.*)) return null;
+        if (tensor_matmul_k_incompatible(a, b)) return null;
+        const dims = try alloc.alloc(ResolvedType, 2);
+        dims[0] = ta.dims[0];
+        dims[1] = tb.dims[1];
+        return ResolvedType{ .tensor = .{ .dims = dims, .dtype = ta.dtype } };
+    }
+
+    /// True when both operands are tensors with identical shape and dtype.
+    pub fn tensor_same_shape(a: ResolvedType, b: ResolvedType) bool {
+        if (a != .tensor or b != .tensor) return false;
+        return a.eql(b);
+    }
+
+    /// True when concrete tensor dims are known to differ (strict elementwise; no broadcast).
+    pub fn tensor_strict_shape_incompatible(a: ResolvedType, b: ResolvedType) bool {
+        const ta = switch (a) {
+            .tensor => |t| t,
+            else => return false,
+        };
+        const tb = switch (b) {
+            .tensor => |t| t,
+            else => return false,
+        };
+        if (ta.dims.len != tb.dims.len or !ta.dtype.*.eql(tb.dtype.*)) return true;
+        if (tensor_same_shape(a, b)) return false;
+        for (ta.dims, tb.dims) |da, db| {
+            if (da.eql(db)) continue;
+            const ac = tensor_dim_const(da);
+            const bc = tensor_dim_const(db);
+            if (ac == null or bc == null) continue;
+            return true;
+        }
+        return false;
+    }
+
+    fn tensor_dim_broadcast_compatible(da: ResolvedType, db: ResolvedType) bool {
+        if (da.eql(db)) return true;
+        if (tensor_dim_const(da) == 1 or tensor_dim_const(db) == 1) return true;
+        const ac = tensor_dim_const(da);
+        const bc = tensor_dim_const(db);
+        if (ac == null or bc == null) return true;
+        return false;
+    }
+
+    fn tensor_dim_broadcast_result(da: ResolvedType, db: ResolvedType, alloc: std.mem.Allocator) std.mem.Allocator.Error!ResolvedType {
+        if (da.eql(db)) return da;
+        const ac = tensor_dim_const(da);
+        const bc = tensor_dim_const(db);
+        if (ac) |a| {
+            if (bc) |b| {
+                const m = @max(a, b);
+                const name = try std.fmt.allocPrint(alloc, "{d}", .{m});
+                return ResolvedType{ .@"struct" = .{ .name = name } };
+            }
+            if (a == 1) return db;
+        }
+        if (bc) |b| {
+            if (b == 1) return da;
+        }
+        return da;
+    }
+
+    /// True when concrete broadcast rules cannot reconcile tensor shapes.
+    pub fn tensor_broadcast_shape_incompatible(a: ResolvedType, b: ResolvedType) bool {
+        const ta = switch (a) {
+            .tensor => |t| t,
+            else => return false,
+        };
+        const tb = switch (b) {
+            .tensor => |t| t,
+            else => return false,
+        };
+        if (ta.dims.len != tb.dims.len or !ta.dtype.*.eql(tb.dtype.*)) return true;
+        if (tensor_same_shape(a, b)) return false;
+        for (ta.dims, tb.dims) |da, db| {
+            if (!tensor_dim_broadcast_compatible(da, db)) return true;
+        }
+        return false;
+    }
+
+    /// Broadcast `Tensor` shapes (numpy-style per dim). Returns null if incompatible.
+    pub fn tensor_broadcast(a: ResolvedType, b: ResolvedType, alloc: std.mem.Allocator) std.mem.Allocator.Error!?ResolvedType {
+        if (tensor_broadcast_shape_incompatible(a, b)) return null;
+        if (tensor_same_shape(a, b)) return a;
+        const ta = a.tensor;
+        const tb = b.tensor;
+        const dims = try alloc.alloc(ResolvedType, ta.dims.len);
+        for (ta.dims, tb.dims, 0..) |da, db, i| {
+            dims[i] = try tensor_dim_broadcast_result(da, db, alloc);
+        }
+        return ResolvedType{ .tensor = .{ .dims = dims, .dtype = ta.dtype } };
     }
 
     pub fn eql(a: ResolvedType, b: ResolvedType) bool {
@@ -250,6 +401,16 @@ pub const ResolvedType = union(enum) {
                 .instantiated => |ib| ia.specialization_key == ib.specialization_key,
                 else => false,
             },
+            .tensor => |ta| switch (b) {
+                .tensor => |tb| blk: {
+                    if (ta.dims.len != tb.dims.len or !ta.dtype.*.eql(tb.dtype.*)) break :blk false;
+                    for (ta.dims, tb.dims) |da, db| {
+                        if (!da.eql(db)) break :blk false;
+                    }
+                    break :blk true;
+                },
+                else => false,
+            },
             .func => |fa| switch (b) {
                 .func => |fb| blk: {
                     if (fa.params.len != fb.params.len) break :blk false;
@@ -338,6 +499,9 @@ pub const ResolvedType = union(enum) {
                 return std.fmt.bufPrint(buf, "{{...{d} fields}}", .{t.fields.len}) catch "table";
             },
             .instantiated => "generic",
+            .tensor => {
+                return "Tensor";
+            },
         };
     }
 
@@ -405,6 +569,7 @@ pub const ResolvedType = union(enum) {
             .instantiated => |inst| {
                 return std.fmt.bufPrint(buf, "duo_spec_{}", .{inst.specialization_key}) catch "duo_spec";
             },
+            .tensor => "lua_Value",
         };
     }
 
@@ -492,6 +657,16 @@ pub const ResolvedType = union(enum) {
                     if (i > 0) try w.writeAll(", ");
                     try w.print("{}", .{arg});
                 }
+                try w.writeByte(']');
+            },
+            .tensor => |t| {
+                try w.writeAll("Tensor[");
+                for (t.dims, 0..) |d, i| {
+                    if (i > 0) try w.writeAll(", ");
+                    try w.print("{}", .{d});
+                }
+                try w.writeAll(", ");
+                try w.print("{}", .{t.dtype.*});
                 try w.writeByte(']');
             },
         }
@@ -717,11 +892,13 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
     return switch (te) {
         .inferred => .any,
         .named => |n| {
-            // Check for common single-letter type parameter names (heuristic)
+            // Single uppercase letters are type parameters (e.g. Tensor[M, K, f32]).
             if (n.len == 1) {
                 const c = n[0];
-                if ((c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z')) {
-                    // Likely a type parameter, resolve to any for now
+                if (c >= 'A' and c <= 'Z') {
+                    return ResolvedType{ .generic_param = .{ .name = n, .constraint = null } };
+                }
+                if (c >= 'a' and c <= 'z') {
                     return .any;
                 }
             }
@@ -834,6 +1011,28 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                 alloc.free(args);
                 return ResolvedType{ .option = opt_ptr };
             }
+            if (base.* == .@"struct" and std.mem.eql(u8, base.@"struct".name, "Tensor")) {
+                if (args.len < 2) {
+                    alloc.destroy(base);
+                    alloc.free(args);
+                    return .any;
+                }
+                const dtype: ResolvedType = if (args.len >= 3 and (args[args.len - 1] == .f32 or args[args.len - 1] == .f64))
+                    args[args.len - 1]
+                else
+                    .f64;
+                const dim_len = if (args.len >= 3 and (args[args.len - 1] == .f32 or args[args.len - 1] == .f64))
+                    args.len - 1
+                else
+                    args.len;
+                const dims = try alloc.alloc(ResolvedType, dim_len);
+                @memcpy(dims, args[0..dim_len]);
+                alloc.destroy(base);
+                alloc.free(args);
+                const dtype_ptr = try alloc.create(ResolvedType);
+                dtype_ptr.* = dtype;
+                return ResolvedType{ .tensor = .{ .dims = dims, .dtype = dtype_ptr } };
+            }
             var key: u64 = std.hash.Wyhash.hash(0, "generic");
             if (base.* == .enum_type) key = std.hash.Wyhash.hash(0, base.enum_type.name);
             if (base.* == .@"struct") key = std.hash.Wyhash.hash(0, base.@"struct".name);
@@ -856,5 +1055,152 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             }
             return ResolvedType{ .table_type = .{ .fields = fields } };
         },
+        .tuple => {
+            // Tuple types represent multi-return values. At the runtime level
+            // Duo uses Lua-style multi-return (caller assigns to multiple locals),
+            // so the resolved type is just `any` — type checking for individual
+            // elements happens at sema time if needed.
+            return .any;
+        },
     };
+}
+
+test "resolve: Tensor[M,N,f32]" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const base = try alloc.create(ast.TypeExpr);
+    base.* = .{ .named = "Tensor" };
+    const params = try alloc.alloc(ast.TypeExpr, 3);
+    params[0] = .{ .named = "784" };
+    params[1] = .{ .named = "256" };
+    params[2] = .{ .named = "f32" };
+    const te: ast.TypeExpr = .{ .generic = .{ .base = base, .params = params } };
+    const resolved_type = try resolve(te, null, alloc);
+    try testing.expect(resolved_type == .tensor);
+    try testing.expectEqual(@as(usize, 2), resolved_type.tensor.dims.len);
+    try testing.expect(resolved_type.tensor.dtype.* == .f32);
+}
+
+test "tensor_matmul: compatible 2-D tensors" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const f32p = try alloc.create(ResolvedType);
+    f32p.* = .f32;
+    const a_dims = try alloc.alloc(ResolvedType, 2);
+    a_dims[0] = .{ .@"struct" = .{ .name = "784" } };
+    a_dims[1] = .{ .@"struct" = .{ .name = "256" } };
+    const b_dims = try alloc.alloc(ResolvedType, 2);
+    b_dims[0] = .{ .@"struct" = .{ .name = "256" } };
+    b_dims[1] = .{ .@"struct" = .{ .name = "10" } };
+    const a = ResolvedType{ .tensor = .{ .dims = a_dims, .dtype = f32p } };
+    const b = ResolvedType{ .tensor = .{ .dims = b_dims, .dtype = f32p } };
+    const out = (try ResolvedType.tensor_matmul(a, b, alloc)) orelse return error.TestExpectedSuccess;
+    try testing.expect(out == .tensor);
+    try testing.expectEqual(@as(usize, 2), out.tensor.dims.len);
+    try testing.expectEqualStrings("784", out.tensor.dims[0].@"struct".name);
+    try testing.expectEqualStrings("10", out.tensor.dims[1].@"struct".name);
+}
+
+test "tensor_matmul: K mismatch returns null" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const f32p = try alloc.create(ResolvedType);
+    f32p.* = .f32;
+    const a_dims = try alloc.alloc(ResolvedType, 2);
+    a_dims[0] = .{ .@"struct" = .{ .name = "784" } };
+    a_dims[1] = .{ .@"struct" = .{ .name = "256" } };
+    const b_dims = try alloc.alloc(ResolvedType, 2);
+    b_dims[0] = .{ .@"struct" = .{ .name = "128" } };
+    b_dims[1] = .{ .@"struct" = .{ .name = "10" } };
+    const a = ResolvedType{ .tensor = .{ .dims = a_dims, .dtype = f32p } };
+    const b = ResolvedType{ .tensor = .{ .dims = b_dims, .dtype = f32p } };
+    try testing.expect(try ResolvedType.tensor_matmul(a, b, alloc) == null);
+    try testing.expect(ResolvedType.tensor_matmul_k_incompatible(a, b));
+}
+
+test "tensor_matmul: symbolic K mismatch" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const f32p = try alloc.create(ResolvedType);
+    f32p.* = .f32;
+    const k = try alloc.dupe(u8, "K");
+    const j = try alloc.dupe(u8, "J");
+    const m = try alloc.dupe(u8, "M");
+    const n = try alloc.dupe(u8, "N");
+    const a_dims = try alloc.alloc(ResolvedType, 2);
+    a_dims[0] = .{ .generic_param = .{ .name = m, .constraint = null } };
+    a_dims[1] = .{ .generic_param = .{ .name = k, .constraint = null } };
+    const b_dims = try alloc.alloc(ResolvedType, 2);
+    b_dims[0] = .{ .generic_param = .{ .name = j, .constraint = null } };
+    b_dims[1] = .{ .generic_param = .{ .name = n, .constraint = null } };
+    const a = ResolvedType{ .tensor = .{ .dims = a_dims, .dtype = f32p } };
+    const b = ResolvedType{ .tensor = .{ .dims = b_dims, .dtype = f32p } };
+    try testing.expect(ResolvedType.tensor_matmul_k_incompatible(a, b));
+    try testing.expect((try ResolvedType.tensor_matmul(a, b, alloc)) == null);
+}
+
+test "tensor_matmul: symbolic K match infers output" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const f32p = try alloc.create(ResolvedType);
+    f32p.* = .f32;
+    const k = try alloc.dupe(u8, "K");
+    const m = try alloc.dupe(u8, "M");
+    const n = try alloc.dupe(u8, "N");
+    const a_dims = try alloc.alloc(ResolvedType, 2);
+    a_dims[0] = .{ .generic_param = .{ .name = m, .constraint = null } };
+    a_dims[1] = .{ .generic_param = .{ .name = k, .constraint = null } };
+    const b_dims = try alloc.alloc(ResolvedType, 2);
+    b_dims[0] = .{ .generic_param = .{ .name = k, .constraint = null } };
+    b_dims[1] = .{ .generic_param = .{ .name = n, .constraint = null } };
+    const a = ResolvedType{ .tensor = .{ .dims = a_dims, .dtype = f32p } };
+    const b = ResolvedType{ .tensor = .{ .dims = b_dims, .dtype = f32p } };
+    try testing.expect(!ResolvedType.tensor_matmul_k_incompatible(a, b));
+    const out = (try ResolvedType.tensor_matmul(a, b, alloc)) orelse return error.TestExpectedSuccess;
+    try testing.expect(out.tensor.dims[0].eql(a_dims[0]));
+    try testing.expect(out.tensor.dims[1].eql(b_dims[1]));
+}
+
+test "tensor_broadcast: 1 x N with M x N" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const f32p = try alloc.create(ResolvedType);
+    f32p.* = .f32;
+    const a_dims = try alloc.alloc(ResolvedType, 2);
+    a_dims[0] = .{ .@"struct" = .{ .name = "1" } };
+    a_dims[1] = .{ .@"struct" = .{ .name = "10" } };
+    const b_dims = try alloc.alloc(ResolvedType, 2);
+    b_dims[0] = .{ .@"struct" = .{ .name = "784" } };
+    b_dims[1] = .{ .@"struct" = .{ .name = "10" } };
+    const a = ResolvedType{ .tensor = .{ .dims = a_dims, .dtype = f32p } };
+    const b = ResolvedType{ .tensor = .{ .dims = b_dims, .dtype = f32p } };
+    const out = (try ResolvedType.tensor_broadcast(a, b, alloc)) orelse return error.TestExpectedSuccess;
+    try testing.expectEqualStrings("784", out.tensor.dims[0].@"struct".name);
+    try testing.expectEqualStrings("10", out.tensor.dims[1].@"struct".name);
+}
+
+test "tensor_broadcast: incompatible 2 x 3 + 3 x 4" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const f32p = try alloc.create(ResolvedType);
+    f32p.* = .f32;
+    const mk = struct {
+        fn t(rows: []const u8, cols: []const u8, dtype: *ResolvedType, a: std.mem.Allocator) !ResolvedType {
+            const dims = try a.alloc(ResolvedType, 2);
+            dims[0] = .{ .@"struct" = .{ .name = rows } };
+            dims[1] = .{ .@"struct" = .{ .name = cols } };
+            return ResolvedType{ .tensor = .{ .dims = dims, .dtype = dtype } };
+        }
+    }.t;
+    const a = try mk("2", "3", f32p, alloc);
+    const b = try mk("3", "4", f32p, alloc);
+    try testing.expect(ResolvedType.tensor_broadcast_shape_incompatible(a, b));
+    try testing.expect((try ResolvedType.tensor_broadcast(a, b, alloc)) == null);
 }

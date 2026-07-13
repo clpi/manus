@@ -14,7 +14,7 @@ total_passes = 0
 total_fails = 0
 
 fun count_result(p)
-    if p then total_passes = total_passes + 1 else total_fails = total_fails + 1 end
+    if p then total_passes += 1 else total_fails += 1 end
 end
 
 log.info("duo stdlib smoke-test")

@@ -93,7 +93,7 @@ IS_DEBUG = ##(false)
 fun derive_clone(val)
     if type(val) ~= "table" then return val end
     c = {}
-    for k, v in pairs(val) do c[k] = v end
+    for k, v in val do c[k] = v end
     c
 end
 
@@ -107,7 +107,7 @@ fun derive_display(val): str
     if type(val) == "string" then return val end
     if type(val) == "table" then
         parts = {}
-        for k, v in pairs(val) do
+        for k, v in val do
             if type(k) == "string" then
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
@@ -152,7 +152,7 @@ fun demo_reflection(val): void
     -- Field introspection on tables
     if type(val) == "table" then
         count = 0
-        for _, _ in pairs(val) do count = count + 1 end
+        for _, _ in val do count += 1 end
         print("Field count: " .. tostring(count))
     end
 end

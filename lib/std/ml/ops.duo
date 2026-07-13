@@ -1,0 +1,106 @@
+-- std.ml.ops — High-level ML ops; hot paths delegate to ml.* intrinsics
+
+Tensor = req "std.ml.tensor"
+
+-- Native kernels (zero-arg checksum benchmarks / fused paths)
+fun bench_matmul(): f64
+    return ml.matmul_256()
+end
+
+fun bench_conv2d(): f64
+    return ml.conv2d()
+end
+
+fun bench_softmax(): f64
+    return ml.softmax_1k()
+end
+
+fun bench_attention(): f64
+    return ml.attention()
+end
+
+fun bench_mlp(): f64
+    return ml.mlp_forward()
+end
+
+fun bench_gelu(): f64
+    return ml.gelu_1k()
+end
+
+fun bench_layernorm(): f64
+    return ml.layernorm_1k()
+end
+
+fun bench_dot(): f64
+    return ml.dot_1m()
+end
+
+fun bench_conv1d(): f64
+    return ml.conv1d()
+end
+
+-- User-facing tensor ops (stdlib path; compiler may fuse later)
+@hot
+fun matmul(a, b): any
+    return Tensor.matmul(a, b)
+end
+
+@hot
+fun softmax(t): any
+    return Tensor.softmax(t)
+end
+
+fun gelu(t): any
+    result = Tensor.zeros(t.rows, t.cols)
+    for i = 1, t.size
+        v = t.data[i]
+        inner = 0.044715 * v * v * v + v
+        result.data[i] = 0.5 * v * (1.0 + math.tanh(0.7978845608 * inner))
+    end
+    return result
+end
+
+fun layernorm(t, eps): any
+    if eps == nil eps = 1e-5 end
+    n = t.size
+    mean = 0.0
+    for i = 1, n mean += t.data[i] end
+    mean /= n
+    var = 0.0
+    for i = 1, n
+        d = t.data[i] - mean
+        var += d * d
+    end
+    inv_std = 1.0 / math.sqrt(var / n + eps)
+    result = Tensor.zeros(t.rows, t.cols)
+    for i = 1, n
+        result.data[i] = (t.data[i] - mean) * inv_std
+    end
+    return result
+end
+
+fun dot(a, b): f64
+    assert(a.size == b.size, "dot size mismatch")
+    sum = 0.0
+    for i = 1, a.size
+        sum += a.data[i] * b.data[i]
+    end
+    return sum
+end
+
+M = {}
+M.bench_matmul = bench_matmul
+M.bench_conv2d = bench_conv2d
+M.bench_softmax = bench_softmax
+M.bench_attention = bench_attention
+M.bench_mlp = bench_mlp
+M.bench_gelu = bench_gelu
+M.bench_layernorm = bench_layernorm
+M.bench_dot = bench_dot
+M.bench_conv1d = bench_conv1d
+M.matmul = matmul
+M.softmax = softmax
+M.gelu = gelu
+M.layernorm = layernorm
+M.dot = dot
+M

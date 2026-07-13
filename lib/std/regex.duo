@@ -96,7 +96,7 @@ local function quote(s: str): str
         else
             out = out .. ch
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -142,7 +142,7 @@ local function regex_match(code: any, subject: str, startoffset: int): any
     while i < npairs
         local pair = read_ovector_pair(ovptr, i)
         result[rawlen(result) + 1] = pair
-        i = i + 1
+        i += 1
     end
     pcre2_match_data_free_8(md)
     result
@@ -208,7 +208,7 @@ local function find_all(code: any, subject: str): any
         if e0 > startoffset then
             startoffset = e0
         else
-            startoffset = startoffset + 1
+            startoffset += 1
         end
     end
     results
@@ -238,7 +238,7 @@ local function replace(code: any, subject: str, replacement: str): str
         out = out .. replacement
         -- Advance last past the match (end_ is exclusive 0-based = 1-based inclusive end)
         last = e + 1
-        i = i + 1
+        i += 1
     end
     -- Append trailing text
     if last <= slen then

@@ -32,10 +32,10 @@ print("Eq:       " .. tostring(point.eq(point, cloned)))
 -- Reflection: inspect what methods a type has
 print("\nPoint fields:")
 fields = {}
-for k, _ in pairs(point) do
+for k, _ in point
     fields[#fields + 1] = k
 end
-for _, name in ipairs(fields) do
+for _, name in fields
     print("  " .. name .. ": " .. type(point[name]))
 end
 

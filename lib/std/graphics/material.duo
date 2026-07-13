@@ -1,0 +1,388 @@
+-- std.graphics.material — Material and texture management
+-- For ward's graphics pipeline and rendering.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Texture
+-- ═══════════════════════════════════════════════════════════════
+
+fun texture_new(width: i64, height: i64, channels: i64): any
+    data = {}
+    size = width * height * channels
+    i = 1
+    while i <= size
+        data[i] = 0
+        i += 1
+    end
+    {
+        width = width,
+        height = height,
+        channels = channels,
+        data = data,
+        format = "rgba",
+        filter = "linear",
+        wrap = "repeat",
+    }
+end
+
+fun texture_from_data(data: any, width: i64, height: i64, channels: i64): any
+    {
+        width = width,
+        height = height,
+        channels = channels,
+        data = data,
+        format = channels == 4 and "rgba" or "rgb",
+        filter = "linear",
+        wrap = "repeat",
+    }
+end
+
+fun texture_get_pixel(tex: any, x: i64, y: i64): any
+    x = x % tex.width
+    y = y % tex.height
+    idx = (y * tex.width + x) * tex.channels
+    pixel = {}
+    i = 1
+    while i <= tex.channels
+        pixel[i] = tex.data[idx + i]
+        i += 1
+    end
+    pixel
+end
+
+fun texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
+    x = x % tex.width
+    y = y % tex.height
+    idx = (y * tex.width + x) * tex.channels
+    i = 1
+    while i <= tex.channels
+        tex.data[idx + i] = pixel[i]
+        i += 1
+    end
+end
+
+fun texture_sample(tex: any, u: f64, v: f64): any
+    x = math.floor(u * tex.width) % tex.width
+    y = math.floor(v * tex.height) % tex.height
+    texture_get_pixel(tex, x, y)
+end
+
+fun texture_resize(tex: any, new_width: i64, new_height: i64): any
+    new_tex = texture_new(new_width, new_height, tex.channels)
+    x_scale = tex.width / new_width
+    y_scale = tex.height / new_height
+
+    y = 0
+    while y < new_height
+        x = 0
+        while x < new_width
+            src_x = math.floor(x * x_scale)
+            src_y = math.floor(y * y_scale)
+            pixel = texture_get_pixel(tex, src_x, src_y)
+            texture_set_pixel(new_tex, x, y, pixel)
+            x += 1
+        end
+        y += 1
+    end
+    new_tex
+end
+
+fun texture_flip_h(tex: any): any
+    new_tex = texture_new(tex.width, tex.height, tex.channels)
+    y = 0
+    while y < tex.height
+        x = 0
+        while x < tex.width
+            pixel = texture_get_pixel(tex, tex.width - 1 - x, y)
+            texture_set_pixel(new_tex, x, y, pixel)
+            x += 1
+        end
+        y += 1
+    end
+    new_tex
+end
+
+fun texture_flip_v(tex: any): any
+    new_tex = texture_new(tex.width, tex.height, tex.channels)
+    y = 0
+    while y < tex.height
+        x = 0
+        while x < tex.width
+            pixel = texture_get_pixel(tex, x, tex.height - 1 - y)
+            texture_set_pixel(new_tex, x, y, pixel)
+            x += 1
+        end
+        y += 1
+    end
+    new_tex
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Procedural Textures
+-- ═══════════════════════════════════════════════════════════════
+
+fun texture_checkerboard(size: i64, square_size: i64): any
+    tex = texture_new(size, size, 3)
+    y = 0
+    while y < size
+        x = 0
+        while x < size
+            is_white = ((x / square_size) + (y / square_size)) % 2 == 0
+            if is_white then
+                texture_set_pixel(tex, x, y, {255, 255, 255})
+            else
+                texture_set_pixel(tex, x, y, {0, 0, 0})
+            end
+            x += 1
+        end
+        y += 1
+    end
+    tex
+end
+
+fun texture_gradient(size: i64, color1: any, color2: any): any
+    tex = texture_new(size, size, 3)
+    y = 0
+    while y < size
+        x = 0
+        while x < size
+            t = x / size
+            r = math.floor(color1[1] + (color2[1] - color1[1]) * t)
+            g = math.floor(color1[2] + (color2[2] - color1[2]) * t)
+            b = math.floor(color1[3] + (color2[3] - color1[3]) * t)
+            texture_set_pixel(tex, x, y, {r, g, b})
+            x += 1
+        end
+        y += 1
+    end
+    tex
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Material
+-- ═══════════════════════════════════════════════════════════════
+
+fun material_new(name: str): any
+    {
+        name = name,
+        albedo = {r = 0.8, g = 0.8, b = 0.8},
+        metallic = 0.0,
+        roughness = 0.5,
+        ao = 1.0,
+        emissive = {r = 0, g = 0, b = 0},
+        emissive_strength = 0,
+        albedo_texture = nil,
+        metallic_roughness_texture = nil,
+        normal_texture = nil,
+        ao_texture = nil,
+        emissive_texture = nil,
+        double_sided = false,
+        alpha_mode = "opaque",  -- "opaque", "mask", "blend"
+        alpha_cutoff = 0.5,
+    }
+end
+
+fun material_set_albedo(mat: any, r: f64, g: f64, b: f64): void
+    mat.albedo = {r = r, g = g, b = b}
+end
+
+fun material_set_metallic(mat: any, metallic: f64, roughness: f64): void
+    mat.metallic = metallic
+    mat.roughness = roughness
+end
+
+fun material_set_emissive(mat: any, r: f64, g: f64, b: f64, strength: f64): void
+    mat.emissive = {r = r, g = g, b = b}
+    mat.emissive_strength = strength
+end
+
+fun material_set_texture(mat: any, texture_type: str, texture: any): void
+    if texture_type == "albedo" then
+        mat.albedo_texture = texture
+    elseif texture_type == "metallic_roughness" then
+        mat.metallic_roughness_texture = texture
+    elseif texture_type == "normal" then
+        mat.normal_texture = texture
+    elseif texture_type == "ao" then
+        mat.ao_texture = texture
+    elseif texture_type == "emissive" then
+        mat.emissive_texture = texture
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Material Library
+-- ═══════════════════════════════════════════════════════════════
+
+fun material_library_new(): any
+    {
+        materials = {},
+        default_materials = {},
+    }
+end
+
+fun material_library_add(lib: any, name: str, material: any): void
+    lib.materials[name] = material
+end
+
+fun material_library_get(lib: any, name: str): any
+    lib.materials[name] or lib.default_materials["default"]
+end
+
+fun material_library_remove(lib: any, name: str): void
+    lib.materials[name] = nil
+end
+
+fun material_library_list(lib: any): any
+    names = {}
+    for name in lib.materials
+        names[#names + 1] = name
+    end
+    names
+end
+
+-- Default materials
+fun material_default_white(): any
+    mat = material_new("default_white")
+    mat.albedo = {r = 1, g = 1, b = 1}
+    mat
+end
+
+fun material_default_gray(): any
+    mat = material_new("default_gray")
+    mat.albedo = {r = 0.5, g = 0.5, b = 0.5}
+    mat
+end
+
+fun material_default_black(): any
+    mat = material_new("default_black")
+    mat.albedo = {r = 0, g = 0, b = 0}
+    mat
+end
+
+fun material_metal(color: any): any
+    mat = material_new("metal")
+    mat.albedo = color or {r = 0.8, g = 0.8, b = 0.8}
+    mat.metallic = 1.0
+    mat.roughness = 0.2
+    mat
+end
+
+fun material_plastic(color: any): any
+    mat = material_new("plastic")
+    mat.albedo = color or {r = 0.8, g = 0.2, b = 0.2}
+    mat.metallic = 0.0
+    mat.roughness = 0.5
+    mat
+end
+
+fun material_rubber(color: any): any
+    mat = material_new("rubber")
+    mat.albedo = color or {r = 0.2, g = 0.2, b = 0.2}
+    mat.metallic = 0.0
+    mat.roughness = 1.0
+    mat
+end
+
+fun material_glass(): any
+    mat = material_new("glass")
+    mat.albedo = {r = 1, g = 1, b = 1}
+    mat.metallic = 0.0
+    mat.roughness = 0.0
+    mat.alpha_mode = "blend"
+    mat
+end
+
+fun material_emissive(color: any, strength: f64): any
+    mat = material_new("emissive")
+    mat.albedo = {r = 0, g = 0, b = 0}
+    mat.emissive = color or {r = 1, g = 1, b = 1}
+    mat.emissive_strength = strength or 1.0
+    mat
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PBR Shading (simplified)
+-- ═══════════════════════════════════════════════════════════════
+
+fun pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
+    -- Simplified PBR shading
+    n_dot_l = math.max(0, normal.x * light_dir.x + normal.y * light_dir.y + normal.z * light_dir.z)
+
+    -- Diffuse
+    diffuse = {
+        r = material.albedo.r * n_dot_l,
+        g = material.albedo.g * n_dot_l,
+        b = material.albedo.b * n_dot_l,
+    }
+
+    -- Specular (simplified)
+    half_dir = {
+        x = light_dir.x + view_dir.x,
+        y = light_dir.y + view_dir.y,
+        z = light_dir.z + view_dir.z,
+    }
+    len = math.sqrt(half_dir.x * half_dir.x + half_dir.y * half_dir.y + half_dir.z * half_dir.z)
+    if len > 0 then
+        half_dir.x = half_dir.x / len
+        half_dir.y = half_dir.y / len
+        half_dir.z = half_dir.z / len
+    end
+
+    n_dot_h = math.max(0, normal.x * half_dir.x + normal.y * half_dir.y + normal.z * half_dir.z)
+    spec = math.pow(n_dot_h, 32 * (1 - material.roughness))
+
+    specular = {
+        r = spec * material.metallic,
+        g = spec * material.metallic,
+        b = spec * material.metallic,
+    }
+
+    -- Combine
+    {
+        r = math.min(1, diffuse.r + specular.r),
+        g = math.min(1, diffuse.g + specular.g),
+        b = math.min(1, diffuse.b + specular.b),
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Texture
+M.texture_new = texture_new
+M.texture_from_data = texture_from_data
+M.texture_get_pixel = texture_get_pixel
+M.texture_set_pixel = texture_set_pixel
+M.texture_sample = texture_sample
+M.texture_resize = texture_resize
+M.texture_flip_h = texture_flip_h
+M.texture_flip_v = texture_flip_v
+-- Procedural
+M.texture_checkerboard = texture_checkerboard
+M.texture_gradient = texture_gradient
+-- Material
+M.material_new = material_new
+M.material_set_albedo = material_set_albedo
+M.material_set_metallic = material_set_metallic
+M.material_set_emissive = material_set_emissive
+M.material_set_texture = material_set_texture
+-- Library
+M.library_new = material_library_new
+M.library_add = material_library_add
+M.library_get = material_library_get
+M.library_remove = material_library_remove
+M.library_list = material_library_list
+-- Defaults
+M.default_white = material_default_white
+M.default_gray = material_default_gray
+M.default_black = material_default_black
+M.metal = material_metal
+M.plastic = material_plastic
+M.rubber = material_rubber
+M.glass = material_glass
+M.emissive = material_emissive
+-- Shading
+M.pbr_shade = pbr_shade
+M

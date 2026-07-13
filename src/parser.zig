@@ -5,6 +5,7 @@ const Token = @import("lexer.zig").Token;
 const TK = @import("lexer.zig").TokenKind;
 const ast = @import("ast.zig");
 const term = @import("term.zig");
+const debug_trace = @import("debug_trace.zig");
 
 pub const ParseError = error{
     UnexpectedToken,
@@ -21,6 +22,8 @@ pub const Parser = struct {
     quote_depth: u32 = 0,
     /// When true (.duo source), emit deprecation warnings for `then` and `local`.
     duo_mode: bool = false,
+
+    deferred_hint_attrs: std.ArrayList(ast.Attribute) = .empty,
 
     pub fn init(lex: *Lexer, alloc: Allocator) Parser {
         return .{ .lex = lex, .alloc = alloc };
@@ -51,6 +54,35 @@ pub const Parser = struct {
             }
         }
         return attrs[0..count];
+    }
+
+    /// Turn `--- @build.*` / `--- @debug.*` comment hints into module directive statements.
+    fn flush_module_hint_directives(self: *Parser, stmts: *std.ArrayList(ast.Stmt)) ParseError!void {
+        const directives_mod = @import("directives.zig");
+        while (self.lex.hasPendingHints()) {
+            const hint_attrs = try self.consumeLexerHints();
+            defer self.alloc.free(hint_attrs);
+            var emitted = false;
+            for (hint_attrs) |attr| {
+                if (directives_mod.isBuildDirective(attr.name) or directives_mod.isDebugDirective(attr.name)) {
+                    const loc = (try self.pk()).loc;
+                    try stmts.append(self.alloc, .{ .directive = .{ .loc = loc, .attr = attr } });
+                    emitted = true;
+                } else {
+                    try self.deferred_hint_attrs.append(self.alloc, attr);
+                }
+            }
+            if (!emitted) break;
+        }
+    }
+
+    fn merge_deferred_hints(self: *Parser, hint_attrs: []ast.Attribute) ParseError![]ast.Attribute {
+        if (self.deferred_hint_attrs.items.len == 0 and hint_attrs.len == 0) return &.{};
+        var all: std.ArrayList(ast.Attribute) = .empty;
+        try all.appendSlice(self.alloc, self.deferred_hint_attrs.items);
+        self.deferred_hint_attrs.clearRetainingCapacity();
+        try all.appendSlice(self.alloc, hint_attrs);
+        return try all.toOwnedSlice(self.alloc);
     }
 
     fn pk(self: *Parser) ParseError!Token {
@@ -182,6 +214,10 @@ pub const Parser = struct {
                 const t = try self.adv();
                 return .{ .named = t.text };
             },
+            .int_lit => {
+                const t = try self.adv();
+                return .{ .named = t.text };
+            },
             .star => {
                 _ = try self.adv();
                 const inner = try self.alloc.create(ast.TypeExpr);
@@ -196,7 +232,7 @@ pub const Parser = struct {
                 return .{ .optional = inner };
             },
             .lparen => {
-                // Function type: `(T, U) -> R` or `() -> R`
+                // Tuple type: `(T, U)` or Function type: `(T, U) -> R`
                 _ = try self.adv(); // consume '('
                 var params: std.ArrayList(ast.TypeExpr) = .empty;
                 if (!(try self.check(.rparen))) {
@@ -206,13 +242,17 @@ pub const Parser = struct {
                     }
                 }
                 _ = try self.expect(.rparen);
-                _ = try self.expect(.arrow);
-                const ret = try self.alloc.create(ast.TypeExpr);
-                ret.* = try self.parse_type();
-                return .{ .func = .{
-                    .params = try params.toOwnedSlice(self.alloc),
-                    .ret = ret,
-                } };
+                // If followed by `->`, it's a function type; otherwise it's a tuple
+                if (try self.eat(.arrow) != null) {
+                    const ret = try self.alloc.create(ast.TypeExpr);
+                    ret.* = try self.parse_type();
+                    return .{ .func = .{
+                        .params = try params.toOwnedSlice(self.alloc),
+                        .ret = ret,
+                    } };
+                } else {
+                    return .{ .tuple = try params.toOwnedSlice(self.alloc) };
+                }
             },
             .lbracket => {
                 _ = try self.adv();
@@ -306,7 +346,10 @@ pub const Parser = struct {
                     _ = try self.eat(.semi);
                     break;
                 },
-                else => try stmts.append(self.alloc, try self.parse_stmt()),
+                else => {
+                    try self.flush_module_hint_directives(&stmts);
+                    try stmts.append(self.alloc, try self.parse_stmt());
+                },
             }
         }
         // Extract implicit tail expression: if the last statement is an
@@ -348,6 +391,7 @@ pub const Parser = struct {
 
         return switch (tok.kind) {
             .at => blk: {
+                if (try self.try_parse_c_interface_stmt()) |c_stmt| break :blk c_stmt;
                 const saved = self.lex.saveState();
                 if (try self.parse_at_starts_attribute_decl()) {
                     self.lex.restoreState(saved);
@@ -363,9 +407,10 @@ pub const Parser = struct {
             // keyword; records are declared via inline type-literal
             // annotations on bindings.
             .kw_function, .kw_fun => blk: {
-                // Check for pending compiler hints from --- @hint comments
                 const hint_attrs = try self.consumeLexerHints();
-                break :blk self.parse_func_decl_with_attrs(false, hint_attrs);
+                defer if (hint_attrs.len > 0) self.alloc.free(hint_attrs);
+                const merged = try self.merge_deferred_hints(hint_attrs);
+                break :blk self.parse_func_decl_with_attrs(false, merged);
             },
             .kw_async => self.parse_async_func_decl_with_attrs(&.{}),
             .kw_enum => self.parse_enum_def_with_attrs(&.{}),
@@ -413,6 +458,30 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .at) {
             _ = try self.adv();
             const attr_name = try self.expect(.name);
+            const is_build = std.mem.eql(u8, attr_name.text, "build") or std.mem.startsWith(u8, attr_name.text, "build.");
+            const is_debug = std.mem.eql(u8, attr_name.text, "debug") or std.mem.startsWith(u8, attr_name.text, "debug.");
+            if (is_build or is_debug) {
+                while ((try self.pk()).kind == .dot) {
+                    _ = try self.adv();
+                    _ = try self.expect(.name);
+                }
+                if ((try self.pk()).kind == .lparen) {
+                    var depth: u32 = 0;
+                    while (true) {
+                        const tok = try self.adv();
+                        switch (tok.kind) {
+                            .lparen => depth += 1,
+                            .rparen => {
+                                depth -= 1;
+                                if (depth == 0) break;
+                            },
+                            .eof => return false,
+                            else => {},
+                        }
+                    }
+                }
+                return true;
+            }
             if (!is_known_attribute(attr_name.text)) return false;
             if ((try self.pk()).kind == .lparen) {
                 var depth: u32 = 0;
@@ -432,7 +501,7 @@ pub const Parser = struct {
         }
         const tok = try self.pk();
         return switch (tok.kind) {
-            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global => true,
+            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global, .kw_for => true,
             .name => blk: {
                 if (std.mem.eql(u8, tok.text, "type")) break :blk true;
                 // Jai-like syntax: @attr Name: { ... } — name followed by ':' is a type def
@@ -454,12 +523,18 @@ pub const Parser = struct {
             "align",
             "arc",
             "asm",
+            "bench",
             "bitfield",
             "bitcast",
+            "build",
             "cinclude",
+            "autodiff",
             "cold",
             "concurrent",
+            "debug",
             "deprecated",
+            "device",
+            "differentiable",
             "derive",
             "export",
             "ffi",
@@ -470,12 +545,22 @@ pub const Parser = struct {
             "nopanic",
             "noreturn",
             "packed",
+            "profile",
             "repr",
             "restrict",
             "simd",
             "specialize",
             "test",
+            "time",
+            "trace",
+            "unroll",
             "volatile",
+            "dispatch",
+            "prefetch",
+            "likely",
+            "unlikely",
+            "flatten",
+            "pure",
         };
         for (known) |item| {
             if (std.mem.eql(u8, name, item)) return true;
@@ -519,26 +604,28 @@ pub const Parser = struct {
     /// binding with `@implements(...)`).
     fn parse_attributed_decl(self: *Parser) ParseError!ast.Stmt {
         var attrs: std.ArrayList(ast.Attribute) = .empty;
+        const directives = @import("directives.zig");
         while ((try self.pk()).kind == .at) {
-            try attrs.append(self.alloc, try self.parse_one_attribute());
+            const attr = try self.parse_one_attribute();
+
+            // Standalone @cinclude / @build.* / @debug.* module directives are
+            // each their own statement; do not accumulate them as attributes.
+            if (std.mem.eql(u8, attr.name, "cinclude") or std.mem.eql(u8, attr.name, "c.include")) {
+                const header = strip_quotes(attr.args orelse "");
+                return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
+            }
+            if (std.mem.eql(u8, attr.name, "c.emit")) {
+                const loc_tok = try self.pk();
+                return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
+            }
+            if (directives.isBuildDirective(attr.name) or directives.isDebugDirective(attr.name)) {
+                const loc_tok = try self.pk();
+                return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
+            }
+
+            try attrs.append(self.alloc, attr);
         }
         const attrs_slice = try attrs.toOwnedSlice(self.alloc);
-
-        // Handle standalone @cinclude("header.h") as a top-level statement.
-        if (attrs_slice.len == 1 and std.mem.eql(u8, attrs_slice[0].name, "cinclude")) {
-            const raw = attrs_slice[0].args orelse "";
-            const header = strip_quotes(raw);
-            return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
-        }
-
-        // Standalone @build.* module directives (no following declaration).
-        if (attrs_slice.len == 1) {
-            const directives = @import("directives.zig");
-            if (directives.isBuildDirective(attrs_slice[0].name)) {
-                const loc_tok = try self.pk();
-                return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attrs_slice[0] } };
-            }
-        }
 
         const tok = try self.pk();
         if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
@@ -558,6 +645,23 @@ pub const Parser = struct {
             .kw_concept => self.parse_concept_def_with_attrs(attrs_slice),
             .kw_alias => self.parse_alias_def_with_attrs(attrs_slice),
             .kw_local, .kw_global => self.parse_local_or_global_with_attrs(attrs_slice),
+            .kw_for => blk: {
+                // @unroll(N) before a for loop: parse the for and attach unroll
+                var stmt = try self.parse_for();
+                if (stmt == .num_for) {
+                    for (attrs_slice) |attr| {
+                        if (std.mem.eql(u8, attr.name, "unroll")) {
+                            if (attr.args) |args| {
+                                const trimmed = std.mem.trim(u8, args, " \t");
+                                stmt.num_for.unroll = std.fmt.parseInt(u32, trimmed, 10) catch null;
+                            } else {
+                                stmt.num_for.unroll = 8; // default unroll factor
+                            }
+                        }
+                    }
+                }
+                break :blk stmt;
+            },
             else => {
                 term.locErr(tok.loc, "expected declaration after attribute(s), got '{s}'", .{
                     tok.kind.spelling(),
@@ -568,11 +672,24 @@ pub const Parser = struct {
     }
 
     fn strip_quotes(raw: []const u8) []const u8 {
-        const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-        if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') {
-            return trimmed[1 .. trimmed.len - 1];
+        return @import("directives.zig").extractCRawCode(raw);
+    }
+
+    /// Standalone `@c.emit("...")` / `@c.include("h.h")` statement (module or block body).
+    fn try_parse_c_interface_stmt(self: *Parser) ParseError!?ast.Stmt {
+        if ((try self.pk()).kind != .at) return null;
+        const saved = self.lex.saveState();
+        const loc = (try self.pk()).loc;
+        const attr = try self.parse_one_attribute();
+        if (std.mem.eql(u8, attr.name, "c.include")) {
+            const header = strip_quotes(attr.args orelse "");
+            return ast.Stmt{ .cinclude = .{ .loc = loc, .header = header } };
         }
-        return trimmed;
+        if (std.mem.eql(u8, attr.name, "c.emit")) {
+            return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
+        }
+        self.lex.restoreState(saved);
+        return null;
     }
 
     /// Check if a name token text is a language keyword (should not be treated as
@@ -638,35 +755,25 @@ pub const Parser = struct {
     /// Parse attribute argument text between parens, handling nested parens.
     /// Returns the raw source text content (not including outer parens).
     fn parse_attribute_args(self: *Parser) ParseError![]const u8 {
-        // At this point, the opening `(` has already been consumed.
-        // The lexer's `peeked` is null and `pos` is right after `(`.
-        // We need to find the source range between `(` and matching `)`.
-
-        // Get the position in source right after `(` was consumed.
-        // Since we may have a peeked token, clear it by peeking first.
         const first_tok = try self.pk();
-        if (first_tok.kind == .rparen) return ""; // empty args
+        if (first_tok.kind == .rparen) return "";
 
-        // Compute start of args in source by looking at first token position.
-        // For string_lit tokens, text doesn't include quotes, so we use the
-        // pointer to compute where in src the token's semantic text starts.
-        // We want the RAW source text including any string delimiters.
-        // Use: start = position of first non-whitespace after `(`
         const src = self.lex.src;
 
-        // Walk forward from the `(` to find raw source span.
-        // The opening `(` was consumed, so we can compute its end position.
-        // We'll determine start from first token's text pointer adjusted for
-        // possible quote prefix (for string literals the text pointer is after the quote).
         var start: usize = undefined;
         if (first_tok.kind == .string_lit) {
-            // String token text starts after the opening quote
-            start = (@intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr)) - 1;
+            const tok_start = @intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr);
+            if (longBracketSpan(src, tok_start, first_tok.text.len)) |span| {
+                start = span.start;
+            } else if (longBracketDelimiterWidth(src, tok_start)) |delim| {
+                start = tok_start - delim;
+            } else {
+                start = tok_start - 1;
+            }
         } else {
             start = @intFromPtr(first_tok.text.ptr) - @intFromPtr(src.ptr);
         }
 
-        // Consume tokens until matching `)`, tracking depth
         var depth: u32 = 1;
         var end: usize = start;
 
@@ -678,13 +785,17 @@ pub const Parser = struct {
             }
             if (tok.kind == .rparen) {
                 depth -= 1;
-                if (depth == 0) break; // don't consume the closing paren
+                if (depth == 0) break;
             }
-            // Update end to span this token in source
             const tok_start = @intFromPtr(tok.text.ptr) - @intFromPtr(src.ptr);
             if (tok.kind == .string_lit) {
-                // Include the closing quote
-                end = tok_start + tok.text.len + 1;
+                if (longBracketSpan(src, tok_start, tok.text.len)) |span| {
+                    end = span.end;
+                } else if (longBracketDelimiterWidth(src, tok_start)) |delim| {
+                    end = tok_start + tok.text.len + delim;
+                } else {
+                    end = tok_start + tok.text.len + 1;
+                }
             } else {
                 end = tok_start + tok.text.len;
             }
@@ -694,6 +805,45 @@ pub const Parser = struct {
 
         if (end <= start) return "";
         return src[start..end];
+    }
+
+    /// Width of `[=*[` / `]=*]` delimiter before long-string content (0 if not long bracket).
+    fn longBracketDelimiterWidth(src: []const u8, content_start: usize) ?usize {
+        if (content_start < 2) return null;
+        if (src[content_start - 2] == '[' and src[content_start - 1] == '[') return 2;
+        if (content_start < 3 or src[content_start - 1] != '[') return null;
+        var eq: usize = 0;
+        var i = content_start - 2;
+        while (i > 0 and src[i] == '=') : (i -= 1) eq += 1;
+        if (src[i] != '[') return null;
+        return eq + 2;
+    }
+
+    fn skipLongBracketWsBack(src: []const u8, i: usize) usize {
+        var p = i;
+        while (p > 0 and (src[p - 1] == ' ' or src[p - 1] == '\t' or src[p - 1] == '\r' or src[p - 1] == '\n')) p -= 1;
+        return p;
+    }
+
+    fn skipLongBracketWsForward(src: []const u8, i: usize) usize {
+        var p = i;
+        while (p < src.len and (src[p] == ' ' or src[p] == '\t' or src[p] == '\r' or src[p] == '\n')) p += 1;
+        return p;
+    }
+
+    /// Map long-string content slice to full `[[...]]` / `[=[...]=]` span in source.
+    fn longBracketSpan(src: []const u8, content_start: usize, content_len: usize) ?struct { start: usize, end: usize } {
+        const after_open = skipLongBracketWsBack(src, content_start);
+        const open_width = longBracketDelimiterWidth(src, after_open) orelse return null;
+        const start = after_open - open_width;
+        const close_pos = skipLongBracketWsForward(src, content_start + content_len);
+        if (close_pos >= src.len or src[close_pos] != ']') return null;
+        var eq: usize = 0;
+        var i = close_pos + 1;
+        while (i < src.len and src[i] == '=') : (i += 1) eq += 1;
+        const level: usize = if (open_width >= 2) open_width - 2 else 0;
+        if (eq != level or i >= src.len or src[i] != ']') return null;
+        return .{ .start = start, .end = i + 1 };
     }
 
     /// Parse `enum Name[T, E] ... end` with variant cases and optional payloads.
@@ -739,11 +889,14 @@ pub const Parser = struct {
         }
         _ = try self.expect(.kw_end);
 
+        const variant_slice = try variants.toOwnedSlice(self.alloc);
+        debug_trace.event(.parse, .enum_type, "enum {s} ({d} variants)", .{ nm.text, variant_slice.len });
+
         return ast.Stmt{ .enum_def = .{
             .loc = l,
             .name = nm.text,
             .type_params = type_params,
-            .variants = try variants.toOwnedSlice(self.alloc),
+            .variants = variant_slice,
             .attributes = attrs,
         } };
     }
@@ -902,6 +1055,58 @@ pub const Parser = struct {
             .loc = nm.loc,
             .names = try names.toOwnedSlice(self.alloc),
             .inits = try inits.toOwnedSlice(self.alloc),
+        } };
+    }
+
+    /// Parse `struct field: type = default ... end` body into an alias_def with @packed semantics.
+    /// Syntax: `Name = struct field1: Type1 [= default1] field2: Type2 ... end`
+    fn parse_struct_body(self: *Parser, name: []const u8, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        const loc = (try self.pk()).loc;
+        // Parse fields: name: type [= default_value]
+        var fields: std.ArrayList(ast.RecordField) = .empty;
+        while ((try self.pk()).kind != .kw_end) {
+            if ((try self.pk()).kind == .eof) {
+                term.locErr(loc, "unexpected end of file in struct definition", .{});
+                return ParseError.UnexpectedToken;
+            }
+            const field_loc = (try self.pk()).loc;
+            const field_name = try self.expect(.name);
+            // Optional colon + type (if omitted, infer as any)
+            var field_type: ast.TypeExpr = .inferred;
+            if ((try self.pk()).kind == .colon) {
+                _ = try self.adv();
+                field_type = try self.parse_type();
+            }
+            // Optional = default (skip for now, just consume)
+            if ((try self.pk()).kind == .assign) {
+                _ = try self.adv();
+                _ = try self.parse_expr(); // consume default expr
+            }
+            try fields.append(self.alloc, .{
+                .loc = field_loc,
+                .name = field_name.text,
+                .typ = field_type,
+            });
+            // Optional comma separator
+            _ = try self.eat(.comma);
+        }
+        _ = try self.expect(.kw_end); // consume 'end'
+
+        // Build record TypeExpr
+        const field_slice = try fields.toOwnedSlice(self.alloc);
+        const rec = try self.alloc.create(ast.TypeExpr.RecordType);
+        rec.* = .{ .fields = field_slice };
+
+        debug_trace.event(.parse, .@"struct", "struct {s} ({d} fields)", .{ name, field_slice.len });
+
+        return ast.Stmt{ .alias_def = .{
+            .loc = loc,
+            .name = name,
+            .target = .{ .record = rec },
+            .parent = null,
+            .fields = &.{},
+            .methods = &.{},
+            .attributes = attrs,
         } };
     }
 
@@ -1486,6 +1691,10 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
+            if (tok.kind == .at) {
+                std.debug.print("DEBUG parse_prec: @ at line {} col {}, lhs line {} col {}\n", .{ tok.loc.line, tok.loc.col, lhs.loc().line, lhs.loc().col });
+            }
+            if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = try self.parse_match_scrutinee_prec(inf.right);
@@ -1832,6 +2041,14 @@ pub const Parser = struct {
                 return ParseError.UnexpectedToken;
             }
             _ = try self.adv();
+            // Check for `Name = struct ... end` — C-layout type definition
+            if (first.* == .name and compound_op == null and targets.items.len == 1) {
+                const next_tok = try self.pk();
+                if (next_tok.kind == .name and std.mem.eql(u8, next_tok.text, "struct")) {
+                    _ = try self.adv(); // consume "struct"
+                    return try self.parse_struct_body(first.name.ident, &.{});
+                }
+            }
             var values: std.ArrayList(*ast.Expr) = .empty;
             if (compound_op) |op| {
                 const rhs = if (self.match_arm_depth > 0)
@@ -1922,6 +2139,10 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
+            if (tok.kind == .at) {
+                std.debug.print("DEBUG finish_prec: @ at line {} col {}, e line {} col {}\n", .{ tok.loc.line, tok.loc.col, e.loc().line, e.loc().col });
+            }
+            if (tok.kind == .at and tok.loc.line > e.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = try self.parse_prec(inf.right);
@@ -1946,28 +2167,30 @@ pub const Parser = struct {
 
     fn infix_prec(kind: TK) ?struct { op: ast.BinOp, left: u8, right: u8 } {
         return switch (kind) {
-            .kw_or => .{ .op = .@"or", .left = 1, .right = 2 },
-            .kw_and => .{ .op = .@"and", .left = 3, .right = 4 },
-            .lt => .{ .op = .lt, .left = 5, .right = 5 },
-            .gt => .{ .op = .gt, .left = 5, .right = 5 },
-            .leq => .{ .op = .leq, .left = 5, .right = 5 },
-            .geq => .{ .op = .geq, .left = 5, .right = 5 },
-            .eq => .{ .op = .eq, .left = 5, .right = 5 },
-            .neq => .{ .op = .neq, .left = 5, .right = 5 },
-            .kw_in => .{ .op = .contains, .left = 5, .right = 5 },
-            .pipe => .{ .op = .bor, .left = 6, .right = 7 },
-            .tilde => .{ .op = .bxor, .left = 8, .right = 9 },
-            .amp => .{ .op = .band, .left = 10, .right = 11 },
-            .lshift => .{ .op = .lshift, .left = 12, .right = 13 },
-            .rshift => .{ .op = .rshift, .left = 12, .right = 13 },
-            .concat => .{ .op = .concat, .left = 15, .right = 14 }, // right-assoc
-            .plus => .{ .op = .add, .left = 16, .right = 17 },
-            .minus => .{ .op = .sub, .left = 16, .right = 17 },
-            .star => .{ .op = .mul, .left = 18, .right = 19 },
-            .slash => .{ .op = .div, .left = 18, .right = 19 },
-            .idiv => .{ .op = .idiv, .left = 18, .right = 19 },
-            .percent => .{ .op = .mod, .left = 18, .right = 19 },
-            .caret => .{ .op = .pow, .left = 22, .right = 21 }, // right-assoc
+            .kw_or => .{ .op = .@"or", .left = 2, .right = 3 },
+            .kw_and => .{ .op = .@"and", .left = 4, .right = 5 },
+            .lt => .{ .op = .lt, .left = 6, .right = 6 },
+            .gt => .{ .op = .gt, .left = 6, .right = 6 },
+            .leq => .{ .op = .leq, .left = 6, .right = 6 },
+            .geq => .{ .op = .geq, .left = 6, .right = 6 },
+            .eq => .{ .op = .eq, .left = 6, .right = 6 },
+            .neq => .{ .op = .neq, .left = 6, .right = 6 },
+            .kw_in => .{ .op = .contains, .left = 6, .right = 6 },
+            .pipe => .{ .op = .bor, .left = 7, .right = 8 },
+            .tilde => .{ .op = .bxor, .left = 9, .right = 10 },
+            .amp => .{ .op = .band, .left = 11, .right = 12 },
+            .lshift => .{ .op = .lshift, .left = 13, .right = 14 },
+            .rshift => .{ .op = .rshift, .left = 13, .right = 14 },
+            .concat => .{ .op = .concat, .left = 16, .right = 15 }, // right-assoc
+            .plus => .{ .op = .add, .left = 17, .right = 18 },
+            .minus => .{ .op = .sub, .left = 17, .right = 18 },
+            .star => .{ .op = .mul, .left = 19, .right = 20 },
+            .slash => .{ .op = .div, .left = 19, .right = 20 },
+            .idiv => .{ .op = .idiv, .left = 19, .right = 20 },
+            .percent => .{ .op = .mod, .left = 19, .right = 20 },
+            .caret => .{ .op = .pow, .left = 23, .right = 22 }, // right-assoc
+            .at => .{ .op = .matmul, .left = 19, .right = 20 }, // a @ b (same band as *)
+            .pipe_gt => .{ .op = .pipeline, .left = 1, .right = 2 }, // a |> f (lowest prec, left-assoc)
             else => null,
         };
     }
@@ -2027,6 +2250,9 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
+            // @ on a new line is an attribute prefix, not the matmul operator.
+            // Without this check, `x = 42\n@hot\nfun ...` parses as `x = 42 @ hot`.
+            if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
             const rhs = try self.parse_prec(inf.right);
@@ -2129,7 +2355,18 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
             return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
         }
-        const name = try self.expect(.name);
+        const first = try self.expect(.name);
+        var parts: std.ArrayList([]const u8) = .empty;
+        defer parts.deinit(self.alloc);
+        try parts.append(self.alloc, first.text);
+        while ((try self.pk()).kind == .dot) {
+            _ = try self.adv();
+            const part = try self.expect(.name);
+            try parts.append(self.alloc, part.text);
+        }
+        const qualified = try std.mem.join(self.alloc, ".", parts.items);
+        defer self.alloc.free(qualified);
+
         _ = try self.expect(.lparen);
         var args: std.ArrayList(*ast.Expr) = .empty;
         if (!(try self.check(.rparen))) {
@@ -2139,10 +2376,28 @@ pub const Parser = struct {
             }
         }
         _ = try self.expect(.rparen);
+        const args_slice = try args.toOwnedSlice(self.alloc);
+
+        // `@c.emit(expr)` / `@emit(expr)` desugar to `__emit(expr)` — canonical C injection under `@`.
+        if ((std.mem.eql(u8, qualified, "c.emit") or std.mem.eql(u8, qualified, "emit")) and args_slice.len >= 1) {
+            const emit_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__emit" } });
+            return self.new_expr(.{ .call = .{ .loc = l, .func = emit_name, .args = args_slice } });
+        }
+        // `@asm(...)` desugars to `__asm(...)` for inline assembly.
+        if (std.mem.eql(u8, qualified, "asm") and args_slice.len >= 1) {
+            const asm_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__asm" } });
+            return self.new_expr(.{ .call = .{ .loc = l, .func = asm_name, .args = args_slice } });
+        }
+        // `@hot_path(expr)` desugars to `__hot_path(expr)`.
+        if (std.mem.eql(u8, qualified, "hot_path") and args_slice.len == 1) {
+            const hot_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__hot_path" } });
+            return self.new_expr(.{ .call = .{ .loc = l, .func = hot_name, .args = args_slice } });
+        }
+
         return self.new_expr(.{ .macro_call = .{
             .loc = l,
-            .name = name.text,
-            .args = try args.toOwnedSlice(self.alloc),
+            .name = first.text,
+            .args = args_slice,
         } });
     }
 
@@ -2207,7 +2462,15 @@ pub const Parser = struct {
                         .args = callargs,
                     } });
                 },
-                .lparen, .lbrace, .string_lit => {
+                .lbrace => {
+                    if (e.* == .name and std.mem.eql(u8, e.name.ident, "nn")) {
+                        e = try self.parse_nn_block_desugar(tok.loc);
+                    } else {
+                        const callargs = try self.parse_call_args();
+                        e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
+                    }
+                },
+                .lparen, .string_lit => {
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
                 },
@@ -2223,6 +2486,94 @@ pub const Parser = struct {
             }
         }
         return e;
+    }
+
+    /// `nn { linear(784,256) relu() … }` → `(req "std.ml.nn").build(NN.linear(...), …)`.
+    fn parse_nn_block_desugar(self: *Parser, loc: ast.Loc) ParseError!*ast.Expr {
+        _ = try self.expect(.lbrace);
+        var layers: std.ArrayList(*ast.Expr) = .empty;
+        while (!(try self.check(.rbrace))) {
+            const layer = try self.parse_nn_layer_expr();
+            try layers.append(self.alloc, layer);
+            _ = try self.eat(.semi);
+        }
+        _ = try self.expect(.rbrace);
+        return try self.desugar_nn_build(loc, try layers.toOwnedSlice(self.alloc));
+    }
+
+    fn parse_nn_layer_expr(self: *Parser) ParseError!*ast.Expr {
+        const tok = try self.pk();
+        if (tok.kind == .name) {
+            const saved = self.lex.saveState();
+            _ = try self.adv();
+            const nxt = try self.pk();
+            if (nxt.kind != .lparen) {
+                const func = try self.new_expr(.{ .name = .{ .loc = tok.loc, .ident = tok.text } });
+                return try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = func, .args = &.{} } });
+            }
+            self.lex.restoreState(saved);
+        }
+        const expr = try self.parse_expr();
+        if (expr.* == .name) {
+            const func = expr;
+            return try self.new_expr(.{ .call = .{ .loc = func.loc(), .func = func, .args = &.{} } });
+        }
+        return expr;
+    }
+
+    fn desugar_nn_build(self: *Parser, loc: ast.Loc, layers: []*ast.Expr) ParseError!*ast.Expr {
+        const mod_ref = try self.make_req_module(loc, "std.ml.nn");
+        var nn_layers: std.ArrayList(*ast.Expr) = .empty;
+        for (layers) |layer| {
+            try nn_layers.append(self.alloc, try self.nn_layer_to_method(loc, mod_ref, layer));
+        }
+        const build_fn = try self.new_expr(.{ .field = .{
+            .loc = loc,
+            .obj = mod_ref,
+            .field = "build",
+        } });
+        return try self.new_expr(.{ .call = .{
+            .loc = loc,
+            .func = build_fn,
+            .args = try nn_layers.toOwnedSlice(self.alloc),
+        } });
+    }
+
+    fn nn_layer_to_method(self: *Parser, loc: ast.Loc, mod_ref: *ast.Expr, layer: *ast.Expr) ParseError!*ast.Expr {
+        return switch (layer.*) {
+            .call => |c| blk: {
+                const method: []const u8 = switch (c.func.*) {
+                    .name => |n| n.ident,
+                    .field => |f| f.field,
+                    else => return layer,
+                };
+                break :blk try self.new_expr(.{ .method_call = .{
+                    .loc = loc,
+                    .obj = mod_ref,
+                    .method = method,
+                    .args = c.args,
+                } });
+            },
+            .name => |n| try self.new_expr(.{ .method_call = .{
+                .loc = loc,
+                .obj = mod_ref,
+                .method = n.ident,
+                .args = &.{},
+            } }),
+            else => layer,
+        };
+    }
+
+    fn make_req_module(self: *Parser, loc: ast.Loc, path: []const u8) ParseError!*ast.Expr {
+        const req_fn = try self.new_expr(.{ .name = .{ .loc = loc, .ident = "req" } });
+        const path_lit = try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = path } });
+        const req_args = try self.alloc.alloc(*ast.Expr, 1);
+        req_args[0] = path_lit;
+        return try self.new_expr(.{ .call = .{
+            .loc = loc,
+            .func = req_fn,
+            .args = req_args,
+        } });
     }
 
     fn parse_call_args(self: *Parser) ParseError![]*ast.Expr {
@@ -3269,6 +3620,26 @@ test "parse: chained postfix operators" {
     try testing.expect(field_expr.field.obj.try_expr.operand.* == .name);
 }
 
+test "parse: @asm and @emit desugar to internal intrinsics" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\a = @asm("nop")
+        \\b = @emit("(int64_t)1")
+    , &arena);
+    try testing.expectEqual(@as(usize, 2), mod.body.stmts.len);
+    const a_stmt = mod.body.stmts[0];
+    const b_stmt = mod.body.stmts[1];
+    try testing.expect(a_stmt == .assign);
+    try testing.expect(b_stmt == .assign);
+    const a_call = a_stmt.assign.values[0];
+    const b_call = b_stmt.assign.values[0];
+    try testing.expect(a_call.* == .call);
+    try testing.expect(b_call.* == .call);
+    try testing.expectEqualStrings("__asm", a_call.call.func.name.ident);
+    try testing.expectEqualStrings("__emit", b_call.call.func.name.ident);
+}
+
 test "parse: single attribute on function" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -3377,6 +3748,46 @@ test "parse: function without attributes has empty attributes" {
     const stmt = mod.body.stmts[0];
     try testing.expect(stmt == .func_decl);
     try testing.expectEqual(@as(usize, 0), stmt.func_decl.attributes.len);
+}
+
+test "parse: @c.emit long bracket in function body" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f(): i64
+        \\    @c.emit([[
+        \\        int x = 1;
+        \\    ]])
+        \\    @c.emit("result = x")
+        \\    return result
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqual(@as(usize, 3), stmt.func_decl.func.body.stmts.len);
+    try testing.expect(stmt.func_decl.func.body.stmts[0] == .directive);
+    try testing.expect(stmt.func_decl.func.body.stmts[1] == .directive);
+    try testing.expectEqualStrings("c.emit", stmt.func_decl.func.body.stmts[0].directive.attr.name);
+    try testing.expect(std.mem.indexOf(u8, stmt.func_decl.func.body.stmts[0].directive.attr.args.?, "int x = 1") != null);
+}
+
+test "parse: @c.emit long bracket preserves C array index before close" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f(): f64
+        \\    @c.emit([[
+        \\        double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];
+        \\    ]])
+        \\    return 0
+        \\end
+    , &arena);
+    const args = mod.body.stmts[0].func_decl.func.body.stmts[0].directive.attr.args.?;
+    try testing.expect(std.mem.endsWith(u8, args, "]]"));
+    const code = @import("directives.zig").extractCRawCode(args);
+    try testing.expect(std.mem.indexOf(u8, code, "cksum+=C[i];") != null);
+    try testing.expect(std.mem.indexOf(u8, code, "\n    ]") == null);
+    try testing.expect(!std.mem.endsWith(u8, std.mem.trim(u8, code, " \t\r\n"), "]"));
 }
 
 test "parse: attribute with ffi string arg" {
@@ -3717,4 +4128,48 @@ test "parse: empty concept" {
     try testing.expectEqualStrings("Empty", cd.name);
     try testing.expectEqual(@as(usize, 0), cd.required_methods.len);
     try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
+}
+
+test "parse: nn block desugars to build call" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = nn {
+        \\  linear(784, 256)
+        \\  relu
+        \\  softmax()
+        \\}
+    , &arena);
+    const assign = mod.body.stmts[0].assign;
+    try testing.expectEqualStrings("x", assign.targets[0].name.ident);
+    const call = assign.values[0].call;
+    try testing.expect(call.func.* == .field);
+    try testing.expectEqualStrings("build", call.func.field.field);
+    try testing.expectEqual(@as(usize, 3), call.args.len);
+}
+
+test "parse: infix @ is matmul binop" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\y = a @ b
+    , &arena);
+    const assign = mod.body.stmts[0].assign;
+    const b = assign.values[0].binop;
+    try testing.expectEqual(ast.BinOp.matmul, b.op);
+}
+
+test "parse: Tensor[M,N,f32] type with numeric dims" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f(x: Tensor[784, 256, f32]): Tensor[256, 10, f32]
+        \\  return x
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    const ty = fb.params[0].typ;
+    try testing.expect(ty == .generic);
+    try testing.expectEqualStrings("Tensor", ty.generic.base.*.named);
+    try testing.expectEqual(@as(usize, 3), ty.generic.params.len);
 }

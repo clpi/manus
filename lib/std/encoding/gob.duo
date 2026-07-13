@@ -56,14 +56,14 @@ fun encode(v: any, out: any): void
         -- check if array
         n = rawlen(v)
         count = 0
-        for _ in pairs(v) do count = count + 1 end
+        for _ in pairs(v) do count += 1 end
         if count == n and n > 0 then
             out[rawlen(out) + 1] = string.char(TAG_ARRAY)
             encode_int(n, out)
             i = 1
             while i <= n
                 encode(v[i], out)
-                i = i + 1
+                i += 1
             end
         else
             out[rawlen(out) + 1] = string.char(TAG_TABLE)
@@ -93,12 +93,12 @@ fun encode_int(v: i64, out: any): void
     end
     while n > 0
         parts[rawlen(parts) + 1] = string.char(n % 256)
-        n = n / 256
+        n /= 256
     end
     i = rawlen(parts)
     while i >= 1
         out[rawlen(out) + 1] = parts[i]
-        i = i - 1
+        i -= 1
     end
 end
 
@@ -146,7 +146,7 @@ fun decode(p: any): any
         i = 1
         while i <= n
             arr[i] = decode(p)
-            i = i + 1
+            i += 1
         end
         return arr
     end
@@ -158,7 +158,7 @@ fun decode(p: any): any
             k = decode(p)
             v = decode(p)
             tbl[k] = v
-            i = i + 1
+            i += 1
         end
         return tbl
     end

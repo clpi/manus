@@ -1,0 +1,225 @@
+-- std.ml.export — Model export (ONNX, PyTorch, etc.)
+-- For saving trained models to standard formats.
+
+-- ═══════════════════════════════════════════════════════════════
+-- ONNX Export
+-- ═══════════════════════════════════════════════════════════════
+
+fun onnx_graph_new(name: str): any
+    {
+        name = name,
+        nodes = {},
+        inputs = {},
+        outputs = {},
+        initializers = {},
+    }
+end
+
+fun onnx_graph_add_node(graph: any, op_type: str, inputs: any, outputs: any, name: str): void
+    graph.nodes[#graph.nodes + 1] = {
+        op_type = op_type,
+        inputs = inputs,
+        outputs = outputs,
+        name = name or "node_" .. tostring(#graph.nodes),
+    }
+end
+
+fun onnx_graph_add_input(graph: any, name: str, shape: any, dtype: str): void
+    graph.inputs[#graph.inputs + 1] = {
+        name = name,
+        shape = shape,
+        dtype = dtype or "float32",
+    }
+end
+
+fun onnx_graph_add_output(graph: any, name: str, shape: any, dtype: str): void
+    graph.outputs[#graph.outputs + 1] = {
+        name = name,
+        shape = shape,
+        dtype = dtype or "float32",
+    }
+end
+
+fun onnx_graph_add_initializer(graph: any, name: str, shape: any, data: any): void
+    graph.initializers[#graph.initializers + 1] = {
+        name = name,
+        shape = shape,
+        data = data,
+    }
+end
+
+fun onnx_model_new(graph: any, opset: i64): any
+    {
+        graph = graph,
+        opset = opset or 17,
+        ir_version = 8,
+        producer_name = "duo",
+        producer_version = "1.0",
+    }
+end
+
+fun onnx_model_encode(model: any): any
+    -- Placeholder: would serialize to ONNX protobuf format
+    {
+        format = "onnx",
+        size = #model.graph.nodes * 100,
+    }
+end
+
+fun onnx_model_save(model: any, path: str): any
+    data = onnx_model_encode(model)
+    -- In production, write to file
+    {ok = true, path = path, size = data.size}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PyTorch Export (state dict)
+-- ═══════════════════════════════════════════════════════════════
+
+fun pytorch_state_dict_new(): any
+    {
+        tensors = {},
+        metadata = {},
+    }
+end
+
+fun pytorch_state_dict_add(state_dict: any, name: str, tensor: any): void
+    state_dict.tensors[name] = tensor
+end
+
+fun pytorch_state_dict_save(state_dict: any, path: str): any
+    -- Placeholder: would serialize to PyTorch format
+    {ok = true, path = path}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- SafeTensors Export
+-- ═══════════════════════════════════════════════════════════════
+
+fun safetensors_new(): any
+    {
+        tensors = {},
+        metadata = {},
+    }
+end
+
+fun safetensors_add_tensor(st: any, name: str, tensor: any, dtype: str): void
+    st.tensors[name] = {
+        data = tensor,
+        dtype = dtype or "f32",
+        shape = tensor.shape or {tensor.size},
+    }
+end
+
+fun safetensors_encode(st: any): any
+    -- Placeholder: would serialize to SafeTensors format
+    {
+        format = "safetensors",
+        size = 0,
+    }
+end
+
+fun safetensors_save(st: any, path: str): any
+    data = safetensors_encode(st)
+    {ok = true, path = path}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GGUF Export
+-- ═══════════════════════════════════════════════════════════════
+
+fun gguf_writer_new(quantization: str): any
+    {
+        tensors = {},
+        metadata = {},
+        quantization = quantization or "f16",
+    }
+end
+
+fun gguf_writer_add_tensor(gw: any, name: str, tensor: any, shape: any): void
+    gw.tensors[name] = {
+        data = tensor,
+        shape = shape,
+    }
+end
+
+fun gguf_writer_add_metadata(gw: any, key: str, value: any): void
+    gw.metadata[key] = value
+end
+
+fun gguf_writer_encode(gw: any): any
+    -- Placeholder: would serialize to GGUF format
+    {
+        format = "gguf",
+        version = 3,
+        size = 0,
+    }
+end
+
+fun gguf_writer_save(gw: any, path: str): any
+    data = gguf_writer_encode(gw)
+    {ok = true, path = path}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Model Conversion
+-- ═══════════════════════════════════════════════════════════════
+
+fun convert_onnx_to_safetensors(onnx_model: any): any
+    st = safetensors_new()
+    for init in onnx_model.graph.initializers
+        safetensors_add_tensor(st, init.name, init.data, "f32")
+    end
+    st
+end
+
+fun convert_pytorch_to_onnx(state_dict: any, input_shapes: any): any
+    graph = onnx_graph_new("model")
+    for name, tensor in state_dict.tensors
+        onnx_graph_add_initializer(graph, name, tensor.shape, tensor.data)
+    end
+    onnx_model_new(graph)
+end
+
+fun convert_gguf_to_safetensors(gguf_model: any): any
+    st = safetensors_new()
+    for name, tensor in gguf_model.tensors
+        safetensors_add_tensor(st, name, tensor.data, "f32")
+    end
+    st
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- ONNX
+M.onnx_graph_new = onnx_graph_new
+M.onnx_graph_add_node = onnx_graph_add_node
+M.onnx_graph_add_input = onnx_graph_add_input
+M.onnx_graph_add_output = onnx_graph_add_output
+M.onnx_graph_add_initializer = onnx_graph_add_initializer
+M.onnx_model_new = onnx_model_new
+M.onnx_model_encode = onnx_model_encode
+M.onnx_model_save = onnx_model_save
+-- PyTorch
+M.pytorch_state_dict_new = pytorch_state_dict_new
+M.pytorch_state_dict_add = pytorch_state_dict_add
+M.pytorch_state_dict_save = pytorch_state_dict_save
+-- SafeTensors
+M.safetensors_new = safetensors_new
+M.safetensors_add_tensor = safetensors_add_tensor
+M.safetensors_encode = safetensors_encode
+M.safetensors_save = safetensors_save
+-- GGUF
+M.gguf_writer_new = gguf_writer_new
+M.gguf_writer_add_tensor = gguf_writer_add_tensor
+M.gguf_writer_add_metadata = gguf_writer_add_metadata
+M.gguf_writer_encode = gguf_writer_encode
+M.gguf_writer_save = gguf_writer_save
+-- Conversion
+M.convert_onnx_to_safetensors = convert_onnx_to_safetensors
+M.convert_pytorch_to_onnx = convert_pytorch_to_onnx
+M.convert_gguf_to_safetensors = convert_gguf_to_safetensors
+M

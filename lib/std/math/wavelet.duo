@@ -1,0 +1,244 @@
+-- std.math.wavelet — Wavelet transforms
+-- For signal processing, compression, and denoising.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Haar Wavelet Transform
+-- ═══════════════════════════════════════════════════════════════
+
+fun haar_forward(data: any): any
+    n = #data
+    if n <= 1 then return data end
+
+    -- Pad to even length if needed
+    padded = {table.unpack(data)}
+    if n % 2 ~= 0 then
+        padded[n + 1] = padded[n]
+        n += 1
+    end
+
+    result = {}
+    temp = {table.unpack(padded)}
+
+    level = n
+    while level > 1
+        half = level / 2
+        i = 1
+        while i <= half
+            avg = (temp[2 * i - 1] + temp[2 * i]) / 2
+            diff = (temp[2 * i - 1] - temp[2 * i]) / 2
+            result[half + i - 1] = diff
+            result[i] = avg
+            i += 1
+        end
+        i = 1
+        while i <= level
+            temp[i] = result[i]
+            i += 1
+        end
+        level = half
+    end
+
+    -- Reorder: store as [cA_n, cD_n, cD_{n-1}, ..., cD_1]
+    result
+end
+
+fun haar_inverse(data: any): any
+    n = #data
+    if n <= 1 then return data end
+
+    temp = {table.unpack(data)}
+
+    level = 2
+    while level <= n
+        half = level / 2
+        i = 1
+        while i <= half
+            temp[2 * i - 1] = temp[i] + temp[half + i]
+            temp[2 * i] = temp[i] - temp[half + i]
+            i += 1
+        end
+        level *= 2
+    end
+
+    temp
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Daubechies Wavelet (db4)
+-- ═══════════════════════════════════════════════════════════════
+
+-- Filter coefficients for Daubechies-4
+DB4_LO_DE = {
+    0.4829629131446902,
+    0.8365163037378077,
+    0.2241438680420134,
+    -0.1294095225512603,
+}
+DB4_HI_DE = {
+    -0.1294095225512603,
+    -0.2241438680420134,
+    0.8365163037378077,
+    -0.4829629131446902,
+}
+DB4_LO_RE = {
+    -0.1294095225512603,
+    0.2241438680420134,
+    0.8365163037378077,
+    0.4829629131446902,
+}
+DB4_HI_RE = {
+    0.4829629131446902,
+    -0.8365163037378077,
+    0.2241438680420134,
+    0.1294095225512603,
+}
+
+fun convolve(signal: any, filter: any): any
+    n = #signal
+    f = #filter
+    result = {}
+    i = 1
+    while i <= n
+        sum = 0
+        j = 1
+        while j <= f
+            idx = i - j + 1
+            if idx >= 1 and idx <= n then
+                sum += signal[idx] * filter[j]
+            end
+            j += 1
+        end
+        result[i] = sum
+        i += 1
+    end
+    result
+end
+
+fun downsample(data: any, factor: i64): any
+    result = {}
+    i = 1
+    while i <= #data
+        result[#result + 1] = data[i]
+        i += factor
+    end
+    result
+end
+
+fun upsample(data: any, factor: i64): any
+    result = {}
+    i = 1
+    while i <= #data
+        result[#result + 1] = data[i]
+        j = 1
+        while j < factor
+            result[#result + 1] = 0
+            j += 1
+        end
+        i += 1
+    end
+    result
+end
+
+fun db4_forward(data: any): any
+    approx = convolve(data, DB4_LO_DE)
+    detail = convolve(data, DB4_HI_DE)
+    approx_ds = downsample(approx, 2)
+    detail_ds = downsample(detail, 2)
+    {
+        approx = approx_ds,
+        detail = detail_ds,
+    }
+end
+
+fun db4_inverse(approx: any, detail: any): any
+    approx_us = upsample(approx, 2)
+    detail_us = upsample(detail, 2)
+    a = convolve(approx_us, DB4_LO_RE)
+    d = convolve(detail_us, DB4_HI_RE)
+    n = math.min(#a, #d)
+    result = {}
+    i = 1
+    while i <= n
+        result[i] = a[i] + d[i]
+        i += 1
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Multi-level Decomposition
+-- ═══════════════════════════════════════════════════════════════
+
+fun wavelet_decompose(data: any, levels: i64): any
+    coeffs = {data}
+    i = 1
+    while i <= levels
+        result = db4_forward(coeffs[i])
+        coeffs[i] = result.detail
+        coeffs[i + 1] = result.approx
+        i += 1
+    end
+    {
+        approx = coeffs[levels + 1],
+        details = {},
+        levels = levels,
+    }
+end
+
+fun wavelet_reconstruct(decomp: any): any
+    signal = decomp.approx
+    i = decomp.levels
+    while i >= 1
+        signal = db4_inverse(signal, decomp.details[i])
+        i -= 1
+    end
+    signal
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Denoising
+-- ═══════════════════════════════════════════════════════════════
+
+fun wavelet_denoise(signal: any, threshold: f64): any
+    decomp = wavelet_decompose(signal, 3)
+
+    -- Soft threshold detail coefficients
+    i = 1
+    while i <= #decomp.details
+        j = 1
+        while j <= #decomp.details[i]
+            coeff = decomp.details[i][j]
+            if math.abs(coeff) < threshold then
+                decomp.details[i][j] = 0
+            else
+                decomp.details[i][j] = coeff - math.sign(coeff) * threshold
+            end
+            j += 1
+        end
+        i += 1
+    end
+
+    wavelet_reconstruct(decomp)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Haar
+M.haar_forward = haar_forward
+M.haar_inverse = haar_inverse
+-- Daubechies
+M.db4_forward = db4_forward
+M.db4_inverse = db4_inverse
+-- Multi-level
+M.decompose = wavelet_decompose
+M.reconstruct = wavelet_reconstruct
+-- Denoise
+M.denoise = wavelet_denoise
+-- Utility
+M.convolve = convolve
+M.downsample = downsample
+M.upsample = upsample
+M

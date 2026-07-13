@@ -31,10 +31,10 @@ fun std_string_trim(s: any): any
     first = 1
     last = string.len(s)
     while first <= last and std_string_is_space(string.sub(s, first, first))
-        first = first + 1
+        first += 1
     end
     while last >= first and std_string_is_space(string.sub(s, last, last))
-        last = last - 1
+        last -= 1
     end
     if last < first then return "" end
     string.sub(s, first, last)
@@ -45,7 +45,7 @@ fun std_string_ltrim(s: any): any
     first = 1
     last = string.len(s)
     while first <= last and std_string_is_space(string.sub(s, first, first))
-        first = first + 1
+        first += 1
     end
     string.sub(s, first)
 end
@@ -54,7 +54,7 @@ fun std_string_rtrim(s: any): any
     if s == nil then return "" end
     last = string.len(s)
     while last >= 1 and std_string_is_space(string.sub(s, last, last))
-        last = last - 1
+        last -= 1
     end
     if last < 1 then return "" end
     string.sub(s, 1, last)
@@ -149,7 +149,7 @@ fun std_string_count(s: any, pat: any): i64
     while true
         pos = string.find(s, pat, start, true)
         if pos == nil then break end
-        c = c + 1
+        c += 1
         start = pos + string.len(pat)
     end
     c

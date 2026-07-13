@@ -15,7 +15,7 @@ fun std_maps_copy(dst: any, src: any): i64
     count = 0
     for k, v in pairs(src)
         dst[k] = v
-        count = count + 1
+        count += 1
     end
     count
 end
@@ -31,9 +31,9 @@ fun std_maps_equal(m1: any, m2: any): bool
     if m1 == nil and m2 == nil then return true end
     if m1 == nil or m2 == nil then return false end
     c1 = 0
-    for _ in pairs(m1) do c1 = c1 + 1 end
+    for _ in pairs(m1) do c1 += 1 end
     c2 = 0
-    for _ in pairs(m2) do c2 = c2 + 1 end
+    for _ in pairs(m2) do c2 += 1 end
     if c1 ~= c2 then return false end
     for k, v in pairs(m1)
         if m2[k] ~= v then return false end
@@ -45,9 +45,9 @@ fun std_maps_equal_func(m1: any, m2: any, eq: any): bool
     if m1 == nil and m2 == nil then return true end
     if m1 == nil or m2 == nil then return false end
     c1 = 0
-    for _ in pairs(m1) do c1 = c1 + 1 end
+    for _ in pairs(m1) do c1 += 1 end
     c2 = 0
-    for _ in pairs(m2) do c2 = c2 + 1 end
+    for _ in pairs(m2) do c2 += 1 end
     if c1 ~= c2 then return false end
     for k, v in pairs(m1)
         v2 = m2[k]
@@ -99,7 +99,7 @@ end
 fun std_maps_size(m: any): i64
     if m == nil then return 0 end
     c = 0
-    for _ in pairs(m) do c = c + 1 end
+    for _ in pairs(m) do c += 1 end
     c
 end
 

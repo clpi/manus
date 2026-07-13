@@ -1,5 +1,9 @@
 -- std.mem — memory primitives, allocators, and low-level memory operations
--- Provides arena, pool, and stack allocators as well as raw memory utilities.
+-- Provides raw memory utilities backed by C stdlib/mmap, plus arena/pool/stack allocators.
+
+@c.include("stdlib.h")
+@c.include("string.h")
+@c.include("sys/mman.h")
 
 -- Memory size constants
 fun page_size(): u64
@@ -15,7 +19,6 @@ fun gigabyte(): u64
 end
 
 -- Arena allocator: bump-allocate, free all at once
--- Wraps a table of byte buffers for conceptual arena semantics.
 fun arena_alloc(self: any, bytes: any): any
     if self._offset + bytes > self._capacity then
         new_buf = "alloc(" .. tostring(bytes) .. " bytes)"
@@ -170,30 +173,128 @@ fun fixed_buffer_new(size: i64): any
     }
 end
 
--- Raw memory operations (for native targets with WASM/C codegen)
-fun mem_copy(dst: any, src: any, bytes: i64): void
-    for i = 0, bytes - 1
-        dst[i] = src[i]
-    end
+-- Raw heap allocation
+fun alloc(bytes: i64): any
+    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
 end
 
-fun mem_set(dst: any, val: u8, bytes: i64): void
-    for i = 0, bytes - 1
-        dst[i] = val
-    end
+fun free(mem: any): void
+    __emit("free(mem.as.tval)")
 end
 
-fun mem_compare(a: any, b: any, bytes: i64)
-    for i = 0, bytes - 1
-        if a[i] ~= b[i] then return a[i] - b[i] end
-    end
-    0
+fun realloc(mem: any, new_bytes: i64): any
+    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
 end
 
-fun mem_zero(dst: any, bytes: i64): void
-    for i = 0, bytes - 1
-        dst[i] = 0
-    end
+fun dup(mem: any, bytes: i64): any
+    if bytes == 0 return alloc(0) end
+    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
+end
+
+fun offset(mem: any, n: i64): any
+    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = (void*)((uint8_t*)mem.as.tval + n); _v; })]])
+end
+
+-- Raw memory operations
+fun copy(dst: any, src: any, bytes: i64): void
+    if bytes == 0 return end
+    __emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
+end
+
+fun set(mem: any, val: u8, bytes: i64): void
+    if bytes == 0 return end
+    __emit("memset(mem.as.tval, (int)val, (size_t)bytes)")
+end
+
+fun zero(mem: any, bytes: i64): void
+    if bytes == 0 return end
+    __emit("memset(mem.as.tval, 0, (size_t)bytes)")
+end
+
+fun compare(a: any, b: any, bytes: i64): i64
+    if bytes == 0 return 0 end
+    __emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
+end
+
+-- mmap-backed allocation
+fun mmap(bytes: i64): any
+    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = mmap(NULL, (size_t)bytes, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0); _v; })]])
+end
+
+fun mremap(mem: any, old_bytes: i64, new_bytes: i64): any
+    __emit([[({
+        lua_Value _v;
+        _v.type = VAL_BUFFER;
+        void* _r = mmap(NULL, (size_t)new_bytes, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+        if (_r != MAP_FAILED && mem.as.tval) {
+            size_t _copy = (size_t)old_bytes < (size_t)new_bytes ? (size_t)old_bytes : (size_t)new_bytes;
+            if (_copy) memcpy(_r, mem.as.tval, _copy);
+            if (old_bytes) munmap(mem.as.tval, (size_t)old_bytes);
+        }
+        _v.as.tval = _r;
+        _v;
+    })]])
+end
+
+fun munmap(mem: any, bytes: i64): i64
+    __emit("(int64_t)munmap(mem.as.tval, (size_t)bytes)")
+end
+
+-- Byte readers/writers
+fun read_byte(mem: any, offset: i64): i64
+    __emit("(int64_t)(((uint8_t*)mem.as.tval + offset)[0])")
+end
+
+fun write_byte(mem: any, offset: i64, val: i64): void
+    __emit("((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val")
+end
+
+fun read_i32(mem: any, offset: i64): i64
+    __emit("(int64_t)(*(int32_t*)((uint8_t*)mem.as.tval + offset))")
+end
+
+fun write_i32(mem: any, offset: i64, val: i64): void
+    __emit("*(int32_t*)((uint8_t*)mem.as.tval + offset) = (int32_t)val")
+end
+
+fun read_u32(mem: any, offset: i64): i64
+    __emit("(int64_t)(*(uint32_t*)((uint8_t*)mem.as.tval + offset))")
+end
+
+fun write_u32(mem: any, offset: i64, val: u64): void
+    __emit("*(uint32_t*)((uint8_t*)mem.as.tval + offset) = (uint32_t)val")
+end
+
+fun read_i64(mem: any, offset: i64): i64
+    __emit("*(int64_t*)((uint8_t*)mem.as.tval + offset)")
+end
+
+fun write_i64(mem: any, offset: i64, val: i64): void
+    __emit("*(int64_t*)((uint8_t*)mem.as.tval + offset) = val")
+end
+
+fun read_u64(mem: any, offset: i64): u64
+    __emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset)")
+end
+
+fun write_u64(mem: any, offset: i64, val: u64): void
+    __emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset) = val")
+end
+
+fun read_f32(mem: any, offset: i64): f64
+    __emit("(double)(*(float*)((uint8_t*)mem.as.tval + offset))")
+end
+
+fun write_f32(mem: any, offset: i64, val: f64): void
+    __emit("*(float*)((uint8_t*)mem.as.tval + offset) = (float)val")
+end
+
+fun read_f64(mem: any, offset: i64): f64
+    __emit("*(double*)((uint8_t*)mem.as.tval + offset)")
+end
+
+fun write_f64(mem: any, offset: i64, val: f64): void
+    __emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
 end
 
 -- Standard allocators
@@ -224,10 +325,36 @@ M.pool_new = pool_new
 M.stack_new = stack_new
 M.fixed_buffer_new = fixed_buffer_new
 M.default_allocator = default_allocator
-M.mem_copy = mem_copy
-M.mem_set = mem_set
-M.mem_compare = mem_compare
-M.mem_zero = mem_zero
+M.alloc = alloc
+M.free = free
+M.realloc = realloc
+M.dup = dup
+M.offset = offset
+M.copy = copy
+M.mem_copy = copy
+M.set = set
+M.mem_set = set
+M.zero = zero
+M.mem_zero = zero
+M.compare = compare
+M.mem_compare = compare
+M.mmap = mmap
+M.mremap = mremap
+M.munmap = munmap
+M.read_byte = read_byte
+M.write_byte = write_byte
+M.read_i32 = read_i32
+M.write_i32 = write_i32
+M.read_u32 = read_u32
+M.write_u32 = write_u32
+M.read_i64 = read_i64
+M.write_i64 = write_i64
+M.read_u64 = read_u64
+M.write_u64 = write_u64
+M.read_f32 = read_f32
+M.write_f32 = write_f32
+M.read_f64 = read_f64
+M.write_f64 = write_f64
 M.align_up = align_up
 M.align_down = align_down
 M.is_power_of_two = is_power_of_two

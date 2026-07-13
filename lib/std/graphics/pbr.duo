@@ -1,0 +1,220 @@
+-- std.graphics.pbr — Physically Based Rendering
+-- For PBR materials and shading in ward's rendering pipeline.
+
+-- ═══════════════════════════════════════════════════════════════
+-- PBR Material
+-- ═══════════════════════════════════════════════════════════════
+
+fun pbr_material_new(): any
+    {
+        albedo = {r = 1, g = 1, b = 1, a = 1},
+        metallic = 0.0,
+        roughness = 0.5,
+        normal = nil,
+        emissive = {r = 0, g = 0, b = 0},
+        ao = 1.0,
+        ao_texture = nil,
+        albedo_texture = nil,
+        metallic_roughness_texture = nil,
+        normal_texture = nil,
+        emissive_texture = nil,
+    }
+end
+
+fun pbr_material_set_albedo(mat: any, r: f64, g: f64, b: f64, a: f64): void
+    mat.albedo = {r = r, g = g, b = b, a = a or 1}
+end
+
+fun pbr_material_set_metallic(mat: any, metallic: f64): void
+    mat.metallic = math.max(0, math.min(1, metallic))
+end
+
+fun pbr_material_set_roughness(mat: any, roughness: f64): void
+    mat.roughness = math.max(0.04, math.min(1, roughness))
+end
+
+fun pbr_material_set_emissive(mat: any, r: f64, g: f64, b: f64): void
+    mat.emissive = {r = r, g = g, b = b}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- BRDF Functions
+-- ═══════════════════════════════════════════════════════════════
+
+-- Normal Distribution Function (GGX/Trowbridge-Reitz)
+fun distribution_ggx(n_dot_h: f64, roughness: f64): f64
+    a = roughness * roughness
+    a2 = a * a
+    n_dot_h2 = n_dot_h * n_dot_h
+
+    denom = n_dot_h2 * (a2 - 1) + 1
+    denom = math.pi * denom * denom
+
+    if denom > 0 then
+        a2 / denom
+    else
+        0
+    end
+end
+
+-- Geometry Function (Smith's method)
+fun geometry_schlick_ggx(n_dot_v: f64, roughness: f64): f64
+    r = roughness + 1
+    k = (r * r) / 8
+    denom = n_dot_v * (1 - k) + k
+    n_dot_v / denom
+end
+
+fun geometry_smith(n_dot_v: f64, n_dot_l: f64, roughness: f64): f64
+    ggx1 = geometry_schlick_ggx(n_dot_v, roughness)
+    ggx2 = geometry_schlick_ggx(n_dot_l, roughness)
+    ggx1 * ggx2
+end
+
+-- Fresnel Equation (Schlick approximation)
+fun fresnel_schlick(cos_theta: f64, f0: any): any
+    power = math.pow(1 - cos_theta, 5)
+    return {
+        r = f0.r + (1 - f0.r) * power,
+        g = f0.g + (1 - f0.g) * power,
+        b = f0.b + (1 - f0.b) * power,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PBR Shading
+-- ═══════════════════════════════════════════════════════════════
+
+fun pbr_calculate_f0(mat: any): any
+    -- F0 is the reflectance at normal incidence
+    -- Dielectrics: 0.04, Metals: albedo
+    {
+        r = 0.04 + mat.metallic * (mat.albedo.r - 0.04),
+        g = 0.04 + mat.metallic * (mat.albedo.g - 0.04),
+        b = 0.04 + mat.metallic * (mat.albedo.b - 0.04),
+    }
+end
+
+fun pbr_shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64): any
+    -- Calculate F0
+    f0 = pbr_calculate_f0(mat)
+
+    -- Half vector
+    h = vec3_normalize(vec3_add(v, l))
+
+    -- Dot products
+    n_dot_l = math.max(0, vec3_dot(n, l))
+    n_dot_v = math.max(0.001, vec3_dot(n, v))
+    n_dot_h = math.max(0, vec3_dot(n, h))
+    v_dot_h = math.max(0, vec3_dot(v, h))
+
+    -- Cook-Torrance BRDF
+    d = distribution_ggx(n_dot_h, mat.roughness)
+    g = geometry_smith(n_dot_v, n_dot_l, mat.roughness)
+    f = fresnel_schlick(v_dot_h, f0)
+
+    -- Specular
+    numerator = {r = d * g * f.r, g = d * g * f.g, b = d * g * f.b}
+    denominator = 4 * n_dot_v * n_dot_l
+    specular = {
+        r = numerator.r / denominator,
+        g = numerator.g / denominator,
+        b = numerator.b / denominator,
+    }
+
+    -- Energy conservation
+    k_d = {r = 1 - f.r, g = 1 - f.g, b = 1 - f.b}
+    k_d.r = k_d.r * (1 - mat.metallic)
+    k_d.g = k_d.g * (1 - mat.metallic)
+    k_d.b = k_d.b * (1 - mat.metallic)
+
+    -- Diffuse (Lambertian)
+    diffuse = {
+        r = mat.albedo.r / math.pi,
+        g = mat.albedo.g / math.pi,
+        b = mat.albedo.b / math.pi,
+    }
+
+    -- Combine
+    lo = {
+        r = (k_d.r * diffuse.r + specular.r) * light_color.r * light_intensity * n_dot_l,
+        g = (k_d.g * diffuse.g + specular.g) * light_color.g * light_intensity * n_dot_l,
+        b = (k_d.b * diffuse.b + specular.b) * light_color.b * light_intensity * n_dot_l,
+    }
+
+    lo
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Vector Utilities
+-- ═══════════════════════════════════════════════════════════════
+
+fun vec3_new(x: f64, y: f64, z: f64): any
+    {x = x, y = y, z = z}
+end
+
+fun vec3_add(a: any, b: any): any
+    {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
+end
+
+fun vec3_sub(a: any, b: any): any
+    {x = a.x - b.x, y = a.y - b.y, z = a.z - b.z}
+end
+
+fun vec3_scale(v: any, s: f64): any
+    {x = v.x * s, y = v.y * s, z = v.z * s}
+end
+
+fun vec3_dot(a: any, b: any): f64
+    a.x * b.x + a.y * b.y + a.z * b.z
+end
+
+fun vec3_cross(a: any, b: any): any
+    {
+        x = a.y * b.z - a.z * b.y,
+        y = a.z * b.x - a.x * b.z,
+        z = a.x * b.y - a.y * b.x,
+    }
+end
+
+fun vec3_length(v: any): f64
+    math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+end
+
+fun vec3_normalize(v: any): any
+    len = vec3_length(v)
+    if len > 0 then
+        {x = v.x / len, y = v.y / len, z = v.z / len}
+    else
+        {x = 0, y = 0, z = 0}
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Material
+M.material_new = pbr_material_new
+M.material_set_albedo = pbr_material_set_albedo
+M.material_set_metallic = pbr_material_set_metallic
+M.material_set_roughness = pbr_material_set_roughness
+M.material_set_emissive = pbr_material_set_emissive
+-- BRDF
+M.distribution_ggx = distribution_ggx
+M.geometry_smith = geometry_smith
+M.fresnel_schlick = fresnel_schlick
+-- Shading
+M.shade = pbr_shade
+M.calculate_f0 = pbr_calculate_f0
+-- Vec3
+M.vec3_new = vec3_new
+M.vec3_add = vec3_add
+M.vec3_sub = vec3_sub
+M.vec3_scale = vec3_scale
+M.vec3_dot = vec3_dot
+M.vec3_cross = vec3_cross
+M.vec3_length = vec3_length
+M.vec3_normalize = vec3_normalize
+M

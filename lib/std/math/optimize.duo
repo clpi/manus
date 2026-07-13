@@ -1,0 +1,315 @@
+-- std.math.optimize — Optimization algorithms
+-- For ML hyperparameter tuning and function optimization.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Gradient Descent (1D)
+-- ═══════════════════════════════════════════════════════════════
+
+fun optimize_gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
+    x = x0
+    history = {x}
+
+    i = 0
+    while i < iterations
+        grad = df(x)
+        x -= lr * grad
+        history[#history + 1] = x
+        i += 1
+    end
+
+    {
+        x = x,
+        f_x = f(x),
+        history = history,
+        iterations = iterations,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Adam Optimizer (for scalar functions)
+-- ═══════════════════════════════════════════════════════════════
+
+fun optimize_adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64): any
+    if beta1 == nil then beta1 = 0.9 end
+    if beta2 == nil then beta2 = 0.999 end
+    if epsilon == nil then epsilon = 1e-8 end
+
+    x = x0
+    m = 0
+    v = 0
+    history = {x}
+
+    i = 1
+    while i <= iterations
+        grad = df(x)
+        m = beta1 * m + (1 - beta1) * grad
+        v = beta2 * v + (1 - beta2) * grad * grad
+        m_hat = m / (1 - beta1 ^ i)
+        v_hat = v / (1 - beta2 ^ i)
+        x -= lr * m_hat / (math.sqrt(v_hat) + epsilon)
+        history[#history + 1] = x
+        i += 1
+    end
+
+    {
+        x = x,
+        f_x = f(x),
+        history = history,
+        iterations = iterations,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Nelder-Mead (derivative-free)
+-- ═══════════════════════════════════════════════════════════════
+
+fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64): any
+    if alpha == nil then alpha = 1.0 end
+    if gamma == nil then gamma = 2.0 end
+    if rho == nil then rho = 0.5 end
+    if sigma == nil then sigma = 0.5 end
+
+    n = #x0
+
+    -- Initialize simplex
+    simplex = {}
+    simplex[1] = {point = x0, value = f(x0)}
+    i = 1
+    while i <= n
+        point = {}
+        j = 1
+        while j <= n
+            if j == i then
+                point[j] = x0[j] + 0.05
+            else
+                point[j] = x0[j]
+            end
+            j += 1
+        end
+        simplex[#simplex + 1] = {point = point, value = f(point)}
+        i += 1
+    end
+
+    iter = 0
+    while iter < iterations
+        -- Sort simplex by value
+        table.sort(simplex, function(a, b) return a.value < b.value end)
+
+        -- Best and worst
+        best = simplex[1]
+        worst = simplex[n + 1]
+
+        -- Centroid (excluding worst)
+        centroid = {}
+        i = 1
+        while i <= n
+            centroid[i] = 0
+            j = 1
+            while j <= n
+                centroid[i] = centroid[i] + simplex[j].point[i]
+                j += 1
+            end
+            centroid[i] = centroid[i] / n
+            i += 1
+        end
+
+        -- Reflection
+        reflected = {}
+        i = 1
+        while i <= n
+            reflected[i] = centroid[i] + alpha * (centroid[i] - worst.point[i])
+            i += 1
+        end
+        reflected_value = f(reflected)
+
+        if reflected_value < simplex[n].value and reflected_value >= best.value then
+            -- Accept reflection
+            simplex[n + 1] = {point = reflected, value = reflected_value}
+        elseif reflected_value < best.value then
+            -- Expansion
+            expanded = {}
+            i = 1
+            while i <= n
+                expanded[i] = centroid[i] + gamma * (reflected[i] - centroid[i])
+                i += 1
+            end
+            expanded_value = f(expanded)
+
+            if expanded_value < reflected_value then
+                simplex[n + 1] = {point = expanded, value = expanded_value}
+            else
+                simplex[n + 1] = {point = reflected, value = reflected_value}
+            end
+        else
+            -- Contraction
+            contracted = {}
+            i = 1
+            while i <= n
+                contracted[i] = centroid[i] + rho * (worst.point[i] - centroid[i])
+                i += 1
+            end
+            contracted_value = f(contracted)
+
+            if contracted_value < worst.value then
+                simplex[n + 1] = {point = contracted, value = contracted_value}
+            else
+                -- Shrink
+                i = 2
+                while i <= n + 1
+                    j = 1
+                    while j <= n
+                        simplex[i].point[j] = best.point[j] + sigma * (simplex[i].point[j] - best.point[j])
+                        j += 1
+                    end
+                    simplex[i].value = f(simplex[i].point)
+                    i += 1
+                end
+            end
+        end
+
+        iter += 1
+    end
+
+    -- Sort final simplex
+    table.sort(simplex, function(a, b) return a.value < b.value end)
+
+    {
+        x = simplex[1].point,
+        f_x = simplex[1].value,
+        iterations = iterations,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Grid Search
+-- ═══════════════════════════════════════════════════════════════
+
+fun optimize_grid_search(f: any, ranges: any, steps: i64): any
+    -- Generate grid points
+    grid = {}
+    for param_name, range in ranges
+        min_val = range[1]
+        max_val = range[2]
+        step_size = (max_val - min_val) / (steps - 1)
+        points = {}
+        i = 0
+        while i < steps
+            points[#points + 1] = min_val + i * step_size
+            i += 1
+        end
+        grid[param_name] = points
+    end
+
+    -- Evaluate all combinations
+    best = nil
+    best_value = 1e30
+    results = {}
+
+    -- Simple recursive evaluation for 2 params
+    param_names = {}
+    for name in ranges
+        param_names[#param_names + 1] = name
+    end
+
+    if #param_names == 1 then
+        for v in grid[param_names[1]]
+            params = {[param_names[1]] = v}
+            value = f(params)
+            results[#results + 1] = {params = params, value = value}
+            if value < best_value then
+                best_value = value
+                best = params
+            end
+        end
+    elseif #param_names == 2 then
+        for v1 in grid[param_names[1]]
+            for v2 in grid[param_names[2]]
+                params = {[param_names[1]] = v1, [param_names[2]] = v2}
+                value = f(params)
+                results[#results + 1] = {params = params, value = value}
+                if value < best_value then
+                    best_value = value
+                    best = params
+                end
+            end
+        end
+    end
+
+    {
+        best = best,
+        best_value = best_value,
+        results = results,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Random Search
+-- ═══════════════════════════════════════════════════════════════
+
+fun optimize_random_search(f: any, ranges: any, iterations: i64): any
+    best = nil
+    best_value = 1e30
+    results = {}
+
+    i = 0
+    while i < iterations
+        params = {}
+        for param_name, range in ranges
+            min_val = range[1]
+            max_val = range[2]
+            params[param_name] = min_val + math.random() * (max_val - min_val)
+        end
+
+        value = f(params)
+        results[#results + 1] = {params = params, value = value}
+
+        if value < best_value then
+            best_value = value
+            best = params
+        end
+
+        i += 1
+    end
+
+    {
+        best = best,
+        best_value = best_value,
+        results = results,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Line Search (backtracking)
+-- ═══════════════════════════════════════════════════════════════
+
+fun optimize_line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_iter: i64): f64
+    if alpha == nil then alpha = 0.5 end
+    if beta == nil then beta = 0.8 end
+    if max_iter == nil then max_iter = 20 end
+
+    t = 1.0
+    f_x = f(x)
+
+    i = 0
+    while i < max_iter
+        if f(x + t * direction) <= f_x + alpha * t * direction then
+            return t
+        end
+        t = beta * t
+        i += 1
+    end
+    t
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.gradient_descent = optimize_gradient_descent
+M.adam = optimize_adam
+M.nelder_mead = optimize_nelder_mead
+M.grid_search = optimize_grid_search
+M.random_search = optimize_random_search
+M.line_search = optimize_line_search
+M

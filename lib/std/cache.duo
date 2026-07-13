@@ -46,7 +46,7 @@ fun simple_delete(c: any, key: str): void
         if c.order[i] ~= key then
             new_order[rawlen(new_order) + 1] = c.order[i]
         end
-        i = i + 1
+        i += 1
     end
     c.order = new_order
 end
@@ -160,8 +160,8 @@ fun ttl_purge_expired(c: any): i64
     i = 1
     while i <= rawlen(keys_to_remove)
         std_cache_ttl_delete(c, keys_to_remove[i])
-        removed = removed + 1
-        i = i + 1
+        removed += 1
+        i += 1
     end
     removed
 end
@@ -171,7 +171,7 @@ fun ttl_size(c: any): i64
     if c == nil then return 0 end
     n = 0
     for _ck, _cv in c.data
-        n = n + 1
+        n += 1
     end
     n
 end
@@ -186,7 +186,7 @@ fun std_cache_lru_touch(c: any, key: str): void
         if c.order[i] ~= key then
             new_order[rawlen(new_order) + 1] = c.order[i]
         end
-        i = i + 1
+        i += 1
     end
     new_order[rawlen(new_order) + 1] = key
     c.order = new_order
@@ -200,7 +200,7 @@ fun std_cache_lru_remove_order(c: any, key: str): void
         if c.order[i] ~= key then
             new_order[rawlen(new_order) + 1] = c.order[i]
         end
-        i = i + 1
+        i += 1
     end
     c.order = new_order
 end
@@ -239,7 +239,7 @@ fun lru_set(c: any, key: str, value: any): void
         j = 2
         while j <= rawlen(c.order)
             new_order[rawlen(new_order) + 1] = c.order[j]
-            j = j + 1
+            j += 1
         end
         c.order = new_order
     end
@@ -285,7 +285,7 @@ fun lru_evict(c: any): any
     j = 2
     while j <= rawlen(c.order)
         new_order[rawlen(new_order) + 1] = c.order[j]
-        j = j + 1
+        j += 1
     end
     c.order = new_order
     val

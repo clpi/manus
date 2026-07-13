@@ -71,7 +71,7 @@ fun decode(data: str): any
         elseif chunk_type == "IEND" then
             break
         end
-        off = off + 12 + chunk_len
+        off += 12 + chunk_len
     end
     img
 end

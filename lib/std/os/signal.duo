@@ -1,0 +1,236 @@
+-- std.os.signal — Signal handling for runtime
+-- Used by ward to handle process signals and clean shutdown.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Signal Constants
+-- ═══════════════════════════════════════════════════════════════
+
+SIGHUP = 1
+SIGINT = 2
+SIGQUIT = 3
+SIGKILL = 9
+SIGUSR1 = 10
+SIGUSR2 = 12
+SIGPIPE = 13
+SIGALRM = 14
+SIGTERM = 15
+SIGSTOP = 17
+SIGCONT = 19
+SIGCHLD = 20
+SIGTSTP = 20
+SIGTTIN = 21
+SIGTTOU = 22
+SIGPROF = 27
+SIGWINCH = 28
+
+-- ═══════════════════════════════════════════════════════════════
+-- Signal Handler Registry
+-- ═══════════════════════════════════════════════════════════════
+
+fun signal_handler_new(): any
+    {
+        handlers = {},
+        default_handlers = {},
+        signal_queue = {},
+        blocked = {},
+    }
+end
+
+fun signal_register(handler: any, sig: i64, callback: any): void
+    handler.handlers[sig] = callback
+end
+
+fun signal_unregister(handler: any, sig: i64): void
+    handler.handlers[sig] = nil
+end
+
+fun signal_block(handler: any, sig: i64): void
+    handler.blocked[sig] = true
+end
+
+fun signal_unblock(handler: any, sig: i64): void
+    handler.blocked[sig] = nil
+end
+
+fun signal_emit(handler: any, sig: i64): void
+    if handler.blocked[sig] then
+        handler.signal_queue[#handler.signal_queue + 1] = sig
+        return
+    end
+
+    if handler.handlers[sig] then
+        handler.handlers[sig](sig)
+    end
+end
+
+fun signal_process_queue(handler: any): void
+    while #handler.signal_queue > 0
+        sig = handler.signal_queue[1]
+        table.remove(handler.signal_queue, 1)
+        if not handler.blocked[sig] and handler.handlers[sig] then
+            handler.handlers[sig](sig)
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Signal Utilities
+-- ═══════════════════════════════════════════════════════════════
+
+fun signal_name(sig: i64): str
+    names = {
+        [SIGHUP] = "SIGHUP",
+        [SIGINT] = "SIGINT",
+        [SIGQUIT] = "SIGQUIT",
+        [SIGKILL] = "SIGKILL",
+        [SIGUSR1] = "SIGUSR1",
+        [SIGUSR2] = "SIGUSR2",
+        [SIGPIPE] = "SIGPIPE",
+        [SIGALRM] = "SIGALRM",
+        [SIGTERM] = "SIGTERM",
+        [SIGSTOP] = "SIGSTOP",
+        [SIGCONT] = "SIGCONT",
+        [SIGCHLD] = "SIGCHLD",
+        [SIGTSTP] = "SIGTSTP",
+        [SIGTTIN] = "SIGTTIN",
+        [SIGTTOU] = "SIGTTOU",
+        [SIGPROF] = "SIGPROF",
+        [SIGWINCH] = "SIGWINCH",
+    }
+    names[sig] or "UNKNOWN"
+end
+
+fun signal_from_name(name: str): i64
+    names = {
+        HUP = SIGHUP,
+        INT = SIGINT,
+        QUIT = SIGQUIT,
+        KILL = SIGKILL,
+        USR1 = SIGUSR1,
+        USR2 = SIGUSR2,
+        PIPE = SIGPIPE,
+        ALRM = SIGALRM,
+        TERM = SIGTERM,
+        STOP = SIGSTOP,
+        CONT = SIGCONT,
+        CHLD = SIGCHLD,
+        TSTP = SIGTSTP,
+        TTIN = SIGTTIN,
+        TTOU = SIGTTOU,
+        PROF = SIGPROF,
+        WINCH = SIGWINCH,
+    }
+    -- Remove SIG prefix if present
+    clean = name
+    if string.sub(name, 1, 3) == "SIG" then
+        clean = string.sub(name, 4)
+    end
+    names[clean] or 0
+end
+
+fun signal_is_fatal(sig: i64): bool
+    sig == SIGKILL or sig == SIGTERM or sig == SIGHUP
+end
+
+fun signal_is_stop(sig: i64): bool
+    sig == SIGSTOP or sig == SIGTSTP or sig == SIGTTIN or sig == SIGTTOU
+end
+
+fun signal_is_continue(sig: i64): bool
+    sig == SIGCONT
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Graceful Shutdown Handler
+-- ═══════════════════════════════════════════════════════════════
+
+fun shutdown_handler_new(): any
+    {
+        handler = signal_handler_new(),
+        shutdown_hooks = {},
+        is_shutting_down = false,
+        shutdown_timeout = 30,
+    }
+end
+
+fun shutdown_register(sh: any, callback: any): void
+    sh.shutdown_hooks[#sh.shutdown_hooks + 1] = callback
+end
+
+fun shutdown_trigger(sh: any): void
+    if sh.is_shutting_down then return end
+    sh.is_shutting_down = true
+
+    -- Run hooks in reverse order
+    i = #sh.shutdown_hooks
+    while i >= 1
+        sh.shutdown_hooks[i]()
+        i -= 1
+    end
+end
+
+fun shutdown_is_active(sh: any): bool
+    sh.is_shutting_down
+end
+
+fun shutdown_setup(sh: any): void
+    -- Register signal handlers for graceful shutdown
+    signal_register(sh.handler, SIGTERM, function(sig)
+        print("Received SIGTERM, shutting down...")
+        shutdown_trigger(sh)
+    end)
+
+    signal_register(sh.handler, SIGINT, function(sig)
+        print("Received SIGINT, shutting down...")
+        shutdown_trigger(sh)
+    end)
+
+    signal_register(sh.handler, SIGHUP, function(sig)
+        print("Received SIGHUP, reloading...")
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Constants
+M.SIGHUP = SIGHUP
+M.SIGINT = SIGINT
+M.SIGQUIT = SIGQUIT
+M.SIGKILL = SIGKILL
+M.SIGUSR1 = SIGUSR1
+M.SIGUSR2 = SIGUSR2
+M.SIGPIPE = SIGPIPE
+M.SIGALRM = SIGALRM
+M.SIGTERM = SIGTERM
+M.SIGSTOP = SIGSTOP
+M.SIGCONT = SIGCONT
+M.SIGCHLD = SIGCHLD
+M.SIGTSTP = SIGTSTP
+M.SIGTTIN = SIGTTIN
+M.SIGTTOU = SIGTTOU
+M.SIGPROF = SIGPROF
+M.SIGWINCH = SIGWINCH
+-- Handler
+M.handler_new = signal_handler_new
+M.register = signal_register
+M.unregister = signal_unregister
+M.block = signal_block
+M.unblock = signal_unblock
+M.emit = signal_emit
+M.process_queue = signal_process_queue
+-- Utilities
+M.name = signal_name
+M.from_name = signal_from_name
+M.is_fatal = signal_is_fatal
+M.is_stop = signal_is_stop
+M.is_continue = signal_is_continue
+-- Shutdown
+M.shutdown_new = shutdown_handler_new
+M.shutdown_register = shutdown_register
+M.shutdown_trigger = shutdown_trigger
+M.shutdown_is_active = shutdown_is_active
+M.shutdown_setup = shutdown_setup
+M

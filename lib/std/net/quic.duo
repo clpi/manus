@@ -1,0 +1,327 @@
+-- std.net.quic — QUIC protocol
+-- For modern, multiplexed, encrypted networking.
+
+-- ═══════════════════════════════════════════════════════════════
+-- QUIC Constants
+-- ═══════════════════════════════════════════════════════════════
+
+M.QUIC_VERSION = 0x00000001
+M.MAX_UDP_PAYLOAD = 1200
+M.MAX_STREAMS = 256
+M.DEFAULT_IDLE_TIMEOUT = 30000
+
+-- Packet Types
+M.PACKET_TYPE_INITIAL = 0x00
+M.PACKET_TYPE_0RTT = 0x01
+M.PACKET_TYPE_HANDSHAKE = 0x02
+M.PACKET_TYPE_RETRY = 0x03
+M.PACKET_TYPE_1RTT = 0x04
+
+-- Frame Types
+M.FRAME_CRYPTO = 0x06
+M.FRAME_STREAM = 0x08
+M.FRAME_ACK = 0x0A
+M.FRAME_MAX_DATA = 0x10
+M.FRAME_MAX_STREAMS = 0x12
+M.FRAME_CONNECTION_CLOSE = 0x1C
+
+-- ═══════════════════════════════════════════════════════════════
+-- QUIC Connection
+-- ═══════════════════════════════════════════════════════════════
+
+fun quic_connection_new(config: any): any
+    {
+        connection_id = config.connection_id or generate_connection_id(),
+        remote_address = config.remote_address or "0.0.0.0:0",
+        state = "idle",
+        streams = {},
+        next_stream_id = 0,
+        packet_number = 0,
+        max_data = 1048576,
+        max_streams = M.MAX_STREAMS,
+        idle_timeout = M.DEFAULT_IDLE_TIMEOUT,
+        created_at = os.time() * 1000,
+        last_activity = os.time() * 1000,
+    }
+end
+
+fun quic_connection_connect(conn: any, address: str): any
+    conn.remote_address = address
+    conn.state = "connecting"
+    conn.last_activity = os.time() * 1000
+
+    -- Would initiate handshake with Initial packet
+    -- For now, simulate connection
+    {
+        ok = true,
+        connection_id = conn.connection_id,
+    }
+end
+
+fun quic_connection_accept(conn: any): any
+    conn.state = "connected"
+    conn.last_activity = os.time() * 1000
+    {
+        ok = true,
+        connection_id = conn.connection_id,
+    }
+end
+
+fun quic_connection_close(conn: any, error_code: i64, reason: str): void
+    conn.state = "closed"
+    conn.close_error = error_code
+    conn.close_reason = reason
+end
+
+fun quic_connection_is_open(conn: any): bool
+    conn.state ~= "closed"
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- QUIC Stream
+-- ═══════════════════════════════════════════════════════════════
+
+fun quic_stream_new(conn: any, stream_id: i64): any
+    {
+        stream_id = stream_id or conn.next_stream_id,
+        conn = conn,
+        state = "open",
+        send_buffer = {},
+        recv_buffer = {},
+        send_offset = 0,
+        recv_offset = 0,
+        max_stream_data = 65536,
+        data_available = false,
+    }
+end
+
+fun quic_stream_write(stream: any, data: any): any
+    if stream.state ~= "open" then
+        return {ok = false, error = "stream closed"}
+    end
+
+    -- Add to send buffer
+    for byte in data
+        stream.send_buffer[#stream.send_buffer + 1] = byte
+    end
+    stream.send_offset = stream.send_offset + #data
+
+    -- Would send STREAM frame
+    {
+        ok = true,
+        bytes_sent = #data,
+    }
+end
+
+fun quic_stream_read(stream: any, max_bytes: i64): any
+    if #stream.recv_buffer == 0 then
+        return {ok = false, error = "no data"}
+    end
+
+    bytes = {}
+    count = math.min(max_bytes, #stream.recv_buffer)
+    i = 1
+    while i <= count
+        bytes[i] = stream.recv_buffer[i]
+        i += 1
+    end
+
+    -- Remove from buffer
+    i = 1
+    while i <= #stream.recv_buffer - count
+        stream.recv_buffer[i] = stream.recv_buffer[i + count]
+        i += 1
+    end
+
+    -- Resize buffer
+    new_size = #stream.recv_buffer - count
+    while #stream.recv_buffer > new_size
+        stream.recv_buffer[#stream.recv_buffer] = nil
+    end
+
+    stream.recv_offset = stream.recv_offset + count
+
+    {
+        ok = true,
+        data = bytes,
+        size = count,
+    }
+end
+
+fun quic_stream_close(stream: any): void
+    stream.state = "closed"
+end
+
+fun quic_stream_is_open(stream: any): bool
+    stream.state == "open"
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- QUIC Packet Encoding
+-- ═══════════════════════════════════════════════════════════════
+
+fun quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_number: i64): any
+    -- Simplified header encoding
+    bytes = {}
+
+    -- Version (4 bytes)
+    bytes[1] = bit.band(bit.rshift(M.QUIC_VERSION, 24), 0xFF)
+    bytes[2] = bit.band(bit.rshift(M.QUIC_VERSION, 16), 0xFF)
+    bytes[3] = bit.band(bit.rshift(M.QUIC_VERSION, 8), 0xFF)
+    bytes[4] = bit.band(M.QUIC_VERSION, 0xFF)
+
+    -- Connection ID length + connection ID
+    bytes[5] = 8  -- ID length
+    i = 1
+    while i <= 8
+        bytes[5 + i] = bit.band(bit.rshift(connection_id, (8 - i) * 8), 0xFF)
+        i += 1
+    end
+
+    -- Packet number (4 bytes)
+    offset = 14
+    bytes[offset] = bit.band(bit.rshift(packet_number, 24), 0xFF)
+    bytes[offset + 1] = bit.band(bit.rshift(packet_number, 16), 0xFF)
+    bytes[offset + 2] = bit.band(bit.rshift(packet_number, 8), 0xFF)
+    bytes[offset + 3] = bit.band(packet_number, 0xFF)
+
+    bytes
+end
+
+fun quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
+    bytes = {}
+
+    -- Frame type
+    bytes[1] = M.FRAME_STREAM
+
+    -- Stream ID (varint)
+    bytes[2] = bit.band(stream_id, 0xFF)
+
+    -- Offset (varint)
+    bytes[3] = bit.band(offset, 0xFF)
+
+    -- Data length
+    bytes[4] = #data
+
+    -- Data
+    i = 1
+    while i <= #data
+        bytes[4 + i] = data[i]
+        i += 1
+    end
+
+    bytes
+end
+
+fun quic_frame_ack_encode(largest_acknowledged: i64, ack_delay: i64): any
+    bytes = {}
+
+    -- Frame type
+    bytes[1] = M.FRAME_ACK
+
+    -- Largest acknowledged (varint)
+    bytes[2] = bit.band(largest_acknowledged, 0xFF)
+
+    -- ACK delay (varint)
+    bytes[3] = bit.band(ack_delay, 0xFF)
+
+    -- ACK range count
+    bytes[4] = 0
+
+    bytes
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- QUIC Config
+-- ═══════════════════════════════════════════════════════════════
+
+fun quic_config_new(): any
+    {
+        max_data = 1048576,
+        max_streams = M.MAX_STREAMS,
+        idle_timeout = M.DEFAULT_IDLE_TIMEOUT,
+        max_udp_payload = M.MAX_UDP_PAYLOAD,
+        initial_max_data = 1048576,
+        initial_max_streams_bidi = 100,
+        initial_max_streams_uni = 100,
+    }
+end
+
+fun quic_config_set_max_data(config: any, max_data: i64): void
+    config.max_data = max_data
+end
+
+fun quic_config_set_max_streams(config: any, max_streams: i64): void
+    config.max_streams = max_streams
+end
+
+fun quic_config_set_idle_timeout(config: any, timeout: i64): void
+    config.idle_timeout = timeout
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Utility
+-- ═══════════════════════════════════════════════════════════════
+
+fun generate_connection_id(): any
+    bytes = {}
+    i = 1
+    while i <= 8
+        bytes[i] = math.random(0, 255)
+        i += 1
+    end
+    bytes
+end
+
+fun quic_varint_encode(value: i64): any
+    if value < 0x40 then
+        return {bit.band(value, 0xFF)}
+    elseif value < 0x4000 then
+        return {
+            bit.bor(0x40, bit.rshift(value, 8)),
+            bit.band(value, 0xFF),
+        }
+    elseif value < 0x40000000 then
+        return {
+            bit.bor(0x80, bit.rshift(value, 24)),
+            bit.band(bit.rshift(value, 16), 0xFF),
+            bit.band(bit.rshift(value, 8), 0xFF),
+            bit.band(value, 0xFF),
+        }
+    else
+        return {
+            bit.bor(0xC0, bit.rshift(value, 56)),
+            bit.band(bit.rshift(value, 48), 0xFF),
+            bit.band(bit.rshift(value, 40), 0xFF),
+            bit.band(bit.rshift(value, 32), 0xFF),
+            bit.band(bit.rshift(value, 24), 0xFF),
+            bit.band(bit.rshift(value, 16), 0xFF),
+            bit.band(bit.rshift(value, 8), 0xFF),
+            bit.band(value, 0xFF),
+        }
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M.connection_new = quic_connection_new
+M.connection_connect = quic_connection_connect
+M.connection_accept = quic_connection_accept
+M.connection_close = quic_connection_close
+M.connection_is_open = quic_connection_is_open
+M.stream_new = quic_stream_new
+M.stream_write = quic_stream_write
+M.stream_read = quic_stream_read
+M.stream_close = quic_stream_close
+M.stream_is_open = quic_stream_is_open
+M.packet_header_encode = quic_packet_header_encode
+M.frame_stream_encode = quic_frame_stream_encode
+M.frame_ack_encode = quic_frame_ack_encode
+M.config_new = quic_config_new
+M.config_set_max_data = quic_config_set_max_data
+M.config_set_max_streams = quic_config_set_max_streams
+M.config_set_idle_timeout = quic_config_set_idle_timeout
+M.varint_encode = quic_varint_encode
+M

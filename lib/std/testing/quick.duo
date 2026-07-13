@@ -60,7 +60,7 @@ fun check(fn: any, config: any): bool
     if config == nil then config = default_config() end
     local max_count = config.max_count
     if config.max_count_scale ~= nil then
-        max_count = max_count * config.max_count_scale
+        max_count *= config.max_count_scale
     end
     for i = 1, max_count
         local ok, err = pcall(fn)

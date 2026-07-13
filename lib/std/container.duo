@@ -201,7 +201,7 @@ fun new_ring(n: any): any
     while i < n
         cur.next = {value = nil, next = nil}
         cur = cur.next
-        i = i + 1
+        i += 1
     end
     cur.next = head  -- close the circle
     {current = head, len = n}

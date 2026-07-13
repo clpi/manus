@@ -41,13 +41,13 @@ fun sha1(s: str): str
             off = block * 64 + j * 4 + 1
             w[j + 1] = string.byte(msg, off) * 16777216 + string.byte(msg, off + 1) * 65536 + string.byte(msg, off + 2) * 256 + string.byte(msg, off + 3)
             w[j + 1] = w[j + 1] % (2^32)
-            j = j + 1
+            j += 1
         end
         j = 16
         while j < 80
             v = w[j - 3] ~ w[j - 8] ~ w[j - 14] ~ w[j - 16]
             w[j + 1] = ((v << 1) | (v >> 31)) % (2^32)
-            j = j + 1
+            j += 1
         end
         a = h0; b = h1; c = h2; d = h3; e = h4
         j = 0
@@ -73,14 +73,14 @@ fun sha1(s: str): str
             c = ((b << 30) | (b >> 2)) % (2^32)
             b = a
             a = temp
-            j = j + 1
+            j += 1
         end
         h0 = (h0 + a) % (2^32)
         h1 = (h1 + b) % (2^32)
         h2 = (h2 + c) % (2^32)
         h3 = (h3 + d) % (2^32)
         h4 = (h4 + e) % (2^32)
-        block = block + 1
+        block += 1
     end
     string.format("%08x%08x%08x%08x%08x", h0, h1, h2, h3, h4)
 end
@@ -126,7 +126,7 @@ fun sha256(s: str): str
             off = block * 64 + j * 4 + 1
             w[j + 1] = string.byte(msg, off) * 16777216 + string.byte(msg, off + 1) * 65536 + string.byte(msg, off + 2) * 256 + string.byte(msg, off + 3)
             w[j + 1] = w[j + 1] % (2^32)
-            j = j + 1
+            j += 1
         end
         j = 16
         while j < 64
@@ -137,7 +137,7 @@ fun sha256(s: str): str
             local wt2 = w[j - 15 + 1]
             s1 = (((wt2 >> 17) | (wt2 << 15)) % (2^32)) ~ (((wt2 >> 19) | (wt2 << 13)) % (2^32)) ~ (wt2 >> 10)
             w[j + 1] = (w[j + 1] + s0 + w[j - 7 + 1] + s1) % (2^32)
-            j = j + 1
+            j += 1
         end
         a = H0; b = H1; c = H2; d = H3; e = H4; f = H5; g = H6; h = H7
         j = 0
@@ -158,7 +158,7 @@ fun sha256(s: str): str
             c = b
             b = a
             a = (temp1 + temp2) % (2^32)
-            j = j + 1
+            j += 1
         end
         H0 = (H0 + a) % (2^32)
         H1 = (H1 + b) % (2^32)
@@ -168,7 +168,7 @@ fun sha256(s: str): str
         H5 = (H5 + f) % (2^32)
         H6 = (H6 + g) % (2^32)
         H7 = (H7 + h) % (2^32)
-        block = block + 1
+        block += 1
     end
     string.format("%08x%08x%08x%08x%08x%08x%08x%08x", H0, H1, H2, H3, H4, H5, H6, H7)
 end

@@ -51,9 +51,9 @@ fun pow_int(base: int, exp: int): int
     result: int = 1
     while exp > 0
         if exp % 2 == 1 then
-            result = result * base
+            result *= base
         end
-        base = base * base
+        base *= base
         exp = exp >> 1
     end
     result

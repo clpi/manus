@@ -68,6 +68,49 @@ fun std_fmt_trunc(s: str, width: i64): str
     string.sub(s, 1, width)
 end
 
+fun format(fmt: str, args: any): str
+    if fmt == nil then return "" end
+    if args == nil then args = {} end
+    out = ""
+    i = 1
+    arg_idx = 1
+    while i <= #fmt
+        if fmt:sub(i, i) == "{" then
+            j = fmt:find("}", i, true)
+            if j then
+                spec = fmt:sub(i + 1, j - 1)
+                v = args[arg_idx]
+                if spec == "" then
+                    out = out .. tostring(v)
+                elseif string.sub(spec, 1, 2) == ":." then
+                    prec = tonumber(string.sub(spec, 3))
+                    if prec and tonumber(v) then
+                        out = out .. string.format("%." .. tostring(prec) .. "f", v)
+                    else
+                        out = out .. tostring(v)
+                    end
+                else
+                    out = out .. tostring(v)
+                end
+                arg_idx = arg_idx + 1
+                i = j + 1
+            else
+                out = out .. fmt:sub(i, i)
+                i = i + 1
+            end
+        else
+            out = out .. fmt:sub(i, i)
+            i = i + 1
+        end
+    end
+    out
+end
+
+fun println(fmt: str, ...args): void
+    local s = format(fmt, args)
+    __emit("printf(\"%s\\n\", s)")
+end
+
 M = {}
 M.int = std_fmt_int
 M.float = std_fmt_float
@@ -78,4 +121,6 @@ M.bin = bin
 M.trim = trim
 M.pad = pad
 M.trunc = std_fmt_trunc
+M.format = format
+M.println = println
 M

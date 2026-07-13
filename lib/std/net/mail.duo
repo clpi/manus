@@ -33,20 +33,20 @@ fun parse_address_list(s: str): any
     i = 1
     while i <= string.len(s)
         ch = string.sub(s, i, i)
-        if ch == "<" then depth = depth + 1 end
-        if ch == ">" then depth = depth - 1 end
+        if ch == "<" then depth += 1 end
+        if ch == ">" then depth -= 1 end
         if ch == "," and depth == 0 then
             parts[rawlen(parts) + 1] = string.sub(s, start, i - 1)
             start = i + 1
         end
-        i = i + 1
+        i += 1
     end
     parts[rawlen(parts) + 1] = string.sub(s, start)
     i = 1
     while i <= rawlen(parts)
         addr = parse_address(parts[i])
         if addr ~= nil then out[rawlen(out) + 1] = addr end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -75,7 +75,7 @@ fun split_lines(s: str): any
             out[rawlen(out) + 1] = line
             start = i + 1
         end
-        i = i + 1
+        i += 1
     end
     if start <= string.len(s) then
         out[rawlen(out) + 1] = string.sub(s, start)
@@ -121,7 +121,7 @@ fun read_message(raw: str): any
                 local cur_key = nil
             end
         end
-        i = i + 1
+        i += 1
     end
     if cur_key ~= nil then
         headers[string.lower(cur_key)] = string.gsub(cur_val, "^%s+", "")

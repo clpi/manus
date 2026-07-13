@@ -18,7 +18,7 @@ fun build(data: str): any
             local b = string.sub(data, sa[j])
             if a <= b then break end
             sa[j - 1], sa[j] = sa[j], sa[j - 1]
-            j = j - 1
+            j -= 1
         end
     end
     {data = data, sa = sa}

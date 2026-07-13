@@ -17,7 +17,7 @@ fun decode(data: str): any
     bg_color = string.byte(data, 13)
     off = 14
     if gct_flag == 1 then
-        off = off + gct_size * 3
+        off += gct_size * 3
     end
     img = image.new_rgba(image.rect(0, 0, width, height))
     gfx_ctrl = nil
@@ -28,11 +28,11 @@ fun decode(data: str): any
             if ext_label == 0xF9 and ext_len == 4 then
                 gfx_ctrl = string.byte(data, off + 3)
             end
-            off = off + 2 + ext_len + 1
+            off += 2 + ext_len + 1
             while string.byte(data, off) ~= 0
-                off = off + string.byte(data, off) + 1
+                off += string.byte(data, off) + 1
             end
-            off = off + 1
+            off += 1
         elseif string.byte(data, off) == 0x2C then
             left = string.byte(data, off + 1) + string.byte(data, off + 2) * 256
             top = string.byte(data, off + 3) + string.byte(data, off + 4) * 256
@@ -44,14 +44,14 @@ fun decode(data: str): any
             if lct_flag == 1 then
                 lct_size = 2 ^ ((local_packed % 8) + 1)
             end
-            off = off + 10 + lct_size * 3
+            off += 10 + lct_size * 3
             min_code_size = string.byte(data, off)
-            off = off + 2
+            off += 2
             -- Skip LZW data blocks
             while string.byte(data, off) ~= 0
-                off = off + string.byte(data, off) + 1
+                off += string.byte(data, off) + 1
             end
-            off = off + 1
+            off += 1
             -- Fill image area with placeholder
             for y = top, top + img_h - 1
                 for x = left, left + img_w - 1

@@ -499,6 +499,8 @@ pub const Evaluator = struct {
             .neq => .{ .bool = !left.eql(right) },
             .lt, .gt, .leq, .geq => try evalComparison(op, left, right),
             .contains, .@"and", .@"or" => error.UnsupportedOperator,
+            .matmul => error.UnsupportedOperator,
+            .pipeline => error.UnsupportedOperator,
         };
     }
 

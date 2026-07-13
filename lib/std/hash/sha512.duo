@@ -11,8 +11,8 @@ fun wide_add(a: any, b: any): any
     lo = a.lo + b.lo
     hi = a.hi + b.hi
     if lo >= (2^32) then
-        lo = lo - (2^32)
-        hi = hi + 1
+        lo -= (2^32)
+        hi += 1
     end
     hi = hi % (2^32)
     lo = lo % (2^32)

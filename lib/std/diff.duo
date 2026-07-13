@@ -1,0 +1,287 @@
+-- std.diff — Structural diff algorithms
+-- Myers O(ND) text diff, LCS, and hierarchical table diff.
+-- Critical for: config management, CRDTs, code review, data sync,
+-- ML model versioning, and version control systems.
+
+-- ═══════════════════════════════════════════════════════════════
+-- LCS: longest common subsequence
+-- ═══════════════════════════════════════════════════════════════
+
+fun lcs(a: any, b: any): any
+    la = rawlen(a)
+    lb = rawlen(b)
+    prev = {}
+    curr = {}
+    j = 0
+    while j <= lb
+        prev[j + 1] = 0
+        j += 1
+    end
+    i = 1
+    while i <= la
+        curr[1] = 0
+        j = 1
+        while j <= lb
+            if a[i] == b[j] then
+                curr[j + 1] = prev[j] + 1
+            else
+                left = curr[j]
+                up = prev[j + 1]
+                if left > up then curr[j + 1] = left else curr[j + 1] = up end
+            end
+            j += 1
+        end
+        tmp = prev
+        prev = curr
+        curr = tmp
+        i += 1
+    end
+    -- backtrack
+    out = {}
+    i = la
+    j = lb
+    while i > 0 and j > 0
+        if a[i] == b[j] then
+            out[rawlen(out) + 1] = {op = "equal", old = i, new = j, value = a[i]}
+            i -= 1
+            j -= 1
+        else
+            if i == 1 then
+                row_prev = {}
+                k = 0
+                while k <= lb
+                    row_prev[k + 1] = 0
+                    k += 1
+                end
+            else
+                row_prev = prev
+            end
+            if i > 0 and j > 0 and row_prev[j + 1] >= curr[j] then
+                j -= 1
+            else
+                i -= 1
+            end
+        end
+    end
+    ops = {}
+    k = rawlen(out)
+    while k >= 1
+        ops[rawlen(ops) + 1] = out[k]
+        k -= 1
+    end
+    ops
+end
+
+-- lcs_length: return just the length of the LCS (faster, no backtrack).
+fun lcs_length(a: any, b: any): i64
+    la = rawlen(a)
+    lb = rawlen(b)
+    prev = {}
+    curr = {}
+    j = 0
+    while j <= lb
+        prev[j + 1] = 0
+        j += 1
+    end
+    i = 1
+    while i <= la
+        curr[1] = 0
+        j = 1
+        while j <= lb
+            if a[i] == b[j] then
+                curr[j + 1] = prev[j] + 1
+            else
+                left = curr[j]
+                up = prev[j + 1]
+                if left > up then curr[j + 1] = left else curr[j + 1] = up end
+            end
+            j += 1
+        end
+        tmp = prev
+        prev = curr
+        curr = tmp
+        i += 1
+    end
+    prev[lb + 1]
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Myers diff: edit script (insert/delete) for sequences
+-- ═══════════════════════════════════════════════════════════════
+
+fun myers(a: any, b: any): any
+    la = rawlen(a)
+    lb = rawlen(b)
+    max = la + lb
+    if max == 0 then return {} end
+    v = {}
+    trace = {}
+    d = 0
+    while d <= max
+        k = 0 - d
+        while k <= d
+            if k == 0 - d or (k ~= d and (v[k - 1] or 0) < (v[k + 1] or 0)) then
+                x = v[k + 1] or 0
+            else
+                x = (v[k - 1] or 0) + 1
+            end
+            y = x - k
+            while x < la and y < lb and a[x + 1] == b[y + 1]
+                x += 1
+                y += 1
+            end
+            v[k] = x
+            if x >= la and y >= lb then
+                return myers_backtrack(a, b, trace, la, lb)
+            end
+            k += 2
+        end
+        snap = {}
+        for sk, sv in v
+            snap[sk] = sv
+        end
+        trace[rawlen(trace) + 1] = snap
+        d += 1
+    end
+    {}
+end
+
+fun myers_backtrack(a: any, b: any, trace: any, x: any, y: any): any
+    edits = {}
+    d = rawlen(trace)
+    while d > 0
+        snap = trace[d]
+        k = x - y
+        if k == 0 - d or (k ~= d and (snap[k - 1] or 0) < (snap[k + 1] or 0)) then
+            prev_x = snap[k + 1] or 0
+        else
+            prev_x = (snap[k - 1] or 0) + 1
+        end
+        prev_y = prev_x - k
+        while x > prev_x and y > prev_y
+            edits[rawlen(edits) + 1] = {op = "equal", value = a[x]}
+            x -= 1
+            y -= 1
+        end
+        if d > 1 then
+            if x == prev_x then
+                edits[rawlen(edits) + 1] = {op = "insert", value = b[y]}
+                y -= 1
+            else
+                edits[rawlen(edits) + 1] = {op = "delete", value = a[x]}
+                x -= 1
+            end
+        end
+        d -= 1
+    end
+    out = {}
+    i = rawlen(edits)
+    while i >= 1
+        out[rawlen(out) + 1] = edits[i]
+        i -= 1
+    end
+    out
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Unified diff: produce human-readable line diff
+-- ═══════════════════════════════════════════════════════════════
+
+fun unified(old_lines: any, new_lines: any): any
+    ops = myers(old_lines, new_lines)
+    out = {}
+    i = 1
+    while i <= rawlen(ops)
+        op = ops[i]
+        if op.op == "equal" then
+            out[rawlen(out) + 1] = " " .. op.value
+        elseif op.op == "delete" then
+            out[rawlen(out) + 1] = "-" .. op.value
+        elseif op.op == "insert" then
+            out[rawlen(out) + 1] = "+" .. op.value
+        end
+        i += 1
+    end
+    out
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Table diff: hierarchical structural diff for nested tables
+-- ═══════════════════════════════════════════════════════════════
+
+fun table_diff(old: any, new_: any): any
+    diffs = {}
+    table_diff_into(old, new_, "", diffs)
+    diffs
+end
+
+fun table_diff_into(old: any, new_: any, path: str, diffs: any): void
+    if old == nil and new_ == nil then return end
+    if old == nil then
+        diffs[rawlen(diffs) + 1] = {op = "add", path = path, value = new_}
+        return
+    end
+    if new_ == nil then
+        diffs[rawlen(diffs) + 1] = {op = "remove", path = path}
+        return
+    end
+    if type(old) ~= type(new_) then
+        diffs[rawlen(diffs) + 1] = {op = "replace", path = path, old = old, new = new_}
+        return
+    end
+    if type(old) ~= "table" then
+        if old ~= new_ then
+            diffs[rawlen(diffs) + 1] = {op = "replace", path = path, old = old, new = new_}
+        end
+        return
+    end
+    visited = {}
+    for k, v in old
+        nk = new_[k]
+        p = path
+        if type(k) == "number" then
+            p = p .. "[" .. tostring(k) .. "]"
+        else
+            if p ~= "" then p = p .. "." end
+            p = p .. tostring(k)
+        end
+        visited[k] = true
+        table_diff_into(v, nk, p, diffs)
+    end
+    for k, v in new_
+        if not visited[k] then
+            p = path
+            if type(k) == "number" then
+                p = p .. "[" .. tostring(k) .. "]"
+            else
+                if p ~= "" then p = p .. "." end
+                p = p .. tostring(k)
+            end
+            diffs[rawlen(diffs) + 1] = {op = "add", path = p, value = v}
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Utility: count additions, removals, replacements
+-- ═══════════════════════════════════════════════════════════════
+
+fun stats(diffs: any): any
+    adds = 0
+    removes = 0
+    replaces = 0
+    i = 1
+    while i <= rawlen(diffs)
+        if diffs[i].op == "add" then adds += 1
+        elseif diffs[i].op == "remove" then removes += 1
+        elseif diffs[i].op == "replace" then replaces += 1
+        end
+        i += 1
+    end
+    {adds = adds, removes = removes, replaces = replaces, total = adds + removes + replaces}
+end
+
+-- has_changes: return true if the diff list is non-empty.
+fun has_changes(diffs: any): bool
+    rawlen(diffs) > 0
+end

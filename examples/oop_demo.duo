@@ -128,8 +128,8 @@ fun power(base: f64, exp: f64 = 2.0): f64
     result: f64 = base
     i: i64 = 1
     while i < math.floor(exp)
-        result = result * base
-        i = i + 1
+        result *= base
+        i += 1
     end
     result
 end

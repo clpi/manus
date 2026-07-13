@@ -46,7 +46,7 @@ fun sample(list: any, n: i64): any
     i = 1
     while i <= len
         indices[i] = i
-        i = i + 1
+        i += 1
     end
     picked = 0
     while picked < n
@@ -55,7 +55,7 @@ fun sample(list: any, n: i64): any
         indices[picked + 1] = indices[swap_idx]
         indices[swap_idx] = tmp
         out[rawlen(out) + 1] = list[indices[picked + 1]]
-        picked = picked + 1
+        picked += 1
     end
     out
 end
@@ -75,16 +75,16 @@ fun weighted_choice(items: any, weights: any): any
     total = 0
     i = 1
     while i <= len
-        total = total + weights[i]
-        i = i + 1
+        total += weights[i]
+        i += 1
     end
     r = math.random() * total
     cumulative = 0
     i = 1
     while i <= len
-        cumulative = cumulative + weights[i]
+        cumulative += weights[i]
         if r <= cumulative then return items[i] end
-        i = i + 1
+        i += 1
     end
     items[len]
 end
@@ -98,13 +98,13 @@ fun range(start: i64, stop: i64, step: i64): any
         i = start
         while i < stop
             out[rawlen(out) + 1] = i
-            i = i + step
+            i += step
         end
     else
         i = start
         while i > stop
             out[rawlen(out) + 1] = i
-            i = i + step
+            i += step
         end
     end
     out
@@ -132,7 +132,7 @@ fun shuffle(list: any): void
         tmp = list[n]
         list[n] = list[k]
         list[k] = tmp
-        n = n - 1
+        n -= 1
     end
 end
 
@@ -162,13 +162,13 @@ fun uuid_v4ish(): str
         else
             parts[i] = string.sub(hex_chars, math.random(1, 16), math.random(1, 16))
         end
-        i = i + 1
+        i += 1
     end
     result = ""
     i = 1
     while i <= 36
         result = result .. parts[i]
-        i = i + 1
+        i += 1
     end
     result
 end

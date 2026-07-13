@@ -1,0 +1,187 @@
+-- bench_gpu_metal.duo — GPU (Metal) vs CPU matrix multiplication benchmark
+-- Demonstrates Duo FFI to Metal compute shaders on macOS Apple Silicon.
+--
+-- Build: see scripts/run_gpu_benchmark.sh
+-- Requires: macOS with Metal-capable GPU
+
+-- FFI declarations for the Metal helper (metal_compute.m)
+@ffi("metal_init")
+fun metal_init(): i32
+end
+
+@ffi("metal_matmul")
+fun metal_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): i32
+end
+
+@ffi("metal_sync")
+fun metal_sync()
+end
+
+@ffi("metal_cleanup")
+fun metal_cleanup()
+end
+
+-- C stdlib timing
+@c.include("time.h")
+@c.include("stdlib.h")
+@c.include("stdio.h")
+@c.include("string.h")
+
+-- Helper: get time in seconds
+fun clock_sec(): float
+  @c.emit("struct timespec _ts;")
+  @c.emit("clock_gettime(CLOCK_MONOTONIC, &_ts);")
+  @c.emit("lua_pushnumber(L, (double)_ts.tv_sec + (double)_ts.tv_nsec * 1e-9);")
+  @c.emit("return 1;")
+end
+
+-- Helper: allocate float array
+fun alloc_floats(n: i32): ptr
+  @c.emit("float* _p = (float*)calloc((size_t)lua_tointeger(L, 1), sizeof(float));")
+  @c.emit("lua_pushlightuserdata(L, _p);")
+  @c.emit("return 1;")
+end
+
+-- Helper: free float array
+fun free_floats(p: ptr)
+  @c.emit("free(lua_touserdata(L, 1));")
+  @c.emit("return 0;")
+end
+
+-- Helper: set float at index
+fun set_float(p: ptr, idx: i32, val: float)
+  @c.emit("float* arr = (float*)lua_touserdata(L, 1);")
+  @c.emit("int i = (int)lua_tointeger(L, 2);")
+  @c.emit("arr[i] = (float)lua_tonumber(L, 3);")
+  @c.emit("return 0;")
+end
+
+-- Helper: get float at index
+fun get_float(p: ptr, idx: i32): float
+  @c.emit("float* arr = (float*)lua_touserdata(L, 1);")
+  @c.emit("int i = (int)lua_tointeger(L, 2);")
+  @c.emit("lua_pushnumber(L, (double)arr[i]);")
+  @c.emit("return 1;")
+end
+
+-- CPU matmul: C = A * B, all MxN with inner dim K
+-- Emitted as raw C for fair comparison (typed Duo compiles to this anyway)
+@hot
+fun cpu_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32)
+  @c.emit("float* A = (float*)lua_touserdata(L, 1);")
+  @c.emit("float* B = (float*)lua_touserdata(L, 2);")
+  @c.emit("float* C = (float*)lua_touserdata(L, 3);")
+  @c.emit("int M_ = (int)lua_tointeger(L, 4);")
+  @c.emit("int N_ = (int)lua_tointeger(L, 5);")
+  @c.emit("int K_ = (int)lua_tointeger(L, 6);")
+  @c.emit("for (int r = 0; r < M_; r++) {")
+  @c.emit("  for (int c = 0; c < N_; c++) {")
+  @c.emit("    float sum = 0.0f;")
+  @c.emit("    for (int i = 0; i < K_; i++)")
+  @c.emit("      sum += A[r * K_ + i] * B[i * N_ + c];")
+  @c.emit("    C[r * N_ + c] = sum;")
+  @c.emit("  }")
+  @c.emit("}")
+  @c.emit("return 0;")
+end
+
+-- Fill matrix with pseudo-random values
+fun fill_random(p: ptr, n: i32)
+  @c.emit("float* arr = (float*)lua_touserdata(L, 1);")
+  @c.emit("int n = (int)lua_tointeger(L, 2);")
+  @c.emit("for (int i = 0; i < n; i++)")
+  @c.emit("  arr[i] = (float)(i % 97) * 0.01f;")
+  @c.emit("return 0;")
+end
+
+-- Verify results match (returns max absolute error)
+fun max_error(a: ptr, b: ptr, n: i32): float
+  @c.emit("float* x = (float*)lua_touserdata(L, 1);")
+  @c.emit("float* y = (float*)lua_touserdata(L, 2);")
+  @c.emit("int n = (int)lua_tointeger(L, 3);")
+  @c.emit("float maxe = 0.0f;")
+  @c.emit("for (int i = 0; i < n; i++) {")
+  @c.emit("  float d = x[i] - y[i]; if (d < 0) d = -d;")
+  @c.emit("  if (d > maxe) maxe = d;")
+  @c.emit("}")
+  @c.emit("lua_pushnumber(L, (double)maxe);")
+  @c.emit("return 1;")
+end
+
+-- Main benchmark
+fun main()
+  const DIM = 1024
+  const SIZE = DIM * DIM
+
+  print("=== Duo GPU (Metal) vs CPU Matmul Benchmark ===")
+  print(string.format("Matrix size: %dx%d", DIM, DIM))
+  print("")
+
+  -- Allocate matrices
+  a = alloc_floats(SIZE)
+  b = alloc_floats(SIZE)
+  c_gpu = alloc_floats(SIZE)
+  c_cpu = alloc_floats(SIZE)
+
+  -- Fill with data
+  fill_random(a, SIZE)
+  fill_random(b, SIZE)
+
+  -- Initialize Metal
+  print("[bench] Initializing Metal...")
+  rc = metal_init()
+  if rc ~= 0
+    print("ERROR: Metal initialization failed")
+    free_floats(a)
+    free_floats(b)
+    free_floats(c_gpu)
+    free_floats(c_cpu)
+    return
+  end
+
+  -- GPU benchmark (warm-up + timed)
+  print("[bench] GPU warm-up...")
+  metal_matmul(a, b, c_gpu, DIM, DIM, DIM)
+  metal_sync()
+
+  print("[bench] GPU timed run...")
+  t0 = clock_sec()
+  metal_matmul(a, b, c_gpu, DIM, DIM, DIM)
+  metal_sync()
+  t1 = clock_sec()
+  gpu_time = t1 - t0
+
+  -- CPU benchmark (warm-up + timed)
+  print("[bench] CPU timed run...")
+  t0 = clock_sec()
+  cpu_matmul(a, b, c_cpu, DIM, DIM, DIM)
+  t1 = clock_sec()
+  cpu_time = t1 - t0
+
+  -- Verify correctness
+  err = max_error(c_gpu, c_cpu, SIZE)
+
+  -- Results
+  print("")
+  print("=== Results ===")
+  print(string.format("GPU (Metal): %.6f s", gpu_time))
+  print(string.format("CPU (naive): %.6f s", cpu_time))
+  print(string.format("Speedup:     %.2fx", cpu_time / gpu_time))
+  print(string.format("Max error:   %.6e", err))
+  print("")
+
+  if err < 0.01
+    print("PASS — GPU and CPU results match within tolerance")
+  else
+    print("FAIL — Results diverge (max error too large)")
+  end
+
+  -- Cleanup
+  metal_cleanup()
+  free_floats(a)
+  free_floats(b)
+  free_floats(c_gpu)
+  free_floats(c_cpu)
+end
+
+main()

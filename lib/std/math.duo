@@ -46,7 +46,7 @@ end
 fun std_math_sum(xs: any): any
     total = 0
     for _, v in ipairs(xs)
-        total = total + v
+        total += v
     end
     total
 end

@@ -31,7 +31,7 @@ fun render(tmpl: str, data: any): str
             i = close + 2
         else
             out[rawlen(out) + 1] = string.sub(tmpl, i, i)
-            i = i + 1
+            i += 1
         end
     end
     table.concat(out)
@@ -79,7 +79,7 @@ fun resolve_path(path: str, data: any): any
     while i <= rawlen(parts)
         if cur == nil then return "" end
         cur = cur[parts[i]]
-        i = i + 1
+        i += 1
     end
     if cur == nil then return "" end
     cur
@@ -123,9 +123,9 @@ fun render_blocks(tmpl: str, data: any, start: i64): str
                             inner = string.gsub(string.sub(tmpl, j + 2, c2 - 1), "^%s+", "")
                             inner = string.gsub(inner, "%s+$", "")
                             if string.sub(inner, 1, 6) == "range " then
-                                depth = depth + 1
+                                depth += 1
                             elseif inner == "end" then
-                                depth = depth - 1
+                                depth -= 1
                                 if depth == 0 then
                                     block_end = j
                                     break
@@ -133,10 +133,10 @@ fun render_blocks(tmpl: str, data: any, start: i64): str
                             end
                             j = c2 + 2
                         else
-                            j = j + 1
+                            j += 1
                         end
                     else
-                        j = j + 1
+                        j += 1
                     end
                 end
                 if block_end ~= nil and collection ~= nil then
@@ -146,7 +146,7 @@ fun render_blocks(tmpl: str, data: any, start: i64): str
                         -- iterate array part
                         while k <= rawlen(collection)
                             out[rawlen(out) + 1] = render_blocks(block_text, collection[k], 1)
-                            k = k + 1
+                            k += 1
                         end
                         -- also iterate hash parts
                         for hk, hv in pairs(collection)
@@ -177,9 +177,9 @@ fun render_blocks(tmpl: str, data: any, start: i64): str
                             inner = string.gsub(string.sub(tmpl, j + 2, c2 - 1), "^%s+", "")
                             inner = string.gsub(inner, "%s+$", "")
                             if string.sub(inner, 1, 3) == "if " then
-                                depth = depth + 1
+                                depth += 1
                             elseif inner == "end" then
-                                depth = depth - 1
+                                depth -= 1
                                 if depth == 0 then
                                     block_end = j
                                     break
@@ -187,10 +187,10 @@ fun render_blocks(tmpl: str, data: any, start: i64): str
                             end
                             j = c2 + 2
                         else
-                            j = j + 1
+                            j += 1
                         end
                     else
-                        j = j + 1
+                        j += 1
                     end
                 end
                 if block_end ~= nil and cond ~= nil and cond ~= false then
@@ -206,7 +206,7 @@ fun render_blocks(tmpl: str, data: any, start: i64): str
             end
         else
             out[rawlen(out) + 1] = string.sub(tmpl, i, i)
-            i = i + 1
+            i += 1
         end
     end
     table.concat(out)

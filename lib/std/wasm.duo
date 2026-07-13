@@ -1,0 +1,521 @@
+-- std.wasm — WebAssembly binary format decoder/encoder
+-- This module provides WASM module parsing, validation, and manipulation.
+-- Used by ward (Duo's WASM runtime) and tools that generate/transform WASM.
+
+Bit = req "std.bit"
+
+-- WASM magic and version
+WASM_MAGIC = 0x0061736D
+WASM_VERSION = 0x01000000
+
+-- Section IDs
+SECTION_CUSTOM = 0
+SECTION_TYPE = 1
+SECTION_IMPORT = 2
+SECTION_FUNCTION = 3
+SECTION_TABLE = 4
+SECTION_MEMORY = 5
+SECTION_GLOBAL = 6
+SECTION_EXPORT = 7
+SECTION_START = 8
+SECTION_ELEMENT = 9
+SECTION_CODE = 10
+SECTION_DATA = 11
+SECTION_DATA_COUNT = 12
+
+-- Value types
+TYPE_I32 = 0x7F
+TYPE_I64 = 0x7E
+TYPE_F32 = 0x7D
+TYPE_F64 = 0x7C
+TYPE_V128 = 0x7B
+TYPE_FUNC = 0x60
+TYPE_EMPTY = 0x40
+
+-- External kinds
+IMPORT_FUNC = 0
+IMPORT_TABLE = 1
+IMPORT_MEMORY = 2
+IMPORT_GLOBAL = 3
+IMPORT_TAG = 4
+
+-- ═══════════════════════════════════════════════════════════════
+-- Binary reader
+-- ═══════════════════════════════════════════════════════════════
+
+fun reader_new(data: any): any
+    {data = data, pos = 1, len = #data}
+end
+
+fun reader_u8(r: any): i64
+    if r.pos > r.len then return nil end
+    b = r.data[r.pos]
+    r.pos += 1
+    b
+end
+
+fun reader_u32(r: any): i64
+    result = 0
+    shift = 0
+    while true
+        b = reader_u8(r)
+        if b == nil then return nil end
+        result = result | ((b & 0x7F) << shift)
+        shift += 7
+        if (b & 0x80) == 0 then break end
+    end
+    result
+end
+
+fun reader_i32(r: any): i64
+    result = 0
+    shift = 0
+    b = 0
+    while true
+        b = reader_u8(r)
+        if b == nil then return nil end
+        result = result | ((b & 0x7F) << shift)
+        shift += 7
+        if (b & 0x80) == 0 then break end
+    end
+    -- Sign extend
+    if shift < 32 and (b & 0x40) ~= 0 then
+        result = result | (~0 << shift)
+    end
+    result
+end
+
+fun reader_i64(r: any): i64
+    result = 0
+    shift = 0
+    b = 0
+    while true
+        b = reader_u8(r)
+        if b == nil then return nil end
+        result = result | ((b & 0x7F) << shift)
+        shift += 7
+        if (b & 0x80) == 0 then break end
+    end
+    if shift < 64 and (b & 0x40) ~= 0 then
+        result = result | (~0 << shift)
+    end
+    result
+end
+
+fun reader_bytes(r: any, n: i64): any
+    out = {}
+    i = 0
+    while i < n
+        b = reader_u8(r)
+        if b == nil then return nil end
+        out[#out + 1] = b
+        i += 1
+    end
+    out
+end
+
+fun reader_string(r: any): str
+    len = reader_u32(r)
+    if len == nil then return "" end
+    bytes = reader_bytes(r, len)
+    parts = {}
+    i = 1
+    while i <= #bytes
+        parts[#parts + 1] = string.char(bytes[i])
+        i += 1
+    end
+    table.concat(parts)
+end
+
+fun reader_skip(r: any, n: i64): void
+    r.pos += n
+end
+
+fun reader_remaining(r: any): i64
+    r.len - r.pos + 1
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module parsing
+-- ═══════════════════════════════════════════════════════════════
+
+fun module_decode(data: any): any
+    r = reader_new(data)
+
+    -- Read header
+    magic = reader_u32(r)
+    if magic ~= WASM_MAGIC then
+        return nil, "invalid WASM magic number"
+    end
+    version = reader_u32(r)
+    if version ~= WASM_VERSION then
+        return nil, "unsupported WASM version"
+    end
+
+    mod = {
+        types = {},
+        imports = {},
+        functions = {},
+        tables = {},
+        memories = {},
+        globals = {},
+        exports = {},
+        start = nil,
+        elements = {},
+        codes = {},
+        datas = {},
+        data_count = nil,
+    }
+
+    -- Parse sections
+    while reader_remaining(r) > 0
+        section_id = reader_u8(r)
+        if section_id == nil then break end
+        section_size = reader_u32(r)
+        if section_size == nil then break end
+        section_start = r.pos
+
+        if section_id == SECTION_TYPE then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                func_type = reader_u8(r)  -- should be TYPE_FUNC (0x60)
+                param_count = reader_u32(r)
+                params = {}
+                j = 0
+                while j < param_count
+                    params[#params + 1] = reader_u8(r)
+                    j += 1
+                end
+                result_count = reader_u32(r)
+                results = {}
+                j = 0
+                while j < result_count
+                    results[#results + 1] = reader_u8(r)
+                    j += 1
+                end
+                mod.types[#mod.types + 1] = {params = params, results = results}
+                i += 1
+            end
+        elseif section_id == SECTION_IMPORT then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                module_name = reader_string(r)
+                field_name = reader_string(r)
+                kind = reader_u8(r)
+                import_entry = {module = module_name, field = field_name, kind = kind}
+                if kind == IMPORT_FUNC then
+                    import_entry.type_idx = reader_u32(r)
+                elseif kind == IMPORT_TABLE then
+                    elem_type = reader_u8(r)
+                    limits = reader_limits(r)
+                    import_entry.table = {elem_type = elem_type, limits = limits}
+                elseif kind == IMPORT_MEMORY then
+                    limits = reader_limits(r)
+                    import_entry.memory = {limits = limits}
+                elseif kind == IMPORT_GLOBAL then
+                    val_type = reader_u8(r)
+                    mutability = reader_u8(r)
+                    import_entry.global = {type = val_type, mutable = mutability == 1}
+                end
+                mod.imports[#mod.imports + 1] = import_entry
+                i += 1
+            end
+        elseif section_id == SECTION_FUNCTION then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                type_idx = reader_u32(r)
+                mod.functions[#mod.functions + 1] = {type_idx = type_idx}
+                i += 1
+            end
+        elseif section_id == SECTION_MEMORY then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                limits = reader_limits(r)
+                mod.memories[#mod.memories + 1] = {limits = limits}
+                i += 1
+            end
+        elseif section_id == SECTION_GLOBAL then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                val_type = reader_u8(r)
+                mutability = reader_u8(r)
+                init_expr = reader_init_expr(r)
+                mod.globals[#mod.globals + 1] = {
+                    type = val_type,
+                    mutable = mutability == 1,
+                    init = init_expr,
+                }
+                i += 1
+            end
+        elseif section_id == SECTION_EXPORT then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                name = reader_string(r)
+                kind = reader_u8(r)
+                index = reader_u32(r)
+                mod.exports[#mod.exports + 1] = {name = name, kind = kind, index = index}
+                i += 1
+            end
+        elseif section_id == SECTION_START then
+            mod.start = reader_u32(r)
+        elseif section_id == SECTION_CODE then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                body_size = reader_u32(r)
+                body_start = r.pos
+                local_count = reader_u32(r)
+                locals = {}
+                j = 0
+                while j < local_count
+                    n = reader_u32(r)
+                    val_type = reader_u8(r)
+                    locals[#locals + 1] = {count = n, type = val_type}
+                    j += 1
+                end
+                -- Read bytecode until end marker (0x0B)
+                bytecode = {}
+                while r.pos < body_start + body_size
+                    opcode = reader_u8(r)
+                    if opcode == nil then break end
+                    bytecode[#bytecode + 1] = opcode
+                    if opcode == 0x0B then break end  -- end marker
+                end
+                mod.codes[#mod.codes + 1] = {
+                    locals = locals,
+                    bytecode = bytecode,
+                    size = body_size,
+                }
+                i += 1
+            end
+        elseif section_id == SECTION_DATA then
+            count = reader_u32(r)
+            i = 0
+            while i < count
+                mem_idx = reader_u32(r)
+                offset_expr = reader_init_expr(r)
+                data_len = reader_u32(r)
+                data_bytes = reader_bytes(r, data_len)
+                mod.datas[#mod.datas + 1] = {
+                    memory_index = mem_idx,
+                    offset = offset_expr,
+                    data = data_bytes,
+                }
+                i += 1
+            end
+        elseif section_id == SECTION_DATA_COUNT then
+            mod.data_count = reader_u32(r)
+        end
+
+        -- Skip to end of section (if size was given)
+        r.pos = section_start + section_size
+    end
+
+    mod
+end
+
+-- Read limits (flags + min + max)
+fun reader_limits(r: any): any
+    flags = reader_u8(r)
+    min = reader_u32(r)
+    max = nil
+    if (flags & 1) == 1 then
+        max = reader_u32(r)
+    end
+    {min = min, max = max, has_max = (flags & 1) == 1}
+end
+
+-- Read init expression (constant expression)
+fun reader_init_expr(r: any): any
+    opcode = reader_u8(r)
+    value = nil
+    if opcode == TYPE_I32 then
+        value = reader_i32(r)
+    elseif opcode == TYPE_I64 then
+        value = reader_i64(r)
+    elseif opcode == TYPE_F32 then
+        value = reader_u32(r)  -- read raw bits
+    elseif opcode == TYPE_F64 then
+        value = reader_u64(r)  -- read raw bits
+    end
+    reader_u8(r)  -- END opcode (0x0B)
+    {opcode = opcode, value = value}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module inspection
+-- ═══════════════════════════════════════════════════════════════
+
+fun module_func_count(mod: any): i64
+    #mod.functions
+end
+
+fun module_memory_count(mod: any): i64
+    #mod.memories
+end
+
+fun module_export_names(mod: any): any
+    names = {}
+    i = 1
+    while i <= #mod.exports
+        names[#names + 1] = mod.exports[i].name
+        i += 1
+    end
+    names
+end
+
+fun module_import_count(mod: any): i64
+    #mod.imports
+end
+
+fun module_type_count(mod: any): i64
+    #mod.types
+end
+
+fun module_code_size(mod: any): i64
+    total = 0
+    i = 1
+    while i <= #mod.datas
+        total += #mod.datas[i].data
+        i += 1
+    end
+    total
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module validation
+-- ═══════════════════════════════════════════════════════════════
+
+fun module_validate(mod: any): any
+    errors = {}
+
+    -- Check type indices
+    i = 1
+    while i <= #mod.functions
+        idx = mod.functions[i].type_idx
+        if idx >= #mod.types then
+            errors[#errors + 1] = "function " .. tostring(i) .. " references invalid type index " .. tostring(idx)
+        end
+        i += 1
+    end
+
+    -- Check export names are unique
+    seen = {}
+    i = 1
+    while i <= #mod.exports
+        name = mod.exports[i].name
+        if seen[name] then
+            errors[#errors + 1] = "duplicate export name: " .. name
+        end
+        seen[name] = true
+        i += 1
+    end
+
+    -- Check memory limits
+    i = 1
+    while i <= #mod.memories
+        mem = mod.memories[i]
+        if mem.limits.max ~= nil and mem.limits.min > mem.limits.max then
+            errors[#errors + 1] = "memory " .. tostring(i) .. " min > max"
+        end
+        i += 1
+    end
+
+    {valid = #errors == 0, errors = errors}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module serialization (encode to binary)
+-- ═══════════════════════════════════════════════════════════════
+
+fun module_encode(mod: any): any
+    writer = {}
+
+    -- Header
+    writer_bytes(writer, Bit.leb128_encode_u(WASM_MAGIC))
+    writer_bytes(writer, Bit.leb128_encode_u(WASM_VERSION))
+
+    -- Type section
+    if #mod.types > 0 then
+        section = {}
+        writer_bytes(section, Bit.leb128_encode_u(#mod.types))
+        i = 1
+        while i <= #mod.types
+            t = mod.types[i]
+            writer_bytes(section, {TYPE_FUNC})
+            writer_bytes(section, Bit.leb128_encode_u(#t.params))
+            for p in t.params writer_bytes(section, {p}) end
+            writer_bytes(section, Bit.leb128_encode_u(#t.results))
+            for r in t.results writer_bytes(section, {r}) end
+            i += 1
+        end
+        write_section(writer, SECTION_TYPE, section)
+    end
+
+    writer_data = {}
+    i = 1
+    while i <= #writer
+        for b in writer[i]
+            writer_data[#writer_data + 1] = b
+        end
+        i += 1
+    end
+    writer_data
+end
+
+fun writer_bytes(writer: any, bytes: any): void
+    writer[#writer + 1] = bytes
+end
+
+fun write_section(writer: any, id: i64, content: any): void
+    writer_bytes(writer, {id})
+    writer_bytes(writer, Bit.leb128_encode_u(#content))
+    writer_bytes(writer, content)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.decode = module_decode
+M.encode = module_encode
+M.validate = module_validate
+M.func_count = module_func_count
+M.memory_count = module_memory_count
+M.export_names = module_export_names
+M.import_count = module_import_count
+M.type_count = module_type_count
+M.code_size = module_code_size
+M.MAGIC = WASM_MAGIC
+M.VERSION = WASM_VERSION
+M.SECTION = {
+    CUSTOM = SECTION_CUSTOM,
+    TYPE = SECTION_TYPE,
+    IMPORT = SECTION_IMPORT,
+    FUNCTION = SECTION_FUNCTION,
+    TABLE = SECTION_TABLE,
+    MEMORY = SECTION_MEMORY,
+    GLOBAL = SECTION_GLOBAL,
+    EXPORT = SECTION_EXPORT,
+    START = SECTION_START,
+    ELEMENT = SECTION_ELEMENT,
+    CODE = SECTION_CODE,
+    DATA = SECTION_DATA,
+    DATA_COUNT = SECTION_DATA_COUNT,
+}
+M.TYPE = {
+    I32 = TYPE_I32,
+    I64 = TYPE_I64,
+    F32 = TYPE_F32,
+    F64 = TYPE_F64,
+    FUNC = TYPE_FUNC,
+    EMPTY = TYPE_EMPTY,
+}
+M

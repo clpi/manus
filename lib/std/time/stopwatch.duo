@@ -1,0 +1,220 @@
+-- std.time.stopwatch — High-precision timing and profiling
+-- For ward runtime performance measurement and ML inference timing.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Stopwatch
+-- ═══════════════════════════════════════════════════════════════
+
+fun stopwatch_new(): any
+    {
+        start_time = nil,
+        elapsed = 0,
+        running = false,
+        laps = {},
+    }
+end
+
+fun stopwatch_start(sw: any): void
+    if sw.running then return end
+    sw.start_time = os.clock()
+    sw.running = true
+end
+
+fun stopwatch_stop(sw: any): f64
+    if not sw.running then return sw.elapsed end
+    sw.elapsed = sw.elapsed + (os.clock() - sw.start_time)
+    sw.running = false
+    sw.elapsed
+end
+
+fun stopwatch_reset(sw: any): void
+    sw.start_time = nil
+    sw.elapsed = 0
+    sw.running = false
+    sw.laps = {}
+end
+
+fun stopwatch_elapsed(sw: any): f64
+    if not sw.running then return sw.elapsed end
+    sw.elapsed + (os.clock() - sw.start_time)
+end
+
+fun stopwatch_lap(sw: any): f64
+    if not sw.running then return 0 end
+    lap_time = os.clock() - sw.start_time
+    sw.laps[#sw.laps + 1] = lap_time
+    sw.start_time = os.clock()
+    lap_time
+end
+
+fun stopwatch_laps(sw: any): any
+    sw.laps
+end
+
+fun stopwatch_avg_lap(sw: any): f64
+    if #sw.laps == 0 then return 0 end
+    total = 0
+    for lap in sw.laps
+        total += lap
+    end
+    total / #sw.laps
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Scoped Timer (auto-start/stop)
+-- ═══════════════════════════════════════════════════════════════
+
+fun scoped_timer_new(name: str): any
+    sw = stopwatch_new()
+    stopwatch_start(sw)
+    {
+        name = name,
+        stopwatch = sw,
+    }
+end
+
+fun scoped_timer_stop(st: any): f64
+    elapsed = stopwatch_stop(st.stopwatch)
+    elapsed
+end
+
+fun scoped_timer_elapsed(st: any): f64
+    stopwatch_elapsed(st.stopwatch)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Profiler (aggregate timing statistics)
+-- ═══════════════════════════════════════════════════════════════
+
+fun profiler_new(): any
+    {
+        sections = {},
+    }
+end
+
+fun profiler_start(profiler: any, name: str): void
+    if profiler.sections[name] == nil then
+        profiler.sections[name] = {
+            total = 0,
+            count = 0,
+            min = 1e30,
+            max = -1e30,
+            start_time = nil,
+        }
+    end
+    profiler.sections[name].start_time = os.clock()
+end
+
+fun profiler_stop(profiler: any, name: str): void
+    section = profiler.sections[name]
+    if section == nil or section.start_time == nil then return end
+
+    elapsed = os.clock() - section.start_time
+    section.total += elapsed
+    section.count = section.count + 1
+    if elapsed < section.min then section.min = elapsed end
+    if elapsed > section.max then section.max = elapsed end
+    section.start_time = nil
+end
+
+fun profiler_stats(profiler: any, name: str): any
+    section = profiler.sections[name]
+    if section == nil then return nil end
+
+    {
+        name = name,
+        total = section.total,
+        count = section.count,
+        avg = section.count > 0 and section.total / section.count or 0,
+        min = section.count > 0 and section.min or 0,
+        max = section.count > 0 and section.max or 0,
+    }
+end
+
+fun profiler_report(profiler: any): any
+    report = {}
+    for name, section in profiler.sections
+        report[#report + 1] = profiler_stats(profiler, name)
+    end
+    -- Sort by total time descending
+    table.sort(report, function(a, b) return a.total > b.total end)
+    report
+end
+
+fun profiler_reset(profiler: any): void
+    profiler.sections = {}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Benchmark Helper
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark(func: any, iterations: i64): any
+    if iterations == nil then iterations = 1000 end
+
+    -- Warmup
+    i = 0
+    while i < math.min(iterations, 100)
+        func()
+        i += 1
+    end
+
+    -- Timed runs
+    times = {}
+    i = 0
+    while i < iterations
+        start = os.clock()
+        func()
+        elapsed = os.clock() - start
+        times[#times + 1] = elapsed
+        i += 1
+    end
+
+    -- Calculate statistics
+    table.sort(times)
+    total = 0
+    for t in times
+        total += t
+    end
+
+    {
+        iterations = iterations,
+        total = total,
+        avg = total / iterations,
+        median = times[math.floor(iterations / 2) + 1],
+        min = times[1],
+        max = times[iterations],
+        p95 = times[math.floor(iterations * 0.95) + 1],
+        p99 = times[math.floor(iterations * 0.99) + 1],
+        ops_per_sec = iterations / total,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Stopwatch
+M.stopwatch_new = stopwatch_new
+M.stopwatch_start = stopwatch_start
+M.stopwatch_stop = stopwatch_stop
+M.stopwatch_reset = stopwatch_reset
+M.stopwatch_elapsed = stopwatch_elapsed
+M.stopwatch_lap = stopwatch_lap
+M.stopwatch_laps = stopwatch_laps
+M.stopwatch_avg_lap = stopwatch_avg_lap
+-- Scoped Timer
+M.scoped_timer_new = scoped_timer_new
+M.scoped_timer_stop = scoped_timer_stop
+M.scoped_timer_elapsed = scoped_timer_elapsed
+-- Profiler
+M.profiler_new = profiler_new
+M.profiler_start = profiler_start
+M.profiler_stop = profiler_stop
+M.profiler_stats = profiler_stats
+M.profiler_report = profiler_report
+M.profiler_reset = profiler_reset
+-- Benchmark
+M.benchmark = benchmark
+M

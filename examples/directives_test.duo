@@ -15,8 +15,8 @@ fun bench_loop(): void
     local sum: i64 = 0
     local i: i64 = 0
     while i < 1000
-        sum = sum + i
-        i = i + 1
+        sum += i
+        i += 1
     end
 end
 

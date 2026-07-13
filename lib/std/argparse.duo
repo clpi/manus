@@ -1,43 +1,188 @@
 -- std.argparse — Command-line argument parser
 
-fun parse(args: any): any
-    if args == nil then args = arg or {} end
-    parsed = { flags = {}, positionals = {} }
-    
+fun argparse_key(s: str): str
+    string.gsub(s or "", "^%-+", "")
+end
+
+fun argparse_add_positional(parser, name: str, help: str, options: any)
+    parser.positionals[#parser.positionals + 1] = {
+        name = name,
+        help = help or "",
+        required = options and options.required,
+    }
+end
+
+fun argparse_add_flag(parser, short_or_long: str, long_or_help: str, help: str)
+    short = nil
+    long = nil
+    desc = help
+    if long_or_help and string.sub(long_or_help, 1, 1) == "-" then
+        short = short_or_long
+        long = long_or_help
+    else
+        long = short_or_long
+        desc = long_or_help
+    end
+    parser.flags[#parser.flags + 1] = {
+        key = argparse_key(long or short),
+        short = short,
+        long = long,
+        help = desc or "",
+    }
+end
+
+fun argparse_add_option(parser, short_or_long: str, long_or_help: str, help: str)
+    short = nil
+    long = nil
+    desc = help
+    if long_or_help and string.sub(long_or_help, 1, 1) == "-" then
+        short = short_or_long
+        long = long_or_help
+    else
+        long = short_or_long
+        desc = long_or_help
+    end
+    parser.options[#parser.options + 1] = {
+        key = argparse_key(long or short),
+        short = short,
+        long = long,
+        help = desc or "",
+    }
+end
+
+fun argparse_parse(parser, args: any): any
+    if args == nil then args = {} end
+    opts = { rest_args = {} }
+    positional_idx = 1
     i = 1
+    stop_options = false
+
     while i <= #args
         v = args[i]
-        if string.sub(v, 1, 2) == "--" then
+        if v == "--" and not stop_options then
+            stop_options = true
+            i = i + 1
+        elseif not stop_options and string.sub(v, 1, 2) == "--" then
             name = string.sub(v, 3)
-            eq_pos = string.find(name, "=")
-            if eq_pos then
-                val = string.sub(name, eq_pos + 1)
-                name = string.sub(name, 1, eq_pos - 1)
-                parsed.flags[name] = val
-            else
-                if i + 1 <= #args and string.sub(args[i+1], 1, 1) ~= "-" then
-                    parsed.flags[name] = args[i+1]
-                    i = i + 1
-                else
-                    parsed.flags[name] = true
-                end
-            end
-        elseif string.sub(v, 1, 1) == "-" then
-            name = string.sub(v, 2)
-            if i + 1 <= #args and string.sub(args[i+1], 1, 1) ~= "-" then
-                parsed.flags[name] = args[i+1]
+            eq = string.find(name, "=")
+            if eq then
+                key = string.sub(name, 1, eq - 1)
+                val = string.sub(name, eq + 1)
+                opts[key] = val
                 i = i + 1
             else
-                parsed.flags[name] = true
+                matched = false
+                for _, opt in parser.options
+                    if opt.long == v then
+                        if i + 1 <= #args and string.sub(args[i + 1], 1, 1) ~= "-" then
+                            opts[opt.key] = args[i + 1]
+                            i = i + 2
+                        else
+                            opts[opt.key] = nil
+                            i = i + 1
+                        end
+                        matched = true
+                        break
+                    end
+                end
+                if not matched then
+                    for _, fl in parser.flags
+                        if fl.long == v then
+                            opts[fl.key] = true
+                            matched = true
+                            i = i + 1
+                            break
+                        end
+                    end
+                end
+                if not matched then
+                    opts[name] = true
+                    i = i + 1
+                end
+            end
+        elseif not stop_options and string.sub(v, 1, 1) == "-" and #v > 1 then
+            name = string.sub(v, 2, 2)
+            rest = string.sub(v, 3)
+            short = "-" .. name
+            matched = false
+            for _, opt in parser.options
+                if opt.short == short then
+                    if #rest > 0 then
+                        opts[opt.key] = rest
+                        i = i + 1
+                    elseif i + 1 <= #args and string.sub(args[i + 1], 1, 1) ~= "-" then
+                        opts[opt.key] = args[i + 1]
+                        i = i + 2
+                    else
+                        opts[opt.key] = nil
+                        i = i + 1
+                    end
+                    matched = true
+                    break
+                end
+            end
+            if not matched then
+                for _, fl in parser.flags
+                    if fl.short == short then
+                        opts[fl.key] = true
+                        matched = true
+                        i = i + 1
+                        break
+                    end
+                end
+            end
+            if not matched then
+                if #rest > 0 and i + 1 <= #args and string.sub(args[i + 1], 1, 1) ~= "-" then
+                    opts[name] = args[i + 1]
+                    i = i + 2
+                else
+                    opts[name] = true
+                    i = i + 1
+                end
             end
         else
-            table.insert(parsed.positionals, v)
+            if positional_idx <= #parser.positionals then
+                def = parser.positionals[positional_idx]
+                opts[def.name] = v
+                positional_idx = positional_idx + 1
+            else
+                opts.rest_args[#opts.rest_args + 1] = v
+            end
+            i = i + 1
         end
-        i = i + 1
     end
-    parsed
+
+    while positional_idx <= #parser.positionals
+        def = parser.positionals[positional_idx]
+        if opts[def.name] == nil then
+            opts[def.name] = nil
+        end
+        positional_idx = positional_idx + 1
+    end
+
+    opts
+end
+
+fun new(name: str, description: str): any
+    parser = {
+        name = name,
+        description = description,
+        positionals = {},
+        flags = {},
+        options = {},
+    }
+    parser.positional = fun(a: str, b: str, c: any) argparse_add_positional(parser, a, b, c) end
+    parser.flag = fun(a: str, b: str, c: str) argparse_add_flag(parser, a, b, c) end
+    parser.option = fun(a: str, b: str, c: str) argparse_add_option(parser, a, b, c) end
+    parser.parse = fun(args: any): any return argparse_parse(parser, args) end
+    parser
+end
+
+fun parse(args: any): any
+    new("", "").parse(args)
 end
 
 M = {}
+M.new = new
 M.parse = parse
 M

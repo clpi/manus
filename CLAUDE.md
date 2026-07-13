@@ -42,10 +42,13 @@ zig test src/tests.zig --test-filter "<name>"   # a single unit test
 - **Compile-fail tests** live in `examples/compile_fail/*.lua`; each must produce a specific
   error. Run via `scripts/run_compile_fail_tests.sh`.
 - **Benchmark gate** (`zig build bench`): compiles `examples/benchmark.lua` and reference
-  `examples/benchmark_c.c`, verifies all 40 `RESULT <id> <value>` lines match, then requires
-  **Duo to beat or tie C wall-time on every benchmark** (1% slack). This is a hard CI gate —
-  a change that regresses codegen performance will fail it. `examples/benchmark.duo` mirrors
-  the `.lua` driver and must be kept in sync.
+ `examples/benchmark_c.c`, verifies all 40 `RESULT <id> <value>` lines match, then requires
+ **Duo to beat or tie C wall-time on every benchmark** (1% slack). This is a hard CI gate —
+ a change that regresses codegen performance will fail it. `examples/benchmark.duo` mirrors
+ the `.lua` driver and must be kept in sync.
+- **ML benchmark** (`zig build ml-bench`): five ML workloads; warns when Duo slower than C.
+- **Honest benchmark** (`zig build honest-bench`): runtime-seeded inputs; no constant-folding.
+- **Performance ledger:** `docs/performance.md` — mandatory read/update for all agents doing performance work.
 - `zig build cross-bench` additionally needs `lua` (≥5.4) and `luajit` on `$PATH`.
 
 ## Compiler pipeline

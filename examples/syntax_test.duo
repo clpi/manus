@@ -28,7 +28,7 @@ fun calculate(): void
     end
 
     while x < 100
-        x = x + 1
+        x += 1
     end
 
     for i = 1, 10

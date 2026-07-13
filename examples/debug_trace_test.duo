@@ -1,0 +1,24 @@
+@debug.sema
+@trace.parse
+
+enum Color
+    Red
+    Green
+    Blue
+end
+
+Point = struct
+    x: i64
+    y: i64
+end
+
+@test.unit
+fun test_color_exists(): void
+  t = req("std.test")
+    t.assert_true(true, "enum compiled")
+end
+
+@test.should_panic
+fun test_error_panics(): void
+    error("expected panic")
+end

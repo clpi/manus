@@ -10,10 +10,10 @@ fun std_sort_insertion(arr: any, lo: any, hi: any, less: any): void
         j = i
         while j > lo and less(key, arr[j - 1])
             arr[j] = arr[j - 1]
-            j = j - 1
+            j -= 1
         end
         arr[j] = key
-        i = i + 1
+        i += 1
     end
 end
 
@@ -41,10 +41,10 @@ fun std_sort_partition(arr: any, lo: any, hi: any, less: any): any
     i = lo
     j = hi - 1
     while true
-        i = i + 1
-        while less(arr[i], pivot) do i = i + 1 end
-        j = j - 1
-        while less(pivot, arr[j]) do j = j - 1 end
+        i += 1
+        while less(arr[i], pivot) do i += 1 end
+        j -= 1
+        while less(pivot, arr[j]) do j -= 1 end
         if i >= j then break end
         tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
     end
@@ -129,7 +129,7 @@ fun is_sorted(arr: any, less: any): bool
     i = 2
     while i <= n
         if less(arr[i], arr[i - 1]) then return false end
-        i = i + 1
+        i += 1
     end
     true
 end
@@ -177,8 +177,8 @@ fun reverse(arr: any): void
     j = n
     while i < j
         tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
-        i = i + 1
-        j = j - 1
+        i += 1
+        j -= 1
     end
 end
 

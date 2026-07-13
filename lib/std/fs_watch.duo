@@ -534,7 +534,7 @@ fun poll(kq: int, timeout_ms: int): any
             -- Advance past event + name (16 + name_len, aligned to 16? No, name is padded)
             -- Actually inotify events are not padded to 16; name is included inline.
             -- The total event size is 16 + name_len.
-            pos = pos + 16 + name_len
+            pos += 16 + name_len
         end
 
         if #events == 0 then return nil end

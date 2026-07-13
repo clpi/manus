@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const types = @import("types.zig");
 const Expr = ast.Expr;
 const Stmt = ast.Stmt;
 const TypeExpr = ast.TypeExpr;
@@ -118,6 +119,14 @@ pub const PrettyPrinter = struct {
                 }
                 try self.write(" }");
             },
+            .tuple => |elems| {
+                try self.write("(");
+                for (elems, 0..) |elem, i| {
+                    if (i > 0) try self.write(", ");
+                    try self.printTypeExpr(elem);
+                }
+                try self.write(")");
+            },
         }
     }
 
@@ -131,6 +140,8 @@ pub const PrettyPrinter = struct {
             .concat => 4,
             .add, .sub, .bor, .bxor => 5,
             .mul, .div, .idiv, .mod, .band => 6,
+            .matmul => 6,
+            .pipeline => 0,
             .lshift, .rshift => 7,
             .pow => 8,
         };
@@ -228,6 +239,8 @@ pub const PrettyPrinter = struct {
                     .@"and" => " and ",
                     .@"or" => " or ",
                     .contains => " in ",
+                    .matmul => " @ ",
+                    .pipeline => " |> ",
                 };
                 try self.write(op_str);
                 try self.printExpr(x.rhs, prec);
@@ -657,7 +670,7 @@ pub const PrettyPrinter = struct {
         try self.write("end");
     }
 
-    fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
+    pub fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
         try self.printFuncSig(fb);
         try self.printBlock(&fb.body);
         try self.nl();
@@ -803,6 +816,44 @@ pub fn prettyPrint(alloc: std.mem.Allocator, mod: *const Module, mode: Mode) ![]
     return try buf.toOwnedSlice(alloc);
 }
 
+/// Source for `duo compile --load-chunk`: `return function(...) ... end`
+pub fn formatJitClosureSource(alloc: std.mem.Allocator, fb: *const ast.FuncBody, mode: Mode) Error![]u8 {
+    var buf = std.ArrayList(u8).empty;
+    errdefer buf.deinit(alloc);
+    var pp = PrettyPrinter.init(alloc, &buf, mode);
+    if (fb.upvalues.len > 0) {
+        try pp.write("return ");
+        if (mode == .duo) try pp.write("fun") else try pp.write("function");
+        try pp.write("(");
+        for (fb.upvalues, 0..) |uv, i| {
+            if (i > 0) try pp.write(", ");
+            try pp.write(uv.name);
+            if (mode == .duo) {
+                if (uv.typ) |t| {
+                    if (types.rt_to_type_name(t)) |nm| {
+                        try pp.write(": ");
+                        try pp.write(nm);
+                    }
+                }
+            }
+        }
+        try pp.write(")\n");
+        try pp.write("  return ");
+    } else {
+        try pp.write("return ");
+    }
+    if (mode == .duo) try pp.write("fun") else try pp.write("function");
+    try pp.printFuncSig(fb);
+    try pp.printBlock(&fb.body);
+    try pp.nl();
+    try pp.write("end");
+    if (fb.upvalues.len > 0) {
+        try pp.nl();
+        try pp.write("end");
+    }
+    return try buf.toOwnedSlice(alloc);
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
@@ -821,6 +872,43 @@ fn expectRoundTrip(alloc: std.mem.Allocator, src: []const u8) !void {
         std.debug.print("Round-trip mismatch:\n--- original ---\n{s}\n--- printed ---\n{s}\n", .{ src, out });
         return error.RoundTripMismatch;
     }
+}
+
+test "pretty: jit closure source" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseSource(alloc, "local f = function(x) return x end\n");
+    const expr = mod.body.stmts[0].local_decl.inits[0];
+    const fb = switch (expr.*) {
+        .func_expr => |f| f,
+        else => return error.NotFunction,
+    };
+    const src = try formatJitClosureSource(alloc, fb, .lua);
+    try testing.expect(std.mem.startsWith(u8, src, "return function("));
+}
+
+test "pretty: jit closure source with upvalue" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var mod = try parseSource(alloc,
+        \\local n = 1
+        \\local f = function(x) return x + n end
+        \\
+    );
+    var semantic = @import("sema.zig").Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&mod);
+    const expr = mod.body.stmts[1].local_decl.inits[0];
+    const fb = switch (expr.*) {
+        .func_expr => |f| f,
+        else => return error.NotFunction,
+    };
+    try testing.expect(fb.upvalues.len > 0);
+    const src = try formatJitClosureSource(alloc, fb, .lua);
+    try testing.expect(std.mem.indexOf(u8, src, "return function(n)") != null);
+    try testing.expect(std.mem.indexOf(u8, src, "return function(x)") != null);
 }
 
 test "pretty: simple function" {

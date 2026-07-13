@@ -25,7 +25,7 @@ fun format_int(v: any, base: any): str
     i = rawlen(out)
     while i >= 1
         s = s .. out[i]
-        i = i - 1
+        i -= 1
     end
     if neg then s = "-" .. s end
     s
@@ -98,7 +98,7 @@ fun parse_int(s: str, base: any): any
         d = pos - 1
         if d >= base then return 0, false end
         val = val * base + d
-        i = i + 1
+        i += 1
     end
     if neg then val = 0 - val end
     return val, true
@@ -169,7 +169,7 @@ fun quote(s: str): str
         else
             out[rawlen(out) + 1] = ch
         end
-        i = i + 1
+        i += 1
     end
     out[rawlen(out) + 1] = "\""
     table.concat(out)
@@ -209,10 +209,10 @@ fun unquote(s: str): str
             else
                 out[rawlen(out) + 1] = nxt
             end
-            i = i + 2
+            i += 2
         else
             out[rawlen(out) + 1] = ch
-            i = i + 1
+            i += 1
         end
     end
     table.concat(out)

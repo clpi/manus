@@ -29,26 +29,26 @@ fun parse_attributes(data: str, start: i64): any
     local len = string.len(data)
     while i <= len
         while i <= len and (string.byte(data, i) == 32 or string.byte(data, i) == 9 or string.byte(data, i) == 10 or string.byte(data, i) == 13)
-            i = i + 1
+            i += 1
         end
         if i > len or string.byte(data, i) == 62 or string.byte(data, i) == 47 then
             break
         end
         local key_start = i
         while i <= len and string.byte(data, i) ~= 61 and string.byte(data, i) ~= 32 and string.byte(data, i) ~= 9 and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13 and string.byte(data, i) ~= 62 and string.byte(data, i) ~= 47
-            i = i + 1
+            i += 1
         end
         local key = string.sub(data, key_start, i - 1)
         if string.byte(data, i) == 61 then
-            i = i + 1
+            i += 1
             local delim = string.byte(data, i)
-            i = i + 1
+            i += 1
             local val_start = i
             while i <= len and string.byte(data, i) ~= delim
-                i = i + 1
+                i += 1
             end
             local val = string.sub(data, val_start, i - 1)
-            i = i + 1
+            i += 1
             attrs[key] = unescape(val)
         end
     end
@@ -59,18 +59,18 @@ fun parse_elem(data: str, start: i64): any
     i = start
     len = string.len(data)
     while i <= len and string.byte(data, i) ~= 60
-        i = i + 1
+        i += 1
     end
     if i > len then return nil end
-    i = i + 1
+    i += 1
     if i <= len and string.byte(data, i) == 63 then
         while i <= len
             if string.byte(data, i) == 63 and i + 1 <= len and string.byte(data, i + 1) == 62 then
                 break
             end
-            i = i + 1
+            i += 1
         end
-        if i <= len then i = i + 2 end
+        if i <= len then i += 2 end
         return parse_elem(data, i)
     end
     if i <= len and string.byte(data, i) == 33 then
@@ -78,9 +78,9 @@ fun parse_elem(data: str, start: i64): any
             if string.byte(data, i) == 93 and i + 2 <= len and string.byte(data, i + 1) == 93 and string.byte(data, i + 2) == 62 then
                 break
             end
-            i = i + 1
+            i += 1
         end
-        if i <= len then i = i + 3 end
+        if i <= len then i += 3 end
         return parse_elem(data, i)
     end
     if i <= len and string.byte(data, i) == 47 then
@@ -88,7 +88,7 @@ fun parse_elem(data: str, start: i64): any
     end
     tag_start = i
     while i <= len and string.byte(data, i) ~= 32 and string.byte(data, i) ~= 9 and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13 and string.byte(data, i) ~= 62 and string.byte(data, i) ~= 47
-        i = i + 1
+        i += 1
     end
     tag = string.sub(data, tag_start, i - 1)
     attrs = {}
@@ -98,10 +98,10 @@ fun parse_elem(data: str, start: i64): any
     end
     if i <= len and string.byte(data, i) == 47 then
         self_closing = true
-        i = i + 1
+        i += 1
     end
     if i <= len and string.byte(data, i) == 62 then
-        i = i + 1
+        i += 1
     end
     elem = {tag = tag, attrs = attrs, children = {}}
     if not self_closing then
@@ -109,7 +109,7 @@ fun parse_elem(data: str, start: i64): any
             sp = ""
             while i <= len and string.byte(data, i) ~= 60
                 sp = sp .. string.sub(data, i, i)
-                i = i + 1
+                i += 1
             end
             trimmed = string.trim(sp)
             if string.len(trimmed) > 0 then
@@ -118,11 +118,11 @@ fun parse_elem(data: str, start: i64): any
             if i > len then break end
             peek_byte = string.byte(data, i + 1)
             if peek_byte == 47 then
-                i = i + 2
+                i += 2
                 while i <= len and string.byte(data, i) ~= 62
-                    i = i + 1
+                    i += 1
                 end
-                if i <= len then i = i + 1 end
+                if i <= len then i += 1 end
                 break
             end
             child = parse_elem(data, i)
@@ -139,7 +139,7 @@ fun parse(data: str): any
     if data == nil then return nil end
     i = 1
     while i <= string.len(data) and string.byte(data, i) ~= 60
-        i = i + 1
+        i += 1
     end
     if i > string.len(data) then return nil end
     doc = parse_elem(data, i)

@@ -1,0 +1,235 @@
+-- std.compress.snappy — Snappy compression (fast, low-ratio)
+-- Snappy is used in many systems for its speed: LevelDB, RocksDB, Kafka, etc.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Snappy format: varint length + literal runs + copy operations
+-- ═══════════════════════════════════════════════════════════════
+
+-- Snappy block size
+SNAPPY_BLOCK_SIZE = 32768
+
+-- Compress data using Snappy-like algorithm
+fun compress(data: any): any
+    if data == nil or #data == 0 then return {0} end
+
+    src_len = #data
+    out = {}
+
+    -- Write uncompressed length as varint
+    write_varint(out, src_len)
+
+    -- Simple literal-only compression (fallback for correctness)
+    -- Real Snappy uses hash table for back-references
+    i = 1
+    while i <= src_len
+        -- Find longest match
+        match_len, match_offset = find_match(data, i, src_len)
+
+        if match_len >= 4 then
+            -- Emit copy operation
+            -- Copy with offset
+            length = match_len - 4
+            if length < 60 then
+                out[#out + 1] = (length << 2) | 0x01
+            elseif length < 256 then
+                out[#out + 1] = (59 << 2) | 0x01
+                out[#out + 1] = length
+            else
+                out[#out + 1] = (60 << 2) | 0x01
+                out[#out + 1] = length & 0xFF
+                out[#out + 1] = (length >> 8) & 0xFF
+            end
+            -- Write 2-byte little-endian offset
+            out[#out + 1] = (match_offset - 1) & 0xFF
+            out[#out + 1] = ((match_offset - 1) >> 8) & 0xFF
+            i += match_len
+        else
+            -- Emit literal
+            literal_start = i
+            literal_len = 0
+            while i <= src_len and literal_len < SNAPPY_BLOCK_SIZE
+                ml, _ = find_match(data, i, src_len)
+                if ml >= 4 then break end
+                literal_len += 1
+                i += 1
+            end
+
+            -- Write literal header
+            if literal_len < 61 then
+                out[#out + 1] = ((literal_len - 1) << 2) | 0x00
+            elseif literal_len < 256 then
+                out[#out + 1] = (60 << 2) | 0x00
+                out[#out + 1] = literal_len
+            else
+                out[#out + 1] = (61 << 2) | 0x00
+                out[#out + 1] = literal_len & 0xFF
+                out[#out + 1] = (literal_len >> 8) & 0xFF
+            end
+
+            -- Write literal bytes
+            j = literal_start
+            while j < literal_start + literal_len
+                out[#out + 1] = data[j]
+                j += 1
+            end
+        end
+    end
+
+    out
+end
+
+-- Decompress Snappy data
+fun decompress(data: any): any
+    if data == nil or #data == 0 then return {} end
+
+    r = {pos = 1, data = data}
+    src_len = read_varint(r)
+    out = {}
+
+    while r.pos <= #data and #out < src_len
+        byte = data[r.pos]
+        r.pos = r.pos + 1
+
+        tag = byte & 0x03
+
+        if tag == 0 then
+            -- Literal
+            literal_len = (byte >> 2) & 0x3F
+            if literal_len < 60 then
+                literal_len += 1
+            elseif literal_len == 60 then
+                literal_len = data[r.pos] + 1
+                r.pos = r.pos + 1
+            elseif literal_len == 61 then
+                literal_len = data[r.pos] + (data[r.pos + 1] << 8) + 1
+                r.pos = r.pos + 2
+            end
+
+            i = 0
+            while i < literal_len
+                out[#out + 1] = data[r.pos]
+                r.pos = r.pos + 1
+                i += 1
+            end
+
+        elseif tag == 1 then
+            -- Copy with 2-byte offset
+            length = (byte >> 2) & 0x3F
+            if length < 60 then
+                length += 4
+            elseif length == 60 then
+                length = data[r.pos] + 4
+                r.pos = r.pos + 1
+            elseif length == 61 then
+                length = data[r.pos] + (data[r.pos + 1] << 8) + 4
+                r.pos = r.pos + 2
+            end
+            offset = data[r.pos] + (data[r.pos + 1] << 8) + 1
+            r.pos = r.pos + 2
+
+            -- Copy from output buffer
+            src_pos = #out - offset + 1
+            i = 0
+            while i < length
+                out[#out + 1] = out[src_pos + i]
+                i += 1
+            end
+
+        elseif tag == 2 then
+            -- Copy with 1-byte offset
+            length = (byte >> 2) & 0x3F
+            if length < 60 then
+                length += 4
+            else
+                length = data[r.pos] + 4
+                r.pos = r.pos + 1
+            end
+            offset = data[r.pos] + 1
+            r.pos = r.pos + 1
+
+            src_pos = #out - offset + 1
+            i = 0
+            while i < length
+                out[#out + 1] = out[src_pos + i]
+                i += 1
+            end
+
+        elseif tag == 3 then
+            -- Copy with 4-byte offset
+            length = (byte >> 2) & 0x3F
+            if length < 60 then
+                length += 4
+            else
+                length = data[r.pos] + 4
+                r.pos = r.pos + 1
+            end
+            offset = data[r.pos] + (data[r.pos + 1] << 8) +
+                     (data[r.pos + 2] << 16) + (data[r.pos + 3] << 24) + 1
+            r.pos = r.pos + 4
+
+            src_pos = #out - offset + 1
+            i = 0
+            while i < length
+                out[#out + 1] = out[src_pos + i]
+                i += 1
+            end
+        end
+    end
+
+    out
+end
+
+-- Find longest match using simple hash chain
+fun find_match(data: any, pos: i64, src_len: i64): any
+    best_len = 0
+    best_offset = 0
+    max_len = math.min(64, src_len - pos + 1)
+
+    -- Simple search (for correctness; real Snappy uses hash table)
+    start = math.max(1, pos - 32768)
+    i = start
+    while i < pos
+        match_len = 0
+        while match_len < max_len and data[i + match_len] == data[pos + match_len]
+            match_len += 1
+        end
+        if match_len > best_len then
+            best_len = match_len
+            best_offset = pos - i
+        end
+        i += 1
+    end
+
+    best_len, best_offset
+end
+
+-- Varint encoding/decoding
+fun write_varint(out: any, value: i64): void
+    while value >= 0x80
+        out[#out + 1] = (value & 0x7F) | 0x80
+        value = value >> 7
+    end
+    out[#out + 1] = value
+end
+
+fun read_varint(r: any): i64
+    result = 0
+    shift = 0
+    while true
+        byte = r.data[r.pos]
+        r.pos = r.pos + 1
+        result = result | ((byte & 0x7F) << shift)
+        shift += 7
+        if (byte & 0x80) == 0 then break end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.compress = compress
+M.decompress = decompress
+M

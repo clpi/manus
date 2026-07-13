@@ -1,0 +1,303 @@
+-- std.ml.benchmark — Model inference benchmarking
+-- For profiling and comparing model performance.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Benchmark Config
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_config_new(): any
+    {
+        warmup_runs = 10,
+        num_runs = 100,
+        batch_sizes = {1, 2, 4, 8, 16, 32},
+        measure_memory = true,
+        measure_latency = true,
+        measure_throughput = true,
+        measure_first_token = true,
+        output_dir = "./benchmarks",
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Benchmark Result
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_result_new(model_name: str, batch_size: i64): any
+    {
+        model_name = model_name,
+        batch_size = batch_size,
+        latencies = {},
+        first_token_latency = 0,
+        throughput = 0,
+        memory_used = 0,
+        memory_peak = 0,
+        tokens_per_second = 0,
+    }
+end
+
+fun benchmark_result_add_latency(result: any, latency: f64): void
+    result.latencies[#result.latencies + 1] = latency
+end
+
+fun benchmark_result_calculate_stats(result: any): void
+    n = #result.latencies
+    if n == 0 then return end
+
+    -- Sort latencies
+    sorted = {table.unpack(result.latencies)}
+    table.sort(sorted)
+
+    sum = 0
+    for v in sorted
+        sum += v
+    end
+
+    result.mean_latency = sum / n
+    result.median_latency = sorted[math.floor(n / 2) + 1]
+    result.p95_latency = sorted[math.floor(n * 0.95) + 1]
+    result.p99_latency = sorted[math.floor(n * 0.99) + 1]
+    result.min_latency = sorted[1]
+    result.max_latency = sorted[n]
+
+    -- Throughput (tokens/sec)
+    if result.mean_latency > 0 then
+        result.throughput = result.batch_size / result.mean_latency
+        result.tokens_per_second = result.throughput
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Benchmark Runner
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_runner_new(config: any): any
+    {
+        config = config,
+        results = {},
+    }
+end
+
+fun benchmark_runner_run(runner: any, model_fn: any, input_generator: any): any
+    config = runner.config
+    results = {}
+
+    batch_idx = 1
+    while batch_idx <= #config.batch_sizes
+        batch_size = config.batch_sizes[batch_idx]
+        result = benchmark_result_new("model", batch_size)
+
+        -- Warmup
+        i = 0
+        while i < config.warmup_runs
+            input = input_generator(batch_size)
+            model_fn(input)
+            i += 1
+        end
+
+        -- Benchmark
+        i = 0
+        while i < config.num_runs
+            start_time = os.clock()
+            input = input_generator(batch_size)
+            output = model_fn(input)
+            end_time = os.clock()
+            benchmark_result_add_latency(result, end_time - start_time)
+            i += 1
+        end
+
+        benchmark_result_calculate_stats(result)
+        results[batch_idx] = result
+        batch_idx += 1
+    end
+
+    runner.results = results
+    results
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Throughput Test
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64): any
+    -- Warmup
+    i = 0
+    while i < 5
+        input = input_generator(batch_size)
+        model_fn(input)
+        i += 1
+    end
+
+    -- Run for duration
+    start_time = os.clock()
+    tokens = 0
+    runs = 0
+
+    while os.clock() - start_time < duration
+        input = input_generator(batch_size)
+        output = model_fn(input)
+        tokens += batch_size
+        runs += 1
+    end
+
+    elapsed = os.clock() - start_time
+
+    {
+        batch_size = batch_size,
+        total_tokens = tokens,
+        total_runs = runs,
+        elapsed = elapsed,
+        tokens_per_second = tokens / elapsed,
+        runs_per_second = runs / elapsed,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Latency Test
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): any
+    -- Warmup
+    i = 0
+    while i < 5
+        input = input_generator(batch_size)
+        model_fn(input)
+        i += 1
+    end
+
+    -- Measure
+    latencies = {}
+    i = 0
+    while i < num_runs
+        start_time = os.clock()
+        input = input_generator(batch_size)
+        model_fn(input)
+        end_time = os.clock()
+        latencies[#latencies + 1] = end_time - start_time
+        i += 1
+    end
+
+    -- Calculate stats
+    table.sort(latencies)
+    sum = 0
+    for v in latencies
+        sum += v
+    end
+
+    {
+        batch_size = batch_size,
+        num_runs = num_runs,
+        mean = sum / num_runs,
+        median = latencies[math.floor(num_runs / 2) + 1],
+        p95 = latencies[math.floor(num_runs * 0.95) + 1],
+        p99 = latencies[math.floor(num_runs * 0.99) + 1],
+        min = latencies[1],
+        max = latencies[num_runs],
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory Test
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_memory(model_fn: any, input_generator: any, batch_size: i64): any
+    -- Measure memory before
+    -- In production, would use system-specific memory measurement
+    -- For now, estimate based on tensor sizes
+
+    input = input_generator(batch_size)
+    output = model_fn(input)
+
+    -- Estimate tensor sizes
+    input_size = 0
+    if input and input.data then
+        input_size = #input.data * 4  -- float32
+    end
+
+    output_size = 0
+    if output and output.data then
+        output_size = #output.data * 4
+    end
+
+    {
+        batch_size = batch_size,
+        input_size = input_size,
+        output_size = output_size,
+        estimated_total = input_size + output_size,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Comparison
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_compare(results: any): any
+    comparison = {}
+    for name, result in results
+        comparison[name] = {
+            mean_latency = result.mean_latency or 0,
+            throughput = result.throughput or 0,
+            tokens_per_second = result.tokens_per_second or 0,
+        }
+    end
+    comparison
+end
+
+fun benchmark_rank(results: any, metric: str): any
+    ranked = {}
+    for name, result in results
+        ranked[#ranked + 1] = {
+            name = name,
+            value = result[metric] or 0,
+        }
+    end
+    table.sort(ranked, function(a, b) return a.value > b.value end)
+    ranked
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Report Generation
+-- ═══════════════════════════════════════════════════════════════
+
+fun benchmark_report(results: any): str
+    lines = {}
+    lines[#lines + 1] = "=== Benchmark Report ==="
+    lines[#lines + 1] = ""
+
+    for name, result in results
+        lines[#lines + 1] = "Model: " .. name
+        lines[#lines + 1] = "  Batch Size: " .. tostring(result.batch_size)
+        lines[#lines + 1] = "  Mean Latency: " .. tostring(result.mean_latency) .. "s"
+        lines[#lines + 1] = "  Median Latency: " .. tostring(result.median_latency) .. "s"
+        lines[#lines + 1] = "  P95 Latency: " .. tostring(result.p95_latency) .. "s"
+        lines[#lines + 1] = "  P99 Latency: " .. tostring(result.p99_latency) .. "s"
+        lines[#lines + 1] = "  Throughput: " .. tostring(result.throughput) .. " batches/s"
+        lines[#lines + 1] = "  Tokens/sec: " .. tostring(result.tokens_per_second)
+        lines[#lines + 1] = ""
+    end
+
+    table.concat(lines, "\n")
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Config
+M.config_new = benchmark_config_new
+-- Result
+M.result_new = benchmark_result_new
+M.result_add_latency = benchmark_result_add_latency
+M.result_calculate_stats = benchmark_result_calculate_stats
+-- Runner
+M.runner_new = benchmark_runner_new
+M.runner_run = benchmark_runner_run
+-- Tests
+M.throughput = benchmark_throughput
+M.latency = benchmark_latency
+M.memory = benchmark_memory
+-- Analysis
+M.compare = benchmark_compare
+M.rank = benchmark_rank
+M.report = benchmark_report
+M

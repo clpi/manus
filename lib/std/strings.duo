@@ -39,8 +39,8 @@ fun bldr_len(b: any): i64
     total = 0
     i = 1
     while i <= b.count
-        total = total + string.len(b.parts[i])
-        i = i + 1
+        total += string.len(b.parts[i])
+        i += 1
     end
     total
 end
@@ -134,7 +134,7 @@ fun to_snake(s: str): str
         else
             result = result .. c
         end
-        i = i + 1
+        i += 1
     end
     result
 end
@@ -156,7 +156,7 @@ fun to_camel(s: str): str
         else
             result = result .. c
         end
-        i = i + 1
+        i += 1
     end
     result
 end
@@ -188,13 +188,13 @@ fun center(s: str, width: i64, fill: str): str
     i = 0
     while i < left
         result = result .. fill
-        i = i + 1
+        i += 1
     end
     result = result .. s
     i = 0
     while i < right
         result = result .. fill
-        i = i + 1
+        i += 1
     end
     result
 end
@@ -205,7 +205,7 @@ fun repeat_char(c: str, n: i64): str
     i = 0
     while i < n
         result = result .. c
-        i = i + 1
+        i += 1
     end
     result
 end
@@ -228,12 +228,12 @@ fun word_wrap(s: str, width: i64): str
             line_len = wlen
         elseif line_len + 1 + wlen <= width then
             result = result .. " " .. word
-            line_len = line_len + 1 + wlen
+            line_len += 1 + wlen
         else
             result = result .. "\n" .. word
             line_len = wlen
         end
-        i = i + 1
+        i += 1
     end
     result
 end
@@ -271,7 +271,7 @@ fun count_sub(s: str, substr: str): i64
     while true
         start_idx = string.find(s, substr, pos, true)
         if start_idx == nil then break end
-        count = count + 1
+        count += 1
         pos = start_idx + string.len(substr)
     end
     count
@@ -334,7 +334,7 @@ fun split_trimmed(s: str, sep: str): any
         if string.len(trimmed) > 0 then
             out[rawlen(out) + 1] = trimmed
         end
-        i = i + 1
+        i += 1
     end
     out
 end

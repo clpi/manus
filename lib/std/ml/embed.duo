@@ -1,0 +1,262 @@
+-- std.ml.embed — Token embeddings, positional encodings, and RoPE
+-- Essential for transformer-based models (LLMs, ViTs, etc.)
+
+Tensor = req "std.ml.tensor"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Token Embedding
+-- ═══════════════════════════════════════════════════════════════
+
+fun token_embedding(vocab_size: i64, embed_dim: i64): any
+    scale = 1.0 / math.sqrt(embed_dim)
+    weights = Tensor.zeros(vocab_size, embed_dim)
+    for i = 1, weights.size
+        weights.data[i] = (math.random() * 2 - 1) * scale
+    end
+    {
+        type = "token_embedding",
+        vocab_size = vocab_size,
+        embed_dim = embed_dim,
+        weights = weights,
+    }
+end
+
+@hot
+fun token_embed_forward(layer: any, token_ids: any): any
+    -- token_ids: {batch_size, seq_len} or 1D array
+    batch = 1
+    seq_len = #token_ids
+    if type(token_ids[1]) == "table" then
+        batch = #token_ids
+        seq_len = #token_ids[1]
+    end
+    result = Tensor.zeros(batch * seq_len, layer.embed_dim)
+    for i = 1, batch * seq_len
+        id = token_ids[i]
+        for j = 1, layer.embed_dim
+            result.data[(i-1)*layer.embed_dim + j] = layer.weights.data[(id-1)*layer.embed_dim + j]
+        end
+    end
+    Tensor.reshape(result, batch * seq_len, layer.embed_dim)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Sinusoidal Positional Encoding (original Transformer)
+-- ═══════════════════════════════════════════════════════════════
+
+fun sinusoidal_encoding(max_len: i64, embed_dim: i64): any
+    pe = Tensor.zeros(max_len, embed_dim)
+    for pos = 0, max_len - 1
+        for i = 0, math.floor(embed_dim / 2) - 1
+            freq = 1.0 / math.pow(10000, (2 * i) / embed_dim)
+            pe.data[pos * embed_dim + 2 * i + 1] = math.sin(pos * freq)
+            if 2 * i + 2 <= embed_dim then
+                pe.data[pos * embed_dim + 2 * i + 2] = math.cos(pos * freq)
+            end
+        end
+    end
+    {
+        type = "sinusoidal",
+        max_len = max_len,
+        embed_dim = embed_dim,
+        weights = pe,
+    }
+end
+
+fun sinusoidal_forward(layer: any, seq_len: i64): any
+    Tensor.slice(layer.weights, 1, seq_len, 1, layer.embed_dim)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Learned Positional Embedding
+-- ═══════════════════════════════════════════════════════════════
+
+fun learned_positional_embedding(max_len: i64, embed_dim: i64): any
+    {
+        type = "learned_positional",
+        max_len = max_len,
+        embed_dim = embed_dim,
+        weights = Tensor.rand(max_len, embed_dim),
+    }
+end
+
+fun learned_positional_forward(layer: any, positions: any): any
+    -- positions: list of 0-based position indices
+    seq_len = #positions
+    result = Tensor.zeros(seq_len, layer.embed_dim)
+    for i = 1, seq_len
+        pos = positions[i] + 1  -- 1-indexed
+        for j = 1, layer.embed_dim
+            result.data[(i-1)*layer.embed_dim + j] = layer.weights.data[(pos-1)*layer.embed_dim + j]
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Rotary Position Embedding (RoPE) — used in LLaMA, GPT-NeoX, etc.
+-- ═══════════════════════════════════════════════════════════════
+
+fun rope_embedding(dim: i64, base: f64, max_seq_len: i64): any
+    if base == nil then base = 10000.0 end
+    if max_seq_len == nil then max_seq_len = 8192 end
+
+    -- Precompute frequencies
+    freqs = Tensor.zeros(max_seq_len, dim)
+    for pos = 0, max_seq_len - 1
+        for i = 0, math.floor(dim / 2) - 1
+            freq = 1.0 / math.pow(base, (2 * i) / dim)
+            angle = pos * freq
+            freqs.data[pos * dim + 2 * i + 1] = math.cos(angle)
+            freqs.data[pos * dim + 2 * i + 2] = math.sin(angle)
+        end
+    end
+
+    {
+        type = "rope",
+        dim = dim,
+        base = base,
+        max_seq_len = max_seq_len,
+        freqs = freqs,
+    }
+end
+
+@hot
+fun rope_forward(layer: any, x: any, offset: i64): any
+    -- x: [seq_len, dim]
+    -- Applies rotary embedding in-place conceptually
+    seq_len = x.rows
+    dim = x.cols
+    result = Tensor.zeros(seq_len, dim)
+
+    for pos = 0, seq_len - 1
+        abs_pos = pos + (offset or 0)
+        for i = 0, math.floor(dim / 2) - 1
+            cos_val = layer.freqs.data[abs_pos * dim + 2 * i + 1]
+            sin_val = layer.freqs.data[abs_pos * dim + 2 * i + 2]
+            x0 = x.data[pos * dim + 2 * i + 1]
+            x1 = x.data[pos * dim + 2 * i + 2]
+            result.data[pos * dim + 2 * i + 1] = x0 * cos_val - x1 * sin_val
+            result.data[pos * dim + 2 * i + 2] = x0 * sin_val + x1 * cos_val
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ALiBi (Attention with Linear Biases) — used in BLOOM, MPT
+-- ═══════════════════════════════════════════════════════════════
+
+fun alibi_encoding(heads: i64, max_seq_len: i64): any
+    -- Precompute slope for each head
+    slopes = {}
+    for i = 1, heads
+        base = math.pow(2, -8 * i / heads)
+        slopes[i] = base
+    end
+
+    -- Precompute bias matrix
+    biases = Tensor.zeros(heads, max_seq_len)
+    for h = 1, heads
+        for pos = 0, max_seq_len - 1
+            biases.data[(h-1) * max_seq_len + pos + 1] = -slopes[h] * pos
+        end
+    end
+
+    {
+        type = "alibi",
+        heads = heads,
+        max_seq_len = max_seq_len,
+        slopes = slopes,
+        biases = biases,
+    }
+end
+
+fun alibi_forward(layer: any, scores: any, seq_len: i64): any
+    -- scores: [heads, seq_len, seq_len]
+    -- Add ALiBi bias to attention scores
+    result = Tensor.copy(scores)
+    for h = 1, layer.heads
+        for i = 1, seq_len
+            for j = 1, seq_len
+                if j <= i then
+                    -- Linear bias: -slope * |i - j|
+                    result.data[(h-1)*seq_len*seq_len + (i-1)*seq_len + j] =
+                        result.data[(h-1)*seq_len*seq_len + (i-1)*seq_len + j] +
+                        layer.biases.data[(h-1)*layer.max_seq_len + math.abs(i - j) + 1]
+                end
+            end
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Embedding + Position + LayerNorm (complete embedding layer)
+-- ═══════════════════════════════════════════════════════════════
+
+fun embedding_layer(vocab_size: i64, embed_dim: i64, max_seq_len: i64, pos_encoding: str): any
+    if pos_encoding == nil then pos_encoding = "rope" end
+    token_emb = token_embedding(vocab_size, embed_dim)
+    pos_emb = nil
+
+    if pos_encoding == "rope" then
+        pos_emb = rope_embedding(embed_dim, 10000, max_seq_len)
+    elseif pos_encoding == "sinusoidal" then
+        pos_emb = sinusoidal_encoding(max_seq_len, embed_dim)
+    elseif pos_encoding == "learned" then
+        pos_emb = learned_positional_embedding(max_seq_len, embed_dim)
+    end
+
+    {
+        type = "embedding",
+        vocab_size = vocab_size,
+        embed_dim = embed_dim,
+        max_seq_len = max_seq_len,
+        pos_encoding = pos_encoding,
+        token = token_emb,
+        pos = pos_emb,
+    }
+end
+
+@hot
+fun embedding_forward(layer: any, token_ids: any, offset: i64): any
+    -- Token embeddings
+    x = token_embed_forward(layer.token, token_ids)
+    -- Position embeddings
+    if layer.pos ~= nil then
+        if layer.pos_encoding == "rope" then
+            x = rope_forward(layer.pos, x, offset)
+        elseif layer.pos_encoding == "sinusoidal" then
+            pos_enc = sinusoidal_forward(layer.pos, x.rows)
+            x = Tensor.add(x, pos_enc)
+        elseif layer.pos_encoding == "learned" then
+            positions = {}
+            for i = 0, x.rows - 1
+                positions[#positions + 1] = i
+            end
+            pos_enc = learned_positional_forward(layer.pos, positions)
+            x = Tensor.add(x, pos_enc)
+        end
+    end
+    x
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.token_embedding = token_embedding
+M.token_embed_forward = token_embed_forward
+M.sinusoidal_encoding = sinusoidal_encoding
+M.sinusoidal_forward = sinusoidal_forward
+M.learned_positional_embedding = learned_positional_embedding
+M.learned_positional_forward = learned_positional_forward
+M.rope_embedding = rope_embedding
+M.rope_forward = rope_forward
+M.alibi_encoding = alibi_encoding
+M.alibi_forward = alibi_forward
+M.embedding_layer = embedding_layer
+M.embedding_forward = embedding_forward
+M

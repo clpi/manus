@@ -13,12 +13,12 @@ fun count_primes(limit: i64): i64
             if n % d == 0 then
                 is_prime = false
             end
-            d = d + 1
+            d += 1
         end
         if is_prime then
-            count = count + 1
+            count += 1
         end
-        n = n + 1
+        n += 1
     end
     count
 end

@@ -15,7 +15,7 @@ fun mandel(cx: f64, cy: f64): i64
         if x2 + y2 > 4.0 then return i end
         y = 2.0 * x * y + cy
         x = x2 - y2 + cx
-        i = i + 1
+        i += 1
     end
     MAX_ITER
 end
@@ -33,10 +33,10 @@ fun render(): void
             else
                 print(".")
             end
-            col = col + 1
+            col += 1
         end
         print("\n")
-        row = row + 1
+        row += 1
     end
 end
 

@@ -1,0 +1,226 @@
+-- std.graphics.font — Font rendering and text layout
+-- For rendering text in ward's graphics pipeline.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Font Config
+-- ═══════════════════════════════════════════════════════════════
+
+fun font_config_new(): any
+    {
+        path = "",
+        size = 16,
+        dpi = 72,
+        antialiasing = "gray",  -- "none", "gray", "lcd"
+        hinting = "normal",  -- "none", "slight", "normal"
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Glyph
+-- ═══════════════════════════════════════════════════════════════
+
+fun glyph_new(char: str): any
+    {
+        char = char,
+        codepoint = string.byte(char),
+        width = 0,
+        height = 0,
+        advance_x = 0,
+        advance_y = 0,
+        bearing_x = 0,
+        bearing_y = 0,
+        bitmap = {},
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Font
+-- ═══════════════════════════════════════════════════════════════
+
+fun font_new(config: any): any
+    {
+        config = config,
+        glyphs = {},
+        ascender = 0,
+        descender = 0,
+        line_height = 0,
+        loaded = false,
+    }
+end
+
+fun font_load(font: any): any
+    -- In production, would parse font file (TrueType/OpenType)
+    font.ascender = math.floor(font.config.size * 0.8)
+    font.descender = -math.floor(font.config.size * 0.2)
+    font.line_height = font.ascender - font.descender
+    font.loaded = true
+    {ok = true}
+end
+
+fun font_get_glyph(font: any, char: str): any
+    codepoint = string.byte(char)
+    if font.glyphs[codepoint] then
+        return font.glyphs[codepoint]
+    end
+
+    -- Generate placeholder glyph
+    glyph = glyph_new(char)
+    glyph.width = math.floor(font.config.size * 0.6)
+    glyph.height = font.config.size
+    glyph.advance_x = glyph.width + 2
+    glyph.bearing_x = 0
+    glyph.bearing_y = font.ascender
+
+    -- Generate bitmap (placeholder)
+    y = 1
+    while y <= glyph.height
+        x = 1
+        while x <= glyph.width
+            -- Simple alpha mask (placeholder)
+            alpha = 255
+            if x == 1 or x == glyph.width or y == 1 or y == glyph.height then
+                alpha = 128
+            end
+            glyph.bitmap[(y - 1) * glyph.width + x] = alpha
+            x += 1
+        end
+        y += 1
+    end
+
+    font.glyphs[codepoint] = glyph
+    glyph
+end
+
+fun font_measure_text(font: any, text: str): any
+    x = 0
+    max_x = 0
+    y = 0
+    max_y = font.line_height
+
+    i = 1
+    while i <= #text
+        char = text:sub(i, i)
+        glyph = font_get_glyph(font, char)
+        x += glyph.advance_x
+        if x > max_x then max_x = x end
+        i += 1
+    end
+
+    {
+        width = max_x,
+        height = max_y,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Text Layout
+-- ═══════════════════════════════════════════════════════════════
+
+fun text_layout_new(font: any): any
+    {
+        font = font,
+        lines = {},
+        current_line = {},
+        cursor_x = 0,
+        cursor_y = 0,
+    }
+end
+
+fun text_layout_add_text(layout: any, text: str): void
+    i = 1
+    while i <= #text
+        char = text:sub(i, i)
+        if char == "\n" then
+            layout.lines[#layout.lines + 1] = layout.current_line
+            layout.current_line = {}
+            layout.cursor_x = 0
+            layout.cursor_y = layout.cursor_y + layout.font.line_height
+        else
+            glyph = font_get_glyph(layout.font, char)
+            layout.current_line[#layout.current_line + 1] = {
+                glyph = glyph,
+                x = layout.cursor_x,
+                y = layout.cursor_y,
+            }
+            layout.cursor_x += glyph.advance_x
+        end
+        i += 1
+    end
+end
+
+fun text_layout_get_glyphs(layout: any): any
+    glyphs = {}
+    for line in layout.lines
+        for item in line
+            glyphs[#glyphs + 1] = item
+        end
+    end
+    for item in layout.current_line
+        glyphs[#glyphs + 1] = item
+    end
+    glyphs
+end
+
+fun text_layout_get_size(layout: any): any
+    max_x = 0
+    for line in layout.lines
+        line_width = 0
+        for item in line
+            line_width += item.glyph.advance_x
+        end
+        if line_width > max_x then max_x = line_width end
+    end
+    if layout.cursor_x > max_x then max_x = layout.cursor_x end
+
+    {
+        width = max_x,
+        height = layout.cursor_y + layout.font.line_height,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Text Rendering
+-- ═══════════════════════════════════════════════════════════════
+
+fun text_render_text(font: any, text: str, x: f64, y: f64, color: any): any
+    layout = text_layout_new(font)
+    text_layout_add_text(layout, text)
+
+    render_items = {}
+    for glyph in text_layout_get_glyphs(layout)
+        render_items[#render_items + 1] = {
+            x += glyph.x,
+            y += glyph.y,
+            glyph = glyph.glyph,
+            color = color,
+        }
+    end
+
+    {
+        items = render_items,
+        size = text_layout_get_size(layout),
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Config
+M.config_new = font_config_new
+-- Glyph
+M.glyph_new = glyph_new
+-- Font
+M.font_new = font_new
+M.font_load = font_load
+M.font_get_glyph = font_get_glyph
+M.font_measure_text = font_measure_text
+-- Layout
+M.layout_new = text_layout_new
+M.layout_add_text = text_layout_add_text
+M.layout_get_glyphs = text_layout_get_glyphs
+M.layout_get_size = text_layout_get_size
+-- Rendering
+M.render_text = text_render_text
+M

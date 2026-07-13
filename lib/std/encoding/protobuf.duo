@@ -1,0 +1,265 @@
+-- std.encoding.protobuf — Protocol Buffers encoding/decoding
+-- Minimal implementation for wire format (varint, length-delimited, fixed32/64)
+
+Bit = req "std.bit"
+
+-- Wire types
+WIRE_VARINT = 0
+WIRE_64BIT = 1
+WIRE_LENGTH_DELIMITED = 2
+WIRE_START_GROUP = 3
+WIRE_END_GROUP = 4
+WIRE_32BIT = 5
+
+-- ═══════════════════════════════════════════════════════════════
+-- Writer
+-- ═══════════════════════════════════════════════════════════════
+
+fun writer_new(): any
+    {bytes = {}}
+end
+
+fun write_varint(w: any, value: i64): void
+    while value >= 0x80
+        w.bytes[#w.bytes + 1] = (value & 0x7F) | 0x80
+        value = value >> 7
+    end
+    w.bytes[#w.bytes + 1] = value
+end
+
+fun write_tag(w: any, field: i64, wire_type: i64): void
+    write_varint(w, (field << 3) | wire_type)
+end
+
+fun write_field_varint(w: any, field: i64, value: i64): void
+    write_tag(w, field, WIRE_VARINT)
+    write_varint(w, value)
+end
+
+fun write_field_bytes(w: any, field: i64, data: any): void
+    write_tag(w, field, WIRE_LENGTH_DELIMITED)
+    write_varint(w, #data)
+    for b in data
+        w.bytes[#w.bytes + 1] = b
+    end
+end
+
+fun write_field_string(w: any, field: i64, value: str): void
+    write_tag(w, field, WIRE_LENGTH_DELIMITED)
+    bytes = string_to_bytes(value)
+    write_varint(w, #bytes)
+    for b in bytes
+        w.bytes[#w.bytes + 1] = b
+    end
+end
+
+fun write_field_fixed32(w: any, field: i64, value: i64): void
+    write_tag(w, field, WIRE_32BIT)
+    w.bytes[#w.bytes + 1] = value & 0xFF
+    w.bytes[#w.bytes + 1] = (value >> 8) & 0xFF
+    w.bytes[#w.bytes + 1] = (value >> 16) & 0xFF
+    w.bytes[#w.bytes + 1] = (value >> 24) & 0xFF
+end
+
+fun write_field_fixed64(w: any, field: i64, value: i64): void
+    write_tag(w, field, WIRE_64BIT)
+    i = 0
+    while i < 8
+        w.bytes[#w.bytes + 1] = (value >> (i * 8)) & 0xFF
+        i += 1
+    end
+end
+
+fun write_field_float(w: any, field: i64, value: f64): void
+    -- Simplified: encode as fixed32 with approximation
+    write_field_fixed32(w, field, math.floor(value * 1000))
+end
+
+fun writer_bytes(w: any): any
+    w.bytes
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Reader
+-- ═══════════════════════════════════════════════════════════════
+
+fun reader_new(data: any): any
+    {data = data, pos = 1, len = #data}
+end
+
+fun reader_varint(r: any): i64
+    result = 0
+    shift = 0
+    while true
+        if r.pos > r.len then return nil end
+        byte = r.data[r.pos]
+        r.pos = r.pos + 1
+        result = result | ((byte & 0x7F) << shift)
+        shift += 7
+        if (byte & 0x80) == 0 then break end
+    end
+    result
+end
+
+fun reader_tag(r: any): any
+    val = reader_varint(r)
+    if val == nil then return nil end
+    {field = val >> 3, wire_type = val & 0x07}
+end
+
+fun reader_skip_field(r: any, wire_type: i64): void
+    if wire_type == WIRE_VARINT then
+        reader_varint(r)
+    elseif wire_type == WIRE_64BIT then
+        r.pos = r.pos + 8
+    elseif wire_type == WIRE_LENGTH_DELIMITED then
+        len = reader_varint(r)
+        r.pos = r.pos + len
+    elseif wire_type == WIRE_32BIT then
+        r.pos = r.pos + 4
+    end
+end
+
+fun reader_field_bytes(r: any, wire_type: i64): any
+    if wire_type ~= WIRE_LENGTH_DELIMITED then return nil end
+    len = reader_varint(r)
+    out = {}
+    i = 0
+    while i < len
+        out[#out + 1] = r.data[r.pos]
+        r.pos = r.pos + 1
+        i += 1
+    end
+    out
+end
+
+fun reader_field_string(r: any, wire_type: i64): str
+    bytes = reader_field_bytes(r, wire_type)
+    if bytes == nil then return "" end
+    bytes_to_string(bytes)
+end
+
+fun reader_field_fixed32(r: any, wire_type: i64): i64
+    if wire_type ~= WIRE_32BIT then return nil end
+    b0 = r.data[r.pos]
+    b1 = r.data[r.pos + 1]
+    b2 = r.data[r.pos + 2]
+    b3 = r.data[r.pos + 3]
+    r.pos = r.pos + 4
+    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+end
+
+fun reader_field_fixed64(r: any, wire_type: i64): i64
+    if wire_type ~= WIRE_64BIT then return nil end
+    result = 0
+    i = 0
+    while i < 8
+        result = result | (r.data[r.pos + i] << (i * 8))
+        i += 1
+    end
+    r.pos = r.pos + 8
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Helper functions
+-- ═══════════════════════════════════════════════════════════════
+
+fun string_to_bytes(s: str): any
+    out = {}
+    i = 1
+    while i <= string.len(s)
+        out[#out + 1] = string.byte(s, i)
+        i += 1
+    end
+    out
+end
+
+fun bytes_to_string(bytes: any): str
+    parts = {}
+    i = 1
+    while i <= #bytes
+        parts[#parts + 1] = string.char(bytes[i])
+        i += 1
+    end
+    table.concat(parts)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Schema definition helpers
+-- ═══════════════════════════════════════════════════════════════
+
+fun message_new(fields: any): any
+    {
+        type = "protobuf_message",
+        fields = fields,  -- {name = {field_num, wire_type, type}}
+    }
+end
+
+fun field_def(field_num: i64, wire_type: i64, type_name: str): any
+    {field_num = field_num, wire_type = wire_type, type = type_name}
+end
+
+-- Encode a message from a table of field values
+fun message_encode(schema: any, values: any): any
+    w = writer_new()
+    for name, field_def in schema.fields
+        value = values[name]
+        if value ~= nil then
+            if field_def.type == "varint" then
+                write_field_varint(w, field_def.field_num, value)
+            elseif field_def.type == "string" then
+                write_field_string(w, field_def.field_num, value)
+            elseif field_def.type == "bytes" then
+                write_field_bytes(w, field_def.field_num, value)
+            elseif field_def.type == "fixed32" then
+                write_field_fixed32(w, field_def.field_num, value)
+            elseif field_def.type == "fixed64" then
+                write_field_fixed64(w, field_def.field_num, value)
+            end
+        end
+    end
+    writer_bytes(w)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Writer
+M.writer_new = writer_new
+M.write_varint = write_varint
+M.write_tag = write_tag
+M.write_field_varint = write_field_varint
+M.write_field_bytes = write_field_bytes
+M.write_field_string = write_field_string
+M.write_field_fixed32 = write_field_fixed32
+M.write_field_fixed64 = write_field_fixed64
+M.writer_bytes = writer_bytes
+-- Reader
+M.reader_new = reader_new
+M.reader_varint = reader_varint
+M.reader_tag = reader_tag
+M.reader_skip_field = reader_skip_field
+M.reader_field_bytes = reader_field_bytes
+M.reader_field_string = reader_field_string
+M.reader_field_fixed32 = reader_field_fixed32
+M.reader_field_fixed64 = reader_field_fixed64
+-- Helpers
+M.string_to_bytes = string_to_bytes
+M.bytes_to_string = bytes_to_string
+-- Schema
+M.message_new = message_new
+M.field_def = field_def
+M.message_encode = message_encode
+-- Wire type constants
+M.WIRE = {
+    VARINT = WIRE_VARINT,
+    FIXED64 = WIRE_64BIT,
+    LENGTH_DELIMITED = WIRE_LENGTH_DELIMITED,
+    START_GROUP = WIRE_START_GROUP,
+    END_GROUP = WIRE_END_GROUP,
+    FIXED32 = WIRE_32BIT,
+}
+M

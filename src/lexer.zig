@@ -118,6 +118,7 @@ pub const TokenKind = enum {
     dcolon, // ::
     arrow, // ->
     fat_arrow, // =>
+    pipe_gt, // |>
     plus_assign, // +=
     minus_assign, // -=
     star_assign, // *=
@@ -225,6 +226,7 @@ pub const TokenKind = enum {
             .dcolon => "::",
             .arrow => "->",
             .fat_arrow => "=>",
+            .pipe_gt => "|>",
             .plus_assign => "+=",
             .minus_assign => "-=",
             .star_assign => "*=",
@@ -409,18 +411,21 @@ pub const Lexer = struct {
         }
         const start = self.pos;
         while (self.pos < self.src.len) {
-            if (self.adv() == ']') {
+            if (self.peek_char() == ']') {
+                const close_start = self.pos;
+                _ = self.adv();
                 var eq: u32 = 0;
-                const eq_start = self.pos;
                 while (self.peek_char() == '=') {
                     _ = self.adv();
                     eq += 1;
                 }
                 if (eq == level and self.peek_char() == ']') {
-                    const content = self.src[start .. eq_start - 1];
+                    const content = self.src[start..close_start];
                     _ = self.adv();
                     return content;
                 }
+            } else {
+                _ = self.adv();
             }
         }
         return LexError.UnterminatedLongString;
@@ -719,7 +724,10 @@ pub const Lexer = struct {
                 break :blk Token{ .kind = .hash_hash, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .hash, .loc = l, .text = self.src[p - 1 .. p] },
             '&' => Token{ .kind = .amp, .loc = l, .text = self.src[p - 1 .. p] },
-            '|' => Token{ .kind = .pipe, .loc = l, .text = self.src[p - 1 .. p] },
+            '|' => if (self.pos < self.src.len and self.src[self.pos] == '>') blk2: {
+                self.pos += 1;
+                break :blk2 Token{ .kind = .pipe_gt, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .pipe, .loc = l, .text = self.src[p - 1 .. p] },
             '(' => Token{ .kind = .lparen, .loc = l, .text = self.src[p - 1 .. p] },
             ')' => Token{ .kind = .rparen, .loc = l, .text = self.src[p - 1 .. p] },
             '[' => Token{ .kind = .lbracket, .loc = l, .text = self.src[p - 1 .. p] },
@@ -981,6 +989,23 @@ test "lex: long string with embedded newlines preserved" {
     const tok = try l.next();
     try testing.expectEqual(TokenKind.string_lit, tok.kind);
     try testing.expectEqualStrings("line1\nline2", tok.text);
+}
+
+test "lex: long string with array index before close" {
+    var l = Lexer.init("[[double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];]]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];", tok.text);
+    try testing.expect(tok.text[tok.text.len - 1] != ']');
+}
+
+test "lex: long bracket after lparen for c.emit" {
+    var l = Lexer.init("([[double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];]])", "test");
+    _ = try l.next(); // lparen
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expect(std.mem.indexOf(u8, tok.text, "C[i];") != null);
+    try testing.expect(!std.mem.endsWith(u8, tok.text, "]"));
 }
 
 test "lex: long string embedded in other tokens" {

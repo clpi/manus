@@ -197,6 +197,9 @@ pub const Expander = struct {
 
     fn expandMacroCall(self: *Expander, call: ast.MacroCall, ctx: *HygieneContext) Error!*ast.Expr {
         if (self.expansion_depth >= max_expansion_depth) return Error.ExpansionLimitExceeded;
+        if (std.mem.eql(u8, call.name, "grad")) {
+            return try self.expandGradBuiltin(call, ctx);
+        }
         const def = self.macros.get(call.name) orelse return Error.UnknownMacro;
         if (def.params.len != call.args.len) return Error.ArityMismatch;
         if (def.body != .expr) return Error.MacroBodyExpectedExpression;
@@ -215,8 +218,55 @@ pub const Expander = struct {
         return self.cloneExpr(def.body.expr, &macro_ctx);
     }
 
+    /// `@grad(fn, wrt?)` → `(req "std.ml.autodiff"):grad(fn, wrt)`.
+    fn expandGradBuiltin(self: *Expander, call: ast.MacroCall, ctx: *HygieneContext) Error!*ast.Expr {
+        if (call.args.len < 1 or call.args.len > 2) return Error.ArityMismatch;
+        const mod_ref = try self.makeReqModuleExpr(call.loc, "std.ml.autodiff");
+        var args: std.ArrayList(*ast.Expr) = .empty;
+        defer args.deinit(self.alloc);
+        try args.append(self.alloc, try self.cloneExpr(call.args[0], ctx));
+        if (call.args.len == 2) {
+            try args.append(self.alloc, try self.cloneExpr(call.args[1], ctx));
+        } else {
+            const nil_expr = try self.alloc.create(ast.Expr);
+            nil_expr.* = .{ .nil = call.loc };
+            try args.append(self.alloc, nil_expr);
+        }
+        const out = try self.alloc.create(ast.Expr);
+        out.* = .{ .method_call = .{
+            .loc = call.loc,
+            .obj = mod_ref,
+            .method = "grad",
+            .args = try args.toOwnedSlice(self.alloc),
+        } };
+        return out;
+    }
+
+    fn makeReqModuleExpr(self: *Expander, loc: ast.Loc, path: []const u8) Error!*ast.Expr {
+        const path_owned = try self.alloc.dupe(u8, path);
+        const req_name = try self.alloc.create(ast.Expr);
+        req_name.* = .{ .name = .{ .loc = loc, .ident = "req" } };
+        const path_lit = try self.alloc.create(ast.Expr);
+        path_lit.* = .{ .string_lit = .{ .loc = loc, .val = path_owned } };
+        const args_slice = try self.alloc.alloc(*ast.Expr, 1);
+        args_slice[0] = path_lit;
+        const out = try self.alloc.create(ast.Expr);
+        out.* = .{ .call = .{
+            .loc = loc,
+            .func = req_name,
+            .args = args_slice,
+        } };
+        return out;
+    }
+
     fn expandMacroStmtCall(self: *Expander, call: ast.MacroCall, ctx: *HygieneContext) Error![]ast.Stmt {
         if (self.expansion_depth >= max_expansion_depth) return Error.ExpansionLimitExceeded;
+        if (std.mem.eql(u8, call.name, "grad")) {
+            const expr = try self.expandGradBuiltin(call, ctx);
+            const out = try self.alloc.alloc(ast.Stmt, 1);
+            out[0] = .{ .expr_stmt = .{ .loc = call.loc, .expr = expr } };
+            return out;
+        }
         const def = self.macros.get(call.name) orelse return Error.UnknownMacro;
         if (def.params.len != call.args.len) return Error.ArityMismatch;
         if (def.body != .block) return Error.MacroBodyExpectedBlock;
@@ -699,6 +749,7 @@ pub const Expander = struct {
                 out.* = .{ .fields = try self.cloneRecordFields(record.fields, ctx) };
                 break :blk .{ .record = out };
             },
+            .tuple => |elems| .{ .tuple = try self.cloneTypeExprSlice(elems, ctx) },
         };
     }
 
@@ -1060,4 +1111,58 @@ test "macro expansion hygienically renames introduced function parameters" {
     try std.testing.expectEqualStrings(expanded_func.params[0].name, lhs.name.ident);
     const rhs = expanded_func.body.tail_expr.?.binop.rhs;
     try std.testing.expectEqualStrings("tmp", rhs.name.ident);
+}
+
+test "macro expansion: nn block assign clones without hang" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init("model = nn { relu }\n", "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var expander = Expander.init(alloc);
+    defer expander.deinit();
+    try expander.expandModule(&module);
+    try std.testing.expect(module.body.stmts[0] == .assign);
+}
+
+test "macro expansion: @grad desugars to autodiff grad call" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const module = try parseAndExpandForTest(
+        \\local plan = @grad(loss_fn, model)
+    , &arena);
+
+    try std.testing.expectEqual(@as(usize, 1), module.body.stmts.len);
+    const init = module.body.stmts[0].local_decl.inits[0];
+    try std.testing.expect(init.* == .method_call);
+    try std.testing.expectEqualStrings("grad", init.method_call.method);
+    try std.testing.expectEqual(@as(usize, 2), init.method_call.args.len);
+
+    const mod_expr = init.method_call.obj;
+    try std.testing.expect(mod_expr.* == .call);
+    try std.testing.expect(mod_expr.call.func.* == .name);
+    try std.testing.expectEqualStrings("req", mod_expr.call.func.name.ident);
+    try std.testing.expectEqual(@as(usize, 1), mod_expr.call.args.len);
+    try std.testing.expect(mod_expr.call.args[0].* == .string_lit);
+    try std.testing.expectEqualStrings("std.ml.autodiff", mod_expr.call.args[0].string_lit.val);
+
+    try std.testing.expect(init.method_call.args[0].* == .name);
+    try std.testing.expectEqualStrings("loss_fn", init.method_call.args[0].name.ident);
+    try std.testing.expect(init.method_call.args[1].* == .name);
+    try std.testing.expectEqualStrings("model", init.method_call.args[1].name.ident);
+}
+
+test "macro expansion: @grad without wrt passes nil" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const module = try parseAndExpandForTest(
+        \\local plan = @grad(loss_fn)
+    , &arena);
+
+    const init = module.body.stmts[0].local_decl.inits[0];
+    try std.testing.expect(init.* == .method_call);
+    try std.testing.expectEqual(@as(usize, 2), init.method_call.args.len);
+    try std.testing.expect(init.method_call.args[1].* == .nil);
 }

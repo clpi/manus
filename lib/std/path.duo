@@ -22,11 +22,11 @@ fun basename(p: str): str
     end
     i = string.len(p)
     while i > 1 and string.sub(p, i, i) == "/"
-        i = i - 1
+        i -= 1
     end
     last = i
     while i > 1 and string.sub(p, i - 1, i - 1) ~= "/"
-        i = i - 1
+        i -= 1
     end
     string.sub(p, i, last)
 end
@@ -37,10 +37,10 @@ fun dirname(p: str): str
     end
     i = string.len(p)
     while i > 1 and string.sub(p, i, i) == "/"
-        i = i - 1
+        i -= 1
     end
     while i > 1 and string.sub(p, i - 1, i - 1) ~= "/"
-        i = i - 1
+        i -= 1
     end
     if i <= 1 then
         if string.sub(p, 1, 1) == "/" then
@@ -58,7 +58,7 @@ fun extname(p: str): str
         if string.sub(base, i, i) == "." then
             string.sub(base, i, string.len(base))
         end
-        i = i - 1
+        i -= 1
     end
     ""
 end

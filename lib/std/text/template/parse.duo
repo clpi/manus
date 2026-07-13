@@ -32,7 +32,7 @@ local function parse(template)
                 local text_node = new_node("text")
                 text_node.text = string.sub(template, i, i)
                 root.children[rawlen(root.children) + 1] = text_node
-                i = i + 1
+                i += 1
             end
         else
             local text_node = new_node("text")

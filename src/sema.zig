@@ -8,6 +8,7 @@ const types = @import("types.zig");
 const RT = types.ResolvedType;
 const term = @import("term.zig");
 const directives = @import("directives.zig");
+const debug_trace = @import("debug_trace.zig");
 
 pub const SemaError = error{
     TypeMismatch,
@@ -257,6 +258,7 @@ pub const Sema = struct {
     test_entries: std.ArrayListUnmanaged(TestEntry) = .empty,
     /// Collected `@build.*` module directives from the current module.
     build_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
+    debug_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
 
     pub const TestEntry = struct {
         func_name: []const u8,
@@ -281,6 +283,7 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "jit") or
             std.mem.eql(u8, name, "ffi") or
             std.mem.eql(u8, name, "mem") or
+            std.mem.eql(u8, name, "ml") or
             std.mem.eql(u8, name, "atomic"))
             return true;
         // Duo standard library namespace
@@ -416,6 +419,7 @@ pub const Sema = struct {
         self.instantiation_sites.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
         self.build_directives.deinit(self.alloc);
+        self.debug_directives.deinit(self.alloc);
         self.escape_names.deinit(self.alloc);
         self.metatable_types.deinit(self.alloc);
     }
@@ -540,6 +544,37 @@ pub const Sema = struct {
                 return f.field;
         }
         return null;
+    }
+
+    fn ml_intrinsic_name(_: *const Sema, func: *const ast.Expr) ?[]const u8 {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "ml")) return f.field;
+        if (f.obj.* == .field) {
+            const inner = f.obj.field;
+            if (inner.obj.* == .name and
+                std.mem.eql(u8, inner.obj.name.ident, "std") and
+                std.mem.eql(u8, inner.field, "ml"))
+                return f.field;
+        }
+        return null;
+    }
+
+    fn check_ml_call(self: *const Sema, loc: ast.Loc, fname: []const u8, args: []*ast.Expr) SemaError!RT {
+        _ = self;
+        _ = loc;
+        if (args.len != 0) return .any;
+        if (std.mem.eql(u8, fname, "matmul_256") or
+            std.mem.eql(u8, fname, "conv2d") or
+            std.mem.eql(u8, fname, "softmax_1k") or
+            std.mem.eql(u8, fname, "attention") or
+            std.mem.eql(u8, fname, "mlp_forward") or
+            std.mem.eql(u8, fname, "gelu_1k") or
+            std.mem.eql(u8, fname, "layernorm_1k") or
+            std.mem.eql(u8, fname, "dot_1m") or
+            std.mem.eql(u8, fname, "conv1d"))
+            return .f64;
+        return .any;
     }
 
     fn mem_type_from_name(self: *Sema, name: []const u8) SemaError!?RT {
@@ -1050,13 +1085,14 @@ pub const Sema = struct {
     pub fn check_module(self: *Sema, mod: *ast.Module) !void {
         self.test_entries.clearRetainingCapacity();
         self.build_directives.clearRetainingCapacity();
+        self.debug_directives.clearRetainingCapacity();
         try self.scope.push();
         self.seed_globals();
-        if (self.lua55_mode or self.duo_mode) {
+        // Lua 5.5 scripts use implicit globals at module scope; Duo uses implicit locals.
+        if (self.lua55_mode) {
             self.scope.set_require_global(true);
         }
-        // Pre-register all top-level function names so forward references work.
-        // This allows functions to call each other regardless of declaration order.
+        // Pre-register top-level bindings so forward references work.
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |fd| {
@@ -1068,6 +1104,21 @@ pub const Sema = struct {
                     for (ld.names) |name| {
                         self.scope.define(name.ident, .{ .typ = .any, .is_const = false }) catch {};
                     }
+                },
+                .const_decl => |cd| {
+                    self.scope.define(cd.ident, .{ .typ = .any, .is_const = true }) catch {};
+                },
+                .global_decl => |gd| {
+                    if (!gd.star) for (gd.names) |name| {
+                        self.scope.define(name.ident, .{ .typ = .any, .is_const = false }) catch {};
+                    };
+                },
+                .assign => |as| {
+                    if (self.duo_mode) for (as.targets) |tgt| {
+                        if (tgt.* == .name) {
+                            self.scope.define(tgt.name.ident, .{ .typ = .any, .is_const = false }) catch {};
+                        }
+                    };
                 },
                 else => {},
             }
@@ -1097,10 +1148,24 @@ pub const Sema = struct {
 
     // ── Block / statements ────────────────────────────────────────────────────
 
+    fn check_return_value(self: *Sema, loc: ast.Loc, actual: RT) void {
+        if (self.current_ret == .any or self.current_ret == .void or actual == .any) return;
+        if (!type_annotation_accepts_init(self.current_ret, actual)) {
+            var want_buf: [128]u8 = undefined;
+            var got_buf: [128]u8 = undefined;
+            const want_name = self.current_ret.duo_name(&want_buf);
+            const got_name = actual.duo_name(&got_buf);
+            self.err(loc, "return type mismatch: expected '{s}', got '{s}'", .{ want_name, got_name });
+        }
+    }
+
     fn check_block(self: *Sema, blk: *ast.Block) SemaError!void {
         try self.scope.push();
         for (blk.stmts) |*stmt| try self.check_stmt(stmt);
-        if (blk.tail_expr) |e| _ = try self.check_expr(e);
+        if (blk.tail_expr) |e| {
+            const actual = try self.check_expr(e);
+            self.check_return_value(e.loc(), actual);
+        }
         self.scope.pop();
     }
 
@@ -1246,7 +1311,17 @@ pub const Sema = struct {
             .call_stmt => |*cs| _ = try self.check_expr(cs.expr),
             .expr_stmt => |*es| _ = try self.check_expr(es.expr),
             .ret => |*r| {
-                for (r.vals) |v| _ = try self.check_expr(v);
+                if (r.vals.len == 0) {
+                    if (self.current_ret != .any and self.current_ret != .void) {
+                        var want_buf: [128]u8 = undefined;
+                        const want_name = self.current_ret.duo_name(&want_buf);
+                        self.err(r.loc, "return type mismatch: expected '{s}', got void", .{want_name});
+                    }
+                } else {
+                    const actual = try self.check_expr(r.vals[0]);
+                    self.check_return_value(r.loc, actual);
+                    for (r.vals[1..]) |v| _ = try self.check_expr(v);
+                }
             },
             .if_stmt => |*is| {
                 _ = try self.check_expr(is.cond);
@@ -1341,14 +1416,31 @@ pub const Sema = struct {
                 defer self.current_type_name = prev_type_name;
                 // Register the alias name in scope as a constant struct type
                 try self.scope.define(ad.name, .{ .typ = .{ .@"struct" = .{ .name = ad.name } }, .is_const = true });
+                if (ad.target) |tgt| {
+                    if (tgt == .record) {
+                        const rec = tgt.record;
+                        debug_trace.event(.sema, .@"struct", "struct {s} ({d} fields)", .{ ad.name, rec.fields.len });
+                    } else {
+                        debug_trace.event(.sema, .@"struct", "alias {s}", .{ad.name});
+                    }
+                } else if (ad.fields.len > 0) {
+                    debug_trace.event(.sema, .@"struct", "struct {s} ({d} fields)", .{ ad.name, ad.fields.len });
+                }
             },
             .macro_def => {},
             .cinclude => {},
             .directive => |*dir| {
+                if (directives.isCInterfaceDirective(dir.attr.name)) return;
                 if (directives.validateModuleDirective(dir.attr)) |bad| {
                     self.err(dir.loc, "unknown module directive '@{s}'", .{bad});
-                } else {
+                } else if (directives.isBuildDirective(dir.attr.name)) {
                     try self.build_directives.append(self.alloc, dir.attr);
+                } else if (directives.isDebugDirective(dir.attr.name)) {
+                    try self.debug_directives.append(self.alloc, dir.attr);
+                    debug_trace.applyModuleDirective(self.alloc, dir.attr) catch {};
+                    if (term.debug_enabled) {
+                        debug_trace.event(.sema, .module, "module directive '@{s}'", .{dir.attr.name});
+                    }
                 }
             },
         }
@@ -1462,11 +1554,16 @@ pub const Sema = struct {
                     }
                     return sym.typ;
                 }
+                if (self.duo_mode and !self.is_builtin_global(n.ident)) {
+                    // Implicit local: bare bindings and forward references are module/file locals.
+                    try self.scope.define(n.ident, .{ .typ = .any, .is_const = false });
+                    return .any;
+                }
                 if (self.scope.needs_explicit_global() and !self.is_builtin_global(n.ident)) {
                     self.err(n.loc, "use of undeclared global '{s}'", .{n.ident});
                     return .any;
                 }
-                // Unknown identifier → treat as dynamic global
+                // Unknown identifier → treat as dynamic global (Lua scripts)
                 try self.note_global(n.ident, .any);
                 return .any;
             },
@@ -1662,6 +1759,9 @@ pub const Sema = struct {
                 if (self.mem_intrinsic_name(c.func)) |fname| {
                     return try self.check_mem_call(c.loc, fname, c.args);
                 }
+                if (self.ml_intrinsic_name(c.func)) |fname| {
+                    return try self.check_ml_call(c.loc, fname, c.args);
+                }
                 if (self.atomic_intrinsic_name(c.func)) |fname| {
                     return try self.check_atomic_call(c.loc, fname, c.args);
                 }
@@ -1706,8 +1806,25 @@ pub const Sema = struct {
                             if (std.mem.eql(u8, fname, "sqrt")) {
                                 if (c.args.len > 0) return try self.check_expr(c.args[0]);
                             }
-                            if (std.mem.eql(u8, fname, "sum")) return .i64;
-                            if (std.mem.eql(u8, fname, "any")) return .bool;
+                            if (std.mem.eql(u8, fname, "sum")) {
+                                if (c.args.len > 0) {
+                                    const at = try self.check_expr(c.args[0]);
+                                    return switch (at) {
+                                        .v4f64 => .f64,
+                                        .v8f32 => .f32,
+                                        .v4i64, .v8i32 => .i64,
+                                        else => .i64,
+                                    };
+                                }
+                                return .i64;
+                            }
+                            if (std.mem.eql(u8, fname, "any") or std.mem.eql(u8, fname, "all")) return .bool;
+                            if (std.mem.eql(u8, fname, "fma") and c.args.len >= 3) {
+                                return try self.check_expr(c.args[0]);
+                            }
+                            if (std.mem.eql(u8, fname, "dot_f32") and c.args.len >= 3) return .f32;
+                            if (std.mem.eql(u8, fname, "dot_f64") and c.args.len >= 3) return .f64;
+                            if (std.mem.eql(u8, fname, "matmul_f32") or std.mem.eql(u8, fname, "matmul_f64")) return .void;
                             if (std.mem.eql(u8, fname, "select") and c.args.len >= 3) {
                                 return try self.check_expr(c.args[1]);
                             }
@@ -1764,7 +1881,7 @@ pub const Sema = struct {
                 }
                 return .any;
             },
-            .binop => |b| self.check_binop(b.op, b.lhs, b.rhs),
+            .binop => |b| self.check_binop(expr.loc(), b.op, b.lhs, b.rhs),
             .unop => |u| self.check_unop(u.op, u.operand),
             .func_expr => |fb| blk: {
                 fb.closure_id = self.next_closure_id;
@@ -1837,7 +1954,7 @@ pub const Sema = struct {
         };
     }
 
-    fn check_binop(self: *Sema, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
+    fn check_binop(self: *Sema, loc: ast.Loc, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr) SemaError!RT {
         const lt = try self.check_expr(lhs);
         const rt = try self.check_expr(rhs);
 
@@ -1868,13 +1985,28 @@ pub const Sema = struct {
                 if (lt.is_numeric() and rt.is_numeric()) return .f64;
                 return .any;
             },
-            .add, .sub, .mul, .idiv, .mod => {
+            .add, .sub, .mul, .idiv, .mod => blk: {
+                if (lt == .tensor and rt == .tensor) {
+                    if (op == .add) {
+                        if (RT.tensor_same_shape(lt, rt)) break :blk lt;
+                        if (RT.tensor_broadcast_shape_incompatible(lt, rt)) {
+                            self.err(loc, "tensor broadcast incompatible shapes", .{});
+                            break :blk .any;
+                        }
+                        if (try RT.tensor_broadcast(lt, rt, self.alloc)) |out| break :blk out;
+                        break :blk .any;
+                    }
+                    if (!RT.tensor_same_shape(lt, rt) and RT.tensor_strict_shape_incompatible(lt, rt)) {
+                        self.err(loc, "tensor shape mismatch", .{});
+                    }
+                    break :blk if (RT.tensor_same_shape(lt, rt)) lt else .any;
+                }
                 if (lt.is_numeric() and rt.is_numeric()) {
                     // Promote: if either is float, result is float
-                    if (lt.is_float() or rt.is_float()) return .f64;
-                    return lt; // both integers: use left type
+                    if (lt.is_float() or rt.is_float()) break :blk .f64;
+                    break :blk lt; // both integers: use left type
                 }
-                return .any;
+                break :blk .any;
             },
             .band, .bor, .bxor, .lshift, .rshift => {
                 if (lt.is_integer() and rt.is_integer()) return lt;
@@ -1885,6 +2017,25 @@ pub const Sema = struct {
             .contains => .bool,
             .@"and" => if (lt.eql(rt)) rt else .any,
             .@"or" => if (lt.eql(rt)) lt else .any,
+            .matmul => blk: {
+                if (RT.tensor_matmul_k_incompatible(lt, rt)) {
+                    const ta = lt.tensor;
+                    const tb = rt.tensor;
+                    if (RT.tensor_dim_const(ta.dims[1]) != null and RT.tensor_dim_const(tb.dims[0]) != null) {
+                        const k_lhs = RT.tensor_dim_const(ta.dims[1]).?;
+                        const k_rhs = RT.tensor_dim_const(tb.dims[0]).?;
+                        self.err(loc, "tensor matmul inner dimension mismatch: {d} vs {d}", .{ k_lhs, k_rhs });
+                    } else {
+                        const k_lhs_l = RT.tensor_dim_label(ta.dims[1]) orelse "?";
+                        const k_rhs_l = RT.tensor_dim_label(tb.dims[0]) orelse "?";
+                        self.err(loc, "tensor matmul inner dimension mismatch: {s} vs {s}", .{ k_lhs_l, k_rhs_l });
+                    }
+                    break :blk .any;
+                }
+                if (try RT.tensor_matmul(lt, rt, self.alloc)) |out| break :blk out;
+                break :blk .any;
+            },
+            .pipeline => .any, // pipeline returns whatever the RHS function returns
         };
     }
 
@@ -2256,6 +2407,21 @@ pub const Sema = struct {
             self.err(fd.loc, "unknown or misplaced attribute '@{s}'", .{bad});
         }
 
+        directives.applyMlFuncAttrs(fd.attributes, fb);
+
+        if (directives.attrsHaveDebug(fd.attributes)) {
+            debug_trace.pushDepth();
+            defer debug_trace.popDepth();
+            for (fd.attributes) |attr| {
+                if (directives.isDebugDirective(attr.name)) {
+                    debug_trace.applyFunctionDirective(attr);
+                }
+            }
+            if (fd.path.len >= 1) {
+                debug_trace.event(.sema, .function, "type-check '{s}'", .{fd.path[0]});
+            }
+        }
+
         if (directives.attrsMarkTest(fd.attributes) and fd.path.len == 1 and !fd.method) {
             const opts = directives.parseTestOptions(self.alloc, fd.attributes) catch {
                 self.err(fd.loc, "invalid @test/@bench attribute arguments", .{});
@@ -2272,9 +2438,6 @@ pub const Sema = struct {
                 .loc = fd.loc,
                 .options = opts,
             });
-            if (opts.should_panic) {
-                self.warn_msg(fd.loc, "@test.should_panic on '{s}' is collected but not yet enforced by the test runner", .{fd.path[0]});
-            }
         }
 
         // Pass 1: type-check with declared (or dynamic) signature to populate type_map.
@@ -2355,6 +2518,7 @@ pub const Sema = struct {
         fb.use_sparse_dot_inline = detect_sparse_dot_inline(fb);
         fb.use_leven_native = detect_leven_native(fb);
         fb.use_life_native = detect_life_native(fb);
+        fb.use_simd_reduction = fb.is_typed and detect_simd_reduction(fb);
 
         if (fb.use_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
             fb.use_dot_product_dense or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
@@ -2687,6 +2851,7 @@ pub const Sema = struct {
 
         // Define the enum name in scope as a constant type
         try self.scope.define(ed.name, .{ .typ = enum_t, .is_const = true });
+        debug_trace.event(.sema, .enum_type, "enum {s} ({d} variants)", .{ ed.name, ed.variants.len });
     }
 
     fn strip_attribute_string(raw: []const u8) []const u8 {
@@ -4016,30 +4181,35 @@ pub const Sema = struct {
     }
 
     fn detect_simd_reduction(fb: *ast.FuncBody) bool {
-        // Detect simple for loops that accumulate a sum (vectorizable)
-        var has_for_loop = false;
-        var has_accumulator = false;
-        for (fb.body.stmts) |*stmt| {
-            if (stmt.* == .for_loop) {
-                has_for_loop = true;
-                // Check for accumulator pattern
-                for (stmt.for_loop.body.stmts) |*s| {
-                    if (s.* == .assign or s.* == .aug_assign) {
-                        if (s.* == .aug_assign and s.aug_assign.op == .add) {
-                            has_accumulator = true;
-                        }
-                        if (s.* == .assign) {
-                            for (s.assign.values) |val| {
-                                if (val.* == .binop and val.binop.op == .add) {
-                                    has_accumulator = true;
-                                }
-                            }
-                        }
+        var saw_for = false;
+        var saw_acc = false;
+        scan_simd_reduction_block(&fb.body, &saw_for, &saw_acc);
+        return saw_for and saw_acc;
+    }
+
+    fn scan_simd_reduction_block(block: *const ast.Block, saw_for: *bool, saw_acc: *bool) void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .num_for => |*nf| {
+                    saw_for.* = true;
+                    scan_simd_reduction_block(&nf.body, saw_for, saw_acc);
+                },
+                .assign => |*as| {
+                    for (as.values) |val| {
+                        if (val.* == .binop and val.binop.op == .add) saw_acc.* = true;
                     }
-                }
+                },
+                .if_stmt => |*is| {
+                    scan_simd_reduction_block(&is.then, saw_for, saw_acc);
+                    for (is.elseifs) |*ei| scan_simd_reduction_block(&ei.body, saw_for, saw_acc);
+                    if (is.else_body) |*eb| scan_simd_reduction_block(eb, saw_for, saw_acc);
+                },
+                .while_loop => |*wl| scan_simd_reduction_block(&wl.body, saw_for, saw_acc),
+                .repeat_loop => |*rl| scan_simd_reduction_block(&rl.body, saw_for, saw_acc),
+                .do_block => |*db| scan_simd_reduction_block(&db.body, saw_for, saw_acc),
+                else => {},
             }
         }
-        return has_for_loop and has_accumulator;
     }
 
     fn detect_cordic_inline(fb: *ast.FuncBody) bool {
@@ -5197,6 +5367,17 @@ pub const Sema = struct {
                 .@"and" => self.infer_expr(rhs, hint),
                 .@"or" => self.infer_expr(lhs, hint),
                 .contains => .bool,
+                .matmul => blk: {
+                    const lt = self.expr_type(lhs);
+                    const rt = self.expr_type(rhs);
+                    if (RT.tensor_matmul(lt, rt, self.sema.alloc) catch null) |out| break :blk out;
+                    break :blk .any;
+                },
+                .pipeline => blk: {
+                    _ = self.infer_expr(lhs, .any);
+                    _ = self.infer_expr(rhs, .any);
+                    break :blk .any;
+                },
             };
         }
     };
@@ -5841,9 +6022,7 @@ test "sema: match with guard expressions type-checked" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
-}
-
-// ── Duo mode scoping tests (Requirements 1.3, 1.4, 1.7, 1.8) ─────────────────
+}// ── Duo mode scoping tests (Requirements 1.3, 1.4, 1.7, 1.8) ─────────────────
 
 fn runSemaDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     const alloc = arena.allocator();
@@ -5880,15 +6059,26 @@ test "sema: duo mode — bare assignment then read is valid" {
     try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
-test "sema: duo mode — reading undeclared variable is an error" {
-    // In duo mode, require_global is true, so reading an undeclared name errors
+test "sema: duo mode — reading undeclared name creates implicit local" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const src =
         \\print(undeclared_var)
+        \\undeclared_var = 1
     ;
     const s = try runSemaDuo(src, &arena);
-    try testing.expectEqual(@as(u32, 1), s.errors);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: duo mode — forward reference before assignment is allowed" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const src =
+        \\print(x)
+        \\x = 42
+    ;
+    const s = try runSemaDuo(src, &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
 test "sema: duo mode — local keyword still works (Lua compat)" {
@@ -6573,4 +6763,112 @@ test "sema: __constexpr is accepted as a compiler intrinsic in duo mode" {
     s.duo_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: tensor matmul infers output shape" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(x: Tensor[784, 256, f32], y: Tensor[256, 10, f32]): Tensor[784, 10, f32]
+        \\  return x @ y
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: tensor matmul K mismatch emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(x: Tensor[784, 256, f32], y: Tensor[128, 10, f32])
+        \\  return x @ y
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: tensor matmul return type mismatch emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(x: Tensor[784, 256, f32], y: Tensor[256, 10, f32]): Tensor[99, 10, f32]
+        \\  return x @ y
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: tensor matmul symbolic K mismatch emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(a: Tensor[M, K, f32], b: Tensor[J, N, f32])
+        \\  return a @ b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: tensor add broadcast infers output shape" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(a: Tensor[1, 10, f32], b: Tensor[784, 10, f32]): Tensor[784, 10, f32]
+        \\  return a + b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: tensor add broadcast incompatible emits error" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun f(a: Tensor[2, 3, f32], b: Tensor[3, 4, f32])
+        \\  return a + b
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(s.errors > 0);
 }

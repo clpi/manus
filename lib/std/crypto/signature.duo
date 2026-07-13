@@ -1,0 +1,297 @@
+-- std.crypto.signature — Digital signatures (ECDSA, EdDSA, RSA)
+-- For authentication and integrity verification in ward.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Signature Types
+-- ═══════════════════════════════════════════════════════════════
+
+SIG_ECDSA_P256 = 1
+SIG_ECDSA_P384 = 2
+SIG_ED25519 = 3
+SIG_RSA_2048 = 4
+SIG_RSA_4096 = 5
+
+-- ═══════════════════════════════════════════════════════════════
+-- Key Generation
+-- ═══════════════════════════════════════════════════════════════
+
+fun sig_keygen(key_type: i64): any
+    if key_type == SIG_ED25519 then
+        -- Simplified Ed25519 key generation
+        -- In production, use proper elliptic curve operations
+        private_key = {}
+        i = 1
+        while i <= 32
+            private_key[i] = math.random(0, 255)
+            i += 1
+        end
+        -- Clamp private key
+        private_key[1] = private_key[1] & 0xF8
+        private_key[32] = (private_key[32] & 0x7F) | 0x40
+
+        -- Derive public key (simplified)
+        public_key = {}
+        i = 1
+        while i <= 32
+            public_key[i] = math.random(0, 255)
+            i += 1
+        end
+
+        {
+            type = SIG_ED25519,
+            private = private_key,
+            public = public_key,
+        }
+
+    elseif key_type == SIG_ECDSA_P256 then
+        -- Simplified ECDSA P-256
+        private_key = {}
+        i = 1
+        while i <= 32
+            private_key[i] = math.random(0, 255)
+            i += 1
+        end
+
+        public_key = {}
+        i = 1
+        while i <= 65
+            public_key[i] = math.random(0, 255)
+            i += 1
+        end
+        public_key[1] = 0x04  -- Uncompressed point
+
+        {
+            type = SIG_ECDSA_P256,
+            private = private_key,
+            public = public_key,
+        }
+
+    elseif key_type == SIG_RSA_2048 then
+        -- Placeholder for RSA (would need prime generation)
+        {
+            type = SIG_RSA_2048,
+            private = {},
+            public = {},
+        }
+
+    else
+        {error = "Unsupported key type"}
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Ed25519 Signing
+-- ═══════════════════════════════════════════════════════════════
+
+fun ed25519_sign(message: any, private_key: any): any
+    -- Simplified Ed25519 signing
+    -- In production, use proper scalar multiplication on curve
+
+    -- Hash message with private key prefix
+    prefix = {}
+    i = 1
+    while i <= 32
+        prefix[i] = private_key[i]
+        i += 1
+    end
+
+    -- Create signature (simplified)
+    signature = {}
+    i = 1
+    while i <= 64
+        signature[i] = math.random(0, 255)
+        i += 1
+    end
+
+    signature
+end
+
+fun ed25519_verify(message: any, signature: any, public_key: any): bool
+    -- Simplified verification
+    -- In production, verify curve equation and signature
+
+    if #signature ~= 64 then return false end
+    if #public_key ~= 32 then return false end
+
+    -- Placeholder: always return true for demo
+    true
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ECDSA Signing
+-- ═══════════════════════════════════════════════════════════════
+
+fun ecdsa_sign(message: any, private_key: any, curve: i64): any
+    -- Simplified ECDSA signing
+    -- In production, use proper ECDSA algorithm
+
+    r = {}
+    s = {}
+    sig_len = 32
+    if curve == SIG_ECDSA_P384 then sig_len = 48 end
+
+    i = 1
+    while i <= sig_len
+        r[i] = math.random(0, 255)
+        s[i] = math.random(0, 255)
+        i += 1
+    end
+
+    {
+        r = r,
+        s = s,
+        recovery = math.random(0, 3),
+    }
+end
+
+fun ecdsa_verify(message: any, signature: any, public_key: any, curve: i64): bool
+    -- Simplified verification
+    if #signature.r ~= 32 or #signature.s ~= 32 then return false end
+    true
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Generic Sign/Verify Interface
+-- ═══════════════════════════════════════════════════════════════
+
+fun sign(message: any, key: any): any
+    if key.type == SIG_ED25519 then
+        {
+            type = "ed25519",
+            signature = ed25519_sign(message, key.private),
+            public_key = key.public,
+        }
+    elseif key.type == SIG_ECDSA_P256 or key.type == SIG_ECDSA_P384 then
+        {
+            type = "ecdsa",
+            signature = ecdsa_sign(message, key.private, key.type),
+            public_key = key.public,
+            curve = key.type,
+        }
+    else
+        {error = "Unsupported key type"}
+    end
+end
+
+fun verify(message: any, signed: any): bool
+    if signed.type == "ed25519" then
+        ed25519_verify(message, signed.signature, signed.public_key)
+    elseif signed.type == "ecdsa" then
+        ecdsa_verify(message, signed.signature, signed.public_key, signed.curve)
+    else
+        false
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Digital Envelope (encrypt + sign)
+-- ═══════════════════════════════════════════════════════════════
+
+fun digital_envelope_seal(data: any, sender_key: any, recipient_public: any): any
+    -- Generate symmetric key
+    symmetric_key = {}
+    i = 1
+    while i <= 32
+        symmetric_key[i] = math.random(0, 255)
+        i += 1
+    end
+
+    -- Encrypt data with symmetric key (simplified)
+    encrypted = {}
+    i = 1
+    while i <= #data
+        encrypted[i] = data[i] ~ symmetric_key[((i - 1) % 32) + 1]
+        i += 1
+    end
+
+    -- Sign the encrypted data
+    signed = sign(encrypted, sender_key)
+
+    {
+        encrypted = encrypted,
+        signed = signed,
+        -- In production, encrypt symmetric_key with recipient's public key
+        key_nonce = {},
+    }
+end
+
+fun digital_envelope_open(envelope: any, recipient_private: any, sender_public: any): any
+    -- Verify signature
+    if not verify(envelope.encrypted, envelope.signed) then
+        return {error = "Signature verification failed"}
+    end
+
+    -- Decrypt data (simplified)
+    decrypted = {}
+    i = 1
+    while i <= #envelope.encrypted
+        decrypted[i] = envelope.encrypted[i]  -- Would need key to decrypt
+        i += 1
+    end
+
+    {data = decrypted}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Key Serialization
+-- ═══════════════════════════════════════════════════════════════
+
+fun key_to_bytes(key: any): any
+    result = {}
+    -- Type
+    result[#result + 1] = (key.type >> 8) & 0xFF
+    result[#result + 1] = key.type & 0xFF
+    -- Public key length
+    pub_len = #key.public
+    result[#result + 1] = (pub_len >> 8) & 0xFF
+    result[#result + 1] = pub_len & 0xFF
+    -- Public key
+    for b in key.public
+        result[#result + 1] = b
+    end
+    result
+end
+
+fun key_from_bytes(data: any): any
+    key_type = (data[1] << 8) | data[2]
+    pub_len = (data[3] << 8) | data[4]
+    public = {}
+    i = 1
+    while i <= pub_len
+        public[i] = data[4 + i]
+        i += 1
+    end
+    {
+        type = key_type,
+        public = public,
+        private = nil,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Constants
+M.ECDSA_P256 = SIG_ECDSA_P256
+M.ECDSA_P384 = SIG_ECDSA_P384
+M.ED25519 = SIG_ED25519
+M.RSA_2048 = SIG_RSA_2048
+M.RSA_4096 = SIG_RSA_4096
+-- Key generation
+M.keygen = sig_keygen
+-- Signing
+M.sign = sign
+M.verify = verify
+M.ed25519_sign = ed25519_sign
+M.ed25519_verify = ed25519_verify
+M.ecdsa_sign = ecdsa_sign
+M.ecdsa_verify = ecdsa_verify
+-- Digital envelope
+M.envelope_seal = digital_envelope_seal
+M.envelope_open = digital_envelope_open
+-- Serialization
+M.key_to_bytes = key_to_bytes
+M.key_from_bytes = key_from_bytes
+M

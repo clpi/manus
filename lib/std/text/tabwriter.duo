@@ -21,7 +21,7 @@ fun write(w: any, s: str): any
             w.cur_row[rawlen(w.cur_row) + 1] = string.sub(s, start, i - 1)
             start = i + 1
         end
-        i = i + 1
+        i += 1
     end
     w.cur_row[rawlen(w.cur_row) + 1] = string.sub(s, start)
     w
@@ -42,7 +42,7 @@ fun newline(w: any): any
         if w.col_widths[i] == nil or cell_len > w.col_widths[i] then
             w.col_widths[i] = cell_len
         end
-        i = i + 1
+        i += 1
     end
     w.rows[rawlen(w.rows) + 1] = w.cur_row
     w.cur_row = {}
@@ -69,12 +69,12 @@ fun flush(w: any): str
             pad_len = width - string.len(cell)
             if pad_len < 0 then pad_len = 0 end
             line = line .. cell .. string.rep(w.padchar, pad_len)
-            c = c + 1
+            c += 1
         end
         -- trim trailing pad
         line = string.gsub(line, w.padchar .. "*$", "")
         out[rawlen(out) + 1] = line
-        r = r + 1
+        r += 1
     end
     table.concat(out, "\n")
 end

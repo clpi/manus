@@ -31,6 +31,7 @@
 //! and distinct type-argument tuples produce distinct specializations.
 
 const std = @import("std");
+const debug_trace = @import("debug_trace.zig");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const sema_mod = @import("sema.zig");
@@ -561,6 +562,7 @@ pub const Monomorphizer = struct {
         try self.collectSpecializedValueTypes(spec, &req.template.body);
         try self.specializations.put(self.alloc, req.key, spec);
         try self.order.append(self.alloc, spec);
+        debug_trace.event(.mono, .generic, "specialize {s} → {s}", .{ req.generic_name, spec.mangled_name });
 
         // Fixed-point: scan the specialized body with this substitution active
         // to surface nested generic instantiations.

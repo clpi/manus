@@ -1,0 +1,293 @@
+-- std.graphics.ui — UI widgets and layout
+-- For building user interfaces in ward's rendering pipeline.
+
+-- ═══════════════════════════════════════════════════════════════
+-- UI Rect
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_rect_new(x: f64, y: f64, width: f64, height: f64): any
+    {
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+    }
+end
+
+fun ui_rect_contains(rect: any, px: f64, py: f64): bool
+    px >= rect.x and px <= rect.x + rect.width and
+    py >= rect.y and py <= rect.y + rect.height
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- UI Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_widget_new(widget_type: str): any
+    {
+        type = widget_type,
+        id = "",
+        rect = ui_rect_new(0, 0, 0, 0),
+        visible = true,
+        enabled = true,
+        parent = nil,
+        children = {},
+        background = {r = 0.2, g = 0.2, b = 0.2, a = 1},
+        foreground = {r = 1, g = 1, b = 1, a = 1},
+        border = {r = 0.4, g = 0.4, b = 0.4, a = 1},
+        border_width = 1,
+        padding = {top = 4, right = 4, bottom = 4, left = 4},
+        margin = {top = 0, right = 0, bottom = 0, left = 0},
+        cursor = "default",
+        hovered = false,
+        pressed = false,
+        focused = false,
+    }
+end
+
+fun ui_widget_add_child(parent: any, child: any): void
+    child.parent = parent
+    parent.children[#parent.children + 1] = child
+end
+
+fun ui_widget_remove_child(parent: any, child: any): void
+    i = 1
+    while i <= #parent.children
+        if parent.children[i] == child then
+            table.remove(parent.children, i)
+            child.parent = nil
+            return
+        end
+        i += 1
+    end
+end
+
+fun ui_widget_set_rect(widget: any, x: f64, y: f64, width: f64, height: f64): void
+    widget.rect = ui_rect_new(x, y, width, height)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Button Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_button_new(label: str): any
+    widget = ui_widget_new("button")
+    widget.label = label
+    widget.on_click = nil
+    widget
+end
+
+fun ui_button_set_on_click(button: any, callback: any): void
+    button.on_click = callback
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Label Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_label_new(text: str): any
+    widget = ui_widget_new("label")
+    widget.text = text
+    widget.font_size = 14
+    widget
+end
+
+fun ui_label_set_text(label: any, text: str): void
+    label.text = text
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Text Input Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_text_input_new(placeholder: str): any
+    widget = ui_widget_new("text_input")
+    widget.text = ""
+    widget.placeholder = placeholder or ""
+    widget.cursor_pos = 0
+    widget.selection_start = 0
+    widget.selection_end = 0
+    widget.multiline = false
+    widget.on_change = nil
+    widget
+end
+
+fun ui_text_input_set_text(input: any, text: str): void
+    input.text = text
+    input.cursor_pos = #text
+end
+
+fun ui_text_input_get_text(input: any): str
+    input.text
+end
+
+fun ui_text_input_set_on_change(input: any, callback: any): void
+    input.on_change = callback
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Slider Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_slider_new(min: f64, max: f64, value: f64): any
+    widget = ui_widget_new("slider")
+    widget.min = min
+    widget.max = max
+    widget.value = value or min
+    widget.step = 0
+    widget.on_change = nil
+    widget
+end
+
+fun ui_slider_set_value(slider: any, value: f64): void
+    slider.value = math.max(slider.min, math.min(slider.max, value))
+end
+
+fun ui_slider_get_value(slider: any): f64
+    slider.value
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Checkbox Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_checkbox_new(label: str, checked: bool): any
+    widget = ui_widget_new("checkbox")
+    widget.label = label
+    widget.checked = checked or false
+    widget.on_change = nil
+    widget
+end
+
+fun ui_checkbox_set_checked(checkbox: any, checked: bool): void
+    checkbox.checked = checked
+end
+
+fun ui_checkbox_is_checked(checkbox: any): bool
+    checkbox.checked
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Panel Widget
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_panel_new(): any
+    widget = ui_widget_new("panel")
+    widget.scroll_x = 0
+    widget.scroll_y = 0
+    widget.overflow = "hidden"
+    widget
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Layout
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_layout_vertical(container: any, x: f64, y: f64, spacing: f64): void
+    current_y = y
+    for child in container.children
+        child.rect.x = x
+        child.rect.y = current_y
+        current_y += child.rect.height + spacing
+    end
+end
+
+fun ui_layout_horizontal(container: any, x: f64, y: f64, spacing: f64): void
+    current_x = x
+    for child in container.children
+        child.rect.x = current_x
+        child.rect.y = y
+        current_x += child.rect.width + spacing
+    end
+end
+
+fun ui_layout_grid(container: any, x: f64, y: f64, cols: i64, spacing: f64): void
+    current_x = x
+    current_y = y
+    col = 0
+    for child in container.children
+        child.rect.x = current_x
+        child.rect.y = current_y
+        col += 1
+        if col >= cols then
+            col = 0
+            current_x = x
+            current_y += child.rect.height + spacing
+        else
+            current_x += child.rect.width + spacing
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Event Handling
+-- ═══════════════════════════════════════════════════════════════
+
+fun ui_event_mouse_move(widget: any, x: f64, y: f64): bool
+    widget.hovered = ui_rect_contains(widget.rect, x, y)
+    widget.hovered
+end
+
+fun ui_event_mouse_down(widget: any, x: f64, y: f64): bool
+    if widget.hovered and widget.enabled then
+        widget.pressed = true
+        return true
+    end
+    false
+end
+
+fun ui_event_mouse_up(widget: any, x: f64, y: f64): bool
+    if widget.pressed and widget.hovered then
+        widget.pressed = false
+        if widget.type == "button" and widget.on_click then
+            widget.on_click(widget)
+        end
+        return true
+    end
+    widget.pressed = false
+    false
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Rect
+M.rect_new = ui_rect_new
+M.rect_contains = ui_rect_contains
+-- Widget
+M.widget_new = ui_widget_new
+M.widget_add_child = ui_widget_add_child
+M.widget_remove_child = ui_widget_remove_child
+M.widget_set_rect = ui_widget_set_rect
+-- Button
+M.button_new = ui_button_new
+M.button_set_on_click = ui_button_set_on_click
+-- Label
+M.label_new = ui_label_new
+M.label_set_text = ui_label_set_text
+-- Text Input
+M.text_input_new = ui_text_input_new
+M.text_input_set_text = ui_text_input_set_text
+M.text_input_get_text = ui_text_input_get_text
+M.text_input_set_on_change = ui_text_input_set_on_change
+-- Slider
+M.slider_new = ui_slider_new
+M.slider_set_value = ui_slider_set_value
+M.slider_get_value = ui_slider_get_value
+-- Checkbox
+M.checkbox_new = ui_checkbox_new
+M.checkbox_set_checked = ui_checkbox_set_checked
+M.checkbox_is_checked = ui_checkbox_is_checked
+-- Panel
+M.panel_new = ui_panel_new
+-- Layout
+M.layout_vertical = ui_layout_vertical
+M.layout_horizontal = ui_layout_horizontal
+M.layout_grid = ui_layout_grid
+-- Events
+M.event_mouse_move = ui_event_mouse_move
+M.event_mouse_down = ui_event_mouse_down
+M.event_mouse_up = ui_event_mouse_up
+M

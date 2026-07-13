@@ -86,12 +86,12 @@ fun read_leb128_u32(bytecode, pc: i64): i64
     local pos: i64 = pc
     for i = 0, 4
         b = bytecode[pos]
-        pos = pos + 1
+        pos += 1
         result = result | ((b & 0x7F) << shift)
         if (b & 0x80) == 0
             return result
         end
-        shift = shift + 7
+        shift += 7
     end
     return result
 end
@@ -104,9 +104,9 @@ fun read_leb128_i32(bytecode, pc: i64): i64
     local pos: i64 = pc
     for i = 0, 4
         b = bytecode[pos]
-        pos = pos + 1
+        pos += 1
         result = result | ((b & 0x7F) << shift)
-        shift = shift + 7
+        shift += 7
         if (b & 0x80) == 0
             -- Sign extend
             if shift < 32 and (b & 0x40) ~= 0
@@ -147,53 +147,53 @@ fun execute(bytecode, pc: i64, stack, sp: i64, locals): i64
     local running = true
     while running
         local op: i64 = bytecode[pc]
-        pc = pc + 1
+        pc += 1
 
         if op == OP_NOP
             -- no-op
         elseif op == OP_I32_CONST
             local val = read_leb128_i32(bytecode, pc)
-            pc = pc + 1 -- simplified: actual LEB128 advances variable bytes
+            pc += 1 -- simplified: actual LEB128 advances variable bytes
             sp = stack_push_i32(stack, sp, val)
         elseif op == OP_I32_ADD
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = (a + b) & 0xFFFFFFFF
         elseif op == OP_I32_SUB
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = (a - b) & 0xFFFFFFFF
         elseif op == OP_I32_MUL
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = (a * b) & 0xFFFFFFFF
         elseif op == OP_I32_AND
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = a & b
         elseif op == OP_I32_OR
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = a | b
         elseif op == OP_I32_XOR
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = a ~ b
         elseif op == OP_I32_SHL
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = (a << (b & 31)) & 0xFFFFFFFF
         elseif op == OP_I32_SHR_U
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = a >> (b & 31)
         elseif op == OP_I32_CLZ
             local a = stack[sp - 1]
@@ -211,12 +211,12 @@ fun execute(bytecode, pc: i64, stack, sp: i64, locals): i64
         elseif op == OP_I32_ROTL
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = __rotl(a & 0xFFFFFFFF, b & 31)
         elseif op == OP_I32_ROTR
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             stack[sp - 1] = __rotr(a & 0xFFFFFFFF, b & 31)
         elseif op == OP_I32_EQZ
             local a = stack[sp - 1]
@@ -228,7 +228,7 @@ fun execute(bytecode, pc: i64, stack, sp: i64, locals): i64
         elseif op == OP_I32_EQ
             local b = stack[sp - 1]
             local a = stack[sp - 2]
-            sp = sp - 1
+            sp -= 1
             if a == b
                 stack[sp - 1] = 1
             else
@@ -236,15 +236,15 @@ fun execute(bytecode, pc: i64, stack, sp: i64, locals): i64
             end
         elseif op == OP_LOCAL_GET
             local idx = read_leb128_u32(bytecode, pc)
-            pc = pc + 1
+            pc += 1
             sp = stack_push_i32(stack, sp, locals[idx + 1])
         elseif op == OP_LOCAL_SET
             local idx = read_leb128_u32(bytecode, pc)
-            pc = pc + 1
-            sp = sp - 1
+            pc += 1
+            sp -= 1
             locals[idx + 1] = stack[sp]
         elseif op == OP_DROP
-            sp = sp - 1
+            sp -= 1
         elseif op == OP_RETURN
             running = false
         elseif op == OP_END

@@ -1,0 +1,51 @@
+-- std.ml.fusion — Kernel fusion rules (compile-time rewrite targets)
+
+-- Adjacent op patterns the compiler should merge (documented contract for @trace)
+fun rules(): any
+    return {
+        { pattern = { "linear", "relu" }, fused = "fused_linear_relu" },
+        { pattern = { "linear", "gelu" }, fused = "fused_linear_gelu" },
+        { pattern = { "matmul", "add" }, fused = "fused_matmul_bias" },
+        { pattern = { "softmax", "cross_entropy" }, fused = "fused_softmax_ce" },
+        { pattern = { "layernorm", "linear" }, fused = "fused_ln_linear" },
+    }
+end
+
+fun can_fuse(layer_a, layer_b): bool
+    if layer_a.type == "linear" and layer_b.type == "relu" return true end
+    if layer_a.type == "linear" and layer_b.type == "gelu" return true end
+    return false
+end
+
+fun fuse_sequential(model): any
+    if model.type ~= "sequential" return model end
+    fused = {}
+    i = 1
+    fi = 0
+    while i <= model.n_layers
+        a = model.layers[i]
+        b = nil
+        if i < model.n_layers b = model.layers[i + 1] end
+        if b ~= nil and can_fuse(a, b)
+            fi += 1
+            fused[fi] = {
+                type = "fused",
+                ops = { a.type, b.type },
+                a = a,
+                b = b,
+            }
+            i += 2
+        else
+            fi += 1
+            fused[fi] = a
+            i += 1
+        end
+    end
+    return { type = "sequential", layers = fused, n_layers = fi }
+end
+
+M = {}
+M.rules = rules
+M.can_fuse = can_fuse
+M.fuse_sequential = fuse_sequential
+M

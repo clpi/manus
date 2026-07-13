@@ -20,8 +20,8 @@ fun mandel_v4(cx: v4f64, cy: v4f64): v4i64
         end
         zy = 2.0 * zx * zy + cy
         zx = zx2 - zy2 + cx
-        iters = iters + active
-        i = i + 1
+        iters += active
+        i += 1
     end
     iters
 end
@@ -37,10 +37,10 @@ while y <= 1.0
         cxs: v4f64 = simd.v4f64(x, x + 0.01, x + 0.02, x + 0.03)
         cys: v4f64 = simd.v4f64(y, y, y, y)
         res: v4i64 = mandel_v4(cxs, cys)
-        sum = sum + simd.sum(res)
-        x = x + 0.04
+        sum += simd.sum(res)
+        x += 0.04
     end
-    y = y + 0.01
+    y += 0.01
 end
 
 t_end = os.clock()

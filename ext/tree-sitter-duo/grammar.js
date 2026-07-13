@@ -41,6 +41,7 @@ module.exports = grammar({
       $.typed_binding,
       $.jai_type_definition,
       $.type_definition,
+      $.struct_definition,
       $.do_block,
       $.if_statement,
       $.while_loop,
@@ -63,10 +64,13 @@ module.exports = grammar({
 
     // ── Attributes ──────────────────────────────────────────────────────────
 
-    attribute: $ => seq(
-      '@',
-      $.identifier,
-      optional(seq('(', $.attribute_args, ')')),
+    attribute: $ => choice(
+      // @name or @name(args)
+      seq('@', $.identifier, optional(seq('(', $.attribute_args, ')'))),
+      // @c.include("header.h"), @c.emit("code"), @c.export("name")
+      seq('@', $.identifier, '.', $.identifier, optional(seq('(', $.attribute_args, ')'))),
+      // @(expr) — compile-time evaluation
+      seq('@', '(', $.expression, ')'),
     ),
 
     attribute_args: $ => /[^)]*/,
@@ -471,6 +475,23 @@ module.exports = grammar({
       $.type,
       '=',
       $.expression,
+    ),
+
+    // ── Struct definition (Name = struct ... end) ────────────────────────────
+
+    struct_definition: $ => seq(
+      optional($._attribute_list),
+      $.identifier,
+      '=',
+      'struct',
+      repeat($.struct_field),
+      'end',
+    ),
+
+    struct_field: $ => seq(
+      $.identifier,
+      optional(seq(':', $.type)),
+      optional(seq('=', $.expression)),
     ),
 
     alias_member: $ => choice(

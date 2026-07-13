@@ -171,7 +171,7 @@ fun assert_is_array(value: any, message: any): bool
             if message ~= nil then msg = message .. " — " .. msg end
             error(msg)
         end
-        i = i + 1
+        i += 1
     end
     true
 end
@@ -248,7 +248,7 @@ fun assert_in(value: any, list: any, message: any): bool
     i = 1
     while i <= rawlen(list)
         if list[i] == value then return true end
-        i = i + 1
+        i += 1
     end
     msg = "expected " .. tostring(value) .. " to be in list"
     if message ~= nil then msg = message .. " — " .. msg end
@@ -322,7 +322,7 @@ fun soft_check(collector: any): bool
     i = 1
     while i <= rawlen(collector.failures)
         msg = msg .. "  - " .. collector.failures[i] .. "\n"
-        i = i + 1
+        i += 1
     end
     error(msg)
 end

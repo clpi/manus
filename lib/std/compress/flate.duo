@@ -10,15 +10,15 @@ local function flate_compress(data)
         local run = 1
         local j = i + 1
         while j <= n and string.sub(data, j, j) == ch and run < 255
-            run = run + 1
-            j = j + 1
+            run += 1
+            j += 1
         end
         if run >= 3 then
             out[rawlen(out) + 1] = string.char(0xFE) .. string.char(run) .. ch
-            i = i + run
+            i += run
         else
             out[rawlen(out) + 1] = ch
-            i = i + 1
+            i += 1
         end
     end
     return table.concat(out)
@@ -36,10 +36,10 @@ local function flate_decompress(data)
             local run = string.byte(data, i + 1)
             local ch = string.sub(data, i + 2, i + 2)
             out[rawlen(out) + 1] = string.rep(ch, run)
-            i = i + 3
+            i += 3
         else
             out[rawlen(out) + 1] = string.sub(data, i, i)
-            i = i + 1
+            i += 1
         end
     end
     return table.concat(out)

@@ -12,8 +12,8 @@ fun std_timer_round_dec(x: any, places: any): any
     factor = 1
     i = 0
     while i < places
-        factor = factor * 10
-        i = i + 1
+        factor *= 10
+        i += 1
     end
     std_timer_round(x * factor) / factor
 end
@@ -122,8 +122,8 @@ fun summary(t: any): any
     while i <= n
         if laps[i] < min_val then min_val = laps[i] end
         if laps[i] > max_val then max_val = laps[i] end
-        total = total + laps[i]
-        i = i + 1
+        total += laps[i]
+        i += 1
     end
     {count = n, total = total, min = min_val, max = max_val, avg = total / n}
 end
@@ -151,7 +151,7 @@ fun time_it(n: i64, fn_ref: any): any
         fn_ref()
         stop(t)
         times[rawlen(times) + 1] = elapsed(t)
-        i = i + 1
+        i += 1
     end
     total = 0
     min_val = times[1]
@@ -160,8 +160,8 @@ fun time_it(n: i64, fn_ref: any): any
     while j <= rawlen(times)
         if times[j] < min_val then min_val = times[j] end
         if times[j] > max_val then max_val = times[j] end
-        total = total + times[j]
-        j = j + 1
+        total += times[j]
+        j += 1
     end
     out = {}
     out.iterations = n
@@ -185,8 +185,8 @@ fun bench(fn_ref: any, min_seconds: float): any
         stop(t)
         lap_time = elapsed(t)
         times[rawlen(times) + 1] = lap_time
-        total = total + lap_time
-        count = count + 1
+        total += lap_time
+        count += 1
     end
     min_val = times[1]
     max_val = times[1]
@@ -194,7 +194,7 @@ fun bench(fn_ref: any, min_seconds: float): any
     while i <= rawlen(times)
         if times[i] < min_val then min_val = times[i] end
         if times[i] > max_val then max_val = times[i] end
-        i = i + 1
+        i += 1
     end
     out = {}
     out.iterations = count

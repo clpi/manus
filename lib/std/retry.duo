@@ -44,13 +44,13 @@ fun exponential_backoff(base: float, max_val: float, jitter: bool): any
         wait = base_c
         idx = 0
         while idx < attempt
-            wait = wait * 2
-            idx = idx + 1
+            wait *= 2
+            idx += 1
         end
         if wait > max_c then wait = max_c end
         if jitter_c then
             variation = wait * 0.25
-            wait = wait - variation + (math.random() * variation * 2)
+            wait -= variation + (math.random() * variation * 2)
         end
         wait
     end
@@ -76,7 +76,7 @@ fun do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
             wait = backoff_fn(attempt)
             std_retry_sleep(wait)
         end
-        attempt = attempt + 1
+        attempt += 1
     end
     {ok = nil, error = last_error, attempts = max_attempts}
 end
@@ -99,7 +99,7 @@ fun do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
             wait = backoff_fn(attempt)
             std_retry_sleep(wait)
         end
-        attempt = attempt + 1
+        attempt += 1
     end
     {ok = false, error = last_error, attempts = max_attempts}
 end
@@ -136,7 +136,7 @@ fun retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): a
             wait = backoff_fn(attempt)
             std_retry_sleep(wait)
         end
-        attempt = attempt + 1
+        attempt += 1
     end
     {ok = nil, error = last_error, attempts = max_attempts}
 end

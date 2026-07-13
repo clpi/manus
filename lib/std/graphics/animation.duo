@@ -1,0 +1,405 @@
+-- std.graphics.animation — Animation and keyframe system
+-- For character animation, procedural motion, and visual effects.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Keyframe
+-- ═══════════════════════════════════════════════════════════════
+
+fun keyframe_new(time: f64, value: any): any
+    {
+        time = time,
+        value = value,
+        easing = "linear",
+    }
+end
+
+fun keyframe_set_easing(kf: any, easing: str): any
+    kf.easing = easing
+    kf
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Animation Curve
+-- ═══════════════════════════════════════════════════════════════
+
+fun animation_curve_new(name: str): any
+    {
+        name = name,
+        keyframes = {},
+        duration = 0,
+        loop = false,
+        ping_pong = false,
+    }
+end
+
+fun animation_curve_add_keyframe(curve: any, time: f64, value: any): void
+    kf = keyframe_new(time, value)
+    curve.keyframes[#curve.keyframes + 1] = kf
+
+    -- Sort by time
+    table.sort(curve.keyframes, function(a, b) return a.time < b.time end)
+
+    -- Update duration
+    if time > curve.duration then
+        curve.duration = time
+    end
+end
+
+fun animation_curve_set_keyframe_easing(curve: any, index: i64, easing: str): void
+    if curve.keyframes[index] then
+        curve.keyframes[index].easing = easing
+    end
+end
+
+fun animation_curve_evaluate(curve: any, time: f64): any
+    if #curve.keyframes == 0 then return nil end
+    if #curve.keyframes == 1 then return curve.keyframes[1].value end
+
+    -- Handle loop/ping-pong
+    if curve.loop then
+        time = time % curve.duration
+    elseif curve.ping_pong then
+        cycle = math.floor(time / curve.duration)
+        time = time % curve.duration
+        if cycle % 2 == 1 then
+            time = curve.duration - time
+        end
+    end
+
+    -- Find surrounding keyframes
+    prev = curve.keyframes[1]
+    next = curve.keyframes[#curve.keyframes]
+
+    for i = 1, #curve.keyframes - 1
+        if time >= curve.keyframes[i].time and time <= curve.keyframes[i + 1].time then
+            prev = curve.keyframes[i]
+            next = curve.keyframes[i + 1]
+            break
+        end
+    end
+
+    -- Calculate interpolation factor
+    if next.time == prev.time then return prev.value end
+    t = (time - prev.time) / (next.time - prev.time)
+
+    -- Apply easing
+    t = apply_easing(t, next.easing)
+
+    -- Interpolate value
+    interpolate_values(prev.value, next.value, t)
+end
+
+fun animation_curve_get_duration(curve: any): f64
+    curve.duration
+end
+
+fun animation_curve_set_loop(curve: any, loop: bool): void
+    curve.loop = loop
+end
+
+fun animation_curve_set_ping_pong(curve: any, ping_pong: bool): void
+    curve.ping_pong = ping_pong
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Animation Clip
+-- ═══════════════════════════════════════════════════════════════
+
+fun animation_clip_new(name: str): any
+    {
+        name = name,
+        curves = {},
+        duration = 0,
+        fps = 30,
+    }
+end
+
+fun animation_clip_add_curve(clip: any, curve: any): void
+    clip.curves[curve.name] = curve
+    if curve.duration > clip.duration then
+        clip.duration = curve.duration
+    end
+end
+
+fun animation_clip_evaluate(clip: any, time: f64): any
+    result = {}
+    for name, curve in clip.curves
+        result[name] = animation_curve_evaluate(curve, time)
+    end
+    result
+end
+
+fun animation_clip_set_fps(clip: any, fps: i64): void
+    clip.fps = fps
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Animation Player
+-- ═══════════════════════════════════════════════════════════════
+
+fun animation_player_new(): any
+    {
+        clips = {},
+        current_clip = nil,
+        current_time = 0,
+        playing = false,
+        speed = 1.0,
+        callbacks = {},
+    }
+end
+
+fun animation_player_add_clip(player: any, clip: any): void
+    player.clips[clip.name] = clip
+end
+
+fun animation_player_play(player: any, clip_name: str, start_time: f64): void
+    player.current_clip = clip_name
+    player.current_time = start_time or 0
+    player.playing = true
+end
+
+fun animation_player_stop(player: any): void
+    player.playing = false
+end
+
+fun animation_player_pause(player: any): void
+    player.playing = false
+end
+
+fun animation_player_resume(player: any): void
+    player.playing = true
+end
+
+fun animation_player_set_speed(player: any, speed: f64): void
+    player.speed = speed
+end
+
+fun animation_player_update(player: any, delta_time: f64): any
+    if not player.playing or player.current_clip == nil then return nil end
+
+    clip = player.clips[player.current_clip]
+    if clip == nil then return nil end
+
+    player.current_time += delta_time * player.speed
+
+    -- Handle end of clip
+    if player.current_time > clip.duration then
+        if clip.curves and next(clip.curves) then
+            -- Check if any curve loops
+            for curve in clip.curves
+                if curve.loop then
+                    player.current_time = player.current_time % clip.duration
+                    break
+                end
+            end
+        else
+            player.current_time = clip.duration
+            player.playing = false
+        end
+    end
+
+    -- Evaluate clip
+    result = animation_clip_evaluate(clip, player.current_time)
+
+    -- Trigger callbacks
+    for callback in player.callbacks
+        callback(result, player.current_time)
+    end
+
+    result
+end
+
+fun animation_player_add_callback(player: any, callback: any): void
+    player.callbacks[#player.callbacks + 1] = callback
+end
+
+fun animation_player_get_time(player: any): f64
+    player.current_time
+end
+
+fun animation_player_is_playing(player: any): bool
+    player.playing
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Animation State Machine
+-- ═══════════════════════════════════════════════════════════════
+
+fun animation_state_machine_new(): any
+    {
+        states = {},
+        current_state = nil,
+        transitions = {},
+    }
+end
+
+fun animation_state_machine_add_state(sm: any, name: str, clip_name: str): void
+    sm.states[name] = {
+        clip_name = clip_name,
+        transitions = {},
+    }
+end
+
+fun animation_state_machine_add_transition(sm: any, from: str, to: str, condition: any): void
+    if sm.transitions[from] == nil then
+        sm.transitions[from] = {}
+    end
+    sm.transitions[from][#sm.transitions[from] + 1] = {
+        to = to,
+        condition = condition,
+    }
+end
+
+fun animation_state_machine_set_state(sm: any, state_name: str): void
+    sm.current_state = state_name
+end
+
+fun animation_state_machine_update(sm: any, params: any): any
+    if sm.current_state == nil then return nil end
+
+    -- Check transitions
+    transitions = sm.transitions[sm.current_state]
+    if transitions then
+        for transition in transitions
+            if transition.condition(params) then
+                sm.current_state = transition.to
+                return {
+                    transition = true,
+                    from = sm.current_state,
+                    to = transition.to,
+                }
+            end
+        end
+    end
+
+    -- Return current state info
+    state = sm.states[sm.current_state]
+    {
+        state = sm.current_state,
+        clip_name = state.clip_name,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Procedural Animation
+-- ═══════════════════════════════════════════════════════════════
+
+fun procedural_sine(time: f64, frequency: f64, amplitude: f64, phase: f64): f64
+    if frequency == nil then frequency = 1 end
+    if amplitude == nil then amplitude = 1 end
+    if phase == nil then phase = 0 end
+    amplitude * math.sin(2 * math.pi * frequency * time + phase)
+end
+
+fun procedural_noise(time: f64, frequency: f64, amplitude: f64): f64
+    -- Simplified noise (would use proper noise function in production)
+    if frequency == nil then frequency = 1 end
+    if amplitude == nil then amplitude = 1 end
+    amplitude * math.sin(time * frequency * 12.9898 + 78.233) * 0.5 + 0.5
+end
+
+fun procedural_bounce(time: f64, period: f64, height: f64): f64
+    if period == nil then period = 1 end
+    if height == nil then height = 1 end
+    t = time % period
+    -- Parabola
+    height * (1 - (2 * t / period - 1) ^ 2)
+end
+
+fun procedural_wobble(time: f64, frequency: f64, damping: f64): f64
+    if frequency == nil then frequency = 5 end
+    if damping == nil then damping = 2 end
+    math.exp(-damping * time) * math.cos(2 * math.pi * frequency * time)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Utility Functions
+-- ═══════════════════════════════════════════════════════════════
+
+fun apply_easing(t: f64, easing: str): f64
+    if easing == "linear" then return t end
+    if easing == "ease_in" then return t * t end
+    if easing == "ease_out" then return t * (2 - t) end
+    if easing == "ease_in_out" then
+        if t < 0.5 then
+            return 2 * t * t
+        else
+            return -1 + (4 - 2 * t) * t
+        end
+    end
+    if easing == "bounce" then
+        if t < 0.5 then
+            return 4 * t * t
+        else
+            t -= 0.5
+            return 1 - 8 * t * t + 2 * t
+        end
+    end
+    t
+end
+
+fun interpolate_values(a: any, b: f64, t: f64): any
+    if type(a) == "number" then
+        return a + (b - a) * t
+    elseif type(a) == "table" then
+        result = {}
+        for k, v in a
+            if b[k] then
+                result[k] = v + (b[k] - v) * t
+            else
+                result[k] = v
+            end
+        end
+        return result
+    end
+    a
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Keyframe
+M.keyframe_new = keyframe_new
+M.keyframe_set_easing = keyframe_set_easing
+-- Curve
+M.curve_new = animation_curve_new
+M.curve_add_keyframe = animation_curve_add_keyframe
+M.curve_set_keyframe_easing = animation_curve_set_keyframe_easing
+M.curve_evaluate = animation_curve_evaluate
+M.curve_get_duration = animation_curve_get_duration
+M.curve_set_loop = animation_curve_set_loop
+M.curve_set_ping_pong = animation_curve_set_ping_pong
+-- Clip
+M.clip_new = animation_clip_new
+M.clip_add_curve = animation_clip_add_curve
+M.clip_evaluate = animation_clip_evaluate
+M.clip_set_fps = animation_clip_set_fps
+-- Player
+M.player_new = animation_player_new
+M.player_add_clip = animation_player_add_clip
+M.player_play = animation_player_play
+M.player_stop = animation_player_stop
+M.player_pause = animation_player_pause
+M.player_resume = animation_player_resume
+M.player_set_speed = animation_player_set_speed
+M.player_update = animation_player_update
+M.player_add_callback = animation_player_add_callback
+M.player_get_time = animation_player_get_time
+M.player_is_playing = animation_player_is_playing
+-- State Machine
+M.state_machine_new = animation_state_machine_new
+M.state_machine_add_state = animation_state_machine_add_state
+M.state_machine_add_transition = animation_state_machine_add_transition
+M.state_machine_set_state = animation_state_machine_set_state
+M.state_machine_update = animation_state_machine_update
+-- Procedural
+M.procedural_sine = procedural_sine
+M.procedural_noise = procedural_noise
+M.procedural_bounce = procedural_bounce
+M.procedural_wobble = procedural_wobble
+-- Utilities
+M.apply_easing = apply_easing
+M.interpolate_values = interpolate_values
+M

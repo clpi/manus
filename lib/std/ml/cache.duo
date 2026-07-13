@@ -1,0 +1,322 @@
+-- std.ml.cache — Model inference cache
+-- For caching model outputs and reducing redundant computation.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Cache Configuration
+-- ═══════════════════════════════════════════════════════════════
+
+fun inference_cache_config_new(): any
+    {
+        max_size = 1000,
+        ttl = 300,  -- seconds
+        eviction_policy = "lru",  -- "lru", "lfu", "fifo"
+        enable_hash_keys = true,
+        compression = false,
+    }
+end
+
+fun inference_cache_config_set_max_size(config: any, max_size: i64): any
+    config.max_size = max_size
+    config
+end
+
+fun inference_cache_config_set_ttl(config: any, ttl: i64): any
+    config.ttl = ttl
+    config
+end
+
+fun inference_cache_config_set_eviction(config: any, policy: str): any
+    config.eviction_policy = policy
+    config
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Inference Cache
+-- ═══════════════════════════════════════════════════════════════
+
+fun inference_cache_new(config: any): any
+    {
+        config = config,
+        entries = {},
+        access_order = {},
+        hit_count = 0,
+        miss_count = 0,
+    }
+end
+
+fun inference_cache_key(model_name: str, input_hash: str): str
+    model_name .. ":" .. input_hash
+end
+
+fun inference_cache_get(cache: any, key: str): any
+    entry = cache.entries[key]
+    if entry == nil then
+        cache.miss_count = cache.miss_count + 1
+        return nil
+    end
+
+    -- Check TTL
+    if os.clock() - entry.timestamp > cache.config.ttl then
+        inference_cache_evict(cache, key)
+        cache.miss_count = cache.miss_count + 1
+        return nil
+    end
+
+    -- Update access
+    entry.access_count = entry.access_count + 1
+    entry.last_access = os.clock()
+    cache.hit_count = cache.hit_count + 1
+
+    -- Move to front of access order
+    for i, k in cache.access_order
+        if k == key then
+            table.remove(cache.access_order, i)
+            break
+        end
+    end
+    table.insert(cache.access_order, 1, key)
+
+    entry.value
+end
+
+fun inference_cache_set(cache: any, key: str, value: any): void
+    -- Check if already exists
+    if cache.entries[key] then
+        cache.entries[key].value = value
+        cache.entries[key].timestamp = os.clock()
+        cache.entries[key].access_count = cache.entries[key].access_count + 1
+        return
+    end
+
+    -- Evict if at capacity
+    if #cache.entries >= cache.config.max_size then
+        inference_cache_evict_oldest(cache)
+    end
+
+    -- Add new entry
+    cache.entries[key] = {
+        value = value,
+        timestamp = os.clock(),
+        access_count = 1,
+        last_access = os.clock(),
+    }
+    table.insert(cache.access_order, 1, key)
+end
+
+fun inference_cache_evict(cache: any, key: str): void
+    cache.entries[key] = nil
+    for i, k in cache.access_order
+        if k == key then
+            table.remove(cache.access_order, i)
+            break
+        end
+    end
+end
+
+fun inference_cache_evict_oldest(cache: any): void
+    if #cache.access_order == 0 then return end
+    key = cache.access_order[#cache.access_order]
+    inference_cache_evict(cache, key)
+end
+
+fun inference_cache_clear(cache: any): void
+    cache.entries = {}
+    cache.access_order = {}
+end
+
+fun inference_cache_stats(cache: any): any
+    total = cache.hit_count + cache.miss_count
+    {
+        size = #cache.entries,
+        max_size = cache.config.max_size,
+        hit_count = cache.hit_count,
+        miss_count = cache.miss_count,
+        hit_rate = total > 0 and cache.hit_count / total or 0,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Attention Cache (for KV cache in transformers)
+-- ═══════════════════════════════════════════════════════════════
+
+fun attention_cache_new(max_seq_len: i64, num_heads: i64, head_dim: i64): any
+    {
+        max_seq_len = max_seq_len,
+        num_heads = num_heads,
+        head_dim = head_dim,
+        keys = {},
+        values = {},
+        current_len = 0,
+    }
+end
+
+fun attention_cache_append(cache: any, layer_idx: i64, keys: any, values: any): void
+    if cache.keys[layer_idx] == nil then
+        cache.keys[layer_idx] = {}
+        cache.values[layer_idx] = {}
+    end
+
+    cache.keys[layer_idx][#cache.keys[layer_idx] + 1] = keys
+    cache.values[layer_idx][#cache.values[layer_idx] + 1] = values
+    cache.current_len = cache.current_len + 1
+end
+
+fun attention_cache_get(cache: any, layer_idx: i64): any
+    {
+        keys = cache.keys[layer_idx] or {},
+        values = cache.values[layer_idx] or {},
+    }
+end
+
+fun attention_cache_reset(cache: any): void
+    cache.keys = {}
+    cache.values = {}
+    cache.current_len = 0
+end
+
+fun attention_cache_is_full(cache: any): bool
+    cache.current_len >= cache.max_seq_len
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Embedding Cache
+-- ═══════════════════════════════════════════════════════════════
+
+fun embedding_cache_new(max_entries: i64): any
+    {
+        max_entries = max_entries,
+        embeddings = {},
+        access_order = {},
+    }
+end
+
+fun embedding_cache_get(cache: any, token_id: i64): any
+    entry = cache.embeddings[token_id]
+    if entry == nil then return nil end
+
+    -- Update access order
+    for i, id in cache.access_order
+        if id == token_id then
+            table.remove(cache.access_order, i)
+            break
+        end
+    end
+    table.insert(cache.access_order, 1, token_id)
+
+    entry.embedding
+end
+
+fun embedding_cache_set(cache: any, token_id: i64, embedding: any): void
+    if cache.embeddings[token_id] then
+        cache.embeddings[token_id].embedding = embedding
+        return
+    end
+
+    -- Evict if full
+    if #cache.access_order >= cache.max_entries then
+        oldest = cache.access_order[#cache.access_order]
+        cache.embeddings[oldest] = nil
+        table.remove(cache.access_order)
+    end
+
+    cache.embeddings[token_id] = {
+        embedding = embedding,
+        timestamp = os.clock(),
+    }
+    table.insert(cache.access_order, 1, token_id)
+end
+
+fun embedding_cache_stats(cache: any): any
+    {
+        size = #cache.access_order,
+        max_size = cache.max_entries,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Result Cache (for caching function results)
+-- ═══════════════════════════════════════════════════════════════
+
+fun result_cache_new(max_size: i64, ttl: i64): any
+    {
+        max_size = max_size or 100,
+        ttl = ttl or 60,
+        results = {},
+    }
+end
+
+fun result_cache_get(cache: any, key: str): any
+    entry = cache.results[key]
+    if entry == nil then return nil end
+
+    if os.clock() - entry.timestamp > cache.ttl then
+        cache.results[key] = nil
+        return nil
+    end
+
+    entry.value
+end
+
+fun result_cache_set(cache: any, key: str, value: any): void
+    -- Evict oldest if full
+    count = 0
+    for _ in cache.results
+        count += 1
+    end
+    if count >= cache.max_size then
+        oldest_key = nil
+        oldest_time = 1e30
+        for k, v in cache.results
+            if v.timestamp < oldest_time then
+                oldest_time = v.timestamp
+                oldest_key = k
+            end
+        end
+        if oldest_key then cache.results[oldest_key] = nil end
+    end
+
+    cache.results[key] = {
+        value = value,
+        timestamp = os.clock(),
+    }
+end
+
+fun result_cache_clear(cache: any): void
+    cache.results = {}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Config
+M.config_new = inference_cache_config_new
+M.config_set_max_size = inference_cache_config_set_max_size
+M.config_set_ttl = inference_cache_config_set_ttl
+M.config_set_eviction = inference_cache_config_set_eviction
+-- Inference Cache
+M.cache_new = inference_cache_new
+M.cache_key = inference_cache_key
+M.cache_get = inference_cache_get
+M.cache_set = inference_cache_set
+M.cache_evict = inference_cache_evict
+M.cache_clear = inference_cache_clear
+M.cache_stats = inference_cache_stats
+-- Attention Cache
+M.attention_cache_new = attention_cache_new
+M.attention_cache_append = attention_cache_append
+M.attention_cache_get = attention_cache_get
+M.attention_cache_reset = attention_cache_reset
+M.attention_cache_is_full = attention_cache_is_full
+-- Embedding Cache
+M.embedding_cache_new = embedding_cache_new
+M.embedding_cache_get = embedding_cache_get
+M.embedding_cache_set = embedding_cache_set
+M.embedding_cache_stats = embedding_cache_stats
+-- Result Cache
+M.result_cache_new = result_cache_new
+M.result_cache_get = result_cache_get
+M.result_cache_set = result_cache_set
+M.result_cache_clear = result_cache_clear
+M

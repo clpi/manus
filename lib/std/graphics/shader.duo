@@ -1,0 +1,213 @@
+-- std.graphics.shader — Shader compilation and management
+-- For managing shaders in ward's rendering pipeline.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Shader Types
+-- ═══════════════════════════════════════════════════════════════
+
+M.SHADER_VERTEX = "vertex"
+M.SHADER_FRAGMENT = "fragment"
+M.SHADER_COMPUTE = "compute"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Shader
+-- ═══════════════════════════════════════════════════════════════
+
+fun shader_new(shader_type: str, source: str): any
+    {
+        type = shader_type,
+        source = source,
+        compiled = false,
+        handle = nil,
+    }
+end
+
+fun shader_compile(shader: any): any
+    -- In production, would compile via WebGPU/Vulkan/Metal
+    shader.compiled = true
+    {ok = true}
+end
+
+fun shader_get_error(shader: any): str
+    ""
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Shader Program
+-- ═══════════════════════════════════════════════════════════════
+
+fun shader_program_new(): any
+    {
+        vertex_shader = nil,
+        fragment_shader = nil,
+        compute_shader = nil,
+        linked = false,
+        uniforms = {},
+        handle = nil,
+    }
+end
+
+fun shader_program_attach(program: any, shader: any): void
+    if shader.type == M.SHADER_VERTEX then
+        program.vertex_shader = shader
+    elseif shader.type == M.SHADER_FRAGMENT then
+        program.fragment_shader = shader
+    elseif shader.type == M.SHADER_COMPUTE then
+        program.compute_shader = shader
+    end
+end
+
+fun shader_program_link(program: any): any
+    -- In production, would link shader program
+    program.linked = true
+    {ok = true}
+end
+
+fun shader_program_use(program: any): void
+    -- In production, would bind program
+end
+
+fun shader_program_get_uniform(program: any, name: str): any
+    program.uniforms[name]
+end
+
+fun shader_program_set_uniform(program: any, name: str, value: any): void
+    program.uniforms[name] = value
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Built-in Shaders
+-- ═══════════════════════════════════════════════════════════════
+
+fun shader_basic_vertex(): str
+    [[
+        @vertex
+        fn vs_main(@location(0) position: vec3f) -> @builtin(position) vec4f {
+            return vec4f(position, 1.0);
+        }
+    ]]
+end
+
+fun shader_basic_fragment(): str
+    [[
+        @fragment
+        fn fs_main() -> @location(0) vec4f {
+            return vec4f(1.0, 1.0, 1.0, 1.0);
+        }
+    ]]
+end
+
+fun shader_pbr_vertex(): str
+    [[
+        struct Uniforms {
+            model: mat4x4f,
+            view: mat4x4f,
+            projection: mat4x4f,
+            normal_matrix: mat3x3f,
+        }
+        @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+        struct VertexInput {
+            @location(0) position: vec3f,
+            @location(1) normal: vec3f,
+            @location(2) uv: vec2f,
+        }
+
+        struct VertexOutput {
+            @builtin(position) position: vec4f,
+            @location(0) world_position: vec3f,
+            @location(1) world_normal: vec3f,
+            @location(2) uv: vec2f,
+        }
+
+        @vertex
+        fn vs_main(input: VertexInput) -> VertexOutput {
+            var output: VertexOutput;
+            output.world_position = (uniforms.model * vec4f(input.position, 1.0)).xyz;
+            output.world_normal = uniforms.normal_matrix * input.normal;
+            output.uv = input.uv;
+            output.position = uniforms.projection * uniforms.view * vec4f(output.world_position, 1.0);
+            return output;
+        }
+    ]]
+end
+
+fun shader_pbr_fragment(): str
+    [[
+        struct Material {
+            albedo: vec4f,
+            metallic: f32,
+            roughness: f32,
+            ao: f32,
+            emissive: vec3f,
+        }
+        @group(1) @binding(0) var<uniform> material: Material;
+        @group(1) @binding(1) var albedo_texture: texture_2d<f32>;
+        @group(1) @binding(2) var albedo_sampler: sampler;
+
+        struct Light {
+            position: vec3f,
+            color: vec3f,
+            intensity: f32,
+        }
+        @group(2) @binding(0) var<uniform> light: Light;
+
+        @fragment
+        fn fs_main(
+            @location(0) world_position: vec3f,
+            @location(1) world_normal: vec3f,
+            @location(2) uv: vec2f,
+        ) -> @location(0) vec4f {
+            let albedo = textureSample(albedo_texture, albedo_sampler, uv).rgb * material.albedo.rgb;
+            let n = normalize(world_normal);
+            let v = normalize(-world_position);
+            let l = normalize(light.position - world_position);
+            let h = normalize(v + l);
+
+            let n_dot_l = max(dot(n, l), 0.0);
+
+            return vec4f(albedo * light.color * light.intensity * n_dot_l, material.albedo.a);
+        }
+    ]]
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Shader Presets
+-- ═══════════════════════════════════════════════════════════════
+
+fun shader_preset_basic(): any
+    program = shader_program_new()
+    shader_program_attach(program, shader_new(M.SHADER_VERTEX, shader_basic_vertex()))
+    shader_program_attach(program, shader_new(M.SHADER_FRAGMENT, shader_basic_fragment()))
+    shader_program_link(program)
+    program
+end
+
+fun shader_preset_pbr(): any
+    program = shader_program_new()
+    shader_program_attach(program, shader_new(M.SHADER_VERTEX, shader_pbr_vertex()))
+    shader_program_attach(program, shader_new(M.SHADER_FRAGMENT, shader_pbr_fragment()))
+    shader_program_link(program)
+    program
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M.new = shader_new
+M.compile = shader_compile
+M.get_error = shader_get_error
+M.program_new = shader_program_new
+M.program_attach = shader_program_attach
+M.program_link = shader_program_link
+M.program_use = shader_program_use
+M.program_get_uniform = shader_program_get_uniform
+M.program_set_uniform = shader_program_set_uniform
+M.basic_vertex = shader_basic_vertex
+M.basic_fragment = shader_basic_fragment
+M.pbr_vertex = shader_pbr_vertex
+M.pbr_fragment = shader_pbr_fragment
+M.preset_basic = shader_preset_basic
+M.preset_pbr = shader_preset_pbr
+M

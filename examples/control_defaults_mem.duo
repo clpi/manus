@@ -10,7 +10,7 @@ fun skipped_sum(limit: i64): i64
         if i % 2 == 0 then
             continue
         end
-        total = total + i
+        total += i
     end
     return total
 end

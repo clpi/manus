@@ -15,7 +15,7 @@ fun encode(b: any): str
     while i <= string.len(b64)
         local chunk = string.sub(b64, i, i + line_width - 1)
         lines[rawlen(lines) + 1] = chunk
-        i = i + line_width
+        i += line_width
     end
     lines[rawlen(lines) + 1] = "-----END " .. typ .. "-----"
     table.concat(lines, "\n")

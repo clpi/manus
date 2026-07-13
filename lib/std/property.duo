@@ -19,7 +19,7 @@ fun std_property_parse(path: str): any
         else
             current = current .. ch
         end
-        i = i + 1
+        i += 1
     end
     if current ~= "" then
         parts[rawlen(parts) + 1] = current
@@ -50,7 +50,7 @@ fun std_property_navigate(obj: any, path: str): any
             current = current[key]
         end
         if current == nil then return nil end
-        i = i + 1
+        i += 1
     end
     last = parts[rawlen(parts)]
     last_idx = std_property_to_num(last)
@@ -78,7 +78,7 @@ fun std_property_ensure_path(obj: any, parts: any): any
             end
             current = current[key]
         end
-        i = i + 1
+        i += 1
     end
     current
 end
@@ -105,7 +105,7 @@ fun get(obj: any, path: str): any
             current = current[key]
         end
         if current == nil then return nil end
-        i = i + 1
+        i += 1
     end
     current
 end
@@ -132,7 +132,7 @@ fun set(obj: any, path: str, value: any): void
             end
             current = current[key]
         end
-        i = i + 1
+        i += 1
     end
     last = parts[rawlen(parts)]
     last_idx = std_property_to_num(last)
@@ -159,7 +159,7 @@ fun has(obj: any, path: str): bool
             current = current[key]
         end
         if current == nil then return false end
-        i = i + 1
+        i += 1
     end
     true
 end

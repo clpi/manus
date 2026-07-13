@@ -1,0 +1,62 @@
+-- std.ml.device — Device selection (runtime table + compile-time @device hints)
+--
+-- Use `@device(.auto)` on functions for backend selection at compile time.
+-- This module tracks runtime placement for tensors and pipelines.
+
+fun cpu(): any
+    return { kind = "cpu", id = 0 }
+end
+
+fun auto(): any
+    return { kind = "auto", id = -1 }
+end
+
+fun metal(id): any
+    if id == nil id = 0 end
+    return { kind = "metal", id = id }
+end
+
+fun cuda(id): any
+    if id == nil id = 0 end
+    return { kind = "cuda", id = id }
+end
+
+fun webgpu(): any
+    return { kind = "webgpu", id = 0 }
+end
+
+fun wasm_simd(): any
+    return { kind = "wasm", id = 0 }
+end
+
+-- Pick best device for current host (Metal on Apple, else CPU for now)
+fun best(): any
+    return auto()
+end
+
+-- Place a tensor descriptor on a device (metadata only until GPU buffers land)
+fun on(tensor, dev): any
+    out = {}
+    for k, v in tensor
+        out[k] = v
+    end
+    out.device = dev
+    return out
+end
+
+-- Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
+fun place(stages): any
+    return { type = "placement", stages = stages }
+end
+
+M = {}
+M.cpu = cpu
+M.auto = auto
+M.metal = metal
+M.cuda = cuda
+M.webgpu = webgpu
+M.wasm_simd = wasm_simd
+M.best = best
+M.on = on
+M.place = place
+M

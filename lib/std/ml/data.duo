@@ -1,0 +1,70 @@
+-- std.ml.data — Batching, shuffling, and dataset iterators (training pipelines)
+
+fun batch(samples, batch_size): any
+    if batch_size == nil batch_size = 32 end
+    batches = {}
+    n = #samples
+    i = 1
+    bi = 0
+    while i <= n
+        bi += 1
+        chunk = {}
+        j = 0
+        while j < batch_size and i <= n
+            j += 1
+            chunk[j] = samples[i]
+            i += 1
+        end
+        batches[bi] = { x = chunk, size = j }
+    end
+    return { type = "batches", items = batches, n = bi, batch_size = batch_size }
+end
+
+fun from_pairs(xs, ys): any
+    assert(#xs == #ys, "from_pairs: length mismatch")
+    samples = {}
+    for i = 1, #xs
+        samples[i] = { x = xs[i], y = ys[i] }
+    end
+    return samples
+end
+
+-- Fisher–Yates shuffle (in-place on array table)
+fun shuffle(samples): any
+    n = #samples
+    i = n
+    while i >= 2
+        j = math.floor(math.random() * i) + 1
+        tmp = samples[i]
+        samples[i] = samples[j]
+        samples[j] = tmp
+        i -= 1
+    end
+    return samples
+end
+
+fun dataloader(samples, batch_size, shuffle): any
+    if shuffle == nil shuffle = true end
+    return {
+        type = "dataloader",
+        samples = samples,
+        batch_size = batch_size,
+        shuffle = shuffle,
+        epoch = 0,
+    }
+end
+
+fun iter_epoch(loader): any
+    loader.epoch = loader.epoch + 1
+    data = loader.samples
+    if loader.shuffle data = shuffle(data) end
+    return batch(data, loader.batch_size)
+end
+
+M = {}
+M.batch = batch
+M.from_pairs = from_pairs
+M.shuffle = shuffle
+M.dataloader = dataloader
+M.iter_epoch = iter_epoch
+M

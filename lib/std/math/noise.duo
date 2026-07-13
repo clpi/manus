@@ -1,0 +1,366 @@
+-- std.math.noise — Perlin and Simplex noise
+-- For procedural generation, terrain, textures, and ML data augmentation.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Permutation Table
+-- ═══════════════════════════════════════════════════════════════
+
+fun perlin_permutation_new(seed: i64): any
+    perm = {}
+    i = 0
+    while i < 256
+        perm[i] = i
+        i += 1
+    end
+
+    -- Shuffle with seed
+    rng = seed
+    i = 255
+    while i > 0
+        rng = (rng * 1103515245 + 12345) & 0x7FFFFFFF
+        j = rng % (i + 1)
+        temp = perm[i]
+        perm[i] = perm[j]
+        perm[j] = temp
+        i -= 1
+    end
+
+    -- Duplicate
+    p = {}
+    i = 0
+    while i < 512
+        p[i] = perm[i % 256]
+        i += 1
+    end
+    p
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Perlin Noise (2D)
+-- ═══════════════════════════════════════════════════════════════
+
+fun perlin_fade(t: f64): f64
+    t * t * t * (t * (t * 6 - 15) + 10)
+end
+
+fun perlin_lerp(a: f64, b: f64, t: f64): f64
+    a + t * (b - a)
+end
+
+fun perlin_grad_2d(hash: i64, x: f64, y: f64): f64
+    h = hash & 3
+    if h == 0 then return x + y end
+    if h == 1 then return -x + y end
+    if h == 2 then return x - y end
+    return -x - y
+end
+
+fun perlin_noise_2d(perm: any, x: f64, y: f64): f64
+    xi = math.floor(x) & 255
+    yi = math.floor(y) & 255
+    xf = x - math.floor(x)
+    yf = y - math.floor(y)
+
+    u = perlin_fade(xf)
+    v = perlin_fade(yf)
+
+    aa = perm[perm[xi] + yi]
+    ab = perm[perm[xi] + yi + 1]
+    ba = perm[perm[xi + 1] + yi]
+    bb = perm[perm[xi + 1] + yi + 1]
+
+    x1 = perlin_lerp(perlin_grad_2d(aa, xf, yf), perlin_grad_2d(ba, xf - 1, yf), u)
+    x2 = perlin_lerp(perlin_grad_2d(ab, xf, yf - 1), perlin_grad_2d(bb, xf - 1, yf - 1), u)
+    perlin_lerp(x1, x2, v)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Perlin Noise (3D)
+-- ═══════════════════════════════════════════════════════════════
+
+fun perlin_grad_3d(hash: i64, x: f64, y: f64, z: f64): f64
+    h = hash & 15
+    u = h < 8 and x or y
+    v = h < 4 and y or (h == 12 or h == 14) and x or z
+    if h < 4 then v = x end
+    if h == 12 or h == 14 then v = x end
+    if h & 1 ~= 0 then u = -u end
+    if h & 2 ~= 0 then v = -v end
+    u + v
+end
+
+fun perlin_noise_3d(perm: any, x: f64, y: f64, z: f64): f64
+    xi = math.floor(x) & 255
+    yi = math.floor(y) & 255
+    zi = math.floor(z) & 255
+    xf = x - math.floor(x)
+    yf = y - math.floor(y)
+    zf = z - math.floor(z)
+
+    u = perlin_fade(xf)
+    v = perlin_fade(yf)
+    w = perlin_fade(zf)
+
+    aaa = perm[perm[perm[xi] + yi] + zi]
+    aba = perm[perm[perm[xi] + yi + 1] + zi]
+    aab = perm[perm[perm[xi] + yi] + zi + 1]
+    abb = perm[perm[perm[xi] + yi + 1] + zi + 1]
+    baa = perm[perm[perm[xi + 1] + yi] + zi]
+    bba = perm[perm[perm[xi + 1] + yi + 1] + zi]
+    bab = perm[perm[perm[xi + 1] + yi] + zi + 1]
+    bbb = perm[perm[perm[xi + 1] + yi + 1] + zi + 1]
+
+    x1 = perlin_lerp(perlin_grad_3d(aaa, xf, yf, zf), perlin_grad_3d(baa, xf - 1, yf, zf), u)
+    x2 = perlin_lerp(perlin_grad_3d(aba, xf, yf - 1, zf), perlin_grad_3d(bba, xf - 1, yf - 1, zf), u)
+    y1 = perlin_lerp(x1, x2, v)
+
+    x1 = perlin_lerp(perlin_grad_3d(aab, xf, yf, zf - 1), perlin_grad_3d(bab, xf - 1, yf, zf - 1), u)
+    x2 = perlin_lerp(perlin_grad_3d(abb, xf, yf - 1, zf - 1), perlin_grad_3d(bbb, xf - 1, yf - 1, zf - 1), u)
+    y2 = perlin_lerp(x1, x2, v)
+
+    perlin_lerp(y1, y2, w)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Simplex Noise (2D)
+-- ═══════════════════════════════════════════════════════════════
+
+SIMPLEX_GRAD2 = {
+    {1, 1}, {-1, 1}, {1, -1}, {-1, -1},
+    {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+}
+
+fun simplex_noise_2d(perm: any, x: f64, y: f64): f64
+    -- Skewing factors
+    F2 = 0.5 * (math.sqrt(3) - 1)
+    G2 = (3 - math.sqrt(3)) / 6
+
+    -- Skew input space
+    s = (x + y) * F2
+    i = math.floor(x + s)
+    j = math.floor(y + s)
+
+    -- Unskew
+    t = (i + j) * G2
+    x0 = x - (i - t)
+    y0 = y - (j - t)
+
+    -- Determine simplex
+    if x0 > y0 then
+        i1 = 1; j1 = 0
+    else
+        i1 = 0; j1 = 1
+    end
+
+    -- Offsets
+    x1 = x0 - i1 + G2
+    y1 = y0 - j1 + G2
+    x2 = x0 - 1 + 2 * G2
+    y2 = y0 - 1 + 2 * G2
+
+    -- Hash
+    ii = i & 255
+    jj = j & 255
+    gi0 = perm[ii + perm[jj]] % 8
+    gi1 = perm[ii + i1 + perm[jj + j1]] % 8
+    gi2 = perm[ii + 1 + perm[jj + 1]] % 8
+
+    -- Contributions
+    n0 = 0
+    n1 = 0
+    n2 = 0
+
+    t0 = 0.5 - x0 * x0 - y0 * y0
+    if t0 >= 0 then
+        t0 *= t0
+        n0 = t0 * t0 * (SIMPLEX_GRAD2[gi0 + 1][1] * x0 + SIMPLEX_GRAD2[gi0 + 1][2] * y0)
+    end
+
+    t1 = 0.5 - x1 * x1 - y1 * y1
+    if t1 >= 0 then
+        t1 *= t1
+        n1 = t1 * t1 * (SIMPLEX_GRAD2[gi1 + 1][1] * x1 + SIMPLEX_GRAD2[gi1 + 1][2] * y1)
+    end
+
+    t2 = 0.5 - x2 * x2 - y2 * y2
+    if t2 >= 0 then
+        t2 *= t2
+        n2 = t2 * t2 * (SIMPLEX_GRAD2[gi2 + 1][1] * x2 + SIMPLEX_GRAD2[gi2 + 1][2] * y2)
+    end
+
+    70 * (n0 + n1 + n2)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Fractal Brownian Motion (fBM)
+-- ═══════════════════════════════════════════════════════════════
+
+fun fbm_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
+    if octaves == nil then octaves = 6 end
+    if lacunarity == nil then lacunarity = 2 end
+    if gain == nil then gain = 0.5 end
+
+    value = 0
+    amplitude = 1
+    frequency = 1
+    max_value = 0
+
+    i = 0
+    while i < octaves
+        value += amplitude * perlin_noise_2d(perm, x * frequency, y * frequency)
+        max_value += amplitude
+        amplitude *= gain
+        frequency *= lacunarity
+        i += 1
+    end
+
+    value / max_value
+end
+
+fun fbm_3d(perm: any, x: f64, y: f64, z: f64, octaves: i64, lacunarity: f64, gain: f64): f64
+    if octaves == nil then octaves = 6 end
+    if lacunarity == nil then lacunarity = 2 end
+    if gain == nil then gain = 0.5 end
+
+    value = 0
+    amplitude = 1
+    frequency = 1
+    max_value = 0
+
+    i = 0
+    while i < octaves
+        value += amplitude * perlin_noise_3d(perm, x * frequency, y * frequency, z * frequency)
+        max_value += amplitude
+        amplitude *= gain
+        frequency *= lacunarity
+        i += 1
+    end
+
+    value / max_value
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Ridged Noise
+-- ═══════════════════════════════════════════════════════════════
+
+fun ridged_noise_2d(perm: any, x: f64, y: f64, octaves: i64, lacunarity: f64, gain: f64): f64
+    if octaves == nil then octaves = 6 end
+    if lacunarity == nil then lacunarity = 2 end
+    if gain == nil then gain = 0.5 end
+
+    value = 0
+    amplitude = 1
+    frequency = 1
+    max_value = 0
+
+    i = 0
+    while i < octaves
+        n = 1 - math.abs(perlin_noise_2d(perm, x * frequency, y * frequency))
+        n *= n
+        value += amplitude * n
+        max_value += amplitude
+        amplitude *= gain
+        frequency *= lacunarity
+        i += 1
+    end
+
+    value / max_value
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Domain Warping
+-- ═══════════════════════════════════════════════════════════════
+
+fun domain_warp_2d(perm: any, x: f64, y: f64, strength: f64): f64
+    if strength == nil then strength = 1 end
+    qx = fbm_2d(perm, x, y, 4)
+    qy = fbm_2d(perm, x + 5.2, y + 1.3, 4)
+    fbm_2d(perm, x + strength * qx, y + strength * qy, 4)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Voronoi Noise
+-- ═══════════════════════════════════════════════════════════════
+
+fun voronoi_noise_2d(x: f64, y: f64, seed: i64): any
+    xi = math.floor(x)
+    yi = math.floor(y)
+
+    min_dist = 1e10
+    second_min = 1e10
+    closest_cell = {x = 0, y = 0}
+
+    dy = -1
+    while dy <= 1
+        dx = -1
+        while dx <= 1
+            cx = xi + dx
+            cy = yi + dy
+
+            -- Hash for cell
+            h = (cx * 374761393 + cy * 668265263 + seed) & 0x7FFFFFFF
+            px = cx + (h % 1000) / 1000
+            h = (h * 1103515245 + 12345) & 0x7FFFFFFF
+            py = cy + (h % 1000) / 1000
+
+            dist = math.sqrt((x - px) * (x - px) + (y - py) * (y - py))
+
+            if dist < min_dist then
+                second_min = min_dist
+                min_dist = dist
+                closest_cell = {x = px, y = py}
+            elseif dist < second_min then
+                second_min = dist
+            end
+
+            dx += 1
+        end
+        dy += 1
+    end
+
+    {
+        distance = min_dist,
+        cell = closest_cell,
+        edge = second_min - min_dist,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Worley Noise
+-- ═══════════════════════════════════════════════════════════════
+
+fun worley_noise_2d(x: f64, y: f64, seed: i64): f64
+    result = voronoi_noise_2d(x, y, seed)
+    result.distance
+end
+
+fun worley_edge_2d(x: f64, y: f64, seed: i64): f64
+    result = voronoi_noise_2d(x, y, seed)
+    result.edge
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Permutation
+M.permutation_new = perlin_permutation_new
+-- Perlin
+M.perlin_2d = perlin_noise_2d
+M.perlin_3d = perlin_noise_3d
+-- Simplex
+M.simplex_2d = simplex_noise_2d
+-- FBM
+M.fbm_2d = fbm_2d
+M.fbm_3d = fbm_3d
+-- Ridged
+M.ridged_2d = ridged_noise_2d
+-- Domain Warping
+M.domain_warp_2d = domain_warp_2d
+-- Voronoi
+M.voronoi_2d = voronoi_noise_2d
+-- Worley
+M.worley_2d = worley_noise_2d
+M.worley_edge_2d = worley_edge_2d
+M

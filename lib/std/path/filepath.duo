@@ -55,11 +55,11 @@ end
 fun base(path: str): str
     dot = string.len(path)
     while dot > 1 and string.sub(path, dot, dot) == "/" do
-        dot = dot - 1
+        dot -= 1
     end
     last = dot
     while dot > 1 and string.sub(path, dot - 1, dot - 1) ~= "/" do
-        dot = dot - 1
+        dot -= 1
     end
     string.sub(path, dot, last)
 end
@@ -68,10 +68,10 @@ end
 fun dir(path: str): str
     dot = string.len(path)
     while dot > 1 and string.sub(path, dot, dot) == "/" do
-        dot = dot - 1
+        dot -= 1
     end
     while dot > 1 and string.sub(path, dot - 1, dot - 1) ~= "/" do
-        dot = dot - 1
+        dot -= 1
     end
     if dot <= 1 then return "." end
     string.sub(path, 1, dot - 1)

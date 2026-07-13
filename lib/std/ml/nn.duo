@@ -1,0 +1,201 @@
+-- std.ml.nn — Neural network layers and training
+
+Tensor = req "std.ml.tensor"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Layer definitions
+-- ═══════════════════════════════════════════════════════════════
+
+fun linear(in_features: i64, out_features: i64): any
+    -- Xavier initialization
+    scale = 1.0 / math.sqrt(in_features)
+    return {
+        type = "linear",
+        weight = Tensor.rand(in_features, out_features),
+        bias = Tensor.zeros(1, out_features),
+        in_features = in_features,
+        out_features = out_features,
+        -- Gradient storage (allocated on first backward)
+        grad_weight = nil,
+        grad_bias = nil,
+        -- Cache for backward pass
+        input_cache = nil,
+    }
+end
+
+fun relu(): any
+    return {
+        type = "relu",
+        mask_cache = nil,
+    }
+end
+
+fun gelu(): any
+    return { type = "gelu" }
+end
+
+fun softmax(): any
+    return {
+        type = "softmax",
+        output_cache = nil,
+    }
+end
+
+fun dropout(rate: f64): any
+    return {
+        type = "dropout",
+        rate = rate,
+        training = true,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Model construction
+-- ═══════════════════════════════════════════════════════════════
+
+fun sequential(...)
+    layers = {...}
+    return {
+        type = "sequential",
+        layers = layers,
+        n_layers = #layers,
+    }
+end
+
+-- Alias for `nn { ... }` design doc syntax (varargs table today)
+build = sequential
+
+-- MNIST classifier preset
+fun mnist_classifier(): any
+    return sequential(
+        linear(784, 256),
+        relu(),
+        linear(256, 128),
+        relu(),
+        linear(128, 10),
+        softmax()
+    )
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Forward pass
+-- ═══════════════════════════════════════════════════════════════
+
+@hot
+fun forward_linear(layer, x): any
+    -- Cache input for backward pass
+    layer.input_cache = x
+    -- y = x @ W + b
+    y = Tensor.matmul(x, layer.weight)
+    return Tensor.add(y, layer.bias)
+end
+
+@hot
+fun forward_relu(layer, x): any
+    return Tensor.relu(x)
+end
+
+@hot
+fun forward_gelu(layer, x): any
+    Ops = req "std.ml.ops"
+    return Ops.gelu(x)
+end
+
+@hot
+fun forward_softmax(layer, x): any
+    out = Tensor.softmax(x)
+    layer.output_cache = out
+    return out
+end
+
+fun forward_layer(layer, x): any
+    if layer.type == "linear" return forward_linear(layer, x) end
+    if layer.type == "relu" return forward_relu(layer, x) end
+    if layer.type == "gelu" return forward_gelu(layer, x) end
+    if layer.type == "softmax" return forward_softmax(layer, x) end
+    return x
+end
+
+fun forward(model, x): any
+    h = x
+    for i = 1, model.n_layers
+        h = forward_layer(model.layers[i], h)
+    end
+    return h
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Loss functions
+-- ═══════════════════════════════════════════════════════════════
+
+fun cross_entropy(pred, target): f64
+    -- Simplified: assumes pred is softmax output, target is class index per row
+    loss = 0.0
+    for i = 1, pred.rows
+        idx = Tensor.get(target, i, 1)
+        p = Tensor.get(pred, i, idx)
+        if p < 1e-7 p = 1e-7 end
+        loss -= math.log(p)
+    end
+    return loss / pred.rows
+end
+
+fun mse_loss(pred, target): f64
+    diff = Tensor.add(pred, Tensor.mul_scalar(target, -1))
+    sum = 0.0
+    for i = 1, diff.size
+        v = diff.data[i]
+        sum += v * v
+    end
+    return sum / diff.size
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Optimizer (SGD with momentum)
+-- ═══════════════════════════════════════════════════════════════
+
+fun sgd(lr, momentum)
+    if momentum == nil momentum = 0.0 end
+    return {
+        type = "sgd",
+        lr = lr,
+        momentum = momentum,
+        velocities = {},
+    }
+end
+
+fun adam(lr, beta1, beta2, eps)
+    if beta1 == nil beta1 = 0.9 end
+    if beta2 == nil beta2 = 0.999 end
+    if eps == nil eps = 1e-8 end
+    return {
+        type = "adam",
+        lr = lr,
+        beta1 = beta1,
+        beta2 = beta2,
+        eps = eps,
+        t = 0,
+        m = {},
+        v = {},
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.linear = linear
+M.relu = relu
+M.gelu = gelu
+M.softmax = softmax
+M.dropout = dropout
+M.sequential = sequential
+M.build = build
+M.mnist_classifier = mnist_classifier
+M.forward = forward
+M.cross_entropy = cross_entropy
+M.mse_loss = mse_loss
+M.sgd = sgd
+M.adam = adam
+M

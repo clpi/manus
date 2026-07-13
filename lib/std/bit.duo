@@ -1,0 +1,280 @@
+-- std.bit — bit manipulation primitives for WASM, low-level, and cryptographic work
+
+-- Population count (Hamming weight)
+fun popcount(x: i64): i64
+    n = x
+    count = 0
+    while n > 0
+        count += (n & 1)
+        n = n >> 1
+    end
+    count
+end
+
+-- Count leading zeros
+fun clz(x: i64): i64
+    if x == 0 then return 64 end
+    n = 0
+    mask = 1 << 63
+    while (x & mask) == 0
+        n += 1
+        mask = mask >> 1
+    end
+    n
+end
+
+-- Count trailing zeros
+fun ctz(x: i64): i64
+    if x == 0 then return 64 end
+    n = 0
+    while (x & 1) == 0
+        n += 1
+        x = x >> 1
+    end
+    n
+end
+
+-- Bit length (position of highest set bit + 1)
+fun bit_length(x: i64): i64
+    if x == 0 then return 0 end
+    64 - clz(x)
+end
+
+-- Rotate left (for hash functions, ciphers)
+fun rotl(x: i64, k: i64): i64
+    k = k & 63
+    if k == 0 then return x end
+    (x << k) | (x >> (64 - k))
+end
+
+-- Rotate right
+fun rotr(x: i64, k: i64): i64
+    k = k & 63
+    if k == 0 then return x end
+    (x >> k) | (x << (64 - k))
+end
+
+-- Reverse all bits (for bitfield encoding)
+fun reverse(x: i64): i64
+    r = 0
+    i = 0
+    while i < 64
+        r = r | ((x >> i) & 1) << (63 - i)
+        i += 1
+    end
+    r
+end
+
+-- Reverse bytes (endianness conversion)
+fun reverse_bytes(x: i64): i64
+    ((x & 0xFF) << 56) |
+    ((x & 0xFF00) << 40) |
+    ((x & 0xFF0000) << 24) |
+    ((x & 0xFF000000) << 8) |
+    ((x >> 8) & 0xFF000000) |
+    ((x >> 24) & 0xFF0000) |
+    ((x >> 40) & 0xFF00) |
+    ((x >> 56) & 0xFF)
+end
+
+-- Extract a bitfield: extract bits [hi:lo] from x (inclusive, 0-indexed)
+fun extract(x: i64, hi: i64, lo: i64): i64
+    width = hi - lo + 1
+    mask = (1 << width) - 1
+    (x >> lo) & mask
+end
+
+-- Insert a bitfield: insert value into bits [hi:lo] of x
+fun insert(x: i64, hi: i64, lo: i64, value: i64): i64
+    width = hi - lo + 1
+    mask = (1 << width) - 1
+    cleared = x & ~(mask << lo)
+    cleared | ((value & mask) << lo)
+end
+
+-- Set a single bit
+fun set_bit(x: i64, pos: i64): i64
+    x | (1 << pos)
+end
+
+-- Clear a single bit
+fun clear_bit(x: i64, pos: i64): i64
+    x & ~(1 << pos)
+end
+
+-- Toggle a single bit
+fun toggle_bit(x: i64, pos: i64): i64
+    x ^ (1 << pos)
+end
+
+-- Test if bit at pos is set
+fun test_bit(x: i64, pos: i64): bool
+    (x & (1 << pos)) ~= 0
+end
+
+-- Count set bits in range [hi:lo]
+fun popcount_range(x: i64, hi: i64, lo: i64): i64
+    width = hi - lo + 1
+    mask = (1 << width) - 1
+    popcount((x >> lo) & mask)
+end
+
+-- Next power of two
+fun next_pow2(x: i64): i64
+    if x <= 1 then return 1 end
+    x -= 1
+    x = x | (x >> 1)
+    x = x | (x >> 2)
+    x = x | (x >> 4)
+    x = x | (x >> 8)
+    x = x | (x >> 16)
+    x = x | (x >> 32)
+    x + 1
+end
+
+-- Previous power of two
+fun prev_pow2(x: i64): i64
+    if x <= 1 then return 1 end
+    1 << (bit_length(x) - 1)
+end
+
+-- LEB128 unsigned encode (used in WASM binary format)
+fun leb128_encode_u(value: i64): any
+    bytes = {}
+    repeat
+        byte = value & 0x7F
+        value = value >> 7
+        if value ~= 0 then
+            byte = byte | 0x80
+        end
+        bytes[#bytes + 1] = byte
+    until value == 0
+    bytes
+end
+
+-- LEB128 unsigned decode
+fun leb128_decode_u(bytes: any, pos: i64): any
+    result = 0
+    shift = 0
+    i = pos
+    while true
+        byte = bytes[i]
+        result = result | ((byte & 0x7F) << shift)
+        shift += 7
+        if (byte & 0x80) == 0 then break end
+        i += 1
+    end
+    {value = result, next = i + 1}
+end
+
+-- LEB128 signed encode
+fun leb128_encode_s(value: i64): any
+    bytes = {}
+    more = true
+    while more
+        byte = value & 0x7F
+        value = value >> 7
+        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) ~= 0) then
+            more = false
+        else
+            byte = byte | 0x80
+        end
+        bytes[#bytes + 1] = byte
+    end
+    bytes
+end
+
+-- LEB128 signed decode
+fun leb128_decode_s(bytes: any, pos: i64): any
+    result = 0
+    shift = 0
+    i = pos
+    while true
+        byte = bytes[i]
+        result = result | ((byte & 0x7F) << shift)
+        shift += 7
+        if (byte & 0x80) == 0 then
+            if shift < 64 and (byte & 0x40) ~= 0 then
+                result = result | (~0 << shift)
+            end
+            break
+        end
+        i += 1
+    end
+    {value = result, next = i + 1}
+end
+
+-- Binary AND/OR/XOR arrays element-wise (for SIMD-like ops on byte arrays)
+fun and_bytes(a: any, b: any): any
+    out = {}
+    n = #a
+    if #b < n then n = #b end
+    i = 1
+    while i <= n
+        out[#out + 1] = a[i] & b[i]
+        i += 1
+    end
+    out
+end
+
+fun or_bytes(a: any, b: any): any
+    out = {}
+    n = #a
+    if #b < n then n = #b end
+    i = 1
+    while i <= n
+        out[#out + 1] = a[i] | b[i]
+        i += 1
+    end
+    out
+end
+
+fun xor_bytes(a: any, b: any): any
+    out = {}
+    n = #a
+    if #b < n then n = #b end
+    i = 1
+    while i <= n
+        out[#out + 1] = a[i] ^ b[i]
+        i += 1
+    end
+    out
+end
+
+fun not_bytes(a: any): any
+    out = {}
+    i = 1
+    while i <= #a
+        out[#out + 1] = ~a[i] & 0xFF
+        i += 1
+    end
+    out
+end
+
+M = {}
+M.popcount = popcount
+M.clz = clz
+M.ctz = ctz
+M.bit_length = bit_length
+M.rotl = rotl
+M.rotr = rotr
+M.reverse = reverse
+M.reverse_bytes = reverse_bytes
+M.extract = extract
+M.insert = insert
+M.set_bit = set_bit
+M.clear_bit = clear_bit
+M.toggle_bit = toggle_bit
+M.test_bit = test_bit
+M.popcount_range = popcount_range
+M.next_pow2 = next_pow2
+M.prev_pow2 = prev_pow2
+M.leb128_encode_u = leb128_encode_u
+M.leb128_decode_u = leb128_decode_u
+M.leb128_encode_s = leb128_encode_s
+M.leb128_decode_s = leb128_decode_s
+M.and_bytes = and_bytes
+M.or_bytes = or_bytes
+M.xor_bytes = xor_bytes
+M.not_bytes = not_bytes
+M

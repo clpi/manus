@@ -1,0 +1,288 @@
+-- std.ml.conv — Convolution and pooling layers for neural networks
+
+Tensor = req "std.ml.tensor"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Conv1D
+-- ═══════════════════════════════════════════════════════════════
+
+fun conv1d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64, padding: i64): any
+    if stride == nil then stride = 1 end
+    if padding == nil then padding = 0 end
+    scale = 1.0 / math.sqrt(in_channels * kernel_size)
+    weight = Tensor.zeros(kernel_size * in_channels, out_channels)
+    for i = 1, weight.size
+        weight.data[i] = (math.random() * 2 - 1) * scale
+    end
+    {
+        type = "conv1d",
+        in_channels = in_channels,
+        out_channels = out_channels,
+        kernel_size = kernel_size,
+        stride = stride,
+        padding = padding,
+        weight = weight,
+        bias = Tensor.zeros(1, out_channels),
+    }
+end
+
+@hot
+fun conv1d_forward(layer: any, input: any): any
+    -- input: {batch_size, in_channels, length}
+    -- Simplified: assumes input is a single flattened sequence
+    batch = input.rows
+    in_len = input.cols
+    out_len = math.floor((in_len + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
+    result = Tensor.zeros(batch, out_len * layer.out_channels)
+    for b = 1, batch
+        for o = 1, out_len
+            acc = Tensor.zeros(1, layer.out_channels)
+            for k = 0, layer.kernel_size - 1
+                pos = (o - 1) * layer.stride + k - layer.padding + 1
+                if pos >= 1 and pos <= in_len then
+                    -- Dot product of input slice with kernel
+                    for c = 1, layer.in_channels
+                        idx_in = (b - 1) * in_len + (pos - 1) * layer.in_channels + c
+                        for oc = 1, layer.out_channels
+                            idx_w = (k * layer.in_channels + c - 1) * layer.out_channels + oc
+                            idx_out = (o - 1) * layer.out_channels + oc
+                            acc.data[idx_out] = acc.data[idx_out] + input.data[idx_in] * layer.weight.data[idx_w]
+                        end
+                    end
+                end
+            end
+            -- Add bias
+            for oc = 1, layer.out_channels
+                idx_out = (o - 1) * layer.out_channels + oc
+                acc.data[idx_out] = acc.data[idx_out] + layer.bias.data[oc]
+            end
+            -- Write to result
+            for oc = 1, layer.out_channels
+                idx_res = (b - 1) * out_len * layer.out_channels + (o - 1) * layer.out_channels + oc
+                result.data[idx_res] = acc.data[oc]
+            end
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Conv2D
+-- ═══════════════════════════════════════════════════════════════
+
+fun conv2d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64, padding: i64): any
+    if stride == nil then stride = 1 end
+    if padding == nil then padding = 0 end
+    scale = 1.0 / math.sqrt(in_channels * kernel_size * kernel_size)
+    weight = Tensor.zeros(kernel_size * kernel_size * in_channels, out_channels)
+    for i = 1, weight.size
+        weight.data[i] = (math.random() * 2 - 1) * scale
+    end
+    {
+        type = "conv2d",
+        in_channels = in_channels,
+        out_channels = out_channels,
+        kernel_size = kernel_size,
+        stride = stride,
+        padding = padding,
+        weight = weight,
+        bias = Tensor.zeros(1, out_channels),
+    }
+end
+
+@hot
+fun conv2d_forward(layer: any, input: any): any
+    -- input: flattened {height, width, in_channels}
+    -- Simplified: 2D convolution on a single image
+    h_in = input.rows
+    w_in = math.floor(input.cols / layer.in_channels)
+    h_out = math.floor((h_in + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
+    w_out = math.floor((w_in + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
+    result = Tensor.zeros(h_out * w_out, layer.out_channels)
+    for oh = 0, h_out - 1
+        for ow = 0, w_out - 1
+            for oc = 1, layer.out_channels
+                acc = 0
+                for kh = 0, layer.kernel_size - 1
+                    for kw = 0, layer.kernel_size - 1
+                        ih = oh * layer.stride + kh - layer.padding
+                        iw = ow * layer.stride + kw - layer.padding
+                        if ih >= 0 and ih < h_in and iw >= 0 and iw < w_in then
+                            for ic = 1, layer.in_channels
+                                idx_in = ih * w_in * layer.in_channels + iw * layer.in_channels + ic
+                                idx_w = (kh * layer.kernel_size * layer.in_channels + kw * layer.in_channels + ic - 1) * layer.out_channels + oc
+                                acc += input.data[idx_in] * layer.weight.data[idx_w]
+                            end
+                        end
+                    end
+                end
+                idx_out = (oh * w_out + ow) * layer.out_channels + oc
+                result.data[idx_out] = acc + layer.bias.data[oc]
+            end
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Max Pooling
+-- ═══════════════════════════════════════════════════════════════
+
+fun maxpool1d(kernel_size: i64, stride: i64): any
+    if stride == nil then stride = kernel_size end
+    {
+        type = "maxpool1d",
+        kernel_size = kernel_size,
+        stride = stride,
+    }
+end
+
+fun maxpool1d_forward(layer: any, input: any): any
+    in_len = input.cols
+    channels = input.rows
+    out_len = math.floor((in_len - layer.kernel_size) / layer.stride) + 1
+    result = Tensor.zeros(channels, out_len)
+    for c = 1, channels
+        for o = 1, out_len
+            max_val = -1e30
+            for k = 0, layer.kernel_size - 1
+                pos = (o - 1) * layer.stride + k
+                val = input.data[(c - 1) * in_len + pos + 1]
+                if val > max_val then max_val = val end
+            end
+            result.data[(c - 1) * out_len + o] = max_val
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Average Pooling
+-- ═══════════════════════════════════════════════════════════════
+
+fun avgpool1d(kernel_size: i64, stride: i64): any
+    if stride == nil then stride = kernel_size end
+    {
+        type = "avgpool1d",
+        kernel_size = kernel_size,
+        stride = stride,
+    }
+end
+
+fun avgpool1d_forward(layer: any, input: any): any
+    in_len = input.cols
+    channels = input.rows
+    out_len = math.floor((in_len - layer.kernel_size) / layer.stride) + 1
+    result = Tensor.zeros(channels, out_len)
+    for c = 1, channels
+        for o = 1, out_len
+            sum = 0
+            for k = 0, layer.kernel_size - 1
+                pos = (o - 1) * layer.stride + k
+                sum += input.data[(c - 1) * in_len + pos + 1]
+            end
+            result.data[(c - 1) * out_len + o] = sum / layer.kernel_size
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Adaptive Average Pooling (output size is fixed)
+-- ═══════════════════════════════════════════════════════════════
+
+fun adaptive_avgpool(output_size: i64): any
+    {
+        type = "adaptive_avgpool",
+        output_size = output_size,
+    }
+end
+
+fun adaptive_avgpool_forward(layer: any, input: any): any
+    in_len = input.cols
+    channels = input.rows
+    out_size = layer.output_size
+    result = Tensor.zeros(channels, out_size)
+    for c = 1, channels
+        for o = 1, out_size
+            start = math.floor((o - 1) * in_len / out_size)
+            finish = math.floor(o * in_len / out_size)
+            sum = 0
+            count = 0
+            i = start
+            while i < finish
+                sum += input.data[(c - 1) * in_len + i + 1]
+                count += 1
+                i += 1
+            end
+            if count > 0 then
+                result.data[(c - 1) * out_size + o] = sum / count
+            end
+        end
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Global Average Pooling
+-- ═══════════════════════════════════════════════════════════════
+
+fun global_avgpool(): any
+    {type = "global_avgpool"}
+end
+
+fun global_avgpool_forward(layer: any, input: any): any
+    channels = input.rows
+    len = input.cols
+    result = Tensor.zeros(channels, 1)
+    for c = 1, channels
+        sum = 0
+        i = 1
+        while i <= len
+            sum += input.data[(c - 1) * len + i]
+            i += 1
+        end
+        result.data[c] = sum / len
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Flatten (for transitioning conv to linear layers)
+-- ═══════════════════════════════════════════════════════════════
+
+fun flatten(): any
+    {type = "flatten"}
+end
+
+fun flatten_forward(layer: any, input: any): any
+    -- Reshape to {1, total_elements}
+    result = Tensor.zeros(1, input.size)
+    i = 1
+    while i <= input.size
+        result.data[i] = input.data[i]
+        i += 1
+    end
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.conv1d_layer = conv1d_layer
+M.conv1d_forward = conv1d_forward
+M.conv2d_layer = conv2d_layer
+M.conv2d_forward = conv2d_forward
+M.maxpool1d = maxpool1d
+M.maxpool1d_forward = maxpool1d_forward
+M.avgpool1d = avgpool1d
+M.avgpool1d_forward = avgpool1d_forward
+M.adaptive_avgpool = adaptive_avgpool
+M.adaptive_avgpool_forward = adaptive_avgpool_forward
+M.global_avgpool = global_avgpool
+M.global_avgpool_forward = global_avgpool_forward
+M.flatten = flatten
+M.flatten_forward = flatten_forward
+M

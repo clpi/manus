@@ -5,11 +5,22 @@ std = {}
 -- Core / Lang
 std.math = req "std.math"
 std.math.cmplx = req "std.math.cmplx"
+std.math.stats = req "std.math.stats"
+std.math.optimize = req "std.math.optimize"
+std.math.fft = req "std.math.fft"
+std.math.interpolate = req "std.math.interpolate"
+std.math.wavelet = req "std.math.wavelet"
+std.math.noise = req "std.math.noise"
+std.math.geometry = req "std.math.geometry"
 std.string = req "std.string"
 std.table = req "std.table"
 std.meta = req "std.meta"
+std.reflect = req "std.reflect"
 std.coroutine = req "std.coroutine"
 std.mem = req "std.mem"
+std.bit = req "std.bit"
+std.cmp = req "std.cmp"
+std.errors = req "std.errors"
 
 -- System / OS
 std.sys = {
@@ -19,12 +30,19 @@ std.sys = {
     env = req "std.env",
     path = req "std.path",
     proc = req "std.proc",
-    time = req "std.time"
+    time = req "std.time",
+    signal = req "std.os.signal",
+    process = req "std.os.process",
+    fs_watch = req "std.fs_watch"
 }
 
 -- Network & Concurrency
 std.net = req "std.net"
+std.net.ws = req "std.net.ws"
+std.net.dns = req "std.net.dns"
+std.net.rpc = req "std.net.rpc"
 std.http = req "std.http"
+std.context = req "std.context"
 std.sync = {
     atomic = req "std.atomic",
     thread = req "std.thread",
@@ -48,7 +66,9 @@ std.data = {
     html = req "std.html",
     sqlite = req "std.sqlite",
     tar = req "std.tar",
-    zip = req "std.zip"
+    zip = req "std.zip",
+    db = req "std.db",
+    mime = req "std.mime"
 }
 
 -- Compression
@@ -56,7 +76,8 @@ std.compress = {
     zlib = req "std.compress.zlib",
     gzip = req "std.compress.gzip",
     flate = req "std.compress.flate",
-    lzw = req "std.compress.lzw"
+    lzw = req "std.compress.lzw",
+    snappy = req "std.compress.snappy"
 }
 
 -- Encoding sub-packages
@@ -65,7 +86,8 @@ std.encoding = {
     binary = req "std.encoding.binary",
     gob = req "std.encoding.gob",
     pem = req "std.encoding.pem",
-    ascii85 = req "std.encoding.ascii85"
+    ascii85 = req "std.encoding.ascii85",
+    protobuf = req "std.encoding.protobuf"
 }
 
 -- Cryptography
@@ -74,11 +96,68 @@ std.crypto = {
     algo = req "std.crypto",
     uuid = req "std.uuid",
     rand = req "std.crypto.rand",
-    subtle = req "std.crypto.subtle"
+    subtle = req "std.crypto.subtle",
+    aes = req "std.crypto.aes",
+    signature = req "std.crypto.signature"
 }
+
+-- SIMD buffer kernels + vector helpers (global `simd.*` builtins)
+std.simd = req "std.simd"
+-- Low-level CPU fences / spin hints; re-exports std.ml.device
+std.hardware = req "std.hardware"
+
+-- Machine learning (tensor ops + nn layers; hot paths use ml.* intrinsics)
+std.ml = {
+    tensor = req "std.ml.tensor",
+    nn = req "std.ml.nn",
+    ops = req "std.ml.ops",
+    device = req "std.ml.device",
+    shape = req "std.ml.shape",
+    autodiff = req "std.ml.autodiff",
+    train = req "std.ml.train",
+    quant = req "std.ml.quant",
+    transformer = req "std.ml.transformer",
+    data = req "std.ml.data",
+    deploy = req "std.ml.deploy",
+    fusion = req "std.ml.fusion",
+    conv = req "std.ml.conv",
+    norm = req "std.ml.norm",
+    loss = req "std.ml.loss",
+    optim = req "std.ml.optim",
+    tokenizer = req "std.ml.tokenizer",
+    gguf = req "std.ml.gguf",
+    attention = req "std.ml.attention",
+    embed = req "std.ml.embed",
+    rnn = req "std.ml.rnn",
+    vision = req "std.ml.vision",
+    generate = req "std.ml.generate",
+    distill = req "std.ml.distill",
+    cache = req "std.ml.cache",
+    onnx = req "std.onnx",
+}
+
+-- Graphics & Visualization
+std.graphics = req "std.graphics"
+std.graphics.mesh = req "std.graphics.mesh"
+std.graphics.material = req "std.graphics.material"
+std.graphics.animation = req "std.graphics.animation"
+
+-- WebAssembly support
+std.wasm = req "std.wasm"
+
+-- Runtime support (GC, isolates, snapshots)
+std.runtime = req "std.runtime"
+std.runtime.memory = req "std.runtime.memory"
+
+-- Observability (counters, gauges, histograms, timers)
+std.metrics = req "std.metrics"
 
 -- Utilities
 std.collections = req "std.collections"
+std.container = req "std.container"
+std.heap = req "std.heap"
+std.mem = req "std.mem"
+std.mem_ring = req "std.mem_ring"
 std.iter = req "std.iter"
 std.fn = req "std.fn"
 std.result = req "std.result"
@@ -93,11 +172,28 @@ std.regex = req "std.regex"
 std.log = req "std.log"
 std.fmt = req "std.fmt"
 std.strings = req "std.strings"
+std.strconv = req "std.strconv"
 std.config = req "std.config"
 std.flag = req "std.flag"
 std.image = req "std.image"
 std.utf8 = req "std.utf8"
+std.unicode = req "std.unicode"
 std.datetime = req "std.datetime"
+std.text.transformer = req "std.text.transformer"
+std.time.stopwatch = req "std.time.stopwatch"
+std.io.buffer = req "std.io.buffer"
+std.bufio = req "std.bufio"
+std.bytes = req "std.bytes"
+std.slices = req "std.slices"
+std.sort = req "std.sort"
+std.maps = req "std.maps"
+std.graph = req "std.graph"
+std.pool = req "std.pool"
+std.schema = req "std.schema"
+std.diff = req "std.diff"
+
+-- Go compatibility shim
+std.go = req "std.go"
 
 -- Tooling
 std.tools = {
@@ -116,7 +212,8 @@ std.tools = {
 std.testing = {
     quick = req "std.testing.quick",
     fstest = req "std.testing.fstest",
-    iotest = req "std.testing.iotest"
+    iotest = req "std.testing.iotest",
+    assert = req "std.testing.assert"
 }
 
 -- Index/data structures

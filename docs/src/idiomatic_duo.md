@@ -50,13 +50,35 @@ end
 Use `req` for all module imports. When importing from stdlib, use the `std` global:
 
 ```duo
--- Stdlib imports via std global
-local s = req("std.string")
-local m = req("std.math")
+-- Stdlib imports via std global (double quotes are conventional)
+s = req("std.string")
+m = req("std.math")
+
+-- String-literal call sugar: omit parentheses when the sole argument is a string
+io = req 'std.io'
+print 'ready'
 
 -- User module imports
-local util = req("utils")
+util = req("utils")
+util = req 'utils'   -- same as above
 ```
+
+`print 'hello'` and `req 'io'` are equivalent to `print('hello')` and `req('io')`. The parser treats a string literal immediately after a callable as the argument list. Double-quoted strings work the same way.
+
+## 3b. Indentation Does Not Matter
+
+Duo blocks are delimited by keywords (`fun`/`if`/`while`/`for`/`match` + `end`), not by significant whitespace. Indentation is for human readability only; the formatter (`duo fmt`) may normalize it but the compiler ignores it.
+
+```duo
+fun demo(): i64
+if true
+print(1)
+end
+1
+end
+```
+
+This parses the same as a neatly indented version. Python-style indentation rules do **not** apply.
 
 ## 4. Omit `do` Where Possible
 
@@ -230,16 +252,20 @@ end
 | `@test.skip` | Skip |
 | `@test.only` | Run only these when any `@test.only` exists |
 | `@test.flaky` | Mark flaky (logged, still runs) |
-| `@test.should_panic` | Collected; runner enforcement pending |
+| `@test.should_panic` | Expect panic/`error(...)`; normal return fails |
 | `@test.bench` / `@test.time` | Enable bench/timing in test runner |
 
 CLI:
 
 ```bash
 duo test examples/directives_test.duo
+duo test                              # uses @build.test src from build.duo / src/main.duo
 duo test my_tests.duo --filter integration
 duo bench my_bench.duo
+duo symbols src/main.duo              # glanceable @build / @test inventory
 ```
+
+In `.lua` files, use `--- @build.*` / `--- @test.*` comment directives (same semantics as `@` in `.duo`).
 
 ### Benchmarking (`@bench`, `@time`)
 
@@ -258,25 +284,116 @@ end
 
 ### Build (`@build.*`)
 
-Module-level directives in `build.duo` (also supported as `build.exe({...})` calls):
+Inline in any module — no separate `build.duo` required (discovery order: `build.duo` → `src/main.duo` → `main.duo`):
 
 ```duo
 @build.project({ name = "myapp", version = "0.1.0", default = "app" })
 
-@build.exe({ name = "app", src = "src/main.duo", out = "zig-out/bin/myapp" })
+@build.run({ name = "app", src = "src/main.duo", out = "zig-out/bin/myapp" })
 
-@build.test({ name = "tests", src = "tests/all.duo" })
+@build.test({ name = "test", src = "src/main.duo", out = "zig-out/bin/myapp_test" })
 
 @build.bench({ name = "bench", src = "bench/suite.duo" })
+
+@build.check({ name = "check", src = "src/main.duo" })
+
+@build.fmt({ name = "fmt" })
+
+@build.clean({ name = "clean" })
 ```
 
 | Directive | Purpose |
 |-----------|---------|
 | `build.project` | Project metadata; `default` names the default target |
-| `build.exe` | Executable target |
+| `build.exe` / `build.run` | Executable target |
 | `build.lib` | Library target |
-| `build.test` | Test runner target (`duo build tests`) |
-| `build.bench` | Bench target |
-| `build.run` / `build.check` / `build.fmt` / `build.clean` | Reserved for future `duo build` subcommands |
+| `build.test` | Test runner target (`duo build test` or default for `duo test`) |
+| `build.bench` | Bench target (`duo bench` without file) |
+| `build.check` | Type-check without linking (`duo build check`) |
+| `build.fmt` | Format project sources (`duo build fmt`) |
+| `build.clean` | Remove `zig-out/` (`duo build clean`) |
+
+Common target fields: `name`, `src`, `out`, `opt`, `cc`, `target`, `stage` (build order), `deps` (comma-separated target names), `link`.
+
+```bash
+duo build              # default target from @build.project
+duo build app          # named target
+duo build list         # show all targets (or: duo build --list)
+duo build all          # build every compile target in stage order
+duo build test         # compile + run test runner
+duo build clean|fmt|check
+```
 
 Registry tables: `std.test.attrs`, `std.bench.attrs`.
+
+### Terminal output (diagnostics, debug, build, test)
+
+The `duo` CLI uses ANSI styling when stdout is a TTY and `NO_COLOR` is unset. Diagnostics support rich source context; pipeline tracing and debug channels are opt-in.
+
+**Diagnostics & tracing**
+
+| Flag / env | Effect |
+|------------|--------|
+| `--trace` / `DUO_TRACE=1` | Pipeline steps with timings (parse, mono, ARC, codegen, link) |
+| `--trace-rich` / `DUO_TRACE_RICH=1` | Unicode pipeline tree + timing bars (implies `--trace`; pairs with `-v` or `--build-report verbose`) |
+| `--build-report` | `pretty` (default), `compact`, `verbose`, `plain` — target cards and phase timing |
+| `--info` / `DUO_INFO=1` | Informational sema notes |
+| `--hints` / `DUO_HINTS=1` | Compiler hints |
+| `--plain-diagnostics` / `DUO_PLAIN_DIAG=1` | One-line errors for CI/LSP |
+| `--no-color` / `NO_COLOR` | Disable styling |
+
+**Debug / trace channels**
+
+Module or function attributes:
+
+```duo
+@debug.sema
+@trace.codegen({ depth = 8 })
+@debug({ channels = "parse,sema,types", scopes = "function,struct" })
+```
+
+CLI / environment:
+
+```bash
+duo check app.duo --debug                    # all channels
+duo check app.duo --debug=sema,codegen       # subset
+duo check app.duo --debug-depth 6
+DUO_DEBUG=parse,sema duo build
+```
+
+Channels: `lex`, `parse`, `sema`, `types`, `mono`, `arc`, `async`, `codegen`, `build`, `test`, `link`, or `all`.
+
+**Test & bench reporting**
+
+`duo test` and `duo bench` emit a structured `DUO_EVT` protocol on stderr; the compiler captures it and renders a tree-style report (default **pretty**).
+
+| Style | Behavior |
+|-------|----------|
+| `pretty` | Icons, run/pass/skip/bench lines, summary box |
+| `compact` | Minimal lines; bench shows µs/iter |
+| `verbose` | Extra legacy detail |
+| `plain` | Raw stderr (no capture) |
+| `json` | NDJSON events for agents/CI (`--test-report json`) |
+
+```bash
+duo test examples/directives_test.duo
+duo test my.duo --test-report compact --filter unit
+duo test my.duo --test-report json | jq .
+DUO_TEST_REPORT=verbose duo bench suite.duo
+```
+
+Assert failures emit `DUO_EVT test fail name=… reason=…` (assertion message when available) and continue with remaining tests.
+
+`@test.should_panic` expects the test body to call `error(...)` (or otherwise trigger `lua_error`); returning normally counts as failure (`expected_panic`).
+
+**Build reporting**
+
+`duo build` shows target cards and compile phase timing when `--build-report` is not `plain` (default **pretty**). Use `DUO_BUILD_REPORT=compact` in CI.
+
+```bash
+duo build list                    # project hero + target table
+duo build all --trace-rich -v     # full pipeline tree for every target
+duo build app --build-report verbose
+```
+
+Target fields `stage` (numeric order) and `deps` (comma-separated target names) control `duo build all` ordering via topological sort.

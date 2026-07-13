@@ -61,7 +61,7 @@ fun encode_with_alphabet(data: str, tab: str): str
             res[rawlen(res) + 1] = string.sub(tab, c7, c7)
             res[rawlen(res) + 1] = string.sub(tab, c8, c8)
         end
-        i = i + 5
+        i += 5
     end
     table.concat(res)
 end
@@ -86,19 +86,19 @@ fun decode_with_alphabet(data: str, tab: any): str
             local pos = i + j
             if pos > len then
                 vals[j + 1] = 0
-                pad_count = pad_count + 1
+                pad_count += 1
             else
                 local c = string.byte(data, pos)
                 if c == 61 then
                     vals[j + 1] = 0
-                    pad_count = pad_count + 1
+                    pad_count += 1
                 else
                     local v = tab[c]
                     if v ~= nil then
                         vals[j + 1] = v
                     else
                         vals[j + 1] = 0
-                        pad_count = pad_count + 1
+                        pad_count += 1
                     end
                 end
             end
@@ -121,7 +121,7 @@ fun decode_with_alphabet(data: str, tab: any): str
         if pad_count < 1 then
             res[rawlen(res) + 1] = string.char(b5)
         end
-        i = i + 8
+        i += 8
     end
     table.concat(res)
 end

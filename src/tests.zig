@@ -20,4 +20,8 @@ test {
     _ = @import("codegen.zig");
     _ = @import("directives.zig");
     _ = @import("term.zig");
+    _ = @import("debug_trace.zig");
+    _ = @import("build_framework.zig");
+    _ = @import("ml_kernels.zig");
+    _ = @import("jit.zig");
 }

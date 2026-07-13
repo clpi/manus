@@ -1,0 +1,369 @@
+-- std.net.ws — WebSocket client and server (RFC 6455)
+-- Used by ward for real-time communication and the WASM runtime's debug protocol.
+
+-- ═══════════════════════════════════════════════════════════════
+-- WebSocket frame encoding/decoding
+-- ═══════════════════════════════════════════════════════════════
+
+-- Opcodes
+OP_CONTINUATION = 0x00
+OP_TEXT = 0x01
+OP_BINARY = 0x02
+OP_CLOSE = 0x08
+OP_PING = 0x09
+OP_PONG = 0x0A
+
+-- Frame types
+FRAME_TEXT = 1
+FRAME_BINARY = 2
+FRAME_CLOSE = 8
+FRAME_PING = 9
+FRAME_PONG = 10
+
+-- ═══════════════════════════════════════════════════════════════
+-- Frame encoding
+-- ═══════════════════════════════════════════════════════════════
+
+fun ws_encode_frame(opcode: i64, payload: any, mask: bool): any
+    bytes = {}
+    -- First byte: FIN bit + opcode
+    bytes[1] = 0x80 | opcode
+
+    -- Payload length
+    len = #payload
+    if len < 126 then
+        bytes[2] = len
+        if mask then bytes[2] = bytes[2] | 0x80 end
+    elseif len < 65536 then
+        bytes[2] = 126
+        if mask then bytes[2] = bytes[2] | 0x80 end
+        bytes[3] = (len >> 8) & 0xFF
+        bytes[4] = len & 0xFF
+    else
+        bytes[2] = 127
+        if mask then bytes[2] = bytes[2] | 0x80 end
+        i = 0
+        while i < 8
+            bytes[3 + i] = (len >> (56 - i * 8)) & 0xFF
+            i += 1
+        end
+    end
+
+    -- Masking key (if client->server)
+    mask_key = nil
+    if mask then
+        mask_key = {}
+        i = 1
+        while i <= 4
+            mask_key[i] = math.random(0, 255)
+            bytes[#bytes + 1] = mask_key[i]
+            i += 1
+        end
+    end
+
+    -- Payload
+    i = 1
+    while i <= #payload
+        if mask then
+            bytes[#bytes + 1] = payload[i] ^ mask_key[((i - 1) % 4) + 1]
+        else
+            bytes[#bytes + 1] = payload[i]
+        end
+        i += 1
+    end
+
+    bytes
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Frame decoding
+-- ═══════════════════════════════════════════════════════════════
+
+fun ws_decode_frame(data: any, pos: i64): any
+    if pos > #data then return nil end
+
+    byte1 = data[pos]
+    byte2 = data[pos + 1]
+
+    fin = (byte1 & 0x80) ~= 0
+    opcode = byte1 & 0x0F
+    masked = (byte2 & 0x80) ~= 0
+    payload_len = byte2 & 0x7F
+
+    offset = pos + 2
+
+    -- Extended payload length
+    if payload_len == 126 then
+        payload_len = (data[offset] << 8) | data[offset + 1]
+        offset += 2
+    elseif payload_len == 127 then
+        payload_len = 0
+        i = 0
+        while i < 8
+            payload_len = payload_len | (data[offset + i] << (56 - i * 8))
+            i += 1
+        end
+        offset += 8
+    end
+
+    -- Masking key
+    mask_key = nil
+    if masked then
+        mask_key = {data[offset], data[offset + 1], data[offset + 2], data[offset + 3]}
+        offset += 4
+    end
+
+    -- Payload
+    payload = {}
+    i = 0
+    while i < payload_len
+        b = data[offset + i]
+        if mask then
+            b = b ^ mask_key[i % 4]
+        end
+        payload[#payload + 1] = b
+        i += 1
+    end
+
+    {
+        fin = fin,
+        opcode = opcode,
+        masked = masked,
+        payload = payload,
+        next = offset + payload_len,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- WebSocket handshake (client side)
+-- ═══════════════════════════════════════════════════════════════
+
+fun ws_client_handshake(host: str, port: i64, path: str): str
+    -- Generate random key (16 bytes base64 encoded)
+    key_bytes = {}
+    i = 1
+    while i <= 16
+        key_bytes[i] = math.random(0, 255)
+        i += 1
+    end
+    key = base64_encode(key_bytes)
+
+    "GET " .. path .. " HTTP/1.1\r\n"
+        .. "Host: " .. host .. ":" .. tostring(port) .. "\r\n"
+        .. "Upgrade: websocket\r\n"
+        .. "Connection: Upgrade\r\n"
+        .. "Sec-WebSocket-Key: " .. key .. "\r\n"
+        .. "Sec-WebSocket-Version: 13\r\n"
+        .. "Origin: http://" .. host .. ":" .. tostring(port) .. "\r\n"
+        .. "\r\n"
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- WebSocket handshake (server side)
+-- ═══════════════════════════════════════════════════════════════
+
+fun ws_server_handshake(request: str): str
+    -- Extract Sec-WebSocket-Key
+    key = string["match"](request, "Sec%-WebSocket%-Key: ([%w%+/=]+)")
+    if key == nil then
+        return "HTTP/1.1 400 Bad Request\r\n\r\n"
+    end
+
+    -- Compute accept hash
+    magic = "258EAFA5-E914-47DA-95CA-5AB9FC1B5B09"
+    accept = base64_sha1(key .. magic)
+
+    "HTTP/1.1 101 Switching Protocols\r\n"
+        .. "Upgrade: websocket\r\n"
+        .. "Connection: Upgrade\r\n"
+        .. "Sec-WebSocket-Accept: " .. accept .. "\r\n"
+        .. "\r\n"
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- WebSocket message helpers
+-- ═══════════════════════════════════════════════════════════════
+
+fun ws_text_frame(text: str): any
+    bytes = {}
+    i = 1
+    while i <= string.len(text)
+        bytes[#bytes + 1] = string.byte(text, i)
+        i += 1
+    end
+    ws_encode_frame(OP_TEXT, bytes, false)
+end
+
+fun ws_binary_frame(data: any): any
+    ws_encode_frame(OP_BINARY, data, false)
+end
+
+fun ws_close_frame(code: i64, reason: str): any
+    payload = {}
+    payload[1] = (code >> 8) & 0xFF
+    payload[2] = code & 0xFF
+    if reason then
+        i = 1
+        while i <= string.len(reason)
+            payload[#payload + 1] = string.byte(reason, i)
+            i += 1
+        end
+    end
+    ws_encode_frame(OP_CLOSE, payload, false)
+end
+
+fun ws_ping_frame(data: any): any
+    if data == nil then data = {} end
+    ws_encode_frame(OP_PING, data, false)
+end
+
+fun ws_pong_frame(data: any): any
+    if data == nil then data = {} end
+    ws_encode_frame(OP_PONG, data, false)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- WebSocket connection state machine
+-- ═══════════════════════════════════════════════════════════════
+
+fun ws_connection_new(role: str): any
+    -- role: "client" or "server"
+    {
+        role = role,
+        state = "connecting",
+        buffer = {},
+        message = nil,
+        close_code = nil,
+        close_reason = nil,
+    }
+end
+
+fun ws_connection_send(conn: any, opcode: i64, payload: any): any
+    mask = conn.role == "client"
+    ws_encode_frame(opcode, payload, mask)
+end
+
+fun ws_connection_receive(conn: any, data: any): any
+    -- Append to buffer
+    for b in data
+        conn.buffer[#conn.buffer + 1] = b
+    end
+
+    -- Try to decode
+    if #conn.buffer < 2 then return nil end
+    frame = ws_decode_frame(conn.buffer, 1)
+    if frame == nil then return nil end
+
+    -- Remove consumed bytes
+    new_buf = {}
+    i = frame.next
+    while i <= #conn.buffer
+        new_buf[#new_buf + 1] = conn.buffer[i]
+        i += 1
+    end
+    conn.buffer = new_buf
+
+    -- Handle control frames
+    if frame.opcode == OP_PING then
+        conn.state = "connected"
+        return {type = "ping", payload = frame.payload}
+    elseif frame.opcode == OP_PONG then
+        return {type = "pong", payload = frame.payload}
+    elseif frame.opcode == OP_CLOSE then
+        conn.state = "closed"
+        if #frame.payload >= 2 then
+            conn.close_code = (frame.payload[1] << 8) | frame.payload[2]
+        end
+        return {type = "close", code = conn.close_code}
+    elseif frame.opcode == OP_TEXT then
+        -- Convert payload to string
+        parts = {}
+        i = 1
+        while i <= #frame.payload
+            parts[#parts + 1] = string.char(frame.payload[i])
+            i += 1
+        end
+        return {type = "text", data = table.concat(parts)}
+    elseif frame.opcode == OP_BINARY then
+        return {type = "binary", data = frame.payload}
+    end
+
+    nil
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Utility functions (local implementations)
+-- ═══════════════════════════════════════════════════════════════
+
+fun base64_encode(data: any): str
+    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    result = ""
+    i = 1
+    while i <= #data
+        b0 = data[i]
+        b1 = 0
+        b2 = 0
+        if i + 1 <= #data then b1 = data[i + 1] end
+        if i + 2 <= #data then b2 = data[i + 2] end
+
+        triplet = (b0 << 16) | (b1 << 8) | b2
+        result = result .. string.char(string.byte(chars, (triplet >> 18) & 0x3F + 1))
+        result = result .. string.char(string.byte(chars, (triplet >> 12) & 0x3F + 1))
+        if i + 1 <= #data then
+            result = result .. string.char(string.byte(chars, (triplet >> 6) & 0x3F + 1))
+        else
+            result = result .. "="
+        end
+        if i + 2 <= #data then
+            result = result .. string.char(string.byte(chars, triplet & 0x3F + 1))
+        else
+            result = result .. "="
+        end
+        i += 3
+    end
+    result
+end
+
+fun base64_sha1(data: str): str
+    -- SHA-1 is needed for WebSocket handshake
+    -- Simplified: return placeholder (real impl needs SHA-1)
+    -- In production, use std.crypto.hash
+    base64_encode_string(data)
+end
+
+fun base64_encode_string(s: str): str
+    bytes = {}
+    i = 1
+    while i <= string.len(s)
+        bytes[#bytes + 1] = string.byte(s, i)
+        i += 1
+    end
+    base64_encode(bytes)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.encode_frame = ws_encode_frame
+M.decode_frame = ws_decode_frame
+M.client_handshake = ws_client_handshake
+M.server_handshake = ws_server_handshake
+M.text_frame = ws_text_frame
+M.binary_frame = ws_binary_frame
+M.close_frame = ws_close_frame
+M.ping_frame = ws_ping_frame
+M.pong_frame = ws_pong_frame
+M.connection_new = ws_connection_new
+M.connection_send = ws_connection_send
+M.connection_receive = ws_connection_receive
+M.OP = {
+    CONTINUATION = OP_CONTINUATION,
+    TEXT = OP_TEXT,
+    BINARY = OP_BINARY,
+    CLOSE = OP_CLOSE,
+    PING = OP_PING,
+    PONG = OP_PONG,
+}
+M

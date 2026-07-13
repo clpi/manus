@@ -68,6 +68,26 @@ any_true: bool = simd.any(mask)
 all_true: bool = simd.all(mask)
 ```
 
+## Fused Multiply-Add
+
+```duo
+-- Element-wise a*b+c in one instruction
+out: v4f64 = simd.fma(a, b, c)
+```
+
+## Buffer Kernels (raw pointers)
+
+For contiguous numeric buffers, use SIMD dot/matmul kernels:
+
+```duo
+s: f64 = simd.dot_f64(ptr_a, ptr_b, n)
+simd.matmul_f64(ptr_a, ptr_b, ptr_c, m, n, k)  -- C += A @ B
+```
+
+Or via `std.simd` module: `std.simd.dot_f64(...)`, `std.simd.matmul_f64(...)`.
+
+ML workloads can also call native kernels directly: `ml.matmul_256()`, `ml.dot_1m()`.
+
 ## Element Access
 
 Access individual elements with indexing (0-indexed, following C convention):

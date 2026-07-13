@@ -39,7 +39,7 @@ fun marshal(v: any): str
             else
                 out[rawlen(out) + 1] = ch
             end
-            i = i + 1
+            i += 1
         end
         out[rawlen(out) + 1] = "\""
         return table.concat(out)
@@ -47,7 +47,7 @@ fun marshal(v: any): str
     if t == "table" then
         n = rawlen(v)
         count = 0
-        for _ in pairs(v) do count = count + 1 end
+        for _ in pairs(v) do count += 1 end
         if n > 0 and count == n then
             -- array
             out = {"["}
@@ -55,7 +55,7 @@ fun marshal(v: any): str
             while i <= n
                 out[rawlen(out) + 1] = marshal(v[i])
                 if i < n then out[rawlen(out) + 1] = "," end
-                i = i + 1
+                i += 1
             end
             out[rawlen(out) + 1] = "]"
             return table.concat(out)
@@ -88,14 +88,14 @@ fun marshal(v: any): str
                     else
                         key_out[rawlen(key_out) + 1] = ch
                     end
-                    j = j + 1
+                    j += 1
                 end
                 key_out[rawlen(key_out) + 1] = "\""
                 out[rawlen(out) + 1] = table.concat(key_out)
                 out[rawlen(out) + 1] = ":"
                 out[rawlen(out) + 1] = marshal(v[k])
                 if i < rawlen(keys) then out[rawlen(out) + 1] = "," end
-                i = i + 1
+                i += 1
             end
             out[rawlen(out) + 1] = "}"
             return table.concat(out)
@@ -352,38 +352,38 @@ fun marshal_indent(v: any, indent: str): str
             out[rawlen(out) + 1] = ch
             if ch == "\\" and i < string.len(jstr) then
                 out[rawlen(out) + 1] = string.sub(jstr, i + 1, i + 1)
-                i = i + 2
+                i += 2
             elseif ch == "\"" then
                 in_string = false
-                i = i + 1
+                i += 1
             else
-                i = i + 1
+                i += 1
             end
         else
             if ch == "\"" then
                 in_string = true
                 out[rawlen(out) + 1] = ch
-                i = i + 1
+                i += 1
             elseif ch == "{" or ch == "[" then
                 out[rawlen(out) + 1] = ch
-                depth = depth + 1
+                depth += 1
                 out[rawlen(out) + 1] = "\n" .. string.rep(indent, depth)
-                i = i + 1
+                i += 1
             elseif ch == "}" or ch == "]" then
-                depth = depth - 1
+                depth -= 1
                 if depth < 0 then depth = 0 end
                 out[rawlen(out) + 1] = "\n" .. string.rep(indent, depth) .. ch
-                i = i + 1
+                i += 1
             elseif ch == "," then
                 out[rawlen(out) + 1] = ch
                 out[rawlen(out) + 1] = "\n" .. string.rep(indent, depth)
-                i = i + 1
+                i += 1
             elseif ch == ":" then
                 out[rawlen(out) + 1] = ": "
-                i = i + 1
+                i += 1
             else
                 out[rawlen(out) + 1] = ch
-                i = i + 1
+                i += 1
             end
         end
     end

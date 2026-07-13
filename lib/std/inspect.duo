@@ -11,9 +11,9 @@ fun std_inspect_sort_strings(arr: any): void
         j = i
         while j > 1 and arr[j] < arr[j - 1]
             tmp = arr[j]; arr[j] = arr[j - 1]; arr[j - 1] = tmp
-            j = j - 1
+            j -= 1
         end
-        i = i + 1
+        i += 1
     end
 end
 
@@ -34,7 +34,7 @@ fun std_inspect_hash(value: any): str
         v = value[tonumber(k)]
         if v == nil then v = value[k] end
         parts[rawlen(parts) + 1] .. k .. "=" .. std_inspect_hash(v)
-        i = i + 1
+        i += 1
     end
     "{" .. table.concat(parts, ",") .. "}"
 end
@@ -70,7 +70,7 @@ fun std_inspect_to_str(value: any, indent: any, seen: any): str
         i = 1
         while i <= n
             parts[rawlen(parts) + 1] = std_inspect_to_str(value[i], indent + 1, seen)
-            i = i + 1
+            i += 1
         end
         prefix = string.rep("  ", indent)
         inner_prefix = string.rep("  ", indent + 1)
@@ -94,7 +94,7 @@ fun std_inspect_to_str(value: any, indent: any, seen: any): str
         end
         val_str = std_inspect_to_str(pair.v, indent + 1, seen)
         parts[rawlen(parts) + 1] = key_str .. " = " .. val_str
-        i = i + 1
+        i += 1
     end
     prefix = string.rep("  ", indent)
     inner_prefix = string.rep("  ", indent + 1)
@@ -161,7 +161,7 @@ fun deep_equal(a: any, b: any): bool
         i = 1
         while i <= na
             if not deep_equal(a[i], b[i]) then return false end
-            i = i + 1
+            i += 1
         end
         for ka, _va in a
             if type(ka) ~= "number" then
@@ -212,7 +212,7 @@ fun diff_summary(a: any, b: any): str
             line = line .. ": " .. tostring(d.old)
         end
         parts[rawlen(parts) + 1] = line
-        i = i + 1
+        i += 1
     end
     tostring(rawlen(diffs)) .. " difference(s):\n" .. table.concat(parts, "\n")
 end
@@ -226,7 +226,7 @@ fun type_name(value: any): str
         if n > 0 then return "array[" .. tostring(n) .. "]" end
         count = 0
         for _ck, _cv in value
-            count = count + 1
+            count += 1
         end
         if count > 0 then return "table[" .. tostring(count) .. "]" end
         return "table"
@@ -244,7 +244,7 @@ fun size(value: any): i64
         if n > 0 then return n end
         count = 0
         for _ck, _cv in value
-            count = count + 1
+            count += 1
         end
         return count
     end
@@ -274,7 +274,7 @@ fun summary(value: any): str
     count = 0
     first_key = nil
     for k, v in value
-        count = count + 1
+        count += 1
         if first_key == nil then first_key = tostring(k) end
     end
     if count == 0 then return "empty table" end
@@ -321,7 +321,7 @@ fun stack_trace(level: any, max_depth: any): str
             line = line .. "]"
         end
         lines[rawlen(lines) + 1] = line
-        i = i + 1
+        i += 1
     end
     table.concat(lines, "\n")
 end

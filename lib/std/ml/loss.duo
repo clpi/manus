@@ -1,0 +1,199 @@
+-- std.ml.loss — Loss functions for training neural networks
+
+Tensor = req "std.ml.tensor"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Classification losses
+-- ═══════════════════════════════════════════════════════════════
+
+-- Cross-entropy loss (softmax output + class indices)
+fun cross_entropy(pred: any, target: any, eps: f64): f64
+    if eps == nil then eps = 1e-7 end
+    loss = 0
+    for i = 1, pred.rows
+        idx = target.data[i]
+        p = pred.data[(i - 1) * pred.cols + idx]
+        if p < eps then p = eps end
+        loss -= math.log(p)
+    end
+    loss / pred.rows
+end
+
+-- Binary cross-entropy
+fun binary_cross_entropy(pred: any, target: any, eps: f64): f64
+    if eps == nil then eps = 1e-7 end
+    loss = 0
+    for i = 1, pred.size
+        p = pred.data[i]
+        t = target.data[i]
+        if p < eps then p = eps end
+        if p > 1 - eps then p = 1 - eps end
+        loss -= (t * math.log(p) + (1 - t) * math.log(1 - p))
+    end
+    loss / pred.size
+end
+
+-- Focal loss (for class imbalance)
+fun focal_loss(pred: any, target: any, gamma: f64, eps: f64): f64
+    if gamma == nil then gamma = 2.0 end
+    if eps == nil then eps = 1e-7 end
+    loss = 0
+    for i = 1, pred.rows
+        idx = target.data[i]
+        p = pred.data[(i - 1) * pred.cols + idx]
+        if p < eps then p = eps end
+        loss -= math.pow(1 - p, gamma) * math.log(p)
+    end
+    loss / pred.rows
+end
+
+-- Label smoothing cross-entropy
+fun label_smoothing_ce(pred: any, target: any, smoothing: f64): f64
+    n = pred.rows
+    d = pred.cols
+    loss = 0
+    for i = 1, n
+        idx = target.data[i]
+        for j = 1, d
+            if j == idx then
+                t = 1 - smoothing + smoothing / d
+            else
+                t = smoothing / d
+            end
+            p = pred.data[(i - 1) * d + j]
+            if p < 1e-7 then p = 1e-7 end
+            loss -= t * math.log(p)
+        end
+    end
+    loss / n
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Regression losses
+-- ═══════════════════════════════════════════════════════════════
+
+-- Mean squared error
+fun mse(pred: any, target: any): f64
+    sum = 0
+    for i = 1, pred.size
+        diff = pred.data[i] - target.data[i]
+        sum += diff * diff
+    end
+    sum / pred.size
+end
+
+-- Mean absolute error
+fun mae(pred: any, target: any): f64
+    sum = 0
+    for i = 1, pred.size
+        diff = pred.data[i] - target.data[i]
+        sum += math.abs(diff)
+    end
+    sum / pred.size
+end
+
+-- Huber loss (smooth L1)
+fun huber(pred: any, target: any, delta: f64): f64
+    if delta == nil then delta = 1.0 end
+    sum = 0
+    for i = 1, pred.size
+        diff = pred.data[i] - target.data[i]
+        abs_diff = math.abs(diff)
+        if abs_diff <= delta then
+            sum += 0.5 * diff * diff
+        else
+            sum += delta * (abs_diff - 0.5 * delta)
+        end
+    end
+    sum / pred.size
+end
+
+-- Log-Cosh loss (smooth L1 alternative)
+fun log_cosh(pred: any, target: any): f64
+    sum = 0
+    for i = 1, pred.size
+        diff = pred.data[i] - target.data[i]
+        sum += math.log(math.cosh(diff))
+    end
+    sum / pred.size
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Ranking losses
+-- ═══════════════════════════════════════════════════════════════
+
+-- Hinge loss (SVM)
+fun hinge_loss(pred: any, target: any): f64
+    sum = 0
+    for i = 1, pred.size
+        t = target.data[i]
+        if t == 0 then t = -1 end
+        val = 1 - t * pred.data[i]
+        if val > 0 then sum += val end
+    end
+    sum / pred.size
+end
+
+-- Triplet loss
+fun triplet_loss(anchor: any, positive: any, negative: any, margin: f64): f64
+    if margin == nil then margin = 1.0 end
+    sum = 0
+    for i = 1, anchor.size
+        d_pos = (anchor.data[i] - positive.data[i])
+        d_pos *= d_pos
+        d_neg = (anchor.data[i] - negative.data[i])
+        d_neg *= d_neg
+        loss = d_pos - d_neg + margin
+        if loss > 0 then sum += loss end
+    end
+    sum / anchor.size
+end
+
+-- Cosine similarity loss
+fun cosine_loss(pred: any, target: any): f64
+    dot = 0
+    norm_pred = 0
+    norm_target = 0
+    for i = 1, pred.size
+        dot += pred.data[i] * target.data[i]
+        norm_pred += pred.data[i] * pred.data[i]
+        norm_target += target.data[i] * target.data[i]
+    end
+    1 - dot / (math.sqrt(norm_pred) * math.sqrt(norm_target) + 1e-8)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- KL divergence
+-- ═══════════════════════════════════════════════════════════════
+
+fun kl_divergence(pred: any, target: any, eps: f64): f64
+    if eps == nil then eps = 1e-7 end
+    sum = 0
+    for i = 1, pred.size
+        p = pred.data[i]
+        q = target.data[i]
+        if p < eps then p = eps end
+        if q < eps then q = eps end
+        sum += p * math.log(p / q)
+    end
+    sum
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+M.cross_entropy = cross_entropy
+M.binary_cross_entropy = binary_cross_entropy
+M.focal_loss = focal_loss
+M.label_smoothing_ce = label_smoothing_ce
+M.mse = mse
+M.mae = mae
+M.huber = huber
+M.log_cosh = log_cosh
+M.hinge_loss = hinge_loss
+M.triplet_loss = triplet_loss
+M.cosine_loss = cosine_loss
+M.kl_divergence = kl_divergence
+M

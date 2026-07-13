@@ -7,7 +7,7 @@ fun parse_value(data: str, start: i64, indent: i64): any
     local i = start
     local len = string.len(data)
     while i <= len and (string.byte(data, i) == 32 or string.byte(data, i) == 9)
-        i = i + 1
+        i += 1
     end
     local current_indent = i - start
     if current_indent < indent then
@@ -15,11 +15,11 @@ fun parse_value(data: str, start: i64, indent: i64): any
     end
     local line_start = i
     while i <= len and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13
-        i = i + 1
+        i += 1
     end
     local line = string.sub(data, line_start, i - 1)
-    if string.byte(data, i) == 10 then i = i + 1 end
-    if string.byte(data, i) == 13 then i = i + 1 end
+    if string.byte(data, i) == 10 then i += 1 end
+    if string.byte(data, i) == 13 then i += 1 end
     if string.sub(line, 1, 1) == "#" or string.sub(line, 1, 3) == "---" then
         return parse_value(data, i, indent)
     end

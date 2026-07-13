@@ -195,7 +195,7 @@ fun collect(results: any): any
         else
             errs[rawlen(errs) + 1] = std_result_error(r)
         end
-        i = i + 1
+        i += 1
     end
     first_err = nil
     if rawlen(errs) > 0 then first_err = errs[1] end
@@ -208,7 +208,7 @@ fun all_ok(results: any): bool
     i = 1
     while i <= rawlen(results)
         if not is_ok(results[i]) then return false end
-        i = i + 1
+        i += 1
     end
     true
 end
@@ -223,7 +223,7 @@ fun values(results: any): any
         if r ~= nil and r.kind == "ok" then
             out[rawlen(out) + 1] = r.value
         end
-        i = i + 1
+        i += 1
     end
     out
 end
@@ -238,7 +238,7 @@ fun std_result_errors(results: any): any
         if r ~= nil and r.kind == "err" then
             out[rawlen(out) + 1] = r.err
         end
-        i = i + 1
+        i += 1
     end
     out
 end

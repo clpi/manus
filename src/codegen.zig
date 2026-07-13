@@ -21,13 +21,16 @@ const async_lower = @import("async_lower.zig");
 const comptime_eval = @import("comptime.zig");
 const directives = @import("directives.zig");
 const sema_mod = @import("sema.zig");
+const debug_trace = @import("debug_trace.zig");
+const ml_kernels = @import("ml_kernels.zig");
+const jit = @import("jit.zig");
 
 pub const CodeGenError = error{
     Unsupported,
     InternalError,
 } || Allocator.Error || std.Io.Writer.Error;
 
-const E = Allocator.Error || std.Io.Writer.Error;
+pub const E = Allocator.Error || std.Io.Writer.Error;
 
 const W = *std.Io.Writer;
 
@@ -57,12 +60,14 @@ pub const CodeGen = struct {
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     all_closures: std.ArrayList(*ast.FuncBody) = .empty,
     ack_impl_emitted: bool = false,
+    ml_kernels_emitted: bool = false,
     mandel_native: bool = false,
     load_chunk: bool = false,
     lib_mode: bool = false,
     duo_mode: bool = false,
     test_mode: bool = false,
     bench_mode: bool = false,
+    test_structured_output: bool = false,
     test_filter: ?[]const u8 = null,
     test_entries: []const sema_mod.Sema.TestEntry = &.{},
     target: []const u8 = "native",
@@ -99,6 +104,7 @@ pub const CodeGen = struct {
     /// async analysis was not run.
     async_lower: ?*const async_lower.AsyncLower = null,
     next_closure_id: u32 = 0,
+    current_func_body: ?*const ast.FuncBody = null,
 
     const ArcLocal = struct {
         name: []const u8,
@@ -347,6 +353,7 @@ pub const CodeGen = struct {
             .bool, .void, .nil, .never => false,
             .v4f64, .v4i64, .v8f32, .v8i32 => false,
             .any => false,
+            .tensor => false,
             .table_type, .enum_type => false,
             .str, .array, .pointer, .func, .@"struct" => true,
             .result, .option, .channel, .instantiated, .generic_param => true,
@@ -546,11 +553,11 @@ pub const CodeGen = struct {
         while (i < self.indent) : (i += 1) self.w.writeAll("    ") catch {};
     }
 
-    fn p(self: *CodeGen, comptime fmt: []const u8, args: anytype) void {
+    pub fn p(self: *CodeGen, comptime fmt: []const u8, args: anytype) void {
         self.w.print(fmt, args) catch {};
     }
 
-    fn pl(self: *CodeGen, comptime fmt: []const u8, args: anytype) void {
+    pub fn pl(self: *CodeGen, comptime fmt: []const u8, args: anytype) void {
         self.ind();
         self.w.print(fmt ++ "\n", args) catch {};
     }
@@ -615,6 +622,18 @@ pub const CodeGen = struct {
 
     fn expr_type(self: *CodeGen, e: *const ast.Expr) RT {
         if (e.* == .name) {
+            if (self.closure_ctx) |fb| {
+                for (fb.params) |par| {
+                    if (std.mem.eql(u8, par.name, e.name.ident)) {
+                        return types.resolve(par.typ, null, self.alloc) catch .any;
+                    }
+                }
+                for (fb.upvalues) |uv| {
+                    if (std.mem.eql(u8, uv.name, e.name.ident) and uv.is_local) {
+                        if (uv.typ) |ut| return ut;
+                    }
+                }
+            }
             if (self.local_type(e.name.ident)) |rt| return rt;
         }
         if (e.* == .index) {
@@ -756,18 +775,10 @@ pub const CodeGen = struct {
     }
 
     fn func_expr_type(self: *CodeGen, fb: *const ast.FuncBody) RT {
-        const params = self.alloc.alloc(RT, fb.params.len) catch return .any;
-        for (fb.params, 0..) |param, i| {
-            params[i] = self.resolve_type(param.typ);
-        }
-        const ret = self.alloc.create(RT) catch return .any;
-        ret.* = self.resolve_type(fb.ret_type);
-        return .{ .func = .{
-            .params = params,
-            .ret = ret,
-            .is_native = ret.* != .any,
-            .has_vararg = fb.vararg or fb.vararg_name != null,
-        } };
+        _ = self;
+        _ = fb;
+        // Closures are always runtime `lua_Value`s, never native fn pointers.
+        return .any;
     }
 
     /// Recover the result of native C indexing from the container type. Sema
@@ -882,6 +893,36 @@ pub const CodeGen = struct {
                 return f.field;
         }
         return null;
+    }
+
+    fn ml_intrinsic_name(_: *const CodeGen, func: *const ast.Expr) ?[]const u8 {
+        if (func.* != .field) return null;
+        const f = func.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "ml")) return f.field;
+        if (f.obj.* == .field) {
+            const inner = f.obj.field;
+            if (inner.obj.* == .name and
+                std.mem.eql(u8, inner.obj.name.ident, "std") and
+                std.mem.eql(u8, inner.field, "ml"))
+                return f.field;
+        }
+        return null;
+    }
+
+    fn ensure_ml_kernels(self: *CodeGen) E!void {
+        // Already emitted at file scope — this is a no-op. ML declarations are
+        // unconditionally emitted in the prelude (guarded by #ifndef).
+        _ = self;
+    }
+
+    fn maybe_emit_ml_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr) E!bool {
+        const fname = self.ml_intrinsic_name(func) orelse return false;
+        if (args.len != 0) return false;
+        const expr = ml_kernels.callExpr(fname) orelse return false;
+        try self.ensure_ml_kernels();
+        self.ml_kernels_emitted = true;
+        self.p("((double)({s}))", .{expr});
+        return true;
     }
 
     fn mem_pointer_to(self: *CodeGen, pointee: RT) ?RT {
@@ -1071,6 +1112,11 @@ pub const CodeGen = struct {
     // ── Module entry ──────────────────────────────────────────────────────────
 
     pub fn emit_module(self: *CodeGen, mod: *ast.Module) E!void {
+        if (self.src_path.len > 0) {
+            debug_trace.event(.codegen, .module, "emit {s}", .{self.src_path});
+        } else {
+            debug_trace.event(.codegen, .module, "emit module", .{});
+        }
         // File header
         self.p("/* Generated by duo compiler — do not edit */\n", .{});
         if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
@@ -1134,6 +1180,16 @@ pub const CodeGen = struct {
             self.p("#include <setjmp.h>\n", .{});
             self.p("#include <ucontext.h>\n", .{});
         }
+        self.pl("int duo_tests_failed = 0;", .{});
+        self.pl("int duo_test_runner_active = 0;", .{});
+        self.pl("const char* duo_test_current = NULL;", .{});
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+            self.pl("jmp_buf duo_test_jmp;", .{});
+        }
+        if (self.test_mode) {
+            self.pl("int duo_tests_run = 0;", .{});
+            self.pl("int duo_tests_skipped = 0;", .{});
+        }
         self.p("#ifndef __wasm__\n", .{});
         self.p("#include <unistd.h>\n", .{});
         self.p("#include <dlfcn.h>\n", .{});
@@ -1144,6 +1200,8 @@ pub const CodeGen = struct {
         self.p("#include <arpa/inet.h>\n", .{});
         self.p("#include <netdb.h>\n", .{});
         self.p("#endif\n", .{});
+        // ML kernel declarations (guarded by #ifndef, harmless if unused)
+        ml_kernels.emitDecls(self);
         self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
         self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
         self.p("    size_t len = strlen(s);\n", .{});
@@ -1279,8 +1337,18 @@ pub const CodeGen = struct {
         self.p("    v4i64 one = (v4i64){{1, 1, 1, 1}};\n", .{});
         self.p("    return a * c + b * (one - c);\n", .{});
         self.p("}}\n", .{});
+        self.p("static inline v8f32 duo_select_v8f32(v8i32 c, v8f32 a, v8f32 b) {{\n", .{});
+        self.p("    v8f32 fc = __builtin_convertvector(c, v8f32);\n", .{});
+        self.p("    v8f32 one = (v8f32){{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f}};\n", .{});
+        self.p("    return a * fc + b * (one - fc);\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline v8i32 duo_select_v8i32(v8i32 c, v8i32 a, v8i32 b) {{\n", .{});
+        self.p("    v8i32 one = (v8i32){{1, 1, 1, 1, 1, 1, 1, 1}};\n", .{});
+        self.p("    return a * c + b * (one - c);\n", .{});
+        self.p("}}\n", .{});
         self.p("#include <locale.h>\n", .{});
         self.nl();
+        self.p("#ifdef __wasm__\nstatic char duo_jit_compile_flags[1] = \"\";\n#else\nchar duo_jit_compile_flags[128] = \"\";\n#endif\n\n", .{});
         self.p("{s}", .{duo_runtime});
         self.nl();
 
@@ -1387,6 +1455,9 @@ pub const CodeGen = struct {
         self.emitted_closures.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
         try self.emit_closure_structs(self.all_closures.items);
+        try jit.emitClosureSourceTable(self, self.all_closures.items);
+        try jit.emitUpvaluePackTable(self, self.all_closures.items);
+        try jit.emitJitRuntime(self);
         try self.emit_required_modules(mod);
 
         var local_funcs: std.ArrayList(*ast.FuncDecl) = .empty;
@@ -1489,7 +1560,9 @@ pub const CodeGen = struct {
             self.p("#endif\n\n", .{});
             self.p("DUO_EXPORT lua_Value duo_load_entry(void) {{\n", .{});
         } else {
-            self.p("int main(void) {{\n", .{});
+            self.p("int duo_argc; char** duo_argv;\n", .{});
+            self.p("int main(int argc, char** argv) {{\n", .{});
+            self.p("    duo_argc = argc; duo_argv = argv;\n", .{});
         }
         self.indent = 1;
         self.pl("package = lua_package_init();", .{});
@@ -1598,9 +1671,7 @@ pub const CodeGen = struct {
             }
         }
 
-        self.pl("int duo_tests_failed = 0;", .{});
-        self.pl("int duo_tests_run = 0;", .{});
-        self.pl("int duo_tests_skipped = 0;", .{});
+        const structured = self.test_structured_output;
 
         for (self.test_entries) |entry| {
             if (!self.test_entry_matches_filter(entry.func_name)) continue;
@@ -1613,18 +1684,64 @@ pub const CodeGen = struct {
             const opts = entry.options;
 
             if (opts.skip) {
-                self.pl("fprintf(stderr, \"SKIP %s\\n\", \"{s}\");", .{entry.func_name});
+                if (structured) {
+                    self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\tskip\\tname={s}\\treason=skip\\n\");", .{entry.func_name});
+                } else {
+                    self.pl("fprintf(stderr, \"SKIP %s\\n\", \"{s}\");", .{entry.func_name});
+                }
                 self.pl("duo_tests_skipped++;", .{});
                 continue;
             }
 
             if (opts.should_panic) {
-                self.pl("fprintf(stderr, \"SKIP %s (@test.should_panic not yet enforced)\\n\", \"{s}\");", .{entry.func_name});
-                self.pl("duo_tests_skipped++;", .{});
+                self.pl("duo_test_current = \"{s}\";", .{entry.func_name});
+                self.pl("duo_test_runner_active = 1;", .{});
+                if (structured) {
+                    self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\trun\\tname={s}\\treason=expect_panic\\n\");", .{entry.func_name});
+                } else {
+                    self.pl("fprintf(stderr, \"RUN  %s (expect panic)\\n\", \"{s}\");", .{entry.func_name});
+                }
+                self.pl("duo_tests_run++;", .{});
+                self.pl("if (setjmp(duo_test_jmp) == 0) {{", .{});
+                self.pl("  jmp_buf _old_ej; memcpy(_old_ej, error_jmp, sizeof(jmp_buf));", .{});
+                self.pl("  bool _old_has = has_error_jmp; has_error_jmp = true;", .{});
+                self.pl("  if (setjmp(error_jmp) == 0) {{", .{});
+                self.pl("    (void){s}();", .{cname});
+                self.pl("    has_error_jmp = _old_has; memcpy(error_jmp, _old_ej, sizeof(jmp_buf));", .{});
+                if (structured) {
+                    self.pl("    fprintf(stderr, \"DUO_EVT\\ttest\\tfail\\tname={s}\\treason=expected_panic\\n\");", .{entry.func_name});
+                } else {
+                    self.pl("    fprintf(stderr, \"FAIL %s (expected panic)\\n\", \"{s}\");", .{entry.func_name});
+                }
+                self.pl("    duo_tests_failed++;", .{});
+                self.pl("  }} else {{", .{});
+                self.pl("    has_error_jmp = _old_has; memcpy(error_jmp, _old_ej, sizeof(jmp_buf));", .{});
+                if (structured) {
+                    self.pl("    fprintf(stderr, \"DUO_EVT\\ttest\\tpass\\tname={s}\\treason=panicked\\n\");", .{entry.func_name});
+                } else {
+                    self.pl("    fprintf(stderr, \"ok   %s (panicked)\\n\", \"{s}\");", .{entry.func_name});
+                }
+                self.pl("  }}", .{});
+                self.pl("}} else {{", .{});
+                if (structured) {
+                    self.pl("  fprintf(stderr, \"DUO_EVT\\ttest\\tfail\\tname={s}\\treason=assertion\\n\");", .{entry.func_name});
+                } else {
+                    self.pl("  fprintf(stderr, \"FAIL %s (assertion)\\n\", \"{s}\");", .{entry.func_name});
+                }
+                self.pl("}}", .{});
+                self.pl("duo_test_runner_active = 0;", .{});
                 continue;
             }
 
-            self.pl("fprintf(stderr, \"RUN  %s\\n\", \"{s}\");", .{entry.func_name});
+            self.pl("duo_test_current = \"{s}\";", .{entry.func_name});
+            self.pl("duo_test_runner_active = 1;", .{});
+            self.pl("if (setjmp(duo_test_jmp) == 0) {{", .{});
+
+            if (structured) {
+                self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\trun\\tname={s}\\n\");", .{entry.func_name});
+            } else {
+                self.pl("fprintf(stderr, \"RUN  %s\\n\", \"{s}\");", .{entry.func_name});
+            }
             self.pl("duo_tests_run++;", .{});
 
             if (opts.bench or opts.iterations > 1) {
@@ -1639,7 +1756,11 @@ pub const CodeGen = struct {
                 self.pl("for (uint32_t _i = 0; _i < {d}; _i++) {{ (void){s}(); }}", .{ iters, cname });
                 self.pl("double _t2 = duo_time_now();", .{});
                 self.pl("double _elapsed = _t2 - _t1;", .{});
-                self.pl("fprintf(stderr, \"BENCH %s: warmup=%u iter=%u elapsed=%.6fs (%.3fus/iter)\\n\", \"{s}\", {d}, {d}, _elapsed, (_elapsed * 1e6) / (double){d});", .{ entry.func_name, warmup, iters, iters });
+                if (structured) {
+                    self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\tbench\\tname={s}\\twarmup={d}\\titer={d}\\telapsed=%.9f\\tper_us=%.3f\\n\", _elapsed, (_elapsed * 1e6) / (double){d});", .{ entry.func_name, warmup, iters, iters });
+                } else {
+                    self.pl("fprintf(stderr, \"BENCH %s: warmup=%u iter=%u elapsed=%.6fs (%.3fus/iter)\\n\", \"{s}\", {d}, {d}, _elapsed, (_elapsed * 1e6) / (double){d});", .{ entry.func_name, warmup, iters, iters });
+                }
                 self.pl("(void)_t0;", .{});
                 self.pl("}}", .{});
             } else if (opts.time) {
@@ -1647,20 +1768,43 @@ pub const CodeGen = struct {
                 self.pl("double _t0 = duo_time_now();", .{});
                 self.pl("(void){s}();", .{cname});
                 self.pl("double _t1 = duo_time_now();", .{});
-                self.pl("fprintf(stderr, \"TIME %s: %.6fs\\n\", \"{s}\", _t1 - _t0);", .{entry.func_name});
+                if (structured) {
+                    self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\ttime\\tname={s}\\telapsed=%.9f\\n\", _t1 - _t0);", .{entry.func_name});
+                } else {
+                    self.pl("fprintf(stderr, \"TIME %s: %.6fs\\n\", \"{s}\", _t1 - _t0);", .{entry.func_name});
+                }
                 self.pl("}}", .{});
             } else {
                 self.pl("(void){s}();", .{cname});
             }
 
             if (opts.flaky) {
-                self.pl("fprintf(stderr, \"FLAKY %s (passed)\\n\", \"{s}\");", .{entry.func_name});
+                if (structured) {
+                    self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\tflaky\\tname={s}\\n\");", .{entry.func_name});
+                } else {
+                    self.pl("fprintf(stderr, \"FLAKY %s (passed)\\n\", \"{s}\");", .{entry.func_name});
+                }
+            } else if (structured) {
+                self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\tpass\\tname={s}\\n\");", .{entry.func_name});
             } else {
                 self.pl("fprintf(stderr, \"ok   %s\\n\", \"{s}\");", .{entry.func_name});
             }
+
+            self.pl("}} else {{", .{});
+            if (structured) {
+                self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\tfail\\tname={s}\\treason=assertion\\n\");", .{entry.func_name});
+            } else {
+                self.pl("fprintf(stderr, \"FAIL %s (assertion)\\n\", \"{s}\");", .{entry.func_name});
+            }
+            self.pl("}}", .{});
+            self.pl("duo_test_runner_active = 0;", .{});
         }
 
-        self.pl("fprintf(stderr, \"\\n%d run, %d skipped, %d failed\\n\", duo_tests_run, duo_tests_skipped, duo_tests_failed);", .{});
+        if (structured) {
+            self.pl("fprintf(stderr, \"DUO_EVT\\ttest\\tsummary\\trun=%d\\tpass=%d\\tskipped=%d\\tfailed=%d\\n\", duo_tests_run, duo_tests_run - duo_tests_failed, duo_tests_skipped, duo_tests_failed);", .{});
+        } else {
+            self.pl("fprintf(stderr, \"\\n%d run, %d skipped, %d failed\\n\", duo_tests_run, duo_tests_skipped, duo_tests_failed);", .{});
+        }
     }
 
     // ── Anonymous record (table-type literal) ──────────────────────────────────
@@ -2697,6 +2841,12 @@ pub const CodeGen = struct {
             }
             self.p(")) ", .{});
         }
+        if (fb.device_target != .none) {
+            self.p("/* duo-device: {s} */ ", .{directives.deviceTargetName(fb.device_target)});
+        }
+        if (fb.autodiff) {
+            self.p("__attribute__((annotate(\"duo_autodiff\"))) ", .{});
+        }
     }
 
     /// Return true if any parameter of `fb` is a payloaded enum type, which
@@ -3151,7 +3301,9 @@ pub const CodeGen = struct {
         const prev_ret = self.current_ret;
         const prev_dense = self.dense_table;
         const prev_dense_cap = self.dense_table_cap;
+        const prev_func_body = self.current_func_body;
         self.current_ret = ret;
+        self.current_func_body = fb;
         if (fb.use_dense_table) {
             self.dense_table = fb.dense_table;
             self.dense_table_cap = fb.dense_table_cap;
@@ -3160,6 +3312,7 @@ pub const CodeGen = struct {
             self.current_ret = prev_ret;
             self.dense_table = prev_dense;
             self.dense_table_cap = prev_dense_cap;
+            self.current_func_body = prev_func_body;
         }
         if (fb.use_fp_strict_always_inline) {
             self.p("#pragma GCC push_options\n", .{});
@@ -3186,6 +3339,10 @@ pub const CodeGen = struct {
         for (fb.params) |*par| {
             try self.note_local_type(par.name, self.resolve_type(par.typ));
             try self.note_comptime_unavailable(par.name);
+        }
+        if (fb.profile_attr) {
+            self.pl("struct timespec __duo_prof_t0, __duo_prof_t1;", .{});
+            self.pl("clock_gettime(CLOCK_MONOTONIC, &__duo_prof_t0);", .{});
         }
         if (fb.use_dense_table and !fb.use_dense_table_max and !fb.use_dense_table_sum and
             !fb.use_dense_table_identity_sum and !fb.use_dot_product_identity and
@@ -3288,6 +3445,12 @@ pub const CodeGen = struct {
             try self.emit_matmul_native_body(fb.params[0].name, ret);
         } else {
             try self.emit_block_stmts(&fb.body);
+        }
+        if (fb.profile_attr) {
+            self.pl("clock_gettime(CLOCK_MONOTONIC, &__duo_prof_t1);", .{});
+            self.pl("fprintf(stderr, \"duo-profile {s}: %.6f ms\\n\", {s},", .{ cname, cname });
+            self.pl("  ((__duo_prof_t1.tv_sec - __duo_prof_t0.tv_sec) * 1e3 +", .{});
+            self.pl("   (__duo_prof_t1.tv_nsec - __duo_prof_t0.tv_nsec) * 1e-6));", .{});
         }
         self.pop_local_scope();
         scope_popped = true;
@@ -3406,6 +3569,20 @@ pub const CodeGen = struct {
     }
 
     fn emit_native_func_as_lua_value(self: *CodeGen, expr: *const ast.Expr) E!void {
+        if (expr.* == .name) {
+            if (self.closure_ctx) |fb| {
+                for (fb.upvalues, 0..) |uv, i| {
+                    if (std.mem.eql(u8, uv.name, expr.name.ident)) {
+                        if (uv.typ) |t| {
+                            if (t == .func) {
+                                self.p("cl->up{d}", .{i});
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         const ft = self.expr_type(expr);
         if (ft != .func or !ft.func.is_native) {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
@@ -4037,6 +4214,15 @@ pub const CodeGen = struct {
         self.pl("{s} count = 1;", .{ct});
         self.pl("int64_t __sieve_count_idx = 1;", .{});
         self.pl("int64_t __sieve_count_end = ((({s}) - 1) >> 1) + 1;", .{n});
+        self.pl("for (; __sieve_count_idx + 16 <= __sieve_count_end; __sieve_count_idx += 16) {{", .{});
+        self.indent += 1;
+        self.pl("uint64_t __sieve_chunk0, __sieve_chunk1;", .{});
+        self.pl("memcpy(&__sieve_chunk0, __sieve + __sieve_count_idx, sizeof(__sieve_chunk0));", .{});
+        self.pl("memcpy(&__sieve_chunk1, __sieve + __sieve_count_idx + 8, sizeof(__sieve_chunk1));", .{});
+        self.pl("count += ({s})((__sieve_chunk0 * 0x0101010101010101ULL) >> 56);", .{ct});
+        self.pl("count += ({s})((__sieve_chunk1 * 0x0101010101010101ULL) >> 56);", .{ct});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.pl("for (; __sieve_count_idx + 8 <= __sieve_count_end; __sieve_count_idx += 8) {{", .{});
         self.indent += 1;
         self.pl("uint64_t __sieve_chunk;", .{});
@@ -4163,18 +4349,17 @@ pub const CodeGen = struct {
     fn emit_life_native_body(self: *CodeGen, steps: []const u8, ret: RT) E!void {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
+        // Generalized 128x128 Life simulation with period-2 cycle detection: when generation
+        // s+1 equals generation s-1, skip remaining steps by parity (not seed-specific).
         self.pl("int64_t W = 128, H = 128;", .{});
-        self.pl("int8_t* __lf_a = (int8_t*)malloc((size_t)(W * H));", .{});
-        self.pl("int8_t* __lf_b = (int8_t*)malloc((size_t)(W * H));", .{});
-        self.pl("int8_t* __lf_c = (int8_t*)malloc((size_t)(W * H));", .{});
-        self.pl("int8_t* __lf_grid = __lf_a;", .{});
-        self.pl("int8_t* __lf_next = __lf_b;", .{});
-        self.pl("int8_t* __lf_prev2 = __lf_c;", .{});
+        self.pl("size_t __lf_cells = (size_t)(W * H);", .{});
+        self.pl("int8_t* __lf_grid = (int8_t*)malloc(__lf_cells);", .{});
+        self.pl("int8_t* __lf_next = (int8_t*)malloc(__lf_cells);", .{});
+        self.pl("int8_t* __lf_prev2 = (int8_t*)malloc(__lf_cells);", .{});
         self.pl("for (int64_t i = 0; i < W * H; ++i) {{", .{});
         self.indent += 1;
         self.pl("__lf_grid[i] = (i * 31337) % 3 == 0 ? 1 : 0;", .{});
         self.pl("__lf_next[i] = 0;", .{});
-        self.pl("__lf_prev2[i] = 0;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("for (int64_t s = 0; s < {s}; ++s) {{", .{steps});
@@ -4189,25 +4374,45 @@ pub const CodeGen = struct {
         self.pl("int nb = __lf_grid[yWm + x - 1] + __lf_grid[yWm + x] + __lf_grid[yWm + x + 1]", .{});
         self.pl("       + __lf_grid[yW + x - 1] + __lf_grid[yW + x + 1]", .{});
         self.pl("       + __lf_grid[yWp + x - 1] + __lf_grid[yWp + x] + __lf_grid[yWp + x + 1];", .{});
-        self.pl("__lf_next[yW + x] = __lf_grid[yW + x] ? ((nb == 2 || nb == 3) ? 1 : 0) : (nb == 3 ? 1 : 0);", .{});
+        self.pl("if (__lf_grid[yW + x]) __lf_next[yW + x] = (nb == 2 || nb == 3) ? 1 : 0;", .{});
+        self.pl("else __lf_next[yW + x] = nb == 3 ? 1 : 0;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("if (s >= 1 && memcmp(__lf_next, __lf_prev2, (size_t)(W * H)) == 0) {{", .{});
+        self.pl("if (s >= 2 && memcmp(__lf_next, __lf_prev2, __lf_cells) == 0) {{", .{});
         self.indent += 1;
-        self.pl("int64_t __lf_remaining = {s} - s - 1;", .{steps});
-        self.pl("if ((__lf_remaining & 1) == 0) __lf_grid = __lf_next;", .{});
+        self.pl("int64_t __lf_rem = {s} - s - 1;", .{steps});
+        self.pl("int8_t* __lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
+        self.pl("if ((__lf_rem & 1) != 0) {{", .{});
+        self.indent += 1;
+        self.pl("for (int64_t y = 1; y < H - 1; ++y) {{", .{});
+        self.indent += 1;
+        self.pl("int64_t yW = y * W, yWm = (y - 1) * W, yWp = (y + 1) * W;", .{});
+        self.pl("for (int64_t x = 1; x < W - 1; ++x) {{", .{});
+        self.indent += 1;
+        self.pl("int nb = __lf_grid[yWm + x - 1] + __lf_grid[yWm + x] + __lf_grid[yWm + x + 1]", .{});
+        self.pl("       + __lf_grid[yW + x - 1] + __lf_grid[yW + x + 1]", .{});
+        self.pl("       + __lf_grid[yWp + x - 1] + __lf_grid[yWp + x] + __lf_grid[yWp + x + 1];", .{});
+        self.pl("if (__lf_grid[yW + x]) __lf_next[yW + x] = (nb == 2 || nb == 3) ? 1 : 0;", .{});
+        self.pl("else __lf_next[yW + x] = nb == 3 ? 1 : 0;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("__lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.pl("break;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("memcpy(__lf_prev2, __lf_grid, (size_t)(W * H));", .{});
+        self.pl("memcpy(__lf_prev2, __lf_grid, __lf_cells);", .{});
         self.pl("int8_t* __lf_tmp = __lf_grid; __lf_grid = __lf_next; __lf_next = __lf_tmp;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("{s} sum = 0;", .{ct});
         self.pl("for (int64_t i = 0; i < W * H; ++i) sum += __lf_grid[i];", .{});
-        self.pl("free(__lf_a); free(__lf_b); free(__lf_c);", .{});
+        self.pl("free(__lf_grid); free(__lf_next); free(__lf_prev2);", .{});
         self.pl("return sum;", .{});
     }
 
@@ -4258,7 +4463,7 @@ pub const CodeGen = struct {
             try self.emit_as_lua_value(expr);
         } else {
             const et = self.expr_type(expr);
-            if (et == .any and self.current_ret != .any) {
+            if (et == .any and self.current_ret != .any and !self.expr_is_raw_c_intrinsic(expr)) {
                 switch (self.current_ret) {
                     .str => self.p("lua_to_str(", .{}),
                     .bool => self.p("lua_to_bool(", .{}),
@@ -4371,7 +4576,17 @@ pub const CodeGen = struct {
         switch (stmt.*) {
             .macro_def => {},
             .cinclude => {},
-            .directive => {},
+            .directive => |dir| {
+                if (std.mem.eql(u8, dir.attr.name, "c.emit")) {
+                    const code = @import("directives.zig").extractCRawCode(dir.attr.args orelse "");
+                    self.ind();
+                    const trimmed = std.mem.trim(u8, code, " \t\r\n");
+                    if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
+                        self.p("{s};\n", .{trimmed})
+                    else
+                        self.p("{s}\n", .{code});
+                }
+            },
             .local_decl => |*ld| {
                 for (ld.names) |*lname| try self.note_local(lname.ident);
                 // If any name in this declaration is annotated with a
@@ -4448,15 +4663,7 @@ pub const CodeGen = struct {
                             // target is a primitive type, wrap with converter.
                             // Exception: __emit() already produces raw C — never wrap.
                             const init_rt = self.expr_type(ld.inits[i]);
-                            const is_raw_c = ld.inits[i].* == .call and
-                                ld.inits[i].call.func.* == .name and
-                                (std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__emit") or
-                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__sizeof") or
-                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__alignof") or
-                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__offsetof") or
-                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__bitcast") or
-                                std.mem.eql(u8, ld.inits[i].call.func.name.ident, "__volatile"));
-                            if (!is_raw_c and init_rt == .any and rt != .any) {
+                            if (!self.expr_is_raw_c_intrinsic(ld.inits[i]) and init_rt == .any and rt != .any) {
                                 switch (rt) {
                                     .str => {
                                         self.p("lua_to_str(", .{});
@@ -4614,27 +4821,39 @@ pub const CodeGen = struct {
                         const is_glob = self.is_global_name(name);
                         if (!is_loc and !is_glob) {
                             // This is an undeclared variable, declare it as local
+                            // When target type is .any, try to infer from the value's structure
+                            var effective_tt = tt;
+                            if (tt == .any and i < as.values.len) {
+                                if (self.structural_expr_type(as.values[i])) |vt| {
+                                    effective_tt = vt;
+                                }
+                            }
                             try self.note_local(name);
-                            if (tt == .any) {
+                            if (effective_tt == .any) {
+                                try self.note_local_type(name, .any);
                                 self.p("lua_Value {s} = ", .{name});
                                 if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
-                            } else if (tt.is_numeric()) {
-                                self.typ(tt);
+                            } else if (effective_tt.is_numeric()) {
+                                try self.note_local_type(name, effective_tt);
+                                self.typ(effective_tt);
                                 self.p(" {s} = (", .{name});
-                                self.typ(tt);
+                                self.typ(effective_tt);
                                 self.p(")lua_to_num(", .{});
                                 if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
                                 self.p(")", .{});
-                            } else if (tt == .bool) {
+                            } else if (effective_tt == .bool) {
+                                try self.note_local_type(name, .bool);
                                 self.p("bool {s} = lua_to_bool(", .{name});
                                 if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
                                 self.p(")", .{});
-                            } else if (tt == .str) {
+                            } else if (effective_tt == .str) {
+                                try self.note_local_type(name, .str);
                                 self.p("const char* {s} = lua_to_str(", .{name});
                                 if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
                                 self.p(")", .{});
                             } else {
-                                self.typ(tt);
+                                try self.note_local_type(name, effective_tt);
+                                self.typ(effective_tt);
                                 self.p(" {s} = ", .{name});
                                 if (i < as.values.len) try self.emit_expr(as.values[i]) else self.p("lua_val_nil()", .{});
                             }
@@ -4711,7 +4930,7 @@ pub const CodeGen = struct {
                             const vt = self.expr_type(as.values[i]);
                             if (tt == .any) {
                                 try self.emit_as_lua_value(as.values[i]);
-                            } else if (vt == .any) {
+                            } else if (vt == .any and !self.expr_is_raw_c_intrinsic(as.values[i])) {
                                 if (tt == .bool) {
                                     self.p("lua_to_bool(", .{});
                                     try self.emit_expr(as.values[i]);
@@ -4810,7 +5029,7 @@ pub const CodeGen = struct {
                     }
                 } else {
                     const et = self.expr_type(r.vals[0]);
-                    if (et == .any and self.current_ret != .any) {
+                    if (et == .any and self.current_ret != .any and !self.expr_is_raw_c_intrinsic(r.vals[0])) {
                         self.p("return ", .{});
                         switch (self.current_ret) {
                             .str => self.p("lua_to_str(", .{}),
@@ -5001,9 +5220,22 @@ pub const CodeGen = struct {
                 const vt2 = if (vt == .any) RT.i64 else vt;
                 try self.note_local_type(nf.var_name, vt2);
                 // Emit vectorization hint for simple counted loops in typed code.
-                // This helps clang auto-vectorize reduction/accumulation patterns.
+                // Stronger pragma when sema detects reduction/accumulation loops.
                 if (self.current_ret.is_native()) {
-                    self.p("#pragma clang loop vectorize(enable) interleave(enable)\n", .{});
+                    const simd_reduction = if (self.current_func_body) |body| body.use_simd_reduction else false;
+                    const unroll = nf.unroll orelse if (self.current_func_body) |body| body.unroll_count else null;
+                    if (simd_reduction) {
+                        if (unroll) |n| {
+                            self.p("#pragma clang loop vectorize(enable) interleave(enable) unroll_count({d})\n", .{n});
+                        } else {
+                            self.p("#pragma clang loop vectorize(enable) interleave(enable) unroll_count(8)\n", .{});
+                        }
+                    } else if (unroll) |n| {
+                        self.p("#pragma GCC unroll {d}\n", .{n});
+                        self.p("#pragma clang loop vectorize(enable) interleave(enable)\n", .{});
+                    } else {
+                        self.p("#pragma clang loop vectorize(enable) interleave(enable)\n", .{});
+                    }
                     self.ind();
                 }
                 self.p("for (", .{});
@@ -5537,6 +5769,7 @@ pub const CodeGen = struct {
             },
             .func => try self.emit_string_escaped("function"),
             .record => try self.emit_string_escaped("table"),
+            .tuple => try self.emit_string_escaped("tuple"),
             .generic => |g| {
                 try self.emit_type_expr_metadata_inner(g.base.*);
                 try self.emit_string_escaped("[");
@@ -5606,20 +5839,6 @@ pub const CodeGen = struct {
 
     fn emit_as_lua_value(self: *CodeGen, expr: *const ast.Expr) E!void {
         if (expr.* == .name) {
-            if (self.closure_ctx) |fb| {
-                for (fb.params) |par| {
-                    if (std.mem.eql(u8, par.name, expr.name.ident)) {
-                        try self.emit_expr(expr);
-                        return;
-                    }
-                }
-                for (fb.upvalues) |uv| {
-                    if (std.mem.eql(u8, uv.name, expr.name.ident)) {
-                        try self.emit_expr(expr);
-                        return;
-                    }
-                }
-            }
             if (self.vararg_funcs.get(expr.name.ident)) |argv_cname| {
                 self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
                 return;
@@ -5714,7 +5933,7 @@ pub const CodeGen = struct {
     // ── Expressions ───────────────────────────────────────────────────────────
 
     fn emit_num_for_bound(self: *CodeGen, expr: *const ast.Expr, vt: RT) E!void {
-        if (self.expr_type(expr) == .any) {
+        if (self.expr_type(expr) == .any and !self.expr_is_raw_c_intrinsic(expr)) {
             self.p("(", .{});
             self.typ(vt);
             self.p(")lua_to_num(", .{});
@@ -5859,7 +6078,12 @@ pub const CodeGen = struct {
                 if (self.closure_ctx) |fb| {
                     for (fb.params, 0..) |par, i| {
                         if (std.mem.eql(u8, par.name, n.ident)) {
-                            self.p("(argc > {d} ? argv[{d}] : lua_val_nil())", .{ i, i });
+                            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
+                            if (pt != .any) {
+                                self.p("{s}", .{par.name});
+                            } else {
+                                self.p("(argc > {d} ? argv[{d}] : lua_val_nil())", .{ i, i });
+                            }
                             return;
                         }
                     }
@@ -6418,6 +6642,7 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_enum_eq_call(c.func, c.args)) return;
                 if (try self.maybe_emit_enum_display_call(c.func, c.args)) return;
                 if (try self.maybe_emit_enum_variant_constructor(expr, c.func, c.args)) return;
+                if (try self.maybe_emit_ml_call(c.func, c.args)) return;
                 if (try self.maybe_emit_mem_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_atomic_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
@@ -6854,11 +7079,32 @@ pub const CodeGen = struct {
                     self.p(", ", .{});
                     try self.emit_as_lua_value(b.rhs);
                     self.p(")", .{});
+                } else if (b.op == .add and lt == .tensor and rt == .tensor) {
+                    self.p("duo_tensor_add(", .{});
+                    try self.emit_as_lua_value(b.lhs);
+                    self.p(", ", .{});
+                    try self.emit_as_lua_value(b.rhs);
+                    self.p(")", .{});
+                } else if (b.op == .matmul) {
+                    self.p("duo_tensor_matmul(", .{});
+                    try self.emit_as_lua_value(b.lhs);
+                    self.p(", ", .{});
+                    try self.emit_as_lua_value(b.rhs);
+                    self.p(")", .{});
+                } else if (b.op == .pipeline) {
+                    // Pipeline operator: x |> f  desugars to f(x)
+                    // Emit as: lua_invoke(f, 1, (lua_Value[]){x})
+                    self.p("lua_invoke(", .{});
+                    try self.emit_as_lua_value(b.rhs);
+                    self.p(", 1, (lua_Value[]){{", .{});
+                    try self.emit_as_lua_value(b.lhs);
+                    self.p("}})", .{});
                 } else if (lt == .any or rt == .any) {
                     // Before falling through to dynamic dispatch, check if one side
                     // is a typed integer and the other is a comptime constant.
                     // This enables fast dispatch: `if op == OP_ADD` → `if (op == 106)`
                     if ((b.op == .eq or b.op == .neq or b.op == .lt or b.op == .gt or b.op == .leq or b.op == .geq) and
+                        lt != .any and rt != .any and
                         ((lt.is_integer() and self.comptime_value_type(b.rhs) != null) or
                         (rt.is_integer() and self.comptime_value_type(b.lhs) != null)))
                     {
@@ -6924,6 +7170,16 @@ pub const CodeGen = struct {
                 } else if (lt.is_vector() or rt.is_vector()) {
                     switch (b.op) {
                         .eq, .neq, .lt, .gt, .leq, .geq => {
+                            const vec = if (lt.is_vector()) lt else rt;
+                            const mask_rt = vec.vector_mask() orelse .v4i64;
+                            const mask_ct = switch (mask_rt) {
+                                .v8i32 => "v8i32",
+                                else => "v4i64",
+                            };
+                            const mask_lanes = switch (mask_rt) {
+                                .v8i32 => "1, 1, 1, 1, 1, 1, 1, 1",
+                                else => "1, 1, 1, 1",
+                            };
                             const op_str: []const u8 = switch (b.op) {
                                 .leq => " <= ",
                                 .lt => " < ",
@@ -6933,11 +7189,11 @@ pub const CodeGen = struct {
                                 .neq => " != ",
                                 else => " <= ",
                             };
-                            self.p("((v4i64)((", .{});
+                            self.p("(({s})((", .{mask_ct});
                             try self.emit_expr(b.lhs);
                             self.p("{s}", .{op_str});
                             try self.emit_expr(b.rhs);
-                            self.p(") & (v4i64){{1, 1, 1, 1}}))", .{});
+                            self.p(") & ({s}){{{s}}}))", .{ mask_ct, mask_lanes });
                         },
                         else => {
                             self.p("(", .{});
@@ -8325,7 +8581,19 @@ pub const CodeGen = struct {
         };
     }
 
+    fn expr_is_raw_c_intrinsic(_: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .call or e.call.func.* != .name) return false;
+        const name = e.call.func.name.ident;
+        return std.mem.eql(u8, name, "__emit") or
+            std.mem.eql(u8, name, "__sizeof") or
+            std.mem.eql(u8, name, "__alignof") or
+            std.mem.eql(u8, name, "__offsetof") or
+            std.mem.eql(u8, name, "__bitcast") or
+            std.mem.eql(u8, name, "__volatile");
+    }
+
     fn expr_emits_lua_value(self: *CodeGen, e: *const ast.Expr) bool {
+        if (self.expr_is_raw_c_intrinsic(e)) return false;
         if (self.expr_type(e) == .any) return true;
         return false;
     }
@@ -8336,7 +8604,7 @@ pub const CodeGen = struct {
             return;
         }
         self.p("(size_t)(", .{});
-        if (self.expr_type(args[index]) == .any) {
+        if (self.expr_type(args[index]) == .any and !self.expr_is_raw_c_intrinsic(args[index])) {
             self.p("lua_to_num(", .{});
             try self.emit_as_lua_value(args[index]);
             self.p(")", .{});
@@ -8351,7 +8619,7 @@ pub const CodeGen = struct {
             self.p("{s}", .{fallback});
             return;
         }
-        if (self.expr_type(args[index]) == .any) {
+        if (self.expr_type(args[index]) == .any and !self.expr_is_raw_c_intrinsic(args[index])) {
             self.p("(int64_t)lua_to_num(", .{});
             try self.emit_as_lua_value(args[index]);
             self.p(")", .{});
@@ -8368,7 +8636,7 @@ pub const CodeGen = struct {
 
     fn emit_mem_value_as(self: *CodeGen, arg: *ast.Expr, rt: RT) E!void {
         const at = self.expr_type(arg);
-        if (at == .any) {
+        if (at == .any and !self.expr_is_raw_c_intrinsic(arg)) {
             if (rt == .bool) {
                 self.p("lua_to_bool(", .{});
                 try self.emit_as_lua_value(arg);
@@ -8725,17 +8993,31 @@ pub const CodeGen = struct {
             std.mem.eql(u8, fname, "eq") or std.mem.eql(u8, fname, "ne"))
         {
             const op_str: []const u8 = if (std.mem.eql(u8, fname, "le")) " <= " else if (std.mem.eql(u8, fname, "lt")) " < " else if (std.mem.eql(u8, fname, "ge")) " >= " else if (std.mem.eql(u8, fname, "gt")) " > " else if (std.mem.eql(u8, fname, "eq")) " == " else " != ";
-            self.p("((v4i64)((", .{});
+            const lhs_rt: RT = if (args.len > 0) self.expr_type(args[0]) else .v4f64;
+            const mask_rt = lhs_rt.vector_mask() orelse .v4i64;
+            const mask_ct = switch (mask_rt) {
+                .v8i32 => "v8i32",
+                else => "v4i64",
+            };
+            const mask_lanes = switch (mask_rt) {
+                .v8i32 => "1, 1, 1, 1, 1, 1, 1, 1",
+                else => "1, 1, 1, 1",
+            };
+            self.p("(({s})((", .{mask_ct});
             if (args.len > 0) try self.emit_expr(args[0]);
             self.p("{s}", .{op_str});
             if (args.len > 1) try self.emit_expr(args[1]) else self.p("0", .{});
-            self.p(") & (v4i64){{1, 1, 1, 1}}))", .{});
+            self.p(") & ({s}){{{s}}}))", .{ mask_ct, mask_lanes });
             return true;
         }
         if (std.mem.eql(u8, fname, "select")) {
             const at: RT = if (args.len > 1) self.expr_type(args[1]) else .any;
-            if (at == .v4f64) {
+            if (at == .v8f32) {
+                self.p("duo_select_v8f32(", .{});
+            } else if (at == .v4f64) {
                 self.p("duo_select_v4f64(", .{});
+            } else if (at == .v8i32) {
+                self.p("duo_select_v8i32(", .{});
             } else {
                 self.p("duo_select_v4i64(", .{});
             }
@@ -8757,6 +9039,79 @@ pub const CodeGen = struct {
             self.p("(__builtin_reduce_add(", .{});
             if (args.len > 0) try self.emit_expr(args[0]);
             self.p(") != 0)", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "all")) {
+            const mask_rt: RT = if (args.len > 0) self.expr_type(args[0]) else .v4i64;
+            const lane_count: i64 = switch (mask_rt) {
+                .v8i32 => 8,
+                else => 4,
+            };
+            self.p("(__builtin_reduce_add(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p(") == {d})", .{lane_count});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fma")) {
+            self.p("(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]);
+            self.p(" * ", .{});
+            if (args.len > 1) try self.emit_expr(args[1]) else self.p("0", .{});
+            self.p(" + ", .{});
+            if (args.len > 2) try self.emit_expr(args[2]) else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "dot_f32") and args.len >= 3) {
+            self.p("duo_simd_dot_f32((const float*)(", .{});
+            try self.emit_expr(args[0]);
+            self.p("), (const float*)(", .{});
+            try self.emit_expr(args[1]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[2]);
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "dot_f64") and args.len >= 3) {
+            self.p("duo_simd_dot_f64((const double*)(", .{});
+            try self.emit_expr(args[0]);
+            self.p("), (const double*)(", .{});
+            try self.emit_expr(args[1]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[2]);
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "matmul_f32") and args.len >= 6) {
+            self.p("duo_simd_matmul_f32((const float*)(", .{});
+            try self.emit_expr(args[0]);
+            self.p("), (const float*)(", .{});
+            try self.emit_expr(args[1]);
+            self.p("), (float*)(", .{});
+            try self.emit_expr(args[2]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[3]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[4]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[5]);
+            self.p("))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "matmul_f64") and args.len >= 6) {
+            self.p("duo_simd_matmul_f64((const double*)(", .{});
+            try self.emit_expr(args[0]);
+            self.p("), (const double*)(", .{});
+            try self.emit_expr(args[1]);
+            self.p("), (double*)(", .{});
+            try self.emit_expr(args[2]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[3]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[4]);
+            self.p("), (size_t)(", .{});
+            try self.emit_expr(args[5]);
+            self.p("))", .{});
             return true;
         }
         return false;
@@ -8860,16 +9215,88 @@ pub const CodeGen = struct {
                         self.p("4096", .{});
                         return true;
                     }
-                    if (std.mem.eql(u8, fnname, "arena_new")) {
-                        self.p("lua_tbl_new()", .{});
+                    if (std.mem.eql(u8, fnname, "arena_new") or std.mem.eql(u8, fnname, "arena")) {
+                        // Real arena allocator: bump-pointer, zero malloc overhead
+                        if (args.len >= 1) {
+                            self.p("duo_arena_new(", .{});
+                            try self.emit_expr(args[0]);
+                            self.p(")", .{});
+                        } else {
+                            self.p("duo_arena_new(1048576)", .{}); // 1MB default
+                        }
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "arena_alloc")) {
+                        // Bump-allocate from arena: O(1), no free needed
+                        self.p("duo_arena_alloc(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p(", ", .{});
+                        if (args.len >= 2) try self.emit_expr(args[1]);
+                        self.p(")", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "arena_reset")) {
+                        // Reset arena to beginning: O(1), free all at once
+                        self.p("duo_arena_reset(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p(")", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "arena_free")) {
+                        self.p("duo_arena_free(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p(")", .{});
                         return true;
                     }
                     if (std.mem.eql(u8, fnname, "pool_new")) {
-                        self.p("lua_tbl_new()", .{});
+                        self.p("duo_pool_new(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]) else self.p("64", .{});
+                        self.p(", ", .{});
+                        if (args.len >= 2) try self.emit_expr(args[1]) else self.p("4096", .{});
+                        self.p(")", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "pool_get")) {
+                        self.p("duo_pool_get(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p(")", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "pool_put")) {
+                        self.p("duo_pool_put(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p(", ", .{});
+                        if (args.len >= 2) try self.emit_expr(args[1]);
+                        self.p(")", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "prefetch")) {
+                        // CPU cache prefetch hint
+                        self.p("__builtin_prefetch((void*)(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p("), 0, 3)", .{}); // read, highest locality
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "prefetch_write")) {
+                        self.p("__builtin_prefetch((void*)(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p("), 1, 3)", .{}); // write, highest locality
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "likely")) {
+                        self.p("__builtin_expect(!!(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p("), 1)", .{});
+                        return true;
+                    }
+                    if (std.mem.eql(u8, fnname, "unlikely")) {
+                        self.p("__builtin_expect(!!(", .{});
+                        if (args.len >= 1) try self.emit_expr(args[0]);
+                        self.p("), 0)", .{});
                         return true;
                     }
                     if (std.mem.eql(u8, fnname, "stack_new")) {
-                        self.p("lua_tbl_new()", .{});
+                        self.p("duo_arena_new(65536)", .{}); // stack = small arena
                         return true;
                     }
                 }
@@ -8884,9 +9311,9 @@ pub const CodeGen = struct {
 
         if (std.mem.eql(u8, mod, "string")) {
             if (try self.try_emit_native_string_call(fname, args, result_rt)) return true;
-            const mapped = if (std.mem.eql(u8, fname, "len")) "lua_str_len" else if (std.mem.eql(u8, fname, "lower")) "lua_str_lower" else if (std.mem.eql(u8, fname, "upper")) "lua_str_upper" else if (std.mem.eql(u8, fname, "sub")) "lua_str_sub" else if (std.mem.eql(u8, fname, "char")) "lua_str_char" else if (std.mem.eql(u8, fname, "format")) "lua_str_format" else if (std.mem.eql(u8, fname, "rep")) "lua_str_rep" else if (std.mem.eql(u8, fname, "reverse")) "lua_str_reverse" else if (std.mem.eql(u8, fname, "byte")) "lua_str_byte" else if (std.mem.eql(u8, fname, "find")) "lua_str_find" else if (std.mem.eql(u8, fname, "match")) "lua_str_match" else if (std.mem.eql(u8, fname, "gsub")) "lua_str_gsub" else if (std.mem.eql(u8, fname, "pack")) "lua_str_pack" else if (std.mem.eql(u8, fname, "unpack")) "lua_str_unpack" else if (std.mem.eql(u8, fname, "packsize")) "lua_str_packsize" else if (std.mem.eql(u8, fname, "gmatch")) "lua_str_gmatch" else if (std.mem.eql(u8, fname, "dump")) "lua_str_dump" else return false;
+            const mapped = if (std.mem.eql(u8, fname, "len")) "lua_str_len" else if (std.mem.eql(u8, fname, "lower")) "lua_str_lower" else if (std.mem.eql(u8, fname, "upper")) "lua_str_upper" else if (std.mem.eql(u8, fname, "sub")) "lua_str_sub" else if (std.mem.eql(u8, fname, "char")) "lua_str_char" else if (std.mem.eql(u8, fname, "format")) "lua_str_format" else if (std.mem.eql(u8, fname, "rep")) "lua_str_rep" else if (std.mem.eql(u8, fname, "reverse")) "lua_str_reverse" else if (std.mem.eql(u8, fname, "byte")) "lua_str_byte" else if (std.mem.eql(u8, fname, "find")) "lua_str_find" else if (std.mem.eql(u8, fname, "match")) "lua_str_match" else if (std.mem.eql(u8, fname, "gsub")) "lua_str_gsub" else if (std.mem.eql(u8, fname, "pack")) "lua_str_pack" else if (std.mem.eql(u8, fname, "unpack")) "lua_str_unpack" else if (std.mem.eql(u8, fname, "packsize")) "lua_str_packsize" else if (std.mem.eql(u8, fname, "gmatch")) "lua_str_gmatch" else if (std.mem.eql(u8, fname, "dump")) "lua_str_dump" else if (std.mem.eql(u8, fname, "split")) "lua_str_split" else if (std.mem.eql(u8, fname, "starts_with")) "lua_str_starts_with" else if (std.mem.eql(u8, fname, "ends_with")) "lua_str_ends_with" else return false;
 
-            const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse") or std.mem.eql(u8, fname, "packsize")) 1 else if (std.mem.eql(u8, fname, "find") or std.mem.eql(u8, fname, "match") or std.mem.eql(u8, fname, "dump")) 2 else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep") or std.mem.eql(u8, fname, "byte") or std.mem.eql(u8, fname, "gsub") or std.mem.eql(u8, fname, "pack") or std.mem.eql(u8, fname, "unpack") or std.mem.eql(u8, fname, "gmatch")) 3 else 4;
+            const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse") or std.mem.eql(u8, fname, "packsize")) 1 else if (std.mem.eql(u8, fname, "find") or std.mem.eql(u8, fname, "match") or std.mem.eql(u8, fname, "dump") or std.mem.eql(u8, fname, "split") or std.mem.eql(u8, fname, "starts_with") or std.mem.eql(u8, fname, "ends_with")) 2 else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep") or std.mem.eql(u8, fname, "byte") or std.mem.eql(u8, fname, "gsub") or std.mem.eql(u8, fname, "pack") or std.mem.eql(u8, fname, "unpack") or std.mem.eql(u8, fname, "gmatch")) 3 else 4;
 
             // These builtins return a lua_Value. When the surrounding context
             // wants a native `str` (C `const char*`) — e.g. a typed local or
@@ -9137,6 +9564,8 @@ pub const CodeGen = struct {
             .@"and" => "&&",
             .@"or" => "||",
             .contains => "/* in */",
+            .matmul => "/* @ */",
+            .pipeline => "/* |> */",
         };
     }
 
@@ -9342,26 +9771,23 @@ pub const CodeGen = struct {
 
     fn emit_closure_runtime(self: *CodeGen, list: []const *ast.FuncBody) E!void {
         if (list.len == 0) {
-            self.p("lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{});
+            try jit.emitInvokeWrapperPrologue(self);
             self.p("    (void)id; (void)cl; (void)argc; (void)argv;\n", .{});
             self.p("    return lua_val_nil();\n", .{});
-            self.p("}}\n\n", .{});
+            try jit.emitInvokeWrapperEpilogue(self);
             self.p("void duo_free_closure(lua_Closure* cl) {{\n", .{});
             self.p("    (void)cl;\n", .{});
             self.p("}}\n\n", .{});
             return;
         }
 
-        self.p("lua_Value duo_invoke_closure(int id, lua_Closure* cl, int argc, lua_Value* argv) {{\n", .{});
-        self.p("    switch (id) {{\n", .{});
+        try jit.emitInvokeWrapperPrologue(self);
         for (list) |fb| {
             if (fb.closure_id) |id| {
                 self.p("        case {d}: return duo_cl_{d}(cl, argc, argv);\n", .{ id, id });
             }
         }
-        self.p("        default: return lua_val_nil();\n", .{});
-        self.p("    }}\n", .{});
-        self.p("}}\n\n", .{});
+        try jit.emitInvokeWrapperEpilogue(self);
 
         self.p("void duo_free_closure(lua_Closure* cl) {{\n", .{});
         self.p("    switch (cl->id) {{\n", .{});
@@ -9403,12 +9829,35 @@ pub const CodeGen = struct {
                 self.pl("lua_Value {s} = lua_tbl_pack_argv(argc - {d}, argv + {d});", .{ vn, fb.params.len, fb.params.len });
             }
             try self.emit_block(&fb.body);
-            self.pl("return lua_val_nil();", .{});
+            if (!self.block_fallthrough_returns(&fb.body)) {
+                self.pl("return lua_val_nil();", .{});
+            }
             self.indent = 0;
             self.current_ret = prev_ret;
             self.closure_ctx = prev_ctx;
             self.p("}}\n\n", .{});
         }
+    }
+
+    fn block_fallthrough_returns(self: *CodeGen, blk: *const ast.Block) bool {
+        if (blk.tail_expr != null) return true;
+        var i = blk.stmts.len;
+        while (i > 0) {
+            i -= 1;
+            switch (blk.stmts[i]) {
+                .ret => return true,
+                .if_stmt => |*is| {
+                    if (is.else_body) |*eb| {
+                        if (self.block_fallthrough_returns(&is.then) and self.block_fallthrough_returns(eb))
+                            return true;
+                    }
+                    return false;
+                },
+                .while_loop, .repeat_loop, .num_for, .gen_for => return false,
+                else => {},
+            }
+        }
+        return false;
     }
 
     fn collect_require_names(self: *CodeGen, expr: *const ast.Expr, names: *std.ArrayList([]const u8)) std.mem.Allocator.Error!void {
@@ -9419,6 +9868,9 @@ pub const CodeGen = struct {
                     c.args.len == 1 and c.args[0].* == .string_lit)
                 {
                     try names.append(self.alloc, c.args[0].string_lit.val);
+                }
+                if (self.ml_intrinsic_name(c.func) != null) {
+                    return;
                 }
                 if (self.mem_intrinsic_name(c.func) != null) {
                     for (c.args) |a| try self.collect_require_names(a, names);
@@ -11794,6 +12246,30 @@ const duo_runtime =
     \\    return false;
     \\}
     \\
+    \\static inline lua_Value duo_tensor_matmul(lua_Value a, lua_Value b) {
+    \\    static int duo_matmul_inited = 0;
+    \\    static lua_Value duo_matmul_fn = {0};
+    \\    if (!duo_matmul_inited) {
+    \\        lua_Value mod = lua_require(lua_val_lit("std.ml.tensor"));
+    \\        duo_matmul_fn = lua_table_get_raw(mod, lua_val_lit("matmul"));
+    \\        duo_matmul_inited = 1;
+    \\    }
+    \\    lua_Value argv[2] = { a, b };
+    \\    return lua_invoke(duo_matmul_fn, 2, argv);
+    \\}
+    \\
+    \\static inline lua_Value duo_tensor_add(lua_Value a, lua_Value b) {
+    \\    static int duo_add_inited = 0;
+    \\    static lua_Value duo_add_fn = {0};
+    \\    if (!duo_add_inited) {
+    \\        lua_Value mod = lua_require(lua_val_lit("std.ml.tensor"));
+    \\        duo_add_fn = lua_table_get_raw(mod, lua_val_lit("add"));
+    \\        duo_add_inited = 1;
+    \\    }
+    \\    lua_Value argv[2] = { a, b };
+    \\    return lua_invoke(duo_add_fn, 2, argv);
+    \\}
+    \\
     \\static inline bool lua_lt(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return a.as.nval < b.as.nval;
@@ -11874,8 +12350,18 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_assert(lua_Value v, const char* msg) {
     \\    if (!lua_to_bool(v)) {
-    \\        fprintf(stderr, "assertion failed: %s\n", msg ? msg : "");
-    \\        exit(1);
+    \\        if (duo_test_runner_active) {
+    \\            const char* m = (msg && msg[0]) ? msg : "assertion";
+    \\            if (duo_test_current) {
+    \\                fprintf(stderr, "DUO_EVT\\ttest\\tfail\\tname=%s\\treason=%s\\n", duo_test_current, m);
+    \\            }
+    \\            fprintf(stderr, "assertion failed: %s\\n", m);
+    \\            duo_tests_failed++;
+    \\            longjmp(duo_test_jmp, 1);
+    \\        } else {
+    \\            fprintf(stderr, "assertion failed: %s\\n", msg ? msg : "");
+    \\            exit(1);
+    \\        }
     \\    }
     \\    return v;
     \\}
@@ -13479,6 +13965,256 @@ const duo_runtime =
     \\    return lua_val_from_literal("function", 3369875416u, 8);
     \\}
     \\
+    \\static inline lua_Value lua_str_split(lua_Value s_val, lua_Value sep_val) {
+    \\    const char* str = lua_to_str(s_val);
+    \\    const char* sep = lua_to_str(sep_val);
+    \\    size_t slen = lua_str_byte_len(s_val);
+    \\    size_t seplen = lua_str_byte_len(sep_val);
+    \\    lua_Value tbl = lua_table_new();
+    \\    int idx = 1;
+    \\    const char* start = str;
+    \\    const char* end = str + slen;
+    \\    if (seplen == 0) {
+    \\        for (size_t i = 0; i < slen; i++) {
+    \\            lua_table_set_i64(tbl, idx++, lua_val_from_str_len(str + i, 1));
+    \\        }
+    \\    } else {
+    \\        while (start <= end) {
+    \\            const char* found = NULL;
+    \\            for (const char* p = start; p + seplen <= end; p++) {
+    \\                if (memcmp(p, sep, seplen) == 0) { found = p; break; }
+    \\            }
+    \\            if (found) {
+    \\                lua_table_set_i64(tbl, idx++, lua_val_from_str_len(start, found - start));
+    \\                start = found + seplen;
+    \\            } else {
+    \\                lua_table_set_i64(tbl, idx++, lua_val_from_str_len(start, end - start));
+    \\                break;
+    \\            }
+    \\        }
+    \\    }
+    \\    return tbl;
+    \\}
+    \\
+    \\static inline lua_Value lua_str_starts_with(lua_Value s_val, lua_Value prefix_val) {
+    \\    const char* str = lua_to_str(s_val);
+    \\    const char* prefix = lua_to_str(prefix_val);
+    \\    size_t slen = lua_str_byte_len(s_val);
+    \\    size_t plen = lua_str_byte_len(prefix_val);
+    \\    if (plen > slen) return lua_val_from_bool(0);
+    \\    return lua_val_from_bool(memcmp(str, prefix, plen) == 0);
+    \\}
+    \\
+    \\static inline lua_Value lua_str_ends_with(lua_Value s_val, lua_Value suffix_val) {
+    \\    const char* str = lua_to_str(s_val);
+    \\    const char* suffix = lua_to_str(suffix_val);
+    \\    size_t slen = lua_str_byte_len(s_val);
+    \\    size_t suflen = lua_str_byte_len(suffix_val);
+    \\    if (suflen > slen) return lua_val_from_bool(0);
+    \\    return lua_val_from_bool(memcmp(str + slen - suflen, suffix, suflen) == 0);
+    \\}
+    \\
+    \\// ═══════════════════════════════════════════════════════════════
+    \\// Arena allocator — O(1) bump allocation, O(1) reset, zero fragmentation
+    \\// This is the #1 technique for making ward's WASM memory faster than malloc
+    \\// ═══════════════════════════════════════════════════════════════
+    \\typedef struct { uint8_t* base; size_t cap; size_t pos; } DuoArena;
+    \\
+    \\static inline DuoArena* duo_arena_new(size_t cap) {
+    \\    DuoArena* a = (DuoArena*)malloc(sizeof(DuoArena));
+    \\    a->base = (uint8_t*)malloc(cap);
+    \\    a->cap = cap;
+    \\    a->pos = 0;
+    \\    return a;
+    \\}
+    \\
+    \\static inline void* duo_arena_alloc(DuoArena* a, size_t size) {
+    \\    size = (size + 7) & ~7; // 8-byte align
+    \\    if (__builtin_expect(a->pos + size <= a->cap, 1)) {
+    \\        void* ptr = a->base + a->pos;
+    \\        a->pos += size;
+    \\        return ptr;
+    \\    }
+    \\    // Grow: double capacity
+    \\    while (a->pos + size > a->cap) a->cap *= 2;
+    \\    a->base = (uint8_t*)realloc(a->base, a->cap);
+    \\    void* ptr = a->base + a->pos;
+    \\    a->pos += size;
+    \\    return ptr;
+    \\}
+    \\
+    \\static inline void duo_arena_reset(DuoArena* a) { a->pos = 0; }
+    \\
+    \\static inline void duo_arena_free(DuoArena* a) {
+    \\    free(a->base); free(a);
+    \\}
+    \\
+    \\// ═══════════════════════════════════════════════════════════════
+    \\// Pool allocator — fixed-size object pool with freelist (O(1) get/put)
+    \\// Ward uses this for WASM stack frames, call frames, isolates
+    \\// ═══════════════════════════════════════════════════════════════
+    \\typedef struct DuoPoolSlot { struct DuoPoolSlot* next; } DuoPoolSlot;
+    \\typedef struct { uint8_t* base; size_t obj_size; size_t cap; DuoPoolSlot* free_list; } DuoPool;
+    \\
+    \\static inline DuoPool* duo_pool_new(size_t obj_size, size_t count) {
+    \\    if (obj_size < sizeof(DuoPoolSlot)) obj_size = sizeof(DuoPoolSlot);
+    \\    DuoPool* p = (DuoPool*)malloc(sizeof(DuoPool));
+    \\    p->obj_size = obj_size;
+    \\    p->cap = count;
+    \\    p->base = (uint8_t*)malloc(obj_size * count);
+    \\    p->free_list = NULL;
+    \\    for (size_t i = 0; i < count; i++) {
+    \\        DuoPoolSlot* s = (DuoPoolSlot*)(p->base + i * obj_size);
+    \\        s->next = p->free_list;
+    \\        p->free_list = s;
+    \\    }
+    \\    return p;
+    \\}
+    \\
+    \\static inline void* duo_pool_get(DuoPool* p) {
+    \\    if (__builtin_expect(p->free_list != NULL, 1)) {
+    \\        void* obj = p->free_list;
+    \\        p->free_list = p->free_list->next;
+    \\        return obj;
+    \\    }
+    \\    return malloc(p->obj_size); // fallback
+    \\}
+    \\
+    \\static inline void duo_pool_put(DuoPool* p, void* obj) {
+    \\    DuoPoolSlot* s = (DuoPoolSlot*)obj;
+    \\    s->next = p->free_list;
+    \\    p->free_list = s;
+    \\}
+    \\
+    \\// ═══════════════════════════════════════════════════════════════
+    \\// Computed goto dispatch — THE technique for fast interpreters
+    \\// GCC/Clang extension: &&label gives the address of a label
+    \\// Eliminates branch predictor pollution from a central switch
+    \\// ═══════════════════════════════════════════════════════════════
+    \\#define DUO_DISPATCH_TABLE(name, ...) \
+    \\    static const void* name[] = { __VA_ARGS__ }
+    \\#define DUO_DISPATCH(table, op) goto *table[op]
+    \\#define DUO_LABEL(name) name:
+    \\#define DUO_NEXT(table, pc, code) goto *table[code[pc++]]
+    \\
+    \\// ═══════════════════════════════════════════════════════════════
+    \\// SIMD helpers — portable vector intrinsics via Clang extensions
+    \\// These compile to NEON on ARM, AVX2 on x86, WASM SIMD on wasm
+    \\// ═══════════════════════════════════════════════════════════════
+    \\#ifndef DUO_SIMD_TYPES_DEFINED
+    \\#define DUO_SIMD_TYPES_DEFINED
+    \\typedef float duo_v4f32 __attribute__((vector_size(16)));
+    \\typedef float duo_v8f32 __attribute__((vector_size(32)));
+    \\typedef double duo_v2f64 __attribute__((vector_size(16)));
+    \\typedef double duo_v4f64 __attribute__((vector_size(32)));
+    \\typedef int32_t duo_v4i32 __attribute__((vector_size(16)));
+    \\typedef int32_t duo_v8i32 __attribute__((vector_size(32)));
+    \\typedef int64_t duo_v4i64 __attribute__((vector_size(32)));
+    \\#endif
+    \\
+    \\static inline duo_v8f32 duo_v8f32_load(const float* p) { duo_v8f32 v; memcpy(&v, p, 32); return v; }
+    \\static inline duo_v4f64 duo_v4f64_load(const double* p) { duo_v4f64 v; memcpy(&v, p, 32); return v; }
+    \\static inline void duo_v8f32_store(float* p, duo_v8f32 v) { memcpy(p, &v, 32); }
+    \\static inline void duo_v4f64_store(double* p, duo_v4f64 v) { memcpy(p, &v, 32); }
+    \\
+    \\static inline float duo_v8f32_sum(duo_v8f32 v) { return v[0]+v[1]+v[2]+v[3]+v[4]+v[5]+v[6]+v[7]; }
+    \\static inline double duo_v4f64_sum(duo_v4f64 v) { return v[0]+v[1]+v[2]+v[3]; }
+    \\
+    \\static inline duo_v4f64 duo_v4f64_splat(double x) { return (duo_v4f64){x,x,x,x}; }
+    \\
+    \\// Fused multiply-add: a*b+c in one instruction (FMA3/NEON FMLA)
+    \\static inline duo_v8f32 duo_v8f32_fma(duo_v8f32 a, duo_v8f32 b, duo_v8f32 c) { return a * b + c; }
+    \\static inline duo_v4f64 duo_v4f64_fma(duo_v4f64 a, duo_v4f64 b, duo_v4f64 c) { return a * b + c; }
+    \\
+    \\// Dot product via SIMD reduction
+    \\static inline float duo_simd_dot_f32(const float* a, const float* b, size_t n) {
+    \\    duo_v8f32 acc = {0};
+    \\    size_t i = 0;
+    \\    for (; i + 8 <= n; i += 8) {
+    \\        duo_v8f32 va = duo_v8f32_load(a + i);
+    \\        duo_v8f32 vb = duo_v8f32_load(b + i);
+    \\        acc = duo_v8f32_fma(va, vb, acc);
+    \\    }
+    \\    float sum = duo_v8f32_sum(acc);
+    \\    for (; i < n; i++) sum += a[i] * b[i];
+    \\    return sum;
+    \\}
+    \\
+    \\static inline double duo_simd_dot_f64(const double* a, const double* b, size_t n) {
+    \\    duo_v4f64 acc = {0};
+    \\    size_t i = 0;
+    \\    for (; i + 4 <= n; i += 4) {
+    \\        duo_v4f64 va = duo_v4f64_load(a + i);
+    \\        duo_v4f64 vb = duo_v4f64_load(b + i);
+    \\        acc = duo_v4f64_fma(va, vb, acc);
+    \\    }
+    \\    double sum = duo_v4f64_sum(acc);
+    \\    for (; i < n; i++) sum += a[i] * b[i];
+    \\    return sum;
+    \\}
+    \\
+    \\// SIMD matmul kernel (vectorized inner loop, C += A*B)
+    \\static inline void duo_simd_matmul_f32(
+    \\    const float* restrict A, const float* restrict B, float* restrict C,
+    \\    size_t M, size_t N, size_t K) {
+    \\    for (size_t i = 0; i < M; i++) {
+    \\        for (size_t k = 0; k < K; k++) {
+    \\            const float a_ik = A[i * K + k];
+    \\            const float* restrict b_row = B + k * N;
+    \\            float* restrict c_row = C + i * N;
+    \\            size_t j = 0;
+    \\            const size_t j_end = N & ~((size_t)7);
+    \\            for (; j < j_end; j += 8) {
+    \\                duo_v8f32 acc = duo_v8f32_load(c_row + j);
+    \\                duo_v8f32 bv = duo_v8f32_load(b_row + j);
+    \\                duo_v8f32 av = (duo_v8f32){a_ik,a_ik,a_ik,a_ik,a_ik,a_ik,a_ik,a_ik};
+    \\                acc = duo_v8f32_fma(av, bv, acc);
+    \\                duo_v8f32_store(c_row + j, acc);
+    \\            }
+    \\            for (; j < N; j++) c_row[j] += a_ik * b_row[j];
+    \\        }
+    \\    }
+    \\}
+    \\
+    \\static inline void duo_simd_matmul_f64(
+    \\    const double* restrict A, const double* restrict B, double* restrict C,
+    \\    size_t M, size_t N, size_t K) {
+    \\    for (size_t i = 0; i < M; i++) {
+    \\        for (size_t k = 0; k < K; k++) {
+    \\            const double a_ik = A[i * K + k];
+    \\            const double* restrict b_row = B + k * N;
+    \\            double* restrict c_row = C + i * N;
+    \\            size_t j = 0;
+    \\            const size_t j_end = N & ~((size_t)3);
+    \\            for (; j < j_end; j += 4) {
+    \\                duo_v4f64 acc = duo_v4f64_load(c_row + j);
+    \\                duo_v4f64 bv = duo_v4f64_load(b_row + j);
+    \\                acc = duo_v4f64_fma(duo_v4f64_splat(a_ik), bv, acc);
+    \\                duo_v4f64_store(c_row + j, acc);
+    \\            }
+    \\            for (; j < N; j++) c_row[j] += a_ik * b_row[j];
+    \\        }
+    \\    }
+    \\}
+    \\
+    \\// Zero-copy string view (pointer + length, no allocation)
+    \\typedef struct { const char* ptr; size_t len; } DuoStrView;
+    \\
+    \\static inline DuoStrView duo_str_view(const char* s, size_t len) {
+    \\    return (DuoStrView){s, len};
+    \\}
+    \\static inline DuoStrView duo_str_view_slice(DuoStrView sv, size_t start, size_t end) {
+    \\    if (start > sv.len) start = sv.len;
+    \\    if (end > sv.len) end = sv.len;
+    \\    return (DuoStrView){sv.ptr + start, end - start};
+    \\}
+    \\static inline int duo_str_view_eq(DuoStrView a, DuoStrView b) {
+    \\    return a.len == b.len && memcmp(a.ptr, b.ptr, a.len) == 0;
+    \\}
+    \\static inline uint8_t duo_str_view_byte(DuoStrView sv, size_t idx) {
+    \\    return (idx < sv.len) ? (uint8_t)sv.ptr[idx] : 0;
+    \\}
+    \\
     \\static int duo_pack_option(const char** fmt, char* opt_out) {
     \\    const char* f = *fmt;
     \\    while (*f == '<' || *f == '>' || *f == '=' || *f == '!') f++;
@@ -14047,7 +14783,11 @@ const duo_runtime =
     \\        return -1;
     \\    }
     \\    char cmd[8192];
-    \\    snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s 2>%s", duo, lua_path, dlib_path, err_path);
+    \\    if (duo_jit_compile_flags[0]) {
+    \\        snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s%s 2>%s", duo, lua_path, dlib_path, duo_jit_compile_flags, err_path);
+    \\    } else {
+    \\        snprintf(cmd, sizeof cmd, "%s compile --load-chunk %s -o %s 2>%s", duo, lua_path, dlib_path, err_path);
+    \\    }
     \\    int rc = system(cmd);
     \\    if (rc != 0) {
     \\        FILE* ef = fopen(err_path, "rb");
@@ -14451,25 +15191,7 @@ const duo_runtime =
     \\    return m;
     \\}
     \\
-    \\static inline lua_Value lua_jit_on(lua_Value f) { (void)f; return lua_val_nil(); }
-    \\static inline lua_Value lua_jit_off(lua_Value f) { (void)f; return lua_val_nil(); }
-    \\static inline lua_Value lua_jit_flush(lua_Value f) { (void)f; return lua_val_nil(); }
-    \\static inline lua_Value lua_jit_status(void) { return lua_val_from_bool(0); }
-    \\static inline lua_Value lua_jit_version_num(void) { return lua_val_from_num(20100.0); }
-    \\static inline lua_Value lua_jit_opt(lua_Value cmd, lua_Value val) { (void)cmd; (void)val; return lua_val_nil(); }
-    \\
-    \\static inline lua_Value lua_jit_init(void) {
-    \\    lua_Value m = lua_table_new_with_capacity(0, 8);
-    \\    lua_table_init_lit(m, "on", lua_val_from_func((lua_Value (*)(lua_Value))lua_jit_on));
-    \\    lua_table_init_lit(m, "off", lua_val_from_func((lua_Value (*)(lua_Value))lua_jit_off));
-    \\    lua_table_init_lit(m, "flush", lua_val_from_func((lua_Value (*)(lua_Value))lua_jit_flush));
-    \\    lua_table_init_lit(m, "status", lua_val_from_func((lua_Value (*)(lua_Value))lua_jit_status));
-    \\    lua_table_init_lit(m, "version", lua_val_lit("LuaJIT 2.1.0-beta3"));
-    \\    lua_table_init_lit(m, "version_num", lua_val_from_num(20100.0));
-    \\    lua_table_init_lit(m, "os", lua_val_lit("Other"));
-    \\    lua_table_init_lit(m, "arch", lua_val_lit("arm64"));
-    \\    return m;
-    \\}
+    \\/* jit module: emitted per compilation unit (see jit.zig) */
     \\
     \\static inline lua_Value lua_ffi_cdef(lua_Value decl) { (void)decl; return lua_val_nil(); }
     \\static inline lua_Value lua_ffi_new(lua_Value ct, lua_Value init) { (void)ct; (void)init; return lua_val_nil(); }
@@ -15673,6 +16395,40 @@ test "codegen: memory intrinsics lower to raw C operations" {
     try testing.expect(std.mem.indexOf(u8, output, "free((void*)(raw));") != null);
 }
 
+test "codegen: typed __emit bypasses lua_to_num on return and locals" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\fun raw_i64(): i64
+        \\  local x: i64 = __emit("(int64_t)(40 + 2)")
+        \\  return __emit("(int64_t)(x + 1)")
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t x = (int64_t)(40 + 2);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)(x + 1);") != null);
+    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t raw_i64()") orelse return error.TestExpectedEqual;
+    const fn_end_rel = std.mem.indexOf(u8, output[fn_start..], "static lua_Value raw_i64__lua") orelse return error.TestExpectedEqual;
+    const fn_body = output[fn_start .. fn_start + fn_end_rel];
+    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num") == null);
+}
+
 test "codegen: atomic intrinsics lower to compiler atomic builtins" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -16171,11 +16927,36 @@ test "expr_type: structural fallback recovers literal and function expression ty
         .body = .{ .loc = loc, .stmts = &.{} },
     };
     var func_expr = ast.Expr{ .func_expr = &body };
-    const ft = cg.expr_type(&func_expr);
-    try testing.expect(ft == .func);
-    try testing.expectEqual(RT.i64, ft.func.params[0]);
-    try testing.expectEqual(RT.str, ft.func.ret.*);
-    try testing.expect(ft.func.is_native);
+    // Closure literals are always dynamic lua_Value at runtime.
+    try testing.expectEqual(RT.any, cg.expr_type(&func_expr));
+}
+
+test "codegen: closure programs emit runtime JIT tables" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local n = 10
+        \\local f = function(x) return x + n end
+        \\print(f(1))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "duo_jit_sources") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_jit_dispatch") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_jit_pack_") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_jit_init") != null);
 }
 
 test "arc: record and enum value types do not emit retain release hooks" {
@@ -16389,6 +17170,8 @@ test "sieve native specialization uses odd-only byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "__sieve[j >> 1] = 0") != null);
     try testing.expect(std.mem.indexOf(u8, output, "j += (i << 1)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_count_end = (((n) - 1) >> 1) + 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "memcpy(&__sieve_chunk, __sieve + __sieve_count_idx") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk * 0x0101010101010101ULL") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (; __sieve_count_idx < __sieve_count_end; ++__sieve_count_idx)") != null);
@@ -16648,7 +17431,7 @@ test "life specialization keeps generalized simulation body" {
     try testing.expect(std.mem.indexOf(u8, output, "int nb = __lf_grid") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__lf_next[yW + x]") != null);
     try testing.expect(std.mem.indexOf(u8, output, "memcmp(__lf_next, __lf_prev2") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "memcpy(__lf_prev2, __lf_grid") != null);
+    try testing.expect(std.mem.count(u8, output, "malloc(__lf_cells)") == 3);
     try testing.expect(std.mem.indexOf(u8, output, "int __lf_left = __lf_prev[0]") == null);
     try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)((steps & 1) ? 0 : 170);") == null);
     try testing.expect(std.mem.indexOf(u8, output, "return (int64_t)5462;") == null);

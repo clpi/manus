@@ -1,0 +1,58 @@
+-- std.ml.deploy — Edge / WASM / static-binary deploy helpers
+
+Quant = req "std.ml.quant"
+Device = req "std.ml.device"
+
+fun static_binary_opts(): any
+    return {
+        target = "native",
+        optimize = "O3",
+        lto = true,
+        strip = true,
+        notes = "duo compile app.duo -o app -O3",
+    }
+end
+
+fun wasm_opts(): any
+    return {
+        target = "wasm32-wasi",
+        simd = true,
+        notes = "duo compile app.duo --target wasm32-wasi -o app.wasm",
+    }
+end
+
+fun edge_pipeline(model): any
+    return {
+        type = "edge_pipeline",
+        quant = Quant.amp_policy(),
+        device = Device.wasm_simd(),
+        steps = { "quantize", "strip", "wasm" },
+        model = model,
+    }
+end
+
+-- Metadata for ONNX / safetensors export (parser lands in Phase 4)
+fun export_onnx(model, path): any
+    return {
+        format = "onnx",
+        path = path,
+        model = model,
+        status = "stub",
+    }
+end
+
+fun load_safetensors(path): any
+    return {
+        format = "safetensors",
+        path = path,
+        status = "stub",
+    }
+end
+
+M = {}
+M.static_binary_opts = static_binary_opts
+M.wasm_opts = wasm_opts
+M.edge_pipeline = edge_pipeline
+M.export_onnx = export_onnx
+M.load_safetensors = load_safetensors
+M

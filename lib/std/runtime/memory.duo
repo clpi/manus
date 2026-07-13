@@ -1,0 +1,334 @@
+-- std.runtime.memory — Memory management for ward runtime
+-- Heap management, GC tuning, memory arenas for isolate isolation.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory Stats
+-- ═══════════════════════════════════════════════════════════════
+
+fun memory_stats_new(): any
+    {
+        allocated = 0,
+        freed = 0,
+        current = 0,
+        peak = 0,
+        gc_count = 0,
+        gc_paused = 0,
+        allocations_by_type = {},
+    }
+end
+
+fun memory_stats_record_alloc(stats: any, size: i64, type: str): void
+    stats.allocated = stats.allocated + size
+    stats.current = stats.current + size
+    if stats.current > stats.peak then
+        stats.peak = stats.current
+    end
+    stats.allocations_by_type[type] = (stats.allocations_by_type[type] or 0) + size
+end
+
+fun memory_stats_record_free(stats: any, size: i64): void
+    stats.freed = stats.freed + size
+    stats.current = stats.current - size
+end
+
+fun memory_stats_record_gc(stats: any, paused: f64): void
+    stats.gc_count = stats.gc_count + 1
+    stats.gc_paused = stats.gc_paused + paused
+end
+
+fun memory_stats_summary(stats: any): any
+    {
+        allocated = stats.allocated,
+        freed = stats.freed,
+        current = stats.current,
+        peak = stats.peak,
+        gc_count = stats.gc_count,
+        gc_total_paused = stats.gc_paused,
+        gc_avg_pause = stats.gc_count > 0 and stats.gc_paused / stats.gc_count or 0,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory Arena (per-isolate)
+-- ═══════════════════════════════════════════════════════════════
+
+fun memory_arena_new(initial_size: i64): any
+    {
+        blocks = {},
+        total_size = initial_size or 65536,
+        used = 0,
+        block_size = 4096,
+    }
+end
+
+fun memory_arena_alloc(arena: any, size: i64): any
+    -- Check if current block has enough space
+    if #arena.blocks == 0 or arena.blocks[#arena.blocks].used + size > arena.block_size then
+        -- Allocate new block
+        block_size = math.max(arena.block_size, size)
+        arena.blocks[#arena.blocks + 1] = {
+            data = {},
+            size = block_size,
+            used = 0,
+        }
+    end
+
+    block = arena.blocks[#arena.blocks]
+    offset = block.used
+    block.used = block.used + size
+    arena.used = arena.used + size
+
+    {
+        block = #arena.blocks,
+        offset = offset,
+        size = size,
+    }
+end
+
+fun memory_arena_reset(arena: any): void
+    arena.blocks = {}
+    arena.used = 0
+end
+
+fun memory_arena_stats(arena: any): any
+    {
+        total_blocks = #arena.blocks,
+        total_size = arena.total_size,
+        used = arena.used,
+        utilization = arena.total_size > 0 and arena.used / arena.total_size or 0,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GC Configuration
+-- ═══════════════════════════════════════════════════════════════
+
+fun gc_config_new(): any
+    {
+        mode = "incremental",  -- "incremental", "generational", "concurrent"
+        pause_target = 10,     -- ms
+        growth_factor = 2.0,
+        min_heap_size = 1024 * 1024,  -- 1MB
+        max_heap_size = 256 * 1024 * 1024,  -- 256MB
+        heap_growth = 0.5,
+        marking_threshold = 0.8,
+        sweep_threshold = 0.5,
+    }
+end
+
+fun gc_config_set_mode(config: any, mode: str): any
+    config.mode = mode
+    config
+end
+
+fun gc_config_set_pause_target(config: any, target_ms: f64): any
+    config.pause_target = target_ms
+    config
+end
+
+fun gc_config_set_heap_limits(config: any, min_size: i64, max_size: i64): any
+    config.min_heap_size = min_size
+    config.max_heap_size = max_size
+    config
+end
+
+fun gc_config_set_growth(config: any, factor: f64, heap_growth: f64): any
+    config.growth_factor = factor
+    config.heap_growth = heap_growth
+    config
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GC State
+-- ═══════════════════════════════════════════════════════════════
+
+fun gc_state_new(config: any): any
+    {
+        config = config,
+        phase = "idle",  -- "idle", "marking", "sweeping", "compact"
+        allocated = 0,
+        threshold = config.min_heap_size,
+        pause_start = nil,
+        pause_total = 0,
+        collections = 0,
+        bytes_since_gc = 0,
+    }
+end
+
+fun gc_state_should_collect(gc: any): bool
+    gc.allocated >= gc.threshold
+end
+
+fun gc_state_start_collection(gc: any): void
+    gc.phase = "marking"
+    gc.pause_start = os.clock()
+end
+
+fun gc_state_end_collection(gc: any): void
+    if gc.pause_start then
+        gc.pause_total = gc.pause_total + (os.clock() - gc.pause_start)
+    end
+    gc.phase = "idle"
+    gc.collections = gc.collections + 1
+    gc.bytes_since_gc = 0
+    gc.threshold = gc.allocated * gc.config.growth_factor
+    if gc.threshold < gc.config.min_heap_size then
+        gc.threshold = gc.config.min_heap_size
+    end
+end
+
+fun gc_state_record_alloc(gc: any, size: i64): void
+    gc.allocated = gc.allocated + size
+    gc.bytes_since_gc = gc.bytes_since_gc + size
+end
+
+fun gc_state_record_free(gc: any, size: i64): void
+    gc.allocated = gc.allocated - size
+end
+
+fun gc_state_stats(gc: any): any
+    {
+        phase = gc.phase,
+        allocated = gc.allocated,
+        threshold = gc.threshold,
+        collections = gc.collections,
+        pause_total = gc.pause_total,
+        avg_pause = gc.collections > 0 and gc.pause_total / gc.collections or 0,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory Pressure Monitor
+-- ═══════════════════════════════════════════════════════════════
+
+fun memory_pressure_new(low_threshold: f64, high_threshold: f64): any
+    {
+        low_threshold = low_threshold or 0.6,
+        high_threshold = high_threshold or 0.85,
+        current_pressure = 0,
+        peak_pressure = 0,
+        warnings = 0,
+    }
+end
+
+fun memory_pressure_update(pressure: any, allocated: i64, max_size: i64): void
+    if max_size > 0 then
+        pressure.current_pressure = allocated / max_size
+    else
+        pressure.current_pressure = 0
+    end
+
+    if pressure.current_pressure > pressure.peak_pressure then
+        pressure.peak_pressure = pressure.current_pressure
+    end
+
+    if pressure.current_pressure > pressure.high_threshold then
+        pressure.warnings = pressure.warnings + 1
+    end
+end
+
+fun memory_pressure_level(pressure: any): str
+    if pressure.current_pressure < pressure.low_threshold then
+        "low"
+    elseif pressure.current_pressure < pressure.high_threshold then
+        "medium"
+    else
+        "high"
+    end
+end
+
+fun memory_pressure_should_gc(pressure: any): bool
+    pressure.current_pressure > pressure.high_threshold
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Object Pool (for frequently allocated objects)
+-- ═══════════════════════════════════════════════════════════════
+
+fun object_pool_new(factory: any, initial_size: i64): any
+    {
+        factory = factory,
+        available = {},
+        in_use = {},
+        stats = {
+            created = 0,
+            reused = 0,
+            returned = 0,
+        },
+    }
+end
+
+fun object_pool_acquire(pool: any): any
+    if #pool.available > 0 then
+        obj = pool.available[#pool.available]
+        pool.available[#pool.available] = nil
+        pool.in_use[obj] = true
+        pool.stats.reused = pool.stats.reused + 1
+        return obj
+    end
+
+    obj = pool.factory()
+    pool.in_use[obj] = true
+    pool.stats.created = pool.stats.created + 1
+    obj
+end
+
+fun object_pool_release(pool: any, obj: any): void
+    if pool.in_use[obj] then
+        pool.in_use[obj] = nil
+        pool.available[#pool.available + 1] = obj
+        pool.stats.returned = pool.stats.returned + 1
+    end
+end
+
+fun object_pool_stats(pool: any): any
+    {
+        available = #pool.available,
+        in_use_count = 0,
+        created = pool.stats.created,
+        reused = pool.stats.reused,
+        returned = pool.stats.returned,
+    }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M = {}
+-- Stats
+M.stats_new = memory_stats_new
+M.stats_record_alloc = memory_stats_record_alloc
+M.stats_record_free = memory_stats_record_free
+M.stats_record_gc = memory_stats_record_gc
+M.stats_summary = memory_stats_summary
+-- Arena
+M.arena_new = memory_arena_new
+M.arena_alloc = memory_arena_alloc
+M.arena_reset = memory_arena_reset
+M.arena_stats = memory_arena_stats
+-- GC Config
+M.gc_config_new = gc_config_new
+M.gc_config_set_mode = gc_config_set_mode
+M.gc_config_set_pause_target = gc_config_set_pause_target
+M.gc_config_set_heap_limits = gc_config_set_heap_limits
+M.gc_config_set_growth = gc_config_set_growth
+-- GC State
+M.gc_state_new = gc_state_new
+M.gc_state_should_collect = gc_state_should_collect
+M.gc_state_start_collection = gc_state_start_collection
+M.gc_state_end_collection = gc_state_end_collection
+M.gc_state_record_alloc = gc_state_record_alloc
+M.gc_state_record_free = gc_state_record_free
+M.gc_state_stats = gc_state_stats
+-- Pressure
+M.pressure_new = memory_pressure_new
+M.pressure_update = memory_pressure_update
+M.pressure_level = memory_pressure_level
+M.pressure_should_gc = memory_pressure_should_gc
+-- Object Pool
+M.pool_new = object_pool_new
+M.pool_acquire = object_pool_acquire
+M.pool_release = object_pool_release
+M.pool_stats = object_pool_stats
+M

@@ -22,7 +22,7 @@ fun decode_header(data: str): any
         marker = string.byte(data, off + 1)
         if marker == 0xD9 then break end
         if marker == 0x00 or (marker >= 0xD0 and marker <= 0xD7) then
-            off = off + 2
+            off += 2
         else
             seg_len = read_u16(data, off + 2)
             if marker == 0xC0 or marker == 0xC1 or marker == 0xC2 then
@@ -31,7 +31,7 @@ fun decode_header(data: str): any
                 info.width = read_u16(data, off + 7)
                 info.components = string.byte(data, off + 9)
             end
-            off = off + 2 + seg_len
+            off += 2 + seg_len
         end
     end
     info

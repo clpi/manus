@@ -1,7 +1,7 @@
 -- std.os — operating system utilities
 
 fun os_execute(cmd: str): int
-    os.execute(cmd)
+    if os.execute(cmd) then 0 else 1 end
 end
 
 fun os_exit(code: int)
@@ -16,9 +16,57 @@ fun os_rename(old: str, new: str): bool
     os.rename(old, new)
 end
 
+fun os_read_file(path: str): str
+    if path == nil then return "" end
+    f = io.open(path, "rb")
+    if f == nil then return "" end
+    data = f:read("*a")
+    f:close()
+    if data == nil then return "" end
+    data
+end
+
+fun os_write_file(path: str, data: str): bool
+    if path == nil then return false end
+    if data == nil then data = "" end
+    f = io.open(path, "wb")
+    if f == nil then return false end
+    if f:write(data)
+        f:close()
+        true
+    else
+        false
+    end
+end
+
+fun os_mkdir(path: str): bool
+    if path == nil then return false end
+    __emit("mkdir(path, 0777) == 0")
+end
+
+fun os_mkdir_all(path: str): bool
+    if path == nil then return false end
+    os.execute("mkdir -p '" .. path .. "'")
+end
+
+fun os_args(): any
+    local out = {}
+    __emit([[{
+        for (int i = 1; i < duo_argc; i++) {
+            lua_table_set_raw(out, lua_val_from_int(i), lua_val_from_str(duo_argv[i]));
+        }
+    }]])
+    out
+end
+
 M = {}
 M.execute = os_execute
 M.exit = os_exit
 M.remove = os_remove
 M.rename = os_rename
+M.read_file = os_read_file
+M.write_file = os_write_file
+M.mkdir = os_mkdir
+M.mkdir_all = os_mkdir_all
+M.args = os_args
 M

@@ -1,0 +1,15 @@
+-- JIT demo: hot closure tier-2 recompile after call threshold (AOT tier-1 until hot)
+fun hot_add(n: i64): i64
+  f = fun(x: i64): i64
+    return x + n
+  end
+  jit.opt("hotloop", 5)
+  sum: i64 = 0
+  for i = 1, 20
+    sum = sum + f(i)
+  end
+  sum
+end
+
+print("jit.status:", jit.status())
+print("hot_add(10):", hot_add(10))

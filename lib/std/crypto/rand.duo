@@ -1,46 +1,70 @@
--- std.crypto.rand — cryptographic random number generation (mirrors Go's crypto/rand)
+-- std.crypto.rand — cryptographic random number generation (uses /dev/urandom)
+
+@c.include("fcntl.h")
+@c.include("unistd.h")
 
 fun read(buf: any): i64
     if buf == nil then return 0 end
-    local n = rawlen(buf)
+    n = rawlen(buf)
+    b = bytes(n)
     for i = 1, n
-        buf[i] = math.random(0, 255)
+        buf[i] = b[i]
     end
     n
 end
 
 fun int(max: i64): i64
-    math.random(0, max - 1)
+    if max == nil or max <= 0 return 0 end
+    r: i64 = 0
+    __emit([[{
+        int fd = open("/dev/urandom", O_RDONLY);
+        if (fd >= 0) { read(fd, &r, sizeof(r)); close(fd); }
+    }]])
+    r % max
 end
 
 fun bytes(n: i64): any
-    local buf = {}
-    for i = 1, n
-        buf[i] = math.random(0, 255)
-    end
-    buf
+    if n == nil or n <= 0 return {} end
+    out = {}
+    __emit([[{
+        int fd = open("/dev/urandom", O_RDONLY);
+        if (fd >= 0) {
+            for (int i = 1; i <= n; i++) {
+                uint8_t b;
+                if (read(fd, &b, 1) == 1) {
+                    lua_table_set_raw(out, lua_val_from_int(i), lua_val_from_int((int64_t)b));
+                }
+            }
+            close(fd);
+        }
+    }]])
+    out
 end
 
 fun hex(n: i64): str
-    local res = ""
+    if n == nil or n <= 0 return "" end
+    b = bytes(n)
+    res = ""
     for i = 1, n
-        local v = math.random(0, 255)
-        res = res .. string.format("%02x", v)
+        res = res .. string.format("%02x", b[i])
     end
     res
 end
 
 fun prime(bits: i64): i64
+    if bits == nil or bits < 2 return 2 end
     while true
-        local n = math.random(2 ^ (bits - 1) + 1, 2 ^ bits - 1)
-        local prime = true
+        low = 1 << (bits - 1)
+        high = (1 << bits) - 1
+        n = low + int(high - low + 1)
+        is_prime = true
         for i = 2, math.sqrt(n)
             if n % i == 0 then
-                prime = false
+                is_prime = false
                 break
             end
         end
-        if prime then return n end
+        if is_prime then return n end
     end
 end
 
