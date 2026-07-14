@@ -5034,6 +5034,31 @@ pub const CodeGen = struct {
         self.pl("__sieve_delta_b = ((i << 2) + 1) / 3;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
+        // 4x unrolled marking: process 8 composites per inner iteration.
+        // Original stride pattern: mark, +=a, mark, +=b, mark, +=a, mark, +=b, ...
+        // 8 marks at offsets: 0, a, a+b, 2a+b, 2a+2b, 3a+2b, 3a+3b, 4a+3b
+        // Total advance per unrolled iteration: 4a+4b
+        self.pl("const int64_t __sieve_s1 = __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_s2 = __sieve_s1 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s3 = __sieve_s2 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_s4 = __sieve_s3 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s5 = __sieve_s4 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_s6 = __sieve_s5 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s7 = __sieve_s6 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_unroll = __sieve_s7 + __sieve_delta_b;", .{});
+        self.pl("while (__sieve_mark_idx + __sieve_unroll < __sieve_len) {{", .{});
+        self.indent += 1;
+        self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s1] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s2] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s3] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s4] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s5] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s6] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s7] = 0;", .{});
+        self.pl("__sieve_mark_idx += __sieve_unroll;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.pl("while (__sieve_mark_idx + __sieve_delta_a < __sieve_len) {{", .{});
         self.indent += 1;
         self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
@@ -5049,13 +5074,23 @@ pub const CodeGen = struct {
         self.pl("}}", .{});
         self.pl("{s} count = 2;", .{ct});
         self.pl("int64_t __sieve_count_idx = 0;", .{});
+        self.pl("for (; __sieve_count_idx + 32 <= __sieve_len; __sieve_count_idx += 32) {{", .{});
+        self.indent += 1;
+        self.pl("uint64_t __sieve_c0, __sieve_c1, __sieve_c2, __sieve_c3;", .{});
+        self.pl("memcpy(&__sieve_c0, __sieve + __sieve_count_idx, sizeof(__sieve_c0));", .{});
+        self.pl("memcpy(&__sieve_c1, __sieve + __sieve_count_idx + 8, sizeof(__sieve_c1));", .{});
+        self.pl("memcpy(&__sieve_c2, __sieve + __sieve_count_idx + 16, sizeof(__sieve_c2));", .{});
+        self.pl("memcpy(&__sieve_c3, __sieve + __sieve_count_idx + 24, sizeof(__sieve_c3));", .{});
+        self.pl("count += (__builtin_popcountll(__sieve_c0)) + (__builtin_popcountll(__sieve_c1))", .{});
+        self.pl("        + (__builtin_popcountll(__sieve_c2)) + (__builtin_popcountll(__sieve_c3));", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
         self.pl("for (; __sieve_count_idx + 16 <= __sieve_len; __sieve_count_idx += 16) {{", .{});
         self.indent += 1;
         self.pl("uint64_t __sieve_chunk0, __sieve_chunk1;", .{});
         self.pl("memcpy(&__sieve_chunk0, __sieve + __sieve_count_idx, sizeof(__sieve_chunk0));", .{});
         self.pl("memcpy(&__sieve_chunk1, __sieve + __sieve_count_idx + 8, sizeof(__sieve_chunk1));", .{});
-        self.pl("count += (__builtin_popcountll(__sieve_chunk0));", .{});
-        self.pl("count += (__builtin_popcountll(__sieve_chunk1));", .{});
+        self.pl("count += (__builtin_popcountll(__sieve_chunk0)) + (__builtin_popcountll(__sieve_chunk1));", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("for (; __sieve_count_idx + 8 <= __sieve_len; __sieve_count_idx += 8) {{", .{});

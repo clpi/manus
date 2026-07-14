@@ -334,6 +334,9 @@ pub const Parser = struct {
     }
 
     fn parse_block(self: *Parser) ParseError!ast.Block {
+        const saved_match_depth = self.match_arm_depth;
+        self.match_arm_depth = 0;
+        defer self.match_arm_depth = saved_match_depth;
         const l = (try self.pk()).loc;
         var stmts: std.ArrayList(ast.Stmt) = .empty;
         while (true) {
