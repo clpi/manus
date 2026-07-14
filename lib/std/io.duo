@@ -2,68 +2,86 @@
 -- Binary I/O: io.read(n) reads exactly n bytes from stdin (LSP Content-Length framing)
 -- io.read("*l") reads a line, io.read("*a") reads all remaining input
 
-fun open(filename: str, mode: str): any
+fun std_io_open(filename: str, mode: str): any
     io.open(filename, mode)
 end
 
-fun popen(prog: str, mode: str): any
+fun std_io_popen(prog: str, mode: str): any
     io.popen(prog, mode)
 end
 
-fun read(file: any, arg: any): any
+fun std_io_read(file: any, arg: any): any
     file:read(arg)
 end
 
-fun write(file: any, arg: any): any
+fun std_io_write(file: any, arg: any): any
     file:write(arg)
 end
 
-fun close(file: any): void
+fun std_io_close(file: any): void
     file:close()
 end
 
-fun flush(file: any): void
+fun std_io_flush(file: any): void
     file:flush()
 end
 
-fun lines(filename: str): any
+fun std_io_lines(filename: str): any
     io.lines(filename)
 end
 
-fun input(file: any): any
+fun std_io_input(file: any): any
     io.input(file)
 end
 
-fun output(file: any): any
+fun std_io_output(file: any): any
     io.output(file)
 end
 
-fun tmpfile(): any
+fun std_io_tmpfile(): any
     io.tmpfile()
 end
 
-fun type(obj: any): any
+fun std_io_type(obj: any): any
     io.type(obj)
 end
 
 -- read_bytes: read exactly n bytes from a file or stdin.
 -- For LSP JSON-RPC: read header with read("*l"), extract Content-Length,
 -- then read_bytes(len) to get the body.
-fun read_bytes(file: any, n: int): str
+fun std_io_read_bytes(file: any, n: int): str
     file:read(n)
 end
 
 -- write_bytes: write a string/bytes to a file or stdout.
-fun write_bytes(file: any, data: str): void
+fun std_io_write_bytes(file: any, data: str): void
     file:write(data)
 end
 
 -- read_line: convenience to read one line from a file
-fun read_line(file: any): str
+fun std_io_read_line(file: any): str
     file:read("*l")
 end
 
 -- read_all: convenience to read all remaining input
-fun read_all(file: any): str
+fun std_io_read_all(file: any): str
     file:read("*a")
 end
+
+M = {}
+M.open = std_io_open
+M.popen = std_io_popen
+M.read = std_io_read
+M.write = std_io_write
+M.close = std_io_close
+M.flush = std_io_flush
+M.lines = std_io_lines
+M.input = std_io_input
+M.output = std_io_output
+M.tmpfile = std_io_tmpfile
+M.type = std_io_type
+M.read_bytes = std_io_read_bytes
+M.write_bytes = std_io_write_bytes
+M.read_line = std_io_read_line
+M.read_all = std_io_read_all
+M

@@ -36,36 +36,60 @@ duo_probe=$(/tmp/honest_duo)
 c_probe=$(/tmp/honest_c)
 duo_matmul=$(echo "$duo_probe" | awk '/^RESULT matmul / { print $3 }')
 c_matmul=$(echo "$c_probe" | awk '/^RESULT matmul / { print $3 }')
+if [ -z "$duo_matmul" ] || [ -z "$c_matmul" ]; then
+    echo "RESULT matmul missing: Duo=$duo_matmul C=$c_matmul"
+    exit 1
+fi
 if ! awk "BEGIN { d=$duo_matmul; c=$c_matmul; diff=d-c; if (diff < 0) diff=-diff; exit !(diff <= 1e-9) }"; then
     echo "RESULT matmul mismatch: Duo=$duo_matmul C=$c_matmul"
     exit 1
 fi
 duo_qsort=$(echo "$duo_probe" | awk '/^RESULT qsort / { print $3 }')
 c_qsort=$(echo "$c_probe" | awk '/^RESULT qsort / { print $3 }')
+if [ -z "$duo_qsort" ] || [ -z "$c_qsort" ]; then
+    echo "RESULT qsort missing: Duo=$duo_qsort C=$c_qsort"
+    exit 1
+fi
 if [ "$duo_qsort" != "$c_qsort" ]; then
     echo "RESULT qsort mismatch: Duo=$duo_qsort C=$c_qsort"
     exit 1
 fi
 duo_bsearch=$(echo "$duo_probe" | awk '/^RESULT bsearch / { print $3 }')
 c_bsearch=$(echo "$c_probe" | awk '/^RESULT bsearch / { print $3 }')
+if [ -z "$duo_bsearch" ] || [ -z "$c_bsearch" ]; then
+    echo "RESULT bsearch missing: Duo=$duo_bsearch C=$c_bsearch"
+    exit 1
+fi
 if [ "$duo_bsearch" != "$c_bsearch" ]; then
     echo "RESULT bsearch mismatch: Duo=$duo_bsearch C=$c_bsearch"
     exit 1
 fi
 duo_hashtable=$(echo "$duo_probe" | awk '/^RESULT hashtable / { print $3 }')
 c_hashtable=$(echo "$c_probe" | awk '/^RESULT hashtable / { print $3 }')
+if [ -z "$duo_hashtable" ] || [ -z "$c_hashtable" ]; then
+    echo "RESULT hashtable missing: Duo=$duo_hashtable C=$c_hashtable"
+    exit 1
+fi
 if [ "$duo_hashtable" != "$c_hashtable" ]; then
     echo "RESULT hashtable mismatch: Duo=$duo_hashtable C=$c_hashtable"
     exit 1
 fi
 duo_nbody=$(echo "$duo_probe" | awk '/^RESULT nbody / { print $3 }')
 c_nbody=$(echo "$c_probe" | awk '/^RESULT nbody / { print $3 }')
+if [ -z "$duo_nbody" ] || [ -z "$c_nbody" ]; then
+    echo "RESULT nbody missing: Duo=$duo_nbody C=$c_nbody"
+    exit 1
+fi
 if ! awk "BEGIN { d=$duo_nbody; c=$c_nbody; diff=d-c; if (diff < 0) diff=-diff; exit !(diff <= 1e-9) }"; then
     echo "RESULT nbody mismatch: Duo=$duo_nbody C=$c_nbody"
     exit 1
 fi
 duo_fnv=$(echo "$duo_probe" | awk '/^RESULT fnv / { print $3 }')
 c_fnv=$(echo "$c_probe" | awk '/^RESULT fnv / { print $3 }')
+if [ -z "$duo_fnv" ] || [ -z "$c_fnv" ]; then
+    echo "RESULT fnv missing: Duo=$duo_fnv C=$c_fnv"
+    exit 1
+fi
 if [ "$duo_fnv" != "$c_fnv" ]; then
     echo "RESULT fnv mismatch: Duo=$duo_fnv C=$c_fnv"
     exit 1
@@ -134,6 +158,7 @@ if [ "$OVERALL_PASS" -eq 1 ]; then
     echo "  (Duo uses runtime inputs and optimized native kernels without fixed-result folding)"
 else
     echo "⚠ Some benchmarks show C faster — investigating codegen overhead."
+    exit 1
 fi
 echo ""
 echo "Note: These benchmarks use runtime-seeded PRNG inputs that cannot be"

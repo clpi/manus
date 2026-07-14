@@ -5866,7 +5866,11 @@ pub const CodeGen = struct {
                     self.pl("free(__dt_{s});", .{dt});
                 }
                 if (r.vals.len == 0) {
-                    self.p("return;\n", .{});
+                    if (self.current_ret == .any) {
+                        self.p("return lua_val_nil();\n", .{});
+                    } else {
+                        self.p("return;\n", .{});
+                    }
                 } else if (r.vals.len == 1 and r.vals[0].* == .call and
                     r.vals[0].call.func.* == .name and
                     std.mem.eql(u8, r.vals[0].call.func.name.ident, "error"))
@@ -11062,6 +11066,7 @@ pub const CodeGen = struct {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
                 .local_decl => |*ld| for (ld.inits) |e| try self.collect_require_names(e, names),
+                .global_decl => |*gd| for (gd.inits) |e| try self.collect_require_names(e, names),
                 .assign => |*as| for (as.values) |v| try self.collect_require_names(v, names),
                 .ret => |*r| for (r.vals) |v| try self.collect_require_names(v, names),
                 .if_stmt => |*is| {
@@ -11111,6 +11116,24 @@ pub const CodeGen = struct {
         defer seen.deinit(self.alloc);
         const dir = if (self.src_path.len > 0) std.fs.path.dirname(self.src_path) orelse "." else ".";
 
+        // Find the project root: the parent of the `src` directory that contains the source file.
+        // This makes `req "src.foo"` resolve to `<project_root>/src/foo.duo` regardless of whether
+        // the current source is `src/main.duo` or `src/wasm/init.duo`.
+        const src_dir = blk: {
+            var d = dir;
+            while (d.len > 0 and !std.mem.eql(u8, d, ".")) {
+                if (std.mem.eql(u8, std.fs.path.basename(d), "src")) break :blk d;
+                const parent = std.fs.path.dirname(d);
+                if (parent == null or parent.?.len == 0) break;
+                d = parent.?;
+            }
+            break :blk dir;
+        };
+        const project_root = if (std.mem.eql(u8, std.fs.path.basename(src_dir), "src"))
+            std.fs.path.dirname(src_dir) orelse "."
+        else
+            dir;
+
         var embedded: std.ArrayList(struct { name: []const u8, cname: []const u8 }) = .empty;
         defer {
             for (embedded.items) |e| self.alloc.free(e.cname);
@@ -11158,8 +11181,8 @@ pub const CodeGen = struct {
             defer self.alloc.free(mod_path_name);
 
             var mod_path: ?[]const u8 = null;
-            const src_lua = try std.fmt.allocPrint(self.alloc, "{s}/{s}.lua", .{ dir, mod_path_name });
-            const src_duo = try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ dir, mod_path_name });
+            const src_lua = try std.fmt.allocPrint(self.alloc, "{s}/{s}.lua", .{ project_root, mod_path_name });
+            const src_duo = try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ project_root, mod_path_name });
             const lib_lua = try std.fmt.allocPrint(self.alloc, "lib/{s}.lua", .{mod_path_name});
             const lib_duo = try std.fmt.allocPrint(self.alloc, "lib/{s}.duo", .{mod_path_name});
             const vendor_lua = if (has_vendor) try std.fmt.allocPrint(self.alloc, "vendor/{s}.lua", .{mod_path_name}) else @as([]const u8, "");

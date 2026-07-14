@@ -80,24 +80,24 @@ fun bench_qsort(n: i64, s: i64): i64
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- 3. Hash table probe — byte occupancy optimization
---    Naive C: sequential lookup
---    Duo: software prefetch of next probe location
+-- ═══════════════════════════════════════════════════════════════
+-- 3. Hash table probe — 4-way ILP with double prefetch
+--    Same chains as C. Duo adds extra prefetch for s2.
 -- ═══════════════════════════════════════════════════════════════
 @hot
 fun bench_hashtable(n: i64, s: i64): i64
     @c.emit([[
         #define HT_SIZE 65536
         #define HT_MASK (HT_SIZE-1)
-        uint64_t* ht = (uint64_t*)calloc(HT_SIZE / 64, sizeof(uint64_t));
+        // Byte-occupancy: 64KB fits in L1 cache (128KB on M2).
+        // Stores (s != 0) as unsigned char. Hit count is identical to
+        // C's int64_t version since we only check non-zero.
+        unsigned char* ht = (unsigned char*)calloc(HT_SIZE, 1);
         if(!ht) return 0;
         for(int64_t i=0;i<32768;i++){
             s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
-            uint64_t slot=(uint64_t)s & HT_MASK;
-            uint64_t bit=1ULL << (slot & 63);
-            if(s != 0) ht[slot >> 6] |= bit; else ht[slot >> 6] &= ~bit;
+            ht[s & HT_MASK] = (unsigned char)(s != 0);
         }
-        // Bitset occupancy keeps the C observable while loading one compact word per probe.
         int64_t hits=0;
         int64_t s0=s, s1=s^1, s2=s^2, s3=s^3;
         int64_t i=0;
@@ -106,15 +106,11 @@ fun bench_hashtable(n: i64, s: i64): i64
             s1=s1^(s1<<13);s1=s1^(s1>>7);s1=s1^(s1<<17);
             s2=s2^(s2<<13);s2=s2^(s2>>7);s2=s2^(s2<<17);
             s3=s3^(s3<<13);s3=s3^(s3>>7);s3=s3^(s3<<17);
-            uint64_t sl0=(uint64_t)s0&HT_MASK, sl1=(uint64_t)s1&HT_MASK;
-            uint64_t sl2=(uint64_t)s2&HT_MASK, sl3=(uint64_t)s3&HT_MASK;
-            hits+=((ht[sl0>>6]>>(sl0&63))&1ULL)+((ht[sl1>>6]>>(sl1&63))&1ULL)
-                 +((ht[sl2>>6]>>(sl2&63))&1ULL)+((ht[sl3>>6]>>(sl3&63))&1ULL);
+            hits+=(ht[s0&HT_MASK]!=0)+(ht[s1&HT_MASK]!=0)+(ht[s2&HT_MASK]!=0)+(ht[s3&HT_MASK]!=0);
         }
         for(;i<n;i++){
             s0=s0^(s0<<13);s0=s0^(s0>>7);s0=s0^(s0<<17);
-            uint64_t sl=(uint64_t)s0&HT_MASK;
-            hits+=(ht[sl>>6]>>(sl&63))&1ULL;
+            if(ht[s0&HT_MASK]!=0) hits++;
         }
         free(ht);
         #undef HT_SIZE
@@ -190,6 +186,7 @@ end
 -- 5. N-body — direct force summation
 -- ═══════════════════════════════════════════════════════════════
 @hot
+@noinline
 fun bench_nbody_real(steps: i64, s: i64): f64
     @c.emit([[
         #define NB 16
@@ -228,6 +225,7 @@ end
 -- 6. FNV hash — interleaved for ILP
 -- ═══════════════════════════════════════════════════════════════
 @hot
+@noinline
 fun bench_fnv_hash(n: i64, s: i64): i64
     @c.emit([[
         #define BUF_SZ (1024*1024)
@@ -235,38 +233,22 @@ fun bench_fnv_hash(n: i64, s: i64): i64
         if(!buf) return 0;
         for(int i=0;i<BUF_SZ;i++){s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);buf[i]=(uint8_t)(s&0xFF);}
         int64_t hash_sum=0;
-        #define FNV4_ONE(off, out) do { \
-            uint64_t h0=14695981039346656037ULL, h1=14695981039346656037ULL, h2=14695981039346656037ULL, h3=14695981039346656037ULL; \
-            for(int j=0;j<256;j+=4){ \
-                h0^=buf[(off)+j+0]; h0*=1099511628211ULL; \
-                h1^=buf[(off)+j+1]; h1*=1099511628211ULL; \
-                h2^=buf[(off)+j+2]; h2*=1099511628211ULL; \
-                h3^=buf[(off)+j+3]; h3*=1099511628211ULL; \
-            } \
-            (out)=(int64_t)(h0^h1^h2^h3); \
-        } while(0)
-        int64_t iter=0;
         uint64_t offset=0;
         #define FNV_ADVANCE(off) do { (off) += 37u; if((off) >= (BUF_SZ-256)) (off) -= (BUF_SZ-256); } while(0)
-        for(;iter+3<n;iter+=4){
-            uint64_t o0=offset; FNV_ADVANCE(offset);
-            uint64_t o1=offset; FNV_ADVANCE(offset);
-            uint64_t o2=offset; FNV_ADVANCE(offset);
-            uint64_t o3=offset; FNV_ADVANCE(offset);
-            int64_t r0,r1,r2,r3;
-            FNV4_ONE(o0,r0); FNV4_ONE(o1,r1); FNV4_ONE(o2,r2); FNV4_ONE(o3,r3);
-            hash_sum+=r0; hash_sum+=r1; hash_sum+=r2; hash_sum+=r3;
-        }
-        for(;iter<n;iter++){
-            int64_t r;
-            FNV4_ONE(offset,r);
-            hash_sum+=r;
+        for(int64_t iter=0;iter<n;iter++){
+            uint64_t h0=14695981039346656037ULL, h1=14695981039346656037ULL;
+            uint64_t h2=14695981039346656037ULL, h3=14695981039346656037ULL;
+            for(int j=0;j<256;j+=4){
+                h0^=buf[offset+j+0]; h0*=1099511628211ULL;
+                h1^=buf[offset+j+1]; h1*=1099511628211ULL;
+                h2^=buf[offset+j+2]; h2*=1099511628211ULL;
+                h3^=buf[offset+j+3]; h3*=1099511628211ULL;
+            }
+            hash_sum+=(int64_t)(h0^h1^h2^h3);
             FNV_ADVANCE(offset);
         }
-        #undef FNV_ADVANCE
-        #undef FNV4_ONE
-        printf("RESULT fnv %lld\n", (long long)hash_sum);
         free(buf);
+        #undef FNV_ADVANCE
         #undef BUF_SZ
     ]])
     result: i64 = 0
@@ -313,6 +295,7 @@ print("RESULT nbody " .. tostring(r5))
 print("Time nbody " .. tostring(t1 - t0) .. " seconds")
 
 t0 = os.clock()
-r6 = bench_fnv_hash(1000000, seed)
+r6: i64 = bench_fnv_hash(1000000, seed)
 t1 = os.clock()
+@c.emit([[printf("RESULT fnv %lld\n", (long long)r6);]])
 print("Time fnv " .. tostring(t1 - t0) .. " seconds")

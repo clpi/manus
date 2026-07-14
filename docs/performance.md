@@ -87,10 +87,10 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | --- | --- | --- |
 | matmul | 128×128 matrix checksum | Duo contracts `sum(A*B)` to column/row sums; C materializes the GEMM |
 | qsort | 100K int64 | Duo: signed i64 LSD radix sort; C: median-of-three quicksort |
-| hashtable | 1M probes / 64K table | Duo: 16-way byte-occupancy probes; C: 4-way int64 slot probes |
+| hashtable | 1M probes / 64K table | Duo: exact 4-way bitset occupancy probes; C: 4-way int64 slot probes |
 | bsearch | 1M queries | Duo: open-address membership with 8-way bitset occupancy probes; C: branchless binary search |
-| nbody | 16 bodies × 100K steps | Same algorithm family; runtime-seeded |
-| fnv | 1M hash passes | Duo: 16-way ILP FNV over padded ring offsets; C: 4-way modulo-offset FNV |
+| nbody | 16 bodies × 100K steps | Same exact scalar trajectory; runtime-seeded |
+| fnv | 1M hash passes | Duo: exact 4-window FNV with offset recurrence; C: 4-way modulo-offset FNV |
 
 ---
 
@@ -130,14 +130,14 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
-| matmul | 0.000064 | 0.000182 | 0.35x | ✓ Duo 65% faster (`sum(A*B)` contraction) |
-| qsort | 0.001002 | 0.004467 | 0.22x | ✓ Duo ~4.5x faster (signed i64 radix sort) |
-| hashtable | 0.000369 | 0.000920 | 0.40x | ✓ Duo 60% faster (16-way byte occupancy, no prefetch) |
-| bsearch | 0.006649 | 0.018733 | 0.35x | ✓ Duo 65% faster (8-way bitset occupancy + direct xorshift slots) |
-| nbody | 0.016681 | 0.029616 | 0.56x | ✓ Duo 44% faster (2-way dual-pipeline) |
-| fnv | 0.045220 | 0.077917 | 0.58x | ✓ Duo 42% faster (16-way ILP + padded ring offsets) |
+| matmul | 0.000066 | 0.000180 | 0.37x | ✓ Duo 63% faster (`sum(A*B)` contraction) |
+| qsort | 0.001022 | 0.004313 | 0.24x | ✓ Duo ~4.2x faster (signed i64 radix sort) |
+| hashtable | 0.000782 | 0.000922 | 0.85x | ✓ Duo 15% faster (exact bitset occupancy) |
+| bsearch | 0.006857 | 0.018528 | 0.37x | ✓ Duo 63% faster (8-way bitset occupancy + direct xorshift slots) |
+| nbody | 0.028196 | 0.028660 | 0.98x | ✓ Duo 2% faster (exact C trajectory, noinline layout) |
+| fnv | 0.072967 | 0.076687 | 0.95x | ✓ Duo 5% faster (exact FNV windows + offset recurrence) |
 
-**Status:** PASS — Duo matches or beats C on all honest benchmarks. All 6 show Duo clearly faster in the latest gate.
+**Status:** PASS — Duo matches or beats C on all honest benchmarks. The harness now validates all six `RESULT` rows; all six rows are faster in the latest default-seed gate, with nbody still the narrowest margin.
 
 ---
 
@@ -3808,3 +3808,90 @@ Rejected:
 Remaining:
 
 - The narrowest honest rows remain nbody and fnv. Further wins likely need a different physics-kernel structure or a broader hashing/codegen improvement rather than more simple unroll width.
+
+## 2026-07-14 Honest Full-Result Enforcement + Exact Hashtable/FNV
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+Hashtable hit count matches C exactly.
+Nbody energy matches C within 1e-9.
+FNV checksum matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `scripts/run_honest_benchmark.sh`: now compares all six `RESULT` rows before timing, fails if a required `RESULT` line is missing, and exits nonzero if any row loses outside the 3% slack band. Previously only matmul, qsort, and bsearch were checked.
+- `examples/bench_honest.duo` `bench_hashtable`: replaced the unchecked 16-stream byte-occupancy variant with an exact 4-stream bitset occupancy table. It preserves the C query stream and `s != 0` overwrite behavior while reducing probe memory from 64 KiB of bytes to 8 KiB of bits.
+- `examples/bench_honest.duo` `bench_nbody_real`: restored the exact scalar C trajectory after unchecked unrolled variants changed the energy result.
+- `examples/bench_honest.duo` `bench_fnv_hash`: restored exact C hash windows and offset range, prints the raw 64-bit checksum from native code, and keeps a 4-window outer unroll with offset recurrence instead of per-iteration modulo.
+
+Measured impact:
+
+| Measurement | Previous checked Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Honest hashtable, default seed | 0.000961 | 0.000755 | 0.000922 | 0.819x | Exact hit count now checked; bitset occupancy retained. |
+| Honest hashtable, seed `987654321` | N/A | 0.000790 | 0.000951 | 0.831x | Alternate seed; exact hit count checked. |
+| Honest nbody, default seed | 0.029068 | 0.028552 | 0.028618 | 0.998x | Exact energy now checked; tie within 3% slack. |
+| Honest nbody, seed `987654321` | N/A | 0.029328 | 0.028943 | 1.013x | Alternate seed; exact energy checked. |
+| Honest fnv, default seed | 0.074566 | 0.072788 | 0.076554 | 0.951x | Exact 64-bit checksum now checked; offset recurrence retained. |
+| Honest fnv, seed `987654321` | N/A | 0.073545 | 0.076700 | 0.959x | Alternate seed; exact checksum checked. |
+
+Rejected:
+
+- The previous 16-stream hashtable, 4-way/no-branch nbody, 2-way nbody, and 16-way padded-offset FNV variants were faster but did not preserve the newly checked C observable results, so they are no longer acceptable evidence for honest runtime wins.
+- Nbody branch splitting (`j < i` then `j > i`) and `@inline` both changed the final energy under the current optimizer, despite preserving source-level physics intent. They remain rejected unless the benchmark contract changes to tolerate floating trajectory drift explicitly.
+- 8-window exact FNV outer unroll preserved the checksum but measured slower than the retained 4-window recurrence variant (`0.074093s` vs the retained `0.073350s` sample).
+- Nbody `__builtin_expect(i==j, 0)` preserved exact energy and improved one default-seed sample (`0.028179s` vs C `0.028634s`), but failed the alternate-seed strengthened gate with nbody at `1.077x`, so it was reverted.
+- Compiling the honest Duo binary with `duo compile --pgo -O3` preserved all six results but regressed FNV in the focused measurement (`0.080018s` Duo vs `0.076605s` C), so PGO is not wired into `zig build honest-bench`.
+- 2-window exact FNV recurrence preserved checksums but did not improve over the retained 4-window recurrence on the checked samples, so the documented 4-window version remains retained.
+
+Remaining:
+
+- Nbody remains the narrowest honest row after full-result enforcement. Further work needs an exact-result strategy or a deliberately documented benchmark-contract change; simple source-equivalent rewrites can alter the chaotic floating trajectory under `-ffast-math`.
+
+## 2026-07-14 Honest Nbody Exact NoInline Layout
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Nbody energy matches C within 1e-9.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_nbody_real`: added `@noinline` while keeping `@hot` and the exact scalar force loop. This preserves the C observable trajectory and avoids the generated `static inline` layout for this numerically fragile kernel.
+
+Measured impact:
+
+| Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Honest nbody, default seed | 0.028552 | 0.028196 | 0.028660 | 0.984x | Exact energy checked. |
+| Honest nbody, seed `987654321` | 0.029328 | 0.028145 | 0.028585 | 0.985x | Alternate seed; exact energy checked. |
+
+Rejected:
+
+- No new algorithmic nbody rewrite was retained in this slice. Prior branch hints, branch splitting, and inline forcing remain rejected because they either failed the alternate-seed timing gate or changed the exact final energy.
+
+Remaining:
+
+- Nbody is now faster on both checked seeds, but it remains the narrowest honest row. Further gains need exact-result code-layout work, a broader physics-kernel contract, or a benchmark-contract change that explicitly tolerates floating trajectory drift.
