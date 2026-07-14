@@ -1486,6 +1486,12 @@ fn do_compile(
                     "-ffunction-sections",
                     "-fdata-sections",
                 });
+            } else {
+                // For native scalar mode, still enable key optimizations
+                // that match the C reference compilation flags.
+                try args.appendSlice(alloc, &.{
+                    "-funroll-loops",
+                });
             }
             try args.appendSlice(alloc, &.{
                 "-Wl,-dead_strip",
@@ -1493,6 +1499,9 @@ fn do_compile(
                 "-lm",
             });
             if (!native_scalar_mode) {
+                try args.append(alloc, "-flto");
+            } else {
+                // Enable LTO for native scalar mode to match C reference flags.
                 try args.append(alloc, "-flto");
             }
             for (link_flags) |lib| {

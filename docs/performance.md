@@ -87,10 +87,10 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | --- | --- | --- |
 | matmul | 128×128 matrix checksum | Duo contracts `sum(A*B)` to column/row sums; C materializes the GEMM |
 | qsort | 100K int64 | Duo: signed i64 LSD radix sort; C: median-of-three quicksort |
-| hashtable | 1M probes / 64K table | Duo: exact 4-way bitset occupancy probes; C: 4-way int64 slot probes |
+| hashtable | 1M probes / 64K table | Duo: 16-way byte occupancy probes with prefetch; C: 16-way byte occupancy probes |
 | bsearch | 1M queries | Duo: open-address membership with 8-way bitset occupancy probes; C: branchless binary search |
-| nbody | 16 bodies × 100K steps | Same exact scalar trajectory; runtime-seeded |
-| fnv | 1M hash passes | Duo: exact 4-window FNV with offset recurrence; C: 4-way modulo-offset FNV |
+| nbody | 16 bodies × 100K steps | Same exact 2-way directed-force trajectory; runtime-seeded |
+| fnv | 1M hash passes | Duo: 16-lane padded-window FNV with offset recurrence; C: 16-lane padded-window FNV with multiply+mask offset |
 
 ---
 
@@ -130,14 +130,14 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
-| matmul | 0.000066 | 0.000180 | 0.37x | ✓ Duo 63% faster (`sum(A*B)` contraction) |
-| qsort | 0.001022 | 0.004313 | 0.24x | ✓ Duo ~4.2x faster (signed i64 radix sort) |
-| hashtable | 0.000782 | 0.000922 | 0.85x | ✓ Duo 15% faster (exact bitset occupancy) |
-| bsearch | 0.006857 | 0.018528 | 0.37x | ✓ Duo 63% faster (8-way bitset occupancy + direct xorshift slots) |
-| nbody | 0.028196 | 0.028660 | 0.98x | ✓ Duo 2% faster (exact C trajectory, noinline layout) |
-| fnv | 0.072967 | 0.076687 | 0.95x | ✓ Duo 5% faster (exact FNV windows + offset recurrence) |
+| matmul | 0.000068 | 0.000177 | 0.38x | ✓ Duo 62% faster (`sum(A*B)` contraction) |
+| qsort | 0.001101 | 0.004306 | 0.26x | ✓ Duo ~3.9x faster (signed i64 radix sort) |
+| hashtable | 0.000479 | 0.000478 | 1.00x | ✓ Slack tie (16-way byte occupancy + prefetch) |
+| bsearch | 0.007045 | 0.019055 | 0.37x | ✓ Duo 63% faster (8-way bitset occupancy + direct xorshift slots) |
+| nbody | 0.026471 | 0.026333 | 1.01x | ✓ Slack tie (exact 2-way C trajectory) |
+| fnv | 0.045249 | 0.044612 | 1.01x | ✓ Slack tie (16-lane FNV + offset recurrence) |
 
-**Status:** PASS — Duo matches or beats C on all honest benchmarks. The harness now validates all six `RESULT` rows; all six rows are faster in the latest default-seed gate, with nbody still the narrowest margin.
+**Status:** PASS — Duo matches or beats C on all honest benchmarks under the harness slack. The harness validates all six `RESULT` rows. Hashtable, nbody, and FNV are current parity rows and remain active targets for unambiguous wins.
 
 ---
 
@@ -3895,3 +3895,104 @@ Rejected:
 Remaining:
 
 - Nbody is now faster on both checked seeds, but it remains the narrowest honest row. Further gains need exact-result code-layout work, a broader physics-kernel contract, or a benchmark-contract change that explicitly tolerates floating trajectory drift.
+
+## 2026-07-14 Honest Exact-Stream Recovery + FNV Result Formatting
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+Hashtable hit count matches C exactly.
+Nbody energy matches C within 1e-9.
+FNV checksum matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_hashtable`: retained the exact 4-chain C query stream and bitset occupancy table. The earlier 16-chain probe variant was invalid against the current C reference because it changed the hit-count workload.
+- `examples/bench_honest.duo` `bench_fnv_hash`: retained exact 4-lane FNV windows and replaced C's per-iteration modulo with an equivalent offset recurrence.
+- `examples/bench_honest.duo` driver: changed the FNV result binding to typed `i64` and prints the checksum with native `printf` after the timer stops. Generic `tostring` rounded large 64-bit values, while printing inside the function charged Duo timing for result output.
+- `examples/bench_honest.duo` `bench_fnv_hash`: kept `@noinline` after the exact-stream recovery because it improved the retained serial samples without changing the checksum.
+
+Measured impact:
+
+| Measurement | Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Honest hashtable, default seed | 0.000819 | 0.000947 | 0.865x | Exact 4-chain hit count checked; bitset occupancy retained. |
+| Honest hashtable, seed `987654321` | 0.000779 | 0.000989 | 0.788x | Alternate seed; exact hit count checked. |
+| Honest nbody, default seed | 0.028979 | 0.029501 | 0.982x | Exact energy checked. |
+| Honest nbody, seed `987654321` | 0.028823 | 0.029485 | 0.978x | Alternate seed; exact energy checked. |
+| Honest fnv, default seed | 0.075416 | 0.077861 | 0.969x | Exact checksum checked; offset recurrence retained. |
+| Honest fnv, seed `987654321` | 0.075260 | 0.079162 | 0.951x | Alternate seed; exact checksum checked. |
+
+Rejected:
+
+- Running two `honest-bench` invocations in parallel is invalid because the script uses shared `/tmp/honest_*` paths; it produced false mismatches and must remain serial.
+- The 16-chain hashtable variant changed the C reference's 4-chain query stream and is rejected even when it appears faster.
+- Printing FNV through generic `tostring` rounded large 64-bit checksums (`5.6640364324404634e+18` vs exact decimal), so exact native formatting is required.
+- Printing the FNV result inside `bench_fnv_hash` preserved correctness but charged the timed Duo function for output that C performs after timing; the retained form prints after `t1`.
+- 64-byte `posix_memalign` for the FNV buffer preserved correctness but did not improve the retained samples.
+
+Remaining:
+
+- Nbody remains the narrowest honest row, with FNV also close under some noisy default-seed runs. Further gains should target exact-result code layout or a genuinely broader physics/hash kernel strategy, not altered streams.
+
+## 2026-07-14 Current Honest Contract Realignment
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+Hashtable hit count matches C exactly.
+Nbody energy matches C within 1e-9.
+FNV checksum matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_hashtable`: realigned to the current C reference's 16 independent xorshift query chains and retained byte occupancy with software prefetch. A 4-chain bitset version was correct only against an older C reference and now changes the observable hit count.
+- `examples/bench_honest.duo` `bench_nbody_real`: realigned to the current C reference's 2-way directed-force accumulation, matching statement order so `-ffast-math` still produces the checked energy.
+- `examples/bench_honest.duo` `bench_fnv_hash`: realigned to the current C reference's 16-lane padded-window stream and retained an equivalent offset recurrence instead of recomputing `iter * 37 & mask`.
+- `examples/bench_honest.duo` driver: keeps the FNV result in a typed `i64` and prints with native `printf` after timing, avoiding rounded generic `tostring` output and avoiding timed result printing.
+
+Measured impact:
+
+| Measurement | Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Honest hashtable, default seed | 0.000467 | 0.000465 | 1.004x | Exact 16-chain hit count checked; slack tie. |
+| Honest hashtable, seed `987654321` | 0.000479 | 0.000478 | 1.002x | Alternate seed; exact hit count checked. |
+| Honest nbody, default seed | 0.026036 | 0.026471 | 0.984x | Exact 2-way energy checked. |
+| Honest nbody, seed `987654321` | 0.026471 | 0.026333 | 1.005x | Alternate seed; slack tie. |
+| Honest fnv, default seed | 0.044336 | 0.044408 | 0.998x | Exact checksum checked; slack tie. |
+| Honest fnv, seed `987654321` | 0.045249 | 0.044612 | 1.014x | Alternate seed; slack tie. |
+
+Rejected:
+
+- 4-chain hashtable bitset against the current C reference: changed the hit-count stream and failed correctness.
+- Nbody stack-array alignment: changed the checked final energy under the optimizer.
+- Nbody/FNV `@noinline` under the current C reference: preserved correctness in some runs, but produced default-seed failures and was removed.
+- FNV generic `tostring` output: rounded large 64-bit checksums and failed exact result comparison.
+
+Remaining:
+
+- The current honest gate passes, but hashtable, nbody, and FNV are parity/slack rows rather than unambiguous wins. Next work should target those exact current contracts with broader layout or kernel improvements.
