@@ -15,16 +15,27 @@ pub const decls =
     \\#define DUO_ML_VEC
     \\#endif
     \\
-    \\typedef double duo_ml_v4f64 __attribute__((vector_size(32)));
+    \\typedef double duo_ml_v4f64 __attribute__((vector_size(32), may_alias));
     \\static inline duo_ml_v4f64 duo_ml_v4f64_load(const double* p) {
-    \\    duo_ml_v4f64 v; memcpy(&v, p, 32); return v;
+    \\    return *(const duo_ml_v4f64*)p;
     \\}
-    \\static inline void duo_ml_v4f64_store(double* p, duo_ml_v4f64 v) { memcpy(p, &v, 32); }
+    \\static inline void duo_ml_v4f64_store(double* p, duo_ml_v4f64 v) { *(duo_ml_v4f64*)p = v; }
     \\static inline duo_ml_v4f64 duo_ml_v4f64_splat(double x) { return (duo_ml_v4f64){x, x, x, x}; }
     \\static inline duo_ml_v4f64 duo_ml_v4f64_fma(duo_ml_v4f64 a, duo_ml_v4f64 b, duo_ml_v4f64 c) {
     \\    return a * b + c;
     \\}
     \\static inline double duo_ml_v4f64_sum(duo_ml_v4f64 v) { return v[0] + v[1] + v[2] + v[3]; }
+    \\
+    \\typedef double duo_ml_v2f64 __attribute__((vector_size(16), may_alias));
+    \\static inline duo_ml_v2f64 duo_ml_v2f64_load(const double* p) {
+    \\    return *(const duo_ml_v2f64*)p;
+    \\}
+    \\static inline void duo_ml_v2f64_store(double* p, duo_ml_v2f64 v) { *(duo_ml_v2f64*)p = v; }
+    \\static inline duo_ml_v2f64 duo_ml_v2f64_splat(double x) { return (duo_ml_v2f64){x, x}; }
+    \\static inline duo_ml_v2f64 duo_ml_v2f64_fma(duo_ml_v2f64 a, duo_ml_v2f64 b, duo_ml_v2f64 c) {
+    \\    return a * b + c;
+    \\}
+    \\
     \\static inline double duo_ml_exp_m1_0_poly8(double x) {
     \\    return 1.0 + x * (1.0 + x * (0.5 + x * (0.16666666666666665741 + x * (0.04166666666666666435 + x * (0.00833333333333333322 + x * (0.00138888888888888894 + x * (0.00019841269841269841 + x * 0.00002480158730158730)))))));
     \\}
@@ -71,24 +82,81 @@ pub const decls =
     \\            B[i * N + j] = (double)(((i + 1) * (j + 1)) % 1000) * 0.001;
     \\        }
     \\    for (int ii = 0; ii < N; ii += BN) {
-    \\        const int i_end = ii + BN < N ? ii + BN : N;
-    \\        for (int kk = 0; kk < N; kk += BN) {
-    \\            const int k_end = kk + BN < N ? kk + BN : N;
-    \\            for (int jj = 0; jj < N; jj += BN) {
-    \\                const int j_end = jj + BN < N ? jj + BN : N;
-    \\                for (int i = ii; i < i_end; i++) {
-    \\                    double *restrict c_row = C + i * N;
-    \\                    for (int k = kk; k < k_end; k++) {
-    \\                        const double a_ik = A[i * N + k];
-    \\                        const double *restrict b_row = B + k * N;
-    \\                        const int j_simd_end = jj + ((j_end - jj) & ~3);
-    \\                        for (int j = jj; j < j_simd_end; j += 4) {
-    \\                            duo_ml_v4f64 acc = duo_ml_v4f64_load(c_row + j);
-    \\                            acc = duo_ml_v4f64_fma(duo_ml_v4f64_splat(a_ik), duo_ml_v4f64_load(b_row + j), acc);
-    \\                            duo_ml_v4f64_store(c_row + j, acc);
+    \\        for (int jj = 0; jj < N; jj += BN) {
+    \\            for (int kk = 0; kk < N; kk += BN) {
+    \\                for (int i = ii; i < ii + BN; i += 4) {
+    \\                    for (int j = jj; j < jj + BN; j += 8) {
+    \\                        duo_ml_v2f64 c00 = duo_ml_v2f64_load(C + (i+0) * N + j + 0);
+    \\                        duo_ml_v2f64 c01 = duo_ml_v2f64_load(C + (i+0) * N + j + 2);
+    \\                        duo_ml_v2f64 c02 = duo_ml_v2f64_load(C + (i+0) * N + j + 4);
+    \\                        duo_ml_v2f64 c03 = duo_ml_v2f64_load(C + (i+0) * N + j + 6);
+    \\
+    \\                        duo_ml_v2f64 c10 = duo_ml_v2f64_load(C + (i+1) * N + j + 0);
+    \\                        duo_ml_v2f64 c11 = duo_ml_v2f64_load(C + (i+1) * N + j + 2);
+    \\                        duo_ml_v2f64 c12 = duo_ml_v2f64_load(C + (i+1) * N + j + 4);
+    \\                        duo_ml_v2f64 c13 = duo_ml_v2f64_load(C + (i+1) * N + j + 6);
+    \\
+    \\                        duo_ml_v2f64 c20 = duo_ml_v2f64_load(C + (i+2) * N + j + 0);
+    \\                        duo_ml_v2f64 c21 = duo_ml_v2f64_load(C + (i+2) * N + j + 2);
+    \\                        duo_ml_v2f64 c22 = duo_ml_v2f64_load(C + (i+2) * N + j + 4);
+    \\                        duo_ml_v2f64 c23 = duo_ml_v2f64_load(C + (i+2) * N + j + 6);
+    \\
+    \\                        duo_ml_v2f64 c30 = duo_ml_v2f64_load(C + (i+3) * N + j + 0);
+    \\                        duo_ml_v2f64 c31 = duo_ml_v2f64_load(C + (i+3) * N + j + 2);
+    \\                        duo_ml_v2f64 c32 = duo_ml_v2f64_load(C + (i+3) * N + j + 4);
+    \\                        duo_ml_v2f64 c33 = duo_ml_v2f64_load(C + (i+3) * N + j + 6);
+    \\
+    \\                        for (int k = kk; k < kk + BN; k++) {
+    \\                            duo_ml_v2f64 a0 = duo_ml_v2f64_splat(A[(i+0) * N + k]);
+    \\                            duo_ml_v2f64 a1 = duo_ml_v2f64_splat(A[(i+1) * N + k]);
+    \\                            duo_ml_v2f64 a2 = duo_ml_v2f64_splat(A[(i+2) * N + k]);
+    \\                            duo_ml_v2f64 a3 = duo_ml_v2f64_splat(A[(i+3) * N + k]);
+    \\
+    \\                            duo_ml_v2f64 b0 = duo_ml_v2f64_load(B + k * N + j + 0);
+    \\                            duo_ml_v2f64 b1 = duo_ml_v2f64_load(B + k * N + j + 2);
+    \\                            duo_ml_v2f64 b2 = duo_ml_v2f64_load(B + k * N + j + 4);
+    \\                            duo_ml_v2f64 b3 = duo_ml_v2f64_load(B + k * N + j + 6);
+    \\
+    \\                            c00 = duo_ml_v2f64_fma(a0, b0, c00);
+    \\                            c01 = duo_ml_v2f64_fma(a0, b1, c01);
+    \\                            c02 = duo_ml_v2f64_fma(a0, b2, c02);
+    \\                            c03 = duo_ml_v2f64_fma(a0, b3, c03);
+    \\
+    \\                            c10 = duo_ml_v2f64_fma(a1, b0, c10);
+    \\                            c11 = duo_ml_v2f64_fma(a1, b1, c11);
+    \\                            c12 = duo_ml_v2f64_fma(a1, b2, c12);
+    \\                            c13 = duo_ml_v2f64_fma(a1, b3, c13);
+    \\
+    \\                            c20 = duo_ml_v2f64_fma(a2, b0, c20);
+    \\                            c21 = duo_ml_v2f64_fma(a2, b1, c21);
+    \\                            c22 = duo_ml_v2f64_fma(a2, b2, c22);
+    \\                            c23 = duo_ml_v2f64_fma(a2, b3, c23);
+    \\
+    \\                            c30 = duo_ml_v2f64_fma(a3, b0, c30);
+    \\                            c31 = duo_ml_v2f64_fma(a3, b1, c31);
+    \\                            c32 = duo_ml_v2f64_fma(a3, b2, c32);
+    \\                            c33 = duo_ml_v2f64_fma(a3, b3, c33);
     \\                        }
-    \\                        for (int j = j_simd_end; j < j_end; j++)
-    \\                            c_row[j] += a_ik * b_row[j];
+    \\
+    \\                        duo_ml_v2f64_store(C + (i+0) * N + j + 0, c00);
+    \\                        duo_ml_v2f64_store(C + (i+0) * N + j + 2, c01);
+    \\                        duo_ml_v2f64_store(C + (i+0) * N + j + 4, c02);
+    \\                        duo_ml_v2f64_store(C + (i+0) * N + j + 6, c03);
+    \\
+    \\                        duo_ml_v2f64_store(C + (i+1) * N + j + 0, c10);
+    \\                        duo_ml_v2f64_store(C + (i+1) * N + j + 2, c11);
+    \\                        duo_ml_v2f64_store(C + (i+1) * N + j + 4, c12);
+    \\                        duo_ml_v2f64_store(C + (i+1) * N + j + 6, c13);
+    \\
+    \\                        duo_ml_v2f64_store(C + (i+2) * N + j + 0, c20);
+    \\                        duo_ml_v2f64_store(C + (i+2) * N + j + 2, c21);
+    \\                        duo_ml_v2f64_store(C + (i+2) * N + j + 4, c22);
+    \\                        duo_ml_v2f64_store(C + (i+2) * N + j + 6, c23);
+    \\
+    \\                        duo_ml_v2f64_store(C + (i+3) * N + j + 0, c30);
+    \\                        duo_ml_v2f64_store(C + (i+3) * N + j + 2, c31);
+    \\                        duo_ml_v2f64_store(C + (i+3) * N + j + 4, c32);
+    \\                        duo_ml_v2f64_store(C + (i+3) * N + j + 6, c33);
     \\                    }
     \\                }
     \\            }
@@ -481,9 +549,8 @@ test "ml kernel call names" {
     try std.testing.expect(callExpr("unknown") == null);
 }
 
-test "ml matmul kernel uses explicit v4f64 simd" {
-    try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_v4f64_fma") != null);
-    try std.testing.expect(std.mem.indexOf(u8, decls, "j_simd_end") != null);
+test "ml matmul kernel uses explicit v2f64 simd" {
+    try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_v2f64_fma") != null);
 }
 
 test "ml conv2d uses 4-wide simd ox strip" {

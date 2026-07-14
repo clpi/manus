@@ -1472,6 +1472,209 @@ pub const CodeGen = struct {
         };
     }
 
+    fn native_scalar_needs_stdio_h(self: *CodeGen, mod: *const ast.Module) bool {
+        if (!self.native_scalar_mode) return true;
+        if (mod.body.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_stdio_h(expr)) return true;
+        }
+        for (mod.body.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_stdio_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn block_needs_native_scalar_stdio_h(self: *CodeGen, block: ast.Block) bool {
+        if (block.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_stdio_h(expr)) return true;
+        }
+        for (block.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_stdio_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_needs_native_scalar_stdio_h(self: *CodeGen, stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.inits) |expr| {
+                    if (self.expr_needs_native_scalar_stdio_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .const_decl => |cd| self.expr_needs_native_scalar_stdio_h(cd.val),
+            .assign => |as| blk: {
+                for (as.targets) |expr| {
+                    if (self.expr_needs_native_scalar_stdio_h(expr)) break :blk true;
+                }
+                for (as.values) |expr| {
+                    if (self.expr_needs_native_scalar_stdio_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .call_stmt => |cs| self.expr_needs_native_scalar_stdio_h(cs.expr),
+            .expr_stmt => |es| self.expr_needs_native_scalar_stdio_h(es.expr),
+            .do_block => |db| self.block_needs_native_scalar_stdio_h(db.body),
+            .while_loop => |wl| self.expr_needs_native_scalar_stdio_h(wl.cond) or self.block_needs_native_scalar_stdio_h(wl.body),
+            .repeat_loop => |rl| self.expr_needs_native_scalar_stdio_h(rl.cond) or self.block_needs_native_scalar_stdio_h(rl.body),
+            .if_stmt => |is| blk: {
+                if (self.expr_needs_native_scalar_stdio_h(is.cond) or self.block_needs_native_scalar_stdio_h(is.then)) break :blk true;
+                for (is.elseifs) |elseif| {
+                    if (self.expr_needs_native_scalar_stdio_h(elseif.cond) or self.block_needs_native_scalar_stdio_h(elseif.body)) break :blk true;
+                }
+                if (is.else_body) |body| {
+                    if (self.block_needs_native_scalar_stdio_h(body)) break :blk true;
+                }
+                break :blk false;
+            },
+            .num_for => |nf| self.expr_needs_native_scalar_stdio_h(nf.start) or
+                self.expr_needs_native_scalar_stdio_h(nf.stop) or
+                (nf.step != null and self.expr_needs_native_scalar_stdio_h(nf.step.?)) or
+                self.block_needs_native_scalar_stdio_h(nf.body),
+            .func_decl => |fd| self.block_needs_native_scalar_stdio_h(fd.func.body),
+            .ret => |r| blk: {
+                for (r.vals) |expr| {
+                    if (self.expr_needs_native_scalar_stdio_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    fn expr_needs_native_scalar_stdio_h(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .binop => |b| self.expr_needs_native_scalar_stdio_h(b.lhs) or self.expr_needs_native_scalar_stdio_h(b.rhs),
+            .unop => |un| self.expr_needs_native_scalar_stdio_h(un.operand),
+            .call => |call| blk: {
+                if (call.func.* == .name) {
+                    const name = call.func.name.ident;
+                    if (std.mem.eql(u8, name, "print") or std.mem.eql(u8, name, "__emit")) break :blk true;
+                }
+                if (self.expr_needs_native_scalar_stdio_h(call.func)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_stdio_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .method_call => |call| blk: {
+                if (self.expr_needs_native_scalar_stdio_h(call.obj)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_stdio_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .index => |idx| self.expr_needs_native_scalar_stdio_h(idx.obj) or self.expr_needs_native_scalar_stdio_h(idx.key),
+            .field => |field| self.expr_needs_native_scalar_stdio_h(field.obj),
+            else => false,
+        };
+    }
+
+    fn native_scalar_needs_stdbool_h(self: *CodeGen, mod: *const ast.Module) bool {
+        if (!self.native_scalar_mode) return true;
+        if (mod.body.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_stdbool_h(expr)) return true;
+        }
+        for (mod.body.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_stdbool_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn block_needs_native_scalar_stdbool_h(self: *CodeGen, block: ast.Block) bool {
+        if (block.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_stdbool_h(expr)) return true;
+        }
+        for (block.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_stdbool_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_needs_native_scalar_stdbool_h(self: *CodeGen, stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.names, 0..) |lname, i| {
+                    if (self.resolve_type(lname.typ) == .bool) break :blk true;
+                    if (lname.typ == .inferred and i < ld.inits.len and self.expr_type(ld.inits[i]) == .bool) break :blk true;
+                }
+                for (ld.inits) |expr| {
+                    if (self.expr_needs_native_scalar_stdbool_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .const_decl => |cd| self.resolve_type(cd.typ) == .bool or self.expr_needs_native_scalar_stdbool_h(cd.val),
+            .assign => |as| blk: {
+                for (as.values) |expr| {
+                    if (self.expr_needs_native_scalar_stdbool_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .call_stmt => |cs| self.expr_needs_native_scalar_stdbool_h(cs.expr),
+            .expr_stmt => |es| self.expr_needs_native_scalar_stdbool_h(es.expr),
+            .do_block => |db| self.block_needs_native_scalar_stdbool_h(db.body),
+            .while_loop => |wl| self.expr_needs_native_scalar_stdbool_h(wl.cond) or self.block_needs_native_scalar_stdbool_h(wl.body),
+            .repeat_loop => |rl| self.expr_needs_native_scalar_stdbool_h(rl.cond) or self.block_needs_native_scalar_stdbool_h(rl.body),
+            .if_stmt => |is| blk: {
+                if (self.expr_needs_native_scalar_stdbool_h(is.cond) or self.block_needs_native_scalar_stdbool_h(is.then)) break :blk true;
+                for (is.elseifs) |elseif| {
+                    if (self.expr_needs_native_scalar_stdbool_h(elseif.cond) or self.block_needs_native_scalar_stdbool_h(elseif.body)) break :blk true;
+                }
+                if (is.else_body) |body| {
+                    if (self.block_needs_native_scalar_stdbool_h(body)) break :blk true;
+                }
+                break :blk false;
+            },
+            .num_for => |nf| self.expr_needs_native_scalar_stdbool_h(nf.start) or
+                self.expr_needs_native_scalar_stdbool_h(nf.stop) or
+                (nf.step != null and self.expr_needs_native_scalar_stdbool_h(nf.step.?)) or
+                self.block_needs_native_scalar_stdbool_h(nf.body),
+            .func_decl => |fd| blk: {
+                if (self.resolve_type(fd.func.ret_type) == .bool) break :blk true;
+                for (fd.func.params) |param| {
+                    if (self.resolve_type(param.typ) == .bool) break :blk true;
+                    if (param.default_val) |expr| {
+                        if (self.expr_needs_native_scalar_stdbool_h(expr)) break :blk true;
+                    }
+                }
+                break :blk self.block_needs_native_scalar_stdbool_h(fd.func.body);
+            },
+            .ret => |r| blk: {
+                for (r.vals) |expr| {
+                    if (self.expr_needs_native_scalar_stdbool_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    fn expr_needs_native_scalar_stdbool_h(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .true_lit, .false_lit => true,
+            .binop => |b| self.expr_needs_native_scalar_stdbool_h(b.lhs) or
+                self.expr_needs_native_scalar_stdbool_h(b.rhs),
+            .unop => |un| self.expr_needs_native_scalar_stdbool_h(un.operand),
+            .call => |call| blk: {
+                if (self.expr_needs_native_scalar_stdbool_h(call.func)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_stdbool_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .method_call => |call| blk: {
+                if (self.expr_needs_native_scalar_stdbool_h(call.obj)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_stdbool_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .index => |idx| self.expr_needs_native_scalar_stdbool_h(idx.obj) or
+                self.expr_needs_native_scalar_stdbool_h(idx.key),
+            .field => |field| self.expr_needs_native_scalar_stdbool_h(field.obj),
+            else => false,
+        };
+    }
+
     fn native_scalar_needs_int_floor_helpers(self: *CodeGen, mod: *const ast.Module) bool {
         if (!self.native_scalar_mode) return true;
         if (mod.body.tail_expr) |expr| {
@@ -1592,10 +1795,16 @@ pub const CodeGen = struct {
             if (stmt.* != .cinclude) continue;
             self.p("#include <{s}>\n", .{stmt.cinclude.header});
         }
-        self.p("#include <stddef.h>\n", .{});
+        if (!native_scalar_plain) {
+            self.p("#include <stddef.h>\n", .{});
+        }
         self.p("#include <stdint.h>\n", .{});
-        self.p("#include <stdbool.h>\n", .{});
-        self.p("#include <stdio.h>\n", .{});
+        if (!native_scalar_plain or self.native_scalar_needs_stdbool_h(mod)) {
+            self.p("#include <stdbool.h>\n", .{});
+        }
+        if (!native_scalar_plain or self.native_scalar_needs_stdio_h(mod)) {
+            self.p("#include <stdio.h>\n", .{});
+        }
         if (!native_scalar_plain or self.native_scalar_needs_stdlib_h(mod)) {
             self.p("#include <stdlib.h>\n", .{});
         }

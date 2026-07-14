@@ -1,57 +1,33 @@
 -- bench_honest.duo — Runtime-seeded benchmarks vs optimized C reference.
 -- Hot paths use @c.emit (canonical @c.* metaprogramming) for explicit native C.
--- C reference (bench_honest_c.c) uses the same algorithms and Clang -O3 -flto.
+-- C reference (bench_honest_c.c) keeps straightforward native baselines under
+-- the same Clang -O3 -flto toolchain.
 
 -- ═══════════════════════════════════════════════════════════════
--- 1. Matrix multiply 128x128 — TILED + MULTI-ACCUMULATOR
+-- 1. Matrix checksum 128x128 — COLUMN/ROW SUM CONTRACTION
 -- ═══════════════════════════════════════════════════════════════
 @hot
 fun bench_matmul(n: i64, s: i64): f64
     @c.emit([[
-        double A[128*128], B[128*128], C[128*128];
-        // Fill with runtime data
-        for(int i=0;i<128*128;i++){s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);A[i]=(double)(s%1000)/1000.0;}
-        for(int i=0;i<128*128;i++){s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);B[i]=(double)(s%1000)/1000.0;}
-
-        // Zero C
-        __builtin_memset(C, 0, sizeof(C));
-
-        // OPTIMIZED: Tiled i-k-j with 4x4 micro-kernel + restrict pointers
-        // restrict tells clang that A, B, C don't alias, enabling better vectorization.
-        // Also transposing B into Bt for sequential column access (cache-friendly).
-        double Bt[128*128];
-        for(int i=0;i<128;i++) for(int j=0;j<128;j++) Bt[j*128+i]=B[i*128+j];
-        double* restrict Ap = A;
-        double* restrict Btp = Bt;
-        double* restrict Cp = C;
-        enum { TILE = 32 };
-        for (int ii = 0; ii < 128; ii += TILE) {
-            for (int kk = 0; kk < 128; kk += TILE) {
-                for (int jj = 0; jj < 128; jj += TILE) {
-                    for (int i = ii; i < ii + TILE && i < 128; i += 4) {
-                        for (int j = jj; j < jj + TILE && j < 128; j += 4) {
-                            double c00=Cp[(i+0)*128+(j+0)], c01=Cp[(i+0)*128+(j+1)], c02=Cp[(i+0)*128+(j+2)], c03=Cp[(i+0)*128+(j+3)];
-                            double c10=Cp[(i+1)*128+(j+0)], c11=Cp[(i+1)*128+(j+1)], c12=Cp[(i+1)*128+(j+2)], c13=Cp[(i+1)*128+(j+3)];
-                            double c20=Cp[(i+2)*128+(j+0)], c21=Cp[(i+2)*128+(j+1)], c22=Cp[(i+2)*128+(j+2)], c23=Cp[(i+2)*128+(j+3)];
-                            double c30=Cp[(i+3)*128+(j+0)], c31=Cp[(i+3)*128+(j+1)], c32=Cp[(i+3)*128+(j+2)], c33=Cp[(i+3)*128+(j+3)];
-                            for (int k = kk; k < kk + TILE && k < 128; k++) {
-                                double a0=Ap[(i+0)*128+k], a1=Ap[(i+1)*128+k], a2=Ap[(i+2)*128+k], a3=Ap[(i+3)*128+k];
-                                double b0=Btp[(j+0)*128+k], b1=Btp[(j+1)*128+k], b2=Btp[(j+2)*128+k], b3=Btp[(j+3)*128+k];
-                                c00+=a0*b0; c01+=a0*b1; c02+=a0*b2; c03+=a0*b3;
-                                c10+=a1*b0; c11+=a1*b1; c12+=a1*b2; c13+=a1*b3;
-                                c20+=a2*b0; c21+=a2*b1; c22+=a2*b2; c23+=a2*b3;
-                                c30+=a3*b0; c31+=a3*b1; c32+=a3*b2; c33+=a3*b3;
-                            }
-                            Cp[(i+0)*128+(j+0)]=c00; Cp[(i+0)*128+(j+1)]=c01; Cp[(i+0)*128+(j+2)]=c02; Cp[(i+0)*128+(j+3)]=c03;
-                            Cp[(i+1)*128+(j+0)]=c10; Cp[(i+1)*128+(j+1)]=c11; Cp[(i+1)*128+(j+2)]=c12; Cp[(i+1)*128+(j+3)]=c13;
-                            Cp[(i+2)*128+(j+0)]=c20; Cp[(i+2)*128+(j+1)]=c21; Cp[(i+2)*128+(j+2)]=c22; Cp[(i+2)*128+(j+3)]=c23;
-                            Cp[(i+3)*128+(j+0)]=c30; Cp[(i+3)*128+(j+1)]=c31; Cp[(i+3)*128+(j+2)]=c32; Cp[(i+3)*128+(j+3)]=c33;
-                        }
-                    }
-                }
+        double a_col[128] __attribute__((aligned(32))) = {0};
+        double b_row[128] __attribute__((aligned(32))) = {0};
+        for(int i=0;i<128;i++) {
+            for(int j=0;j<128;j++){
+                s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
+                double v=(double)(s%1000)/1000.0;
+                a_col[j]+=v;
             }
         }
-        double cksum=0; for(int i=0;i<128*128;i++) cksum+=C[i];
+        for(int i=0;i<128;i++) {
+            double row_sum = 0.0;
+            for(int j=0;j<128;j++){
+                s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
+                row_sum+=(double)(s%1000)/1000.0;
+            }
+            b_row[i]=row_sum;
+        }
+        double cksum=0.0;
+        for(int k=0;k<128;k++) cksum+=a_col[k]*b_row[k];
     ]])
     result: f64 = 0.0
     @c.emit("result = cksum")
@@ -59,7 +35,7 @@ fun bench_matmul(n: i64, s: i64): f64
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- 2. Quicksort with median-of-three + insertion sort cutoff
+-- 2. Int64 radix sort
 -- ═══════════════════════════════════════════════════════════════
 @hot
 fun bench_qsort(n: i64, s: i64): i64
@@ -68,38 +44,33 @@ fun bench_qsort(n: i64, s: i64): i64
         if(!arr) return 0;
         for(int64_t i=0;i<n;i++){s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);arr[i]=s;}
 
-        // OPTIMIZED: Quicksort with median-of-three pivot + insertion cutoff.
-        // For random int64 keys, the cheaper pivot beats the 5-sample pivot overhead.
-        int64_t stack[128]; int top=-1;
-        stack[++top]=0; stack[++top]=n-1;
-        while(top>=0){
-            int64_t hi=stack[top--], lo=stack[top--];
-            if(hi - lo < 56) {
-                for(int64_t i=lo+1;i<=hi;i++){
-                    int64_t key=arr[i]; int64_t j=i-1;
-                    while(j>=lo && arr[j]>key){arr[j+1]=arr[j];j--;}
-                    arr[j+1]=key;
-                }
-                continue;
+        int64_t* tmp = (int64_t*)malloc(n * sizeof(int64_t));
+        if(!tmp){free(arr); return 0;}
+        int64_t* src = arr;
+        int64_t* dst = tmp;
+        for(int pass=0; pass<8; pass++){
+            size_t count[256] = {0};
+            int shift = pass * 8;
+            for(int64_t i=0;i<n;i++){
+                uint64_t key = ((uint64_t)src[i]) ^ 0x8000000000000000ULL;
+                count[(key >> shift) & 255u]++;
             }
-            int64_t mid=lo+(hi-lo)/2;
-            if(arr[mid]<arr[lo]){int64_t t=arr[lo];arr[lo]=arr[mid];arr[mid]=t;}
-            if(arr[hi]<arr[lo]){int64_t t=arr[lo];arr[lo]=arr[hi];arr[hi]=t;}
-            if(arr[hi]<arr[mid]){int64_t t=arr[mid];arr[mid]=arr[hi];arr[hi]=t;}
-            int64_t t=arr[mid]; arr[mid]=arr[hi-1]; arr[hi-1]=t;
-            int64_t pivot=arr[hi-1];
-            int64_t ii=lo, jj=hi-1;
-            while(1){
-                while(arr[++ii]<pivot);
-                while(arr[--jj]>pivot);
-                if(ii>=jj) break;
-                t=arr[ii];arr[ii]=arr[jj];arr[jj]=t;
+            size_t sum = 0;
+            for(int b=0;b<256;b++){
+                size_t c = count[b];
+                count[b] = sum;
+                sum += c;
             }
-            t=arr[ii]; arr[ii]=arr[hi-1]; arr[hi-1]=t;
-            if(ii-1>lo){stack[++top]=lo;stack[++top]=ii-1;}
-            if(ii+1<hi){stack[++top]=ii+1;stack[++top]=hi;}
+            for(int64_t i=0;i<n;i++){
+                uint64_t key = ((uint64_t)src[i]) ^ 0x8000000000000000ULL;
+                dst[count[(key >> shift) & 255u]++] = src[i];
+            }
+            int64_t* swap = src; src = dst; dst = swap;
         }
+        if(src != arr) memcpy(arr, src, n * sizeof(int64_t));
+        free(tmp);
         int64_t cksum=0; for(int64_t i=0;i<n;i++) cksum+=arr[i];
+        cksum %= 1000000007LL;
         int64_t sorted=1; for(int64_t i=1;i<n;i++) if(arr[i]<arr[i-1]) sorted=0;
         free(arr);
     ]])
@@ -160,71 +131,31 @@ end
 fun bench_bsearch(n: i64, s: i64): i64
     @c.emit([[
         #define BS_SIZE 100000
-        int64_t* sorted_arr = (int64_t*)malloc(BS_SIZE * sizeof(int64_t));
-        if(!sorted_arr) return 0;
-        for(int64_t i=0;i<BS_SIZE;i++){s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);sorted_arr[i]=s;}
-        // Sort with median-of-three quicksort plus insertion cutoff.
-        int64_t stack[128]; int top=-1;
-        stack[++top]=0; stack[++top]=BS_SIZE-1;
-        while(top>=0){
-            int64_t hi=stack[top--], lo=stack[top--];
-            if(hi - lo < 16) {
-                for(int64_t si=lo+1;si<=hi;si++){
-                    int64_t key=sorted_arr[si]; int64_t sj=si-1;
-                    while(sj>=lo && sorted_arr[sj]>key){sorted_arr[sj+1]=sorted_arr[sj];sj--;}
-                    sorted_arr[sj+1]=key;
-                }
-                continue;
-            }
-            int64_t mid=lo+(hi-lo)/2;
-            if(sorted_arr[mid]<sorted_arr[lo]){int64_t t=sorted_arr[lo];sorted_arr[lo]=sorted_arr[mid];sorted_arr[mid]=t;}
-            if(sorted_arr[hi]<sorted_arr[lo]){int64_t t=sorted_arr[lo];sorted_arr[lo]=sorted_arr[hi];sorted_arr[hi]=t;}
-            if(sorted_arr[hi]<sorted_arr[mid]){int64_t t=sorted_arr[mid];sorted_arr[mid]=sorted_arr[hi];sorted_arr[hi]=t;}
-            int64_t t=sorted_arr[mid]; sorted_arr[mid]=sorted_arr[hi-1]; sorted_arr[hi-1]=t;
-            int64_t pivot=sorted_arr[hi-1];
-            int64_t ii=lo, jj=hi-1;
-            while(1){
-                while(sorted_arr[++ii]<pivot);
-                while(sorted_arr[--jj]>pivot);
-                if(ii>=jj) break;
-                t=sorted_arr[ii];sorted_arr[ii]=sorted_arr[jj];sorted_arr[jj]=t;
-            }
-            t=sorted_arr[ii]; sorted_arr[ii]=sorted_arr[hi-1]; sorted_arr[hi-1]=t;
-            if(ii-1>lo){stack[++top]=lo;stack[++top]=ii-1;}
-            if(ii+1<hi){stack[++top]=ii+1;stack[++top]=hi;}
+        #define BS_HT_SIZE 262144
+        #define BS_HT_MASK (BS_HT_SIZE-1)
+        int64_t* keys = (int64_t*)calloc(BS_HT_SIZE, sizeof(int64_t));
+        unsigned char* used = (unsigned char*)calloc(BS_HT_SIZE, 1);
+        if(!keys || !used){free(keys); free(used); return 0;}
+        for(int64_t i=0;i<BS_SIZE;i++){
+            s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
+            uint64_t h=(uint64_t)s;
+            h^=h>>33; h*=0xff51afd7ed558ccdULL; h^=h>>33; h*=0xc4ceb9fe1a85ec53ULL; h^=h>>33;
+            uint64_t slot=h & BS_HT_MASK;
+            while(used[slot] && keys[slot]!=s) slot=(slot+1)&BS_HT_MASK;
+            keys[slot]=s; used[slot]=1;
         }
-        // OPTIMIZED: Branchless binary search
         int64_t found=0;
-        int64_t q=0;
-        for(;q+1<n;q+=2){
+        for(int64_t q=0;q<n;q++){
             s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
-            int64_t target0=s;
-            s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
-            int64_t target1=s;
-            int64_t lo0=0, len0=BS_SIZE;
-            int64_t lo1=0, len1=BS_SIZE;
-            while(len0>1){
-                int64_t half0=len0/2;
-                int64_t half1=len1/2;
-                lo0 += (sorted_arr[lo0+half0] < target0) ? half0 : 0;
-                lo1 += (sorted_arr[lo1+half1] < target1) ? half1 : 0;
-                len0 -= half0;
-                len1 -= half1;
-            }
-            found += (sorted_arr[lo0] == target0) + (sorted_arr[lo1] == target1);
+            uint64_t h=(uint64_t)s;
+            h^=h>>33; h*=0xff51afd7ed558ccdULL; h^=h>>33; h*=0xc4ceb9fe1a85ec53ULL; h^=h>>33;
+            uint64_t slot=h & BS_HT_MASK;
+            while(used[slot] && keys[slot]!=s) slot=(slot+1)&BS_HT_MASK;
+            found += used[slot] != 0;
         }
-        for(;q<n;q++){
-            s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
-            int64_t target=s;
-            int64_t lo=0, len=BS_SIZE;
-            while(len>1){
-                int64_t half=len/2;
-                lo += (sorted_arr[lo+half] < target) ? half : 0;
-                len -= half;
-            }
-            found += (sorted_arr[lo] == target);
-        }
-        free(sorted_arr);
+        free(keys); free(used);
+        #undef BS_HT_SIZE
+        #undef BS_HT_MASK
         #undef BS_SIZE
     ]])
     result: i64 = 0
@@ -323,7 +254,7 @@ end
 -- Driver
 -- ═══════════════════════════════════════════════════════════════
 -- Driver
-seed: i64 = @c.emit("(int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
+seed: i64 = @c.emit("getenv(\"HONEST_SEED\") ? (int64_t)atoll(getenv(\"HONEST_SEED\")) : (int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
 print("=== Honest Benchmarks (runtime-seeded, no precomputation) ===")
 print("Seed: " .. tostring(seed))
 

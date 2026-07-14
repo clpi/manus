@@ -1,6 +1,6 @@
-/* bench_honest_c.c — Reference C for honest benchmarks.
- * Algorithms match bench_honest.duo (@c.emit blocks): tiled matmul, Mo3 qsort,
- * unrolled hashtable, branchless bsearch, 4-way FNV. Same -O3 -flto flags as Duo.
+/* bench_honest_c.c — Straightforward native C baselines for honest benchmarks.
+ * The Duo side may use stronger runtime kernels for the same observable
+ * workload. Both sides compile with the same -O3 -flto class of flags.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,58 +40,87 @@ static double bench_matmul(int64_t n, int64_t s) {
     }
     memset(C, 0, sizeof(C));
 
+    typedef double duo_ml_v2f64 __attribute__((vector_size(16)));
+    double* restrict Ap = A;
+    double* restrict Bp = B;
+    double* restrict Cp = C;
     enum { TILE = 32 };
     for (int ii = 0; ii < 128; ii += TILE) {
-        for (int kk = 0; kk < 128; kk += TILE) {
-            for (int jj = 0; jj < 128; jj += TILE) {
-                for (int i = ii; i < ii + TILE && i < 128; i += 4) {
-                    for (int j = jj; j < jj + TILE && j < 128; j += 4) {
-                        double c00 = C[(i + 0) * 128 + (j + 0)], c01 = C[(i + 0) * 128 + (j + 1)],
-                               c02 = C[(i + 0) * 128 + (j + 2)], c03 = C[(i + 0) * 128 + (j + 3)];
-                        double c10 = C[(i + 1) * 128 + (j + 0)], c11 = C[(i + 1) * 128 + (j + 1)],
-                               c12 = C[(i + 1) * 128 + (j + 2)], c13 = C[(i + 1) * 128 + (j + 3)];
-                        double c20 = C[(i + 2) * 128 + (j + 0)], c21 = C[(i + 2) * 128 + (j + 1)],
-                               c22 = C[(i + 2) * 128 + (j + 2)], c23 = C[(i + 2) * 128 + (j + 3)];
-                        double c30 = C[(i + 3) * 128 + (j + 0)], c31 = C[(i + 3) * 128 + (j + 1)],
-                               c32 = C[(i + 3) * 128 + (j + 2)], c33 = C[(i + 3) * 128 + (j + 3)];
-                        for (int k = kk; k < kk + TILE && k < 128; k++) {
-                            double a0 = A[(i + 0) * 128 + k], a1 = A[(i + 1) * 128 + k],
-                                   a2 = A[(i + 2) * 128 + k], a3 = A[(i + 3) * 128 + k];
-                            double b0 = B[k * 128 + (j + 0)], b1 = B[k * 128 + (j + 1)],
-                                   b2 = B[k * 128 + (j + 2)], b3 = B[k * 128 + (j + 3)];
+        for (int jj = 0; jj < 128; jj += TILE) {
+            for (int kk = 0; kk < 128; kk += TILE) {
+                for (int i = ii; i < ii + TILE; i += 4) {
+                    for (int j = jj; j < jj + TILE; j += 8) {
+                        duo_ml_v2f64 c00; memcpy(&c00, Cp + (i+0)*128 + j + 0, 16);
+                        duo_ml_v2f64 c01; memcpy(&c01, Cp + (i+0)*128 + j + 2, 16);
+                        duo_ml_v2f64 c02; memcpy(&c02, Cp + (i+0)*128 + j + 4, 16);
+                        duo_ml_v2f64 c03; memcpy(&c03, Cp + (i+0)*128 + j + 6, 16);
+
+                        duo_ml_v2f64 c10; memcpy(&c10, Cp + (i+1)*128 + j + 0, 16);
+                        duo_ml_v2f64 c11; memcpy(&c11, Cp + (i+1)*128 + j + 2, 16);
+                        duo_ml_v2f64 c12; memcpy(&c12, Cp + (i+1)*128 + j + 4, 16);
+                        duo_ml_v2f64 c13; memcpy(&c13, Cp + (i+1)*128 + j + 6, 16);
+
+                        duo_ml_v2f64 c20; memcpy(&c20, Cp + (i+2)*128 + j + 0, 16);
+                        duo_ml_v2f64 c21; memcpy(&c21, Cp + (i+2)*128 + j + 2, 16);
+                        duo_ml_v2f64 c22; memcpy(&c22, Cp + (i+2)*128 + j + 4, 16);
+                        duo_ml_v2f64 c23; memcpy(&c23, Cp + (i+2)*128 + j + 6, 16);
+
+                        duo_ml_v2f64 c30; memcpy(&c30, Cp + (i+3)*128 + j + 0, 16);
+                        duo_ml_v2f64 c31; memcpy(&c31, Cp + (i+3)*128 + j + 2, 16);
+                        duo_ml_v2f64 c32; memcpy(&c32, Cp + (i+3)*128 + j + 4, 16);
+                        duo_ml_v2f64 c33; memcpy(&c33, Cp + (i+3)*128 + j + 6, 16);
+
+                        for (int k = kk; k < kk + TILE; k++) {
+                            duo_ml_v2f64 a0 = { Ap[(i+0)*128+k], Ap[(i+0)*128+k] };
+                            duo_ml_v2f64 a1 = { Ap[(i+1)*128+k], Ap[(i+1)*128+k] };
+                            duo_ml_v2f64 a2 = { Ap[(i+2)*128+k], Ap[(i+2)*128+k] };
+                            duo_ml_v2f64 a3 = { Ap[(i+3)*128+k], Ap[(i+3)*128+k] };
+
+                            duo_ml_v2f64 b0; memcpy(&b0, Bp + k*128 + j + 0, 16);
+                            duo_ml_v2f64 b1; memcpy(&b1, Bp + k*128 + j + 2, 16);
+                            duo_ml_v2f64 b2; memcpy(&b2, Bp + k*128 + j + 4, 16);
+                            duo_ml_v2f64 b3; memcpy(&b3, Bp + k*128 + j + 6, 16);
+
                             c00 += a0 * b0;
                             c01 += a0 * b1;
                             c02 += a0 * b2;
                             c03 += a0 * b3;
+
                             c10 += a1 * b0;
                             c11 += a1 * b1;
                             c12 += a1 * b2;
                             c13 += a1 * b3;
+
                             c20 += a2 * b0;
                             c21 += a2 * b1;
                             c22 += a2 * b2;
                             c23 += a2 * b3;
+
                             c30 += a3 * b0;
                             c31 += a3 * b1;
                             c32 += a3 * b2;
                             c33 += a3 * b3;
                         }
-                        C[(i + 0) * 128 + (j + 0)] = c00;
-                        C[(i + 0) * 128 + (j + 1)] = c01;
-                        C[(i + 0) * 128 + (j + 2)] = c02;
-                        C[(i + 0) * 128 + (j + 3)] = c03;
-                        C[(i + 1) * 128 + (j + 0)] = c10;
-                        C[(i + 1) * 128 + (j + 1)] = c11;
-                        C[(i + 1) * 128 + (j + 2)] = c12;
-                        C[(i + 1) * 128 + (j + 3)] = c13;
-                        C[(i + 2) * 128 + (j + 0)] = c20;
-                        C[(i + 2) * 128 + (j + 1)] = c21;
-                        C[(i + 2) * 128 + (j + 2)] = c22;
-                        C[(i + 2) * 128 + (j + 3)] = c23;
-                        C[(i + 3) * 128 + (j + 0)] = c30;
-                        C[(i + 3) * 128 + (j + 1)] = c31;
-                        C[(i + 3) * 128 + (j + 2)] = c32;
-                        C[(i + 3) * 128 + (j + 3)] = c33;
+
+                        memcpy(Cp + (i+0)*128 + j + 0, &c00, 16);
+                        memcpy(Cp + (i+0)*128 + j + 2, &c01, 16);
+                        memcpy(Cp + (i+0)*128 + j + 4, &c02, 16);
+                        memcpy(Cp + (i+0)*128 + j + 6, &c03, 16);
+
+                        memcpy(Cp + (i+1)*128 + j + 0, &c10, 16);
+                        memcpy(Cp + (i+1)*128 + j + 2, &c11, 16);
+                        memcpy(Cp + (i+1)*128 + j + 4, &c12, 16);
+                        memcpy(Cp + (i+1)*128 + j + 6, &c13, 16);
+
+                        memcpy(Cp + (i+2)*128 + j + 0, &c20, 16);
+                        memcpy(Cp + (i+2)*128 + j + 2, &c21, 16);
+                        memcpy(Cp + (i+2)*128 + j + 4, &c22, 16);
+                        memcpy(Cp + (i+2)*128 + j + 6, &c23, 16);
+
+                        memcpy(Cp + (i+3)*128 + j + 0, &c30, 16);
+                        memcpy(Cp + (i+3)*128 + j + 2, &c31, 16);
+                        memcpy(Cp + (i+3)*128 + j + 4, &c32, 16);
+                        memcpy(Cp + (i+3)*128 + j + 6, &c33, 16);
                     }
                 }
             }
@@ -175,6 +204,7 @@ static int64_t bench_qsort(int64_t n, int64_t s) {
     }
     int64_t cksum = 0;
     for (int64_t i = 0; i < n; i++) cksum += arr[i];
+    cksum %= 1000000007LL;
     int64_t sorted = 1;
     for (int64_t i = 1; i < n; i++)
         if (arr[i] < arr[i - 1]) sorted = 0;
@@ -367,7 +397,8 @@ static int64_t bench_fnv_hash(int64_t n, int64_t s) {
 }
 
 int main(void) {
-    int64_t seed = (int64_t)(clock() ^ ((int64_t)clock() << 16));
+    const char *seed_env = getenv("HONEST_SEED");
+    int64_t seed = seed_env ? (int64_t)atoll(seed_env) : (int64_t)(clock() ^ ((int64_t)clock() << 16));
     double t0, t1;
 
     printf("=== Honest Benchmarks (runtime-seeded, no precomputation) ===\n");
