@@ -52,9 +52,30 @@ if [ "$duo_bsearch" != "$c_bsearch" ]; then
     echo "RESULT bsearch mismatch: Duo=$duo_bsearch C=$c_bsearch"
     exit 1
 fi
+duo_hashtable=$(echo "$duo_probe" | awk '/^RESULT hashtable / { print $3 }')
+c_hashtable=$(echo "$c_probe" | awk '/^RESULT hashtable / { print $3 }')
+if [ "$duo_hashtable" != "$c_hashtable" ]; then
+    echo "RESULT hashtable mismatch: Duo=$duo_hashtable C=$c_hashtable"
+    exit 1
+fi
+duo_nbody=$(echo "$duo_probe" | awk '/^RESULT nbody / { print $3 }')
+c_nbody=$(echo "$c_probe" | awk '/^RESULT nbody / { print $3 }')
+if ! awk "BEGIN { d=$duo_nbody; c=$c_nbody; diff=d-c; if (diff < 0) diff=-diff; exit !(diff <= 1e-9) }"; then
+    echo "RESULT nbody mismatch: Duo=$duo_nbody C=$c_nbody"
+    exit 1
+fi
+duo_fnv=$(echo "$duo_probe" | awk '/^RESULT fnv / { print $3 }')
+c_fnv=$(echo "$c_probe" | awk '/^RESULT fnv / { print $3 }')
+if [ "$duo_fnv" != "$c_fnv" ]; then
+    echo "RESULT fnv mismatch: Duo=$duo_fnv C=$c_fnv"
+    exit 1
+fi
 echo "Matmul checksum matches C within 1e-9."
 echo "Qsort checksum matches C exactly."
 echo "Bsearch hit count matches C exactly."
+echo "Hashtable hit count matches C exactly."
+echo "Nbody energy matches C within 1e-9."
+echo "FNV checksum matches C exactly."
 echo
 
 # Run both multiple times, extract min times
