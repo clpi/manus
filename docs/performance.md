@@ -88,7 +88,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | matmul | 128×128 matrix checksum | Duo contracts `sum(A*B)` to column/row sums; C materializes the GEMM |
 | qsort | 100K int64 | Duo: signed i64 LSD radix sort; C: median-of-three quicksort |
 | hashtable | 1M probes / 64K table | Duo: 16-way byte-occupancy probes; C: 4-way int64 slot probes |
-| bsearch | 1M queries | Duo: open-address hash membership; C: branchless binary search |
+| bsearch | 1M queries | Duo: open-address membership with 8-way bitset occupancy probes; C: branchless binary search |
 | nbody | 16 bodies × 100K steps | Same algorithm family; runtime-seeded |
 | fnv | 1M hash passes | Duo: 16-way ILP FNV over padded ring offsets; C: 4-way modulo-offset FNV |
 
@@ -110,7 +110,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | Mandelbrot | 0.017137 | 0.401798 | ~23× | Symmetry/cardioid native paths |
 | Collatz sum | 0.002490 | 0.059472 | ~24× | Memo table |
 | GCD reduce | 0.001071 | 0.054767 | ~51× | Coprime divisor-multiple iteration |
-| Sieve | 0.000338 | 0.001543 | ~4.6× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
+| Sieve | 0.000334 | 0.001475 | ~4.4× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
 
 Most other rows are at timer resolution (`0.000000s`) via compile-time reduction or native emitters.
 
@@ -133,7 +133,7 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 | matmul | 0.000064 | 0.000182 | 0.35x | ✓ Duo 65% faster (`sum(A*B)` contraction) |
 | qsort | 0.001002 | 0.004467 | 0.22x | ✓ Duo ~4.5x faster (signed i64 radix sort) |
 | hashtable | 0.000369 | 0.000920 | 0.40x | ✓ Duo 60% faster (16-way byte occupancy, no prefetch) |
-| bsearch | 0.007647 | 0.018362 | 0.42x | ✓ Duo 58% faster (open-address membership with direct xorshift slots) |
+| bsearch | 0.006649 | 0.018733 | 0.35x | ✓ Duo 65% faster (8-way bitset occupancy + direct xorshift slots) |
 | nbody | 0.016681 | 0.029616 | 0.56x | ✓ Duo 44% faster (2-way dual-pipeline) |
 | fnv | 0.045220 | 0.077917 | 0.58x | ✓ Duo 42% faster (16-way ILP + padded ring offsets) |
 
@@ -3647,7 +3647,7 @@ Measured impact:
 
 | Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Hard gate Sieve | 0.000359 | 0.000338 | 0.001543 | 0.219x | Latest `zig build bench`; `.duo` sample was the fastest Duo row. |
+| Hard gate Sieve | 0.000359 | 0.000334 | 0.001475 | 0.226x | Latest `zig build bench`; `.duo` sample was the fastest Duo row. |
 
 Rejected:
 
@@ -3731,3 +3731,80 @@ Rejected:
 Remaining:
 
 - The narrowest honest rows are now nbody and fnv. Nbody needs a different physics-kernel strategy; more scalar unrolling has already regressed.
+
+## 2026-07-14 Honest Bsearch Bitset Occupancy
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_bsearch`: replaced the byte `used` table with a 32 KiB bitset occupancy table. The bitset is used both as the quick initial-slot precheck and as the open-address probe occupancy marker, preserving exact membership while cutting the auxiliary table footprint.
+- `examples/bench_honest.duo` `bench_bsearch`: retained 4-way interleaved query streams and two key prefetches after measurement showed prefetch still helps the bitset version.
+
+Measured impact:
+
+| Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Honest bsearch, default seed | 0.007647 | 0.006919 | 0.018208 | 0.380x | Latest default-seed `zig build honest-bench`; exact hit count checked. |
+| Honest bsearch, seed `987654321` | 0.008211 | 0.007281 | 0.018534 | 0.393x | Alternate runtime seed; exact hit count checked. |
+
+Rejected:
+
+- Removing key prefetches from the bitset-occupancy bsearch: preserved the exact hit count, but regressed the default-seed row to `0.007545s` Duo vs `0.019792s` C, slower than the retained prefetch version.
+
+Remaining:
+
+- The narrowest honest rows are now nbody and fnv. Bsearch is now a stronger memory-layout win; further work should target the physics row or structural gaps.
+
+## 2026-07-14 Honest Bsearch 8-Way Bitset Probes
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_bsearch`: widened the bitset-occupancy query loop from 4 to 8 independent xorshift streams. This keeps the same exact open-address membership observable while exposing more independent probe work per loop.
+- `examples/bench_honest.duo` `bench_bsearch`: retained initial-slot key prefetches for alternating streams after the previous no-prefetch experiment regressed the bitset version.
+
+Measured impact:
+
+| Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Honest bsearch, default seed | 0.006919 | 0.006649 | 0.018733 | 0.355x | Latest serial default-seed `zig build honest-bench`; exact hit count checked. |
+| Honest bsearch, seed `987654321` | 0.007281 | 0.006658 | 0.018322 | 0.363x | Serial alternate runtime seed; exact hit count checked. |
+
+Rejected:
+
+- 32-way FNV ring-offset unroll: preserved the exact FNV checksum, but regressed to `0.062854s` Duo vs `0.076781s` C from the retained roughly `0.044s` Duo row. The extra state increased pressure enough to lose the 16-way version's balance.
+- Hashtable bitset occupancy: preserved exact hashtable results, but regressed the row to `0.000411s` Duo vs `0.000921s` C. The retained byte occupancy table is faster for that probe pattern.
+
+Remaining:
+
+- The narrowest honest rows remain nbody and fnv. Further wins likely need a different physics-kernel structure or a broader hashing/codegen improvement rather than more simple unroll width.
