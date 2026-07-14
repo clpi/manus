@@ -1,4 +1,4 @@
--- std.ini — basic INI parsing stub
+-- std.ini — INI file parser
 
 local string = req "std.string"
 local table_mod = req "std.table"

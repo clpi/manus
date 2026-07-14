@@ -163,30 +163,66 @@ fun sample_top_p(logits: any, top_p: f64, temperature: f64): i64
 end
 
 fun sample_beam_search(logits: any, beams: i64, sequence: any): any
-    -- Simplified beam search
-    -- In production, maintain beam candidates across time steps
+    -- Beam search: maintain top-k candidates across decoding steps
+    -- sequence is the accumulated token history for each beam
+    if sequence == nil then
+        -- First step: initialize beams from first logits
+        beam_scores = {}
+        for i = 1, beams
+            beam_scores[i] = {score = 0, tokens = {}}
+        end
 
-    beam_scores = {}
-    for i = 1, beams
-        beam_scores[i] = {score = 0, tokens = {}}
+        indexed = {}
+        for i = 1, #logits
+            indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+        end
+        table.sort(indexed, function(a, b) return a.logit > b.logit end)
+
+        i = 1
+        while i <= beams and i <= #indexed
+            beam_scores[i].tokens[1] = indexed[i].idx
+            beam_scores[i].score = indexed[i].logit
+            i += 1
+        end
+        return beam_scores
     end
 
-    -- Get top beam_size tokens
-    indexed = {}
-    for i = 1, #logits
-        indexed[#indexed + 1] = {idx = i, logit = logits[i]}
-    end
-    table.sort(indexed, function(a, b) return a.logit > b.logit end)
+    -- Subsequent steps: expand each beam, keep top beams
+    all_candidates = {}
+    for beam_idx = 1, #sequence
+        beam = sequence[beam_idx]
+        -- Expand this beam with top candidates
+        indexed = {}
+        for i = 1, #logits
+            indexed[#indexed + 1] = {idx = i, logit = logits[i]}
+        end
+        table.sort(indexed, function(a, b) return a.logit > b.logit end)
 
-    -- Assign to beams
+        top_n = math.min(beams, #indexed)
+        i = 1
+        while i <= top_n
+            new_tokens = {}
+            for t in beam.tokens
+                new_tokens[#new_tokens + 1] = t
+            end
+            new_tokens[#new_tokens + 1] = indexed[i].idx
+            all_candidates[#all_candidates + 1] = {
+                score = beam.score + indexed[i].logit,
+                tokens = new_tokens,
+            }
+            i += 1
+        end
+    end
+
+    -- Sort all candidates by score and keep top beams
+    table.sort(all_candidates, function(a, b) return a.score > b.score end)
+    result = {}
     i = 1
-    while i <= beams and i <= #indexed
-        beam_scores[i].tokens[1] = indexed[i].idx
-        beam_scores[i].score = indexed[i].logit
+    while i <= beams and i <= #all_candidates
+        result[i] = all_candidates[i]
         i += 1
     end
-
-    beam_scores
+    result
 end
 
 -- ═══════════════════════════════════════════════════════════════

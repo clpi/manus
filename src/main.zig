@@ -2,6 +2,7 @@ const std = @import("std");
 const Io = std.Io;
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
+const ast = @import("ast.zig");
 const Sema = @import("sema.zig").Sema;
 const CodeGen = @import("codegen.zig").CodeGen;
 const Mono = @import("mono.zig");
@@ -14,6 +15,8 @@ const term = @import("term.zig");
 const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
+
+var macos_sdkroot_configured = false;
 
 fn env_value_truthy(value: []const u8) bool {
     if (value.len == 0) return false;
@@ -150,6 +153,9 @@ pub fn main(init: std.process.Init) !void {
     const alloc = init.arena.allocator();
     term.init(init.io);
     apply_env_flags(init);
+    if (init.environ_map.get("SDKROOT")) |sdkroot| {
+        macos_sdkroot_configured = sdkroot.len > 0;
+    }
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
 
@@ -658,7 +664,6 @@ fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
         \\
     , .{ name, name, name });
 
-
     const mkdir_argv = [_][]const u8{ "mkdir", "-p", "src", "zig-out/bin" };
     try run_child_process(io, &mkdir_argv, "mkdir", true);
     try writeNewFile(io, "src/main.duo", main_src);
@@ -936,7 +941,7 @@ fn do_project_build_one(
 }
 
 const ParsedModule = struct {
-    mod: @import("ast.zig").Module,
+    mod: ast.Module,
     sem: Sema,
 };
 
@@ -946,6 +951,166 @@ fn is_lua_source_path(path: []const u8) bool {
 
 fn is_duo_source_path(path: []const u8) bool {
     return std.mem.endsWith(u8, path, ".duo");
+}
+
+fn module_has_macro_syntax(mod: *const ast.Module) bool {
+    return block_has_macro_syntax(mod.body);
+}
+
+fn block_has_macro_syntax(block: ast.Block) bool {
+    if (block.tail_expr) |expr| {
+        if (expr_has_macro_syntax(expr)) return true;
+    }
+    for (block.stmts) |*stmt| {
+        if (stmt_has_macro_syntax(stmt)) return true;
+    }
+    return false;
+}
+
+fn stmt_has_macro_syntax(stmt: *const ast.Stmt) bool {
+    return switch (stmt.*) {
+        .local_decl => |ld| expr_slice_has_macro_syntax(ld.inits),
+        .const_decl => |cd| expr_has_macro_syntax(cd.val),
+        .global_decl => |gd| expr_slice_has_macro_syntax(gd.inits),
+        .assign => |as| expr_slice_has_macro_syntax(as.targets) or expr_slice_has_macro_syntax(as.values),
+        .call_stmt => |cs| expr_has_macro_syntax(cs.expr),
+        .expr_stmt => |es| expr_has_macro_syntax(es.expr),
+        .do_block => |db| block_has_macro_syntax(db.body),
+        .while_loop => |wl| expr_has_macro_syntax(wl.cond) or block_has_macro_syntax(wl.body),
+        .repeat_loop => |rl| block_has_macro_syntax(rl.body) or expr_has_macro_syntax(rl.cond),
+        .if_stmt => |is| blk: {
+            if (expr_has_macro_syntax(is.cond) or block_has_macro_syntax(is.then)) break :blk true;
+            for (is.elseifs) |elseif| {
+                if (expr_has_macro_syntax(elseif.cond) or block_has_macro_syntax(elseif.body)) break :blk true;
+            }
+            if (is.else_body) |body| {
+                if (block_has_macro_syntax(body)) break :blk true;
+            }
+            break :blk false;
+        },
+        .num_for => |nf| expr_has_macro_syntax(nf.start) or
+            expr_has_macro_syntax(nf.stop) or
+            (nf.step != null and expr_has_macro_syntax(nf.step.?)) or
+            block_has_macro_syntax(nf.body),
+        .gen_for => |gf| expr_slice_has_macro_syntax(gf.iters) or block_has_macro_syntax(gf.body),
+        .func_decl => |fd| func_body_has_macro_syntax(fd.func),
+        .ret => |r| expr_slice_has_macro_syntax(r.vals),
+        .match_stmt => |ms| match_has_macro_syntax(ms),
+        .try_stmt => |ts| try_stmt_has_macro_syntax(ts),
+        .defer_stmt => |ds| block_has_macro_syntax(ds.body),
+        .alias_def => |ad| alias_has_macro_syntax(ad),
+        .macro_def => true,
+        else => false,
+    };
+}
+
+fn expr_slice_has_macro_syntax(exprs: []const *ast.Expr) bool {
+    for (exprs) |expr| {
+        if (expr_has_macro_syntax(expr)) return true;
+    }
+    return false;
+}
+
+fn expr_has_macro_syntax(expr: *const ast.Expr) bool {
+    return switch (expr.*) {
+        .index => |idx| expr_has_macro_syntax(idx.obj) or expr_has_macro_syntax(idx.key),
+        .field => |field| expr_has_macro_syntax(field.obj),
+        .call => |call| expr_has_macro_syntax(call.func) or expr_slice_has_macro_syntax(call.args),
+        .method_call => |call| expr_has_macro_syntax(call.obj) or expr_slice_has_macro_syntax(call.args),
+        .binop => |bin| expr_has_macro_syntax(bin.lhs) or expr_has_macro_syntax(bin.rhs),
+        .unop => |un| expr_has_macro_syntax(un.operand),
+        .func_expr => |func| func_body_has_macro_syntax(func.*),
+        .table => |table| table_fields_have_macro_syntax(table.fields),
+        .list_comp => |lc| expr_has_macro_syntax(lc.value) or
+            expr_has_macro_syntax(lc.iter) or
+            (lc.filter != null and expr_has_macro_syntax(lc.filter.?)),
+        .try_expr => |try_expr| expr_has_macro_syntax(try_expr.operand),
+        .unwrap_expr => |unwrap_expr| expr_has_macro_syntax(unwrap_expr.operand),
+        .match_expr => |match| match_has_macro_syntax(match.*),
+        .await_expr => |await_expr| expr_has_macro_syntax(await_expr.operand),
+        .contains_expr => |contains| expr_has_macro_syntax(contains.lhs) or expr_has_macro_syntax(contains.rhs),
+        .quote, .unquote, .macro_call => true,
+        else => false,
+    };
+}
+
+fn table_fields_have_macro_syntax(fields: []const ast.TableField) bool {
+    for (fields) |field| {
+        switch (field) {
+            .indexed => |indexed| {
+                if (expr_has_macro_syntax(indexed.key) or expr_has_macro_syntax(indexed.val)) return true;
+            },
+            .named => |named| if (expr_has_macro_syntax(named.val)) return true,
+            .positional => |expr| if (expr_has_macro_syntax(expr)) return true,
+        }
+    }
+    return false;
+}
+
+fn func_body_has_macro_syntax(func: ast.FuncBody) bool {
+    for (func.params) |param| {
+        if (param.default_val) |expr| {
+            if (expr_has_macro_syntax(expr)) return true;
+        }
+    }
+    return block_has_macro_syntax(func.body);
+}
+
+fn match_has_macro_syntax(match: ast.MatchExpr) bool {
+    if (expr_has_macro_syntax(match.scrutinee)) return true;
+    for (match.arms) |arm| {
+        if (pattern_has_macro_syntax(arm.pattern)) return true;
+        if (arm.guard) |guard| {
+            if (expr_has_macro_syntax(guard)) return true;
+        }
+        if (block_has_macro_syntax(arm.body)) return true;
+    }
+    return false;
+}
+
+fn pattern_has_macro_syntax(pattern: ast.Pattern) bool {
+    return switch (pattern) {
+        .literal => |expr| expr_has_macro_syntax(expr),
+        .variant => |variant| pattern_slice_has_macro_syntax(variant.payload orelse &.{}),
+        .table_destr => |items| blk: {
+            for (items) |item| {
+                if (pattern_has_macro_syntax(item.pat)) break :blk true;
+            }
+            break :blk false;
+        },
+        .array_destr => |items| pattern_slice_has_macro_syntax(items),
+        else => false,
+    };
+}
+
+fn pattern_slice_has_macro_syntax(patterns: []const ast.Pattern) bool {
+    for (patterns) |pattern| {
+        if (pattern_has_macro_syntax(pattern)) return true;
+    }
+    return false;
+}
+
+fn try_stmt_has_macro_syntax(stmt: ast.TryStmt) bool {
+    if (block_has_macro_syntax(stmt.body)) return true;
+    for (stmt.catches) |catch_clause| {
+        if (block_has_macro_syntax(catch_clause.body)) return true;
+    }
+    for (stmt.defers) |defer_stmt| {
+        if (block_has_macro_syntax(defer_stmt.body)) return true;
+    }
+    return false;
+}
+
+fn alias_has_macro_syntax(alias: ast.AliasDef) bool {
+    for (alias.fields) |field| {
+        if (field.default_val) |expr| {
+            if (expr_has_macro_syntax(expr)) return true;
+        }
+    }
+    for (alias.methods) |method| {
+        if (func_body_has_macro_syntax(method.func)) return true;
+    }
+    return false;
 }
 
 fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !ParsedModule {
@@ -969,12 +1134,14 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     sem.duo_mode = is_duo_source_path(src_path);
     sem.hints_enabled = term.hints;
     sem.info_enabled = term.info;
-    var expander = MacroExpand.Expander.init(alloc);
-    defer expander.deinit();
-    expander.expandModule(&mod) catch |e| {
-        term.err("macro expansion error: {s}", .{@errorName(e)});
-        std.process.exit(1);
-    };
+    if (module_has_macro_syntax(&mod)) {
+        var expander = MacroExpand.Expander.init(alloc);
+        defer expander.deinit();
+        expander.expandModule(&mod) catch |e| {
+            term.err("macro expansion error: {s}", .{@errorName(e)});
+            std.process.exit(1);
+        };
+    }
     sem.check_module(&mod) catch |e| {
         term.err("sema error: {}", .{e});
         std.process.exit(1);
@@ -1113,45 +1280,67 @@ fn do_compile(
         return;
     }
 
+    var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id);
+    native_scalar_precheck.src_path = src_path;
+    native_scalar_precheck.target = target;
+    native_scalar_precheck.load_chunk = load_chunk;
+    native_scalar_precheck.lib_mode = lib_mode;
+    native_scalar_precheck.duo_mode = ps.sem.duo_mode;
+    native_scalar_precheck.test_mode = test_mode;
+    native_scalar_precheck.bench_mode = bench_mode;
+    const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
+
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("monomorphize", .{});
     // Monomorphization: expand generic functions into concrete specializations
     // before codegen (Task 8.3). Runs on every compile so generic instantiation
     // is exercised even before codegen consumes the specializations (Task 12.1).
-    var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
-    defer mono.deinit();
-    mono.run(&ps.mod) catch |e| {
-        term.err("monomorphization error: {}", .{e});
-        std.process.exit(1);
-    };
+    var mono: ?Mono.Monomorphizer = null;
+    defer if (mono) |*m| m.deinit();
+    if (!native_scalar_candidate) {
+        mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
+        mono.?.run(&ps.mod) catch |e| {
+            term.err("monomorphization error: {}", .{e});
+            std.process.exit(1);
+        };
+    }
     if (phase_timer) |*t| {
-        const detail = try std.fmt.allocPrint(alloc, "{d} specialization(s)", .{mono.count()});
+        const detail = if (native_scalar_candidate)
+            try std.fmt.allocPrint(alloc, "skipped native-scalar", .{})
+        else
+            try std.fmt.allocPrint(alloc, "{d} specialization(s)", .{mono.?.count()});
         defer alloc.free(detail);
         trace_phase(io, t, "monomorphize", detail);
     }
-    debug_trace.event(.mono, .module, "{d} specialization(s)", .{mono.count()});
+    if (!native_scalar_candidate) debug_trace.event(.mono, .module, "{d} specialization(s)", .{mono.?.count()});
 
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("ARC analysis", .{});
     // ARC insertion: decide retain/release/close points for heap values, after
     // monomorphization and before codegen (Task 9.4).
-    var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
-    defer arc_pass.deinit();
-    // Populate escaping set from sema escape analysis.
-    // Only variables captured by closures are marked as escaping.
-    // All other locals are non-escaping and get ARC pruned.
-    {
-        var it = ps.sem.escape_names.iterator();
-        while (it.next()) |entry| {
-            arc_pass.markEscaping(entry.key_ptr.*) catch {};
+    var arc_pass: ?Arc.ArcPass = null;
+    defer if (arc_pass) |*a| a.deinit();
+    if (!native_scalar_candidate) {
+        arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
+        // Populate escaping set from sema escape analysis.
+        // Only variables captured by closures are marked as escaping.
+        // All other locals are non-escaping and get ARC pruned.
+        {
+            var it = ps.sem.escape_names.iterator();
+            while (it.next()) |entry| {
+                arc_pass.?.markEscaping(entry.key_ptr.*) catch {};
+            }
         }
+        arc_pass.?.run(&ps.mod) catch |e| {
+            term.err("ARC analysis error: {}", .{e});
+            std.process.exit(1);
+        };
     }
-    arc_pass.run(&ps.mod) catch |e| {
-        term.err("ARC analysis error: {}", .{e});
-        std.process.exit(1);
-    };
     if (phase_timer) |*t| {
-        const detail = try std.fmt.allocPrint(alloc, "{d} annotation(s)", .{arc_pass.annotations.items.len});
+        const detail = if (native_scalar_candidate)
+            try std.fmt.allocPrint(alloc, "skipped native-scalar", .{})
+        else
+            try std.fmt.allocPrint(alloc, "{d} annotation(s)", .{arc_pass.?.annotations.items.len});
         defer alloc.free(detail);
         trace_phase(io, t, "ARC analysis", detail);
     }
@@ -1168,14 +1357,20 @@ fn do_compile(
         term.err("the threaded scheduler is not supported on the wasm32-wasi target", .{});
         std.process.exit(1);
     };
-    var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
-    defer async_pass.deinit();
-    async_pass.run(&ps.mod) catch |e| {
-        term.err("async lowering error: {}", .{e});
-        std.process.exit(1);
-    };
+    var async_pass: ?AsyncLower.AsyncLower = null;
+    defer if (async_pass) |*a| a.deinit();
+    if (!native_scalar_candidate) {
+        async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
+        async_pass.?.run(&ps.mod) catch |e| {
+            term.err("async lowering error: {}", .{e});
+            std.process.exit(1);
+        };
+    }
     if (phase_timer) |*t| {
-        const detail = try std.fmt.allocPrint(alloc, "{d} async function(s)", .{async_pass.count()});
+        const detail = if (native_scalar_candidate)
+            try std.fmt.allocPrint(alloc, "skipped native-scalar", .{})
+        else
+            try std.fmt.allocPrint(alloc, "{d} async function(s)", .{async_pass.?.count()});
         defer alloc.free(detail);
         trace_phase(io, t, "async lower", detail);
     }
@@ -1188,6 +1383,7 @@ fn do_compile(
 
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("codegen", .{});
+    var native_scalar_mode = false;
     const ml_kernels_sidecar = ml_sidecar: {
         const cwd = Io.Dir.cwd();
         const cf = try Io.Dir.createFile(cwd, io, c_path, .{});
@@ -1196,9 +1392,9 @@ fn do_compile(
         var buf: [65536]u8 = undefined;
         var fw: Io.File.Writer = .init(cf, io, &buf);
         var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id);
-        cg.mono = &mono;
-        cg.arc = &arc_pass;
-        cg.async_lower = &async_pass;
+        if (mono) |*m| cg.mono = m;
+        if (arc_pass) |*a| cg.arc = a;
+        if (async_pass) |*a| cg.async_lower = a;
         cg.src_path = src_path;
         cg.target = target;
         cg.load_chunk = load_chunk;
@@ -1213,6 +1409,7 @@ fn do_compile(
             term.err("codegen error: {}", .{e});
             std.process.exit(1);
         };
+        native_scalar_mode = cg.native_scalar_mode;
         try fw.interface.flush();
         break :ml_sidecar cg.ml_kernels_emitted;
     };
@@ -1263,7 +1460,11 @@ fn do_compile(
             }
         } else {
             if (comptime @import("builtin").os.tag == .macos) {
-                try args.appendSlice(alloc, &.{ "xcrun", cc });
+                if (macos_sdkroot_configured) {
+                    try args.append(alloc, cc);
+                } else {
+                    try args.appendSlice(alloc, &.{ "xcrun", cc });
+                }
             } else {
                 try args.append(alloc, cc);
             }
@@ -1272,20 +1473,28 @@ fn do_compile(
                 "-ffast-math",
                 "-DNDEBUG",
                 "-march=native",
-                "-mtune=native",
-                "-flto",
-                "-fstrict-aliasing",
                 "-fomit-frame-pointer",
-                "-funroll-loops",
                 "-ffp-contract=fast",
                 "-fno-trapping-math",
                 "-fno-math-errno",
-                "-ffunction-sections",
-                "-fdata-sections",
+            });
+            if (!native_scalar_mode) {
+                try args.appendSlice(alloc, &.{
+                    "-mtune=native",
+                    "-fstrict-aliasing",
+                    "-funroll-loops",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                });
+            }
+            try args.appendSlice(alloc, &.{
                 "-Wl,-dead_strip",
                 "-std=gnu99",
                 "-lm",
             });
+            if (!native_scalar_mode) {
+                try args.append(alloc, "-flto");
+            }
             for (link_flags) |lib| {
                 try args.append(alloc, try std.fmt.allocPrint(alloc, "-l{s}", .{lib}));
             }
@@ -1646,6 +1855,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.async_lower = &async_pass;
     cg.src_path = src_path;
     cg.target = target;
+    cg.duo_mode = ps.sem.duo_mode;
     cg.emit_module(&ps.mod) catch |e| {
         term.err("codegen error: {}", .{e});
         std.process.exit(1);

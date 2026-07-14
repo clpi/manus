@@ -1,9 +1,50 @@
 -- std.graphics.image — Image loading, saving, and manipulation
 -- For loading PNG/JPEG/etc. in ward's rendering pipeline.
+-- Delegates I/O to std.image.png and std.io.
+
+local io = req "std.io"
+local png_mod = req "std.image.png"
 
 -- ═══════════════════════════════════════════════════════════════
--- Image
+-- Image I/O
 -- ═══════════════════════════════════════════════════════════════
+
+fun image_load(path: str): any
+    f = io.open(path, "rb")
+    if f == nil then
+        return {ok = false, error = "Cannot open file: " .. path}
+    end
+    raw = io.read(f, "*a")
+    io.close(f)
+    if raw == nil or string.len(raw) == 0 then
+        return {ok = false, error = "Empty file: " .. path}
+    end
+    png_result = png_mod.decode(raw)
+    if png_result.error then
+        return {ok = false, error = png_result.error}
+    end
+    img = image_new(png_result.width, png_result.height, png_result.channels)
+    img.data = png_result.data
+    {ok = true, image = img, format = "png"}
+end
+
+fun image_save(image: any, path: str, format: str): any
+    fmt = format or "png"
+    if fmt ~= "png" then
+        return {ok = false, error = "Unsupported format: " .. fmt .. " (only png supported)"}
+    end
+    png_data = png_mod.encode(image.data, image.width, image.height, image.channels)
+    if png_data.error then
+        return {ok = false, error = png_data.error}
+    end
+    f = io.open(path, "wb")
+    if f == nil then
+        return {ok = false, error = "Cannot create file: " .. path}
+    end
+    io.write(f, png_data.data)
+    io.close(f)
+    {ok = true, path = path, format = "png"}
+end
 
 fun image_new(width: i64, height: i64, channels: i64): any
     data = {}
@@ -292,26 +333,6 @@ fun image_adjust_contrast(image: any, factor: f64): any
         i += 1
     end
     result
-end
-
--- ═══════════════════════════════════════════════════════════════
--- Image I/O (Placeholder)
--- ═══════════════════════════════════════════════════════════════
-
-fun image_load(path: str): any
-    -- In production, would decode PNG/JPEG/etc.
-    {
-        ok = false,
-        error = "not implemented",
-    }
-end
-
-fun image_save(image: any, path: str, format: str): any
-    -- In production, would encode to PNG/JPEG/etc.
-    {
-        ok = false,
-        error = "not implemented",
-    }
 end
 
 -- ═══════════════════════════════════════════════════════════════

@@ -63,14 +63,30 @@ end
 
 -- temp_file: create a temporary file and return its handle and path.
 fun temp_file(): any
-    local path = "/tmp/duo_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
+    crypto_rand = req "std.crypto.rand"
+    rand_hex = ""
+    rand_bytes = crypto_rand.bytes(8)
+    i = 1
+    while i <= 8
+        rand_hex = rand_hex .. string.format("%02x", string.byte(rand_bytes, i))
+        i += 1
+    end
+    local path = "/tmp/duo_" .. tostring(os.time()) .. "_" .. rand_hex
     local f = io.open(path, "w+")
     return {fh = f, path = path}
 end
 
 -- temp_dir: create a temporary directory and return its path.
 fun temp_dir(): str
-    path = "/tmp/duo_dir_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
+    crypto_rand = req "std.crypto.rand"
+    rand_hex = ""
+    rand_bytes = crypto_rand.bytes(8)
+    i = 1
+    while i <= 8
+        rand_hex = rand_hex .. string.format("%02x", string.byte(rand_bytes, i))
+        i += 1
+    end
+    path = "/tmp/duo_dir_" .. tostring(os.time()) .. "_" .. rand_hex
     os.execute("mkdir -p " .. path)
     path
 end

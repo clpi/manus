@@ -71,8 +71,86 @@ fun write_field_fixed64(w: any, field: i64, value: i64): void
 end
 
 fun write_field_float(w: any, field: i64, value: f64): void
-    -- Simplified: encode as fixed32 with approximation
-    write_field_fixed32(w, field, math.floor(value * 1000))
+    -- IEEE 754 single-precision float encoding
+    write_tag(w, field, WIRE_32BIT)
+    -- Convert to IEEE 754 float32 bytes
+    if value ~= value then
+        -- NaN
+        w.bytes[#w.bytes + 1] = 0x7F
+        w.bytes[#w.bytes + 1] = 0xC0
+        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[#w.bytes + 1] = 0x00
+        return
+    end
+    if value == math.huge then
+        w.bytes[#w.bytes + 1] = 0x7F
+        w.bytes[#w.bytes + 1] = 0x80
+        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[#w.bytes + 1] = 0x00
+        return
+    end
+    if value == -math.huge then
+        w.bytes[#w.bytes + 1] = 0xFF
+        w.bytes[#w.bytes + 1] = 0x80
+        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[#w.bytes + 1] = 0x00
+        return
+    end
+    sign = 0
+    if value < 0 then
+        sign = 1
+        value = -value
+    end
+    if value == 0 then
+        w.bytes[#w.bytes + 1] = sign * 128
+        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[#w.bytes + 1] = 0x00
+        w.bytes[#w.bytes + 1] = 0x00
+        return
+    end
+    -- Decompose
+    exp = 0
+    while value >= 2
+        value = value / 2
+        exp += 1
+    end
+    while value < 1
+        value = value * 2
+        exp -= 1
+    end
+    mantissa = (value - 1) * (2^23)
+    biased_exp = exp + 127
+    b0 = sign * 128 + math.floor(biased_exp / 2) * 4 + math.floor(mantissa / (2^23))
+    b1 = math.floor(mantissa / (2^15)) % 256
+    b2 = math.floor(mantissa / (2^7)) % 256
+    b3 = (mantissa * 2) % 256
+    w.bytes[#w.bytes + 1] = b0
+    w.bytes[#w.bytes + 1] = b1
+    w.bytes[#w.bytes + 1] = b2
+    w.bytes[#w.bytes + 1] = b3
+end
+
+fun read_field_float(r: any): f64
+    -- Read IEEE 754 single-precision float
+    if r.pos + 3 > r.len then return 0 end
+    b0 = r.data[r.pos]
+    b1 = r.data[r.pos + 1]
+    b2 = r.data[r.pos + 2]
+    b3 = r.data[r.pos + 3]
+    r.pos += 4
+    sign = 1
+    if b0 >= 128 then
+        sign = -1
+        b0 = b0 - 128
+    end
+    exp = math.floor(b0 / 2) * 16 + math.floor(b1 / 16)
+    mantissa = (b0 % 2) * (2^23) + b1 * (2^15) + b2 * (2^7) + b3
+    if exp == 0 then return sign * mantissa * (2^-149) end
+    if exp == 255 then
+        if mantissa == 0 then return sign * math.huge end
+        return 0/0
+    end
+    sign * (1 + mantissa * (2^-23)) * (2^(exp - 127))
 end
 
 fun writer_bytes(w: any): any

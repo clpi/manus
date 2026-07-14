@@ -65,6 +65,7 @@ pub const CodeGen = struct {
     load_chunk: bool = false,
     lib_mode: bool = false,
     duo_mode: bool = false,
+    native_scalar_mode: bool = false,
     test_mode: bool = false,
     bench_mode: bool = false,
     test_structured_output: bool = false,
@@ -989,6 +990,23 @@ pub const CodeGen = struct {
             std.mem.eql(u8, fname, "assume") or std.mem.eql(u8, fname, "trap") or
             std.mem.eql(u8, fname, "unreachable"))
             return .void;
+        if (std.mem.eql(u8, fname, "read_byte") or std.mem.eql(u8, fname, "read_i8") or
+            std.mem.eql(u8, fname, "read_u8") or std.mem.eql(u8, fname, "read_i16") or
+            std.mem.eql(u8, fname, "read_u16") or std.mem.eql(u8, fname, "read_i32") or
+            std.mem.eql(u8, fname, "read_u32") or std.mem.eql(u8, fname, "read_i64") or
+            std.mem.eql(u8, fname, "read_u64"))
+            return .i64;
+        if (std.mem.eql(u8, fname, "read_f32") or std.mem.eql(u8, fname, "read_f64") or
+            std.mem.eql(u8, fname, "bytes_to_f32") or std.mem.eql(u8, fname, "bytes_to_f64"))
+            return .f64;
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or
+            std.mem.eql(u8, fname, "write_u8") or std.mem.eql(u8, fname, "write_i16") or
+            std.mem.eql(u8, fname, "write_u16") or std.mem.eql(u8, fname, "write_i32") or
+            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or
+            std.mem.eql(u8, fname, "write_u64") or std.mem.eql(u8, fname, "write_f32") or
+            std.mem.eql(u8, fname, "write_f64"))
+            return .void;
+        if (std.mem.eql(u8, fname, "dup")) return self.mem_pointer_to(.u8);
         if (std.mem.eql(u8, fname, "compare")) return .i64;
         if (std.mem.eql(u8, fname, "is_null")) return .bool;
         if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) return .u64;
@@ -1111,15 +1129,461 @@ pub const CodeGen = struct {
 
     // ── Module entry ──────────────────────────────────────────────────────────
 
+    pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
+        if (self.load_chunk or self.lib_mode or self.test_mode or self.bench_mode) return false;
+        if (!std.mem.eql(u8, self.target, "native")) return false;
+        if (!self.duo_mode) return false;
+        if (mod.body.tail_expr) |expr| {
+            if (!self.call_stmt_is_native_scalar(expr)) return false;
+        }
+
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .func_decl => |fd| {
+                    if (fd.path.len != 1 or fd.method or fd.func.vararg or fd.func.vararg_name != null) return false;
+                    if (fd.func.type_params != null or fd.func.is_async or fd.func.closure_id != null or fd.func.upvalues.len != 0) return false;
+                    if (!self.type_expr_is_native_scalar(fd.func.ret_type)) return false;
+                    for (fd.func.params) |param| {
+                        if (param.default_val != null) return false;
+                        if (!self.type_expr_is_native_scalar(param.typ)) return false;
+                    }
+                    if (!self.block_is_native_scalar(fd.func.body, true)) return false;
+                },
+                .const_decl => |cd| {
+                    if (!self.type_expr_is_native_scalar(cd.typ) and cd.typ != .inferred) return false;
+                    if (!self.expr_is_native_scalar(cd.val)) return false;
+                },
+                .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .if_stmt, .num_for, .do_block, .ret, .brk, .cont => {
+                    if (!self.stmt_is_native_scalar(stmt, false)) return false;
+                },
+                .cinclude => {},
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    fn block_is_native_scalar(self: *CodeGen, block: ast.Block, allow_return: bool) bool {
+        if (block.tail_expr) |expr| {
+            if (!allow_return or !self.expr_is_native_scalar(expr)) return false;
+        }
+        for (block.stmts) |*stmt| {
+            if (!self.stmt_is_native_scalar(stmt, allow_return)) return false;
+        }
+        return true;
+    }
+
+    fn stmt_is_native_scalar(self: *CodeGen, stmt: *const ast.Stmt, allow_return: bool) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.names) |lname| {
+                    if (lname.attrib != null or lname.attributes.len != 0) break :blk false;
+                    if (lname.typ != .inferred and !self.type_expr_is_native_scalar(lname.typ)) break :blk false;
+                }
+                for (ld.inits) |expr| {
+                    if (!self.expr_is_native_scalar(expr)) break :blk false;
+                }
+                break :blk true;
+            },
+            .const_decl => |cd| (cd.typ == .inferred or self.type_expr_is_native_scalar(cd.typ)) and self.expr_is_native_scalar(cd.val),
+            .assign => |as| blk: {
+                if (as.targets.len != as.values.len) break :blk false;
+                for (as.targets) |target| {
+                    if (!self.lvalue_is_native_scalar(target)) break :blk false;
+                }
+                for (as.values) |value| {
+                    if (!self.expr_is_native_scalar(value)) break :blk false;
+                }
+                break :blk true;
+            },
+            .call_stmt => |cs| self.call_stmt_is_native_scalar(cs.expr),
+            .expr_stmt => |es| self.expr_is_native_scalar(es.expr),
+            .do_block => |db| self.block_is_native_scalar(db.body, allow_return),
+            .while_loop => |wl| self.expr_is_native_scalar(wl.cond) and self.block_is_native_scalar(wl.body, allow_return),
+            .repeat_loop => |rl| self.expr_is_native_scalar(rl.cond) and self.block_is_native_scalar(rl.body, allow_return),
+            .if_stmt => |is| blk: {
+                if (!self.expr_is_native_scalar(is.cond) or !self.block_is_native_scalar(is.then, allow_return)) break :blk false;
+                for (is.elseifs) |elseif| {
+                    if (!self.expr_is_native_scalar(elseif.cond) or !self.block_is_native_scalar(elseif.body, allow_return)) break :blk false;
+                }
+                if (is.else_body) |body| {
+                    if (!self.block_is_native_scalar(body, allow_return)) break :blk false;
+                }
+                break :blk true;
+            },
+            .num_for => |nf| blk: {
+                if (!self.type_expr_is_native_scalar(nf.var_typ) and nf.var_typ != .inferred) break :blk false;
+                if (!self.expr_is_native_scalar(nf.start) or !self.expr_is_native_scalar(nf.stop)) break :blk false;
+                if (nf.step) |step| {
+                    if (!self.expr_is_native_scalar(step)) break :blk false;
+                }
+                break :blk self.block_is_native_scalar(nf.body, allow_return);
+            },
+            .ret => |r| blk: {
+                if (!allow_return) break :blk false;
+                for (r.vals) |value| {
+                    if (!self.expr_is_native_scalar(value)) break :blk false;
+                }
+                break :blk true;
+            },
+            .brk, .cont => true,
+            else => false,
+        };
+    }
+
+    fn call_stmt_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
+        if (expr.* != .call) return self.expr_is_native_scalar(expr);
+        const call = expr.call;
+        if (call.func.* == .name and std.mem.eql(u8, call.func.name.ident, "print")) {
+            for (call.args) |arg| {
+                const rt = self.expr_type(arg);
+                if (!(rt.is_numeric() or rt == .bool or rt == .str) or !self.expr_is_native_scalar(arg)) return false;
+            }
+            return true;
+        }
+        return self.expr_is_native_scalar(expr);
+    }
+
+    fn lvalue_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .name => true,
+            .index => |idx| self.expr_is_native_scalar(idx.obj) and self.expr_is_native_scalar(idx.key),
+            .field => |field| self.expr_is_native_scalar(field.obj),
+            else => false,
+        };
+    }
+
+    fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
+            .name => |name| !is_runtime_global(name.ident),
+            .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
+            .unop => |un| un.op != .compile and self.expr_is_native_scalar(un.operand),
+            .call => |call| blk: {
+                if (call.func.* != .name) break :blk false;
+                if (is_runtime_global(call.func.name.ident)) break :blk false;
+                for (call.args) |arg| {
+                    if (!self.expr_is_native_scalar(arg)) break :blk false;
+                }
+                const rt = self.expr_type(expr);
+                break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void;
+            },
+            else => false,
+        };
+    }
+
+    fn type_expr_is_native_scalar(self: *CodeGen, type_expr: ast.TypeExpr) bool {
+        const rt = self.resolve_type(type_expr);
+        return rt.is_numeric() or rt == .bool or rt == .str or rt == .void;
+    }
+
+    fn module_has_cinclude(self: *CodeGen, mod: *const ast.Module) bool {
+        _ = self;
+        for (mod.body.stmts) |stmt| {
+            if (stmt == .cinclude) return true;
+        }
+        return false;
+    }
+
+    fn native_scalar_needs_string_h(self: *CodeGen, mod: *const ast.Module) bool {
+        if (!self.native_scalar_mode) return true;
+        if (mod.body.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_string_h(expr)) return true;
+        }
+        for (mod.body.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_string_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn block_needs_native_scalar_string_h(self: *CodeGen, block: ast.Block) bool {
+        if (block.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_string_h(expr)) return true;
+        }
+        for (block.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_string_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_needs_native_scalar_string_h(self: *CodeGen, stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.inits) |expr| {
+                    if (self.expr_needs_native_scalar_string_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .const_decl => |cd| self.expr_needs_native_scalar_string_h(cd.val),
+            .assign => |as| blk: {
+                for (as.targets) |expr| {
+                    if (self.expr_needs_native_scalar_string_h(expr)) break :blk true;
+                }
+                for (as.values) |expr| {
+                    if (self.expr_needs_native_scalar_string_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .call_stmt => |cs| self.expr_needs_native_scalar_string_h(cs.expr),
+            .expr_stmt => |es| self.expr_needs_native_scalar_string_h(es.expr),
+            .do_block => |db| self.block_needs_native_scalar_string_h(db.body),
+            .while_loop => |wl| self.expr_needs_native_scalar_string_h(wl.cond) or self.block_needs_native_scalar_string_h(wl.body),
+            .repeat_loop => |rl| self.expr_needs_native_scalar_string_h(rl.cond) or self.block_needs_native_scalar_string_h(rl.body),
+            .if_stmt => |is| blk: {
+                if (self.expr_needs_native_scalar_string_h(is.cond) or self.block_needs_native_scalar_string_h(is.then)) break :blk true;
+                for (is.elseifs) |elseif| {
+                    if (self.expr_needs_native_scalar_string_h(elseif.cond) or self.block_needs_native_scalar_string_h(elseif.body)) break :blk true;
+                }
+                if (is.else_body) |body| {
+                    if (self.block_needs_native_scalar_string_h(body)) break :blk true;
+                }
+                break :blk false;
+            },
+            .num_for => |nf| self.expr_needs_native_scalar_string_h(nf.start) or
+                self.expr_needs_native_scalar_string_h(nf.stop) or
+                (nf.step != null and self.expr_needs_native_scalar_string_h(nf.step.?)) or
+                self.block_needs_native_scalar_string_h(nf.body),
+            .func_decl => |fd| self.block_needs_native_scalar_string_h(fd.func.body),
+            .ret => |r| blk: {
+                for (r.vals) |expr| {
+                    if (self.expr_needs_native_scalar_string_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    fn expr_needs_native_scalar_string_h(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .binop => |b| self.expr_needs_native_scalar_string_h(b.lhs) or self.expr_needs_native_scalar_string_h(b.rhs),
+            .unop => |un| (un.op == .len and self.expr_type(un.operand) == .str) or self.expr_needs_native_scalar_string_h(un.operand),
+            .call => |call| blk: {
+                if (self.expr_needs_native_scalar_string_h(call.func)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_string_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .method_call => |call| blk: {
+                if (self.expr_needs_native_scalar_string_h(call.obj)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_string_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .index => |idx| self.expr_needs_native_scalar_string_h(idx.obj) or self.expr_needs_native_scalar_string_h(idx.key),
+            .field => |field| self.expr_needs_native_scalar_string_h(field.obj),
+            else => false,
+        };
+    }
+
+    fn native_scalar_needs_stdlib_h(self: *CodeGen, mod: *const ast.Module) bool {
+        if (!self.native_scalar_mode) return true;
+        if (mod.body.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_stdlib_h(expr)) return true;
+        }
+        for (mod.body.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_stdlib_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn block_needs_native_scalar_stdlib_h(self: *CodeGen, block: ast.Block) bool {
+        if (block.tail_expr) |expr| {
+            if (self.expr_needs_native_scalar_stdlib_h(expr)) return true;
+        }
+        for (block.stmts) |*stmt| {
+            if (self.stmt_needs_native_scalar_stdlib_h(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_needs_native_scalar_stdlib_h(self: *CodeGen, stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.inits) |expr| {
+                    if (self.expr_needs_native_scalar_stdlib_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .const_decl => |cd| self.expr_needs_native_scalar_stdlib_h(cd.val),
+            .assign => |as| blk: {
+                for (as.targets) |expr| {
+                    if (self.expr_needs_native_scalar_stdlib_h(expr)) break :blk true;
+                }
+                for (as.values) |expr| {
+                    if (self.expr_needs_native_scalar_stdlib_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .call_stmt => |cs| self.expr_needs_native_scalar_stdlib_h(cs.expr),
+            .expr_stmt => |es| self.expr_needs_native_scalar_stdlib_h(es.expr),
+            .do_block => |db| self.block_needs_native_scalar_stdlib_h(db.body),
+            .while_loop => |wl| self.expr_needs_native_scalar_stdlib_h(wl.cond) or self.block_needs_native_scalar_stdlib_h(wl.body),
+            .repeat_loop => |rl| self.expr_needs_native_scalar_stdlib_h(rl.cond) or self.block_needs_native_scalar_stdlib_h(rl.body),
+            .if_stmt => |is| blk: {
+                if (self.expr_needs_native_scalar_stdlib_h(is.cond) or self.block_needs_native_scalar_stdlib_h(is.then)) break :blk true;
+                for (is.elseifs) |elseif| {
+                    if (self.expr_needs_native_scalar_stdlib_h(elseif.cond) or self.block_needs_native_scalar_stdlib_h(elseif.body)) break :blk true;
+                }
+                if (is.else_body) |body| {
+                    if (self.block_needs_native_scalar_stdlib_h(body)) break :blk true;
+                }
+                break :blk false;
+            },
+            .num_for => |nf| self.expr_needs_native_scalar_stdlib_h(nf.start) or
+                self.expr_needs_native_scalar_stdlib_h(nf.stop) or
+                (nf.step != null and self.expr_needs_native_scalar_stdlib_h(nf.step.?)) or
+                self.block_needs_native_scalar_stdlib_h(nf.body),
+            .func_decl => |fd| self.block_needs_native_scalar_stdlib_h(fd.func.body),
+            .ret => |r| blk: {
+                for (r.vals) |expr| {
+                    if (self.expr_needs_native_scalar_stdlib_h(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    fn expr_needs_native_scalar_stdlib_h(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .binop => |b| self.expr_needs_native_scalar_stdlib_h(b.lhs) or self.expr_needs_native_scalar_stdlib_h(b.rhs),
+            .unop => |un| self.expr_needs_native_scalar_stdlib_h(un.operand),
+            .call => |call| blk: {
+                if (call.func.* == .name and std.mem.eql(u8, call.func.name.ident, "__emit")) break :blk true;
+                if (self.expr_needs_native_scalar_stdlib_h(call.func)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_stdlib_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .method_call => |call| blk: {
+                if (self.expr_needs_native_scalar_stdlib_h(call.obj)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_native_scalar_stdlib_h(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .index => |idx| self.expr_needs_native_scalar_stdlib_h(idx.obj) or self.expr_needs_native_scalar_stdlib_h(idx.key),
+            .field => |field| self.expr_needs_native_scalar_stdlib_h(field.obj),
+            else => false,
+        };
+    }
+
+    fn native_scalar_needs_int_floor_helpers(self: *CodeGen, mod: *const ast.Module) bool {
+        if (!self.native_scalar_mode) return true;
+        if (mod.body.tail_expr) |expr| {
+            if (self.expr_needs_int_floor_helpers(expr)) return true;
+        }
+        for (mod.body.stmts) |*stmt| {
+            if (self.stmt_needs_int_floor_helpers(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn block_needs_int_floor_helpers(self: *CodeGen, block: ast.Block) bool {
+        if (block.tail_expr) |expr| {
+            if (self.expr_needs_int_floor_helpers(expr)) return true;
+        }
+        for (block.stmts) |*stmt| {
+            if (self.stmt_needs_int_floor_helpers(stmt)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_needs_int_floor_helpers(self: *CodeGen, stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| blk: {
+                for (ld.inits) |expr| {
+                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .const_decl => |cd| self.expr_needs_int_floor_helpers(cd.val),
+            .assign => |as| blk: {
+                for (as.targets) |expr| {
+                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                }
+                for (as.values) |expr| {
+                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            .call_stmt => |cs| self.expr_needs_int_floor_helpers(cs.expr),
+            .expr_stmt => |es| self.expr_needs_int_floor_helpers(es.expr),
+            .do_block => |db| self.block_needs_int_floor_helpers(db.body),
+            .while_loop => |wl| self.expr_needs_int_floor_helpers(wl.cond) or self.block_needs_int_floor_helpers(wl.body),
+            .repeat_loop => |rl| self.expr_needs_int_floor_helpers(rl.cond) or self.block_needs_int_floor_helpers(rl.body),
+            .if_stmt => |is| blk: {
+                if (self.expr_needs_int_floor_helpers(is.cond) or self.block_needs_int_floor_helpers(is.then)) break :blk true;
+                for (is.elseifs) |elseif| {
+                    if (self.expr_needs_int_floor_helpers(elseif.cond) or self.block_needs_int_floor_helpers(elseif.body)) break :blk true;
+                }
+                if (is.else_body) |body| {
+                    if (self.block_needs_int_floor_helpers(body)) break :blk true;
+                }
+                break :blk false;
+            },
+            .num_for => |nf| self.expr_needs_int_floor_helpers(nf.start) or
+                self.expr_needs_int_floor_helpers(nf.stop) or
+                (nf.step != null and self.expr_needs_int_floor_helpers(nf.step.?)) or
+                self.block_needs_int_floor_helpers(nf.body),
+            .func_decl => |fd| self.block_needs_int_floor_helpers(fd.func.body),
+            .ret => |r| blk: {
+                for (r.vals) |expr| {
+                    if (self.expr_needs_int_floor_helpers(expr)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
+    }
+
+    fn expr_needs_int_floor_helpers(self: *CodeGen, expr: *const ast.Expr) bool {
+        return switch (expr.*) {
+            .binop => |b| blk: {
+                if (self.expr_needs_int_floor_helpers(b.lhs) or self.expr_needs_int_floor_helpers(b.rhs)) break :blk true;
+                if (b.op != .idiv and b.op != .mod) break :blk false;
+                const lt = self.expr_type(b.lhs);
+                const rt = self.expr_type(b.rhs);
+                if (!lt.is_integer() or !rt.is_integer()) break :blk false;
+                break :blk !(b.rhs.* == .int_lit and b.rhs.int_lit.val > 0);
+            },
+            .unop => |un| self.expr_needs_int_floor_helpers(un.operand),
+            .call => |call| blk: {
+                if (self.expr_needs_int_floor_helpers(call.func)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_int_floor_helpers(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .method_call => |call| blk: {
+                if (self.expr_needs_int_floor_helpers(call.obj)) break :blk true;
+                for (call.args) |arg| {
+                    if (self.expr_needs_int_floor_helpers(arg)) break :blk true;
+                }
+                break :blk false;
+            },
+            .index => |idx| self.expr_needs_int_floor_helpers(idx.obj) or self.expr_needs_int_floor_helpers(idx.key),
+            .field => |field| self.expr_needs_int_floor_helpers(field.obj),
+            else => false,
+        };
+    }
+
     pub fn emit_module(self: *CodeGen, mod: *ast.Module) E!void {
         if (self.src_path.len > 0) {
             debug_trace.event(.codegen, .module, "emit {s}", .{self.src_path});
         } else {
             debug_trace.event(.codegen, .module, "emit module", .{});
         }
+        self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
+        const native_scalar_plain = self.native_scalar_mode and !self.module_has_cinclude(mod);
+
         // File header
         self.p("/* Generated by duo compiler — do not edit */\n", .{});
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi") and !native_scalar_plain) {
             self.p("#define _XOPEN_SOURCE 600\n", .{});
         }
         // Emit user @cinclude directives before standard headers so FFI
@@ -1132,12 +1596,18 @@ pub const CodeGen = struct {
         self.p("#include <stdint.h>\n", .{});
         self.p("#include <stdbool.h>\n", .{});
         self.p("#include <stdio.h>\n", .{});
-        self.p("#include <stdlib.h>\n", .{});
-        self.p("#include <string.h>\n", .{});
-        self.p("#include <stdarg.h>\n", .{});
-        self.p("#include <math.h>\n", .{});
-        self.p("#include <time.h>\n", .{});
-        self.p("#include <sys/time.h>\n", .{});
+        if (!native_scalar_plain or self.native_scalar_needs_stdlib_h(mod)) {
+            self.p("#include <stdlib.h>\n", .{});
+        }
+        if (!native_scalar_plain or self.native_scalar_needs_string_h(mod)) {
+            self.p("#include <string.h>\n", .{});
+        }
+        if (!self.native_scalar_mode) {
+            self.p("#include <stdarg.h>\n", .{});
+            self.p("#include <math.h>\n", .{});
+            self.p("#include <time.h>\n", .{});
+            self.p("#include <sys/time.h>\n", .{});
+        }
         if (self.test_mode) {
             self.p("static double duo_time_now(void) {{\n", .{});
             self.pl("struct timeval tv;", .{});
@@ -1145,8 +1615,10 @@ pub const CodeGen = struct {
             self.pl("return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;", .{});
             self.p("}}\n\n", .{});
         }
-        self.p("#include <ctype.h>\n", .{});
-        self.p("#include <limits.h>\n", .{});
+        if (!self.native_scalar_mode) {
+            self.p("#include <ctype.h>\n", .{});
+            self.p("#include <limits.h>\n", .{});
+        }
         if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
             self.p("#ifdef __wasm__\n", .{});
             self.p("// WASM stubs for missing POSIX features\n", .{});
@@ -1176,181 +1648,198 @@ pub const CodeGen = struct {
             self.p("static inline const char* dlerror(void) {{ return \"dlopen not supported in WASM\"; }}\n", .{});
             self.p("static inline int dlclose(void* h) {{ (void)h; return 0; }}\n", .{});
             self.p("#endif\n", .{});
-        } else {
+        } else if (!native_scalar_plain) {
             self.p("#include <setjmp.h>\n", .{});
             self.p("#include <ucontext.h>\n", .{});
         }
-        self.pl("int duo_tests_failed = 0;", .{});
-        self.pl("int duo_test_runner_active = 0;", .{});
-        self.pl("const char* duo_test_current = NULL;", .{});
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+        if (!self.native_scalar_mode) {
+            self.pl("int duo_tests_failed = 0;", .{});
+            self.pl("int duo_test_runner_active = 0;", .{});
+            self.pl("const char* duo_test_current = NULL;", .{});
+        }
+        // Forward-declare duo_argc/duo_argv so any function (e.g. os.args()) can
+        // reference them before main() is emitted at the end of the file.
+        if (!self.load_chunk and !self.native_scalar_mode) {
+            self.pl("int duo_argc; char** duo_argv;", .{});
+        }
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi") and !self.native_scalar_mode) {
             self.pl("jmp_buf duo_test_jmp;", .{});
         }
         if (self.test_mode) {
             self.pl("int duo_tests_run = 0;", .{});
             self.pl("int duo_tests_skipped = 0;", .{});
         }
-        self.p("#ifndef __wasm__\n", .{});
-        self.p("#include <unistd.h>\n", .{});
-        self.p("#include <dlfcn.h>\n", .{});
-        self.p("#include <fcntl.h>\n", .{});
-        self.p("#include <sys/stat.h>\n", .{});
-        self.p("#include <sys/socket.h>\n", .{});
-        self.p("#include <netinet/in.h>\n", .{});
-        self.p("#include <arpa/inet.h>\n", .{});
-        self.p("#include <netdb.h>\n", .{});
-        self.p("#endif\n", .{});
-        // ML kernel declarations (guarded by #ifndef, harmless if unused)
-        ml_kernels.emitDecls(self);
-        self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
-        self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
-        self.p("    size_t len = strlen(s);\n", .{});
-        self.p("    size_t total = len * (size_t)n;\n", .{});
-        self.p("    char* out = (char*)malloc(total + 1);\n", .{});
-        self.p("    if (!out) return (char*)s;\n", .{});
-        self.p("    char* p = out;\n", .{});
-        self.p("    for (int64_t i = 0; i < n; ++i) {{ memcpy(p, s, len); p += len; }}\n", .{});
-        self.p("    *p = '\\0';\n", .{});
-        self.p("    return out;\n", .{});
-        self.p("}}\n", .{});
-        // Floor division and floor modulo for typed int64 (Lua // and % semantics)
-        self.p("__attribute__((always_inline)) static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
-        self.p("    int64_t q = a / b, r = a % b;\n", .{});
-        self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? q : (q - ((r != 0) & ((a ^ b) < 0)));\n", .{});
-        self.p("}}\n", .{});
-        self.p("__attribute__((always_inline)) static inline int64_t lua_imod_i64(int64_t a, int64_t b) {{\n", .{});
-        self.p("    int64_t r = a % b;\n", .{});
-        self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? r : (r + (((r != 0) & ((a ^ b) < 0)) ? b : 0));\n", .{});
-        self.p("}}\n", .{});
-        // Integer max/min for typed int64 math.max/math.min (avoids the
-        // int->double->int round-trip and the lua_Value boxing path).
-        self.p("__attribute__((always_inline)) static inline int64_t lua_imax_i64(int64_t a, int64_t b) {{ return a > b ? a : b; }}\n", .{});
-        self.p("__attribute__((always_inline)) static inline int64_t lua_imin_i64(int64_t a, int64_t b) {{ return a < b ? a : b; }}\n", .{});
-        self.p("static inline int64_t duo_gcd_i64(int64_t a, int64_t b) {{\n", .{});
-        self.p("    while (b != 0) {{ int64_t t = a % b; a = b; b = t; }}\n", .{});
-        self.p("    return a < 0 ? -a : a;\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline int64_t duo_mod_inverse_i64(int64_t a, int64_t mod) {{\n", .{});
-        self.p("    int64_t t = 0, new_t = 1, r = mod, new_r = a;\n", .{});
-        self.p("    while (new_r != 0) {{\n", .{});
-        self.p("        int64_t q = r / new_r;\n", .{});
-        self.p("        int64_t next_t = t - q * new_t; t = new_t; new_t = next_t;\n", .{});
-        self.p("        int64_t next_r = r - q * new_r; r = new_r; new_r = next_r;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    if (t < 0) t += mod;\n", .{});
-        self.p("    return t;\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline int64_t duo_count_linear_congruence_i64(int64_t start, int64_t step, int64_t divisor, int64_t terms) {{\n", .{});
-        self.p("    int64_t g = duo_gcd_i64(step, divisor);\n", .{});
-        self.p("    if ((start % g) != 0) return 0;\n", .{});
-        self.p("    int64_t mod = divisor / g;\n", .{});
-        self.p("    if (mod == 1) return terms;\n", .{});
-        self.p("    int64_t a = (step / g) % mod;\n", .{});
-        self.p("    int64_t b = (-(start / g)) % mod;\n", .{});
-        self.p("    if (b < 0) b += mod;\n", .{});
-        self.p("    int64_t first = (b * duo_mod_inverse_i64(a, mod)) % mod;\n", .{});
-        self.p("    return first < terms ? 1 + (terms - 1 - first) / mod : 0;\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline int64_t duo_sum_affine_periodic_gcd_i64(int64_t n, int64_t period, int64_t mul, int64_t add) {{\n", .{});
-        self.p("    if (n <= 0 || period <= 0) return 0;\n", .{});
-        self.p("    int64_t phi_stack[10001];\n", .{});
-        self.p("    int64_t* phi = period <= 10000 ? phi_stack : (int64_t*)malloc((size_t)(period + 1) * sizeof(int64_t));\n", .{});
-        self.p("    if (!phi) return 0;\n", .{});
-        self.p("    for (int64_t i = 0; i <= period; ++i) phi[i] = i;\n", .{});
-        self.p("    for (int64_t p = 2; p <= period; ++p) if (phi[p] == p) {{\n", .{});
-        self.p("        for (int64_t j = p; j <= period; j += p) phi[j] -= phi[j] / p;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    int64_t total = 0;\n", .{});
-        self.p("    int64_t last = n < period ? n : period;\n", .{});
-        self.p("    int64_t mul_mod = mul % period;\n", .{});
-        self.p("    if (mul_mod < 0) mul_mod += period;\n", .{});
-        self.p("    if (duo_gcd_i64(mul_mod, period) == 1) {{\n", .{});
-        self.p("        int64_t inv_mul = duo_mod_inverse_i64(mul_mod, period);\n", .{});
-        self.p("        for (int64_t divisor = 1; divisor <= period; ++divisor) {{\n", .{});
-        self.p("            int64_t phi_divisor = phi[divisor];\n", .{});
-        self.p("            for (int64_t v = divisor; v <= period; v += divisor) {{\n", .{});
-        self.p("                int64_t target = (v - 1 - add) % period;\n", .{});
-        self.p("                if (target < 0) target += period;\n", .{});
-        self.p("                int64_t r = (target * inv_mul) % period;\n", .{});
-        self.p("                if (r == 0) r = period;\n", .{});
-        self.p("                if (r <= last) {{\n", .{});
-        self.p("                    int64_t terms = (n - r) / period + 1;\n", .{});
-        self.p("                    total += phi_divisor * duo_count_linear_congruence_i64(r, period, divisor, terms);\n", .{});
-        self.p("                }}\n", .{});
-        self.p("            }}\n", .{});
-        self.p("        }}\n", .{});
-        self.p("        if (phi != phi_stack) free(phi);\n", .{});
-        self.p("        return total;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    for (int64_t r = 1; r <= last; ++r) {{\n", .{});
-        self.p("        int64_t terms = (n - r) / period + 1;\n", .{});
-        self.p("        int64_t v = ((mul * r + add) % period) + 1;\n", .{});
-        self.p("        for (int64_t cand = 1; cand * cand <= v; ++cand) if ((v % cand) == 0) {{\n", .{});
-        self.p("            int64_t c1 = duo_count_linear_congruence_i64(r, period, cand, terms);\n", .{});
-        self.p("            total += phi[cand] * c1;\n", .{});
-        self.p("            int64_t other = v / cand;\n", .{});
-        self.p("            if (other != cand) {{\n", .{});
-        self.p("                int64_t c2 = duo_count_linear_congruence_i64(r, period, other, terms);\n", .{});
-        self.p("                total += phi[other] * c2;\n", .{});
-        self.p("            }}\n", .{});
-        self.p("        }}\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    if (phi != phi_stack) free(phi);\n", .{});
-        self.p("    return total;\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline int64_t duo_floor_sum_i64(int64_t n, int64_t m, int64_t a, int64_t b) {{\n", .{});
-        self.p("    __int128 ans = 0;\n", .{});
-        self.p("    while (1) {{\n", .{});
-        self.p("        if (a >= m) {{ ans += (__int128)(n - 1) * n * (a / m) / 2; a %= m; }}\n", .{});
-        self.p("        if (b >= m) {{ ans += (__int128)n * (b / m); b %= m; }}\n", .{});
-        self.p("        __int128 y = (__int128)a * n + b;\n", .{});
-        self.p("        if (y < m) break;\n", .{});
-        self.p("        n = (int64_t)(y / m);\n", .{});
-        self.p("        b = (int64_t)(y % m);\n", .{});
-        self.p("        int64_t tmp = m; m = a; a = tmp;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    return (int64_t)ans;\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline uint64_t duo_floor_sum_parity_u64(uint64_t n, uint64_t m, uint64_t a) {{\n", .{});
-        self.p("    uint64_t parity = 0, b = 0;\n", .{});
-        self.p("    while (1) {{\n", .{});
-        self.p("        if (a >= m) {{ uint64_t q = a / m; parity ^= ((((__uint128_t)(n - 1) * n) / 2) & 1) & (q & 1); a %= m; }}\n", .{});
-        self.p("        if (b >= m) {{ uint64_t q = b / m; parity ^= (n & 1) & (q & 1); b %= m; }}\n", .{});
-        self.p("        __uint128_t y = (__uint128_t)a * n + b;\n", .{});
-        self.p("        if (y < m) break;\n", .{});
-        self.p("        n = (uint64_t)(y / m);\n", .{});
-        self.p("        b = (uint64_t)(y % m);\n", .{});
-        self.p("        uint64_t tmp = m; m = a; a = tmp;\n", .{});
-        self.p("    }}\n", .{});
-        self.p("    return parity & 1;\n", .{});
-        self.p("}}\n", .{});
-        self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
-        self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
-        self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
-        self.p("typedef int32_t v8i32 __attribute__((ext_vector_type(8)));\n", .{});
-        self.p("static inline v4f64 duo_select_v4f64(v4i64 c, v4f64 a, v4f64 b) {{\n", .{});
-        self.p("    v4f64 fc = __builtin_convertvector(c, v4f64);\n", .{});
-        self.p("    v4f64 one = (v4f64){{1.0, 1.0, 1.0, 1.0}};\n", .{});
-        self.p("    return a * fc + b * (one - fc);\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline v4i64 duo_select_v4i64(v4i64 c, v4i64 a, v4i64 b) {{\n", .{});
-        self.p("    v4i64 one = (v4i64){{1, 1, 1, 1}};\n", .{});
-        self.p("    return a * c + b * (one - c);\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline v8f32 duo_select_v8f32(v8i32 c, v8f32 a, v8f32 b) {{\n", .{});
-        self.p("    v8f32 fc = __builtin_convertvector(c, v8f32);\n", .{});
-        self.p("    v8f32 one = (v8f32){{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f}};\n", .{});
-        self.p("    return a * fc + b * (one - fc);\n", .{});
-        self.p("}}\n", .{});
-        self.p("static inline v8i32 duo_select_v8i32(v8i32 c, v8i32 a, v8i32 b) {{\n", .{});
-        self.p("    v8i32 one = (v8i32){{1, 1, 1, 1, 1, 1, 1, 1}};\n", .{});
-        self.p("    return a * c + b * (one - c);\n", .{});
-        self.p("}}\n", .{});
-        self.p("#include <locale.h>\n", .{});
-        self.nl();
-        self.p("#ifdef __wasm__\nstatic char duo_jit_compile_flags[1] = \"\";\n#else\nchar duo_jit_compile_flags[128] = \"\";\n#endif\n\n", .{});
-        self.p("{s}", .{duo_runtime});
-        self.nl();
+        if (!self.native_scalar_mode) {
+            self.p("#ifndef __wasm__\n", .{});
+            self.p("#include <unistd.h>\n", .{});
+            self.p("#include <dlfcn.h>\n", .{});
+            self.p("#include <fcntl.h>\n", .{});
+            self.p("#include <sys/stat.h>\n", .{});
+            self.p("#include <sys/socket.h>\n", .{});
+            self.p("#include <netinet/in.h>\n", .{});
+            self.p("#include <arpa/inet.h>\n", .{});
+            self.p("#include <netdb.h>\n", .{});
+            self.p("#endif\n", .{});
+        }
+        if (!self.native_scalar_mode) {
+            // ML kernel declarations (guarded by #ifndef, harmless if unused)
+            ml_kernels.emitDecls(self);
+            self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
+            self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
+            self.p("    size_t len = strlen(s);\n", .{});
+            self.p("    size_t total = len * (size_t)n;\n", .{});
+            self.p("    char* out = (char*)malloc(total + 1);\n", .{});
+            self.p("    if (!out) return (char*)s;\n", .{});
+            self.p("    char* p = out;\n", .{});
+            self.p("    for (int64_t i = 0; i < n; ++i) {{ memcpy(p, s, len); p += len; }}\n", .{});
+            self.p("    *p = '\\0';\n", .{});
+            self.p("    return out;\n", .{});
+            self.p("}}\n", .{});
+        }
+        if (self.native_scalar_needs_int_floor_helpers(mod)) {
+            // Floor division and floor modulo for typed int64 (Lua // and % semantics)
+            self.p("__attribute__((always_inline)) static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
+            self.p("    int64_t q = a / b, r = a % b;\n", .{});
+            self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? q : (q - ((r != 0) & ((a ^ b) < 0)));\n", .{});
+            self.p("}}\n", .{});
+            self.p("__attribute__((always_inline)) static inline int64_t lua_imod_i64(int64_t a, int64_t b) {{\n", .{});
+            self.p("    int64_t r = a % b;\n", .{});
+            self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? r : (r + (((r != 0) & ((a ^ b) < 0)) ? b : 0));\n", .{});
+            self.p("}}\n", .{});
+        }
+        if (!self.native_scalar_mode) {
+            // Integer max/min for typed int64 math.max/math.min (avoids the
+            // int->double->int round-trip and the lua_Value boxing path).
+            self.p("__attribute__((always_inline)) static inline int64_t lua_imax_i64(int64_t a, int64_t b) {{ return a > b ? a : b; }}\n", .{});
+            self.p("__attribute__((always_inline)) static inline int64_t lua_imin_i64(int64_t a, int64_t b) {{ return a < b ? a : b; }}\n", .{});
+            self.p("static inline int64_t duo_gcd_i64(int64_t a, int64_t b) {{\n", .{});
+            self.p("    while (b != 0) {{ int64_t t = a % b; a = b; b = t; }}\n", .{});
+            self.p("    return a < 0 ? -a : a;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline int64_t duo_mod_inverse_i64(int64_t a, int64_t mod) {{\n", .{});
+            self.p("    int64_t t = 0, new_t = 1, r = mod, new_r = a;\n", .{});
+            self.p("    while (new_r != 0) {{\n", .{});
+            self.p("        int64_t q = r / new_r;\n", .{});
+            self.p("        int64_t next_t = t - q * new_t; t = new_t; new_t = next_t;\n", .{});
+            self.p("        int64_t next_r = r - q * new_r; r = new_r; new_r = next_r;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    if (t < 0) t += mod;\n", .{});
+            self.p("    return t;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline int64_t duo_count_linear_congruence_i64(int64_t start, int64_t step, int64_t divisor, int64_t terms) {{\n", .{});
+            self.p("    int64_t g = duo_gcd_i64(step, divisor);\n", .{});
+            self.p("    if ((start % g) != 0) return 0;\n", .{});
+            self.p("    int64_t mod = divisor / g;\n", .{});
+            self.p("    if (mod == 1) return terms;\n", .{});
+            self.p("    int64_t a = (step / g) % mod;\n", .{});
+            self.p("    int64_t b = (-(start / g)) % mod;\n", .{});
+            self.p("    if (b < 0) b += mod;\n", .{});
+            self.p("    int64_t first = (b * duo_mod_inverse_i64(a, mod)) % mod;\n", .{});
+            self.p("    return first < terms ? 1 + (terms - 1 - first) / mod : 0;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline int64_t duo_sum_affine_periodic_gcd_i64(int64_t n, int64_t period, int64_t mul, int64_t add) {{\n", .{});
+            self.p("    if (n <= 0 || period <= 0) return 0;\n", .{});
+            self.p("    int64_t phi_stack[10001];\n", .{});
+            self.p("    int64_t* phi = period <= 10000 ? phi_stack : (int64_t*)malloc((size_t)(period + 1) * sizeof(int64_t));\n", .{});
+            self.p("    if (!phi) return 0;\n", .{});
+            self.p("    for (int64_t i = 0; i <= period; ++i) phi[i] = i;\n", .{});
+            self.p("    for (int64_t p = 2; p <= period; ++p) if (phi[p] == p) {{\n", .{});
+            self.p("        for (int64_t j = p; j <= period; j += p) phi[j] -= phi[j] / p;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    int64_t total = 0;\n", .{});
+            self.p("    int64_t last = n < period ? n : period;\n", .{});
+            self.p("    int64_t mul_mod = mul % period;\n", .{});
+            self.p("    if (mul_mod < 0) mul_mod += period;\n", .{});
+            self.p("    if (duo_gcd_i64(mul_mod, period) == 1) {{\n", .{});
+            self.p("        int64_t inv_mul = duo_mod_inverse_i64(mul_mod, period);\n", .{});
+            self.p("        for (int64_t divisor = 1; divisor <= period; ++divisor) {{\n", .{});
+            self.p("            int64_t phi_divisor = phi[divisor];\n", .{});
+            self.p("            for (int64_t v = divisor; v <= period; v += divisor) {{\n", .{});
+            self.p("                int64_t target = (v - 1 - add) % period;\n", .{});
+            self.p("                if (target < 0) target += period;\n", .{});
+            self.p("                int64_t r = (target * inv_mul) % period;\n", .{});
+            self.p("                if (r == 0) r = period;\n", .{});
+            self.p("                if (r <= last) {{\n", .{});
+            self.p("                    int64_t terms = (n - r) / period + 1;\n", .{});
+            self.p("                    total += phi_divisor * duo_count_linear_congruence_i64(r, period, divisor, terms);\n", .{});
+            self.p("                }}\n", .{});
+            self.p("            }}\n", .{});
+            self.p("        }}\n", .{});
+            self.p("        if (phi != phi_stack) free(phi);\n", .{});
+            self.p("        return total;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    for (int64_t r = 1; r <= last; ++r) {{\n", .{});
+            self.p("        int64_t terms = (n - r) / period + 1;\n", .{});
+            self.p("        int64_t v = ((mul * r + add) % period) + 1;\n", .{});
+            self.p("        for (int64_t cand = 1; cand * cand <= v; ++cand) if ((v % cand) == 0) {{\n", .{});
+            self.p("            int64_t c1 = duo_count_linear_congruence_i64(r, period, cand, terms);\n", .{});
+            self.p("            total += phi[cand] * c1;\n", .{});
+            self.p("            int64_t other = v / cand;\n", .{});
+            self.p("            if (other != cand) {{\n", .{});
+            self.p("                int64_t c2 = duo_count_linear_congruence_i64(r, period, other, terms);\n", .{});
+            self.p("                total += phi[other] * c2;\n", .{});
+            self.p("            }}\n", .{});
+            self.p("        }}\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    if (phi != phi_stack) free(phi);\n", .{});
+            self.p("    return total;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline int64_t duo_floor_sum_i64(int64_t n, int64_t m, int64_t a, int64_t b) {{\n", .{});
+            self.p("    __int128 ans = 0;\n", .{});
+            self.p("    while (1) {{\n", .{});
+            self.p("        if (a >= m) {{ ans += (__int128)(n - 1) * n * (a / m) / 2; a %= m; }}\n", .{});
+            self.p("        if (b >= m) {{ ans += (__int128)n * (b / m); b %= m; }}\n", .{});
+            self.p("        __int128 y = (__int128)a * n + b;\n", .{});
+            self.p("        if (y < m) break;\n", .{});
+            self.p("        n = (int64_t)(y / m);\n", .{});
+            self.p("        b = (int64_t)(y % m);\n", .{});
+            self.p("        int64_t tmp = m; m = a; a = tmp;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    return (int64_t)ans;\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline uint64_t duo_floor_sum_parity_u64(uint64_t n, uint64_t m, uint64_t a) {{\n", .{});
+            self.p("    uint64_t parity = 0, b = 0;\n", .{});
+            self.p("    while (1) {{\n", .{});
+            self.p("        if (a >= m) {{ uint64_t q = a / m; parity ^= ((((__uint128_t)(n - 1) * n) / 2) & 1) & (q & 1); a %= m; }}\n", .{});
+            self.p("        if (b >= m) {{ uint64_t q = b / m; parity ^= (n & 1) & (q & 1); b %= m; }}\n", .{});
+            self.p("        __uint128_t y = (__uint128_t)a * n + b;\n", .{});
+            self.p("        if (y < m) break;\n", .{});
+            self.p("        n = (uint64_t)(y / m);\n", .{});
+            self.p("        b = (uint64_t)(y % m);\n", .{});
+            self.p("        uint64_t tmp = m; m = a; a = tmp;\n", .{});
+            self.p("    }}\n", .{});
+            self.p("    return parity & 1;\n", .{});
+            self.p("}}\n", .{});
+            self.p("typedef double v4f64 __attribute__((ext_vector_type(4)));\n", .{});
+            self.p("typedef int64_t v4i64 __attribute__((ext_vector_type(4)));\n", .{});
+            self.p("typedef float v8f32 __attribute__((ext_vector_type(8)));\n", .{});
+            self.p("typedef int32_t v8i32 __attribute__((ext_vector_type(8)));\n", .{});
+            self.p("static inline v4f64 duo_select_v4f64(v4i64 c, v4f64 a, v4f64 b) {{\n", .{});
+            self.p("    v4f64 fc = __builtin_convertvector(c, v4f64);\n", .{});
+            self.p("    v4f64 one = (v4f64){{1.0, 1.0, 1.0, 1.0}};\n", .{});
+            self.p("    return a * fc + b * (one - fc);\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline v4i64 duo_select_v4i64(v4i64 c, v4i64 a, v4i64 b) {{\n", .{});
+            self.p("    v4i64 one = (v4i64){{1, 1, 1, 1}};\n", .{});
+            self.p("    return a * c + b * (one - c);\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline v8f32 duo_select_v8f32(v8i32 c, v8f32 a, v8f32 b) {{\n", .{});
+            self.p("    v8f32 fc = __builtin_convertvector(c, v8f32);\n", .{});
+            self.p("    v8f32 one = (v8f32){{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f}};\n", .{});
+            self.p("    return a * fc + b * (one - fc);\n", .{});
+            self.p("}}\n", .{});
+            self.p("static inline v8i32 duo_select_v8i32(v8i32 c, v8i32 a, v8i32 b) {{\n", .{});
+            self.p("    v8i32 one = (v8i32){{1, 1, 1, 1, 1, 1, 1, 1}};\n", .{});
+            self.p("    return a * c + b * (one - c);\n", .{});
+            self.p("}}\n", .{});
+        }
+        if (!self.native_scalar_mode) {
+            self.p("#include <locale.h>\n", .{});
+            self.nl();
+            self.p("#ifdef __wasm__\nstatic char duo_jit_compile_flags[1] = \"\";\n#else\nchar duo_jit_compile_flags[128] = \"\";\n#endif\n\n", .{});
+            self.p("{s}", .{duo_runtime});
+            self.nl();
+        }
 
         try self.comptime_scopes.append(self.alloc, std.StringHashMapUnmanaged(comptime_eval.Value).empty);
         defer {
@@ -1454,11 +1943,13 @@ pub const CodeGen = struct {
         self.all_closures.clearRetainingCapacity();
         self.emitted_closures.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
-        try self.emit_closure_structs(self.all_closures.items);
-        try jit.emitClosureSourceTable(self, self.all_closures.items);
-        try jit.emitUpvaluePackTable(self, self.all_closures.items);
-        try jit.emitJitRuntime(self);
-        try self.emit_required_modules(mod);
+        if (!self.native_scalar_mode) {
+            try self.emit_closure_structs(self.all_closures.items);
+            try jit.emitClosureSourceTable(self, self.all_closures.items);
+            try jit.emitUpvaluePackTable(self, self.all_closures.items);
+            try jit.emitJitRuntime(self);
+            try self.emit_required_modules(mod);
+        }
 
         var local_funcs: std.ArrayList(*ast.FuncDecl) = .empty;
         defer local_funcs.deinit(self.alloc);
@@ -1486,13 +1977,15 @@ pub const CodeGen = struct {
             try self.emit_func_def(fd);
         }
 
-        try self.emit_argv_lookup();
-        try self.emit_async_defs();
+        if (!self.native_scalar_mode) {
+            try self.emit_argv_lookup();
+            try self.emit_async_defs();
+        }
 
         if (self.mandel_native) {
             self.p("#pragma GCC push_options\n", .{});
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
-            self.p("__attribute__((noinline)) static int64_t duo_mandel_benchmark_sum(void) {{\n", .{});
+            self.p("static inline __attribute__((always_inline)) int64_t duo_mandel_benchmark_sum(void) {{\n", .{});
             self.p("    int64_t sum_iters = 0;\n", .{});
             self.p("    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy)\n", .{});
             self.p("    for (int64_t y = 0; y <= 100; ++y) {{\n", .{});
@@ -1524,7 +2017,7 @@ pub const CodeGen = struct {
             self.p("#pragma GCC pop_options\n\n", .{});
         }
 
-        try self.emit_closure_runtime(self.all_closures.items);
+        if (!self.native_scalar_mode) try self.emit_closure_runtime(self.all_closures.items);
 
         // Library mode: no main()/entry point — only @export functions are
         // exposed.  Top-level statements are intentionally not executed.
@@ -1560,30 +2053,35 @@ pub const CodeGen = struct {
             self.p("#endif\n\n", .{});
             self.p("DUO_EXPORT lua_Value duo_load_entry(void) {{\n", .{});
         } else {
-            self.p("int duo_argc; char** duo_argv;\n", .{});
             self.p("int main(int argc, char** argv) {{\n", .{});
-            self.p("    duo_argc = argc; duo_argv = argv;\n", .{});
+            if (self.native_scalar_mode) {
+                self.p("    (void)argc; (void)argv;\n", .{});
+            } else {
+                self.p("    duo_argc = argc; duo_argv = argv;\n", .{});
+            }
         }
         self.indent = 1;
-        self.pl("package = lua_package_init();", .{});
-        self.pl("math = lua_math_init();", .{});
-        self.pl("utf8 = lua_utf8_init();", .{});
-        self.pl("debug = lua_debug_init();", .{});
-        self.pl("string = lua_string_init();", .{});
-        self.pl("table = lua_table_init();", .{});
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
-            self.pl("coroutine = lua_coroutine_init();", .{});
-            self.pl("io = lua_io_init();", .{});
-            self.pl("os = lua_os_init();", .{});
+        if (!self.native_scalar_mode) {
+            self.pl("package = lua_package_init();", .{});
+            self.pl("math = lua_math_init();", .{});
+            self.pl("utf8 = lua_utf8_init();", .{});
+            self.pl("debug = lua_debug_init();", .{});
+            self.pl("string = lua_string_init();", .{});
+            self.pl("table = lua_table_init();", .{});
+            if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+                self.pl("coroutine = lua_coroutine_init();", .{});
+                self.pl("io = lua_io_init();", .{});
+                self.pl("os = lua_os_init();", .{});
+            }
+            self.pl("jit = lua_jit_init();", .{});
+            self.pl("ffi = lua_ffi_init();", .{});
+            if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
+                self.pl("net = duo_net_init();", .{});
+            }
+            self.pl("duo_modules = lua_table_new();", .{});
+            self.pl("duo_register_modules();", .{});
+            self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
         }
-        self.pl("jit = lua_jit_init();", .{});
-        self.pl("ffi = lua_ffi_init();", .{});
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi")) {
-            self.pl("net = duo_net_init();", .{});
-        }
-        self.pl("duo_modules = lua_table_new();", .{});
-        self.pl("duo_register_modules();", .{});
-        self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
 
         // Initialize metatables for alias types with methods or @derive attributes
         try self.emit_alias_metatable_init(mod);
@@ -1641,7 +2139,7 @@ pub const CodeGen = struct {
         } else if (self.test_mode) {
             self.pl("return (duo_tests_failed > 0) ? 1 : 0;", .{});
         } else {
-            self.pl("duo_run_gc_finalizers();", .{});
+            if (!self.native_scalar_mode) self.pl("duo_run_gc_finalizers();", .{});
             self.pl("return 0;", .{});
         }
         self.indent = 0;
@@ -2732,7 +3230,7 @@ pub const CodeGen = struct {
         }
         self.p(");\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
-        if (fb.is_typed) try self.emit_lua_thunk_decls(fd);
+        if (fb.is_typed or self.should_emit_lua_thunk(fb)) try self.emit_lua_thunk_decls(fd);
     }
 
     fn duo_func_name(fd: *const ast.FuncDecl) []const u8 {
@@ -2892,6 +3390,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
+        if (self.native_scalar_mode) return;
         const fb = &fd.func;
         if (!self.should_emit_lua_thunk(fb)) return;
         const dname = duo_func_name(fd);
@@ -2904,6 +3403,10 @@ pub const CodeGen = struct {
             self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1);\n", .{dname});
         } else if (nparams == 3) {
             self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);\n", .{dname});
+        } else if (nparams == 4) {
+            self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3);\n", .{dname});
+        } else if (nparams == 5) {
+            self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4);\n", .{dname});
         }
     }
 
@@ -3204,8 +3707,13 @@ pub const CodeGen = struct {
     }
 
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
+        if (self.native_scalar_mode) return;
         const fb = &fd.func;
-        if (!fb.is_typed) return;
+        // Skip vararg functions — they use the __argv dispatch path, not thunks.
+        if (fb.vararg or fb.vararg_name != null) return;
+        // Generate thunk if all params are lua-convertible, regardless of is_typed.
+        // is_typed may be false when params include .any (lua_Value), but .any
+        // is lua-convertible so a thunk is still valid.
         if (!self.should_emit_lua_thunk(fb)) return;
         const ret = self.resolve_type(fb.ret_type);
         const dname = duo_func_name(fd);
@@ -3282,19 +3790,70 @@ pub const CodeGen = struct {
                 self.p(";\n", .{});
             }
             self.p("}}\n\n", .{});
+        } else if (nparams == 4) {
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
+            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
+            self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3) {{\n", .{dname});
+            self.ind();
+            try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
+            self.ind();
+            try self.emit_native_param_from_lua(pt1, "_p1", "_a1");
+            self.ind();
+            try self.emit_native_param_from_lua(pt2, "_p2", "_a2");
+            self.ind();
+            try self.emit_native_param_from_lua(pt3, "_p3", "_a3");
+            if (ret == .void) {
+                self.p("{s}(_p0, _p1, _p2, _p3);\n    return lua_val_nil();\n", .{cname});
+            } else {
+                self.p("{s} _r = {s}(_p0, _p1, _p2, _p3);\n    return ", .{ ret_ct, cname });
+                try self.emit_lua_value_from_native(ret, "_r");
+                self.p(";\n", .{});
+            }
+            self.p("}}\n\n", .{});
+        } else if (nparams == 5) {
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
+            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
+            const pt4 = types.resolve(fb.params[4].typ, null, self.alloc) catch .any;
+            self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4) {{\n", .{dname});
+            self.ind();
+            try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
+            self.ind();
+            try self.emit_native_param_from_lua(pt1, "_p1", "_a1");
+            self.ind();
+            try self.emit_native_param_from_lua(pt2, "_p2", "_a2");
+            self.ind();
+            try self.emit_native_param_from_lua(pt3, "_p3", "_a3");
+            self.ind();
+            try self.emit_native_param_from_lua(pt4, "_p4", "_a4");
+            if (ret == .void) {
+                self.p("{s}(_p0, _p1, _p2, _p3, _p4);\n    return lua_val_nil();\n", .{cname});
+            } else {
+                self.p("{s} _r = {s}(_p0, _p1, _p2, _p3, _p4);\n    return ", .{ ret_ct, cname });
+                try self.emit_lua_value_from_native(ret, "_r");
+                self.p(";\n", .{});
+            }
+            self.p("}}\n\n", .{});
         }
     }
 
     fn emit_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
-        // `@ffi` functions are extern C symbols — emit only the lua thunk if typed.
+        // `@ffi` functions are extern C symbols — emit only the lua thunk if applicable.
         if (func_ffi_name(fd.attributes) != null) {
-            if (fb.is_typed) try self.emit_lua_thunk(fd);
+            try self.emit_lua_thunk(fd);
             return;
         }
+        // Always try to emit a lua thunk for module-exported functions,
+        // even if is_typed is false (params may include .any which is
+        // lua-convertible but not "native").
+        try self.emit_lua_thunk(fd);
         if (fb.use_mandel_iter_native) self.mandel_native = true;
         const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
-        if ((fb.vararg_name != null or fb.vararg) and ret == .any) {
+        if ((fb.vararg_name != null or fb.vararg) and (ret == .any or ret == .void)) {
             try self.emit_vararg_func_def(fd);
             return;
         }
@@ -3458,7 +4017,8 @@ pub const CodeGen = struct {
         self.p("}}\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
         self.p("\n", .{});
-        try self.emit_lua_thunk(fd);
+        // Note: lua thunk is emitted at the top of emit_func_def, not here,
+        // to avoid double emission.
     }
 
     fn emit_vararg_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
@@ -3562,6 +4122,7 @@ pub const CodeGen = struct {
         }
         self.p("    if (f == (void*)lua_tbl_create_argv) return lua_tbl_create_argv;\n", .{});
         self.p("    if (f == (void*)lua_tbl_pack_argv_fn) return lua_tbl_pack_argv_fn;\n", .{});
+        self.p("    if (f == (void*)lua_str_find_argv_fn) return lua_str_find_argv_fn;\n", .{});
         self.p("    if (f == (void*)lua_pcall_argv_fn) return lua_pcall_argv_fn;\n", .{});
         self.p("    if (f == (void*)lua_xpcall_argv_fn) return lua_xpcall_argv_fn;\n", .{});
         self.p("    return NULL;\n", .{});
@@ -3584,31 +4145,55 @@ pub const CodeGen = struct {
             }
         }
         const ft = self.expr_type(expr);
-        if (ft != .func or !ft.func.is_native) {
+        // For named functions, try to use a __lua thunk if available.
+        // This works even for non-native functions (where is_native is false)
+        // because we now emit thunks for all lua-convertible functions.
+        if (expr.* == .name) {
+            const cname = expr.name.ident;
+            // Check if this function has a thunk by checking param convertibility
+            if (ft == .func) {
+                var thunkable = true;
+                for (ft.func.params) |pt| {
+                    if (!self.rt_is_lua_convertible(pt)) {
+                        thunkable = false;
+                        break;
+                    }
+                }
+                if (thunkable and !self.vararg_funcs.contains(cname)) {
+                    const nparams = ft.func.params.len;
+                    if (nparams == 0 or nparams == 1) {
+                        self.p("lua_val_from_func((lua_Value (*)(lua_Value)){s}__lua)", .{cname});
+                        return;
+                    } else if (nparams == 2) {
+                        self.p("lua_val_from_func((void*){s}__lua2)", .{cname});
+                        return;
+                    } else if (nparams == 3) {
+                        self.p("lua_val_from_func((void*){s}__lua3)", .{cname});
+                        return;
+                    } else if (nparams == 4) {
+                        self.p("lua_val_from_func((void*){s}__lua4)", .{cname});
+                        return;
+                    } else if (nparams == 5) {
+                        self.p("lua_val_from_func((void*){s}__lua5)", .{cname});
+                        return;
+                    }
+                }
+            }
+            // Fall back to raw cast for non-thunkable or 6+ param functions
             self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
             try self.emit_expr(expr);
             self.p(")", .{});
             return;
         }
-        const cname: []const u8 = switch (expr.*) {
-            .name => |n| n.ident,
-            else => {
-                self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
-                try self.emit_expr(expr);
-                self.p(")", .{});
-                return;
-            },
-        };
-        try self.emit_native_func_name_as_lua_value(cname, ft.func.params, ft.func.is_native);
+        // Non-name expressions: raw cast
+        self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
+        try self.emit_expr(expr);
+        self.p(")", .{});
     }
 
-    fn emit_native_func_name_as_lua_value(self: *CodeGen, cname: []const u8, params: []types.ResolvedType, is_native: bool) E!void {
+    fn emit_native_func_name_as_lua_value(self: *CodeGen, cname: []const u8, params: []types.ResolvedType, _: bool) E!void {
         if (self.vararg_funcs.get(cname)) |argv_cname| {
             self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
-            return;
-        }
-        if (!is_native) {
-            self.p("lua_val_from_func((void*){s})", .{cname});
             return;
         }
         const nparams = params.len;
@@ -3622,12 +4207,18 @@ pub const CodeGen = struct {
                 break;
             }
         }
+        // Use thunk if available (thunks are now emitted for all lua-convertible
+        // functions, not just is_typed ones).
         if (thunkable and (nparams == 0 or nparams == 1)) {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value)){s}__lua)", .{cname});
         } else if (thunkable and nparams == 2) {
             self.p("lua_val_from_func((void*){s}__lua2)", .{cname});
         } else if (thunkable and nparams == 3) {
             self.p("lua_val_from_func((void*){s}__lua3)", .{cname});
+        } else if (thunkable and nparams == 4) {
+            self.p("lua_val_from_func((void*){s}__lua4)", .{cname});
+        } else if (thunkable and nparams == 5) {
+            self.p("lua_val_from_func((void*){s}__lua5)", .{cname});
         } else {
             self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
             self.p("{s}", .{cname});
@@ -3647,8 +4238,9 @@ pub const CodeGen = struct {
         const ct = ret.c_type(&buf);
         self.pl("if ({s} < 2) return 0;", .{limit});
         self.pl("{s} __prime_odd_len = (({s}) >> 1) + 1;", .{ ct, limit });
-        self.pl("uint8_t* __restrict __prime = (uint8_t*)malloc((size_t)__prime_odd_len);", .{});
-        self.pl("if (!__prime) return 0;", .{});
+        self.pl("uint8_t* __restrict __prime_alloc = (uint8_t*)malloc((size_t)__prime_odd_len);", .{});
+        self.pl("if (!__prime_alloc) return 0;", .{});
+        self.pl("uint8_t* __restrict __prime = (uint8_t*)__builtin_assume_aligned(__prime_alloc, 16);", .{});
         self.pl("memset(__prime, 1, (size_t)__prime_odd_len);", .{});
         self.pl("__prime[0] = 0;", .{});
         self.pl("for ({s} __n = 3; __n <= {s} / __n; __n += 2) {{", .{ ct, limit });
@@ -3658,8 +4250,17 @@ pub const CodeGen = struct {
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("{s} __count = 1;", .{ct});
-        self.pl("for ({s} __n = 3; __n <= {s}; __n += 2) __count += ({s})__prime[__n >> 1];", .{ ct, limit, ct });
-        self.pl("free(__prime);", .{});
+        self.pl("int64_t __prime_count_idx = 0;", .{});
+        self.pl("int64_t __prime_count_end = (({s} - 1) >> 1) + 1;", .{limit});
+        self.pl("for (; __prime_count_idx + 8 <= __prime_count_end; __prime_count_idx += 8) {{", .{});
+        self.indent += 1;
+        self.pl("uint64_t __prime_chunk;", .{});
+        self.pl("memcpy(&__prime_chunk, __prime + __prime_count_idx, sizeof(__prime_chunk));", .{});
+        self.pl("__count += (__builtin_popcountll(__prime_chunk));", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("for (; __prime_count_idx < __prime_count_end; ++__prime_count_idx) __count += ({s})__prime[__prime_count_idx];", .{ct});
+        self.pl("free(__prime_alloc);", .{});
         self.pl("return __count;", .{});
     }
 
@@ -4198,40 +4799,65 @@ pub const CodeGen = struct {
         var buf: [64]u8 = undefined;
         const ct = ret.c_type(&buf);
         self.pl("if ({s} < 2) return 0;", .{n});
-        self.pl("int64_t __sieve_odd_len = ({s} >> 1) + 1;", .{n});
-        self.pl("uint8_t* __restrict __sieve = (uint8_t*)malloc((size_t)__sieve_odd_len);", .{});
-        self.pl("memset(__sieve, 1, (size_t)__sieve_odd_len);", .{});
-        self.pl("__sieve[0] = 0;", .{});
-        self.pl("for (int64_t i = 3; i * i <= {s}; i += 2) {{", .{n});
+        self.pl("if ({s} < 3) return 1;", .{n});
+        self.pl("if ({s} < 5) return 2;", .{n});
+        self.pl("int64_t __sieve_q = {s} / 6;", .{n});
+        self.pl("int64_t __sieve_r = {s} - __sieve_q * 6;", .{n});
+        self.pl("int64_t __sieve_len = 2 * __sieve_q + (__sieve_r >= 1) + (__sieve_r >= 5) - 1;", .{});
+        self.pl("uint8_t* __restrict __sieve_alloc = (uint8_t*)malloc((size_t)__sieve_len);", .{});
+        self.pl("if (!__sieve_alloc) return 0;", .{});
+        self.pl("uint8_t* __restrict __sieve = (uint8_t*)__builtin_assume_aligned(__sieve_alloc, 16);", .{});
+        self.pl("memset(__sieve, 1, (size_t)__sieve_len);", .{});
+        self.pl("for (int64_t i = 5, __sieve_istep = 2; i * i <= {s}; i += __sieve_istep, __sieve_istep = 6 - __sieve_istep) {{", .{n});
         self.indent += 1;
-        self.pl("if (__sieve[i >> 1]) {{", .{});
+        self.pl("if (__sieve[i / 3 - 1]) {{", .{});
         self.indent += 1;
-        self.pl("for (int64_t j = i * i; j <= {s}; j += (i << 1)) __sieve[j >> 1] = 0;", .{n});
+        self.pl("int64_t __sieve_mark_idx = (i * i) / 3 - 1;", .{});
+        self.pl("int64_t __sieve_delta_a, __sieve_delta_b;", .{});
+        self.pl("if (__sieve_istep == 4) {{", .{});
+        self.indent += 1;
+        self.pl("__sieve_delta_a = ((i << 2) - 1) / 3;", .{});
+        self.pl("__sieve_delta_b = ((i << 1) + 1) / 3;", .{});
+        self.indent -= 1;
+        self.pl("}} else {{", .{});
+        self.indent += 1;
+        self.pl("__sieve_delta_a = ((i << 1) - 1) / 3;", .{});
+        self.pl("__sieve_delta_b = ((i << 2) + 1) / 3;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("while (__sieve_mark_idx + __sieve_delta_a < __sieve_len) {{", .{});
+        self.indent += 1;
+        self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
+        self.pl("__sieve_mark_idx += __sieve_delta_a;", .{});
+        self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
+        self.pl("__sieve_mark_idx += __sieve_delta_b;", .{});
+        self.indent -= 1;
+        self.pl("}}", .{});
+        self.pl("if (__sieve_mark_idx < __sieve_len) __sieve[__sieve_mark_idx] = 0;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("{s} count = 1;", .{ct});
-        self.pl("int64_t __sieve_count_idx = 1;", .{});
-        self.pl("int64_t __sieve_count_end = ((({s}) - 1) >> 1) + 1;", .{n});
-        self.pl("for (; __sieve_count_idx + 16 <= __sieve_count_end; __sieve_count_idx += 16) {{", .{});
+        self.pl("{s} count = 2;", .{ct});
+        self.pl("int64_t __sieve_count_idx = 0;", .{});
+        self.pl("for (; __sieve_count_idx + 16 <= __sieve_len; __sieve_count_idx += 16) {{", .{});
         self.indent += 1;
         self.pl("uint64_t __sieve_chunk0, __sieve_chunk1;", .{});
         self.pl("memcpy(&__sieve_chunk0, __sieve + __sieve_count_idx, sizeof(__sieve_chunk0));", .{});
         self.pl("memcpy(&__sieve_chunk1, __sieve + __sieve_count_idx + 8, sizeof(__sieve_chunk1));", .{});
-        self.pl("count += ({s})((__sieve_chunk0 * 0x0101010101010101ULL) >> 56);", .{ct});
-        self.pl("count += ({s})((__sieve_chunk1 * 0x0101010101010101ULL) >> 56);", .{ct});
+        self.pl("count += (__builtin_popcountll(__sieve_chunk0));", .{});
+        self.pl("count += (__builtin_popcountll(__sieve_chunk1));", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("for (; __sieve_count_idx + 8 <= __sieve_count_end; __sieve_count_idx += 8) {{", .{});
+        self.pl("for (; __sieve_count_idx + 8 <= __sieve_len; __sieve_count_idx += 8) {{", .{});
         self.indent += 1;
         self.pl("uint64_t __sieve_chunk;", .{});
         self.pl("memcpy(&__sieve_chunk, __sieve + __sieve_count_idx, sizeof(__sieve_chunk));", .{});
-        self.pl("count += ({s})((__sieve_chunk * 0x0101010101010101ULL) >> 56);", .{ct});
+        self.pl("count += (__builtin_popcountll(__sieve_chunk));", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("for (; __sieve_count_idx < __sieve_count_end; ++__sieve_count_idx) count += ({s})__sieve[__sieve_count_idx];", .{ct});
-        self.pl("free(__sieve);", .{});
+        self.pl("for (; __sieve_count_idx < __sieve_len; ++__sieve_count_idx) count += ({s})__sieve[__sieve_count_idx];", .{ct});
+        self.pl("free(__sieve_alloc);", .{});
         self.pl("return count;", .{});
     }
 
@@ -5304,9 +5930,9 @@ pub const CodeGen = struct {
                     self.pl("lua_Table* t_ptr = (lua_Table*)tbl.as.tval;", .{});
 
                     if (mode != .explicit_ipairs) {
-                        self.pl("for (int idx = 0; idx < t_ptr->array_size; idx++) {{", .{});
+                        self.pl("for (int _gf_idx = 0; _gf_idx < t_ptr->array_size; _gf_idx++) {{", .{});
                         self.indent += 1;
-                        self.pl("if (t_ptr->array[idx].type == VAL_NIL) continue;", .{});
+                        self.pl("if (t_ptr->array[_gf_idx].type == VAL_NIL) continue;", .{});
                         const value_name: ?[]const u8 = if (mode == .direct_table and gf.vars.len == 1)
                             gf.vars[0]
                         else if (gf.vars.len > 1)
@@ -5314,10 +5940,10 @@ pub const CodeGen = struct {
                         else
                             null;
                         if (mode == .direct_table and gf.vars.len == 1) {
-                            self.pl("lua_Value {s} = t_ptr->array[idx];", .{gf.vars[0]});
+                            self.pl("lua_Value {s} = t_ptr->array[_gf_idx];", .{gf.vars[0]});
                         } else {
-                            if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
-                            if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->array[idx];", .{gf.vars[1]});
+                            if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(_gf_idx + 1));", .{gf.vars[0]});
+                            if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->array[_gf_idx];", .{gf.vars[1]});
                         }
                         if (gf.vars.len > 2) {
                             for (gf.vars[2..]) |extra| self.pl("lua_Value {s} = lua_val_nil();", .{extra});
@@ -5327,12 +5953,12 @@ pub const CodeGen = struct {
                             defer self.pop_break_scope();
                             try self.emit_block(&gf.body);
                         }
-                        if (value_name) |name| self.pl("t_ptr->array[idx] = {s};", .{name});
+                        if (value_name) |name| self.pl("t_ptr->array[_gf_idx] = {s};", .{name});
                         self.indent -= 1;
                         self.pl("}}", .{});
-                        self.pl("for (int idx = 0; idx < t_ptr->capacity; idx++) {{", .{});
+                        self.pl("for (int _gf_idx = 0; _gf_idx < t_ptr->capacity; _gf_idx++) {{", .{});
                         self.indent += 1;
-                        self.pl("if (t_ptr->hash_keys[idx].type == VAL_NIL) continue;", .{});
+                        self.pl("if (t_ptr->hash_keys[_gf_idx].type == VAL_NIL) continue;", .{});
                         const hash_value_name: ?[]const u8 = if (mode == .direct_table and gf.vars.len == 1)
                             gf.vars[0]
                         else if (gf.vars.len > 1)
@@ -5340,10 +5966,10 @@ pub const CodeGen = struct {
                         else
                             null;
                         if (mode == .direct_table and gf.vars.len == 1) {
-                            self.pl("lua_Value {s} = t_ptr->hash_vals[idx];", .{gf.vars[0]});
+                            self.pl("lua_Value {s} = t_ptr->hash_vals[_gf_idx];", .{gf.vars[0]});
                         } else {
-                            if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->hash_keys[idx];", .{gf.vars[0]});
-                            if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->hash_vals[idx];", .{gf.vars[1]});
+                            if (gf.vars.len > 0) self.pl("lua_Value {s} = t_ptr->hash_keys[_gf_idx];", .{gf.vars[0]});
+                            if (gf.vars.len > 1) self.pl("lua_Value {s} = t_ptr->hash_vals[_gf_idx];", .{gf.vars[1]});
                         }
                         if (gf.vars.len > 2) {
                             for (gf.vars[2..]) |extra| self.pl("lua_Value {s} = lua_val_nil();", .{extra});
@@ -5353,15 +5979,15 @@ pub const CodeGen = struct {
                             defer self.pop_break_scope();
                             try self.emit_block(&gf.body);
                         }
-                        if (hash_value_name) |name| self.pl("t_ptr->hash_vals[idx] = {s};", .{name});
+                        if (hash_value_name) |name| self.pl("t_ptr->hash_vals[_gf_idx] = {s};", .{name});
                         self.indent -= 1;
                         self.pl("}}", .{});
                     } else {
-                        self.pl("for (int idx = 0; idx < t_ptr->array_size; idx++) {{", .{});
+                        self.pl("for (int _gf_idx = 0; _gf_idx < t_ptr->array_size; _gf_idx++) {{", .{});
                         self.indent += 1;
-                        self.pl("lua_Value _v_val = t_ptr->array[idx];", .{});
+                        self.pl("lua_Value _v_val = t_ptr->array[_gf_idx];", .{});
                         self.pl("if (_v_val.type == VAL_NIL) break;", .{});
-                        if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(idx + 1));", .{gf.vars[0]});
+                        if (gf.vars.len > 0) self.pl("lua_Value {s} = lua_val_from_num((double)(_gf_idx + 1));", .{gf.vars[0]});
                         if (gf.vars.len > 1) self.pl("lua_Value {s} = _v_val;", .{gf.vars[1]});
                         if (gf.vars.len > 2) {
                             for (gf.vars[2..]) |extra| self.pl("lua_Value {s} = lua_val_nil();", .{extra});
@@ -5371,7 +5997,7 @@ pub const CodeGen = struct {
                             defer self.pop_break_scope();
                             try self.emit_block(&gf.body);
                         }
-                        if (gf.vars.len > 1) self.pl("t_ptr->array[idx] = {s};", .{gf.vars[1]});
+                        if (gf.vars.len > 1) self.pl("t_ptr->array[_gf_idx] = {s};", .{gf.vars[1]});
                         self.indent -= 1;
                         self.pl("}}", .{});
                     }
@@ -5981,28 +6607,28 @@ pub const CodeGen = struct {
             try self.note_local(lc.value_name);
 
             self.ind();
-            self.p("for (int idx = 0; idx < t_ptr->array_size; idx++) {{\n", .{});
+            self.p("for (int _gf_idx = 0; _gf_idx < t_ptr->array_size; _gf_idx++) {{\n", .{});
             self.indent += 1;
             self.ind();
-            self.p("if (t_ptr->array[idx].type == VAL_NIL) continue;\n", .{});
+            self.p("if (t_ptr->array[_gf_idx].type == VAL_NIL) continue;\n", .{});
             self.ind();
-            self.p("lua_Value {s} = lua_val_from_num((double)(idx + 1));\n", .{key_name});
+            self.p("lua_Value {s} = lua_val_from_num((double)(_gf_idx + 1));\n", .{key_name});
             self.ind();
-            self.p("lua_Value {s} = t_ptr->array[idx];\n", .{lc.value_name});
+            self.p("lua_Value {s} = t_ptr->array[_gf_idx];\n", .{lc.value_name});
             try self.emit_list_comprehension_append(lc);
             self.indent -= 1;
             self.ind();
             self.p("}}\n", .{});
 
             self.ind();
-            self.p("for (int idx = 0; idx < t_ptr->capacity; idx++) {{\n", .{});
+            self.p("for (int _gf_idx = 0; _gf_idx < t_ptr->capacity; _gf_idx++) {{\n", .{});
             self.indent += 1;
             self.ind();
-            self.p("if (t_ptr->hash_keys[idx].type == VAL_NIL) continue;\n", .{});
+            self.p("if (t_ptr->hash_keys[_gf_idx].type == VAL_NIL) continue;\n", .{});
             self.ind();
-            self.p("lua_Value {s} = t_ptr->hash_keys[idx];\n", .{key_name});
+            self.p("lua_Value {s} = t_ptr->hash_keys[_gf_idx];\n", .{key_name});
             self.ind();
-            self.p("lua_Value {s} = t_ptr->hash_vals[idx];\n", .{lc.value_name});
+            self.p("lua_Value {s} = t_ptr->hash_vals[_gf_idx];\n", .{lc.value_name});
             try self.emit_list_comprehension_append(lc);
             self.indent -= 1;
             self.ind();
@@ -6010,10 +6636,10 @@ pub const CodeGen = struct {
         } else {
             try self.note_local(lc.value_name);
             self.ind();
-            self.p("for (int idx = 0; idx < t_ptr->array_size; idx++) {{\n", .{});
+            self.p("for (int _gf_idx = 0; _gf_idx < t_ptr->array_size; _gf_idx++) {{\n", .{});
             self.indent += 1;
             self.ind();
-            self.p("lua_Value {s} = t_ptr->array[idx];\n", .{lc.value_name});
+            self.p("lua_Value {s} = t_ptr->array[_gf_idx];\n", .{lc.value_name});
             self.ind();
             self.p("if ({s}.type == VAL_NIL) break;\n", .{lc.value_name});
             try self.emit_list_comprehension_append(lc);
@@ -6698,7 +7324,9 @@ pub const CodeGen = struct {
                     self.indent += 1;
                     self.ind();
                     self.p("lua_Value __fn = ", .{});
-                    if (c.func.* == .name and self.emit_lua_global_fn(c.func.name.ident)) {} else try self.emit_expr(c.func);
+                    if (c.func.* == .name and self.emit_lua_global_fn(c.func.name.ident)) {} else {
+                        try self.emit_expr(c.func);
+                    }
                     self.p(";\n", .{});
                     self.ind();
                     if (c.args.len == 0) {
@@ -6896,6 +7524,58 @@ pub const CodeGen = struct {
                         self.p("lua_Value __argv[{d}] = {{__self", .{mc.args.len + 1});
                         for (mc.args, 0..) |arg, i| {
                             _ = i;
+                            self.p(", ", .{});
+                            try self.emit_as_lua_value(arg);
+                        }
+                        self.p("}};\n", .{});
+                        self.ind();
+                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{mc.args.len + 1});
+                        self.indent -= 1;
+                        self.ind();
+                        self.p("}})", .{});
+                    }
+                } else if (ot == .str) {
+                    // String method calls: s:sub(), s:find(), s:byte(), etc.
+                    // Map to lua_str_* functions.
+                    const mapped: ?[]const u8 = blk: {
+                        if (std.mem.eql(u8, mc.method, "len")) break :blk "lua_str_len" else if (std.mem.eql(u8, mc.method, "lower")) break :blk "lua_str_lower" else if (std.mem.eql(u8, mc.method, "upper")) break :blk "lua_str_upper" else if (std.mem.eql(u8, mc.method, "sub")) break :blk "lua_str_sub" else if (std.mem.eql(u8, mc.method, "char")) break :blk "lua_str_char" else if (std.mem.eql(u8, mc.method, "format")) break :blk "lua_str_format" else if (std.mem.eql(u8, mc.method, "rep")) break :blk "lua_str_rep" else if (std.mem.eql(u8, mc.method, "reverse")) break :blk "lua_str_reverse" else if (std.mem.eql(u8, mc.method, "byte")) break :blk "lua_str_byte" else if (std.mem.eql(u8, mc.method, "find")) break :blk "lua_str_find" else if (std.mem.eql(u8, mc.method, "match")) break :blk "lua_str_match" else if (std.mem.eql(u8, mc.method, "gsub")) break :blk "lua_str_gsub" else if (std.mem.eql(u8, mc.method, "gmatch")) break :blk "lua_str_gmatch" else if (std.mem.eql(u8, mc.method, "split")) break :blk "lua_str_split" else if (std.mem.eql(u8, mc.method, "starts_with")) break :blk "lua_str_starts_with" else if (std.mem.eql(u8, mc.method, "ends_with")) break :blk "lua_str_ends_with" else break :blk null;
+                    };
+                    if (mapped) |fname| {
+                        const result_rt = self.expr_type(expr);
+                        const want_cstr = result_rt == .str;
+                        const expected: usize = if (std.mem.eql(u8, mc.method, "len") or std.mem.eql(u8, mc.method, "lower") or std.mem.eql(u8, mc.method, "upper") or std.mem.eql(u8, mc.method, "reverse")) 1 else if (std.mem.eql(u8, mc.method, "match") or std.mem.eql(u8, mc.method, "split") or std.mem.eql(u8, mc.method, "starts_with") or std.mem.eql(u8, mc.method, "ends_with")) 2 else if (std.mem.eql(u8, mc.method, "find")) 4 else if (std.mem.eql(u8, mc.method, "sub") or std.mem.eql(u8, mc.method, "rep") or std.mem.eql(u8, mc.method, "byte") or std.mem.eql(u8, mc.method, "gsub") or std.mem.eql(u8, mc.method, "gmatch")) 3 else 4;
+                        if (want_cstr) self.p("lua_to_str(", .{});
+                        self.p("{s}(", .{fname});
+                        var i: usize = 0;
+                        while (i < expected) : (i += 1) {
+                            if (i == 0) {
+                                try self.emit_as_lua_value(mc.obj);
+                                continue;
+                            }
+                            self.p(", ", .{});
+                            const arg_idx = i - 1;
+                            if (arg_idx < mc.args.len) {
+                                try self.emit_as_lua_value(mc.args[arg_idx]);
+                            } else {
+                                self.p("lua_val_nil()", .{});
+                            }
+                        }
+                        self.p(")", .{});
+                        if (want_cstr) self.p(")", .{});
+                    } else {
+                        // Unknown string method — fall back to dynamic dispatch
+                        const hash = calc_lua_hash(mc.method);
+                        self.p("({{\n", .{});
+                        self.indent += 1;
+                        self.ind();
+                        self.p("lua_Value __self = ", .{});
+                        try self.emit_as_lua_value(mc.obj);
+                        self.p(";\n", .{});
+                        self.ind();
+                        self.p("lua_Value __fn = lua_table_get_str_lit(__self, \"{s}\", {d}u, {d});\n", .{ mc.method, hash, mc.method.len });
+                        self.ind();
+                        self.p("lua_Value __argv[{d}] = {{__self", .{mc.args.len + 1});
+                        for (mc.args) |arg| {
                             self.p(", ", .{});
                             try self.emit_as_lua_value(arg);
                         }
@@ -7106,7 +7786,7 @@ pub const CodeGen = struct {
                     if ((b.op == .eq or b.op == .neq or b.op == .lt or b.op == .gt or b.op == .leq or b.op == .geq) and
                         lt != .any and rt != .any and
                         ((lt.is_integer() and self.comptime_value_type(b.rhs) != null) or
-                        (rt.is_integer() and self.comptime_value_type(b.lhs) != null)))
+                            (rt.is_integer() and self.comptime_value_type(b.lhs) != null)))
                     {
                         const op_str: []const u8 = switch (b.op) {
                             .eq => " == ",
@@ -7280,6 +7960,36 @@ pub const CodeGen = struct {
                             self.p(") {s} (", .{binop_str(b.op)});
                             try self.emit_expr(b.rhs);
                             self.p(")))", .{});
+                        },
+                        .@"or", .@"and" => {
+                            // For str (const char*), pointer, nil (void*), and any types,
+                            // `a or b` = (a ? a : b), `a and b` = (a ? b : a).
+                            // C's || and && don't work on pointers.
+                            if (lt == .str or lt == .pointer or lt == .nil or lt == .any) {
+                                if (b.op == .@"or") {
+                                    self.p("((", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p(") ? (", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p(") : (", .{});
+                                    try self.emit_expr(b.rhs);
+                                    self.p("))", .{});
+                                } else {
+                                    self.p("((", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p(") ? (", .{});
+                                    try self.emit_expr(b.rhs);
+                                    self.p(") : (", .{});
+                                    try self.emit_expr(b.lhs);
+                                    self.p("))", .{});
+                                }
+                            } else {
+                                self.p("(", .{});
+                                try self.emit_expr(b.lhs);
+                                self.p(" {s} ", .{binop_str(b.op)});
+                                try self.emit_expr(b.rhs);
+                                self.p(")", .{});
+                            }
                         },
                         else => {
                             if (b.op == .mul and try self.try_emit_sin_cos_product(b.lhs, b.rhs)) return;
@@ -8844,6 +9554,188 @@ pub const CodeGen = struct {
             self.p("__builtin_unreachable()", .{});
             return true;
         }
+        if (std.mem.eql(u8, fname, "read_byte") or std.mem.eql(u8, fname, "read_i8") or std.mem.eql(u8, fname, "read_u8")) {
+            self.p("((int64_t)(*(uint8_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_i16") or std.mem.eql(u8, fname, "read_u16")) {
+            self.p("((int64_t)(*(int16_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_i32")) {
+            self.p("((int64_t)(*(int32_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_u32")) {
+            self.p("((uint64_t)(*(uint32_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_i64")) {
+            self.p("((int64_t)(*(int64_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_u64")) {
+            self.p("((uint64_t)(*(uint64_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_f32")) {
+            self.p("((double)(*(float*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p("))))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "read_f64")) {
+            self.p("(*(double*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or std.mem.eql(u8, fname, "write_u8")) {
+            self.p("*(uint8_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (uint8_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_i16")) {
+            self.p("*(int16_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (int16_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_u16")) {
+            self.p("*(uint16_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (uint16_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_i32")) {
+            self.p("*(int32_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (int32_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_u32")) {
+            self.p("*(uint32_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (uint32_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_i64")) {
+            self.p("*(int64_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (int64_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_u64")) {
+            self.p("*(uint64_t*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (uint64_t)(", .{});
+            if (args.len > 2) try self.emit_mem_integer_arg(args, 2, "0") else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_f32")) {
+            self.p("*(float*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (float)(", .{});
+            if (args.len > 2) try self.emit_expr(args[2]) else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "write_f64")) {
+            self.p("*(double*)((uint8_t*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(") + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("0", .{});
+            self.p(")) = (double)(", .{});
+            if (args.len > 2) try self.emit_expr(args[2]) else self.p("0", .{});
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "dup")) {
+            self.p("({{ uint8_t* _d = (uint8_t*)malloc(", .{});
+            if (args.len > 1) try self.emit_mem_size_arg(args, 1, "0") else self.p("0", .{});
+            self.p("); if (_d && (", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(")) memcpy(_d, (", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p("), ", .{});
+            if (args.len > 1) try self.emit_mem_size_arg(args, 1, "0") else self.p("0", .{});
+            self.p("); _d; }})", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "bytes_to_f32")) {
+            self.p("({{ float _v; memcpy(&_v, ((const char*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(".as.sval)) + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("1", .{});
+            self.p(" - 1), sizeof(float)); (double)_v; }})", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "bytes_to_f64")) {
+            self.p("({{ double _v; memcpy(&_v, ((const char*)(", .{});
+            if (args.len > 0) try self.emit_expr(args[0]) else self.p("NULL", .{});
+            self.p(".as.sval)) + (", .{});
+            if (args.len > 1) try self.emit_mem_integer_arg(args, 1, "0") else self.p("1", .{});
+            self.p(" - 1), sizeof(double)); _v; }})", .{});
+            return true;
+        }
         return false;
     }
 
@@ -9313,7 +10205,7 @@ pub const CodeGen = struct {
             if (try self.try_emit_native_string_call(fname, args, result_rt)) return true;
             const mapped = if (std.mem.eql(u8, fname, "len")) "lua_str_len" else if (std.mem.eql(u8, fname, "lower")) "lua_str_lower" else if (std.mem.eql(u8, fname, "upper")) "lua_str_upper" else if (std.mem.eql(u8, fname, "sub")) "lua_str_sub" else if (std.mem.eql(u8, fname, "char")) "lua_str_char" else if (std.mem.eql(u8, fname, "format")) "lua_str_format" else if (std.mem.eql(u8, fname, "rep")) "lua_str_rep" else if (std.mem.eql(u8, fname, "reverse")) "lua_str_reverse" else if (std.mem.eql(u8, fname, "byte")) "lua_str_byte" else if (std.mem.eql(u8, fname, "find")) "lua_str_find" else if (std.mem.eql(u8, fname, "match")) "lua_str_match" else if (std.mem.eql(u8, fname, "gsub")) "lua_str_gsub" else if (std.mem.eql(u8, fname, "pack")) "lua_str_pack" else if (std.mem.eql(u8, fname, "unpack")) "lua_str_unpack" else if (std.mem.eql(u8, fname, "packsize")) "lua_str_packsize" else if (std.mem.eql(u8, fname, "gmatch")) "lua_str_gmatch" else if (std.mem.eql(u8, fname, "dump")) "lua_str_dump" else if (std.mem.eql(u8, fname, "split")) "lua_str_split" else if (std.mem.eql(u8, fname, "starts_with")) "lua_str_starts_with" else if (std.mem.eql(u8, fname, "ends_with")) "lua_str_ends_with" else return false;
 
-            const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse") or std.mem.eql(u8, fname, "packsize")) 1 else if (std.mem.eql(u8, fname, "find") or std.mem.eql(u8, fname, "match") or std.mem.eql(u8, fname, "dump") or std.mem.eql(u8, fname, "split") or std.mem.eql(u8, fname, "starts_with") or std.mem.eql(u8, fname, "ends_with")) 2 else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep") or std.mem.eql(u8, fname, "byte") or std.mem.eql(u8, fname, "gsub") or std.mem.eql(u8, fname, "pack") or std.mem.eql(u8, fname, "unpack") or std.mem.eql(u8, fname, "gmatch")) 3 else 4;
+            const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse") or std.mem.eql(u8, fname, "packsize")) 1 else if (std.mem.eql(u8, fname, "match") or std.mem.eql(u8, fname, "dump") or std.mem.eql(u8, fname, "split") or std.mem.eql(u8, fname, "starts_with") or std.mem.eql(u8, fname, "ends_with")) 2 else if (std.mem.eql(u8, fname, "find")) 4 else if (std.mem.eql(u8, fname, "sub") or std.mem.eql(u8, fname, "rep") or std.mem.eql(u8, fname, "byte") or std.mem.eql(u8, fname, "gsub") or std.mem.eql(u8, fname, "pack") or std.mem.eql(u8, fname, "unpack") or std.mem.eql(u8, fname, "gmatch")) 3 else 4;
 
             // These builtins return a lua_Value. When the surrounding context
             // wants a native `str` (C `const char*`) — e.g. a typed local or
@@ -9518,10 +10410,10 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, mod, "net")) {
-            const mapped = if (std.mem.eql(u8, fname, "connect")) "duo_net_tcp_connect" else if (std.mem.eql(u8, fname, "listen")) "duo_net_tcp_listen" else if (std.mem.eql(u8, fname, "accept")) "duo_net_tcp_accept" else if (std.mem.eql(u8, fname, "send")) "duo_net_tcp_send" else if (std.mem.eql(u8, fname, "recv")) "duo_net_tcp_recv" else if (std.mem.eql(u8, fname, "close")) "duo_net_tcp_close" else if (std.mem.eql(u8, fname, "udp_socket")) "duo_net_udp_socket_open" else if (std.mem.eql(u8, fname, "udp_sendto")) "duo_net_udp_sendto" else if (std.mem.eql(u8, fname, "udp_recvfrom")) "duo_net_udp_recvfrom" else if (std.mem.eql(u8, fname, "http_get")) "duo_net_http_get" else if (std.mem.eql(u8, fname, "http_post")) "duo_net_http_post" else return false;
+            const mapped = if (std.mem.eql(u8, fname, "connect")) "duo_net_tcp_connect" else if (std.mem.eql(u8, fname, "listen")) "duo_net_tcp_listen" else if (std.mem.eql(u8, fname, "accept")) "duo_net_tcp_accept" else if (std.mem.eql(u8, fname, "send")) "duo_net_tcp_send" else if (std.mem.eql(u8, fname, "recv")) "duo_net_tcp_recv" else if (std.mem.eql(u8, fname, "close")) "duo_net_tcp_close" else if (std.mem.eql(u8, fname, "udp_socket")) "duo_net_udp_socket_open" else if (std.mem.eql(u8, fname, "udp_sendto")) "duo_net_udp_sendto" else if (std.mem.eql(u8, fname, "udp_recvfrom")) "duo_net_udp_recvfrom" else if (std.mem.eql(u8, fname, "http_get")) "duo_net_http_get" else if (std.mem.eql(u8, fname, "http_post")) "duo_net_http_post" else if (std.mem.eql(u8, fname, "dns_resolve")) "duo_net_dns_resolve" else return false;
 
             const expected: usize =
-                if (std.mem.eql(u8, fname, "accept") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "http_get")) @as(usize, 1) else if (std.mem.eql(u8, fname, "udp_sendto") or std.mem.eql(u8, fname, "http_post")) @as(usize, 3) else @as(usize, 2);
+                if (std.mem.eql(u8, fname, "accept") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "http_get") or std.mem.eql(u8, fname, "dns_resolve")) @as(usize, 1) else if (std.mem.eql(u8, fname, "http_post")) @as(usize, 3) else if (std.mem.eql(u8, fname, "udp_sendto")) @as(usize, 4) else @as(usize, 2);
 
             self.p("{s}(", .{mapped});
             var i: usize = 0;
@@ -10920,6 +11812,18 @@ const duo_runtime =
     \\            lua_mret_push(r);
     \\            return r;
     \\        }
+    \\        if (argc == 4) {
+    \\            lua_Value (*fn4)(lua_Value, lua_Value, lua_Value, lua_Value) = (lua_Value (*)(lua_Value, lua_Value, lua_Value, lua_Value))f.as.fval;
+    \\            lua_Value r = fn4(argv[0], argv[1], argv[2], argv[3]);
+    \\            lua_mret_push(r);
+    \\            return r;
+    \\        }
+    \\        if (argc == 5) {
+    \\            lua_Value (*fn5)(lua_Value, lua_Value, lua_Value, lua_Value, lua_Value) = (lua_Value (*)(lua_Value, lua_Value, lua_Value, lua_Value, lua_Value))f.as.fval;
+    \\            lua_Value r = fn5(argv[0], argv[1], argv[2], argv[3], argv[4]);
+    \\            lua_mret_push(r);
+    \\            return r;
+    \\        }
     \\        lua_Value (*fn1)(lua_Value) = (lua_Value (*)(lua_Value))f.as.fval;
     \\        lua_Value r = fn1(argc > 0 ? argv[0] : lua_val_nil());
     \\        lua_mret_push(r);
@@ -11941,9 +12845,16 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (LUA_LIKELY(t && idx >= 1)) {
-    \\            if (idx <= t->array_size && t->array[idx-1].type != VAL_NIL) {
+    \\            if (idx <= t->array_size) {
     \\                if (LUA_UNLIKELY(t->frozen)) { lua_error(lua_val_lit("attempt to modify a frozen table")); return; }
     \\                t->array[idx-1] = val;
+    \\                return;
+    \\            }
+    \\            if (idx <= t->array_capacity) {
+    \\                if (LUA_UNLIKELY(t->frozen)) { lua_error(lua_val_lit("attempt to modify a frozen table")); return; }
+    \\                t->array[idx-1] = val;
+    \\                if (idx > t->array_size) t->array_size = (int)idx;
+    \\                if (val.type != VAL_NIL) t->count++;
     \\                return;
     \\            }
     \\            lua_Value existing = lua_table_get_raw_i64(table, idx);
@@ -13581,15 +14492,36 @@ const duo_runtime =
     \\    return 0;
     \\}
     \\
-    \\static inline lua_Value lua_str_find(lua_Value s, lua_Value pat_val) {
+    \\static inline lua_Value lua_str_find(lua_Value s, lua_Value pat_val, lua_Value init_val, lua_Value plain_val) {
     \\    const char* str = lua_to_str(s);
     \\    const char* pat = lua_to_str(pat_val);
     \\    size_t slen = lua_str_byte_len(s);
+    \\    size_t start = 0;
+    \\    if (init_val.type != VAL_NIL) start = (size_t)lua_to_num(init_val) > 0 ? (size_t)lua_to_num(init_val) - 1 : 0;
+    \\    int plain = 0;
+    \\    if (plain_val.type == VAL_BOOL && plain_val.as.bval) plain = 1;
     \\    size_t ms = 0, me = 0;
-    \\    if (duo_lp_find_at(str, slen, pat, 0, &ms, &me)) {
+    \\    if (plain) {
+    \\        /* Plain text search */
+    \\        size_t plen = strlen(pat);
+    \\        if (plen == 0) { if (start <= slen) return lua_val_from_num((double)(start + 1)); return lua_val_nil(); }
+    \\        if (start >= slen) return lua_val_nil();
+    \\        const char* found = strstr(str + start, pat);
+    \\        return found ? lua_val_from_num((double)((found - str) + 1)) : lua_val_nil();
+    \\    }
+    \\    if (duo_lp_find_at(str, slen, pat, start, &ms, &me)) {
     \\        return lua_val_from_num((double)(ms + 1));
     \\    }
     \\    return lua_val_nil();
+    \\}
+    \\static inline lua_Value lua_str_find_argv_fn(int argc, lua_Value* argv) {
+    \\    lua_Value nil = lua_val_nil();
+    \\    return lua_str_find(
+    \\        argc > 0 ? argv[0] : nil,
+    \\        argc > 1 ? argv[1] : nil,
+    \\        argc > 2 ? argv[2] : nil,
+    \\        argc > 3 ? argv[3] : nil
+    \\    );
     \\}
     \\
     \\static inline lua_Value lua_tbl_move(lua_Value a1, lua_Value f_val, lua_Value e_val, lua_Value t_val, lua_Value a2) {
@@ -15103,7 +16035,7 @@ const duo_runtime =
     \\    lua_table_init_lit(m, "rep", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_rep));
     \\    lua_table_init_lit(m, "reverse", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_reverse));
     \\    lua_table_init_lit(m, "byte", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_byte));
-    \\    lua_table_init_lit(m, "find", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_find));
+    \\    lua_table_init_lit(m, "find", lua_val_from_func((void*)lua_str_find_argv_fn));
     \\    lua_table_init_lit(m, "match", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_match));
     \\    lua_table_init_lit(m, "gsub", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_gsub));
     \\    lua_table_init_lit(m, "gmatch", lua_val_from_func((lua_Value (*)(lua_Value))lua_str_gmatch));
@@ -15300,13 +16232,19 @@ const duo_runtime =
     \\    }
     \\    return lua_val_from_int((int64_t)fd);
     \\}
-    \\static lua_Value duo_net_udp_sendto(lua_Value fd_v, lua_Value data_v, lua_Value host_v) {
-    \\    (void)host_v;
+    \\static lua_Value duo_net_udp_sendto(lua_Value fd_v, lua_Value data_v, lua_Value host_v, lua_Value port_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
     \\    int fd = (int)(int64_t)fd_v.as.nval;
     \\    const char* data = (data_v.type == VAL_STRING) ? data_v.as.sval : "";
-    \\    (void)fd; (void)data;
-    \\    return lua_val_nil();
+    \\    size_t data_len = (data_v.type == VAL_STRING) ? lua_str_byte_len(data_v) : 0;
+    \\    const char* host = (host_v.type == VAL_STRING) ? host_v.as.sval : "127.0.0.1";
+    \\    int port = (port_v.type == VAL_NUMBER) ? (int)(int64_t)port_v.as.nval : 53;
+    \\    struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
+    \\    addr.sin_family = AF_INET;
+    \\    addr.sin_port = htons((uint16_t)port);
+    \\    inet_pton(AF_INET, host, &addr.sin_addr);
+    \\    ssize_t sent = sendto(fd, data, data_len, 0, (struct sockaddr*)&addr, sizeof(addr));
+    \\    return lua_val_from_int((int64_t)sent);
     \\}
     \\static lua_Value duo_net_udp_recvfrom(lua_Value fd_v, lua_Value maxlen_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
@@ -15319,6 +16257,25 @@ const duo_runtime =
     \\    if (n <= 0) { free(buf); return lua_val_nil(); }
     \\    buf[n] = '\0';
     \\    lua_Value r = lua_val_from_str_len(buf, (size_t)n); free(buf); return r;
+    \\}
+    \\static lua_Value duo_net_dns_resolve(lua_Value host_v) {
+    \\    if (host_v.type != VAL_STRING) return lua_val_nil();
+    \\    const char* h = host_v.as.sval;
+    \\    struct addrinfo hints, *res; memset(&hints, 0, sizeof(hints));
+    \\    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    \\    if (getaddrinfo(h, NULL, &hints, &res) != 0) return lua_val_nil();
+    \\    char ip[INET6_ADDRSTRLEN] = {0};
+    \\    for (struct addrinfo* r = res; r; r = r->ai_next) {
+    \\        void* addr_ptr = NULL;
+    \\        if (r->ai_family == AF_INET) {
+    \\            addr_ptr = &((struct sockaddr_in*)r->ai_addr)->sin_addr;
+    \\        } else if (r->ai_family == AF_INET6) {
+    \\            addr_ptr = &((struct sockaddr_in6*)r->ai_addr)->sin6_addr;
+    \\        }
+    \\        if (addr_ptr && inet_ntop(r->ai_family, addr_ptr, ip, sizeof(ip))) break;
+    \\    }
+    \\    freeaddrinfo(res);
+    \\    return (ip[0] != '\0') ? lua_val_from_str(ip) : lua_val_nil();
     \\}
     \\static lua_Value duo_net_http_get(lua_Value url_v) {
     \\    if (url_v.type != VAL_STRING) return lua_val_nil();
@@ -15412,6 +16369,7 @@ const duo_runtime =
     \\    lua_table_init_lit(m, "close", lua_val_from_func((lua_Value (*)(lua_Value))duo_net_tcp_close));
     \\    lua_table_init_lit(m, "http_get", lua_val_from_func((lua_Value (*)(lua_Value))duo_net_http_get));
     \\    lua_table_init_lit(m, "http_post", lua_val_from_func((lua_Value (*)(lua_Value))duo_net_http_post));
+    \\    lua_table_init_lit(m, "dns_resolve", lua_val_from_func((lua_Value (*)(lua_Value))duo_net_dns_resolve));
     \\    return m;
     \\}
     \\#else
@@ -15422,10 +16380,11 @@ const duo_runtime =
     \\static lua_Value duo_net_tcp_recv(lua_Value fd, lua_Value n) { (void)fd; (void)n; return lua_val_nil(); }
     \\static lua_Value duo_net_tcp_close(lua_Value fd) { (void)fd; return lua_val_nil(); }
     \\static lua_Value duo_net_udp_socket_open(lua_Value h, lua_Value p) { (void)h; (void)p; return lua_val_nil(); }
-    \\static lua_Value duo_net_udp_sendto(lua_Value fd, lua_Value d, lua_Value h) { (void)fd; (void)d; (void)h; return lua_val_nil(); }
+    \\static lua_Value duo_net_udp_sendto(lua_Value fd, lua_Value d, lua_Value h, lua_Value p) { (void)fd; (void)d; (void)h; (void)p; return lua_val_from_int(0); }
     \\static lua_Value duo_net_udp_recvfrom(lua_Value fd, lua_Value n) { (void)fd; (void)n; return lua_val_nil(); }
     \\static lua_Value duo_net_http_get(lua_Value u) { (void)u; return lua_val_nil(); }
     \\static lua_Value duo_net_http_post(lua_Value u, lua_Value b, lua_Value c) { (void)u; (void)b; (void)c; return lua_val_nil(); }
+    \\static lua_Value duo_net_dns_resolve(lua_Value h) { (void)h; return lua_val_nil(); }
     \\static lua_Value duo_net_init(void) { return lua_val_nil(); }
     \\#endif
     \\/* ── Shared-memory atomics ── */
@@ -17148,7 +18107,7 @@ test "cond swap specialization computes swap-invariant sum directly" {
     try testing.expect(std.mem.indexOf(u8, output, "sum += (i * 17) % __cs_period;") != null);
 }
 
-test "sieve native specialization uses odd-only byte flags" {
+test "sieve native specialization uses wheel-6 byte flags" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -17162,19 +18121,33 @@ test "sieve native specialization uses odd-only byte flags" {
     try cg.emit_sieve_native_body("n", .i64);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "calloc") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve_odd_len = (n >> 1) + 1") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* __restrict __sieve") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "memset(__sieve, 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (n < 5) return 2;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_q = n / 6") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_len = 2 * __sieve_q") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* __restrict __sieve_alloc") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_assume_aligned(__sieve_alloc, 16)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "memset(__sieve, 1, (size_t)__sieve_len)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 4; i <= n; i += 2)") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve[i >> 1]") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve[j >> 1] = 0") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "j += (i << 1)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve_count_end = (((n) - 1) >> 1) + 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "i += __sieve_istep, __sieve_istep = 6 - __sieve_istep") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve[i / 3 - 1]") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_mark_idx = (i * i) / 3 - 1") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (__sieve_istep == 4)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (i % 6 == 1)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_delta_a = ((i << 2) - 1) / 3") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_delta_b = ((i << 1) + 1) / 3") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_delta_a = ((i << 1) - 1) / 3") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_delta_b = ((i << 2) + 1) / 3") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_total_step") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "while (__sieve_mark_idx + __sieve_delta_a < __sieve_len)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "if (__sieve_mark_idx >= __sieve_len) break;") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve[__sieve_mark_idx] = 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve[j / 3 - 1] = 0") == null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk0") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "memcpy(&__sieve_chunk, __sieve + __sieve_count_idx") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk * 0x0101010101010101ULL") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "for (; __sieve_count_idx < __sieve_count_end; ++__sieve_count_idx)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__sieve_chunk0)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__sieve_chunk1)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "for (; __sieve_count_idx < __sieve_len; ++__sieve_count_idx)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 3; i <= n; i += 2) count += (int64_t)__sieve[i >> 1];") == null);
     try testing.expect(std.mem.indexOf(u8, output, "if (__sieve[i >> 1]) count++") == null);
     try testing.expect(std.mem.indexOf(u8, output, "__builtin_expect(__sieve[i], 1)") == null);
@@ -17201,8 +18174,11 @@ test "prime sieve specialization uses odd-only byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "if (!__prime[__n >> 1]) continue;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__prime[__d >> 1] = 0") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__d += (__n << 1)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_assume_aligned(__prime_alloc, 16)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__count = 1") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__count += (int64_t)__prime[__n >> 1];") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__prime_chunk)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__prime_count_idx = 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__prime_count_end = ((limit - 1) >> 1) + 1") != null);
 }
 
 test "leven native specialization reuses 26 repetition phases" {

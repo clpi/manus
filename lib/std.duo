@@ -12,9 +12,13 @@ std.math.interpolate = req "std.math.interpolate"
 std.math.wavelet = req "std.math.wavelet"
 std.math.noise = req "std.math.noise"
 std.math.geometry = req "std.math.geometry"
+std.math.bits = req "std.math.bits"
+std.math.prng = req "std.math.prng"
 std.string = req "std.string"
 std.table = req "std.table"
 std.meta = req "std.meta"
+std.meta.derive = req "std.meta.derive"
+std.meta.macros = req "std.meta.macros"
 std.reflect = req "std.reflect"
 std.coroutine = req "std.coroutine"
 std.mem = req "std.mem"
@@ -29,11 +33,13 @@ std.sys = {
     io = req "std.io",
     env = req "std.env",
     path = req "std.path",
+    filepath = req "std.path.filepath",
     proc = req "std.proc",
     time = req "std.time",
     signal = req "std.os.signal",
     process = req "std.os.process",
-    fs_watch = req "std.fs_watch"
+    fs_watch = req "std.fs_watch",
+    linux = req "std.os.linux"
 }
 
 -- Network & Concurrency
@@ -41,6 +47,14 @@ std.net = req "std.net"
 std.net.ws = req "std.net.ws"
 std.net.dns = req "std.net.dns"
 std.net.rpc = req "std.net.rpc"
+std.net.mail = req "std.net.mail"
+std.net.smtp = req "std.net.smtp"
+std.net.quic = req "std.net.quic"
+std.net.url = req "std.net.url"
+std.net.http = req "std.net.http"
+std.net.http.cgi = req "std.net.http.cgi"
+std.net.http.httptest = req "std.net.http.httptest"
+std.net.http.httputil = req "std.net.http.httputil"
 std.http = req "std.http"
 std.context = req "std.context"
 std.sync = {
@@ -48,7 +62,10 @@ std.sync = {
     thread = req "std.thread",
     mproc = req "std.mproc",
     concurrent = req "std.concurrent",
-    channel = req "std.sync"
+    channel = req "std.sync",
+    mutex = req "std.sync.mutex",
+    once = req "std.sync.once",
+    waitgroup = req "std.sync.waitgroup"
 }
 
 -- Data & Encoding
@@ -68,7 +85,8 @@ std.data = {
     tar = req "std.tar",
     zip = req "std.zip",
     db = req "std.db",
-    mime = req "std.mime"
+    mime = req "std.mime",
+    multipart = req "std.mime.multipart"
 }
 
 -- Compression
@@ -87,7 +105,36 @@ std.encoding = {
     gob = req "std.encoding.gob",
     pem = req "std.encoding.pem",
     ascii85 = req "std.encoding.ascii85",
-    protobuf = req "std.encoding.protobuf"
+    protobuf = req "std.encoding.protobuf",
+    cbor = req "std.encoding.cbor",
+    varint = req "std.encoding.varint",
+}
+
+-- Hash algorithms
+std.hash = {
+    main = req "std.hash",
+    adler32 = req "std.hash.adler32",
+    crc32 = req "std.hash.crc32",
+    crc64 = req "std.hash.crc64",
+    fnv = req "std.hash.fnv",
+    maphash = req "std.hash.maphash",
+    sha1 = req "std.hash.sha1",
+    sha256 = req "std.hash.sha256",
+    sha512 = req "std.hash.sha512"
+}
+
+-- Image formats
+std.image = {
+    main = req "std.image",
+    color = req "std.image.color",
+    gif = req "std.image.gif",
+    jpeg = req "std.image.jpeg",
+    png = req "std.image.png"
+}
+
+-- Database
+std.database = {
+    sql = req "std.database.sql"
 }
 
 -- Cryptography
@@ -98,6 +145,9 @@ std.crypto = {
     rand = req "std.crypto.rand",
     subtle = req "std.crypto.subtle",
     aes = req "std.crypto.aes",
+    hmac = req "std.crypto.hmac",
+    sha = req "std.crypto.sha",
+    tls = req "std.crypto.tls",
     signature = req "std.crypto.signature"
 }
 
@@ -134,6 +184,8 @@ std.ml = {
     distill = req "std.ml.distill",
     cache = req "std.ml.cache",
     onnx = req "std.onnx",
+    benchmark = req "std.ml.benchmark",
+    export = req "std.ml.export",
 }
 
 -- Graphics & Visualization
@@ -141,9 +193,20 @@ std.graphics = req "std.graphics"
 std.graphics.mesh = req "std.graphics.mesh"
 std.graphics.material = req "std.graphics.material"
 std.graphics.animation = req "std.graphics.animation"
+std.graphics.sprite = req "std.graphics.sprite"
+std.graphics.shader = req "std.graphics.shader"
+std.graphics.font = req "std.graphics.font"
+std.graphics.pbr = req "std.graphics.pbr"
+std.graphics.postprocess = req "std.graphics.postprocess"
+std.graphics.particle = req "std.graphics.particle"
+std.graphics.gui = req "std.graphics.gui"
+std.graphics.ui = req "std.graphics.ui"
+std.graphics.image = req "std.graphics.image"
+std.graphics.audio = req "std.graphics.audio"
 
 -- WebAssembly support
 std.wasm = req "std.wasm"
+std.wasm.wasi = req "std.wasm.wasi"
 
 -- Runtime support (GC, isolates, snapshots)
 std.runtime = req "std.runtime"
@@ -175,13 +238,12 @@ std.strings = req "std.strings"
 std.strconv = req "std.strconv"
 std.config = req "std.config"
 std.flag = req "std.flag"
-std.image = req "std.image"
 std.utf8 = req "std.utf8"
 std.unicode = req "std.unicode"
 std.datetime = req "std.datetime"
-std.text.transformer = req "std.text.transformer"
 std.time.stopwatch = req "std.time.stopwatch"
 std.io.buffer = req "std.io.buffer"
+std.io.util = req "std.io.util"
 std.bufio = req "std.bufio"
 std.bytes = req "std.bytes"
 std.slices = req "std.slices"
@@ -191,6 +253,15 @@ std.graph = req "std.graph"
 std.pool = req "std.pool"
 std.schema = req "std.schema"
 std.diff = req "std.diff"
+
+-- Text processing
+std.text = {
+    transformer = req "std.text.transformer",
+    scanner = req "std.text.scanner",
+    tabwriter = req "std.text.tabwriter",
+    template = req "std.text.template",
+    template_parse = req "std.text.template.parse"
+}
 
 -- Go compatibility shim
 std.go = req "std.go"

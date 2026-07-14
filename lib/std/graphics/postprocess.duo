@@ -92,47 +92,93 @@ fun bloom_extract_bright(image: any, threshold: f64): any
 end
 
 fun bloom_blur(image: any, radius: i64): any
-    -- Simple box blur (would use Gaussian in production)
+    -- Separable Gaussian blur (two-pass: horizontal then vertical)
     width = image.width
     height = image.height
     channels = image.channels
 
+    -- Build 1D Gaussian kernel
+    sigma = radius / 3.0
+    if sigma < 0.5 then sigma = 0.5 end
+    kernel = {}
+    kernel_sum = 0.0
+    i = -radius
+    while i <= radius
+        val = math.exp(-(i * i) / (2 * sigma * sigma))
+        kernel[i + radius + 1] = val
+        kernel_sum += val
+        i += 1
+    end
+    -- Normalize kernel
+    i = 1
+    while i <= #kernel
+        kernel[i] = kernel[i] / kernel_sum
+        i += 1
+    end
+
+    -- Horizontal pass
+    temp = {}
+    y = 0
+    while y < height
+        x = 0
+        while x < width
+            r_sum = 0.0
+            g_sum = 0.0
+            b_sum = 0.0
+            k_idx = 1
+            dx = -radius
+            while dx <= radius
+                nx = x + dx
+                if nx < 0 then nx = 0 end
+                if nx >= width then nx = width - 1 end
+                idx = (y * width + nx) * channels + 1
+                w = kernel[k_idx]
+                if channels >= 3 then
+                    r_sum += image.data[idx] * w
+                    g_sum += image.data[idx + 1] * w
+                    b_sum += image.data[idx + 2] * w
+                end
+                k_idx += 1
+                dx += 1
+            end
+            idx = (y * width + x) * channels + 1
+            temp[idx] = r_sum
+            temp[idx + 1] = g_sum
+            temp[idx + 2] = b_sum
+            x += 1
+        end
+        y += 1
+    end
+
+    -- Vertical pass
     result = {}
     y = 0
     while y < height
         x = 0
         while x < width
-            r_sum = 0
-            g_sum = 0
-            b_sum = 0
-            count = 0
-
+            r_sum = 0.0
+            g_sum = 0.0
+            b_sum = 0.0
+            k_idx = 1
             dy = -radius
             while dy <= radius
-                dx = -radius
-                while dx <= radius
-                    nx = x + dx
-                    ny = y + dy
-                    if nx >= 0 and nx < width and ny >= 0 and ny < height then
-                        idx = (ny * width + nx) * channels + 1
-                        if channels >= 3 then
-                            r_sum += image.data[idx]
-                            g_sum += image.data[idx + 1]
-                            b_sum += image.data[idx + 2]
-                        end
-                        count += 1
-                    end
-                    dx += 1
+                ny = y + dy
+                if ny < 0 then ny = 0 end
+                if ny >= height then ny = height - 1 end
+                idx = (ny * width + x) * channels + 1
+                w = kernel[k_idx]
+                if channels >= 3 then
+                    r_sum += temp[idx] * w
+                    g_sum += temp[idx + 1] * w
+                    b_sum += temp[idx + 2] * w
                 end
+                k_idx += 1
                 dy += 1
             end
-
             idx = (y * width + x) * channels + 1
-            if count > 0 then
-                result[idx] = r_sum / count
-                result[idx + 1] = g_sum / count
-                result[idx + 2] = b_sum / count
-            end
+            result[idx] = r_sum
+            result[idx + 1] = g_sum
+            result[idx + 2] = b_sum
             x += 1
         end
         y += 1

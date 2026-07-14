@@ -43,6 +43,10 @@ fun vec3_normalize(v: any): any
     vec3_scale(v, 1.0 / len)
 end
 
+fun vec3_negate(v: any): any
+    {x = -v.x, y = -v.y, z = -v.z}
+end
+
 fun vec3_lerp(a: any, b: any, t: f64): any
     {
         x = a.x + (b.x - a.x) * t,

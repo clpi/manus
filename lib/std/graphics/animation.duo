@@ -292,10 +292,29 @@ fun procedural_sine(time: f64, frequency: f64, amplitude: f64, phase: f64): f64
 end
 
 fun procedural_noise(time: f64, frequency: f64, amplitude: f64): f64
-    -- Simplified noise (would use proper noise function in production)
+    -- Value noise using hash-based interpolation
     if frequency == nil then frequency = 1 end
     if amplitude == nil then amplitude = 1 end
-    amplitude * math.sin(time * frequency * 12.9898 + 78.233) * 0.5 + 0.5
+
+    t = time * frequency
+    -- Integer and fractional parts
+    i0 = math.floor(t)
+    frac = t - i0
+
+    -- Smoothstep interpolation (ease-in-out)
+    fade = frac * frac * (3 - 2 * frac)
+
+    -- Hash function for pseudo-random values at integer points
+    fun _hash(n: i64): f64
+        h = (n * 2654435761) & 0xFFFFFFFF
+        h = ((h >> 16) ~ h) & 0xFFFFFFFF
+        (h & 0xFFFF) / 65535.0
+    end
+
+    v0 = _hash(i0)
+    v1 = _hash(i0 + 1)
+
+    amplitude * (v0 + fade * (v1 - v0))
 end
 
 fun procedural_bounce(time: f64, period: f64, height: f64): f64

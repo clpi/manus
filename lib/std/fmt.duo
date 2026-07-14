@@ -106,9 +106,10 @@ fun format(fmt: str, args: any): str
     out
 end
 
-fun println(fmt: str, ...args): void
-    local s = format(fmt, args)
-    __emit("printf(\"%s\\n\", s)")
+fun println(fmt_str: str, ...args): void
+    s = format(fmt_str, args)
+    io.write(s)
+    io.write("\n")
 end
 
 M = {}

@@ -1,4 +1,5 @@
 -- std.atomic — atomic operations on table-backed memory
+-- Uses compare_swap for CAS-based mutex and spin_wait for CPU yielding.
 
 fun store(t: any, key: any, value: any): any
     old = t[key]
@@ -56,17 +57,44 @@ fun dec(t: any, key: any): any
 end
 
 fun mutex_new(): any
-    { locked = false }
+    { locked = false, owner = nil, count = 0 }
 end
 
 fun lock(m: any): void
-    while m.locked
-        m.locked = true
+    while true
+        ok, _ = compare_swap(m, "locked", false, true)
+        if ok then
+            m.owner = "current"
+            m.count = 1
+            return
+        end
+        -- Spin-wait: yield CPU hint between attempts
+        @c.emit("#if defined(__x86_64__) || defined(__i386__)")
+        @c.emit("__asm__ volatile(\"pause\");")
+        @c.emit("#elif defined(__aarch64__)")
+        @c.emit("__asm__ volatile(\"yield\");")
+        @c.emit("#endif")
     end
 end
 
 fun unlock(m: any): void
+    m.owner = nil
+    m.count = 0
     m.locked = false
+end
+
+fun try_lock(m: any): bool
+    ok, _ = compare_swap(m, "locked", false, true)
+    if ok then
+        m.owner = "current"
+        m.count = 1
+        return true
+    end
+    false
+end
+
+fun is_locked(m: any): bool
+    m.locked
 end
 
 fun std_atomic_signal(sp: any): void
@@ -84,5 +112,7 @@ M.dec = dec
 M.mutex_new = mutex_new
 M.lock = lock
 M.unlock = unlock
+M.try_lock = try_lock
+M.is_locked = is_locked
 M.signal = std_atomic_signal
 M

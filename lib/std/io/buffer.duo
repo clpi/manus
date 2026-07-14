@@ -1,5 +1,8 @@
 -- std.io.buffer — Buffered I/O operations
--- For efficient file and network I/O in ward runtime.
+-- For efficient file and network I/O.
+-- Sources: file handles (io.open), stdin, or raw byte-table sources.
+
+local io = req "std.io"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Buffered Reader
@@ -21,12 +24,43 @@ end
 fun buffered_reader_fill(br: any): any
     if br.eof then return {ok = false, reason = "EOF"} end
 
-    -- In production, this would read from the actual source
-    -- For now, return placeholder
     br.buffer = {}
     br.buffer_pos = 1
     br.buffer_len = 0
-    {ok = true, bytes = 0}
+
+    -- Read from Lua file handle
+    if type(br.source) ~= "table" then
+        local chunk = br.source:read(br.buffer_size)
+        if chunk == nil or chunk == "" then
+            br.eof = true
+            return {ok = true, bytes = 0}
+        end
+        i = 1
+        while i <= string.len(chunk)
+            br.buffer[i] = string.byte(chunk, i)
+            i += 1
+        end
+        br.buffer_len = string.len(chunk)
+        return {ok = true, bytes = string.len(chunk)}
+    end
+
+    -- Read from raw byte table (source.pos tracks read cursor)
+    local pos = br.source.pos or 1
+    local src = br.source.data or br.source
+    local avail = #src - pos + 1
+    if avail <= 0 then
+        br.eof = true
+        return {ok = true, bytes = 0}
+    end
+    local n = math.min(br.buffer_size, avail)
+    i = 0
+    while i < n
+        br.buffer[i + 1] = src[pos + i]
+        i += 1
+    end
+    br.source.pos = pos + n
+    br.buffer_len = n
+    {ok = true, bytes = n}
 end
 
 fun buffered_reader_read_byte(br: any): any
@@ -89,10 +123,11 @@ fun buffered_reader_read_line(br: any): any
         if byte == 10 then  -- newline
             return {ok = true, line = line, eof = false}
         elseif byte == 13 then  -- carriage return
-            -- Check for \r\n
+            -- Check for \r\n — if next byte is not \n, push it back
             peek = buffered_reader_read_byte(br)
             if peek.ok and peek.byte ~= 10 then
-                -- Put back the byte (simplified - in production would use pushback)
+                -- Push back the non-newline byte
+                buffered_reader_unread(br, peek.byte)
             end
             return {ok = true, line = line, eof = false}
         else
@@ -145,10 +180,21 @@ fun buffered_writer_new(destination: any, buffer_size: i64): any
 end
 
 fun buffered_writer_flush(bw: any): any
-    if #bw.buffer == 0 then return {ok = true} end
+    if bw.buffer_pos == 1 then return {ok = true} end
 
-    -- In production, this would write to the actual destination
-    -- For now, just clear the buffer
+    -- Build chunk from buffered bytes
+    chunk = ""
+    i = 1
+    while i < bw.buffer_pos
+        chunk = chunk .. string.char(bw.buffer[i])
+        i += 1
+    end
+
+    -- Write to Lua file handle
+    if type(bw.destination) ~= "table" then
+        bw.destination:write(chunk)
+    end
+
     bw.buffer = {}
     bw.buffer_pos = 1
     {ok = true}

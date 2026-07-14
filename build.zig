@@ -74,4 +74,10 @@ pub fn build(b: *std.Build) void {
     honest_bench_cmd.step.dependOn(b.getInstallStep());
     const honest_bench_step = b.step("honest-bench", "Run honest benchmark (no precomputation, runtime inputs)");
     honest_bench_step.dependOn(&honest_bench_cmd.step);
+
+    const compile_size_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_compile_size_benchmark.sh" });
+    compile_size_bench_cmd.setCwd(b.path("."));
+    compile_size_bench_cmd.step.dependOn(b.getInstallStep());
+    const compile_size_bench_step = b.step("compile-size-bench", "Track compile time and binary size vs C");
+    compile_size_bench_step.dependOn(&compile_size_bench_cmd.step);
 }

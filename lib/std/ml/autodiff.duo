@@ -63,8 +63,26 @@ fun backward_linear(tape, idx, grad_out): any
 end
 
 fun backward_softmax(tape, idx, grad_out): any
-    -- Simplified: pass-through for demo (full Jacobian omitted)
-    return grad_out
+    -- Softmax backward: dL/dx_i = sum_j (dL/dy_j * (delta_ij * y_i - y_i * y_j))
+    -- For a single sample (row), this simplifies to: grad_out * softmax_output - softmax_output * sum(grad_out * softmax_output)
+    op = tape.ops[idx]
+    y = op.output  -- softmax output from forward pass
+    n = y.rows * y.cols
+    g = Tensor.zeros(y.rows, y.cols)
+    -- Compute sum(grad_out * y) for each row
+    for row = 1, y.rows
+        dot = 0.0
+        for col = 1, y.cols
+            idx_flat = (row - 1) * y.cols + col
+            dot += grad_out.data[idx_flat] * y.data[idx_flat]
+        end
+        -- g_i = y_i * (grad_out_i - dot)
+        for col = 1, y.cols
+            idx_flat = (row - 1) * y.cols + col
+            g.data[idx_flat] = y.data[idx_flat] * (grad_out.data[idx_flat] - dot)
+        end
+    end
+    return g
 end
 
 fun backward_layer(tape, idx, grad_out): any

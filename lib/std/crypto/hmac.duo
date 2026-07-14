@@ -38,9 +38,23 @@ fun hmac_sha256(key: str, message: str): str
     hmac(crypto.sha256, key, message, 64)
 end
 
+-- hmac_sha256_bytes: HMAC-SHA-256 returning raw 32-byte binary string.
+fun hmac_sha256_bytes(key: str, message: str): str
+    hex = hmac_sha256(key, message)
+    bytes = {}
+    i = 1
+    while i <= 64
+        byte_val = tonumber(hex:sub(i, i + 1), 16)
+        bytes[#bytes + 1] = string.char(byte_val)
+        i += 2
+    end
+    return table.concat(bytes)
+end
+
 -- hmac_sha1: HMAC-SHA-1.
 fun hmac_sha1(key: str, message: str): str
-    hmac(h.simple, key, message, 64)
+    crypto = require "std.crypto"
+    hmac(crypto.sha1, key, message, 64)
 end
 
 -- hmac_md5: HMAC-MD5.
@@ -68,6 +82,7 @@ end
 M = {}
 M.hmac = hmac
 M.hmac_sha256 = hmac_sha256
+M.hmac_sha256_bytes = hmac_sha256_bytes
 M.hmac_sha1 = hmac_sha1
 M.hmac_md5 = hmac_md5
 M.hmac_fnv1a = hmac_fnv1a

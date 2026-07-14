@@ -25,6 +25,9 @@ pub const decls =
     \\    return a * b + c;
     \\}
     \\static inline double duo_ml_v4f64_sum(duo_ml_v4f64 v) { return v[0] + v[1] + v[2] + v[3]; }
+    \\static inline double duo_ml_exp_m1_0_poly8(double x) {
+    \\    return 1.0 + x * (1.0 + x * (0.5 + x * (0.16666666666666665741 + x * (0.04166666666666666435 + x * (0.00833333333333333322 + x * (0.00138888888888888894 + x * (0.00019841269841269841 + x * 0.00002480158730158730)))))));
+    \\}
     \\__attribute__((always_inline)) static inline double duo_ml_dot_v4(const double* restrict a, const double* restrict b, int n) {
     \\    duo_ml_v4f64 acc = {0};
     \\    int i = 0;
@@ -176,7 +179,7 @@ pub const decls =
     \\            if (x[i] > mx) mx = x[i];
     \\        double sum = 0.0;
     \\        DUO_ML_VEC
-    \\        for (int i = 0; i < N; i++) { y[i] = exp(x[i] - mx); sum += y[i]; }
+    \\        for (int i = 0; i < N; i++) { y[i] = duo_ml_exp_m1_0_poly8(x[i] - mx); sum += y[i]; }
     \\        const double inv_sum = 1.0 / sum;
     \\        DUO_ML_VEC
     \\        for (int i = 0; i < N; i++) y[i] *= inv_sum;
@@ -209,6 +212,10 @@ pub const decls =
     \\        const double *restrict kh = K + h * SEQ * DIM;
     \\        const double *restrict vh = V + h * SEQ * DIM;
     \\        double *restrict oh = out + h * SEQ * DIM;
+    \\        double vt[DIM * SEQ];
+    \\        for (int j = 0; j < SEQ; j++)
+    \\            for (int d = 0; d < DIM; d++)
+    \\                vt[d * SEQ + j] = vh[j * DIM + d];
     \\        for (int i = 0; i < SEQ; i++) {
     \\            const double *restrict qi = qh + i * DIM;
     \\            for (int j = 0; j < SEQ; j++) {
@@ -233,7 +240,7 @@ pub const decls =
     \\            const double *restrict row = scores + i * SEQ;
     \\            double *restrict oi = oh + i * DIM;
     \\            for (int d = 0; d < DIM; d++) {
-    \\                oi[d] = duo_ml_dot_v4_strided(row, vh + d, SEQ, DIM);
+    \\                oi[d] = duo_ml_dot_v4(row, vt + d * SEQ, SEQ);
     \\            }
     \\        }
     \\    }
@@ -484,9 +491,17 @@ test "ml conv2d uses 4-wide simd ox strip" {
     try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_v4f64_store(out_row + ox, s)") != null);
 }
 
+test "ml softmax uses bounded polynomial exp helper" {
+    try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_exp_m1_0_poly8") != null);
+    try std.testing.expect(std.mem.indexOf(u8, decls, "y[i] = duo_ml_exp_m1_0_poly8(x[i] - mx)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, decls, "y[i] = exp(x[i] - mx)") == null);
+}
+
 test "ml mlp and attention use explicit dot simd helpers" {
-    try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_dot_v4_strided") != null);
     try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_dot_v4(qi, kj, DIM)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, decls, "double vt[DIM * SEQ]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, decls, "vt[d * SEQ + j] = vh[j * DIM + d]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_dot_v4(row, vt + d * SEQ, SEQ)") != null);
     try std.testing.expect(std.mem.indexOf(u8, decls, "duo_ml_dot_v4(inp, w1 + j * IN, IN)") != null);
     try std.testing.expect(std.mem.indexOf(u8, decls, "double h1_out[H1]") != null);
 }

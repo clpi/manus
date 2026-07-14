@@ -29,8 +29,8 @@ pub const Symbol = struct {
     /// If non-null, using this symbol emits a deprecation warning.
     deprecated_msg: ?[]const u8 = null,
     // Escape analysis fields (populated by analyze_closure_upvalues and checking passes)
-    escapes: bool = false,            // true if variable outlives its scope
-    address_taken: bool = false,      // true if &var is used or stored in table
+    escapes: bool = false, // true if variable outlives its scope
+    address_taken: bool = false, // true if &var is used or stored in table
     captured_by_closure: bool = false, // true if referenced in a nested function
     assigned_after_init: bool = false, // true if reassigned after declaration
 };
@@ -646,6 +646,23 @@ pub const Sema = struct {
             std.mem.eql(u8, fname, "assume") or std.mem.eql(u8, fname, "trap") or
             std.mem.eql(u8, fname, "unreachable"))
             return .void;
+        if (std.mem.eql(u8, fname, "read_byte") or std.mem.eql(u8, fname, "read_i8") or
+            std.mem.eql(u8, fname, "read_u8") or std.mem.eql(u8, fname, "read_i16") or
+            std.mem.eql(u8, fname, "read_u16") or std.mem.eql(u8, fname, "read_i32") or
+            std.mem.eql(u8, fname, "read_u32") or std.mem.eql(u8, fname, "read_i64") or
+            std.mem.eql(u8, fname, "read_u64"))
+            return .i64;
+        if (std.mem.eql(u8, fname, "read_f32") or std.mem.eql(u8, fname, "read_f64") or
+            std.mem.eql(u8, fname, "bytes_to_f32") or std.mem.eql(u8, fname, "bytes_to_f64"))
+            return .f64;
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or
+            std.mem.eql(u8, fname, "write_u8") or std.mem.eql(u8, fname, "write_i16") or
+            std.mem.eql(u8, fname, "write_u16") or std.mem.eql(u8, fname, "write_i32") or
+            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or
+            std.mem.eql(u8, fname, "write_u64") or std.mem.eql(u8, fname, "write_f32") or
+            std.mem.eql(u8, fname, "write_f64"))
+            return .void;
+        if (std.mem.eql(u8, fname, "dup")) return try self.mem_pointer_to(.u8);
         if (std.mem.eql(u8, fname, "compare")) return .i64;
         if (std.mem.eql(u8, fname, "is_null")) return .bool;
         if (std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof")) return .u64;
@@ -778,6 +795,41 @@ pub const Sema = struct {
         if (std.mem.eql(u8, fname, "zero")) {
             _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
             self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "read_byte") or std.mem.eql(u8, fname, "read_i8") or
+            std.mem.eql(u8, fname, "read_u8") or std.mem.eql(u8, fname, "read_i16") or
+            std.mem.eql(u8, fname, "read_u16") or std.mem.eql(u8, fname, "read_i32") or
+            std.mem.eql(u8, fname, "read_u32") or std.mem.eql(u8, fname, "read_i64") or
+            std.mem.eql(u8, fname, "read_u64") or std.mem.eql(u8, fname, "read_f32") or
+            std.mem.eql(u8, fname, "read_f64"))
+        {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "write_byte") or std.mem.eql(u8, fname, "write_i8") or
+            std.mem.eql(u8, fname, "write_u8") or std.mem.eql(u8, fname, "write_i16") or
+            std.mem.eql(u8, fname, "write_u16") or std.mem.eql(u8, fname, "write_i32") or
+            std.mem.eql(u8, fname, "write_u32") or std.mem.eql(u8, fname, "write_i64") or
+            std.mem.eql(u8, fname, "write_u64") or std.mem.eql(u8, fname, "write_f32") or
+            std.mem.eql(u8, fname, "write_f64"))
+        {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 3, 3);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "dup")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 2, 2);
+            self.mem_validate_pointer_arg(fname, args, 0);
+            self.mem_validate_numeric_arg(fname, args, 1);
+            return;
+        }
+        if (std.mem.eql(u8, fname, "bytes_to_f32") or std.mem.eql(u8, fname, "bytes_to_f64")) {
+            _ = self.mem_arg_count_ok(loc, fname, args.len, 1, 2);
             self.mem_validate_numeric_arg(fname, args, 1);
             return;
         }
@@ -1193,13 +1245,13 @@ pub const Sema = struct {
                         if (i < init_types.items.len) {
                             const init_t = init_types.items[i];
                             if (ann != .any and init_t != .any and init_t != .nil and !type_annotation_accepts_init(ann, init_t)) {
-                            {
-                                var ann_buf: [128]u8 = undefined;
-                                var init_buf: [128]u8 = undefined;
-                                const ann_name = ann.duo_name(&ann_buf);
-                                const init_name = init_t.duo_name(&init_buf);
-                                self.err(lname.loc, "type mismatch: variable '{s}' declared as '{s}', but initializer has type '{s}'", .{ lname.ident, ann_name, init_name });
-                            }
+                                {
+                                    var ann_buf: [128]u8 = undefined;
+                                    var init_buf: [128]u8 = undefined;
+                                    const ann_name = ann.duo_name(&ann_buf);
+                                    const init_name = init_t.duo_name(&init_buf);
+                                    self.err(lname.loc, "type mismatch: variable '{s}' declared as '{s}', but initializer has type '{s}'", .{ lname.ident, ann_name, init_name });
+                                }
                             }
                         }
                         t = ann;
@@ -3445,6 +3497,8 @@ pub const Sema = struct {
             if (std.mem.eql(u8, f.field, "len") and expr.call.args.len >= 1)
                 return find_string_rep_b(expr.call.args[0]);
         }
+        if (expr.* == .binop and expr.binop.op == .add)
+            return find_string_rep_b(expr.binop.lhs) or find_string_rep_b(expr.binop.rhs);
         return false;
     }
 
@@ -6022,7 +6076,7 @@ test "sema: match with guard expressions type-checked" {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
-}// ── Duo mode scoping tests (Requirements 1.3, 1.4, 1.7, 1.8) ─────────────────
+} // ── Duo mode scoping tests (Requirements 1.3, 1.4, 1.7, 1.8) ─────────────────
 
 fn runSemaDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     const alloc = arena.allocator();

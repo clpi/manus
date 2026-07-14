@@ -1,0 +1,496 @@
+-- std.encoding.cbor — CBOR (RFC 7049) encoder/decoder
+-- Concise Binary Object Representation: self-describing binary format
+-- that supports integers, floats, strings, arrays, maps, and more.
+
+M = {}
+
+-- Major types
+MT_UINT    = 0
+MT_NEGINT  = 1
+MT_BYTES   = 2
+MT_TEXT    = 3
+MT_ARRAY   = 4
+MT_MAP     = 5
+MT_SPECIAL = 7  -- float, bool, nil, etc.
+
+-- ═══════════════════════════════════════════════════════════════
+-- Encoder
+-- ═══════════════════════════════════════════════════════════════
+
+fun encode(v: any): str
+    local buf = {}
+    encode_value(v, buf)
+    return table.concat(buf)
+end
+
+fun encode_value(v: any, buf: any): void
+    if v == nil then
+        buf[#buf + 1] = string.char(0xF6)  -- null
+        return
+    end
+    t = type(v)
+    if t == "boolean" then
+        if v then
+            buf[#buf + 1] = string.char(0xF5)  -- true
+        else
+            buf[#buf + 1] = string.char(0xF4)  -- false
+        end
+        return
+    end
+    if t == "number" then
+        encode_number(v, buf)
+        return
+    end
+    if t == "string" then
+        encode_string(v, buf)
+        return
+    end
+    if t == "table" then
+        if is_array(v) then
+            encode_array(v, buf)
+        else
+            encode_map(v, buf)
+        end
+        return
+    end
+end
+
+fun encode_number(n: f64, buf: any): void
+    if n >= 0 and math.floor(n) == n and n < 2^64 then
+        -- Unsigned integer
+        encode_uint(MT_UINT, math.floor(n), buf)
+    elseif n < 0 and math.floor(n) == n and n >= -(2^64) then
+        -- Negative integer: store as -1 - n
+        encode_uint(MT_NEGINT, math.floor(-1 - n), buf)
+    elseif math.floor(n) == n and math.abs(n) < 2^53 then
+        -- Large integer — encode as 8-byte float
+        encode_float64(n, buf)
+    else
+        -- Float
+        encode_float64(n, buf)
+    end
+end
+
+fun encode_uint(major: i64, value: i64, buf: any): void
+    if value < 0x18 then
+        buf[#buf + 1] = string.char(major * 32 + value)
+    elseif value <= 0xFF then
+        buf[#buf + 1] = string.char(major * 32 + 24)
+        buf[#buf + 1] = string.char(value)
+    elseif value <= 0xFFFF then
+        buf[#buf + 1] = string.char(major * 32 + 25)
+        buf[#buf + 1] = string.char(math.floor(value / 256))
+        buf[#buf + 1] = string.char(value % 256)
+    elseif value <= 0xFFFFFFFF then
+        buf[#buf + 1] = string.char(major * 32 + 26)
+        buf[#buf + 1] = string.char(math.floor(value / 16777216))
+        buf[#buf + 1] = string.char(math.floor(value / 65536) % 256)
+        buf[#buf + 1] = string.char(math.floor(value / 256) % 256)
+        buf[#buf + 1] = string.char(value % 256)
+    else
+        buf[#buf + 1] = string.char(major * 32 + 27)
+        -- 8-byte big-endian
+        hi = math.floor(value / 4294967296)
+        lo = value % 4294967296
+        buf[#buf + 1] = string.char(math.floor(hi / 16777216) % 256)
+        buf[#buf + 1] = string.char(math.floor(hi / 65536) % 256)
+        buf[#buf + 1] = string.char(math.floor(hi / 256) % 256)
+        buf[#buf + 1] = string.char(hi % 256)
+        buf[#buf + 1] = string.char(math.floor(lo / 16777216) % 256)
+        buf[#buf + 1] = string.char(math.floor(lo / 65536) % 256)
+        buf[#buf + 1] = string.char(math.floor(lo / 256) % 256)
+        buf[#buf + 1] = string.char(lo % 256)
+    end
+end
+
+fun encode_float64(value: f64, buf: any): void
+    buf[#buf + 1] = string.char(0xFB)  -- float64
+    -- IEEE 754 double-precision big-endian
+    if value ~= value then
+        -- NaN: all exponent bits set, non-zero mantissa
+        buf[#buf + 1] = string.char(0x7F)
+        buf[#buf + 1] = string.char(0xF8)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        return
+    end
+    if value == math.huge then
+        buf[#buf + 1] = string.char(0x7F)
+        buf[#buf + 1] = string.char(0xF0)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        return
+    end
+    if value == -math.huge then
+        buf[#buf + 1] = string.char(0xFF)
+        buf[#buf + 1] = string.char(0xF0)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        buf[#buf + 1] = string.char(0x00)
+        return
+    end
+    -- Use string.pack if available, else manual encoding
+    if string.pack then
+        local packed = string.pack(">d", value)
+        for i = 1, #packed
+            buf[#buf + 1] = packed:sub(i, i)
+        end
+    else
+        -- Manual IEEE 754 encoding
+        sign = 0
+        if value < 0 then
+            sign = 1
+            value = -value
+        end
+        if value == 0 then
+            buf[#buf + 1] = string.char(sign * 128)
+            buf[#buf + 1] = string.char(0x00)
+            buf[#buf + 1] = string.char(0x00)
+            buf[#buf + 1] = string.char(0x00)
+            buf[#buf + 1] = string.char(0x00)
+            buf[#buf + 1] = string.char(0x00)
+            buf[#buf + 1] = string.char(0x00)
+            buf[#buf + 1] = string.char(0x00)
+            return
+        end
+        -- Decompose into mantissa and exponent
+        exp = 0
+        while value >= 2
+            value = value / 2
+            exp += 1
+        end
+        while value < 1
+            value = value * 2
+            exp -= 1
+        end
+        mantissa = (value - 1) * (2^52)
+        biased_exp = exp + 1023
+        bytes = {}
+        bytes[1] = sign * 128 + math.floor(biased_exp / 2) * 4 + math.floor(mantissa / (2^52))
+        bytes[2] = math.floor(mantissa / (2^44)) % 256
+        bytes[3] = math.floor(mantissa / (2^36)) % 256
+        bytes[4] = math.floor(mantissa / (2^28)) % 256
+        bytes[5] = math.floor(mantissa / (2^20)) % 256
+        bytes[6] = math.floor(mantissa / (2^12)) % 256
+        bytes[7] = math.floor(mantissa / (2^4)) % 256
+        bytes[8] = (mantissa * 16) % 256
+        for i = 1, 8
+            buf[#buf + 1] = string.char(bytes[i])
+        end
+    end
+end
+
+fun encode_string(s: str, buf: any): void
+    len = #s
+    buf[#buf + 1] = string.char(MT_TEXT * 32 + encode_addinfo(len))
+    encode_addinfo_bytes(len, buf)
+    for i = 1, len
+        buf[#buf + 1] = s:sub(i, i)
+    end
+end
+
+fun encode_array(arr: any, buf: any): void
+    n = #arr
+    buf[#buf + 1] = string.char(MT_ARRAY * 32 + encode_addinfo(n))
+    encode_addinfo_bytes(n, buf)
+    i = 1
+    while i <= n
+        encode_value(arr[i], buf)
+        i += 1
+    end
+end
+
+fun encode_map(m: any, buf: any): void
+    n = 0
+    for _ in pairs(m) do n += 1 end
+    buf[#buf + 1] = string.char(MT_MAP * 32 + encode_addinfo(n))
+    encode_addinfo_bytes(n, buf)
+    for k, v in pairs(m)
+        encode_value(k, buf)
+        encode_value(v, buf)
+    end
+end
+
+fun encode_addinfo(n: i64): i64
+    if n < 24 then return n end
+    if n <= 0xFF then return 24 end
+    if n <= 0xFFFF then return 25 end
+    if n <= 0xFFFFFFFF then return 26 end
+    return 27
+end
+
+fun encode_addinfo_bytes(n: i64, buf: any): void
+    if n >= 24 and n <= 0xFF then
+        buf[#buf + 1] = string.char(n)
+    elseif n >= 0x100 and n <= 0xFFFF then
+        buf[#buf + 1] = string.char(math.floor(n / 256))
+        buf[#buf + 1] = string.char(n % 256)
+    elseif n >= 0x10000 and n <= 0xFFFFFFFF then
+        buf[#buf + 1] = string.char(math.floor(n / 16777216))
+        buf[#buf + 1] = string.char(math.floor(n / 65536) % 256)
+        buf[#buf + 1] = string.char(math.floor(n / 256) % 256)
+        buf[#buf + 1] = string.char(n % 256)
+    end
+end
+
+fun is_array(t: any): bool
+    n = 0
+    for _ in pairs(t) do n += 1 end
+    return n == #t and n > 0
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Decoder
+-- ═══════════════════════════════════════════════════════════════
+
+fun decode(data: str): any
+    pos = {1}  -- mutable position wrapper
+    return decode_value(data, pos)
+end
+
+fun decode_value(data: str, pos: any): any
+    if pos[1] > #data then
+        error("cbor: unexpected end of data")
+    end
+    byte = string.byte(data, pos[1])
+    pos[1] += 1
+
+    major = math.floor(byte / 32)
+    addinfo = byte % 32
+
+    if major == MT_UINT then
+        return decode_uint(addinfo, data, pos)
+    end
+    if major == MT_NEGINT then
+        return -1 - decode_uint(addinfo, data, pos)
+    end
+    if major == MT_BYTES then
+        return decode_bytes(addinfo, data, pos)
+    end
+    if major == MT_TEXT then
+        return decode_text(addinfo, data, pos)
+    end
+    if major == MT_ARRAY then
+        return decode_array(addinfo, data, pos)
+    end
+    if major == MT_MAP then
+        return decode_map(addinfo, data, pos)
+    end
+    if major == MT_SPECIAL then
+        return decode_special(addinfo, data, pos)
+    end
+    error("cbor: unknown major type " .. major)
+end
+
+fun decode_uint(addinfo: i64, data: str, pos: any): i64
+    if addinfo < 24 then return addinfo end
+    if addinfo == 24 then
+        v = string.byte(data, pos[1])
+        pos[1] += 1
+        return v
+    end
+    if addinfo == 25 then
+        b0 = string.byte(data, pos[1])
+        b1 = string.byte(data, pos[1] + 1)
+        pos[1] += 2
+        return b0 * 256 + b1
+    end
+    if addinfo == 26 then
+        b0 = string.byte(data, pos[1])
+        b1 = string.byte(data, pos[1] + 1)
+        b2 = string.byte(data, pos[1] + 2)
+        b3 = string.byte(data, pos[1] + 3)
+        pos[1] += 4
+        return b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
+    end
+    if addinfo == 27 then
+        b0 = string.byte(data, pos[1])
+        b1 = string.byte(data, pos[1] + 1)
+        b2 = string.byte(data, pos[1] + 2)
+        b3 = string.byte(data, pos[1] + 3)
+        b4 = string.byte(data, pos[1] + 4)
+        b5 = string.byte(data, pos[1] + 5)
+        b6 = string.byte(data, pos[1] + 6)
+        b7 = string.byte(data, pos[1] + 7)
+        pos[1] += 8
+        hi = b0 * 16777216 + b1 * 65536 + b2 * 256 + b3
+        lo = b4 * 16777216 + b5 * 65536 + b6 * 256 + b7
+        return hi * 4294967296 + lo
+    end
+    error("cbor: invalid additional info " .. addinfo)
+end
+
+fun decode_bytes(addinfo: i64, data: str, pos: any): str
+    len = decode_uint(addinfo, data, pos)
+    s = data:sub(pos[1], pos[1] + len - 1)
+    pos[1] += len
+    return s
+end
+
+fun decode_text(addinfo: i64, data: str, pos: any): str
+    len = decode_uint(addinfo, data, pos)
+    s = data:sub(pos[1], pos[1] + len - 1)
+    pos[1] += len
+    return s
+end
+
+fun decode_array(addinfo: i64, data: str, pos: any): any
+    if addinfo == 31 then
+        -- Indefinite length array
+        arr = {}
+        while true
+            if pos[1] > #data then break end
+            byte = string.byte(data, pos[1])
+            if byte == 0xFF then
+                pos[1] += 1
+                break
+            end
+            arr[#arr + 1] = decode_value(data, pos)
+        end
+        return arr
+    end
+    n = decode_uint(addinfo, data, pos)
+    arr = {}
+    i = 0
+    while i < n
+        arr[#arr + 1] = decode_value(data, pos)
+        i += 1
+    end
+    return arr
+end
+
+fun decode_map(addinfo: i64, data: str, pos: any): any
+    if addinfo == 31 then
+        -- Indefinite length map
+        m = {}
+        while true
+            if pos[1] > #data then break end
+            byte = string.byte(data, pos[1])
+            if byte == 0xFF then
+                pos[1] += 1
+                break
+            end
+            k = decode_value(data, pos)
+            v = decode_value(data, pos)
+            m[k] = v
+        end
+        return m
+    end
+    n = decode_uint(addinfo, data, pos)
+    m = {}
+    i = 0
+    while i < n
+        k = decode_value(data, pos)
+        v = decode_value(data, pos)
+        m[k] = v
+        i += 1
+    end
+    return m
+end
+
+fun decode_special(addinfo: i64, data: str, pos: any): any
+    if addinfo == 20 then return false end  -- false
+    if addinfo == 21 then return true end   -- true
+    if addinfo == 22 then return nil end    -- null
+    if addinfo == 23 then return nil end    -- undefined
+    if addinfo == 25 then
+        -- float16
+        b0 = string.byte(data, pos[1])
+        b1 = string.byte(data, pos[1] + 1)
+        pos[1] += 2
+        return decode_float16(b0, b1)
+    end
+    if addinfo == 26 then
+        -- float32
+        b0 = string.byte(data, pos[1])
+        b1 = string.byte(data, pos[1] + 1)
+        b2 = string.byte(data, pos[1] + 2)
+        b3 = string.byte(data, pos[1] + 3)
+        pos[1] += 4
+        return decode_float32(b0, b1, b2, b3)
+    end
+    if addinfo == 27 then
+        -- float64
+        b0 = string.byte(data, pos[1])
+        b1 = string.byte(data, pos[1] + 1)
+        b2 = string.byte(data, pos[1] + 2)
+        b3 = string.byte(data, pos[1] + 3)
+        b4 = string.byte(data, pos[1] + 4)
+        b5 = string.byte(data, pos[1] + 5)
+        b6 = string.byte(data, pos[1] + 6)
+        b7 = string.byte(data, pos[1] + 7)
+        pos[1] += 8
+        return decode_float64(b0, b1, b2, b3, b4, b5, b6, b7)
+    end
+    error("cbor: unsupported special type " .. addinfo)
+end
+
+fun decode_float16(b0: i64, b1: i64): f64
+    sign = 1
+    if b0 >= 128 then
+        sign = -1
+        b0 = b0 - 128
+    end
+    exp = math.floor(b0 / 4)
+    mantissa = (b0 % 4) * 256 + b1
+    if exp == 0 then
+        return sign * mantissa * (2^-24)
+    end
+    if exp == 31 then
+        if mantissa == 0 then return sign * math.huge end
+        return 0/0  -- NaN
+    end
+    return sign * (1 + mantissa * (2^-10)) * (2^(exp - 15))
+end
+
+fun decode_float32(b0: i64, b1: i64, b2: i64, b3: i64): f64
+    sign = 1
+    if b0 >= 128 then
+        sign = -1
+        b0 = b0 - 128
+    end
+    exp = math.floor(b0 / 2) * 16 + math.floor(b1 / 16)
+    mantissa = (b0 % 2) * 16777216 + b1 * 65536 + b2 * 256 + b3
+    if exp == 0 then
+        return sign * mantissa * (2^-149)
+    end
+    if exp == 255 then
+        if mantissa == 0 then return sign * math.huge end
+        return 0/0
+    end
+    return sign * (1 + mantissa * (2^-23)) * (2^(exp - 127))
+end
+
+fun decode_float64(b0: i64, b1: i64, b2: i64, b3: i64, b4: i64, b5: i64, b6: i64, b7: i64): f64
+    sign = 1
+    if b0 >= 128 then
+        sign = -1
+        b0 = b0 - 128
+    end
+    exp = math.floor(b0 / 16) * 128 + math.floor(b1 / 2)
+    hi_mantissa = (b0 % 16) * (2^48) + b1 * (2^40) + b2 * (2^32) + b3 * (2^24)
+    lo_mantissa = b4 * (2^16) + b5 * (2^8) + b6
+    mantissa = hi_mantissa + lo_mantissa + b7 * (2^-8)
+    if exp == 0 then
+        return sign * mantissa * (2^-1074)
+    end
+    if exp == 2047 then
+        if mantissa == 0 then return sign * math.huge end
+        return 0/0
+    end
+    return sign * (1 + mantissa * (2^-52)) * (2^(exp - 1023))
+end
+
+M.encode = encode
+M.decode = decode

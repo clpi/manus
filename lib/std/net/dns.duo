@@ -1,6 +1,8 @@
 -- std.net.dns — DNS resolver (UDP-based)
 -- Used by ward for network communication and service discovery.
 
+local net = req "std.net"
+
 -- ═══════════════════════════════════════════════════════════════
 -- DNS Record Types
 -- ═══════════════════════════════════════════════════════════════
@@ -153,9 +155,13 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 fun dns_query_new(name: str, qtype: i64): any
+    crypto_rand = req "std.crypto.rand"
+    id_bytes = crypto_rand.bytes(2)
+    query_id = (string.byte(id_bytes, 1) << 8) | string.byte(id_bytes, 2)
+    
     {
         header = dns_header_new(
-            math.random(0, 65535),  -- ID
+            query_id,  -- ID (cryptographically random)
             0,   -- QR (query)
             0,   -- Opcode
             0,   -- AA
@@ -231,11 +237,14 @@ fun dns_record_decode(data: any, pos: i64): any
     if rtype == DNS_A and rdlength == 4 then
         rdata = tostring(data[pos]) .. "." .. tostring(data[pos + 1]) .. "." .. tostring(data[pos + 2]) .. "." .. tostring(data[pos + 3])
     elseif rtype == DNS_AAAA and rdlength == 16 then
-        -- IPv6 address (simplified)
+        -- IPv6 address
         parts = {}
         i = 0
         while i < 16
-            parts[#parts + 1] = string.format("%02x", data[pos + i])
+            -- Format two bytes per group for compact representation
+            hi = data[pos + i]
+            lo = data[pos + i + 1]
+            parts[#parts + 1] = string.format("%02x%02x", hi, lo)
             i += 2
         end
         rdata = table.concat(parts, ":")
@@ -363,14 +372,34 @@ fun dns_resolver_resolve(resolver: any, name: str, qtype: i64): any
         return resolver.cache[cache_key]
     end
 
-    -- Create query
-    query = dns_query_new(name, qtype)
-    query_bytes = dns_query_encode(query)
+    -- Use native DNS resolution via codegen (getaddrinfo)
+    if qtype == DNS_A then
+        ip = net.dns_resolve(name)
+        if ip ~= nil then
+            result = {
+                header = dns_header_new(0, 1, 0, 0, 0, 1, 1, 0, 0),
+                answers = {{
+                    name = name,
+                    type = DNS_A,
+                    class = 1,
+                    ttl = 300,
+                    rdlength = 4,
+                    rdata = ip,
+                    next = 0,
+                }},
+                authority = {},
+                additional = {},
+            }
+            resolver.cache[cache_key] = result
+            return result
+        end
+    end
 
-    -- Try each DNS server
+    -- Fallback: try each DNS server via UDP (placeholder for raw socket)
     for server in resolver.servers
-        -- In production, this would send UDP packet
-        -- For now, return placeholder
+        query = dns_query_new(name, qtype)
+        query_bytes = dns_query_encode(query)
+
         result = {
             header = query.header,
             answers = {},
@@ -378,7 +407,6 @@ fun dns_resolver_resolve(resolver: any, name: str, qtype: i64): any
             additional = {},
         }
 
-        -- Cache successful results
         if result.header.rcode == 0 and #result.answers > 0 then
             resolver.cache[cache_key] = result
         end

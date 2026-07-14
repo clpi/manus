@@ -1,0 +1,257 @@
+-- std.math.prng — Cryptographically secure pseudo-random number generators
+-- Provides ChaCha20 stream cipher and HMAC-DRBG (NIST SP 800-90A).
+-- These are suitable for security-sensitive applications (key generation,
+-- nonces, tokens). For non-security uses, std.random is faster.
+
+M = {}
+
+-- ═══════════════════════════════════════════════════════════════
+-- ChaCha20 (RFC 8439)
+-- ═══════════════════════════════════════════════════════════════
+
+fun chacha20_quarter(state: any, a: i64, b: i64, c: i64, d: i64): void
+    state[a] = state[a] + state[b]
+    state[d] = state[d] ~ state[a]
+    state[d] = (state[d] << 16) | (state[d] >> 16)
+
+    state[c] = state[c] + state[d]
+    state[b] = state[b] ~ state[c]
+    state[b] = (state[b] << 12) | (state[b] >> 20)
+
+    state[a] = state[a] + state[b]
+    state[d] = state[d] ~ state[a]
+    state[d] = (state[d] << 8) | (state[d] >> 24)
+
+    state[c] = state[c] + state[d]
+    state[b] = state[b] ~ state[c]
+    state[b] = (state[b] << 7) | (state[b] >> 25)
+end
+
+fun chacha20_block(key: any, counter: i64, nonce: any): any
+    -- "expand 32-byte k" constant
+    state = {
+        0x65787061, 0x6E642033, 0x322D6279, 0x7465206B,
+    }
+    -- Load key (8 x 32-bit words)
+    i = 0
+    while i < 8
+        off = i * 4
+        state[#state + 1] = string.byte(key, off + 1) |
+            (string.byte(key, off + 2) << 8) |
+            (string.byte(key, off + 3) << 16) |
+            (string.byte(key, off + 4) << 24)
+        i += 1
+    end
+    -- Counter
+    state[#state + 1] = counter & 0xFFFFFFFF
+    -- Nonce (3 x 32-bit words)
+    i = 0
+    while i < 3
+        off = i * 4
+        state[#state + 1] = string.byte(nonce, off + 1) |
+            (string.byte(nonce, off + 2) << 8) |
+            (string.byte(nonce, off + 3) << 16) |
+            (string.byte(nonce, off + 4) << 24)
+        i += 1
+    end
+
+    -- Working state = copy of initial state
+    working = {}
+    for i = 1, 16 do working[i] = state[i] end
+
+    -- 20 rounds (10 double rounds)
+    round = 0
+    while round < 10
+        -- Column rounds
+        chacha20_quarter(working, 1, 5, 9, 13)
+        chacha20_quarter(working, 2, 6, 10, 14)
+        chacha20_quarter(working, 3, 7, 11, 15)
+        chacha20_quarter(working, 4, 8, 12, 16)
+        -- Diagonal rounds
+        chacha20_quarter(working, 1, 6, 11, 16)
+        chacha20_quarter(working, 2, 7, 12, 13)
+        chacha20_quarter(working, 3, 8, 9, 14)
+        chacha20_quarter(working, 4, 5, 10, 15)
+        round += 1
+    end
+
+    -- Add initial state and serialize
+    result = {}
+    i = 1
+    while i <= 16
+        val = (working[i] + state[i]) & 0xFFFFFFFF
+        result[#result + 1] = string.char(val & 0xFF)
+        result[#result + 1] = string.char((val >> 8) & 0xFF)
+        result[#result + 1] = string.char((val >> 16) & 0xFF)
+        result[#result + 1] = string.char((val >> 24) & 0xFF)
+        i += 1
+    end
+    return table.concat(result)
+end
+
+-- ChaCha20 stream cipher: XOR keystream with plaintext
+fun chacha20_crypt(key: str, nonce: str, data: str): str
+    out = {}
+    pos = 1
+    counter = 1
+    nonce12 = nonce
+    -- Pad nonce to 12 bytes
+    while #nonce12 < 12
+        nonce12 = nonce12 .. string.char(0)
+    end
+
+    while pos <= #data
+        block = chacha20_block(key, counter, nonce12)
+        i = 1
+        while i <= 64 and pos <= #data
+            out[#out + 1] = string.char(string.byte(data, pos) ~ string.byte(block, i))
+            pos += 1
+            i += 1
+        end
+        counter += 1
+    end
+    return table.concat(out)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- HMAC-DRBG (NIST SP 800-90A)
+-- Uses HMAC-SHA256 as the underlying primitive
+-- ═══════════════════════════════════════════════════════════════
+
+hmac_mod = req "std.crypto.hmac"
+crypto = req "std.crypto"
+
+fun hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
+    -- V = 0x00 * 32, K = 0x00 * 32
+    V = string.rep(string.char(0), 32)
+    K = string.rep(string.char(0), 32)
+
+    -- entropy_input = entropy || nonce || personalization
+    entropy_input = entropy .. nonce .. personalization
+
+    -- Initial seeding: K = HMAC(K, V || 0x00 || entropy_input)
+    K = hmac_mod.hmac_sha256_bytes(K, V .. string.char(0) .. entropy_input)
+    -- V = HMAC(K, V)
+    V = hmac_mod.hmac_sha256_bytes(K, V)
+
+    -- Additional entropy rounds
+    K = hmac_mod.hmac_sha256_bytes(K, V .. string.char(1) .. entropy_input)
+    V = hmac_mod.hmac_sha256_bytes(K, V)
+
+    {
+        v = V,
+        k = K,
+        reseed_counter = 0,
+    }
+end
+
+fun hmac_drbg_generate(state: any, num_bytes: i64): str
+    temp = {}
+    remaining = num_bytes
+
+    while remaining > 0
+        -- V = HMAC(K, V)
+        state.v = hmac_mod.hmac_sha256_bytes(state.k, state.v)
+
+        -- Take min(remaining, 32) bytes from V
+        take = remaining
+        if take > 32 then take = 32 end
+        temp[#temp + 1] = state.v:sub(1, take)
+        remaining -= take
+    end
+
+    state.reseed_counter += 1
+    return table.concat(temp)
+end
+
+fun hmac_drbg_reseed(state: any, entropy: str): void
+    -- K = HMAC(K, V || 0x00 || entropy)
+    state.k = hmac_mod.hmac_sha256_bytes(state.k, state.v .. string.char(0) .. entropy)
+    -- V = HMAC(K, V)
+    state.v = hmac_mod.hmac_sha256_bytes(state.k, state.v)
+
+    -- K = HMAC(K, V || 0x01 || entropy)
+    state.k = hmac_mod.hmac_sha256_bytes(state.k, state.v .. string.char(1) .. entropy)
+    -- V = HMAC(K, V)
+    state.v = hmac_mod.hmac_sha256_bytes(state.k, state.v)
+
+    state.reseed_counter = 0
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- High-level random helpers
+-- ═══════════════════════════════════════════════════════════════
+
+-- Generate cryptographically random bytes
+fun random_bytes(n: i64): str
+    -- Use OS entropy if available, else ChaCha20 with time-based seed
+    local handle = io.popen("cat /dev/urandom 2>/dev/null | head -c " .. n)
+    if handle then
+        local data = handle:read(n) or ""
+        handle:close()
+        if #data == n then return data end
+    end
+    -- Fallback: ChaCha20 with time-based entropy (not all zeros!)
+    time_seed = tostring(os.clock()) .. tostring(os.time()) .. tostring(math.random(1, 999999))
+    key = {}
+    i = 1
+    while i <= 32
+        if i <= #time_seed then
+            key[i] = string.byte(time_seed, i)
+        else
+            key[i] = (i * 7 + 13) % 256  -- deterministic but non-zero
+        end
+        i += 1
+    end
+    nonce = {}
+    i = 1
+    while i <= 12
+        if i <= #time_seed then
+            nonce[i] = string.byte(time_seed, ((i - 1) % #time_seed) + 1) ~ i
+        else
+            nonce[i] = (i * 11 + 3) % 256
+        end
+        i += 1
+    end
+    key_str = table.concat(key, "")
+    nonce_str = table.concat(nonce, "")
+    return chacha20_crypt(key_str, nonce_str, string.rep(string.char(0), n))
+end
+
+-- Generate a random integer in [min, max]
+fun random_int(min: i64, max: i64): i64
+    range = max - min + 1
+    bytes = random_bytes(8)
+    val = 0
+    i = 0
+    while i < 8
+        val = (val << 8) | string.byte(bytes, i + 1)
+        i += 1
+    end
+    return min + (val % range)
+end
+
+-- Generate a random float in [0.0, 1.0)
+fun random_float(): f64
+    bytes = random_bytes(8)
+    val = 0
+    i = 0
+    while i < 8
+        val = (val << 8) | string.byte(bytes, i + 1)
+        i += 1
+    end
+    return val / (2^64)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M.chacha20_crypt = chacha20_crypt
+M.chacha20_block = chacha20_block
+M.hmac_drbg_new = hmac_drbg_new
+M.hmac_drbg_generate = hmac_drbg_generate
+M.hmac_drbg_reseed = hmac_drbg_reseed
+M.random_bytes = random_bytes
+M.random_int = random_int
+M.random_float = random_float

@@ -192,8 +192,25 @@ fun distill_self_distillation_loss(logits: any, labels: any, temperature: f64): 
     soft_probs = softmax_temperature(logits, temperature)
     hard_loss = distill_hard_loss(logits, labels)
 
-    # logits  -- Placeholder
-    hard_loss
+    -- Compute cross-entropy between soft probs and hard labels
+    -- KL divergence: sum(soft_probs * log(soft_probs / target_probs))
+    -- For self-distillation, target is the hard label distribution
+    n = #logits
+    soft_loss = 0.0
+    i = 1
+    while i <= n
+        if soft_probs[i] > 1e-10 then
+            -- Weight by hard label probability (1 for correct class, 0 for others)
+            if i == labels then
+                soft_loss = soft_loss - math.log(soft_probs[i])
+            end
+        end
+        i += 1
+    end
+
+    -- Combined loss: alpha * soft + (1-alpha) * hard
+    alpha = 0.7
+    alpha * soft_loss + (1 - alpha) * hard_loss
 end
 
 -- ═══════════════════════════════════════════════════════════════

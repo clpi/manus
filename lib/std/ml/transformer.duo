@@ -40,9 +40,9 @@ end
 
 -- Reference FFN (compiler may fuse linear+gelu+linear later)
 fun ffn_forward(block, x): any
-    h = Tensor.matmul(x, Tensor.rand(block.dim, block.ffn_dim))
+    h = Tensor.matmul(x, block.ffn1.weight)
     h = Ops.gelu(h)
-    return Tensor.matmul(h, Tensor.rand(block.ffn_dim, block.dim))
+    return Tensor.matmul(h, block.ffn2.weight)
 end
 
 fun forward_block(block, x): any

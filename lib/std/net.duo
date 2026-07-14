@@ -34,7 +34,9 @@ end
 
 -- HTTP GET via curl (fallback when variable not named "net")
 fun http_get(url: str): str
-    local f = io.popen("curl -sL --max-time 30 -- " .. url, "r")
+    -- Sanitize URL to prevent shell injection
+    safe_url = string.gsub(url, "[;&|`$]", "")
+    local f = io.popen("curl -sL --max-time 30 -- " .. safe_url, "r")
     if f == nil then return "" end
     local body = f:read("*a") or ""
     f:close()
@@ -46,10 +48,12 @@ fun http_post(url: str, body: str, content_type: str): str
     local ct = content_type
     if ct == nil then ct = "application/x-www-form-urlencoded" end
     if body == nil then body = "" end
+    -- Sanitize URL and escape body for shell
+    safe_url = string.gsub(url, "[;&|`$]", "")
     local escaped = string.gsub(body, "'", "'\\''")
     local cmd = "curl -sL --max-time 30 -X POST"
         .. " -H 'Content-Type: " .. ct .. "'"
-        .. " --data '" .. escaped .. "' -- " .. url
+        .. " --data '" .. escaped .. "' -- " .. safe_url
     local f = io.popen(cmd, "r")
     if f == nil then return "" end
     local resp = f:read("*a") or ""
@@ -59,17 +63,22 @@ end
 
 -- HTTP request returning {body, status} via curl
 fun http_request(method: str, url: str, body: str, headers: any): any
+    -- Sanitize URL to prevent shell injection
+    safe_url = string.gsub(url, "[;&|`$]", "")
     cmd = "curl -si --max-time 30 -X " .. method
     if headers then
         for k, v in pairs(headers)
-            cmd = cmd .. " -H '" .. k .. ": " .. v .. "'"
+            -- Also sanitize header values
+            safe_k = string.gsub(k, "[;&|`$']", "")
+            safe_v = string.gsub(tostring(v), "[;&|`$']", "")
+            cmd = cmd .. " -H '" .. safe_k .. ": " .. safe_v .. "'"
         end
     end
     if body and body ~= "" then
         escaped = string.gsub(body, "'", "'\\''")
         cmd = cmd .. " --data '" .. escaped .. "'"
     end
-    cmd = cmd .. " -- " .. url
+    cmd = cmd .. " -- " .. safe_url
     f = io.popen(cmd, "r")
     if f == nil then return {body = "", status = 0} end
     raw = f:read("*a") or ""
@@ -159,6 +168,11 @@ fun http_serve(port: i64, handler: any): void
     std_net_close(srv)
 end
 
+-- DNS resolve — codegen-intercepted to use getaddrinfo
+fun std_net_dns_resolve(host: str): str
+    nil  -- intercepted: duo_net_dns_resolve(host)
+end
+
 M = {}
 M.parse_url = parse_url
 M.http_get = http_get
@@ -174,4 +188,5 @@ M.udp_socket   = udp_socket
 M.udp_sendto   = udp_sendto
 M.udp_recvfrom = udp_recvfrom
 M.http_serve   = http_serve
+M.dns_resolve  = std_net_dns_resolve
 M

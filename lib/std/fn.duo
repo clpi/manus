@@ -282,6 +282,48 @@ fun sort_by(list: any, fn_ref: any): void
     end
 end
 
+-- pipe: compose functions left-to-right (pipe(f, g)(x) = g(f(x))).
+fun pipe(f1: any, f2: any): any
+    fun composed(x: any): any
+        f2(f1(x))
+    end
+    composed
+end
+
+-- pipe3: compose three functions.
+fun pipe3(f1: any, f2: any, f3: any): any
+    fun composed(x: any): any
+        f3(f2(f1(x)))
+    end
+    composed
+end
+
+-- negate: return a function that negates the predicate.
+fun negate(fn_ref: any): any
+    fun negated(x: any): any
+        not fn_ref(x)
+    end
+    negated
+end
+
+-- curry2: convert a 2-arg function to a chain of 1-arg calls.
+fun curry2(fn_ref: any): any
+    fun curried(a: any): any
+        fun partial(b: any): any
+            fn_ref(a, b)
+        end
+        partial
+    end
+    curried
+end
+
+-- clamp: clamp value between min and max.
+fun clamp_val(v: any, lo: any, hi: any): any
+    if v < lo then return lo end
+    if v > hi then return hi end
+    v
+end
+
 M = {}
 M.identity = identity
 M.constant = constant_val
@@ -302,4 +344,9 @@ M.partition = partition
 M.min_by = min_by
 M.max_by = max_by
 M.sort_by = sort_by
+M.pipe = pipe
+M.pipe3 = pipe3
+M.negate = negate
+M.curry2 = curry2
+M.clamp = clamp_val
 M

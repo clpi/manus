@@ -133,6 +133,51 @@ fun channel_drain(ch: any): any
     return out
 end
 
+-- ═══════════════════════════════════════════════════════════════
+-- WaitGroup — similar to Go's sync.WaitGroup
+-- ═══════════════════════════════════════════════════════════════
+
+fun waitgroup_new(): any
+    {count = 0, waiters = {}}
+end
+
+fun waitgroup_add(wg: any, n: i64): void
+    if n == nil then n = 1 end
+    wg.count += n
+end
+
+fun waitgroup_done(wg: any): void
+    wg.count -= 1
+    if wg.count <= 0 then
+        -- Wake all waiters
+        for _, w in ipairs(wg.waiters)
+            __sync_run_queue[#__sync_run_queue + 1] = w
+        end
+        wg.waiters = {}
+    end
+end
+
+fun waitgroup_wait(wg: any): void
+    if wg.count <= 0 then return end
+    local co = coroutine.running()
+    wg.waiters[#wg.waiters + 1] = {co = co}
+    coroutine.yield()
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Once — execute a function exactly once
+-- ═══════════════════════════════════════════════════════════════
+
+fun once(fn: any): any
+    {fn = fn, done = false}
+end
+
+fun once_do(o: any): void
+    if o.done then return end
+    o.fn()
+    o.done = true
+end
+
 local M = {}
 M.spawn         = spawn
 M.yield         = yield
@@ -145,4 +190,10 @@ M.channel_recv  = channel_recv
 M.channel_try_recv = channel_try_recv
 M.channel_close = channel_close
 M.channel_drain = channel_drain
+M.waitgroup_new = waitgroup_new
+M.waitgroup_add = waitgroup_add
+M.waitgroup_done = waitgroup_done
+M.waitgroup_wait = waitgroup_wait
+M.once          = once
+M.once_do       = once_do
 return M

@@ -13,39 +13,39 @@ fun argparse_add_positional(parser, name: str, help: str, options: any)
 end
 
 fun argparse_add_flag(parser, short_or_long: str, long_or_help: str, help: str)
-    short = nil
-    long = nil
+    short_opt = nil
+    long_opt = nil
     desc = help
     if long_or_help and string.sub(long_or_help, 1, 1) == "-" then
-        short = short_or_long
-        long = long_or_help
+        short_opt = short_or_long
+        long_opt = long_or_help
     else
-        long = short_or_long
+        long_opt = short_or_long
         desc = long_or_help
     end
     parser.flags[#parser.flags + 1] = {
-        key = argparse_key(long or short),
-        short = short,
-        long = long,
+        key = argparse_key(long_opt or short_opt),
+        short = short_opt,
+        long = long_opt,
         help = desc or "",
     }
 end
 
 fun argparse_add_option(parser, short_or_long: str, long_or_help: str, help: str)
-    short = nil
-    long = nil
+    short_opt = nil
+    long_opt = nil
     desc = help
     if long_or_help and string.sub(long_or_help, 1, 1) == "-" then
-        short = short_or_long
-        long = long_or_help
+        short_opt = short_or_long
+        long_opt = long_or_help
     else
-        long = short_or_long
+        long_opt = short_or_long
         desc = long_or_help
     end
     parser.options[#parser.options + 1] = {
-        key = argparse_key(long or short),
-        short = short,
-        long = long,
+        key = argparse_key(long_opt or short_opt),
+        short = short_opt,
+        long = long_opt,
         help = desc or "",
     }
 end
@@ -103,10 +103,10 @@ fun argparse_parse(parser, args: any): any
         elseif not stop_options and string.sub(v, 1, 1) == "-" and #v > 1 then
             name = string.sub(v, 2, 2)
             rest = string.sub(v, 3)
-            short = "-" .. name
+            short_opt = "-" .. name
             matched = false
             for _, opt in parser.options
-                if opt.short == short then
+                if opt.short == short_opt then
                     if #rest > 0 then
                         opts[opt.key] = rest
                         i = i + 1
@@ -123,7 +123,7 @@ fun argparse_parse(parser, args: any): any
             end
             if not matched then
                 for _, fl in parser.flags
-                    if fl.short == short then
+                    if fl.short == short_opt then
                         opts[fl.key] = true
                         matched = true
                         i = i + 1
@@ -171,10 +171,6 @@ fun new(name: str, description: str): any
         flags = {},
         options = {},
     }
-    parser.positional = fun(a: str, b: str, c: any) argparse_add_positional(parser, a, b, c) end
-    parser.flag = fun(a: str, b: str, c: str) argparse_add_flag(parser, a, b, c) end
-    parser.option = fun(a: str, b: str, c: str) argparse_add_option(parser, a, b, c) end
-    parser.parse = fun(args: any): any return argparse_parse(parser, args) end
     parser
 end
 
@@ -185,4 +181,8 @@ end
 M = {}
 M.new = new
 M.parse = parse
+M.add_positional = argparse_add_positional
+M.add_flag = argparse_add_flag
+M.add_option = argparse_add_option
+M.parse_with = argparse_parse
 M

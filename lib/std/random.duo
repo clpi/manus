@@ -160,7 +160,9 @@ fun uuid_v4ish(): str
             else parts[i] = "b"
             end
         else
-            parts[i] = string.sub(hex_chars, math.random(1, 16), math.random(1, 16))
+            -- Use single random call to get one hex character
+            local idx = math.random(1, 16)
+            parts[i] = string.sub(hex_chars, idx, idx)
         end
         i += 1
     end

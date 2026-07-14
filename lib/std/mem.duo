@@ -241,16 +241,33 @@ fun munmap(mem: any, bytes: i64): i64
 end
 
 -- Byte readers/writers
+-- VAL_STRING offsets are 1-indexed; VAL_BUFFER offsets are 0-indexed.
 fun read_byte(mem: any, offset: i64): i64
-    __emit("(int64_t)(((uint8_t*)mem.as.tval + offset)[0])")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; (int64_t)_p[_off]; })")
 end
 
 fun write_byte(mem: any, offset: i64, val: i64): void
-    __emit("((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val")
+    __emit("(((uint8_t*)mem.as.tval + offset)[0] = (uint8_t)val)")
+end
+
+fun read_i16(mem: any, offset: i64): i64
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+end
+
+fun write_i16(mem: any, offset: i64, val: i64): void
+    __emit("*(int16_t*)((uint8_t*)mem.as.tval + offset) = (int16_t)val")
+end
+
+fun read_u16(mem: any, offset: i64): i64
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint16_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
+end
+
+fun write_u16(mem: any, offset: i64, val: u64): void
+    __emit("*(uint16_t*)((uint8_t*)mem.as.tval + offset) = (uint16_t)val")
 end
 
 fun read_i32(mem: any, offset: i64): i64
-    __emit("(int64_t)(*(int32_t*)((uint8_t*)mem.as.tval + offset))")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
 end
 
 fun write_i32(mem: any, offset: i64, val: i64): void
@@ -258,7 +275,7 @@ fun write_i32(mem: any, offset: i64, val: i64): void
 end
 
 fun read_u32(mem: any, offset: i64): i64
-    __emit("(int64_t)(*(uint32_t*)((uint8_t*)mem.as.tval + offset))")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint32_t _v; memcpy(&_v, _p + _off, sizeof(_v)); (int64_t)_v; })")
 end
 
 fun write_u32(mem: any, offset: i64, val: u64): void
@@ -266,7 +283,7 @@ fun write_u32(mem: any, offset: i64, val: u64): void
 end
 
 fun read_i64(mem: any, offset: i64): i64
-    __emit("*(int64_t*)((uint8_t*)mem.as.tval + offset)")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; int64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
 end
 
 fun write_i64(mem: any, offset: i64, val: i64): void
@@ -274,7 +291,7 @@ fun write_i64(mem: any, offset: i64, val: i64): void
 end
 
 fun read_u64(mem: any, offset: i64): u64
-    __emit("*(uint64_t*)((uint8_t*)mem.as.tval + offset)")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; uint64_t _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
 end
 
 fun write_u64(mem: any, offset: i64, val: u64): void
@@ -282,7 +299,7 @@ fun write_u64(mem: any, offset: i64, val: u64): void
 end
 
 fun read_f32(mem: any, offset: i64): f64
-    __emit("(double)(*(float*)((uint8_t*)mem.as.tval + offset))")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; float _v; memcpy(&_v, _p + _off, sizeof(_v)); (double)_v; })")
 end
 
 fun write_f32(mem: any, offset: i64, val: f64): void
@@ -290,11 +307,20 @@ fun write_f32(mem: any, offset: i64, val: f64): void
 end
 
 fun read_f64(mem: any, offset: i64): f64
-    __emit("*(double*)((uint8_t*)mem.as.tval + offset)")
+    __emit("({ const uint8_t* _p = (mem.type == VAL_STRING) ? (const uint8_t*)mem.as.sval : (const uint8_t*)mem.as.tval; int64_t _off = (mem.type == VAL_STRING) ? (offset - 1) : offset; double _v; memcpy(&_v, _p + _off, sizeof(_v)); _v; })")
 end
 
 fun write_f64(mem: any, offset: i64, val: f64): void
     __emit("*(double*)((uint8_t*)mem.as.tval + offset) = val")
+end
+
+-- Decode a 1-indexed byte sequence as a float (defaults to first byte).
+fun bytes_to_f32(s: str, i: i64 = 1): f64
+    __emit("({ float _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(float)); (double)_v; })")
+end
+
+fun bytes_to_f64(s: str, i: i64 = 1): f64
+    __emit("({ double _v; memcpy(&_v, ((const char*)s) + (i - 1), sizeof(double)); _v; })")
 end
 
 -- Standard allocators
@@ -343,6 +369,10 @@ M.mremap = mremap
 M.munmap = munmap
 M.read_byte = read_byte
 M.write_byte = write_byte
+M.read_i16 = read_i16
+M.write_i16 = write_i16
+M.read_u16 = read_u16
+M.write_u16 = write_u16
 M.read_i32 = read_i32
 M.write_i32 = write_i32
 M.read_u32 = read_u32
@@ -355,6 +385,8 @@ M.read_f32 = read_f32
 M.write_f32 = write_f32
 M.read_f64 = read_f64
 M.write_f64 = write_f64
+M.bytes_to_f32 = bytes_to_f32
+M.bytes_to_f64 = bytes_to_f64
 M.align_up = align_up
 M.align_down = align_down
 M.is_power_of_two = is_power_of_two

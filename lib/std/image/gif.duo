@@ -1,72 +1,290 @@
--- std.image.gif — GIF image decoder
--- Basic GIF decoder: reads GIF87a/GIF89a header, Logical Screen Descriptor,
--- and image data blocks.
+-- std.image.gif — GIF image decoder with LZW decompression
+-- Decodes GIF87a/GIF89a images including LZW-compressed image data.
 
 local string = req "std.string"
 local image = req "std.image"
 
-fun decode(data: str): any
-    if data == nil then return nil end
-    sig = string.sub(data, 1, 6)
-    if sig ~= "GIF87a" and sig ~= "GIF89a" then return nil end
-    width = string.byte(data, 7) + string.byte(data, 8) * 256
-    height = string.byte(data, 9) + string.byte(data, 10) * 256
-    packed = string.byte(data, 11)
-    gct_flag = (packed / 128) % 2
-    gct_size = 2 ^ ((packed % 8) + 1)
-    bg_color = string.byte(data, 13)
-    off = 14
-    if gct_flag == 1 then
-        off += gct_size * 3
+-- ═══════════════════════════════════════════════════════════════
+-- LZW Decompressor (GIF variant: LSB-first, variable-width codes)
+-- ═══════════════════════════════════════════════════════════════
+
+fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
+    clear_code = 2 ^ min_code_size
+    eoi_code = clear_code + 1
+
+    -- Initialize code table
+    table = {}
+    i = 0
+    while i < clear_code
+        table[i] = {i}
+        i += 1
     end
-    img = image.new_rgba(image.rect(0, 0, width, height))
-    gfx_ctrl = nil
-    while off < string.len(data)
-        if string.byte(data, off) == 0x21 then
-            ext_label = string.byte(data, off + 1)
-            ext_len = string.byte(data, off + 2)
-            if ext_label == 0xF9 and ext_len == 4 then
-                gfx_ctrl = string.byte(data, off + 3)
+    table_size = eoi_code + 1
+    code_size = min_code_size + 1
+    next_code = table_size
+
+    -- Bit reader state
+    byte_pos = 1
+    bit_pos = 0
+
+    -- Read a variable-width code from the bit stream (LSB first)
+    fun read_code(): i64
+        code = 0
+        bits_read = 0
+        while bits_read < code_size
+            if byte_pos > string.len(data) then return eoi_code end
+            byte_val = string.byte(data, byte_pos)
+            bit = (byte_val >> bit_pos) & 1
+            code = code | (bit << bits_read)
+            bit_pos += 1
+            bits_read += 1
+            if bit_pos >= 8 then
+                bit_pos = 0
+                byte_pos += 1
             end
-            off += 2 + ext_len + 1
-            while string.byte(data, off) ~= 0
-                off += string.byte(data, off) + 1
+        end
+        code
+    end
+
+    -- Output buffer
+    output = {}
+    prev = nil
+
+    while true
+        code = read_code()
+
+        if code == clear_code then
+            -- Reset
+            i = 0
+            while i < clear_code
+                table[i] = {i}
+                i += 1
             end
-            off += 1
-        elseif string.byte(data, off) == 0x2C then
-            left = string.byte(data, off + 1) + string.byte(data, off + 2) * 256
-            top = string.byte(data, off + 3) + string.byte(data, off + 4) * 256
-            img_w = string.byte(data, off + 5) + string.byte(data, off + 6) * 256
-            img_h = string.byte(data, off + 7) + string.byte(data, off + 8) * 256
-            local_packed = string.byte(data, off + 9)
-            lct_flag = (local_packed / 128) % 2
-            lct_size = 0
-            if lct_flag == 1 then
-                lct_size = 2 ^ ((local_packed % 8) + 1)
+            table_size = eoi_code + 1
+            code_size = min_code_size + 1
+            next_code = table_size
+            prev = nil
+
+        elseif code == eoi_code then
+            break
+
+        elseif code < table_size then
+            -- Code is in the table
+            entry = table[code]
+            -- Output the entry
+            i = 1
+            while i <= #entry
+                output[#output + 1] = entry[i]
+                i += 1
             end
-            off += 10 + lct_size * 3
-            min_code_size = string.byte(data, off)
-            off += 2
-            -- Skip LZW data blocks
-            while string.byte(data, off) ~= 0
-                off += string.byte(data, off) + 1
-            end
-            off += 1
-            -- Fill image area with placeholder
-            for y = top, top + img_h - 1
-                for x = left, left + img_w - 1
-                    if x < width and y < height then
-                        c = image.color.rgba(65535, 65535, 65535, 65535)
-                        image.img_set(img, x, y, c)
+
+            if prev ~= nil then
+                -- Add new entry: prev + first byte of current entry
+                new_entry = {}
+                j = 1
+                while j <= #table[prev]
+                    new_entry[j] = table[prev][j]
+                    j += 1
+                end
+                if #entry > 0 then
+                    new_entry[j] = entry[1]
+                end
+                if next_code < 4096 then
+                    table[next_code] = new_entry
+                    next_code += 1
+                    -- Increase code size if needed
+                    if next_code > (2 ^ code_size) and code_size < 12 then
+                        code_size += 1
                     end
                 end
             end
-        elseif string.byte(data, off) == 0x3B then
+            prev = code
+
+        else
+            -- code >= table_size: special case
+            if prev == nil then break end
+            entry = table[prev]
+            -- Output entry + first byte of entry
+            new_entry = {}
+            j = 1
+            while j <= #entry
+                new_entry[j] = entry[j]
+                output[#output + 1] = entry[j]
+                j += 1
+            end
+            first = entry[1]
+            new_entry[j] = first
+            output[#output + 1] = first
+
+            if next_code < 4096 then
+                table[next_code] = new_entry
+                next_code += 1
+                if next_code > (2 ^ code_size) and code_size < 12 then
+                    code_size += 1
+                end
+            end
+            prev = next_code - 1
+        end
+
+        if #output >= pixel_count then break end
+    end
+
+    output
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- GIF Decoder
+-- ═══════════════════════════════════════════════════════════════
+
+fun read_u16_le(s: str, off: i64): i64
+    string.byte(s, off) + string.byte(s, off + 1) * 256
+end
+
+fun decode(data: str): any
+    if data == nil then return nil end
+
+    -- Verify signature
+    sig = string.sub(data, 1, 6)
+    if sig ~= "GIF87a" and sig ~= "GIF89a" then return nil end
+
+    -- Logical Screen Descriptor
+    width = read_u16_le(data, 7)
+    height = read_u16_le(data, 9)
+    packed = string.byte(data, 11)
+    gct_flag = (packed >> 7) & 1
+    color_res = ((packed >> 4) & 7) + 1
+    gct_size = 2 ^ ((packed & 7) + 1)
+    bg_color_idx = string.byte(data, 12)
+
+    off = 14
+
+    -- Global Color Table
+    gct = {}
+    if gct_flag == 1 then
+        i = 0
+        while i < gct_size
+            gct[i] = {
+                r = string.byte(data, off + i * 3),
+                g = string.byte(data, off + i * 3 + 1),
+                b = string.byte(data, off + i * 3 + 2),
+            }
+            i += 1
+        end
+        off += gct_size * 3
+    end
+
+    img = image.new_rgba(image.rect(0, 0, width, height))
+    transparent_idx = -1
+    lct = nil
+
+    while off < string.len(data)
+        byte = string.byte(data, off)
+
+        if byte == 0x21 then
+            -- Extension block
+            ext_label = string.byte(data, off + 1)
+            off += 2
+
+            -- Read sub-blocks
+            sub_len = string.byte(data, off)
+            if ext_label == 0xF9 then
+                -- Graphics Control Extension
+                if sub_len >= 4 then
+                    packed = string.byte(data, off + 1)
+                    transparent_flag = packed & 1
+                    if transparent_flag == 1 then
+                        transparent_idx = string.byte(data, off + 4)
+                    end
+                end
+            end
+            off += sub_len + 1
+
+            -- Skip remaining sub-blocks
+            while off < string.len(data)
+                sub_len = string.byte(data, off)
+                off += 1
+                if sub_len == 0 then break end
+                off += sub_len
+            end
+
+        elseif byte == 0x2C then
+            -- Image Descriptor
+            left = read_u16_le(data, off + 1)
+            top = read_u16_le(data, off + 3)
+            img_w = read_u16_le(data, off + 5)
+            img_h = read_u16_le(data, off + 7)
+            local_packed = string.byte(data, off + 9)
+            lct_flag = (local_packed >> 7) & 1
+            lct_size = 2 ^ ((local_packed & 7) + 1)
+            off += 10
+
+            -- Local Color Table
+            lct = nil
+            if lct_flag == 1 then
+                lct = {}
+                i = 0
+                while i < lct_size
+                    lct[i] = {
+                        r = string.byte(data, off + i * 3),
+                        g = string.byte(data, off + i * 3 + 1),
+                        b = string.byte(data, off + i * 3 + 2),
+                    }
+                    i += 1
+                end
+                off += lct_size * 3
+            end
+
+            -- Use LCT if present, otherwise GCT
+            palette = lct or gct
+
+            -- LZW Minimum Code Size
+            min_code_size = string.byte(data, off)
+            off += 1
+
+            -- Collect LZW data from sub-blocks
+            lzw_data = ""
+            while off < string.len(data)
+                sub_len = string.byte(data, off)
+                off += 1
+                if sub_len == 0 then break end
+                lzw_data = lzw_data .. string.sub(data, off, off + sub_len - 1)
+                off += sub_len
+            end
+
+            -- Decompress
+            pixels = lzw_decompress(lzw_data, min_code_size, img_w * img_h)
+
+            -- Write pixels to image
+            idx = 1
+            y = top
+            while y < top + img_h and y < height
+                x = left
+                while x < left + img_w and x < width
+                    if idx <= #pixels then
+                        color_idx = pixels[idx]
+                        if color_idx ~= transparent_idx and palette ~= nil then
+                            c = palette[color_idx]
+                            if c ~= nil then
+                                image.img_set(img, x, y, image.color.rgba(
+                                    c.r * 257, c.g * 257, c.b * 257, 65535
+                                ))
+                            end
+                        end
+                    end
+                    idx += 1
+                    x += 1
+                end
+                y += 1
+            end
+
+        elseif byte == 0x3B then
+            -- Trailer
             break
         else
             break
         end
     end
+
     img
 end
 

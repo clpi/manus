@@ -184,9 +184,14 @@ fun rpc_transport_http_new(url: str): any
 end
 
 fun rpc_transport_http_send(transport: any, message: any): any
-    -- In production, this would make HTTP POST request
-    -- For now, return placeholder
-    {ok = true}
+    json = req "std.encoding.json"
+    net = req "std.net"
+    payload = json.encode(message)
+    result = net.http_post(transport.url, payload, "application/json")
+    if result.error then
+        return {ok = false, error = result.error}
+    end
+    {ok = true, data = result.body}
 end
 
 fun rpc_transport_websocket_new(url: str): any
@@ -199,7 +204,18 @@ fun rpc_transport_websocket_new(url: str): any
 end
 
 fun rpc_transport_websocket_send(transport: any, message: any): any
-    -- In production, this would send over WebSocket
+    json = req "std.encoding.json"
+    net = req "std.net"
+    if transport.connection == nil then
+        result = net.ws_connect(transport.url)
+        if result.error then
+            return {ok = false, error = result.error}
+        end
+        transport.connection = result.conn
+        transport.connected = true
+    end
+    payload = json.encode(message)
+    net.ws_send(transport.connection, payload)
     {ok = true}
 end
 
@@ -214,7 +230,18 @@ fun rpc_transport_tcp_new(host: str, port: i64): any
 end
 
 fun rpc_transport_tcp_send(transport: any, message: any): any
-    -- In production, this would send over TCP socket
+    json = req "std.encoding.json"
+    net = req "std.net"
+    if transport.socket == nil then
+        result = net.connect(transport.host, transport.port)
+        if result.error then
+            return {ok = false, error = result.error}
+        end
+        transport.socket = result.socket
+        transport.connected = true
+    end
+    payload = json.encode(message)
+    net.send(transport.socket, payload)
     {ok = true}
 end
 

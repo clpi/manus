@@ -237,14 +237,37 @@ static int64_t bench_bsearch(int64_t n, int64_t s) {
         s = s ^ (s << 17);
         sorted_arr[i] = s;
     }
-    for (int64_t i = 1; i < BS_SIZE; i++) {
-        int64_t key = sorted_arr[i];
-        int64_t j = i - 1;
-        while (j >= 0 && sorted_arr[j] > key) {
-            sorted_arr[j + 1] = sorted_arr[j];
-            j--;
+    /* Sort using the same median-of-three quicksort as the Duo version */
+    {
+        int64_t stack[128]; int top = -1;
+        stack[++top] = 0; stack[++top] = BS_SIZE - 1;
+        while (top >= 0) {
+            int64_t hi = stack[top--], lo = stack[top--];
+            if (hi - lo < 16) {
+                for (int64_t i = lo + 1; i <= hi; i++) {
+                    int64_t key = sorted_arr[i]; int64_t j = i - 1;
+                    while (j >= lo && sorted_arr[j] > key) { sorted_arr[j + 1] = sorted_arr[j]; j--; }
+                    sorted_arr[j + 1] = key;
+                }
+                continue;
+            }
+            int64_t mid = lo + (hi - lo) / 2;
+            if (sorted_arr[mid] < sorted_arr[lo]) { int64_t t = sorted_arr[lo]; sorted_arr[lo] = sorted_arr[mid]; sorted_arr[mid] = t; }
+            if (sorted_arr[hi] < sorted_arr[lo]) { int64_t t = sorted_arr[lo]; sorted_arr[lo] = sorted_arr[hi]; sorted_arr[hi] = t; }
+            if (sorted_arr[hi] < sorted_arr[mid]) { int64_t t = sorted_arr[mid]; sorted_arr[mid] = sorted_arr[hi]; sorted_arr[hi] = t; }
+            int64_t t = sorted_arr[mid]; sorted_arr[mid] = sorted_arr[hi - 1]; sorted_arr[hi - 1] = t;
+            int64_t pivot = sorted_arr[hi - 1];
+            int64_t i = lo, j = hi - 1;
+            for (;;) {
+                while (sorted_arr[++i] < pivot) {}
+                while (sorted_arr[--j] > pivot) {}
+                if (i >= j) break;
+                t = sorted_arr[i]; sorted_arr[i] = sorted_arr[j]; sorted_arr[j] = t;
+            }
+            t = sorted_arr[i]; sorted_arr[i] = sorted_arr[hi - 1]; sorted_arr[hi - 1] = t;
+            if (i - 1 > lo) { stack[++top] = lo; stack[++top] = i - 1; }
+            if (i + 1 < hi) { stack[++top] = i + 1; stack[++top] = hi; }
         }
-        sorted_arr[j + 1] = key;
     }
     int64_t found = 0;
     for (int64_t q = 0; q < n; q++) {

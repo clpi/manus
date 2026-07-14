@@ -1,6 +1,7 @@
 -- std.time — time utilities
 
 @c.include("sys/time.h")
+@c.include("time.h")
 
 fun now(): int
     os.time()
@@ -16,7 +17,9 @@ end
 
 fun time_sleep(seconds: any): void
     if seconds == nil then return end
-    os.execute("sleep " .. tostring(seconds))
+    local sec = math.floor(seconds)
+    local ns = math.floor((seconds - sec) * 1000000000)
+    __emit("({ struct timespec ts; ts.tv_sec = " .. tostring(sec) .. "; ts.tv_nsec = " .. tostring(ns) .. "; nanosleep(&ts, NULL); })")
 end
 
 fun now_ns(): i64

@@ -105,8 +105,8 @@ When writing `.duo` files, follow these conventions:
 
 ### Open gaps (2026-07-12)
 
-- **Sieve**: file-scope NEON popcount (portable SWAR done; ~2.7× vs C, room to improve)
-- **Mandelbrot**: correct 4-wide SIMD without RESULT drift (prior unroll reverted)
+- **Sieve**: 8-byte hardware popcount via `__builtin_popcountll` now implemented (NEON on AArch64, `popcnt` on x86); ~2.65× vs C, but marking loop still dominates, so 16-byte NEON popcount or marking improvements remain open.
+- **Mandelbrot**: `duo_mandel_benchmark_sum` is now `static inline __attribute__((always_inline))` while keeping `no-fast-math`; `.duo` now beats `.lua` while `RESULT` matches. 4-wide SIMD without RESULT drift is still open.
 - **LSP `_` privacy**: export filtering in `duo-lsp` (codegen already filters)
 - **Full `@` surface**: `@sizeof` / `@alignof` desugar from `@` (still `__sizeof` internally)
 - **GPU CI**: `examples/bench_gpu_metal.duo` + `scripts/run_gpu_benchmark.sh` not in `zig build test`

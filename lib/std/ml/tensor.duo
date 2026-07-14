@@ -639,8 +639,52 @@ end
 fun tensor_multi_head_attention(q, k, v, heads): any
     assert(q.cols % heads == 0, "dim must be divisible by heads")
     head_dim = q.cols / heads
-    -- For simplicity, process all heads together (real impl would split)
-    tensor_scaled_dot_attention(q, k, v)
+
+    -- Split into heads, apply attention to each, then concatenate
+    head_outputs = {}
+    h = 0
+    while h < heads
+        -- Extract head slices: columns [h*head_dim+1, (h+1)*head_dim]
+        q_head = tensor_zeros(q.rows, head_dim)
+        k_head = tensor_zeros(k.rows, head_dim)
+        v_head = tensor_zeros(v.rows, head_dim)
+
+        -- Copy columns for this head
+        r = 0
+        while r < q.rows
+            c = 0
+            while c < head_dim
+                q_head.data[r * head_dim + c] = q.data[r * q.cols + h * head_dim + c]
+                k_head.data[r * head_dim + c] = k.data[r * k.cols + h * head_dim + c]
+                v_head.data[r * head_dim + c] = v.data[r * v.cols + h * head_dim + c]
+                c += 1
+            end
+            r += 1
+        end
+
+        -- Apply attention for this head
+        head_outputs[h + 1] = tensor_scaled_dot_attention(q_head, k_head, v_head)
+        h += 1
+    end
+
+    -- Concatenate all head outputs
+    result = tensor_zeros(q.rows, q.cols)
+    h = 0
+    while h < heads
+        head = head_outputs[h + 1]
+        r = 0
+        while r < q.rows
+            c = 0
+            while c < head_dim
+                result.data[r * q.cols + h * head_dim + c] = head.data[r * head_dim + c]
+                c += 1
+            end
+            r += 1
+        end
+        h += 1
+    end
+
+    result
 end
 
 -- ═══════════════════════════════════════════════════════════════

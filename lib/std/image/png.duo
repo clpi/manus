@@ -1,8 +1,14 @@
--- std.image.png — PNG image decoder
--- Basic PNG decoder: reads IHDR, IDAT, IEND chunks
+-- std.image.png — PNG image decoder/encoder
+-- Decoder: reads IHDR, IDAT, IEND chunks with zlib decompression and filter reconstruction.
+-- Encoder: writes uncompressed store blocks (valid PNG, larger files).
 
 local string = req "std.string"
 local image = req "std.image"
+local zlib = req "std.compress.zlib"
+
+-- ═══════════════════════════════════════════════════════════════
+-- CRC32 and helpers
+-- ═══════════════════════════════════════════════════════════════
 
 fun crc32_byte(crc: i64, b: i64): i64
     crc = crc ~ b
@@ -32,55 +38,244 @@ fun read_u16(s: str, off: i64): i64
     (string.byte(s, off) * 256 + string.byte(s, off + 1)) % 65536
 end
 
+fun str_to_bytes(s: str): any
+    bytes = {}
+    i = 1
+    while i <= string.len(s)
+        bytes[#bytes + 1] = string.byte(s, i)
+        i += 1
+    end
+    bytes
+end
+
+fun bytes_to_str(b: any): str
+    parts = {}
+    i = 1
+    while i <= #b
+        parts[#parts + 1] = string.char(b[i])
+        i += 1
+    end
+    table.concat(parts)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PNG filter reconstruction
+-- ═══════════════════════════════════════════════════════════════
+
+fun paeth_predictor(a: i64, b: i64, c: i64): i64
+    p = a + b - c
+    pa = p - a
+    if pa < 0 then pa = -pa end
+    pb = p - b
+    if pb < 0 then pb = -pb end
+    pc = p - c
+    if pc < 0 then pc = -pc end
+    if pa <= pb and pa <= pc then return a end
+    if pb <= pc then return b end
+    c
+end
+
+fun reconstruct_row(raw_data: any, row: i64, stride: i64, bpp: i64): any
+    -- Extract the row bytes (skip the filter byte at the start)
+    row_start = row * stride + 1
+    filter_type = raw_data[row_start]
+    row_bytes = {}
+    i = 1
+    while i <= stride
+        row_bytes[i] = raw_data[row_start + i]
+        i += 1
+    end
+
+    if filter_type == 0 then
+        -- None: no reconstruction needed
+        return row_bytes
+    end
+
+    -- For Sub/Up/Average/Paeth, we need the previous reconstructed row
+    prev = {}
+    if row > 0 then
+        prev_start = (row - 1) * stride + 1
+        i = 1
+        while i <= stride
+            prev[i] = raw_data[prev_start + i]
+            i += 1
+        end
+    else
+        i = 1
+        while i <= stride
+            prev[i] = 0
+            i += 1
+        end
+    end
+
+    recon = {}
+    i = 1
+    while i <= stride
+        raw_byte = row_bytes[i]
+        if filter_type == 1 then
+            -- Sub: recon(x) = raw(x) + recon(a)
+            left = (i > bpp) and recon[i - bpp] or 0
+            recon[i] = (raw_byte + left) % 256
+        elseif filter_type == 2 then
+            -- Up: recon(x) = raw(x) + recon(b)
+            recon[i] = (raw_byte + prev[i]) % 256
+        elseif filter_type == 3 then
+            -- Average: recon(x) = raw(x) + floor((a + b) / 2)
+            left = (i > bpp) and recon[i - bpp] or 0
+            recon[i] = (raw_byte + math.floor((left + prev[i]) / 2)) % 256
+        elseif filter_type == 4 then
+            -- Paeth: recon(x) = raw(x) + paeth(a, b, c)
+            left = (i > bpp) and recon[i - bpp] or 0
+            upper_left = (i > bpp) and prev[i - bpp] or 0
+            recon[i] = (raw_byte + paeth_predictor(left, prev[i], upper_left)) % 256
+        else
+            recon[i] = raw_byte
+        end
+        i += 1
+    end
+
+    recon
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PNG decoder
+-- ═══════════════════════════════════════════════════════════════
+
 fun decode(data: str): any
     if data == nil then return nil end
+
+    -- Verify PNG signature
     sig = "\137PNG\r\n\26\n"
     for i = 1, 8
         if string.byte(data, i) ~= string.byte(sig, i) then
             return nil
         end
     end
+
     off = 9
     img = nil
-    while off + 4 <= string.len(data)
+    width = 0
+    height = 0
+    bit_depth = 8
+    color_type = 6
+    idat_data = ""
+
+    -- First pass: read IHDR and collect IDAT chunks
+    while off + 8 <= string.len(data)
         chunk_len = read_u32(data, off)
         chunk_type = string.sub(data, off + 4, off + 7)
         chunk_data = string.sub(data, off + 8, off + 7 + chunk_len)
-        expected_crc = read_u32(data, off + 8 + chunk_len)
+
         if chunk_type == "IHDR" then
             width = read_u32(chunk_data, 1)
             height = read_u32(chunk_data, 5)
             bit_depth = string.byte(chunk_data, 9)
             color_type = string.byte(chunk_data, 10)
-            if bit_depth == 8 and color_type == 6 then
+            compression = string.byte(chunk_data, 11)
+            filter_method = string.byte(chunk_data, 12)
+            interlace = string.byte(chunk_data, 13)
+
+            -- Create image based on color type
+            if color_type == 6 then
+                -- RGBA
                 img = image.new_rgba(image.rect(0, 0, width, height))
-            elseif bit_depth == 8 and color_type == 0 then
+            elseif color_type == 2 then
+                -- RGB (will set alpha to 255)
+                img = image.new_rgba(image.rect(0, 0, width, height))
+            elseif color_type == 0 then
+                -- Grayscale
                 img = image.new_gray(image.rect(0, 0, width, height))
+            elseif color_type == 4 then
+                -- Gray + Alpha
+                img = image.new_rgba(image.rect(0, 0, width, height))
+            else
+                -- Unsupported: create RGBA as fallback
+                img = image.new_rgba(image.rect(0, 0, width, height))
             end
-        elseif chunk_type == "IDAT" and img ~= nil then
-            -- Append raw compressed data (actual decompression not implemented)
-            -- For now, we fill with placeholder pixel data
-            w = image.rect_dx(img.rect)
-            h = image.rect_dy(img.rect)
-            for y = 0, h - 1
-                for x = 0, w - 1
-                    c = image.color.rgba(65535, 65535, 65535, 65535)
-                    image.img_set(img, x, y, c)
-                end
-            end
+
+        elseif chunk_type == "IDAT" then
+            -- Concatenate all IDAT data
+            idat_data = idat_data .. chunk_data
+
         elseif chunk_type == "IEND" then
             break
         end
+
+        -- Skip to next chunk (4 len + 4 type + chunk_len data + 4 CRC)
         off += 12 + chunk_len
     end
+
+    -- Second pass: decompress and reconstruct
+    if img ~= nil and string.len(idat_data) > 0 then
+        -- Decompress the IDAT data (zlib wrapped)
+        compressed = str_to_bytes(idat_data)
+        raw_data_str = zlib.decompress(idat_data)
+        raw_data = str_to_bytes(raw_data_str)
+
+        -- Determine bytes per pixel based on color type and bit depth
+        bpp = 1
+        if color_type == 2 then bpp = 3
+        elseif color_type == 4 then bpp = 2
+        elseif color_type == 6 then bpp = 4
+        end
+
+        -- For 8-bit depth, stride = width * bpp
+        -- (handles sub-byte bit depths as 1 byte per sample for simplicity)
+        if bit_depth < 8 then
+            bpp = 1
+        end
+        stride = width * bpp
+
+        -- Reconstruct each row
+        row = 0
+        while row < height
+            recon = reconstruct_row(raw_data, row, stride, bpp)
+
+            -- Write pixels to image
+            col = 0
+            while col < width
+                if color_type == 6 then
+                    -- RGBA
+                    r = recon[col * 4 + 1] * 257
+                    g = recon[col * 4 + 2] * 257
+                    b = recon[col * 4 + 3] * 257
+                    a = recon[col * 4 + 4] * 257
+                    image.img_set(img, col, row, image.color.rgba(r, g, b, a))
+                elseif color_type == 2 then
+                    -- RGB
+                    r = recon[col * 3 + 1] * 257
+                    g = recon[col * 3 + 2] * 257
+                    b = recon[col * 3 + 3] * 257
+                    image.img_set(img, col, row, image.color.rgba(r, g, b, 65535))
+                elseif color_type == 0 then
+                    -- Grayscale
+                    y = recon[col + 1] * 257
+                    image.img_set(img, col, row, image.color.gray(y))
+                elseif color_type == 4 then
+                    -- Gray + Alpha
+                    y = recon[col * 2 + 1] * 257
+                    a = recon[col * 2 + 2] * 257
+                    image.img_set(img, col, row, image.color.rgba(y, y, y, a))
+                end
+                col += 1
+            end
+            row += 1
+        end
+    end
+
     img
 end
+
+-- ═══════════════════════════════════════════════════════════════
+-- PNG encoder
+-- ═══════════════════════════════════════════════════════════════
 
 fun encode(img: any): str
     out = "\137PNG\r\n\26\n"
     w = image.rect_dx(img.rect)
     h = image.rect_dy(img.rect)
-    ihdr_data = string.char(0, 0, 0, 0, 0, 0, 0, 0, 8, 6, 0, 0, 0)
+
+    -- IHDR chunk (13 bytes)
     ihdr_data = string.char(
         (w / 16777216) % 256, (w / 65536) % 256, (w / 256) % 256, w % 256,
         (h / 16777216) % 256, (h / 65536) % 256, (h / 256) % 256, h % 256,
@@ -91,10 +286,11 @@ fun encode(img: any): str
     out = out .. string.char(
         (ihdr_crc / 16777216) % 256, (ihdr_crc / 65536) % 256, (ihdr_crc / 256) % 256, ihdr_crc % 256
     )
-    -- IDAT chunk (raw uncompressed - violates PNG spec but allows basic decode)
+
+    -- IDAT chunk: build raw filtered data (filter type 0 = None for each row)
     raw = ""
     for y = 0, h - 1
-        raw = raw .. string.char(0) -- filter none
+        raw = raw .. string.char(0) -- filter: none
         for x = 0, w - 1
             c = image.img_at(img, x, y)
             r = (c.r / 257) % 256
@@ -104,22 +300,30 @@ fun encode(img: any): str
             raw = raw .. string.char(r, g, b, a)
         end
     end
+
+    -- Zlib wrapper: store block (uncompressed deflate)
     zlib_header = string.char(0x78, 0x01)
-    -- No actual deflate compression; store raw data
-    deflate_block = string.char(0x01)
+    deflate_block = string.char(0x01) -- BFINAL=1, BTYPE=00 (stored)
     len = string.len(raw)
-    deflate_block = deflate_block .. string.char(len % 256, (len / 256) % 256, (~len) % 256, ((~len) / 256) % 256)
+    -- LEN is the 16-bit length, NLEN is its one's complement
+    nlen = 0xFFFF ~ len
+    deflate_block = deflate_block .. string.char(len % 256, math.floor(len / 256) % 256, nlen % 256, math.floor(nlen / 256) % 256)
     deflate_block = deflate_block .. raw
+
+    -- Adler-32 checksum
     adler_a = 1
     adler_b = 0
     for i = 1, string.len(raw)
         adler_a = (adler_a + string.byte(raw, i)) % 65521
         adler_b = (adler_b + adler_a) % 65521
     end
-    adler32_check = adler_b * 65536 + adler_a
+    -- Adler-32 is stored as (A << 16) | B in big-endian
+    adler32_check = adler_a * 65536 + adler_b
+
     idat_data = zlib_header .. deflate_block .. string.char(
         (adler32_check / 16777216) % 256, (adler32_check / 65536) % 256, (adler32_check / 256) % 256, adler32_check % 256
     )
+
     idat_len = string.len(idat_data)
     out = out .. string.char(
         (idat_len / 16777216) % 256, (idat_len / 65536) % 256, (idat_len / 256) % 256, idat_len % 256
@@ -128,6 +332,7 @@ fun encode(img: any): str
     out = out .. string.char(
         (idat_crc / 16777216) % 256, (idat_crc / 65536) % 256, (idat_crc / 256) % 256, idat_crc % 256
     )
+
     -- IEND chunk
     iend_crc = crc32_bytes("IEND")
     out = out .. string.char(0, 0, 0, 0) .. "IEND" .. string.char(

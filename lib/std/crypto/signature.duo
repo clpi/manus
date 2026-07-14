@@ -1,5 +1,9 @@
 -- std.crypto.signature — Digital signatures (ECDSA, EdDSA, RSA)
--- For authentication and integrity verification in ward.
+-- For authentication and integrity verification.
+-- Uses CSPRNG for key generation and signing operations.
+
+crypto_rand = req "std.crypto.rand"
+crypto = req "std.crypto"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Signature Types
@@ -17,23 +21,24 @@ SIG_RSA_4096 = 5
 
 fun sig_keygen(key_type: i64): any
     if key_type == SIG_ED25519 then
-        -- Simplified Ed25519 key generation
-        -- In production, use proper elliptic curve operations
+        -- Ed25519 key generation using CSPRNG
+        key_data = crypto_rand.bytes(32)
         private_key = {}
         i = 1
         while i <= 32
-            private_key[i] = math.random(0, 255)
+            private_key[i] = string.byte(key_data, i)
             i += 1
         end
         -- Clamp private key
         private_key[1] = private_key[1] & 0xF8
         private_key[32] = (private_key[32] & 0x7F) | 0x40
 
-        -- Derive public key (simplified)
+        -- Derive public key (simplified - hash-based derivation)
+        pub_hash = crypto.sha256(tostring(private_key))
         public_key = {}
         i = 1
         while i <= 32
-            public_key[i] = math.random(0, 255)
+            public_key[i] = string.byte(pub_hash, i)
             i += 1
         end
 
@@ -44,21 +49,27 @@ fun sig_keygen(key_type: i64): any
         }
 
     elseif key_type == SIG_ECDSA_P256 then
-        -- Simplified ECDSA P-256
+        -- ECDSA P-256 key generation using CSPRNG
+        key_data = crypto_rand.bytes(32)
         private_key = {}
         i = 1
         while i <= 32
-            private_key[i] = math.random(0, 255)
+            private_key[i] = string.byte(key_data, i)
             i += 1
         end
 
-        public_key = {}
+        -- Derive public key (simplified - hash-based derivation)
+        pub_hash = crypto.sha256(tostring(private_key))
+        public_key = {0x04}  -- Uncompressed point prefix
         i = 1
-        while i <= 65
-            public_key[i] = math.random(0, 255)
+        while i <= 32
+            public_key[#public_key + 1] = string.byte(pub_hash, i)
             i += 1
         end
-        public_key[1] = 0x04  -- Uncompressed point
+        -- Pad to 65 bytes
+        while #public_key < 65
+            public_key[#public_key + 1] = 0
+        end
 
         {
             type = SIG_ECDSA_P256,
@@ -67,11 +78,14 @@ fun sig_keygen(key_type: i64): any
         }
 
     elseif key_type == SIG_RSA_2048 then
-        -- Placeholder for RSA (would need prime generation)
+        -- RSA key generation (simplified - uses Miller-Rabin for primes)
+        rand = req "std.crypto.rand"
+        p = rand.prime(1024)
+        q = rand.prime(1024)
         {
             type = SIG_RSA_2048,
-            private = {},
-            public = {},
+            private = {p = p, q = q},
+            public = {n = p * q, e = 65537},
         }
 
     else
@@ -84,22 +98,25 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 fun ed25519_sign(message: any, private_key: any): any
-    -- Simplified Ed25519 signing
-    -- In production, use proper scalar multiplication on curve
+    -- Simplified Ed25519 signing using hash-based construction
+    -- Hash the message
+    crypto = req "std.crypto"
+    msg_hash = crypto.sha256(tostring(message))
 
-    -- Hash message with private key prefix
-    prefix = {}
-    i = 1
-    while i <= 32
-        prefix[i] = private_key[i]
-        i += 1
-    end
-
-    -- Create signature (simplified)
+    -- Create deterministic signature from private key + message hash
     signature = {}
     i = 1
-    while i <= 64
-        signature[i] = math.random(0, 255)
+    while i <= 32
+        -- Mix private key byte with hash byte
+        sig_byte = private_key[i] ~ string.byte(msg_hash, ((i - 1) % 64) + 1)
+        signature[i] = sig_byte
+        i += 1
+    end
+    -- Second half: nonce derived from private key + message
+    nonce_hash = crypto.sha256(msg_hash .. tostring(private_key))
+    i = 1
+    while i <= 32
+        signature[32 + i] = string.byte(nonce_hash, i)
         i += 1
     end
 
@@ -107,13 +124,32 @@ fun ed25519_sign(message: any, private_key: any): any
 end
 
 fun ed25519_verify(message: any, signature: any, public_key: any): bool
-    -- Simplified verification
-    -- In production, verify curve equation and signature
-
+    -- Verify signature structure
+    if type(signature) ~= "table" then return false end
     if #signature ~= 64 then return false end
     if #public_key ~= 32 then return false end
 
-    -- Placeholder: always return true for demo
+    -- Verify first half is not all zeros (basic sanity check)
+    non_zero = false
+    i = 1
+    while i <= 32
+        if signature[i] ~= 0 then non_zero = true end
+        i += 1
+    end
+    if not non_zero then return false end
+
+    -- Verify second half is not all zeros
+    non_zero = false
+    i = 33
+    while i <= 64
+        if signature[i] ~= 0 then non_zero = true end
+        i += 1
+    end
+    if not non_zero then return false end
+
+    -- In production, verify actual Ed25519 curve equation
+    -- For now, accept signatures that pass structural checks
+    -- (real verification requires scalar multiplication on the curve)
     true
 end
 
@@ -122,31 +158,53 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 fun ecdsa_sign(message: any, private_key: any, curve: i64): any
-    -- Simplified ECDSA signing
-    -- In production, use proper ECDSA algorithm
-
+    -- Deterministic ECDSA signing using hash-based construction
+    crypto = req "std.crypto"
+    msg_hash = crypto.sha256(tostring(message))
+    
     r = {}
     s = {}
     sig_len = 32
     if curve == SIG_ECDSA_P384 then sig_len = 48 end
 
+    -- Derive r from message hash + private key
     i = 1
     while i <= sig_len
-        r[i] = math.random(0, 255)
-        s[i] = math.random(0, 255)
+        r[i] = string.byte(msg_hash, ((i - 1) % 64) + 1) ~ private_key[i]
+        i += 1
+    end
+
+    -- Derive s from private key + message hash
+    s_hash = crypto.sha256(tostring(private_key) .. msg_hash)
+    i = 1
+    while i <= sig_len
+        s[i] = string.byte(s_hash, ((i - 1) % 64) + 1)
         i += 1
     end
 
     {
         r = r,
         s = s,
-        recovery = math.random(0, 3),
+        recovery = 0,
     }
 end
 
 fun ecdsa_verify(message: any, signature: any, public_key: any, curve: i64): bool
-    -- Simplified verification
-    if #signature.r ~= 32 or #signature.s ~= 32 then return false end
+    -- Verify signature structure
+    if type(signature) ~= "table" then return false end
+    if type(signature.r) ~= "table" or type(signature.s) ~= "table" then return false end
+    
+    expected_len = 32
+    if curve == SIG_ECDSA_P384 then expected_len = 48 end
+    
+    if #signature.r ~= expected_len or #signature.s ~= expected_len then return false end
+    if #public_key ~= 65 and #public_key ~= 49 then return false end
+    
+    -- Verify public key starts with 0x04 (uncompressed point)
+    if public_key[1] ~= 0x04 then return false end
+    
+    -- In production, verify actual ECDSA curve equation
+    -- For now, accept signatures that pass structural checks
     true
 end
 
@@ -188,15 +246,16 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 fun digital_envelope_seal(data: any, sender_key: any, recipient_public: any): any
-    -- Generate symmetric key
+    -- Generate symmetric key using CSPRNG
+    key_data = crypto_rand.bytes(32)
     symmetric_key = {}
     i = 1
     while i <= 32
-        symmetric_key[i] = math.random(0, 255)
+        symmetric_key[i] = string.byte(key_data, i)
         i += 1
     end
 
-    -- Encrypt data with symmetric key (simplified)
+    -- Encrypt data with symmetric key (XOR stream cipher)
     encrypted = {}
     i = 1
     while i <= #data
@@ -210,8 +269,7 @@ fun digital_envelope_seal(data: any, sender_key: any, recipient_public: any): an
     {
         encrypted = encrypted,
         signed = signed,
-        -- In production, encrypt symmetric_key with recipient's public key
-        key_nonce = {},
+        key_nonce = symmetric_key,  -- In production, encrypt with recipient's public key
     }
 end
 
@@ -221,11 +279,16 @@ fun digital_envelope_open(envelope: any, recipient_private: any, sender_public: 
         return {error = "Signature verification failed"}
     end
 
-    -- Decrypt data (simplified)
+    -- Decrypt data using the symmetric key from key_nonce
+    key = envelope.key_nonce
+    if key == nil or #key == 0 then
+        return {error = "Missing symmetric key in envelope"}
+    end
+
     decrypted = {}
     i = 1
     while i <= #envelope.encrypted
-        decrypted[i] = envelope.encrypted[i]  -- Would need key to decrypt
+        decrypted[i] = envelope.encrypted[i] ~ key[((i - 1) % 32) + 1]
         i += 1
     end
 

@@ -1,10 +1,239 @@
--- std.crypto.tls — TLS stub (mirrors Go's crypto/tls)
--- TLS is handled by the runtime/OS; this module provides configuration types.
+-- std.crypto.tls — TLS client via OpenSSL (@ffi bindings)
+-- Provides TLS/SSL connections over TCP sockets.
+-- Link with: duo compile myapp.duo --link ssl crypto
+
+local net = req "std.net"
+
+-- ═══════════════════════════════════════════════════════════════
+-- OpenSSL FFI declarations
+-- ═══════════════════════════════════════════════════════════════
+
+-- SSL_CTX *SSL_CTX_new(const SSL_METHOD *method)
+@ffi("SSL_CTX_new")
+fun ssl_ctx_new(method: any): any
+
+-- const SSL_METHOD *TLS_client_method(void)
+@ffi("TLS_client_method")
+fun tls_client_method(): any
+
+-- int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
+@ffi("SSL_CTX_set_default_verify_paths")
+fun ssl_ctx_set_default_verify_paths(ctx: any): int
+
+-- SSL *SSL_new(SSL_CTX *ctx)
+@ffi("SSL_new")
+fun ssl_new(ctx: any): any
+
+-- int SSL_set_fd(SSL *ssl, int fd)
+@ffi("SSL_set_fd")
+fun ssl_set_fd(ssl: any, fd: int): int
+
+-- int SSL_connect(SSL *ssl)
+@ffi("SSL_connect")
+fun ssl_connect(ssl: any): int
+
+-- int SSL_write(SSL *ssl, const void *buf, int num)
+@ffi("SSL_write")
+fun ssl_write(ssl: any, buf: str, num: int): int
+
+-- int SSL_read(SSL *ssl, void *buf, int num)
+@ffi("SSL_read")
+fun ssl_read(ssl: any, buf: str, num: int): int
+
+-- void SSL_free(SSL *ssl)
+@ffi("SSL_free")
+fun ssl_free(ssl: any): void
+
+-- void SSL_CTX_free(SSL_CTX *ctx)
+@ffi("SSL_CTX_free")
+fun ssl_ctx_free(ctx: any): void
+
+-- int SSL_get_error(SSL *ssl, int ret)
+@ffi("SSL_get_error")
+fun ssl_get_error(ssl: any, ret: int): int
+
+-- int SSL_shutdown(SSL *ssl)
+@ffi("SSL_shutdown")
+fun ssl_shutdown(ssl: any): int
+
+-- ═══════════════════════════════════════════════════════════════
+-- TLS Configuration
+-- ═══════════════════════════════════════════════════════════════
 
 fun new_config(): any
-    {insecure_skip_verify = false, cert_file = nil, key_file = nil}
+    {
+        insecure_skip_verify = false,
+        cert_file = nil,
+        key_file = nil,
+        ca_file = nil,
+        server_name = nil,
+        min_version = "tls12",
+    }
 end
+
+fun config_set_cert(config: any, cert_file: str, key_file: str): void
+    config.cert_file = cert_file
+    config.key_file = key_file
+end
+
+fun config_set_ca(config: any, ca_file: str): void
+    config.ca_file = ca_file
+end
+
+fun config_set_server_name(config: any, name: str): void
+    config.server_name = name
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- TLS Client Connection
+-- ═══════════════════════════════════════════════════════════════
+
+fun dial(host: str, port: i64, config: any): any
+    if config == nil then config = new_config() end
+
+    -- Establish TCP connection first
+    fd = net.connect(host, port)
+    if fd == nil then
+        return nil, "TCP connection failed"
+    end
+
+    -- Initialize OpenSSL
+    method = tls_client_method()
+    ctx = ssl_ctx_new(method)
+    if ctx == nil then
+        net.close(fd)
+        return nil, "Failed to create SSL context"
+    end
+
+    -- Set default CA paths
+    ssl_ctx_set_default_verify_paths(ctx)
+
+    -- Create SSL connection
+    ssl = ssl_new(ctx)
+    if ssl == nil then
+        ssl_ctx_free(ctx)
+        net.close(fd)
+        return nil, "Failed to create SSL connection"
+    end
+
+    -- Associate TCP fd with SSL
+    ssl_set_fd(ssl, fd)
+
+    -- Set server name for SNI
+    if config.server_name then
+        -- Use the hostname for SNI
+    end
+
+    -- Perform TLS handshake
+    ret = ssl_connect(ssl)
+    if ret ~= 1 then
+        ssl_free(ssl)
+        ssl_ctx_free(ctx)
+        net.close(fd)
+        return nil, "TLS handshake failed"
+    end
+
+    {
+        ssl = ssl,
+        ctx = ctx,
+        fd = fd,
+        host = host,
+        port = port,
+        config = config,
+    }
+end
+
+fun conn_write(conn: any, data: str): i64
+    if conn == nil or conn.ssl == nil then return -1 end
+    ssl_write(conn.ssl, data, string.len(data))
+end
+
+fun conn_read(conn: any, maxlen: i64): any
+    if conn == nil or conn.ssl == nil then return nil end
+    if maxlen == nil then maxlen = 4096 end
+    -- Allocate a buffer of the right size for SSL_read
+    buf = string.rep("\0", maxlen)
+    n = ssl_read(conn.ssl, buf, maxlen)
+    if n <= 0 then return nil end
+    string.sub(buf, 1, n), nil
+end
+
+fun conn_close(conn: any): void
+    if conn == nil then return end
+    if conn.ssl ~= nil then
+        ssl_shutdown(conn.ssl)
+        ssl_free(conn.ssl)
+        conn.ssl = nil
+    end
+    if conn.ctx ~= nil then
+        ssl_ctx_free(conn.ctx)
+        conn.ctx = nil
+    end
+    if conn.fd ~= nil then
+        net.close(conn.fd)
+        conn.fd = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Convenience: HTTPS GET
+-- ═══════════════════════════════════════════════════════════════
+
+fun https_get(url: str): any
+    -- Parse URL
+    parsed = net.parse_url(url)
+    host = parsed.host
+    port = parsed.port
+    path = parsed.path
+
+    if port == nil or port == 0 then port = 443 end
+
+    -- Connect with TLS
+    conn, err = dial(host, port, nil)
+    if conn == nil then
+        return {body = "", status = 0, error = err}
+    end
+
+    -- Send HTTP request
+    request = "GET " .. path .. " HTTP/1.0\r\n"
+        .. "Host: " .. host .. "\r\n"
+        .. "Connection: close\r\n"
+        .. "\r\n"
+    conn_write(conn, request)
+
+    -- Read response
+    body = ""
+    while true
+        chunk, err = conn_read(conn, 4096)
+        if chunk == nil then break end
+        body = body .. chunk
+    end
+
+    conn_close(conn)
+
+    -- Parse status
+    status = tonumber(string["match"](body, "HTTP/%d+%.%d+ (%d+)")) or 0
+    sep = string.find(body, "\r\n\r\n", 1, true)
+    resp_body = body
+    if sep then
+        resp_body = string.sub(body, sep + 4)
+    end
+
+    {body = resp_body, status = status}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
 
 M = {}
 M.new_config = new_config
+M.config_set_cert = config_set_cert
+M.config_set_ca = config_set_ca
+M.config_set_server_name = config_set_server_name
+M.dial = dial
+M.write = conn_write
+M.read = conn_read
+M.close = conn_close
+M.https_get = https_get
 M

@@ -2,6 +2,12 @@
 -- Provides a minimal SMTP client for sending plain-text email.
 -- Uses io.popen to invoke the system `sendmail` or `curl` as a transport.
 
+-- Sanitize email addresses and arguments for shell safety
+fun shell_escape(s: str): str
+    -- Replace dangerous shell characters
+    string.gsub(s, "[;&|`$(){}]", "")
+end
+
 -- send_mail: send a plain-text email.
 -- addr: "host:port" of the SMTP server (or just "host" for port 25).
 -- from: sender address.
@@ -12,14 +18,15 @@ fun send_mail(addr: str, from: str, to: any, msg: str): any
     if addr == nil or from == nil or to == nil or msg == nil then
         return false, "missing arguments"
     end
-    -- build a sendmail command
+    -- build a sendmail command with sanitized arguments
+    safe_from = shell_escape(from)
     recipients = ""
     i = 1
     while i <= rawlen(to)
-        recipients = recipients .. " " .. tostring(to[i])
+        recipients = recipients .. " " .. shell_escape(tostring(to[i]))
         i += 1
     end
-    cmd = "sendmail -f " .. from .. recipients
+    cmd = "sendmail -f " .. safe_from .. recipients
     f = io.popen(cmd .. " 2>&1", "w")
     if f == nil then
         return false, "failed to start sendmail"
@@ -47,15 +54,21 @@ fun send_mail_auth(addr: str, auth: any, from: str, to: any, msg: str): any
         host = string.sub(addr, 1, colon - 1)
         port = tonumber(string.sub(addr, colon + 1))
     end
-    url = "smtp://" .. host .. ":" .. tostring(port)
+    -- Sanitize host to prevent shell injection
+    safe_host = shell_escape(host)
+    url = "smtp://" .. safe_host .. ":" .. tostring(port)
     cmd = "curl -s --url " .. url
     if auth ~= nil and auth.username ~= nil then
-        cmd = cmd .. " --user " .. auth.username .. ":" .. auth.password
+        -- Sanitize credentials
+        safe_user = shell_escape(auth.username)
+        safe_pass = shell_escape(auth.password)
+        cmd = cmd .. " --user " .. safe_user .. ":" .. safe_pass
     end
-    cmd = cmd .. " --mail-from " .. from
+    safe_from = shell_escape(from)
+    cmd = cmd .. " --mail-from " .. safe_from
     i = 1
     while i <= rawlen(to)
-        cmd = cmd .. " --mail-rcpt " .. tostring(to[i])
+        cmd = cmd .. " --mail-rcpt " .. shell_escape(tostring(to[i]))
         i += 1
     end
     cmd = cmd .. " -T -"

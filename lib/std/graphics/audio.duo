@@ -1,5 +1,9 @@
 -- std.graphics.audio — Audio playback and spatial audio
 -- For sound effects and music in ward's runtime.
+-- Supports WAV file loading (PCM format) and procedural waveform generation.
+
+local io = req "std.io"
+local string = req "std.string"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Audio Config
@@ -27,11 +31,101 @@ fun audio_buffer_new(config: any): any
 end
 
 fun audio_buffer_load(buffer: any, path: str): any
-    -- In production, would decode audio file
-    {
-        ok = false,
-        error = "not implemented",
-    }
+    f = io.open(path, "rb")
+    if f == nil then
+        return {ok = false, error = "Cannot open file: " .. path}
+    end
+
+    -- Read RIFF header
+    riff = io.read(f, 4)
+    if riff ~= "RIFF" then
+        io.close(f)
+        return {ok = false, error = "Not a WAV file (missing RIFF header)"}
+    end
+
+    -- File size (skip)
+    io.read(f, 4)
+
+    -- WAVE marker
+    wave = io.read(f, 4)
+    if wave ~= "WAVE" then
+        io.close(f)
+        return {ok = false, error = "Not a WAV file (missing WAVE marker)"}
+    end
+
+    -- Parse chunks
+    sample_rate = 44100
+    channels = 1
+    bits_per_sample = 16
+    data = nil
+
+    while true
+        chunk_id = io.read(f, 4)
+        if chunk_id == nil or string.len(chunk_id) < 4 then break end
+
+        -- Read chunk size (little-endian u32)
+        size_bytes = io.read(f, 4)
+        if size_bytes == nil or string.len(size_bytes) < 4 then break end
+        chunk_size = 0
+        i = 1
+        while i <= 4
+            chunk_size = chunk_size + string.byte(size_bytes, i) * (256 ^ (i - 1))
+            i += 1
+        end
+
+        if chunk_id == "fmt " then
+            -- Format chunk
+            fmt_data = io.read(f, chunk_size)
+            if fmt_data and string.len(fmt_data) >= 16 then
+                audio_format = string.byte(fmt_data, 1) + string.byte(fmt_data, 2) * 256
+                channels = string.byte(fmt_data, 3) + string.byte(fmt_data, 4) * 256
+                sample_rate = string.byte(fmt_data, 5) + string.byte(fmt_data, 6) * 256 +
+                    string.byte(fmt_data, 7) * 65536 + string.byte(fmt_data, 8) * 16777216
+                bits_per_sample = string.byte(fmt_data, 15) + string.byte(fmt_data, 16) * 256
+            end
+        elseif chunk_id == "data" then
+            -- Data chunk — read raw PCM samples
+            raw = io.read(f, chunk_size)
+            if raw then
+                samples = {}
+                bytes_per_sample = math.floor(bits_per_sample / 8)
+                num_samples = math.floor(string.len(raw) / bytes_per_sample)
+                i = 1
+                while i <= num_samples
+                    -- Read little-endian sample (16-bit signed)
+                    if bits_per_sample == 16 then
+                        lo = string.byte(raw, i * 2 - 1) or 0
+                        hi = string.byte(raw, i * 2) or 0
+                        val = lo + hi * 256
+                        if val >= 32768 then val = val - 65536 end
+                        samples[i] = val / 32768.0
+                    elseif bits_per_sample == 8 then
+                        val = string.byte(raw, i) or 128
+                        samples[i] = (val - 128) / 128.0
+                    else
+                        samples[i] = 0
+                    end
+                    i += 1
+                end
+                data = samples
+            end
+        else
+            -- Skip unknown chunk
+            io.read(f, chunk_size)
+        end
+    end
+
+    io.close(f)
+
+    if data == nil then
+        return {ok = false, error = "No audio data found in WAV file"}
+    end
+
+    buffer.data = data
+    buffer.sample_rate = sample_rate
+    buffer.channels = channels
+    buffer.duration = #data / (sample_rate * channels)
+    {ok = true, duration = buffer.duration, sample_rate = sample_rate, channels = channels}
 end
 
 fun audio_buffer_get_duration(buffer: any): f64
@@ -161,13 +255,104 @@ fun audio_system_set_mute(system: any, muted: bool): void
     system.muted = muted
 end
 
-fun audio_system_update(system: any, delta_time: f64): void
-    -- In production, would process audio mixing
-    for source in system.sources
-        if source.playing and not source.paused then
-            -- Update source position, apply spatial audio, etc.
+-- ═══════════════════════════════════════════════════════════════
+-- Audio Mixing
+-- ═══════════════════════════════════════════════════════════════
+
+fun audio_mix_sources(sources: any, master_volume: f64, muted: bool): any
+    if muted then return {} end
+    
+    mixed = {}
+    max_samples = 0
+    
+    -- Find the longest source
+    for source in sources
+        if source.playing and source.buffer then
+            len = #source.buffer.data
+            if len > max_samples then max_samples = len end
         end
     end
+    
+    if max_samples == 0 then return {} end
+    
+    -- Initialize output buffer
+    i = 1
+    while i <= max_samples
+        mixed[i] = 0
+        i += 1
+    end
+    
+    -- Mix all playing sources
+    for source in sources
+        if source.playing and source.buffer then
+            vol = (source.current_volume or source.volume) * master_volume
+            pitch = source.pitch or 1.0
+            
+            -- Mix samples with volume and pitch adjustment
+            i = 1
+            while i <= max_samples
+                -- Get sample index with pitch adjustment
+                sample_idx = math.floor((i - 1) * pitch) + 1
+                if sample_idx <= #source.buffer.data then
+                    sample = source.buffer.data[sample_idx]
+                    mixed[i] = mixed[i] + sample * vol
+                end
+                i += 1
+            end
+        end
+    end
+    
+    -- Clamp output to [-1, 1]
+    i = 1
+    while i <= max_samples
+        if mixed[i] > 1 then mixed[i] = 1 end
+        if mixed[i] < -1 then mixed[i] = -1 end
+        i += 1
+    end
+    
+    mixed
+end
+
+fun audio_system_update(system: any, delta_time: f64): void
+    -- Process audio sources and apply spatial effects
+    for source in system.sources
+        if source.playing and not source.paused then
+            -- Update playback position
+            source.position = source.position + delta_time
+            
+            -- Apply volume falloff based on distance (if spatial)
+            if source.spatial and source.listener then
+                dx = source.x - source.listener.x
+                dy = source.y - source.listener.y
+                dz = source.z - source.listener.z
+                distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+                
+                -- Simple inverse distance falloff
+                if distance > 1 then
+                    source.current_volume = source.volume / distance
+                else
+                    source.current_volume = source.volume
+                end
+                
+                -- Apply Doppler effect (simplified)
+                relative_velocity = (source.vx or 0) * dx + (source.vy or 0) * dy + (source.vz or 0) * dz
+                doppler_factor = 1.0 - relative_velocity / 343.0  -- Speed of sound
+                source.pitch = source.base_pitch * doppler_factor
+            end
+            
+            -- Check if source has finished playing
+            if source.duration > 0 and source.position >= source.duration then
+                if source.loop then
+                    source.position = 0
+                else
+                    source.playing = false
+                end
+            end
+        end
+    end
+    
+    -- Update mixer output
+    system.output = audio_mix_sources(system.sources, system.master_volume, system.muted)
 end
 
 -- ═══════════════════════════════════════════════════════════════

@@ -79,12 +79,32 @@ fun process_new(): any
 end
 
 fun process_start(proc: any, config: any): any
-    -- In production, this would call fork/exec via __emit
-    -- For now, return placeholder
-    proc.pid = math.random(10000, 99999)
-    proc.running = true
-    proc.exit_code = nil
-    {ok = true, pid = proc.pid}
+    -- Build command with arguments
+    full_cmd = config.cmd
+    for arg in config.args
+        full_cmd = full_cmd .. " " .. tostring(arg)
+    end
+
+    -- Set environment variables for the child process
+    env_prefix = ""
+    for k, v in config.env
+        env_prefix = env_prefix .. k .. "=" .. tostring(v) .. " "
+    end
+
+    -- Capture PID and run in background
+    handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
+    if handle then
+        pid_str = io.read(handle, "*l")
+        io.close(handle)
+        if pid_str then
+            proc.pid = tonumber(pid_str) or 0
+            proc.running = true
+            proc.exit_code = nil
+            proc.config = config
+            return {ok = true, pid = proc.pid}
+        end
+    end
+    {ok = false, error = "Failed to start process"}
 end
 
 fun process_wait(proc: any): any
@@ -92,9 +112,23 @@ fun process_wait(proc: any): any
         return {exit_code = proc.exit_code}
     end
 
-    -- In production, this would call waitpid
+    -- Wait for process and capture exit code
+    if proc.pid and proc.pid > 0 then
+        os.execute("wait " .. tostring(proc.pid) .. " 2>/dev/null")
+        -- Get exit code via $?
+        handle = io.popen("echo $?")
+        if handle then
+            code_str = io.read(handle, "*l")
+            io.close(handle)
+            proc.exit_code = tonumber(code_str) or 0
+        else
+            proc.exit_code = 0
+        end
+    else
+        proc.exit_code = 0
+    end
+
     proc.running = false
-    proc.exit_code = 0
     {exit_code = proc.exit_code}
 end
 
@@ -103,10 +137,13 @@ fun process_kill(proc: any, signal: i64): any
         return {error = "Process not running"}
     end
 
-    -- In production, this would call kill
+    sig = signal or 15  -- SIGTERM default
+    if proc.pid and proc.pid > 0 then
+        os.execute("kill -" .. tostring(sig) .. " " .. tostring(proc.pid) .. " 2>/dev/null")
+    end
     proc.killed = true
     proc.running = false
-    proc.exit_code = -signal
+    proc.exit_code = -sig
     {ok = true}
 end
 
@@ -115,7 +152,11 @@ fun process_write_stdin(proc: any, data: str): any
         return {error = "stdin not available"}
     end
 
-    -- In production, this would write to pipe
+    -- Write to the process's stdin pipe
+    if type(proc.stdin) == "userdata" then
+        proc.stdin:write(data)
+        proc.stdin:flush()
+    end
     {ok = true}
 end
 
@@ -124,7 +165,10 @@ fun process_read_stdout(proc: any): any
         return {error = "stdout not available"}
     end
 
-    -- In production, this would read from pipe
+    if type(proc.stdout) == "userdata" then
+        data = proc.stdout:read("*a") or ""
+        return {data = data, eof = string.len(data) == 0}
+    end
     {data = "", eof = true}
 end
 
@@ -133,6 +177,10 @@ fun process_read_stderr(proc: any): any
         return {error = "stderr not available"}
     end
 
+    if type(proc.stderr) == "userdata" then
+        data = proc.stderr:read("*a") or ""
+        return {data = data, eof = string.len(data) == 0}
+    end
     {data = "", eof = true}
 end
 
@@ -149,35 +197,70 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 fun process_run(cmd: str, args: any): any
-    config = process_config_new(cmd)
-    config = process_config_args(config, args)
+    -- Build full command line
+    full_cmd = cmd
+    if args then
+        for arg in args
+            full_cmd = full_cmd .. " " .. tostring(arg)
+        end
+    end
 
-    proc = process_new()
-    result = process_start(proc, config)
-    if result.error then return result end
+    -- Execute and capture output + exit code in one shot
+    f = io.popen(full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
+    if f == nil then
+        return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
+    end
+    raw = f:read("*a") or ""
+    f:close()
 
-    process_wait(proc)
+    -- Split output from exit code (last line after final newline)
+    last_nl = string.find(raw, "\n[^\n]*$")
+    if last_nl then
+        stdout = string.sub(raw, 1, last_nl - 1)
+        exit_str = string.sub(raw, last_nl + 1)
+        exit_code = tonumber(string.match(exit_str, "%d+")) or 0
+    else
+        stdout = raw
+        exit_code = 0
+    end
+
     {
-        exit_code = proc.exit_code,
-        stdout = "",
+        exit_code = exit_code,
+        stdout = stdout,
         stderr = "",
     }
 end
 
 fun process_run_with_input(cmd: str, args: any, input: str): any
-    config = process_config_new(cmd)
-    config = process_config_args(config, args)
-    config = process_config_stdin(config, "pipe")
+    full_cmd = cmd
+    if args then
+        for arg in args
+            full_cmd = full_cmd .. " " .. tostring(arg)
+        end
+    end
 
-    proc = process_new()
-    result = process_start(proc, config)
-    if result.error then return result end
+    -- Pipe input to command and capture output + exit code
+    escaped_input = string.gsub(input, "'", "'\\''")
+    f = io.popen("echo '" .. escaped_input .. "' | " .. full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
+    if f == nil then
+        return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
+    end
+    raw = f:read("*a") or ""
+    f:close()
 
-    process_write_stdin(proc, input)
-    process_wait(proc)
+    last_nl = string.find(raw, "\n[^\n]*$")
+    if last_nl then
+        stdout = string.sub(raw, 1, last_nl - 1)
+        exit_str = string.sub(raw, last_nl + 1)
+        exit_code = tonumber(string.match(exit_str, "%d+")) or 0
+    else
+        stdout = raw
+        exit_code = 0
+    end
+
     {
-        exit_code = proc.exit_code,
-        stdout = "",
+        exit_code = exit_code,
+        stdout = stdout,
         stderr = "",
     }
 end
@@ -223,23 +306,26 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 fun process_env_get(name: str): any
-    -- In production, this would call getenv
-    nil
+    os.getenv(name)
 end
 
 fun process_env_set(name: str, value: str): any
-    -- In production, this would call setenv
+    -- Use C setenv for persistent environment changes in the current process
+    __emit("setenv(" .. name .. ", " .. value .. ", 1)")
+    -- Also update Lua's environment table
+    os.setenv(name, value)
     {ok = true}
 end
 
 fun process_env_unset(name: str): any
-    -- In production, this would call unsetenv
+    -- Use C unsetenv for persistent environment changes
+    __emit("unsetenv(" .. name .. ")")
+    os.setenv(name, nil)
     {ok = true}
 end
 
 fun process_env_list(): any
-    -- In production, this would return all environment variables
-    {}
+    os.getenv()
 end
 
 -- ═══════════════════════════════════════════════════════════════

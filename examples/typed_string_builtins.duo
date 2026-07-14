@@ -14,6 +14,18 @@ fun combined(s: str, n: i64): str
   return a .. b
 end
 
+fun typed_find(s: str): i64
+  local p: i64 = string.find(s, "Duo", 1, true)
+  return p
+end
+
+fun method_find(s: str): i64
+  local p: i64 = s:find("o", 1, true)
+  return p
+end
+
 print(typed_sub("abcdef"))
 print(typed_tostring(42))
 print(combined("abcdef", 42))
+print(typed_find("Hello Duo"))
+print(method_find("Duo"))

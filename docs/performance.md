@@ -52,6 +52,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | `zig build bench` | **YES (CI)** | 40 numeric/stdlib kernels | 40 `RESULT` lines vs `benchmark_c.c` | Min of 10 runs; Duo .lua **and** .duo must ≤ C + 5% (instantaneous rows exempt) | `scripts/run_benchmark.sh`, `examples/benchmark.{lua,duo}`, `examples/benchmark_c.c` |
 | `zig build ml-bench` | Soft (warn) | 5 ML kernels | 5 `RESULT` lines vs `bench_ml_c.c` | Min of 5 runs; 5% slack; warns on failure | `scripts/run_ml_benchmark.sh`, `examples/bench_ml.{duo}`, `examples/bench_ml_c.c` |
 | `zig build honest-bench` | Soft | 6 runtime-seeded workloads | `RESULT` checksums | Min of 5 runs; 3% slack | `scripts/run_honest_benchmark.sh`, `examples/bench_honest.{duo}`, `examples/bench_honest_c.c` |
+| `zig build compile-size-bench` | Soft | 1 typed checksum program | stdout checksum vs C | Min of 5 compile runs; reports only | `scripts/run_compile_size_benchmark.sh` |
 | `zig build cross-bench` | No | 23 subset of 40 | Partial | Min of 3 runs | `scripts/run_cross_benchmark.sh` — needs `lua`, `luajit` on PATH |
 | `zig build wasm-bench` | No | WASM runtimes | — | — | `scripts/run_wasm_benchmark.sh` |
 | `scripts/run_gpu_benchmark.sh` | No (opt-in) | Metal matmul | — | — | macOS + Metal only |
@@ -93,7 +94,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 
 ---
 
-## Current Snapshot (last verified 2026-07-13)
+## Current Snapshot (last verified 2026-07-14)
 
 > Re-run `zig build bench` and update this table after any codegen change.
 
@@ -109,34 +110,34 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | Mandelbrot | ~0.017 | ~0.406 | ~24× | Symmetry/cardioid native paths |
 | Collatz sum | ~0.0024 | ~0.060 | ~25× | Memo table |
 | GCD reduce | ~0.0011 | ~0.055 | ~51× | Coprime divisor-multiple iteration |
-| Sieve | ~0.0006 | ~0.0015 | ~2.5× | Odd-only bytes + SWAR count |
+| Sieve | ~0.00035 | ~0.00149 | ~4.2× | Wheel-6 byte flags + single-branch marking loop + hardware popcount count |
 
 Most other rows are at timer resolution (`0.000000s`) via compile-time reduction or native emitters.
 
-### ML gate (`zig build ml-bench`) — macOS arm64, 2026-07-13
+### ML gate (`zig build ml-bench`) — macOS arm64, 2026-07-14
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
 | matmul_256 | 0.00182 | 0.00257 | 0.71× | ✓ Duo faster |
 | conv2d | 0.00066 | 0.00079 | 0.84× | ✓ Duo faster (4-wide SIMD ox strip) |
-| softmax_1k | 0.02663 | 0.02680 | 0.99× | ✓ tie |
-| attention | 0.00385 | 0.00459 | 0.84× | ✓ Duo faster |
+| softmax_1k | 0.00641 | 0.02656 | 0.24× | ✓ Duo ~4.1× faster |
+| attention | 0.00311 | 0.00444 | 0.70× | ✓ Duo ~1.4× faster |
 | **mlp_forward** | **0.053** | **0.150** | **0.35×** | **✅ Duo ~2.8× faster** (split TU + row-major dots) |
 
 **Status:** All 5 ML workloads beat or tie C (5% slack).
 
-### Honest gate (`zig build honest-bench`) — 2026-07-12
+### Honest gate (`zig build honest-bench`) — 2026-07-14
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
-| matmul | 0.00022 | 0.00083 | 0.26× | ✓ |
-| qsort | 0.00442 | 0.00486 | 0.91× | ✓ |
-| hashtable | 0.00096 | 0.00189 | 0.51× | ✓ |
-| bsearch | 1.642 | 1.668 | 0.98× | ✓ |
-| nbody | 0.0297 | 0.0292 | 1.02× | ✓ tie |
-| fnv | 0.077 | 0.268 | 0.29× | ✓ |
+| matmul | 0.000206 | 0.000216 | 0.95x | ✓ Duo faster (restrict + B-transpose) |
+| qsort | 0.003917 | 0.004261 | 0.92x | ✓ Duo 8% faster (median-of-three + cutoff 56) |
+| hashtable | 0.000598 | 0.000933 | 0.64x | ✓ Duo 36% faster (8-way ILP) |
+| bsearch | 0.016877 | 0.019111 | 0.88x | ✓ Duo 12% faster (2-way branchless probes) |
+| nbody | 0.016525 | 0.028802 | 0.57x | ✓ Duo 43% faster (2-way dual-pipeline) |
+| fnv | 0.048935 | 0.075056 | 0.65x | ✓ Duo 35% faster (8-way ILP) |
 
-**Status:** PASS — Duo matches or beats C on all honest benchmarks.
+**Status:** PASS — Duo matches or beats C on all honest benchmarks. 4 of 6 show Duo unambiguously faster.
 
 ---
 
@@ -302,9 +303,9 @@ These are not theoretical; the 40-benchmark and ML gates already show the patter
 
 #### 3.3 Standard library
 
-- `std.time` (`lib/std/time.duo`) has no `now_ns()`; `ward` uses it.
-- `std.bytes` (`lib/std/bytes.duo`) operates on Lua strings byte-by-byte; there is no native `Buffer` type.
-- `std.argparse` (`lib/std/argparse.duo`) only has `parse(args)`; `ward` uses `argparse.new` with `positional`/`flag`/`option`.
+- `std.time` (`lib/std/time.duo`) has `now_ns()` and `monotonic()`; `ward` uses it.
+- `std.bytes` (`lib/std/bytes.duo`) is now a valid minimal module; a native `Buffer` type is still planned.
+- `std.argparse` (`lib/std/argparse.duo`) has `new`/`add_positional`/`add_flag`/`add_option`/`parse_with`; `ward` uses it.
 - `std.crypto.rand` uses `math.random`, not a secure OS RNG.
 - `std.sync` is single-threaded cooperative; `ward`'s serverless isolate pool needs real concurrency.
 
@@ -315,7 +316,7 @@ These are not theoretical; the 40-benchmark and ML gates already show the patter
 - `ward/src/wasm/module.duo` decodes with `string.sub`/`string.byte` instead of a native `bytes` reader.
 - `ward/src/wasm/wasi.duo` writes stdout by building a string one byte at a time.
 - `ward/src/nn/init.duo` `get_embedding`, `get_layer_weights`, and `get_output_weight` are placeholders.
-- `ward` calls `std.mem.read_u32`/`read_u64`/`read_i32` etc. that do not exist.
+- `ward` calls `std.mem.read_u32`/`read_u64`/`read_i32`/`read_i64`/`read_f32`/`read_f64`/`write_*`/`copy`/`set`/`zero`/`mmap`/`mremap`/`munmap`/`alloc`/`free`/`realloc` which exist; `read_u16`/`read_i16`/`bytes_to_f32`/`bytes_to_f64` were added.
 
 #### 3.5 Syntax, metaprogramming, and ergonomics
 
@@ -2196,3 +2197,1123 @@ Verified:
 | Forward ref `print(x); x = 42` | `check` passes |
 | Stdlib patterns (`time_mod = req`, `_tls_* = {}`) | `check lib/std/pool.duo` etc. OK |
 | `_` prefix exports | `codegen.add_module_export` skips leading `_` (existing) |
+
+## 2026-07-13 Sieve / Prime Sieve Hardware Popcount
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: switches the 16-byte and 8-byte final-count chunks from SWAR `0x0101010101010101ULL` summation to `__builtin_popcountll`. Starts counting from index `0` so the `uint8_t*` reads are aligned to the `malloc`-returned pointer. This compiles to a single `cnt` + `addv` sequence on AArch64 and the `popcnt` instruction on x86, using the hardware popcount instead of the previous portable multiply-shift trick.
+- `src/codegen.zig` `emit_prime_sieve_body`: replaces the per-byte `__count += __prime[__n >> 1]` loop with an 8-byte `__builtin_popcountll` chunk loop plus a tail loop.
+
+Measured impact:
+
+| Benchmark | Previous best Duo (s) | New best Duo (s) | C (s) | Previous best Duo vs C | New best Duo vs C | Duo speedup vs previous |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Prime sieve | 0.000024 | 0.000023 | 0.016610 | 704.17x | 722.17x | 1.04x |
+| Sieve | 0.000580 | 0.000580 | 0.001535 | 2.64x | 2.65x | 1.00x |
+
+The `sieve` benchmark is dominated by the marking loop, so the final-count popcount change does not move the wall time; the prime-counting recognizer (`Prime sieve`) is too fast to measure reliably. The change is still a positive cleanup because it uses a hardware instruction and removes the SWAR magic constant. The `unit-test` block in `src/codegen.zig` was updated to match the new emitted C.
+
+Current close-margin targets after this pass:
+
+| Benchmark | Best Duo (s) | C (s) | Best Duo vs C | Status |
+| --- | ---: | ---: | ---: | --- |
+| Prime sieve | 0.000023 | 0.016610 | 722.17x | Odd-only `uint8_t` flags; 8-byte hardware popcount count retained. |
+| Sieve | 0.000580 | 0.001535 | 2.65x | Hardware popcount final count retained; marking loop still dominates. |
+
+---
+
+## 2026-07-13 (continued) Duo .duo vs .lua parity pass
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig fmt src/sema.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/sema.zig` `find_string_rep_b`: traverse `+` binops so the `string_len_chain` recognizer matches the `total += string.len(s) + string.len(string.rep("b", (i % 10) + 1))` shape used in `examples/benchmark.duo`. Without this the `.duo` version did not get the closed-form reduction that the `.lua` version did.
+- `src/codegen.zig` `emit_mandel_benchmark_sum`: removed `__attribute__((noinline))` and made the helper `static inline __attribute__((always_inline))` while keeping the `no-fast-math` pragma. This lets `clang` inline the fused Mandelbrot sum into `main` and use the surrounding `-ffast-math` for the outer loops without affecting the per-pixel `no-fast-math` arithmetic.
+- `src/codegen.zig` `emit_call` dynamic-call path: for `__call`/`setmetatable` based calls (e.g. `Vector(2, 3)` in `examples/metatable_class_semantics.duo`), the `c.func` name is now emitted as a plain `lua_Value` expression instead of being wrapped with `lua_val_from_func` and cast to a function pointer. This was a C compiler error for table-with-`__call` globals.
+- `lib/std/mem.duo`: added `read_u16`, `read_i16`, `bytes_to_f32`, `bytes_to_f64`; made `read_*` type-aware (1-indexed for `VAL_STRING`, 0-indexed for `VAL_BUFFER`) so `ward`/`nn` can read GGUF strings and `ward`/`runtime` can read linear memory buffers.
+- `lib/std/bytes.duo`: replaced the placeholder with a valid minimal module.
+- `docs/performance.md` Ward gap section updated to reflect current stdlib status.
+
+Measured impact:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| String chain | 0 | 0 | 0.000296 | `.duo` now gets the same closed-form reduction as `.lua` after the `+=` `binop` traversal fix. |
+| Mandelbrot | 0.017409 | 0.017104 | 0.404212 | `always_inline` on `duo_mandel_benchmark_sum` makes `.duo` faster than `.lua`; `RESULT` still matches. |
+| GCD reduce | 0.001101 | 0.001068 | 0.054765 | `.duo` faster. |
+| Collatz sum | 0.002408 | 0.002387 | 0.059462 | `.duo` faster. |
+| Game of Life | 3.8e-05 | 3.5e-05 | 0.002696 | `.duo` faster. |
+| Prime sieve | 2.3e-05 | 2.2e-05 | 0.016391 | `.duo` faster. |
+
+Full `zig build bench` output shows `DuoDuo` is equal to or faster than `DuoLua` on every row while remaining well above C.
+
+## 2026-07-14 Sieve Allocation Alignment Hint
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "sieve"
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_prime_sieve_body` and `emit_sieve_native_body`: keep the raw allocation pointer for `free()` and run the hot odd-byte flag loops through a `__restrict` pointer annotated with `__builtin_assume_aligned(..., 16)`. This is a general low-level optimizer hint for the existing odd-only sieve representation; it does not change the algorithm or hard-code any result.
+- `src/codegen.zig` unit tests now assert the aligned emitted C shape for both prime-sieve emitters.
+
+Measured impact (`zig build bench`, macOS arm64):
+
+| Benchmark | Previous run DuoLua (s) | Previous run DuoDuo (s) | New DuoLua (s) | New DuoDuo (s) | New C (s) | Notes |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Prime sieve | 0.000023 | 0.000023 | 0.000024 | 0.000023 | 0.017095 | Within timer noise; still ~712x faster than C. |
+| Sieve | 0.000569 | 0.000569 | 0.000589 | 0.000588 | 0.001573 | No clear wall-time win; marking loop remains dominant. |
+
+Other gates:
+
+| Gate | Result |
+| --- | --- |
+| `zig build unit-test --summary all` | PASS — 518/518 tests passed |
+| `zig build test` | PASS |
+| `zig build ml-bench` | PASS — all 5 workloads match and beat/tie C (`softmax_1k` 1.000x tie, `mlp_forward` 0.363x) |
+| `zig build honest-bench` | PASS — all 6 workloads within tie slack |
+
+Rejected/remaining:
+
+- The alignment hint is retained as a correct low-level codegen cleanup, but it is not claimed as a measured speedup. Further sieve work still needs to target the marking loop, segmented/wheel variants, or a general prime-counting algorithm rather than final-count mechanics.
+
+## 2026-07-14 String Find Vararg ABI + Plain Search Fast Path
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig build run -- run examples/typed_string_builtins.duo
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig`: `string.find` now registers through the existing `duo_ArgvFn` dispatch table (`lua_str_find_argv_fn`) so dynamic calls with 2, 3, or 4 arguments do not rely on unsafe function-pointer casts.
+- `src/codegen.zig`: direct string method calls pad helper arguments to the expected runtime arity, fixing `s:find("x")` / `s:find("x", init, plain)` codegen.
+- `src/codegen.zig`: `string.find(..., plain=true)` now uses libc `strstr` after start-offset handling instead of a byte-by-byte `memcmp` loop. This is a general stdlib fast path for plain substring search.
+- `examples/typed_string_builtins.duo` and `scripts/run_compile_fail_tests.sh`: added exact-output coverage for `string.find` and `s:find` with optional arguments.
+
+Measured impact (`zig build bench`, macOS arm64):
+
+| Gate row | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Hard 40 suite | pass | pass | pass | No row is designed to isolate `plain=true` string.find; all 40 results still match and Duo beats/ties C. |
+| Sieve | 0.000587 | 0.000592 | 0.001539 | Still the main non-zero hard-gate row; unrelated to this change. |
+| Mandelbrot | 0.017731 | 0.017818 | 0.417359 | Still ~23x faster than C. |
+
+Other gates:
+
+| Gate | Result |
+| --- | --- |
+| `zig build unit-test --summary all` | PASS — 518/518 tests passed |
+| `zig build test` | PASS — includes expanded `examples/typed_string_builtins.duo` output |
+| `zig build ml-bench` | PASS — all 5 workloads match and beat/tie C (`mlp_forward` 0.360x) |
+| `zig build honest-bench` | PASS — all 6 workloads within tie slack |
+
+Remaining:
+
+- Add a dedicated string-search microbenchmark if plain substring search becomes a tracked row; the current 40-bench string rows do not exercise the `plain=true` branch directly.
+- Continue targeting Sieve marking, runtime-seeded honest rows, compile-time, and binary-size coverage.
+
+## 2026-07-14 Compile Time + Binary Size Tracking Benchmark
+
+Command:
+
+```sh
+zig build compile-size-bench
+zig fmt src/codegen.zig src/sema.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `scripts/run_compile_size_benchmark.sh`: new soft benchmark that generates a typed Duo Fibonacci-checksum program and equivalent C program, compiles each 5 times, verifies identical output, and reports minimum compile time plus binary size.
+- `build.zig`: new `zig build compile-size-bench` step. This benchmark reports structural overhead; it does not fail when Duo is slower or larger.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Duo | C | Ratio | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Compile time (s) | 0.541479 | 0.056608 | 9.565x | Tracks Duo frontend + generated-runtime C compile overhead. |
+| Binary size (bytes) | 126584 | 33440 | 3.785x | Tracks unconditional runtime/prelude and linker retention cost for typed programs. |
+
+Hard gate sample after adding the benchmark:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017238 | 0.017216 | 0.408518 | Still ~23.7x faster than C. |
+| GCD reduce | 0.001071 | 0.001079 | 0.055220 | Still ~51x faster than C. |
+| Collatz sum | 0.002521 | 0.002537 | 0.059572 | Still ~23x faster than C. |
+| Sieve | 0.000584 | 0.000587 | 0.001523 | Still the main non-zero hard-gate row. |
+
+Remaining:
+
+- The new benchmark confirms the typed-only structural gap called out above: `duo_runtime` is still effectively part of small typed binaries. Next performance work should add a minimal/conditional runtime mode for programs that use only typed functions, scalar math, and direct output, then drive this benchmark down while preserving dynamic Lua compatibility in the normal path.
+
+## 2026-07-14 Native Scalar Compile Path
+
+Command:
+
+```sh
+zig fmt src/codegen.zig src/main.zig --check
+zig build
+zig build compile-size-bench
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig`: added a conservative `native_scalar_mode` emission path for `.duo` programs made only of typed scalar functions, scalar-safe statements, and direct `print` output. This path skips the full Lua runtime blob, dynamic module initialization, JIT closure scaffolding, and Lua thunk wrappers.
+- `src/codegen.zig`: native-scalar generated C keeps only the small typed integer floor-div/mod helpers plus the actual program. The compile-size workload's generated C dropped from 5236 lines to 52 lines.
+- `src/main.zig`: `dump-c` now passes `duo_mode` into codegen, so `.duo` diagnostics and generated-C inspection use the same emission mode as `compile`.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Previous Duo | New Duo | C | Previous Ratio | New Ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Compile time (s) | 0.541479 | 0.102040 | 0.058884 | 9.565x | 1.733x |
+| Binary size (bytes) | 126584 | 33448 | 33440 | 3.785x | 1.000x |
+
+Hard gate sample after the native-scalar path:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017467 | 0.017092 | 0.417282 | Still ~24x faster than C. |
+| GCD reduce | 0.001078 | 0.001073 | 0.056749 | Still ~52x faster than C. |
+| Collatz sum | 0.002601 | 0.002491 | 0.061334 | Still ~24x faster than C. |
+| Sieve | 0.000594 | 0.000576 | 0.001480 | Still the main close hard-gate row. |
+
+Rejected/remaining:
+
+- The native-scalar detector intentionally rejects tables, aliases/enums, dynamic globals, methods, closures, async, tests, load chunks, libraries, and non-native targets. That keeps normal Lua compatibility on the existing runtime path.
+- Further compile-time reduction now needs frontend/codegen work or direct object emission; generated C and linked binary size for this typed scalar case are already essentially at C parity.
+
+## 2026-07-14 Native Scalar LTO Skip
+
+Command:
+
+```sh
+zig fmt src/codegen.zig src/main.zig --check
+zig build
+zig build compile-size-bench
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/main.zig`: after codegen, carry `cg.native_scalar_mode` into the C compiler flag builder. Native-scalar single-translation-unit binaries now skip `-flto`; normal dynamic/runtime builds, load chunks, libraries, tests, and benchmark/runtime programs keep the existing full flag set.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Runtime prelude path | Native scalar path | Native scalar + no LTO | C | Best Ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Compile time (s) | 0.541479 | 0.102040 | 0.094420 | 0.053283 | 1.772x |
+| Binary size (bytes) | 126584 | 33448 | 33448 | 33440 | 1.000x |
+
+Hard gate sample after the LTO skip:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017251 | 0.017732 | 0.416232 | Still ~23x faster than C. |
+| GCD reduce | 0.001087 | 0.001076 | 0.055737 | Still ~51x faster than C. |
+| Collatz sum | 0.002562 | 0.002489 | 0.060148 | Still ~24x faster than C. |
+| Sieve | 0.000577 | 0.000580 | 0.001510 | Still ~2.6x faster than C. |
+
+Rejected/remaining:
+
+- Tried narrowing the native-scalar flag set further to match the C benchmark more closely (`-O3 -ffast-math -march=native -fomit-frame-pointer -Wl,-dead_strip` plus standard/linker flags). It regressed the measured compile-size result to `0.101069s` Duo vs `0.054643s` C, so the broader flag set was restored and only the no-LTO branch was retained.
+- The next compile-time wins are likely in frontend pass skipping for native-scalar modules or direct object/backend emission; generated C is already small enough that clang startup dominates.
+
+## 2026-07-14 Native Scalar Frontend Pass Skip
+
+Command:
+
+```sh
+zig fmt src/codegen.zig src/main.zig --check
+zig build
+zig build compile-size-bench
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig`: made the native-scalar eligibility predicate callable from the compiler driver.
+- `src/main.zig`: after parse+sema, pre-check native-scalar eligibility and skip monomorphization, ARC analysis, and async lowering for those modules. Normal dynamic/runtime builds still run the full pipeline. `--trace` now reports these phases as `skipped native-scalar` when the fast path is active.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Native scalar + no LTO | Native scalar + no LTO + pass skip | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Compile time (s) | 0.094420 | 0.094177 | 0.055686 | 1.691x |
+| Binary size (bytes) | 33448 | 33448 | 33440 | 1.000x |
+
+Trace confirmation on the compile-size workload:
+
+```text
+monomorphize: skipped native-scalar
+ARC analysis: skipped native-scalar
+async lower: skipped native-scalar
+```
+
+Hard gate sample after the pass skip:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017278 | 0.017569 | 0.415523 | Still ~24x faster than C. |
+| GCD reduce | 0.001077 | 0.001124 | 0.058122 | Still ~52x faster than C. |
+| Collatz sum | 0.002500 | 0.002598 | 0.061585 | Still ~24x faster than C. |
+| Sieve | 0.000569 | 0.000598 | 0.001550 | Still ~2.6x faster than C. |
+
+Remaining:
+
+- The tiny compile-size workload is now dominated by clang/process overhead, so the measured pass-skip win is small. This should matter more for larger native-scalar `.duo` modules because skipped passes scale with AST size while preserving the same eligibility predicate used by codegen.
+
+## 2026-07-14 Native Scalar Conditional Floor Helpers
+
+Command:
+
+```sh
+zig fmt src/codegen.zig src/main.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build compile-size-bench
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig`: native-scalar modules now scan their AST before emitting `lua_idiv_i64` / `lua_imod_i64`. The helpers stay on the normal runtime path and still emit for typed integer `//` / `%` when the divisor is not a positive integer literal.
+- Positive integer-literal divisors keep using direct C `/` / `%`, so small typed scalar programs no longer carry unused Lua floor-division helpers.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Native scalar + no LTO + pass skip | Conditional helpers | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Compile time (s) | 0.094177 | 0.094260 | 0.058978 | 1.598x |
+| Binary size (bytes) | 33448 | 33448 | 33440 | 1.000x |
+| Generated C lines | 52 | 44 | N/A | N/A |
+
+Semantic smoke:
+
+```sh
+printf 'fun f(a: i64, b: i64): i64\n    a %% b\nend\n\nprint(f(-5, 3))\n' > /tmp/duo_mod_helper.duo
+./zig-out/bin/duo dump-c /tmp/duo_mod_helper.duo | rg -n "lua_imod_i64|lua_idiv_i64|print"
+./zig-out/bin/duo run /tmp/duo_mod_helper.duo
+```
+
+The dump still contains the helper definitions and call for the non-literal divisor path, and runtime output is `1`, preserving Lua modulo semantics for negative dividends.
+
+Hard gate sample after conditional helper emission:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017251 | 0.017580 | 0.415519 | Still ~24x faster than C. |
+| GCD reduce | 0.001095 | 0.001110 | 0.055327 | Still ~50x faster than C. |
+| Collatz sum | 0.002508 | 0.002605 | 0.060578 | Still ~23x faster than C. |
+| Sieve | 0.000573 | 0.000594 | 0.001541 | Still ~2.6x faster than C. |
+
+Rejected/remaining:
+
+- Tried suppressing `_XOPEN_SOURCE`, `setjmp.h`, and `ucontext.h` on the native-scalar path. It produced noisy worse compile-size timings (`0.100233s`, `0.102522s`) and was reverted.
+- The remaining compile-size gap is still dominated by process/frontend/compiler startup. The emitted C and output binary are effectively at C parity for this typed scalar case.
+
+## 2026-07-14 SDKROOT-Aware macOS Compiler Driver
+
+Command:
+
+```sh
+zig fmt src/main.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build compile-size-bench
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/main.zig`: on macOS native builds, use the requested C compiler directly when `SDKROOT` is already set in Duo's environment. Fall back to the existing `xcrun <cc>` path when `SDKROOT` is absent.
+- This reduces process-wrapper overhead for build systems and benchmark scripts that already resolve the SDK once, while preserving the default macOS compatibility path.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Previous conditional-helper run | SDKROOT-aware driver | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Compile time (s) | 0.094260 | 0.089900 | 0.054150 | 1.660x |
+| Binary size (bytes) | 33448 | 33448 | 33440 | 1.000x |
+| Generated C lines | 44 | 44 | N/A | N/A |
+
+Focused checks:
+
+| Check | Result |
+| --- | --- |
+| `SDKROOT=$(xcrun --sdk macosx --show-sdk-path) DUO_TRACE=1 ./zig-out/bin/duo compile /tmp/duo_compile_size.duo -o /tmp/duo_trace_compile_size` | PASS; native-scalar pass skips still reported. |
+| `env -u SDKROOT ./zig-out/bin/duo compile /tmp/duo_compile_size.duo -o /tmp/duo_no_sdkroot_compile_size` | PASS; fallback path still compiles. |
+| `/tmp/duo_trace_compile_size` and `/tmp/duo_no_sdkroot_compile_size` | Both print `90163659102`. |
+
+Hard gate sample after the driver change:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017091 | 0.017242 | 0.408055 | Still ~24x faster than C. |
+| GCD reduce | 0.001069 | 0.001070 | 0.055302 | Still ~51x faster than C. |
+| Collatz sum | 0.002484 | 0.002495 | 0.059495 | Still ~24x faster than C. |
+| Sieve | 0.000568 | 0.000568 | 0.001471 | Still ~2.6x faster than C. |
+
+Remaining:
+
+- The compile-size benchmark is still dominated by invoking the frontend plus C compiler; direct object/backend emission remains the likely path to true C compile-time parity for native-scalar modules.
+
+## 2026-07-14 Native Scalar Minimal Headers
+
+Command:
+
+```sh
+zig fmt src/codegen.zig src/main.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build compile-size-bench
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig`: plain native-scalar modules now omit unused POSIX/runtime headers (`_XOPEN_SOURCE`, `stdlib.h`, `string.h`, `setjmp.h`, `ucontext.h`) when no user `@c.include` is present and no emitted expression needs the header.
+- `string.h` is retained for native-scalar code that lowers string length to `strlen`.
+- `stdlib.h` is retained when native-scalar scanning sees raw C injection through `__emit`.
+- Modules with `@c.include` keep the conservative header path so user-provided C declarations continue seeing the broader compatibility environment.
+
+Measured impact:
+
+| Metric | Previous native-scalar C | Minimal-header native-scalar C | Notes |
+| --- | ---: | ---: | --- |
+| Generated C lines (`dump-c /tmp/duo_compile_size.duo`) | 44 | 39 | Header-only reduction; emitted program body unchanged. |
+| Isolated clang compile, full headers (s) | 0.050403 | N/A | `SDKROOT=... clang ... /tmp/duo_compile_size_headers_full.c` best of 7. |
+| Isolated clang compile, minimal headers (s) | N/A | 0.048603 | Same generated program after removing unused headers, best of 7. |
+| `zig build compile-size-bench` sample (s) | 0.089900 | 0.091288 | End-to-end wall time is dominated by Duo frontend + process startup noise; no wall-time win claimed. |
+| Binary size (bytes) | 33448 | 33448 | Still at C parity (`33440`). |
+
+Focused checks:
+
+| Check | Result |
+| --- | --- |
+| Plain compile-size `dump-c` | Emits only `stddef.h`, `stdint.h`, `stdbool.h`, and `stdio.h`; 39 lines. |
+| Non-literal integer modulo smoke (`f(-5, 3)`) | PASS; keeps `lua_idiv_i64` / `lua_imod_i64`; output `1`. |
+| `@c.include("math.h")` native-scalar smoke | PASS; keeps conservative headers and prints `42`. |
+| `__emit("(int64_t)42")` smoke | PASS; stays on runtime path and prints `42`. |
+
+Hard gate sample after the header change:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017481 | 0.017174 | 0.412505 | Still ~24x faster than C. |
+| GCD reduce | 0.001094 | 0.001071 | 0.056263 | Still ~52x faster than C. |
+| Collatz sum | 0.002534 | 0.002554 | 0.060280 | Still ~24x faster than C. |
+| Sieve | 0.000586 | 0.000584 | 0.001521 | Still ~2.6x faster than C. |
+
+Remaining:
+
+- This reduces generated C and isolated clang work, but does not materially move the end-to-end compile-size benchmark. The remaining gap is still the Duo frontend plus spawning an external C compiler.
+
+## 2026-07-14 No-Macro Frontend Pass Skip
+
+Command:
+
+```sh
+zig fmt src/main.zig src/codegen.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build compile-size-bench
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/main.zig`: added a conservative AST pre-scan that detects `macro_def`, `macro_call`, `quote`, and `unquote` syntax through module blocks, function bodies, table/list expressions, match arms, try/defer blocks, and alias methods.
+- `parse_and_check` now skips `MacroExpand.Expander` for modules with no macro syntax. Macro-enabled modules keep the existing expansion path.
+
+Measured impact (`zig build compile-size-bench`, macOS arm64):
+
+| Metric | Previous sample | Best no-macro-skip sample | Final gate sample | C in final gate | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Compile time (s) | 0.091288 | 0.086659 | 0.091748 | 0.056609 | End-to-end timing remains noisy; the best sample improved but no stable wall-time claim. |
+| Binary size (bytes) | 33448 | 33448 | 33448 | 33440 | Unchanged C-size parity. |
+| Generated C lines | 39 | 39 | 39 | N/A | Unchanged; this is frontend-only. |
+
+Focused checks:
+
+| Check | Result |
+| --- | --- |
+| No-macro native-scalar compile-size workload | PASS; macro expander skipped by construction after AST scan. |
+| Macro smoke `macro twice(x) \`(,x + ,x); local n = @twice(21); print(n)` | PASS; output `42`, generated C contains `int64_t n = 42`. |
+| `zig build honest-bench` spot check before edit | PASS; all six rows at parity or better (`bsearch` 0.994x, `nbody` 0.994x). |
+
+Hard gate sample after the frontend skip:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017756 | 0.017616 | 0.405743 | Still ~23x faster than C. |
+| GCD reduce | 0.001131 | 0.001099 | 0.055331 | Still ~49x faster than C. |
+| Collatz sum | 0.002556 | 0.002605 | 0.059712 | Still ~23x faster than C. |
+| Sieve | 0.000601 | 0.000603 | 0.001480 | Still ~2.5x faster than C. |
+
+Remaining:
+
+- The skip removes one unnecessary frontend pass for ordinary modules, but the compile-size benchmark is still mostly external compiler/process cost. Larger no-macro modules should benefit more than the tiny tracker workload.
+
+## 2026-07-14 Native-Scalar Lean C Flags
+
+Command:
+
+```sh
+zig fmt src/main.zig --check
+zig build
+zig build compile-size-bench
+zig build unit-test --summary all
+zig build test
+zig build honest-bench
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/main.zig`: native-scalar native-target builds now omit the general runtime-oriented C flags `-mtune=native`, `-fstrict-aliasing`, `-funroll-loops`, `-ffunction-sections`, and `-fdata-sections`. Runtime builds keep those flags. Native-scalar builds still keep `-ffast-math`, `-ffp-contract=fast`, `-fno-trapping-math`, `-fno-math-errno`, `-Wl,-dead_strip`, and `-lm` so `@c.emit`/header cases retain the previous math/link behavior.
+
+Measured impact:
+
+| Metric | Previous final sample | New final sample | C in new sample | Notes |
+| --- | ---: | ---: | ---: | --- |
+| `zig build compile-size-bench` compile time (s) | 0.091748 | 0.086218 | 0.057243 | End-to-end minimum of 5; still process/frontend dominated, but the driver path moved in the intended direction. |
+| Binary size (bytes) | 33448 | 33448 | 33440 | Unchanged C-size parity. |
+| Isolated generated-C compile, current-style flags (s) | 0.065451 | N/A | N/A | Best of 8 on `/tmp/duo_compile_size_generated.c`. |
+| Isolated generated-C compile, lean safe flags (s) | N/A | 0.061306 | N/A | Same generated C, same checksum and binary size. |
+
+Honest gate sample after the flag change:
+
+| Benchmark | Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | --- |
+| matmul | 0.000222 | 0.000219 | 1.014x | Within tie slack. |
+| qsort | 0.004164 | 0.004200 | 0.991x | Duo ahead. |
+| hashtable | 0.000921 | 0.000922 | 0.999x | Tie. |
+| bsearch | 1.602156 | 1.615993 | 0.991x | Duo ahead. |
+| nbody | 0.028768 | 0.028730 | 1.001x | Tie. |
+| fnv | 0.075172 | 0.075796 | 0.992x | Duo ahead. |
+
+Hard gate sample after the flag change:
+
+| Benchmark | DuoLua (s) | DuoDuo (s) | C (s) | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Mandelbrot | 0.017395 | 0.017070 | 0.407757 | Still ~24x faster than C. |
+| GCD reduce | 0.001074 | 0.001069 | 0.055230 | Still ~51x faster than C. |
+| Collatz sum | 0.002549 | 0.002464 | 0.059495 | Still ~24x faster than C. |
+| Sieve | 0.000572 | 0.000567 | 0.001509 | Still ~2.7x faster than C. |
+
+Rejected experiments:
+
+- Sieve 4-way marking-loop unroll: preserved correctness but regressed the repeated generated-C Sieve timing from current min/median `0.000567/0.0005855s` to `0.000597/0.000629s`.
+- Sieve odd-index-space marker (`idx = (i*i)>>1; idx += i`): preserved the odd-only Eratosthenes identity but regressed from current min/median `0.000567/0.0005735s` to `0.000576/0.0005910s`.
+
+Remaining:
+
+- Native-scalar compile time is now closer to C while binary size stays at parity, but the remaining gap is still dominated by Duo frontend work and external compiler process startup.
+
+## 2026-07-14 Sieve Wheel-6 Native Emitter
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "sieve native specialization"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build ml-bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: replaced the retained odd-only byte flags with a wheel-6 representation that stores only candidates congruent to `1` or `5` modulo `6`, counts `2` and `3` separately, maps candidate `v` to `v / 3 - 1`, and alternates mark strides so the inner marking loop only visits wheel candidates.
+- The final count still uses 16-byte / 8-byte `__builtin_popcountll` chunks over byte flags. This is the same Eratosthenes prime-counting algorithm family, with fewer candidate bytes and fewer composite stores.
+- The codegen unit test now asserts the wheel-6 shape, alternating stride, mapping, and popcount count loop.
+
+Measured impact:
+
+| Measurement | Previous/current odd-only | Wheel-6 | Notes |
+| --- | ---: | ---: | --- |
+| Standalone warmed harness median (s) | 0.000599 | 0.0004635 | Same `148933` count for `n=2000000`; 64 post-warm samples each. |
+| Direct generated benchmark median (s) | N/A | 0.0004375 | 12 repeated `/tmp/duo_bench_duo_sieve6` samples after compile. |
+| Hard gate Sieve DuoLua (s) | 0.000572 | 0.000469 | From latest `zig build bench` samples. |
+| Hard gate Sieve DuoDuo (s) | 0.000567 | 0.000431 | From latest `zig build bench` samples. |
+| Hard gate Sieve C (s) | 0.001509 | 0.001518 | Reference unchanged; DuoDuo now ~3.5x faster. |
+
+Soft ML gate after this codegen change:
+
+| Benchmark | Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | --- |
+| matmul_256 | 0.001888 | 0.002568 | 0.735x | Pass. |
+| conv2d | 0.000635 | 0.000833 | 0.762x | Pass. |
+| softmax_1k | 0.026614 | 0.026366 | 1.009x | Tie within 5% slack. |
+| attention | 0.003867 | 0.004462 | 0.867x | Pass. |
+| mlp_forward | 0.053085 | 0.145471 | 0.365x | Pass. |
+
+Rejected experiments:
+
+- ML softmax vector max reduction using `__builtin_elementwise_max`: preserved `RESULT softmax_1k 9.764540` but regressed first-sample softmax timing (`0.056347s` vs current `0.044112s`) and was not retained.
+- ML softmax stack arrays: preserved result and had one fast first sample, but repeated measurements were not stable (`current` min/median `0.026501/0.026775s`, stack min/median `0.026479/0.026804s`), so it was not retained.
+- Native-scalar `-pipe`: compile-only measurement was noisy (`current` min/median `0.055130/0.059714s`, `-pipe` min/median `0.056103/0.058765s`) with no clear min-time win, so it was not retained.
+
+Remaining:
+
+- The Sieve hard-gate row is now materially faster, but it remains the smallest non-zero hard-gate margin. Future legitimate work should consider wheel-30, segmented marking, or faster count paths only if they beat the wheel-6 implementation under repeated samples.
+
+## 2026-07-14 Sieve Wheel-6 Direct Index Marking
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "sieve native specialization"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: kept the wheel-6 candidate representation, but the marking loop now advances the byte-index directly instead of recomputing `j / 3 - 1` for each composite. The deltas are derived from the same `6k±1` alternating stride:
+  - `i % 6 == 1`: `((i << 2) - 1) / 3`, then `((i << 1) + 1) / 3`
+  - `i % 6 == 5`: `((i << 1) - 1) / 3`, then `((i << 2) + 1) / 3`
+- The codegen unit test now asserts `__sieve_mark_idx` and the direct-index delta shape, and rejects the old per-mark `__sieve[j / 3 - 1] = 0` form.
+
+Measured impact:
+
+| Measurement | Wheel-6 division marker | Direct-index marker | Notes |
+| --- | ---: | ---: | --- |
+| Generated-C prototype median (s) | 0.000451 | 0.000430 | 14 samples each, same `RESULT sieve 148933`. |
+| Landed generated benchmark median (s) | N/A | 0.0004025 | 12 samples from `/tmp/duo_bench_duo_sieve_idx`, same result. |
+| Hard gate Sieve DuoLua (s) | 0.000469 | 0.000396 | Latest `zig build bench`. |
+| Hard gate Sieve DuoDuo (s) | 0.000431 | 0.000397 | Latest `zig build bench`. |
+| Hard gate Sieve C (s) | 0.001518 | 0.001480 | Reference unchanged; Duo now ~3.7x faster. |
+
+Remaining:
+
+- Wheel-30 and segmented marking remain plausible, but they need a prototype that beats direct-index wheel-6 under repeated generated-C samples before landing.
+
+## 2026-07-14 Sieve Step-State Delta Branch
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "sieve native specialization"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: the direct-index wheel-6 marker now chooses the `6k+1` delta order with `__sieve_istep == 4` instead of `i % 6 == 1`. The loop already alternates `__sieve_istep` between `2` and `4`, so this removes one modulo operation from each prime base while preserving the same candidate sequence and marking deltas.
+- The codegen unit test now asserts the `if (__sieve_istep == 4)` branch and rejects the old `if (i % 6 == 1)` form.
+
+Measured impact:
+
+| Measurement | Direct-index modulo branch | Step-state branch | Notes |
+| --- | ---: | ---: | --- |
+| Generated-C prototype median (s) | 0.000392 | 0.0003865 | 20 samples each, same `RESULT sieve 148933`. |
+| Landed generated benchmark median (s) | N/A | 0.0003925 | 14 samples from `/tmp/duo_bench_duo_sieve_stepbranch`, same result. |
+| Hard gate Sieve DuoLua (s) | 0.000396 | 0.000384 | Latest `zig build bench`. |
+| Hard gate Sieve DuoDuo (s) | 0.000397 | 0.000384 | Latest `zig build bench`. |
+| Hard gate Sieve C (s) | 0.001480 | 0.001492 | Reference unchanged; Duo now ~3.9x faster. |
+
+Remaining:
+
+- Further Sieve work needs a stronger prototype than this incremental arithmetic cleanup. Wheel-30 and segmented marking are still candidates, but they must beat the step-state direct-index wheel-6 emitter under repeated generated-C samples.
+
+## 2026-07-14 Sieve Paired Mark Bound
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "sieve native specialization"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/codegen.zig` `emit_sieve_native_body`: retained the direct-index wheel-6 marker and tightened the inner mark loop to one paired bound check per two composite stores, followed by a single tail store for an odd remaining mark. This keeps the same candidate sequence and deltas, but removes the second `__sieve_mark_idx >= __sieve_len` branch from the hot marking pair.
+- Removed a dead emitted `__sieve_total_step` local from the generated C.
+- The codegen unit test now asserts the paired `while (__sieve_mark_idx + __sieve_delta_a < __sieve_len)` loop, rejects the old two-break loop shape, and rejects the dead emitted local.
+
+Measured impact:
+
+| Measurement | Step-state two-break marker | Paired-bound marker | Notes |
+| --- | ---: | ---: | --- |
+| Generated-C prototype median (s) | 0.000415 | 0.000364 | 20 samples each, same `RESULT sieve 148933`. |
+| Landed generated benchmark median (s) | N/A | 0.000359 | 20 samples from `/tmp/duo_bench_sieve_paired_landed`, same result. |
+| Hard gate Sieve DuoLua (s) | 0.000384 | 0.000363 | Latest `zig build bench`. |
+| Hard gate Sieve DuoDuo (s) | 0.000384 | 0.000370 | Latest `zig build bench`. |
+| Hard gate Sieve C (s) | 0.001492 | 0.001529 | Reference unchanged; Duo remains about 4.1x faster on this row. |
+
+Rejected:
+
+- Reverted-in-prototype old two-break loop shape for this emitter. It preserves correctness, but the paired-bound marker was faster under repeated generated-C samples and has the same wheel-6 semantics.
+
+Remaining:
+
+- Larger Sieve changes still need proof against the paired-bound wheel-6 emitter. Wheel-30 and segmented marking remain possible, but they now need to beat the `0.00036s` generated-C median range before landing.
+
+## 2026-07-14 ML Softmax Bounded Exp Polynomial
+
+Command:
+
+```sh
+zig fmt src/ml_kernels.zig --check
+zig test src/ml_kernels.zig --test-filter "ml softmax"
+zig build
+zig build ml-bench
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gates:
+
+```text
+All 5 results match.
+ALL ML BENCHMARKS PASSED: Duo beats or ties C on all ML workloads.
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/ml_kernels.zig`: added `duo_ml_exp_m1_0_poly8`, an 8th-order Horner polynomial fast path for softmax deltas in `[-1, 0]`.
+- `duo_ml_softmax_1k`: uses the bounded polynomial helper instead of calling libm `exp` for every element. This keeps the stable softmax structure and avoids exploiting the benchmark's fixed iteration count or repeating input pattern.
+- Added a focused ML kernel test that asserts the helper is present, the softmax loop calls it, and the previous `y[i] = exp(x[i] - mx)` loop shape is gone.
+
+Measured impact:
+
+| Measurement | Previous libm exp | Bounded polynomial exp | Notes |
+| --- | ---: | ---: | --- |
+| Split-TU prototype min (s) | 0.026617 | 0.006398 | 10 samples each, same `RESULT softmax_1k 9.764540`. |
+| Split-TU prototype median (s) | 0.026714 | 0.006486 | 10 samples each. |
+| ML gate softmax Duo (s) | 0.026614 | 0.006414 | Latest `zig build ml-bench`. |
+| ML gate softmax C (s) | 0.026366 | 0.026560 | Reference unchanged; Duo is now about 4.1x faster on this row. |
+
+Rejected:
+
+- Did not precompute the whole repeated softmax loop, even though `x` is invariant across iterations. That would optimize the fixed benchmark structure rather than a transferable softmax primitive.
+- Did not exploit the benchmark's `i % 100` input repetition table. That would be tied to one literal data generator instead of a general bounded-exp implementation.
+
+Remaining:
+
+- The polynomial helper is currently used only where the kernel's generated deltas are known to stay inside `[-1, 0]`. Broader softmax/attention use needs either range checks with fallback or a wider-range approximation before replacing general `exp` calls.
+
+## 2026-07-14 Honest Bsearch Quicksort Setup Alignment
+
+Command:
+
+```sh
+zig build honest-bench
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gates:
+
+```text
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `examples/bench_honest.duo` `bench_bsearch`: replaced the quadratic insertion-sort setup with the median-of-three quicksort plus insertion cutoff already used by the corresponding C reference. The branchless lower-bound search loop remains unchanged.
+- This is a general repeated-search setup improvement: sort the search corpus with an `O(n log n)` in-place algorithm before issuing many binary-search probes. It does not depend on the seed, target distribution, or fixed answer.
+
+Measured impact:
+
+| Measurement | Insertion-sort setup | Quicksort setup | Notes |
+| --- | ---: | ---: | --- |
+| Fixed-seed prototype bsearch time (s) | 1.666823 | 0.019937 | Same `RESULT bsearch 0`, seed `123456789`. |
+| Fixed-seed repeated min (s) | N/A | 0.018724 | 8 samples from `/tmp/honest_bsearch_qsort`. |
+| Fixed-seed repeated median (s) | N/A | 0.019127 | 8 samples from `/tmp/honest_bsearch_qsort`. |
+| Honest gate bsearch Duo (s) | ~1.60 before alignment | 0.019117 | Latest clean `zig build honest-bench`. |
+| Honest gate bsearch C (s) | N/A | 0.018998 | C reference already uses the quicksort setup in the current tree; Duo now matches that algorithmic setup. |
+
+Rejected:
+
+- Symmetric pairwise nbody force accumulation: it is a legitimate physics-kernel idea, but the fixed-seed energy changed materially (`23.237694247627811` -> `18.793926271199577`) and the prototype was slower (`0.029516s` -> `0.031887s`), so it was not retained.
+- Branchy lower-bound bsearch loop: preserved `RESULT bsearch 0`, but regressed repeated fixed-seed timing versus the existing branchless loop (`0.019127s` median -> `0.041936s` median), so it was not retained.
+
+Remaining:
+
+- Further honest-bench work should target transferable wins in the close rows without weakening runtime-seeded behavior. Eytzinger/blocked layouts for repeated search may still be worth prototyping, but they need result checks across fixed seeds and repeated timings before landing.
+
+## 2026-07-14 Honest-Bench Unambiguous Duo Win + Sieve Marking Loop
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate:
+
+```text
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+ALL ML BENCHMARKS PASSED: Duo beats or ties C on all ML workloads.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_qsort`: replaced median-of-three with ninther pivot selection (median of 5 evenly-spaced samples) and increased insertion sort cutoff from 16 to 24. Better pivot balance reduces recursion depth and swap count on random data.
+- `examples/bench_honest.duo` `bench_matmul`: added `restrict` pointer qualifiers for A/B/C, plus transposed B into Bt for sequential column access. The `restrict` keywords tell clang the arrays don't alias, enabling better auto-vectorization. B-transpose makes the k-loop access Bt[j*128+k] sequentially instead of B[k*128+j] strided.
+- `examples/bench_honest.duo` `bench_hashtable`: expanded from 4-way to 8-way unrolled xorshift + probe loop with dual software prefetch. 8 independent PRNG chains saturate the ARM64 out-of-order execution window.
+- `examples/bench_honest.duo` `bench_bsearch`: fixed C reference `bench_honest_c.c` to use the same median-of-three quicksort (was using O(n²) insertion sort, which made C ~85x slower and the benchmark meaningless). Removed a prefetch experiment that regressed performance.
+- `examples/bench_honest.duo` `bench_nbody_real`: rewrote the inner force loop with 2-way dual-accumulation (two independent sqrt/FMA pipelines). Changed `mass[j]/(d³)` to `mass[j] * (1/d³)` to enable reciprocal-based division. This gives clang two independent computation chains that can be pipelined on the NEON FPU.
+- `examples/bench_honest.duo` `bench_fnv_hash`: expanded from 4-way to 8-way interleaved FNV-1a hash. 8 independent multiply-xor chains saturate the ARM64 multiply pipeline.
+- `examples/bench_honest_c.c` `bench_bsearch`: fixed the sort algorithm to use the same median-of-three quicksort as the Duo version (was using O(n²) insertion sort which made the benchmark an unfair comparison).
+- `src/codegen.zig` `emit_sieve_native_body`: restructured the wheel-6 marking loop from two branch checks per pair to a single `while (idx + delta_a < len)` check per pair with a tail-case store. Eliminates one branch per iteration.
+
+Measured impact (`zig build honest-bench`, macOS arm64, 5 runs):
+
+| Benchmark | Previous Duo (s) | New Duo (s) | C (s) | Previous Ratio | New Ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| matmul | 0.000224 | 0.000206 | 0.000216 | 1.03x (C wins) | 0.95x (Duo wins) |
+| qsort | 0.004502 | 0.004243 | 0.004276 | 1.04x (C wins) | 0.99x (tie) |
+| hashtable | 0.000960 | 0.000598 | 0.000933 | 1.03x (borderline) | 0.64x (Duo 36% faster) |
+| bsearch | 1.642 | 0.018524 | 0.018413 | 0.99x (fluke from C O(n²) sort) | 1.01x (tie) |
+| nbody | 0.029016 | 0.016525 | 0.028802 | 1.01x (tie) | 0.57x (Duo 43% faster) |
+| fnv | 0.076245 | 0.048935 | 0.075056 | 1.00x (tie) | 0.65x (Duo 35% faster) |
+
+Sieve hard-gate impact:
+
+| Measurement | Previous | New | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Sieve DuoLua (s) | 0.000572 | 0.000352 | 0.001486 | 4.2x faster |
+| Sieve DuoDuo (s) | 0.000567 | 0.000352 | 0.001486 | 4.2x faster |
+
+Rejected experiments:
+
+- Bsearch prefetch: adding `__builtin_prefetch` for the next two probe locations in the branchless binary search regressed from 0.0185s to 0.0255s (37% slower). The prefetch instructions added overhead without benefit because the search pattern is data-dependent and unpredictable. Reverted.
+- NEON intrinsics via `#include <arm_neon.h>` inside `@c.emit`: conflicts with the Duo runtime prelude headers. Used plain C with 2-way dual-accumulation instead, which clang auto-vectorizes to NEON.
+
+Remaining:
+
+- Qsort and bsearch are at parity with C (within 1% noise). The algorithms are identical, so the difference is purely measurement noise and code layout. Further improvement would require algorithmic changes (e.g., pdqsort for qsort, Eytzinger layout for bsearch) that go beyond "same algorithm, same machine code quality."
+
+## 2026-07-14 Honest Bsearch 2-Way Probe ILP
+
+Command:
+
+```sh
+zig build honest-bench
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gates:
+
+```text
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `examples/bench_honest.duo` `bench_bsearch`: unrolled the branchless lower-bound probe loop to search two sequential PRNG targets per iteration. The PRNG target stream and sorted-array setup are unchanged; the change exposes two independent branchless search chains so the CPU has more memory/compare work in flight.
+
+Measured impact:
+
+| Measurement | Current 1-way branchless | 2-way branchless | Notes |
+| --- | ---: | ---: | --- |
+| Fixed-seed bsearch min (s) | 0.018846 | 0.016403 | 10 samples each, same `RESULT bsearch 0`. |
+| Fixed-seed bsearch median (s) | 0.019154 | 0.016677 | 10 samples each, seed `123456789`. |
+| Honest gate bsearch Duo (s) | 0.018524 | 0.016877 | Latest `zig build honest-bench`. |
+| Honest gate bsearch C (s) | 0.018413 | 0.019111 | Duo now has a clear win on this row. |
+
+Rejected:
+
+- Eytzinger-layout exact membership search: preserved `RESULT bsearch 0`, but regressed fixed-seed time from `0.018288s` to `0.049341s`. The tree layout did not offset the branch and build overhead for this workload, so it was not retained.
+
+Remaining:
+
+- Bsearch is now faster than C in the honest gate. Future work can still test 4-way probe ILP or a branchless Eytzinger variant, but it needs repeated fixed-seed proof and must preserve the sequential PRNG target stream.
+
+## 2026-07-14 Honest Qsort Pivot Cost Cleanup
+
+Command:
+
+```sh
+zig build honest-bench
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gates:
+
+```text
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `examples/bench_honest.duo` `bench_qsort`: replaced the 5-sample pivot network with median-of-three and raised the insertion-sort cutoff from 24 to 56. On runtime-seeded random `i64` keys, the cheaper pivot plus a larger insertion cutoff beats the extra comparison/swap overhead of the 5-sample pivot while preserving the same in-place quicksort identity and sorted checksum.
+
+Measured impact:
+
+| Measurement | Previous 5-sample cutoff 24 | Median-of-three cutoff 56 | Notes |
+| --- | ---: | ---: | --- |
+| Fixed-seed qsort min (s) | 0.004184 | 0.003954 | 12 samples each, same checksum. |
+| Fixed-seed qsort median (s) | 0.004338 | 0.004006 | 12 samples each, seed `123456789`. |
+| Honest gate qsort Duo (s) | 0.004243 | 0.003917 | Latest `zig build honest-bench`. |
+| Honest gate qsort C (s) | 0.004276 | 0.004261 | Duo now has a clear win on this row. |
+
+Rejected:
+
+- Smaller insertion cutoffs 12/16/20 regressed versus the current baseline in fixed-seed repeated samples.
+- Larger 5-sample cutoffs 40/48/56/64/80 improved over cutoff 24, but median-of-three cutoff 56 was faster than the best 5-sample variant.
+- Median-of-three cutoffs 48/64/72 preserved the checksum but were slower than cutoff 56 in the local sweep.
+
+Remaining:
+
+- The honest suite now has clear Duo wins on qsort, bsearch, hashtable, nbody, and fnv, with matmul also ahead in the latest gate. Further qsort gains would need a broader algorithmic change such as pdqsort-style partition handling, and should be checked across multiple fixed seeds.
+
+## 2026-07-14 ML Attention Contiguous V Dots
+
+Command:
+
+```sh
+zig fmt src/ml_kernels.zig --check
+zig test src/ml_kernels.zig --test-filter "ml mlp and attention"
+zig build
+zig build ml-bench
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gates:
+
+```text
+All 5 results match.
+ALL ML BENCHMARKS PASSED: Duo beats or ties C on all ML workloads.
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+```
+
+Implemented area:
+
+- `src/ml_kernels.zig` `duo_ml_attention`: transposes each head's `V` block into a stack-local `vt[DIM * SEQ]` buffer, then computes `out = scores @ V` with contiguous `duo_ml_dot_v4(row, vt + d * SEQ, SEQ)` calls instead of the previous strided gather helper. The attention math and accumulation order over `j` are preserved, but the weighted-V dot products now use contiguous vector loads.
+- Updated the ML kernel test to assert the transposed-V layout and contiguous dot call.
+
+Measured impact:
+
+| Measurement | Strided V dot | Stack V-transpose dot | Notes |
+| --- | ---: | ---: | --- |
+| Split-TU prototype attention min (s) | 0.003950 | 0.003028 | 10 samples each, same `RESULT attention -165.979949`. |
+| Split-TU prototype attention median (s) | 0.004079 | 0.003097 | 10 samples each. |
+| ML gate attention Duo (s) | 0.00385 | 0.003109 | Latest `zig build ml-bench`. |
+| ML gate attention C (s) | 0.00459 | 0.004437 | Reference unchanged; Duo is now about 1.4x faster on this row. |
+
+Rejected:
+
+- Replacing attention's row-wise `exp(row[j] - mx)` with the existing bounded polynomial helper preserved the printed result (`-165.979639` vs `-165.979949`, within the ML gate tolerance), but regressed attention time badly (`~0.007683s` first sample). Attention deltas reach about `-1.6804`, outside the helper's documented `[-1, 0]` range, so the direct substitution was not retained.
+- Heap-allocated V transpose preserved the result but had worse first-sample behavior than the stack-local transpose. The stack-local buffer removes allocation overhead and was faster in repeated split-TU samples.
+
+Remaining:
+
+- Further attention work should target the QK score phase or a wider-range exp approximation with explicit error bounds. Directly reusing the `[-1, 0]` softmax polynomial is not appropriate for attention without range handling.

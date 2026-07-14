@@ -118,7 +118,7 @@ fun read_message(raw: str): any
                 cur_key = string.sub(line, 1, colon - 1)
                 cur_val = string.sub(line, colon + 1)
             else
-                local cur_key = nil
+                cur_key = nil
             end
         end
         i += 1

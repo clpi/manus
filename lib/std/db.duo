@@ -1,5 +1,7 @@
 -- std.db — Database abstraction: connection pooling, query builder
--- Generic interface for SQLite, PostgreSQL, MySQL with connection pooling.
+-- Generic interface for SQLite (via std.sqlite FFI), PostgreSQL, MySQL with connection pooling.
+
+local sqlite = req "std.sqlite"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Database Configuration
@@ -125,48 +127,85 @@ fun db_pool_stats(pool: any): any
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- Database Connection
+-- Database Connection (backed by real SQLite FFI)
 -- ═══════════════════════════════════════════════════════════════
 
 fun db_connection_new(config: any): any
-    -- This is a placeholder. In production, this would call
-    -- the driver-specific connection code via __emit.
-    {
-        config = config,
-        connected = true,
-        connection_id = math.random(10000, 99999),
-        transaction_active = false,
-    }
+    if config.driver == "sqlite" then
+        db_path = config.database
+        if db_path == nil or db_path == "" then
+            db_path = ":memory:"
+        end
+        handle = sqlite.open(db_path)
+        if handle == nil then
+            return {error = "Failed to open SQLite database: " .. db_path}
+        end
+        {
+            config = config,
+            connected = true,
+            handle = handle,
+            driver = "sqlite",
+            transaction_active = false,
+        }
+    else
+        -- Non-sqlite drivers not yet supported
+        {error = "Unsupported driver: " .. config.driver}
+    end
 end
 
 fun db_connection_close(conn: any): void
+    if conn == nil then return end
+    if conn.handle ~= nil and conn.connected then
+        sqlite.close(conn.handle)
+        conn.handle = nil
+    end
     conn.connected = false
 end
 
 fun db_connection_ping(conn: any): bool
-    conn.connected
+    conn.connected and conn.handle ~= nil
 end
 
 fun db_connection_execute(conn: any, sql: str, params: any): any
     if not conn.connected then
         return {error = "Connection closed"}
     end
-    -- Placeholder: returns empty result set
-    {
-        ok = true,
-        rows_affected = 0,
-        rows = {},
-        columns = {},
-    }
+    if conn.driver == "sqlite" then
+        -- Use sqlite.exec for DDL/DML without results
+        err = sqlite.execute(conn.handle, sql)
+        if err ~= "" then
+            return {ok = false, error = err, rows_affected = 0, rows = {}, columns = {}}
+        end
+        affected = sqlite.changes(conn.handle)
+        return {ok = true, rows_affected = affected, rows = {}, columns = {}}
+    end
+    {error = "Unsupported driver"}
 end
 
 fun db_connection_query(conn: any, sql: str, params: any): any
-    db_connection_execute(conn, sql, params)
+    if not conn.connected then
+        return {error = "Connection closed"}
+    end
+    if conn.driver == "sqlite" then
+        rows = sqlite.query(conn.handle, sql)
+        if rows == nil then
+            return {ok = false, error = "Query failed", rows = {}, columns = {}}
+        end
+        -- Extract column names from first row
+        columns = {}
+        if #rows > 0 then
+            for k, _ in rows[1]
+                columns[#columns + 1] = k
+            end
+        end
+        return {ok = true, rows_affected = 0, rows = rows, columns = columns}
+    end
+    {error = "Unsupported driver"}
 end
 
 fun db_connection_query_one(conn: any, sql: str, params: any): any
-    result = db_connection_execute(conn, sql, params)
-    if result.error then return result end
+    result = db_connection_query(conn, sql, params)
+    if result.error or not result.ok then return result end
     if #result.rows > 0 then
         return result.rows[1]
     end
@@ -177,6 +216,12 @@ fun db_connection_begin(conn: any): any
     if conn.transaction_active then
         return {error = "Transaction already active"}
     end
+    if conn.driver == "sqlite" then
+        err = sqlite.execute(conn.handle, "BEGIN TRANSACTION")
+        if err ~= "" then
+            return {ok = false, error = err}
+        end
+    end
     conn.transaction_active = true
     {ok = true}
 end
@@ -185,6 +230,12 @@ fun db_connection_commit(conn: any): any
     if not conn.transaction_active then
         return {error = "No active transaction"}
     end
+    if conn.driver == "sqlite" then
+        err = sqlite.execute(conn.handle, "COMMIT")
+        if err ~= "" then
+            return {ok = false, error = err}
+        end
+    end
     conn.transaction_active = false
     {ok = true}
 end
@@ -192,6 +243,12 @@ end
 fun db_connection_rollback(conn: any): any
     if not conn.transaction_active then
         return {error = "No active transaction"}
+    end
+    if conn.driver == "sqlite" then
+        err = sqlite.execute(conn.handle, "ROLLBACK")
+        if err ~= "" then
+            return {ok = false, error = err}
+        end
     end
     conn.transaction_active = false
     {ok = true}

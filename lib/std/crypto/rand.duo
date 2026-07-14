@@ -53,18 +53,84 @@ end
 
 fun prime(bits: i64): i64
     if bits == nil or bits < 2 return 2 end
+    if bits == 2 return 2 + int(2) end  -- 2 or 3
+    
+    -- Miller-Rabin primality test
+    -- Returns true if n is probably prime
+    fun is_probable_prime(n: i64): bool
+        if n < 2 then return false end
+        if n == 2 or n == 3 then return true end
+        if n % 2 == 0 then return false end
+        
+        -- Write n-1 as 2^r * d
+        d = n - 1
+        r = 0
+        while d % 2 == 0
+            d = d / 2
+            r += 1
+        end
+        
+        -- Witness loop
+        witnesses = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37}
+        for _, a in witnesses
+            if a >= n then continue end
+            
+            x = pow_mod(a, d, n)
+            if x == 1 or x == n - 1 then continue end
+            
+            composite = true
+            j = 1
+            while j < r
+                x = pow_mod(x, 2, n)
+                if x == n - 1 then
+                    composite = false
+                    break
+                end
+                j += 1
+            end
+            if composite then return false end
+        end
+        true
+    end
+    
+    -- Modular exponentiation: base^exp % mod
+    fun pow_mod(base: i64, exp: i64, mod: i64): i64
+        result = 1
+        base = base % mod
+        while exp > 0
+            if exp % 2 == 1 then
+                result = (result * base) % mod
+            end
+            exp = exp / 2
+            base = (base * base) % mod
+        end
+        result
+    end
+    
+    -- Generate random odd number of the right bit length
     while true
         low = 1 << (bits - 1)
         high = (1 << bits) - 1
         n = low + int(high - low + 1)
-        is_prime = true
-        for i = 2, math.sqrt(n)
-            if n % i == 0 then
-                is_prime = false
+        -- Make odd
+        n = n | 1
+        -- Ensure it's within range
+        if n > high then n = high - 1 end
+        if n < low then n = low + 1 end
+        
+        -- Quick trial division for small factors
+        small_primes = {3, 5, 7, 11, 13, 17, 19, 23, 29, 31}
+        is_composite = false
+        for _, p in small_primes
+            if n % p == 0 and n ~= p then
+                is_composite = true
                 break
             end
         end
-        if is_prime then return n end
+        if is_composite then continue end
+        
+        -- Miller-Rabin test
+        if is_probable_prime(n) then return n end
     end
 end
 

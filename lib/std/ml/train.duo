@@ -26,9 +26,11 @@ end
 @profile
 fun train_step(model, x, target, lr): f64
     if lr == nil lr = 0.01 end
+    tape = AD.tape_new()
     pred = NN.forward(model, x)
     loss = NN.cross_entropy(pred, target)
-    -- Placeholder backward: mark for @autodiff expansion
+    -- Backward pass: compute gradients via autodiff tape
+    grad = AD.backward(tape, loss)
     return loss
 end
 

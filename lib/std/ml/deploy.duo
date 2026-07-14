@@ -31,22 +31,85 @@ fun edge_pipeline(model): any
     }
 end
 
--- Metadata for ONNX / safetensors export (parser lands in Phase 4)
+-- Metadata for ONNX / safetensors export
+local OnnxExport = req "std.ml.export"
+local io = req "std.io"
+local json_mod = req "std.encoding.json"
+
 fun export_onnx(model, path): any
-    return {
-        format = "onnx",
-        path = path,
-        model = model,
-        status = "stub",
-    }
+    -- Build ONNX model from Duo model's layers
+    graph = OnnxExport.onnx_graph_new(model.name or "model")
+    -- Export layers as ONNX nodes
+    for layer in model.layers
+        if layer.type == "linear" then
+            OnnxExport.onnx_graph_add_node(graph, "MatMul", {layer.name .. "_input", layer.name .. "_weight"}, {layer.name .. "_output"}, layer.name)
+            OnnxExport.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.in_features, layer.out_features}, layer.weight)
+            if layer.bias then
+                OnnxExport.onnx_graph_add_node(graph, "Add", {layer.name .. "_output", layer.name .. "_bias"}, {layer.name .. "_final"}, layer.name .. "_add_bias")
+                OnnxExport.onnx_graph_add_initializer(graph, layer.name .. "_bias", {layer.out_features}, layer.bias)
+            end
+        elseif layer.type == "relu" then
+            OnnxExport.onnx_graph_add_node(graph, "Relu", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+        elseif layer.type == "softmax" then
+            OnnxExport.onnx_graph_add_node(graph, "Softmax", {layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+        elseif layer.type == "embedding" then
+            OnnxExport.onnx_graph_add_initializer(graph, layer.name .. "_weight", {layer.vocab_size, layer.embed_dim}, layer.weight)
+            OnnxExport.onnx_graph_add_node(graph, "Gather", {layer.name .. "_weight", layer.name .. "_input"}, {layer.name .. "_output"}, layer.name)
+        end
+    end
+    -- Set input/output specs
+    OnnxExport.onnx_graph_add_input(graph, "input", {nil}, "float32")
+    OnnxExport.onnx_graph_add_output(graph, "output", {nil}, "float32")
+    onnx_model = OnnxExport.onnx_model_new(graph, model.opset or 17)
+    OnnxExport.onnx_model_save(onnx_model, path)
 end
 
-fun load_safetensors(path): any
-    return {
-        format = "safetensors",
-        path = path,
-        status = "stub",
-    }
+fun load_safetensors(path: str): any
+    f = io.open(path, "rb")
+    if f == nil then
+        return {ok = false, error = "Cannot open file: " .. path}
+    end
+
+    -- Read 8-byte header length prefix
+    len_bytes = io.read(f, 8)
+    if len_bytes == nil or string.len(len_bytes) < 8 then
+        io.close(f)
+        return {ok = false, error = "Invalid safetensors: missing header length"}
+    end
+
+    -- Decode little-endian u64 header length
+    header_len = 0
+    i = 1
+    while i <= 8
+        header_len = header_len + string.byte(len_bytes, i) * (2 ^ ((i - 1) * 8))
+        i += 1
+    end
+
+    -- Read header JSON
+    header_json = io.read(f, header_len)
+    io.close(f)
+    if header_json == nil then
+        return {ok = false, error = "Invalid safetensors: cannot read header"}
+    end
+
+    header = json_mod.decode(header_json)
+    if header == nil then
+        return {ok = false, error = "Invalid safetensors: bad header JSON"}
+    end
+
+    -- Build tensor map from header metadata
+    tensors = {}
+    for name, entry in header
+        if type(entry) == "table" and entry.dtype then
+            tensors[name] = {
+                dtype = entry.dtype,
+                shape = entry.shape,
+                data_offsets = entry.data_offsets,
+            }
+        end
+    end
+
+    {ok = true, path = path, tensors = tensors, header = header}
 end
 
 M = {}

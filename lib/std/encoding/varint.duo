@@ -1,0 +1,168 @@
+-- std.encoding.varint — Variable-length integer encodings
+-- Provides three common varint formats:
+--   1. Base-128 varint (protobuf-style, unsigned)
+--   2. ZigZag encoding (maps signed to unsigned for better compression)
+--   3. LEB128 (DWARF/ELF style, signed and unsigned)
+
+M = {}
+
+-- ═══════════════════════════════════════════════════════════════
+-- Base-128 Varint (protobuf-style, unsigned)
+-- Each byte: 7 bits of data + 1 continuation bit (high bit)
+-- ═══════════════════════════════════════════════════════════════
+
+fun write_varint(buf: any, value: i64): void
+    while value >= 0x80
+        buf[#buf + 1] = string.char((value & 0x7F) | 0x80)
+        value = value >> 7
+    end
+    buf[#buf + 1] = string.char(value)
+end
+
+fun read_varint(data: str, pos: any): i64
+    result = 0
+    shift = 0
+    while true
+        if pos[1] > #data then
+            error("varint: unexpected end of data")
+        end
+        byte = string.byte(data, pos[1])
+        pos[1] += 1
+        result = result | ((byte & 0x7F) << shift)
+        if byte < 0x80 then
+            break
+        end
+        shift += 7
+        if shift >= 64 then
+            error("varint: overflow")
+        end
+    end
+    return result
+end
+
+fun varint_size(value: i64): i64
+    if value < 0x80 then return 1 end
+    if value < 0x4000 then return 2 end
+    if value < 0x200000 then return 3 end
+    if value < 0x10000000 then return 4 end
+    if value < 0x800000000 then return 5 end
+    if value < 0x40000000000 then return 6 end
+    if value < 0x2000000000000 then return 7 end
+    if value < 0x100000000000000 then return 8 end
+    if value < 0x8000000000000000 then return 9 end
+    return 10
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ZigZag encoding (protobuf-style, maps signed → unsigned)
+-- ZigZag(n) = (n << 1) ^ (n >> 63)
+--   0 → 0, -1 → 1, 1 → 2, -2 → 3, ...
+-- ═══════════════════════════════════════════════════════════════
+
+fun zigzag_encode(value: i64): i64
+    return (value << 1) ~ (value >> 63)
+end
+
+fun zigzag_decode(value: i64): i64
+    return (value >> 1) ~ -(value & 1)
+end
+
+fun write_zigzag_varint(buf: any, value: i64): void
+    write_varint(buf, zigzag_encode(value))
+end
+
+fun read_zigzag_varint(data: str, pos: any): i64
+    return zigzag_decode(read_varint(data, pos))
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- LEB128 (Little-Endian Base-128, DWARF/ELF style)
+-- Each byte: 7 bits of data + 1 continuation bit (high bit)
+-- Little-endian ordering (lsb first)
+-- ═══════════════════════════════════════════════════════════════
+
+fun write_leb128(buf: any, value: i64): void
+    repeat
+        byte = value & 0x7F
+        value = value >> 7
+        if value ~= 0 then
+            byte = byte | 0x80
+        end
+        buf[#buf + 1] = string.char(byte)
+    until value == 0
+end
+
+fun read_leb128(data: str, pos: any): i64
+    result = 0
+    shift = 0
+    while true
+        if pos[1] > #data then
+            error("leb128: unexpected end of data")
+        end
+        byte = string.byte(data, pos[1])
+        pos[1] += 1
+        result = result | ((byte & 0x7F) << shift)
+        if byte < 0x80 then
+            break
+        end
+        shift += 7
+        if shift >= 64 then
+            error("leb128: overflow")
+        end
+    end
+    return result
+end
+
+fun write_signed_leb128(buf: any, value: i64): void
+    more = true
+    while more
+        byte = value & 0x7F
+        value = value >> 7
+        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) ~= 0) then
+            more = false
+        else
+            byte = byte | 0x80
+        end
+        buf[#buf + 1] = string.char(byte)
+    end
+end
+
+fun read_signed_leb128(data: str, pos: any): i64
+    result = 0
+    shift = 0
+    while true
+        if pos[1] > #data then
+            error("signed leb128: unexpected end of data")
+        end
+        byte = string.byte(data, pos[1])
+        pos[1] += 1
+        result = result | ((byte & 0x7F) << shift)
+        shift += 7
+        if byte < 0x80 then
+            if shift < 64 and (byte & 0x40) ~= 0 then
+                result = result | -(1 << shift)
+            end
+            break
+        end
+        if shift >= 64 then
+            error("signed leb128: overflow")
+        end
+    end
+    return result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+
+M.write = write_varint
+M.read = read_varint
+M.size = varint_size
+M.zigzag_encode = zigzag_encode
+M.zigzag_decode = zigzag_decode
+M.write_zigzag = write_zigzag_varint
+M.read_zigzag = read_zigzag_varint
+M.write_leb128 = write_leb128
+M.read_leb128 = read_leb128
+M.write_signed_leb128 = write_signed_leb128
+M.read_signed_leb128 = read_signed_leb128
