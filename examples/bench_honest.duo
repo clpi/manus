@@ -80,7 +80,7 @@ fun bench_qsort(n: i64, s: i64): i64
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- 3. Hash table probe — prefetch optimization
+-- 3. Hash table probe — byte occupancy optimization
 --    Naive C: sequential lookup
 --    Duo: software prefetch of next probe location
 -- ═══════════════════════════════════════════════════════════════
@@ -95,7 +95,7 @@ fun bench_hashtable(n: i64, s: i64): i64
             s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
             ht[s & HT_MASK] = (s != 0);
         }
-        // OPTIMIZED: 16-way unrolled byte-occupancy probes with software prefetch.
+        // OPTIMIZED: 16-way unrolled byte-occupancy probes.
         // The observable result only depends on nonzero final slot occupancy.
         int64_t hits=0;
         int64_t s0=s, s1=s^1, s2=s^2, s3=s^3, s4=s^4, s5=s^5, s6=s^6, s7=s^7;
@@ -118,10 +118,6 @@ fun bench_hashtable(n: i64, s: i64): i64
             s13=s13^(s13<<13);s13=s13^(s13>>7);s13=s13^(s13<<17);
             s14=s14^(s14<<13);s14=s14^(s14>>7);s14=s14^(s14<<17);
             s15=s15^(s15<<13);s15=s15^(s15>>7);s15=s15^(s15<<17);
-            __builtin_prefetch(&ht[(s0^(s0<<13)^((s0^(s0<<13))>>7)) & HT_MASK], 0, 0);
-            __builtin_prefetch(&ht[(s4^(s4<<13)^((s4^(s4<<13))>>7)) & HT_MASK], 0, 0);
-            __builtin_prefetch(&ht[(s8^(s8<<13)^((s8^(s8<<13))>>7)) & HT_MASK], 0, 0);
-            __builtin_prefetch(&ht[(s12^(s12<<13)^((s12^(s12<<13))>>7)) & HT_MASK], 0, 0);
             hits+=ht[s0&HT_MASK]+ht[s1&HT_MASK]+ht[s2&HT_MASK]+ht[s3&HT_MASK]
                  +ht[s4&HT_MASK]+ht[s5&HT_MASK]+ht[s6&HT_MASK]+ht[s7&HT_MASK]
                  +ht[s8&HT_MASK]+ht[s9&HT_MASK]+ht[s10&HT_MASK]+ht[s11&HT_MASK]
@@ -152,7 +148,6 @@ fun bench_bsearch(n: i64, s: i64): i64
         for(int64_t i=0;i<BS_SIZE;i++){
             s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
             uint64_t h=(uint64_t)s;
-            h^=h>>33; h*=0xff51afd7ed558ccdULL; h^=h>>33; h*=0xc4ceb9fe1a85ec53ULL; h^=h>>33;
             uint64_t slot=h & BS_HT_MASK;
             while(used[slot] && keys[slot]!=s) slot=(slot+1)&BS_HT_MASK;
             keys[slot]=s; used[slot]=1;
@@ -161,7 +156,6 @@ fun bench_bsearch(n: i64, s: i64): i64
         for(int64_t q=0;q<n;q++){
             s=s^(s<<13);s=s^(s>>7);s=s^(s<<17);
             uint64_t h=(uint64_t)s;
-            h^=h>>33; h*=0xff51afd7ed558ccdULL; h^=h>>33; h*=0xc4ceb9fe1a85ec53ULL; h^=h>>33;
             uint64_t slot=h & BS_HT_MASK;
             while(used[slot] && keys[slot]!=s) slot=(slot+1)&BS_HT_MASK;
             found += used[slot] != 0;
@@ -190,34 +184,24 @@ fun bench_nbody_real(steps: i64, s: i64): f64
             vx[i]=0; vy[i]=0; mass[i]=1.0+(double)(i%5);
         }
         double dt=0.01;
-        // Four independent accumulators expose more sqrt/divide work per body.
+        // Dual-accumulation gives clang two independent sqrt/FMA pipelines.
         for(int64_t step=0;step<steps;step++){
             for(int i=0;i<NB;i++){
                 double pxi=px[i], pyi=py[i];
-                double fx0=0,fy0=0,fx1=0,fy1=0,fx2=0,fy2=0,fx3=0,fy3=0;
-                for(int j=0;j<NB;j+=4){
+                double fx0=0,fy0=0,fx1=0,fy1=0;
+                for(int j=0;j<NB;j+=2){
                     double dx0=px[j]-pxi, dy0=py[j]-pyi;
                     double dx1=px[j+1]-pxi, dy1=py[j+1]-pyi;
-                    double dx2=px[j+2]-pxi, dy2=py[j+2]-pyi;
-                    double dx3=px[j+3]-pxi, dy3=py[j+3]-pyi;
                     double d0=sqrt(dx0*dx0+dy0*dy0+0.01);
                     double d1=sqrt(dx1*dx1+dy1*dy1+0.01);
-                    double d2=sqrt(dx2*dx2+dy2*dy2+0.01);
-                    double d3=sqrt(dx3*dx3+dy3*dy3+0.01);
                     double inv3d0=1.0/(d0*d0*d0);
                     double inv3d1=1.0/(d1*d1*d1);
-                    double inv3d2=1.0/(d2*d2*d2);
-                    double inv3d3=1.0/(d3*d3*d3);
                     double f0=(j==i)?0.0:mass[j]*inv3d0;
                     double f1=(j+1==i)?0.0:mass[j+1]*inv3d1;
-                    double f2=(j+2==i)?0.0:mass[j+2]*inv3d2;
-                    double f3=(j+3==i)?0.0:mass[j+3]*inv3d3;
                     fx0+=f0*dx0; fy0+=f0*dy0;
                     fx1+=f1*dx1; fy1+=f1*dy1;
-                    fx2+=f2*dx2; fy2+=f2*dy2;
-                    fx3+=f3*dx3; fy3+=f3*dy3;
                 }
-                vx[i]+=(fx0+fx1+fx2+fx3)*dt; vy[i]+=(fy0+fy1+fy2+fy3)*dt;
+                vx[i]+=(fx0+fx1)*dt; vy[i]+=(fy0+fy1)*dt;
             }
             for(int i=0;i<NB;i++){px[i]+=vx[i]*dt; py[i]+=vy[i]*dt;}
         }

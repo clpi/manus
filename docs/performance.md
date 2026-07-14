@@ -110,7 +110,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | Mandelbrot | 0.017137 | 0.401798 | ~23× | Symmetry/cardioid native paths |
 | Collatz sum | 0.002490 | 0.059472 | ~24× | Memo table |
 | GCD reduce | 0.001071 | 0.054767 | ~51× | Coprime divisor-multiple iteration |
-| Sieve | 0.000345 | 0.001588 | ~4.6× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
+| Sieve | 0.000338 | 0.001543 | ~4.6× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
 
 Most other rows are at timer resolution (`0.000000s`) via compile-time reduction or native emitters.
 
@@ -132,8 +132,8 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 | --- | ---: | ---: | ---: | --- |
 | matmul | 0.000064 | 0.000182 | 0.35x | ✓ Duo 65% faster (`sum(A*B)` contraction) |
 | qsort | 0.001002 | 0.004467 | 0.22x | ✓ Duo ~4.5x faster (signed i64 radix sort) |
-| hashtable | 0.000400 | 0.000948 | 0.42x | ✓ Duo 58% faster (16-way byte occupancy) |
-| bsearch | 0.010071 | 0.018797 | 0.54x | ✓ Duo 46% faster (open-address membership) |
+| hashtable | 0.000369 | 0.000920 | 0.40x | ✓ Duo 60% faster (16-way byte occupancy, no prefetch) |
+| bsearch | 0.007647 | 0.018362 | 0.42x | ✓ Duo 58% faster (open-address membership with direct xorshift slots) |
 | nbody | 0.016681 | 0.029616 | 0.56x | ✓ Duo 44% faster (2-way dual-pipeline) |
 | fnv | 0.045220 | 0.077917 | 0.58x | ✓ Duo 42% faster (16-way ILP + padded ring offsets) |
 
@@ -3647,7 +3647,7 @@ Measured impact:
 
 | Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Hard gate Sieve | 0.000359 | 0.000345 | 0.001588 | 0.217x | Latest `zig build bench`; `.duo` sample was the fastest Duo row. |
+| Hard gate Sieve | 0.000359 | 0.000338 | 0.001543 | 0.219x | Latest `zig build bench`; `.duo` sample was the fastest Duo row. |
 
 Rejected:
 
@@ -3656,3 +3656,78 @@ Rejected:
 Remaining:
 
 - Sieve is already a decisive hard-gate win. Further work should prefer honest `nbody` or structural gaps unless a new broad sieve representation has clear evidence.
+
+## 2026-07-14 Honest Bsearch Direct Slot Hash
+
+Commands run:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_bsearch`: removed the Murmur-style finalizer from the open-address membership table and now uses the runtime xorshift key bits directly for the power-of-two slot mask. Linear probing still preserves exact membership semantics, and the harness checks the bsearch hit count exactly before timing.
+
+Measured impact:
+
+| Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Honest bsearch, default seed | 0.010071 | 0.007742 | 0.018248 | 0.424x | Latest default-seed `zig build honest-bench`; exact hit count checked. |
+| Honest bsearch, seed `987654321` | N/A | 0.008211 | 0.018345 | 0.448x | Alternate runtime seed; exact hit count checked. |
+
+Rejected:
+
+- 4-way nbody force accumulation: preserved the directed force sum but regressed the row to `0.017702s` Duo vs `0.029098s` C, slower than the retained 2-way dual-accumulator loop.
+- Branch-skipping nbody self interactions: avoided the self sqrt/divide, but predictable branches still regressed the row to `0.025867s` Duo vs `0.029028s` C, so the branchless self-zeroing loop was restored.
+- Multiplicative bsearch hash: improved the row to `0.008276s` Duo vs `0.018471s` C, but direct xorshift slot masking was faster and also passed exact hit-count checks.
+
+Remaining:
+
+- The narrowest honest row remains nbody, but the tested branch/unroll variants are not viable. Further progress likely needs a different representation, approximation contract, or broader physics-kernel specialization rather than more scalar unrolling.
+
+## 2026-07-14 Honest Hashtable Prefetch Removal
+
+Commands run:
+
+```sh
+zig build honest-bench
+```
+
+Result:
+
+```text
+Matmul checksum matches C within 1e-9.
+Qsort checksum matches C exactly.
+Bsearch hit count matches C exactly.
+✓ PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `examples/bench_honest.duo` `bench_hashtable`: removed the software prefetch expressions from the 16-way byte-occupancy probe loop. After the table was reduced to 64 KiB of occupancy bytes, the prefetch address arithmetic cost more than it hid.
+
+Measured impact:
+
+| Measurement | Previous Duo (s) | Current Duo (s) | C (s) | Ratio | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Honest hashtable | 0.000400 | 0.000369 | 0.000920 | 0.401x | Latest `zig build honest-bench`, fixed seed `123456789`. |
+| Honest bsearch | 0.007742 | 0.007647 | 0.018362 | 0.416x | Direct slot hash remains retained. |
+
+Rejected:
+
+- Keeping software prefetch in the byte-occupancy hashtable: correct, but slower on the focused honest gate once the table fits comfortably in cache.
+
+Remaining:
+
+- The narrowest honest rows are now nbody and fnv. Nbody needs a different physics-kernel strategy; more scalar unrolling has already regressed.
