@@ -1695,6 +1695,7 @@ native_scalar_precheck.bench_mode = bench_mode;
         native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
         native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
         native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
+        native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
         const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
     phase_timer = start_trace_timer(io);
