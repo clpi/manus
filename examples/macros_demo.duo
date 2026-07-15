@@ -1,31 +1,31 @@
 -- Macro demo: compile-time meta blocks and code generation patterns
--- Demonstrates ## (compile-time evaluation) and meta programming
+-- Demonstrates @() compile-time evaluation and meta programming
 
--- Compile-time constants via ##
-PI = ##3.141592653589793
-E = ##2.718281828459045
-VERSION = ##"1.0.0"
+-- Compile-time constants via @()
+PI = @(3.141592653589793)
+E = @(2.718281828459045)
+VERSION = @("1.0.0")
 
 -- Compile-time arithmetic
-ARRAY_SIZE = ##(1024 * 8)
+ARRAY_SIZE = @(1024 * 8)
 
 -- Compile-time conditionals
-BUFFER_LEN = ##(true and 4096 or 2048)
+BUFFER_LEN = @(true and 4096 or 2048)
 
 -- Basic compile-time constant evaluation
-a = ##42
-b = ##(10 + 20)
-c = ##"compile-time string"
+a = @(42)
+b = @(10 + 20)
+c = @("compile-time string")
 
 -- Multi-line meta block pattern
-d = ##(2 * 3 + 4 * 5)
+d = @(2 * 3 + 4 * 5)
 
 print("PI: " .. tostring(PI))
 print("E: " .. tostring(E))
 print("VERSION: " .. VERSION)
 print("ARRAY_SIZE: " .. tostring(ARRAY_SIZE))
 print("BUFFER_LEN: " .. tostring(BUFFER_LEN))
-print("a (##42): " .. tostring(a))
-print("b (##(10+20)): " .. tostring(b))
-print("c (##'str'): " .. c)
-print("d (##expr): " .. tostring(d))
+print("a (@(42)): " .. tostring(a))
+print("b (@(10+20)): " .. tostring(b))
+print("c (@(\"str\")): " .. c)
+print("d (@(expr)): " .. tostring(d))

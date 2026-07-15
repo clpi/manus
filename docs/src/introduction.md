@@ -8,7 +8,7 @@ Duo is a Lua-like language that compiles to native C (ahead-of-time compilation)
 - **Static types, zero-cost**: When you annotate types, Duo generates pure C code with no runtime overhead or boxing
 - **Native performance**: Fully-typed Duo code compiles to native C that beats C in many benchmarks due to aggressive optimizations
 - **WASM target**: Cross-compile to WebAssembly with WASI support
-- **Pattern matching**: Rust/Go-style match expressions with destructuring
+- **Pattern matching**: Lua-like match expressions with destructuring and `then`/`do` arms
 - **Async/await**: Cooperative concurrency built on stackless coroutines
 - **Generics**: Monomorphized generics (compile-time specialization)
 - **Result and Option types**: Rust-inspired error handling without runtime cost

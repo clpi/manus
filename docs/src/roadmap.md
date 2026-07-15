@@ -16,13 +16,15 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 - `fun` for typed functions and `function` for Lua-compatible untyped functions.
 - `.duo` files are local-by-default for bare assignments; `local` remains valid for Lua compatibility and readability.
 - Type annotations on locals, constants, parameters, and returns: `: i64`, `: f64`, `: str`, `: bool`, `: void`, etc.
-- Type aliases: `type Name = ExistingType` (preferred); `alias` is still accepted as legacy syntax.
+- Type aliases: `type Name = ExistingType` and generic aliases such as
+  `type Vec<T> = List[T]` (preferred); `alias` is still accepted as legacy
+  syntax.
 - Pointer types: `*T` parse and lower; reference/ownership semantics are still evolving.
 - Postfix `?` and `!` as propagation and unwrap operators.
 - `await` is the async wait primitive. There is no separate `wait` keyword.
-- `match` expressions with Lua-like `case pattern then expression` or
-  `case pattern do statement` arms. Legacy `pattern => expression` arms remain
-  accepted for source compatibility.
+- `match` expressions with Lua-like `pattern then expression` or
+  `pattern do statement` arms. A leading `case` remains accepted when it helps
+  readability; fat-arrow arms are not part of the Duo surface.
 - `try` / `catch` / `defer` for error handling and cleanup.
 - `enum`, `concept`, `alias`, `extends`, `private` for type-system extensions.
 - `const` bindings and attributes such as `@export`, `@inline`, and `@concurrent("threaded")`.
@@ -49,7 +51,8 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
 
 ### Codegen and tooling
 
-- Monomorphizer (`src/mono.zig`) for generic specializations.
+- Monomorphizer (`src/mono.zig`) for inferred generic specializations plus
+  explicit `@specialize(name, types...)` pre-generation.
 - ARC pass (`src/arc.zig`) for retain/release/close decisions.
 - Async lowering (`src/async_lower.zig`) transforms async functions into stackless
   state-machine descriptors; async declarations also emit a direct callable body
@@ -67,8 +70,11 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   descriptor tables (`name`, `required_fields`, `required_methods`) that
   `std.meta.satisfies_concept` can inspect. `std.meta.make_concept(...)` and
   `std.meta.derive` now create the same descriptor shape as ordinary tables,
-  and `@implements` accepts literal descriptor bindings. Full generic
-  constraint dispatch and syntax removal are still in progress.
+  and `@implements` accepts literal descriptor bindings.
+  `@specialize(name, types...)` can pre-generate validated generic
+  specializations without a call site, and its type arguments use normal Duo
+  type syntax including nested generic types. Full generic constraint dispatch
+  and syntax removal are still in progress.
 - `@derive(...)` on enums emits a runtime descriptor table with the enum
   `name`, `variants`, and requested `derives` while preserving the native enum
   value layout. Payload-free enums that derive `Display` or `Eq` now get
@@ -76,12 +82,24 @@ Duo stays close to Lua while adding static types, AOT codegen, and a small set o
   generation is still in progress.
 - Pointer types use `*T`. Reference and ownership semantics are still evolving.
 - Allocator and memory-management work is tracked through ARC, escape analysis, and custom allocator tasks.
-- Compile-time `##(...)` and `__constexpr(...)` share a small pure evaluator
+- Compile-time `@(expr)` and legacy `##(...)` / `__constexpr(...)` share a small pure evaluator
   for literals, unary/binary operators, string concatenation, table literals,
   table field/index lookups, pure `match` conditionals with table/array
   destructuring, scoped local/const bindings, and bounded pure `do` blocks
   with local mutation plus numeric `for`/`while` loops and pure function calls,
   including simple recursion and compile-time capture snapshots.
+  `@sizeof(T)` and `@alignof(T)` lower through the same internal layout
+  intrinsics as their expression forms. `@as(T, expr)` is the explicit
+  Zig-like typed coercion form and routes dynamic values through the native
+  unboxing path when `T` is a primitive Duo type. Named compile-time and
+  low-level intrinsics such as `@type_name`, `@type_id`, `@is_type`,
+  `@static_assert`, `@popcount`, and `@prefetch` are the public spelling for
+  the existing internal intrinsic calls. `@c.import("header.h")` imports external C
+  declarations through the generated translation unit, `@c.type("name")`
+  names external C types in Duo type annotations, `@c.call("name", args...)`
+  emits a direct raw C function call expression for typed low-level contexts,
+  and `@c.export("name")` exposes a Duo function with a chosen native export
+  name.
   Unsupported runtime expressions still fall back to normal runtime emission.
   Expression macros now support `macro name(args) \`expr`, `,arg` unquote
   splicing, and `@name(args)` expansion before sema. Statement macros can use

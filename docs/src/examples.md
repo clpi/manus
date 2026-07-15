@@ -35,8 +35,8 @@ end
 
 fun handle_option(opt: Option)
     match opt
-        case Some(val) then print("Got value:", val)
-        case None then print("No value")
+        Some(val) then print("Got value:", val)
+        None then print("No value")
     end
 end
 

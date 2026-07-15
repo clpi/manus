@@ -2,91 +2,218 @@
 
 global crypto_sha = req "std.crypto.sha"
 global hash_sha512 = req "std.hash.sha512"
+global crypto_rand = req "std.crypto.rand"
 
-fun sha1(s: str): str
+-- Wrappers are prefixed with `wrap_` so they don't collide at the C
+-- static level with the same-named implementations in std.crypto.sha
+-- / std.hash.sha512 when both modules end up embedded in the same
+-- compilation unit.
+fun wrap_sha1(s: str): str
     crypto_sha.sha1(s)
 end
 
-fun sha256(s: str): str
+fun wrap_sha256(s: str): str
     crypto_sha.sha256(s)
 end
 
-fun sha512(s: str): str
+fun wrap_sha512(s: str): str
     hash_sha512.sha512(s)
 end
 
+-- ── Base64 ──────────────────────────────────────────────────────────────
+
+const B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
 fun base64_encode(s: str): str
-    b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    padded = s
+    if s == nil then return "" end
+    local padded = s
     while #padded % 3 ~= 0
         padded = padded .. "\0"
     end
-    out = {}
+    local out = {}
     for i = 1, string.len(padded), 3
-        b1 = string.byte(padded, i)
-        b2 = string.byte(padded, i + 1)
-        b3 = string.byte(padded, i + 2)
-        triple = (b1 * 65536) + (b2 * 256) + b3
-        c1 = string.sub(b64chars, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
-        c2 = string.sub(b64chars, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
-        c3 = string.sub(b64chars, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
-        c4 = string.sub(b64chars, (triple % 64) + 1, (triple % 64) + 1)
-        out[rawlen(out) + 1] = c1 .. c2 .. c3 .. c4
+        local b1 = string.byte(padded, i)
+        local b2 = string.byte(padded, i + 1)
+        local b3 = string.byte(padded, i + 2)
+        local triple = (b1 * 65536) + (b2 * 256) + b3
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor(triple / 262144) + 1, math.floor(triple / 262144) + 1)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 262144) / 4096) + 1, math.floor((triple % 262144) / 4096) + 1)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, math.floor((triple % 4096) / 64) + 1, math.floor((triple % 4096) / 64) + 1)
+        out[rawlen(out) + 1] = string.sub(B64_CHARS, (triple % 64) + 1, (triple % 64) + 1)
     end
-    table.concat(out)
+    local result = table.concat(out)
+    local orig_len = string.len(s)
+    local pad_count = (3 - (orig_len % 3)) % 3
+    if pad_count > 0 then
+        result = string.sub(result, 1, string.len(result) - pad_count)
+    end
+    result
 end
 
 fun base64_decode(s: str): str
-    b64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    out = {}
-    clean = string.gsub(s, "[^A-Za-z0-9+/=]", "")
+    if s == nil then return "" end
+    local clean = string.gsub(s, "[^A-Za-z0-9+/=]", "")
     while #clean % 4 ~= 0
         clean = clean .. "="
     end
+    local lookup = {}
+    for i = 1, 64
+        lookup[string.sub(B64_CHARS, i, i)] = i - 1
+    end
+    local out = {}
     for i = 1, string.len(clean), 4
-        c1v = 0; c2v = 0; c3v = 0; c4v = 0
-        for j = 1, 64
-            if string.sub(b64chars, j, j) == string.sub(clean, i, i) then c1v = j - 1 end
-            if string.sub(b64chars, j, j) == string.sub(clean, i + 1, i + 1) then c2v = j - 1 end
-            if string.sub(b64chars, j, j) == string.sub(clean, i + 2, i + 2) then c3v = j - 1 end
-            if string.sub(b64chars, j, j) == string.sub(clean, i + 3, i + 3) then c4v = j - 1 end
+        local c1v = lookup[string.sub(clean, i, i)] or 0
+        local c2v = lookup[string.sub(clean, i + 1, i + 1)] or 0
+        local c3v = lookup[string.sub(clean, i + 2, i + 2)] or 0
+        local c4v = lookup[string.sub(clean, i + 3, i + 3)] or 0
+        local triple = c1v * 262144 + c2v * 4096 + c3v * 64 + c4v
+        local b1 = math.floor(triple / 65536)
+        local b2 = math.floor((triple % 65536) / 256)
+        local b3 = triple % 256
+        if string.sub(clean, i + 2, i + 2) ~= "=" then
+            out[rawlen(out) + 1] = string.char(b1)
         end
-        triple = c1v * 262144 + c2v * 4096 + c3v * 64 + c4v
-        b1 = math.floor(triple / 65536)
-        b2 = math.floor((triple % 65536) / 256)
-        b3 = triple % 256
-        if c3v ~= -1 and string.sub(clean, i + 2, i + 2) ~= "=" then out[rawlen(out) + 1] = string.char(b1) end
-        if c4v ~= -1 and string.sub(clean, i + 3, i + 3) ~= "=" then out[rawlen(out) + 1] = string.char(b2) end
-        if string.sub(clean, i + 4, i + 4) ~= "=" then out[rawlen(out) + 1] = string.char(b3) end
+        if string.sub(clean, i + 3, i + 3) ~= "=" then
+            out[rawlen(out) + 1] = string.char(b2)
+        end
+        if string.sub(clean, i + 3, i + 3) ~= "=" then
+            out[rawlen(out) + 1] = string.char(b3)
+        end
     end
     table.concat(out)
 end
 
-fun xor_encrypt(s: str, key: str): str
-    out = ""
-    key_len = string.len(key)
+const B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+fun base64_url_encode(s: str): str
+    local std = base64_encode(s)
+    local result = string.gsub(std, "+", "-")
+    result = string.gsub(result, "/", "_")
+    result = string.gsub(result, "=", "")
+    result
+end
+
+fun base64_url_decode(s: str): str
+    local padded = string.gsub(s, "-", "+")
+    padded = string.gsub(padded, "_", "/")
+    local pad_len = (4 - (#padded % 4)) % 4
+    for _ = 1, pad_len
+        padded = padded .. "="
+    end
+    base64_decode(tostring(padded))
+end
+
+-- ── Hex ─────────────────────────────────────────────────────────────────
+
+const HEX_CHARS = "0123456789abcdef"
+
+fun hex_encode(s: str): str
+    if s == nil then return "" end
+    local out = ""
     for i = 1, string.len(s)
-        sc = string.byte(s, i)
-        kc = string.byte(key, ((i - 1) % key_len) + 1)
+        local b = string.byte(s, i)
+        local hi = math.floor(b / 16) + 1
+        local lo = (b % 16) + 1
+        out = out .. string.sub(HEX_CHARS, hi, hi) .. string.sub(HEX_CHARS, lo, lo)
+    end
+    out
+end
+
+fun hex_decode(s: str): str
+    if s == nil then return "" end
+    local clean = string.gsub(s, "[^0-9a-fA-F]", "")
+    if #clean % 2 ~= 0 then clean = "0" .. clean end
+    local out = ""
+    local hex_map = {}
+    for i = 1, 16
+        hex_map[string.sub(HEX_CHARS, i, i)] = i - 1
+        hex_map[string.sub("ABCDEF", i - 10, i - 10)] = i - 1
+    end
+    for i = 1, #clean, 2
+        local hi = string.sub(clean, i, i)
+        local lo = string.sub(clean, i + 1, i + 1)
+        local h = hex_map[string.lower(hi)] or 0
+        local l = hex_map[string.lower(lo)] or 0
+        out = out .. string.char(h * 16 + l)
+    end
+    out
+end
+
+-- ── XOR encryption ──────────────────────────────────────────────────────
+
+fun xor_encrypt(s: str, key: str): str
+    if s == nil or key == nil then return "" end
+    local out = ""
+    local key_len = string.len(key)
+    for i = 1, string.len(s)
+        local sc = string.byte(s, i)
+        local kc = string.byte(key, ((i - 1) % key_len) + 1)
         out = out .. string.char(sc ~ kc)
     end
     out
 end
 
-fun hex_encode(s: str): str
-    out = ""
-    for i = 1, string.len(s)
-        out = out .. string.format("%02X", string.byte(s, i))
+-- ── Secure random ───────────────────────────────────────────────────────
+
+fun secure_random_bytes(n: i64): str
+    if n == nil or n <= 0 then return "" end
+    crypto_rand.bytes(n)
+end
+
+fun secure_random_hex(n: i64): str
+    hex_encode(secure_random_bytes(n))
+end
+
+fun secure_random_int(): i64
+    crypto_rand.int()
+end
+
+-- ── Constant-time comparison (timing-attack safe) ───────────────────────
+
+fun compare_digest(a: str, b: str): bool
+    if a == nil or b == nil then return false end
+    if string.len(a) ~= string.len(b) then return false end
+    local result = 0
+    for i = 1, string.len(a)
+        result = result | (string.byte(a, i) ~ string.byte(b, i))
     end
-    out
+    result == 0
+end
+
+-- ── HMAC (RFC 2104) ────────────────────────────────────────────────────
+
+fun hmac_sha256(key: str, message: str): str
+    local block_size = 64
+    local k = key
+    if string.len(k) > block_size then
+        k = wrap_sha256(k)
+    end
+    while string.len(k) < block_size
+        k = k .. "\0"
+    end
+    local o_key_pad = ""
+    local i_key_pad = ""
+    for i = 1, block_size
+        o_key_pad = o_key_pad .. string.char(string.byte(k, i) ~ 0x5c)
+        i_key_pad = i_key_pad .. string.char(string.byte(k, i) ~ 0x36)
+    end
+    wrap_sha256(o_key_pad .. wrap_sha256(i_key_pad .. message))
 end
 
 M = {}
-M.sha1 = sha1
-M.sha256 = sha256
-M.sha512 = sha512
+M.sha1 = wrap_sha1
+M.sha256 = wrap_sha256
+M.sha512 = wrap_sha512
 M.base64_encode = base64_encode
 M.base64_decode = base64_decode
-M.xor_encrypt = xor_encrypt
+M.base64_url_encode = base64_url_encode
+M.base64_url_decode = base64_url_decode
 M.hex_encode = hex_encode
+M.hex_decode = hex_decode
+M.xor_encrypt = xor_encrypt
+M.secure_random_bytes = secure_random_bytes
+M.secure_random_hex = secure_random_hex
+M.secure_random_int = secure_random_int
+M.compare_digest = compare_digest
+M.hmac_sha256 = hmac_sha256
 M

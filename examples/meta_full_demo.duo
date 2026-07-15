@@ -73,19 +73,19 @@ distance.label = fun(self): str
     "Distance(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
 end
 
--- ── Section 3: Meta Blocks (## compile-time evaluation) ─────────────────────
+-- ── Section 3: Meta Blocks (@ compile-time evaluation) ─────────────────────
 
 -- Compile-time constant
-MAX_ITEMS = ##100
+MAX_ITEMS = @(100)
 
 -- Compile-time expression
-BUFFER_SIZE = ##(1024 * 16)
+BUFFER_SIZE = @(1024 * 16)
 
 -- Compile-time string constant
-APP_NAME = ##"duo_demo"
+APP_NAME = @("duo_demo")
 
 -- Compile-time conditional constant
-IS_DEBUG = ##(false)
+IS_DEBUG = @(false)
 
 -- ── Section 4: Derive helpers ──────────────────────────────────────────────
 

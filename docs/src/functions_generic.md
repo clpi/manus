@@ -59,25 +59,45 @@ fun first_or<T>(items: List[T], fallback: T): T
 end
 ```
 
-Generic type aliases such as `type Vec<T> = ...` are planned, but the current
-`type` declaration is for non-generic aliases.
+Generic type aliases use the same `<T>` declaration style as generic functions:
 
-## Partial Specialization
+```duo
+type Vec<T> = List[T]
+local xs: Vec[i64] = {}
+```
 
-You can provide custom implementations for specific types:
+Alias type arguments are substituted through the alias target during semantic
+and native type resolution, so `Vec[i64]` above resolves like `List[i64]` in
+function parameters, return checks, locals, and generated C types.
+
+## Explicit Specialization
+
+Call sites normally infer generic type arguments automatically. When you want a
+specialization generated ahead of time, use `@specialize(name, types...)` at
+module scope:
 
 ```duo
 fun hash<T>(value: T): i64
-    -- Default implementation
     return builtin_hash(value)
 end
 
--- Custom hash for strings
 @specialize(hash, str)
-fun hash_str(s: str): i64
-    -- Optimized string hashing
-    return djb2_hash(s)
-end
+```
+
+This generates the same `hash<str>` native body that a typed call would have
+requested, without requiring a call site in the current module. Custom
+replacement implementations for particular type tuples are still planned.
+
+The target must be a known top-level generic function, and the number of type
+arguments must match the function's type-parameter list. Invalid specialization
+requests are compile-time errors instead of silent no-ops.
+
+Type arguments use normal Duo type syntax, so nested generic types keep their
+commas inside the type argument:
+
+```duo
+@specialize(hash, Result[i64, str])
+@specialize(first_or, List[i64])
 ```
 
 ## Advanced Generics
@@ -96,8 +116,8 @@ end
 -- Generic options
 fun get_or_default<T>(opt: Option[T], default: T): T
     match opt
-        case some(v) then v
-        case none then default
+        some(v) then v
+        none then default
     end
 end
 ```

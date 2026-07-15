@@ -171,8 +171,8 @@ end
 
 fun process(opt: Option)
     match opt
-        case Some(val) then print(val)
-        case None then print("Nothing")
+        Some(val) then print(val)
+        None then print("Nothing")
     end
 end
 ```

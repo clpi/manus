@@ -72,8 +72,6 @@ global DT_SECS_PER_DAY = 86400
 global DT_SECS_PER_WEEK = 604800
 
 -- ---- Constructors ----
--- dt_new takes i64 for C-level speed; callers pass direct table fields or literals.
-
 fun dt_new(year: any, month: any, day: any, hour: any, min: any, sec: any): any
     d = {}
     d.year = year
@@ -113,7 +111,6 @@ fun dt_is_leap_year(year: i64): bool
     false
 end
 
--- dt_days_in_month: takes i64 for C speed; callers inline direct table fields.
 fun dt_days_in_month(year: i64, month: i64): i64
     if month == 2 and dt_is_leap_year(year) then return 29 end
     DT_DAYS_PER_MONTH[month]
@@ -171,13 +168,7 @@ fun dt_add_months(d: any, n: i64): any
         new_month += 12
         new_year -= 1
     end
-    -- Inline leap year check to avoid passing lua_Value locals to i64 params.
-    max_day = DT_DAYS_PER_MONTH[new_month]
-    if new_month == 2 then
-        if new_year % 400 == 0 or (new_year % 4 == 0 and new_year % 100 ~= 0) then
-            max_day = 29
-        end
-    end
+    max_day = dt_days_in_month(new_year, new_month)
     new_day = d.day
     if new_day > max_day then new_day = max_day end
     r = {}
@@ -202,18 +193,15 @@ fun dt_diff(a: any, b: any): int
 end
 
 fun dt_diff_days(a: any, b: any): i64
-    math.floor(dt_diff(a, b) / DT_SECS_PER_DAY)
+    dt_diff(a, b) // DT_SECS_PER_DAY
 end
 
 fun dt_diff_hours(a: any, b: any): i64
-    math.floor(dt_diff(a, b) / DT_SECS_PER_HOUR)
+    dt_diff(a, b) // DT_SECS_PER_HOUR
 end
 
 -- ---- Formatting ----
--- dt_pad2 takes i64 for C speed. Callers must pass direct table fields
--- or inline expressions, never intermediate local variables.
-
-fun dt_pad2(n: any): str
+fun dt_pad2(n: i64): str
     if n < 10 then return "0" .. tostring(n) end
     tostring(n)
 end
@@ -224,7 +212,6 @@ fun dt_format(d: any, layout: str): str
     year2 = string.sub(year4, string.len(year4) - 1)
     r = string.gsub(r, "YYYY", year4)
     r = string.gsub(r, "YY", year2)
-    -- Pass direct table fields to dt_pad2 (i64 params work with table field access).
     r = string.gsub(r, "MM", dt_pad2(d.month))
     r = string.gsub(r, "DD", dt_pad2(d.day))
     r = string.gsub(r, "HH", dt_pad2(d.hour))
@@ -232,26 +219,13 @@ fun dt_format(d: any, layout: str): str
     r = string.gsub(r, "ss", dt_pad2(d.sec))
     r = string.gsub(r, "WWW", DT_DAY_ABBR[d.wday])
     r = string.gsub(r, "WWWW", DT_DAY_NAMES[d.wday])
-    -- 12-hour: h12 is a local, so we can't pass it to dt_pad2(i64).
-    -- Inline the pad logic directly.
+    h12 = d.hour % 12
+    if h12 == 0 then h12 = 12 end
+    r = string.gsub(r, "hh", dt_pad2(h12))
     if d.hour < 12 then
-        h12 = d.hour % 12
-        if h12 == 0 then h12 = 12 end
-        if h12 < 10 then
-            r = string.gsub(r, "hh", "0" .. tostring(h12))
-        else
-            r = string.gsub(r, "hh", tostring(h12))
-        end
         r = string.gsub(r, "AMPM", "AM")
         r = string.gsub(r, "ampm", "am")
     else
-        h12 = d.hour % 12
-        if h12 == 0 then h12 = 12 end
-        if h12 < 10 then
-            r = string.gsub(r, "hh", "0" .. tostring(h12))
-        else
-            r = string.gsub(r, "hh", tostring(h12))
-        end
         r = string.gsub(r, "AMPM", "PM")
         r = string.gsub(r, "ampm", "pm")
     end
@@ -362,18 +336,7 @@ fun dt_parse_iso8601(s: str): any
             end
         end
     end
-    -- Build table directly to avoid passing lua_Value locals to i64 params.
-    d = {}
-    d.year = year
-    d.month = month
-    d.day = day
-    d.hour = hour
-    d.min = minute
-    d.sec = second
-    d.wday = 0
-    d.yday = 0
-    d.isdst = false
-    d
+    dt_new(year, month, day, hour, minute, second)
 end
 
 fun dt_parse_date(s: str): any
@@ -392,18 +355,7 @@ fun dt_parse_time(s: str): any
     if string.sub(s, pos, pos) == ":" then
         second, pos = dt_parse_digit2(s, pos + 1)
     end
-    -- Build table directly to avoid passing lua_Value locals to i64 params.
-    d = {}
-    d.year = 0
-    d.month = 1
-    d.day = 1
-    d.hour = hour
-    d.min = minute
-    d.sec = second
-    d.wday = 0
-    d.yday = 0
-    d.isdst = false
-    d
+    dt_new(0, 1, 1, hour, minute, second)
 end
 
 -- ---- Comparison ----
@@ -431,9 +383,6 @@ fun dt_max_dt(a: any, b: any): any
 end
 
 -- ---- Range & Truncation ----
--- All dt_new calls pass direct table fields (lua_Value) which the codegen
--- casts to i64 at the call site.
-
 fun dt_start_of_day(d: any): any
     dt_new(d.year, d.month, d.day, 0, 0, 0)
 end
@@ -447,24 +396,8 @@ fun dt_start_of_month(d: any): any
 end
 
 fun dt_end_of_month(d: any): any
-    -- Inline everything to avoid passing lua_Value locals to i64 params.
-    last_day = DT_DAYS_PER_MONTH[d.month]
-    if d.month == 2 then
-        if d.year % 400 == 0 or (d.year % 4 == 0 and d.year % 100 ~= 0) then
-            last_day = 29
-        end
-    end
-    r = {}
-    r.year = d.year
-    r.month = d.month
-    r.day = last_day
-    r.hour = 23
-    r.min = 59
-    r.sec = 59
-    r.wday = 0
-    r.yday = 0
-    r.isdst = false
-    r
+    last_day = dt_days_in_month(d.year, d.month)
+    dt_new(d.year, d.month, last_day, 23, 59, 59)
 end
 
 fun dt_start_of_year(d: any): any

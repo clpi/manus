@@ -197,22 +197,22 @@ fun execute(bytecode, pc: i64, stack, sp: i64, locals): i64
             stack[sp - 1] = a >> (b & 31)
         elseif op == OP_I32_CLZ
             local a = stack[sp - 1]
-            stack[sp - 1] = __clz(a) - 32 -- adjust for 64-bit clz
+            stack[sp - 1] = @clz(a) - 32 -- adjust for 64-bit clz
         elseif op == OP_I32_CTZ
             local a = stack[sp - 1]
             if a == 0
                 stack[sp - 1] = 32
             else
-                stack[sp - 1] = __ctz(a)
+                stack[sp - 1] = @ctz(a)
             end
         elseif op == OP_I32_POPCNT
             local a = stack[sp - 1]
-            stack[sp - 1] = __popcount(a & 0xFFFFFFFF)
+            stack[sp - 1] = @popcount(a & 0xFFFFFFFF)
         elseif op == OP_I32_ROTL
             local b = stack[sp - 1]
             local a = stack[sp - 2]
             sp -= 1
-            stack[sp - 1] = __rotl(a & 0xFFFFFFFF, b & 31)
+            stack[sp - 1] = @rotl(a & 0xFFFFFFFF, b & 31)
         elseif op == OP_I32_ROTR
             local b = stack[sp - 1]
             local a = stack[sp - 2]

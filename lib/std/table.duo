@@ -189,6 +189,154 @@ fun std_table_count(list: any, fn: any): i64
     c
 end
 
+fun std_table_flat(list: any): any
+    out = {}
+    if list == nil then return out end
+    i = 1
+    while i <= rawlen(list)
+        local item = list[i]
+        if type(item) == "table" then
+            j = 1
+            while j <= rawlen(item)
+                out[rawlen(out) + 1] = item[j]
+                j += 1
+            end
+        else
+            out[rawlen(out) + 1] = item
+        end
+        i += 1
+    end
+    out
+end
+
+fun std_table_unique(list: any): any
+    out = {}
+    if list == nil then return out end
+    seen = {}
+    i = 1
+    while i <= rawlen(list)
+        local v = list[i]
+        local key = tostring(v)
+        if not seen[key] then
+            seen[key] = true
+            out[rawlen(out) + 1] = v
+        end
+        i += 1
+    end
+    out
+end
+
+fun std_table_zip(lists: any): any
+    out = {}
+    if lists == nil or rawlen(lists) == 0 then return out end
+    local min_len = rawlen(lists[1])
+    i = 2
+    while i <= rawlen(lists)
+        if rawlen(lists[i]) < min_len then
+            min_len = rawlen(lists[i])
+        end
+        i += 1
+    end
+    j = 1
+    while j <= min_len
+        local tuple = {}
+        i = 1
+        while i <= rawlen(lists)
+            tuple[rawlen(tuple) + 1] = lists[i][j]
+            i += 1
+        end
+        out[rawlen(out) + 1] = tuple
+        j += 1
+    end
+    out
+end
+
+fun std_table_from_pairs(pairs: any): any
+    out = {}
+    if pairs == nil then return out end
+    i = 1
+    while i <= rawlen(pairs)
+        local pair = pairs[i]
+        if pair and rawlen(pair) >= 2 then
+            out[pair[1]] = pair[2]
+        end
+        i += 1
+    end
+    out
+end
+
+fun std_table_to_pairs(t: any): any
+    out = {}
+    if t == nil then return out end
+    for k, v in pairs(t)
+        out[rawlen(out) + 1] = {k, v}
+    end
+    out
+end
+
+fun std_table_pick(t: any, keys: any): any
+    out = {}
+    if t == nil or keys == nil then return out end
+    i = 1
+    while i <= rawlen(keys)
+        local k = keys[i]
+        if t[k] ~= nil then
+            out[k] = t[k]
+        end
+        i += 1
+    end
+    out
+end
+
+fun std_table_omit(t: any, keys: any): any
+    out = {}
+    if t == nil then return out end
+    local omit_set = {}
+    if keys ~= nil then
+        i = 1
+        while i <= rawlen(keys)
+            omit_set[keys[i]] = true
+            i += 1
+        end
+    end
+    for k, v in pairs(t)
+        if not omit_set[k] then
+            out[k] = v
+        end
+    end
+    out
+end
+
+fun std_table_find(list: any, fn: any): any
+    if list == nil then return nil end
+    i = 1
+    while i <= rawlen(list)
+        if fn(list[i]) then return list[i] end
+        i += 1
+    end
+    nil
+end
+
+fun std_table_every(list: any, fn: any): bool
+    if list == nil then return true end
+    i = 1
+    while i <= rawlen(list)
+        if not fn(list[i]) then return false end
+        i += 1
+    end
+    true
+end
+
+fun std_table_some(list: any, fn: any): bool
+    if list == nil then return false end
+    i = 1
+    while i <= rawlen(list)
+        if fn(list[i]) then return true end
+        i += 1
+    end
+    false
+end
+
 M = {}
 M.len = std_table_len
 M.keys = std_table_keys
@@ -210,4 +358,14 @@ M.unpack = std_table_unpack
 M.insert = std_table_insert
 M.remove = std_table_remove
 M.count = std_table_count
+M.flat = std_table_flat
+M.unique = std_table_unique
+M.zip = std_table_zip
+M.from_pairs = std_table_from_pairs
+M.to_pairs = std_table_to_pairs
+M.pick = std_table_pick
+M.omit = std_table_omit
+M.find = std_table_find
+M.every = std_table_every
+M.some = std_table_some
 M

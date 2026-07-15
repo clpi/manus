@@ -1,38 +1,34 @@
 -- std.hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
 -- Pure-Duo implementation using 32-bit word pairs to represent 64-bit values.
 
-local string = req "std.string"
-
 fun make_wide(hi: i64, lo: i64): any
-    {hi = hi % (2^32), lo = lo % (2^32)}
+    {hi = hi % (4294967296), lo = lo % (4294967296)}
 end
 
 fun wide_add(a: any, b: any): any
     lo = a.lo + b.lo
     hi = a.hi + b.hi
-    if lo >= (2^32) then
-        lo -= (2^32)
+    if lo >= (4294967296) then
+        lo -= (4294967296)
         hi += 1
     end
-    hi = hi % (2^32)
-    lo = lo % (2^32)
-    {hi = hi, lo = lo}
+    {hi = hi % (4294967296), lo = lo % (4294967296)}
 end
 
 fun wide_not(a: any): any
-    {hi = (~a.hi) % (2^32), lo = (~a.lo) % (2^32)}
+    {hi = (~a.hi) % (4294967296), lo = (~a.lo) % (4294967296)}
 end
 
 fun wide_and(a: any, b: any): any
-    {hi = (a.hi & b.hi) % (2^32), lo = (a.lo & b.lo) % (2^32)}
+    {hi = (a.hi & b.hi) % (4294967296), lo = (a.lo & b.lo) % (4294967296)}
 end
 
 fun wide_or(a: any, b: any): any
-    {hi = (a.hi | b.hi) % (2^32), lo = (a.lo | b.lo) % (2^32)}
+    {hi = (a.hi | b.hi) % (4294967296), lo = (a.lo | b.lo) % (4294967296)}
 end
 
 fun wide_xor(a: any, b: any): any
-    {hi = (a.hi ~ b.hi) % (2^32), lo = (a.lo ~ b.lo) % (2^32)}
+    {hi = (a.hi ~ b.hi) % (4294967296), lo = (a.lo ~ b.lo) % (4294967296)}
 end
 
 fun wide_shr(a: any, n: i64): any
@@ -40,16 +36,16 @@ fun wide_shr(a: any, n: i64): any
         return {hi = 0, lo = a.hi >> (n - 32)}
     end
     new_hi = a.hi >> n
-    new_lo = ((a.hi % (2^n)) * 2^(32 - n) + a.lo >> n) % (2^32)
+    new_lo = ((a.hi % (1 << n)) * (1 << (32 - n)) + a.lo >> n) % (4294967296)
     return {hi = new_hi, lo = new_lo}
 end
 
 fun wide_shl(a: any, n: i64): any
     if n >= 32 then
-        return {hi = (a.lo << (n - 32)) % (2^32), lo = 0}
+        return {hi = (a.lo << (n - 32)) % (4294967296), lo = 0}
     end
-    new_hi = ((a.hi << n) + (a.lo >> (32 - n))) % (2^32)
-    new_lo = (a.lo << n) % (2^32)
+    new_hi = ((a.hi << n) + (a.lo >> (32 - n))) % (4294967296)
+    new_lo = (a.lo << n) % (4294967296)
     return {hi = new_hi, lo = new_lo}
 end
 
@@ -64,63 +60,63 @@ end
 fun wide_from_bytes(data: str, off: i64): any
     hi = 0
     for k = 0, 3
-        hi = (hi * 256 + string.byte(data, off + k)) % (2^32)
+        hi = (hi * 256 + string.byte(data, off + k)) % (4294967296)
     end
     lo = 0
     for k = 0, 3
-        lo = (lo * 256 + string.byte(data, off + 4 + k)) % (2^32)
+        lo = (lo * 256 + string.byte(data, off + 4 + k)) % (4294967296)
     end
     {hi = hi, lo = lo}
 end
 
-K = {
-    make_wide(0x428a2f98, 0xd728ae22), make_wide(0x71374491, 0x23ef65cd),
-    make_wide(0xb5c0fbcf, 0xec4d3b2f), make_wide(0xe9b5dba5, 0x8189dbbc),
-    make_wide(0x3956c25b, 0xf348b538), make_wide(0x59f111f1, 0xb605d019),
-    make_wide(0x923f82a4, 0xaf194f9b), make_wide(0xab1c5ed5, 0xda6d8118),
-    make_wide(0xd807aa98, 0xa3030242), make_wide(0x12835b01, 0x45706fbe),
-    make_wide(0x243185be, 0x4ee4b28c), make_wide(0x550c7dc3, 0xd5ffb4e2),
-    make_wide(0x72be5d74, 0xf27b896f), make_wide(0x80deb1fe, 0x3b1696b1),
-    make_wide(0x9bdc06a7, 0x25c71235), make_wide(0xc19bf174, 0xcf692694),
-    make_wide(0xe49b69c1, 0x9ef14ad2), make_wide(0xefbe4786, 0x384f25e3),
-    make_wide(0x0fc19dc6, 0x8b8cd5b5), make_wide(0x240ca1cc, 0x77ac9c65),
-    make_wide(0x2de92c6f, 0x592b0275), make_wide(0x4a7484aa, 0x6ea6e483),
-    make_wide(0x5cb0a9dc, 0xbd41fbd4), make_wide(0x76f988da, 0x831153b5),
-    make_wide(0x983e5152, 0xee66dfab), make_wide(0xa831c66d, 0x2db43210),
-    make_wide(0xb00327c8, 0x98fb213f), make_wide(0xbf597fc7, 0xbeef0ee4),
-    make_wide(0xc6e00bf3, 0x3da88fc2), make_wide(0xd5a79147, 0x930aa725),
-    make_wide(0x06ca6351, 0xe003826f), make_wide(0x14292967, 0x0a0e6e70),
-    make_wide(0x27b70a85, 0x46d22ffc), make_wide(0x2e1b2138, 0x5c26c926),
-    make_wide(0x4d2c6dfc, 0x5ac42aed), make_wide(0x53380d13, 0x9d95b3df),
-    make_wide(0x650a7354, 0x8baf63de), make_wide(0x766a0abb, 0x3c77b2a8),
-    make_wide(0x81c2c92e, 0x47edaee6), make_wide(0x92722c85, 0x1482353b),
-    make_wide(0xa2bfe8a1, 0x4cf10364), make_wide(0xa81a664b, 0xbc423001),
-    make_wide(0xc24b8b70, 0xd0f89791), make_wide(0xc76c51a3, 0x0654be30),
-    make_wide(0xd192e819, 0xd6ef5218), make_wide(0xd6990624, 0x5565a910),
-    make_wide(0xf40e3585, 0x5771202a), make_wide(0x106aa070, 0x32bbd1b8),
-    make_wide(0x19a4c116, 0xb8d2d0c8), make_wide(0x1e376c08, 0x5141ab53),
-    make_wide(0x2748774c, 0xdf8eeb99), make_wide(0x34b0bcb5, 0xe19b48a8),
-    make_wide(0x391c0cb3, 0xc5c95a63), make_wide(0x4ed8aa4a, 0xe3418acb),
-    make_wide(0x5b9cca4f, 0x7763e373), make_wide(0x682e6ff3, 0xd6b2b8a3),
-    make_wide(0x748f82ee, 0x5defb2fc), make_wide(0x78a5636f, 0x43172f60),
-    make_wide(0x84c87814, 0xa1f0ab72), make_wide(0x8cc70208, 0x1a6439ec),
-    make_wide(0x90befffa, 0x23631e28), make_wide(0xa4506ceb, 0xde82bde9),
-    make_wide(0xbef9a3f7, 0xb2c67915), make_wide(0xc67178f2, 0xe372532b),
-    make_wide(0xca273ece, 0xea26619c), make_wide(0xd186b8c7, 0x21c0c207),
-    make_wide(0xeada7dd6, 0xcde0eb1e), make_wide(0xf57d4f7f, 0xee6ed178),
-    make_wide(0x06f067aa, 0x72176fba), make_wide(0x0a637dc5, 0xa2c898a6),
-    make_wide(0x113f9804, 0xbef90dae), make_wide(0x1b710b35, 0x131c471b),
-    make_wide(0x28db77f5, 0x23047d84), make_wide(0x32caab7b, 0x40c72493),
-    make_wide(0x3c9ebe0a, 0x15c9bebc), make_wide(0x431d67c4, 0x9c100d4c),
-    make_wide(0x4cc5d4be, 0xcb3e42b6), make_wide(0x597f299c, 0xfc657e2a),
-    make_wide(0x5fcb6fab, 0x3ad6faec), make_wide(0x6c44198c, 0x4a475817)
+const K = {
+    {hi = 0x428a2f98, lo = 0xd728ae22}, {hi = 0x71374491, lo = 0x23ef65cd},
+    {hi = 0xb5c0fbcf, lo = 0xec4d3b2f}, {hi = 0xe9b5dba5, lo = 0x8189dbbc},
+    {hi = 0x3956c25b, lo = 0xf348b538}, {hi = 0x59f111f1, lo = 0xb605d019},
+    {hi = 0x923f82a4, lo = 0xaf194f9b}, {hi = 0xab1c5ed5, lo = 0xda6d8118},
+    {hi = 0xd807aa98, lo = 0xa3030242}, {hi = 0x12835b01, lo = 0x45706fbe},
+    {hi = 0x243185be, lo = 0x4ee4b28c}, {hi = 0x550c7dc3, lo = 0xd5ffb4e2},
+    {hi = 0x72be5d74, lo = 0xf27b896f}, {hi = 0x80deb1fe, lo = 0x3b1696b1},
+    {hi = 0x9bdc06a7, lo = 0x25c71235}, {hi = 0xc19bf174, lo = 0xcf692694},
+    {hi = 0xe49b69c1, lo = 0x9ef14ad2}, {hi = 0xefbe4786, lo = 0x384f25e3},
+    {hi = 0x0fc19dc6, lo = 0x8b8cd5b5}, {hi = 0x240ca1cc, lo = 0x77ac9c65},
+    {hi = 0x2de92c6f, lo = 0x592b0275}, {hi = 0x4a7484aa, lo = 0x6ea6e483},
+    {hi = 0x5cb0a9dc, lo = 0xbd41fbd4}, {hi = 0x76f988da, lo = 0x831153b5},
+    {hi = 0x983e5152, lo = 0xee66dfab}, {hi = 0xa831c66d, lo = 0x2db43210},
+    {hi = 0xb00327c8, lo = 0x98fb213f}, {hi = 0xbf597fc7, lo = 0xbeef0ee4},
+    {hi = 0xc6e00bf3, lo = 0x3da88fc2}, {hi = 0xd5a79147, lo = 0x930aa725},
+    {hi = 0x06ca6351, lo = 0xe003826f}, {hi = 0x14292967, lo = 0x0a0e6e70},
+    {hi = 0x27b70a85, lo = 0x46d22ffc}, {hi = 0x2e1b2138, lo = 0x5c26c926},
+    {hi = 0x4d2c6dfc, lo = 0x5ac42aed}, {hi = 0x53380d13, lo = 0x9d95b3df},
+    {hi = 0x650a7354, lo = 0x8baf63de}, {hi = 0x766a0abb, lo = 0x3c77b2a8},
+    {hi = 0x81c2c92e, lo = 0x47edaee6}, {hi = 0x92722c85, lo = 0x1482353b},
+    {hi = 0xa2bfe8a1, lo = 0x4cf10364}, {hi = 0xa81a664b, lo = 0xbc423001},
+    {hi = 0xc24b8b70, lo = 0xd0f89791}, {hi = 0xc76c51a3, lo = 0x0654be30},
+    {hi = 0xd192e819, lo = 0xd6ef5218}, {hi = 0xd6990624, lo = 0x5565a910},
+    {hi = 0xf40e3585, lo = 0x5771202a}, {hi = 0x106aa070, lo = 0x32bbd1b8},
+    {hi = 0x19a4c116, lo = 0xb8d2d0c8}, {hi = 0x1e376c08, lo = 0x5141ab53},
+    {hi = 0x2748774c, lo = 0xdf8eeb99}, {hi = 0x34b0bcb5, lo = 0xe19b48a8},
+    {hi = 0x391c0cb3, lo = 0xc5c95a63}, {hi = 0x4ed8aa4a, lo = 0xe3418acb},
+    {hi = 0x5b9cca4f, lo = 0x7763e373}, {hi = 0x682e6ff3, lo = 0xd6b2b8a3},
+    {hi = 0x748f82ee, lo = 0x5defb2fc}, {hi = 0x78a5636f, lo = 0x43172f60},
+    {hi = 0x84c87814, lo = 0xa1f0ab72}, {hi = 0x8cc70208, lo = 0x1a6439ec},
+    {hi = 0x90befffa, lo = 0x23631e28}, {hi = 0xa4506ceb, lo = 0xde82bde9},
+    {hi = 0xbef9a3f7, lo = 0xb2c67915}, {hi = 0xc67178f2, lo = 0xe372532b},
+    {hi = 0xca273ece, lo = 0xea26619c}, {hi = 0xd186b8c7, lo = 0x21c0c207},
+    {hi = 0xeada7dd6, lo = 0xcde0eb1e}, {hi = 0xf57d4f7f, lo = 0xee6ed178},
+    {hi = 0x06f067aa, lo = 0x72176fba}, {hi = 0x0a637dc5, lo = 0xa2c898a6},
+    {hi = 0x113f9804, lo = 0xbef90dae}, {hi = 0x1b710b35, lo = 0x131c471b},
+    {hi = 0x28db77f5, lo = 0x23047d84}, {hi = 0x32caab7b, lo = 0x40c72493},
+    {hi = 0x3c9ebe0a, lo = 0x15c9bebc}, {hi = 0x431d67c4, lo = 0x9c100d4c},
+    {hi = 0x4cc5d4be, lo = 0xcb3e42b6}, {hi = 0x597f299c, lo = 0xfc657e2a},
+    {hi = 0x5fcb6fab, lo = 0x3ad6faec}, {hi = 0x6c44198c, lo = 0x4a475817},
 }
 
-H_init = {
-    make_wide(0x6a09e667, 0xf3bcc908), make_wide(0xbb67ae85, 0x84caa73b),
-    make_wide(0x3c6ef372, 0xfe94f82b), make_wide(0xa54ff53a, 0x5f1d36f1),
-    make_wide(0x510e527f, 0xade682d1), make_wide(0x9b05688c, 0x2b3e6c1f),
-    make_wide(0x1f83d9ab, 0xfb41bd6b), make_wide(0x5be0cd19, 0x137e2179)
+const H_init = {
+    {hi = 0x6a09e667, lo = 0xf3bcc908}, {hi = 0xbb67ae85, lo = 0x84caa73b},
+    {hi = 0x3c6ef372, lo = 0xfe94f82b}, {hi = 0xa54ff53a, lo = 0x5f1d36f1},
+    {hi = 0x510e527f, lo = 0xade682d1}, {hi = 0x9b05688c, lo = 0x2b3e6c1f},
+    {hi = 0x1f83d9ab, lo = 0xfb41bd6b}, {hi = 0x5be0cd19, lo = 0x137e2179},
 }
 
 fun hash_string(s: str): str
@@ -140,8 +136,8 @@ fun hash_string(s: str): str
     for block = 0, string.len(msg) / 128 - 1
         w = {}
         for j = 0, 15
-            off = block * 128 + j * 8 + 1
-            w[j + 1] = wide_from_bytes(msg, off)
+            off: i64 = block * 128 + j * 8 + 1
+            w[j + 1] = wide_from_bytes(tostring(msg), off)
         end
         for j = 16, 79
             s0 = wide_xor(wide_xor(wide_ror(w[j - 14 + 1], 1), wide_ror(w[j - 14 + 1], 8)), wide_shr(w[j - 14 + 1], 7))

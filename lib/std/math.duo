@@ -92,6 +92,69 @@ fun std_math_lcm(a: i64, b: i64): i64
     n / std_math_gcd(a, b)
 end
 
+fun std_math_median(xs: any): any
+    if xs == nil or rawlen(xs) == 0 then return 0 end
+    local sorted = {}
+    for _, v in ipairs(xs)
+        sorted[rawlen(sorted) + 1] = v
+    end
+    table.sort(sorted)
+    local n = rawlen(sorted)
+    if n % 2 == 1 then
+        return sorted[math.floor(n / 2) + 1]
+    end
+    (sorted[n / 2] + sorted[n / 2 + 1]) / 2
+end
+
+fun std_math_variance(xs: any): any
+    if xs == nil or rawlen(xs) <= 1 then return 0 end
+    local m = std_math_mean(xs)
+    local sum_sq = 0
+    for _, v in ipairs(xs)
+        local diff = v - m
+        sum_sq = sum_sq + diff * diff
+    end
+    sum_sq / rawlen(xs)
+end
+
+fun std_math_std_dev(xs: any): any
+    math.sqrt(std_math_variance(xs))
+end
+
+fun std_math_smoothstep(edge0: any, edge1: any, x: any): any
+    local t = std_math_clamp((x - edge0) / (edge1 - edge0), 0, 1)
+    t * t * (3 - 2 * t)
+end
+
+fun std_math_approx_eq(a: any, b: any, eps: any): bool
+    if eps == nil then eps = 1e-9 end
+    local diff = a - b
+    if diff < 0 then diff = 0 - diff end
+    diff <= eps
+end
+
+fun std_math_min_of(list: any): any
+    if list == nil or rawlen(list) == 0 then return nil end
+    local result = list[1]
+    i = 2
+    while i <= rawlen(list)
+        if list[i] < result then result = list[i] end
+        i += 1
+    end
+    result
+end
+
+fun std_math_max_of(list: any): any
+    if list == nil or rawlen(list) == 0 then return nil end
+    local result = list[1]
+    i = 2
+    while i <= rawlen(list)
+        if list[i] > result then result = list[i] end
+        i += 1
+    end
+    result
+end
+
 M = {}
 M.clamp = std_math_clamp
 M.min = std_math_min
@@ -102,6 +165,13 @@ M.lerp = std_math_lerp
 M.remap = std_math_remap
 M.sum = std_math_sum
 M.mean = std_math_mean
+M.median = std_math_median
+M.variance = std_math_variance
+M.std_dev = std_math_std_dev
+M.smoothstep = std_math_smoothstep
+M.approx_eq = std_math_approx_eq
+M.min_of = std_math_min_of
+M.max_of = std_math_max_of
 M.is_even = std_math_is_even
 M.is_odd = std_math_is_odd
 M.distance = std_math_distance

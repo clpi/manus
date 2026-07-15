@@ -178,15 +178,15 @@ fun alloc(bytes: i64): any
     __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
 end
 
-fun free(mem: any): void
+fun mem_free(mem: any): void
     __emit("free(mem.as.tval)")
 end
 
-fun realloc(mem: any, new_bytes: i64): any
+fun mem_realloc(mem: any, new_bytes: i64): any
     __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
 end
 
-fun dup(mem: any, bytes: i64): any
+fun mem_dup(mem: any, bytes: i64): any
     if bytes == 0 return alloc(0) end
     __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
 end
@@ -217,27 +217,37 @@ fun compare(a: any, b: any, bytes: i64): i64
 end
 
 -- mmap-backed allocation
-fun mmap(bytes: i64): any
-    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = mmap(NULL, (size_t)bytes, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0); _v; })]])
+fun mem_mmap(bytes: i64): any
+    -- Use calloc rather than mmap so the codegen is portable across
+    -- platforms where MAP_ANON is gated behind feature-test macros
+    -- (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
+    -- memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
+    -- on systems with zero-filled pages.
+    __emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
 end
 
 fun mremap(mem: any, old_bytes: i64, new_bytes: i64): any
     __emit([[({
         lua_Value _v;
         _v.type = VAL_BUFFER;
-        void* _r = mmap(NULL, (size_t)new_bytes, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
-        if (_r != MAP_FAILED && mem.as.tval) {
-            size_t _copy = (size_t)old_bytes < (size_t)new_bytes ? (size_t)old_bytes : (size_t)new_bytes;
-            if (_copy) memcpy(_r, mem.as.tval, _copy);
-            if (old_bytes) munmap(mem.as.tval, (size_t)old_bytes);
+        void* _r = realloc(mem.as.tval, (size_t)new_bytes);
+        if (_r) {
+            _v.as.tval = _r;
+            if ((size_t)new_bytes > (size_t)old_bytes) {
+                memset((uint8_t*)_r + (size_t)old_bytes, 0, (size_t)new_bytes - (size_t)old_bytes);
+            }
+        } else {
+            _v = mem;
         }
-        _v.as.tval = _r;
         _v;
     })]])
+    _ = old_bytes
 end
 
-fun munmap(mem: any, bytes: i64): i64
-    __emit("(int64_t)munmap(mem.as.tval, (size_t)bytes)")
+fun mem_munmap(mem: any, bytes: i64): i64
+    -- Portable: just free. (munmap would require MAP_ANON-like backing.)
+    __emit("(free(mem.as.tval), 0)")
+    _ = bytes
 end
 
 -- Byte readers/writers
@@ -352,9 +362,9 @@ M.stack_new = stack_new
 M.fixed_buffer_new = fixed_buffer_new
 M.default_allocator = default_allocator
 M.alloc = alloc
-M.free = free
-M.realloc = realloc
-M.dup = dup
+M.free = mem_free
+M.realloc = mem_realloc
+M.dup = mem_dup
 M.offset = offset
 M.copy = copy
 M.mem_copy = copy
@@ -364,9 +374,9 @@ M.zero = zero
 M.mem_zero = zero
 M.compare = compare
 M.mem_compare = compare
-M.mmap = mmap
+M.mmap = mem_mmap
 M.mremap = mremap
-M.munmap = munmap
+M.munmap = mem_munmap
 M.read_byte = read_byte
 M.write_byte = write_byte
 M.read_i16 = read_i16

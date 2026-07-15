@@ -102,6 +102,14 @@ local p: *i64 = nil
 `List[T]`, `list[T]`, and `[]T` resolve to the same dynamic list type. Fixed
 arrays use `[N]T`. Pointer types use `*T`; their full ownership semantics are still evolving.
 
+Generic aliases can wrap these type expressions without introducing a new
+runtime representation:
+
+```duo
+type Vec<T> = List[T]
+local values: Vec[i64] = {}
+```
+
 ### Raw Memory And Pointers
 
 Typed Duo code has a compiler-recognized `mem` namespace for C-style machine

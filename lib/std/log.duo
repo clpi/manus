@@ -1,44 +1,75 @@
--- std.log — structured logging
+-- std.log — structured logging with level filtering
 
-fun level_new(name: str): any
-    { name = name, value = nil }
+global __log_level = 1
+global __log_levels = {DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3}
+
+fun set_level(level: str): void
+    if level == nil then level = "DEBUG" end
+    local v = __log_levels[level]
+    if v ~= nil then
+        __log_level = v
+    end
 end
 
-fun level_set_value(level: any, value: any): any
-    level.value = value
-    level
+fun get_level(): str
+    for name, v in pairs(__log_levels)
+        if v == __log_level then return name end
+    end
+    "INFO"
 end
 
 fun std_log_debug(msg: str): void
-    io.write(string.format("[DEBUG] %s\n", msg))
+    if __log_level <= 0 then
+        io.write(string.format("[DEBUG] %s\n", msg))
+    end
 end
 
 fun std_log_info(msg: str): void
-    io.write(string.format("[INFO] %s\n", msg))
+    if __log_level <= 1 then
+        io.write(string.format("[INFO] %s\n", msg))
+    end
 end
 
 fun std_log_warn(msg: str): void
-    io.write(string.format("[WARN] %s\n", msg))
+    if __log_level <= 2 then
+        io.write(string.format("[WARN] %s\n", msg))
+    end
 end
 
 fun std_log_error(msg: str): void
-    io.write(string.format("[ERROR] %s\n", msg))
+    if __log_level <= 3 then
+        io.write(string.format("[ERROR] %s\n", msg))
+    end
 end
 
 fun print(level: str, msg: str): void
     if level == nil then
         io.write(string.format("%s\n", msg))
     else
-        io.write(string.format("[%s] %s\n", level, msg))
+        io.write(string.format("[%s] %s\n", string.upper(level), msg))
     end
 end
 
+fun with_fields(level: str, fields: any, msg: str): void
+    if level == nil then level = "INFO" end
+    local level_val = __log_levels[string.upper(level)] or 1
+    if level_val < __log_level then return end
+    local parts = {string.format("[%s] %s", string.upper(level), msg)}
+    if fields ~= nil then
+        for k, v in pairs(fields)
+            parts[rawlen(parts) + 1] = string.format("%s=%s", k, tostring(v))
+        end
+    end
+    io.write(table.concat(parts, " ") .. "\n")
+end
+
 M = {}
-M.level_new = level_new
-M.level_set_value = level_set_value
+M.set_level = set_level
+M.get_level = get_level
 M.debug = std_log_debug
 M.info = std_log_info
 M.warn = std_log_warn
 M.error = std_log_error
 M.print = print
+M.with_fields = with_fields
 M

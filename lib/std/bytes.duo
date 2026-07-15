@@ -86,7 +86,7 @@ end
 
 fun buf_write_bytes(b: any, data: any): i64
     if data == nil or #data == 0 then return 0 end
-    n = #data
+    n: i64 = #data
     buf_grow(b, n)
     i = 1
     while i <= n
@@ -126,6 +126,15 @@ fun buf_read_byte(b: any): any
     b.off += 1
     b.last_read = "b"
     c, nil
+end
+
+fun buf_index_byte(b: any, c: i64): i64
+    i = b.off
+    while i < rawlen(b.buf)
+        if b.buf[i + 1] == c then return i - b.off end
+        i += 1
+    end
+    (-1)
 end
 
 fun buf_read_bytes(b: any, delim: i64): any
@@ -196,15 +205,6 @@ fun buf_unread_byte(b: any): any
     if b.last_read ~= "b" then return nil end
     b.off -= 1
     b.buf[b.off + 1], nil
-end
-
-fun buf_index_byte(b: any, c: i64): i64
-    i = b.off
-    while i < rawlen(b.buf)
-        if b.buf[i + 1] == c then return i - b.off end
-        i += 1
-    end
-    -1
 end
 
 fun buf_bytes(b: any): any
@@ -289,13 +289,13 @@ fun bytes_contains(s: any, substr: any): bool
     if #substr > #s then return false end
     i = 1
     while i <= #s - #substr + 1
-        match = true
+        matched = true
         j = 1
         while j <= #substr
-            if s[i + j - 1] ~= substr[j] then match = false; break end
+            if s[i + j - 1] ~= substr[j] then matched = false; break end
             j += 1
         end
-        if match then return true end
+        if matched then return true end
         i += 1
     end
     false
@@ -307,13 +307,13 @@ fun bytes_count(s: any, sep: any): i64
     count = 0
     i = 1
     while i <= #s - #sep + 1
-        match = true
+        matched = true
         j = 1
         while j <= #sep
-            if s[i + j - 1] ~= sep[j] then match = false; break end
+            if s[i + j - 1] ~= sep[j] then matched = false; break end
             j += 1
         end
-        if match then
+        if matched then
             count += 1
             i += #sep
         else
@@ -352,16 +352,16 @@ fun bytes_index(s: any, sep: any): i64
     if #sep > #s then return -1 end
     i = 1
     while i <= #s - #sep + 1
-        match = true
+        matched = true
         j = 1
         while j <= #sep
-            if s[i + j - 1] ~= sep[j] then match = false; break end
+            if s[i + j - 1] ~= sep[j] then matched = false; break end
             j += 1
         end
-        if match then return i - 1 end
+        if matched then return i - 1 end
         i += 1
     end
-    -1
+    (-1)
 end
 
 fun bytes_last_index(s: any, sep: any): i64
@@ -370,16 +370,16 @@ fun bytes_last_index(s: any, sep: any): i64
     if #sep > #s then return -1 end
     i = #s - #sep + 1
     while i >= 1
-        match = true
+        matched = true
         j = 1
         while j <= #sep
-            if s[i + j - 1] ~= sep[j] then match = false; break end
+            if s[i + j - 1] ~= sep[j] then matched = false; break end
             j += 1
         end
-        if match then return i - 1 end
+        if matched then return i - 1 end
         i -= 1
     end
-    -1
+    (-1)
 end
 
 fun bytes_join(elems: any, sep: any): any
@@ -433,13 +433,13 @@ fun bytes_replace(s: any, old: any, new: any, n: i64): any
             result[#result + 1] = s[i]
             i += 1
         else
-            match = true
+            matched = true
             j = 1
             while j <= #old
-                if i + j - 1 > #s or s[i + j - 1] ~= old[j] then match = false; break end
+                if i + j - 1 > #s or s[i + j - 1] ~= old[j] then matched = false; break end
                 j += 1
             end
-            if match then
+            if matched then
                 j = 1
                 while j <= #new
                     result[#result + 1] = new[j]
@@ -454,6 +454,24 @@ fun bytes_replace(s: any, old: any, new: any, n: i64): any
         end
     end
     result
+end
+
+fun bytes_index_from(s: any, sep: any, start: i64): i64
+    if start < 1 then start = 1 end
+    if #sep == 0 then return 0 end
+    if #sep > #s - start + 1 then return -1 end
+    i = start
+    while i <= #s - #sep + 1
+        matched = true
+        j = 1
+        while j <= #sep
+            if s[i + j - 1] ~= sep[j] then matched = false; break end
+            j += 1
+        end
+        if matched then return i - start end
+        i += 1
+    end
+    (-1)
 end
 
 fun bytes_split(s: any, sep: any): any
@@ -492,24 +510,6 @@ fun bytes_split(s: any, sep: any): any
         start = start + idx + #sep
     end
     result
-end
-
-fun bytes_index_from(s: any, sep: any, start: i64): i64
-    if start < 1 then start = 1 end
-    if #sep == 0 then return 0 end
-    if #sep > #s - start + 1 then return -1 end
-    i = start
-    while i <= #s - #sep + 1
-        match = true
-        j = 1
-        while j <= #sep
-            if s[i + j - 1] ~= sep[j] then match = false; break end
-            j += 1
-        end
-        if match then return i - start end
-        i += 1
-    end
-    -1
 end
 
 fun bytes_trim(s: any, cutset: any): any
@@ -649,7 +649,7 @@ M.has_suffix = bytes_has_suffix
 M.index = bytes_index
 M.last_index = bytes_last_index
 M.join = bytes_join
-M.repeat = bytes_repeat
+M["repeat"] = bytes_repeat
 M.replace = bytes_replace
 M.split = bytes_split
 M.trim = bytes_trim

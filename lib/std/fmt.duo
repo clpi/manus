@@ -112,6 +112,61 @@ fun println(fmt_str: str, ...args): void
     io.write("\n")
 end
 
+fun bytes(size: any): str
+    if size == nil then return "0 B" end
+    if size < 1024 then
+        return tostring(size) .. " B"
+    elseif size < 1024 * 1024 then
+        return string.format("%.1f KB", size / 1024)
+    elseif size < 1024 * 1024 * 1024 then
+        return string.format("%.1f MB", size / (1024 * 1024))
+    else
+        return string.format("%.2f GB", size / (1024 * 1024 * 1024))
+    end
+end
+
+fun join(parts: any, sep: str): str
+    if parts == nil then return "" end
+    if sep == nil then sep = ", " end
+    local strs = {}
+    i = 1
+    while i <= rawlen(parts)
+        strs[rawlen(strs) + 1] = tostring(parts[i])
+        i += 1
+    end
+    table.concat(strs, sep)
+end
+
+fun repr(v: any): str
+    if v == nil then return "nil" end
+    local t = type(v)
+    if t == "string" then
+        return "\"" .. string.gsub(v, "\"", "\\\"") .. "\""
+    elseif t == "boolean" then
+        if v then return "true" else return "false" end
+    elseif t == "number" then
+        return tostring(v)
+    elseif t == "table" then
+        local parts = {}
+        local n = rawlen(v)
+        if n > 0 then
+            i = 1
+            while i <= n
+                parts[rawlen(parts) + 1] = repr(v[i])
+                i += 1
+            end
+            return "{" .. table.concat(parts, ", ") .. "}"
+        else
+            for k, val in pairs(v)
+                parts[rawlen(parts) + 1] = tostring(k) .. "=" .. repr(val)
+            end
+            return "{" .. table.concat(parts, ", ") .. "}"
+        end
+    else
+        return tostring(v)
+    end
+end
+
 M = {}
 M.int = std_fmt_int
 M.float = std_fmt_float
@@ -124,4 +179,7 @@ M.pad = pad
 M.trunc = std_fmt_trunc
 M.format = format
 M.println = println
+M.bytes = bytes
+M.join = join
+M.repr = repr
 M
