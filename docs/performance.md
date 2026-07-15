@@ -5746,3 +5746,55 @@ Rejected:
   assignments are still correctly rejected by `dense_check_float_assign`.
 - Did not support literal-init tables (`local t = {10, 20, 30}`) — only
   empty-table + loop-fill patterns are detected.
+
+## 2026-07-15 `#t` type recovery for untyped table length
+
+Goal: Recover `.f64` type for `#t` (length operator) on untyped `lua_Value`
+values, so that loop conditions like `while i <= #t` use a native C comparison
+instead of `lua_leq` runtime dispatch.
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig build unit-test --summary all
+zig build && zig build test
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate:
+
+```text
+Build Summary: 3/3 steps succeeded; 568/568 tests passed
+All compile-fail tests passed
+All 40 benchmark results match reference C for .lua and .duo.
+ALL ML BENCHMARKS PASSED
+PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- `expr_type` (`src/codegen.zig`): `#t` on `.any` values now returns `.f64`
+  instead of falling through to `.any`. `lua_len` always returns a numeric
+  `lua_Value`, so this is a safe recovery.
+- Emit site for `#t` on untyped values: now emits `lua_to_num(lua_len(t))`
+  instead of bare `lua_len(t)`, so the generated C has a `double` result
+  that matches the recovered `.f64` type.
+
+Measured impact:
+
+| Before | After |
+| --- | --- |
+| `lua_Value n = lua_len(t); while (lua_leq(lua_val_from_int(i), n))` | `double n = lua_to_num(lua_len(t)); while ((i <= n))` |
+
+The `lua_leq` runtime call is eliminated from the loop condition. The loop
+body still uses `lua_add` for `sum + t[i]` because `t[i]` returns `lua_Value`
+and metamethod dispatch must be preserved for untyped code.
+
+Rejected:
+
+- Did not replace `lua_add` with native `+` when one operand is `int64_t` and
+  the other is `lua_Value` — unsafe because Lua metamethods (`__add`) must
+  be dispatched for untyped code.

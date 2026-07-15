@@ -199,6 +199,20 @@ Keep it in sync with `docs/src/roadmap.md`.
 - [ ] **Generalize dense-table lowering** (`is_dense_table_index`, `src/codegen.zig:2210`).
   Broaden the pattern match so more table-as-array code (sums, histograms, filters,
   numeric loops) becomes native indexed memory access.
+  - [x] Multi-table support: `dense_tables`/`dense_table_caps` lists in `FuncBody`;
+    `detect_dense_table` finds ALL empty-table locals; codegen allocates/reads/
+    writes/frees all qualifying tables (2026-07-15).
+  - [x] Typed .duo detection: `detect_dense_table` now runs for typed functions;
+    specialized emitters (sum/max/identity) gated to untyped only (2026-07-15).
+  - [x] Local-constant capacity: loop bounds using local constants (e.g.
+    `local size = 1000`) are inlined into calloc calls (2026-07-15).
+  - [x] Ring-buffer detector correctness: `detect_ring_buf_inline` now requires
+    both a mod-based write AND a mod-based read, fixing histogram misfire (2026-07-15).
+  - [x] `#t` type recovery: `expr_type` now returns `.f64` for `#t` on untyped
+    values, eliminating `lua_leq` in loop conditions like `while i <= #t` (2026-07-15).
+  - [ ] Support float-valued dense tables (`double*` allocation).
+  - [ ] Support literal-init tables (`local t = {10, 20, 30}`).
+  - [ ] Generalize `detect_dense_table_sum_patterns` emitters for typed functions.
 
 ## Additional high-value
 

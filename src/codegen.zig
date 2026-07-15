@@ -763,7 +763,13 @@ pub const CodeGen = struct {
                 // `not` lowers to a C `!` (or `!lua_to_bool(...)`) — always bool.
                 .not => return .bool,
                 // `#x` lowers to `strlen`/`(int64_t)strlen` when typed → i64.
-                .len => if (self.expr_type(u.operand).is_native()) return .i64,
+                // For untyped values (tables/strings), `lua_len` always returns
+                // a number, so recover `.f64` to enable native unboxing.
+                .len => {
+                    const ot = self.expr_type(u.operand);
+                    if (ot.is_native()) return .i64;
+                    return .f64;
+                },
                 // `-x` is `(-x)` for a native operand, preserving its type.
                 .neg => {
                     const ot = self.expr_type(u.operand);
@@ -9068,9 +9074,11 @@ pub const CodeGen = struct {
                             self.p("))", .{});
                         },
                         .len => {
-                            self.p("lua_len(", .{});
+                            // Untyped: lua_len returns lua_Value; unbox to
+                            // double so the result matches the recovered .f64 type.
+                            self.p("lua_to_num(lua_len(", .{});
                             try self.emit_expr(u.operand);
-                            self.p(")", .{});
+                            self.p("))", .{});
                         },
                         .bnot => {
                             self.p("lua_bnot(", .{});
