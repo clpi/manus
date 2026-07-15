@@ -210,7 +210,7 @@ Keep it in sync with `docs/src/roadmap.md`.
     both a mod-based write AND a mod-based read, fixing histogram misfire (2026-07-15).
   - [x] `#t` type recovery: `expr_type` now returns `.f64` for `#t` on untyped
     values, eliminating `lua_leq` in loop conditions like `while i <= #t` (2026-07-15).
-  - [ ] Support float-valued dense tables (`double*` allocation).
+  - [x] Support float-valued dense tables (`double*` allocation) (2026-07-15).
   - [ ] Support literal-init tables (`local t = {10, 20, 30}`).
   - [ ] Generalize `detect_dense_table_sum_patterns` emitters for typed functions.
 
