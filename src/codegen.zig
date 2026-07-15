@@ -25,6 +25,15 @@ const debug_trace = @import("debug_trace.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const jit = @import("jit.zig");
 
+pub var native_diag: bool = false;
+var native_diag_tag: ?[]const u8 = null;
+fn native_diag_fail(tag: []const u8) void {
+    if (!native_diag) return;
+    if (native_diag_tag != null) return;
+    native_diag_tag = tag;
+    std.debug.print("[native-diag] first fail: {s}\n", .{tag});
+}
+
 pub const CodeGenError = error{
     Unsupported,
     InternalError,
@@ -56,6 +65,7 @@ pub const CodeGen = struct {
     dense_table: ?[]const u8 = null,
     dense_table_cap: ?[]const u8 = null,
     src_path: []const u8 = "",
+    stdlib_root: ?[]const u8 = null,
     closure_ctx: ?*const ast.FuncBody = null,
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     all_closures: std.ArrayList(*ast.FuncBody) = .empty,
@@ -72,6 +82,7 @@ pub const CodeGen = struct {
     test_filter: ?[]const u8 = null,
     test_entries: []const sema_mod.Sema.TestEntry = &.{},
     target: []const u8 = "native",
+    current_module_cname: []const u8 = "",
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
     /// Set of anonymous record hashes for which we have already emitted a
@@ -112,6 +123,11 @@ pub const CodeGen = struct {
         ty: RT,
         is_close: bool,
     };
+
+    fn mangled_name(self: *CodeGen, name: []const u8, buf: []u8) []const u8 {
+        if (self.current_module_cname.len == 0) return name;
+        return std.fmt.bufPrint(buf, "{s}__{s}", .{ self.current_module_cname, name }) catch name;
+    }
 
     fn calc_lua_hash(s: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -228,7 +244,10 @@ pub const CodeGen = struct {
     }
 
     fn note_func_body(self: *CodeGen, name: []const u8, func: *const ast.FuncBody) !void {
-        try self.func_bodies.put(self.alloc, name, func);
+        var buf: [256]u8 = undefined;
+        const key = self.mangled_name(name, &buf);
+        const owned = try self.alloc.dupe(u8, key);
+        try self.func_bodies.put(self.alloc, owned, func);
     }
 
     /// Try to evaluate an expression's boolean condition at compile time.
@@ -348,7 +367,7 @@ pub const CodeGen = struct {
     }
 
     fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
-        _ = self;
+        if (self.enum_name_of(rt) != null) return false;
         return switch (rt) {
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => false,
             .bool, .void, .nil, .never => false,
@@ -484,10 +503,31 @@ pub const CodeGen = struct {
     }
 
     fn emit_var_name(self: *CodeGen, name: []const u8) void {
+        var name_buf: [256]u8 = undefined;
         if (self.function_c_names.get(name)) |cname| {
             self.p("{s}", .{cname});
-        } else if (!self.is_local_name(name) and self.global_type(name) != null and !is_runtime_global(name)) {
-            self.p("duo_g_{s}", .{name});
+        } else if (self.is_local_name(name)) {
+            self.p("{s}", .{name});
+        } else if (!is_runtime_global(name) and self.global_type(name) != null) {
+            if (self.current_module_cname.len > 0) {
+                self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
+            } else {
+                self.p("duo_g_{s}", .{name});
+            }
+        } else if (self.comptime_bindings().get(name) != null) {
+            if (self.current_module_cname.len > 0) {
+                self.p("{s}__{s}", .{ self.current_module_cname, name });
+            } else {
+                self.p("{s}", .{name});
+            }
+        } else if (self.vararg_funcs.get(name)) |cname| {
+            self.p("{s}__argv", .{cname});
+        } else if (self.func_bodies.get(self.mangled_name(name, &name_buf)) != null) {
+            if (self.current_module_cname.len > 0) {
+                self.p("{s}__{s}", .{ self.current_module_cname, name });
+            } else {
+                self.p("{s}", .{name});
+            }
         } else {
             self.p("{s}", .{name});
         }
@@ -648,6 +688,14 @@ pub const CodeGen = struct {
             if (self.enum_display_call_result_type(c.func, c.args)) |t| return t;
             if (self.mem_call_result_type(c.func, c.args)) |t| return t;
             if (self.atomic_call_result_type(c.func, c.args)) |t| return t;
+            if (self.math_call_result_type(c.func, c.args)) |t| return t;
+            if (self.table_call_result_type(c.func, c.args)) |t| return t;
+            if (self.os_call_result_type(c.func, c.args)) |t| return t;
+            if (self.ffi_call_result_type(c.func, c.args)) |t| return t;
+            if (self.net_call_result_type(c.func, c.args)) |t| return t;
+            if (self.coroutine_call_result_type(c.func, c.args)) |t| return t;
+            if (self.debug_call_result_type(c.func, c.args)) |t| return t;
+            if (self.jit_call_result_type(c.func, c.args)) |t| return t;
             if (c.func.* == .name) {
                 if (std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     if (self.comptime_value_type(c.args[0])) |rt| return rt;
@@ -742,6 +790,14 @@ pub const CodeGen = struct {
                 for (ot.table_type.fields) |fld| {
                     if (std.mem.eql(u8, fld.name, e.field.field)) return fld.typ;
                 }
+            } else if (ot == .@"struct") {
+                if (self.record_aliases.get(ot.@"struct".name)) |alias_rt| {
+                    if (alias_rt == .table_type) {
+                        for (alias_rt.table_type.fields) |fld| {
+                            if (std.mem.eql(u8, fld.name, e.field.field)) return fld.typ;
+                        }
+                    }
+                }
             }
         }
         // Builtin module calls can recover native result types even when sema
@@ -753,8 +809,38 @@ pub const CodeGen = struct {
             if (self.atomic_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.math_call_result_type(e.call.func, e.call.args)) |t| return t;
             if (self.string_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.utf8_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.table_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.os_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.ffi_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.net_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.coroutine_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.debug_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (self.jit_call_result_type(e.call.func, e.call.args)) |t| return t;
+            if (e.call.func.* == .name and std.mem.eql(u8, e.call.func.name.ident, "__as") and
+                e.call.args.len == 2 and e.call.args[0].* == .string_lit)
+            {
+                if (self.type_from_c_name(e.call.args[0].string_lit.val)) |target| return target;
+            }
             const callee_type = self.expr_type(e.call.func);
+            if (e.call.func.* == .name) {
+                var name_buf: [256]u8 = undefined;
+                if (self.func_bodies.get(self.mangled_name(e.call.func.name.ident, &name_buf))) |body| {
+                    const fb_type = self.func_expr_type(body);
+                    if (fb_type == .func) return fb_type.func.ret.*;
+                }
+            }
             if (callee_type == .func) return callee_type.func.ret.*;
+        }
+        // Sema can leave a forward function reference without a type. Recover
+        // its typed signature from the func body map so calls can be emitted as
+        // direct C function calls instead of falling through to lua_invoke.
+        if (e.* == .name and (tm == null or tm.? != .func)) {
+            var name_buf: [256]u8 = undefined;
+            if (self.func_bodies.get(self.mangled_name(e.name.ident, &name_buf))) |body| {
+                const fb_type = self.func_expr_type(body);
+                if (fb_type == .func) return fb_type;
+            }
         }
         if (self.structural_expr_type(e)) |t| return t;
         return tm orelse .any;
@@ -776,10 +862,23 @@ pub const CodeGen = struct {
     }
 
     fn func_expr_type(self: *CodeGen, fb: *const ast.FuncBody) RT {
-        _ = self;
-        _ = fb;
         // Closures are always runtime `lua_Value`s, never native fn pointers.
-        return .any;
+        if (fb.closure_id != null or fb.upvalues.len > 0) return .any;
+        const ret = self.alloc.create(RT) catch return .any;
+        ret.* = self.resolve_type(fb.ret_type);
+        const params = self.alloc.alloc(RT, fb.params.len) catch {
+            self.alloc.destroy(ret);
+            return .any;
+        };
+        for (fb.params, 0..) |par, i| {
+            params[i] = self.resolve_type(par.typ);
+        }
+        return .{ .func = .{
+            .params = params,
+            .ret = ret,
+            .is_native = fb.is_typed,
+            .has_vararg = fb.vararg or fb.vararg_name != null,
+        } };
     }
 
     /// Recover the result of native C indexing from the container type. Sema
@@ -850,9 +949,21 @@ pub const CodeGen = struct {
             if (self.expr_type(args[0]).is_integer()) return .i64;
             return .f64;
         }
+        if (std.mem.eql(u8, fname, "random")) return .f64;
+        if (std.mem.eql(u8, fname, "modf")) return .f64;
+        if (std.mem.eql(u8, fname, "ult") and args.len == 2) return .bool;
+        if (std.mem.eql(u8, fname, "type") and args.len == 1) {
+            if (self.expr_type(args[0]).is_numeric()) return .str;
+            return null;
+        }
+        if (std.mem.eql(u8, fname, "tointeger") and args.len == 1) {
+            if (self.expr_type(args[0]).is_integer()) return .i64;
+            return null;
+        }
         const f64_names = [_][]const u8{
-            "sqrt", "sin", "cos", "tan",  "asin",  "acos", "atan",
-            "exp",  "log", "pow", "fmod", "floor", "ceil",
+            "sqrt", "sin", "cos",   "tan",  "asin", "acos",  "atan",
+            "exp",  "log", "log10", "pow",  "fmod", "floor", "ceil",
+            "deg",  "rad", "sinh",  "cosh", "tanh",
         };
         for (f64_names) |n| if (std.mem.eql(u8, fname, n)) return .f64;
         return null;
@@ -879,6 +990,105 @@ pub const CodeGen = struct {
             std.mem.eql(u8, fname, "upper") or
             std.mem.eql(u8, fname, "reverse"))
             return .str;
+        return null;
+    }
+
+    fn utf8_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "utf8")) return null;
+        if (std.mem.eql(u8, f.field, "len")) return .i64;
+        if (std.mem.eql(u8, f.field, "char")) return .str;
+        return null;
+    }
+
+    fn table_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "table")) return null;
+        if (std.mem.eql(u8, f.field, "concat")) return .str;
+        if (std.mem.eql(u8, f.field, "isfrozen")) return .bool;
+        return null;
+    }
+
+    fn os_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "os")) return null;
+        if (std.mem.eql(u8, f.field, "clock") or
+            std.mem.eql(u8, f.field, "time") or
+            std.mem.eql(u8, f.field, "difftime"))
+            return .f64;
+        if (std.mem.eql(u8, f.field, "remove") or
+            std.mem.eql(u8, f.field, "rename") or
+            std.mem.eql(u8, f.field, "execute"))
+            return .bool;
+        return null;
+    }
+
+    fn ffi_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "ffi")) return null;
+        if (std.mem.eql(u8, f.field, "sizeof") or
+            std.mem.eql(u8, f.field, "alignof") or
+            std.mem.eql(u8, f.field, "offsetof") or
+            std.mem.eql(u8, f.field, "errno"))
+            return .i64;
+        if (std.mem.eql(u8, f.field, "istype")) return .bool;
+        if (std.mem.eql(u8, f.field, "string")) return .str;
+        return null;
+    }
+
+    fn net_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "net")) return null;
+        if (std.mem.eql(u8, f.field, "send")) return .i64;
+        return null;
+    }
+
+    fn coroutine_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "coroutine")) return null;
+        if (std.mem.eql(u8, f.field, "status")) return .str;
+        if (std.mem.eql(u8, f.field, "isyieldable") or
+            std.mem.eql(u8, f.field, "close"))
+            return .bool;
+        return null;
+    }
+
+    fn debug_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "debug")) return null;
+        if (std.mem.eql(u8, f.field, "traceback")) return .str;
+        return null;
+    }
+
+    fn jit_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
+        _ = self;
+        _ = args;
+        if (func.* != .field) return null;
+        const f = &func.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "jit")) return null;
+        if (std.mem.eql(u8, f.field, "status")) return .bool;
+        if (std.mem.eql(u8, f.field, "version_num")) return .f64;
         return null;
     }
 
@@ -959,6 +1169,22 @@ pub const CodeGen = struct {
         if (index >= args.len) return null;
         if (args[index].* != .string_lit) return null;
         return self.mem_type_from_name(args[index].string_lit.val);
+    }
+
+    fn type_from_c_name(self: *CodeGen, name: []const u8) ?RT {
+        if (std.mem.eql(u8, name, "int8_t")) return .i8;
+        if (std.mem.eql(u8, name, "int16_t")) return .i16;
+        if (std.mem.eql(u8, name, "int32_t")) return .i32;
+        if (std.mem.eql(u8, name, "int64_t")) return .i64;
+        if (std.mem.eql(u8, name, "uint8_t")) return .u8;
+        if (std.mem.eql(u8, name, "uint16_t")) return .u16;
+        if (std.mem.eql(u8, name, "uint32_t")) return .u32;
+        if (std.mem.eql(u8, name, "uint64_t")) return .u64;
+        if (std.mem.eql(u8, name, "float")) return .f32;
+        if (std.mem.eql(u8, name, "double")) return .f64;
+        if (std.mem.eql(u8, name, "bool")) return .bool;
+        if (std.mem.eql(u8, name, "const char*")) return .str;
+        return self.mem_type_from_name(name);
     }
 
     fn mem_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
@@ -1073,8 +1299,88 @@ pub const CodeGen = struct {
         if (self.current_mono_spec) |spec| return spec.resolveType(te);
         if (te == .named) {
             if (self.record_aliases.get(te.named)) |rt| return rt;
+        } else if (te == .generic and te.generic.base.* == .named) {
+            if (self.alias_defs.get(te.generic.base.named)) |ad| {
+                if (ad.type_params) |type_params| {
+                    if (ad.target != null and type_params.len == te.generic.params.len) {
+                        const expanded = self.substitute_alias_type(ad.target.?, type_params, te.generic.params) catch null;
+                        if (expanded) |target| return self.resolve_type(target);
+                    }
+                }
+            }
         }
         return types.resolve(te, null, self.alloc) catch .any;
+    }
+
+    fn substitute_alias_type(
+        self: *CodeGen,
+        type_expr: ast.TypeExpr,
+        params: []const ast.TypeExpr,
+        args: []const ast.TypeExpr,
+    ) E!ast.TypeExpr {
+        if (type_expr == .named) {
+            for (params, 0..) |param, i| {
+                if (param == .named and std.mem.eql(u8, param.named, type_expr.named)) return args[i];
+            }
+            return type_expr;
+        }
+        return switch (type_expr) {
+            .inferred => .inferred,
+            .named => unreachable,
+            .pointer => |inner| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.substitute_alias_type(inner.*, params, args);
+                break :blk .{ .pointer = next };
+            },
+            .optional => |inner| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.substitute_alias_type(inner.*, params, args);
+                break :blk .{ .optional = next };
+            },
+            .array => |arr| blk: {
+                const elem = try self.alloc.create(ast.TypeExpr);
+                elem.* = try self.substitute_alias_type(arr.elem.*, params, args);
+                break :blk .{ .array = .{ .elem = elem, .size = arr.size } };
+            },
+            .generic => |g| blk: {
+                const base = try self.alloc.create(ast.TypeExpr);
+                base.* = try self.substitute_alias_type(g.base.*, params, args);
+                const gargs = try self.alloc.alloc(ast.TypeExpr, g.params.len);
+                for (g.params, 0..) |arg, i| {
+                    gargs[i] = try self.substitute_alias_type(arg, params, args);
+                }
+                break :blk .{ .generic = .{ .base = base, .params = gargs } };
+            },
+            .func => |f| blk: {
+                const fparams = try self.alloc.alloc(ast.TypeExpr, f.params.len);
+                for (f.params, 0..) |param, i| {
+                    fparams[i] = try self.substitute_alias_type(param, params, args);
+                }
+                const ret = try self.alloc.create(ast.TypeExpr);
+                ret.* = try self.substitute_alias_type(f.ret.*, params, args);
+                break :blk .{ .func = .{ .params = fparams, .ret = ret } };
+            },
+            .tuple => |items| blk: {
+                const out = try self.alloc.alloc(ast.TypeExpr, items.len);
+                for (items, 0..) |item, i| {
+                    out[i] = try self.substitute_alias_type(item, params, args);
+                }
+                break :blk .{ .tuple = out };
+            },
+            .record => |rec| blk: {
+                const fields = try self.alloc.alloc(ast.RecordField, rec.fields.len);
+                for (rec.fields, 0..) |field, i| {
+                    fields[i] = .{
+                        .name = field.name,
+                        .typ = try self.substitute_alias_type(field.typ, params, args),
+                        .loc = field.loc,
+                    };
+                }
+                const next = try self.alloc.create(ast.TypeExpr.RecordType);
+                next.* = .{ .fields = fields };
+                break :blk .{ .record = next };
+            },
+        };
     }
 
     fn apply_binding_record_attrs(_: *CodeGen, rt: *RT, attributes: []const ast.Attribute) void {
@@ -1130,34 +1436,69 @@ pub const CodeGen = struct {
     // ── Module entry ──────────────────────────────────────────────────────────
 
     pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
-        if (self.load_chunk or self.lib_mode or self.test_mode or self.bench_mode) return false;
-        if (!std.mem.eql(u8, self.target, "native")) return false;
-        if (!self.duo_mode) return false;
+        if (native_diag) std.debug.print("[native-diag] CALLED duo_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.duo_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
+        if (self.load_chunk or self.lib_mode or self.test_mode or self.bench_mode) {
+            native_diag_fail("guard-mode");
+            return false;
+        }
+        if (!std.mem.eql(u8, self.target, "native")) {
+            native_diag_fail("guard-target");
+            return false;
+        }
+        if (!self.duo_mode) {
+            native_diag_fail("guard-duo");
+            return false;
+        }
         if (mod.body.tail_expr) |expr| {
-            if (!self.call_stmt_is_native_scalar(expr)) return false;
+            if (!self.call_stmt_is_native_scalar(expr)) {
+                native_diag_fail("mod-tail");
+                return false;
+            }
         }
 
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl => |fd| {
-                    if (fd.path.len != 1 or fd.method or fd.func.vararg or fd.func.vararg_name != null) return false;
-                    if (fd.func.type_params != null or fd.func.is_async or fd.func.closure_id != null or fd.func.upvalues.len != 0) return false;
+                    if (fd.path.len != 1) return false;
+                    if (fd.func.vararg or fd.func.vararg_name != null) return false;
+                    if (fd.func.is_async) return false;
+                    // Allow closures and methods — they compile to C functions.
+                    if (fd.func.type_params != null) return false;
                     if (!self.type_expr_is_native_scalar(fd.func.ret_type)) return false;
                     for (fd.func.params) |param| {
                         if (param.default_val != null) return false;
                         if (!self.type_expr_is_native_scalar(param.typ)) return false;
                     }
-                    if (!self.block_is_native_scalar(fd.func.body, true)) return false;
+                    if (!self.block_is_native_scalar(fd.func.body, true)) {
+                        native_diag_fail("func-body");
+                        return false;
+                    }
                 },
                 .const_decl => |cd| {
-                    if (!self.type_expr_is_native_scalar(cd.typ) and cd.typ != .inferred) return false;
-                    if (!self.expr_is_native_scalar(cd.val)) return false;
+                    if (!self.type_expr_is_native_scalar(cd.typ) and cd.typ != .inferred) {
+                        native_diag_fail("const-typ-nonnative");
+                        return false;
+                    }
+                    if (!self.expr_is_native_scalar(cd.val)) {
+                        native_diag_fail("const-val-expr");
+                        return false;
+                    }
                 },
                 .local_decl, .assign, .call_stmt, .expr_stmt, .while_loop, .if_stmt, .num_for, .do_block, .ret, .brk, .cont => {
-                    if (!self.stmt_is_native_scalar(stmt, false)) return false;
+                    if (!self.stmt_is_native_scalar(stmt, false)) {
+                        native_diag_fail("mod-top-stmt");
+                        if (native_diag) std.debug.print("[native-diag]   stmt kind: {s}\n", .{@tagName(stmt.*)});
+                        return false;
+                    }
                 },
                 .cinclude => {},
-                else => return false,
+                .enum_def, .alias_def, .concept_def => {},
+                .directive => {},
+                .macro_def => {},
+                else => {
+                    native_diag_fail("mod-top-stmt-unhandled");
+                    return false;
+                },
             }
         }
         return true;
@@ -1165,7 +1506,11 @@ pub const CodeGen = struct {
 
     fn block_is_native_scalar(self: *CodeGen, block: ast.Block, allow_return: bool) bool {
         if (block.tail_expr) |expr| {
-            if (!allow_return or !self.expr_is_native_scalar(expr)) return false;
+            if (!allow_return) {
+                native_diag_fail("block-tail-no-return");
+                return false;
+            }
+            if (!self.expr_is_native_scalar(expr)) return false;
         }
         for (block.stmts) |*stmt| {
             if (!self.stmt_is_native_scalar(stmt, allow_return)) return false;
@@ -1177,11 +1522,20 @@ pub const CodeGen = struct {
         return switch (stmt.*) {
             .local_decl => |ld| blk: {
                 for (ld.names) |lname| {
-                    if (lname.attrib != null or lname.attributes.len != 0) break :blk false;
-                    if (lname.typ != .inferred and !self.type_expr_is_native_scalar(lname.typ)) break :blk false;
+                    if (lname.attrib != null or lname.attributes.len != 0) {
+                        native_diag_fail("local-decl-attrib");
+                        break :blk false;
+                    }
+                    if (lname.typ != .inferred and !self.type_expr_is_native_scalar(lname.typ)) {
+                        native_diag_fail("local-decl-typ");
+                        break :blk false;
+                    }
                 }
                 for (ld.inits) |expr| {
-                    if (!self.expr_is_native_scalar(expr)) break :blk false;
+                    if (!self.expr_is_native_scalar(expr)) {
+                        native_diag_fail("local-decl-init");
+                        break :blk false;
+                    }
                 }
                 break :blk true;
             },
@@ -1227,6 +1581,26 @@ pub const CodeGen = struct {
                 break :blk true;
             },
             .brk, .cont => true,
+            .gen_for => |gf| blk: {
+                for (gf.iters) |iter| {
+                    if (!self.expr_is_native_scalar(iter)) break :blk false;
+                }
+                break :blk self.block_is_native_scalar(gf.body, allow_return);
+            },
+            .label_stmt, .goto_stmt => true,
+            .directive => true,
+            .cinclude => true,
+            .enum_def, .alias_def, .concept_def => true,
+            .match_stmt => |m| blk: {
+                if (!self.expr_is_native_scalar(m.scrutinee)) break :blk false;
+                for (m.arms) |arm| {
+                    if (!self.block_is_native_scalar(arm.body, allow_return)) break :blk false;
+                    if (arm.guard) |g| {
+                        if (!self.expr_is_native_scalar(g)) break :blk false;
+                    }
+                }
+                break :blk true;
+            },
             else => false,
         };
     }
@@ -1256,25 +1630,54 @@ pub const CodeGen = struct {
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
             .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
+            .nil => true,
             .name => |name| !is_runtime_global(name.ident),
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
             .unop => |un| un.op != .compile and self.expr_is_native_scalar(un.operand),
+            .field => |field| self.expr_is_native_scalar(field.obj),
+            .index => |idx| self.expr_is_native_scalar(idx.obj) and self.expr_is_native_scalar(idx.key),
+            .table => |t| blk: {
+                // A table literal is native scalar only when it is a typed record
+                // (anonymous struct) — emitted as a C struct compound literal via
+                // emit_record_initializer at binding/call/return sites. Untyped
+                // dynamic tables require the lua_Value runtime.
+                const rt = self.expr_type(expr);
+                if (rt != .table_type) break :blk false;
+                for (t.fields) |fld| switch (fld) {
+                    .named => |nmd| if (!self.expr_is_native_scalar(nmd.val)) break :blk false,
+                    .positional => |pos| if (!self.expr_is_native_scalar(pos)) break :blk false,
+                    .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
+                        !self.expr_is_native_scalar(idx.val)) break :blk false,
+                };
+                break :blk true;
+            },
             .call => |call| blk: {
-                if (call.func.* != .name) break :blk false;
-                if (is_runtime_global(call.func.name.ident)) break :blk false;
+                if (call.func.* == .name) {
+                    // @c.emit / __emit / __asm: raw C injection — always native scalar.
+                    if (std.mem.eql(u8, call.func.name.ident, "__emit") or
+                        std.mem.eql(u8, call.func.name.ident, "__asm")) break :blk true;
+                    if (is_runtime_global(call.func.name.ident)) break :blk false;
+                }
+                if (!self.expr_is_native_scalar(call.func)) break :blk false;
                 for (call.args) |arg| {
                     if (!self.expr_is_native_scalar(arg)) break :blk false;
                 }
                 const rt = self.expr_type(expr);
-                break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void;
+                break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void or rt == .any;
             },
-            else => false,
+            else => {
+                native_diag_fail("expr-unhandled");
+                if (native_diag) std.debug.print("[native-diag]   expr kind: {s}\n", .{@tagName(expr.*)});
+                return false;
+            },
         };
     }
 
     fn type_expr_is_native_scalar(self: *CodeGen, type_expr: ast.TypeExpr) bool {
         const rt = self.resolve_type(type_expr);
-        return rt.is_numeric() or rt == .bool or rt == .str or rt == .void;
+        return rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
+            rt == .array or rt == .@"struct" or rt == .enum_type or
+            rt == .table_type or rt == .pointer or rt == .any or rt == .func;
     }
 
     fn module_has_cinclude(self: *CodeGen, mod: *const ast.Module) bool {
@@ -1776,18 +2179,27 @@ pub const CodeGen = struct {
     }
 
     pub fn emit_module(self: *CodeGen, mod: *ast.Module) E!void {
+        const old_module_cname = self.current_module_cname;
+        self.current_module_cname = "";
+        defer self.current_module_cname = old_module_cname;
         if (self.src_path.len > 0) {
             debug_trace.event(.codegen, .module, "emit {s}", .{self.src_path});
         } else {
             debug_trace.event(.codegen, .module, "emit module", .{});
         }
+        try self.populate_record_aliases(mod);
+        try self.populate_enum_defs(mod);
+        try self.populate_alias_defs(mod);
+
         self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
+        if (native_diag) std.debug.print("[native-diag] emit_module native_scalar_mode={} src={s}\n", .{ self.native_scalar_mode, self.src_path });
         const native_scalar_plain = self.native_scalar_mode and !self.module_has_cinclude(mod);
 
         // File header
         self.p("/* Generated by duo compiler — do not edit */\n", .{});
         if (!std.mem.eql(u8, self.target, "wasm32-wasi") and !native_scalar_plain) {
             self.p("#define _XOPEN_SOURCE 600\n", .{});
+            self.p("#define _DARWIN_C_SOURCE\n", .{});
         }
         // Emit user @cinclude directives before standard headers so FFI
         // declarations can use library types.
@@ -1885,6 +2297,7 @@ pub const CodeGen = struct {
             self.p("#include <fcntl.h>\n", .{});
             self.p("#include <sys/stat.h>\n", .{});
             self.p("#include <sys/socket.h>\n", .{});
+            self.p("#include <sys/mman.h>\n", .{});
             self.p("#include <netinet/in.h>\n", .{});
             self.p("#include <arpa/inet.h>\n", .{});
             self.p("#include <netdb.h>\n", .{});
@@ -2056,10 +2469,6 @@ pub const CodeGen = struct {
             module_comptime.deinit(self.alloc);
         }
 
-        try self.populate_record_aliases(mod);
-        try self.populate_enum_defs(mod);
-        try self.populate_alias_defs(mod);
-
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .func_decl) {
                 const fd = &stmt.func_decl;
@@ -2103,28 +2512,48 @@ pub const CodeGen = struct {
             while (it.next()) |key| {
                 if (is_runtime_global(key.*)) continue;
                 const gt = globals.get(key.*) orelse .any;
-                self.p("static ", .{});
-                self.typ(gt);
-                self.p(" duo_g_{s};\n", .{key.*});
+                if (self.current_module_cname.len > 0) {
+                    self.p("static ", .{});
+                    self.typ(gt);
+                    self.p(" duo_g_{s}_{s};\n", .{ self.current_module_cname, key.* });
+                } else {
+                    self.p("static ", .{});
+                    self.typ(gt);
+                    self.p(" duo_g_{s};\n", .{key.*});
+                }
             }
             self.nl();
         }
 
         // Emit top-level constants after record/enum typedefs so annotated
         // aggregate types are declared before static storage uses them.
+        // Table-valued consts are declared here and their init functions are
+        // emitted after function definitions so the init functions can call
+        // module functions (e.g. make_wide) that are already declared.
+        var table_consts: std.ArrayList(*const ast.Stmt) = .empty;
+        defer table_consts.deinit(self.alloc);
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .const_decl) {
                 const cd = &stmt.const_decl;
+                var name_buf: [256]u8 = undefined;
+                const mname = self.mangled_name(cd.ident, &name_buf);
                 const rt = if (cd.typ != .inferred)
                     types.resolve(cd.typ, null, self.alloc) catch .any
                 else
                     self.expr_type(cd.val);
-                self.p("static const ", .{});
-                self.typ(rt);
-                self.p(" {s} = ", .{cd.ident});
-                try self.emit_expr(cd.val);
-                self.p(";\n", .{});
-                try self.note_comptime_binding(cd.ident, cd.val);
+                if (cd.val.* == .table) {
+                    // Table literal: forward-declare static storage; _init emitted later
+                    self.p("static lua_Value {s};\n", .{mname});
+                    try table_consts.append(self.alloc, stmt);
+                    try self.note_comptime_binding(cd.ident, cd.val);
+                } else {
+                    self.p("static const ", .{});
+                    self.typ(rt);
+                    self.p(" {s} = ", .{mname});
+                    try self.emit_expr(cd.val);
+                    self.p(";\n", .{});
+                    try self.note_comptime_binding(cd.ident, cd.val);
+                }
             }
         }
         self.nl();
@@ -2185,6 +2614,24 @@ pub const CodeGen = struct {
         for (local_funcs.items) |fd| {
             try self.emit_func_def(fd);
         }
+
+        // Emit table-valued const init functions after function definitions
+        // so they can call module functions that are already declared.
+        for (table_consts.items) |stmt| {
+            const cd = &stmt.const_decl;
+            var name_buf: [256]u8 = undefined;
+            const mname = self.mangled_name(cd.ident, &name_buf);
+            self.p("static void _init_{s}(void) {{\n", .{mname});
+            self.indent += 1;
+            self.ind();
+            self.p("{s} = ", .{mname});
+            try self.emit_expr(cd.val);
+            self.p(";\n", .{});
+            self.indent -= 1;
+            self.ind();
+            self.p("}}\n", .{});
+        }
+        if (table_consts.items.len > 0) self.nl();
 
         if (!self.native_scalar_mode) {
             try self.emit_argv_lookup();
@@ -2290,6 +2737,16 @@ pub const CodeGen = struct {
             self.pl("duo_modules = lua_table_new();", .{});
             self.pl("duo_register_modules();", .{});
             self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
+        }
+
+        // Initialize table-valued top-level constants
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .const_decl and stmt.const_decl.val.* == .table) {
+                self.ind();
+                var name_buf: [256]u8 = undefined;
+                const mname = self.mangled_name(stmt.const_decl.ident, &name_buf);
+                self.p("_init_{s}();\n", .{mname});
+            }
         }
 
         // Initialize metatables for alias types with methods or @derive attributes
@@ -2626,16 +3083,17 @@ pub const CodeGen = struct {
         }
     }
 
-    fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
+    pub fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
+            if (ad.type_params != null) continue;
             const rt = try self.alias_record_type(ad);
             try self.record_aliases.put(self.alloc, ad.name, rt);
         }
     }
 
-    fn populate_enum_defs(self: *CodeGen, mod: *ast.Module) E!void {
+    pub fn populate_enum_defs(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .enum_def) continue;
             const ed = &stmt.enum_def;
@@ -2649,7 +3107,7 @@ pub const CodeGen = struct {
         }
     }
 
-    fn populate_alias_defs(self: *CodeGen, mod: *ast.Module) E!void {
+    pub fn populate_alias_defs(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
@@ -3174,11 +3632,9 @@ pub const CodeGen = struct {
             self.ind();
             self.p(".{s} = ", .{rf.name});
             if (found.get(rf.name)) |val| {
-                // Named field: use directly
-                try self.emit_expr(val);
+                try self.emit_arg_for_param(val, rf.typ);
             } else if (i < positionals.items.len) {
-                // Smart positional init: map position to field name
-                try self.emit_expr(positionals.items[i]);
+                try self.emit_arg_for_param(positionals.items[i], rf.typ);
             } else {
                 self.p("0", .{});
             }
@@ -3192,17 +3648,90 @@ pub const CodeGen = struct {
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT) E!void {
         if (param_type == .any) {
             try self.emit_as_lua_value(arg);
-        } else if (param_type == .f64 and self.expr_type(arg).is_integer()) {
-            self.p("(double)(", .{});
-            try self.emit_expr(arg);
-            self.p(")", .{});
         } else if (param_type == .table_type and arg.* == .table) {
             self.p("(", .{});
             self.typ(param_type);
             self.p(")", .{});
             try self.emit_record_initializer(param_type.table_type.fields, arg);
         } else {
-            try self.emit_expr(arg);
+            const arg_type = self.expr_type(arg);
+            if (arg_type == .any and self.expr_is_raw_c_intrinsic(arg)) {
+                try self.emit_expr(arg);
+                return;
+            }
+            if (arg_type == .any) {
+                // Untyped runtime value: convert to the native parameter type.
+                if (param_type.is_numeric()) {
+                    if (param_type == .f64) {
+                        self.p("lua_to_num(", .{});
+                        try self.emit_expr(arg);
+                        self.p(")", .{});
+                    } else {
+                        var buf: [32]u8 = undefined;
+                        self.p("((", .{});
+                        self.p("{s})lua_to_num(", .{param_type.c_type(&buf)});
+                        try self.emit_expr(arg);
+                        self.p("))", .{});
+                    }
+                } else if (param_type == .str) {
+                    self.p("lua_to_str(", .{});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
+                } else if (param_type == .bool) {
+                    self.p("lua_to_bool(", .{});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
+                } else {
+                    try self.emit_expr(arg);
+                }
+            } else if (arg_type.is_numeric() and param_type.is_numeric()) {
+                if (arg_type.eql(param_type)) {
+                    try self.emit_expr(arg);
+                } else if (param_type == .f64) {
+                    self.p("(double)(", .{});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
+                } else {
+                    var buf: [32]u8 = undefined;
+                    self.p("((", .{});
+                    self.p("{s})(", .{param_type.c_type(&buf)});
+                    try self.emit_expr(arg);
+                    self.p("))", .{});
+                }
+            } else if (param_type == .str and arg_type == .str) {
+                try self.emit_expr(arg);
+            } else if (param_type == .bool and arg_type == .bool) {
+                try self.emit_expr(arg);
+            } else {
+                try self.emit_expr(arg);
+            }
+        }
+    }
+
+    fn rt_accepts_lua_value_coercion(rt: RT) bool {
+        return switch (rt) {
+            .any, .str, .bool, .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => true,
+            else => false,
+        };
+    }
+
+    fn emit_lua_value_coercion_start(self: *CodeGen, rt: RT) void {
+        switch (rt) {
+            .str => self.p("lua_to_str(", .{}),
+            .bool => self.p("lua_to_bool(", .{}),
+            .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
+                var buf: [64]u8 = undefined;
+                self.p("(({s})lua_to_num(", .{rt.c_type(&buf)});
+            },
+            else => {},
+        }
+    }
+
+    fn emit_lua_value_coercion_end(self: *CodeGen, rt: RT) void {
+        switch (rt) {
+            .str, .bool => self.p(")", .{}),
+            .f32, .f64, .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => self.p("))", .{}),
+            else => {},
         }
     }
 
@@ -3447,9 +3976,20 @@ pub const CodeGen = struct {
     }
 
     fn emit_func_c_name(self: *CodeGen, fd: *const ast.FuncDecl, buf: []u8) []const u8 {
-        _ = self;
         if (func_ffi_name(fd.attributes)) |name| return name;
         var pos: usize = 0;
+        if (self.current_module_cname.len > 0) {
+            const cm = self.current_module_cname;
+            if (pos + cm.len <= buf.len) {
+                @memcpy(buf[pos..][0..cm.len], cm);
+                pos += cm.len;
+            }
+            if (pos + 2 <= buf.len) {
+                buf[pos] = '_';
+                buf[pos + 1] = '_';
+                pos += 2;
+            }
+        }
         for (fd.path, 0..) |part, i| {
             if (i > 0 and pos + 2 <= buf.len) {
                 buf[pos] = '_';
@@ -3480,12 +4020,27 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn func_export_name(fd: *const ast.FuncDecl) ?[]const u8 {
+        for (fd.attributes) |attr| {
+            if (std.mem.eql(u8, attr.name, "c.export")) {
+                if (attr.args) |raw| {
+                    if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
+                    if (raw.len > 0) return raw;
+                }
+                return if (fd.path.len > 0) fd.path[fd.path.len - 1] else "unknown";
+            }
+        }
+        if (func_has_attr(fd.attributes, "export")) {
+            return if (fd.path.len > 0) fd.path[fd.path.len - 1] else "unknown";
+        }
+        return null;
+    }
+
     fn emit_func_storage_and_attrs(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         // `@export` functions are WASM exports: external linkage, no `static`,
         // with export_name + visibility attributes so the linker exposes them.
-        if (func_has_attr(fd.attributes, "export")) {
-            const export_name = if (fd.path.len > 0) fd.path[fd.path.len - 1] else "unknown";
+        if (func_export_name(fd)) |export_name| {
             self.p("__attribute__((export_name(\"{s}\"), visibility(\"default\"))) ", .{export_name});
             return; // Skip static/inline/hot — these must be externally visible.
         }
@@ -3602,20 +4157,21 @@ pub const CodeGen = struct {
         if (self.native_scalar_mode) return;
         const fb = &fd.func;
         if (!self.should_emit_lua_thunk(fb)) return;
-        const dname = duo_func_name(fd);
+        var cname_buf: [128]u8 = undefined;
+        const cname = self.emit_func_c_name(fd, &cname_buf);
         const nparams = fb.params.len;
         if (nparams == 0) {
-            self.p("static lua_Value {s}__lua(lua_Value _unused);\n", .{dname});
+            self.p("static lua_Value {s}__lua(lua_Value _unused);\n", .{cname});
         } else if (nparams == 1) {
-            self.p("static lua_Value {s}__lua(lua_Value _a0);\n", .{dname});
+            self.p("static lua_Value {s}__lua(lua_Value _a0);\n", .{cname});
         } else if (nparams == 2) {
-            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1);\n", .{dname});
+            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1);\n", .{cname});
         } else if (nparams == 3) {
-            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);\n", .{dname});
+            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2);\n", .{cname});
         } else if (nparams == 4) {
-            self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3);\n", .{dname});
+            self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3);\n", .{cname});
         } else if (nparams == 5) {
-            self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4);\n", .{dname});
+            self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4);\n", .{cname});
         }
     }
 
@@ -3677,15 +4233,7 @@ pub const CodeGen = struct {
             if (i > 0) self.p(", ", .{});
             if (i < spec.template.params.len) {
                 const pt = spec.resolveType(spec.template.params[i].typ);
-                if (pt == .any) {
-                    try self.emit_as_lua_value(arg);
-                } else if (pt == .f64 and self.expr_type(arg).is_integer()) {
-                    self.p("(double)(", .{});
-                    try self.emit_expr(arg);
-                    self.p(")", .{});
-                } else {
-                    try self.emit_expr(arg);
-                }
+                try self.emit_arg_for_param(arg, pt);
             } else {
                 try self.emit_expr(arg);
             }
@@ -3925,7 +4473,6 @@ pub const CodeGen = struct {
         // is lua-convertible so a thunk is still valid.
         if (!self.should_emit_lua_thunk(fb)) return;
         const ret = self.resolve_type(fb.ret_type);
-        const dname = duo_func_name(fd);
         var cname_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &cname_buf);
         const nparams = fb.params.len;
@@ -3933,7 +4480,7 @@ pub const CodeGen = struct {
         const ret_ct = ret.c_type(&ret_buf);
 
         if (nparams == 0) {
-            self.p("static lua_Value {s}__lua(lua_Value _unused) {{\n", .{dname});
+            self.p("static lua_Value {s}__lua(lua_Value _unused) {{\n", .{cname});
             self.pl("    (void)_unused;", .{});
             if (ret == .void) {
                 self.p("    {s}();\n    return lua_val_nil();\n", .{cname});
@@ -3947,7 +4494,7 @@ pub const CodeGen = struct {
         }
         if (nparams == 1) {
             const pt = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{dname});
+            self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{cname});
             self.ind();
             var pbuf: [32]u8 = undefined;
             const p0 = std.fmt.bufPrint(&pbuf, "_p0", .{}) catch "_p0";
@@ -3965,7 +4512,7 @@ pub const CodeGen = struct {
         if (nparams == 2) {
             const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
             const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{dname});
+            self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
@@ -3984,7 +4531,7 @@ pub const CodeGen = struct {
             const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
             const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
             const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{dname});
+            self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
@@ -4004,7 +4551,7 @@ pub const CodeGen = struct {
             const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
             const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
             const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3) {{\n", .{dname});
+            self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
@@ -4027,7 +4574,7 @@ pub const CodeGen = struct {
             const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
             const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
             const pt4 = types.resolve(fb.params[4].typ, null, self.alloc) catch .any;
-            self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4) {{\n", .{dname});
+            self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
@@ -4358,37 +4905,11 @@ pub const CodeGen = struct {
         // This works even for non-native functions (where is_native is false)
         // because we now emit thunks for all lua-convertible functions.
         if (expr.* == .name) {
-            const cname = expr.name.ident;
-            // Check if this function has a thunk by checking param convertibility
             if (ft == .func) {
-                var thunkable = true;
-                for (ft.func.params) |pt| {
-                    if (!self.rt_is_lua_convertible(pt)) {
-                        thunkable = false;
-                        break;
-                    }
-                }
-                if (thunkable and !self.vararg_funcs.contains(cname)) {
-                    const nparams = ft.func.params.len;
-                    if (nparams == 0 or nparams == 1) {
-                        self.p("lua_val_from_func((lua_Value (*)(lua_Value)){s}__lua)", .{cname});
-                        return;
-                    } else if (nparams == 2) {
-                        self.p("lua_val_from_func((void*){s}__lua2)", .{cname});
-                        return;
-                    } else if (nparams == 3) {
-                        self.p("lua_val_from_func((void*){s}__lua3)", .{cname});
-                        return;
-                    } else if (nparams == 4) {
-                        self.p("lua_val_from_func((void*){s}__lua4)", .{cname});
-                        return;
-                    } else if (nparams == 5) {
-                        self.p("lua_val_from_func((void*){s}__lua5)", .{cname});
-                        return;
-                    }
-                }
+                try self.emit_native_func_name_as_lua_value(expr.name.ident, ft.func.params, ft.func.is_native);
+                return;
             }
-            // Fall back to raw cast for non-thunkable or 6+ param functions
+            // Fall back to raw cast for non-func references
             self.p("lua_val_from_func((lua_Value (*)(lua_Value))", .{});
             try self.emit_expr(expr);
             self.p(")", .{});
@@ -4400,11 +4921,13 @@ pub const CodeGen = struct {
         self.p(")", .{});
     }
 
-    fn emit_native_func_name_as_lua_value(self: *CodeGen, cname: []const u8, params: []types.ResolvedType, _: bool) E!void {
-        if (self.vararg_funcs.get(cname)) |argv_cname| {
+    fn emit_native_func_name_as_lua_value(self: *CodeGen, raw_name: []const u8, params: []types.ResolvedType, _: bool) E!void {
+        if (self.vararg_funcs.get(raw_name)) |argv_cname| {
             self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
             return;
         }
+        var name_buf: [256]u8 = undefined;
+        const cname = self.mangled_name(raw_name, &name_buf);
         const nparams = params.len;
         // A thunk only exists when every parameter is lua-convertible (see
         // should_emit_lua_thunk). If not, fall back to a direct function-pointer
@@ -5328,6 +5851,51 @@ pub const CodeGen = struct {
             self.p(");\n", .{});
             return;
         }
+        // ── Multi-value implicit return: a, b ──
+        if (expr.* == .sequence) {
+            const seq = expr.sequence;
+            if (seq.exprs.len == 1) {
+                // Single element — treat as single return
+                return self.emit_implicit_return(seq.exprs[0]);
+            }
+            // Multi-value return: push all but first, then return first
+            if (self.current_ret != .void) {
+                if (self.closure_ctx != null or self.current_ret == .any) {
+                    self.pl("lua_mret_clear();", .{});
+                    for (seq.exprs[1..]) |v| {
+                        self.ind();
+                        self.p("lua_mret_push(", .{});
+                        try self.emit_as_lua_value(v);
+                        self.p(");\n", .{});
+                    }
+                    self.ind();
+                    self.p("return ", .{});
+                    try self.emit_as_lua_value(seq.exprs[0]);
+                    self.p(";\n", .{});
+                } else {
+                    self.pl("lua_mret_clear();", .{});
+                    for (seq.exprs[1..]) |v| {
+                        self.ind();
+                        self.p("lua_mret_push(", .{});
+                        try self.emit_expr(v);
+                        self.p(");\n", .{});
+                    }
+                    self.ind();
+                    self.p("return ", .{});
+                    try self.emit_expr(seq.exprs[0]);
+                    self.p(";\n", .{});
+                }
+            } else {
+                // void function — just evaluate all expressions for side effects
+                for (seq.exprs) |sub| {
+                    self.ind();
+                    try self.emit_expr(sub);
+                    self.p(";\n", .{});
+                }
+            }
+            return;
+        }
+        // ── Single-value implicit return ──
         if (self.current_ret != .void) self.p("return ", .{});
         if (self.closure_ctx != null or self.current_ret == .any) {
             try self.emit_as_lua_value(expr);
@@ -5472,15 +6040,33 @@ pub const CodeGen = struct {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
                     self.ind();
-                    self.p("lua_Value {s} = ", .{ld.names[0].ident});
+                    const first_rt = if (ld.names[0].typ != .inferred and rt_accepts_lua_value_coercion(self.resolve_binding_type(&ld.names[0])))
+                        self.resolve_binding_type(&ld.names[0])
+                    else
+                        RT.any;
+                    try self.note_local_type(ld.names[0].ident, first_rt);
+                    self.typ(first_rt);
+                    self.p(" {s} = ", .{ld.names[0].ident});
+                    self.emit_lua_value_coercion_start(first_rt);
                     try self.emit_as_lua_value(ld.inits[0]);
+                    self.emit_lua_value_coercion_end(first_rt);
                     self.p(";\n", .{});
                     if (ld.names[0].attrib != null and std.mem.eql(u8, ld.names[0].attrib.?, "close"))
                         try self.note_close_local(ld.names[0].ident);
                     try self.note_comptime_unavailable(ld.names[0].ident);
                     for (ld.names[1..], 0..) |*lname, i| {
                         self.ind();
-                        self.p("lua_Value {s} = lua_mret_get({d});\n", .{ lname.ident, i });
+                        const rest_rt = if (lname.typ != .inferred and rt_accepts_lua_value_coercion(self.resolve_binding_type(lname)))
+                            self.resolve_binding_type(lname)
+                        else
+                            RT.any;
+                        try self.note_local_type(lname.ident, rest_rt);
+                        self.typ(rest_rt);
+                        self.p(" {s} = ", .{lname.ident});
+                        self.emit_lua_value_coercion_start(rest_rt);
+                        self.p("lua_mret_get({d})", .{i});
+                        self.emit_lua_value_coercion_end(rest_rt);
+                        self.p(";\n", .{});
                         if (lname.attrib != null and std.mem.eql(u8, lname.attrib.?, "close"))
                             try self.note_close_local(lname.ident);
                         try self.note_comptime_unavailable(lname.ident);
@@ -5581,12 +6167,20 @@ pub const CodeGen = struct {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
                     self.ind();
-                    self.p("duo_g_{s} = ", .{gd.names[0].ident});
+                    if (self.current_module_cname.len > 0) {
+                        self.p("duo_g_{s}_{s} = ", .{ self.current_module_cname, gd.names[0].ident });
+                    } else {
+                        self.p("duo_g_{s} = ", .{gd.names[0].ident});
+                    }
                     try self.emit_as_lua_value(gd.inits[0]);
                     self.p(";\n", .{});
                     for (gd.names[1..], 0..) |*lname, i| {
                         self.ind();
-                        self.p("duo_g_{s} = lua_mret_get({d});\n", .{ lname.ident, i });
+                        if (self.current_module_cname.len > 0) {
+                            self.p("duo_g_{s}_{s} = lua_mret_get({d});\n", .{ self.current_module_cname, lname.ident, i });
+                        } else {
+                            self.p("duo_g_{s} = lua_mret_get({d});\n", .{ lname.ident, i });
+                        }
                     }
                 } else for (gd.names, 0..) |*lname, i| {
                     self.ind();
@@ -5599,7 +6193,11 @@ pub const CodeGen = struct {
                         }
                         break :blk self.global_type(lname.ident) orelse .any;
                     };
-                    self.p("duo_g_{s}", .{lname.ident});
+                    if (self.current_module_cname.len > 0) {
+                        self.p("duo_g_{s}_{s}", .{ self.current_module_cname, lname.ident });
+                    } else {
+                        self.p("duo_g_{s}", .{lname.ident});
+                    }
                     if (i < gd.inits.len) {
                         self.p(" = ", .{});
                         if (rt == .any) {
@@ -5626,7 +6224,7 @@ pub const CodeGen = struct {
                 self.p("const ", .{});
                 self.typ(rt);
                 self.p(" {s} = ", .{cd.ident});
-                try self.emit_expr(cd.val);
+                try self.emit_arg_for_param(cd.val, rt);
                 self.p(";\n", .{});
                 try self.note_comptime_binding(cd.ident, cd.val);
             },
@@ -5634,50 +6232,73 @@ pub const CodeGen = struct {
                 if (as.values.len == 1 and self.uses_multi_return(as.values[0], as.targets.len)) {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
-                    self.ind();
-                    const tt0 = self.expr_type(as.targets[0]);
-                    try self.emit_lvalue(as.targets[0]);
-                    self.p(" = ", .{});
-                    if (tt0 == .any) {
-                        try self.emit_as_lua_value(as.values[0]);
-                    } else if (tt0.is_numeric()) {
-                        self.p("((", .{});
-                        self.typ(tt0);
-                        self.p(")lua_to_num(", .{});
-                        try self.emit_as_lua_value(as.values[0]);
-                        self.p("))", .{});
-                    } else if (tt0 == .bool) {
-                        self.p("lua_to_bool(", .{});
-                        try self.emit_as_lua_value(as.values[0]);
-                        self.p(")", .{});
-                    } else if (tt0 == .str) {
-                        self.p("lua_to_str(", .{});
-                        try self.emit_as_lua_value(as.values[0]);
-                        self.p(")", .{});
+                    // Check if first target needs implicit local declaration
+                    const first_needs_decl = self.duo_mode and as.targets[0].* == .name and
+                        !self.is_local_name(as.targets[0].name.ident) and
+                        !self.is_global_name(as.targets[0].name.ident);
+                    if (first_needs_decl) {
+                        const name = as.targets[0].name.ident;
+                        try self.note_local(name);
+                        try self.note_local_type(name, .any);
+                        self.ind();
+                        self.p("lua_Value {s} = lua_mret_get(0);\n", .{name});
                     } else {
-                        try self.emit_as_lua_value(as.values[0]);
+                        self.ind();
+                        const tt0 = self.expr_type(as.targets[0]);
+                        try self.emit_lvalue(as.targets[0]);
+                        self.p(" = ", .{});
+                        if (tt0 == .any) {
+                            try self.emit_as_lua_value(as.values[0]);
+                        } else if (tt0.is_numeric()) {
+                            self.p("((", .{});
+                            self.typ(tt0);
+                            self.p(")lua_to_num(", .{});
+                            try self.emit_as_lua_value(as.values[0]);
+                            self.p("))", .{});
+                        } else if (tt0 == .bool) {
+                            self.p("lua_to_bool(", .{});
+                            try self.emit_as_lua_value(as.values[0]);
+                            self.p(")", .{});
+                        } else if (tt0 == .str) {
+                            self.p("lua_to_str(", .{});
+                            try self.emit_as_lua_value(as.values[0]);
+                            self.p(")", .{});
+                        } else {
+                            try self.emit_as_lua_value(as.values[0]);
+                        }
+                        self.p(";\n", .{});
                     }
-                    self.p(";\n", .{});
                     if (as.targets[0].* == .name) try self.note_comptime_unavailable(as.targets[0].name.ident);
                     for (as.targets[1..], 0..) |tgt, i| {
                         self.ind();
                         const tt = self.expr_type(tgt);
-                        try self.emit_lvalue(tgt);
-                        self.p(" = ", .{});
-                        if (tt == .any) {
-                            self.p("lua_mret_get({d})", .{i});
-                        } else if (tt.is_numeric()) {
-                            self.p("((", .{});
-                            self.typ(tt);
-                            self.p(")lua_to_num(lua_mret_get({d})))", .{i});
-                        } else if (tt == .bool) {
-                            self.p("lua_to_bool(lua_mret_get({d}))", .{i});
-                        } else if (tt == .str) {
-                            self.p("lua_to_str(lua_mret_get({d}))", .{i});
+                        // Check if this target needs implicit local declaration
+                        const needs_decl = self.duo_mode and tgt.* == .name and
+                            !self.is_local_name(tgt.name.ident) and
+                            !self.is_global_name(tgt.name.ident);
+                        if (needs_decl) {
+                            const name = tgt.name.ident;
+                            try self.note_local(name);
+                            try self.note_local_type(name, .any);
+                            self.p("lua_Value {s} = lua_mret_get({d});\n", .{ name, i });
                         } else {
-                            self.p("lua_mret_get({d})", .{i});
+                            try self.emit_lvalue(tgt);
+                            self.p(" = ", .{});
+                            if (tt == .any) {
+                                self.p("lua_mret_get({d})", .{i});
+                            } else if (tt.is_numeric()) {
+                                self.p("((", .{});
+                                self.typ(tt);
+                                self.p(")lua_to_num(lua_mret_get({d})))", .{i});
+                            } else if (tt == .bool) {
+                                self.p("lua_to_bool(lua_mret_get({d}))", .{i});
+                            } else if (tt == .str) {
+                                self.p("lua_to_str(lua_mret_get({d}))", .{i});
+                            } else {
+                                self.p("lua_mret_get({d})", .{i});
+                            }
+                            self.p(";\n", .{});
                         }
-                        self.p(";\n", .{});
                         if (tgt.* == .name) try self.note_comptime_unavailable(tgt.name.ident);
                     }
                 } else for (as.targets, 0..) |tgt, i| {
@@ -5853,9 +6474,18 @@ pub const CodeGen = struct {
                 self.p(";\n", .{});
             },
             .expr_stmt => |*es| {
-                self.ind();
-                try self.emit_expr(es.expr);
-                self.p(";\n", .{});
+                // Handle sequence expressions (a, b) — evaluate all, discard results.
+                if (es.expr.* == .sequence) {
+                    for (es.expr.sequence.exprs) |sub| {
+                        self.ind();
+                        try self.emit_expr(sub);
+                        self.p(";\n", .{});
+                    }
+                } else {
+                    self.ind();
+                    try self.emit_expr(es.expr);
+                    self.p(";\n", .{});
+                }
             },
             .ret => |*r| {
                 // Run all enclosing defers (LIFO, innermost scope first)
@@ -6928,6 +7558,14 @@ pub const CodeGen = struct {
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
             .quote, .unquote, .macro_call => self.p("/* unexpanded macro expression */ lua_val_nil()", .{}),
+            .sequence => |seq| {
+                // In single-value context, emit first expression; rest are side effects.
+                if (seq.exprs.len > 0) {
+                    try self.emit_expr(seq.exprs[0]);
+                } else {
+                    self.p("lua_val_nil()", .{});
+                }
+            },
             .nil => self.p("NULL", .{}),
             .true_lit => self.p("true", .{}),
             .false_lit => self.p("false", .{}),
@@ -7163,6 +7801,36 @@ pub const CodeGen = struct {
                         } else {
                             self.p("/* __emit: arg must evaluate to string */0", .{});
                         }
+                    }
+                    return;
+                }
+                // __c_call("name", args...) — direct raw C function call.
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__c_call") and c.args.len >= 1) {
+                    if (c.args[0].* != .string_lit) {
+                        self.p("/* __c_call: first arg must be function name */0", .{});
+                        return;
+                    }
+                    self.p("{s}(", .{c.args[0].string_lit.val});
+                    for (c.args[1..], 0..) |arg, i| {
+                        if (i > 0) self.p(", ", .{});
+                        try self.emit_expr(arg);
+                    }
+                    self.p(")", .{});
+                    return;
+                }
+                // __as("ctype", expr) — explicit typed coercion from @as(T, expr).
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__as") and c.args.len == 2) {
+                    if (c.args[0].* != .string_lit) {
+                        self.p("/* __as: first arg must be type name */0", .{});
+                        return;
+                    }
+                    const target_name = c.args[0].string_lit.val;
+                    if (self.type_from_c_name(target_name)) |target| {
+                        try self.emit_arg_for_param(c.args[1], target);
+                    } else {
+                        self.p("(({s})(", .{target_name});
+                        try self.emit_expr(c.args[1]);
+                        self.p("))", .{});
                     }
                     return;
                 }
@@ -7532,7 +8200,16 @@ pub const CodeGen = struct {
                         }
                     }
                 }
-                const ft = self.expr_type(c.func);
+                var ft = self.expr_type(c.func);
+                // Sema may only know a function name as `.any` for forward calls.
+                // Recover the typed signature so we can emit a direct C call.
+                if (c.func.* == .name) {
+                    var name_buf: [256]u8 = undefined;
+                    if (self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf))) |body| {
+                        const fb_type = self.func_expr_type(body);
+                        if (fb_type == .func) ft = fb_type;
+                    }
+                }
                 if (c.func.* == .name) {
                     if (self.vararg_funcs.get(c.func.name.ident)) |argv_cname| {
                         self.p("({{\n", .{});
@@ -7596,7 +8273,10 @@ pub const CodeGen = struct {
                 }
                 try self.emit_expr(c.func);
                 self.p("(", .{});
-                const callee_body: ?*const ast.FuncBody = if (c.func.* == .name) self.func_bodies.get(c.func.name.ident) else null;
+                const callee_body: ?*const ast.FuncBody = if (c.func.* == .name) blk: {
+                    var name_buf: [256]u8 = undefined;
+                    break :blk self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf));
+                } else null;
                 var emitted_args: usize = 0;
                 for (c.args, 0..) |arg, i| {
                     if (i > 0) self.p(", ", .{});
@@ -9255,16 +9935,34 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         }
+        if ((std.mem.eql(u8, fname, "deg") or std.mem.eql(u8, fname, "rad")) and args.len == 1) {
+            const scale = if (std.mem.eql(u8, fname, "deg")) "180.0 / 3.14159265358979323846" else "3.14159265358979323846 / 180.0";
+            self.p("(", .{});
+            const at = self.expr_type(args[0]);
+            if (at.is_integer()) {
+                self.p("(double)(", .{});
+                try self.emit_expr(args[0]);
+                self.p(")", .{});
+            } else if (at == .any or self.expr_emits_lua_value(args[0])) {
+                self.p("lua_to_num(", .{});
+                try self.emit_as_lua_value(args[0]);
+                self.p(")", .{});
+            } else {
+                try self.emit_expr(args[0]);
+            }
+            self.p(" * ({s}))", .{scale});
+            return true;
+        }
         const lua_names = [_][]const u8{
-            "sqrt", "abs",  "floor", "ceil", "sin", "cos",  "tan",
-            "asin", "acos", "atan",  "exp",  "log", "fmod", "max",
-            "min",  "pow",
+            "sqrt", "abs",  "floor", "ceil", "sin",  "cos",  "tan",
+            "asin", "acos", "atan",  "exp",  "log",  "fmod", "max",
+            "min",  "pow",  "log10", "sinh", "cosh", "tanh",
         };
         if ((std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min")) and args.len != 2) return false;
         const c_names = [_][]const u8{
-            "sqrt", "fabs", "floor", "ceil", "sin", "cos",  "tan",
-            "asin", "acos", "atan",  "exp",  "log", "fmod", "fmax",
-            "fmin", "pow",
+            "sqrt", "fabs", "floor", "ceil", "sin",  "cos",  "tan",
+            "asin", "acos", "atan",  "exp",  "log",  "fmod", "fmax",
+            "fmin", "pow",  "log10", "sinh", "cosh", "tanh",
         };
         for (lua_names, c_names) |ln, cn| {
             if (std.mem.eql(u8, fname, ln)) {
@@ -9543,6 +10241,8 @@ pub const CodeGen = struct {
         if (e.* != .call or e.call.func.* != .name) return false;
         const name = e.call.func.name.ident;
         return std.mem.eql(u8, name, "__emit") or
+            std.mem.eql(u8, name, "__c_call") or
+            std.mem.eql(u8, name, "__as") or
             std.mem.eql(u8, name, "__sizeof") or
             std.mem.eql(u8, name, "__alignof") or
             std.mem.eql(u8, name, "__offsetof") or
@@ -10326,6 +11026,78 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn emit_lua_result_coerce_prefix(self: *CodeGen, result_rt: RT) bool {
+        switch (result_rt) {
+            .str => {
+                self.p("lua_to_str(", .{});
+                return true;
+            },
+            .bool => {
+                self.p("lua_to_bool(", .{});
+                return true;
+            },
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => {
+                var buf: [64]u8 = undefined;
+                self.p("(({s})lua_to_num(", .{result_rt.c_type(&buf)});
+                return true;
+            },
+            else => return false,
+        }
+    }
+
+    fn emit_lua_result_coerce_suffix(self: *CodeGen, result_rt: RT) void {
+        switch (result_rt) {
+            .str, .bool => self.p(")", .{}),
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => self.p("))", .{}),
+            else => {},
+        }
+    }
+
+    fn emit_boxed_runtime_call(self: *CodeGen, mapped: []const u8, args: []*ast.Expr, expected: usize, result_rt: RT) E!void {
+        const coerced = self.emit_lua_result_coerce_prefix(result_rt);
+        self.p("{s}(", .{mapped});
+        var i: usize = 0;
+        while (i < expected) : (i += 1) {
+            if (i > 0) self.p(", ", .{});
+            if (i < args.len) {
+                try self.emit_as_lua_value(args[i]);
+            } else {
+                self.p("lua_val_nil()", .{});
+            }
+        }
+        self.p(")", .{});
+        if (coerced) self.emit_lua_result_coerce_suffix(result_rt);
+    }
+
+    fn try_emit_native_net_send(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
+        if (!result_rt.is_integer() or args.len != 2) return false;
+        if (!self.expr_type(args[0]).is_integer()) return false;
+        if (!self.expr_is_native_cstr(args[1])) return false;
+
+        self.p("((int64_t)send((int)(", .{});
+        try self.emit_expr(args[0]);
+        self.p("), ", .{});
+        try self.emit_expr(args[1]);
+        self.p(", ", .{});
+        if (args[1].* == .string_lit) {
+            self.p("{d}", .{args[1].string_lit.val.len});
+        } else {
+            self.p("strlen(", .{});
+            try self.emit_expr(args[1]);
+            self.p(")", .{});
+        }
+        self.p(", 0))", .{});
+        return true;
+    }
+
+    fn try_emit_native_net_close(self: *CodeGen, args: []*ast.Expr) E!bool {
+        if (args.len != 1 or !self.expr_type(args[0]).is_integer()) return false;
+        self.p("close((int)(", .{});
+        try self.emit_expr(args[0]);
+        self.p("))", .{});
+        return true;
+    }
+
     fn maybe_emit_stdlib_module_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         if (func.* != .field) return false;
         const f = &func.field;
@@ -10488,17 +11260,7 @@ pub const CodeGen = struct {
 
             const expected: usize = if (std.mem.eql(u8, fname, "sort")) @as(usize, 2) else if (std.mem.eql(u8, fname, "pack")) @as(usize, 1) else if (std.mem.eql(u8, fname, "clear") or std.mem.eql(u8, fname, "freeze") or std.mem.eql(u8, fname, "isfrozen")) @as(usize, 1) else if (std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "new") or std.mem.eql(u8, fname, "create")) @as(usize, 2) else if (std.mem.eql(u8, fname, "insert") or std.mem.eql(u8, fname, "unpack")) @as(usize, 3) else if (std.mem.eql(u8, fname, "concat")) @as(usize, 4) else if (std.mem.eql(u8, fname, "move")) @as(usize, 5) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "io")) {
             const mapped = if (std.mem.eql(u8, fname, "write")) "lua_io_write" else if (std.mem.eql(u8, fname, "read")) "lua_io_read" else if (std.mem.eql(u8, fname, "flush")) "lua_io_flush" else if (std.mem.eql(u8, fname, "open")) "lua_io_open" else if (std.mem.eql(u8, fname, "close")) "lua_io_close" else if (std.mem.eql(u8, fname, "tmpfile")) "lua_io_tmpfile" else if (std.mem.eql(u8, fname, "input")) "lua_io_input" else if (std.mem.eql(u8, fname, "output")) "lua_io_output" else if (std.mem.eql(u8, fname, "popen")) "lua_io_popen" else if (std.mem.eql(u8, fname, "type")) "lua_io_type" else if (std.mem.eql(u8, fname, "lines")) "lua_io_lines" else return false;
@@ -10526,85 +11288,35 @@ pub const CodeGen = struct {
 
             const expected: usize = if (std.mem.eql(u8, fname, "clock") or std.mem.eql(u8, fname, "tmpname")) @as(usize, 0) else if (std.mem.eql(u8, fname, "time") or std.mem.eql(u8, fname, "exit") or std.mem.eql(u8, fname, "getenv") or std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "execute")) @as(usize, 1) else if (std.mem.eql(u8, fname, "difftime") or std.mem.eql(u8, fname, "rename") or std.mem.eql(u8, fname, "date") or std.mem.eql(u8, fname, "setlocale")) @as(usize, 2) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "coroutine")) {
             const mapped = if (std.mem.eql(u8, fname, "create")) "lua_co_create" else if (std.mem.eql(u8, fname, "resume")) "lua_co_resume" else if (std.mem.eql(u8, fname, "yield")) "lua_co_yield" else if (std.mem.eql(u8, fname, "status")) "lua_co_status" else if (std.mem.eql(u8, fname, "running")) "lua_co_running" else if (std.mem.eql(u8, fname, "wrap")) "lua_co_wrap" else if (std.mem.eql(u8, fname, "isyieldable")) "lua_co_isyieldable" else if (std.mem.eql(u8, fname, "close")) "lua_co_close" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "running") or std.mem.eql(u8, fname, "isyieldable")) @as(usize, 0) else if (std.mem.eql(u8, fname, "create") or std.mem.eql(u8, fname, "yield") or std.mem.eql(u8, fname, "status") or std.mem.eql(u8, fname, "wrap") or std.mem.eql(u8, fname, "close")) @as(usize, 1) else if (std.mem.eql(u8, fname, "resume")) @as(usize, 2) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "math")) {
             const mapped = if (std.mem.eql(u8, fname, "random")) "lua_math_random" else if (std.mem.eql(u8, fname, "randomseed")) "lua_math_randomseed" else if (std.mem.eql(u8, fname, "deg")) "lua_math_deg" else if (std.mem.eql(u8, fname, "rad")) "lua_math_rad" else if (std.mem.eql(u8, fname, "type")) "lua_math_type" else if (std.mem.eql(u8, fname, "tointeger")) "lua_math_tointeger" else if (std.mem.eql(u8, fname, "modf")) "lua_math_modf" else if (std.mem.eql(u8, fname, "ult")) "lua_math_ult" else if (std.mem.eql(u8, fname, "abs")) "lua_math_abs" else if (std.mem.eql(u8, fname, "acos")) "lua_math_acos" else if (std.mem.eql(u8, fname, "asin")) "lua_math_asin" else if (std.mem.eql(u8, fname, "atan")) "lua_math_atan" else if (std.mem.eql(u8, fname, "atan2")) "lua_math_atan2" else if (std.mem.eql(u8, fname, "ceil")) "lua_math_ceil" else if (std.mem.eql(u8, fname, "cos")) "lua_math_cos" else if (std.mem.eql(u8, fname, "exp")) "lua_math_exp" else if (std.mem.eql(u8, fname, "floor")) "lua_math_floor" else if (std.mem.eql(u8, fname, "fmod")) "lua_math_fmod" else if (std.mem.eql(u8, fname, "log")) "lua_math_log" else if (std.mem.eql(u8, fname, "log10")) "lua_math_log10" else if (std.mem.eql(u8, fname, "max")) "lua_math_max" else if (std.mem.eql(u8, fname, "min")) "lua_math_min" else if (std.mem.eql(u8, fname, "sin")) "lua_math_sin" else if (std.mem.eql(u8, fname, "sqrt")) "lua_math_sqrt" else if (std.mem.eql(u8, fname, "tan")) "lua_math_tan" else if (std.mem.eql(u8, fname, "pow")) "lua_math_pow" else if (std.mem.eql(u8, fname, "sinh")) "lua_math_sinh" else if (std.mem.eql(u8, fname, "cosh")) "lua_math_cosh" else if (std.mem.eql(u8, fname, "tanh")) "lua_math_tanh" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "randomseed") or std.mem.eql(u8, fname, "deg") or std.mem.eql(u8, fname, "rad") or std.mem.eql(u8, fname, "type") or std.mem.eql(u8, fname, "tointeger") or std.mem.eql(u8, fname, "modf") or std.mem.eql(u8, fname, "abs") or std.mem.eql(u8, fname, "acos") or std.mem.eql(u8, fname, "asin") or std.mem.eql(u8, fname, "atan") or std.mem.eql(u8, fname, "ceil") or std.mem.eql(u8, fname, "cos") or std.mem.eql(u8, fname, "exp") or std.mem.eql(u8, fname, "floor") or std.mem.eql(u8, fname, "log") or std.mem.eql(u8, fname, "log10") or std.mem.eql(u8, fname, "sin") or std.mem.eql(u8, fname, "sqrt") or std.mem.eql(u8, fname, "tan") or std.mem.eql(u8, fname, "sinh") or std.mem.eql(u8, fname, "cosh") or std.mem.eql(u8, fname, "tanh")) @as(usize, 1) else if (std.mem.eql(u8, fname, "random") or std.mem.eql(u8, fname, "ult") or std.mem.eql(u8, fname, "fmod") or std.mem.eql(u8, fname, "max") or std.mem.eql(u8, fname, "min") or std.mem.eql(u8, fname, "atan2") or std.mem.eql(u8, fname, "pow")) @as(usize, 2) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "utf8")) {
             const mapped = if (std.mem.eql(u8, fname, "char")) "lua_str_char" else if (std.mem.eql(u8, fname, "len")) "lua_utf8_len" else if (std.mem.eql(u8, fname, "codepoint")) "lua_utf8_codepoint" else if (std.mem.eql(u8, fname, "offset")) "lua_utf8_offset" else if (std.mem.eql(u8, fname, "codes")) "lua_utf8_codes" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "codes")) @as(usize, 1) else if (std.mem.eql(u8, fname, "offset")) @as(usize, 3) else if (std.mem.eql(u8, fname, "codepoint")) @as(usize, 3) else if (std.mem.eql(u8, fname, "char")) @as(usize, 4) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "debug")) {
             const mapped = if (std.mem.eql(u8, fname, "traceback")) "lua_debug_traceback" else if (std.mem.eql(u8, fname, "getinfo")) "lua_debug_getinfo" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "traceback")) @as(usize, 0) else if (std.mem.eql(u8, fname, "getinfo")) @as(usize, 2) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "package")) {
             const mapped = if (std.mem.eql(u8, fname, "searchpath")) "lua_package_searchpath" else return false;
@@ -10628,34 +11340,14 @@ pub const CodeGen = struct {
 
             const expected: usize = if (std.mem.eql(u8, fname, "on") or std.mem.eql(u8, fname, "off") or std.mem.eql(u8, fname, "flush")) @as(usize, 1) else if (std.mem.eql(u8, fname, "status") or std.mem.eql(u8, fname, "version_num")) @as(usize, 0) else if (std.mem.eql(u8, fname, "opt")) @as(usize, 2) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "ffi")) {
             const mapped = if (std.mem.eql(u8, fname, "cdef")) "lua_ffi_cdef" else if (std.mem.eql(u8, fname, "new")) "lua_ffi_new" else if (std.mem.eql(u8, fname, "typeof")) "lua_ffi_typeof" else if (std.mem.eql(u8, fname, "cast")) "lua_ffi_cast" else if (std.mem.eql(u8, fname, "sizeof")) "lua_ffi_sizeof" else if (std.mem.eql(u8, fname, "alignof")) "lua_ffi_alignof" else if (std.mem.eql(u8, fname, "offsetof")) "lua_ffi_offsetof" else if (std.mem.eql(u8, fname, "istype")) "lua_ffi_istype" else if (std.mem.eql(u8, fname, "errno")) "lua_ffi_errno" else if (std.mem.eql(u8, fname, "string")) "lua_ffi_string" else if (std.mem.eql(u8, fname, "copy")) "lua_ffi_copy" else if (std.mem.eql(u8, fname, "fill")) "lua_ffi_fill" else if (std.mem.eql(u8, fname, "load")) "lua_ffi_load" else if (std.mem.eql(u8, fname, "gc")) "lua_ffi_gc" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "cdef") or std.mem.eql(u8, fname, "typeof") or std.mem.eql(u8, fname, "sizeof") or std.mem.eql(u8, fname, "alignof") or std.mem.eql(u8, fname, "errno") or std.mem.eql(u8, fname, "load")) @as(usize, 1) else if (std.mem.eql(u8, fname, "new") or std.mem.eql(u8, fname, "cast") or std.mem.eql(u8, fname, "istype") or std.mem.eql(u8, fname, "string") or std.mem.eql(u8, fname, "gc")) @as(usize, 2) else if (std.mem.eql(u8, fname, "offsetof") or std.mem.eql(u8, fname, "copy") or std.mem.eql(u8, fname, "fill")) @as(usize, 3) else 0;
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "net")) {
             const mapped = if (std.mem.eql(u8, fname, "connect")) "duo_net_tcp_connect" else if (std.mem.eql(u8, fname, "listen")) "duo_net_tcp_listen" else if (std.mem.eql(u8, fname, "accept")) "duo_net_tcp_accept" else if (std.mem.eql(u8, fname, "send")) "duo_net_tcp_send" else if (std.mem.eql(u8, fname, "recv")) "duo_net_tcp_recv" else if (std.mem.eql(u8, fname, "close")) "duo_net_tcp_close" else if (std.mem.eql(u8, fname, "udp_socket")) "duo_net_udp_socket_open" else if (std.mem.eql(u8, fname, "udp_sendto")) "duo_net_udp_sendto" else if (std.mem.eql(u8, fname, "udp_recvfrom")) "duo_net_udp_recvfrom" else if (std.mem.eql(u8, fname, "http_get")) "duo_net_http_get" else if (std.mem.eql(u8, fname, "http_post")) "duo_net_http_post" else if (std.mem.eql(u8, fname, "dns_resolve")) "duo_net_dns_resolve" else return false;
@@ -10663,17 +11355,9 @@ pub const CodeGen = struct {
             const expected: usize =
                 if (std.mem.eql(u8, fname, "accept") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "http_get") or std.mem.eql(u8, fname, "dns_resolve")) @as(usize, 1) else if (std.mem.eql(u8, fname, "http_post")) @as(usize, 3) else if (std.mem.eql(u8, fname, "udp_sendto")) @as(usize, 4) else @as(usize, 2);
 
-            self.p("{s}(", .{mapped});
-            var i: usize = 0;
-            while (i < expected) : (i += 1) {
-                if (i > 0) self.p(", ", .{});
-                if (i < args.len) {
-                    try self.emit_as_lua_value(args[i]);
-                } else {
-                    self.p("lua_val_nil()", .{});
-                }
-            }
-            self.p(")", .{});
+            if (std.mem.eql(u8, fname, "send") and try self.try_emit_native_net_send(args, result_rt)) return true;
+            if (std.mem.eql(u8, fname, "close") and try self.try_emit_native_net_close(args)) return true;
+            try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         }
 
@@ -10750,6 +11434,9 @@ pub const CodeGen = struct {
                         .positional => |pos| try self.collect_closures_expr(pos, list),
                     }
                 }
+            },
+            .sequence => |seq| {
+                for (seq.exprs) |e| try self.collect_closures_expr(e, list);
             },
             else => {},
         }
@@ -11058,6 +11745,9 @@ pub const CodeGen = struct {
                 }
             },
             .func_expr => |fb| try self.collect_require_names_block(&fb.body, names),
+            .sequence => |seq| {
+                for (seq.exprs) |e| try self.collect_require_names(e, names);
+            },
             else => {},
         }
     }
@@ -11185,6 +11875,8 @@ pub const CodeGen = struct {
             const src_duo = try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ project_root, mod_path_name });
             const lib_lua = try std.fmt.allocPrint(self.alloc, "lib/{s}.lua", .{mod_path_name});
             const lib_duo = try std.fmt.allocPrint(self.alloc, "lib/{s}.duo", .{mod_path_name});
+            const abs_lib_lua = if (self.stdlib_root) |root| try std.fmt.allocPrint(self.alloc, "{s}/{s}.lua", .{ root, mod_path_name }) else @as([]const u8, "");
+            const abs_lib_duo = if (self.stdlib_root) |root| try std.fmt.allocPrint(self.alloc, "{s}/{s}.duo", .{ root, mod_path_name }) else @as([]const u8, "");
             const vendor_lua = if (has_vendor) try std.fmt.allocPrint(self.alloc, "vendor/{s}.lua", .{mod_path_name}) else @as([]const u8, "");
             const vendor_duo = if (has_vendor) try std.fmt.allocPrint(self.alloc, "vendor/{s}.duo", .{mod_path_name}) else @as([]const u8, "");
             const core_lua = if (has_core) try std.fmt.allocPrint(self.alloc, "lib/core/{s}.lua", .{mod_path_name}) else @as([]const u8, "");
@@ -11194,6 +11886,8 @@ pub const CodeGen = struct {
             const src_duo_ok = if (Io.Dir.access(cwd, self.io, src_duo, .{})) true else |_| false;
             const lib_lua_ok = if (Io.Dir.access(cwd, self.io, lib_lua, .{})) true else |_| false;
             const lib_duo_ok = if (Io.Dir.access(cwd, self.io, lib_duo, .{})) true else |_| false;
+            const abs_lib_lua_ok = if (self.stdlib_root != null) if (Io.Dir.access(cwd, self.io, abs_lib_lua, .{})) true else |_| false else false;
+            const abs_lib_duo_ok = if (self.stdlib_root != null) if (Io.Dir.access(cwd, self.io, abs_lib_duo, .{})) true else |_| false else false;
             const vendor_lua_ok = if (has_vendor) if (Io.Dir.access(cwd, self.io, vendor_lua, .{})) true else |_| false else false;
             const vendor_duo_ok = if (has_vendor) if (Io.Dir.access(cwd, self.io, vendor_duo, .{})) true else |_| false else false;
             const core_lua_ok = if (has_core) if (Io.Dir.access(cwd, self.io, core_lua, .{})) true else |_| false else false;
@@ -11208,6 +11902,8 @@ pub const CodeGen = struct {
                 if (has_vendor) self.alloc.free(vendor_duo);
                 if (has_core) self.alloc.free(core_lua);
                 if (has_core) self.alloc.free(core_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
             } else if (src_duo_ok) {
                 mod_path = src_duo;
                 self.alloc.free(src_lua);
@@ -11217,6 +11913,8 @@ pub const CodeGen = struct {
                 if (has_vendor) self.alloc.free(vendor_duo);
                 if (has_core) self.alloc.free(core_lua);
                 if (has_core) self.alloc.free(core_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
             } else if (lib_lua_ok) {
                 mod_path = lib_lua;
                 self.alloc.free(src_lua);
@@ -11226,6 +11924,8 @@ pub const CodeGen = struct {
                 if (has_vendor) self.alloc.free(vendor_duo);
                 if (has_core) self.alloc.free(core_lua);
                 if (has_core) self.alloc.free(core_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
             } else if (lib_duo_ok) {
                 mod_path = lib_duo;
                 self.alloc.free(src_lua);
@@ -11235,12 +11935,38 @@ pub const CodeGen = struct {
                 if (has_vendor) self.alloc.free(vendor_duo);
                 if (has_core) self.alloc.free(core_lua);
                 if (has_core) self.alloc.free(core_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
+            } else if (abs_lib_lua_ok) {
+                mod_path = abs_lib_lua;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
+            } else if (abs_lib_duo_ok) {
+                mod_path = abs_lib_duo;
+                self.alloc.free(src_lua);
+                self.alloc.free(src_duo);
+                self.alloc.free(lib_lua);
+                self.alloc.free(lib_duo);
+                if (has_vendor) self.alloc.free(vendor_lua);
+                if (has_vendor) self.alloc.free(vendor_duo);
+                if (has_core) self.alloc.free(core_lua);
+                if (has_core) self.alloc.free(core_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
             } else if (vendor_lua_ok) {
                 mod_path = vendor_lua;
                 self.alloc.free(src_lua);
                 self.alloc.free(src_duo);
                 self.alloc.free(lib_lua);
                 self.alloc.free(lib_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
                 self.alloc.free(vendor_duo);
                 if (has_core) self.alloc.free(core_lua);
                 if (has_core) self.alloc.free(core_duo);
@@ -11250,6 +11976,8 @@ pub const CodeGen = struct {
                 self.alloc.free(src_duo);
                 self.alloc.free(lib_lua);
                 self.alloc.free(lib_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
                 self.alloc.free(vendor_lua);
                 if (has_core) self.alloc.free(core_lua);
                 if (has_core) self.alloc.free(core_duo);
@@ -11259,6 +11987,8 @@ pub const CodeGen = struct {
                 self.alloc.free(src_duo);
                 self.alloc.free(lib_lua);
                 self.alloc.free(lib_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
                 if (has_vendor) self.alloc.free(vendor_lua);
                 if (has_vendor) self.alloc.free(vendor_duo);
                 self.alloc.free(core_duo);
@@ -11268,6 +11998,8 @@ pub const CodeGen = struct {
                 self.alloc.free(src_duo);
                 self.alloc.free(lib_lua);
                 self.alloc.free(lib_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
                 if (has_vendor) self.alloc.free(vendor_lua);
                 if (has_vendor) self.alloc.free(vendor_duo);
                 self.alloc.free(core_lua);
@@ -11276,6 +12008,8 @@ pub const CodeGen = struct {
                 self.alloc.free(src_duo);
                 self.alloc.free(lib_lua);
                 self.alloc.free(lib_duo);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_lua);
+                if (self.stdlib_root != null) self.alloc.free(abs_lib_duo);
                 if (has_vendor) self.alloc.free(vendor_lua);
                 if (has_vendor) self.alloc.free(vendor_duo);
                 if (has_core) self.alloc.free(core_lua);
@@ -11478,11 +12212,14 @@ pub const CodeGen = struct {
         self.next_closure_id = subsem.next_closure_id;
         const old_duo_mode = self.duo_mode;
         const old_module_globals = self.module_globals;
+        const old_module_cname = self.current_module_cname;
         self.duo_mode = subsem.duo_mode;
         self.module_globals = &subsem.module_globals;
+        self.current_module_cname = cname;
         defer {
             self.duo_mode = old_duo_mode;
             self.module_globals = old_module_globals;
+            self.current_module_cname = old_module_cname;
         }
         // Copy submodule type map into main type map so codegen can resolve types
         // for submodule expressions.
@@ -11505,10 +12242,10 @@ pub const CodeGen = struct {
                 any_global = true;
                 const rt = entry.value_ptr.*;
                 if (rt == .any) {
-                    self.p("static lua_Value duo_g_{s};\n", .{entry.key_ptr.*});
+                    self.p("static lua_Value duo_g_{s}_{s};\n", .{ self.current_module_cname, entry.key_ptr.* });
                 } else {
                     var buf: [128]u8 = undefined;
-                    self.p("static {s} duo_g_{s};\n", .{ rt.c_type(&buf), entry.key_ptr.* });
+                    self.p("static {s} duo_g_{s}_{s};\n", .{ rt.c_type(&buf), self.current_module_cname, entry.key_ptr.* });
                 }
             }
             if (any_global) self.p("\n", .{});
@@ -11519,22 +12256,41 @@ pub const CodeGen = struct {
         self.collect_closures_module(&submod, &self.all_closures) catch {};
         self.emit_closure_structs(self.all_closures.items[start_idx..]) catch {};
 
-        // Emit submodule constants at file scope
+        // Emit submodule constants at file scope. Table-valued constants are
+        // declared here; their init functions are emitted after submodule
+        // function definitions so the init functions can call module functions.
+        var table_consts: std.ArrayList(*const ast.Stmt) = .empty;
+        defer table_consts.deinit(self.alloc);
         for (submod.body.stmts) |*stmt| {
             if (stmt.* == .const_decl) {
                 const cd = &stmt.const_decl;
+                var name_buf: [256]u8 = undefined;
+                const mname = self.mangled_name(cd.ident, &name_buf);
                 const rt = if (cd.typ != .inferred)
                     types.resolve(cd.typ, null, self.alloc) catch .any
                 else
                     self.expr_type(cd.val);
-                self.p("static const ", .{});
-                self.typ(rt);
-                self.p(" {s} = ", .{cd.ident});
-                self.emit_expr(cd.val) catch |e| {
-                    term.err("emit_embedded_module: expr emit failed for const {s}: {}", .{ cd.ident, e });
+                if (cd.val.* == .table) {
+                    // Table literal: forward-declare static storage; _init emitted later
+                    self.p("static lua_Value {s};\n", .{mname});
+                    table_consts.append(self.alloc, stmt) catch |e| {
+                        term.err("emit_embedded_module: oom collecting table const {s}: {}", .{ cd.ident, e });
+                        return false;
+                    };
+                } else {
+                    self.p("static const ", .{});
+                    self.typ(rt);
+                    self.p(" {s} = ", .{mname});
+                    self.emit_expr(cd.val) catch |e| {
+                        term.err("emit_embedded_module: expr emit failed for const {s}: {}", .{ cd.ident, e });
+                        return false;
+                    };
+                    self.p(";\n", .{});
+                }
+                self.note_comptime_binding(cd.ident, cd.val) catch |e| {
+                    term.err("emit_embedded_module: comptime binding failed for const {s}: {}", .{ cd.ident, e });
                     return false;
                 };
-                self.p(";\n", .{});
             }
         }
 
@@ -11583,6 +12339,27 @@ pub const CodeGen = struct {
             };
         }
 
+        // Emit table-valued submodule const init functions after function definitions
+        // so they can call module functions that are already declared.
+        for (table_consts.items) |stmt| {
+            const cd = &stmt.const_decl;
+            var name_buf: [256]u8 = undefined;
+            const mname = self.mangled_name(cd.ident, &name_buf);
+            self.p("static void _init_{s}(void) {{\n", .{mname});
+            self.indent += 1;
+            self.ind();
+            self.p("{s} = ", .{mname});
+            self.emit_expr(cd.val) catch |e| {
+                term.err("emit_embedded_module: _init expr emit failed for const {s}: {}", .{ cd.ident, e });
+                return false;
+            };
+            self.p(";\n", .{});
+            self.indent -= 1;
+            self.ind();
+            self.p("}}\n", .{});
+        }
+        if (table_consts.items.len > 0) self.p("\n", .{});
+
         self.p("static lua_Value duo_mod_{s}(lua_Value _unused) {{\n", .{cname});
         self.p("    (void)_unused;\n", .{});
         self.indent = 1;
@@ -11594,6 +12371,15 @@ pub const CodeGen = struct {
             term.err("emit_embedded_module: scope setup failed: {}", .{e});
             return false;
         };
+        // Initialize table-valued submodule constants
+        for (submod.body.stmts) |*stmt| {
+            if (stmt.* == .const_decl and stmt.const_decl.val.* == .table) {
+                self.ind();
+                var name_buf: [256]u8 = undefined;
+                const mname = self.mangled_name(stmt.const_decl.ident, &name_buf);
+                self.p("_init_{s}();\n", .{mname});
+            }
+        }
         for (submod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl, .const_decl => {},
@@ -16186,7 +16972,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value lua_package_searchpath(lua_Value name, lua_Value path, lua_Value sep, lua_Value rep) {
-    \\    const char* modname = lua_to_str(name);
+    \\    const char* mocname = lua_to_str(name);
     \\    const char* pathspec = lua_to_str(path);
     \\    const char* sepstr = sep.type == VAL_NIL ? ";" : lua_to_str(sep);
     \\    const char* repstr = rep.type == VAL_NIL ? "?" : lua_to_str(rep);
@@ -16205,10 +16991,10 @@ const duo_runtime =
     \\            size_t prefix = (size_t)(q - buf);
     \\            size_t replen = strlen(repstr);
     \\            size_t suffix = strlen(q + replen);
-    \\            size_t mlen = strlen(modname);
+    \\            size_t mlen = strlen(mocname);
     \\            if (prefix + mlen + suffix < sizeof(out)) {
     \\                memcpy(out, buf, prefix);
-    \\                memcpy(out + prefix, modname, mlen);
+    \\                memcpy(out + prefix, mocname, mlen);
     \\                memcpy(out + prefix + mlen, q + replen, suffix + 1);
     \\                if (access(out, R_OK) == 0) return lua_val_from_str_len(out, prefix + mlen + suffix);
     \\            }
@@ -17052,6 +17838,80 @@ test "codegen: async declarations remain directly callable while emitting frames
     try testing.expect(std.mem.indexOf(u8, output, "static duo_Poll duo_step_answer_") != null);
 }
 
+test "codegen: generic specialization calls use typed argument coercion" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\fun pick<T>(fallback: T, value: T): T
+        \\    value
+        \\end
+        \\print(pick(1.5, 2))
+    , "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    defer s.deinit();
+    try s.check_module(&mod);
+
+    var mono_pass = mono.Monomorphizer.init(alloc, &s.type_map);
+    defer mono_pass.deinit();
+    try mono_pass.run(&mod);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &s.type_map, &s.module_globals, &aw.writer, s.next_closure_id);
+    cg.mono = &mono_pass;
+    try cg.emit_module(&mod);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "static inline double duo_pick_f64(double fallback, double value)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_pick_f64(1.5, (double)(2))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_val_from_num((double)(2))") == null);
+}
+
+test "codegen: explicit @specialize emits generic specialization without call site" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    const Sema = @import("sema.zig").Sema;
+
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\fun id<T>(x: T): T
+        \\    x
+        \\end
+        \\@specialize(id, i64)
+        \\print(0)
+    , "test");
+    var p = Parser.init(&lex, alloc);
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    defer s.deinit();
+    try s.check_module(&mod);
+
+    var mono_pass = mono.Monomorphizer.init(alloc, &s.type_map);
+    defer mono_pass.deinit();
+    try mono_pass.run(&mod);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &s.type_map, &s.module_globals, &aw.writer, s.next_closure_id);
+    cg.mono = &mono_pass;
+    try cg.emit_module(&mod);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t duo_id_i64(int64_t x);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static inline int64_t duo_id_i64(int64_t x) {") != null);
+}
+
 test "generic enum specializations use canonical names and concrete payloads" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -17554,6 +18414,726 @@ test "codegen: __constexpr folds function calls with captured constants" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 15;") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+}
+
+test "codegen: @sizeof and @alignof emit layout intrinsics" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local value: i64 = 0
+        \\local sz: i64 = @sizeof(i64)
+        \\local align: i64 = @alignof(i64)
+        \\local value_sz: i64 = @sizeof(value)
+        \\print(sz + align + value_sz)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t sz = ((int64_t)sizeof(int64_t));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t align = ((int64_t)_Alignof(int64_t));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t value_sz = ((int64_t)sizeof(value));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "@sizeof") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sizeof") == null);
+}
+
+test "codegen: @as unboxes dynamic values into explicit native type" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local box = { x = 40 }
+        \\local n = @as(i64, box.x)
+        \\print(n + 2)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_to_num(lua_table_get_str_lit(box, \"x\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value n = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__as") == null);
+}
+
+test "codegen: typed utf8 module calls unbox boxed runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local n: i64 = utf8.len("abc")
+        \\local ch: str = utf8.char(65)
+        \\print(n, ch)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_to_num(lua_utf8_len(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* ch = lua_to_str(lua_str_char(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value n = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value ch = ") == null);
+}
+
+test "codegen: typed table module calls unbox boxed runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local joined: str = table.concat({"a", "b"}, ",")
+        \\local frozen: bool = table.isfrozen({})
+        \\print(joined, frozen)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = lua_to_str(lua_tbl_concat(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool frozen = lua_to_bool(lua_tbl_isfrozen(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value joined = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value frozen = ") == null);
+}
+
+test "codegen: typed extended math module calls lower to native f64" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local x: f64 = 1.5
+        \\local deg: f64 = math.deg(x)
+        \\local rad: f64 = math.rad(90.0)
+        \\local logv: f64 = math.log10(100.0)
+        \\local h: f64 = math.sinh(x) + math.cosh(x) + math.tanh(x)
+        \\print(deg, rad, logv, h)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "double deg = ") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "180.0 / 3.14159265358979323846") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double rad = ") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "3.14159265358979323846 / 180.0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double logv = log10(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "sinh(x)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "cosh(x)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "tanh(x)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double deg = lua_to_num(lua_math_deg(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "double rad = lua_to_num(lua_math_rad(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "double logv = lua_to_num(lua_math_log10(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value deg = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value rad = ") == null);
+}
+
+test "codegen: typed boxed math module calls unbox runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local r: f64 = math.random()
+        \\local intpart: f64 = math.modf(12.75)
+        \\local unsigned_lt: bool = math.ult(1, 2)
+        \\local kind: str = math.type(7)
+        \\local whole: i64 = math.tointeger(7)
+        \\print(r, intpart, unsigned_lt, kind, whole)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "double r = ((double)lua_to_num(lua_math_random(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double intpart = ((double)lua_to_num(lua_math_modf(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool unsigned_lt = lua_to_bool(lua_math_ult(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* kind = lua_to_str(lua_math_type(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t whole = ((int64_t)lua_to_num(lua_math_tointeger(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value r = lua_math_random(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value intpart = lua_math_modf(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value unsigned_lt = lua_math_ult(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value kind = lua_math_type(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value whole = lua_math_tointeger(") == null);
+}
+
+test "codegen: typed ffi module calls unbox boxed runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local sz: i64 = ffi.sizeof("int")
+        \\local al: i64 = ffi.alignof("int")
+        \\local off: i64 = ffi.offsetof("S", "field", 0)
+        \\local ok: bool = ffi.istype("int", 0)
+        \\local err: i64 = ffi.errno(0)
+        \\local s: str = ffi.string(0, 0)
+        \\print(sz, al, off, ok, err, s)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t sz = ((int64_t)lua_to_num(lua_ffi_sizeof(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t al = ((int64_t)lua_to_num(lua_ffi_alignof(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t off = ((int64_t)lua_to_num(lua_ffi_offsetof(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool ok = lua_to_bool(lua_ffi_istype(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t err = ((int64_t)lua_to_num(lua_ffi_errno(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* s = lua_to_str(lua_ffi_string(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value sz = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value ok = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value s = ") == null);
+}
+
+test "codegen: typed os module calls unbox boxed runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local now: f64 = os.time()
+        \\local delta: f64 = os.difftime(now, 1.0)
+        \\local removed: bool = os.remove("missing.tmp")
+        \\local renamed: bool = os.rename("missing.tmp", "other.tmp")
+        \\local shell: bool = os.execute(nil)
+        \\print(now, delta, removed, renamed, shell)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "double now = ((double)lua_to_num(lua_os_time(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double delta = ((double)lua_to_num(lua_os_difftime(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool removed = lua_to_bool(lua_os_remove(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool renamed = lua_to_bool(lua_os_rename(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool shell = lua_to_bool(lua_os_execute(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value now = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value shell = ") == null);
+}
+
+test "codegen: typed coroutine and debug module calls unbox boxed runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local st: str = coroutine.status({})
+        \\local y: bool = coroutine.isyieldable()
+        \\local closed: bool = coroutine.close({})
+        \\local tb: str = debug.traceback()
+        \\print(st, y, closed, tb)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* st = lua_to_str(lua_co_status(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool y = lua_to_bool(lua_co_isyieldable(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool closed = lua_to_bool(lua_co_close(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* tb = lua_to_str(lua_debug_traceback(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value st = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value y = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value closed = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value tb = ") == null);
+}
+
+test "codegen: typed jit module calls unbox boxed runtime results" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local enabled: bool = jit.status()
+        \\local version: f64 = jit.version_num()
+        \\print(enabled, version)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "bool enabled = lua_to_bool(lua_jit_status(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "double version = ((double)lua_to_num(lua_jit_version_num(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value enabled = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value version = ") == null);
+}
+
+test "codegen: typed net.send lowers native fd and string without boxing" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local fd: i64 = 3
+        \\local msg: str = "ping"
+        \\local sent: i64 = net.send(fd, msg)
+        \\print(sent)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t sent = ((int64_t)send((int)(fd), msg, strlen(msg), 0));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_net_tcp_send(lua_val_from_int((int64_t)(fd)), lua_val_from_str(msg))") == null);
+}
+
+test "codegen: typed net.send fallback unboxes boxed runtime result" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local sock = { fd = 3 }
+        \\local sent: i64 = net.send(sock.fd, "x")
+        \\print(sent)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t sent = ((int64_t)lua_to_num(duo_net_tcp_send(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_get_str_lit(sock, \"fd\"") != null);
+}
+
+test "codegen: typed net.close lowers native fd without boxing" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local fd: i64 = 3
+        \\net.close(fd)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "close((int)(fd));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_net_tcp_close(lua_val_from_int((int64_t)(fd)))") == null);
+}
+
+test "codegen: dynamic net.close keeps boxed runtime path" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local sock = { fd = 3 }
+        \\net.close(sock.fd)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "duo_net_tcp_close(lua_table_get_str_lit(sock, \"fd\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "close((int)(lua_table_get_str_lit(sock, \"fd\"") == null);
+}
+
+test "codegen: @c.call emits direct C calls in typed contexts" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\@c.include("stdlib.h")
+        \\fun take(n: i64): i64
+        \\  return n + 1
+        \\end
+        \\local x: i64 = -41
+        \\local n: i64 = @c.call("llabs", x)
+        \\print(take(@c.call("llabs", x)) + n)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "#include <stdlib.h>") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = llabs(x);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "take(llabs(x))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(llabs(x))") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__c_call") == null);
+}
+
+test "codegen: @c.import emits header include for direct C calls" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\@c.import("math.h")
+        \\fun mag(x: f64): f64
+        \\  return @c.call("fabs", x)
+        \\end
+        \\print(mag(-1.5))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "#include <math.h>") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "return fabs(x);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__c_call") == null);
+}
+
+test "codegen: @c.type emits external C type names" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\@c.include("stdio.h")
+        \\fun demo(): i64
+        \\  local p: *@c.type("FILE") = @c.call("tmpfile")
+        \\  local closed: i64 = @c.call("fclose", p)
+        \\  return closed
+        \\end
+        \\print(demo())
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "#include <stdio.h>") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "FILE* p = tmpfile();") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t closed = fclose(p);") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value p = tmpfile()") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__c_type") == null);
+}
+
+test "codegen: @c.export emits exported native symbol name" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\@c.export("duo_add")
+        \\fun add(a: i64, b: i64): i64
+        \\  return a + b
+        \\end
+        \\print(add(40, 2))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "__attribute__((export_name(\"duo_add\"), visibility(\"default\")))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t add(int64_t a, int64_t b)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "static int64_t add") == null);
+}
+
+test "codegen: @ builtin aliases emit existing intrinsic paths" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local folded: i64 = @constexpr(10 + 5)
+        \\local branch: i64 = @comptime_if(true, folded, 0)
+        \\local ty: str = @type_name(branch)
+        \\local bits: i64 = @popcount(0xff)
+        \\@static_assert("sizeof(int64_t) == 8", "i64 size")
+        \\print(branch + bits)
+        \\print(ty)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t folded = 15;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t branch = folded;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t bits =") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "_Static_assert(sizeof(int64_t) == 8, \"i64 size\")") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "@constexpr") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "@comptime_if") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__constexpr") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__comptimeif") == null);
+}
+
+test "codegen: record literal fields unbox into typed record params" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\type Pair = { x: i64, y: i64 }
+        \\fun sum_pair(p: Pair): i64
+        \\  return p.x + p.y
+        \\end
+        \\local boxed = { x = 41, y = 1 }
+        \\local named: i64 = sum_pair({ x = boxed.x, y = boxed.y })
+        \\local positional: i64 = sum_pair({ boxed.x, boxed.y })
+        \\print(named + positional)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, ".x = ((int64_t)lua_to_num(lua_table_get_str_lit(boxed, \"x\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".y = ((int64_t)lua_to_num(lua_table_get_str_lit(boxed, \"y\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ".x = lua_table_get_str_lit(boxed, \"x\"") == null);
+    try testing.expect(std.mem.indexOf(u8, output, ".y = lua_table_get_str_lit(boxed, \"y\"") == null);
+}
+
+test "codegen: dynamic locals unbox into typed call params" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\fun take(n: i64): i64
+        \\  return n + 1
+        \\end
+        \\local box = { x = 40 }
+        \\local value = box.x + 1
+        \\print(take(value))
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "take(((int64_t)lua_to_num(value)))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "take(value)") == null);
+}
+
+test "codegen: typed const initializers unbox dynamic values" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\fun get(): i64
+        \\  local box = { x = 40 }
+        \\  const value: i64 = box.x
+        \\  return value + 2
+        \\end
+        \\print(get())
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const int64_t value = ((int64_t)lua_to_num(lua_table_get_str_lit(box, \"x\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const int64_t value = lua_table_get_str_lit(box, \"x\"") == null);
+}
+
+test "codegen: typed multi-return locals unbox from lua result buffer" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\fun split(): any
+        \\  return 40, "ok", true
+        \\end
+        \\
+        \\fun get(): i64
+        \\  local n: i64, s: str, ok: bool = split()
+        \\  if ok and s == "ok" then
+        \\    return n + 2
+        \\  end
+        \\  return 0
+        \\end
+        \\
+        \\print(get())
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)lua_to_num(split()))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* s = lua_to_str(lua_mret_get(0));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool ok = lua_to_bool(lua_mret_get(1));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value n = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value s = lua_mret_get(0)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value ok = lua_mret_get(1)") == null);
 }
 
 test "codegen: memory intrinsics lower to raw C operations" {
@@ -18079,6 +19659,84 @@ test "expr_type: indexed native containers recover their element type" {
     try testing.expectEqual(RT.i32, cg.expr_type(&index));
 }
 
+test "expr_type: named record alias field fallback recovers declared field type" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var type_map = sema.TypeMap.init(testing.allocator);
+    defer type_map.deinit();
+    var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0);
+    defer {
+        cg.record_aliases.deinit(testing.allocator);
+        cg.local_scopes.deinit(testing.allocator);
+        cg.comptime_scopes.deinit(testing.allocator);
+        cg.close_scopes.deinit(testing.allocator);
+        cg.arc_scopes.deinit(testing.allocator);
+        cg.defer_scopes.deinit(testing.allocator);
+    }
+    try cg.push_local_scope();
+    defer cg.pop_local_scope();
+
+    const fields = try alloc.alloc(types.FieldType, 2);
+    fields[0] = .{ .name = "x", .typ = .i64 };
+    fields[1] = .{ .name = "label", .typ = .str };
+    try cg.record_aliases.put(testing.allocator, "Point", .{ .table_type = .{ .fields = fields } });
+    try cg.note_local_type("p", .{ .@"struct" = .{ .name = "Point" } });
+
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+    var p_name = ast.Expr{ .name = .{ .loc = loc, .ident = "p" } };
+    var x_field = ast.Expr{ .field = .{ .loc = loc, .obj = &p_name, .field = "x" } };
+    var label_field = ast.Expr{ .field = .{ .loc = loc, .obj = &p_name, .field = "label" } };
+
+    try testing.expectEqual(RT.i64, cg.expr_type(&x_field));
+    try testing.expectEqual(RT.str, cg.expr_type(&label_field));
+}
+
+test "codegen: generic type alias resolves through normal type syntax" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var type_map = sema.TypeMap.init(testing.allocator);
+    defer type_map.deinit();
+    var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0);
+    defer {
+        cg.alias_defs.deinit(alloc);
+        cg.local_scopes.deinit(alloc);
+        cg.comptime_scopes.deinit(alloc);
+        cg.close_scopes.deinit(alloc);
+        cg.arc_scopes.deinit(alloc);
+        cg.defer_scopes.deinit(alloc);
+    }
+
+    const tparams = try alloc.alloc(ast.TypeExpr, 1);
+    tparams[0] = .{ .named = "T" };
+    const list_base = try alloc.create(ast.TypeExpr);
+    list_base.* = .{ .named = "List" };
+    const list_args = try alloc.alloc(ast.TypeExpr, 1);
+    list_args[0] = .{ .named = "T" };
+    const alias = try alloc.create(ast.AliasDef);
+    alias.* = .{
+        .loc = .{ .file = "test", .line = 1, .col = 1 },
+        .name = "Vec",
+        .type_params = tparams,
+        .target = .{ .generic = .{ .base = list_base, .params = list_args } },
+        .fields = &.{},
+        .methods = &.{},
+    };
+    try cg.alias_defs.put(alloc, "Vec", alias);
+
+    const vec_base = try alloc.create(ast.TypeExpr);
+    vec_base.* = .{ .named = "Vec" };
+    const vec_args = try alloc.alloc(ast.TypeExpr, 1);
+    vec_args[0] = .{ .named = "i64" };
+    const resolved = cg.resolve_type(.{ .generic = .{ .base = vec_base, .params = vec_args } });
+
+    try testing.expect(resolved == .array);
+    try testing.expect(resolved.array.elem.* == .i64);
+}
+
 test "expr_type: statically typed callee recovers its return type" {
     var ret_type: RT = .i32;
     var type_map = sema.TypeMap.init(testing.allocator);
@@ -18153,8 +19811,12 @@ test "expr_type: structural fallback recovers literal and function expression ty
         .body = .{ .loc = loc, .stmts = &.{} },
     };
     var func_expr = ast.Expr{ .func_expr = &body };
-    // Closure literals are always dynamic lua_Value at runtime.
-    try testing.expectEqual(RT.any, cg.expr_type(&func_expr));
+    const func_type = cg.expr_type(&func_expr);
+    try testing.expect(func_type == .func);
+    try testing.expectEqual(@as(usize, 1), func_type.func.params.len);
+    try testing.expectEqual(RT.i64, func_type.func.params[0]);
+    try testing.expectEqual(RT.str, func_type.func.ret.*);
+    try testing.expect(!func_type.func.has_vararg);
 }
 
 test "codegen: closure programs emit runtime JIT tables" {
@@ -18208,6 +19870,43 @@ test "arc: record and enum value types do not emit retain release hooks" {
 
     try testing.expect(!cg.codegen_needs_arc(record));
     try testing.expect(!cg.codegen_needs_arc(enum_rt));
+}
+
+test "arc: enum-typed locals do not retain or release whole enum values" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\enum Shape
+        \\  Circle(r: i64)
+        \\  Unit
+        \\end
+        \\
+        \\local circ: Shape = Shape.Circle(4)
+        \\local unit: Shape = Shape.Unit
+        \\print(0)
+        \\
+    ;
+
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lex = Lexer.init(src, "enum_arc.duo");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id);
+    try cg.emit_module(&module);
+    const output = aw.written();
+
+    try testing.expect(std.mem.indexOf(u8, output, "duo_retain((void*)(circ))") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_release((void*)(circ))") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_retain((void*)(unit))") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_release((void*)(unit))") == null);
 }
 
 test "ring buffer specialization eliminates storage for fixed lag read" {

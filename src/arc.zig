@@ -350,6 +350,9 @@ pub const ArcPass = struct {
             },
             .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
+            .sequence => |seq| {
+                for (seq.exprs) |e| try self.processExpr(e);
+            },
         }
     }
 

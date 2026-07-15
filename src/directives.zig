@@ -3,7 +3,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-pub const ParseError = error{InvalidDirective, OutOfMemory};
+pub const ParseError = error{ InvalidDirective, OutOfMemory };
 
 pub const ArgMap = struct {
     entries: std.StringHashMapUnmanaged([]const u8) = .{},
@@ -51,12 +51,13 @@ pub fn attrNameEq(attr: ast.Attribute, name: []const u8) bool {
 pub fn isCInterfaceDirective(name: []const u8) bool {
     return std.mem.eql(u8, name, "c.emit") or
         std.mem.eql(u8, name, "c.include") or
+        std.mem.eql(u8, name, "c.import") or
         std.mem.eql(u8, name, "c.export") or
         std.mem.eql(u8, name, "c.type") or
         std.mem.eql(u8, name, "c.call");
 }
 
-/// Strip delimiters from `@c.emit(...)` / `@c.include(...)` argument text.
+/// Strip delimiters from `@c.emit(...)` / `@c.include(...)` / `@c.import(...)` argument text.
 pub fn extractCRawCode(raw: []const u8) []const u8 {
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
     if (trimmed.len >= 4 and std.mem.startsWith(u8, trimmed, "[[") and std.mem.endsWith(u8, trimmed, "]]")) {
@@ -356,6 +357,7 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
             std.mem.eql(u8, attr.name, "hot") or
             std.mem.eql(u8, attr.name, "noinline") or
             std.mem.eql(u8, attr.name, "export") or
+            std.mem.eql(u8, attr.name, "c.export") or
             std.mem.eql(u8, attr.name, "ffi") or
             std.mem.eql(u8, attr.name, "derive") or
             std.mem.eql(u8, attr.name, "arc") or
@@ -390,19 +392,22 @@ pub fn validateModuleDirective(attr: ast.Attribute) ?[]const u8 {
             std.mem.eql(u8, attr.name, "build.run") or
             std.mem.eql(u8, attr.name, "build.clean") or
             std.mem.eql(u8, attr.name, "build.bench") or
+            std.mem.eql(u8, attr.name, "build.command") or
+            std.mem.eql(u8, attr.name, "build.stage") or
             std.mem.eql(u8, attr.name, "build.fmt") or
             std.mem.eql(u8, attr.name, "build.check");
         if (!known) return attr.name;
         return null;
     }
     if (isDebugDirective(attr.name)) return null;
+    if (std.mem.eql(u8, attr.name, "specialize")) return null;
     return attr.name;
 }
 
 /// Human-readable registry of supported directives (for docs / `--help`).
 pub const registry_json =
     \\{"test":["test","test.unit","test.integration","test.e2e","test.skip","test.only","test.flaky","test.should_panic","test.bench","test.time"],
-    \\ "build":["build.project","build.exe","build.lib","build.test","build.run","build.bench","build.check","build.fmt","build.clean"],
+    \\ "build":["build.project","build.stage","build.command","build.exe","build.lib","build.test","build.run","build.bench","build.check","build.fmt","build.clean"],
     \\ "bench":["bench","bench(iterations=N,warmup=N)"],
     \\ "time":["time","time(label=\"...\")"],
     \\ "ml":["device(.auto|.cpu|.metal|.cuda|.webgpu|.wasm|.tpu)","autodiff","differentiable","profile","unroll(N)"],

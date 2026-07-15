@@ -17,6 +17,8 @@ const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 
 var macos_sdkroot_configured = false;
+var compiler_lib_root: ?[]const u8 = null;
+var forwarded_program_args: []const []const u8 = &.{};
 
 fn env_value_truthy(value: []const u8) bool {
     if (value.len == 0) return false;
@@ -29,6 +31,12 @@ fn env_value_truthy(value: []const u8) bool {
 
 fn apply_env_flags(init: std.process.Init) void {
     const map = init.environ_map;
+    {
+        const cg = @import("codegen.zig");
+        if (map.get("DUO_NATIVE_DIAG")) |v| {
+            if (env_value_truthy(v)) cg.native_diag = true;
+        }
+    }
     if (map.get("DUO_TRACE")) |v| {
         if (env_value_truthy(v)) term.trace = true;
     }
@@ -113,11 +121,12 @@ const usage =
     \\commands:
     \\  shell              start the interactive Duo shell (default)
     \\  init       [name]   create a new Duo project
-    \\  build      [target] build the default or named target from build.duo
+    \\  build      [target] build the default or named target from @build metadata
     \\             list     show all @build.* targets (or: duo build --list)
     \\             all      build every compile target in stage order
-    \\  compile    <file>   compile .duo/.lua to a native binary
-    \\  run        [file]   compile and run immediately, or run build.duo target
+    \\             stage S  build targets in stage S (or: duo build all --stage S)
+    \\  compile    [file]   compile .duo/.lua to a native binary
+    \\  run        [file]   compile and run immediately, or run @build target
     \\  check      <file>   type-check only, no output
     \\  fmt        <file>   format a .duo/.lua file
     \\  test       [file]   run inline @test functions (or @build.test target)
@@ -144,6 +153,7 @@ const usage =
     \\  --debug-depth N   max debug nesting depth (default 12)
     \\  --test-report S   test output style: pretty|compact|verbose|plain|json (default pretty)
     \\  --build-report S  build output style: pretty|compact|verbose|plain (default pretty)
+    \\  --stage <name>    with `build all`, build only one named/numeric stage
     \\  --no-color        disable ANSI styling
     \\  --filter <pat>    run only tests whose name contains <pat>
     \\
@@ -158,6 +168,9 @@ pub fn main(init: std.process.Init) !void {
     }
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
+    if (args.len > 0) {
+        compiler_lib_root = try detectCompilerLibRoot(alloc, io, args[0]);
+    }
 
     if (args.len < 2) {
         try do_shell(alloc, io, false);
@@ -205,11 +218,20 @@ pub fn main(init: std.process.Init) !void {
     var test_filter: ?[]const u8 = null;
     var list_targets = false;
     var trace_rich = false;
+    var stage_filter: ?[]const u8 = null;
+    var extra_arg: ?[]const u8 = null;
+    var forwarded_args: std.ArrayList([]const u8) = .empty;
     var link_flags: std.ArrayList([]const u8) = .empty;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
-        if (std.mem.eql(u8, arg, "-o") and i + 1 < args.len) {
+        if (std.mem.eql(u8, arg, "--")) {
+            i += 1;
+            while (i < args.len) : (i += 1) {
+                try forwarded_args.append(alloc, args[i]);
+            }
+            break;
+        } else if (std.mem.eql(u8, arg, "-o") and i + 1 < args.len) {
             i += 1;
             output_file = args[i];
         } else if (std.mem.startsWith(u8, arg, "-O")) {
@@ -272,10 +294,18 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--filter") and i + 1 < args.len) {
             i += 1;
             test_filter = args[i];
+        } else if (std.mem.eql(u8, arg, "--stage") and i + 1 < args.len) {
+            i += 1;
+            stage_filter = args[i];
         } else if (arg.len > 0 and arg[0] != '-') {
-            input_file = arg;
+            if (input_file == null) {
+                input_file = arg;
+            } else {
+                extra_arg = arg;
+            }
         }
     }
+    forwarded_program_args = forwarded_args.items;
 
     apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag, debug_flag, debug_list, debug_depth, test_report_style, build_report_style, no_color, verbose_count);
     if (trace_rich and term.build_report == .pretty) term.setBuildReport(.verbose);
@@ -301,13 +331,25 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
+    if (usesProjectWorkspace(cmd, input_file)) {
+        try enterWorkspaceRoot(alloc, io);
+    }
+
     if (std.mem.eql(u8, cmd, "build")) {
         if (list_targets or (input_file != null and std.mem.eql(u8, input_file.?, "list"))) {
             try do_build_list(alloc, io);
             return;
         }
+        if (input_file != null and std.mem.eql(u8, input_file.?, "stage")) {
+            const stage_name = extra_arg orelse stage_filter orelse {
+                term.err("duo build stage requires a stage name", .{});
+                std.process.exit(1);
+            };
+            try do_build_stage(alloc, io, stage_name, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
+            return;
+        }
         if (input_file != null and std.mem.eql(u8, input_file.?, "all")) {
-            try do_build_all(alloc, io, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
+            try do_build_all(alloc, io, stage_filter, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items);
             return;
         }
         try do_project_build(alloc, io, input_file, output_file, cc, opt_level, target, verbose, load_chunk, pgo, lib_mode, shared_mem, link_flags.items, false);
@@ -339,20 +381,34 @@ pub fn main(init: std.process.Init) !void {
 
     if (std.mem.eql(u8, cmd, "test") or std.mem.eql(u8, cmd, "bench")) {
         const bench_only = std.mem.eql(u8, cmd, "bench");
-        const file = input_file orelse try resolveInlineTestSource(alloc, io, bench_only);
-        const out = output_file orelse out: {
-            const stem = std.fs.path.stem(file);
-            break :out try std.fmt.allocPrint(alloc, "/tmp/duo_{s}.test.out", .{stem});
-        };
-        term.banner(if (bench_only) "bench" else "test");
-        term.kv("source", file);
-        term.kv("report", @tagName(term.test_report));
-        if (test_filter) |f| term.kv("filter", f);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags.items);
+        if (input_file) |file| {
+            try run_test_sources(alloc, io, &.{file}, output_file, cc, opt_level, target, verbose, bench_only, test_filter, link_flags.items);
+            return;
+        }
+        if (try maybeReadBuildTarget(alloc, io, null, if (bench_only) .bench else .@"test")) |t| {
+            const src = t.src orelse {
+                term.err("build target '{s}' has no src= field", .{t.name});
+                std.process.exit(1);
+            };
+            try run_test_sources(alloc, io, &.{src}, output_file, t.cc orelse cc, t.opt orelse opt_level, t.target orelse target, verbose, bench_only or t.bench_mode(), test_filter, t.link);
+            return;
+        }
+        const sources = try scanInlineTestSources(alloc, io, bench_only);
+        defer alloc.free(sources);
+        if (sources.len == 0) {
+            term.err("no inline {s} sources found", .{if (bench_only) "bench" else "test"});
+            term.hint("add @test/@test.* to .duo files or --- @test before Lua functions, or define @build.test", .{});
+            std.process.exit(1);
+        }
+        try run_test_sources(alloc, io, sources, output_file, cc, opt_level, target, verbose, bench_only, test_filter, link_flags.items);
         return;
     }
 
-    const file = input_file orelse {
+    const file = input_file orelse if (std.mem.eql(u8, cmd, "compile") or
+        std.mem.eql(u8, cmd, "check") or
+        std.mem.eql(u8, cmd, "dump-c"))
+        try resolveDefaultSource(alloc, io)
+    else {
         term.err("no input file", .{});
         std.process.exit(1);
     };
@@ -387,22 +443,132 @@ fn read_source(alloc: std.mem.Allocator, io: Io, path: []const u8) ![]u8 {
     return Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited);
 }
 
+fn is_source_path(path: []const u8) bool {
+    return is_duo_source_path(path) or is_lua_source_path(path);
+}
+
+fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
+    if (std.mem.eql(u8, cmd, "build")) return true;
+    if (std.mem.eql(u8, cmd, "test") or std.mem.eql(u8, cmd, "bench")) return input_file == null;
+    if (std.mem.eql(u8, cmd, "compile") or std.mem.eql(u8, cmd, "check") or std.mem.eql(u8, cmd, "dump-c")) return input_file == null;
+    if (std.mem.eql(u8, cmd, "run")) {
+        if (input_file) |f| return !is_source_path(f);
+        return true;
+    }
+    return false;
+}
+
+fn absPathExists(io: Io, path: []const u8) bool {
+    Io.Dir.accessAbsolute(io, path, .{}) catch return false;
+    return true;
+}
+
+fn pathJoin2(alloc: std.mem.Allocator, a: []const u8, b: []const u8) ![]const u8 {
+    return try std.fs.path.join(alloc, &.{ a, b });
+}
+
+fn detectCompilerLibRoot(alloc: std.mem.Allocator, io: Io, argv0: []const u8) !?[]const u8 {
+    var exe_path: ?[]const u8 = null;
+    if (std.fs.path.isAbsolute(argv0)) {
+        exe_path = Io.Dir.realPathFileAbsoluteAlloc(io, argv0, alloc) catch try alloc.dupe(u8, argv0);
+    } else {
+        exe_path = Io.Dir.cwd().realPathFileAlloc(io, argv0, alloc) catch null;
+    }
+    if (exe_path) |exe| {
+        defer alloc.free(exe);
+        if (std.fs.path.dirname(exe)) |bin_dir| {
+            if (std.fs.path.dirname(bin_dir)) |zig_out| {
+                if (std.fs.path.dirname(zig_out)) |repo| {
+                    const lib = try pathJoin2(alloc, repo, "lib");
+                    const std_root = try pathJoin2(alloc, lib, "std.duo");
+                    defer alloc.free(std_root);
+                    if (absPathExists(io, std_root)) return lib;
+                    alloc.free(lib);
+                }
+            }
+        }
+    }
+    const local_std = try pathJoin2(alloc, "lib", "std.duo");
+    defer alloc.free(local_std);
+    if (Io.Dir.cwd().access(io, local_std, .{})) |_| {
+        return try alloc.dupe(u8, "lib");
+    } else |_| {}
+    return null;
+}
+
+fn dirHasWorkspaceMarker(alloc: std.mem.Allocator, io: Io, dir: []const u8) !bool {
+    const build = try pathJoin2(alloc, dir, "build.duo");
+    defer alloc.free(build);
+    if (absPathExists(io, build)) return true;
+    const src_build = try pathJoin2(alloc, dir, "src/build.duo");
+    defer alloc.free(src_build);
+    if (absPathExists(io, src_build)) return true;
+    return false;
+}
+
+fn findWorkspaceRoot(alloc: std.mem.Allocator, io: Io) !?[]const u8 {
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = getCwd(&cwd_buf) catch return null;
+    var current = try alloc.dupe(u8, cwd);
+    while (true) {
+        if (try dirHasWorkspaceMarker(alloc, io, current)) return current;
+        const parent = std.fs.path.dirname(current) orelse break;
+        if (std.mem.eql(u8, parent, current)) break;
+        const next = try alloc.dupe(u8, parent);
+        alloc.free(current);
+        current = next;
+    }
+    alloc.free(current);
+    return null;
+}
+
+fn enterWorkspaceRoot(alloc: std.mem.Allocator, io: Io) !void {
+    const root = (try findWorkspaceRoot(alloc, io)) orelse return;
+    defer alloc.free(root);
+    var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = getCwd(&cwd_buf) catch return;
+    if (std.mem.eql(u8, cwd, root)) return;
+    const root_z = try alloc.dupeSentinel(u8, root, 0);
+    defer alloc.free(root_z);
+    if (std.c.chdir(root_z.ptr) != 0) {
+        term.err("failed to enter workspace root '{s}'", .{root});
+        std.process.exit(1);
+    }
+    term.infoMsg("workspace root {s}", .{root});
+}
+
+fn getCwd(buf: *[std.fs.max_path_bytes]u8) ![]const u8 {
+    _ = std.c.getcwd(buf[0..].ptr, buf.len) orelse return error.Unexpected;
+    return std.mem.sliceTo(buf[0..], 0);
+}
+
 fn buildSourcePath(io: Io, requested: ?[]const u8) []const u8 {
     if (requested) |r| {
-        if (is_duo_source_path(r) or is_lua_source_path(r)) return r;
+        if (is_source_path(r)) return r;
     }
     const path = build_framework.findBuildSource(io, null);
     const cwd = Io.Dir.cwd();
     cwd.access(io, path, .{}) catch {
-        term.err("no build.duo or src/main.duo found", .{});
+        term.err("no build source found", .{});
+        term.hint("expected build.duo, src/build.duo, src/main.duo, main.duo, src/main.lua, main.lua, src/init.lua, or init.lua", .{});
         std.process.exit(1);
     };
     return path;
 }
 
+fn resolveDefaultSource(alloc: std.mem.Allocator, io: Io) ![]const u8 {
+    if (build_framework.findEntrypoint(io)) |path| {
+        term.infoMsg("selected default source '{s}'", .{path});
+        return try alloc.dupe(u8, path);
+    }
+    term.err("no input file and no default source found", .{});
+    term.hint("create src/main.duo, main.duo, src/main.lua, main.lua, src/init.lua, or init.lua", .{});
+    std.process.exit(1);
+}
+
 fn requestedTargetName(requested: ?[]const u8) ?[]const u8 {
     if (requested) |r| {
-        if (is_duo_source_path(r) or is_lua_source_path(r)) return null;
+        if (is_source_path(r)) return null;
         return r;
     }
     return null;
@@ -412,15 +578,21 @@ fn loadBuildProject(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8) !b
     const build_source = buildSourcePath(io, requested);
     var ps = try parse_and_check(alloc, io, build_source);
     _ = &ps;
-    const project = try build_framework.loadFromSema(alloc, build_source, &ps.sem);
+    var project = try build_framework.loadFromSema(alloc, build_source, &ps.sem);
+    if (project.targets.len == 0 and std.mem.eql(u8, std.fs.path.basename(build_source), "build.duo")) {
+        project.deinit(alloc);
+        const source = try read_source(alloc, io, build_source);
+        defer alloc.free(source);
+        return try build_framework.loadLegacyManifest(alloc, build_source, source);
+    }
     return project;
 }
 
-fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8, prefer_kind: ?build_framework.TargetKind) !build_framework.Target {
+fn maybeReadBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8, prefer_kind: ?build_framework.TargetKind) !?build_framework.Target {
     var project = try loadBuildProject(alloc, io, requested);
     defer project.deinit(alloc);
     const want = requestedTargetName(requested);
-    return build_framework.resolveTarget(&project, want, prefer_kind) catch |e| switch (e) {
+    const resolved = build_framework.resolveTarget(&project, want, prefer_kind) catch |e| switch (e) {
         build_framework.ResolveError.TargetNotFound => {
             term.err("target '{s}' not found in '{s}'", .{ want.?, project.build_source });
             if (build_framework.nearestTargetName(want.?, &project)) |hint| {
@@ -433,20 +605,17 @@ fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8, pre
             std.process.exit(1);
         },
         build_framework.ResolveError.NoTargets => {
-            term.err("'{s}' has no @build.* targets — add @build.run {{ src = \"...\" }}", .{project.build_source});
-            std.process.exit(1);
+            return null;
         },
     };
+    return try build_framework.cloneTarget(alloc, resolved);
 }
 
-fn resolveInlineTestSource(alloc: std.mem.Allocator, io: Io, bench_only: bool) ![]const u8 {
-    const prefer: build_framework.TargetKind = if (bench_only) .bench else .@"test";
-    const t = try readBuildTarget(alloc, io, null, prefer);
-    const src = t.src orelse {
-        term.err("build target '{s}' has no src= field", .{t.name});
+fn readBuildTarget(alloc: std.mem.Allocator, io: Io, requested: ?[]const u8, prefer_kind: ?build_framework.TargetKind) !build_framework.Target {
+    return (try maybeReadBuildTarget(alloc, io, requested, prefer_kind)) orelse {
+        term.err("no build targets found — add @build.run {{ src = \"...\" }} or a build.duo target manifest", .{});
         std.process.exit(1);
     };
-    return try alloc.dupe(u8, src);
 }
 
 fn buildTargetRows(alloc: std.mem.Allocator, project: *const build_framework.Project) ![]term.BuildTargetRow {
@@ -460,6 +629,7 @@ fn buildTargetRows(alloc: std.mem.Allocator, project: *const build_framework.Pro
             .src = t.src,
             .out = t.out,
             .stage = t.stage,
+            .stage_name = build_framework.stageLabel(project, t),
             .is_default = is_default,
             .deps = t.deps,
         };
@@ -467,19 +637,35 @@ fn buildTargetRows(alloc: std.mem.Allocator, project: *const build_framework.Pro
     return rows;
 }
 
+fn logBuildStages(project: *const build_framework.Project) void {
+    if (project.stages.len == 0 or term.build_report == .plain) return;
+    term.section("stages");
+    for (project.stages) |stage| {
+        var order_buf: [32]u8 = undefined;
+        const order = std.fmt.bufPrint(&order_buf, "{d}", .{stage.order}) catch "?";
+        if (stage.desc) |desc| {
+            term.kv(stage.name, desc);
+        } else {
+            term.kv(stage.name, order);
+        }
+    }
+}
+
 fn do_build_list(alloc: std.mem.Allocator, io: Io) !void {
     var project = try loadBuildProject(alloc, io, null);
     defer project.deinit(alloc);
     term.buildProjectHero(project.name, project.version, project.build_source);
+    logBuildStages(&project);
     const rows = try buildTargetRows(alloc, &project);
     defer alloc.free(rows);
     term.buildTargetTable(rows);
-    term.dim("inline @build.* — no build.lua; targets live in source", .{});
+    term.dim("inline @build.* — targets can live in build.duo, src/build.duo, or the entrypoint", .{});
 }
 
 fn do_build_all(
     alloc: std.mem.Allocator,
     io: Io,
+    stage_filter: ?[]const u8,
     output_file: ?[]const u8,
     cc_arg: []const u8,
     opt_arg: []const u8,
@@ -497,9 +683,13 @@ fn do_build_all(
     defer alloc.free(order);
     term.banner("build all");
     term.buildProjectHero(project.name, project.version, project.build_source);
+    logBuildStages(&project);
     var built: usize = 0;
     for (order) |idx| {
         const t = project.targets[idx];
+        if (stage_filter) |stage| {
+            if (!build_framework.targetMatchesStage(&project, t, stage)) continue;
+        }
         if (!t.needs_compile()) continue;
         built += 1;
         term.section(t.name);
@@ -510,6 +700,51 @@ fn do_build_all(
     } else {
         term.ok("built {d} target(s)", .{built});
     }
+}
+
+fn do_build_stage(
+    alloc: std.mem.Allocator,
+    io: Io,
+    stage_filter: []const u8,
+    output_file: ?[]const u8,
+    cc_arg: []const u8,
+    opt_arg: []const u8,
+    target_arg: []const u8,
+    verbose: bool,
+    load_chunk_arg: bool,
+    pgo_arg: bool,
+    lib_mode_arg: bool,
+    shared_mem_arg: bool,
+    link_flags_arg: []const []const u8,
+) !void {
+    var project = try loadBuildProject(alloc, io, null);
+    defer project.deinit(alloc);
+    const order = try build_framework.sortBuildOrder(alloc, &project);
+    defer alloc.free(order);
+    term.banner("build stage");
+    term.buildProjectHero(project.name, project.version, project.build_source);
+    term.kv("stage", stage_filter);
+    var built: usize = 0;
+    for (order) |idx| {
+        const t = project.targets[idx];
+        if (!build_framework.targetMatchesStage(&project, t, stage_filter)) continue;
+        built += 1;
+        term.section(t.name);
+        switch (t.kind) {
+            .clean => try do_project_clean(io),
+            .fmt => try do_project_fmt(alloc, io, t),
+            .check => try do_project_check(alloc, io, t),
+            else => try do_project_build_one(alloc, io, t, output_file, cc_arg, opt_arg, target_arg, verbose, load_chunk_arg, pgo_arg, lib_mode_arg, shared_mem_arg, link_flags_arg, false),
+        }
+    }
+    if (built == 0) {
+        term.err("no targets in stage '{s}'", .{stage_filter});
+        const names = build_framework.listTargetNames(alloc, &project) catch "";
+        defer alloc.free(names);
+        if (names.len > 0) term.hint("available targets: {s}", .{names});
+        std.process.exit(1);
+    }
+    term.ok("built {d} target(s) in stage {s}", .{ built, stage_filter });
 }
 
 fn do_project_clean(io: Io) !void {
@@ -569,6 +804,127 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
     };
     try fmtTree(alloc, io, "src");
     term.ok("type-checked project sources", .{});
+}
+
+fn fileMayContainInlineTest(bytes: []const u8, lua_mode: bool, bench_only: bool) bool {
+    if (lua_mode) {
+        if (bench_only) return std.mem.indexOf(u8, bytes, "--- @bench") != null or std.mem.indexOf(u8, bytes, "--- @test.bench") != null;
+        return std.mem.indexOf(u8, bytes, "--- @test") != null or std.mem.indexOf(u8, bytes, "--- @bench") != null;
+    }
+    if (bench_only) return std.mem.indexOf(u8, bytes, "@bench") != null or std.mem.indexOf(u8, bytes, "@test.bench") != null;
+    return std.mem.indexOf(u8, bytes, "@test") != null or std.mem.indexOf(u8, bytes, "@bench") != null;
+}
+
+fn shouldSkipScanDir(name: []const u8) bool {
+    return std.mem.eql(u8, name, ".git") or
+        std.mem.eql(u8, name, ".zig-cache") or
+        std.mem.eql(u8, name, "zig-out") or
+        std.mem.eql(u8, name, "node_modules");
+}
+
+fn scanInlineTestDir(
+    alloc: std.mem.Allocator,
+    io: Io,
+    rel_dir: []const u8,
+    bench_only: bool,
+    out: *std.ArrayListUnmanaged([]const u8),
+) !void {
+    var dir = try Io.Dir.cwd().openDir(io, rel_dir, .{ .iterate = true });
+    defer dir.close(io);
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        if (entry.kind == .directory) {
+            if (shouldSkipScanDir(entry.name)) continue;
+            const child = if (std.mem.eql(u8, rel_dir, "."))
+                try alloc.dupe(u8, entry.name)
+            else
+                try std.fs.path.join(alloc, &.{ rel_dir, entry.name });
+            defer alloc.free(child);
+            try scanInlineTestDir(alloc, io, child, bench_only, out);
+            continue;
+        }
+        if (entry.kind != .file) continue;
+        const is_lua = std.mem.endsWith(u8, entry.name, ".lua");
+        const is_duo = std.mem.endsWith(u8, entry.name, ".duo");
+        if (!is_lua and !is_duo) continue;
+        const path = if (std.mem.eql(u8, rel_dir, "."))
+            try alloc.dupe(u8, entry.name)
+        else
+            try std.fs.path.join(alloc, &.{ rel_dir, entry.name });
+        errdefer alloc.free(path);
+        const bytes = read_source(alloc, io, path) catch {
+            alloc.free(path);
+            continue;
+        };
+        defer alloc.free(bytes);
+        if (fileMayContainInlineTest(bytes, is_lua, bench_only)) {
+            try out.append(alloc, path);
+        } else {
+            alloc.free(path);
+        }
+    }
+}
+
+fn lessTestPath(_: void, a: []const u8, b: []const u8) bool {
+    const score = struct {
+        fn value(path: []const u8) u8 {
+            if (std.mem.eql(u8, path, "test/main.duo")) return 0;
+            if (std.mem.eql(u8, path, "test/main.lua")) return 1;
+            if (std.mem.startsWith(u8, path, "test/")) return 2;
+            if (std.mem.startsWith(u8, path, "tests/")) return 3;
+            if (std.mem.startsWith(u8, path, "src/")) return 4;
+            return 5;
+        }
+    }.value;
+    const sa = score(a);
+    const sb = score(b);
+    if (sa != sb) return sa < sb;
+    return std.mem.order(u8, a, b) == .lt;
+}
+
+fn scanInlineTestSources(alloc: std.mem.Allocator, io: Io, bench_only: bool) ![]const []const u8 {
+    var list: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer {
+        for (list.items) |path| alloc.free(path);
+        list.deinit(alloc);
+    }
+    try scanInlineTestDir(alloc, io, ".", bench_only, &list);
+    std.mem.sort([]const u8, list.items, {}, lessTestPath);
+    return try list.toOwnedSlice(alloc);
+}
+
+fn run_test_sources(
+    alloc: std.mem.Allocator,
+    io: Io,
+    sources: []const []const u8,
+    output_file: ?[]const u8,
+    cc: []const u8,
+    opt_level: []const u8,
+    target: []const u8,
+    verbose: bool,
+    bench_only: bool,
+    test_filter: ?[]const u8,
+    link_flags: []const []const u8,
+) !void {
+    term.banner(if (bench_only) "bench" else "test");
+    term.kv("report", @tagName(term.test_report));
+    if (test_filter) |f| term.kv("filter", f);
+    var failures: u32 = 0;
+    for (sources, 0..) |file, idx| {
+        term.kv("source", file);
+        const out = if (output_file != null and sources.len == 1)
+            output_file.?
+        else
+            try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
+        defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags);
+        const code = try run_pretty_test_runner(alloc, io, out, bench_only);
+        if (code != 0) failures += 1;
+    }
+    if (failures > 0) {
+        term.err("{d} test file(s) failed", .{failures});
+        std.process.exit(1);
+    }
 }
 
 fn do_symbols(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
@@ -755,6 +1111,36 @@ fn run_host_shell_command(io: Io, command: []const u8) !void {
     }
 }
 
+fn run_build_command(io: Io, name: []const u8, command: []const u8) !void {
+    term.banner("duo build");
+    term.buildPhaseStart("command", name);
+    term.kv("target", name);
+    term.kv("command", command);
+    const started = Io.Timestamp.now(io, .awake);
+    const argv = [_][]const u8{ "/bin/sh", "-c", command };
+    var child = try std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin = .inherit,
+        .stdout = .inherit,
+        .stderr = .inherit,
+    });
+    const result = try child.wait(io);
+    switch (result) {
+        .exited => |code| {
+            if (code != 0) {
+                term.err("command target '{s}' failed (exit {})", .{ name, code });
+                std.process.exit(1);
+            }
+        },
+        else => {
+            term.err("command target '{s}' terminated abnormally", .{name});
+            std.process.exit(1);
+        },
+    }
+    const elapsed_ms: u64 = @intCast(@divTrunc(started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+    term.buildPhaseDone("command", elapsed_ms, name);
+}
+
 fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counter: *usize, verbose: bool) !bool {
     const line = std.mem.trim(u8, raw_line, " \t\r\n");
     if (line.len == 0) return true;
@@ -849,6 +1235,14 @@ fn do_project_build(
 ) !void {
     const t = try readBuildTarget(alloc, io, requested, null);
     switch (t.kind) {
+        .command => {
+            const command = t.command orelse {
+                term.err("command target '{s}' requires command = \"...\" or cmd = \"...\"", .{t.name});
+                std.process.exit(1);
+            };
+            try run_build_command(io, t.name, command);
+            return;
+        },
         .clean => {
             try do_project_clean(io);
             return;
@@ -882,6 +1276,14 @@ fn do_project_build_one(
     link_flags_arg: []const []const u8,
     run_after: bool,
 ) !void {
+    if (t.kind == .command) {
+        const command = t.command orelse {
+            term.err("command target '{s}' requires command = \"...\" or cmd = \"...\"", .{t.name});
+            std.process.exit(1);
+        };
+        try run_build_command(io, t.name, command);
+        return;
+    }
     const src = t.src orelse {
         term.err("target '{s}' requires src = \"...\"", .{t.name});
         std.process.exit(1);
@@ -904,6 +1306,7 @@ fn do_project_build_one(
     term.kv("target", t.name);
     term.kv("source", src);
     term.kv("output", out);
+    if (t.stage_name) |stage| term.kv("stage", stage);
     term.kv("report", @tagName(term.build_report));
     if (term.trace) term.traceStep("resolving @build target", .{});
     try ensureDirForPath(io, out);
@@ -1282,13 +1685,17 @@ fn do_compile(
 
     var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id);
     native_scalar_precheck.src_path = src_path;
+    native_scalar_precheck.stdlib_root = compiler_lib_root;
     native_scalar_precheck.target = target;
     native_scalar_precheck.load_chunk = load_chunk;
     native_scalar_precheck.lib_mode = lib_mode;
     native_scalar_precheck.duo_mode = ps.sem.duo_mode;
     native_scalar_precheck.test_mode = test_mode;
-    native_scalar_precheck.bench_mode = bench_mode;
-    const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
+native_scalar_precheck.bench_mode = bench_mode;
+        native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
+        native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
+        native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
+        const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("monomorphize", .{});
@@ -1396,6 +1803,7 @@ fn do_compile(
         if (arc_pass) |*a| cg.arc = a;
         if (async_pass) |*a| cg.async_lower = a;
         cg.src_path = src_path;
+        cg.stdlib_root = compiler_lib_root;
         cg.target = target;
         cg.load_chunk = load_chunk;
         cg.lib_mode = lib_mode;
@@ -1596,9 +2004,12 @@ fn do_compile(
             const code = try run_pretty_test_runner(alloc, io, out_path, bench_mode);
             std.process.exit(code);
         }
-        const run_argv = [_][]const u8{out_path};
+        var run_args: std.ArrayList([]const u8) = .empty;
+        try run_args.append(alloc, out_path);
+        try run_args.appendSlice(alloc, forwarded_program_args);
+        defer run_args.deinit(alloc);
         var run_child = try std.process.spawn(io, .{
-            .argv = &run_argv,
+            .argv = run_args.items,
             .stdin = .inherit,
             .stdout = .inherit,
             .stderr = .inherit,
@@ -1863,6 +2274,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.arc = &arc_pass;
     cg.async_lower = &async_pass;
     cg.src_path = src_path;
+    cg.stdlib_root = compiler_lib_root;
     cg.target = target;
     cg.duo_mode = ps.sem.duo_mode;
     cg.emit_module(&ps.mod) catch |e| {

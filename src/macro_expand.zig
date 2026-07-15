@@ -356,6 +356,10 @@ pub const Expander = struct {
             .quote => |x| .{ .quote = .{ .loc = x.loc, .expr = try self.cloneExpr(x.expr, ctx) } },
             .unquote => |x| try self.cloneUnquote(x.expr, ctx),
             .macro_call => unreachable,
+            .sequence => |x| .{ .sequence = .{
+                .loc = x.loc,
+                .exprs = try self.cloneExprSlice(x.exprs, ctx),
+            } },
         };
         const out = try self.alloc.create(ast.Expr);
         out.* = cloned;
@@ -839,6 +843,7 @@ pub const Expander = struct {
         return .{
             .loc = ad.loc,
             .name = ad.name,
+            .type_params = if (ad.type_params) |params| try self.cloneTypeExprSlice(params, ctx) else null,
             .target = if (ad.target) |target| try self.cloneTypeExpr(target, ctx) else null,
             .parent = ad.parent,
             .fields = try fields.toOwnedSlice(self.alloc),

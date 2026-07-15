@@ -185,6 +185,12 @@ pub const PrettyPrinter = struct {
                 }
                 try self.write(")");
             },
+            .sequence => |x| {
+                for (x.exprs, 0..) |sub, i| {
+                    if (i > 0) try self.write(", ");
+                    try self.printExpr(sub, 0);
+                }
+            },
             .index => |x| {
                 try self.printExpr(x.obj, 0);
                 try self.write("[");
@@ -380,7 +386,6 @@ pub const PrettyPrinter = struct {
         self.indent();
         for (m.arms) |arm| {
             try self.nl();
-            try self.write("case ");
             try self.printPattern(arm.pattern);
             if (arm.guard) |g| {
                 try self.write(" if ");
@@ -433,9 +438,7 @@ pub const PrettyPrinter = struct {
                 }
             },
             .local_decl => |ld| {
-                if (self.mode == .lua or self.mode == .duo) {
-                    // In Duo mode, bare assignment is preferred, but we pretty-print
-                    // with 'local' for explicit clarity in both modes.
+                if (self.mode == .lua) {
                     try self.write("local ");
                 }
                 for (ld.names, 0..) |name, i| {
@@ -526,16 +529,15 @@ pub const PrettyPrinter = struct {
                 try self.printExpr(is.cond, 0);
                 if (self.mode == .lua) {
                     try self.write(" then");
-                } else {
-                    // Duo: optional 'then'
-                    try self.write(" then");
                 }
                 try self.printBlock(&is.then);
                 for (is.elseifs) |ei| {
                     try self.nl();
                     try self.write("elseif ");
                     try self.printExpr(ei.cond, 0);
-                    try self.write(" then");
+                    if (self.mode == .lua) {
+                        try self.write(" then");
+                    }
                     try self.printBlock(&ei.body);
                 }
                 if (is.else_body) |eb| {
@@ -656,6 +658,9 @@ pub const PrettyPrinter = struct {
             try self.nl();
         }
         if (fd.func.is_async) try self.write("async ");
+        if (fd.is_local and self.mode == .lua) {
+            try self.write("local ");
+        }
         if (self.mode == .lua) {
             try self.write("function");
         } else {
@@ -926,7 +931,7 @@ test "pretty: local with type annotation" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     try expectRoundTrip(arena.allocator(),
-        \\local x: i64 = 1
+        \\x: i64 = 1
         \\
     );
 }
@@ -949,11 +954,33 @@ test "pretty: match expression" {
     defer arena.deinit();
     try expectRoundTrip(arena.allocator(),
         \\match x
+        \\  1 then print(1)
+        \\  _ then print(0)
+        \\end
+        \\
+    );
+}
+
+test "pretty: match normalizes legacy case arms" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseSource(alloc,
+        \\match x
         \\  case 1 then print(1)
         \\  case _ then print(0)
         \\end
         \\
     );
+    const out = try prettyPrint(alloc, &mod, .duo);
+    defer alloc.free(out);
+    try testing.expectEqualStrings(
+        \\match x
+        \\  1 then print(1)
+        \\  _ then print(0)
+        \\end
+        \\
+    , out);
 }
 
 test "pretty: concept definition" {

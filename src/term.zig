@@ -605,6 +605,7 @@ pub const BuildTargetRow = struct {
     src: ?[]const u8,
     out: ?[]const u8,
     stage: i32,
+    stage_name: ?[]const u8,
     is_default: bool,
     deps: []const []const u8,
 };
@@ -643,7 +644,11 @@ pub fn buildTargetTable(rows: []const BuildTargetRow) void {
                 wprint("\x1b[1m{s}\x1b[0m", .{row.name});
             }
             wprint(" \x1b[2m{s}\x1b[0m", .{row.kind});
-            if (row.stage != 0) wprint(" \x1b[2mstage {d}\x1b[0m", .{row.stage});
+            if (row.stage_name) |stage| {
+                wprint(" \x1b[2mstage {s}", .{stage});
+                if (row.stage != 0) wprint(":{d}", .{row.stage});
+                wprint("\x1b[0m", .{});
+            } else if (row.stage != 0) wprint(" \x1b[2mstage {d}\x1b[0m", .{row.stage});
             if (row.is_default) wprint(" \x1b[32m★ default\x1b[0m", .{});
             wprint("\n", .{});
             wprint("  \x1b[2m│   \x1b[0m \x1b[2msrc\x1b[0m \x1b[36m{s}\x1b[0m", .{src});
@@ -659,6 +664,7 @@ pub fn buildTargetTable(rows: []const BuildTargetRow) void {
             }
         } else {
             wprint("  {s} {s} ({s})", .{ row.glyph, row.name, row.kind });
+            if (row.stage_name) |stage| wprint(" [stage {s}]", .{stage}) else if (row.stage != 0) wprint(" [stage {d}]", .{row.stage});
             if (row.is_default) wprint(" [default]", .{});
             wprint("\n    src {s} → {s}\n", .{ src, out });
         }
@@ -1272,4 +1278,3 @@ test "feedTestLine DUO_EVT json mode" {
     feedTestLine("DUO_EVT\ttest\tfail\tname=bar\treason=boom");
     try std.testing.expectEqual(@as(u32, 1), test_stats.fail);
 }
-

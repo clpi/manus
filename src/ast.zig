@@ -328,6 +328,7 @@ pub const Expr = union(enum) {
     quote: struct { loc: Loc, expr: *Expr },
     unquote: struct { loc: Loc, expr: *Expr },
     macro_call: MacroCall,
+    sequence: struct { loc: Loc, exprs: []*Expr }, // a, b multi-value
 
     pub fn loc(self: Expr) Loc {
         return switch (self) {
@@ -356,6 +357,7 @@ pub const Expr = union(enum) {
             .quote => |x| x.loc,
             .unquote => |x| x.loc,
             .macro_call => |x| x.loc,
+            .sequence => |x| x.loc,
         };
     }
 };
@@ -568,6 +570,8 @@ pub const Stmt = union(enum) {
 pub const AliasDef = struct {
     loc: Loc,
     name: []const u8,
+    /// Optional type parameters for generic aliases such as `type Vec<T> = List[T]`.
+    type_params: ?[]TypeExpr = null,
     /// Type alias target for `type Name = Type` / `alias Name = Type`.
     target: ?TypeExpr = null,
     /// Optional parent alias for single inheritance (extends Parent).

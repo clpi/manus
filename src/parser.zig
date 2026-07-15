@@ -4,6 +4,7 @@ const Lexer = @import("lexer.zig").Lexer;
 const Token = @import("lexer.zig").Token;
 const TK = @import("lexer.zig").TokenKind;
 const ast = @import("ast.zig");
+const types = @import("types.zig");
 const term = @import("term.zig");
 const debug_trace = @import("debug_trace.zig");
 
@@ -127,7 +128,7 @@ pub const Parser = struct {
 
     // ── Type parsing ─────────────────────────────────────────────────────────
 
-    fn parse_type(self: *Parser) ParseError!ast.TypeExpr {
+    pub fn parse_type(self: *Parser) ParseError!ast.TypeExpr {
         var base = try self.parse_type_primary();
         while (try self.eat(.lbracket) != null) {
             var params: std.ArrayList(ast.TypeExpr) = .empty;
@@ -209,6 +210,15 @@ pub const Parser = struct {
             .kw_str => {
                 _ = try self.adv();
                 return .{ .named = "str" };
+            },
+            .at => {
+                const attr = try self.parse_one_attribute();
+                if (!std.mem.eql(u8, attr.name, "c.type")) {
+                    term.locErr(tok.loc, "expected @c.type(...) in type position, got '@{s}'", .{attr.name});
+                    return ParseError.UnexpectedToken;
+                }
+                const cname = strip_quotes(attr.args orelse "");
+                return .{ .named = try std.mem.concat(self.alloc, u8, &.{ types.c_type_marker_prefix, cname }) };
             },
             .name => {
                 const t = try self.adv();
@@ -461,6 +471,16 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .at) {
             _ = try self.adv();
             const attr_name = try self.expect(.name);
+            var is_c_export = false;
+            if (std.mem.eql(u8, attr_name.text, "c") and (try self.pk()).kind == .dot) {
+                const c_saved = self.lex.saveState();
+                _ = try self.adv();
+                const c_part = try self.expect(.name);
+                is_c_export = std.mem.eql(u8, c_part.text, "export");
+                if (!is_c_export) {
+                    self.lex.restoreState(c_saved);
+                }
+            }
             const is_build = std.mem.eql(u8, attr_name.text, "build") or std.mem.startsWith(u8, attr_name.text, "build.");
             const is_debug = std.mem.eql(u8, attr_name.text, "debug") or std.mem.startsWith(u8, attr_name.text, "debug.");
             if (is_build or is_debug) {
@@ -485,7 +505,7 @@ pub const Parser = struct {
                 }
                 return true;
             }
-            if (!is_known_attribute(attr_name.text)) return false;
+            if (!is_c_export and !is_known_attribute(attr_name.text)) return false;
             if ((try self.pk()).kind == .lparen) {
                 var depth: u32 = 0;
                 while (true) {
@@ -611,9 +631,12 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .at) {
             const attr = try self.parse_one_attribute();
 
-            // Standalone @cinclude / @build.* / @debug.* module directives are
+            // Standalone @cinclude / @c.import / @build.* / @debug.* module directives are
             // each their own statement; do not accumulate them as attributes.
-            if (std.mem.eql(u8, attr.name, "cinclude") or std.mem.eql(u8, attr.name, "c.include")) {
+            if (std.mem.eql(u8, attr.name, "cinclude") or
+                std.mem.eql(u8, attr.name, "c.include") or
+                std.mem.eql(u8, attr.name, "c.import"))
+            {
                 const header = strip_quotes(attr.args orelse "");
                 return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
             }
@@ -678,13 +701,16 @@ pub const Parser = struct {
         return @import("directives.zig").extractCRawCode(raw);
     }
 
-    /// Standalone `@c.emit("...")` / `@c.include("h.h")` statement (module or block body).
+    /// Standalone `@c.emit("...")` / `@c.include("h.h")` / `@c.import("h.h")` statement.
     fn try_parse_c_interface_stmt(self: *Parser) ParseError!?ast.Stmt {
         if ((try self.pk()).kind != .at) return null;
         const saved = self.lex.saveState();
         const loc = (try self.pk()).loc;
         const attr = try self.parse_one_attribute();
-        if (std.mem.eql(u8, attr.name, "c.include")) {
+        if (std.mem.eql(u8, attr.name, "specialize")) {
+            return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
+        }
+        if (std.mem.eql(u8, attr.name, "c.include") or std.mem.eql(u8, attr.name, "c.import")) {
             const header = strip_quotes(attr.args orelse "");
             return ast.Stmt{ .cinclude = .{ .loc = loc, .header = header } };
         }
@@ -1120,11 +1146,22 @@ pub const Parser = struct {
         }
         const l = (try self.pk()).loc;
         const nm = try self.expect(.name);
+        var type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lt) != null) {
+            var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try tp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try tp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.gt);
+            type_params = try tp_list.toOwnedSlice(self.alloc);
+        }
         _ = try self.expect(.assign);
         const target = try self.parse_type();
         return ast.Stmt{ .alias_def = .{
             .loc = l,
             .name = nm.text,
+            .type_params = type_params,
             .target = target,
             .parent = null,
             .fields = &.{},
@@ -1694,9 +1731,6 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
-            if (tok.kind == .at) {
-                std.debug.print("DEBUG parse_prec: @ at line {} col {}, lhs line {} col {}\n", .{ tok.loc.line, tok.loc.col, lhs.loc().line, lhs.loc().col });
-            }
             if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
@@ -1751,17 +1785,62 @@ pub const Parser = struct {
         return e;
     }
 
-    /// Parse a single match arm. The preferred spelling is
-    /// `case pattern [if guard] then|do body`; the original
-    /// `pattern [if guard] => body` spelling remains accepted.
+    fn tokenStartsMatchPattern(kind: TK) bool {
+        return switch (kind) {
+            .name,
+            .dots,
+            .lbrace,
+            .lbracket,
+            .int_lit,
+            .float_lit,
+            .string_lit,
+            .kw_nil,
+            .kw_true,
+            .kw_false,
+            .minus,
+            => true,
+            else => false,
+        };
+    }
+
+    fn startsMatchArm(self: *Parser) ParseError!bool {
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+
+        const first = try self.lex.peek();
+        if (first.kind == .name and std.mem.eql(u8, first.text, "case")) return true;
+        if (first.kind == .kw_else) return true;
+        if (!tokenStartsMatchPattern(first.kind)) return false;
+
+        var depth: u32 = 0;
+        while (true) {
+            const tok = try self.lex.next();
+            if (tok.kind == .eof or tok.kind == .kw_end or tok.kind == .semi) return false;
+            if (depth == 0 and tok.loc.line != first.loc.line) return false;
+            switch (tok.kind) {
+                .lparen, .lbrace, .lbracket => depth += 1,
+                .rparen, .rbrace, .rbracket => {
+                    if (depth == 0) return false;
+                    depth -= 1;
+                },
+                .kw_then, .kw_do => return depth == 0,
+                else => {},
+            }
+        }
+    }
+
+    /// Parse a single match arm. The supported spellings are
+    /// `pattern [if guard] then|do body` and `case pattern [if guard] then|do body`.
     /// The body is either a single expression (as a return statement) or
     /// a block that terminates at the next arm or `end`.
     fn parse_match_arm(self: *Parser) ParseError!ast.MatchArm {
         const first = try self.pk();
         const case_syntax = first.kind == .name and std.mem.eql(u8, first.text, "case");
-        if (case_syntax) _ = try self.adv();
+        const else_syntax = first.kind == .kw_else;
+        if (case_syntax or else_syntax) _ = try self.adv();
 
-        const pattern = try self.parse_pattern();
+        // `else` is always a wildcard/catch-all pattern — no pattern to parse
+        const pattern = if (else_syntax) ast.Pattern.wildcard else try self.parse_pattern();
 
         // Optional guard: `if cond`
         var guard: ?*ast.Expr = null;
@@ -1770,15 +1849,14 @@ pub const Parser = struct {
             guard = try self.parse_expr();
         }
 
-        if (case_syntax) {
-            const separator = try self.pk();
-            if (separator.kind != .kw_then and separator.kind != .kw_do) {
-                term.locErr(separator.loc, "expected 'then' or 'do', got '{s}'", .{separator.kind.spelling()});
-                return ParseError.ExpectedToken;
-            }
+        const separator = try self.pk();
+        if (separator.kind == .kw_then or separator.kind == .kw_do) {
             _ = try self.adv();
+        } else if (case_syntax or else_syntax) {
+            // `case pattern statement` remains accepted for older local sources.
         } else {
-            _ = try self.expect(.fat_arrow);
+            term.locErr(separator.loc, "expected 'then' or 'do', got '{s}'", .{separator.kind.spelling()});
+            return ParseError.ExpectedToken;
         }
 
         // Parse arm body as a block that ends at next arm start or `end`.
@@ -1797,18 +1875,25 @@ pub const Parser = struct {
     fn parse_match_arm_body(self: *Parser) ParseError!ast.Block {
         const l = (try self.pk()).loc;
         var stmts: std.ArrayList(ast.Stmt) = .empty;
-        while (try self.eat(.semi) != null) {}
-        const tok = try self.pk();
-        switch (tok.kind) {
-            .kw_end, .eof => {},
-            .kw_return => {
+        while (true) {
+            while (try self.eat(.semi) != null) {}
+            const tok = try self.pk();
+            // Stop at end of match block, or at 'case'/'else' which starts the next arm.
+            if (tok.kind == .kw_end or tok.kind == .eof or try self.startsMatchArm()) break;
+            if (tok.kind == .kw_return) {
                 // Use restricted return parsing that doesn't consume string/table/array
                 // suffixes (those start the next pattern arm).
                 const ret_loc = (try self.adv()).loc;
                 var vals: std.ArrayList(*ast.Expr) = .empty;
                 const nxt = try self.pk();
+                const is_case_after = nxt.kind == .name and std.mem.eql(u8, nxt.text, "case");
                 switch (nxt.kind) {
                     .kw_end, .kw_else, .kw_elseif, .kw_until, .eof, .semi => {},
+                    .name => if (!is_case_after) {
+                        try vals.append(self.alloc, try self.parse_match_scrutinee());
+                        while (try self.eat(.comma) != null)
+                            try vals.append(self.alloc, try self.parse_match_scrutinee());
+                    },
                     else => {
                         try vals.append(self.alloc, try self.parse_match_scrutinee());
                         while (try self.eat(.comma) != null)
@@ -1819,12 +1904,11 @@ pub const Parser = struct {
                     .loc = ret_loc,
                     .vals = try vals.toOwnedSlice(self.alloc),
                 } });
-            },
-            else => {
+            } else {
                 self.match_arm_depth += 1;
                 defer self.match_arm_depth -= 1;
                 try stmts.append(self.alloc, try self.parse_stmt());
-            },
+            }
         }
         return ast.Block{ .loc = l, .stmts = try stmts.toOwnedSlice(self.alloc) };
     }
@@ -1874,6 +1958,11 @@ pub const Parser = struct {
             .kw_false => {
                 const e = try self.parse_simple_expr();
                 return ast.Pattern{ .literal = e };
+            },
+            // `else` is a wildcard/catch-all pattern in match expressions
+            .kw_else => {
+                _ = try self.adv();
+                return ast.Pattern.wildcard;
             },
             // Name — could be wildcard `_`, variant `Name.Variant(...)`, or binding
             .name => {
@@ -2032,20 +2121,14 @@ pub const Parser = struct {
             // after the bash-call check handle this.
         }
 
-        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null or nxt.kind == .comma) {
-            var targets: std.ArrayList(*ast.Expr) = .empty;
-            try targets.append(self.alloc, first);
-            while (try self.eat(.comma) != null)
-                try targets.append(self.alloc, try self.parse_suffixed_expr());
-            const assign_tok = try self.pk();
-            const compound_op = compound_assign_op(assign_tok.kind);
-            if (compound_op != null and targets.items.len != 1) {
-                term.locErr(assign_tok.loc, "compound assignment accepts one target", .{});
-                return ParseError.UnexpectedToken;
-            }
-            _ = try self.adv();
+        // ── Assignment or sequence expression ────────────────────────────────
+        // Handle:  a = ...        a, b = ...        a += ...
+        // Also:    a, b           (bare sequence — implicit multi-value return)
+        if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null) {
+            // Single-target assignment:  name = expr  /  name += expr
+            _ = try self.adv(); // consume = or compound-assign
             // Check for `Name = struct ... end` — C-layout type definition
-            if (first.* == .name and compound_op == null and targets.items.len == 1) {
+            if (first.* == .name and compound_assign_op(nxt.kind) == null) {
                 const next_tok = try self.pk();
                 if (next_tok.kind == .name and std.mem.eql(u8, next_tok.text, "struct")) {
                     _ = try self.adv(); // consume "struct"
@@ -2053,7 +2136,7 @@ pub const Parser = struct {
                 }
             }
             var values: std.ArrayList(*ast.Expr) = .empty;
-            if (compound_op) |op| {
+            if (compound_assign_op(nxt.kind)) |op| {
                 const rhs = if (self.match_arm_depth > 0)
                     try self.parse_match_scrutinee()
                 else
@@ -2065,8 +2148,6 @@ pub const Parser = struct {
                     .rhs = rhs,
                 } }));
             } else {
-                // Inside a match arm body, use the restricted scrutinee parser so
-                // that `[` at the start of the next arm isn't consumed as an index.
                 if (self.match_arm_depth > 0) {
                     try values.append(self.alloc, try self.parse_match_scrutinee());
                     while (try self.eat(.comma) != null)
@@ -2077,11 +2158,78 @@ pub const Parser = struct {
                         try values.append(self.alloc, try self.parse_expr());
                 }
             }
+            var single_target: std.ArrayList(*ast.Expr) = .empty;
+            try single_target.append(self.alloc, first);
             return ast.Stmt{ .assign = .{
                 .loc = first.loc(),
-                .targets = try targets.toOwnedSlice(self.alloc),
+                .targets = try single_target.toOwnedSlice(self.alloc),
                 .values = try values.toOwnedSlice(self.alloc),
             } };
+        } else if (nxt.kind == .comma) {
+            // Could be multi-target assignment (a, b = ...) or bare sequence
+            // (a, b).  Speculatively parse comma-separated names, then check
+            // whether an assignment operator follows.
+            const saved = self.lex.saveState();
+            var exprs: std.ArrayList(*ast.Expr) = .empty;
+            try exprs.append(self.alloc, first);
+            while (try self.eat(.comma) != null)
+                try exprs.append(self.alloc, try self.parse_suffixed_expr());
+            const after = try self.pk();
+            const after_compound = compound_assign_op(after.kind);
+            if (after.kind == .assign or after_compound != null) {
+                // ── Multi-target assignment: a, b = expr1, expr2 ──
+                if (after_compound != null and exprs.items.len != 1) {
+                    term.locErr(after.loc, "compound assignment accepts one target", .{});
+                    return ParseError.UnexpectedToken;
+                }
+                _ = try self.adv(); // consume = or compound-assign
+                var values: std.ArrayList(*ast.Expr) = .empty;
+                if (after_compound) |op| {
+                    const rhs = if (self.match_arm_depth > 0)
+                        try self.parse_match_scrutinee()
+                    else
+                        try self.parse_expr();
+                    try values.append(self.alloc, try self.new_expr(.{ .binop = .{
+                        .loc = first.loc(),
+                        .op = op,
+                        .lhs = first,
+                        .rhs = rhs,
+                    } }));
+                } else {
+                    if (self.match_arm_depth > 0) {
+                        try values.append(self.alloc, try self.parse_match_scrutinee());
+                        while (try self.eat(.comma) != null)
+                            try values.append(self.alloc, try self.parse_match_scrutinee());
+                    } else {
+                        try values.append(self.alloc, try self.parse_expr());
+                        while (try self.eat(.comma) != null)
+                            try values.append(self.alloc, try self.parse_expr());
+                    }
+                }
+                return ast.Stmt{ .assign = .{
+                    .loc = first.loc(),
+                    .targets = try exprs.toOwnedSlice(self.alloc),
+                    .values = try values.toOwnedSlice(self.alloc),
+                } };
+            } else {
+                // ── Bare sequence expression: a, b ──
+                // No assignment operator follows — this is a comma-separated
+                // expression list.  Common as an implicit multi-value return.
+                self.lex.restoreState(saved);
+                // Re-parse: first was already consumed, but we restored past
+                // the comma so re-collect from first.
+                var seq: std.ArrayList(*ast.Expr) = .empty;
+                try seq.append(self.alloc, first);
+                while (try self.eat(.comma) != null)
+                    try seq.append(self.alloc, try self.parse_expr());
+                return ast.Stmt{ .expr_stmt = .{
+                    .loc = first.loc(),
+                    .expr = try self.new_expr(.{ .sequence = .{
+                        .loc = first.loc(),
+                        .exprs = try seq.toOwnedSlice(self.alloc),
+                    } }),
+                } };
+            }
         }
 
         // Bash-style call: name arg1 arg2 ...
@@ -2142,9 +2290,6 @@ pub const Parser = struct {
         while (true) {
             const tok = try self.pk();
             const inf = infix_prec(tok.kind) orelse break;
-            if (tok.kind == .at) {
-                std.debug.print("DEBUG finish_prec: @ at line {} col {}, e line {} col {}\n", .{ tok.loc.line, tok.loc.col, e.loc().line, e.loc().col });
-            }
             if (tok.kind == .at and tok.loc.line > e.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
@@ -2370,6 +2515,13 @@ pub const Parser = struct {
         const qualified = try std.mem.join(self.alloc, ".", parts.items);
         defer self.alloc.free(qualified);
 
+        if (std.mem.eql(u8, qualified, "sizeof") or std.mem.eql(u8, qualified, "alignof")) {
+            return self.parse_layout_intrinsic_call(l, qualified);
+        }
+        if (std.mem.eql(u8, qualified, "as")) {
+            return self.parse_as_intrinsic_call(l);
+        }
+
         _ = try self.expect(.lparen);
         var args: std.ArrayList(*ast.Expr) = .empty;
         if (!(try self.check(.rparen))) {
@@ -2386,6 +2538,11 @@ pub const Parser = struct {
             const emit_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__emit" } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = emit_name, .args = args_slice } });
         }
+        // `@c.call("name", args...)` lowers to a direct raw C call expression.
+        if (std.mem.eql(u8, qualified, "c.call") and args_slice.len >= 1) {
+            const call_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__c_call" } });
+            return self.new_expr(.{ .call = .{ .loc = l, .func = call_name, .args = args_slice } });
+        }
         // `@asm(...)` desugars to `__asm(...)` for inline assembly.
         if (std.mem.eql(u8, qualified, "asm") and args_slice.len >= 1) {
             const asm_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__asm" } });
@@ -2396,12 +2553,135 @@ pub const Parser = struct {
             const hot_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__hot_path" } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = hot_name, .args = args_slice } });
         }
+        if (at_builtin_internal_name(qualified)) |internal| {
+            const builtin_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = internal } });
+            return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
+        }
 
         return self.new_expr(.{ .macro_call = .{
             .loc = l,
             .name = first.text,
             .args = args_slice,
         } });
+    }
+
+    fn at_builtin_internal_name(name: []const u8) ?[]const u8 {
+        const pairs = [_]struct { public: []const u8, internal: []const u8 }{
+            .{ .public = "constexpr", .internal = "__constexpr" },
+            .{ .public = "comptime_if", .internal = "__comptimeif" },
+            .{ .public = "comptimeif", .internal = "__comptimeif" },
+            .{ .public = "comptime_fold", .internal = "__comptimefold" },
+            .{ .public = "comptimefold", .internal = "__comptimefold" },
+            .{ .public = "comptime_for", .internal = "__comptimefor" },
+            .{ .public = "comptimefor", .internal = "__comptimefor" },
+            .{ .public = "comptime_print", .internal = "__comptimeprint" },
+            .{ .public = "comptimeprint", .internal = "__comptimeprint" },
+            .{ .public = "comptime_warn", .internal = "__comptimewarn" },
+            .{ .public = "comptimewarn", .internal = "__comptimewarn" },
+            .{ .public = "comptime_error", .internal = "__comptimeerror" },
+            .{ .public = "comptimeerror", .internal = "__comptimeerror" },
+            .{ .public = "static_assert", .internal = "__static_assert" },
+            .{ .public = "typeinfo", .internal = "__typeinfo" },
+            .{ .public = "typeof", .internal = "__typeof" },
+            .{ .public = "type_name", .internal = "__type_name" },
+            .{ .public = "type_id", .internal = "__type_id" },
+            .{ .public = "is_type", .internal = "__is_type" },
+            .{ .public = "fields", .internal = "__fields" },
+            .{ .public = "methods", .internal = "__methods" },
+            .{ .public = "variants", .internal = "__variants" },
+            .{ .public = "has_field", .internal = "__has_field" },
+            .{ .public = "has_method", .internal = "__has_method" },
+            .{ .public = "has_metamethod", .internal = "__has_metamethod" },
+            .{ .public = "field_type", .internal = "__field_type" },
+            .{ .public = "field_offset", .internal = "__field_offset" },
+            .{ .public = "field_size", .internal = "__field_size" },
+            .{ .public = "embed_str", .internal = "__embed_str" },
+            .{ .public = "embed_file", .internal = "__embed_file" },
+            .{ .public = "make_type", .internal = "__make_type" },
+            .{ .public = "as_type", .internal = "__as_type" },
+            .{ .public = "bitfield", .internal = "__bitfield" },
+            .{ .public = "union", .internal = "__union" },
+            .{ .public = "select", .internal = "__select" },
+            .{ .public = "likely", .internal = "__likely" },
+            .{ .public = "unlikely", .internal = "__unlikely" },
+            .{ .public = "prefetch", .internal = "__prefetch" },
+            .{ .public = "assume", .internal = "__assume" },
+            .{ .public = "unreachable", .internal = "__unreachable" },
+            .{ .public = "trap", .internal = "__trap" },
+            .{ .public = "fence", .internal = "__fence" },
+            .{ .public = "ctz", .internal = "__ctz" },
+            .{ .public = "clz", .internal = "__clz" },
+            .{ .public = "popcount", .internal = "__popcount" },
+            .{ .public = "bswap", .internal = "__bswap" },
+            .{ .public = "rotl", .internal = "__rotl" },
+            .{ .public = "rotr", .internal = "__rotr" },
+            .{ .public = "bitcast", .internal = "__bitcast" },
+            .{ .public = "volatile", .internal = "__volatile" },
+        };
+        for (pairs) |pair| {
+            if (std.mem.eql(u8, name, pair.public)) return pair.internal;
+        }
+        return null;
+    }
+
+    fn parse_as_intrinsic_call(self: *Parser, loc: ast.Loc) ParseError!*ast.Expr {
+        _ = try self.expect(.lparen);
+        const typ = try self.parse_type();
+        _ = try self.expect(.comma);
+        const value = try self.parse_expr();
+        _ = try self.expect(.rparen);
+
+        const type_name = try self.type_expr_c_name(typ);
+        const type_arg = try self.new_expr(.{ .string_lit = .{ .loc = loc, .val = type_name } });
+        const func = try self.new_expr(.{ .name = .{ .loc = loc, .ident = "__as" } });
+        const args = try self.alloc.alloc(*ast.Expr, 2);
+        args[0] = type_arg;
+        args[1] = value;
+        return self.new_expr(.{ .call = .{ .loc = loc, .func = func, .args = args } });
+    }
+
+    fn parse_layout_intrinsic_call(self: *Parser, loc: ast.Loc, name: []const u8) ParseError!*ast.Expr {
+        _ = try self.expect(.lparen);
+        var args: std.ArrayList(*ast.Expr) = .empty;
+        const after_lparen = self.lex.saveState();
+        if (try self.try_parse_layout_type_arg(loc)) |type_arg| {
+            try args.append(self.alloc, type_arg);
+        } else {
+            self.lex.restoreState(after_lparen);
+            try args.append(self.alloc, try self.parse_expr());
+            while (try self.eat(.comma) != null) {
+                try args.append(self.alloc, try self.parse_expr());
+            }
+            _ = try self.expect(.rparen);
+        }
+
+        const internal_name = if (std.mem.eql(u8, name, "sizeof")) "__sizeof" else "__alignof";
+        const func = try self.new_expr(.{ .name = .{ .loc = loc, .ident = internal_name } });
+        return self.new_expr(.{ .call = .{ .loc = loc, .func = func, .args = try args.toOwnedSlice(self.alloc) } });
+    }
+
+    fn try_parse_layout_type_arg(self: *Parser, loc: ast.Loc) ParseError!?*ast.Expr {
+        const tok = try self.pk();
+        if (!layout_arg_can_start_type(tok)) return null;
+        const typ = try self.parse_type();
+        if ((try self.pk()).kind != .rparen) return null;
+        _ = try self.adv();
+        return self.new_expr(.{ .string_lit = .{ .loc = loc, .val = try self.type_expr_c_name(typ) } });
+    }
+
+    fn layout_arg_can_start_type(tok: Token) bool {
+        if (Lexer.isTypeKeyword(tok.kind)) return true;
+        return switch (tok.kind) {
+            .star, .question, .lbracket, .lbrace => true,
+            .name => tok.text.len > 0 and tok.text[0] >= 'A' and tok.text[0] <= 'Z',
+            else => false,
+        };
+    }
+
+    fn type_expr_c_name(self: *Parser, typ: ast.TypeExpr) ParseError![]const u8 {
+        const rt = types.resolve(typ, null, self.alloc) catch .any;
+        var buf: [128]u8 = undefined;
+        return self.alloc.dupe(u8, rt.c_type(&buf));
     }
 
     fn parse_suffixed_expr(self: *Parser) ParseError!*ast.Expr {
@@ -2738,6 +3018,21 @@ test "parse: type declaration spelling" {
     try testing.expectEqualStrings("UserId", mod.body.stmts[0].alias_def.name);
 }
 
+test "parse: generic type alias declaration" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\type Vec<T> = List[T]
+    , &arena);
+    const alias = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("Vec", alias.name);
+    try testing.expect(alias.type_params != null);
+    try testing.expectEqual(@as(usize, 1), alias.type_params.?.len);
+    try testing.expectEqualStrings("T", alias.type_params.?[0].named);
+    try testing.expect(alias.target.? == .generic);
+    try testing.expectEqualStrings("List", alias.target.?.generic.base.named);
+}
+
 test "parse: type builtin remains expression-call compatible" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -2748,6 +3043,80 @@ test "parse: type builtin remains expression-call compatible" {
     try testing.expect(init.* == .call);
     try testing.expect(init.call.func.* == .name);
     try testing.expectEqualStrings("type", init.call.func.name.ident);
+}
+
+test "parse: @sizeof and @alignof lower type arguments to layout intrinsics" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local sz = @sizeof(i64)
+        \\local align = @alignof(*u8)
+        \\local expr_sz = @sizeof(value)
+    , &arena);
+
+    const sz = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(sz.* == .call);
+    try testing.expect(sz.call.func.* == .name);
+    try testing.expectEqualStrings("__sizeof", sz.call.func.name.ident);
+    try testing.expect(sz.call.args[0].* == .string_lit);
+    try testing.expectEqualStrings("int64_t", sz.call.args[0].string_lit.val);
+
+    const align_expr = mod.body.stmts[1].local_decl.inits[0];
+    try testing.expect(align_expr.* == .call);
+    try testing.expect(align_expr.call.func.* == .name);
+    try testing.expectEqualStrings("__alignof", align_expr.call.func.name.ident);
+    try testing.expect(align_expr.call.args[0].* == .string_lit);
+    try testing.expectEqualStrings("uint8_t*", align_expr.call.args[0].string_lit.val);
+
+    const expr_sz = mod.body.stmts[2].local_decl.inits[0];
+    try testing.expect(expr_sz.* == .call);
+    try testing.expect(expr_sz.call.func.* == .name);
+    try testing.expectEqualStrings("__sizeof", expr_sz.call.func.name.ident);
+    try testing.expect(expr_sz.call.args[0].* == .name);
+    try testing.expectEqualStrings("value", expr_sz.call.args[0].name.ident);
+}
+
+test "parse: @as lowers a type argument to an internal typed coercion" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local n = @as(i64, box.x)
+    , &arena);
+
+    const init = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(init.* == .call);
+    try testing.expect(init.call.func.* == .name);
+    try testing.expectEqualStrings("__as", init.call.func.name.ident);
+    try testing.expectEqual(@as(usize, 2), init.call.args.len);
+    try testing.expect(init.call.args[0].* == .string_lit);
+    try testing.expectEqualStrings("int64_t", init.call.args[0].string_lit.val);
+    try testing.expect(init.call.args[1].* == .field);
+}
+
+test "parse: @ builtin aliases lower to internal intrinsic calls" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local folded = @constexpr(10 + 5)
+        \\local branch = @comptime_if(true, 1, 2)
+        \\local ty = @type_name(folded)
+        \\local bits = @popcount(0xff)
+        \\local checked = @static_assert("sizeof(int64_t) == 8", "i64 size")
+    , &arena);
+
+    const expected = [_][]const u8{
+        "__constexpr",
+        "__comptimeif",
+        "__type_name",
+        "__popcount",
+        "__static_assert",
+    };
+    for (expected, 0..) |name, i| {
+        const init = mod.body.stmts[i].local_decl.inits[0];
+        try testing.expect(init.* == .call);
+        try testing.expect(init.call.func.* == .name);
+        try testing.expectEqualStrings(name, init.call.func.name.ident);
+    }
 }
 
 test "parse: local declaration with integer initializer" {
@@ -3319,7 +3688,7 @@ test "parse: match statement with wildcard" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match x
-        \\  _ => return 1
+        \\  _ then return 1
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3336,9 +3705,9 @@ test "parse: match statement with literal patterns" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match n
-        \\  1 => return "one"
-        \\  2 => return "two"
-        \\  _ => return "other"
+        \\  1 then return "one"
+        \\  2 then return "two"
+        \\  _ then return "other"
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3367,6 +3736,40 @@ test "parse: match case arms accept then and do" {
     try testing.expect(stmt.match_stmt.arms[2].pattern == .wildcard);
 }
 
+test "parse: match pattern arms prefer then and do without fat arrows" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match n
+        \\  1 then return "one"
+        \\  2 do return "two"
+        \\  _ then return "other"
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 3), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[1].pattern == .literal);
+    try testing.expect(stmt.match_stmt.arms[2].pattern == .wildcard);
+}
+
+test "parse: match pattern arm accepts guard before then" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\match value
+        \\  x if x > 0 then return x
+        \\  _ then return 0
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .match_stmt);
+    try testing.expectEqual(@as(usize, 2), stmt.match_stmt.arms.len);
+    try testing.expect(stmt.match_stmt.arms[0].pattern == .binding);
+    try testing.expect(stmt.match_stmt.arms[0].guard != null);
+}
+
 test "parse: match case arm accepts guard before then" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -3388,7 +3791,7 @@ test "parse: match with binding pattern" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match val
-        \\  x => return x
+        \\  x then return x
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3404,8 +3807,8 @@ test "parse: match with guard expression" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match val
-        \\  x if x > 0 => return x
-        \\  _ => return 0
+        \\  x if x > 0 then return x
+        \\  _ then return 0
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3422,8 +3825,8 @@ test "parse: match with variant pattern" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match result
-        \\  Option.Some(val) => return val
-        \\  Option.None => return nil
+        \\  Option.Some(val) then return val
+        \\  Option.None then return nil
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3445,7 +3848,7 @@ test "parse: match with table destructuring" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match obj
-        \\  {x: a, y: b} => return a + b
+        \\  {x: a, y: b} then return a + b
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3463,7 +3866,7 @@ test "parse: match with array destructuring" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match arr
-        \\  [first, second] => return first
+        \\  [first, second] then return first
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3479,7 +3882,7 @@ test "parse: match with rest pattern in array" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match arr
-        \\  [head, ...tail] => return head
+        \\  [head, ...tail] then return head
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3497,8 +3900,8 @@ test "parse: match as expression" {
     defer arena.deinit();
     const mod = try parseSource(
         \\local r = match x
-        \\  1 => return "one"
-        \\  _ => return "other"
+        \\  1 then return "one"
+        \\  _ then return "other"
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3514,9 +3917,9 @@ test "parse: match with string literal pattern" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match cmd
-        \\  "start" => return 1
-        \\  "stop" => return 0
-        \\  _ => return -1
+        \\  "start" then return 1
+        \\  "stop" then return 0
+        \\  _ then return -1
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3531,9 +3934,9 @@ test "parse: match with nil and boolean patterns" {
     defer arena.deinit();
     const mod = try parseSource(
         \\match flag
-        \\  nil => return "nil"
-        \\  true => return "yes"
-        \\  false => return "no"
+        \\  nil then return "nil"
+        \\  true then return "yes"
+        \\  false then return "no"
         \\end
     , &arena);
     const stmt = mod.body.stmts[0];
@@ -3641,6 +4044,91 @@ test "parse: @asm and @emit desugar to internal intrinsics" {
     try testing.expect(b_call.* == .call);
     try testing.expectEqualStrings("__asm", a_call.call.func.name.ident);
     try testing.expectEqualStrings("__emit", b_call.call.func.name.ident);
+}
+
+test "parse: @c.call desugars to raw C call intrinsic" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local n: i64 = @c.call("llabs", x)
+    , &arena);
+    const init = mod.body.stmts[0].local_decl.inits[0];
+    try testing.expect(init.* == .call);
+    try testing.expect(init.call.func.* == .name);
+    try testing.expectEqualStrings("__c_call", init.call.func.name.ident);
+    try testing.expectEqual(@as(usize, 2), init.call.args.len);
+    try testing.expect(init.call.args[0].* == .string_lit);
+    try testing.expectEqualStrings("llabs", init.call.args[0].string_lit.val);
+}
+
+test "parse: @c.import is an imported C header directive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@c.import("math.h")
+        \\local n: f64 = @c.call("fabs", -1.5)
+    , &arena);
+    try testing.expect(mod.body.stmts[0] == .cinclude);
+    try testing.expectEqualStrings("math.h", mod.body.stmts[0].cinclude.header);
+}
+
+test "parse: @specialize is a standalone module directive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun id<T>(x: T): T
+        \\  return x
+        \\end
+        \\@specialize(id, i64)
+    , &arena);
+    try testing.expectEqual(@as(usize, 2), mod.body.stmts.len);
+    try testing.expect(mod.body.stmts[1] == .directive);
+    try testing.expectEqualStrings("specialize", mod.body.stmts[1].directive.attr.name);
+    try testing.expectEqualStrings("id, i64", mod.body.stmts[1].directive.attr.args.?);
+}
+
+test "parse: @specialize preserves nested generic type arguments" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun id<T>(x: T): T
+        \\  return x
+        \\end
+        \\@specialize(id, Result[i64, str])
+    , &arena);
+    try testing.expectEqual(@as(usize, 2), mod.body.stmts.len);
+    try testing.expect(mod.body.stmts[1] == .directive);
+    try testing.expectEqualStrings("specialize", mod.body.stmts[1].directive.attr.name);
+    try testing.expectEqualStrings("id, Result[i64, str]", mod.body.stmts[1].directive.attr.args.?);
+}
+
+test "parse: @c.type is accepted in type position" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local p: *@c.type("struct duo_file") = nil
+    , &arena);
+    const typ = mod.body.stmts[0].local_decl.names[0].typ;
+    try testing.expect(typ == .pointer);
+    try testing.expect(typ.pointer.* == .named);
+    try testing.expectEqualStrings("__c_type:struct duo_file", typ.pointer.*.named);
+}
+
+test "parse: @c.export attribute preserves export name" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@c.export("duo_add")
+        \\fun add(a: i64, b: i64): i64
+        \\  return a + b
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqualStrings("add", stmt.func_decl.path[0]);
+    try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
+    try testing.expectEqualStrings("c.export", stmt.func_decl.attributes[0].name);
+    try testing.expectEqualStrings("\"duo_add\"", stmt.func_decl.attributes[0].args.?);
 }
 
 test "parse: single attribute on function" {

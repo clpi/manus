@@ -13,6 +13,7 @@ pub const TargetKind = enum {
     check,
     fmt,
     clean,
+    command,
 };
 
 pub const Target = struct {
@@ -29,7 +30,9 @@ pub const Target = struct {
     shared_mem: bool = false,
     link: []const []const u8 = &.{},
     stage: i32 = 0,
+    stage_name: ?[]const u8 = null,
     deps: []const []const u8 = &.{},
+    command: ?[]const u8 = null,
 
     pub fn test_mode(self: Target) bool {
         return self.kind == .@"test";
@@ -47,17 +50,29 @@ pub const Target = struct {
     }
 };
 
+pub const Stage = struct {
+    name: []const u8,
+    order: i32 = 0,
+    desc: ?[]const u8 = null,
+};
+
 pub const Project = struct {
     build_source: []const u8,
     name: ?[]const u8 = null,
     version: ?[]const u8 = null,
     default_target: ?[]const u8 = null,
+    stages: []Stage,
     targets: []Target,
 
     pub fn deinit(self: *Project, alloc: std.mem.Allocator) void {
         if (self.name) |n| alloc.free(n);
         if (self.version) |v| alloc.free(v);
         if (self.default_target) |d| alloc.free(d);
+        for (self.stages) |*s| {
+            alloc.free(s.name);
+            if (s.desc) |d| alloc.free(d);
+        }
+        alloc.free(self.stages);
         for (self.targets) |*t| {
             alloc.free(t.name);
             if (t.src) |s| alloc.free(s);
@@ -65,6 +80,8 @@ pub const Project = struct {
             if (t.cc) |c| alloc.free(c);
             if (t.opt) |o| alloc.free(o);
             if (t.target) |tg| alloc.free(tg);
+            if (t.stage_name) |s| alloc.free(s);
+            if (t.command) |c| alloc.free(c);
             for (t.link) |l| alloc.free(l);
             alloc.free(t.link);
             for (t.deps) |d| alloc.free(d);
@@ -86,9 +103,38 @@ fn parseBool(map: *const directives.ArgMap, key: []const u8, default: bool) bool
     return default;
 }
 
+fn parseOpt(alloc: std.mem.Allocator, map: *const directives.ArgMap) !?[]const u8 {
+    if (map.get("opt")) |raw| return try alloc.dupe(u8, raw);
+    if (map.get("optimize")) |raw| {
+        if (std.mem.startsWith(u8, raw, "-O")) return try alloc.dupe(u8, raw);
+        if (std.mem.startsWith(u8, raw, "O")) return try std.fmt.allocPrint(alloc, "-{s}", .{raw});
+        return try std.fmt.allocPrint(alloc, "-O{s}", .{raw});
+    }
+    return null;
+}
+
+fn appendOptValue(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), raw: []const u8) !void {
+    if (std.mem.startsWith(u8, raw, "-O")) {
+        try buf.appendSlice(alloc, raw);
+    } else if (std.mem.startsWith(u8, raw, "O")) {
+        try buf.append(alloc, '-');
+        try buf.appendSlice(alloc, raw);
+    } else {
+        try buf.appendSlice(alloc, "-O");
+        try buf.appendSlice(alloc, raw);
+    }
+}
+
 fn parseI32(map: *const directives.ArgMap, key: []const u8, default: i32) i32 {
     const raw = map.get(key) orelse return default;
     return std.fmt.parseInt(i32, raw, 10) catch default;
+}
+
+fn parseStageName(alloc: std.mem.Allocator, map: *const directives.ArgMap) !?[]const u8 {
+    if (map.get("stage_name")) |raw| return try alloc.dupe(u8, raw);
+    const raw = map.get("stage") orelse return null;
+    _ = std.fmt.parseInt(i32, raw, 10) catch return try alloc.dupe(u8, raw);
+    return null;
 }
 
 fn parseCsvList(alloc: std.mem.Allocator, raw: []const u8) ![]const []const u8 {
@@ -116,6 +162,39 @@ fn parseDepsList(alloc: std.mem.Allocator, map: *const directives.ArgMap) ![]con
     return parseCsvList(alloc, raw);
 }
 
+fn cloneStringList(alloc: std.mem.Allocator, values: []const []const u8) ![]const []const u8 {
+    var list: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer {
+        for (list.items) |item| alloc.free(item);
+        list.deinit(alloc);
+    }
+    for (values) |value| {
+        try list.append(alloc, try alloc.dupe(u8, value));
+    }
+    return try list.toOwnedSlice(alloc);
+}
+
+pub fn cloneTarget(alloc: std.mem.Allocator, target: Target) !Target {
+    return .{
+        .name = try alloc.dupe(u8, target.name),
+        .kind = target.kind,
+        .src = try dupOpt(alloc, target.src),
+        .out = try dupOpt(alloc, target.out),
+        .cc = try dupOpt(alloc, target.cc),
+        .opt = try dupOpt(alloc, target.opt),
+        .target = try dupOpt(alloc, target.target),
+        .load_chunk = target.load_chunk,
+        .pgo = target.pgo,
+        .lib_mode = target.lib_mode,
+        .shared_mem = target.shared_mem,
+        .link = try cloneStringList(alloc, target.link),
+        .stage = target.stage,
+        .stage_name = try dupOpt(alloc, target.stage_name),
+        .deps = try cloneStringList(alloc, target.deps),
+        .command = try dupOpt(alloc, target.command),
+    };
+}
+
 fn kindFromAttr(name: []const u8) ?TargetKind {
     if (std.mem.eql(u8, name, "build.exe")) return .exe;
     if (std.mem.eql(u8, name, "build.run")) return .run;
@@ -125,6 +204,7 @@ fn kindFromAttr(name: []const u8) ?TargetKind {
     if (std.mem.eql(u8, name, "build.check")) return .check;
     if (std.mem.eql(u8, name, "build.fmt")) return .fmt;
     if (std.mem.eql(u8, name, "build.clean")) return .clean;
+    if (std.mem.eql(u8, name, "build.command")) return .command;
     return null;
 }
 
@@ -143,6 +223,7 @@ fn targetFromAttr(alloc: std.mem.Allocator, attr: ast.Attribute) !?Target {
 
     const link = try parseLinkList(alloc, &map);
     const deps = try parseDepsList(alloc, &map);
+    const command = if (map.get("command")) |cmd| try alloc.dupe(u8, cmd) else try dupOpt(alloc, map.get("cmd"));
 
     return Target{
         .name = name,
@@ -150,7 +231,7 @@ fn targetFromAttr(alloc: std.mem.Allocator, attr: ast.Attribute) !?Target {
         .src = src,
         .out = try dupOpt(alloc, map.get("out")),
         .cc = try dupOpt(alloc, map.get("cc")),
-        .opt = try dupOpt(alloc, map.get("opt")),
+        .opt = try parseOpt(alloc, &map),
         .target = try dupOpt(alloc, map.get("target")),
         .load_chunk = parseBool(&map, "load_chunk", false),
         .pgo = parseBool(&map, "pgo", false),
@@ -158,7 +239,180 @@ fn targetFromAttr(alloc: std.mem.Allocator, attr: ast.Attribute) !?Target {
         .shared_mem = parseBool(&map, "shared_memory", false) or parseBool(&map, "shared_mem", false),
         .link = link,
         .stage = parseI32(&map, "stage", 0),
+        .stage_name = try parseStageName(alloc, &map),
         .deps = deps,
+        .command = command,
+    };
+}
+
+fn stringLiteralAfterKey(alloc: std.mem.Allocator, source: []const u8, key: []const u8) !?[]const u8 {
+    var start: usize = 0;
+    while (std.mem.indexOfPos(u8, source, start, key)) |idx| {
+        const before_ok = idx == 0 or (!std.ascii.isAlphanumeric(source[idx - 1]) and source[idx - 1] != '_');
+        const after_idx = idx + key.len;
+        const after_ok = after_idx >= source.len or (!std.ascii.isAlphanumeric(source[after_idx]) and source[after_idx] != '_');
+        start = after_idx;
+        if (!before_ok or !after_ok) continue;
+        var i = after_idx;
+        while (i < source.len and std.ascii.isWhitespace(source[i])) : (i += 1) {}
+        if (i >= source.len or source[i] != '=') continue;
+        i += 1;
+        while (i < source.len and std.ascii.isWhitespace(source[i])) : (i += 1) {}
+        if (i >= source.len or (source[i] != '"' and source[i] != '\'')) continue;
+        const quote = source[i];
+        i += 1;
+        const value_start = i;
+        while (i < source.len and source[i] != quote) : (i += 1) {}
+        if (i >= source.len) return null;
+        return try alloc.dupe(u8, source[value_start..i]);
+    }
+    return null;
+}
+
+fn findMatchingBrace(source: []const u8, open_idx: usize) ?usize {
+    var depth: usize = 0;
+    var i = open_idx;
+    var quote: ?u8 = null;
+    while (i < source.len) : (i += 1) {
+        const c = source[i];
+        if (quote) |q| {
+            if (c == '\\' and i + 1 < source.len) {
+                i += 1;
+                continue;
+            }
+            if (c == q) quote = null;
+            continue;
+        }
+        if (c == '"' or c == '\'') {
+            quote = c;
+            continue;
+        }
+        if (c == '{') {
+            depth += 1;
+        } else if (c == '}') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+    }
+    return null;
+}
+
+fn tableBodyAfterKey(source: []const u8, key: []const u8) ?[]const u8 {
+    const key_idx = std.mem.indexOf(u8, source, key) orelse return null;
+    const eq_idx = std.mem.indexOfScalarPos(u8, source, key_idx + key.len, '=') orelse return null;
+    const open_idx = std.mem.indexOfScalarPos(u8, source, eq_idx + 1, '{') orelse return null;
+    const close_idx = findMatchingBrace(source, open_idx) orelse return null;
+    return source[open_idx + 1 .. close_idx];
+}
+
+fn legacyTargetKind(name: []const u8, block: []const u8) TargetKind {
+    if (std.mem.eql(u8, name, "test")) return .@"test";
+    if (std.mem.eql(u8, name, "bench")) return .bench;
+    if (std.mem.eql(u8, name, "lib")) return .lib;
+    if (std.mem.indexOf(u8, block, "mode") != null and std.mem.indexOf(u8, block, "shared") != null) return .lib;
+    return .run;
+}
+
+fn appendLegacyTarget(alloc: std.mem.Allocator, list: *std.ArrayListUnmanaged(Target), name: []const u8, block: []const u8) !void {
+    const src = try stringLiteralAfterKey(alloc, block, "src") orelse try stringLiteralAfterKey(alloc, block, "entry");
+    const kind = legacyTargetKind(name, block);
+    var map_text: std.ArrayListUnmanaged(u8) = .empty;
+    defer map_text.deinit(alloc);
+    try map_text.appendSlice(alloc, "{ name = \"");
+    try map_text.appendSlice(alloc, name);
+    try map_text.appendSlice(alloc, "\"");
+    if (src) |s| {
+        try map_text.appendSlice(alloc, ", src = \"");
+        try map_text.appendSlice(alloc, s);
+        try map_text.appendSlice(alloc, "\"");
+    }
+    if (try stringLiteralAfterKey(alloc, block, "target")) |target| {
+        defer alloc.free(target);
+        try map_text.appendSlice(alloc, ", target = \"");
+        try map_text.appendSlice(alloc, target);
+        try map_text.appendSlice(alloc, "\"");
+    }
+    if (try stringLiteralAfterKey(alloc, block, "optimize") orelse try stringLiteralAfterKey(alloc, block, "opt")) |opt| {
+        defer alloc.free(opt);
+        try map_text.appendSlice(alloc, ", opt = \"");
+        try appendOptValue(alloc, &map_text, opt);
+        try map_text.appendSlice(alloc, "\"");
+    }
+    if (kind == .lib) try map_text.appendSlice(alloc, ", lib = true");
+    try map_text.appendSlice(alloc, " }");
+    const attr_name = switch (kind) {
+        .lib => "build.lib",
+        .@"test" => "build.test",
+        .bench => "build.bench",
+        else => "build.run",
+    };
+    const t = (try targetFromAttr(alloc, .{ .name = attr_name, .args = map_text.items })) orelse return;
+    try list.append(alloc, t);
+}
+
+pub fn loadLegacyManifest(alloc: std.mem.Allocator, build_source: []const u8, source: []const u8) !Project {
+    var targets: std.ArrayListUnmanaged(Target) = .empty;
+    errdefer {
+        for (targets.items) |*t| {
+            alloc.free(t.name);
+            if (t.src) |s| alloc.free(s);
+            if (t.out) |o| alloc.free(o);
+            if (t.cc) |c| alloc.free(c);
+            if (t.opt) |o| alloc.free(o);
+            if (t.target) |tg| alloc.free(tg);
+            if (t.stage_name) |s| alloc.free(s);
+            if (t.command) |c| alloc.free(c);
+            for (t.link) |l| alloc.free(l);
+            alloc.free(t.link);
+            for (t.deps) |d| alloc.free(d);
+            alloc.free(t.deps);
+        }
+        targets.deinit(alloc);
+    }
+
+    const targets_body = tableBodyAfterKey(source, "targets");
+    if (targets_body) |body| {
+        var i: usize = 0;
+        while (i < body.len) : (i += 1) {
+            while (i < body.len and (std.ascii.isWhitespace(body[i]) or body[i] == ',')) : (i += 1) {}
+            if (i >= body.len or !(std.ascii.isAlphabetic(body[i]) or body[i] == '_')) continue;
+            const name_start = i;
+            i += 1;
+            while (i < body.len and (std.ascii.isAlphanumeric(body[i]) or body[i] == '_')) : (i += 1) {}
+            const name = body[name_start..i];
+            while (i < body.len and std.ascii.isWhitespace(body[i])) : (i += 1) {}
+            if (i >= body.len or body[i] != '=') continue;
+            i += 1;
+            while (i < body.len and std.ascii.isWhitespace(body[i])) : (i += 1) {}
+            if (i >= body.len or body[i] != '{') continue;
+            const close = findMatchingBrace(body, i) orelse break;
+            try appendLegacyTarget(alloc, &targets, name, body[i + 1 .. close]);
+            i = close;
+        }
+    } else if (try stringLiteralAfterKey(alloc, source, "entry")) |entry| {
+        defer alloc.free(entry);
+        try appendLegacyTarget(alloc, &targets, "default", source);
+    }
+
+    return .{
+        .build_source = build_source,
+        .name = try stringLiteralAfterKey(alloc, source, "name"),
+        .version = try stringLiteralAfterKey(alloc, source, "version"),
+        .default_target = if (targets.items.len > 0) try alloc.dupe(u8, targets.items[0].name) else null,
+        .stages = try alloc.alloc(Stage, 0),
+        .targets = try targets.toOwnedSlice(alloc),
+    };
+}
+
+fn stageFromAttr(alloc: std.mem.Allocator, attr: ast.Attribute) !?Stage {
+    if (!std.mem.eql(u8, attr.name, "build.stage")) return null;
+    var map = try directives.parseAttrArgs(alloc, attr.args);
+    defer map.deinit(alloc);
+    const name_raw = map.get("name") orelse map.get("id") orelse "stage";
+    return .{
+        .name = try alloc.dupe(u8, name_raw),
+        .order = parseI32(&map, "order", parseI32(&map, "stage", 0)),
+        .desc = try dupOpt(alloc, map.get("desc") orelse map.get("description")),
     };
 }
 
@@ -172,6 +426,7 @@ pub fn kindLabel(kind: TargetKind) []const u8 {
         .check => "check",
         .fmt => "fmt",
         .clean => "clean",
+        .command => "command",
     };
 }
 
@@ -184,12 +439,61 @@ pub fn kindGlyph(kind: TargetKind) []const u8 {
         .check => "✓",
         .fmt => "¶",
         .clean => "⌫",
+        .command => "›",
+    };
+}
+
+fn pathExists(io: std.Io, path: []const u8) bool {
+    const cwd = std.Io.Dir.cwd();
+    cwd.access(io, path, .{}) catch return false;
+    return true;
+}
+
+fn isEntrypointPath(path: []const u8) bool {
+    return std.mem.eql(u8, path, "src/main.duo") or
+        std.mem.eql(u8, path, "main.duo") or
+        std.mem.eql(u8, path, "src/main.lua") or
+        std.mem.eql(u8, path, "main.lua") or
+        std.mem.eql(u8, path, "src/init.duo") or
+        std.mem.eql(u8, path, "init.duo") or
+        std.mem.eql(u8, path, "src/init.lua") or
+        std.mem.eql(u8, path, "init.lua");
+}
+
+fn implicitTargetForSource(alloc: std.mem.Allocator, build_source: []const u8) !?Target {
+    if (!isEntrypointPath(build_source)) return null;
+    const base = std.fs.path.basename(build_source);
+    const is_init = std.mem.eql(u8, base, "init.duo") or std.mem.eql(u8, base, "init.lua");
+    const name = if (is_init) "lib" else "app";
+    return .{
+        .name = try alloc.dupe(u8, name),
+        .kind = if (is_init) .lib else .run,
+        .src = try alloc.dupe(u8, build_source),
+        .out = null,
+        .cc = null,
+        .opt = null,
+        .target = null,
+        .load_chunk = false,
+        .pgo = false,
+        .lib_mode = is_init,
+        .shared_mem = false,
+        .link = try alloc.alloc([]const u8, 0),
+        .stage = 0,
+        .stage_name = null,
+        .deps = try alloc.alloc([]const u8, 0),
+        .command = null,
     };
 }
 
 pub fn loadFromSema(alloc: std.mem.Allocator, build_source: []const u8, sem: *const Sema) !Project {
     var targets: std.ArrayListUnmanaged(Target) = .empty;
+    var stages: std.ArrayListUnmanaged(Stage) = .empty;
     errdefer {
+        for (stages.items) |*s| {
+            alloc.free(s.name);
+            if (s.desc) |d| alloc.free(d);
+        }
+        stages.deinit(alloc);
         for (targets.items) |*t| {
             alloc.free(t.name);
             if (t.src) |s| alloc.free(s);
@@ -197,6 +501,8 @@ pub fn loadFromSema(alloc: std.mem.Allocator, build_source: []const u8, sem: *co
             if (t.cc) |c| alloc.free(c);
             if (t.opt) |o| alloc.free(o);
             if (t.target) |tg| alloc.free(tg);
+            if (t.stage_name) |s| alloc.free(s);
+            if (t.command) |c| alloc.free(c);
             for (t.link) |l| alloc.free(l);
             alloc.free(t.link);
             for (t.deps) |d| alloc.free(d);
@@ -218,7 +524,16 @@ pub fn loadFromSema(alloc: std.mem.Allocator, build_source: []const u8, sem: *co
             default_target = try dupOpt(alloc, map.get("default"));
             continue;
         }
+        if (try stageFromAttr(alloc, attr)) |s| {
+            try stages.append(alloc, s);
+            continue;
+        }
         if (try targetFromAttr(alloc, attr)) |t| {
+            try targets.append(alloc, t);
+        }
+    }
+    if (targets.items.len == 0) {
+        if (try implicitTargetForSource(alloc, build_source)) |t| {
             try targets.append(alloc, t);
         }
     }
@@ -228,6 +543,7 @@ pub fn loadFromSema(alloc: std.mem.Allocator, build_source: []const u8, sem: *co
         .name = project_name,
         .version = project_version,
         .default_target = default_target,
+        .stages = try stages.toOwnedSlice(alloc),
         .targets = try targets.toOwnedSlice(alloc),
     };
 }
@@ -236,16 +552,71 @@ pub fn findBuildSource(io: std.Io, requested: ?[]const u8) []const u8 {
     if (requested) |r| {
         if (std.mem.endsWith(u8, r, ".duo") or std.mem.endsWith(u8, r, ".lua")) return r;
     }
-    const cwd = std.Io.Dir.cwd();
-    const candidates = [_][]const u8{ "build.duo", "src/main.duo", "main.duo" };
+    const candidates = [_][]const u8{
+        "build.duo",
+        "src/build.duo",
+        "src/main.duo",
+        "main.duo",
+        "src/main.lua",
+        "main.lua",
+        "src/init.duo",
+        "init.duo",
+        "src/init.lua",
+        "init.lua",
+    };
     for (candidates) |c| {
-        cwd.access(io, c, .{}) catch continue;
+        if (!pathExists(io, c)) continue;
         return c;
     }
     return "build.duo";
 }
 
-pub const ResolveError = error{TargetNotFound, NoTargets};
+pub fn findEntrypoint(io: std.Io) ?[]const u8 {
+    const candidates = [_][]const u8{
+        "src/main.duo",
+        "main.duo",
+        "src/main.lua",
+        "main.lua",
+        "src/init.duo",
+        "init.duo",
+        "src/init.lua",
+        "init.lua",
+    };
+    for (candidates) |c| {
+        if (pathExists(io, c)) return c;
+    }
+    return null;
+}
+
+pub fn stageLabel(project: *const Project, target: Target) ?[]const u8 {
+    if (target.stage_name) |name| return name;
+    for (project.stages) |stage| {
+        if (stage.order == target.stage) return stage.name;
+    }
+    return null;
+}
+
+pub fn stageOrder(project: *const Project, target: Target) i32 {
+    if (target.stage_name) |name| {
+        for (project.stages) |stage| {
+            if (std.mem.eql(u8, stage.name, name)) return stage.order;
+        }
+    }
+    return target.stage;
+}
+
+pub fn targetMatchesStage(project: *const Project, target: Target, raw: []const u8) bool {
+    if (target.stage_name) |name| {
+        if (std.mem.eql(u8, name, raw)) return true;
+    }
+    if (stageLabel(project, target)) |name| {
+        if (std.mem.eql(u8, name, raw)) return true;
+    }
+    const wanted = std.fmt.parseInt(i32, raw, 10) catch return false;
+    return stageOrder(project, target) == wanted;
+}
+
+pub const ResolveError = error{ TargetNotFound, NoTargets };
 
 pub fn resolveTarget(project: *const Project, requested: ?[]const u8, prefer_kind: ?TargetKind) !Target {
     // Explicit name request takes priority
@@ -311,7 +682,9 @@ pub fn sortBuildOrder(alloc: std.mem.Allocator, project: *const Project) ![]usiz
         fn cmp(ctx: *const Project, a: usize, b: usize) bool {
             const ta = ctx.targets[a];
             const tb = ctx.targets[b];
-            if (ta.stage != tb.stage) return ta.stage < tb.stage;
+            const sa = stageOrder(ctx, ta);
+            const sb = stageOrder(ctx, tb);
+            if (sa != sb) return sa < sb;
             return std.mem.order(u8, ta.name, tb.name) == .lt;
         }
     }.cmp;
@@ -337,7 +710,9 @@ pub fn sortBuildOrder(alloc: std.mem.Allocator, project: *const Project) ![]usiz
             fn cmp(ctx: *const Project, a: usize, b: usize) bool {
                 const ta = ctx.targets[a];
                 const tb = ctx.targets[b];
-                if (ta.stage != tb.stage) return ta.stage < tb.stage;
+                const sa = stageOrder(ctx, ta);
+                const sb = stageOrder(ctx, tb);
+                if (sa != sb) return sa < sb;
                 return std.mem.order(u8, ta.name, tb.name) == .lt;
             }
         }.cmp;
@@ -380,6 +755,8 @@ test "build_framework: load targets from sema directives" {
     const alloc = arena.allocator();
     const src =
         \\@build.project({ name = "demo", default = "app" })
+        \\@build.stage({ name = "prepare", order = -10, desc = "prepare assets" })
+        \\@build.command({ name = "assets", command = "echo assets", stage = "prepare" })
         \\@build.run({ name = "app", src = "main.duo" })
         \\@build.test({ name = "test", src = "tests.duo", out = "zig-out/bin/t" })
         \\@build.clean({ name = "clean" })
@@ -399,11 +776,18 @@ test "build_framework: load targets from sema directives" {
 
     try std.testing.expectEqualStrings("demo", project.name.?);
     try std.testing.expectEqualStrings("app", project.default_target.?);
-    try std.testing.expect(project.targets.len == 3);
+    try std.testing.expect(project.stages.len == 1);
+    try std.testing.expectEqualStrings("prepare", project.stages[0].name);
+    try std.testing.expect(project.targets.len == 4);
 
     const app = try resolveTarget(&project, "app", null);
     try std.testing.expect(app.kind == .run);
     try std.testing.expectEqualStrings("main.duo", app.src.?);
+
+    const assets = try resolveTarget(&project, "assets", null);
+    try std.testing.expect(assets.kind == .command);
+    try std.testing.expectEqualStrings("echo assets", assets.command.?);
+    try std.testing.expectEqualStrings("prepare", assets.stage_name.?);
 
     const test_t = try resolveTarget(&project, null, .@"test");
     try std.testing.expect(test_t.kind == .@"test");
@@ -452,6 +836,7 @@ test "build_framework: sortBuildOrder respects deps" {
         .name = null,
         .version = null,
         .default_target = null,
+        .stages = try alloc.alloc(Stage, 0),
         .targets = try alloc.alloc(Target, 3),
     };
     defer project.deinit(alloc);
@@ -464,4 +849,26 @@ test "build_framework: sortBuildOrder respects deps" {
     try std.testing.expect(order.len == 3);
     try std.testing.expectEqualStrings("lib", project.targets[order[0]].name);
     try std.testing.expectEqualStrings("app", project.targets[order[1]].name);
+}
+
+test "build_framework: implicit entrypoint target" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "print(\"hello\")\n";
+    var lex = @import("lexer.zig").Lexer.init(src, "src/main.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    var project = try loadFromSema(alloc, "src/main.duo", &sem);
+    defer project.deinit(alloc);
+    try std.testing.expect(project.targets.len == 1);
+    try std.testing.expect(project.targets[0].kind == .run);
+    try std.testing.expectEqualStrings("app", project.targets[0].name);
+    try std.testing.expectEqualStrings("src/main.duo", project.targets[0].src.?);
 }

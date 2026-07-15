@@ -117,7 +117,6 @@ pub const TokenKind = enum {
     idiv, // //
     dcolon, // ::
     arrow, // ->
-    fat_arrow, // =>
     pipe_gt, // |>
     plus_assign, // +=
     minus_assign, // -=
@@ -225,7 +224,6 @@ pub const TokenKind = enum {
             .idiv => "//",
             .dcolon => "::",
             .arrow => "->",
-            .fat_arrow => "=>",
             .pipe_gt => "|>",
             .plus_assign => "+=",
             .minus_assign => "-=",
@@ -646,7 +644,7 @@ pub const Lexer = struct {
             "i16",     "i32",   "i64",      "u8",    "u16",     "u32",    "u64",
             "f32",     "f64",   "bool",     "void",  "str",     "match",  "try",
             "catch",   "defer", "async",    "await", "concept", "alias",  "private",
-            "extends", "macro",  "comptime",
+            "extends", "macro", "comptime",
         };
         const kinds = [_]TokenKind{
             .kw_and,     .kw_break, .kw_continue, .kw_do,    .kw_else,    .kw_elseif, .kw_end,
@@ -761,9 +759,6 @@ pub const Lexer = struct {
             '=' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .eq, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else if (self.peek_char() == '>') blk: {
-                _ = self.adv();
-                break :blk Token{ .kind = .fat_arrow, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .assign, .loc = l, .text = self.src[p - 1 .. p] },
             '~' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
@@ -1252,23 +1247,6 @@ test "lex: bang operator" {
     try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
 }
 
-test "lex: fat arrow operator" {
-    var l = Lexer.init("=>", "test");
-    const tok = try l.next();
-    try testing.expectEqual(TokenKind.fat_arrow, tok.kind);
-    try testing.expectEqualStrings("=>", tok.text);
-    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
-}
-
-test "lex: fat arrow distinguished from assign" {
-    var l = Lexer.init("= =>", "test");
-    const t1 = try l.next();
-    try testing.expectEqual(TokenKind.assign, t1.kind);
-    const t2 = try l.next();
-    try testing.expectEqual(TokenKind.fat_arrow, t2.kind);
-    try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
-}
-
 test "lex: at question bang in sequence" {
     var l = Lexer.init("@ ? !", "test");
     try testing.expectEqual(TokenKind.at, (try l.next()).kind);
@@ -1309,12 +1287,11 @@ test "lex: postfix operators after name" {
     try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
 }
 
-test "lex: match arm with fat arrow" {
-    // Pattern: | Some(x) => body
-    var l = Lexer.init("| x => 42", "test");
+test "lex: match arm with then separator" {
+    var l = Lexer.init("| x then 42", "test");
     try testing.expectEqual(TokenKind.pipe, (try l.next()).kind);
     try testing.expectEqual(TokenKind.name, (try l.next()).kind);
-    try testing.expectEqual(TokenKind.fat_arrow, (try l.next()).kind);
+    try testing.expectEqual(TokenKind.kw_then, (try l.next()).kind);
     try testing.expectEqual(TokenKind.int_lit, (try l.next()).kind);
     try testing.expectEqual(TokenKind.eof, (try l.next()).kind);
 }

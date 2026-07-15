@@ -1152,8 +1152,8 @@ fn build_enum_match_src(
     if (!w.print("enum {s}\n", .{enum_name})) return null;
     for (0..variants) |i| if (!w.print("  V{d}\n", .{i})) return null;
     if (!w.print("end\nlocal v = {s}\nmatch v\n", .{enum_name})) return null;
-    for (0..covered) |i| if (!w.print("  {s}.V{d} => print(1)\n", .{ enum_name, i })) return null;
-    if (wildcard) if (!w.print("  _ => print(0)\n", .{})) return null;
+    for (0..covered) |i| if (!w.print("  {s}.V{d} then print(1)\n", .{ enum_name, i })) return null;
+    if (wildcard) if (!w.print("  _ then print(0)\n", .{})) return null;
     if (!w.print("end\n", .{})) return null;
     return w.written();
 }

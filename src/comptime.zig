@@ -161,6 +161,11 @@ pub const Evaluator = struct {
             .table => |table| try self.evalTable(table.fields),
             .func_expr => |func| try self.makeFunc(func),
             .match_expr => |match_expr| try self.evalMatch(match_expr),
+            .sequence => |seq| blk: {
+                // Evaluate all expressions, return the first (multi-value semantics)
+                if (seq.exprs.len == 0) break :blk .nil;
+                break :blk try self.eval(seq.exprs[0]);
+            },
             else => error.UnsupportedExpression,
         };
     }

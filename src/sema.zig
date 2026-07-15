@@ -225,6 +225,11 @@ pub const Sema = struct {
     /// Registry of overloaded function signatures (Requirement 12).
     /// Maps function name → list of overload signatures.
     overloads: std.StringHashMapUnmanaged(std.ArrayListUnmanaged(FuncSignature)) = .{},
+    /// Top-level type aliases, used by semantic type resolution.
+    alias_defs: std.StringHashMapUnmanaged(*const ast.AliasDef) = .{},
+    /// Top-level function generic arities. `null` means the function exists but
+    /// is not generic.
+    generic_func_arities: std.StringHashMapUnmanaged(?usize) = .{},
     /// Tracked generic instantiation sites for the monomorphizer (Requirement 4.1, 4.3).
     instantiation_sites: std.ArrayListUnmanaged(InstantiationRecord) = .empty,
     /// Aggressive field-type tracking: maps "varname.fieldname" → inferred RT.
@@ -326,6 +331,7 @@ pub const Sema = struct {
             std.mem.eql(u8, name, "__comptimeif") or
             std.mem.eql(u8, name, "__static_assert") or
             std.mem.eql(u8, name, "__typeof") or
+            std.mem.eql(u8, name, "__as") or
             std.mem.eql(u8, name, "__likely") or
             std.mem.eql(u8, name, "__unlikely") or
             std.mem.eql(u8, name, "__prefetch") or
@@ -416,6 +422,8 @@ pub const Sema = struct {
             entry.value_ptr.deinit(self.alloc);
         }
         self.overloads.deinit(self.alloc);
+        self.alias_defs.deinit(self.alloc);
+        self.generic_func_arities.deinit(self.alloc);
         self.instantiation_sites.deinit(self.alloc);
         self.test_entries.deinit(self.alloc);
         self.build_directives.deinit(self.alloc);
@@ -1138,6 +1146,8 @@ pub const Sema = struct {
         self.test_entries.clearRetainingCapacity();
         self.build_directives.clearRetainingCapacity();
         self.debug_directives.clearRetainingCapacity();
+        self.alias_defs.clearRetainingCapacity();
+        self.generic_func_arities.clearRetainingCapacity();
         try self.scope.push();
         self.seed_globals();
         // Lua 5.5 scripts use implicit globals at module scope; Duo uses implicit locals.
@@ -1150,7 +1160,12 @@ pub const Sema = struct {
                 .func_decl => |fd| {
                     if (fd.path.len >= 1) {
                         self.scope.define(fd.path[0], .{ .typ = .any, .is_const = false }) catch {};
+                        const arity: ?usize = if (fd.func.type_params) |params| params.len else null;
+                        try self.generic_func_arities.put(self.alloc, fd.path[0], arity);
                     }
+                },
+                .alias_def => {
+                    try self.alias_defs.put(self.alloc, stmt.alias_def.name, &stmt.alias_def);
                 },
                 .local_decl => |ld| {
                     for (ld.names) |name| {
@@ -1200,6 +1215,91 @@ pub const Sema = struct {
 
     // ── Block / statements ────────────────────────────────────────────────────
 
+    fn resolve_type(self: *Sema, type_expr: ast.TypeExpr) Allocator.Error!RT {
+        if (type_expr == .generic and type_expr.generic.base.* == .named) {
+            if (self.alias_defs.get(type_expr.generic.base.named)) |ad| {
+                if (ad.type_params) |type_params| {
+                    if (ad.target != null and type_params.len == type_expr.generic.params.len) {
+                        const expanded = try self.substitute_alias_type(ad.target.?, type_params, type_expr.generic.params);
+                        return self.resolve_type(expanded);
+                    }
+                }
+            }
+        }
+        return types.resolve(type_expr, self, self.alloc) catch .any;
+    }
+
+    fn substitute_alias_type(
+        self: *Sema,
+        type_expr: ast.TypeExpr,
+        params: []const ast.TypeExpr,
+        args: []const ast.TypeExpr,
+    ) Allocator.Error!ast.TypeExpr {
+        if (type_expr == .named) {
+            for (params, 0..) |param, i| {
+                if (param == .named and std.mem.eql(u8, param.named, type_expr.named)) return args[i];
+            }
+            return type_expr;
+        }
+        return switch (type_expr) {
+            .inferred => .inferred,
+            .named => unreachable,
+            .pointer => |inner| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.substitute_alias_type(inner.*, params, args);
+                break :blk .{ .pointer = next };
+            },
+            .optional => |inner| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.substitute_alias_type(inner.*, params, args);
+                break :blk .{ .optional = next };
+            },
+            .array => |arr| blk: {
+                const elem = try self.alloc.create(ast.TypeExpr);
+                elem.* = try self.substitute_alias_type(arr.elem.*, params, args);
+                break :blk .{ .array = .{ .elem = elem, .size = arr.size } };
+            },
+            .generic => |g| blk: {
+                const base = try self.alloc.create(ast.TypeExpr);
+                base.* = try self.substitute_alias_type(g.base.*, params, args);
+                const gargs = try self.alloc.alloc(ast.TypeExpr, g.params.len);
+                for (g.params, 0..) |arg, i| {
+                    gargs[i] = try self.substitute_alias_type(arg, params, args);
+                }
+                break :blk .{ .generic = .{ .base = base, .params = gargs } };
+            },
+            .func => |f| blk: {
+                const fparams = try self.alloc.alloc(ast.TypeExpr, f.params.len);
+                for (f.params, 0..) |param, i| {
+                    fparams[i] = try self.substitute_alias_type(param, params, args);
+                }
+                const ret = try self.alloc.create(ast.TypeExpr);
+                ret.* = try self.substitute_alias_type(f.ret.*, params, args);
+                break :blk .{ .func = .{ .params = fparams, .ret = ret } };
+            },
+            .tuple => |items| blk: {
+                const out = try self.alloc.alloc(ast.TypeExpr, items.len);
+                for (items, 0..) |item, i| {
+                    out[i] = try self.substitute_alias_type(item, params, args);
+                }
+                break :blk .{ .tuple = out };
+            },
+            .record => |rec| blk: {
+                const fields = try self.alloc.alloc(ast.RecordField, rec.fields.len);
+                for (rec.fields, 0..) |field, i| {
+                    fields[i] = .{
+                        .name = field.name,
+                        .typ = try self.substitute_alias_type(field.typ, params, args),
+                        .loc = field.loc,
+                    };
+                }
+                const next = try self.alloc.create(ast.TypeExpr.RecordType);
+                next.* = .{ .fields = fields };
+                break :blk .{ .record = next };
+            },
+        };
+    }
+
     fn check_return_value(self: *Sema, loc: ast.Loc, actual: RT) void {
         if (self.current_ret == .any or self.current_ret == .void or actual == .any) return;
         if (!type_annotation_accepts_init(self.current_ret, actual)) {
@@ -1221,6 +1321,91 @@ pub const Sema = struct {
         self.scope.pop();
     }
 
+    const SpecializeArgsInfo = struct {
+        name: []const u8,
+        type_arg_count: usize,
+        has_empty_type_arg: bool,
+    };
+
+    fn specialize_args_info(raw: []const u8) SpecializeArgsInfo {
+        var name: []const u8 = "";
+        var count: usize = 0;
+        var has_empty = false;
+        var start: usize = 0;
+        var depth: usize = 0;
+        var quote: ?u8 = null;
+        var saw_first = false;
+        var i: usize = 0;
+        while (i < raw.len) : (i += 1) {
+            const c = raw[i];
+            if (quote) |q| {
+                if (c == '\\') {
+                    i += 1;
+                } else if (c == q) {
+                    quote = null;
+                }
+                continue;
+            }
+            switch (c) {
+                '"', '\'' => quote = c,
+                '(', '[', '{' => depth += 1,
+                ')', ']', '}' => {
+                    if (depth > 0) depth -= 1;
+                },
+                ',' => if (depth == 0) {
+                    const part = std.mem.trim(u8, raw[start..i], " \t\r\n");
+                    if (!saw_first) {
+                        name = part;
+                        saw_first = true;
+                    } else {
+                        if (part.len == 0) has_empty = true;
+                        count += 1;
+                    }
+                    start = i + 1;
+                },
+                else => {},
+            }
+        }
+        const last = std.mem.trim(u8, raw[start..], " \t\r\n");
+        if (!saw_first) {
+            name = last;
+        } else {
+            if (last.len == 0) has_empty = true;
+            count += 1;
+        }
+        return .{ .name = name, .type_arg_count = count, .has_empty_type_arg = has_empty };
+    }
+
+    fn check_specialize_directive(self: *Sema, loc: ast.Loc, raw_args: ?[]const u8) void {
+        const args = raw_args orelse {
+            self.err(loc, "@specialize expects a generic function name followed by type arguments", .{});
+            return;
+        };
+        const info = specialize_args_info(args);
+        const name = info.name;
+        if (name.len == 0) {
+            self.err(loc, "@specialize expects a generic function name followed by type arguments", .{});
+            return;
+        }
+
+        if (info.has_empty_type_arg) {
+            self.err(loc, "@specialize({s}, ...) contains an empty type argument", .{name});
+            return;
+        }
+
+        const arity = self.generic_func_arities.get(name) orelse {
+            self.err(loc, "@specialize target '{s}' is not a known top-level function", .{name});
+            return;
+        };
+        const want = arity orelse {
+            self.err(loc, "@specialize target '{s}' is not generic", .{name});
+            return;
+        };
+        if (info.type_arg_count != want) {
+            self.err(loc, "@specialize target '{s}' expects {d} type argument(s), got {d}", .{ name, want, info.type_arg_count });
+        }
+    }
+
     fn check_stmt(self: *Sema, stmt: *ast.Stmt) SemaError!void {
         switch (stmt.*) {
             .local_decl => |*ld| {
@@ -1239,7 +1424,7 @@ pub const Sema = struct {
                         .any;
                     // If annotated, use the annotation and enforce type match
                     if (lname.typ != .inferred) {
-                        const ann = types.resolve(lname.typ, self, self.alloc) catch .any;
+                        const ann = try self.resolve_type(lname.typ);
                         // Check type mismatch: if init type is known (not any/nil) and
                         // annotation is known (not any), they must match
                         if (i < init_types.items.len) {
@@ -1289,7 +1474,7 @@ pub const Sema = struct {
             .const_decl => |*cd| {
                 var t = try self.check_expr(cd.val);
                 if (cd.typ != .inferred)
-                    t = types.resolve(cd.typ, self, self.alloc) catch .any;
+                    t = try self.resolve_type(cd.typ);
                 try self.maybe_register_meta_concept(cd.ident, cd.val);
                 try self.scope.define(cd.ident, .{ .typ = t, .is_const = true });
             },
@@ -1312,7 +1497,7 @@ pub const Sema = struct {
                     else
                         .any;
                     if (lname.typ != .inferred) {
-                        const ann = types.resolve(lname.typ, self, self.alloc) catch .any;
+                        const ann = try self.resolve_type(lname.typ);
                         t = ann;
                     }
                     apply_record_layout_attrs(&t, lname.attributes);
@@ -1396,7 +1581,7 @@ pub const Sema = struct {
                 try self.scope.push();
                 var var_t: RT = .i64;
                 if (nf.var_typ != .inferred)
-                    var_t = types.resolve(nf.var_typ, self, self.alloc) catch .i64;
+                    var_t = self.resolve_type(nf.var_typ) catch .i64;
                 try self.scope.define(nf.var_name, .{
                     .typ = var_t,
                     .is_const = true,
@@ -1485,6 +1670,8 @@ pub const Sema = struct {
                 if (directives.isCInterfaceDirective(dir.attr.name)) return;
                 if (directives.validateModuleDirective(dir.attr)) |bad| {
                     self.err(dir.loc, "unknown module directive '@{s}'", .{bad});
+                } else if (std.mem.eql(u8, dir.attr.name, "specialize")) {
+                    self.check_specialize_directive(dir.loc, dir.attr.args);
                 } else if (directives.isBuildDirective(dir.attr.name)) {
                     try self.build_directives.append(self.alloc, dir.attr);
                 } else if (directives.isDebugDirective(dir.attr.name)) {
@@ -1507,12 +1694,12 @@ pub const Sema = struct {
                 param_types[i] = .any;
                 all_typed = false;
             } else {
-                param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
+                param_types[i] = try self.resolve_type(p.typ);
             }
         }
         var ret_t: RT = .any;
         if (fb.ret_type != .inferred) {
-            ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
+            ret_t = try self.resolve_type(fb.ret_type);
         } else {
             all_typed = false;
         }
@@ -1684,6 +1871,7 @@ pub const Sema = struct {
                     }
                     if (std.mem.eql(u8, bn, "__typeinfo")) return .str;
                     if (std.mem.eql(u8, bn, "__emit")) return .any;
+                    if (std.mem.eql(u8, bn, "__c_call")) return .any;
                     if (std.mem.eql(u8, bn, "__bitcast")) return .any;
                     if (std.mem.eql(u8, bn, "__volatile")) return .any;
                     if (std.mem.eql(u8, bn, "__comptimeif") and c.args.len == 3) {
@@ -1723,6 +1911,7 @@ pub const Sema = struct {
                     }
                     if (std.mem.eql(u8, bn, "__static_assert")) return .any;
                     if (std.mem.eql(u8, bn, "__typeof")) return .any;
+                    if (std.mem.eql(u8, bn, "__as")) return .any;
                     if (std.mem.eql(u8, bn, "__select") and c.args.len >= 2) {
                         return try self.check_expr(c.args[1]);
                     }
@@ -2002,6 +2191,12 @@ pub const Sema = struct {
                 _ = try self.check_expr(ce.rhs);
                 // `x in y` is always a boolean test.
                 return .bool;
+            },
+            .sequence => |seq| {
+                // Check all sub-expressions; return type of first (primary value).
+                if (seq.exprs.len == 0) return .nil;
+                for (seq.exprs) |e| _ = try self.check_expr(e);
+                return try self.check_expr(seq.exprs[0]);
             },
         };
     }
@@ -2406,9 +2601,9 @@ pub const Sema = struct {
 
         var param_types = try self.alloc.alloc(RT, fb.params.len);
         for (fb.params, 0..) |*p, i| {
-            param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
+            param_types[i] = try self.resolve_type(p.typ);
         }
-        var ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
+        var ret_t = try self.resolve_type(fb.ret_type);
 
         // Register the function before checking the body so recursive calls type-check.
         const ret_ptr = try self.alloc.create(RT);
@@ -2482,7 +2677,7 @@ pub const Sema = struct {
             if (fb.params.len > 0) {
                 self.warn_msg(fd.loc, "@test function '{s}' should take no parameters for the native test runner", .{fd.path[0]});
             }
-            if (fb.ret_type != .inferred and types.resolve(fb.ret_type, self, self.alloc) catch .any != .void) {
+            if (fb.ret_type != .inferred and (self.resolve_type(fb.ret_type) catch .any) != .void) {
                 self.warn_msg(fd.loc, "@test function '{s}' should return void", .{fd.path[0]});
             }
             try self.test_entries.append(self.alloc, .{
@@ -2517,9 +2712,9 @@ pub const Sema = struct {
 
         // Re-resolve after possible inference.
         for (fb.params, 0..) |*p, i| {
-            param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
+            param_types[i] = try self.resolve_type(p.typ);
         }
-        ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
+        ret_t = try self.resolve_type(fb.ret_type);
         var params_native = true;
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
@@ -2591,9 +2786,9 @@ pub const Sema = struct {
             promote_native_f64_signature(fb);
 
         for (fb.params, 0..) |*p, i| {
-            param_types[i] = types.resolve(p.typ, self, self.alloc) catch .any;
+            param_types[i] = try self.resolve_type(p.typ);
         }
-        ret_t = types.resolve(fb.ret_type, self, self.alloc) catch .any;
+        ret_t = try self.resolve_type(fb.ret_type);
         params_native = true;
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
@@ -2707,7 +2902,7 @@ pub const Sema = struct {
                 // Bind the variable in the current scope with the scrutinee's type
                 var bind_type = scrutinee_type;
                 if (b.typ) |type_expr| {
-                    bind_type = types.resolve(type_expr, self, self.alloc) catch .any;
+                    bind_type = try self.resolve_type(type_expr);
                 }
                 try self.scope.define(b.name, .{ .typ = bind_type, .is_const = true });
             },
@@ -2864,7 +3059,7 @@ pub const Sema = struct {
             if (v.payload) |fields| {
                 var pt = try self.alloc.alloc(RT, fields.len);
                 for (fields, 0..) |field, fi| {
-                    pt[fi] = types.resolve(field.typ, self, self.alloc) catch .any;
+                    pt[fi] = try self.resolve_type(field.typ);
                 }
                 payload_types = pt;
             }
@@ -2943,7 +3138,7 @@ pub const Sema = struct {
         // Build method requirements
         var methods = try self.alloc.alloc(ConceptInfo.MethodRequirement, cd.required_methods.len);
         for (cd.required_methods, 0..) |*m, i| {
-            const ret_t = types.resolve(m.ret_type, self, self.alloc) catch .any;
+            const ret_t = try self.resolve_type(m.ret_type);
             methods[i] = .{
                 .name = m.name,
                 .param_count = m.params.len,
@@ -2954,7 +3149,7 @@ pub const Sema = struct {
         // Build field requirements
         var fields = try self.alloc.alloc(ConceptInfo.FieldRequirement, cd.required_fields.len);
         for (cd.required_fields, 0..) |*f, i| {
-            const field_t = types.resolve(f.typ, self, self.alloc) catch .any;
+            const field_t = try self.resolve_type(f.typ);
             fields[i] = .{
                 .name = f.name,
                 .typ = field_t,
@@ -3222,7 +3417,7 @@ pub const Sema = struct {
             var found = false;
             for (record_fields) |rec_field| {
                 if (std.mem.eql(u8, rec_field.name, req_field.name)) {
-                    const rec_field_type = types.resolve(rec_field.typ, self, self.alloc) catch .any;
+                    const rec_field_type = try self.resolve_type(rec_field.typ);
                     if (req_field.typ != .any and rec_field_type != .any and !req_field.typ.eql(rec_field_type)) {
                         self.errors += 1;
                         term.locErr(loc, "binding '{s}' field '{s}' has type {}, but concept '{s}' requires type {}", .{
@@ -5094,7 +5289,7 @@ pub const Sema = struct {
                             var t: RT = .any;
                             if (i < ld.inits.len) t = self.expr_type(ld.inits[i]);
                             if (lname.typ != .inferred) {
-                                t = types.resolve(lname.typ, self.sema, self.sema.alloc) catch .any;
+                                t = self.sema.resolve_type(lname.typ) catch .any;
                             }
                             if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0) {
                                 continue; // dense table placeholder
@@ -5109,7 +5304,7 @@ pub const Sema = struct {
                     .const_decl => |*cd| {
                         var t = self.expr_type(cd.val);
                         if (cd.typ != .inferred) {
-                            t = types.resolve(cd.typ, self.sema, self.sema.alloc) catch .any;
+                            t = self.sema.resolve_type(cd.typ) catch .any;
                         }
                         if (!t.is_native()) continue;
                         self.local_tys.put(cd.ident, t) catch return false;
@@ -5117,7 +5312,7 @@ pub const Sema = struct {
                     .num_for => |*nf| {
                         var t: RT = .i64;
                         if (nf.var_typ != .inferred) {
-                            t = types.resolve(nf.var_typ, self.sema, self.sema.alloc) catch .i64;
+                            t = self.sema.resolve_type(nf.var_typ) catch .i64;
                         }
                         if (!t.is_native()) return false;
                         self.local_tys.put(nf.var_name, t) catch return false;
@@ -5324,6 +5519,10 @@ pub const Sema = struct {
                 .quote, .unquote, .macro_call => blk: {
                     self.ok = false;
                     break :blk .any;
+                },
+                .sequence => |seq| blk: {
+                    if (seq.exprs.len == 0) break :blk .nil;
+                    break :blk self.infer_expr(seq.exprs[0], hint);
                 },
             };
             return result;
@@ -5825,9 +6024,9 @@ test "sema: match_stmt scrutinee and arms are type-checked" {
     const src =
         \\local x = 42
         \\match x
-        \\  1 => print("one")
-        \\  2 => print("two")
-        \\  _ => print("other")
+        \\  1 then print("one")
+        \\  2 then print("two")
+        \\  _ then print("other")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -5850,8 +6049,8 @@ test "sema: match on enum with wildcard is exhaustive" {
         \\end
         \\local c = Color
         \\match c
-        \\  Color.Red => print("red")
-        \\  _ => print("other")
+        \\  Color.Red then print("red")
+        \\  _ then print("other")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -5874,7 +6073,7 @@ test "sema: match on enum missing variants emits error" {
         \\end
         \\local c = Color
         \\match c
-        \\  Color.Red => print("red")
+        \\  Color.Red then print("red")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -5897,8 +6096,8 @@ test "sema: match on enum all variants covered is exhaustive" {
         \\end
         \\local d = Direction
         \\match d
-        \\  Direction.Up => print("up")
-        \\  Direction.Down => print("down")
+        \\  Direction.Up then print("up")
+        \\  Direction.Down then print("down")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -5916,7 +6115,7 @@ test "sema: match on non-enum does not check exhaustiveness" {
     const src =
         \\local x = 42
         \\match x
-        \\  1 => print("one")
+        \\  1 then print("one")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -5996,9 +6195,9 @@ test "sema: match on enum with unqualified variant names" {
         \\end
         \\local s = Shape
         \\match s
-        \\  Shape.Circle => print("circle")
-        \\  Shape.Square => print("square")
-        \\  Shape.Triangle => print("triangle")
+        \\  Shape.Circle then print("circle")
+        \\  Shape.Square then print("square")
+        \\  Shape.Triangle then print("triangle")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -6023,8 +6222,8 @@ test "sema: match on enum partial coverage emits specific missing variants" {
         \\end
         \\local s = Season
         \\match s
-        \\  Season.Spring => print("spring")
-        \\  Season.Summer => print("summer")
+        \\  Season.Spring then print("spring")
+        \\  Season.Summer then print("summer")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -6047,8 +6246,8 @@ test "sema: match expression type-checks scrutinee and arms" {
         \\end
         \\local c = Coin
         \\local result = match c
-        \\  Coin.Heads => return 1
-        \\  Coin.Tails => return 0
+        \\  Coin.Heads then return 1
+        \\  Coin.Tails then return 0
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -6066,8 +6265,8 @@ test "sema: match with guard expressions type-checked" {
     const src =
         \\local x = 42
         \\match x
-        \\  n if n > 10 => print("big")
-        \\  _ => print("small")
+        \\  n if n > 10 then print("big")
+        \\  _ then print("small")
         \\end
     ;
     var lex = Lexer.init(src, "test");
@@ -6087,6 +6286,18 @@ fn runSemaDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     s.duo_mode = true;
     try s.check_module(&mod);
     return s;
+}
+
+test "sema: generic type alias resolves in function parameter annotations" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\type Vec<T> = List[T]
+        \\fun first(xs: Vec[i64]): i64
+        \\  return xs[0]
+        \\end
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
 }
 
 test "sema: duo mode — bare assignment creates local binding" {
@@ -6584,6 +6795,63 @@ test "sema: @arc(false) rejects function declaration" {
     try testing.expect(s.errors > 0);
 }
 
+test "sema: @specialize accepts known generic target with matching arity" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\fun id<T>(x: T): T
+        \\  return x
+        \\end
+        \\@specialize(id, i64)
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: @specialize rejects unknown target" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\@specialize(missing, i64)
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @specialize rejects non-generic target" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\fun plain(x: i64): i64
+        \\  return x
+        \\end
+        \\@specialize(plain, i64)
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @specialize rejects wrong type argument count" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\fun pair<T, U>(x: T, y: U): T
+        \\  return x
+        \\end
+        \\@specialize(pair, i64)
+    , &arena);
+    try testing.expect(s.errors > 0);
+}
+
+test "sema: @specialize counts nested generic type argument commas" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const s = try runSemaDuo(
+        \\fun id<T>(x: T): T
+        \\  return x
+        \\end
+        \\@specialize(id, Result[i64, str])
+    , &arena);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
 test "sema: @deprecated binding emits warning at use site" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -6649,8 +6917,8 @@ test "sema: try_stmt body can discriminate error inside catch via __tag" {
         \\  local x = 42
         \\catch e
         \\  match e.__tag
-        \\    "NotFound" => local y = 1
-        \\    _ => local z = 2
+        \\    "NotFound" then local y = 1
+        \\    _ then local z = 2
         \\  end
         \\end
     ;

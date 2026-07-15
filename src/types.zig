@@ -411,6 +411,10 @@ pub const ResolvedType = union(enum) {
                 },
                 else => false,
             },
+            .array => |aa| switch (b) {
+                .array => |ab| aa.elem.eql(ab.elem.*) and aa.size == ab.size,
+                else => false,
+            },
             .func => |fa| switch (b) {
                 .func => |fb| blk: {
                     if (fa.params.len != fb.params.len) break :blk false;
@@ -421,7 +425,6 @@ pub const ResolvedType = union(enum) {
                 },
                 else => false,
             },
-            else => false,
         };
     }
 
@@ -528,14 +531,16 @@ pub const ResolvedType = union(enum) {
             .nil => "void*",
             .never => "void",
             .pointer => |p| {
-                const inner = p.c_type(buf);
+                var inner_buf: [128]u8 = undefined;
+                const inner = p.c_type(&inner_buf);
                 return std.fmt.bufPrint(buf, "{s}*", .{inner}) catch inner;
             },
             .@"struct" => |s| {
                 return std.fmt.bufPrint(buf, "duo_{s}", .{s.name}) catch s.name;
             },
             .array => |a| {
-                const inner = a.elem.c_type(buf);
+                var inner_buf: [128]u8 = undefined;
+                const inner = a.elem.c_type(&inner_buf);
                 if (a.size) |n| {
                     return std.fmt.bufPrint(buf, "{s}[{}]", .{ inner, n }) catch inner;
                 }
@@ -673,6 +678,8 @@ pub const ResolvedType = union(enum) {
     }
 };
 
+pub const c_type_marker_prefix = "__c_type:";
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const testing = @import("std").testing;
@@ -791,6 +798,13 @@ test "ResolvedType.c_type primitive names" {
     try testing.expectEqualStrings("lua_Value", r(.any).c_type(&buf));
 }
 
+test "ResolvedType.c_type pointer to external C type" {
+    var buf: [64]u8 = undefined;
+    var file = ResolvedType{ .table_type = .{ .fields = &.{}, .ffi_name = "FILE" } };
+    const ptr = ResolvedType{ .pointer = &file };
+    try testing.expectEqualStrings("FILE*", ptr.c_type(&buf));
+}
+
 test "resolve: primitive named types" {
     const alloc = testing.allocator;
     const ATE = @import("ast.zig").TypeExpr;
@@ -892,6 +906,12 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
     return switch (te) {
         .inferred => .any,
         .named => |n| {
+            if (std.mem.startsWith(u8, n, c_type_marker_prefix)) {
+                return ResolvedType{ .table_type = .{
+                    .fields = &.{},
+                    .ffi_name = n[c_type_marker_prefix.len..],
+                } };
+            }
             // Single uppercase letters are type parameters (e.g. Tensor[M, K, f32]).
             if (n.len == 1) {
                 const c = n[0];
@@ -938,6 +958,11 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                     }
                 }
                 return ResolvedType{ .@"struct" = .{ .name = n } };
+            }
+            if (sema) |s| {
+                const sema_mod = @import("sema.zig");
+                const sema_ptr: *const sema_mod.Sema = @ptrCast(@alignCast(s));
+                if (sema_ptr.enum_types.get(n)) |enum_t| return enum_t;
             }
             return ResolvedType{ .@"struct" = .{ .name = n } };
         },

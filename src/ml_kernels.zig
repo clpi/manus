@@ -299,7 +299,7 @@ pub const decls =
     \\                if (row[j] > mx) mx = row[j];
     \\            double sm = 0.0;
     \\            DUO_ML_VEC
-    \\            for (int j = 0; j < SEQ; j++) { row[j] = exp(row[j] - mx); sm += row[j]; }
+    \\            for (int j = 0; j < SEQ; j++) { row[j] = duo_ml_exp_m1_0_poly8(row[j] - mx); sm += row[j]; }
     \\            const double inv = 1.0 / sm;
     \\            DUO_ML_VEC
     \\            for (int j = 0; j < SEQ; j++) row[j] *= inv;

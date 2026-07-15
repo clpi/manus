@@ -6,8 +6,9 @@
 //! A generic function in Duo is a top-level `func_decl` whose `FuncBody` carries
 //! a non-empty `type_params` list (`fun id<T>(x: T) -> T ...`). At each call site
 //! the concrete type arguments are *inferred* from the static types of the
-//! argument expressions (Duo has no turbofish syntax), which the semantic pass
-//! has already recorded in its `type_map` (`*Expr -> ResolvedType`).
+//! argument expressions, or explicitly requested with `@specialize(name, T, U)`.
+//! Inferred call-site types come from the semantic pass' `type_map`
+//! (`*Expr -> ResolvedType`).
 //!
 //! The monomorphizer:
 //!   1. collects every generic function declaration in the module;
@@ -35,6 +36,8 @@ const debug_trace = @import("debug_trace.zig");
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const sema_mod = @import("sema.zig");
+const Lexer = @import("lexer.zig").Lexer;
+const Parser = @import("parser.zig").Parser;
 
 const Allocator = std.mem.Allocator;
 const RT = types.ResolvedType;
@@ -323,7 +326,11 @@ pub const Monomorphizer = struct {
                 for (t.defers) |d| try self.collectSitesBlock(&d.body, env);
             },
             .defer_stmt => |d| try self.collectSitesBlock(&d.body, env),
-            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude, .directive => {},
+            .directive => |d| {
+                if (std.mem.eql(u8, d.attr.name, "specialize"))
+                    try self.recordExplicitSpecialization(d.attr.args orelse "");
+            },
+            .brk, .cont, .goto_stmt, .label_stmt, .enum_def, .concept_def, .alias_def, .macro_def, .cinclude => {},
         }
     }
 
@@ -383,6 +390,9 @@ pub const Monomorphizer = struct {
             },
             .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
+            .sequence => |seq| {
+                for (seq.exprs) |e| try self.collectSitesExpr(e, env);
+            },
         }
     }
 
@@ -535,6 +545,55 @@ pub const Monomorphizer = struct {
         });
     }
 
+    fn recordExplicitSpecialization(self: *Self, raw_args: []const u8) !void {
+        const parts = try splitTopLevelArgs(self.alloc, raw_args);
+        defer self.alloc.free(parts);
+        if (parts.len == 0) return;
+        const name = parts[0];
+        if (name.len == 0) return;
+        const template = self.generics.get(name) orelse return;
+        const type_params = template.type_params orelse &.{};
+        if (type_params.len == 0) return;
+
+        var type_args: std.ArrayListUnmanaged(RT) = .empty;
+        errdefer type_args.deinit(self.alloc);
+        for (parts[1..]) |part| {
+            if (part.len == 0) continue;
+            try type_args.append(self.alloc, try self.directiveType(part));
+        }
+        if (type_args.items.len != type_params.len) {
+            type_args.deinit(self.alloc);
+            return;
+        }
+
+        const owned = try type_args.toOwnedSlice(self.alloc);
+        const key = SpecKey{
+            .generic_id = @intFromPtr(template),
+            .type_args_hash = hashTypeArgs(owned),
+        };
+        if (self.requested.contains(key)) {
+            self.alloc.free(owned);
+            return;
+        }
+        try self.requested.put(self.alloc, key, {});
+        try self.pending.append(self.alloc, .{
+            .template = template,
+            .generic_name = name,
+            .type_args = owned,
+            .key = key,
+        });
+    }
+
+    fn directiveType(self: *Self, name: []const u8) !RT {
+        var lex = Lexer.init(name, "specialize-type");
+        var parser = Parser.init(&lex, self.alloc);
+        const typ = parser.parse_type() catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return .any,
+        };
+        return types.resolve(typ, null, self.alloc) catch .any;
+    }
+
     fn specialize(self: *Self, req: PendingReq) !void {
         if (self.specializations.contains(req.key)) return;
 
@@ -633,6 +692,41 @@ pub const Monomorphizer = struct {
 
 // ── Free helpers ────────────────────────────────────────────────────────────
 
+fn splitTopLevelArgs(alloc: Allocator, raw: []const u8) ![]const []const u8 {
+    var args: std.ArrayListUnmanaged([]const u8) = .empty;
+    errdefer args.deinit(alloc);
+
+    var start: usize = 0;
+    var depth: usize = 0;
+    var quote: ?u8 = null;
+    var i: usize = 0;
+    while (i < raw.len) : (i += 1) {
+        const c = raw[i];
+        if (quote) |q| {
+            if (c == '\\') {
+                i += 1;
+            } else if (c == q) {
+                quote = null;
+            }
+            continue;
+        }
+        switch (c) {
+            '"', '\'' => quote = c,
+            '(', '[', '{' => depth += 1,
+            ')', ']', '}' => {
+                if (depth > 0) depth -= 1;
+            },
+            ',' => if (depth == 0) {
+                try args.append(alloc, std.mem.trim(u8, raw[start..i], " \t\r\n"));
+                start = i + 1;
+            },
+            else => {},
+        }
+    }
+    try args.append(alloc, std.mem.trim(u8, raw[start..], " \t\r\n"));
+    return args.toOwnedSlice(alloc);
+}
+
 fn typeParamName(tp: ast.TypeExpr) []const u8 {
     return switch (tp) {
         .named => |n| n,
@@ -695,8 +789,6 @@ fn appendSanitized(alloc: Allocator, buf: *std.ArrayListUnmanaged(u8), s: []cons
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 const testing = std.testing;
-const Lexer = @import("lexer.zig").Lexer;
-const Parser = @import("parser.zig").Parser;
 const Sema = sema_mod.Sema;
 
 const Harness = struct {
@@ -782,6 +874,41 @@ test "mono: non-generic functions produce no specializations" {
     try mono.run(&h.mod);
 
     try testing.expectEqual(@as(usize, 0), mono.count());
+}
+
+test "mono: explicit @specialize directive creates specialization without call site" {
+    var h = try Harness.run(
+        \\fun id<T>(x: T) -> T return x end
+        \\@specialize(id, i64)
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 1), mono.count());
+    const specs = try mono.getSpecializations("id");
+    try testing.expectEqual(@as(usize, 1), specs.len);
+    try testing.expectEqualStrings("duo_id_i64", specs[0].mangled_name);
+    try testing.expect(specs[0].type_args[0] == .i64);
+}
+
+test "mono: explicit @specialize parses nested generic type arguments" {
+    var h = try Harness.run(
+        \\fun id<T>(x: T) -> T return x end
+        \\@specialize(id, Result[i64, str])
+    );
+    defer h.deinit();
+
+    var mono = Monomorphizer.init(h.arena.allocator(), &h.sema.type_map);
+    try mono.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 1), mono.count());
+    const specs = try mono.getSpecializations("id");
+    try testing.expectEqual(@as(usize, 1), specs.len);
+    try testing.expect(specs[0].type_args[0] == .result);
+    try testing.expect(specs[0].type_args[0].result.ok.* == .i64);
+    try testing.expect(specs[0].type_args[0].result.err.* == .str);
 }
 
 test "mono: substitution map resolves a type parameter to its concrete type" {
