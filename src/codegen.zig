@@ -4748,12 +4748,14 @@ pub const CodeGen = struct {
             !fb.use_dot_product_dense and !fb.use_binary_search_dense and
             !fb.use_table_lookup_sum and !fb.use_dense_table_mod997_sum)
         {
-            // Allocate all qualifying dense tables as native int64_t arrays.
-            for (fb.dense_tables, fb.dense_table_caps) |dt, cap| {
+            // Allocate all qualifying dense tables as native arrays.
+            // Float tables get double*, integer tables get int64_t*.
+            for (fb.dense_tables, fb.dense_table_caps, fb.dense_table_floats) |dt, cap, is_float| {
+                const elem_type: []const u8 = if (is_float) "double" else "int64_t";
                 if (fb.params.len == 1 and (!fb.is_typed and !fb.use_dense_table_sum and !fb.use_dense_table_max)) {
-                    self.pl("int64_t* __dt_{s} = (int64_t*)calloc((int64_t)({s}.as.nval) + 1, sizeof(int64_t));", .{ dt, cap });
+                    self.pl("{s}* __dt_{s} = ({s}*)calloc((int64_t)({s}.as.nval) + 1, sizeof({s}));", .{ elem_type, dt, elem_type, cap, elem_type });
                 } else {
-                    self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+                    self.pl("{s}* __dt_{s} = ({s}*)calloc(({s}) + 1, sizeof({s}));", .{ elem_type, dt, elem_type, cap, elem_type });
                 }
             }
             // Fallback: if dense_tables is empty (shouldn't happen when use_dense_table is true),

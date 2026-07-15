@@ -5144,6 +5144,8 @@ pub const Sema = struct {
         // For each table, check if it only receives integer-indexed assigns/reads.
         var qualifying: std.ArrayList([]const u8) = .empty;
         defer qualifying.deinit(alloc);
+        var qualifying_floats: std.ArrayList(bool) = .empty;
+        defer qualifying_floats.deinit(alloc);
         for (table_names.items) |tname| {
             // Check for loop init pattern for this table.
             if (fb.body.stmts.len >= 2) {
@@ -5173,22 +5175,34 @@ pub const Sema = struct {
             var has_float_assign: bool = false;
 
             dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
-            if ((assigns > 0 and reads > 0 or has_loop_init) and !has_float_assign) {
+            if (assigns > 0 and reads > 0 or has_loop_init) {
                 try qualifying.append(alloc, tname);
+                try qualifying_floats.append(alloc, has_float_assign);
             }
         }
         if (qualifying.items.len == 0) return;
 
         // Populate the multi-table lists.
         fb.dense_tables = try alloc.dupe([]const u8, qualifying.items);
-        fb.dense_table_caps = try alloc.alloc([]const u8, qualifying.items.len);
-        for (fb.dense_table_caps) |*c| c.* = cap;
+        const caps_buf = try alloc.alloc([]const u8, qualifying.items.len);
+        for (caps_buf) |*c| c.* = cap;
+        fb.dense_table_caps = caps_buf;
+        fb.dense_table_floats = try alloc.dupe(bool, qualifying_floats.items);
 
         // Set backward-compat single-table fields from the first qualifying table.
+        // Only set use_dense_table for integer tables (float tables use the
+        // general multi-table path, not the specialized single-table emitters).
         const tname = qualifying.items[0];
-        fb.use_dense_table = true;
-        fb.dense_table = tname;
-        fb.dense_table_cap = cap;
+        const is_first_float = qualifying_floats.items[0];
+        if (!is_first_float) {
+            fb.use_dense_table = true;
+            fb.dense_table = tname;
+            fb.dense_table_cap = cap;
+        } else {
+            // All tables are float — set use_dense_table to route through the
+            // general allocation path (which handles float tables).
+            fb.use_dense_table = true;
+        }
     }
 
     fn detect_naive_fib_pattern(fb: *ast.FuncBody) bool {

@@ -409,6 +409,7 @@ pub const Expander = struct {
             .dense_table_cap = func.dense_table_cap,
             .dense_tables = func.dense_tables,
             .dense_table_caps = func.dense_table_caps,
+            .dense_table_floats = func.dense_table_floats,
             .use_string_byte_scan = func.use_string_byte_scan,
             .use_string_hash_scan = func.use_string_hash_scan,
             .string_scan_lit = func.string_scan_lit,
