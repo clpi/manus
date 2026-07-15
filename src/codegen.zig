@@ -1491,14 +1491,21 @@ pub const CodeGen = struct {
                         return false;
                     }
                 },
+                .repeat_loop, .gen_for, .match_stmt, .label_stmt, .goto_stmt, .global_decl => {
+                    if (!self.stmt_is_native_scalar(stmt, false)) {
+                        native_diag_fail("mod-top-stmt");
+                        if (native_diag) std.debug.print("[native-diag]   stmt kind: {s}\n", .{@tagName(stmt.*)});
+                        return false;
+                    }
+                },
+                .try_stmt, .defer_stmt => {
+                    native_diag_fail("mod-top-try-defer");
+                    return false;
+                },
+                .macro_def => {},
                 .cinclude => {},
                 .enum_def, .alias_def, .concept_def => {},
                 .directive => {},
-                .macro_def => {},
-                else => {
-                    native_diag_fail("mod-top-stmt-unhandled");
-                    return false;
-                },
             }
         }
         return true;
@@ -1531,22 +1538,41 @@ pub const CodeGen = struct {
                         break :blk false;
                     }
                 }
-                for (ld.inits) |expr| {
-                    if (!self.expr_is_native_scalar(expr)) {
+                for (ld.inits, 0..) |expr, i| {
+                    const hint: RT = if (i < ld.names.len) self.resolve_binding_type(&ld.names[i]) else .any;
+                    if (!self.init_is_native_scalar(expr, hint)) {
                         native_diag_fail("local-decl-init");
                         break :blk false;
                     }
                 }
                 break :blk true;
             },
-            .const_decl => |cd| (cd.typ == .inferred or self.type_expr_is_native_scalar(cd.typ)) and self.expr_is_native_scalar(cd.val),
+            .const_decl => |cd| blk: {
+                const typ_ok = cd.typ == .inferred or self.type_expr_is_native_scalar(cd.typ);
+                if (!typ_ok) {
+                    native_diag_fail("const-decl-typ");
+                    break :blk false;
+                }
+                const hint = if (cd.typ != .inferred) self.resolve_type(cd.typ) else .any;
+                if (!self.init_is_native_scalar(cd.val, hint)) {
+                    native_diag_fail("const-decl-init");
+                    break :blk false;
+                }
+                break :blk true;
+            },
             .assign => |as| blk: {
                 if (as.targets.len != as.values.len) break :blk false;
                 for (as.targets) |target| {
-                    if (!self.lvalue_is_native_scalar(target)) break :blk false;
+                    if (!self.lvalue_is_native_scalar(target)) {
+                        native_diag_fail("assign-target");
+                        break :blk false;
+                    }
                 }
                 for (as.values) |value| {
-                    if (!self.expr_is_native_scalar(value)) break :blk false;
+                    if (!self.expr_is_native_scalar(value)) {
+                        native_diag_fail("assign-value");
+                        break :blk false;
+                    }
                 }
                 break :blk true;
             },
@@ -1659,8 +1685,10 @@ pub const CodeGen = struct {
                     if (is_runtime_global(call.func.name.ident)) break :blk false;
                 }
                 if (!self.expr_is_native_scalar(call.func)) break :blk false;
-                for (call.args) |arg| {
-                    if (!self.expr_is_native_scalar(arg)) break :blk false;
+                const param_hints = self.call_param_types(call.func);
+                for (call.args, 0..) |arg, i| {
+                    const hint: RT = if (param_hints) |hints| (if (i < hints.len) hints[i] else .any) else .any;
+                    if (!self.init_is_native_scalar(arg, hint)) break :blk false;
                 }
                 const rt = self.expr_type(expr);
                 break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void or rt == .any;
@@ -1671,6 +1699,43 @@ pub const CodeGen = struct {
                 return false;
             },
         };
+    }
+
+    /// Like `expr_is_native_scalar` but admits a table literal when the
+    /// surrounding context expects a typed record (`table_type`). This lets
+    /// `local p: Point = {x=1, y=2}` and `f({x=1})` (with `f(p: Point)`)
+    /// stay native without falling back to the lua_Value runtime.
+    fn call_param_types(self: *CodeGen, func: *const ast.Expr) ?[]const RT {
+        if (func.* != .name) return null;
+        var name_buf: [256]u8 = undefined;
+        const body = self.func_bodies.get(self.mangled_name(func.name.ident, &name_buf)) orelse return null;
+        const fb_type = self.func_expr_type(body);
+        if (fb_type != .func) return null;
+        return fb_type.func.params;
+    }
+
+    fn init_is_native_scalar(self: *CodeGen, expr: *const ast.Expr, hint: RT) bool {
+        if (expr.* == .table and hint == .table_type) {
+            const t = expr.table;
+            var found: std.StringHashMapUnmanaged(*const ast.Expr) = .empty;
+            defer found.deinit(self.alloc);
+            var positionals: std.ArrayList(*const ast.Expr) = .empty;
+            defer positionals.deinit(self.alloc);
+            for (t.fields) |fld| switch (fld) {
+                .named => |nmd| found.put(self.alloc, nmd.key, nmd.val) catch {},
+                .positional => |pf| positionals.append(self.alloc, pf) catch {},
+                .indexed => |idx| {
+                    if (!self.expr_is_native_scalar(idx.key)) return false;
+                    if (!self.init_is_native_scalar(idx.val, .any)) return false;
+                },
+            };
+            for (hint.table_type.fields, 0..) |rf, i| {
+                const v = if (found.get(rf.name)) |val| val else if (i < positionals.items.len) positionals.items[i] else continue;
+                if (!self.init_is_native_scalar(v, rf.typ)) return false;
+            }
+            return true;
+        }
+        return self.expr_is_native_scalar(expr);
     }
 
     fn type_expr_is_native_scalar(self: *CodeGen, type_expr: ast.TypeExpr) bool {
@@ -2190,6 +2255,7 @@ pub const CodeGen = struct {
         try self.populate_record_aliases(mod);
         try self.populate_enum_defs(mod);
         try self.populate_alias_defs(mod);
+        try self.populate_func_bodies(mod);
 
         self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
         if (native_diag) std.debug.print("[native-diag] emit_module native_scalar_mode={} src={s}\n", .{ self.native_scalar_mode, self.src_path });
@@ -3104,6 +3170,18 @@ pub const CodeGen = struct {
                 if (v.payload != null and v.payload.?.len > 0) has_payload = true;
             }
             try self.enum_has_payload.put(self.alloc, ed.name, has_payload);
+        }
+    }
+
+    pub fn populate_func_bodies(self: *CodeGen, mod: *ast.Module) E!void {
+        // Also populate func_bodies so the native-scalar predicate can resolve
+        // callee parameter types (e.g. for typed-record call args).
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len == 1 and !fd.method) {
+                try self.note_func_body(fd.path[0], &fd.func);
+            }
         }
     }
 
@@ -4664,12 +4742,24 @@ pub const CodeGen = struct {
             !fb.use_dot_product_dense and !fb.use_binary_search_dense and
             !fb.use_table_lookup_sum and !fb.use_dense_table_mod997_sum)
         {
-            if (fb.dense_table) |dt| {
-                if (fb.dense_table_cap) |cap| {
-                    if (fb.params.len == 1 and (!fb.is_typed and !fb.use_dense_table_sum and !fb.use_dense_table_max)) {
-                        self.pl("int64_t* __dt_{s} = (int64_t*)calloc((int64_t)({s}.as.nval) + 1, sizeof(int64_t));", .{ dt, cap });
-                    } else {
-                        self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+            // Allocate all qualifying dense tables as native int64_t arrays.
+            for (fb.dense_tables, fb.dense_table_caps) |dt, cap| {
+                if (fb.params.len == 1 and (!fb.is_typed and !fb.use_dense_table_sum and !fb.use_dense_table_max)) {
+                    self.pl("int64_t* __dt_{s} = (int64_t*)calloc((int64_t)({s}.as.nval) + 1, sizeof(int64_t));", .{ dt, cap });
+                } else {
+                    self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+                }
+            }
+            // Fallback: if dense_tables is empty (shouldn't happen when use_dense_table is true),
+            // use the single-table fields for backward compat.
+            if (fb.dense_tables.len == 0) {
+                if (fb.dense_table) |dt| {
+                    if (fb.dense_table_cap) |cap| {
+                        if (fb.params.len == 1 and (!fb.is_typed and !fb.use_dense_table_sum and !fb.use_dense_table_max)) {
+                            self.pl("int64_t* __dt_{s} = (int64_t*)calloc((int64_t)({s}.as.nval) + 1, sizeof(int64_t));", .{ dt, cap });
+                        } else {
+                            self.pl("int64_t* __dt_{s} = (int64_t*)calloc(({s}) + 1, sizeof(int64_t));", .{ dt, cap });
+                        }
                     }
                 }
             }
@@ -4958,9 +5048,29 @@ pub const CodeGen = struct {
         }
     }
 
-    fn is_dense_table_index(self: *CodeGen, obj: *const ast.Expr) bool {
+    fn is_dense_table_name(self: *CodeGen, name: []const u8) bool {
         if (self.dense_table) |dt| {
-            return obj.* == .name and std.mem.eql(u8, obj.name.ident, dt);
+            if (std.mem.eql(u8, name, dt)) return true;
+        }
+        if (self.current_func_body) |fb| {
+            for (fb.dense_tables) |dt| {
+                if (std.mem.eql(u8, name, dt)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn is_dense_table_index(self: *CodeGen, obj: *const ast.Expr) bool {
+        if (obj.* != .name) return false;
+        const name = obj.name.ident;
+        if (self.dense_table) |dt| {
+            if (std.mem.eql(u8, name, dt)) return true;
+        }
+        // Check additional dense tables from the multi-table list.
+        if (self.current_func_body) |fb| {
+            for (fb.dense_tables) |dt| {
+                if (std.mem.eql(u8, name, dt)) return true;
+            }
         }
         return false;
     }
@@ -5838,6 +5948,13 @@ pub const CodeGen = struct {
         if (self.dense_table) |dt| {
             self.pl("free(__dt_{s});", .{dt});
         }
+        // Free additional dense tables from the multi-table list.
+        if (self.current_func_body) |fb| {
+            for (fb.dense_tables) |dt| {
+                if (self.dense_table) |primary| if (std.mem.eql(u8, dt, primary)) continue;
+                self.pl("free(__dt_{s});", .{dt});
+            }
+        }
         // error() is noreturn — emit lua_error directly without return
         if (expr.* == .call and expr.call.func.* == .name and
             std.mem.eql(u8, expr.call.func.name.ident, "error"))
@@ -6072,13 +6189,10 @@ pub const CodeGen = struct {
                         try self.note_comptime_unavailable(lname.ident);
                     }
                 } else for (ld.names, 0..) |*lname, i| {
-                    if (self.dense_table) |dt| {
-                        if (std.mem.eql(u8, lname.ident, dt) and i < ld.inits.len and
-                            ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0)
-                        {
-                            try self.note_comptime_unavailable(lname.ident);
-                            continue;
-                        }
+                    // Skip emitting lua_table_new for any dense table local.
+                    if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0 and self.is_dense_table_name(lname.ident)) {
+                        try self.note_comptime_unavailable(lname.ident);
+                        continue;
                     }
                     self.ind();
                     // Determine type
@@ -6374,7 +6488,8 @@ pub const CodeGen = struct {
                         const idx = &tgt.index;
                         if (self.is_dense_table_index(idx.obj)) {
                             is_table_assign = true;
-                            if (self.dense_table) |dt| {
+                            if (idx.obj.* == .name) {
+                                const dt = idx.obj.name.ident;
                                 self.p("__dt_{s}[", .{dt});
                                 try self.emit_expr(idx.key);
                                 self.p("] = ", .{});
@@ -6494,6 +6609,13 @@ pub const CodeGen = struct {
                 self.ind();
                 if (self.dense_table) |dt| {
                     self.pl("free(__dt_{s});", .{dt});
+                }
+                // Free additional dense tables from the multi-table list.
+                if (self.current_func_body) |fb| {
+                    for (fb.dense_tables) |dt| {
+                        if (self.dense_table) |primary| if (std.mem.eql(u8, dt, primary)) continue;
+                        self.pl("free(__dt_{s});", .{dt});
+                    }
                 }
                 if (r.vals.len == 0) {
                     if (self.current_ret == .any) {
@@ -7694,7 +7816,8 @@ pub const CodeGen = struct {
             },
             .index => |idx| {
                 if (self.is_dense_table_index(idx.obj)) {
-                    if (self.dense_table) |dt| {
+                    if (idx.obj.* == .name) {
+                        const dt = idx.obj.name.ident;
                         self.p("__dt_{s}[", .{dt});
                         try self.emit_expr(idx.key);
                         self.p("]", .{});

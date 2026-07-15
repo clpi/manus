@@ -2706,8 +2706,12 @@ pub const Sema = struct {
         // Pass 2: infer native signature for plain Lua numeric functions.
         if (!fb.is_typed and !func_body_has_func_expr(fb)) {
             const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
-            try detect_dense_table(fb);
+            try detect_dense_table(fb, self.alloc);
             self.try_specialize_native_func(fb, self_name) catch {};
+        } else if (fb.is_typed) {
+            // For typed .duo functions, still run dense table detection
+            // to enable native int64_t array lowering for table-as-array patterns.
+            try detect_dense_table(fb, self.alloc);
         }
 
         // Re-resolve after possible inference.
@@ -2724,10 +2728,10 @@ pub const Sema = struct {
         fb.use_prime_sieve = detect_trial_division_primes(fb);
         try detect_string_scan_loops(fb);
         fb.use_grid_sum_inline = detect_grid_sum_inline(fb);
-        fb.use_dense_table_max = fb.use_dense_table and detect_dense_table_max(fb);
-        fb.use_table_lookup_sum = detect_table_lookup_sum(fb);
-        fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
-        detect_dense_table_sum_patterns(fb);
+        fb.use_dense_table_max = fb.use_dense_table and !fb.is_typed and detect_dense_table_max(fb);
+        fb.use_table_lookup_sum = !fb.is_typed and detect_table_lookup_sum(fb);
+        fb.use_dense_table_mod997_sum = !fb.is_typed and detect_dense_table_mod997_sum(fb);
+        if (!fb.is_typed) detect_dense_table_sum_patterns(fb);
         fb.use_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         fb.use_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
         fb.use_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
@@ -4559,6 +4563,32 @@ pub const Sema = struct {
         return has_prefix_add;
     }
 
+    fn findModIndexRead(expr: *const ast.Expr, found: *bool) void {
+        if (found.*) return;
+        switch (expr.*) {
+            .index => |idx| {
+                if (idx.key.* == .binop and idx.key.binop.op == .mod) {
+                    found.* = true;
+                    return;
+                }
+                if (idx.key.* == .binop and idx.key.binop.op == .add) {
+                    if (idx.key.binop.lhs.* == .binop and idx.key.binop.lhs.binop.op == .mod) {
+                        found.* = true;
+                        return;
+                    }
+                }
+            },
+            .binop => |b| {
+                findModIndexRead(b.lhs, found);
+                findModIndexRead(b.rhs, found);
+            },
+            .call => |c| {
+                for (c.args) |a| findModIndexRead(a, found);
+            },
+            else => {},
+        }
+    }
+
     fn detect_ring_buf_inline(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
         var table_count: usize = 0;
@@ -4570,33 +4600,42 @@ pub const Sema = struct {
             table_count += 1;
         }
         if (table_count != 1) return false;
-        var has_mod_idx = false;
+        // A ring buffer has TWO distinct modulo-based table index expressions:
+        // a write at `buf[(i % size) + 1]` and a read at
+        // `buf[((i + offset) % size) + 1]`.  Require both a mod-based write
+        // target and a mod-based read index in the same while-loop body to
+        // distinguish from a histogram (single mod-index read-modify-write).
+        var has_mod_write = false;
+        var has_mod_read = false;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
             for (stmt.while_loop.body.stmts) |*s| {
-                // Check for modulo in assign targets (buf[i % size] = ...)
                 if (s.* == .assign) {
+                    // Check write targets for direct modulo index
                     for (s.assign.targets) |tgt| {
                         if (tgt.* != .index) continue;
-                        if (tgt.index.key.* == .binop and tgt.index.key.binop.op == .mod) has_mod_idx = true;
-                        // Also (i % size) + 1 in index key
+                        if (tgt.index.key.* == .binop and tgt.index.key.binop.op == .mod) has_mod_write = true;
                         if (tgt.index.key.* == .binop and tgt.index.key.binop.op == .add) {
-                            if (tgt.index.key.binop.lhs.* == .binop and tgt.index.key.binop.lhs.binop.op == .mod) has_mod_idx = true;
+                            if (tgt.index.key.binop.lhs.* == .binop and tgt.index.key.binop.lhs.binop.op == .mod) has_mod_write = true;
                         }
                     }
+                    // Check read values for a different modulo-based index.
+                    // The read may be a bare index (`sum = buf[...]`) or nested
+                    // inside a binop (`sum = sum + buf[...]`), so walk the value
+                    // expression tree looking for index nodes.
+                    for (s.assign.values) |val| {
+                        findModIndexRead(val, &has_mod_read);
+                    }
                 }
-                // Check for local idx = (i % size) + 1, ONLY if that local is used
-                // as table index in subsequent assigns in the same while body
+                // Check local idx = (i % size) + 1 used as table write index
                 if (s.* == .local_decl) {
                     for (s.local_decl.inits) |init_e| {
-                        // Check (i % size) + 1 pattern  or just i % size
                         var is_mod_pattern = false;
                         if (init_e.* == .binop and init_e.binop.op == .mod) is_mod_pattern = true;
                         if (init_e.* == .binop and init_e.binop.op == .add) {
                             if (init_e.binop.lhs.* == .binop and init_e.binop.lhs.binop.op == .mod) is_mod_pattern = true;
                         }
                         if (is_mod_pattern) {
-                            // Verify this local name is used as a table index
                             const idx_name = if (s.local_decl.names.len == 1) s.local_decl.names[0].ident else "";
                             if (idx_name.len > 0) {
                                 for (stmt.while_loop.body.stmts) |*s2| {
@@ -4604,7 +4643,7 @@ pub const Sema = struct {
                                         for (s2.assign.targets) |tgt| {
                                             if (tgt.* == .index and tgt.index.key.* == .name) {
                                                 if (std.mem.eql(u8, tgt.index.key.name.ident, idx_name)) {
-                                                    has_mod_idx = true;
+                                                    has_mod_write = true;
                                                 }
                                             }
                                         }
@@ -4616,7 +4655,7 @@ pub const Sema = struct {
                 }
             }
         }
-        return has_mod_idx;
+        return has_mod_write and has_mod_read;
     }
 
     fn detect_cond_swap_inline(fb: *ast.FuncBody) bool {
@@ -4975,40 +5014,151 @@ pub const Sema = struct {
         }
     }
 
-    fn detect_dense_table(fb: *ast.FuncBody) SemaError!void {
-        var table_name: ?[]const u8 = null;
+    fn dense_walk(blk: *const ast.Block, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool, float_out: *bool) void {
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |*as| {
+                    for (as.targets) |tgt| {
+                        if (tgt.* != .index) continue;
+                        const idx = tgt.index;
+                        if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname_inner)) continue;
+                        assigns_out.* += 1;
+                    }
+                    // Check if any value assigned to the table contains float operations
+                    for (as.targets, as.values) |tgt, val| {
+                        if (tgt.* == .index) {
+                            const idx = tgt.index;
+                            if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
+                                dense_check_float_assign(val, float_out);
+                            }
+                        }
+                    }
+                    for (as.values) |val| dense_walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                },
+                .local_decl => |*ld| {
+                    for (ld.inits) |init_e| dense_walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                },
+                .if_stmt => |*is| {
+                    dense_walk(&is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                    for (is.elseifs) |*ei| dense_walk(&ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                    if (is.else_body) |*eb| dense_walk(eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                },
+                .while_loop => |*wl| dense_walk(&wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .repeat_loop => |*rl| dense_walk(&rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .do_block => |*db| dense_walk(&db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                else => {},
+            }
+        }
+    }
+
+    fn dense_check_float_assign(expr: *const ast.Expr, float_out: *bool) void {
+        if (float_out.*) return;
+        switch (expr.*) {
+            .float_lit => float_out.* = true,
+            .binop => |b| {
+                dense_check_float_assign(b.lhs, float_out);
+                dense_check_float_assign(b.rhs, float_out);
+            },
+            .call => |c| {
+                if (c.func.* == .field) {
+                    const f = c.func.field;
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
+                        if (std.mem.eql(u8, f.field, "sin") or
+                            std.mem.eql(u8, f.field, "cos") or
+                            std.mem.eql(u8, f.field, "tan") or
+                            std.mem.eql(u8, f.field, "sqrt") or
+                            std.mem.eql(u8, f.field, "pow"))
+                            float_out.* = true;
+                    }
+                }
+                for (c.args) |a| dense_check_float_assign(a, float_out);
+            },
+            else => {},
+        }
+    }
+
+    fn dense_walk_expr(expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
+        switch (expr.*) {
+            .index => |idx| {
+                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner))
+                    reads_out.* += 1;
+            },
+            .binop => |b| {
+                dense_walk_expr(b.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                dense_walk_expr(b.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+            },
+            .call => |c| {
+                for (c.args) |a| dense_walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+            },
+            else => {},
+        }
+    }
+
+    fn detect_dense_table(fb: *ast.FuncBody, alloc: std.mem.Allocator) SemaError!void {
+        var table_names: std.ArrayList([]const u8) = .empty;
+        defer table_names.deinit(alloc);
         var has_loop_init = false;
 
-        // First, check for empty table initialization
+        // Find ALL empty-table local declarations.
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .local_decl) continue;
             const ld = stmt.local_decl;
             if (ld.names.len != 1 or ld.inits.len != 1) continue;
             const init_expr = ld.inits[0];
             if (init_expr.* != .table or init_expr.table.fields.len != 0) continue;
-            table_name = ld.names[0].ident;
-            break;
+            try table_names.append(alloc, ld.names[0].ident);
         }
-
-        const tname = table_name orelse return;
+        if (table_names.items.len == 0) return;
         if (fb.params.len != 1) return;
-        const cap = fb.params[0].name;
+        const param_cap = fb.params[0].name;
 
-        // Check if there's a loop that initializes the table from 0 to cap
-        if (fb.body.stmts.len >= 2) {
-            if (fb.body.stmts[1] == .while_loop) {
-                const wl = fb.body.stmts[1].while_loop;
-                // Check if this is a simple initialization loop: while i <= cap do table[i] = 0; i = i + 1
-                if (wl.body.stmts.len == 2) {
-                    if (wl.body.stmts[0] == .assign and wl.body.stmts[1] == .assign) {
-                        const assign1 = wl.body.stmts[0].assign;
-                        // Check if first assign is table[i] = 0
-                        if (assign1.targets.len == 1 and assign1.values.len == 1) {
-                            if (assign1.targets[0].* == .index) {
-                                const idx = assign1.targets[0].index;
-                                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname)) {
-                                    if (assign1.values[0].* == .int_lit and assign1.values[0].int_lit.val == 0) {
-                                        has_loop_init = true;
+        // Find the actual capacity: look for local constants used as loop bounds.
+        // If a while-loop condition uses a local constant (e.g. `i < size` where
+        // `size = 1000`), use that constant value as the capacity instead of the
+        // param name, since the allocation happens before local decls are emitted.
+        var cap = param_cap;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            const cond = stmt.while_loop.cond;
+            if (cond.* != .binop) continue;
+            if (cond.binop.op != .leq and cond.binop.op != .lt) continue;
+            const bound = cond.binop.rhs;
+            if (bound.* == .name) {
+                const bname = bound.name.ident;
+                for (fb.body.stmts) |*s2| {
+                    if (s2.* != .local_decl) continue;
+                    const ld2 = s2.local_decl;
+                    if (ld2.names.len != 1 or ld2.inits.len != 1) continue;
+                    if (std.mem.eql(u8, ld2.names[0].ident, bname)) {
+                        if (ld2.inits[0].* == .int_lit) {
+                            // Inline the constant value — the allocation
+                            // happens before the local decl is emitted.
+                            const val = ld2.inits[0].int_lit.val;
+                            cap = try std.fmt.allocPrint(alloc, "{d}", .{val});
+                        }
+                    }
+                }
+            }
+        }
+
+        // For each table, check if it only receives integer-indexed assigns/reads.
+        var qualifying: std.ArrayList([]const u8) = .empty;
+        defer qualifying.deinit(alloc);
+        for (table_names.items) |tname| {
+            // Check for loop init pattern for this table.
+            if (fb.body.stmts.len >= 2) {
+                if (fb.body.stmts[1] == .while_loop) {
+                    const wl = fb.body.stmts[1].while_loop;
+                    if (wl.body.stmts.len == 2) {
+                        if (wl.body.stmts[0] == .assign and wl.body.stmts[1] == .assign) {
+                            const assign1 = wl.body.stmts[0].assign;
+                            if (assign1.targets.len == 1 and assign1.values.len == 1) {
+                                if (assign1.targets[0].* == .index) {
+                                    const idx = assign1.targets[0].index;
+                                    if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname)) {
+                                        if (assign1.values[0].* == .int_lit and assign1.values[0].int_lit.val == 0) {
+                                            has_loop_init = true;
+                                        }
                                     }
                                 }
                             }
@@ -5016,100 +5166,29 @@ pub const Sema = struct {
                     }
                 }
             }
+
+            var assigns: usize = 0;
+            var reads: usize = 0;
+            var ok = true;
+            var has_float_assign: bool = false;
+
+            dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
+            if ((assigns > 0 and reads > 0 or has_loop_init) and !has_float_assign) {
+                try qualifying.append(alloc, tname);
+            }
         }
+        if (qualifying.items.len == 0) return;
 
-        var assigns: usize = 0;
-        var reads: usize = 0;
-        var ok = true;
-        var has_float_assign: bool = false;
+        // Populate the multi-table lists.
+        fb.dense_tables = try alloc.dupe([]const u8, qualifying.items);
+        fb.dense_table_caps = try alloc.alloc([]const u8, qualifying.items.len);
+        for (fb.dense_table_caps) |*c| c.* = cap;
 
-        const dense_walk = struct {
-            fn walk(blk: *const ast.Block, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool, float_out: *bool) void {
-                for (blk.stmts) |*s| {
-                    switch (s.*) {
-                        .assign => |*as| {
-                            for (as.targets) |tgt| {
-                                if (tgt.* != .index) continue;
-                                const idx = tgt.index;
-                                if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname_inner)) continue;
-                                assigns_out.* += 1;
-                            }
-                            // Check if any value assigned to the table contains float operations
-                            for (as.targets, as.values) |tgt, val| {
-                                if (tgt.* == .index) {
-                                    const idx = tgt.index;
-                                    if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
-                                        check_float_assign(val, float_out);
-                                    }
-                                }
-                            }
-                            for (as.values) |val| walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        },
-                        .local_decl => |*ld| {
-                            for (ld.inits) |init_e| walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        },
-                        .if_stmt => |*is| {
-                            walk(&is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                            for (is.elseifs) |*ei| walk(&ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                            if (is.else_body) |*eb| walk(eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                        },
-                        .while_loop => |*wl| walk(&wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                        .repeat_loop => |*rl| walk(&rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                        .do_block => |*db| walk(&db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                        else => {},
-                    }
-                }
-            }
-            fn check_float_assign(expr: *const ast.Expr, float_out: *bool) void {
-                if (float_out.*) return;
-                switch (expr.*) {
-                    .float_lit => float_out.* = true,
-                    .binop => |b| {
-                        check_float_assign(b.lhs, float_out);
-                        check_float_assign(b.rhs, float_out);
-                    },
-                    .call => |c| {
-                        if (c.func.* == .field) {
-                            const f = c.func.field;
-                            if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
-                                if (std.mem.eql(u8, f.field, "sin") or
-                                    std.mem.eql(u8, f.field, "cos") or
-                                    std.mem.eql(u8, f.field, "tan") or
-                                    std.mem.eql(u8, f.field, "sqrt") or
-                                    std.mem.eql(u8, f.field, "pow"))
-                                    float_out.* = true;
-                            }
-                        }
-                        for (c.args) |a| check_float_assign(a, float_out);
-                    },
-                    else => {},
-                }
-            }
-            fn walk_expr(expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
-                switch (expr.*) {
-                    .index => |idx| {
-                        if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner))
-                            reads_out.* += 1;
-                    },
-                    .binop => |b| {
-                        walk_expr(b.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        walk_expr(b.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    },
-                    .call => |c| {
-                        for (c.args) |a| walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    },
-                    else => {},
-                }
-            }
-        }.walk;
-
-        dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
-        // Enable dense table optimization if we have the standard pattern OR the loop init pattern
-        if ((assigns > 0 and reads > 0 or has_loop_init) and !has_float_assign) {
-            fb.use_dense_table = true;
-            fb.dense_table = tname;
-            fb.dense_table_cap = cap;
-        }
+        // Set backward-compat single-table fields from the first qualifying table.
+        const tname = qualifying.items[0];
+        fb.use_dense_table = true;
+        fb.dense_table = tname;
+        fb.dense_table_cap = cap;
     }
 
     fn detect_naive_fib_pattern(fb: *ast.FuncBody) bool {

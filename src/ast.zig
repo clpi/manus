@@ -234,6 +234,12 @@ pub const FuncBody = struct {
     use_dense_table: bool = false,
     dense_table: ?[]const u8 = null,
     dense_table_cap: ?[]const u8 = null,
+    /// All empty-table locals detected in the function body. Each one that
+    /// receives only integer-indexed writes/reads gets a native `int64_t*`
+    /// allocation. `dense_table`/`dense_table_cap` above are set to the first
+    /// one for backward compatibility with the specialized single-table emitters.
+    dense_tables: []const []const u8 = &.{},
+    dense_table_caps: [][]const u8 = &.{},
     // set by sema: emit C-style 0-based string scan loops
     use_string_byte_scan: bool = false,
     use_string_hash_scan: bool = false,

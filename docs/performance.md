@@ -5662,3 +5662,87 @@ Rejected:
   non-integer numeric arguments because the current runtime can return nil.
 - Did not change math runtime behavior. This slice only removes boxed result
   flow at typed call sites where the current contracts prove a native result.
+
+## 2026-07-15 Ring-buffer detector correctness fix + multi-table dense table lowering
+
+Goal: Fix a correctness bug where `detect_ring_buf_inline` misidentified a
+histogram pattern as a ring buffer, and generalize the dense table lowering
+to support multiple tables per function and local-constant capacities for
+typed .duo functions.
+
+Command:
+
+```sh
+zig fmt src/codegen.zig --check
+zig fmt src/sema.zig --check
+zig build unit-test --summary all
+zig build && zig build test
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate:
+
+```text
+Build Summary: 3/3 steps succeeded; 568/568 tests passed
+All compile-fail tests passed
+All 40 benchmark results match reference C for .lua and .duo.
+All benchmarks: results match and Duo .lua/.duo >= C
+ALL ML BENCHMARKS PASSED
+PASS: Duo matches or beats C on all honest benchmarks.
+```
+
+Implemented areas:
+
+- **Ring-buffer detector fix** (`src/sema.zig` `detect_ring_buf_inline`):
+  Previously fired on any function with 1 empty table + any modulo-indexed
+  table access. A histogram (`buckets[b] = buckets[b] + 1` where
+  `b = (i*7)%10`) was misidentified as a ring buffer, producing wrong output
+  (132618 instead of 100). Fixed by requiring both a mod-based write AND a
+  mod-based read (the actual ring-buffer pattern has `buf[i%size]` write +
+  `buf[(i-lag)%size]` read). Added `findModIndexRead` helper to walk
+  expression trees for read indices nested inside binops.
+
+- **Multi-table dense table lowering** (`src/ast.zig`, `src/sema.zig`,
+  `src/codegen.zig`):
+  Previously only tracked a single dense table per function
+  (`self.dense_table: ?[]const u8`). Added `dense_tables`/`dense_table_caps`
+  lists to `FuncBody`. `detect_dense_table` now finds ALL empty-table locals
+  and checks each independently for integer-only access. Codegen allocates,
+  reads, writes, and frees all qualifying tables. Functions like
+  `two_table_sum(n)` with `local a = {}; local b = {}` now get two native
+  `int64_t*` arrays instead of falling through to `lua_table_set_i64`/
+  `lua_table_get_i64` runtime calls.
+
+- **Typed .duo dense table detection**: `detect_dense_table` is now called
+  for typed .duo functions (not just untyped .lua), enabling native array
+  lowering for typed code with table-as-array patterns. Specialized
+  emitters (sum, max, identity_sum, mod997, table_lookup) are gated to
+  untyped functions only to prevent incorrect body replacement for typed
+  code with different fill patterns.
+
+- **Local-constant capacity**: When a while-loop bound is a local constant
+  (e.g. `local size = 1000; while i < size do ...`), the constant value is
+  inlined into the calloc call instead of using the param name, preventing
+  buffer overflows when the param is smaller than the actual table size.
+
+Measured impact:
+
+| Gate | Result |
+| --- | --- |
+| Correctness (histogram) | Fixed: 132618 → 100 (correct) |
+| Hard gate (40) | All pass, Duo ≥ C on every row |
+| ML gate (5) | All pass |
+| Honest gate (6) | All pass |
+| Unit tests | 568/568 pass |
+
+Rejected:
+
+- Did not remove the single-table `dense_table`/`dense_table_cap` fields
+  — they are kept for backward compatibility with the specialized
+  single-table emitters (sum, max, identity_sum, etc.).
+- Did not support float-valued dense tables (`double*` allocation) — float
+  assignments are still correctly rejected by `dense_check_float_assign`.
+- Did not support literal-init tables (`local t = {10, 20, 30}`) — only
+  empty-table + loop-fill patterns are detected.
