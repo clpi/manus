@@ -38,10 +38,16 @@ Keep it in sync with `docs/src/roadmap.md`.
   macro-introduced identifiers by default, supports explicit deliberate capture
   with `@capture(name)`, and enforces nested expansion plus recursion/node
   limits. Macro parameters can substitute type fragments through generated
-  declarations. `std.meta` helpers exist, and enum `@derive(...)` now emits
-  metadata plus payload-free `Display` stringification and `Eq` equality
-  methods, but generic/repeat loop forms, explicit AST replacement APIs, and
-  broader reflection-backed derive expansion are still planned.
+  declarations. `std.meta` helpers exist, `@as(T, expr)` now provides explicit
+  Zig-like typed coercion with native unboxing for primitive targets,
+  `@c.import("header.h")` now imports external declarations through generated
+  C headers, `@c.type("name")` now names external C types in annotations,
+  `@c.call("name", args...)` now emits direct raw C calls in typed low-level
+  contexts, `@c.export("name")` now exposes functions with explicit native
+  export names, and enum `@derive(...)` now emits metadata plus payload-free
+  `Display` stringification and `Eq` equality methods, but
+  generic/repeat loop forms, explicit AST replacement APIs, and broader
+  reflection-backed derive expansion are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
 - [~] **Concept metatable merging.** Concepts exist as structural checks and
@@ -57,10 +63,13 @@ Keep it in sync with `docs/src/roadmap.md`.
   library wrappers via `req "std.module"` / `require("std.module")`.
 - [x] **`type` keyword instead of `alias`.** `type Name = ExistingType` is
   supported; `alias` remains accepted as legacy syntax.
-- [x] **`case ... do/then ...` instead of arrow.** Match arms accept the
-  Lua-like `case pattern [if guard] then|do statement` form. The legacy
-  `pattern [if guard] => statement` form remains accepted for compatibility,
-  while the pretty-printer emits `case ... then ...`.
+- [x] **Generic type alias declarations.** `type Vec<T> = List[T]` parses and
+  sema/codegen substitute alias type parameters through the target type when
+  resolving annotations such as `Vec[i64]`.
+- [x] **`pattern ... then/do ...` instead of arrows.** Match arms accept the
+  Lua-like `pattern [if guard] then|do statement` form. A leading `case`
+  remains accepted for compatibility, while the pretty-printer emits
+  pattern-first `... then ...` arms.
 - [x] **`?` and `!` operators.** Postfix propagation and unwrap parse and are
   checked by sema.
 - [x] **Declare without `local` as standard local declaration.** `.duo` files
@@ -90,8 +99,11 @@ Keep it in sync with `docs/src/roadmap.md`.
     field's type from the object's `table_type` when `type_map` misses
     (`src/codegen.zig:483`). The common case (sema-typed record bindings) already
     produced native `obj.field`; this closes the gap for monomorphized/generic bodies
-    where `type_map` is keyed on the unspecialized expr. Still TODO: named `.@"struct"`
-    field lookup (needs a name→fields registry, not just inline `table_type`).
+    where `type_map` is keyed on the unspecialized expr.
+  - [x] **Named record alias field access**: the same fallback now resolves
+    `.@"struct"` aliases through `record_aliases`, so transformed field expressions on
+    named record aliases recover declared field types instead of falling back to
+    `lua_Value`.
   - [x] **Builtin call results — `math.*`**: `math_call_result_type` (`src/codegen.zig:556`)
     types every recognized `math.*` builtin; `expr_type` uses it to recover a native type
     when sema only tagged the call `.any`. `max`/`min`/`abs` are integer-typed when their
@@ -116,15 +128,65 @@ Keep it in sync with `docs/src/roadmap.md`.
   - [~] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
     at `src/codegen.zig:602`, the final `type_map` fallback at `:499`) and replace with explicit typed
     handling where the type is statically recoverable.
-    - [x] Final `type_map` fallback now recovers intrinsic expression-node types
+  - [x] Final `type_map` fallback now recovers intrinsic expression-node types
       for literals and function expressions, so transformed/synthetic nodes no
       longer silently become `lua_Value` when sema did not record the exact AST
       pointer.
+  - [x] **Typed network call lowering**: `net.send(fd: i64, data: str)` now
+    emits direct `send(2)` in native `i64` contexts, avoiding lua_Value
+    argument boxing. `net.close(fd: i64)` emits direct `close(2)` when used as
+    a statement. Dynamic arguments still use the `duo_net_tcp_*` runtime paths,
+    and boxed runtime results are unboxed in-place when the surrounding context
+    expects a native integer.
+  - [x] **Typed UTF-8 builtin results**: `utf8.len(...)` and `utf8.char(...)`
+    recover native `i64`/`str` result types and unbox the boxed runtime helper
+    result at typed call sites. Nil-capable `utf8.offset`/`utf8.codepoint`
+    remain dynamic unless explicitly coerced.
+  - [x] **Typed table builtin results**: `table.concat(...)` and
+    `table.isfrozen(...)` recover native `str`/`bool` result types and unbox
+    boxed runtime helper results in typed contexts. Nil-capable or mutation-only
+    table helpers remain dynamic.
+  - [x] **Extended typed math lowering**: `math.deg`, `math.rad`,
+    `math.log10`, `math.sinh`, `math.cosh`, and `math.tanh` now recover
+    native `f64` results and emit direct C math/formula calls in typed numeric
+    contexts instead of boxed runtime helper calls.
+  - [x] **Typed boxed math builtin results**: `math.random`, `math.modf`, and
+    `math.ult` recover native `f64`/`bool` result types and unbox boxed runtime
+    helper results in typed contexts. `math.type` recovers native `str` only for
+    statically numeric arguments, and `math.tointeger` recovers native `i64`
+    only for statically integer arguments; nil-capable dynamic cases remain
+    boxed.
+  - [x] **Typed FFI builtin results**: `ffi.sizeof`, `ffi.alignof`,
+    `ffi.offsetof`, `ffi.errno`, `ffi.istype`, and `ffi.string` recover native
+    `i64`/`bool`/`str` result types and unbox boxed runtime helper results in
+    typed contexts. Nil-returning FFI operations remain dynamic.
+  - [x] **Typed OS builtin results**: `os.time`, `os.difftime`, `os.remove`,
+    `os.rename`, and `os.execute` recover native `f64`/`bool` result types and
+    unbox boxed runtime helper results in typed contexts. Nil-capable
+    string-producing helpers remain dynamic.
+  - [x] **Typed coroutine/debug builtin results**: `coroutine.status`,
+    `coroutine.isyieldable`, `coroutine.close`, and `debug.traceback` recover
+    native `str`/`bool` result types and unbox boxed runtime helper results in
+    typed contexts. Dynamic or nil-capable coroutine/debug helpers remain
+    dynamic.
+  - [x] **Typed JIT builtin results**: `jit.status()` and
+    `jit.version_num()` recover native `bool`/`f64` result types and unbox
+    boxed runtime helper results in typed contexts. Nil-returning JIT control
+    helpers remain dynamic.
 
 - [x] **Expand monomorphization coverage** (`src/mono.zig`). Cover nested generic call
   chains, env-aware inference, and recursive specialization so concrete types propagate
   deeper. Hook: `findSpecializationForCall` is the codegen entry (`src/codegen.zig:411`);
   missed specializations there leave `expr_type` returning `.any`.
+
+- [x] **Explicit generic specialization requests.** `@specialize(name, types...)`
+  now pre-generates a concrete generic specialization even when no call site
+  infers that type tuple yet. Sema rejects unknown targets, non-generic targets,
+  and wrong type-argument counts instead of letting the monomorphizer silently
+  ignore the request. Directive type arguments now go through the normal Duo
+  type parser, so nested generic type arguments such as `Result[i64, str]` are
+  one type argument instead of two comma-split fragments. Custom replacement
+  implementations remain planned.
 
 - [ ] **Escape analysis + stack allocation for temporaries.** New pass (model after
   `src/arc.zig`) proving values don't escape their scope, letting records/temporaries/
