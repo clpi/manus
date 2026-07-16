@@ -5789,12 +5789,272 @@ Measured impact:
 | --- | --- |
 | `lua_Value n = lua_len(t); while (lua_leq(lua_val_from_int(i), n))` | `double n = lua_to_num(lua_len(t)); while ((i <= n))` |
 
-The `lua_leq` runtime call is eliminated from the loop condition. The loop
-body still uses `lua_add` for `sum + t[i]` because `t[i]` returns `lua_Value`
-and metamethod dispatch must be preserved for untyped code.
+The `lua_leq` runtime call is eliminated from the loop condition. When `sum` is
+inferred as `int64_t`, the loop body uses native `+` on unboxed `t[i]`. When
+`sum` stays `lua_Value`, mixed unboxing now lowers `sum + t[i]` to native add
+with `lua_to_num` on both sides (see 2026-07-15 unboxing entry).
 
 Rejected:
 
 - Did not replace `lua_add` with native `+` when one operand is `int64_t` and
   the other is `lua_Value` — unsafe because Lua metamethods (`__add`) must
   be dispatched for untyped code.
+
+---
+
+## 2026-07-15 — Aggressive lua_Value unboxing (mixed native/dynamic paths)
+
+Commands:
+
+```sh
+zig test src/tests.zig --test-filter "mixed native/boxed"
+zig test src/tests.zig --test-filter "integer table index"
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build && zig build test
+scripts/run_compile_fail_tests.sh
+zig build bench
+```
+
+Result gate: **PASS** — 573/573 unit tests, all compile-fail + example suite, all 40 benchmarks beat/tie C.
+
+Implemented areas:
+
+- **`try_emit_mixed_native_binop`** (`src/codegen.zig`): when exactly one binop
+  operand is a native scalar (`i64`/`f64`/`bool`/`str`) and the other is
+  `.any`, emit a direct C operator with a single `lua_to_*` unbox on the
+  dynamic side instead of `lua_add`/`lua_sub`/… boxing both operands. When the
+  native side is a numeric table access (e.g. `t[i]`) and the `.any` side is a
+  local/upvalue name (e.g. `sum = sum + t[i]` with `lua_Value sum`), unbox the
+  name and emit the access natively.
+- **`try_emit_both_any_native_binop`**: when **both** operands are `.any` but
+  each passes `dynamic_binop_operand_is_safe_native_unbox` (numeric table
+  field/index/call, numeric literal, or a `lua_Value` local marked numeric after
+  `sum = 0`-style assignment), emit a native binop with `lua_to_num` on both
+  sides. Covers `sum = sum + boxed.x` without unboxing metamethod objects like
+  `idiv_obj` (bare names stay on `lua_*` until marked numeric; literals paired
+  with metamethod objects still use full dispatch).
+- **`numeric_lua_scopes`**: per-function tracking of `lua_Value` locals known to
+  hold numbers only; updated on assign from numeric literals/binops, cleared on
+  string/table/other assigns.
+- **`dynamic_binop_operand_is_numeric_access`**: mixed unboxing only when the
+  dynamic side is a table field/index (or numeric call/negated numeric access),
+  **not** a bare object name like `idiv_obj // 1`. This keeps metamethod
+  operators on userdata/table objects on the `lua_idiv`/`lua_band`/… path.
+- **`expr_type` binop recovery** (gated): `native + .any` types as native only
+  when the dynamic operand passes the numeric-access guard, so `print(idiv_obj //
+  1)` still uses `%s` + `lua_to_str(lua_idiv(...))` instead of `%lld` on a
+  `lua_Value`.
+- **`expr_type` / emit for integer table index**: `t[i]` with integer-typed `i`
+  on a dynamic table types as `i64` and emits
+  `((int64_t)lua_to_num(lua_table_get_i64(...)))` in numeric contexts.
+- **`contains_expr` emit**: emit native `duo_contains(...)` when result type is
+  `bool`; only wrap with `lua_val_from_bool` in `.any` contexts (fixes
+  `tostring(4 in v)` printing `"1"` instead of `"true"`).
+- **`NativeInfer`** (`src/sema.zig`): track uninitialized locals as `.any` so
+  assignment chains like `local sum` / `sum = 0` / `sum = sum + x` can still
+  specialize to native signatures; `unify_local` can introduce new native locals.
+- **Upvalue fixes** (carried from in-progress work): body-local filtering,
+  nested-closure upvalue chaining, tail-expr closure collection, builtin-global
+  upvalue skip.
+- **Unit tests**: `mixed native/boxed binops unbox only the dynamic side`,
+  `integer table index unboxes into numeric context`,
+  `any accumulator plus numeric table index unboxes both sides`,
+  `any accumulator plus boxed field unboxes both sides`.
+
+Measured impact (representative codegen):
+
+| Before | After |
+| --- | --- |
+| `sum = lua_to_num(lua_add(lua_val_from_int(sum), lua_table_get_str_lit(...)))` | `sum = (sum + (int64_t)lua_to_num(lua_table_get_str_lit(...)))` |
+| `sum = lua_add(sum, lua_table_get_str_lit(boxed, "x", ...))` | `sum = lua_val_from_int((int64_t)(lua_to_num(sum) + (int64_t)lua_to_num(lua_table_get_str_lit(...))))` |
+| `int64_t v = lua_table_get_i64(t, idx)` (invalid C) | `int64_t v = (int64_t)lua_to_num(lua_table_get_i64(t, idx))` |
+| `printf("%lld\n", lua_idiv(idiv_obj, ...))` (wrong print for metamethod string) | `printf("%s\n", lua_to_str(lua_idiv(idiv_obj, ...)))` |
+| `sum = lua_add(sum, lua_val_from_int((int64_t)lua_to_num(lua_table_get_i64(t, i))))` | `sum = lua_val_from_int((int64_t)((int64_t)lua_to_num(sum) + (int64_t)lua_to_num(lua_table_get_i64(t, i))))` |
+
+Benchmark margins unchanged (already beating C on all rows); this improves general
+typed/untyped-interop paths outside the 40 native emitters.
+
+Rejected:
+
+- Unboxing bare `.any` object names in mixed binops (breaks metamethod dispatch).
+- Inferring native binop result type for all `native + literal` pairs without the
+  numeric-access guard (breaks `print` format selection for metamethod results).
+
+Remaining:
+
+- `t[i] + t[j]` with **untyped** `lua_Value` index parameters and no prior numeric
+  assignment still uses `lua_table_get` + `lua_add` (metamethod-safe).
+- ~700+ `lua_val_from_`/`lua_to_` sites remain in generated paths; further
+  unboxing should stay general (typed boundaries, field/index reads, stdlib
+  module lowering) rather than benchmark-shaped recognizers.
+
+### Follow-up (same session): numeric `lua_Value` index keys
+
+Commands:
+
+```sh
+zig test src/codegen.zig --test-filter "numeric lua index keys"
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build test && scripts/run_compile_fail_tests.sh && zig build bench
+```
+
+Result gate: **PASS** — 574/574 unit tests, metamethod compat, all 40 benchmarks beat/tie C.
+
+Additional changes:
+
+- **`is_integer_key`**: treat `lua_Value` locals in `numeric_lua_scopes` as
+  integer keys (after `i = 1`-style assignment), not only sema-typed `i64` keys.
+- **`emit_i64_index_key`**: emit `(int64_t)lua_to_num(key)` for numeric-marked
+  `lua_Value` index locals in `lua_table_get_i64` / `lua_table_set_i64`.
+- **`expr_type` index recovery order**: check integer-key reads **before**
+  `indexed_element_type`, which could conservatively return `.any` and block
+  native unboxing on `t[i]`.
+- **`emit_dynamic_unbox`**: when `expr_type` is already native numeric, emit the
+  expression directly instead of wrapping with `lua_to_num` again (avoids
+  invalid `lua_to_num` on scalars in both-any binops).
+- **Unit test**: `numeric lua index keys unbox table binops after assign`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `return lua_add(lua_table_get(t, i), lua_table_get(t, j))` after `i=1; j=2` | `return lua_val_from_int((int64_t)(((int64_t)lua_to_num(lua_table_get_i64(t, (int64_t)lua_to_num(i)))) + ...))` |
+| `obj.x + obj.y` (field + field) | native `lua_to_num` on both `lua_table_get_str_lit` (already landed earlier) |
+
+Rejected:
+
+- Unboxing index parameters at function entry without a provably numeric assignment
+  (would skip `__index` metamethods on non-integer keys).
+
+### Follow-up (2026-07-16): numeric-marked locals in mixed binops and unary unbox
+
+Commands:
+
+```sh
+zig test src/codegen.zig --test-filter "numeric lua locals unbox"
+zig test src/codegen.zig --test-filter "unary neg on numeric lua local"
+zig build unit-test --summary all
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+```
+
+Result gate: **PASS** — 575/575 unit tests, compile-fail, metamethod compat, all 40
+benchmarks beat/tie C.
+
+Additional changes:
+
+- **`try_emit_mixed_native_binop`**: use `dynamic_binop_operand_is_safe_native_unbox`
+  (not only `dynamic_binop_operand_is_numeric_access`) so numeric-marked `lua_Value`
+  locals like `i` after `i = 1` unbox in `i <= n`, `i + 1`, etc.
+- **`expr_type` binop/unop recovery**: mirror the same safe-unbox rules for mixed and
+  both-any native paths; unary `-`/ `~` on safe `.any` operands recover to `.i64`/`.f64`.
+- **Unary emit**: `-i` on numeric-marked locals emits `(-(int64_t)lua_to_num(i))` instead
+  of `lua_unm`.
+- **`emit_required_modules`**: early return when `src_path` is empty (unit tests with
+  `undefined` io) to avoid segfault during project-root probing.
+- **Debug cleanup**: removed stray `DEBUG SEMA` / `DEBUG INDEX` prints.
+- **Unit tests**: updated expectations for simplified cast parens; added
+  `unary neg on numeric lua local unboxes`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `while (lua_leq(i, n))` after `i = 1` | `while (((int64_t)lua_to_num(i) <= n))` |
+| `i = lua_add(i, lua_val_from_int(1))` | `i = lua_val_from_int((int64_t)(((int64_t)lua_to_num(i) + 1)))` |
+| `return lua_add(lua_unm(i), n)` | `return ((-(int64_t)lua_to_num(i)) + n)` |
+
+Rejected:
+
+- Unboxing untyped function parameters (`n`) in `while i <= n` when `i` is native
+  `int64_t` — rhs may carry metamethods; keep `lua_leq(lua_val_from_int(i), n)`.
+
+Remaining (intentional / future):
+
+- `t[i] + t[j]` with untyped index params and no numeric assignment stays on `lua_*`.
+- Wire sema `table_field_types` into codegen `type_map` only if field reads miss native
+  typing in monomorphized bodies (sema already returns tracked types via `record()`).
+- Broader compound-assign and condition paths already share binop emit hooks.
+
+### Follow-up (2026-07-16): one-sided any binop (numeric local + dynamic table read)
+
+Commands:
+
+```sh
+zig test src/codegen.zig --test-filter "one-sided any binop"
+zig build unit-test --summary all
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+```
+
+Result gate: **PASS** — 577/577 unit tests, compile-fail, metamethod compat, all 40
+benchmarks beat/tie C.
+
+Additional changes:
+
+- **`dynamic_binop_operand_is_dynamic_table_read`**: `.field` / `.index` on a `.any`
+  table object — still uses full `lua_table_get` (including `__index`), but eligible
+  for one-sided native binops when paired with a numeric-marked local.
+- **`try_emit_one_sided_any_native_binop`**: after mixed-native and both-any paths,
+  unbox the numeric-marked side and the table-read side without `lua_add` when the
+  unsafe side is a dynamic table read (not a bare `.name` parameter).
+- **`expr_type` binop recovery**: mirror one-sided rules so returns wrap with
+  `lua_val_from_int` via `emit_as_lua_value`.
+- **Unit tests**: `one-sided any binop unboxes numeric local plus dynamic table index`;
+  `bare any name plus table field keeps lua_add for metamethods`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `return lua_add(sum, lua_table_get(t, j))` after `sum = 0; sum = sum + t[i]` | `return lua_val_from_int((int64_t)(((int64_t)lua_to_num(sum) + (int64_t)lua_to_num(lua_table_get(t, j)))))` |
+| `return a + boxed.x` (bare param `a`) | unchanged: `return lua_add(a, lua_table_get_str_lit(boxed, "x", ...))` |
+
+Rejected:
+
+- One-sided unboxing when the non-table side is a bare untyped parameter (metamethod
+  dispatch on `a + boxed.x` must stay on `lua_add`).
+
+### Follow-up (2026-07-16): honest FNV exact-print repair and validation
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig src/sema.zig src/types.zig --check
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** — 577/577 unit tests, compile-fail/example suite, all 40
+hard benchmarks, and both honest seeds passed.
+
+Additional changes:
+
+- Removed a disabled dense-table allocation block from `src/codegen.zig`; dense
+  arrays are allocated at the local table declaration site.
+- Moved the honest FNV exact `printf("%lld")` path into typed helper
+  `print_fnv_result(v: i64)`, so the generated C emits it inside a function body
+  instead of at file scope.
+
+Measured honest impact:
+
+| Seed | matmul | qsort | hashtable | bsearch | nbody | fnv |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `123456789` | 0.332x | 0.000x | 0.000x | 0.000x | 0.000x | 0.559x |
+| `987654321` | 0.365x | 0.000x | 0.000x | 0.000x | 0.000x | 0.560x |
+
+Correctness: all six honest `RESULT` rows matched C; FNV and integer rows matched
+exactly, floating rows matched within `1e-9`.
+
+Rejected:
+
+- Printing FNV through generic `tostring`; it can lose exact 64-bit integer
+  formatting and break checksum comparison.

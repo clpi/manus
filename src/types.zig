@@ -544,6 +544,9 @@ pub const ResolvedType = union(enum) {
                 if (a.size) |n| {
                     return std.fmt.bufPrint(buf, "{s}[{}]", .{ inner, n }) catch inner;
                 }
+                if (std.mem.eql(u8, inner, "lua_Value")) {
+                    return "lua_Value";
+                }
                 return std.fmt.bufPrint(buf, "{s}*", .{inner}) catch inner;
             },
             .func => "/* func */",

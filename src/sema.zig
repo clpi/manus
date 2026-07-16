@@ -2406,7 +2406,13 @@ pub const Sema = struct {
         var flags = std.ArrayList(bool).empty;
         defer names.deinit(self.alloc);
         defer flags.deinit(self.alloc);
-        try collect_upvalue_names(fb, &fb.body, fb.params, &names, &flags, self);
+        // Collect all variable names declared inside the function body itself
+        // (locals, consts, for-loop vars). These are NOT upvalues — they belong
+        // to this function's scope, not the enclosing scope.
+        var body_locals = std.StringHashMap(void).init(self.alloc);
+        defer body_locals.deinit();
+        try collect_body_locals(&fb.body, &body_locals);
+        try collect_upvalue_names(fb, &fb.body, fb.params, &body_locals, &names, &flags, self);
         fb.upvalues = try self.alloc.alloc(ast.Upvalue, names.items.len);
         for (names.items, flags.items, 0..) |nm, is_local, i| {
             var typ: ?RT = null;
@@ -2428,58 +2434,119 @@ pub const Sema = struct {
         }
     }
 
+    fn collect_body_locals(block: *const ast.Block, set: *std.StringHashMap(void)) std.mem.Allocator.Error!void {
+        for (block.stmts) |*stmt| {
+            try collect_body_locals_stmt(stmt, set);
+        }
+    }
+
+    fn collect_body_locals_stmt(stmt: *const ast.Stmt, set: *std.StringHashMap(void)) std.mem.Allocator.Error!void {
+        switch (stmt.*) {
+            .local_decl => |*ld| {
+                for (ld.names) |*n| try set.put(n.ident, {});
+            },
+            .const_decl => |*cd| {
+                try set.put(cd.ident, {});
+            },
+            .global_decl => |*gd| {
+                for (gd.names) |*n| try set.put(n.ident, {});
+            },
+            .num_for => |*nf| {
+                try set.put(nf.var_name, {});
+                try collect_body_locals(&nf.body, set);
+            },
+            .gen_for => |*fg| {
+                for (fg.vars) |v| try set.put(v, {});
+                try collect_body_locals(&fg.body, set);
+            },
+            .if_stmt => |*is| {
+                try collect_body_locals(&is.then, set);
+                for (is.elseifs) |*ei| try collect_body_locals(&ei.body, set);
+                if (is.else_body) |*eb| try collect_body_locals(eb, set);
+            },
+            .while_loop => |*wl| try collect_body_locals(&wl.body, set),
+            .repeat_loop => |*rp| try collect_body_locals(&rp.body, set),
+            .do_block => |*db| try collect_body_locals(&db.body, set),
+            // Bare assignments to simple names create implicit locals (Duo mode)
+            // or globals (Lua mode). In neither case should they be captured as
+            // upvalues from the enclosing scope.
+            .assign => |*as| {
+                for (as.targets) |tgt| {
+                    if (tgt.* == .name) try set.put(tgt.name.ident, {});
+                }
+            },
+            // Nested function declarations create local bindings.
+            .func_decl => |*fd| {
+                if (fd.path.len >= 1) try set.put(fd.path[0], {});
+                try collect_body_locals(&fd.func.body, set);
+            },
+            else => {},
+        }
+    }
+
     fn collect_upvalue_names(
         fb: *const ast.FuncBody,
         block: *const ast.Block,
         params: []const ast.FuncParam,
+        body_locals: *const std.StringHashMap(void),
         names: *std.ArrayList([]const u8),
         flags: *std.ArrayList(bool),
         sema: *Sema,
     ) std.mem.Allocator.Error!void {
         _ = fb;
         for (block.stmts) |*stmt| {
-            try collect_upvalue_names_stmt(stmt, params, names, flags, sema);
+            try collect_upvalue_names_stmt(stmt, params, body_locals, names, flags, sema);
+        }
+        // Closures in the tail expression (implicit return) of a block must
+        // also have their free variables collected as upvalues.
+        if (block.tail_expr) |expr| {
+            try collect_upvalue_names_expr(expr, params, body_locals, names, flags, sema);
         }
     }
 
     fn collect_upvalue_names_stmt(
         stmt: *const ast.Stmt,
         params: []const ast.FuncParam,
+        body_locals: *const std.StringHashMap(void),
         names: *std.ArrayList([]const u8),
         flags: *std.ArrayList(bool),
         sema: *Sema,
     ) std.mem.Allocator.Error!void {
         switch (stmt.*) {
             .local_decl => |*ld| {
-                for (ld.inits) |init_expr| try collect_upvalue_names_expr(init_expr, params, names, flags, sema);
+                for (ld.inits) |init_expr| try collect_upvalue_names_expr(init_expr, params, body_locals, names, flags, sema);
             },
             .assign => |*as| {
-                for (as.values) |v| try collect_upvalue_names_expr(v, params, names, flags, sema);
+                for (as.values) |v| try collect_upvalue_names_expr(v, params, body_locals, names, flags, sema);
             },
             .ret => |*r| {
-                for (r.vals) |v| try collect_upvalue_names_expr(v, params, names, flags, sema);
+                for (r.vals) |v| try collect_upvalue_names_expr(v, params, body_locals, names, flags, sema);
             },
             .if_stmt => |*is| {
-                try collect_upvalue_names_expr(is.cond, params, names, flags, sema);
-                try collect_upvalue_names_block(&is.then, params, names, flags, sema);
+                try collect_upvalue_names_expr(is.cond, params, body_locals, names, flags, sema);
+                try collect_upvalue_names_block(&is.then, params, body_locals, names, flags, sema);
                 for (is.elseifs) |*ei| {
-                    try collect_upvalue_names_expr(ei.cond, params, names, flags, sema);
-                    try collect_upvalue_names_block(&ei.body, params, names, flags, sema);
+                    try collect_upvalue_names_expr(ei.cond, params, body_locals, names, flags, sema);
+                    try collect_upvalue_names_block(&ei.body, params, body_locals, names, flags, sema);
                 }
-                if (is.else_body) |*eb| try collect_upvalue_names_block(eb, params, names, flags, sema);
+                if (is.else_body) |*eb| try collect_upvalue_names_block(eb, params, body_locals, names, flags, sema);
             },
             .while_loop => |*wl| {
-                try collect_upvalue_names_expr(wl.cond, params, names, flags, sema);
-                try collect_upvalue_names_block(&wl.body, params, names, flags, sema);
+                try collect_upvalue_names_expr(wl.cond, params, body_locals, names, flags, sema);
+                try collect_upvalue_names_block(&wl.body, params, body_locals, names, flags, sema);
             },
-            .num_for => |*nf| try collect_upvalue_names_block(&nf.body, params, names, flags, sema),
+            .repeat_loop => |*rp| {
+                try collect_upvalue_names_block(&rp.body, params, body_locals, names, flags, sema);
+                try collect_upvalue_names_expr(rp.cond, params, body_locals, names, flags, sema);
+            },
+            .num_for => |*nf| try collect_upvalue_names_block(&nf.body, params, body_locals, names, flags, sema),
             .gen_for => |*fg| {
-                for (fg.iters) |e| try collect_upvalue_names_expr(e, params, names, flags, sema);
-                try collect_upvalue_names_block(&fg.body, params, names, flags, sema);
+                for (fg.iters) |e| try collect_upvalue_names_expr(e, params, body_locals, names, flags, sema);
+                try collect_upvalue_names_block(&fg.body, params, body_locals, names, flags, sema);
             },
-            .call_stmt => |*cs| try collect_upvalue_names_expr(cs.expr, params, names, flags, sema),
-            .expr_stmt => |*es| try collect_upvalue_names_expr(es.expr, params, names, flags, sema),
-            .do_block => |*db| try collect_upvalue_names_block(&db.body, params, names, flags, sema),
+            .call_stmt => |*cs| try collect_upvalue_names_expr(cs.expr, params, body_locals, names, flags, sema),
+            .expr_stmt => |*es| try collect_upvalue_names_expr(es.expr, params, body_locals, names, flags, sema),
+            .do_block => |*db| try collect_upvalue_names_block(&db.body, params, body_locals, names, flags, sema),
             else => {},
         }
     }
@@ -2487,12 +2554,13 @@ pub const Sema = struct {
     fn collect_upvalue_names_block(
         block: *const ast.Block,
         params: []const ast.FuncParam,
+        body_locals: *const std.StringHashMap(void),
         names: *std.ArrayList([]const u8),
         flags: *std.ArrayList(bool),
         sema: *Sema,
     ) std.mem.Allocator.Error!void {
         for (block.stmts) |*stmt| {
-            try collect_upvalue_names_stmt(stmt, params, names, flags, sema);
+            try collect_upvalue_names_stmt(stmt, params, body_locals, names, flags, sema);
         }
     }
 
@@ -2512,11 +2580,17 @@ pub const Sema = struct {
 
     fn note_upvalue(
         name: []const u8,
+        body_locals: *const std.StringHashMap(void),
         names: *std.ArrayList([]const u8),
         flags: *std.ArrayList(bool),
         sema: *Sema,
     ) std.mem.Allocator.Error!void {
+        // Skip names declared inside the function body — they are locals, not upvalues.
+        if (body_locals.contains(name)) return;
         if (upvalue_index(names, name) != null) return;
+        // Skip built-in / runtime globals — they are always accessible
+        // directly at file scope and should not be captured as upvalues.
+        if (sema.is_builtin_global(name)) return;
         const is_local = sema.scope.lookup(name) != null;
         try names.append(sema.alloc, name);
         try flags.append(sema.alloc, is_local);
@@ -2525,6 +2599,7 @@ pub const Sema = struct {
     fn collect_upvalue_names_expr(
         expr: *const ast.Expr,
         params: []const ast.FuncParam,
+        body_locals: *const std.StringHashMap(void),
         names: *std.ArrayList([]const u8),
         flags: *std.ArrayList(bool),
         sema: *Sema,
@@ -2532,44 +2607,40 @@ pub const Sema = struct {
         switch (expr.*) {
             .name => |n| {
                 if (is_param_name(params, n.ident)) return;
-                if (sema.scope.lookup(n.ident) != null) {
-                    try note_upvalue(n.ident, names, flags, sema);
-                } else {
-                    try note_upvalue(n.ident, names, flags, sema);
-                }
+                try note_upvalue(n.ident, body_locals, names, flags, sema);
             },
             .binop => |b| {
-                try collect_upvalue_names_expr(b.lhs, params, names, flags, sema);
-                try collect_upvalue_names_expr(b.rhs, params, names, flags, sema);
+                try collect_upvalue_names_expr(b.lhs, params, body_locals, names, flags, sema);
+                try collect_upvalue_names_expr(b.rhs, params, body_locals, names, flags, sema);
             },
-            .unop => |u| try collect_upvalue_names_expr(u.operand, params, names, flags, sema),
+            .unop => |u| try collect_upvalue_names_expr(u.operand, params, body_locals, names, flags, sema),
             .call => |c| {
-                try collect_upvalue_names_expr(c.func, params, names, flags, sema);
-                for (c.args) |a| try collect_upvalue_names_expr(a, params, names, flags, sema);
+                try collect_upvalue_names_expr(c.func, params, body_locals, names, flags, sema);
+                for (c.args) |a| try collect_upvalue_names_expr(a, params, body_locals, names, flags, sema);
             },
             .method_call => |mc| {
-                try collect_upvalue_names_expr(mc.obj, params, names, flags, sema);
-                for (mc.args) |a| try collect_upvalue_names_expr(a, params, names, flags, sema);
+                try collect_upvalue_names_expr(mc.obj, params, body_locals, names, flags, sema);
+                for (mc.args) |a| try collect_upvalue_names_expr(a, params, body_locals, names, flags, sema);
             },
-            .field => |f| try collect_upvalue_names_expr(f.obj, params, names, flags, sema),
+            .field => |f| try collect_upvalue_names_expr(f.obj, params, body_locals, names, flags, sema),
             .index => |idx| {
-                try collect_upvalue_names_expr(idx.obj, params, names, flags, sema);
-                try collect_upvalue_names_expr(idx.key, params, names, flags, sema);
+                try collect_upvalue_names_expr(idx.obj, params, body_locals, names, flags, sema);
+                try collect_upvalue_names_expr(idx.key, params, body_locals, names, flags, sema);
             },
             .table => |t| {
                 for (t.fields) |fld| {
                     switch (fld) {
                         .indexed => |idx| {
-                            try collect_upvalue_names_expr(idx.key, params, names, flags, sema);
-                            try collect_upvalue_names_expr(idx.val, params, names, flags, sema);
+                            try collect_upvalue_names_expr(idx.key, params, body_locals, names, flags, sema);
+                            try collect_upvalue_names_expr(idx.val, params, body_locals, names, flags, sema);
                         },
-                        .named => |nmd| try collect_upvalue_names_expr(nmd.val, params, names, flags, sema),
-                        .positional => |pos| try collect_upvalue_names_expr(pos, params, names, flags, sema),
+                        .named => |nmd| try collect_upvalue_names_expr(nmd.val, params, body_locals, names, flags, sema),
+                        .positional => |pos| try collect_upvalue_names_expr(pos, params, body_locals, names, flags, sema),
                     }
                 }
             },
             .list_comp => |lc| {
-                try collect_upvalue_names_expr(lc.iter, params, names, flags, sema);
+                try collect_upvalue_names_expr(lc.iter, params, body_locals, names, flags, sema);
                 var comp_params: std.ArrayList(ast.FuncParam) = .empty;
                 defer comp_params.deinit(sema.alloc);
                 try comp_params.appendSlice(sema.alloc, params);
@@ -2577,10 +2648,29 @@ pub const Sema = struct {
                     try comp_params.append(sema.alloc, .{ .name = key_name, .typ = .inferred, .loc = lc.loc });
                 }
                 try comp_params.append(sema.alloc, .{ .name = lc.value_name, .typ = .inferred, .loc = lc.loc });
-                if (lc.filter) |filter| try collect_upvalue_names_expr(filter, comp_params.items, names, flags, sema);
-                try collect_upvalue_names_expr(lc.value, comp_params.items, names, flags, sema);
+                if (lc.filter) |filter| try collect_upvalue_names_expr(filter, comp_params.items, body_locals, names, flags, sema);
+                try collect_upvalue_names_expr(lc.value, comp_params.items, body_locals, names, flags, sema);
             },
-            .func_expr => {},
+            .func_expr => |nested_fb| {
+                // Recursively collect upvalue names from the nested function's
+                // body. This implements upvalue chaining: if a nested closure
+                // needs `wasm`, the outer closure must also capture `wasm`
+                // so it can pass it down.
+                //
+                // We need to filter against both:
+                // - the nested function's body locals (not upvalues of nested)
+                // - the outer function's body locals (not upvalues of outer)
+                // - the outer function's params (handled by is_param_name)
+                // - the nested function's params (handled by is_param_name)
+                var combined_locals = std.StringHashMap(void).init(sema.alloc);
+                defer combined_locals.deinit();
+                // Start with the outer function's body_locals
+                var it = body_locals.iterator();
+                while (it.next()) |entry| combined_locals.put(entry.key_ptr.*, {}) catch {};
+                // Add the nested function's body locals
+                collect_body_locals(&nested_fb.body, &combined_locals) catch {};
+                collect_upvalue_names(nested_fb, &nested_fb.body, nested_fb.params, &combined_locals, names, flags, sema) catch {};
+            },
             else => {},
         }
     }
@@ -5094,6 +5184,119 @@ pub const Sema = struct {
         }
     }
 
+    fn calc_lua_hash(s: []const u8) u32 {
+        var h: u32 = 2166136261;
+        for (s) |c| {
+            h = (h ^ c) *% 16777619;
+        }
+        return h;
+    }
+
+    fn format_expr_c(alloc: std.mem.Allocator, expr: *const ast.Expr) std.mem.Allocator.Error![]const u8 {
+        switch (expr.*) {
+            .name => |n| return try alloc.dupe(u8, n.ident),
+            .int_lit => |il| return try std.fmt.allocPrint(alloc, "{d}", .{il.val}),
+            .float_lit => |fl| return try std.fmt.allocPrint(alloc, "{d}", .{fl.val}),
+            .field => |f| {
+                const obj_str = try format_expr_c(alloc, f.obj);
+                defer alloc.free(obj_str);
+                const hash = calc_lua_hash(f.field);
+                return try std.fmt.allocPrint(alloc, "((int64_t)lua_to_num(lua_table_get_str_lit({s}, \"{s}\", {d}u, {d})))", .{ obj_str, f.field, hash, f.field.len });
+            },
+            .binop => |b| {
+                const lhs_str = try format_expr_c(alloc, b.lhs);
+                defer alloc.free(lhs_str);
+                const rhs_str = try format_expr_c(alloc, b.rhs);
+                defer alloc.free(rhs_str);
+                const op_str = switch (b.op) {
+                    .add => "+",
+                    .sub => "-",
+                    .mul => "*",
+                    .div => "/",
+                    .idiv => "/",
+                    else => return try alloc.dupe(u8, "0"),
+                };
+                return try std.fmt.allocPrint(alloc, "({s} {s} {s})", .{ lhs_str, op_str, rhs_str });
+            },
+            else => return try alloc.dupe(u8, "0"),
+        }
+    }
+
+    fn block_assigns_to_table(blk: *const ast.Block, tname: []const u8) bool {
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .assign => |*as| {
+                    for (as.targets) |tgt| {
+                        if (tgt.* == .index) {
+                            const idx = tgt.index;
+                            if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname)) {
+                                return true;
+                            }
+                        }
+                    }
+                },
+                .if_stmt => |*is| {
+                    if (block_assigns_to_table(&is.then, tname)) return true;
+                    for (is.elseifs) |*ei| {
+                        if (block_assigns_to_table(&ei.body, tname)) return true;
+                    }
+                    if (is.else_body) |*eb| {
+                        if (block_assigns_to_table(eb, tname)) return true;
+                    }
+                },
+                .while_loop => |*wl| {
+                    if (block_assigns_to_table(&wl.body, tname)) return true;
+                },
+                .repeat_loop => |*rl| {
+                    if (block_assigns_to_table(&rl.body, tname)) return true;
+                },
+                .do_block => |*db| {
+                    if (block_assigns_to_table(&db.body, tname)) return true;
+                },
+                .num_for => |*nf| {
+                    if (block_assigns_to_table(&nf.body, tname)) return true;
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    fn solve_index_bound(alloc: std.mem.Allocator, fb: *const ast.FuncBody, tname: []const u8) !?[]const u8 {
+        var has_nested = false;
+        var outer_limit: ?[]const u8 = null;
+        var inner_limit: ?[]const u8 = null;
+        for (fb.body.stmts) |*s| {
+            if (s.* == .num_for) {
+                const nf = s.num_for;
+                if (nf.stop.* == .binop and nf.stop.binop.op == .sub) {
+                    outer_limit = try format_expr_c(alloc, nf.stop.binop.lhs);
+                } else {
+                    outer_limit = try format_expr_c(alloc, nf.stop);
+                }
+                for (nf.body.stmts) |*s2| {
+                    if (s2.* == .num_for) {
+                        const nf2 = s2.num_for;
+                        inner_limit = try format_expr_c(alloc, nf2.stop);
+                        has_nested = true;
+                    }
+                }
+            }
+        }
+        if (has_nested and outer_limit != null and inner_limit != null) {
+            return try std.fmt.allocPrint(alloc, "{s} * {s}", .{ outer_limit.?, inner_limit.? });
+        }
+        for (fb.body.stmts) |*s| {
+            if (s.* == .num_for) {
+                const nf = s.num_for;
+                if (block_assigns_to_table(&nf.body, tname)) {
+                    return try format_expr_c(alloc, nf.stop);
+                }
+            }
+        }
+        return null;
+    }
+
     fn detect_dense_table(fb: *ast.FuncBody, alloc: std.mem.Allocator) SemaError!void {
         var table_names: std.ArrayList([]const u8) = .empty;
         defer table_names.deinit(alloc);
@@ -5151,7 +5354,17 @@ pub const Sema = struct {
                 found_lit_cap = true;
                 break;
             }
-            if (!found_lit_cap) return;
+            if (!found_lit_cap) {
+                var found_any_cap = false;
+                for (table_names.items) |tname| {
+                    if (try solve_index_bound(alloc, fb, tname)) |solved| {
+                        cap = solved;
+                        found_any_cap = true;
+                        break;
+                    }
+                }
+                if (!found_any_cap) return;
+            }
         }
 
         // Find the actual capacity: look for local constants used as loop bounds.
@@ -5226,7 +5439,9 @@ pub const Sema = struct {
         // Populate the multi-table lists.
         fb.dense_tables = try alloc.dupe([]const u8, qualifying.items);
         const caps_buf = try alloc.alloc([]const u8, qualifying.items.len);
-        for (caps_buf) |*c| c.* = cap;
+        for (qualifying.items, 0..) |tname, idx| {
+            caps_buf[idx] = (try solve_index_bound(alloc, fb, tname)) orelse cap;
+        }
         fb.dense_table_caps = caps_buf;
         fb.dense_table_floats = try alloc.dupe(bool, qualifying_floats.items);
 
@@ -5376,15 +5591,24 @@ pub const Sema = struct {
                 if (self.local_tys.getPtr(name)) |entry| {
                     if (entry.* != .str and entry.* != .any) self.ok = false;
                     entry.* = .str;
+                } else {
+                    self.local_tys.put(name, .str) catch {
+                        self.ok = false;
+                    };
                 }
                 return;
             }
-            const entry = self.local_tys.getPtr(name) orelse return;
-            const merged = unify_numeric(entry.*, hint) orelse {
-                self.ok = false;
-                return;
-            };
-            entry.* = merged;
+            if (self.local_tys.getPtr(name)) |entry| {
+                const merged = unify_numeric(entry.*, hint) orelse {
+                    self.ok = false;
+                    return;
+                };
+                entry.* = merged;
+            } else if (hint.is_native()) {
+                self.local_tys.put(name, hint) catch {
+                    self.ok = false;
+                };
+            }
         }
 
         fn expr_type(self: *NativeInfer, expr: *const ast.Expr) RT {
@@ -5428,10 +5652,13 @@ pub const Sema = struct {
                             if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0) {
                                 continue; // dense table placeholder
                             }
-                            // Skip non-native locals — they won't participate in
-                            // specialization but shouldn't block other locals/params
-                            // from being inferred as native types.
-                            if (!t.is_native()) continue;
+                            if (i >= ld.inits.len) {
+                                self.local_tys.put(lname.ident, .any) catch return false;
+                                continue;
+                            }
+                            // Skip non-scalar locals (tables with content, etc.) but
+                            // keep `.any` bindings so assignment chains can narrow them.
+                            if (!t.is_native() and t != .any) continue;
                             self.local_tys.put(lname.ident, t) catch return false;
                         }
                     },

@@ -374,10 +374,13 @@ fun bench_fnv_hash(n: i64, s: i64): i64
     return result
 end
 
+fun print_fnv_result(v: i64): void
+    @c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
+end
+
 -- ═══════════════════════════════════════════════════════════════
 -- Driver
 -- ═══════════════════════════════════════════════════════════════
--- Driver
 seed: i64 = @c.emit("getenv(\"HONEST_SEED\") ? (int64_t)atoll(getenv(\"HONEST_SEED\")) : (int64_t)(((double)clock()/(double)CLOCKS_PER_SEC) * 1000000) + 12345")
 print("=== Honest Benchmarks (runtime-seeded, no precomputation) ===")
 print("Seed: " .. tostring(seed))
@@ -415,5 +418,5 @@ print("Time nbody " .. tostring(t1 - t0) .. " seconds")
 t0 = os.clock()
 r6: i64 = bench_fnv_hash(1000000, seed)
 t1 = os.clock()
-@c.emit([[printf("RESULT fnv %lld\n", (long long)r6);]])
+print_fnv_result(r6)
 print("Time fnv " .. tostring(t1 - t0) .. " seconds")
