@@ -16,32 +16,20 @@ fun os_rename(old: str, new: str): bool
     os.rename(old, new)
 end
 
-fun os_read_file(path: str): str
+fun os_read_file(path: str): any
     if path == nil then return "" end
-    f = io.open(path, "rb")
-    if f == nil then return "" end
-    data = f:read("*a")
-    f:close()
-    if data == nil then return "" end
-    data
+    return @c.emit([[({ FILE* _f = fopen(path, "rb"); lua_Value _v = lua_val_lit(""); if (_f) { fseek(_f, 0, SEEK_END); long _sz = ftell(_f); if (_sz > 0) { fseek(_f, 0, SEEK_SET); char* _buf = (char*)malloc((size_t)_sz); if (_buf) { fread(_buf, 1, (size_t)_sz, _f); _v = lua_val_from_str_len(_buf, (size_t)_sz); free(_buf); } } fclose(_f); } _v; })]])
 end
 
-fun os_write_file(path: str, data: str): bool
+fun os_write_file(path: str, data: any): bool
     if path == nil then return false end
-    if data == nil then data = "" end
-    f = io.open(path, "wb")
-    if f == nil then return false end
-    if f:write(data)
-        f:close()
-        true
-    else
-        false
-    end
+    if data == nil then return false end
+    return @c.emit([[({ FILE* _f = fopen(path, "wb"); int _ok = 0; if (_f) { const char* _s = lua_to_str(data); size_t _len = lua_str_byte_len(data); _ok = fwrite(_s, 1, _len, _f) == _len; fclose(_f); } _ok; })]])
 end
 
 fun os_mkdir(path: str): bool
     if path == nil then return false end
-    @c.emit("mkdir(path, 0777) == 0")
+    return @c.emit("mkdir(path, 0777) == 0")
 end
 
 fun os_mkdir_all(path: str): bool

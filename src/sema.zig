@@ -5099,24 +5099,65 @@ pub const Sema = struct {
         defer table_names.deinit(alloc);
         var has_loop_init = false;
 
-        // Find ALL empty-table local declarations.
+        // Find ALL table local declarations (empty or literal-init with all-int/float fields).
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .local_decl) continue;
             const ld = stmt.local_decl;
             if (ld.names.len != 1 or ld.inits.len != 1) continue;
             const init_expr = ld.inits[0];
-            if (init_expr.* != .table or init_expr.table.fields.len != 0) continue;
-            try table_names.append(alloc, ld.names[0].ident);
+            if (init_expr.* != .table) continue;
+            // Empty tables always qualify.
+            if (init_expr.table.fields.len == 0) {
+                try table_names.append(alloc, ld.names[0].ident);
+                continue;
+            }
+            // Non-empty tables qualify if all fields are positional (array-style)
+            // with int_lit or float_lit values.
+            var all_literal = true;
+            for (init_expr.table.fields) |f| {
+                const v = switch (f) {
+                    .positional => |val| val,
+                    else => {
+                        all_literal = false;
+                        break;
+                    },
+                };
+                if (v.* != .int_lit and v.* != .float_lit) {
+                    all_literal = false;
+                    break;
+                }
+            }
+            if (all_literal) {
+                try table_names.append(alloc, ld.names[0].ident);
+            }
         }
         if (table_names.items.len == 0) return;
-        if (fb.params.len != 1) return;
-        const param_cap = fb.params[0].name;
+
+        // Determine the capacity for each table. Empty tables need a param or
+        // local constant as the bound. Literal-init tables use their field count.
+        var cap: []const u8 = "";
+        if (fb.params.len == 1) {
+            cap = fb.params[0].name;
+        } else {
+            // No param — find a literal-init table and use its field count as cap.
+            var found_lit_cap = false;
+            for (fb.body.stmts) |*stmt| {
+                if (stmt.* != .local_decl) continue;
+                const ld = stmt.local_decl;
+                if (ld.names.len != 1 or ld.inits.len != 1) continue;
+                if (ld.inits[0].* != .table) continue;
+                if (ld.inits[0].table.fields.len == 0) continue;
+                cap = try std.fmt.allocPrint(alloc, "{d}", .{ld.inits[0].table.fields.len});
+                found_lit_cap = true;
+                break;
+            }
+            if (!found_lit_cap) return;
+        }
 
         // Find the actual capacity: look for local constants used as loop bounds.
         // If a while-loop condition uses a local constant (e.g. `i < size` where
         // `size = 1000`), use that constant value as the capacity instead of the
         // param name, since the allocation happens before local decls are emitted.
-        var cap = param_cap;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
             const cond = stmt.while_loop.cond;

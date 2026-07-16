@@ -169,7 +169,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const args = try init.minimal.args.toSlice(alloc);
     if (args.len > 0) {
-        compiler_lib_root = try detectCompilerLibRoot(alloc, io, args[0]);
+        compiler_lib_root = try detectCompilerLibRoot(alloc, io, init.environ_map, args[0]);
     }
 
     if (args.len < 2) {
@@ -467,7 +467,7 @@ fn pathJoin2(alloc: std.mem.Allocator, a: []const u8, b: []const u8) ![]const u8
     return try std.fs.path.join(alloc, &.{ a, b });
 }
 
-fn detectCompilerLibRoot(alloc: std.mem.Allocator, io: Io, argv0: []const u8) !?[]const u8 {
+fn detectCompilerLibRoot(alloc: std.mem.Allocator, io: Io, environ: *std.process.Environ.Map, argv0: []const u8) !?[]const u8 {
     var exe_path: ?[]const u8 = null;
     if (std.fs.path.isAbsolute(argv0)) {
         exe_path = Io.Dir.realPathFileAbsoluteAlloc(io, argv0, alloc) catch try alloc.dupe(u8, argv0);
@@ -493,6 +493,33 @@ fn detectCompilerLibRoot(alloc: std.mem.Allocator, io: Io, argv0: []const u8) !?
     if (Io.Dir.cwd().access(io, local_std, .{})) |_| {
         return try alloc.dupe(u8, "lib");
     } else |_| {}
+    if (!std.fs.path.isAbsolute(argv0)) {
+        const path_env = environ.get("PATH");
+        if (path_env) |path_val| {
+            var it = std.mem.splitScalar(u8, path_val, ':');
+            while (it.next()) |dir| {
+                if (dir.len == 0) continue;
+                const candidate = try pathJoin2(alloc, dir, argv0);
+                defer alloc.free(candidate);
+                if (absPathExists(io, candidate)) {
+                    if (Io.Dir.realPathFileAbsoluteAlloc(io, candidate, alloc)) |real| {
+                        defer alloc.free(real);
+                        if (std.fs.path.dirname(real)) |bin_dir| {
+                            if (std.fs.path.dirname(bin_dir)) |zig_out| {
+                                if (std.fs.path.dirname(zig_out)) |repo| {
+                                    const lib = try pathJoin2(alloc, repo, "lib");
+                                    const std_root = try pathJoin2(alloc, lib, "std.duo");
+                                    defer alloc.free(std_root);
+                                    if (absPathExists(io, std_root)) return lib;
+                                    alloc.free(lib);
+                                }
+                            }
+                        }
+                    } else |_| {}
+                }
+            }
+        }
+    }
     return null;
 }
 

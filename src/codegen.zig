@@ -849,6 +849,11 @@ pub const CodeGen = struct {
             }
         }
         if (self.structural_expr_type(e)) |t| return t;
+        if (e.* == .name) {
+            if (self.global_type(e.name.ident)) |gt| {
+                if (gt != .any) return gt;
+            }
+        }
         return tm orelse .any;
     }
 
@@ -2562,6 +2567,21 @@ pub const CodeGen = struct {
             }
         }
 
+        // Emit module-level @c.emit directives at file scope so raw C
+        // declarations (e.g., struct/typedef definitions) are visible to
+        // file-scope functions in the generated C.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .directive and std.mem.eql(u8, stmt.directive.attr.name, "c.emit")) {
+                const code = @import("directives.zig").extractCRawCode(stmt.directive.attr.args orelse "");
+                const trimmed = std.mem.trim(u8, code, " \t\r\n");
+                if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
+                    self.p("{s};\n", .{code})
+                else
+                    self.p("{s}\n", .{code});
+            }
+        }
+        self.nl();
+
         // Walk the module to find every record-type annotation (function
         // parameters, return types, local/global decls, struct fields) and
         // emit the corresponding C struct typedefs at file scope. This must
@@ -2846,6 +2866,12 @@ pub const CodeGen = struct {
                     .const_decl => {
                         i += 1;
                         continue;
+                    },
+                    .directive => |dir| {
+                        if (std.mem.eql(u8, dir.attr.name, "c.emit")) {
+                            i += 1;
+                            continue;
+                        }
                     },
                     else => {},
                 }
@@ -4757,6 +4783,28 @@ pub const CodeGen = struct {
                 } else {
                     self.pl("{s}* __dt_{s} = ({s}*)calloc(({s}) + 1, sizeof({s}));", .{ elem_type, dt, elem_type, cap, elem_type });
                 }
+                // If this table has a literal init, emit the values.
+                for (fb.body.stmts) |*stmt| {
+                    if (stmt.* != .local_decl) continue;
+                    const ld = stmt.local_decl;
+                    if (ld.names.len != 1 or ld.inits.len != 1) continue;
+                    if (!std.mem.eql(u8, ld.names[0].ident, dt)) continue;
+                    if (ld.inits[0].* != .table) continue;
+                    for (ld.inits[0].table.fields, 0..) |f, idx| {
+                        const val = switch (f) {
+                            .positional => |v| v,
+                            else => break,
+                        };
+                        const val_str = switch (val.*) {
+                            .int_lit => |il| try std.fmt.allocPrint(self.alloc, "{d}", .{il.val}),
+                            .float_lit => |fl| try std.fmt.allocPrint(self.alloc, "{d}", .{fl.val}),
+                            else => break,
+                        };
+                        defer self.alloc.free(val_str);
+                        self.pl("__dt_{s}[{d}] = {s};", .{ dt, idx + 1, val_str });
+                    }
+                    break;
+                }
             }
             // Fallback: if dense_tables is empty (shouldn't happen when use_dense_table is true),
             // use the single-table fields for backward compat.
@@ -6197,10 +6245,57 @@ pub const CodeGen = struct {
                         try self.note_comptime_unavailable(lname.ident);
                     }
                 } else for (ld.names, 0..) |*lname, i| {
-                    // Skip emitting lua_table_new for any dense table local.
-                    if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len == 0 and self.is_dense_table_name(lname.ident)) {
+                    // Skip emitting lua_table_new for any dense table local
+                    // (both empty-init and literal-init).
+                    if (i < ld.inits.len and ld.inits[i].* == .table and self.is_dense_table_name(lname.ident)) {
                         try self.note_comptime_unavailable(lname.ident);
                         continue;
+                    }
+                    // Literal-init table with all-int/float positional fields:
+                    // emit a native static array instead of lua_table_new.
+                    if (i < ld.inits.len and ld.inits[i].* == .table and ld.inits[i].table.fields.len > 0) {
+                        const fields = ld.inits[i].table.fields;
+                        var all_literal = true;
+                        var is_float = false;
+                        for (fields) |f| {
+                            const v = switch (f) {
+                                .positional => |val| val,
+                                else => {
+                                    all_literal = false;
+                                    break;
+                                },
+                            };
+                            if (v.* == .float_lit) {
+                                is_float = true;
+                            } else if (v.* != .int_lit) {
+                                all_literal = false;
+                                break;
+                            }
+                        }
+                        if (all_literal) {
+                            const elem_type: []const u8 = if (is_float) "double" else "int64_t";
+                            // Emit static array + populate.
+                            self.ind();
+                            self.p("{s} {s}[{d}] = {{", .{ elem_type, lname.ident, fields.len + 1 });
+                            // Element 0 is unused (Lua 1-based indexing).
+                            self.p("0", .{});
+                            for (fields) |f| {
+                                const v = switch (f) {
+                                    .positional => |val| val,
+                                    else => unreachable,
+                                };
+                                self.p(", ", .{});
+                                switch (v.*) {
+                                    .int_lit => |il| self.p("{d}", .{il.val}),
+                                    .float_lit => |fl| self.p("{d}", .{fl.val}),
+                                    else => self.p("0", .{}),
+                                }
+                            }
+                            self.p("}};\n", .{});
+                            try self.note_local_type(lname.ident, if (is_float) .f64 else .i64);
+                            try self.note_comptime_unavailable(lname.ident);
+                            continue;
+                        }
                     }
                     self.ind();
                     // Determine type
@@ -12277,6 +12372,15 @@ pub const CodeGen = struct {
         return null;
     }
 
+    fn find_duo_module_const(mod: *const ast.Module, name: []const u8) ?*const ast.Expr {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .const_decl) continue;
+            const cd = &stmt.const_decl;
+            if (std.mem.eql(u8, cd.ident, name)) return cd.val;
+        }
+        return null;
+    }
+
     fn emit_duo_module_return_table(self: *CodeGen, mod: *const ast.Module) E!void {
         var names: std.ArrayList([]const u8) = .empty;
         defer names.deinit(self.alloc);
@@ -12298,6 +12402,8 @@ pub const CodeGen = struct {
                 } else {
                     try self.emit_as_lua_value(&name_expr);
                 }
+            } else if (find_duo_module_const(mod, name)) |cval| {
+                try self.emit_as_lua_value(cval);
             } else if (self.module_globals) |globals| {
                 if (globals.get(name)) |gt| {
                     if (gt == .func) {
@@ -12427,6 +12533,21 @@ pub const CodeGen = struct {
             }
         }
 
+        // Emit module-level @c.emit directives at file scope so raw C
+        // declarations (e.g., struct/typedef definitions) are visible to
+        // file-scope functions in the submodule.
+        for (submod.body.stmts) |*stmt| {
+            if (stmt.* == .directive and std.mem.eql(u8, stmt.directive.attr.name, "c.emit")) {
+                const code = @import("directives.zig").extractCRawCode(stmt.directive.attr.args orelse "");
+                const trimmed = std.mem.trim(u8, code, " \t\r\n");
+                if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
+                    self.p("{s};\n", .{code})
+                else
+                    self.p("{s}\n", .{code});
+            }
+        }
+        self.nl();
+
         // Collect all top-level and nested local functions from submodule
         var sub_funcs: std.ArrayList(*ast.FuncDecl) = .empty;
         defer sub_funcs.deinit(self.alloc);
@@ -12516,6 +12637,13 @@ pub const CodeGen = struct {
         for (submod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .func_decl, .const_decl => {},
+                .directive => |dir| {
+                    if (std.mem.eql(u8, dir.attr.name, "c.emit")) continue;
+                    self.emit_stmt(stmt) catch |e| {
+                        term.err("emit_embedded_module: stmt emit failed: {}", .{e});
+                        return false;
+                    };
+                },
                 else => self.emit_stmt(stmt) catch |e| {
                     term.err("emit_embedded_module: stmt emit failed: {}", .{e});
                     return false;
