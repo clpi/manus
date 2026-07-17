@@ -1710,7 +1710,7 @@ fn do_compile(
         return;
     }
 
-    var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id);
+    var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types);
     native_scalar_precheck.src_path = src_path;
     native_scalar_precheck.stdlib_root = compiler_lib_root;
     native_scalar_precheck.target = target;
@@ -1826,7 +1826,7 @@ native_scalar_precheck.bench_mode = bench_mode;
 
         var buf: [65536]u8 = undefined;
         var fw: Io.File.Writer = .init(cf, io, &buf);
-        var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id);
+        var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types);
         if (mono) |*m| cg.mono = m;
         if (arc_pass) |*a| cg.arc = a;
         if (async_pass) |*a| cg.async_lower = a;
@@ -2297,7 +2297,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     const stdout = Io.File.stdout();
     var buf: [65536]u8 = undefined;
     var fw: Io.File.Writer = .init(stdout, io, &buf);
-    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id);
+    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types);
     cg.mono = &mono;
     cg.arc = &arc_pass;
     cg.async_lower = &async_pass;

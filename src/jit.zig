@@ -158,6 +158,7 @@ pub fn emitJitRuntime(cg: anytype) E!void {
             \\static inline lua_Value lua_jit_on(lua_Value f) { (void)f; return lua_val_nil(); }
             \\static inline lua_Value lua_jit_off(lua_Value f) { (void)f; return lua_val_nil(); }
             \\static inline lua_Value lua_jit_flush(lua_Value f) { (void)f; return lua_val_nil(); }
+            \\static inline bool lua_jit_status_bool(void) { return false; }
             \\static inline lua_Value lua_jit_status(void) { return lua_val_from_bool(0); }
             \\static inline lua_Value lua_jit_version_num(void) { return lua_val_from_num(20100.0); }
             \\static inline lua_Value lua_jit_opt(lua_Value cmd, lua_Value val) { (void)cmd; (void)val; return lua_val_nil(); }
@@ -307,7 +308,8 @@ pub fn emitJitRuntime(cg: anytype) E!void {
         \\    }
         \\    return lua_val_nil();
         \\}
-        \\static inline lua_Value lua_jit_status(void) { return lua_val_from_bool(duo_jit_enabled != 0); }
+        \\static inline bool lua_jit_status_bool(void) { return duo_jit_enabled != 0; }
+        \\static inline lua_Value lua_jit_status(void) { return lua_val_from_bool(lua_jit_status_bool()); }
         \\static inline lua_Value lua_jit_version_num(void) { return lua_val_from_num(20100.0); }
         \\static inline lua_Value lua_jit_opt(lua_Value cmd, lua_Value val) {
         \\    if (cmd.type == VAL_STRING && cmd.as.sval) {
@@ -326,6 +328,7 @@ pub fn emitJitRuntime(cg: anytype) E!void {
         \\static inline lua_Value lua_jit_on(lua_Value f) { (void)f; return lua_val_nil(); }
         \\static inline lua_Value lua_jit_off(lua_Value f) { (void)f; return lua_val_nil(); }
         \\static inline lua_Value lua_jit_flush(lua_Value f) { (void)f; return lua_val_nil(); }
+        \\static inline bool lua_jit_status_bool(void) { return false; }
         \\static inline lua_Value lua_jit_status(void) { return lua_val_from_bool(0); }
         \\static inline lua_Value lua_jit_version_num(void) { return lua_val_from_num(20100.0); }
         \\static inline lua_Value lua_jit_opt(lua_Value cmd, lua_Value val) { (void)cmd; (void)val; return lua_val_nil(); }

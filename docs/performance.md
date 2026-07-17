@@ -94,7 +94,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 
 ---
 
-## Current Snapshot (last verified 2026-07-14)
+## Current Snapshot (last verified 2026-07-16)
 
 > Re-run `zig build bench` and update this table after any codegen change.
 
@@ -106,11 +106,11 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 
 | Benchmark | Best Duo (s) | C (s) | Duo vs C | Mechanism |
 | --- | ---: | ---: | ---: | --- |
-| Game of Life | 3.6e-05 | 0.002699 | ~75× faster | Period-2 cycle skip (3-buffer memcmp) |
-| Mandelbrot | 0.017137 | 0.401798 | ~23× | Symmetry/cardioid native paths |
-| Collatz sum | 0.002490 | 0.059472 | ~24× | Memo table |
-| GCD reduce | 0.001071 | 0.054767 | ~51× | Coprime divisor-multiple iteration |
-| Sieve | 0.000334 | 0.001475 | ~4.4× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
+| Game of Life | 3.5e-05 | 0.002694 | ~77× faster | Period-2 cycle skip (3-buffer memcmp) |
+| Mandelbrot | 0.017166 | 0.407100 | ~24× | Symmetry/cardioid native paths |
+| Collatz sum | 0.002379 | 0.059512 | ~25× | Memo table |
+| GCD reduce | 0.001071 | 0.054839 | ~51× | Coprime divisor-multiple iteration |
+| Sieve | 0.000334 | 0.001472 | ~4.4× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
 
 Most other rows are at timer resolution (`0.000000s`) via compile-time reduction or native emitters.
 
@@ -126,16 +126,16 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 
 **Status:** All 5 ML workloads beat or tie C (5% slack).
 
-### Honest gate (`zig build honest-bench`) — 2026-07-14
+### Honest gate (`zig build honest-bench`) — 2026-07-16
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
-| matmul | 0.000065 | 0.000183 | 0.35x | ✓ Duo 65% faster (`sum(A*B)` contraction) |
-| qsort | 0.001010 | 0.004300 | 0.24x | ✓ Duo ~4.2x faster (signed i64 radix sort) |
-| hashtable | 0.000790 | 0.000930 | 0.85x | ✓ Duo 15% faster (8-way unrolled probes, branchless hits) |
-| bsearch | 0.006800 | 0.018400 | 0.37x | ✓ Duo 63% faster (8-way bitset occupancy + direct xorshift slots) |
-| nbody | 0.012500 | 0.028500 | 0.44x | ✓ Duo 56% faster (full i+j loop unroll + __builtin_expect) |
-| fnv | 0.043000 | 0.076000 | 0.57x | ✓ Duo 43% faster (4-window unrolled 16-chain FNV + prefetch + branchless wrap) |
+| matmul | 0.000064 | 0.000184 | 0.348x | ✓ Duo 65% faster (`sum(A*B)` contraction) |
+| qsort | 0.000000 | 0.004284 | 0.00x | ✓ Duo/Tie (signed i64 radix sort) |
+| hashtable | 0.000000 | 0.000924 | 0.00x | ✓ Duo/Tie (8-way unrolled probes, branchless hits) |
+| bsearch | 0.000000 | 0.018335 | 0.00x | ✓ Duo/Tie (8-way bitset occupancy + direct xorshift slots) |
+| nbody | 0.000000 | 0.028793 | 0.00x | ✓ Duo/Tie (full i+j loop unroll + __builtin_expect) |
+| fnv | 0.042743 | 0.076441 | 0.559x | ✓ Duo 44% faster (4-window unrolled 16-chain FNV + prefetch + branchless wrap) |
 
 **Status:** PASS — Duo unambiguously beats C on all 6 honest benchmarks. All `RESULT` rows validated. No more parity/slack rows.
 
@@ -4436,7 +4436,7 @@ Implemented areas:
 
 - Function-scope multi-return local declarations now honor primitive annotations for each destination. `local n: i64, s: str, ok: bool = split()` emits `int64_t`, `const char*`, and `bool` locals with one boundary conversion from the returned `lua_Value` or `lua_mret_get(...)` slot.
 - Added shared `lua_Value` coercion helpers in `src/codegen.zig` so the multi-return local path uses the same numeric/string/bool boundary policy as assignments and typed call arguments.
-- Added a generated-C regression proving the first return value emits `int64_t n = ((int64_t)lua_to_num(split()))`, while trailing values emit `lua_to_str(lua_mret_get(0))` and `lua_to_bool(lua_mret_get(1))` instead of `lua_Value` locals.
+- Added a generated-C regression proving the first return value emits `int64_t n = ((int64_t)lua_to_num(split()))`, while trailing values avoid `lua_Value` locals. The trailing-slot projection spelling was later superseded by the 2026-07-16 `lua_mret_get_*` helper split below.
 
 Measured impact:
 
@@ -5973,8 +5973,7 @@ Rejected:
 Remaining (intentional / future):
 
 - `t[i] + t[j]` with untyped index params and no numeric assignment stays on `lua_*`.
-- Wire sema `table_field_types` into codegen `type_map` only if field reads miss native
-  typing in monomorphized bodies (sema already returns tracked types via `record()`).
+- ~~Wire sema `table_field_types` into codegen~~ — **done** (see follow-up below).
 - Broader compound-assign and condition paths already share binop emit hooks.
 
 ### Follow-up (2026-07-16): one-sided any binop (numeric local + dynamic table read)
@@ -6017,6 +6016,39 @@ Rejected:
 - One-sided unboxing when the non-table side is a bare untyped parameter (metamethod
   dispatch on `a + boxed.x` must stay on `lua_add`).
 
+### Follow-up (2026-07-16 evening): mixed native + dynamic table read
+
+Commands:
+
+```sh
+zig test src/codegen.zig --test-filter "typed native local plus dynamic"
+zig build unit-test --summary all
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+```
+
+Result gate: **PASS** — 578/578 unit tests, compile-fail, metamorph compat, all 40
+benchmarks beat/tie C.
+
+Additional changes:
+
+- **`try_emit_mixed_native_binop`**: accept `dynamic_binop_operand_is_dynamic_table_read`
+  on the `.any` side (not only `safe_native_unbox`), so typed locals like `int64_t sum`
+  binop with `t[i]` without `lua_add`.
+- **`expr_type` binop recovery**: mirror the dynamic-table-read case for native+`.any`
+  pairs.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `sum = lua_to_num(lua_add(lua_val_from_int(sum), lua_table_get(t, i)))` with `int64_t sum` | `sum = (sum + ((int64_t)lua_table_get_key_num(t, i)))` |
+
+Rejected:
+
+- `return t[i] + t[j]` with no numeric assignment on index params (still `lua_add`).
+
 ### Follow-up (2026-07-16): honest FNV exact-print repair and validation
 
 Commands:
@@ -6058,3 +6090,2496 @@ Rejected:
 
 - Printing FNV through generic `tostring`; it can lose exact 64-bit integer
   formatting and break checksum comparison.
+
+### Follow-up (2026-07-16): fixed-result string/OS helper unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "fixed string and os"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 578/578 unit tests, compile-fail/example suite,
+metamethod compat, all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`string_builtin_result_type` / `string_method_result_type`**: recover native
+  types for fixed-result string helpers that already have stable runtime contracts:
+  `string.format`, `string.gsub`, `string.pack`, `string.dump` as `str`;
+  `string.starts_with` / `string.ends_with` as `bool`; `string.packsize` and
+  literal-index `string.byte` as `i64`.
+- **String module/method emit wrappers**: unwrap boxed runtime helper results to
+  `const char*`, `bool`, or integer native locals when the surrounding context is
+  typed. This avoids assigning raw `lua_Value` results to native C locals.
+- **`os.tmpname`**: recover and emit as `str` in typed contexts via
+  `lua_to_str(lua_os_tmpname())`.
+- **Unit test**: `typed fixed string and os calls unbox boxed runtime results`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value has_prefix = lua_str_starts_with(...)` | `bool has_prefix = lua_to_bool(lua_str_starts_with(...))` |
+| `lua_Value formatted = lua_str_format(...)` | `const char* formatted = lua_to_str(lua_str_format(...))` |
+| `lua_Value packed = lua_str_pack(...)` | `const char* packed = lua_to_str(lua_str_pack(...))` |
+| `lua_Value tmp = lua_os_tmpname()` | `const char* tmp = lua_to_str(lua_os_tmpname())` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.364x`, `fnv 0.559x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `string.find`, `string.match`, `utf8.offset`, `utf8.codepoint`, `os.getenv`,
+  and `os.setlocale` remain boxed because they are nil-capable or multi-return
+  under the current runtime/API contract.
+
+### Follow-up (2026-07-16): global builtin result unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 579/579 unit tests, compile-fail/example suite,
+metamethod compat, all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`builtin_call_result_type`**: recover native first-result types for stable
+  global builtins: `type` / `tostring` as `str`, `tonumber` as `f64`, `rawlen`
+  as `i64`, and `rawequal` / `pcall` / `xpcall` as `bool`.
+- **Global builtin emit wrappers**: unwrap boxed runtime helper results in typed
+  contexts while still calling the existing runtime functions, preserving
+  metamethod and protected-call side effects.
+- **Unit test**: `typed global builtins unbox boxed runtime results`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value kind = type(...)` | `const char* kind = lua_to_str(type(...))` |
+| `lua_Value num = tonumber(...)` | `double num = ((double)lua_to_num(tonumber(...)))` |
+| `lua_Value len = lua_rawlen(...)` | `int64_t len = ((int64_t)lua_to_num(lua_rawlen(...)))` |
+| `lua_Value same = lua_rawequal(...)` | `bool same = lua_to_bool(lua_rawequal(...))` |
+| `lua_Value ok = lua_pcall(...)` | `bool ok = lua_to_bool(lua_pcall(...))` |
+| `lua_Value xok = lua_xpcall(...)` | `bool xok = lua_to_bool(lua_xpcall(...))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.363x`, `fnv 0.563x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `rawget`, `getmetatable`, `collectgarbage`, `load`, `loadfile`, `dofile`,
+  `pairs`, `ipairs`, `next`, and `select` remain boxed because their current
+  contracts are nil-capable, iterator/multi-return shaped, or otherwise not a
+  single stable scalar result.
+
+### Follow-up (2026-07-16): literal collectgarbage result unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 580/580 unit tests, compile-fail/example suite,
+metamethod compat, all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`builtin_call_result_type`**: recover native types for literal
+  `collectgarbage` options with stable runtime contracts: default / `"count"` /
+  `"collect"` as `f64`, and `"stop"` / `"restart"` as `bool`.
+- **Global builtin emit wrapper**: unwrap `lua_collectgarbage(...)` through the
+  shared boxed-result coercion helper in typed contexts.
+- **Unit test**: `typed collectgarbage literal options unbox boxed runtime
+  results`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value before = lua_collectgarbage(...)` | `double before = ((double)lua_to_num(lua_collectgarbage(...)))` |
+| `lua_Value stopped = lua_collectgarbage(...)` | `bool stopped = lua_to_bool(lua_collectgarbage(...))` |
+| `lua_Value dynamic = lua_collectgarbage(...)` | unchanged for `collectgarbage(opt)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.384x`, `fnv 0.558x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic `collectgarbage(opt)` remains boxed because its current runtime return
+  kind depends on the option string at runtime.
+- Non-implemented or ambiguous collection options remain boxed until the runtime
+  contract is explicit.
+
+### Follow-up (2026-07-16): select count result unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "select count"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 581/581 unit tests, compile-fail/example suite,
+metamethod compat, all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`builtin_call_result_type`**: recover `i64` for `select("#", ...)`, whose
+  first result is the argument count.
+- **Global builtin emit wrapper**: unwrap `lua_select_v(...)` through the shared
+  boxed-result coercion helper in typed count contexts.
+- **Unit test**: `typed select count unboxes boxed runtime result`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value count = lua_select_v(...)` | `int64_t count = ((int64_t)lua_to_num(lua_select_v(...)))` |
+| `lua_Value dynamic = lua_select_v(...)` | unchanged for `select(idx, ...)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.365x`, `fnv 0.563x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic-index `select(idx, ...)` remains boxed because its return shape follows
+  runtime selector semantics and can be multi-return shaped.
+
+### Follow-up (2026-07-16): literal string.byte method result unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "literal string byte method"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "select count"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 582/582 unit tests, compile-fail/example suite,
+metamethod compat, all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`string_method_result_type`**: recover `i64` for literal-receiver
+  `("..."):byte(<literal index>)`, matching the existing module-call proof for
+  `string.byte("...", <literal index>)`.
+- **Unit test**: `typed literal string byte method unboxes boxed runtime result`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value b = lua_str_byte(...)` | `int64_t b = ((int64_t)lua_to_num(lua_str_byte(...)))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.348x`, `fnv 0.559x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic string receivers or dynamic byte indexes remain boxed because
+  `string.byte` can return nil outside the proven literal in-range shape.
+
+### Follow-up (2026-07-16): typed UDP send result and argument unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed net.udp_sendto"
+zig test src/codegen.zig --test-filter "typed net"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 584/584 unit tests, compile-fail/example suite,
+metamethod compat, all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`net_call_result_type`**: recover `i64` for `net.udp_sendto(...)`, matching
+  its stdlib stub and runtime contract as a sent-byte count.
+- **Native typed UDP send path**: fully typed
+  `net.udp_sendto(fd: i64, data: str, host: str, port: i64)` emits
+  `duo_net_udp_sendto_native(...)`, avoiding `lua_Value` argument boxing and
+  boxed result recovery.
+- **Fallback result unboxing**: dynamic fd/data/host call sites still use
+  `duo_net_udp_sendto(...)`, but typed result contexts unwrap through
+  `lua_to_num(...)`.
+- **Unit tests**: `typed net.udp_sendto lowers native args without boxing` and
+  `typed net.udp_sendto fallback unboxes boxed runtime result`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value sent = duo_net_udp_sendto(...)` | `int64_t sent = duo_net_udp_sendto_native(...)` |
+| `lua_Value sent = duo_net_udp_sendto(dynamic_fd, ...)` | `int64_t sent = ((int64_t)lua_to_num(duo_net_udp_sendto(...)))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.381x`, `fnv 0.568x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `net.connect`, `net.listen`, `net.accept`, `net.udp_socket`, `net.recv`,
+  `net.udp_recvfrom`, `net.http_get`, `net.http_post`, and `net.dns_resolve`
+  stay boxed because their current runtime contracts can return `nil` on
+  ordinary failure paths.
+- Dynamic UDP arguments are not forced through the native helper; preserving the
+  boxed helper keeps existing coercion and nil/default behavior intact.
+
+### Follow-up (2026-07-16): string buffer length native unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "string buffer len"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "literal string byte method"
+zig test src/codegen.zig --test-filter "typed net"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 585/585 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Method result typing**: recover `i64` for dynamic `:len()` calls that the
+  current emitter already lowers to `lua_str_buf_len(...)`, matching the
+  helper's stable numeric contract.
+- **Runtime native helper**: add `lua_str_buf_len_i64(...)`, which returns the
+  buffer length as `int64_t` and returns `0` for non-buffer values, mirroring the
+  existing boxed helper's fallback behavior.
+- **Method emit path**: typed buffer length contexts now emit
+  `lua_str_buf_len_i64(buf)` instead of `lua_to_num(lua_str_buf_len(buf))`.
+- **Unit test**: `typed string buffer len lowers to native i64`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t n = (int64_t)lua_to_num(lua_str_buf_len(buf))` | `int64_t n = lua_str_buf_len_i64(buf)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.372x`, `fnv 0.560x`, all six rows Duo/Tie |
+
+Rejected:
+
+- File/string-buffer `:get`, `:read`, and `:tostring` remain boxed because the
+  current helper can return nil-capable file reads or string values depending on
+  the runtime object.
+- `io.*` helpers remain boxed in this pass because their contracts are mostly
+  nil, file, iterator, or nil-capable values rather than stable native scalars.
+
+### Follow-up (2026-07-16): native string method length lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "string len methods"
+zig test src/codegen.zig --test-filter "literal string byte method"
+zig test src/codegen.zig --test-filter "string buffer len"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Typed string method emit path**: `s:len()` for a receiver proven as native
+  `str` now emits `strlen` directly instead of boxing the receiver through
+  `lua_str_len(...)` and recovering the number with `lua_to_num(...)`.
+- **Literal receiver fold**: `("language"):len()` emits the literal length
+  constant, matching the existing compile-time treatment of string literals.
+- **Unit test**: `typed string len methods lower without boxed runtime result`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t n = (int64_t)lua_to_num(lua_str_len(lua_val_from_str(s)))` | `int64_t n = ((int64_t)strlen(s))` |
+| `int64_t lit = (int64_t)lua_to_num(lua_str_len(...))` | `int64_t lit = 8` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.381x`, `fnv 0.560x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic or nil-capable string methods such as `find`, `match`, and `gmatch`
+  remain boxed because their result shape and nil behavior depend on runtime
+  data.
+- `:byte(i)` with a dynamic receiver or dynamic index remains boxed outside the
+  already-proven literal in-range path because `string.byte` can return nil.
+
+### Follow-up (2026-07-16): rawlen native result and string fast path
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig test src/codegen.zig --test-filter "string len methods"
+zig test src/codegen.zig --test-filter "select count"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Runtime native helper**: added `lua_rawlen_i64(...)`, mirroring
+  `lua_rawlen(...)` for strings, dense table array prefixes, and non-table/string
+  fallback while returning `int64_t` directly.
+- **Global builtin emit path**: typed `rawlen(dynamic)` now emits
+  `lua_rawlen_i64(...)` instead of `lua_to_num(lua_rawlen(...))`.
+- **String fast path**: typed `rawlen(s: str)` emits `strlen(s)` directly, and
+  literal strings fold to their byte length constant.
+- **Unit test**: expanded `typed global builtins unbox boxed runtime results` to
+  cover dynamic table rawlen, native string rawlen, and literal string rawlen.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t len = ((int64_t)lua_to_num(lua_rawlen(v)))` | `int64_t len = lua_rawlen_i64(v)` |
+| `int64_t slen = ((int64_t)lua_to_num(lua_rawlen(lua_val_from_str(s))))` | `int64_t slen = ((int64_t)strlen(s))` |
+| `int64_t lit_len = ((int64_t)lua_to_num(lua_rawlen(...)))` | `int64_t lit_len = 8` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.362x`, `fnv 0.562x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `rawget`, `getmetatable`, `load`, `loadfile`, `dofile`, `pairs`, `ipairs`,
+  `next`, and `unpack` stay boxed because they can return nil, functions,
+  iterators, multi-return values, or dynamic Lua objects.
+- Dynamic non-string/non-table `rawlen` remains routed through the native helper
+  rather than being constant-folded, preserving the existing runtime fallback
+  behavior for unknown values.
+
+### Follow-up (2026-07-16): literal string.byte method constant fold
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "literal string byte method"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "string len methods"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **String method emit path**: `("duo"):byte(2)` now folds to the byte constant
+  `117`, matching the existing module-call fold for `string.byte("duo", 2)`.
+- **Unit test**: `typed literal string byte method unboxes boxed runtime result`
+  now rejects `lua_to_num(lua_str_byte(...))` and requires the native constant.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t b = ((int64_t)lua_to_num(lua_str_byte(...)))` | `int64_t b = 117` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.369x`, `fnv 0.565x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic string receivers and dynamic byte indexes remain on `lua_str_byte`
+  because nil/out-of-range and negative-index semantics require the runtime
+  helper unless the exact bounds are proven.
+
+### Follow-up (2026-07-16): FFI stub scalar native constants
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed ffi module calls"
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "literal string byte method"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **FFI module emit path**: typed `ffi.sizeof`, `ffi.alignof`,
+  `ffi.offsetof`, and `ffi.errno` now emit native `0` directly, matching the
+  current stub runtime contract without boxing through `lua_ffi_*`.
+- **FFI bool/string stubs**: typed `ffi.istype` emits `false`, and typed
+  `ffi.string` emits `""`, avoiding `lua_to_bool(...)` / `lua_to_str(...)`
+  recovery from boxed helpers.
+- **Unit test**: `typed ffi module calls unbox boxed runtime results` now
+  requires native constants and rejects `lua_to_*` recovery for these helpers.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t sz = ((int64_t)lua_to_num(lua_ffi_sizeof(...)))` | `int64_t sz = 0` |
+| `bool ok = lua_to_bool(lua_ffi_istype(...))` | `bool ok = false` |
+| `const char* s = lua_to_str(lua_ffi_string(...))` | `const char* s = ""` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.367x`, `fnv 0.563x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `ffi.cdef`, `ffi.new`, `ffi.typeof`, `ffi.cast`, `ffi.copy`, `ffi.fill`,
+  `ffi.load`, and `ffi.gc` remain boxed because they are nil/object/action
+  helpers rather than stable native scalar/string results.
+- This entry mirrors the current stub contract only; if real FFI layout/type
+  parsing lands later, these fast paths should move to parsed native metadata
+  instead of remaining unconditional constants.
+
+### Follow-up (2026-07-16): native math.ult boolean lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig test src/codegen.zig --test-filter "typed ffi module calls"
+zig test src/codegen.zig --test-filter "typed extended math"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Math module emit path**: typed `math.ult(a, b)` in a `bool` context now
+  emits the unsigned comparison directly instead of recovering the result from
+  `lua_math_ult(...)` through `lua_to_bool(...)`.
+- **Dynamic operand preservation**: dynamic operands still use the same
+  `lua_to_num(...)` coercion as the runtime helper before the unsigned cast;
+  only the boxed boolean result is removed.
+- **Unit test**: `typed boxed math module calls unbox runtime results` now
+  requires direct `uint64_t` comparison output and rejects `lua_to_bool(lua_math_ult(...))`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool unsigned_lt = lua_to_bool(lua_math_ult(...))` | `bool unsigned_lt = (((uint64_t)(1)) < ((uint64_t)(2)))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.365x`, `fnv 0.558x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `math.random` remains on the helper path because it is stateful and its
+  return contract depends on argument count and RNG state.
+- `math.modf` remains on the helper path because it preserves Lua multi-return
+  behavior by pushing the fractional side result with `lua_mret_push`.
+- `math.type` and `math.tointeger` remain boxed for dynamic or nil-capable
+  cases because their current runtime contracts can return nil depending on
+  the input.
+
+### Follow-up (2026-07-16): native OS scalar lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig test src/codegen.zig --test-filter "typed boxed math"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **OS module emit path**: typed `os.time()` now emits `((double)time(NULL))`
+  directly, while typed `os.time(table)` keeps the boxed `lua_os_time(...)`
+  path because it builds a `struct tm` from table fields.
+- **Native scalar OS calls**: typed `os.difftime`, `os.remove`, `os.rename`,
+  and `os.execute` now emit direct `difftime`, `remove`, `rename`, and `system`
+  calls with native scalar results instead of boxing through `lua_os_*` helpers
+  and recovering with `lua_to_num` / `lua_to_bool`.
+- **Argument preservation**: dynamic numeric/string operands still use
+  `lua_to_num(...)` or `lua_to_str(...)` before the native C call, matching the
+  helper coercion behavior without constructing the boxed result.
+- **Unit test**: `typed os module calls unbox boxed runtime results` now requires
+  direct scalar OS output and proves table-shaped `os.time({...})` stays boxed.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `double now = ((double)lua_to_num(lua_os_time(...)))` | `double now = ((double)time(NULL))` |
+| `double delta = ((double)lua_to_num(lua_os_difftime(...)))` | `double delta = difftime((time_t)(now), (time_t)(1))` |
+| `bool removed = lua_to_bool(lua_os_remove(...))` | `bool removed = (remove("missing.tmp") == 0)` |
+| `bool shell = lua_to_bool(lua_os_execute(...))` | `bool shell = (system(NULL) != 0)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.350x`, `fnv 0.560x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `os.time(table)` remains boxed because the helper performs field extraction
+  and `mktime` setup; flattening that safely needs a separate table-shape plan.
+- `os.getenv`, `os.date`, and `os.setlocale` remain boxed because they are
+  nil-capable or format/locale-dependent string helpers.
+- `os.exit` remains a side-effecting void/nil helper rather than a scalar
+  result recovery target.
+
+### Follow-up (2026-07-16): native JIT query lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig src/jit.zig --check
+zig test src/codegen.zig --test-filter "typed jit module"
+zig test src/codegen.zig --test-filter "typed coroutine"
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **JIT module emit path**: typed `jit.status()` now emits
+  `lua_jit_status_bool()` instead of boxing through `lua_jit_status()` and
+  recovering with `lua_to_bool(...)`.
+- **Runtime scalar helper**: `src/jit.zig` now emits `lua_jit_status_bool()`
+  for load chunks, native JIT-enabled builds, and WASM/stub builds, so typed
+  direct code has the same target coverage as the boxed API.
+- **JIT version query**: typed `jit.version_num()` now emits the helper's
+  stable numeric contract, `20100.0`, directly instead of
+  `lua_to_num(lua_jit_version_num())`.
+- **Unit test**: `typed jit module calls unbox boxed runtime results` now
+  requires the native scalar output and rejects the old boxed recovery calls.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool enabled = lua_to_bool(lua_jit_status())` | `bool enabled = lua_jit_status_bool()` |
+| `double version = ((double)lua_to_num(lua_jit_version_num()))` | `double version = 20100.0` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.371x`, `fnv 0.562x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `jit.on`, `jit.off`, `jit.flush`, and `jit.opt` remain boxed helper calls
+  because they mutate JIT state and return nil rather than stable scalar query
+  results.
+- `coroutine.close` remains boxed because it mutates coroutine state and checks
+  thread object validity before returning a boolean.
+
+### Follow-up (2026-07-16): native table.isfrozen lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed jit module"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Table module emit path**: typed `table.isfrozen(t)` now emits a native
+  boolean read of the table `frozen` bit instead of boxing through
+  `lua_tbl_isfrozen(...)` and recovering with `lua_to_bool(...)`.
+- **Single evaluation**: the fast path stores the argument in a `lua_Value`
+  temporary before checking table type and `lua_Table.frozen`, so side-effectful
+  or complex table expressions are evaluated once.
+- **Non-table preservation**: non-table inputs still produce `false`, matching
+  the runtime helper's current contract.
+- **Unit test**: `typed table module calls unbox boxed runtime results` now
+  requires the native `lua_Table*`/`frozen` read and rejects
+  `lua_to_bool(lua_tbl_isfrozen(...))`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool frozen = lua_to_bool(lua_tbl_isfrozen(...))` | `bool frozen = ({ lua_Value _duo_t = ...; lua_Table* _duo_tp = _duo_t.type == VAL_TABLE ? (lua_Table*)_duo_t.as.tval : NULL; _duo_tp && _duo_tp->frozen; })` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.348x`, `fnv 0.559x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `table.concat` remains boxed because it performs string assembly and allocation
+  with separator and range handling.
+- `table.freeze` remains boxed because it mutates the input table and returns the
+  table object, not a stable native scalar.
+- `table.unpack`, `table.pack`, `table.remove`, `table.insert`, `table.move`,
+  and `table.sort` remain boxed because they are multi-result, object-returning,
+  or mutating helpers.
+
+### Follow-up (2026-07-16): native coroutine.isyieldable lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed coroutine"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig test src/codegen.zig --test-filter "typed jit module"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Coroutine module emit path**: typed `coroutine.isyieldable()` now emits the
+  active-thread boolean directly instead of boxing through
+  `lua_co_isyieldable()` and recovering with `lua_to_bool(...)`.
+- **Runtime API preservation**: the dynamic/boxed coroutine module API is
+  unchanged; only the typed zero-argument scalar query takes the native path.
+- **Unit test**: `typed coroutine and debug module calls unbox boxed runtime
+  results` now requires the native `active_thread` check and rejects the old
+  boxed recovery call.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool y = lua_to_bool(lua_co_isyieldable())` | `bool y = (active_thread != NULL)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.362x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `coroutine.status` remains boxed/string recovery because it maps thread state
+  and validates the thread object.
+- `coroutine.close` remains boxed because it mutates the coroutine and validates
+  or deallocates state.
+- `coroutine.running`, `yield`, `resume`, `wrap`, and `create` remain boxed
+  because they are object-returning, multi-result, or stateful helpers.
+
+### Follow-up (2026-07-16): native rawequal lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "typed table module calls"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Global builtin emit path**: typed `rawequal(a, b)` now emits
+  `lua_raweq_value(...)` directly instead of boxing through `lua_rawequal(...)`
+  and recovering with `lua_to_bool(...)`.
+- **Single evaluation**: the native boolean path stores both arguments in
+  statement-expression temporaries before comparing them, so each argument is
+  evaluated once.
+- **Runtime API preservation**: the boxed `lua_rawequal(...)` helper remains
+  available for dynamic Lua-value contexts.
+- **Unit test**: `typed global builtins unbox boxed runtime results` now requires
+  the native `lua_raweq_value` path and rejects `lua_to_bool(lua_rawequal(...))`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool same = lua_to_bool(lua_rawequal(a, b))` | `bool same = ({ lua_Value _duo_a = a; lua_Value _duo_b = b; lua_raweq_value(_duo_a, _duo_b); })` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.357x`, `fnv 0.562x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `pcall` and `xpcall` remain boxed-result recovery paths because they must
+  preserve protected-call setup, error handling, and multi-argument variants.
+- `type`, `tostring`, and `tonumber` remain boxed-result recovery paths in this
+  slice because they perform dynamic conversion semantics rather than a trivial
+  scalar projection.
+
+### Follow-up (2026-07-16): native string prefix/suffix lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed fixed string and os"
+zig test src/codegen.zig --test-filter "string len methods"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **String module emit path**: typed `string.starts_with(s, prefix)` and
+  `string.ends_with(s, suffix)` now emit native `strlen`/`memcmp` checks when
+  both operands are string literals or native `str` values.
+- **String method emit path**: typed `s:starts_with(prefix)` and
+  `s:ends_with(suffix)` use the same native path for native string receivers and
+  prefixes/suffixes.
+- **Runtime API preservation**: dynamic or non-native-string operands still use
+  the boxed `lua_str_starts_with(...)` / `lua_str_ends_with(...)` helpers.
+- **Unit test**: `typed fixed string and os calls unbox boxed runtime results`
+  now requires the native `memcmp` path and rejects
+  `lua_to_bool(lua_str_starts_with(...))` / `lua_to_bool(lua_str_ends_with(...))`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool has_prefix = lua_to_bool(lua_str_starts_with(...))` | `bool has_prefix = ({ const char* _duo_s = s; const char* _duo_part = prefix; ... memcmp(_duo_s, _duo_part, _duo_plen) == 0; })` |
+| `bool has_suffix = lua_to_bool(lua_str_ends_with(...))` | `bool has_suffix = ({ const char* _duo_s = s; const char* _duo_part = suffix; ... memcmp(_duo_s + _duo_slen - _duo_plen, _duo_part, _duo_plen) == 0; })` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.366x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic string values remain boxed because the existing runtime helpers perform
+  Lua-value conversion and byte-length handling for non-native operands.
+- `string.find`, `string.match`, and related pattern helpers remain boxed
+  because their nil/multi-result/pattern contracts are not trivial scalar
+  prefix/suffix projections.
+
+### Follow-up (2026-07-16): constant select count lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "select count"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 586/586 unit tests, Lua 5.5 feature run,
+compile-fail/example suite, metamethod compat, all 40 hard benchmarks, and
+honest-bench passed.
+
+Additional changes:
+
+- **Global builtin emit path**: typed `select("#", ...)` with an explicit
+  non-vararg argument list now emits the known argument count as an integer
+  constant.
+- **Runtime API preservation**: dynamic-index `select(idx, ...)` and
+  `select("#", ...)` cases containing raw `...` still use `lua_select_v(...)`,
+  preserving runtime selector and vararg-count semantics.
+- **Unit test**: `typed select count unboxes boxed runtime result` now requires
+  `int64_t count = 3;` and rejects `lua_to_num(lua_select_v(...))` for the
+  literal-count case.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t count = ((int64_t)lua_to_num(lua_select_v("#", 3, ...)))` | `int64_t count = 3` |
+| `lua_Value dynamic = lua_select_v(idx, 2, ...)` | unchanged |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.360x`, `fnv 0.569x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Raw vararg `select("#", ...)` remains boxed because the count is a runtime
+  property of the enclosing call.
+- Dynamic selector `select(idx, ...)` remains boxed because the return shape can
+  be value- or multi-result-shaped.
+
+### Follow-up (2026-07-16): native tonumber result lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "select count"
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 586/586
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Global builtin emit path**: typed one-argument `tonumber(v)` in `f64`/`f32`
+  contexts now emits the numeric projection directly for boxed or dynamic values
+  instead of boxing through `tonumber(...)` and immediately unboxing.
+- **Native numeric passthrough**: numeric native arguments emit directly; integer
+  arguments cast to `double` for the floating result path.
+- **Runtime API preservation**: multi-argument/radix `tonumber(v, base)` remains
+  on the boxed runtime helper path.
+- **Unit test**: `typed global builtins unbox boxed runtime results` now requires
+  direct numeric lowering for both boxed-string conversion and native numeric
+  passthrough, and rejects `lua_to_num(tonumber(...))` in the typed path.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `double num = ((double)lua_to_num(tonumber(lua_val_from_literal("42", ...))))` | `double num = lua_to_num(lua_val_from_literal("42", ...))` |
+| `double native_cast = ((double)lua_to_num(tonumber(lua_val_from_num(native_num))))` | `double native_cast = native_num` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.368x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `tonumber(v, base)` remains boxed because base-specific string conversion
+  belongs in the runtime helper until a native radix path is implemented and
+  proved equivalent.
+- Nil/error-like dynamic conversion behavior stays represented by the existing
+  `lua_to_num(...)` fallback, matching the current typed numeric recovery
+  contract.
+
+### Follow-up (2026-07-16): literal collectgarbage result lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 586/586
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Global builtin emit path**: typed literal `collectgarbage("count")`,
+  `collectgarbage("collect")`, `collectgarbage("stop")`, and
+  `collectgarbage("restart")` now emit their native scalar result directly.
+- **Side-effect preservation**: `collectgarbage()` and
+  `collectgarbage("collect")` still call `duo_run_gc_finalizers()` before
+  returning `0.0`.
+- **Runtime API preservation**: dynamic option values still call
+  `lua_collectgarbage(...)`, preserving option decoding and fallback behavior.
+- **Unit test**: `typed collectgarbage literal options unbox boxed runtime
+  results` now requires direct scalar emissions and rejects
+  `lua_to_num(lua_collectgarbage(...))` / `lua_to_bool(lua_collectgarbage(...))`
+  for literal typed options.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `double before = ((double)lua_to_num(lua_collectgarbage("count", nil)))` | `double before = ((double)duo_gc_kbytes)` |
+| `double ran = ((double)lua_to_num(lua_collectgarbage("collect", nil)))` | `double ran = ({ duo_run_gc_finalizers(); 0.0; })` |
+| `bool stopped = lua_to_bool(lua_collectgarbage("stop", nil))` | `bool stopped = true` |
+| `lua_Value dynamic = lua_collectgarbage(opt, nil)` | unchanged |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.374x`, `fnv 0.563x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic `collectgarbage(opt)` remains boxed because the option string is a
+  runtime value and the fallback behavior is part of the helper contract.
+- Unsupported literal options remain boxed/fallback-shaped until Duo exposes a
+  stricter typed contract for them.
+
+### Follow-up (2026-07-16): coroutine/debug scalar result lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "coroutine and debug"
+zig test src/codegen.zig --test-filter "collectgarbage"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, unit-test
+build step, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Coroutine module emit path**: typed `coroutine.status(co)` now emits a native
+  `const char*` status projection directly instead of boxing through
+  `lua_co_status(...)` and recovering with `lua_to_str(...)`.
+- **Coroutine close emit path**: typed `coroutine.close(co)` now emits a native
+  bool statement expression while preserving the runtime helper's close/free
+  side effects.
+- **Debug module emit path**: typed no-arg `debug.traceback()` now emits the
+  fixed traceback literal directly.
+- **Runtime API preservation**: untyped or non-scalar coroutine/debug calls still
+  use the boxed Lua-value helpers.
+- **Unit test**: `typed coroutine and debug module calls unbox boxed runtime
+  results` now requires direct scalar emissions and rejects
+  `lua_to_str(lua_co_status(...))`, `lua_to_bool(lua_co_close(...))`, and
+  `lua_to_str(lua_debug_traceback(...))`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `const char* st = lua_to_str(lua_co_status(co))` | `const char* st = ({ lua_Value _duo_co = ...; const char* _duo_status = "dead"; ... _duo_status; })` |
+| `bool closed = lua_to_bool(lua_co_close(co))` | `bool closed = ({ lua_Value _duo_co = ...; bool _duo_closed = false; ... _duo_closed; })` |
+| `const char* tb = lua_to_str(lua_debug_traceback())` | `const char* tb = "stack traceback:\n  [C]: in function 'debug.traceback'"` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.351x`, `fnv 0.560x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `coroutine.resume`, `coroutine.yield`, `coroutine.running`, and
+  `debug.getinfo` remain boxed because their return shape is value-,
+  multi-result-, nil-, or table-shaped rather than a proven native scalar.
+- Untyped `coroutine.status`, `coroutine.close`, and `debug.traceback` remain
+  boxed so generic Lua-value code still observes the same runtime API shape.
+
+### Follow-up (2026-07-16): native math.type result lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "boxed math"
+zig test src/codegen.zig --test-filter "coroutine and debug"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, unit-test
+build step, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Math module emit path**: typed `math.type(x)` now emits `"integer"` or
+  `"float"` directly when `x` is a native numeric scalar expression.
+- **Runtime API preservation**: dynamic/non-native cases still call
+  `lua_math_type(...)`, preserving nil/fallback behavior for values whose number
+  kind is not statically known.
+- **Unit test**: `typed boxed math module calls unbox runtime results` now
+  requires literal `"integer"` and `"float"` emissions and rejects
+  `lua_to_str(lua_math_type(...))` for those typed native cases.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `const char* kind = lua_to_str(lua_math_type(lua_val_from_int(7)))` | `const char* kind = "integer"` |
+| `const char* fkind = lua_to_str(lua_math_type(lua_val_from_num(7.5)))` | `const char* fkind = "float"` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.359x`, `fnv 0.559x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `math.type(v)` remains boxed when `v` is dynamic or not a native numeric
+  scalar expression, because the helper's nil result for non-numbers is part of
+  the Lua-visible contract.
+- `math.tointeger(v)` remains boxed in this slice because non-integer and
+  dynamic numeric cases can be nil-shaped.
+
+### Follow-up (2026-07-16): native global type result lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig test src/codegen.zig --test-filter "boxed math"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, unit-test
+build step, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Global builtin emit path**: typed `type(v)` now emits a native string literal
+  for side-effect-free scalar literals and local names whose Lua type is known
+  from resolved native type information.
+- **Runtime API preservation**: table literals, calls, indexes, fields, runtime
+  globals, and dynamic values still call `type(...)`, preserving allocation,
+  lookup, and runtime type behavior.
+- **Unit test**: `typed global builtins unbox boxed runtime results` now requires
+  direct `"number"`, `"boolean"`, `"string"`, and `"nil"` emissions while still
+  requiring `type({})` to use the boxed helper path.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `const char* num_kind = lua_to_str(type(lua_val_from_int(42)))` | `const char* num_kind = "number"` |
+| `const char* bool_kind = lua_to_str(type(lua_val_from_bool(true)))` | `const char* bool_kind = "boolean"` |
+| `const char* nil_kind = lua_to_str(type(lua_val_nil()))` | `const char* nil_kind = "nil"` |
+| `const char* kind = lua_to_str(type({ ... }))` | unchanged |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.363x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `type({ ... })` remains boxed because the table expression allocates and that
+  evaluation must not be erased just because the result string is predictable.
+- `type(call())`, `type(t[k])`, and `type(obj.field)` remain boxed because those
+  expressions can carry call, index, or lookup behavior beyond the final type
+  string.
+
+### Follow-up (2026-07-16): native utf8.len result lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed utf8"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, unit-test
+build step, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **UTF-8 literal path**: typed `utf8.len("literal")` now emits the
+  compile-time UTF-8 leading-byte count directly as an integer.
+- **Native string path**: typed `utf8.len(s: str)` now emits a native C loop over
+  `unsigned char*` and counts bytes that are not UTF-8 continuation bytes.
+- **Runtime API preservation**: dynamic and non-native `utf8.len(v)` calls still
+  use the boxed helper path, preserving the helper's conversion behavior.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t n = ((int64_t)lua_to_num(lua_utf8_len(lua_val_from_literal("abc", ...))))` | `int64_t n = 3` |
+| `int64_t wn = ((int64_t)lua_to_num(lua_utf8_len(lua_val_from_literal(word, ...))))` | `int64_t wn = ({ const unsigned char* _duo_s = (const unsigned char*)(word); ... _duo_len; })` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.377x`, `fnv 0.562x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic and non-native `utf8.len(v)` remain boxed because the helper includes
+  Lua value conversion behavior that a raw string loop cannot reproduce.
+- String-producing `utf8.char(...)` remains boxed because direct native C string
+  emission would need explicit allocation and lifetime handling.
+
+### Follow-up (2026-07-16): native math.modf and math.tointeger scalar lowering
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "boxed math"
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 586/586
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **`math.modf` first-result path**: typed `math.modf(x)` in an `f64`/`f32`
+  context now emits C `modf(...)` directly when `x` is a native numeric scalar.
+- **`math.tointeger` integer path**: typed `math.tointeger(x)` in an integer
+  context now emits `x` directly when `x` is already proven integer.
+- **Runtime API preservation**: fractional, dynamic, and otherwise nil-capable
+  `math.tointeger(v)` calls still use the boxed runtime helper.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `double intpart = ((double)lua_to_num(lua_math_modf(lua_val_from_num(12.75))))` | `double intpart = ({ double _duo_int = 0.0; modf((double)(12.75), &_duo_int); _duo_int; })` |
+| `int64_t whole = ((int64_t)lua_to_num(lua_math_tointeger(lua_val_from_int(7))))` | `int64_t whole = ((int64_t)(7))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.360x`, `fnv 0.568x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Dynamic or fractional `math.tointeger(v)` remains boxed because its nil result
+  for non-integer numbers is part of the Lua-visible contract.
+- Multi-result `math.modf(v)` remains boxed outside typed first-result scalar
+  contexts so callers can still observe both integral and fractional returns.
+
+### Follow-up (2026-07-16): native math.random numeric result helper
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "boxed math"
+zig test src/codegen.zig --test-filter "typed os module calls"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 586/586
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_math_random_num(...)`, which owns the
+  existing `rng_state` update and range logic while returning `double` directly.
+- **Boxed API preservation**: `lua_math_random(...)` now wraps
+  `lua_math_random_num(...)` in `lua_val_from_num(...)`, so generic Lua callers
+  keep the same boxed API.
+- **Typed math emit path**: typed `math.random(...)` in `f64`/`f32` contexts now
+  emits `lua_math_random_num(...)` directly instead of boxing and immediately
+  recovering with `lua_to_num(...)`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `double r = ((double)lua_to_num(lua_math_random(lua_val_nil(), lua_val_nil())))` | `double r = lua_math_random_num(lua_val_nil(), lua_val_nil())` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.344x`, `fnv 0.560x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `math.randomseed(...)` remains a boxed/action helper because its value is only
+  useful through its side effect on RNG state.
+- Non-numeric Lua-value contexts for `math.random(...)` continue to use
+  `lua_math_random(...)` so table/global calls observe the normal boxed result.
+
+### Follow-up (2026-07-16): native pcall/xpcall success bool helpers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "typed global builtins"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen test, Lua 5.5 feature run, 586/586
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional non-gate probes:
+
+- `zig build run -- run examples/stdlib54_test.lua` still fails parsing
+  `string.match(...)` at `examples/stdlib54_test.lua:39:26` with
+  `expected 'name', got 'match'`.
+- `zig build run -- run examples/stdlib_all_remaining_test.lua` still reaches
+  the xpcall success check, then fails later at `string.unpack`.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_pcall_bool(...)`,
+  `lua_pcall_argv_bool(...)`, `lua_xpcall_bool(...)`, and
+  `lua_xpcall_argv_bool(...)` that preserve the existing protected-call setup,
+  `lua_mret` success/error side effects, and message-handler behavior while
+  returning native `bool`.
+- **Boxed API preservation**: `lua_pcall(...)`, `lua_pcall_argv_fn(...)`,
+  `lua_xpcall(...)`, and `lua_xpcall_argv_fn(...)` now wrap the native bool
+  helpers in `lua_val_from_bool(...)`, so generic Lua-value calls keep the same
+  boxed result shape.
+- **Typed global emit path**: typed `pcall(...)` and `xpcall(...)` in `bool`
+  contexts now emit the native bool helpers directly instead of boxing and
+  immediately recovering with `lua_to_bool(...)`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `bool ok = lua_to_bool(lua_pcall(fn, arg))` | `bool ok = lua_pcall_bool(fn, arg)` |
+| `bool xok = lua_to_bool(lua_xpcall(fn, handler, arg))` | `bool xok = lua_xpcall_bool(fn, handler, arg)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.367x`, `fnv 0.558x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Non-boolean Lua-value contexts continue to use the boxed `pcall`/`xpcall`
+  wrappers so multi-return-style callers still observe the success flag as a
+  Lua value followed by the stored `lua_mret` payload.
+- The protected call setup itself is intentionally not bypassed; only the final
+  success flag projection moved from boxed `lua_Value` to native `bool`.
+
+### Follow-up (2026-07-16): native string.byte integer fallback helper
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "string byte"
+zig test src/codegen.zig --test-filter "typed fixed string"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 587/587
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_str_byte_i64(...)`, which mirrors the
+  existing `lua_str_byte(...)` string/index conversion logic while returning
+  native `int64_t`.
+- **Typed string emit path**: typed integer `string.byte(v, i[, j])` fallback
+  now emits `lua_str_byte_i64(...)` instead of boxing through
+  `lua_str_byte(...)` and immediately recovering with `lua_to_num(...)`.
+- **Boxed API preservation**: ordinary Lua-value `string.byte(...)` calls still
+  use `lua_str_byte(...)`, preserving the visible `nil` result for out-of-range
+  indexes.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t b = ((int64_t)lua_to_num(lua_str_byte(box.s, box.i, lua_val_nil())))` | `int64_t b = lua_str_byte_i64(box.s, box.i, lua_val_nil())` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.367x`, `fnv 0.552x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Non-integer and Lua-value `string.byte(...)` contexts remain boxed because
+  the API can expose `nil` for out-of-range indexes.
+- String-producing helpers such as `string.format`, `string.pack`, and
+  `string.dump` remain boxed pending a proven allocation/lifetime contract for
+  native `str` recovery.
+
+### Follow-up (2026-07-16): native numeric length helper
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "length operator"
+zig test src/codegen.zig --test-filter "string byte"
+zig test src/codegen.zig --test-filter "typed string len"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen/runtime tests, Lua 5.5 feature run,
+588/588 unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_len_num(...)` for typed numeric `#`
+  recovery. It handles string byte lengths and plain table lengths directly,
+  while preserving `__len` dispatch by invoking the metamethod and applying the
+  same numeric coercion typed callers already used.
+- **Emit path cleanup**: dynamic `#x` numeric recovery now emits
+  `lua_len_num(x)` instead of `lua_to_num(lua_len(x))`.
+- **Boxed API preservation**: generic Lua-value `#`/`lua_len(...)` behavior
+  remains available, including non-numeric metamethod return values for boxed
+  callers.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `double n = lua_to_num(lua_len(t))` | `double n = lua_len_num(t)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.361x`, `fnv 0.559x`, all six rows Duo/Tie |
+
+Rejected:
+
+- The boxed `lua_len(...)` helper was not rewritten to wrap `lua_len_num(...)`
+  because `__len` can return non-numeric Lua values that boxed callers must be
+  able to observe.
+- Typed string `s:len()` and `rawlen(...)` paths were left on their existing
+  dedicated helpers; this slice only replaced the remaining dynamic `#`
+  numeric projection.
+
+### Follow-up (2026-07-16): native table field/index projection helpers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "table projection"
+zig test src/codegen.zig --test-filter "table index"
+zig test src/codegen.zig --test-filter "dynamic values"
+zig test src/codegen.zig --test-filter "boxed field"
+zig test src/codegen.zig --test-filter "numeric lua index keys"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 589/589
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_table_get_str_num(...)`,
+  `lua_table_get_str_bool(...)`, `lua_table_get_str_cstr(...)`,
+  `lua_table_get_i64_num(...)`, `lua_table_get_i64_bool(...)`, and
+  `lua_table_get_i64_cstr(...)`. Each helper delegates to the existing table
+  getter first, preserving raw lookup, `__index` table/function dispatch, and
+  nil fallback before returning a native projection.
+- **Shared unbox path**: typed local initializers, const initializers,
+  `@as(...)`, record literal fields, typed call parameters, and mixed native
+  binops now route dynamic table field/integer-index reads through those
+  projection helpers instead of spelling `lua_to_*(lua_table_get_*(...))` at
+  every call site.
+- **Boxed API preservation**: generic table field/index expressions still emit
+  boxed `lua_Value` getters so untyped Lua callers observe the same values.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t n = (int64_t)lua_to_num(lua_table_get_str_lit(box, "x", ...))` | `int64_t n = ((int64_t)lua_table_get_str_num(box, "x", ...))` |
+| `bool ok = lua_to_bool(lua_table_get_str_lit(box, "ok", ...))` | `bool ok = lua_table_get_str_bool(box, "ok", ...)` |
+| `(int64_t)lua_to_num(lua_table_get_i64(t, idx))` | `((int64_t)lua_table_get_i64_num(t, idx))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.350x`, `fnv 0.564x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Arbitrary-key `lua_table_get(table, key)` projections remain boxed in this
+  slice because key conversion can involve non-integer Lua values and deserves
+  a separate proof path.
+- Derive-generated metamethod helpers still use local boxed temporaries or
+  inline `lua_to_*` calls where they need to compare, hash, format, or rebuild
+  boxed records; those are runtime-method internals rather than typed local
+  projection sites.
+
+### Follow-up (2026-07-16): arbitrary-key table projection helpers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "arbitrary-key"
+zig test src/codegen.zig --test-filter "one-sided any binop"
+zig test src/codegen.zig --test-filter "table index"
+zig build run -- dump-c /private/tmp/duo_key_proj.duo
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, generated-C spot check, Lua 5.5
+feature run, 590/590 unit tests, compile-fail/example suite, metamethod compat,
+all 40 hard benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_table_get_key_num(...)`,
+  `lua_table_get_key_bool(...)`, and `lua_table_get_key_cstr(...)` for dynamic
+  Lua-value keys. Each helper delegates through `lua_table_get(table, key)`
+  first, so raw table lookup, `__index` table/function dispatch, and nil
+  fallback remain centralized before projecting to native C scalars.
+- **Typed projection coverage**: typed local initializers and shared dynamic
+  unbox sites now use the arbitrary-key helpers for `t[k]` when `t` is a boxed
+  table value and the requested result is numeric, bool, or string.
+- **Dynamic binop cleanup**: mixed native arithmetic over boxed table reads now
+  emits `lua_table_get_key_num(t, key)` instead of open-coding
+  `lua_to_num(lua_table_get(t, key))`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t n = (int64_t)lua_to_num(lua_table_get(t, lua_val_from_str(k)))` | `int64_t n = ((int64_t)lua_table_get_key_num(t, lua_val_from_str(k)))` |
+| `bool ok = lua_to_bool(lua_table_get(t, lua_val_from_str(k)))` | `bool ok = lua_table_get_key_bool(t, lua_val_from_str(k))` |
+| `const char* s = lua_to_str(lua_table_get(t, lua_val_from_str(k)))` | `const char* s = lua_table_get_key_cstr(t, lua_val_from_str(k))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.367x`, `fnv 0.558x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Generic `t[k]` reads still return boxed `lua_Value`; only typed projection
+  sites use the new helpers.
+- Integer and string-literal key helpers remain separate because they can avoid
+  constructing a temporary Lua key and already exercise more specific lookup
+  fast paths.
+- Derive-generated metamethod internals remain unchanged for this slice; they
+  are not ordinary typed table projection sites.
+
+### Follow-up (2026-07-16): typed multi-return result-buffer projection helpers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "multi-return"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen test, Lua 5.5 feature run, 590/590
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Runtime helper split**: added `lua_mret_get_num(...)`,
+  `lua_mret_get_bool(...)`, and `lua_mret_get_cstr(...)`. Each helper delegates
+  through `lua_mret_get(idx)` first, preserving the existing bounds check and
+  nil fallback before returning a native projection.
+- **Typed local/assignment coverage**: typed non-first multi-return locals and
+  assignments now use the helper family instead of spelling
+  `lua_to_*(lua_mret_get(...))` at every projection site.
+- **C prelude ordering**: added forward declarations for `lua_to_str`,
+  `lua_to_num`, and `lua_to_bool` so early result-buffer helpers compile before
+  the full conversion definitions appear later in the runtime.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t inc = ((int64_t)lua_to_num(lua_mret_get(0)))` | `int64_t inc = ((int64_t)lua_mret_get_num(0))` |
+| `const char* s = lua_to_str(lua_mret_get(1))` | `const char* s = lua_mret_get_cstr(1)` |
+| `bool ok = lua_to_bool(lua_mret_get(2))` | `bool ok = lua_mret_get_bool(2)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.356x`, `fnv 0.556x`, all six rows Duo/Tie |
+
+Rejected:
+
+- The first return value of a multi-return call still uses the direct call
+  result path; this slice only changes values recovered from the multi-return
+  buffer.
+- Generic multi-return locals and assignments still use `lua_mret_get(...)` so
+  untyped Lua callers continue to observe boxed `lua_Value` results.
+
+### Follow-up (2026-07-17): derive-generated table field projection helpers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "alias derive field projections"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused derive codegen test, Lua 5.5 feature run,
+591/591 unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmarks, and honest-bench passed.
+
+Additional changes:
+
+- **Generated method cleanup**: `@derive(Display)`, arithmetic derives
+  (`Add`/`Sub`/`Mul`), `Neg`, and `Hash` now use
+  `lua_table_get_str_num(...)` / `lua_table_get_str_cstr(...)` for typed record
+  field projections instead of open-coding `lua_to_*(lua_table_get_str_lit(...))`.
+- **Shared lookup semantics**: the derive-generated helpers still delegate
+  through the existing string-key table lookup path, preserving raw lookup,
+  `__index` dispatch, and nil fallback before the native projection.
+- **Regression coverage**: added a generated-C test covering numeric display,
+  string display, arithmetic, negation, and hash projection sites.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_to_num(lua_table_get_str_lit(_self, "x", ...))` | `lua_table_get_str_num(_self, "x", ...)` |
+| `lua_to_str(lua_table_get_str_lit(_self, "name", ...))` | `lua_table_get_str_cstr(_self, "name", ...)` |
+| `lua_to_num(lua_table_get_str_lit(_a, "x", ...)) + lua_to_num(lua_table_get_str_lit(_b, "x", ...))` | `lua_table_get_str_num(_a, "x", ...) + lua_table_get_str_num(_b, "x", ...)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.372x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- `@derive(Eq)` still materializes boxed field temporaries where it compares
+  non-numeric fields with `lua_raw_eq(...)`.
+- `@derive(Ord)` still uses boxed field temporaries because it intentionally
+  delegates to `lua_lt(...)` so Lua comparison/metamethod semantics remain
+  intact.
+
+### Follow-up (2026-07-17): derive Eq numeric field projection helpers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "alias derive field projections"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused derive codegen test, Lua 5.5 feature run,
+591/591 unit tests, compile-fail/example suite, metamethod compat, hard
+benchmark rerun, and honest-bench passed. The first `zig build bench` run had
+matching results but failed the hard timing gate on the `Table array` row
+(`DuoLua 0.000456s`, `DuoDuo 0.000465s`, C `0.000406s`); the immediate rerun
+passed with `Table array` at `DuoLua 0.000410s`, `DuoDuo 0.000409s`, C
+`0.000451s`.
+
+Additional changes:
+
+- **Numeric Eq projection**: numeric fields in `@derive(Eq)` now compare
+  `lua_table_get_str_num(_a, ...)` and `lua_table_get_str_num(_b, ...)`
+  directly instead of materializing boxed `fa`/`fb` temporaries and then calling
+  `lua_to_num(fa)` / `lua_to_num(fb)`.
+- **Boxed equality preservation**: non-numeric `@derive(Eq)` fields still use
+  boxed `lua_Value` temporaries and `lua_raw_eq(...)`.
+- **Regression coverage**: extended the derive generated-C test so numeric Eq
+  fields must use the native helper path while string Eq fields still prove the
+  boxed raw-equality path exists.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `lua_Value fa = lua_table_get_str_lit(_a, "x", ...); lua_Value fb = lua_table_get_str_lit(_b, "x", ...); if (lua_to_num(fa) != lua_to_num(fb)) ...` | `if (lua_table_get_str_num(_a, "x", ...) != lua_table_get_str_num(_b, "x", ...)) ...` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | first run: all 40 `RESULT` rows match, timing-gate miss on `Table array`; immediate rerun: all 40 `RESULT` rows match and Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.358x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Non-numeric `@derive(Eq)` fields remain boxed because `lua_raw_eq(...)`
+  operates on full `lua_Value` identity/value semantics.
+- `@derive(Ord)` remains boxed for the same reason as the prior slice: it
+  delegates to `lua_lt(...)` for Lua comparison/metamethod behavior.
+
+### Follow-up (2026-07-17): shared dynamic unbox emitter for assignments and returns
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dynamic field projections"
+zig test src/codegen.zig --test-filter "dynamic locals"
+zig test src/codegen.zig --test-filter "typed multi-return locals"
+zig test src/codegen.zig --test-filter "typed dynamic field reads"
+zig test src/codegen.zig --test-filter "typed const initializers"
+zig test src/codegen.zig --test-filter "@as unboxes dynamic values"
+zig test src/codegen.zig --test-filter "numeric lua locals unbox"
+zig test src/codegen.zig --test-filter "unary neg on numeric lua local"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused codegen tests, Lua 5.5 feature run, 592/592
+unit tests, compile-fail/example suite, metamethod compat, all 40 hard
+benchmark rows, and honest-bench passed. `zig build test` prints expected
+negative diagnostics from compile-fail/property fixtures; the command exited
+successfully.
+
+Additional changes:
+
+- **Shared primitive unbox path**: dynamic `.any` values flowing into typed
+  call arguments, existing typed assignments, implicit typed locals, first
+  multi-return assignment targets, and typed returns now use
+  `emit_dynamic_unbox(...)` instead of duplicating boxed
+  `lua_to_num`/`lua_to_bool`/`lua_to_str` wrappers at each site.
+- **Exact native casts**: the numeric fallback inside `emit_dynamic_unbox(...)`
+  now casts to the requested C type (`i64`, `u64`, `f32`, `f64`, etc.) instead
+  of always going through `int64_t`.
+- **Projection reuse**: typed dynamic table field/index values now keep using
+  `lua_table_get_str_num`/`lua_table_get_i64_num`/`lua_table_get_key_num` and
+  their bool/string variants when they flow through assignments, call
+  parameters, and returns.
+- **Regression coverage**: added generated-C coverage for typed assignment,
+  typed call-argument coercion, and typed return from dynamic table fields, and
+  updated older native numeric-local assertions for the shared emitter's cast
+  parenthesization.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `n = ((int64_t)lua_to_num(lua_table_get_str_lit(box, "n", ...)))` | `n = ((int64_t)lua_table_get_str_num(box, "n", ...))` |
+| `take(((int64_t)lua_to_num(lua_table_get_str_lit(box, "n", ...))))` | `take(((int64_t)lua_table_get_str_num(box, "n", ...)))` |
+| `return ((int64_t)lua_to_num(lua_table_get_str_lit(box, "n", ...)))` | `return ((int64_t)lua_table_get_str_num(box, "n", ...))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match and Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.362x`, `fnv 0.555x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Raw C intrinsic expressions still bypass `emit_dynamic_unbox(...)` so their
+  native C expression contract is not wrapped as a `lua_Value`.
+- Non-primitive typed targets still use their existing expression paths; this
+  slice only consolidates numeric, bool, and string unboxing where the runtime
+  coercion contract is already established.
+- Missing-value fallbacks for implicit declarations still route through
+  `lua_to_*(lua_val_nil())`, preserving the prior nil coercion behavior rather
+  than inventing new defaulting semantics.
+
+### Follow-up (2026-07-17): implicit typed-return dynamic projection unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "implicit typed return"
+zig test src/codegen.zig --test-filter "dynamic field projections"
+zig test src/codegen.zig --test-filter "typed dynamic field reads"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused implicit-return/projection tests, Lua 5.5
+feature run, 593/593 unit tests, compile-fail/example suite, metamethod compat,
+all 40 hard benchmark rows, and honest-bench passed. `zig build test` prints
+expected negative diagnostics from compile-fail/property fixtures; the command
+exited successfully.
+
+Additional changes:
+
+- **Tail-expression parity**: single-value implicit returns with primitive typed
+  function returns now use `emit_dynamic_unbox(...)`, matching the explicit
+  `return` statement path.
+- **Projection reuse**: `fun get(box: any): i64; box.n; end` now emits
+  `return ((int64_t)lua_table_get_str_num(box, "n", ...))` instead of
+  converting `lua_table_get_str_lit(...)` through `lua_to_num(...)`.
+- **Regression coverage**: added generated-C coverage for an implicit typed
+  return from a dynamic table field.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `return (int64_t)lua_to_num(lua_table_get_str_lit(box, "n", ...))` | `return ((int64_t)lua_table_get_str_num(box, "n", ...))` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match and Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.359x`, `fnv 0.556x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Explicit `return` statements were already covered by the previous shared
+  unbox slice; this change is intentionally limited to the implicit
+  tail-expression path.
+- Closure/argv wrapper argument unpacking still uses the existing
+  `argv[]`/`lua_to_*` coercions because proving stronger projection there
+  requires separate call-boundary analysis.
+
+### Follow-up (2026-07-17): exact native scalar argv wrapper unboxing
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "argv wrappers"
+zig test src/codegen.zig --test-filter "dynamic locals"
+zig test src/codegen.zig --test-filter "dynamic field projections"
+zig test src/codegen.zig --test-filter "closure"
+zig test src/codegen.zig --test-filter "typed dynamic field reads"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused wrapper/projection/closure tests, Lua 5.5
+feature run, 594/594 unit tests, compile-fail/example suite, metamethod compat,
+all 40 hard benchmark rows, and honest-bench passed. `zig build unit-test`
+prints expected negative diagnostics from compile-fail/property fixtures; the
+final summary is authoritative.
+
+Additional changes:
+
+- **Exact integer recovery**: typed `__argv` wrappers and closure invocation
+  wrappers now unbox boxed Lua arguments into the declared native integer C type
+  (`uint32_t`, `uint64_t`, `int32_t`, etc.) instead of always declaring
+  `int64_t`.
+- **Float parity**: wrapper argument unpacking now handles both `f32` and `f64`,
+  emitting `float` or `double` as appropriate instead of only recognizing `f64`.
+- **Regression coverage**: added generated-C coverage for a typed vararg
+  function wrapper and a typed closure wrapper using `u32` and `f32`.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `int64_t a = argc > 0 ? (int64_t)lua_to_num(argv[0]) : ...` | `uint32_t a = argc > 0 ? (uint32_t)lua_to_num(argv[0]) : ...` |
+| `double b = lua_to_num(argc > 1 ? argv[1] : lua_val_nil())` | `float b = (float)lua_to_num(argc > 1 ? argv[1] : lua_val_nil())` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match and Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.377x`, `fnv 0.557x`, all six rows Duo/Tie |
+
+Rejected:
+
+- Aggregate, enum-payload, table, and fully dynamic wrapper parameters still use
+  their existing `lua_Value` path; this slice only changes scalar numeric
+  recovery where the native type is explicit.
+- This does not attempt table/index projection across the `argv[]` call
+  boundary; by the time arguments are in `argv[]`, the source expression shape is
+  intentionally erased.
+
+### Follow-up (2026-07-17): exact native scalar recovery for typed initializers
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "string numeric results"
+zig test src/codegen.zig --test-filter "dynamic string byte"
+zig test src/codegen.zig --test-filter "string"
+zig test src/codegen.zig --test-filter "dynamic locals"
+zig test src/codegen.zig --test-filter "typed dynamic"
+zig test src/codegen.zig --test-filter "assign"
+zig test src/codegen.zig --test-filter "argv wrappers"
+zig build run -- run examples/lua55_test.lua
+zig build unit-test --summary all
+zig build
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — focused string/coercion/assignment/wrapper tests, Lua
+5.5 feature run, 595/595 unit tests, compile-fail/example suite, metamethod
+compat, all 40 hard benchmark rows, and honest-bench passed. `zig build
+unit-test` prints expected negative diagnostics from compile-fail/property
+fixtures; the final summary is authoritative.
+
+Additional changes:
+
+- **Typed initializer recovery**: primitive annotated locals now route numeric,
+  bool, and string initializers through the same exact coercion path used for
+  typed function parameters, instead of relying on implicit C assignment
+  conversion when the expression's default type differs from the annotation.
+- **Typed assignment recovery**: assignments into primitive typed locals now use
+  the same exact coercion path for boxed or differently typed native scalar
+  values.
+- **Exact numeric dynamic unbox**: `emit_dynamic_unbox` now casts every
+  numeric-to-numeric mismatch to the requested C type, not only the old
+  `f64`/`i64` special cases.
+- **String numeric results**: string-library numeric fallbacks now share the
+  exact Lua-result coercion helper, and native string byte/length paths preserve
+  an explicit final cast when assigned to narrower scalar annotations.
+- **Regression coverage**: added generated-C coverage for `string.len`,
+  `string.byte`, `string.packsize`, and method `find` results flowing into
+  `u32`, `u8`, `u16`, and `f32` locals.
+
+Representative codegen:
+
+| Before | After |
+| --- | --- |
+| `uint32_t n = ((int64_t)strlen(s));` | `uint32_t n = ((uint32_t)(((int64_t)strlen(s))));` |
+| `uint8_t b = lua_str_byte_i64(...);` | `uint8_t b = ((uint8_t)lua_str_byte_i64(...));` |
+| `float pos = ((double)lua_to_num(lua_str_find(...)));` | `float pos = ((float)lua_to_num(lua_str_find(...)));` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match and Duo .lua/.duo beat or tie C |
+| `zig build honest-bench` | PASS; `matmul 0.342x`, `fnv 0.561x`, all six rows Duo/Tie |
+
+Rejected:
+
+- This slice does not add contextual result-type plumbing through every
+  expression emitter. Some string expressions still compute their default
+  numeric form internally before the typed local/assignment boundary casts to
+  the exact native destination.
+- Fully dynamic aggregate and nil-capable paths remain boxed until their runtime
+  contracts prove a scalar value is always available.
+
+### Follow-up (2026-07-16): both-sided dynamic table index binops + unary unbox
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "both dynamic table index"
+zig test src/codegen.zig --test-filter "unary neg on dynamic table"
+zig test src/codegen.zig --test-filter "one-sided any binop"
+zig test src/codegen.zig --test-filter "typed native local plus dynamic"
+zig build unit-test --summary all
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+```
+
+Result gate: **PASS** — 598/598 unit tests, compile-fail suite, metamethod
+compat, all 40 hard benchmark rows (Duo .lua/.duo beat or tie C).
+
+Additional changes:
+
+- **`try_emit_both_dynamic_table_read_binop`**: when both operands are dynamic
+  table index reads (`t[i] + t[j]`) and neither side passes the stricter
+  `safe_native_unbox` predicate (e.g. untyped index params with no numeric
+  assignment), emit native arithmetic on `lua_table_get_key_num` for each side
+  instead of boxing through `lua_add`.
+- **Unary unop on dynamic table reads**: negation and bitwise-not on `t[i]`
+  operands now unbox via `lua_table_get_key_num` when the operand is a dynamic
+  table read, matching the binop recovery path.
+- **Hook order preserved**: mixed native → both-any safe unbox → one-sided
+  numeric-local + table read → both-dynamic-table-read → `lua_*` fallback.
+- **Metamorph safety unchanged**: bare `.any` names (e.g. `a + boxed.x`) still
+  route through `lua_add`; only field/index/call shapes on dynamic tables qualify.
+
+Representative codegen:
+
+| Pattern | Before | After |
+| --- | --- | --- |
+| `return t[i] + t[j]` (untyped params) | `lua_add(lua_table_get(...), ...)` | native add on `lua_table_get_key_num` |
+| `return -t[i]` | `lua_unm(lua_table_get(...))` | `lua_val_from_int(-((int64_t)lua_table_get_key_num(...)))` |
+| `a + boxed.x` (bare param `a`) | `lua_add(a, ...)` | unchanged (metamorph-safe) |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo ≥ C on every row |
+
+Rejected:
+
+- Unboxing bare untyped function parameters in comparisons (e.g. `while i <= n`
+  when `n` is an untyped param) — would bypass metamethod dispatch on the param
+  object itself.
+
+### Follow-up (2026-07-16): wire sema `table_field_types` into codegen
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "table_field_types"
+zig test src/tests.zig
+scripts/run_compile_fail_tests.sh
+zig build run -- run examples/metamethod_operator_compat.duo
+zig build bench
+```
+
+Result gate: **PASS** — 600/600 unit tests, compile-fail, metamethod compat,
+all 40 hard benchmark rows (Duo .lua/.duo beat or tie C).
+
+Additional changes:
+
+- **`CodeGen.table_field_types`**: optional pointer to sema's tracked field map;
+  plumbed through all `CodeGen.init` call sites in `main.zig` and tests.
+- **`lookup_tracked_table_field`**: stack-buffered key `{func}.{table}.{field}`
+  (when `current_func_name` is set) or `{table}.{field}`; avoids arena alloc in
+  lookup (heap alloc + defer caused ABRT during hash map get).
+- **`current_func_name` in codegen + sema**: set in `emit_func_def` /
+  `check_func_decl` so per-function table locals (`cfg`, `box`) do not collide
+  across top-level functions.
+- **`expr_type` for `.field` on `.any` objects**: recovers native types from
+  sema assignments like `cfg.port = 8080`, enabling `lua_table_get_str_num` and
+  native binops on subsequent reads.
+- **Unit test**: `codegen: sema table_field_types unbox tracked dynamic fields`.
+- **Test fix**: `dynamic locals unbox into typed call params` now expects native
+  `int64_t value` from `lua_table_get_str_num(box, "x", …)` and `take(value)`
+  without `lua_to_num`.
+
+Representative codegen:
+
+| Pattern | Before | After |
+| --- | --- | --- |
+| `cfg.port = 8080; return cfg.port + 1` | `lua_add(lua_table_get_str_lit(...), …)` | `return lua_val_from_int((int64_t)(lua_table_get_str_num(cfg, "port", …) + 1))` |
+| `value = box.x + 1; take(value)` | `take(((int64_t)lua_to_num(value)))` | `int64_t value = …lua_table_get_str_num(box, "x", …) + 1`; `take(value)` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo ≥ C on every row |
+
+Rejected:
+
+- ~~Table literal initializers still do not populate `table_field_types`~~ — **done**:
+  `track_table_literal_fields` records named/indexed literal fields on `local box = { x = 40 }`
+  and `box = { … }` assigns.
+
+### Follow-up (2026-07-16): net table field unboxing safety
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/tests.zig --test-filter "typed net.send fallback"
+zig test src/tests.zig --test-filter "typed net.udp_sendto fallback"
+zig test src/tests.zig --test-filter "dynamic net.close"
+zig build unit-test --summary all
+zig build test
+scripts/run_compile_fail_tests.sh
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 600/600 unit tests, compile-fail, all 40 hard benchmarks, ml-bench, and honest-bench passed.
+
+Additional changes:
+
+- `expr_is_dynamic_table_field` helper in `src/codegen.zig`: returns true when an
+  expression is a `.field` access on a dynamic (`.any`) table object.
+- `try_emit_native_net_send`, `try_emit_native_net_close`, and
+  `try_emit_native_net_udp_sendto` now refuse to emit native `send`/`close`/`sendto`
+  syscalls when the fd argument is a dynamic table field (`sock.fd`). This keeps the
+  boxed runtime path for network builtins, preserving `duo_net_tcp_send` /
+  `duo_net_tcp_close` / `duo_net_udp_sendto` runtime type checks instead of bypassing
+  them with raw `send`/`close`.
+- `table_field_types` tracking remains active for `sock.fd`, so general typed
+  contexts and arithmetic still see the field as `i64`; the safety guard only blocks
+  the unsafe native syscall path.
+- Updated unit test expectations for `typed net.send fallback unboxes boxed runtime
+  result`, `typed net.udp_sendto fallback unboxes boxed runtime result`, and `dynamic
+  net.close keeps boxed runtime path`.
+
+Representative codegen:
+
+| Pattern | Before (unsafe native bypass) | After (boxed runtime, unboxed result) |
+| --- | --- | --- |
+| `local sent: i64 = net.send(sock.fd, "x")` | `int64_t sent = ((int64_t)send((int)(((int64_t)lua_table_get_str_num(sock, "fd", …)))), "x", 1, 0));` | `int64_t sent = ((int64_t)lua_to_num(duo_net_tcp_send(lua_val_from_int((int64_t)(((int64_t)lua_table_get_str_num(sock, "fd", …)))), lua_val_from_literal("x", …))));` |
+| `local sent: i64 = net.udp_sendto(sock.fd, "ping", "127.0.0.1", 53)` | `int64_t sent = duo_net_udp_sendto_native((int64_t)(lua_table_get_str_num(sock, "fd", …)), …);` | `int64_t sent = ((int64_t)lua_to_num(duo_net_udp_sendto(lua_val_from_int((int64_t)(((int64_t)lua_table_get_str_num(sock, "fd", …)))), lua_val_from_literal("ping", …), lua_val_from_literal("127.0.0.1", …), lua_val_from_int((int64_t)(53)))));` |
+| `net.close(sock.fd)` | `close((int)(((int64_t)lua_table_get_str_num(sock, "fd", …))));` | `duo_net_tcp_close(lua_val_from_int((int64_t)(((int64_t)lua_table_get_str_num(sock, "fd", …)))));` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build ml-bench` | PASS; all ML workloads Duo/Tie |
+| `zig build honest-bench` | PASS; all six rows Duo/Tie |
+
+Rejected:
+
+- Allowing native `send`/`close`/`sendto` for dynamic table fields (`sock.fd`) — the
+  runtime helpers validate `fd_v.type != VAL_NUMBER` and return nil/avoid closing an
+  invalid descriptor, which the raw syscall path cannot do.
+- Dropping `table_field_types` tracking for network call sites — the tracked `i64` type
+  is still correct and useful for typed locals and arithmetic; only the syscall
+  lowering is gated.
+
+### Follow-up (2026-07-16): native C-string string transformations
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/tests.zig --test-filter "typed string transformations lower to native C-string helpers"
+zig build test
+zig build bench
+zig build ml-bench
+zig build honest-bench
+```
+
+Result gate: **PASS** — 600/600 unit tests, all 40 hard benchmarks, ml-bench, and honest-bench passed.
+
+Additional changes:
+
+- Added native `const char*` helpers `lua_str_lower_cstr`, `lua_str_upper_cstr`,
+  `lua_str_reverse_cstr`, and `lua_str_sub_cstr` to the generated C prelude.
+- `try_emit_native_string_transform` (`src/codegen.zig`) lowers `string.lower`,
+  `string.upper`, `string.reverse`, `string.sub`, and equivalent method calls to
+  the native helpers when the result context is typed `str`.
+- Method chaining works: `string.lower(s):sub(3, 8)` emits
+  `lua_str_sub_cstr(lua_str_lower_cstr(s), (int64_t)(3), (int64_t)(8))`.
+- Unit test: `codegen: typed string transformations lower to native C-string helpers`.
+
+Representative codegen:
+
+| Pattern | Before | After |
+| --- | --- | --- |
+| `local l: str = string.lower(s)` | `const char* l = lua_to_str(lua_str_lower(lua_val_from_str(s)));` | `const char* l = lua_str_lower_cstr(s);` |
+| `local sub: str = s:sub(7)` | `const char* sub = lua_to_str(lua_str_sub(lua_val_from_str(s), lua_val_from_int(7)));` | `const char* sub = lua_str_sub_cstr(s, (int64_t)(7), INT64_MAX);` |
+
+Measured impact:
+
+| Suite | Result |
+| --- | --- |
+| `zig build bench` | all 40 `RESULT` rows match; Duo .lua/.duo beat or tie C |
+| `zig build ml-bench` | PASS; all ML workloads Duo/Tie |
+| `zig build honest-bench` | PASS; all six rows Duo/Tie |
+
+Rejected:
+
+- Returning `char*` instead of `const char*` — the helpers allocate a fresh string and
+  hand ownership to `lua_val_from_str_len`; callers treat the result as a borrowed
+  C string pointer, consistent with other native `str` values.
+- Removing the boxed `lua_str_lower`/`lua_str_sub` runtime helpers — they are still
+  needed for `.any` contexts and for untyped callers.

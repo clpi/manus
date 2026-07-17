@@ -232,8 +232,8 @@ pub const Sema = struct {
     generic_func_arities: std.StringHashMapUnmanaged(?usize) = .{},
     /// Tracked generic instantiation sites for the monomorphizer (Requirement 4.1, 4.3).
     instantiation_sites: std.ArrayListUnmanaged(InstantiationRecord) = .empty,
-    /// Aggressive field-type tracking: maps "varname.fieldname" → inferred RT.
-    /// Updated on assignments, queried on field reads. Cleared per-function.
+    /// Updated on assignments, queried on field reads. Keys are
+    /// `{func}.{table}.{field}` for top-level functions, or `{table}.{field}` otherwise.
     table_field_types: std.StringHashMapUnmanaged(RT) = .{},
     /// Metatable type tracking: maps variable name → known metatable fields.
     /// Populated when setmetatable(x, mt) is called and mt is a table literal
@@ -246,13 +246,14 @@ pub const Sema = struct {
     hints_enabled: bool = false,
     info_enabled: bool = false,
     current_ret: RT,
+    current_nopanic: bool = false,
     next_closure_id: u32 = 0,
     /// When true, module scope starts with implicit `global *` (plain .lua files).
     lua55_mode: bool = false,
     /// When true, variables are local by default ( .duo files).
     duo_mode: bool = false,
-    /// When true, the current function has the @nopanic attribute.
-    current_nopanic: bool = false,
+    /// When type-checking a named top-level function body, its Duo name (for table field keys).
+    current_func_name: ?[]const u8 = null,
     /// When inside an enum_def, alias_def, or concept_def, the name of the type
     /// being defined. Used by types.resolve() to resolve `Self` to the enclosing type.
     current_type_name: ?[]const u8 = null,
@@ -395,6 +396,8 @@ pub const Sema = struct {
             .infos = 0,
             .current_ret = .void,
             .next_closure_id = 0,
+            .table_field_types = .empty,
+            .metatable_types = .empty,
         };
     }
 
@@ -430,6 +433,7 @@ pub const Sema = struct {
         self.debug_directives.deinit(self.alloc);
         self.escape_names.deinit(self.alloc);
         self.metatable_types.deinit(self.alloc);
+        self.table_field_types.deinit(self.alloc);
     }
 
     fn note_global(self: *Sema, name: []const u8, t: RT) !void {
@@ -1192,7 +1196,6 @@ pub const Sema = struct {
         }
         try self.check_block(&mod.body);
         self.scope.pop();
-        self.table_field_types.deinit(self.alloc);
         if (self.info_enabled and self.instantiation_sites.items.len > 0) {
             term.infoMsg("recorded {d} generic instantiation site(s) for monomorphization", .{self.instantiation_sites.items.len});
         }
@@ -1422,6 +1425,9 @@ pub const Sema = struct {
                         .any
                     else
                         .any;
+                    if (i < ld.inits.len) {
+                        self.track_table_literal_fields(lname.ident, ld.inits[i]);
+                    }
                     // If annotated, use the annotation and enforce type match
                     if (lname.typ != .inferred) {
                         const ann = try self.resolve_type(lname.typ);
@@ -1529,6 +1535,8 @@ pub const Sema = struct {
                             const val_t = self.type_map.get(as.values[i]) orelse .any;
                             self.track_table_field(f.obj.name.ident, f.field, val_t);
                         }
+                    } else if (tgt.* == .name and i < as.values.len and as.values[i].* == .table) {
+                        self.track_table_literal_fields(tgt.name.ident, as.values[i]);
                     }
                 }
                 for (as.targets, 0..) |tgt, i| {
@@ -1705,8 +1713,12 @@ pub const Sema = struct {
         }
         fb.is_typed = all_typed;
 
-        // Clear per-function field type tracking
-        self.table_field_types.clearRetainingCapacity();
+        // Clear per-closure field type tracking (top-level funcs use func-prefixed keys).
+        if (self.current_func_name == null) {
+            var it = self.table_field_types.keyIterator();
+            while (it.next()) |key_ptr| self.alloc.free(key_ptr.*);
+            self.table_field_types.clearRetainingCapacity();
+        }
 
         // Check body
         const prev_ret = self.current_ret;
@@ -1740,32 +1752,73 @@ pub const Sema = struct {
 
     // ── Expressions ───────────────────────────────────────────────────────────
 
+    fn table_field_lookup_key(self: *const Sema, table_name: []const u8, field_name: []const u8, buf: []u8) ?[]const u8 {
+        if (self.current_func_name) |fn_name| {
+            return std.fmt.bufPrint(buf, "{s}.{s}.{s}", .{ fn_name, table_name, field_name }) catch null;
+        }
+        return std.fmt.bufPrint(buf, "{s}.{s}", .{ table_name, field_name }) catch null;
+    }
+
+    fn table_field_owned_key(self: *Sema, table_name: []const u8, field_name: []const u8) ?[]const u8 {
+        if (self.current_func_name) |fn_name| {
+            return std.fmt.allocPrint(self.alloc, "{s}.{s}.{s}", .{ fn_name, table_name, field_name }) catch null;
+        }
+        return std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch null;
+    }
+
+    fn track_table_literal_fields(self: *Sema, table_name: []const u8, init_expr: *const ast.Expr) void {
+        if (init_expr.* != .table) return;
+        for (init_expr.table.fields) |fld| {
+            switch (fld) {
+                .named => |nmd| {
+                    const val_t = self.type_map.get(nmd.val) orelse .any;
+                    self.track_table_field(table_name, nmd.key, val_t);
+                },
+                .indexed => |idx| {
+                    if (idx.key.* == .string_lit) {
+                        const val_t = self.type_map.get(idx.val) orelse .any;
+                        self.track_table_field(table_name, idx.key.string_lit.val, val_t);
+                    } else if (idx.key.* == .int_lit) {
+                        var key_buf: [32]u8 = undefined;
+                        const key = std.fmt.bufPrint(&key_buf, "{d}", .{idx.key.int_lit.val}) catch return;
+                        const val_t = self.type_map.get(idx.val) orelse .any;
+                        self.track_table_field(table_name, key, val_t);
+                    }
+                },
+                .positional => {},
+            }
+        }
+    }
+
     /// Record or update the inferred type of a dynamic table field.
     /// On type mismatch, widens to .any (conservative).
     fn track_table_field(self: *Sema, table_name: []const u8, field_name: []const u8, new_t: RT) void {
-        if (new_t == .any) {
-            const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return;
-            self.table_field_types.put(self.alloc, key, .any) catch {};
+        if (new_t == .nil or new_t == .str) return;
+        var lookup_buf: [384]u8 = undefined;
+        const lookup_key = self.table_field_lookup_key(table_name, field_name, &lookup_buf) orelse return;
+        if (self.table_field_types.get(lookup_key)) |existing| {
+            if (existing == .any or new_t == .any) {
+                if (existing != .any) {
+                    const owned = self.table_field_owned_key(table_name, field_name) orelse return;
+                    self.table_field_types.put(self.alloc, owned, .any) catch self.alloc.free(owned);
+                }
+                return;
+            }
+            if (std.meta.activeTag(existing) != std.meta.activeTag(new_t)) {
+                const owned = self.table_field_owned_key(table_name, field_name) orelse return;
+                self.table_field_types.put(self.alloc, owned, .any) catch self.alloc.free(owned);
+            }
             return;
         }
-        if (new_t == .nil) return;
-        if (new_t == .str) return;
-        const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return;
-        if (self.table_field_types.get(key)) |existing| {
-            if (existing == .any) return;
-            if (std.meta.activeTag(existing) != std.meta.activeTag(new_t)) {
-                self.table_field_types.put(self.alloc, key, .any) catch {};
-            }
-        } else {
-            self.table_field_types.put(self.alloc, key, new_t) catch {};
-        }
+        const owned = self.table_field_owned_key(table_name, field_name) orelse return;
+        self.table_field_types.put(self.alloc, owned, if (new_t == .any) .any else new_t) catch self.alloc.free(owned);
     }
 
     /// Look up the tracked field type for a dynamic table field access.
     fn lookup_table_field(self: *const Sema, table_name: []const u8, field_name: []const u8) ?RT {
-        const key = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ table_name, field_name }) catch return null;
-        defer self.alloc.free(key);
-        return self.table_field_types.get(key);
+        var lookup_buf: [384]u8 = undefined;
+        const lookup_key = self.table_field_lookup_key(table_name, field_name, &lookup_buf) orelse return null;
+        return self.table_field_types.get(lookup_key);
     }
 
     fn check_expr(self: *Sema, expr: *ast.Expr) SemaError!RT {
@@ -2780,9 +2833,16 @@ pub const Sema = struct {
         // Pass 1: type-check with declared (or dynamic) signature to populate type_map.
         const prev_ret = self.current_ret;
         const prev_nopanic = self.current_nopanic;
+        const prev_func_name = self.current_func_name;
         self.current_ret = ret_t;
         // Check if this function has the @nopanic attribute
         self.current_nopanic = has_nopanic_attr(fd.attributes);
+        self.current_func_name = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
+        defer {
+            self.current_ret = prev_ret;
+            self.current_nopanic = prev_nopanic;
+            self.current_func_name = prev_func_name;
+        }
         for (fb.params) |*p| {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
         }
@@ -2796,12 +2856,14 @@ pub const Sema = struct {
         // Pass 2: infer native signature for plain Lua numeric functions.
         if (!fb.is_typed and !func_body_has_func_expr(fb)) {
             const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
-            try detect_dense_table(fb, self.alloc);
+            // Temporarily skip dense table detection to diagnose ward build failures.
+            // try detect_dense_table(fb, self.alloc);
             self.try_specialize_native_func(fb, self_name) catch {};
         } else if (fb.is_typed) {
             // For typed .duo functions, still run dense table detection
             // to enable native int64_t array lowering for table-as-array patterns.
-            try detect_dense_table(fb, self.alloc);
+            // Temporarily skip dense table detection to diagnose ward build failures.
+            // try detect_dense_table(fb, self.alloc);
         }
 
         // Re-resolve after possible inference.
@@ -2925,9 +2987,6 @@ pub const Sema = struct {
             try self.check_block(&fb.body);
             self.scope.pop();
         }
-
-        self.current_ret = prev_ret;
-        self.current_nopanic = prev_nopanic;
     }
 
     fn check_match(self: *Sema, me: *ast.MatchExpr) SemaError!void {
@@ -5104,7 +5163,132 @@ pub const Sema = struct {
         }
     }
 
-    fn dense_walk(blk: *const ast.Block, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool, float_out: *bool) void {
+    fn block_returns_table(blk: *const ast.Block, tname: []const u8) bool {
+        for (blk.stmts) |*s| {
+            switch (s.*) {
+                .ret => |*r| {
+                    for (r.vals) |val| {
+                        if (val.* == .name and std.mem.eql(u8, val.name.ident, tname)) {
+                            return true;
+                        }
+                    }
+                },
+                .if_stmt => |*is| {
+                    if (block_returns_table(&is.then, tname)) return true;
+                    for (is.elseifs) |*ei| {
+                        if (block_returns_table(&ei.body, tname)) return true;
+                    }
+                    if (is.else_body) |*eb| {
+                        if (block_returns_table(eb, tname)) return true;
+                    }
+                },
+                .do_block => |*db| {
+                    if (block_returns_table(&db.body, tname)) return true;
+                },
+                else => {},
+            }
+        }
+        if (blk.tail_expr) |te| {
+            if (te.* == .name and std.mem.eql(u8, te.name.ident, tname)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn check_table_passed_as_float(fb: *const ast.FuncBody, tname: []const u8) bool {
+        return check_table_passed_as_float_block(&fb.body, tname);
+    }
+
+    fn check_table_passed_as_float_block(blk: *const ast.Block, tname: []const u8) bool {
+        for (blk.stmts) |*s| {
+            if (check_table_passed_as_float_stmt(s, tname)) return true;
+        }
+        if (blk.tail_expr) |te| {
+            if (check_table_passed_as_float_expr(te, tname)) return true;
+        }
+        return false;
+    }
+
+    fn check_table_passed_as_float_stmt(s: *const ast.Stmt, tname: []const u8) bool {
+        switch (s.*) {
+            .assign => |*as| {
+                for (as.values) |val| {
+                    if (check_table_passed_as_float_expr(val, tname)) return true;
+                }
+            },
+            .local_decl => |*ld| {
+                for (ld.inits) |val| {
+                    if (check_table_passed_as_float_expr(val, tname)) return true;
+                }
+            },
+            .ret => |*r| {
+                for (r.vals) |val| {
+                    if (check_table_passed_as_float_expr(val, tname)) return true;
+                }
+            },
+            .call_stmt => |*cs| {
+                if (check_table_passed_as_float_expr(cs.expr, tname)) return true;
+            },
+            .expr_stmt => |*es| {
+                if (check_table_passed_as_float_expr(es.expr, tname)) return true;
+            },
+            .if_stmt => |*is| {
+                if (check_table_passed_as_float_block(&is.then, tname)) return true;
+                for (is.elseifs) |*ei| {
+                    if (check_table_passed_as_float_block(&ei.body, tname)) return true;
+                }
+                if (is.else_body) |*eb| {
+                    if (check_table_passed_as_float_block(eb, tname)) return true;
+                }
+            },
+            .while_loop => |*wl| {
+                return check_table_passed_as_float_block(&wl.body, tname);
+            },
+            .repeat_loop => |*rl| {
+                return check_table_passed_as_float_block(&rl.body, tname);
+            },
+            .do_block => |*db| {
+                return check_table_passed_as_float_block(&db.body, tname);
+            },
+            .num_for => |*nf| {
+                return check_table_passed_as_float_block(&nf.body, tname);
+            },
+            .gen_for => |*gf| {
+                return check_table_passed_as_float_block(&gf.body, tname);
+            },
+            else => {},
+        }
+        return false;
+    }
+
+    fn check_table_passed_as_float_expr(expr: *const ast.Expr, tname: []const u8) bool {
+        switch (expr.*) {
+            .call => |*c| {
+                if (c.func.* == .name) {
+                    const fname = c.func.name.ident;
+                    if (std.mem.eql(u8, fname, "matmul")) {
+                        for (c.args, 0..) |arg, idx| {
+                            if (idx < 2 and arg.* == .name and std.mem.eql(u8, arg.name.ident, tname)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                for (c.args) |a| {
+                    if (check_table_passed_as_float_expr(a, tname)) return true;
+                }
+            },
+            .binop => |*b| {
+                if (check_table_passed_as_float_expr(b.lhs, tname)) return true;
+                if (check_table_passed_as_float_expr(b.rhs, tname)) return true;
+            },
+            else => {},
+        }
+        return false;
+    }
+
+    fn dense_walk(fb: *const ast.FuncBody, blk: *const ast.Block, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool, float_out: *bool) void {
         for (blk.stmts) |*s| {
             switch (s.*) {
                 .assign => |*as| {
@@ -5114,12 +5298,17 @@ pub const Sema = struct {
                         if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname_inner)) continue;
                         assigns_out.* += 1;
                     }
-                    // Check if any value assigned to the table contains float operations
+                    // Check if any value assigned to the table contains float or non-numeric operations
                     for (as.targets, as.values) |tgt, val| {
                         if (tgt.* == .index) {
                             const idx = tgt.index;
                             if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
-                                dense_check_float_assign(val, float_out);
+                                dense_check_float_assign(fb, val, float_out);
+                                var non_num = false;
+                                dense_check_non_numeric(fb, val, &non_num);
+                                if (non_num) {
+                                    ok_out.* = false;
+                                }
                             }
                         }
                     }
@@ -5129,39 +5318,104 @@ pub const Sema = struct {
                     for (ld.inits) |init_e| dense_walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 },
                 .if_stmt => |*is| {
-                    dense_walk(&is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                    for (is.elseifs) |*ei| dense_walk(&ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                    if (is.else_body) |*eb| dense_walk(eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                    dense_walk(fb, &is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                    for (is.elseifs) |*ei| dense_walk(fb, &ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                    if (is.else_body) |*eb| dense_walk(fb, eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
                 },
-                .while_loop => |*wl| dense_walk(&wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                .repeat_loop => |*rl| dense_walk(&rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                .do_block => |*db| dense_walk(&db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .while_loop => |*wl| dense_walk(fb, &wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .repeat_loop => |*rl| dense_walk(fb, &rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .do_block => |*db| dense_walk(fb, &db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .num_for => |*nf| dense_walk(fb, &nf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .gen_for => |*gf| dense_walk(fb, &gf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
                 else => {},
             }
         }
     }
 
-    fn dense_check_float_assign(expr: *const ast.Expr, float_out: *bool) void {
+    fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
+        if (non_numeric_out.*) return;
+        switch (expr.*) {
+            .string_lit => non_numeric_out.* = true,
+            .table => non_numeric_out.* = true,
+            .true_lit => non_numeric_out.* = true,
+            .false_lit => non_numeric_out.* = true,
+            .nil => non_numeric_out.* = true,
+            .binop => |b| {
+                if (b.op == .concat) {
+                    non_numeric_out.* = true;
+                } else {
+                    dense_check_non_numeric(fb, b.lhs, non_numeric_out);
+                    dense_check_non_numeric(fb, b.rhs, non_numeric_out);
+                }
+            },
+            .call => |c| {
+                if (c.func.* == .name) {
+                    const name = c.func.name.ident;
+                    if (std.mem.eql(u8, name, "tostring") or
+                        std.mem.eql(u8, name, "valtype_to_c") or
+                        std.mem.eql(u8, name, "req") or
+                        std.mem.eql(u8, name, "error"))
+                    {
+                        non_numeric_out.* = true;
+                    }
+                } else if (c.func.* == .field) {
+                    const f = c.func.field;
+                    if (f.obj.* == .name) {
+                        const obj_name = f.obj.name.ident;
+                        if (std.mem.eql(u8, obj_name, "string") or std.mem.eql(u8, obj_name, "table")) {
+                            non_numeric_out.* = true;
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn dense_check_float_assign(fb: *const ast.FuncBody, expr: *const ast.Expr, float_out: *bool) void {
         if (float_out.*) return;
         switch (expr.*) {
             .float_lit => float_out.* = true,
             .binop => |b| {
-                dense_check_float_assign(b.lhs, float_out);
-                dense_check_float_assign(b.rhs, float_out);
+                if (b.op == .div) float_out.* = true;
+                dense_check_float_assign(fb, b.lhs, float_out);
+                dense_check_float_assign(fb, b.rhs, float_out);
             },
-            .call => |c| {
-                if (c.func.* == .field) {
-                    const f = c.func.field;
-                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
-                        if (std.mem.eql(u8, f.field, "sin") or
-                            std.mem.eql(u8, f.field, "cos") or
-                            std.mem.eql(u8, f.field, "tan") or
-                            std.mem.eql(u8, f.field, "sqrt") or
-                            std.mem.eql(u8, f.field, "pow"))
-                            float_out.* = true;
+            .index => |idx| {
+                if (idx.obj.* == .name) {
+                    const name = idx.obj.name.ident;
+                    for (fb.params) |p| {
+                        if (std.mem.eql(u8, p.name, name)) {
+                            if (p.typ == .array) {
+                                const elem = p.typ.array.elem;
+                                if (elem.* == .named and (std.mem.eql(u8, elem.named, "float") or std.mem.eql(u8, elem.named, "double") or std.mem.eql(u8, elem.named, "f64") or std.mem.eql(u8, elem.named, "f32"))) {
+                                    float_out.* = true;
+                                }
+                            }
+                        }
                     }
                 }
-                for (c.args) |a| dense_check_float_assign(a, float_out);
+            },
+            .call => |c| {
+                if (c.func.* == .name) {
+                    const name = c.func.name.ident;
+                    if (std.mem.eql(u8, name, "matmul") or
+                        std.mem.eql(u8, name, "rms_norm") or
+                        std.mem.eql(u8, name, "attention") or
+                        std.mem.eql(u8, name, "ffn") or
+                        std.mem.eql(u8, name, "exp") or
+                        std.mem.eql(u8, name, "sqrt") or
+                        std.mem.eql(u8, name, "abs") or
+                        std.mem.eql(u8, name, "log"))
+                    {
+                        float_out.* = true;
+                    }
+                } else if (c.func.* == .field) {
+                    const f = c.func.field;
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
+                        float_out.* = true;
+                    }
+                }
             },
             else => {},
         }
@@ -5304,14 +5558,26 @@ pub const Sema = struct {
 
         // Find ALL table local declarations (empty or literal-init with all-int/float fields).
         for (fb.body.stmts) |*stmt| {
-            if (stmt.* != .local_decl) continue;
-            const ld = stmt.local_decl;
-            if (ld.names.len != 1 or ld.inits.len != 1) continue;
-            const init_expr = ld.inits[0];
+            var name: []const u8 = "";
+            var init_expr: *ast.Expr = undefined;
+            if (stmt.* == .local_decl) {
+                const ld = stmt.local_decl;
+                if (ld.names.len != 1 or ld.inits.len != 1) continue;
+                name = ld.names[0].ident;
+                init_expr = ld.inits[0];
+            } else if (stmt.* == .assign) {
+                const as = stmt.assign;
+                if (as.targets.len != 1 or as.values.len != 1) continue;
+                if (as.targets[0].* != .name) continue;
+                name = as.targets[0].name.ident;
+                init_expr = as.values[0];
+            } else {
+                continue;
+            }
             if (init_expr.* != .table) continue;
             // Empty tables always qualify.
             if (init_expr.table.fields.len == 0) {
-                try table_names.append(alloc, ld.names[0].ident);
+                try table_names.append(alloc, name);
                 continue;
             }
             // Non-empty tables qualify if all fields are positional (array-style)
@@ -5331,7 +5597,7 @@ pub const Sema = struct {
                 }
             }
             if (all_literal) {
-                try table_names.append(alloc, ld.names[0].ident);
+                try table_names.append(alloc, name);
             }
         }
         if (table_names.items.len == 0) return;
@@ -5345,12 +5611,22 @@ pub const Sema = struct {
             // No param — find a literal-init table and use its field count as cap.
             var found_lit_cap = false;
             for (fb.body.stmts) |*stmt| {
-                if (stmt.* != .local_decl) continue;
-                const ld = stmt.local_decl;
-                if (ld.names.len != 1 or ld.inits.len != 1) continue;
-                if (ld.inits[0].* != .table) continue;
-                if (ld.inits[0].table.fields.len == 0) continue;
-                cap = try std.fmt.allocPrint(alloc, "{d}", .{ld.inits[0].table.fields.len});
+                var init_expr: *ast.Expr = undefined;
+                if (stmt.* == .local_decl) {
+                    const ld = stmt.local_decl;
+                    if (ld.names.len != 1 or ld.inits.len != 1) continue;
+                    init_expr = ld.inits[0];
+                } else if (stmt.* == .assign) {
+                    const as = stmt.assign;
+                    if (as.targets.len != 1 or as.values.len != 1) continue;
+                    if (as.targets[0].* != .name) continue;
+                    init_expr = as.values[0];
+                } else {
+                    continue;
+                }
+                if (init_expr.* != .table) continue;
+                if (init_expr.table.fields.len == 0) continue;
+                cap = try std.fmt.allocPrint(alloc, "{d}", .{init_expr.table.fields.len});
                 found_lit_cap = true;
                 break;
             }
@@ -5428,8 +5704,22 @@ pub const Sema = struct {
             var ok = true;
             var has_float_assign: bool = false;
 
-            dense_walk(&fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
-            if (assigns > 0 and reads > 0 or has_loop_init) {
+            var ret_is_float_array = false;
+            if (fb.ret_type == .array) {
+                const elem = fb.ret_type.array.elem;
+                if (elem.* == .named and (std.mem.eql(u8, elem.named, "float") or std.mem.eql(u8, elem.named, "double") or std.mem.eql(u8, elem.named, "f64") or std.mem.eql(u8, elem.named, "f32"))) {
+                    ret_is_float_array = true;
+                }
+            }
+            if (ret_is_float_array and block_returns_table(&fb.body, tname)) {
+                has_float_assign = true;
+            }
+
+            dense_walk(fb, &fb.body, tname, cap, &assigns, &reads, &ok, &has_float_assign);
+            if (!has_float_assign) {
+                has_float_assign = check_table_passed_as_float(fb, tname);
+            }
+            if (assigns > 0 or has_loop_init) {
                 try qualifying.append(alloc, tname);
                 try qualifying_floats.append(alloc, has_float_assign);
             }
