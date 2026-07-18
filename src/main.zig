@@ -459,6 +459,7 @@ fn usesProjectWorkspace(cmd: []const u8, input_file: ?[]const u8) bool {
 }
 
 fn absPathExists(io: Io, path: []const u8) bool {
+    if (!std.fs.path.isAbsolute(path)) return false;
     Io.Dir.accessAbsolute(io, path, .{}) catch return false;
     return true;
 }
@@ -1215,7 +1216,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
     var buf: [1024]u8 = undefined;
 
     if (term.color) {
-        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+        term.shellPrompt();
     } else {
         term.printRaw("duo> ", .{});
     }
@@ -1233,7 +1234,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
                 line.clearRetainingCapacity();
                 if (!keep_running) return;
                 if (term.color) {
-                    term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                    term.shellPrompt();
                 } else {
                     term.printRaw("duo> ", .{});
                 }
@@ -2011,20 +2012,19 @@ native_scalar_precheck.bench_mode = bench_mode;
     }
     if (phase_timer) |*t| trace_phase(io, t, "link", out_path);
 
+    const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
     if (term.trace) {
-        const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
         if (term.richPipeline()) {
             term.pipelineEnd(total_ms, out_path);
         } else {
             term.traceSummary("total", "{d} ms", .{total_ms});
         }
     } else if (term.build_report != .plain and !test_mode) {
-        const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
         term.buildPhaseDone("compile", total_ms, out_path);
     }
 
     if (!run_after) {
-        term.ok("✓ {s}", .{out_path});
+        term.artifactReady(out_path, total_ms);
     }
 
     if (run_after and !is_wasm) {

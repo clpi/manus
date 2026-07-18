@@ -32,9 +32,9 @@ fun argparse_add_flag(parser, short_or_long: str, long_or_help: str, help: str)
 end
 
 fun argparse_add_option(parser, short_or_long: str, long_or_help: str, help: str)
-    short_opt = nil
-    long_opt = nil
-    desc = help
+    short_opt: str = nil
+    long_opt: str = nil
+    desc: str = help
     if long_or_help and string.sub(long_or_help, 1, 1) == "-" then
         short_opt = short_or_long
         long_opt = long_or_help

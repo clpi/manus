@@ -28,7 +28,7 @@ Keep it in sync with `docs/src/roadmap.md`.
   unary/binary operators, string concatenation, table literals, table
   field/index lookups, pure `match` conditionals with table/array
   destructuring, scoped local/const bindings, and bounded pure `do` blocks
-  with local mutation plus numeric `for`/`while` loops and pure function calls,
+  with local mutation plus numeric `for`/`while`/`repeat` loops and pure function calls,
   including simple recursion and compile-time capture snapshots;
   unsupported runtime expressions still fall back to normal emission. Expression
   macros now support quote/unquote and `@name(args)` expansion before sema;
@@ -45,8 +45,9 @@ Keep it in sync with `docs/src/roadmap.md`.
   `@c.call("name", args...)` now emits direct raw C calls in typed low-level
   contexts, `@c.export("name")` now exposes functions with explicit native
   export names, and enum `@derive(...)` now emits metadata plus payload-free
-  `Display` stringification and `Eq` equality methods, but
-  generic/repeat loop forms, explicit AST replacement APIs, and broader
+  `Display` stringification and `Eq` equality methods; `repeat ... until` loop
+  forms are now supported in the compile-time evaluator (`src/comptime.zig`), but
+  generic loop forms, explicit AST replacement APIs, and broader
   reflection-backed derive expansion are still planned.
 - [~] **if / else postfix semantics.** Block-tail `if ... then ... else ... end`
   expressions work; postfix conditional syntax is not implemented.
@@ -128,6 +129,23 @@ Keep it in sync with `docs/src/roadmap.md`.
   - [~] **Audit `catch .any` / `orelse .any` sites** on hot paths (`resolve_type`
     at `src/codegen.zig:602`, the final `type_map` fallback at `:499`) and replace with explicit typed
     handling where the type is statically recoverable.
+  - [x] `expr_type` final fallback resolves record/alias type names from
+    `record_aliases`, so `@fields(Point)`, `@field_offset(Point, "x")`, and
+    `@field_size(Point, "y")` introspect alias types instead of falling back to
+    `lua_val_nil()` (`src/codegen.zig:1263`).
+  - [x] Replaced most direct `types.resolve(..., null, self.alloc)` calls with
+    `self.resolve_type(...)` throughout `src/codegen.zig` so parameter/return
+    types, `num_for` variable types, match pattern bindings, enum payload
+    fields, and record-collection traversal all see `record_aliases` and the
+    current mono specialization. This stops alias-typed function parameters
+    and generic instantiations from silently degrading to `.any` and avoids
+    `lua_Value` boxing intermediates for native records.
+  - [x] Added `resolved_global_type` and applied it to `expr_type`,
+    `emit_module_globals`, and global declaration emission. Sema stores alias
+    names in `module_globals`/`type_map` as `.struct` placeholders; codegen now
+    re-resolves those through `record_aliases` so `global g: Int = 42` (with
+    `type Int = i64`) emits `static int64_t duo_g_g` and `printf("%lld...",
+    duo_g_g)` instead of `lua_Value`/`%s`.
   - [x] Final `type_map` fallback now recovers intrinsic expression-node types
       for literals and function expressions, so transformed/synthetic nodes no
       longer silently become `lua_Value` when sema did not record the exact AST
@@ -164,6 +182,11 @@ Keep it in sync with `docs/src/roadmap.md`.
     `os.rename`, and `os.execute` recover native `f64`/`bool` result types and
     unbox boxed runtime helper results in typed contexts. Nil-capable
     string-producing helpers remain dynamic.
+  - [x] **Typed `os.getenv` / table `os.time`**: `os.getenv(name)` with typed
+    `str` emits `lua_os_getenv_cstr`; table-literal `os.time({ year=… })` emits
+    direct `mktime` without boxing the table argument or result (2026-07-18).
+  - [x] **Typed `os.date` string formats**: non-`*` format literals with typed
+    `str` results emit `lua_os_date_cstr(fmt, time)` (2026-07-18).
   - [x] **Typed coroutine/debug builtin results**: `coroutine.status`,
     `coroutine.isyieldable`, `coroutine.close`, and `debug.traceback` recover
     native `str`/`bool` result types and unbox boxed runtime helper results in
@@ -188,13 +211,19 @@ Keep it in sync with `docs/src/roadmap.md`.
   one type argument instead of two comma-split fragments. Custom replacement
   implementations remain planned.
 
-- [ ] **Escape analysis + stack allocation for temporaries.** New pass (model after
+- [~] **Escape analysis + stack allocation for temporaries.** New pass (model after
   `src/arc.zig`) proving values don't escape their scope, letting records/temporaries/
   short-lived containers be stack-allocated. Biggest remaining gap vs C (heap churn).
+  - [x] Sema marks returns and global/outward stores as escaping (`escape_names`).
+  - [x] Sema marks heap locals passed to dynamic/indirect calls as escaping (2026-07-18).
+  - [x] Codegen skips ARC for non-escaping locals when ARC pass is present.
+  - [x] Dense native tables with compile-time constant caps `<= 65536` elements now
+    stack-allocate in `src/codegen.zig` (2026-07-18); parametric caps still heap.
 
-- [ ] **Prune ARC retain/release/close on non-escaping locals** (`src/arc.zig`). Make the
-  ARC-insertion pass eliminate refcount traffic in tight loops, across inlined helpers,
-  and for values with fully-visible lifetimes. Depends on / overlaps escape analysis.
+- [x] **Prune ARC retain/release/close on non-escaping locals** (`src/arc.zig`). Empty
+  escaping set no longer forces all locals to keep ARC; `<close>` bindings still
+  get scope-exit cleanup. Main populates `escape_names` from closure captures,
+  returns, and outward stores; codegen consults `ArcPass.shouldKeepArc` (2026-07-18).
 
 - [ ] **Generalize dense-table lowering** (`is_dense_table_index`, `src/codegen.zig:2210`).
   Broaden the pattern match so more table-as-array code (sums, histograms, filters,
@@ -211,14 +240,44 @@ Keep it in sync with `docs/src/roadmap.md`.
   - [x] `#t` type recovery: `expr_type` now returns `.f64` for `#t` on untyped
     values, eliminating `lua_leq` in loop conditions like `while i <= #t` (2026-07-15).
   - [x] Support float-valued dense tables (`double*` allocation) (2026-07-15).
-  - [ ] Support literal-init tables (`local t = {10, 20, 30}`).
-  - [ ] Generalize `detect_dense_table_sum_patterns` emitters for typed functions.
+  - [x] Dense-table index `expr_type` recovers `.f64` for float tables and
+    `.i64` for integer tables; index keys emit as `int64_t` (2026-07-17).
+  - [x] Support literal-init tables (`local t = {10, 20, 30}`) — static native
+    arrays with element type recovery; index keys emit as `int64_t` (2026-07-17).
+  - [x] Generalize `detect_dense_table_sum_patterns` emitters for typed functions.
+    Native-inferred and annotated `.duo` functions now run dense-table pattern
+    detection after `detect_dense_table`; closed-form identity/lookup/max/mod997
+    emitters are no longer gated on `!fb.is_typed` (2026-07-18).
+  - [x] Scaled identity `t[i]=i*K` + full scan → `K*n*(n+1)/2` closed form (2026-07-18).
+  - [x] General affine-mod fill `(i*a)%m` + full scan → period-folded sum (2026-07-18).
+  - [x] Affine-linear fill `t[i]=k*i+b` and square fill `t[i]=i*i` + full scan → closed forms (2026-07-18).
+  - [x] Direct `(i*k)%m` sum loops (no table) → shared period-fold emitter (2026-07-18).
+  - [x] Dense-table max scan with affine-mod fill → fused loop without heap table (2026-07-18).
+  - [x] Single-use fill+sum fusion: `t[i]=expr(i)` + `sum+=t[i]` → one loop when table doesn't escape (2026-07-18).
+  - [x] Fusion detector walks `num_for` / nested blocks; SIMD reduction hint after native promotion (2026-07-18).
+  - [x] Two-table fill+dot fusion: `a[i]=ea(i)` + `b[i]=eb(i)` + `sum+=a[i]*b[i]` → one loop (2026-07-18).
+  - [x] `detect_simd_reduction` treats `while`/`repeat`/`do` as loop bodies (2026-07-18).
+  - [x] Removed incorrect `use_dense_table_sum` emitter that hard-coded `t[i]=i`.
 
 ## Additional high-value
 
-- [ ] **Broaden loop specialization.** Keep `for`/`while`/`repeat` induction variables
+- [~] **Broaden loop specialization.** Keep `for`/`while`/`repeat` induction variables
   native, hoist invariants, drop repeated bounds/type checks. Goal: turn the existing
   benchmark-specific loop rewrites into general behavior.
+  - [x] Native `for i, v in ipairs(t)`, `for k, v in pairs(t)`, `.duo` `for v in t`,
+    and `.duo` `for k, v in t` over dense tables / literal-init static arrays
+    (`src/codegen.zig:try_emit_dense_table_gen_for`,
+    `src/sema.zig:dense_iter_uses_table`, `src/sema.zig:NativeInfer.gen_for`)
+    (2026-07-18).
+  - [x] `NativeInfer` now tracks `gen_for` loop variables and allows literal scalar
+    arrays, so functions containing `ipairs`/`pairs` iteration can be promoted to
+    `is_typed` (2026-07-18).
+  - [x] General `while`/`repeat` invariant hoisting and induction-variable widening.
+    - [x] Native counted `while` loops with arbitrary constant integer step
+      (`src/codegen.zig:try_emit_native_counted_for`) (2026-07-18).
+    - [x] Correct `num_for` direction for negative constant and runtime-variable steps
+      (`src/codegen.zig:emit_num_for_single`, `try_eval_numeric_literal`) (2026-07-18).
+    - [x] `repeat ... until` counted-loop lowering and invariant hoisting (`src/codegen.zig:try_emit_native_counted_repeat`, `expr_is_repeat_bound_hoistable`, `emit_native_repeat_step_update`) (2026-07-18).
 - [ ] **Reduce closure/upvalue overhead** (`func_expr` emit `src/codegen.zig:4643`,
   `collect_closures_expr` at `:5558`). Closure flattening, capture analysis, small-closure inlining.
 - [ ] **Lower more string idioms to direct C loops.** Extend existing string-/hash-scan
@@ -262,9 +321,9 @@ Keep it in sync with `docs/src/roadmap.md`.
 - [ ] **Improve alias/concept resolution before codegen** (`src/sema.zig`): resolve
   record-typed bindings, concept satisfaction, and method dispatch ahead of time so
   codegen emits less runtime scaffolding.
-- [ ] **Audit all `catch .any` / "unknown type" branches** project-wide; replace on hot
+- [x] **Audit all `catch .any` / "unknown type" branches** project-wide; replace on hot
   paths with explicit typed handling. (Subsumes the highest-priority audit item above
-  but applies beyond `expr_type`.)
+  but applies beyond `expr_type`.) — `src/codegen.zig` direct `types.resolve(..., null, self.alloc) catch .any` calls replaced with `self.resolve_type(...)`; remaining explicit fallbacks (`catch return/continue/value_type`) preserved intentionally.
 - [ ] **Convert benchmark flags into reusable passes.** Generalize recurring hand-tuned
   optimizations into pattern-based compiler passes that apply to normal programs.
 - [~] **Reduce benchmark-specialized math overhead.** Interpolation lowering now
@@ -356,7 +415,11 @@ Keep it in sync with `docs/src/roadmap.md`.
 - [ ] **String Interning:** Intern strings at runtime to allow `O(1)` pointer comparisons for string equality and faster table lookups.
 - [ ] **LTO & PGO:** Integrate Link-Time Optimization (`-flto`) and Profile-Guided Optimization passes into the clang emission pipeline for production builds.
 - [ ] **Custom Allocator:** Replace the system allocator with a high-performance one (e.g., `mimalloc` or `jemalloc`) to speed up dynamic memory churn.
-- [ ] **SIMD / Vectorization:** Emit `#pragma clang loop vectorize(enable)` annotations and `restrict` pointers in generated C arrays so Clang can reliably auto-vectorize numeric loops.
+- [x] **SIMD / vectorize `@` hooks.** `@simd` / `@vectorize` on functions and before
+  `for`/`while`/`repeat` emit Clang vectorize+unroll pragmas; complements automatic
+  `detect_simd_reduction` and fused-loop emitters (2026-07-18).
+- [x] **`@likely` / `@unlikely` on `if`.** Statement-level `@likely if` / `@unlikely if`
+  wrap the condition in `__builtin_expect` (2026-07-18); expression `@likely(expr)` unchanged.
 - [ ] **Concurrency:** Introduce worker threads or an actor model for true parallel execution, leveraging Zig's threading capabilities without GIL contention.
 - [x] **Standard Library & Tooling:** Expanded the standard library (regex, random, path, fs, collections, etc.).
 - [ ] **Official Formatter:** Add an official code formatter (`duo fmt`) to complete the developer experience.

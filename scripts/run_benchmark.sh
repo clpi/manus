@@ -1,6 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Rich terminal output (disabled for pipes / NO_COLOR).
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  _R=$'\033[0m'
+  _B=$'\033[1m'
+  _D=$'\033[2m'
+  _OK=$'\033[1;32m'
+  _ERR=$'\033[1;31m'
+  _ACC=$'\033[1;36m'
+  _WARN=$'\033[1;33m'
+  _MUT=$'\033[2m'
+  _DUO=$'\033[1;32m'
+  _REF=$'\033[1;33m'
+else
+  _R=
+  _B=
+  _D=
+  _OK=
+  _ERR=
+  _ACC=
+  _WARN=
+  _MUT=
+  _DUO=
+  _REF=
+fi
+
+section() { printf "${_ACC}${_B}▸ %s${_R}\n" "$1"; }
+pass()    { printf "${_OK}▣ PASS${_R} ${_B}%s${_R} ${_MUT}·${_R} %s\n" "$1" "$2"; }
+fail()    { printf "${_ERR}▣ FAIL${_R} ${_B}%s${_R} ${_MUT}·${_R} %s\n" "$1" "$2"; }
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DUO="$ROOT/zig-out/bin/duo"
 CC="${CC:-clang}"
@@ -141,7 +170,7 @@ collect_min_times() {
   rm -f "$tmp"
 }
 
-echo "=== Correctness (RESULT lines) ==="
+section "Correctness (RESULT lines)"
 "$DUO" run examples/benchmark.lua > /tmp/duo_bench_results.txt 2>/dev/null
 "$DUO" run examples/benchmark.duo > /tmp/duo_bench_duo_results.txt 2>/dev/null
 /tmp/c_bench.out > /tmp/c_bench_results.txt 2>/dev/null
@@ -155,11 +184,10 @@ if ! compare_results /tmp/duo_bench_duo_results.txt /tmp/c_bench_results.txt; th
 fi
 
 if [ "$RESULT_FAIL" -ne 0 ]; then
-  echo
-  echo "Benchmark failed: Duo .lua and .duo results must match reference C."
+  fail "benchmark" "Duo .lua and .duo results must match reference C"
   exit 1
 fi
-echo "All $BENCHES benchmark results match reference C for .lua and .duo."
+pass "correctness" "all $BENCHES RESULT lines match reference C (.lua + .duo)"
 
 # Compile timer.so for high resolution timing in Lua 5.5 and LuaJIT
 cat << 'EOF' > /tmp/timer.c
@@ -186,25 +214,24 @@ sed -i '' '1i\
 local ok, t = pcall(require, "timer"); if ok and type(t) == "function" then os.clock = t end\
 ' /tmp/lua_bench.lua
 
-echo
-echo "=== Duo (Lua AOT) ==="
+section "Duo (Lua AOT)"
 DUO_TIMES=$(collect_min_times "/tmp/duo_bench.out")
 
-echo "=== Duo (.duo AOT) ==="
+section "Duo (.duo AOT)"
 DUO_FILE_TIMES=$(collect_min_times "/tmp/duo_bench_duo.out")
 
-echo "=== Reference C ==="
+section "Reference C"
 C_TIMES=$(collect_min_times "/tmp/c_bench.out")
 
-echo "=== LuaJIT ==="
+section "LuaJIT"
 LUAJIT_TIMES=$(LUA_CPATH="/tmp/?.so;;" collect_min_times "luajit /tmp/lua_bench.lua")
 
-echo "=== Lua 5.5 ==="
+section "Lua 5.5"
 LUA55_TIMES=$(LUA_CPATH="/tmp/?.so;;" collect_min_times "lua /tmp/lua_bench.lua")
 
-echo "=== Nelua ==="
-# Note: Nelua may fail to compile the untyped bench if it uses generic tables, but we run it anyway
-NELUA_TIMES=$(collect_min_times "nelua /tmp/lua_bench.lua 2>/dev/null || true")
+section "Nelua"
+# Optional comparison row; no supported Nelua source is generated for this Lua harness.
+NELUA_TIMES=""
 
 NAMES=(
   "Fibonacci(40)"
@@ -250,9 +277,15 @@ NAMES=(
 )
 
 FAIL=0
-echo
-printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "DuoLua(s)" "DuoDuo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
-printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "----------------" "------------" "------------" "------------" "------------" "------------" "------------" "--------"
+printf "\n"
+if [ -n "$_ACC" ]; then
+  printf "${_MUT}╭─ benchmarks ─────────────────────────────────────────────────────────╮${_R}\n"
+  printf "${_MUT}│${_R} %-16s %12s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "DuoLua(s)" "DuoDuo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
+  printf "${_MUT}├──────────────────────────────────────────────────────────────────────┤${_R}\n"
+else
+  printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "DuoLua(s)" "DuoDuo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
+  printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "----------------" "------------" "------------" "------------" "------------" "------------" "------------" "--------"
+fi
 
 idx=0
 while IFS='|' read -r d duo_file c lj l5 n; do
@@ -276,14 +309,24 @@ while IFS='|' read -r d duo_file c lj l5 n; do
   if [ -z "$l5" ]; then l5_fmt="N/A"; fi
   if [ -z "$n" ]; then n_fmt="N/A"; fi
 
-  printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "$name" "$d_fmt" "$duo_file_fmt" "$c_fmt" "$lj_fmt" "$l5_fmt" "$n_fmt" "$winner"
+  if [ -n "$_ACC" ]; then
+    if [ "$winner" = "Duo" ]; then w_color="$_DUO"; else w_color="$_REF"; fi
+    printf "${_MUT}│${_R} %-16s %12s %12s %12s %12s %12s %12s ${w_color}%8s${_R}\n" \
+      "$name" "$d_fmt" "$duo_file_fmt" "$c_fmt" "$lj_fmt" "$l5_fmt" "$n_fmt" "$winner"
+  else
+    printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "$name" "$d_fmt" "$duo_file_fmt" "$c_fmt" "$lj_fmt" "$l5_fmt" "$n_fmt" "$winner"
+  fi
 done < <(paste -d '|' <(echo "$DUO_TIMES") <(echo "$DUO_FILE_TIMES") <(echo "$C_TIMES") <(echo "$LUAJIT_TIMES") <(echo "$LUA55_TIMES") <(echo "$NELUA_TIMES"))
 
+if [ -n "$_ACC" ]; then
+  printf "${_MUT}╰──────────────────────────────────────────────────────────────────────╯${_R}\n"
+fi
+
 if [ "$FAIL" -ne 0 ]; then
-  echo
-  echo "Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test."
+  printf "\n"
+  fail "benchmark" "Duo .lua and .duo must beat or tie reference C on every test"
   exit 1
 fi
 
-echo
-echo "All benchmarks: results match and Duo .lua/.duo >= C"
+printf "\n"
+pass "benchmark" "results match and Duo .lua/.duo ≥ C on all $BENCHES tests"

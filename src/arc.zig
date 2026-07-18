@@ -90,9 +90,19 @@ pub const ArcPass = struct {
     /// By default, all locals are treated as non-escaping (ARC pruned).
     /// Only those in the escaping set get retain/release.
     fn isEscaping(self: *const Self, name: []const u8) bool {
-        // If the escaping set is empty, keep all ARC (safe default).
-        if (self.escaping.count() == 0) return true;
         return self.escaping.contains(name);
+    }
+
+    /// `<close>` bindings always need scope-exit cleanup even when ARC is pruned
+    /// for ordinary non-escaping locals.
+    fn needsScopeArc(self: *const Self, name: []const u8, is_close: bool) bool {
+        if (is_close) return true;
+        return self.isEscaping(name);
+    }
+
+    /// Codegen query: emit retain/release/close for this binding?
+    pub fn shouldKeepArc(self: *const Self, name: []const u8, is_close: bool) bool {
+        return self.needsScopeArc(name, is_close);
     }
 
     pub fn run(self: *Self, module: *const ast.Module) Error!void {
@@ -129,7 +139,7 @@ pub const ArcPass = struct {
         while (i > 0) {
             i -= 1;
             const t = scope.items[i];
-            if (!self.isEscaping(t.name)) continue; // ARC pruned (non-escaping)
+            if (!self.needsScopeArc(t.name, t.is_close)) continue; // ARC pruned (non-escaping)
             if (t.is_close) try self.emit(.close, t.name, t.loc, t.ty);
             try self.emit(.release, t.name, t.loc, t.ty);
         }
@@ -178,7 +188,7 @@ pub const ArcPass = struct {
                     if (hasArcFalse(lname.attributes)) continue;
                     const ty = self.bindingType(lname, if (idx < d.inits.len) d.inits[idx] else null);
                     if (!needsArc(ty)) continue;
-                    if (!self.isEscaping(lname.ident)) {
+                    if (!self.needsScopeArc(lname.ident, isClose(lname.attrib))) {
                         // Non-escaping local: track but skip retain (ARC pruned).
                         try self.track(.{
                             .name = lname.ident,
@@ -216,7 +226,7 @@ pub const ArcPass = struct {
                 for (a.targets) |t| {
                     if (t.* == .name) {
                         if (self.lookup(t.name.ident)) |tracked| {
-                            if (needsArc(tracked.ty) and self.isEscaping(tracked.name)) {
+                            if (needsArc(tracked.ty) and self.needsScopeArc(tracked.name, tracked.is_close)) {
                                 try self.emit(.release, tracked.name, t.name.loc, tracked.ty);
                                 try self.emit(.retain, tracked.name, t.name.loc, tracked.ty);
                             }
@@ -438,6 +448,13 @@ const Harness = struct {
     fn deinit(self: *Harness) void {
         self.arena.deinit();
     }
+
+    fn populateEscaping(arc: *ArcPass, sem: *const Sema) ArcPass.Error!void {
+        var it = sem.escape_names.iterator();
+        while (it.next()) |entry| {
+            try arc.markEscaping(entry.key_ptr.*);
+        }
+    }
 };
 
 test "arc: primitive bindings produce no ARC annotations" {
@@ -455,7 +472,7 @@ test "arc: primitive bindings produce no ARC annotations" {
     try testing.expectEqual(@as(usize, 0), arc.annotations.items.len);
 }
 
-test "arc: a heap binding is retained once and released once (balanced)" {
+test "arc: non-escaping heap bindings are ARC-pruned" {
     var h = try Harness.run(
         \\local s: str = "hello"
     );
@@ -465,11 +482,26 @@ test "arc: a heap binding is retained once and released once (balanced)" {
     defer arc.deinit();
     try arc.run(&h.mod);
 
+    try testing.expectEqual(@as(usize, 0), arc.countOp(.retain));
+    try testing.expectEqual(@as(usize, 0), arc.countOp(.release));
+}
+
+test "arc: escaping heap binding is retained once and released once (balanced)" {
+    var h = try Harness.run(
+        \\local s: str = "hello"
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.markEscaping("s");
+    try arc.run(&h.mod);
+
     try testing.expectEqual(@as(usize, 1), arc.countOp(.retain));
     try testing.expectEqual(@as(usize, 1), arc.countOp(.release));
 }
 
-test "arc: retains and releases are always balanced (refcount returns to zero)" {
+test "arc: non-escaping heap locals produce no ARC traffic" {
     var h = try Harness.run(
         \\local a: str = "x"
         \\local p: { x: i64 } = { x = 1 }
@@ -481,12 +513,30 @@ test "arc: retains and releases are always balanced (refcount returns to zero)" 
     defer arc.deinit();
     try arc.run(&h.mod);
 
-    // Three heap bindings → 3 retains, all released at block exit.
+    try testing.expectEqual(@as(usize, 0), arc.countOp(.retain));
+    try testing.expectEqual(@as(usize, 0), arc.countOp(.release));
+}
+
+test "arc: escaping locals retain and release at scope exit" {
+    var h = try Harness.run(
+        \\local a: str = "x"
+        \\local p: { x: i64 } = { x = 1 }
+        \\local b: str = "y"
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.markEscaping("a");
+    try arc.markEscaping("p");
+    try arc.markEscaping("b");
+    try arc.run(&h.mod);
+
     try testing.expectEqual(@as(usize, 3), arc.countOp(.retain));
     try testing.expectEqual(arc.countOp(.retain), arc.countOp(.release));
 }
 
-test "arc: reassignment releases the old value and retains the new one" {
+test "arc: non-escaping reassignment is ARC-pruned" {
     var h = try Harness.run(
         \\local s: str = "a"
         \\s = "b"
@@ -495,6 +545,22 @@ test "arc: reassignment releases the old value and retains the new one" {
 
     var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
     defer arc.deinit();
+    try arc.run(&h.mod);
+
+    try testing.expectEqual(@as(usize, 0), arc.countOp(.retain));
+    try testing.expectEqual(@as(usize, 0), arc.countOp(.release));
+}
+
+test "arc: escaping reassignment releases the old value and retains the new one" {
+    var h = try Harness.run(
+        \\local s: str = "a"
+        \\s = "b"
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try arc.markEscaping("s");
     try arc.run(&h.mod);
 
     // bind retain + reassign retain = 2; reassign release + scope-exit release = 2.
@@ -516,7 +582,24 @@ test "arc: @arc(false) binding is skipped" {
     try testing.expectEqual(@as(usize, 0), arc.annotations.items.len);
 }
 
-test "arc: to-be-closed binding emits close before release" {
+test "arc: closure capture keeps ARC on the captured local" {
+    var h = try Harness.run(
+        \\local s: str = "hello"
+        \\local f = function() return s end
+    );
+    defer h.deinit();
+
+    var arc = ArcPass.init(h.arena.allocator(), &h.sema.type_map);
+    defer arc.deinit();
+    try Harness.populateEscaping(&arc, &h.sema);
+    try arc.run(&h.mod);
+
+    // bind retain + closure upvalue retain; scope exit releases the outer binding once.
+    try testing.expectEqual(@as(usize, 2), arc.countOp(.retain));
+    try testing.expectEqual(@as(usize, 1), arc.countOp(.release));
+}
+
+test "arc: to-be-closed binding emits close before release even when non-escaping" {
     var h = try Harness.run(
         \\local p: { x: i64 } <close> = { x = 1 }
     );

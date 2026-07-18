@@ -3,8 +3,8 @@
 @c.include("sys/time.h")
 @c.include("time.h")
 
-fun now(): int
-    os.time()
+fun now(): i64
+    @c.emit("((int64_t)time(NULL))")
 end
 
 fun time_clock(): float

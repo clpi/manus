@@ -24,9 +24,9 @@ end
 
 fun std_math_round(x: any): i64
     if x >= 0 then
-        return math.floor(x + 0.5)
+        return math.tointeger(math.floor(x + 0.5))
     end
-    return 0 - math.floor((0 - x) + 0.5)
+    return 0 - math.tointeger(math.floor((0 - x) + 0.5))
 end
 
 fun std_math_lerp(a: any, b: any, t: any): any

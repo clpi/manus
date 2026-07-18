@@ -1415,11 +1415,9 @@ test "Property 13: retains and releases are balanced over random sequences" {
             if (!w.print("local h{d}: str = \"v\"\n", .{i})) continue;
         }
         // Reassign random existing bindings to new heap values.
-        var reassigns_done: usize = 0;
         for (0..num_reassigns) |_| {
             const target = rng.intRangeAtMost(usize, 0, num_bindings - 1);
             if (!w.print("h{d} = \"w\"\n", .{target})) continue;
-            reassigns_done += 1;
         }
         const src = w.written();
 
@@ -1435,6 +1433,10 @@ test "Property 13: retains and releases are balanced over random sequences" {
         var mod = result.mod;
         var sema = result.sema;
         var arc = Arc.ArcPass.init(alloc, &sema.type_map);
+        var it = sema.escape_names.iterator();
+        while (it.next()) |entry| {
+            try arc.markEscaping(entry.key_ptr.*);
+        }
         try arc.run(&mod);
 
         const retains = arc.countOp(.retain);
@@ -1444,10 +1446,9 @@ test "Property 13: retains and releases are balanced over random sequences" {
             std.debug.print("FAIL: retains={d} releases={d} for:\n{s}\n", .{ retains, releases, src });
             return error.TestUnexpectedResult;
         }
-        // Each binding and each reassignment contributes exactly one retain.
-        const expected = num_bindings + reassigns_done;
-        if (retains != expected) {
-            std.debug.print("FAIL: expected {d} retains, got {d} for:\n{s}\n", .{ expected, retains, src });
+        // Non-escaping locals are ARC-pruned; random programs here never capture.
+        if (retains != 0) {
+            std.debug.print("FAIL: expected 0 retains (pruned), got {d} for:\n{s}\n", .{ retains, src });
             return error.TestUnexpectedResult;
         }
     }
@@ -1487,9 +1488,13 @@ test "Property 13: balance holds across nested scopes" {
         var mod = result.mod;
         var sema = result.sema;
         var arc = Arc.ArcPass.init(alloc, &sema.type_map);
+        var esc_it = sema.escape_names.iterator();
+        while (esc_it.next()) |entry| {
+            try arc.markEscaping(entry.key_ptr.*);
+        }
         try arc.run(&mod);
 
         try std.testing.expectEqual(arc.countOp(.retain), arc.countOp(.release));
-        try std.testing.expectEqual(outer + inner, arc.countOp(.retain));
+        try std.testing.expectEqual(@as(usize, 0), arc.countOp(.retain));
     }
 }

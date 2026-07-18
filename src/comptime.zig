@@ -660,6 +660,7 @@ pub const Evaluator = struct {
             .if_stmt => |if_stmt| try self.evalIf(if_stmt),
             .while_loop => |while_loop| try self.evalWhile(while_loop),
             .num_for => |num_for| try self.evalNumFor(num_for),
+            .repeat_loop => |repeat_loop| try self.evalRepeat(repeat_loop),
             else => error.UnsupportedExpression,
         };
     }
@@ -696,6 +697,16 @@ pub const Evaluator = struct {
             try self.setLocal(num_for.var_name, .{ .int = i });
             const result = try self.evalBlockScoped(&num_for.body);
             if (result == .value) return result;
+        }
+        return .none;
+    }
+
+    fn evalRepeat(self: *Evaluator, repeat_loop: anytype) EvalError!BlockResult {
+        while (true) {
+            try self.step();
+            const result = try self.evalBlockScoped(&repeat_loop.body);
+            if (result == .value) return result;
+            if ((try self.eval(repeat_loop.cond)).truthy()) break;
         }
         return .none;
     }
@@ -1122,4 +1133,31 @@ test "comptime eval: step limit" {
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
     var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
     try std.testing.expectError(error.StepLimitExceeded, evalWithBindings(&one, .{}, .{ .step_limit = 0 }));
+}
+
+test "comptime eval: repeat ... until with local mutation" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\local repeat_total = __constexpr(match true
+        \\  case _ then do
+        \\    local n = 4
+        \\    local acc = 0
+        \\    repeat
+        \\      acc = acc + n
+        \\      n = n - 1
+        \\    until n <= 0
+        \\    acc
+        \\  end
+        \\end)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+    const init = module.body.stmts[0].local_decl.inits[0];
+
+    try std.testing.expectEqual(Value{ .int = 10 }, try evalWithBindings(init, .{}, .{ .alloc = alloc }));
 }

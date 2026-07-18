@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Rich terminal output (disabled for pipes / NO_COLOR).
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  _R=$'\033[0m'
+  _B=$'\033[1m'
+  _D=$'\033[2m'
+  _OK=$'\033[1;32m'
+  _ERR=$'\033[1;31m'
+  _ACC=$'\033[1;36m'
+  _MUT=$'\033[2m'
+else
+  _R=
+  _B=
+  _D=
+  _OK=
+  _ERR=
+  _ACC=
+  _MUT=
+fi
+
+section() { printf "${_ACC}${_B}▸ %s${_R}\n" "$1"; }
+pass()    { printf "  ${_OK}✓${_R} %s\n" "$1"; }
+fail()    { printf "  ${_ERR}✗${_R} %s\n" "$1"; }
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DUO="$ROOT/zig-out/bin/duo"
 # Keep compile progress off stdout so `duo run` output assertions stay stable.
@@ -16,13 +39,13 @@ run_fail() {
     local tmp
     tmp=$(mktemp)
     if "$DUO" check "$file" >"$tmp" 2>&1; then
-        echo "FAIL: $file should not compile"
+        fail "$file should not compile"
         cat "$tmp"
         any_failed=1
     elif grep -qF "$pattern" "$tmp"; then
-        echo "OK:   $file  (expected error found)"
+        pass "$file  (${_MUT}expected error${_R})"
     else
-        echo "FAIL: $file  expected pattern: $pattern"
+        fail "$file  expected pattern: $pattern"
         cat "$tmp"
         any_failed=1
     fi
@@ -34,9 +57,9 @@ run_ok() {
     local tmp
     tmp=$(mktemp)
     if "$DUO" check "$file" >"$tmp" 2>&1; then
-        echo "OK:   $file  (check passes)"
+        pass "$file  (${_MUT}check passes${_R})"
     else
-        echo "FAIL: $file  should compile but got:"
+        fail "$file  should compile but got:"
         cat "$tmp"
         any_failed=1
     fi
@@ -50,9 +73,9 @@ run_output() {
     if "$DUO" run "$file" >"$tmp" 2>&1; then
         want=$(printf '%b' "$expected")
         if [[ "$(<"$tmp")" == "$want" ]]; then
-            echo "OK:   $file  (run output matches)"
+            pass "$file  (${_MUT}run output matches${_R})"
         else
-            echo "FAIL: $file  output mismatch"
+            fail "$file  output mismatch"
             echo "--- want ---"
             echo "$want"
             echo "--- got ---"
@@ -60,7 +83,7 @@ run_output() {
             any_failed=1
         fi
     else
-        echo "FAIL: $file  should compile+run but got:"
+        fail "$file  should compile+run but got:"
         cat "$tmp"
         any_failed=1
     fi
@@ -72,15 +95,16 @@ run_shell_ok() {
     local tmp
     tmp=$(mktemp)
     if bash "$script" >"$tmp" 2>&1; then
-        echo "OK:   $label"
+        pass "$label"
     else
-        echo "FAIL: $label failed:"
+        fail "$label failed:"
         cat "$tmp"
         any_failed=1
     fi
     rm -f "$tmp"
 }
 
+section "compile-fail (expected errors)"
 run_fail examples/compile_fail/global_star_read.lua    "use of undeclared global"
 run_fail examples/compile_fail/implicit_global_read.lua "use of undeclared global"
 run_fail examples/compile_fail/global_star_assign.lua  "attempt to assign to undeclared global"
@@ -95,6 +119,8 @@ run_fail examples/compile_fail/tensor_matmul_k_mismatch.duo "tensor matmul inner
 run_fail examples/compile_fail/tensor_matmul_symbolic_k_mismatch.duo "tensor matmul inner dimension mismatch"
 run_fail examples/compile_fail/tensor_broadcast_incompatible.duo "tensor broadcast incompatible shapes"
 run_fail examples/compile_fail/tensor_return_mismatch.duo "return type mismatch"
+
+section "compile-ok + run"
 run_ok   tests/test.lua
 run_ok   examples/hello.lua
 run_ok   examples/fib.lua
@@ -112,13 +138,22 @@ run_output examples/typed_string_builtins.duo "abc\n42\nabc42\n7\n3\n"
 run_output examples/layout_attrs_test.duo "6\n"
 run_output examples/native_record_params.duo "4\n12\n"
 
+section "property tests"
 run_shell_ok "Property 11 test passes" scripts/test_property_11.sh
 run_shell_ok "Property 12 test passes" scripts/test_property_12.sh
 
 echo ""
 if [[ $any_failed -eq 0 ]]; then
-    echo "All compile-fail tests passed"
+    if [ -n "$_OK" ]; then
+        printf "${_OK}▣ PASS${_R} ${_B}compile-fail${_R} ${_MUT}·${_R} all tests passed\n"
+    else
+        echo "All compile-fail tests passed"
+    fi
 else
-    echo "Some tests FAILED"
+    if [ -n "$_ERR" ]; then
+        printf "${_ERR}▣ FAIL${_R} ${_B}compile-fail${_R} ${_MUT}·${_R} some tests failed\n"
+    else
+        echo "Some tests FAILED"
+    fi
     exit 1
 fi

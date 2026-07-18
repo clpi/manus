@@ -524,7 +524,7 @@ pub const Parser = struct {
         }
         const tok = try self.pk();
         return switch (tok.kind) {
-            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global, .kw_for => true,
+            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias, .kw_local, .kw_global, .kw_for, .kw_while, .kw_repeat, .kw_if => true,
             .name => blk: {
                 if (std.mem.eql(u8, tok.text, "type")) break :blk true;
                 // Jai-like syntax: @attr Name: { ... } — name followed by ':' is a type def
@@ -577,6 +577,7 @@ pub const Parser = struct {
             "time",
             "trace",
             "unroll",
+            "vectorize",
             "volatile",
             "dispatch",
             "prefetch",
@@ -620,6 +621,63 @@ pub const Parser = struct {
             .params = try params.toOwnedSlice(self.alloc),
             .body = body,
         } };
+    }
+
+    fn applyLoopAttrs(attrs: []const ast.Attribute, stmt: *ast.Stmt) void {
+        const directives_mod = @import("directives.zig");
+        switch (stmt.*) {
+            .num_for => |*nf| {
+                for (attrs) |attr| {
+                    if (std.mem.eql(u8, attr.name, "unroll")) {
+                        nf.unroll = directives_mod.parseUnrollCount(attr.args) orelse 8;
+                    } else if (std.mem.eql(u8, attr.name, "simd") or std.mem.eql(u8, attr.name, "vectorize")) {
+                        nf.simd = true;
+                        if (directives_mod.parseUnrollCount(attr.args)) |n| {
+                            nf.unroll = n;
+                        } else if (nf.unroll == null) {
+                            nf.unroll = 8;
+                        }
+                    }
+                }
+            },
+            .while_loop => |*wl| {
+                for (attrs) |attr| {
+                    if (std.mem.eql(u8, attr.name, "unroll")) {
+                        wl.unroll = directives_mod.parseUnrollCount(attr.args) orelse 8;
+                    } else if (std.mem.eql(u8, attr.name, "simd") or std.mem.eql(u8, attr.name, "vectorize")) {
+                        wl.simd = true;
+                        if (directives_mod.parseUnrollCount(attr.args)) |n| {
+                            wl.unroll = n;
+                        } else if (wl.unroll == null) {
+                            wl.unroll = 8;
+                        }
+                    }
+                }
+            },
+            .repeat_loop => |*rl| {
+                for (attrs) |attr| {
+                    if (std.mem.eql(u8, attr.name, "unroll")) {
+                        rl.unroll = directives_mod.parseUnrollCount(attr.args) orelse 8;
+                    } else if (std.mem.eql(u8, attr.name, "simd") or std.mem.eql(u8, attr.name, "vectorize")) {
+                        rl.simd = true;
+                        if (directives_mod.parseUnrollCount(attr.args)) |n| {
+                            rl.unroll = n;
+                        } else if (rl.unroll == null) {
+                            rl.unroll = 8;
+                        }
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn applyIfAttrs(attrs: []const ast.Attribute, stmt: *ast.Stmt) void {
+        if (stmt.* != .if_stmt) return;
+        for (attrs) |attr| {
+            if (std.mem.eql(u8, attr.name, "likely")) stmt.if_stmt.likely = true;
+            if (std.mem.eql(u8, attr.name, "unlikely")) stmt.if_stmt.unlikely = true;
+        }
     }
 
     /// Parse one or more `@name` or `@name(args)` attributes, then the declaration
@@ -672,20 +730,23 @@ pub const Parser = struct {
             .kw_alias => self.parse_alias_def_with_attrs(attrs_slice),
             .kw_local, .kw_global => self.parse_local_or_global_with_attrs(attrs_slice),
             .kw_for => blk: {
-                // @unroll(N) before a for loop: parse the for and attach unroll
                 var stmt = try self.parse_for();
-                if (stmt == .num_for) {
-                    for (attrs_slice) |attr| {
-                        if (std.mem.eql(u8, attr.name, "unroll")) {
-                            if (attr.args) |args| {
-                                const trimmed = std.mem.trim(u8, args, " \t");
-                                stmt.num_for.unroll = std.fmt.parseInt(u32, trimmed, 10) catch null;
-                            } else {
-                                stmt.num_for.unroll = 8; // default unroll factor
-                            }
-                        }
-                    }
-                }
+                applyLoopAttrs(attrs_slice, &stmt);
+                break :blk stmt;
+            },
+            .kw_while => blk: {
+                var stmt = try self.parse_while();
+                applyLoopAttrs(attrs_slice, &stmt);
+                break :blk stmt;
+            },
+            .kw_repeat => blk: {
+                var stmt = try self.parse_repeat();
+                applyLoopAttrs(attrs_slice, &stmt);
+                break :blk stmt;
+            },
+            .kw_if => blk: {
+                var stmt = try self.parse_if();
+                applyIfAttrs(attrs_slice, &stmt);
                 break :blk stmt;
             },
             else => {
@@ -4147,6 +4208,55 @@ test "parse: single attribute on function" {
     try testing.expectEqual(@as(usize, 1), stmt.func_decl.attributes.len);
     try testing.expectEqualStrings("inline", stmt.func_decl.attributes[0].name);
     try testing.expect(stmt.func_decl.attributes[0].args == null);
+}
+
+test "parse: @simd before for attaches loop vectorize hint" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f()
+        \\  @simd(4)
+        \\  for i = 1, 10
+        \\  end
+        \\end
+    , &arena);
+    const fun = mod.body.stmts[0].func_decl.func.body;
+    try testing.expect(fun.stmts[0] == .num_for);
+    try testing.expect(fun.stmts[0].num_for.simd);
+    try testing.expectEqual(@as(?u32, 4), fun.stmts[0].num_for.unroll);
+}
+
+test "parse: @vectorize before while attaches loop hint" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f()
+        \\  @vectorize
+        \\  while true
+        \\  end
+        \\end
+    , &arena);
+    const fun = mod.body.stmts[0].func_decl.func.body;
+    try testing.expect(fun.stmts[0] == .while_loop);
+    try testing.expect(fun.stmts[0].while_loop.simd);
+    try testing.expectEqual(@as(?u32, 8), fun.stmts[0].while_loop.unroll);
+}
+
+test "parse: @likely before if attaches branch hint" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f(n: i64)
+        \\  @likely
+        \\  if n > 0
+        \\    return n
+        \\  end
+        \\end
+    , &arena);
+    const fun = mod.body.stmts[0].func_decl.func.body;
+    try testing.expect(fun.stmts[0] == .if_stmt);
+    try testing.expect(fun.stmts[0].if_stmt.likely);
+    try testing.expect(!fun.stmts[0].if_stmt.unlikely);
 }
 
 test "parse: attribute with args on function" {
