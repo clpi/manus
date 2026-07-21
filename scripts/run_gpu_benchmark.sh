@@ -27,8 +27,8 @@ echo ""
 
 # Check prerequisites
 if [[ "$(uname)" != "Darwin" ]]; then
-    echo -e "${RED}ERROR: This benchmark requires macOS with Metal support${NC}"
-    exit 1
+    echo -e "${CYAN}SKIP: This benchmark requires macOS with Metal support. Skipping gracefully.${NC}"
+    exit 0
 fi
 
 if [[ ! -f "$DUO" ]]; then
@@ -61,6 +61,7 @@ echo "      → Generated C: $OUT_DIR/bench_gpu_metal.c"
 clang "$OUT_DIR/bench_gpu_metal.c" \
     "$OUT_DIR/metal_compute.o" \
     -o "$OUT_DIR/bench_gpu_metal" \
+    -isysroot "$SDK_PATH" \
     -framework Metal \
     -framework Foundation \
     -O3 -ffast-math \

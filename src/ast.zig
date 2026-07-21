@@ -252,22 +252,6 @@ pub const FuncBody = struct {
     use_dense_table_max: bool = false,
     use_dense_table_sum: bool = false,
     use_dense_table_identity_sum: bool = false,
-    /// When `use_dense_table_identity_sum`, scale factor K for fill `t[i] = i * K + B`.
-    dense_table_fill_scale: i64 = 1,
-    dense_table_fill_offset: i64 = 0,
-    /// Fill `t[i] = i * i` + full sequential sum.
-    use_dense_table_square_sum: bool = false,
-    /// Single-use fill+sum: fuse `t[i]=expr(i)` + `sum+=t[i]` into one loop (no table alloc).
-    use_dense_table_fused_fill_sum: bool = false,
-    dense_table_fill_index: ?[]const u8 = null,
-    dense_table_fill_expr: ?*Expr = null,
-    /// Two-table fill+dot: fuse `a[i]=ea(i)` + `b[i]=eb(i)` + `sum+=a[i]*b[i]` (no heap).
-    use_dense_table_fused_dot_fill_sum: bool = false,
-    dense_table_dot_a: ?[]const u8 = null,
-    dense_table_dot_b: ?[]const u8 = null,
-    dense_table_dot_fill_index: ?[]const u8 = null,
-    dense_table_dot_fill_a: ?*Expr = null,
-    dense_table_dot_fill_b: ?*Expr = null,
     use_math_floor_max: bool = false,
     use_math_pow_sqrt: bool = false,
     use_string_len_chain: bool = false,
@@ -284,12 +268,7 @@ pub const FuncBody = struct {
     ema_beta: f64 = 0.05,
     ema_period: i64 = 100,
     use_table_lookup_sum: bool = false,
-    table_lookup_fill_scale: i64 = 0,
-    table_lookup_query_scale: i64 = 0,
     use_dense_table_mod997_sum: bool = false,
-    /// `(i * mul) % mod` fill + full sequential sum — period-fold parameters.
-    dense_table_affine_mul: i64 = 13,
-    dense_table_affine_mod: i64 = 997,
     use_string_token_count: bool = false,
     use_string_delim_byte_sum: bool = false,
     use_trig_sum_recur: bool = false,
@@ -327,8 +306,6 @@ pub const FuncBody = struct {
     profile_attr: bool = false,
     /// `@unroll(N)` — loop unroll hint for typed numeric loops
     unroll_count: ?u32 = null,
-    /// `@simd` / `@vectorize` — force vectorization hints on all loops in this function
-    simd_loops: bool = false,
     // set by sema for anonymous/nested functions (func_expr)
     closure_id: ?u32 = null,
     upvalues: []Upvalue = &.{},
@@ -552,16 +529,14 @@ pub const Stmt = union(enum) {
     call_stmt: struct { loc: Loc, expr: *Expr },
     expr_stmt: struct { loc: Loc, expr: *Expr },
     do_block: struct { loc: Loc, body: Block },
-    while_loop: struct { loc: Loc, cond: *Expr, body: Block, simd: bool = false, unroll: ?u32 = null },
-    repeat_loop: struct { loc: Loc, body: Block, cond: *Expr, simd: bool = false, unroll: ?u32 = null },
+    while_loop: struct { loc: Loc, cond: *Expr, body: Block },
+    repeat_loop: struct { loc: Loc, body: Block, cond: *Expr },
     if_stmt: struct {
         loc: Loc,
         cond: *Expr,
         then: Block,
         elseifs: []ElseIf,
         else_body: ?Block,
-        likely: bool = false,
-        unlikely: bool = false,
     },
     num_for: struct {
         loc: Loc,
@@ -572,7 +547,6 @@ pub const Stmt = union(enum) {
         step: ?*Expr,
         body: Block,
         unroll: ?u32 = null,
-        simd: bool = false,
     },
     gen_for: struct {
         loc: Loc,

@@ -330,9 +330,6 @@ pub fn applyMlFuncAttrs(attrs: []const ast.Attribute, fb: *ast.FuncBody) void {
             fb.profile_attr = true;
         } else if (std.mem.eql(u8, attr.name, "unroll")) {
             fb.unroll_count = parseUnrollCount(attr.args);
-        } else if (std.mem.eql(u8, attr.name, "simd") or std.mem.eql(u8, attr.name, "vectorize")) {
-            fb.simd_loops = true;
-            if (parseUnrollCount(attr.args)) |n| fb.unroll_count = n;
         }
     }
 }
@@ -373,8 +370,6 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
             std.mem.eql(u8, attr.name, "differentiable") or
             std.mem.eql(u8, attr.name, "profile") or
             std.mem.eql(u8, attr.name, "unroll") or
-            std.mem.eql(u8, attr.name, "simd") or
-            std.mem.eql(u8, attr.name, "vectorize") or
             std.mem.startsWith(u8, attr.name, "concurrent") or
             std.mem.startsWith(u8, attr.name, "implements"))
         {
@@ -415,7 +410,7 @@ pub const registry_json =
     \\ "build":["build.project","build.stage","build.command","build.exe","build.lib","build.test","build.run","build.bench","build.check","build.fmt","build.clean"],
     \\ "bench":["bench","bench(iterations=N,warmup=N)"],
     \\ "time":["time","time(label=\"...\")"],
-    \\ "ml":["device(.auto|.cpu|.metal|.cuda|.webgpu|.wasm|.tpu)","autodiff","differentiable","profile","unroll(N)","simd(N)","vectorize(N)"],
+    \\ "ml":["device(.auto|.cpu|.metal|.cuda|.webgpu|.wasm|.tpu)","autodiff","differentiable","profile","unroll(N)"],
     \\ "debug":["trace","debug","debug.sema","debug.codegen","debug.types","debug.parse","trace.mono"]}
 ;
 

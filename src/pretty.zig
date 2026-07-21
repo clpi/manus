@@ -168,6 +168,7 @@ pub const PrettyPrinter = struct {
             },
             .string_lit => |x| try self.writeStringLit(x.val),
             .vararg => try self.write("..."),
+
             .name => |x| try self.write(x.ident),
             .quote => |x| {
                 try self.write("`");

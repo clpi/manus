@@ -51,7 +51,6 @@ pub const CodeGen = struct {
     type_map: *sema.TypeMap,
     module_globals: ?*const std.StringHashMapUnmanaged(RT) = null,
     local_scopes: std.ArrayList(std.StringHashMapUnmanaged(RT)) = .empty,
-    local_init_scopes: std.ArrayList(std.StringHashMapUnmanaged(*const ast.Expr)) = .empty,
     comptime_scopes: std.ArrayList(std.StringHashMapUnmanaged(comptime_eval.Value)) = .empty,
     close_scopes: std.ArrayList(std.ArrayListUnmanaged([]const u8)) = .empty,
     arc_scopes: std.ArrayList(std.ArrayListUnmanaged(ArcLocal)) = .empty,
@@ -217,7 +216,6 @@ pub const CodeGen = struct {
 
     fn push_local_scope(self: *CodeGen) E!void {
         try self.local_scopes.append(self.alloc, std.StringHashMapUnmanaged(RT).empty);
-        try self.local_init_scopes.append(self.alloc, std.StringHashMapUnmanaged(*const ast.Expr).empty);
         try self.comptime_scopes.append(self.alloc, std.StringHashMapUnmanaged(comptime_eval.Value).empty);
         try self.numeric_lua_scopes.append(self.alloc, std.StringHashMapUnmanaged(void).empty);
         try self.close_scopes.append(self.alloc, .empty);
@@ -253,14 +251,9 @@ pub const CodeGen = struct {
             }
             closes.deinit(self.alloc);
         }
-        if (self.local_scopes.items.len > 0) {
-            var m = self.local_scopes.pop().?;
-            m.deinit(self.alloc);
-        }
-        if (self.local_init_scopes.items.len > 0) {
-            var im = self.local_init_scopes.pop().?;
-            im.deinit(self.alloc);
-        }
+        if (self.local_scopes.items.len == 0) return;
+        var m = self.local_scopes.pop().?;
+        m.deinit(self.alloc);
         if (self.comptime_scopes.items.len > 0) {
             var cm = self.comptime_scopes.pop().?;
             cm.deinit(self.alloc);
@@ -335,32 +328,6 @@ pub const CodeGen = struct {
     fn note_local(self: *CodeGen, name: []const u8) !void {
         if (self.local_scopes.items.len == 0) return;
         try self.local_scopes.items[self.local_scopes.items.len - 1].put(self.alloc, name, .any);
-    }
-
-    fn note_local_init(self: *CodeGen, name: []const u8, init_expr: *const ast.Expr) !void {
-        if (self.local_init_scopes.items.len == 0) return;
-        try self.local_init_scopes.items[self.local_init_scopes.items.len - 1].put(self.alloc, name, init_expr);
-    }
-
-    fn local_init_expr(self: *const CodeGen, name: []const u8) ?*const ast.Expr {
-        var i = self.local_init_scopes.items.len;
-        while (i > 0) {
-            i -= 1;
-            if (self.local_init_scopes.items[i].get(name)) |init_expr| return init_expr;
-        }
-        return null;
-    }
-
-    fn resolve_table_lit_expr(self: *const CodeGen, expr: *const ast.Expr) ?*const ast.Expr {
-        return switch (expr.*) {
-            .table => expr,
-            .name => |n| blk: {
-                const init_expr = self.local_init_expr(n.ident) orelse break :blk null;
-                if (init_expr.* == .table) break :blk init_expr;
-                break :blk null;
-            },
-            else => null,
-        };
     }
 
     fn note_local_type(self: *CodeGen, name: []const u8, rt: RT) !void {
@@ -846,7 +813,7 @@ pub const CodeGen = struct {
             if (self.closure_ctx) |fb| {
                 for (fb.params) |par| {
                     if (std.mem.eql(u8, par.name, e.name.ident)) {
-                        return self.resolve_type(par.typ);
+                        return types.resolve(par.typ, null, self.alloc) catch .any;
                     }
                 }
                 for (fb.upvalues) |uv| {
@@ -859,15 +826,7 @@ pub const CodeGen = struct {
         }
         if (e.* == .index) {
             const idx = e.index;
-            if (self.is_dense_table_index(idx.obj)) {
-                if (self.current_func_body) |fb| {
-                    const name = idx.obj.name.ident;
-                    for (fb.dense_tables, fb.dense_table_floats) |dt, is_float| {
-                        if (std.mem.eql(u8, dt, name)) return if (is_float) .f64 else .i64;
-                    }
-                }
-                return .i64;
-            }
+            if (self.is_dense_table_index(idx.obj)) return .i64;
             if (self.indexed_element_type(self.expr_type(idx.obj))) |t| return t;
         }
         if (e.* == .call) {
@@ -1369,6 +1328,7 @@ pub const CodeGen = struct {
 
     fn os_call_result_type(self: *CodeGen, func: *const ast.Expr, args: []const *ast.Expr) ?RT {
         _ = self;
+        _ = args;
         if (func.* != .field) return null;
         const f = &func.field;
         if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "os")) return null;
@@ -1377,10 +1337,6 @@ pub const CodeGen = struct {
             std.mem.eql(u8, f.field, "difftime"))
             return .f64;
         if (std.mem.eql(u8, f.field, "tmpname")) return .str;
-        if (std.mem.eql(u8, f.field, "getenv") and args.len >= 1) return .str;
-        if (std.mem.eql(u8, f.field, "date") and args.len >= 1 and args.len <= 2 and
-            os_date_str_format(args[0]) != null)
-            return .str;
         if (std.mem.eql(u8, f.field, "remove") or
             std.mem.eql(u8, f.field, "rename") or
             std.mem.eql(u8, f.field, "execute"))
@@ -3011,7 +2967,7 @@ pub const CodeGen = struct {
                 var name_buf: [256]u8 = undefined;
                 const mname = self.mangled_name(cd.ident, &name_buf);
                 const rt = if (cd.typ != .inferred)
-                    self.resolve_type(cd.typ)
+                    types.resolve(cd.typ, null, self.alloc) catch .any
                 else
                     self.expr_type(cd.val);
                 if (cd.val.* == .table) {
@@ -4043,7 +3999,7 @@ pub const CodeGen = struct {
                         if (fields.len == 0) continue;
                         self.p("        struct {{\n", .{});
                         for (fields, 0..) |field, fi| {
-                            const ft = self.resolve_type(field.typ);
+                            const ft = types.resolve(field.typ, null, self.alloc) catch .any;
                             // Resolve Self to the enclosing enum type (as pointer for recursion)
                             var is_self_ref = false;
                             if (ft == .@"struct") {
@@ -4586,7 +4542,7 @@ pub const CodeGen = struct {
     /// cannot be bridged through lua_Value without extra work.
     fn has_payloaded_enum_param(self: *CodeGen, fb: *const ast.FuncBody) bool {
         for (fb.params) |param| {
-            const pt = self.resolve_type(param.typ);
+            const pt = types.resolve(param.typ, null, self.alloc) catch continue;
             if (self.enum_name_of(pt)) |ename| {
                 if (!self.enum_is_payload_free(ename)) return true;
             }
@@ -4618,7 +4574,7 @@ pub const CodeGen = struct {
     fn should_emit_lua_thunk(self: *CodeGen, fb: *const ast.FuncBody) bool {
         if (self.has_payloaded_enum_param(fb)) return false;
         for (fb.params) |param| {
-            const pt = self.resolve_type(param.typ);
+            const pt = types.resolve(param.typ, null, self.alloc) catch RT.any;
             if (!self.rt_is_lua_convertible(pt)) return false;
         }
         return true;
@@ -4964,7 +4920,7 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 1) {
-            const pt = self.resolve_type(fb.params[0].typ);
+            const pt = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{cname});
             self.ind();
             var pbuf: [32]u8 = undefined;
@@ -4981,8 +4937,8 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 2) {
-            const pt0 = self.resolve_type(fb.params[0].typ);
-            const pt1 = self.resolve_type(fb.params[1].typ);
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -4999,9 +4955,9 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 3) {
-            const pt0 = self.resolve_type(fb.params[0].typ);
-            const pt1 = self.resolve_type(fb.params[1].typ);
-            const pt2 = self.resolve_type(fb.params[2].typ);
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -5018,10 +4974,10 @@ pub const CodeGen = struct {
             }
             self.p("}}\n\n", .{});
         } else if (nparams == 4) {
-            const pt0 = self.resolve_type(fb.params[0].typ);
-            const pt1 = self.resolve_type(fb.params[1].typ);
-            const pt2 = self.resolve_type(fb.params[2].typ);
-            const pt3 = self.resolve_type(fb.params[3].typ);
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
+            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -5040,11 +4996,11 @@ pub const CodeGen = struct {
             }
             self.p("}}\n\n", .{});
         } else if (nparams == 5) {
-            const pt0 = self.resolve_type(fb.params[0].typ);
-            const pt1 = self.resolve_type(fb.params[1].typ);
-            const pt2 = self.resolve_type(fb.params[2].typ);
-            const pt3 = self.resolve_type(fb.params[3].typ);
-            const pt4 = self.resolve_type(fb.params[4].typ);
+            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
+            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
+            const pt4 = types.resolve(fb.params[4].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -5079,7 +5035,7 @@ pub const CodeGen = struct {
         // lua-convertible but not "native").
         try self.emit_lua_thunk(fd);
         if (fb.use_mandel_iter_native) self.mandel_native = true;
-        const ret = self.resolve_type(fb.ret_type);
+        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
         if ((fb.vararg_name != null or fb.vararg) and (ret == .any or ret == .void)) {
             try self.emit_vararg_func_def(fd);
             return;
@@ -5258,7 +5214,7 @@ pub const CodeGen = struct {
             self.current_ret = prev_ret;
         }
         for (fb.params, 0..) |par, i| {
-            const pt = self.resolve_type(par.typ);
+            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
             try self.note_local_type(par.name, pt);
             try self.note_comptime_unavailable(par.name);
             if (pt == .any) {
@@ -6051,7 +6007,15 @@ pub const CodeGen = struct {
         self.pl("const int64_t __sieve_s5 = __sieve_s4 + __sieve_delta_a;", .{});
         self.pl("const int64_t __sieve_s6 = __sieve_s5 + __sieve_delta_b;", .{});
         self.pl("const int64_t __sieve_s7 = __sieve_s6 + __sieve_delta_a;", .{});
-        self.pl("const int64_t __sieve_unroll = __sieve_s7 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s8 = __sieve_s7 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s9 = __sieve_s8 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_s10 = __sieve_s9 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s11 = __sieve_s10 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_s12 = __sieve_s11 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s13 = __sieve_s12 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_s14 = __sieve_s13 + __sieve_delta_b;", .{});
+        self.pl("const int64_t __sieve_s15 = __sieve_s14 + __sieve_delta_a;", .{});
+        self.pl("const int64_t __sieve_unroll = __sieve_s15 + __sieve_delta_b;", .{});
         self.pl("while (__sieve_mark_idx + __sieve_unroll < __sieve_len) {{", .{});
         self.indent += 1;
         self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
@@ -6062,6 +6026,14 @@ pub const CodeGen = struct {
         self.pl("__sieve[__sieve_mark_idx + __sieve_s5] = 0;", .{});
         self.pl("__sieve[__sieve_mark_idx + __sieve_s6] = 0;", .{});
         self.pl("__sieve[__sieve_mark_idx + __sieve_s7] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s8] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s9] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s10] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s11] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s12] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s13] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s14] = 0;", .{});
+        self.pl("__sieve[__sieve_mark_idx + __sieve_s15] = 0;", .{});
         self.pl("__sieve_mark_idx += __sieve_unroll;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
@@ -6643,7 +6615,6 @@ pub const CodeGen = struct {
                         break :blk .any;
                     };
                     try self.note_local_type(lname.ident, rt);
-                    if (i < ld.inits.len) try self.note_local_init(lname.ident, ld.inits[i]);
                     if (rt == .any or rt == .option or rt == .result) {
                         self.p("lua_Value {s}", .{lname.ident});
                         if (i < ld.inits.len) {
@@ -7261,7 +7232,7 @@ pub const CodeGen = struct {
                 // that inner expressions (e.g. `arr[i]`, `i * 2`) see the
                 // concrete type (i64/f64) rather than `.any`.
                 const vt: RT = if (nf.var_typ != .inferred)
-                    self.resolve_type(nf.var_typ)
+                    types.resolve(nf.var_typ, null, self.alloc) catch .i64
                 else
                     self.expr_type(nf.start);
                 const vt2 = if (vt == .any) RT.i64 else vt;
@@ -8622,7 +8593,7 @@ pub const CodeGen = struct {
                 if (self.closure_ctx) |fb| {
                     for (fb.params, 0..) |par, i| {
                         if (std.mem.eql(u8, par.name, n.ident)) {
-                            const pt = self.resolve_type(par.typ);
+                            const pt = types.resolve(par.typ, null, self.alloc) catch .any;
                             if (pt != .any) {
                                 self.p("{s}", .{par.name});
                             } else {
@@ -10077,11 +10048,9 @@ pub const CodeGen = struct {
                                         self.p("))", .{});
                                     },
                                     .len => {
-                                        if (try self.try_emit_native_len(u.operand, .i64)) {} else {
-                                            self.p("lua_len_num(", .{});
-                                            try self.emit_expr(u.operand);
-                                            self.p(")", .{});
-                                        }
+                                        self.p("lua_len_num(", .{});
+                                        try self.emit_expr(u.operand);
+                                        self.p(")", .{});
                                     },
                                     .bnot => {
                                         self.p("lua_bnot(", .{});
@@ -10104,15 +10073,11 @@ pub const CodeGen = struct {
                             self.p("))", .{});
                         },
                         .len => {
-                            if (try self.try_emit_native_len(u.operand, if (ot.is_integer()) ot else .i64)) {} else if (ot == .str) {
-                                self.p("((int64_t)strlen(", .{});
-                                try self.emit_expr(u.operand);
-                                self.p("))", .{});
-                            } else {
-                                self.p("lua_len_num(", .{});
-                                try self.emit_expr(u.operand);
-                                self.p(")", .{});
-                            }
+                            // Untyped operands recover the numeric length
+                            // directly while preserving __len dispatch.
+                            self.p("lua_len_num(", .{});
+                            try self.emit_expr(u.operand);
+                            self.p(")", .{});
                         },
                         .bnot => {
                             self.p("lua_bnot(", .{});
@@ -10136,7 +10101,7 @@ pub const CodeGen = struct {
                             self.p(")", .{});
                         },
                         .len => {
-                            if (try self.try_emit_native_len(u.operand, if (ot.is_integer()) ot else .i64)) {} else if (ot == .str) {
+                            if (ot == .str) {
                                 self.p("((int64_t)strlen(", .{});
                                 try self.emit_expr(u.operand);
                                 self.p("))", .{});
@@ -12327,590 +12292,6 @@ pub const CodeGen = struct {
         return false;
     }
 
-    fn os_date_str_format(arg: *const ast.Expr) ?[]const u8 {
-        return switch (arg.*) {
-            .string_lit => |s| s.val,
-            else => null,
-        };
-    }
-
-    fn append_c_string_literal(self: *CodeGen, buf: *std.ArrayList(u8), s: []const u8) E!void {
-        for (s) |c| {
-            switch (c) {
-                '"' => try buf.appendSlice(self.alloc, "\\\""),
-                '\\' => try buf.appendSlice(self.alloc, "\\\\"),
-                '\n' => try buf.appendSlice(self.alloc, "\\n"),
-                '\r' => try buf.appendSlice(self.alloc, "\\r"),
-                '\t' => try buf.appendSlice(self.alloc, "\\t"),
-                else => {
-                    if (c < 32 or c == 127) {
-                        var tmp: [8]u8 = undefined;
-                        const escaped = std.fmt.bufPrint(&tmp, "\\x{x:0>2}", .{c}) catch unreachable;
-                        try buf.appendSlice(self.alloc, escaped);
-                    } else {
-                        try buf.append(self.alloc, c);
-                    }
-                },
-            }
-        }
-    }
-
-    fn count_printf_conversions(fmt: []const u8) usize {
-        var count: usize = 0;
-        var i: usize = 0;
-        while (i < fmt.len) {
-            if (fmt[i] != '%') {
-                i += 1;
-                continue;
-            }
-            i += 1;
-            if (i >= fmt.len) break;
-            if (fmt[i] == '%') {
-                i += 1;
-                continue;
-            }
-            while (i < fmt.len) {
-                const c = fmt[i];
-                if (c == 'h' or c == 'l' or c == 'L' or c == 'j' or c == 'z' or c == 't' or c == 'q') {
-                    i += 1;
-                    continue;
-                }
-                if (c == '*' or (c >= '0' and c <= '9') or c == '.') {
-                    i += 1;
-                    continue;
-                }
-                if (c == 'd' or c == 'i' or c == 'u' or c == 'x' or c == 'X' or c == 'o' or
-                    c == 'f' or c == 'F' or c == 'e' or c == 'E' or c == 'g' or c == 'G' or
-                    c == 'a' or c == 'A' or c == 'c' or c == 's' or c == 'p' or c == 'n')
-                {
-                    count += 1;
-                    i += 1;
-                    break;
-                }
-                i += 1;
-            }
-        }
-        return count;
-    }
-
-    fn table_lit_positional_parts(self: *CodeGen, expr: *const ast.Expr) ?[]const *const ast.Expr {
-        const table_expr = self.resolve_table_lit_expr(expr) orelse return null;
-        if (table_expr.* != .table) return null;
-        var parts: std.ArrayList(*const ast.Expr) = .empty;
-        errdefer parts.deinit(self.alloc);
-        for (table_expr.table.fields) |fld| switch (fld) {
-            .positional => |v| parts.append(self.alloc, v) catch return null,
-            else => {
-                parts.deinit(self.alloc);
-                return null;
-            },
-        };
-        return parts.toOwnedSlice(self.alloc) catch null;
-    }
-
-    fn table_lit_field_int(table: *const ast.Expr, name: []const u8) ?i64 {
-        if (table.* != .table) return null;
-        for (table.table.fields) |fld| switch (fld) {
-            .named => |n| {
-                if (std.mem.eql(u8, n.key, name) and n.val.* == .int_lit) return n.val.int_lit.val;
-            },
-            else => {},
-        };
-        return null;
-    }
-
-    fn table_lit_field_bool(table: *const ast.Expr, name: []const u8) ?bool {
-        if (table.* != .table) return null;
-        for (table.table.fields) |fld| switch (fld) {
-            .named => |n| {
-                if (!std.mem.eql(u8, n.key, name)) continue;
-                return switch (n.val.*) {
-                    .true_lit => true,
-                    .false_lit => false,
-                    .int_lit => |v| v.val != 0,
-                    else => null,
-                };
-            },
-            else => {},
-        };
-        return null;
-    }
-
-    fn table_lit_positional_len(table: *const ast.Expr) ?usize {
-        if (table.* != .table) return null;
-        var count: usize = 0;
-        for (table.table.fields) |fld| switch (fld) {
-            .positional => count += 1,
-            else => return null,
-        };
-        return count;
-    }
-
-    fn count_native_pack_value_specs(fmt: []const u8) ?usize {
-        var count: usize = 0;
-        var i: usize = 0;
-        while (i < fmt.len) {
-            while (i < fmt.len and (fmt[i] == '<' or fmt[i] == '>' or fmt[i] == '=' or fmt[i] == '!')) i += 1;
-            while (i < fmt.len and fmt[i] >= '0' and fmt[i] <= '9') i += 1;
-            if (i >= fmt.len) return null;
-            const op = fmt[i];
-            i += 1;
-            switch (op) {
-                'b', 'B', 'h', 'H', 'i', 'I', 'j', 'J', 'f', 'd', 'n' => count += 1,
-                'c', 's', 'z', 'Z', 'x', 'X' => return null,
-                else => return null,
-            }
-        }
-        return count;
-    }
-
-    fn dense_table_len_literal(self: *CodeGen, name: []const u8) ?[]const u8 {
-        if (!self.is_dense_table_name(name)) return null;
-        if (self.dense_table_cap) |cap| return cap;
-        if (self.current_func_body) |fb| {
-            for (fb.dense_tables, fb.dense_table_caps) |dt, cap| {
-                if (std.mem.eql(u8, name, dt)) return cap;
-            }
-        }
-        return null;
-    }
-
-    fn try_emit_table_literal_len(self: *CodeGen, operand: *const ast.Expr, result_rt: RT) E!bool {
-        const table_expr = self.resolve_table_lit_expr(operand) orelse return false;
-        const count = table_lit_positional_len(table_expr) orelse return false;
-        if (result_rt.is_integer()) {
-            var buf: [64]u8 = undefined;
-            self.p("(({s}){d})", .{ result_rt.c_type(&buf), count });
-        } else {
-            self.p("{d}", .{count});
-        }
-        return true;
-    }
-
-    fn try_emit_native_len(self: *CodeGen, operand: *const ast.Expr, result_rt: RT) E!bool {
-        if (try self.try_emit_table_literal_len(operand, result_rt)) return true;
-        if (operand.* == .name) {
-            if (self.dense_table_len_literal(operand.name.ident)) |cap| {
-                if (result_rt.is_integer()) {
-                    var buf: [64]u8 = undefined;
-                    self.p("(({s})", .{result_rt.c_type(&buf)});
-                    self.p("{s}", .{cap});
-                    self.p(")", .{});
-                } else {
-                    self.p("{s}", .{cap});
-                }
-                return true;
-            }
-        }
-        return false;
-    }
-
-    const PackSpec = struct { op: u8, size: u8 };
-
-    fn parse_single_pack_spec(fmt: []const u8) ?PackSpec {
-        var i: usize = 0;
-        while (i < fmt.len and (fmt[i] == '<' or fmt[i] == '>' or fmt[i] == '=' or fmt[i] == '!')) i += 1;
-        var count: usize = 0;
-        while (i < fmt.len and fmt[i] >= '0' and fmt[i] <= '9') {
-            count = count * 10 + @as(usize, fmt[i] - '0');
-            i += 1;
-        }
-        if (i >= fmt.len) return null;
-        const op = fmt[i];
-        const size: u8 = switch (op) {
-            'b', 'B' => 1,
-            'h', 'H' => 2,
-            'i', 'I', 'f' => 4,
-            'j', 'J', 'd', 'n' => 8,
-            else => return null,
-        };
-        if (op == 'c' and count > 0) return null;
-        if (i + 1 != fmt.len) return null;
-        return .{ .op = op, .size = size };
-    }
-
-    fn pack_format_total_size(fmt: []const u8) ?i64 {
-        var total: i64 = 0;
-        var i: usize = 0;
-        while (i < fmt.len) {
-            while (i < fmt.len and (fmt[i] == '<' or fmt[i] == '>' or fmt[i] == '=' or fmt[i] == '!')) i += 1;
-            var count: usize = 0;
-            while (i < fmt.len and fmt[i] >= '0' and fmt[i] <= '9') {
-                count = count * 10 + @as(usize, fmt[i] - '0');
-                i += 1;
-            }
-            if (i >= fmt.len) return null;
-            const op = fmt[i];
-            i += 1;
-            const sz: i64 = switch (op) {
-                'c' => if (count == 0) 1 else @intCast(count),
-                'b', 'B' => 1,
-                'h', 'H' => 2,
-                'i', 'I' => 4,
-                'j', 'J' => 8,
-                'f' => 4,
-                'd', 'n' => 8,
-                's' => @sizeOf(usize),
-                else => return null,
-            };
-            total += sz;
-        }
-        return total;
-    }
-
-    fn emit_native_format_arg(self: *CodeGen, arg: *const ast.Expr) E!void {
-        const t = self.expr_type(arg);
-        if (t == .bool) {
-            self.p("(", .{});
-            try self.emit_expr(arg);
-            self.p(") ? \"true\" : \"false\"", .{});
-        } else if (t.is_integer()) {
-            self.p("(long long)(", .{});
-            try self.emit_expr(arg);
-            self.p(")", .{});
-        } else if (t.is_float()) {
-            self.p("(double)(", .{});
-            try self.emit_expr(arg);
-            self.p(")", .{});
-        } else if (t == .str or arg.* == .string_lit) {
-            try self.emit_expr(arg);
-        } else {
-            self.p("lua_to_str(", .{});
-            try self.emit_as_lua_value(arg);
-            self.p(")", .{});
-        }
-    }
-
-    fn try_emit_native_string_format(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        _ = result_rt;
-        if (args.len == 0) return false;
-        for (args[1..]) |arg| {
-            if (!self.expr_is_native_scalar(arg)) return false;
-        }
-        const fmt_str: ?[]const u8 = switch (args[0].*) {
-            .string_lit => |s| s.val,
-            else => if (self.expr_is_native_cstr(args[0])) null else return false,
-        };
-        if (fmt_str) |fmt| {
-            const nconv = count_printf_conversions(fmt);
-            if (nconv == 0 or args.len != 1 + nconv) return false;
-            var fmt_buf: std.ArrayList(u8) = .empty;
-            defer fmt_buf.deinit(self.alloc);
-            try self.append_c_string_literal(&fmt_buf, fmt);
-            self.p("duo_snprintf_cstr(\"{s}\"", .{fmt_buf.items});
-        } else {
-            self.p("duo_snprintf_cstr(", .{});
-            try self.emit_expr(args[0]);
-        }
-        for (args[1..]) |arg| {
-            self.p(", ", .{});
-            try self.emit_native_format_arg(arg);
-        }
-        self.p(")", .{});
-        return true;
-    }
-
-    fn try_emit_native_string_pack(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        if (result_rt != .str or args.len < 2) return false;
-        const fmt_str: []const u8 = switch (args[0].*) {
-            .string_lit => |s| s.val,
-            else => return false,
-        };
-        if (parse_single_pack_spec(fmt_str)) |spec| {
-            if (args.len != 2) return false;
-            if (!self.expr_is_native_scalar(args[1])) return false;
-            const et = self.expr_type(args[1]);
-            if (spec.op == 'f' or spec.op == 'd' or spec.op == 'n') {
-                if (!et.is_float() and !et.is_integer()) return false;
-            } else if (!et.is_integer() and et != .bool) {
-                return false;
-            }
-            self.p("duo_str_pack_one(\"{s}\", (double)(", .{fmt_str});
-            if (spec.op == 'f' or spec.op == 'd' or spec.op == 'n') {
-                try self.emit_expr(args[1]);
-            } else if (et == .bool) {
-                self.p("(", .{});
-                try self.emit_expr(args[1]);
-                self.p(") ? 1.0 : 0.0", .{});
-            } else {
-                try self.emit_expr(args[1]);
-            }
-            self.p("))", .{});
-            return true;
-        }
-        const nvalues = count_native_pack_value_specs(fmt_str) orelse return false;
-        if (args.len != 1 + nvalues) return false;
-        for (args[1..]) |arg| {
-            if (!self.expr_is_native_scalar(arg)) return false;
-            const et = self.expr_type(arg);
-            if (!et.is_numeric() and et != .bool) return false;
-        }
-        self.p("duo_str_pack_argv(\"{s}\", {d}, (const double[]){{", .{ fmt_str, nvalues });
-        for (args[1..], 0..) |arg, i| {
-            if (i > 0) self.p(", ", .{});
-            if (self.expr_type(arg) == .bool) {
-                self.p("(", .{});
-                try self.emit_expr(arg);
-                self.p(") ? 1.0 : 0.0", .{});
-            } else {
-                self.p("(double)(", .{});
-                try self.emit_expr(arg);
-                self.p(")", .{});
-            }
-        }
-        self.p("}})", .{});
-        return true;
-    }
-
-    fn try_emit_native_string_packsize(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        if (!result_rt.is_integer() or args.len != 1) return false;
-        const fmt_str: []const u8 = switch (args[0].*) {
-            .string_lit => |s| s.val,
-            else => return false,
-        };
-        const total = pack_format_total_size(fmt_str) orelse return false;
-        var buf: [64]u8 = undefined;
-        self.p("(({s}){d})", .{ result_rt.c_type(&buf), total });
-        return true;
-    }
-
-    fn try_emit_native_table_concat_from_parts(
-        self: *CodeGen,
-        parts: []const *const ast.Expr,
-        args: []*ast.Expr,
-        result_rt: RT,
-    ) E!bool {
-        _ = result_rt;
-        if (parts.len == 0) return false;
-        for (parts) |part| {
-            const pt = self.expr_type(part);
-            if (!(pt == .str or part.* == .string_lit)) return false;
-            if (!self.expr_is_native_scalar(part)) return false;
-        }
-        if (args.len > 1) {
-            const st = self.expr_type(args[1]);
-            if (!(st == .str or args[1].* == .string_lit)) return false;
-            if (!self.expr_is_native_scalar(args[1])) return false;
-        }
-        if (args.len > 2) {
-            const st = self.expr_type(args[2]);
-            if (!st.is_integer() or !self.expr_is_native_scalar(args[2])) return false;
-        }
-        if (args.len > 3) {
-            const et = self.expr_type(args[3]);
-            if (!et.is_integer() or !self.expr_is_native_scalar(args[3])) return false;
-        }
-        if (args.len > 4) return false;
-        self.p("duo_tbl_concat_cstr(", .{});
-        self.p("{d}, (const char*[]){{", .{parts.len});
-        for (parts, 0..) |part, i| {
-            if (i > 0) self.p(", ", .{});
-            try self.emit_expr(part);
-        }
-        self.p("}}, ", .{});
-        if (args.len > 1) {
-            try self.emit_expr(args[1]);
-        } else {
-            self.p("\"\"", .{});
-        }
-        self.p(", ", .{});
-        if (args.len > 2) {
-            self.p("(int64_t)(", .{});
-            try self.emit_expr(args[2]);
-            self.p(")", .{});
-        } else {
-            self.p("1", .{});
-        }
-        self.p(", ", .{});
-        if (args.len > 3) {
-            self.p("(int64_t)(", .{});
-            try self.emit_expr(args[3]);
-            self.p(")", .{});
-        } else {
-            self.p("{d}", .{parts.len});
-        }
-        self.p(")", .{});
-        return true;
-    }
-
-    fn try_emit_native_table_concat(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        if (result_rt != .str or args.len == 0) return false;
-        if (args[0].* == .table) {
-            var parts: std.ArrayList(*const ast.Expr) = .empty;
-            defer parts.deinit(self.alloc);
-            for (args[0].table.fields) |fld| switch (fld) {
-                .positional => |v| try parts.append(self.alloc, v),
-                else => return false,
-            };
-            return try self.try_emit_native_table_concat_from_parts(parts.items, args, result_rt);
-        }
-        const traced = self.table_lit_positional_parts(args[0]) orelse return false;
-        defer self.alloc.free(traced);
-        return try self.try_emit_native_table_concat_from_parts(traced, args, result_rt);
-    }
-
-    fn emit_os_time_mktime(self: *CodeGen, result_rt: RT, year: i64, month: i64, day: i64, hour: i64, min: i64, sec: i64, isdst: ?bool) E!void {
-        var buf: [64]u8 = undefined;
-        const ct = result_rt.c_type(&buf);
-        self.p("({{ struct tm _duo_tm = {{0}}; _duo_tm.tm_isdst = ", .{});
-        if (isdst) |v| self.p("{d};", .{@intFromBool(v)}) else self.p("-1;", .{});
-        self.p("_duo_tm.tm_year = {d} - 1900; _duo_tm.tm_mon = {d} - 1; _duo_tm.tm_mday = {d}; _duo_tm.tm_hour = {d}; _duo_tm.tm_min = {d}; _duo_tm.tm_sec = {d}; ({s})mktime(&_duo_tm); }}", .{
-            year, month, day, hour, min, sec, ct,
-        });
-    }
-
-    fn try_emit_native_os_time(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        if (result_rt != .f64 or args.len != 1) return false;
-        if (args[0].* == .table) {
-            const table = args[0];
-            const year = table_lit_field_int(table, "year") orelse return false;
-            const month = table_lit_field_int(table, "month") orelse return false;
-            const day = table_lit_field_int(table, "day") orelse return false;
-            const hour = table_lit_field_int(table, "hour") orelse 0;
-            const min = table_lit_field_int(table, "min") orelse 0;
-            const sec = table_lit_field_int(table, "sec") orelse 0;
-            try self.emit_os_time_mktime(result_rt, year, month, day, hour, min, sec, table_lit_field_bool(table, "isdst"));
-            return true;
-        }
-        if (args[0].* == .name) {
-            const init_expr = self.local_init_expr(args[0].name.ident) orelse return false;
-            if (init_expr.* != .table) return false;
-            const table = init_expr;
-            const year = table_lit_field_int(table, "year") orelse return false;
-            const month = table_lit_field_int(table, "month") orelse return false;
-            const day = table_lit_field_int(table, "day") orelse return false;
-            const hour = table_lit_field_int(table, "hour") orelse 0;
-            const min = table_lit_field_int(table, "min") orelse 0;
-            const sec = table_lit_field_int(table, "sec") orelse 0;
-            try self.emit_os_time_mktime(result_rt, year, month, day, hour, min, sec, table_lit_field_bool(table, "isdst"));
-            return true;
-        }
-        return false;
-    }
-
-    fn try_emit_native_os_getenv(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        if (result_rt != .str or args.len != 1) return false;
-        if (args[0].* == .string_lit) {
-            self.p("lua_os_getenv_cstr(\"{s}\")", .{args[0].string_lit.val});
-            return true;
-        }
-        if (self.expr_is_native_cstr(args[0])) {
-            self.p("lua_os_getenv_cstr(", .{});
-            try self.emit_expr(args[0]);
-            self.p(")", .{});
-            return true;
-        }
-        return false;
-    }
-
-    fn try_emit_native_os_tmpname(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        _ = args;
-        if (result_rt != .str) return false;
-        self.p("lua_os_tmpname_cstr()", .{});
-        return true;
-    }
-
-    fn try_emit_native_os_date(self: *CodeGen, args: []*ast.Expr, result_rt: RT) E!bool {
-        if (result_rt != .str or args.len == 0 or args.len > 2) return false;
-        const fmt = os_date_str_format(args[0]) orelse return false;
-        self.p("lua_os_date_cstr(\"{s}\", ", .{fmt});
-        if (args.len > 1) {
-            self.p("(time_t)(", .{});
-            try self.emit_time_arg(args[1]);
-            self.p(")", .{});
-        } else {
-            self.p("time(NULL)", .{});
-        }
-        self.p(")", .{});
-        return true;
-    }
-
-    fn try_emit_native_format_printf(self: *CodeGen, args: []*ast.Expr) E!bool {
-        if (args.len == 0) return false;
-        for (args[1..]) |arg| {
-            if (!self.expr_is_native_scalar(arg)) return false;
-        }
-        const fmt_str: ?[]const u8 = switch (args[0].*) {
-            .string_lit => |s| s.val,
-            else => null,
-        };
-        if (fmt_str) |fmt| {
-            const nconv = count_printf_conversions(fmt);
-            if (nconv == 0 or args.len != 1 + nconv) return false;
-            var fmt_buf: std.ArrayList(u8) = .empty;
-            defer fmt_buf.deinit(self.alloc);
-            try self.append_c_string_literal(&fmt_buf, fmt);
-            self.p("printf(\"{s}\"", .{fmt_buf.items});
-        } else if (self.expr_is_native_cstr(args[0])) {
-            self.p("printf(", .{});
-            try self.emit_expr(args[0]);
-        } else {
-            return false;
-        }
-        for (args[1..]) |arg| {
-            self.p(", ", .{});
-            try self.emit_native_format_arg(arg);
-        }
-        self.p(")", .{});
-        return true;
-    }
-
-    fn try_emit_native_io_write(self: *CodeGen, args: []*ast.Expr) E!bool {
-        if (args.len == 0) return false;
-        if (args.len == 1) {
-            if (args[0].* == .call) {
-                const c = args[0].call;
-                if (c.func.* == .field) {
-                    const f = c.func.field;
-                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
-                        std.mem.eql(u8, f.field, "format"))
-                    {
-                        self.p("({{ ", .{});
-                        if (!try self.try_emit_native_format_printf(c.args)) return false;
-                        self.p("; lua_val_nil(); }})", .{});
-                        return true;
-                    }
-                }
-            }
-            if (args[0].* == .string_lit) {
-                var fmt_buf: std.ArrayList(u8) = .empty;
-                defer fmt_buf.deinit(self.alloc);
-                try self.append_c_string_literal(&fmt_buf, args[0].string_lit.val);
-                self.p("({{ fwrite(\"{s}\", 1, {d}, stdout); lua_val_nil(); }})", .{
-                    fmt_buf.items,
-                    args[0].string_lit.val.len,
-                });
-                return true;
-            }
-            if (self.expr_is_native_cstr(args[0])) {
-                self.p("({{ const char* _duo_s = ", .{});
-                try self.emit_expr(args[0]);
-                self.p("; fwrite(_duo_s, 1, strlen(_duo_s), stdout); lua_val_nil(); }})", .{});
-                return true;
-            }
-            return false;
-        }
-        self.p("({{ ", .{});
-        var i: usize = 0;
-        while (i < args.len) : (i += 1) {
-            if (i > 0) self.p("printf(\"\\t\"); ", .{});
-            if (args[i].* == .string_lit) {
-                var fmt_buf: std.ArrayList(u8) = .empty;
-                defer fmt_buf.deinit(self.alloc);
-                try self.append_c_string_literal(&fmt_buf, args[i].string_lit.val);
-                self.p("fwrite(\"{s}\", 1, {d}, stdout); ", .{ fmt_buf.items, args[i].string_lit.val.len });
-            } else if (self.expr_is_native_cstr(args[i])) {
-                self.p("{{ const char* _duo_s = ", .{});
-                try self.emit_expr(args[i]);
-                self.p("; fwrite(_duo_s, 1, strlen(_duo_s), stdout); }} ", .{});
-            } else {
-                return false;
-            }
-        }
-        self.p("lua_val_nil(); }})", .{});
-        return true;
-    }
-
     fn try_emit_native_string_call(self: *CodeGen, fname: []const u8, args: []*ast.Expr, result_rt: RT) E!bool {
         if (std.mem.eql(u8, fname, "len")) {
             if (args.len == 0) return false;
@@ -12991,15 +12372,6 @@ pub const CodeGen = struct {
                 return true;
             }
             return false;
-        }
-        if (std.mem.eql(u8, fname, "pack") and result_rt == .str) {
-            return try self.try_emit_native_string_pack(args, result_rt);
-        }
-        if (std.mem.eql(u8, fname, "packsize") and result_rt.is_integer()) {
-            return try self.try_emit_native_string_packsize(args, result_rt);
-        }
-        if (std.mem.eql(u8, fname, "format") and result_rt == .str) {
-            return try self.try_emit_native_string_format(args, result_rt);
         }
         if (args.len > 0) {
             if (try self.try_emit_native_string_transform(fname, args[0], args[1..], result_rt)) return true;
@@ -13299,7 +12671,6 @@ pub const CodeGen = struct {
             if (coerced) self.emit_lua_result_coerce_suffix(result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "table")) {
-            if (std.mem.eql(u8, fname, "concat") and try self.try_emit_native_table_concat(args, result_rt)) return true;
             const mapped = if (std.mem.eql(u8, fname, "insert")) "lua_tbl_insert" else if (std.mem.eql(u8, fname, "remove")) "lua_tbl_remove" else if (std.mem.eql(u8, fname, "concat")) "lua_tbl_concat" else if (std.mem.eql(u8, fname, "sort")) "lua_tbl_sort" else if (std.mem.eql(u8, fname, "new")) "lua_tbl_new" else if (std.mem.eql(u8, fname, "create")) "lua_tbl_new" else if (std.mem.eql(u8, fname, "clear")) "lua_tbl_clear" else if (std.mem.eql(u8, fname, "move")) "lua_tbl_move" else if (std.mem.eql(u8, fname, "unpack")) "lua_tbl_unpack" else if (std.mem.eql(u8, fname, "pack")) "lua_tbl_pack" else if (std.mem.eql(u8, fname, "freeze")) "lua_tbl_freeze" else if (std.mem.eql(u8, fname, "isfrozen")) "lua_tbl_isfrozen" else return false;
 
             if (std.mem.eql(u8, fname, "pack") and args.len > 1) {
@@ -13323,7 +12694,6 @@ pub const CodeGen = struct {
             try self.emit_boxed_runtime_call(mapped, args, expected, result_rt);
             return true;
         } else if (std.mem.eql(u8, mod, "io")) {
-            if (std.mem.eql(u8, fname, "write") and try self.try_emit_native_io_write(args)) return true;
             const mapped = if (std.mem.eql(u8, fname, "write")) "lua_io_write" else if (std.mem.eql(u8, fname, "read")) "lua_io_read" else if (std.mem.eql(u8, fname, "flush")) "lua_io_flush" else if (std.mem.eql(u8, fname, "open")) "lua_io_open" else if (std.mem.eql(u8, fname, "close")) "lua_io_close" else if (std.mem.eql(u8, fname, "tmpfile")) "lua_io_tmpfile" else if (std.mem.eql(u8, fname, "input")) "lua_io_input" else if (std.mem.eql(u8, fname, "output")) "lua_io_output" else if (std.mem.eql(u8, fname, "popen")) "lua_io_popen" else if (std.mem.eql(u8, fname, "type")) "lua_io_type" else if (std.mem.eql(u8, fname, "lines")) "lua_io_lines" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "flush") or std.mem.eql(u8, fname, "tmpfile")) @as(usize, 0) else if (std.mem.eql(u8, fname, "read") or std.mem.eql(u8, fname, "close") or std.mem.eql(u8, fname, "input") or std.mem.eql(u8, fname, "output") or std.mem.eql(u8, fname, "type") or std.mem.eql(u8, fname, "lines")) @as(usize, 1) else if (std.mem.eql(u8, fname, "open") or std.mem.eql(u8, fname, "popen")) @as(usize, 2) else if (std.mem.eql(u8, fname, "write")) @as(usize, 4) else 0;
@@ -13381,10 +12751,6 @@ pub const CodeGen = struct {
                 }
                 return true;
             }
-            if (std.mem.eql(u8, fname, "time") and try self.try_emit_native_os_time(args, result_rt)) return true;
-            if (std.mem.eql(u8, fname, "getenv") and try self.try_emit_native_os_getenv(args, result_rt)) return true;
-            if (std.mem.eql(u8, fname, "tmpname") and try self.try_emit_native_os_tmpname(args, result_rt)) return true;
-            if (std.mem.eql(u8, fname, "date") and try self.try_emit_native_os_date(args, result_rt)) return true;
             const mapped = if (std.mem.eql(u8, fname, "clock")) "lua_os_clock" else if (std.mem.eql(u8, fname, "time")) "lua_os_time" else if (std.mem.eql(u8, fname, "difftime")) "lua_os_difftime" else if (std.mem.eql(u8, fname, "exit")) "lua_os_exit" else if (std.mem.eql(u8, fname, "getenv")) "lua_os_getenv" else if (std.mem.eql(u8, fname, "remove")) "lua_os_remove" else if (std.mem.eql(u8, fname, "rename")) "lua_os_rename" else if (std.mem.eql(u8, fname, "date")) "lua_os_date" else if (std.mem.eql(u8, fname, "execute")) "lua_os_execute" else if (std.mem.eql(u8, fname, "tmpname")) "lua_os_tmpname" else if (std.mem.eql(u8, fname, "setlocale")) "lua_os_setlocale" else return false;
 
             const expected: usize = if (std.mem.eql(u8, fname, "clock") or std.mem.eql(u8, fname, "tmpname")) @as(usize, 0) else if (std.mem.eql(u8, fname, "time") or std.mem.eql(u8, fname, "exit") or std.mem.eql(u8, fname, "getenv") or std.mem.eql(u8, fname, "remove") or std.mem.eql(u8, fname, "execute")) @as(usize, 1) else if (std.mem.eql(u8, fname, "difftime") or std.mem.eql(u8, fname, "rename") or std.mem.eql(u8, fname, "date") or std.mem.eql(u8, fname, "setlocale")) @as(usize, 2) else 0;
@@ -13845,7 +13211,7 @@ pub const CodeGen = struct {
             self.dense_table = null;
             self.dense_table_cap = null;
             for (fb.params, 0..) |par, i| {
-                const pt = self.resolve_type(par.typ);
+                const pt = types.resolve(par.typ, null, self.alloc) catch .any;
                 if (pt == .any) {
                     self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
                 } else if (pt.is_integer()) {
@@ -14388,7 +13754,7 @@ pub const CodeGen = struct {
                 var name_buf: [256]u8 = undefined;
                 const mname = self.mangled_name(cd.ident, &name_buf);
                 const rt = if (cd.typ != .inferred)
-                    self.resolve_type(cd.typ)
+                    types.resolve(cd.typ, null, self.alloc) catch .any
                 else
                     self.expr_type(cd.val);
                 if (cd.val.* == .table) {
@@ -14717,7 +14083,7 @@ pub const CodeGen = struct {
                                 });
                                 defer self.alloc.free(payload_expr);
                                 const ft = if (fi < fields.len)
-                                    self.resolve_type(fields[fi].typ)
+                                    types.resolve(fields[fi].typ, null, self.alloc) catch RT.any
                                 else
                                     RT.any;
                                 self.p(" && ", .{});
@@ -14764,7 +14130,7 @@ pub const CodeGen = struct {
                 const payload_pats = v.payload orelse return;
                 for (payload_pats, 0..) |sub_pat, i| {
                     if (i >= fields.len) break;
-                    const field_type = self.resolve_type(fields[i].typ);
+                    const field_type = types.resolve(fields[i].typ, null, self.alloc) catch RT.any;
                     const field_name = fields[i].name orelse try std.fmt.allocPrint(self.alloc, "_{d}", .{i});
                     defer if (fields[i].name == null) self.alloc.free(field_name);
                     const payload_expr = try std.fmt.allocPrint(self.alloc, "{s}.as.{s}.{s}", .{ value_expr, variant_name, field_name });
@@ -15292,61 +14658,6 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_val_from_str(const char* s) {
     \\    return lua_val_from_str_len(s, strlen(s));
-    \\}
-    \\
-    \\static inline const char* duo_snprintf_cstr(const char* fmt, ...) {
-    \\    char* buf = (char*)malloc(8192);
-    \\    if (!buf) return lua_val_from_str_len("", 0).as.sval;
-    \\    va_list ap;
-    \\    va_start(ap, fmt);
-    \\    int n = vsnprintf(buf, 8192, fmt, ap);
-    \\    va_end(ap);
-    \\    if (n < 0) { free(buf); return lua_val_from_str_len("", 0).as.sval; }
-    \\    buf[n] = '\\0';
-    \\    const char* out = lua_val_from_str_len(buf, (size_t)n).as.sval;
-    \\    free(buf);
-    \\    return out;
-    \\}
-    \\
-    \\static inline const char* duo_tbl_concat_cstr(int64_t n, const char** parts, const char* sep, int64_t start, int64_t end) {
-    \\    if (n <= 0 || start > end) return lua_val_from_str_len("", 0).as.sval;
-    \\    size_t sep_len = strlen(sep);
-    \\    size_t total = 0;
-    \\    for (int64_t i = start; i <= end && i <= n; ++i) {
-    \\        const char* p = parts[i - 1];
-    \\        if (p) total += strlen(p);
-    \\        if (i < end && i < n) total += sep_len;
-    \\    }
-    \\    char* out = (char*)malloc(total + 1);
-    \\    if (!out) return lua_val_from_str_len("", 0).as.sval;
-    \\    char* w = out;
-    \\    for (int64_t i = start; i <= end && i <= n; ++i) {
-    \\        const char* p = parts[i - 1];
-    \\        if (p) { size_t plen = strlen(p); memcpy(w, p, plen); w += plen; }
-    \\        if (i < end && i < n) { memcpy(w, sep, sep_len); w += sep_len; }
-    \\    }
-    \\    *w = '\\0';
-    \\    return lua_val_from_str_len(out, total).as.sval;
-    \\}
-    \\
-    \\static inline const char* lua_os_getenv_cstr(const char* name) {
-    \\    const char* val = getenv(name);
-    \\    return val ? lua_val_from_str(val).as.sval : lua_val_from_str_len("", 0).as.sval;
-    \\}
-    \\
-    \\static inline const char* lua_os_tmpname_cstr(void) {
-    \\    char buf[L_tmpnam];
-    \\    tmpnam(buf);
-    \\    return lua_val_from_str_len(buf, strlen(buf)).as.sval;
-    \\}
-    \\
-    \\static inline const char* lua_os_date_cstr(const char* fmt, time_t t) {
-    \\    struct tm* ltime = localtime(&t);
-    \\    if (!ltime) return lua_val_from_str_len("", 0).as.sval;
-    \\    char tmp[1024];
-    \\    size_t len = strftime(tmp, sizeof(tmp), fmt, ltime);
-    \\    if (len == 0) return lua_val_from_str_len("", 0).as.sval;
-    \\    return lua_val_from_str_len(tmp, len).as.sval;
     \\}
     \\
     \\static inline lua_Value lua_val_from_literal(const char* s, uint32_t hash, size_t len) {
@@ -18597,28 +17908,6 @@ const duo_runtime =
     \\    return lua_val_from_num((double)total);
     \\}
     \\
-    \\static inline const char* duo_str_pack_one(const char* fmt, double num) {
-    \\    const char* f = fmt;
-    \\    char op = 0;
-    \\    int sz = duo_pack_option(&f, &op);
-    \\    if (sz <= 0) return lua_val_from_str_len("", 0).as.sval;
-    \\    char* buf = (char*)malloc((size_t)sz);
-    \\    if (!buf) return lua_val_from_str_len("", 0).as.sval;
-    \\    if (op == 'b') { int8_t x = (int8_t)num; memcpy(buf, &x, 1); }
-    \\    else if (op == 'B') { uint8_t x = (uint8_t)num; memcpy(buf, &x, 1); }
-    \\    else if (op == 'h') { int16_t x = (int16_t)num; memcpy(buf, &x, 2); }
-    \\    else if (op == 'H') { uint16_t x = (uint16_t)num; memcpy(buf, &x, 2); }
-    \\    else if (op == 'i') { int32_t x = (int32_t)num; memcpy(buf, &x, 4); }
-    \\    else if (op == 'I') { uint32_t x = (uint32_t)num; memcpy(buf, &x, 4); }
-    \\    else if (op == 'j') { int64_t x = (int64_t)num; memcpy(buf, &x, 8); }
-    \\    else if (op == 'J') { uint64_t x = (uint64_t)num; memcpy(buf, &x, 8); }
-    \\    else if (op == 'f') { float x = (float)num; memcpy(buf, &x, 4); }
-    \\    else { double x = num; memcpy(buf, &x, 8); }
-    \\    const char* out = lua_val_from_str_len(buf, (size_t)sz).as.sval;
-    \\    free(buf);
-    \\    return out;
-    \\}
-    \\
     \\static void duo_pack_append(char** buf, size_t* len, size_t* cap, const void* data, size_t n) {
     \\    if (*len + n > *cap) {
     \\        size_t nc = *cap ? *cap : 64;
@@ -18628,37 +17917,6 @@ const duo_runtime =
     \\    }
     \\    memcpy(*buf + *len, data, n);
     \\    *len += n;
-    \\}
-    \\
-    \\static inline const char* duo_str_pack_argv(const char* fmt, int argc, const double* argv) {
-    \\    const char* f = fmt;
-    \\    char* buf = NULL;
-    \\    size_t len = 0, cap = 0;
-    \\    int vi = 0;
-    \\    char op = 0;
-    \\    while (*f) {
-    \\        int sz = duo_pack_option(&f, &op);
-    \\        if (sz <= 0) break;
-    \\        if (op == 'c' || op == 's') {
-    \\            if (buf) free(buf);
-    \\            return lua_val_from_str_len("", 0).as.sval;
-    \\        }
-    \\        double num = vi < argc ? argv[vi++] : 0.0;
-    \\        if (op == 'b') { int8_t x = (int8_t)num; duo_pack_append(&buf, &len, &cap, &x, 1); }
-    \\        else if (op == 'B') { uint8_t x = (uint8_t)num; duo_pack_append(&buf, &len, &cap, &x, 1); }
-    \\        else if (op == 'h') { int16_t x = (int16_t)num; duo_pack_append(&buf, &len, &cap, &x, 2); }
-    \\        else if (op == 'H') { uint16_t x = (uint16_t)num; duo_pack_append(&buf, &len, &cap, &x, 2); }
-    \\        else if (op == 'i') { int32_t x = (int32_t)num; duo_pack_append(&buf, &len, &cap, &x, 4); }
-    \\        else if (op == 'I') { uint32_t x = (uint32_t)num; duo_pack_append(&buf, &len, &cap, &x, 4); }
-    \\        else if (op == 'j') { int64_t x = (int64_t)num; duo_pack_append(&buf, &len, &cap, &x, 8); }
-    \\        else if (op == 'J') { uint64_t x = (uint64_t)num; duo_pack_append(&buf, &len, &cap, &x, 8); }
-    \\        else if (op == 'f') { float x = (float)num; duo_pack_append(&buf, &len, &cap, &x, 4); }
-    \\        else { double x = num; duo_pack_append(&buf, &len, &cap, &x, 8); }
-    \\    }
-    \\    if (!buf) return lua_val_from_str_len("", 0).as.sval;
-    \\    const char* out = lua_val_from_str_len(buf, len).as.sval;
-    \\    free(buf);
-    \\    return out;
     \\}
     \\
     \\static inline lua_Value lua_str_pack(lua_Value fmt, lua_Value v1, lua_Value v2) {
@@ -20809,7 +20067,7 @@ test "codegen: any accumulator plus numeric table index unboxes both sides" {
     cg.duo_mode = true;
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t sum_any(") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static lua_Value sum_any(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "return sum;") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end + "return sum;".len];
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_i64_num(t, i") != null);
@@ -20846,7 +20104,7 @@ test "codegen: any accumulator plus boxed field unboxes both sides" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t f(") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static lua_Value f(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "return sum;") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end + "return sum;".len];
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_str_num(") != null);
@@ -20878,11 +20136,10 @@ test "codegen: numeric lua index keys unbox table binops after assign" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t f(lua_Value t") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static lua_Value f(lua_Value t") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_i64_num(t, i") != null);
-    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_i64_num(t, j") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_i64_num(t, (int64_t)lua_to_num(i))") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num(lua_table_get_i64(") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get(t,") == null);
@@ -20911,7 +20168,7 @@ test "codegen: sema table_field_types unbox tracked dynamic fields" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t f(lua_Value cfg)") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static lua_Value f(lua_Value cfg)") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_str_num(cfg, \"port\"") != null);
@@ -20948,8 +20205,8 @@ test "codegen: numeric lua locals unbox in mixed native binops" {
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(int64_t n)") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "while ((i <= n))") != null);
-    try testing.expect(std.mem.indexOf(u8, fn_body, "i = (i + 1)") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "while ((((int64_t)lua_to_num(i)) <= n))") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "i = lua_val_from_int((int64_t)((((int64_t)lua_to_num(i)) + 1)))") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_leq(") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
 }
@@ -20981,7 +20238,7 @@ test "codegen: unary neg on numeric lua local unboxes" {
     const fn_start = std.mem.indexOf(u8, output, "static inline int64_t f(int64_t n)") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "return ((-i) + n)") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "return ((-((int64_t)lua_to_num(i))) + n)") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_unm(") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
 }
@@ -21012,10 +20269,10 @@ test "codegen: one-sided any binop unboxes numeric local plus dynamic table inde
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t f(") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static lua_Value f(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_i64_num(t, j") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_table_get_key_num(t, j)") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num(lua_table_get(t, j))") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
 }
@@ -21107,10 +20364,11 @@ test "codegen: typed native local plus dynamic table index unboxes in assign" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t k(") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t k(") orelse
+        std.mem.indexOf(u8, output, "static lua_Value k(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "sum = (sum + ((int64_t)lua_table_get_i64_num(t, i)))") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "sum = (sum + ((int64_t)lua_table_get_key_num(t, i)))") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
 }
 
@@ -21136,10 +20394,10 @@ test "codegen: both dynamic table index reads unbox in binop" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    const fn_start = std.mem.indexOf(u8, output, "static int64_t h(") orelse return error.TestExpectedEqual;
+    const fn_start = std.mem.indexOf(u8, output, "static lua_Value h(") orelse return error.TestExpectedEqual;
     const fn_end = std.mem.indexOf(u8, output[fn_start..], "}\n\nduo_ArgvFn") orelse return error.TestExpectedEqual;
     const fn_body = output[fn_start .. fn_start + fn_end];
-    try testing.expect(std.mem.indexOf(u8, fn_body, "return (((int64_t)lua_table_get_i64_num(t, i)) + ((int64_t)lua_table_get_i64_num(t, j)))") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "return lua_val_from_int((int64_t)((((int64_t)lua_table_get_key_num(t, i)) + ((int64_t)lua_table_get_key_num(t, j))))") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
 }
 
@@ -21632,8 +20890,7 @@ test "codegen: typed table module calls unbox boxed runtime results" {
     var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
     try cg.emit_module(&module);
     const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = duo_tbl_concat_cstr(2, (const char*[]){\"a\", \"b\"}, \",\", 1, 2)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = lua_to_str(lua_tbl_concat(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = lua_to_str(lua_tbl_concat(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool frozen = ({ lua_Value _duo_t = ") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Table* _duo_tp = _duo_t.type == VAL_TABLE ? (lua_Table*)_duo_t.as.tval : NULL; _duo_tp && _duo_tp->frozen; });") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_bool(lua_tbl_isfrozen(") == null);
@@ -21655,10 +20912,7 @@ test "codegen: typed fixed string and os calls unbox boxed runtime results" {
         \\local dumped: str = string.dump(function() end, false)
         \\local b: i64 = string.byte("duo", 2)
         \\local tmp: str = os.tmpname()
-        \\local path: str = os.getenv("PATH")
-        \\local stamp: str = os.date("%Y-%m-%dT%H:%M:%S")
-        \\local at: str = os.date("%Y-%m-%d", 1700000000)
-        \\print(has_prefix, has_suffix, formatted, packed, dumped, b, tmp, path, stamp, at)
+        \\print(has_prefix, has_suffix, formatted, packed, dumped, b, tmp)
     , "test");
     var parser = Parser.init(&lex, alloc);
     var module = try parser.parse_module();
@@ -21677,139 +20931,14 @@ test "codegen: typed fixed string and os calls unbox boxed runtime results" {
     try testing.expect(std.mem.indexOf(u8, output, "memcmp(_duo_s + _duo_slen - _duo_plen, _duo_part, _duo_plen) == 0; });") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_bool(lua_str_starts_with(") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_bool(lua_str_ends_with(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* formatted = duo_snprintf_cstr(\"%s\", \"duo\")") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* packed = duo_str_pack_one(\"i\", (double)(7))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* formatted = lua_to_str(lua_str_format(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* packed = lua_to_str(lua_str_pack(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* dumped = lua_to_str(lua_str_dump(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "int64_t b = 117;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* tmp = lua_os_tmpname_cstr();") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* path = lua_os_getenv_cstr(\"PATH\");") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* stamp = lua_os_date_cstr(\"%Y-%m-%dT%H:%M:%S\", time(NULL));") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* at = lua_os_date_cstr(\"%Y-%m-%d\", (time_t)(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* tmp = lua_to_str(lua_os_tmpname(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* path = lua_to_str(lua_os_getenv(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* stamp = lua_to_str(lua_os_date(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* tmp = lua_to_str(lua_os_tmpname(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value has_prefix = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value has_suffix = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value tmp = ") == null);
-}
-
-test "codegen: traced locals lower format concat and os.time without lua intermediates" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\local fmt: str = "%s-%d"
-        \\local msg: str = string.format(fmt, "duo", 7)
-        \\local parts = {"a", "b", "c"}
-        \\local joined: str = table.concat(parts, ",")
-        \\local when = { year = 2026, month = 7, day = 16 }
-        \\local ts: f64 = os.time(when)
-        \\print(msg, joined, ts)
-    , "test");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "const char* msg = duo_snprintf_cstr(fmt, \"duo\", (long long)(7))") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = duo_tbl_concat_cstr(3, (const char*[]){\"a\", \"b\", \"c\"}, \",\", 1, 3)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double ts = ({ struct tm _duo_tm = {0};") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "_duo_tm.tm_year = 2026 - 1900;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_to_str(lua_str_format(") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_to_int(lua_os_time(") == null);
-}
-
-test "codegen: native io.write avoids boxed io calls" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\local msg: str = "hi"
-        \\io.write(string.format("[INFO] %s\\n", msg))
-        \\local d = { year = 2025, month = 12, day = 25, hour = 0, min = 0, sec = 0 }
-        \\local ts: f64 = os.time(d)
-        \\local sz: i64 = string.packsize("i")
-        \\print(ts, sz)
-    , "test");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "printf(\"[INFO] %s") != null);
-    try testing.expect(std.mem.indexOf(u8, output, ", msg); lua_val_nil();") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_io_write(lua_val") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "_duo_tm.tm_year = 2025 - 1900;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t sz = ((int64_t)4);") != null);
-}
-
-test "codegen: multi-spec string.pack uses native argv packer" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\local packed: str = string.pack("ii", 42, 43)
-        \\print(packed)
-    , "test");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "const char* packed = duo_str_pack_argv(\"ii\", 2, (const double[]){") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_to_str(lua_str_pack(") == null);
-}
-
-test "codegen: table literal length folds without lua_len" {
-    const Lexer = @import("lexer.zig").Lexer;
-    const Parser = @import("parser.zig").Parser;
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var lex = Lexer.init(
-        \\local n: i64 = #{"a", "b", "c"}
-        \\local parts = {"x", "y"}
-        \\local m: i64 = #parts
-        \\print(n, m)
-    , "test");
-    var parser = Parser.init(&lex, alloc);
-    var module = try parser.parse_module();
-    var semantic = sema.Sema.init(alloc);
-    defer semantic.deinit();
-    try semantic.check_module(&module);
-
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
-    try cg.emit_module(&module);
-    const output = aw.written();
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t n = ((int64_t)3);") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "int64_t m = ((int64_t)2);") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_len_num(") == null);
 }
 
 test "codegen: typed literal string byte method unboxes boxed runtime result" {
@@ -21922,7 +21051,7 @@ test "codegen: typed string numeric results keep exact native result type" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "uint32_t n = ((uint32_t)(((int64_t)strlen(s))))") != null);
     try testing.expect(std.mem.indexOf(u8, output, "uint8_t b = ((uint8_t)(((int64_t)(unsigned char)(s[") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "uint16_t packed = ((uint16_t)(((int64_t)4)))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint16_t packed = ((uint16_t)(((int64_t)lua_to_num(lua_str_packsize(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "float pos = ((float)lua_to_num(lua_str_find(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "uint32_t n = ((int64_t)strlen(s));") == null);
     try testing.expect(std.mem.indexOf(u8, output, "uint8_t b = lua_str_byte_i64(") == null);
@@ -22287,9 +21416,7 @@ test "codegen: typed os module calls unbox boxed runtime results" {
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "double now = ((double)time(NULL));") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double table_now = ({ struct tm _duo_tm = {0};") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "_duo_tm.tm_year = 2026 - 1900;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "lua_to_num(lua_os_time(") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "double table_now = ((double)lua_to_num(lua_os_time(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "double delta = difftime((time_t)(now), (time_t)(1));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool removed = (remove(\"missing.tmp\") == 0);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool renamed = (rename(\"missing.tmp\", \"other.tmp\") == 0);") != null);
@@ -23338,7 +22465,6 @@ test "expr_type: indexed native containers recover their element type" {
     var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0, null);
     defer {
         cg.local_scopes.deinit(testing.allocator);
-        cg.local_init_scopes.deinit(testing.allocator);
         cg.comptime_scopes.deinit(testing.allocator);
         cg.close_scopes.deinit(testing.allocator);
         cg.arc_scopes.deinit(testing.allocator);
@@ -23374,7 +22500,6 @@ test "expr_type: named record alias field fallback recovers declared field type"
     defer {
         cg.record_aliases.deinit(testing.allocator);
         cg.local_scopes.deinit(testing.allocator);
-        cg.local_init_scopes.deinit(testing.allocator);
         cg.comptime_scopes.deinit(testing.allocator);
         cg.close_scopes.deinit(testing.allocator);
         cg.arc_scopes.deinit(testing.allocator);
@@ -23411,7 +22536,6 @@ test "codegen: generic type alias resolves through normal type syntax" {
     defer {
         cg.alias_defs.deinit(alloc);
         cg.local_scopes.deinit(alloc);
-        cg.local_init_scopes.deinit(alloc);
         cg.comptime_scopes.deinit(alloc);
         cg.close_scopes.deinit(alloc);
         cg.arc_scopes.deinit(alloc);
@@ -23454,7 +22578,6 @@ test "expr_type: statically typed callee recovers its return type" {
     var cg = CodeGen.init(testing.allocator, undefined, &type_map, null, undefined, 0, null);
     defer {
         cg.local_scopes.deinit(testing.allocator);
-        cg.local_init_scopes.deinit(testing.allocator);
         cg.comptime_scopes.deinit(testing.allocator);
         cg.close_scopes.deinit(testing.allocator);
         cg.arc_scopes.deinit(testing.allocator);
@@ -23496,7 +22619,6 @@ test "expr_type: structural fallback recovers literal and function expression ty
     var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0, null);
     defer {
         cg.local_scopes.deinit(alloc);
-        cg.local_init_scopes.deinit(alloc);
         cg.comptime_scopes.deinit(alloc);
         cg.close_scopes.deinit(alloc);
         cg.arc_scopes.deinit(alloc);
@@ -23570,7 +22692,6 @@ test "arc: record and enum value types do not emit retain release hooks" {
     var cg = CodeGen.init(alloc, undefined, &type_map, null, undefined, 0, null);
     defer {
         cg.local_scopes.deinit(alloc);
-        cg.local_init_scopes.deinit(alloc);
         cg.comptime_scopes.deinit(alloc);
         cg.close_scopes.deinit(alloc);
         cg.arc_scopes.deinit(alloc);

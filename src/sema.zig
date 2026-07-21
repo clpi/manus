@@ -43,68 +43,6 @@ fn is_close_attrib(attrib: ?[]const u8) bool {
     return attrib != null and std.mem.eql(u8, attrib.?, "close");
 }
 
-fn type_needs_arc(t: RT) bool {
-    return switch (t) {
-        .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => false,
-        .bool, .void, .nil, .never => false,
-        .v4f64, .v4i64, .v8f32, .v8i32 => false,
-        .any => false,
-        .tensor => false,
-        .str, .array, .pointer, .func, .@"struct" => true,
-        .result, .option, .enum_type, .channel, .table_type, .instantiated, .generic_param => true,
-    };
-}
-
-fn mark_local_escape(sema: *Sema, name: []const u8) void {
-    if (sema.scope.lookupPtr(name)) |sym| {
-        if (sym.is_global) return;
-        sym.escapes = true;
-        sema.escape_names.put(sema.alloc, name, {}) catch {};
-    }
-}
-
-fn mark_expr_local_escapes(sema: *Sema, expr: *const ast.Expr) void {
-    switch (expr.*) {
-        .name => mark_local_escape(sema, expr.name.ident),
-        else => {},
-    }
-}
-
-fn mark_call_heap_arg_escapes(sema: *Sema, expr: *const ast.Expr) void {
-    switch (expr.*) {
-        .name => |n| {
-            const t = sema.type_map.get(expr) orelse .any;
-            if (type_needs_arc(t)) mark_local_escape(sema, n.ident);
-        },
-        else => {},
-    }
-}
-
-fn callee_may_store_heap_args(func: *const ast.Expr, ft: RT) bool {
-    if (ft == .any) return true;
-    return func.* != .name;
-}
-
-fn binding_is_module_global(sema: *Sema, name: []const u8) bool {
-    if (sema.scope.lookupPtr(name)) |sym| return sym.is_global;
-    return sema.module_globals.contains(name);
-}
-
-fn assign_target_stores_outward(sema: *Sema, tgt: *const ast.Expr) bool {
-    return switch (tgt.*) {
-        .name => binding_is_module_global(sema, tgt.name.ident),
-        .field => |f| blk: {
-            if (f.obj.* != .name) break :blk true;
-            break :blk binding_is_module_global(sema, f.obj.name.ident);
-        },
-        .index => |idx| blk: {
-            if (idx.obj.* != .name) break :blk true;
-            break :blk binding_is_module_global(sema, idx.obj.name.ident);
-        },
-        else => false,
-    };
-}
-
 /// Check whether a function has the @nopanic attribute.
 fn has_nopanic_attr(attributes: []const ast.Attribute) bool {
     for (attributes) |attr| {
@@ -319,7 +257,7 @@ pub const Sema = struct {
     /// When inside an enum_def, alias_def, or concept_def, the name of the type
     /// being defined. Used by types.resolve() to resolve `Self` to the enclosing type.
     current_type_name: ?[]const u8 = null,
-    /// Set of variable names that escape their scope (closures, returns, outward stores).
+    /// Set of variable names that escape their scope (captured by closures).
     /// Populated during analysis; consumed by the ARC pass for pruning.
     escape_names: std.StringHashMapUnmanaged(void) = .{},
     /// Collected `@test` / `@bench` functions for `duo test` / `duo bench`.
@@ -1613,9 +1551,6 @@ pub const Sema = struct {
                             sym.assigned_after_init = true;
                         }
                     }
-                    if (i < as.values.len and assign_target_stores_outward(self, tgt)) {
-                        mark_expr_local_escapes(self, as.values[i]);
-                    }
                 }
             },
             .call_stmt => |*cs| _ = try self.check_expr(cs.expr),
@@ -1631,7 +1566,6 @@ pub const Sema = struct {
                     const actual = try self.check_expr(r.vals[0]);
                     self.check_return_value(r.loc, actual);
                     for (r.vals[1..]) |v| _ = try self.check_expr(v);
-                    for (r.vals) |v| mark_expr_local_escapes(self, v);
                 }
             },
             .if_stmt => |*is| {
@@ -1989,6 +1923,8 @@ pub const Sema = struct {
                         return .i64;
                     }
                     if (std.mem.eql(u8, bn, "__typeinfo")) return .str;
+                    if (std.mem.eql(u8, bn, "__typeof")) return .str;
+                    if (std.mem.eql(u8, bn, "__fields")) return .any;
                     if (std.mem.eql(u8, bn, "__emit")) return .any;
                     if (std.mem.eql(u8, bn, "__c_call")) return .any;
                     if (std.mem.eql(u8, bn, "__bitcast")) return .any;
@@ -2102,9 +2038,6 @@ pub const Sema = struct {
                 }
                 const ft = try self.check_expr(c.func);
                 for (c.args) |arg| _ = try self.check_expr(arg);
-                if (callee_may_store_heap_args(c.func, ft)) {
-                    for (c.args) |arg| mark_call_heap_arg_escapes(self, arg);
-                }
 
                 // Track metatable associations for compile-time method resolution
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "setmetatable") and c.args.len == 2) {
@@ -2135,20 +2068,6 @@ pub const Sema = struct {
                         const fname = f.field;
                         if (std.mem.eql(u8, mod, "os") and std.mem.eql(u8, fname, "clock"))
                             return .f64;
-                        if (std.mem.eql(u8, mod, "os")) {
-                            if (std.mem.eql(u8, fname, "time") or std.mem.eql(u8, fname, "difftime"))
-                                return .f64;
-                            if (std.mem.eql(u8, fname, "tmpname") or std.mem.eql(u8, fname, "getenv"))
-                                return .str;
-                            if (std.mem.eql(u8, fname, "date") and c.args.len >= 1 and c.args.len <= 2 and
-                                c.args[0].* == .string_lit and
-                                !(c.args[0].string_lit.val.len > 0 and c.args[0].string_lit.val[0] == '*'))
-                                return .str;
-                            if (std.mem.eql(u8, fname, "remove") or
-                                std.mem.eql(u8, fname, "rename") or
-                                std.mem.eql(u8, fname, "execute"))
-                                return .bool;
-                        }
                         if (std.mem.eql(u8, mod, "string")) {
                             if (std.mem.eql(u8, fname, "len") or std.mem.eql(u8, fname, "byte"))
                                 return .i64;
@@ -2937,12 +2856,14 @@ pub const Sema = struct {
         self.scope.pop();
 
         // Pass 2: infer native signature for plain Lua numeric functions.
-        const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
-        if (!func_body_has_func_expr(fb)) {
+        if (!fb.is_typed and !func_body_has_func_expr(fb)) {
+            const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
             try detect_dense_table(fb, self.alloc);
-            if (!fb.is_typed) {
-                self.try_specialize_native_func(fb, self_name) catch {};
-            }
+            self.try_specialize_native_func(fb, self_name) catch {};
+        } else if (fb.is_typed) {
+            // For typed .duo functions, still run dense table detection
+            // to enable native int64_t array lowering for table-as-array patterns.
+            try detect_dense_table(fb, self.alloc);
         }
 
         // Re-resolve after possible inference.
@@ -2959,19 +2880,17 @@ pub const Sema = struct {
         fb.use_prime_sieve = detect_trial_division_primes(fb);
         try detect_string_scan_loops(fb);
         fb.use_grid_sum_inline = detect_grid_sum_inline(fb);
-        fb.use_dense_table_max = fb.use_dense_table and detect_dense_table_max(fb);
-        fb.use_table_lookup_sum = detect_table_lookup_sum(fb);
-        fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
-        detect_dense_table_sum_patterns(fb);
-        detect_dense_table_fused_fill_sum(fb);
-        detect_dense_table_fused_dot_fill_sum(fb);
+        fb.use_dense_table_max = fb.use_dense_table and !fb.is_typed and detect_dense_table_max(fb);
+        fb.use_table_lookup_sum = !fb.is_typed and detect_table_lookup_sum(fb);
+        fb.use_dense_table_mod997_sum = !fb.is_typed and detect_dense_table_mod997_sum(fb);
+        if (!fb.is_typed) detect_dense_table_sum_patterns(fb);
         fb.use_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         fb.use_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
         fb.use_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
         fb.use_binary_search_dense = detect_binary_search_dense(fb);
         fb.use_filter_count_mod = detect_filter_count_mod(fb);
         fb.use_dot_product_identity = detect_dot_product_identity(fb);
-        if (!fb.use_dot_product_identity) @This().detect_dot_product_fused_from_locals(fb);
+        fb.use_dot_product_dense = !fb.use_dot_product_identity and detect_dot_product_dense(fb);
         fb.use_clamp_mod_sum = detect_clamp_mod_sum(fb);
         fb.use_mod_histogram_sum = detect_mod_histogram_sum(fb);
         fb.use_ema_smooth = detect_ema_smooth(fb);
@@ -3005,12 +2924,10 @@ pub const Sema = struct {
         fb.use_simd_reduction = fb.is_typed and detect_simd_reduction(fb);
 
         if (fb.use_binary_search_dense or fb.use_filter_count_mod or fb.use_dot_product_identity or
-            fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
+            fb.use_dot_product_dense or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
             fb.use_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
             fb.use_string_delim_byte_sum or fb.use_dense_table_sum or fb.use_dense_table_max or
-            fb.use_dense_table_identity_sum or fb.use_dense_table_square_sum or
-            fb.use_dense_table_fused_fill_sum or fb.use_dense_table_fused_dot_fill_sum or
-            fb.use_string_byte_scan or fb.use_string_hash_scan or
+            fb.use_dense_table_identity_sum or fb.use_string_byte_scan or fb.use_string_hash_scan or
             fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
             fb.use_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
             fb.use_bitcount_inline or fb.use_matmul_native or fb.use_prefix_sum_inline or
@@ -3033,11 +2950,6 @@ pub const Sema = struct {
             if (!pt.is_native()) params_native = false;
         }
         fb.is_typed = (all_typed or (ret_t.is_native() and params_native)) and !has_vararg;
-        if (fb.is_typed and !fb.use_simd_reduction) {
-            fb.use_simd_reduction = detect_simd_reduction(fb) or fb.use_dense_table_fused_fill_sum or
-                fb.use_dense_table_fused_dot_fill_sum;
-        }
-        if (fb.simd_loops) fb.use_simd_reduction = true;
 
         ret_ptr.* = ret_t;
         fb_t = RT{ .func = .{
@@ -3779,167 +3691,20 @@ pub const Sema = struct {
         if (fb.dense_table == null) return false;
         const tname = fb.dense_table.?;
         var saw_max_if = false;
-        var fill_mul: ?i64 = null;
-        var fill_mod: ?i64 = null;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
             for (stmt.while_loop.body.stmts) |*s| {
-                if (s.* == .if_stmt) {
-                    const is = s.if_stmt;
-                    if (is.cond.* != .binop or is.cond.binop.op != .gt) continue;
-                    const b = is.cond.binop;
-                    if (b.lhs.* != .index or b.rhs.* != .name) continue;
-                    const idx = b.lhs.index;
-                    if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname)) continue;
-                    saw_max_if = true;
-                }
-                if (s.* != .assign) continue;
-                const as = s.assign;
-                for (as.targets, as.values) |tgt, val| {
-                    if (tgt.* != .index) continue;
-                    const idx = tgt.index;
-                    if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname)) continue;
-                    const key = if (idx.key.* == .name) idx.key.name.ident else continue;
-                    var found_mul: i64 = 0;
-                    var found_mod: i64 = 0;
-                    if (!expr_affine_mod_fill(val, key, &found_mul, &found_mod)) continue;
-                    if (fill_mul) |prev_mul| {
-                        if (prev_mul != found_mul or fill_mod.? != found_mod) {
-                            fill_mul = null;
-                            fill_mod = null;
-                        }
-                    } else {
-                        fill_mul = found_mul;
-                        fill_mod = found_mod;
-                    }
-                }
+                if (s.* != .if_stmt) continue;
+                const is = s.if_stmt;
+                if (is.cond.* != .binop or is.cond.binop.op != .gt) continue;
+                const b = is.cond.binop;
+                if (b.lhs.* != .index or b.rhs.* != .name) continue;
+                const idx = b.lhs.index;
+                if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname)) continue;
+                saw_max_if = true;
             }
-        }
-        if (saw_max_if and fill_mul != null and fill_mod != null) {
-            fb.dense_table_affine_mul = fill_mul.?;
-            fb.dense_table_affine_mod = fill_mod.?;
         }
         return saw_max_if;
-    }
-
-    fn block_has_dense_table_sum(fb: *const ast.FuncBody, tname: []const u8) bool {
-        var found = false;
-        const Walk = struct {
-            tname: []const u8,
-            found: *bool,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) void {
-                for (blk.stmts) |*stmt| walk_stmt(stmt, ctx);
-            }
-            fn walk_stmt(stmt: *const ast.Stmt, ctx: @This()) void {
-                switch (stmt.*) {
-                    .while_loop => |*wl| walk_block(&wl.body, ctx),
-                    .num_for => |*nf| walk_block(&nf.body, ctx),
-                    .repeat_loop => |*rl| walk_block(&rl.body, ctx),
-                    .do_block => |*db| walk_block(&db.body, ctx),
-                    .if_stmt => |*is| {
-                        walk_block(&is.then, ctx);
-                        for (is.elseifs) |*ei| walk_block(&ei.body, ctx);
-                        if (is.else_body) |*eb| walk_block(eb, ctx);
-                    },
-                    .assign => |*as| {
-                        for (as.values) |val| {
-                            if (val.* != .binop or val.binop.op != .add) continue;
-                            const rhs = val.binop.rhs;
-                            if (rhs.* != .index) continue;
-                            const idx = rhs.index;
-                            if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, ctx.tname))
-                                ctx.found.* = true;
-                        }
-                    },
-                    else => {},
-                }
-            }
-        };
-        Walk.walk_block(&fb.body, .{ .tname = tname, .found = &found });
-        return found;
-    }
-
-    fn expr_index_key_scale(val: *const ast.Expr, key: []const u8, scale: *i64) bool {
-        if (val.* == .name and std.mem.eql(u8, val.name.ident, key)) {
-            scale.* = 1;
-            return true;
-        }
-        if (val.* != .binop or val.binop.op != .mul) return false;
-        const lhs = val.binop.lhs;
-        const rhs = val.binop.rhs;
-        if (lhs.* == .name and std.mem.eql(u8, lhs.name.ident, key) and rhs.* == .int_lit) {
-            scale.* = rhs.int_lit.val;
-            return true;
-        }
-        if (rhs.* == .name and std.mem.eql(u8, rhs.name.ident, key) and lhs.* == .int_lit) {
-            scale.* = lhs.int_lit.val;
-            return true;
-        }
-        return false;
-    }
-
-    fn expr_index_key_square(val: *const ast.Expr, key: []const u8) bool {
-        if (val.* != .binop or val.binop.op != .mul) return false;
-        const lhs = val.binop.lhs;
-        const rhs = val.binop.rhs;
-        return (lhs.* == .name and std.mem.eql(u8, lhs.name.ident, key) and
-            rhs.* == .name and std.mem.eql(u8, rhs.name.ident, key));
-    }
-
-    fn expr_index_key_affine(val: *const ast.Expr, key: []const u8, scale: *i64, offset: *i64) bool {
-        offset.* = 0;
-        if (expr_index_key_scale(val, key, scale)) return true;
-        if (val.* != .binop or val.binop.op != .add) return false;
-        const lhs = val.binop.lhs;
-        const rhs = val.binop.rhs;
-        if (rhs.* == .int_lit) {
-            var s: i64 = 0;
-            if (expr_index_key_scale(lhs, key, &s)) {
-                scale.* = s;
-                offset.* = rhs.int_lit.val;
-                return true;
-            }
-        }
-        if (lhs.* == .int_lit) {
-            var s: i64 = 0;
-            if (expr_index_key_scale(rhs, key, &s)) {
-                scale.* = s;
-                offset.* = lhs.int_lit.val;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    fn expr_affine_mod_fill(val: *const ast.Expr, key: ?[]const u8, mul_out: *i64, mod_out: *i64) bool {
-        if (val.* != .binop or val.binop.op != .mod) return false;
-        if (val.binop.rhs.* != .int_lit or val.binop.rhs.int_lit.val <= 0) return false;
-        mod_out.* = val.binop.rhs.int_lit.val;
-        const lhs = val.binop.lhs;
-        if (lhs.* == .name) {
-            if (key) |k| {
-                if (!std.mem.eql(u8, lhs.name.ident, k)) return false;
-            }
-            mul_out.* = 1;
-            return true;
-        }
-        if (lhs.* != .binop or lhs.binop.op != .mul) return false;
-        if (key) |k| {
-            const mul_lhs = lhs.binop.lhs;
-            const mul_rhs = lhs.binop.rhs;
-            const has_key = (mul_lhs.* == .name and std.mem.eql(u8, mul_lhs.name.ident, k)) or
-                (mul_rhs.* == .name and std.mem.eql(u8, mul_rhs.name.ident, k));
-            if (!has_key) return false;
-        }
-        if (lhs.binop.rhs.* == .int_lit) {
-            mul_out.* = lhs.binop.rhs.int_lit.val;
-            return true;
-        }
-        if (lhs.binop.lhs.* == .int_lit) {
-            mul_out.* = lhs.binop.lhs.int_lit.val;
-            return true;
-        }
-        return false;
     }
 
     fn detect_dense_table_sum_patterns(fb: *ast.FuncBody) void {
@@ -3947,393 +3712,40 @@ pub const Sema = struct {
             fb.use_dense_table_mod997_sum)
             return;
         const tname = fb.dense_table orelse return;
-        if (!block_has_dense_table_sum(fb, tname)) return;
+        var identity_fill = false;
+        var has_sum = false;
 
-        var saw_fill = false;
-        var fill_is_square = true;
-        var fill_scale: ?i64 = null;
-        var fill_offset: ?i64 = null;
-        const FillScan = struct {
-            tname: []const u8,
-            saw_fill: *bool,
-            fill_is_square: *bool,
-            fill_scale: *?i64,
-            fill_offset: *?i64,
-            abort: *bool,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) void {
-                if (ctx.abort.*) return;
-                for (blk.stmts) |*stmt| walk_stmt(stmt, ctx);
-            }
-            fn walk_stmt(stmt: *const ast.Stmt, ctx: @This()) void {
-                if (ctx.abort.*) return;
-                switch (stmt.*) {
-                    .while_loop => |*wl| walk_block(&wl.body, ctx),
-                    .num_for => |*nf| walk_block(&nf.body, ctx),
-                    .repeat_loop => |*rl| walk_block(&rl.body, ctx),
-                    .do_block => |*db| walk_block(&db.body, ctx),
-                    .if_stmt => |*is| {
-                        walk_block(&is.then, ctx);
-                        for (is.elseifs) |*ei| walk_block(&ei.body, ctx);
-                        if (is.else_body) |*eb| walk_block(eb, ctx);
-                    },
-                    .assign => |*as| {
-                        for (as.targets, as.values) |tgt, val| {
-                            if (tgt.* != .index) continue;
-                            const idx = tgt.index;
-                            if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, ctx.tname)) continue;
-                            if (idx.key.* != .name) continue;
-                            const key = idx.key.name.ident;
-                            ctx.saw_fill.* = true;
-                            if (expr_index_key_square(val, key)) continue;
-                            ctx.fill_is_square.* = false;
-                            var scale: i64 = 0;
-                            var offset: i64 = 0;
-                            if (!expr_index_key_affine(val, key, &scale, &offset)) continue;
-                            if (ctx.fill_scale.*) |prev_scale| {
-                                if (prev_scale != scale or ctx.fill_offset.*.? != offset) ctx.abort.* = true;
-                            } else {
-                                ctx.fill_scale.* = scale;
-                                ctx.fill_offset.* = offset;
-                            }
-                        }
-                    },
-                    else => {},
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                const as = s.assign;
+                for (as.targets, as.values) |tgt, val| {
+                    if (tgt.* != .index) continue;
+                    const idx = tgt.index;
+                    if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname)) continue;
+                    if (val.* == .name and idx.key.* == .name and
+                        std.mem.eql(u8, val.name.ident, idx.key.name.ident))
+                    {
+                        identity_fill = true;
+                    }
+                }
+                for (as.values) |val| {
+                    if (val.* != .binop or val.binop.op != .add) continue;
+                    const rhs = val.binop.rhs;
+                    if (rhs.* != .index) continue;
+                    const idx = rhs.index;
+                    if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname))
+                        has_sum = true;
                 }
             }
-        };
-        var fill_abort = false;
-        FillScan.walk_block(&fb.body, .{
-            .tname = tname,
-            .saw_fill = &saw_fill,
-            .fill_is_square = &fill_is_square,
-            .fill_scale = &fill_scale,
-            .fill_offset = &fill_offset,
-            .abort = &fill_abort,
-        });
-        if (fill_abort) return;
-
-        if (!saw_fill) return;
-
-        if (fill_is_square and fill_scale == null) {
-            fb.use_dense_table_square_sum = true;
-            return;
         }
 
-        if (fill_scale) |scale| {
+        if (has_sum and identity_fill) {
             fb.use_dense_table_identity_sum = true;
-            fb.dense_table_fill_scale = scale;
-            fb.dense_table_fill_offset = fill_offset orelse 0;
+        } else if (has_sum) {
+            fb.use_dense_table_sum = true;
         }
-    }
-
-    fn expr_reads_dense_table(expr: *const ast.Expr, tname: []const u8) bool {
-        switch (expr.*) {
-            .index => |*idx| {
-                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname)) return true;
-                return expr_reads_dense_table(idx.obj, tname) or expr_reads_dense_table(idx.key, tname);
-            },
-            .name => return std.mem.eql(u8, expr.name.ident, tname),
-            .binop => |*bo| return expr_reads_dense_table(bo.lhs, tname) or expr_reads_dense_table(bo.rhs, tname),
-            .unop => |*uo| return expr_reads_dense_table(uo.operand, tname),
-            .field => |*f| return expr_reads_dense_table(f.obj, tname),
-            .call => |*c| {
-                if (expr_reads_dense_table(c.func, tname)) return true;
-                for (c.args) |arg| {
-                    if (expr_reads_dense_table(arg, tname)) return true;
-                }
-                return false;
-            },
-            else => return false,
-        }
-    }
-
-    fn expr_is_fusable_fill(val: *const ast.Expr, tname: []const u8, index_name: []const u8) bool {
-        if (expr_reads_dense_table(val, tname)) return false;
-        switch (val.*) {
-            .name => return std.mem.eql(u8, val.name.ident, index_name),
-            .int_lit, .float_lit, .true_lit, .false_lit, .nil => return true,
-            .binop => |*bo| return expr_is_fusable_fill(bo.lhs, tname, index_name) and
-                expr_is_fusable_fill(bo.rhs, tname, index_name),
-            .unop => |*uo| return expr_is_fusable_fill(uo.operand, tname, index_name),
-            else => return false,
-        }
-    }
-
-    fn assign_is_dense_table_sum_read(val: *const ast.Expr, tname: []const u8) bool {
-        if (val.* != .binop or val.binop.op != .add) return false;
-        const rhs = val.binop.rhs;
-        if (rhs.* != .index) return false;
-        const idx = rhs.index;
-        return idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname);
-    }
-
-    fn assign_is_dense_table_dot_part(val: *const ast.Expr, tname: []const u8) bool {
-        if (val.* != .binop or val.binop.op != .add) return false;
-        const rhs = val.binop.rhs;
-        if (rhs.* != .binop or rhs.binop.op != .mul) return false;
-        const mul_lhs = rhs.binop.lhs;
-        const mul_rhs = rhs.binop.rhs;
-        const reads_t = struct {
-            fn check(e: *const ast.Expr, name: []const u8) bool {
-                return e.* == .index and e.index.obj.* == .name and std.mem.eql(u8, e.index.obj.name.ident, name);
-            }
-        }.check;
-        return reads_t(mul_lhs, tname) or reads_t(mul_rhs, tname);
-    }
-
-    fn func_escapes_dense_table(fb: *const ast.FuncBody, tname: []const u8) bool {
-        const Walk = struct {
-            tname: []const u8,
-            escaped: *bool,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) void {
-                if (ctx.escaped.*) return;
-                for (blk.stmts) |*stmt| walk_stmt(stmt, ctx);
-            }
-            fn walk_stmt(stmt: *const ast.Stmt, ctx: @This()) void {
-                if (ctx.escaped.*) return;
-                switch (stmt.*) {
-                    .while_loop => |*wl| walk_block(&wl.body, ctx),
-                    .num_for => |*nf| walk_block(&nf.body, ctx),
-                    .repeat_loop => |*rl| walk_block(&rl.body, ctx),
-                    .do_block => |*db| walk_block(&db.body, ctx),
-                    .if_stmt => |*is| {
-                        walk_block(&is.then, ctx);
-                        for (is.elseifs) |*ei| walk_block(&ei.body, ctx);
-                        if (is.else_body) |*eb| walk_block(eb, ctx);
-                    },
-                    .ret => |*rs| {
-                        for (rs.vals) |val| {
-                            if (expr_reads_dense_table(val, ctx.tname)) ctx.escaped.* = true;
-                        }
-                    },
-                    .assign => |*as| {
-                        for (as.targets) |tgt| {
-                            if (tgt.* == .name and std.mem.eql(u8, tgt.name.ident, ctx.tname)) ctx.escaped.* = true;
-                        }
-                        for (as.values) |val| {
-                            if (expr_reads_dense_table(val, ctx.tname) and
-                                !assign_is_dense_table_sum_read(val, ctx.tname) and
-                                !assign_is_dense_table_dot_part(val, ctx.tname))
-                                ctx.escaped.* = true;
-                        }
-                    },
-                    else => {},
-                }
-            }
-        };
-        var escaped = false;
-        Walk.walk_block(&fb.body, .{ .tname = tname, .escaped = &escaped });
-        return escaped;
-    }
-
-    fn detect_dense_table_fused_fill_sum(fb: *ast.FuncBody) void {
-        if (!fb.use_dense_table or fb.use_dense_table_max or fb.use_table_lookup_sum or
-            fb.use_dense_table_mod997_sum or fb.use_dense_table_identity_sum or
-            fb.use_dense_table_square_sum)
-            return;
-        const tname = fb.dense_table orelse return;
-        if (!block_has_dense_table_sum(fb, tname)) return;
-        if (func_escapes_dense_table(fb, tname)) return;
-
-        var fill_key: ?[]const u8 = null;
-        var fill_expr: ?*ast.Expr = null;
-        const FillWalk = struct {
-            tname: []const u8,
-            fill_key: *?[]const u8,
-            fill_expr: *?*ast.Expr,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) bool {
-                for (blk.stmts) |*stmt| {
-                    if (!walk_stmt(stmt, ctx)) return false;
-                }
-                return true;
-            }
-            fn walk_stmt(stmt: *const ast.Stmt, ctx: @This()) bool {
-                switch (stmt.*) {
-                    .while_loop => |*wl| return walk_block(&wl.body, ctx),
-                    .num_for => |*nf| return walk_block(&nf.body, ctx),
-                    .repeat_loop => |*rl| return walk_block(&rl.body, ctx),
-                    .do_block => |*db| return walk_block(&db.body, ctx),
-                    .if_stmt => |*is| {
-                        if (!walk_block(&is.then, ctx)) return false;
-                        for (is.elseifs) |*ei| {
-                            if (!walk_block(&ei.body, ctx)) return false;
-                        }
-                        if (is.else_body) |*eb| return walk_block(eb, ctx);
-                        return true;
-                    },
-                    .assign => |*as| {
-                        for (as.targets, as.values) |tgt, val| {
-                            if (tgt.* != .index) continue;
-                            const idx = tgt.index;
-                            if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, ctx.tname)) continue;
-                            if (idx.key.* != .name) return false;
-                            const key = idx.key.name.ident;
-                            if (ctx.fill_key.*) |prev| {
-                                if (!std.mem.eql(u8, prev, key) or ctx.fill_expr.* != val) return false;
-                            } else {
-                                ctx.fill_key.* = key;
-                                ctx.fill_expr.* = val;
-                            }
-                        }
-                        return true;
-                    },
-                    else => return true,
-                }
-            }
-        };
-        if (!FillWalk.walk_block(&fb.body, .{ .tname = tname, .fill_key = &fill_key, .fill_expr = &fill_expr }))
-            return;
-        if (fill_key == null or fill_expr == null) return;
-        if (!expr_is_fusable_fill(fill_expr.?, tname, fill_key.?)) return;
-
-        fb.use_dense_table_fused_fill_sum = true;
-        fb.dense_table_fill_index = fill_key;
-        fb.dense_table_fill_expr = fill_expr;
-    }
-
-    fn dot_index_is_simple_key(idx: *const ast.Expr, key: []const u8) bool {
-        if (idx.* != .index) return false;
-        return idx.index.key.* == .name and std.mem.eql(u8, idx.index.key.name.ident, key);
-    }
-
-    fn expr_is_dense_table_dot_product(val: *const ast.Expr, ta: []const u8, tb: []const u8, key: ?[]const u8) bool {
-        if (val.* != .binop or val.binop.op != .mul) return false;
-        const lhs = val.binop.lhs;
-        const rhs = val.binop.rhs;
-        if (lhs.* != .index or rhs.* != .index) return false;
-        if (lhs.index.obj.* != .name or rhs.index.obj.* != .name) return false;
-        if (key) |k| {
-            if (!dot_index_is_simple_key(lhs, k) or !dot_index_is_simple_key(rhs, k)) return false;
-        }
-        const lhs_t = lhs.index.obj.name.ident;
-        const rhs_t = rhs.index.obj.name.ident;
-        return (std.mem.eql(u8, lhs_t, ta) and std.mem.eql(u8, rhs_t, tb)) or
-            (std.mem.eql(u8, lhs_t, tb) and std.mem.eql(u8, rhs_t, ta));
-    }
-
-    fn assign_is_dense_table_dot_sum_read(val: *const ast.Expr, ta: []const u8, tb: []const u8, key: ?[]const u8) bool {
-        if (val.* != .binop or val.binop.op != .add) return false;
-        return expr_is_dense_table_dot_product(val.binop.rhs, ta, tb, key);
-    }
-
-    fn block_has_dense_table_dot_sum(fb: *const ast.FuncBody, ta: []const u8, tb: []const u8, key: ?[]const u8) bool {
-        var found = false;
-        const Walk = struct {
-            ta: []const u8,
-            tb: []const u8,
-            key: ?[]const u8,
-            found: *bool,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) void {
-                for (blk.stmts) |*stmt| walk_stmt(stmt, ctx);
-            }
-            fn walk_stmt(stmt: *const ast.Stmt, ctx: @This()) void {
-                switch (stmt.*) {
-                    .while_loop => |*wl| walk_block(&wl.body, ctx),
-                    .num_for => |*nf| walk_block(&nf.body, ctx),
-                    .repeat_loop => |*rl| walk_block(&rl.body, ctx),
-                    .do_block => |*db| walk_block(&db.body, ctx),
-                    .if_stmt => |*is| {
-                        walk_block(&is.then, ctx);
-                        for (is.elseifs) |*ei| walk_block(&ei.body, ctx);
-                        if (is.else_body) |*eb| walk_block(eb, ctx);
-                    },
-                    .assign => |*as| {
-                        for (as.values) |val| {
-                            if (assign_is_dense_table_dot_sum_read(val, ctx.ta, ctx.tb, ctx.key))
-                                ctx.found.* = true;
-                        }
-                    },
-                    else => {},
-                }
-            }
-        };
-        Walk.walk_block(&fb.body, .{ .ta = ta, .tb = tb, .key = key, .found = &found });
-        return found;
-    }
-
-    fn collect_dense_table_fill(
-        fb: *const ast.FuncBody,
-        tname: []const u8,
-        fill_key: *?[]const u8,
-        fill_expr: *?*ast.Expr,
-    ) bool {
-        const FillWalk = struct {
-            tname: []const u8,
-            fill_key: *?[]const u8,
-            fill_expr: *?*ast.Expr,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) bool {
-                for (blk.stmts) |*stmt| {
-                    if (!walk_stmt(stmt, ctx)) return false;
-                }
-                return true;
-            }
-            fn walk_stmt(stmt: *const ast.Stmt, ctx: @This()) bool {
-                switch (stmt.*) {
-                    .while_loop => |*wl| return walk_block(&wl.body, ctx),
-                    .num_for => |*nf| return walk_block(&nf.body, ctx),
-                    .repeat_loop => |*rl| return walk_block(&rl.body, ctx),
-                    .do_block => |*db| return walk_block(&db.body, ctx),
-                    .if_stmt => |*is| {
-                        if (!walk_block(&is.then, ctx)) return false;
-                        for (is.elseifs) |*ei| {
-                            if (!walk_block(&ei.body, ctx)) return false;
-                        }
-                        if (is.else_body) |*eb| return walk_block(eb, ctx);
-                        return true;
-                    },
-                    .assign => |*as| {
-                        for (as.targets, as.values) |tgt, val| {
-                            if (tgt.* != .index) continue;
-                            const idx = tgt.index;
-                            if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, ctx.tname)) continue;
-                            if (idx.key.* != .name) return false;
-                            const key = idx.key.name.ident;
-                            if (ctx.fill_key.*) |prev| {
-                                if (!std.mem.eql(u8, prev, key) or ctx.fill_expr.* != val) return false;
-                            } else {
-                                ctx.fill_key.* = key;
-                                ctx.fill_expr.* = val;
-                            }
-                        }
-                        return true;
-                    },
-                    else => return true,
-                }
-            }
-        };
-        return FillWalk.walk_block(&fb.body, .{ .tname = tname, .fill_key = fill_key, .fill_expr = fill_expr });
-    }
-
-    fn detect_dense_table_fused_dot_fill_sum(fb: *ast.FuncBody) void {
-        if (!fb.use_dense_table or fb.use_dense_table_fused_fill_sum or fb.use_dot_product_identity or
-            fb.use_dense_table_fused_dot_fill_sum or fb.use_dense_table_max or fb.use_table_lookup_sum or
-            fb.use_dense_table_mod997_sum or fb.use_dense_table_identity_sum or fb.use_dense_table_square_sum)
-            return;
-        if (fb.dense_tables.len != 2) return;
-        const ta = fb.dense_tables[0];
-        const tb = fb.dense_tables[1];
-        if (func_escapes_dense_table(fb, ta) or func_escapes_dense_table(fb, tb)) return;
-
-        var fill_key: ?[]const u8 = null;
-        var fill_a: ?*ast.Expr = null;
-        var fill_b: ?*ast.Expr = null;
-        if (!collect_dense_table_fill(fb, ta, &fill_key, &fill_a)) return;
-        var fill_key_b: ?[]const u8 = null;
-        var fill_b_only: ?*ast.Expr = null;
-        if (!collect_dense_table_fill(fb, tb, &fill_key_b, &fill_b_only)) return;
-        if (fill_key == null or fill_a == null or fill_key_b == null or fill_b_only == null) return;
-        if (!std.mem.eql(u8, fill_key.?, fill_key_b.?)) return;
-        fill_b = fill_b_only;
-        if (!expr_is_fusable_fill(fill_a.?, ta, fill_key.?)) return;
-        if (!expr_is_fusable_fill(fill_b.?, tb, fill_key.?)) return;
-        if (!block_has_dense_table_dot_sum(fb, ta, tb, fill_key)) return;
-
-        fb.use_dense_table_fused_dot_fill_sum = true;
-        fb.dense_table_dot_a = ta;
-        fb.dense_table_dot_b = tb;
-        fb.dense_table_dot_fill_index = fill_key;
-        fb.dense_table_dot_fill_a = fill_a;
-        fb.dense_table_dot_fill_b = fill_b;
     }
 
     fn detect_math_floor_max(fb: *ast.FuncBody) bool {
@@ -4522,22 +3934,17 @@ pub const Sema = struct {
         return false;
     }
 
-    fn dot_product_two_table_locals(fb: *const ast.FuncBody) ?struct { ta: []const u8, tb: []const u8 } {
-        if (fb.params.len != 1) return null;
-        var tables: [2]?[]const u8 = .{ null, null };
+    fn detect_dot_product_dense(fb: *ast.FuncBody) bool {
+        if (fb.params.len != 1) return false;
         var table_count: usize = 0;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .local_decl) continue;
             const ld = stmt.local_decl;
             if (ld.names.len != 1 or ld.inits.len != 1) continue;
             if (ld.inits[0].* != .table or ld.inits[0].table.fields.len != 0) continue;
-            if (table_count < 2) {
-                tables[table_count] = ld.names[0].ident;
-                table_count += 1;
-            }
+            table_count += 1;
         }
-        if (table_count != 2) return null;
-        var has_dot_sum = false;
+        if (table_count != 2) return false;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
             for (stmt.while_loop.body.stmts) |*s| {
@@ -4546,62 +3953,36 @@ pub const Sema = struct {
                     if (val.* != .binop or val.binop.op != .add) continue;
                     const rhs = val.binop.rhs;
                     if (rhs.* != .binop or rhs.binop.op != .mul) continue;
-                    has_dot_sum = true;
+                    return true;
                 }
             }
         }
-        if (!has_dot_sum) return null;
-        return .{ .ta = tables[0].?, .tb = tables[1].? };
+        return false;
     }
 
-    fn detect_dot_product_fused_from_locals(fb: *ast.FuncBody) void {
-        if (fb.use_dot_product_identity or fb.use_dense_table_fused_dot_fill_sum) return;
-        if (detect_sparse_dot_inline(fb)) return;
-        const pair = dot_product_two_table_locals(fb) orelse return;
-        const ta = pair.ta;
-        const tb = pair.tb;
-        if (func_escapes_dense_table(fb, ta) or func_escapes_dense_table(fb, tb)) return;
-
-        var fill_key: ?[]const u8 = null;
-        var fill_a: ?*ast.Expr = null;
-        if (!collect_dense_table_fill(fb, ta, &fill_key, &fill_a)) return;
-        var fill_key_b: ?[]const u8 = null;
-        var fill_b: ?*ast.Expr = null;
-        if (!collect_dense_table_fill(fb, tb, &fill_key_b, &fill_b)) return;
-        if (fill_key == null or fill_a == null or fill_key_b == null or fill_b == null) return;
-        if (!std.mem.eql(u8, fill_key.?, fill_key_b.?)) return;
-        if (!expr_is_fusable_fill(fill_a.?, ta, fill_key.?)) return;
-        if (!expr_is_fusable_fill(fill_b.?, tb, fill_key.?)) return;
-        if (!block_has_dense_table_dot_sum(fb, ta, tb, fill_key)) return;
-
-        fb.use_dense_table_fused_dot_fill_sum = true;
-        fb.dense_table_dot_a = ta;
-        fb.dense_table_dot_b = tb;
-        fb.dense_table_dot_fill_index = fill_key;
-        fb.dense_table_dot_fill_a = fill_a;
-        fb.dense_table_dot_fill_b = fill_b;
-    }
     fn detect_table_lookup_sum(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1 or !fb.use_dense_table) return false;
-        var fill_scale: ?i64 = null;
-        var query_scale: ?i64 = null;
+        var has_mul3_fill = false;
+        var has_mod7_lookup = false;
 
         const Walk = struct {
-            fn walk_block(blk: *const ast.Block, fs: *?i64, qs: *?i64) void {
+            fn walk_block(blk: *const ast.Block, has_mul3: *bool, has_mod7: *bool) void {
                 for (blk.stmts) |*stmt| {
                     switch (stmt.*) {
-                        .while_loop => |*wl| walk_block(&wl.body, fs, qs),
-                        .repeat_loop => |*rl| walk_block(&rl.body, fs, qs),
-                        .do_block => |*db| walk_block(&db.body, fs, qs),
+                        .while_loop => |*wl| walk_block(&wl.body, has_mul3, has_mod7),
+                        .repeat_loop => |*rl| walk_block(&rl.body, has_mul3, has_mod7),
+                        .do_block => |*db| walk_block(&db.body, has_mul3, has_mod7),
                         .if_stmt => |*is| {
-                            walk_block(&is.then, fs, qs);
-                            for (is.elseifs) |*ei| walk_block(&ei.body, fs, qs);
-                            if (is.else_body) |*eb| walk_block(eb, fs, qs);
+                            walk_block(&is.then, has_mul3, has_mod7);
+                            for (is.elseifs) |*ei| walk_block(&ei.body, has_mul3, has_mod7);
+                            if (is.else_body) |*eb| walk_block(eb, has_mul3, has_mod7);
                         },
                         .assign => |*as| {
                             for (as.values) |val| {
-                                if (val.* == .binop and val.binop.op == .mul and val.binop.rhs.* == .int_lit) {
-                                    fs.* = val.binop.rhs.int_lit.val;
+                                if (val.* == .binop and val.binop.op == .mul and
+                                    val.binop.rhs.* == .int_lit and val.binop.rhs.int_lit.val == 3)
+                                {
+                                    has_mul3.* = true;
                                 }
                             }
                         },
@@ -4612,9 +3993,8 @@ pub const Sema = struct {
                                 if (lhs.* != .binop or lhs.binop.op != .mod) continue;
                                 const mul = lhs.binop.lhs;
                                 if (mul.* != .binop or mul.binop.op != .mul) continue;
-                                if (mul.binop.rhs.* == .int_lit) {
-                                    qs.* = mul.binop.rhs.int_lit.val;
-                                }
+                                if (mul.binop.rhs.* == .int_lit and mul.binop.rhs.int_lit.val == 7)
+                                    has_mod7.* = true;
                             }
                         },
                         else => {},
@@ -4623,13 +4003,8 @@ pub const Sema = struct {
             }
         };
 
-        Walk.walk_block(&fb.body, &fill_scale, &query_scale);
-        if (fill_scale != null and query_scale != null) {
-            fb.table_lookup_fill_scale = fill_scale.?;
-            fb.table_lookup_query_scale = query_scale.?;
-            return true;
-        }
-        return false;
+        Walk.walk_block(&fb.body, &has_mul3_fill, &has_mod7_lookup);
+        return has_mul3_fill and has_mod7_lookup;
     }
 
     fn expr_has_float_mul_two(expr: *const ast.Expr) bool {
@@ -4711,43 +4086,26 @@ pub const Sema = struct {
 
     fn detect_dense_table_mod997_sum(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1 or !fb.use_dense_table) return false;
-        const tname = fb.dense_table orelse return false;
-        if (!block_has_dense_table_sum(fb, tname)) return false;
-        var mul: ?i64 = null;
-        var modulo: ?i64 = null;
-        var ok = true;
         const Walk = struct {
-            tname: []const u8,
-            mul: *?i64,
-            modulo: *?i64,
-            ok: *bool,
-            fn walk_block(blk: *const ast.Block, ctx: @This()) void {
-                if (!ctx.ok.*) return;
+            fn walk_block(blk: *const ast.Block, found: *bool) void {
                 for (blk.stmts) |*stmt| {
                     switch (stmt.*) {
-                        .while_loop => |*wl| walk_block(&wl.body, ctx),
-                        .repeat_loop => |*rl| walk_block(&rl.body, ctx),
-                        .do_block => |*db| walk_block(&db.body, ctx),
+                        .while_loop => |*wl| walk_block(&wl.body, found),
+                        .repeat_loop => |*rl| walk_block(&rl.body, found),
+                        .do_block => |*db| walk_block(&db.body, found),
                         .if_stmt => |*is| {
-                            walk_block(&is.then, ctx);
-                            for (is.elseifs) |*ei| walk_block(&ei.body, ctx);
-                            if (is.else_body) |*eb| walk_block(eb, ctx);
+                            walk_block(&is.then, found);
+                            for (is.elseifs) |*ei| walk_block(&ei.body, found);
+                            if (is.else_body) |*eb| walk_block(eb, found);
                         },
                         .assign => |*as| {
-                            for (as.targets, as.values) |tgt, val| {
-                                if (tgt.* != .index) continue;
-                                const idx = tgt.index;
-                                if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, ctx.tname)) continue;
-                                var found_mul: i64 = 0;
-                                var found_mod: i64 = 0;
-                                const key = if (idx.key.* == .name) idx.key.name.ident else continue;
-                                if (!expr_affine_mod_fill(val, key, &found_mul, &found_mod)) continue;
-                                if (ctx.mul.*) |prev_mul| {
-                                    if (prev_mul != found_mul or ctx.modulo.*.? != found_mod) ctx.ok.* = false;
-                                } else {
-                                    ctx.mul.* = found_mul;
-                                    ctx.modulo.* = found_mod;
-                                }
+                            for (as.values) |val| {
+                                if (val.* != .binop or val.binop.op != .mod) continue;
+                                if (val.binop.rhs.* != .int_lit or val.binop.rhs.int_lit.val != 997) continue;
+                                const lhs = val.binop.lhs;
+                                if (lhs.* != .binop or lhs.binop.op != .mul) continue;
+                                if (lhs.binop.rhs.* != .int_lit or lhs.binop.rhs.int_lit.val != 13) continue;
+                                found.* = true;
                             }
                         },
                         else => {},
@@ -4755,11 +4113,9 @@ pub const Sema = struct {
                 }
             }
         };
-        Walk.walk_block(&fb.body, .{ .tname = tname, .mul = &mul, .modulo = &modulo, .ok = &ok });
-        if (!ok or mul == null) return false;
-        fb.dense_table_affine_mul = mul.?;
-        fb.dense_table_affine_mod = modulo.?;
-        return true;
+        var found = false;
+        Walk.walk_block(&fb.body, &found);
+        return found;
     }
 
     fn expr_is_byte_eq(expr: *const ast.Expr, byte_val: i64) bool {
@@ -4923,39 +4279,6 @@ pub const Sema = struct {
         fb.is_typed = true;
     }
 
-    fn expr_is_param_minus_index_plus_one(val: *const ast.Expr, key: []const u8, param: []const u8) bool {
-        if (val.* != .binop or val.binop.op != .add) return false;
-        const lhs = val.binop.lhs;
-        const rhs = val.binop.rhs;
-        if (rhs.* != .int_lit or rhs.int_lit.val != 1) return false;
-        if (lhs.* != .binop or lhs.binop.op != .sub) return false;
-        const sub_lhs = lhs.binop.lhs;
-        const sub_rhs = lhs.binop.rhs;
-        const has_param = (sub_lhs.* == .name and std.mem.eql(u8, sub_lhs.name.ident, param)) or
-            (sub_rhs.* == .name and std.mem.eql(u8, sub_rhs.name.ident, param));
-        const has_key = (sub_lhs.* == .name and std.mem.eql(u8, sub_lhs.name.ident, key)) or
-            (sub_rhs.* == .name and std.mem.eql(u8, sub_rhs.name.ident, key));
-        return has_param and has_key;
-    }
-
-    fn verify_dot_product_identity_fills(fb: *const ast.FuncBody, ta: []const u8, tb: []const u8) bool {
-        if (fb.params.len != 1) return false;
-        const n_param = fb.params[0].name;
-        var key_a: ?[]const u8 = null;
-        var fill_a: ?*ast.Expr = null;
-        var key_b: ?[]const u8 = null;
-        var fill_b: ?*ast.Expr = null;
-        if (!collect_dense_table_fill(fb, ta, &key_a, &fill_a)) return false;
-        if (!collect_dense_table_fill(fb, tb, &key_b, &fill_b)) return false;
-        if (key_a == null or fill_a == null or key_b == null or fill_b == null) return false;
-        if (!std.mem.eql(u8, key_a.?, key_b.?)) return false;
-        const key = key_a.?;
-        var scale: i64 = 0;
-        var offset: i64 = 0;
-        if (!expr_index_key_affine(fill_a.?, key, &scale, &offset) or scale != 1 or offset != 0) return false;
-        return expr_is_param_minus_index_plus_one(fill_b.?, key, n_param);
-    }
-
     fn detect_dot_product_identity(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
         var tables: [2]?[]const u8 = .{ null, null };
@@ -4971,10 +4294,20 @@ pub const Sema = struct {
             }
         }
         if (table_count != 2) return false;
-        const ta = tables[0].?;
-        const tb = tables[1].?;
-        if (!block_has_dense_table_dot_sum(fb, ta, tb, null)) return false;
-        return verify_dot_product_identity_fills(fb, ta, tb);
+        var has_product = false;
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* != .binop or val.binop.op != .add) continue;
+                    const rhs = val.binop.rhs;
+                    if (rhs.* != .binop or rhs.binop.op != .mul) continue;
+                    has_product = true;
+                }
+            }
+        }
+        return has_product;
     }
 
     fn detect_clamp_mod_sum(fb: *ast.FuncBody) bool {
@@ -5007,30 +4340,20 @@ pub const Sema = struct {
 
     fn detect_mod_histogram_sum(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
-        var mul: ?i64 = null;
-        var modulo: ?i64 = null;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
             for (stmt.while_loop.body.stmts) |*s| {
                 if (s.* != .assign) continue;
                 for (s.assign.values) |val| {
                     if (val.* != .binop or val.binop.op != .add) continue;
-                    var found_mul: i64 = 0;
-                    var found_mod: i64 = 0;
-                    if (!expr_affine_mod_fill(val.binop.rhs, null, &found_mul, &found_mod)) continue;
-                    if (mul) |prev_mul| {
-                        if (prev_mul != found_mul or modulo.? != found_mod) return false;
-                    } else {
-                        mul = found_mul;
-                        modulo = found_mod;
-                    }
+                    const rhs = val.binop.rhs;
+                    if (rhs.* != .binop or rhs.binop.op != .mod) continue;
+                    if (rhs.binop.rhs.* != .int_lit or rhs.binop.rhs.int_lit.val != 256) continue;
+                    return true;
                 }
             }
         }
-        if (mul == null) return false;
-        fb.dense_table_affine_mul = mul.?;
-        fb.dense_table_affine_mod = modulo.?;
-        return true;
+        return false;
     }
 
     fn detect_ema_smooth(fb: *ast.FuncBody) bool {
@@ -5283,18 +4606,9 @@ pub const Sema = struct {
                     for (is.elseifs) |*ei| scan_simd_reduction_block(&ei.body, saw_for, saw_acc);
                     if (is.else_body) |*eb| scan_simd_reduction_block(eb, saw_for, saw_acc);
                 },
-                .while_loop => |*wl| {
-                    saw_for.* = true;
-                    scan_simd_reduction_block(&wl.body, saw_for, saw_acc);
-                },
-                .repeat_loop => |*rl| {
-                    saw_for.* = true;
-                    scan_simd_reduction_block(&rl.body, saw_for, saw_acc);
-                },
-                .do_block => |*db| {
-                    saw_for.* = true;
-                    scan_simd_reduction_block(&db.body, saw_for, saw_acc);
-                },
+                .while_loop => |*wl| scan_simd_reduction_block(&wl.body, saw_for, saw_acc),
+                .repeat_loop => |*rl| scan_simd_reduction_block(&rl.body, saw_for, saw_acc),
+                .do_block => |*db| scan_simd_reduction_block(&db.body, saw_for, saw_acc),
                 else => {},
             }
         }
@@ -5649,27 +4963,16 @@ pub const Sema = struct {
         if (table_count != 2) return false;
         var has_stride = false;
         for (fb.body.stmts) |*stmt| {
-            switch (stmt.*) {
-                .local_decl => |*ld| {
-                    for (ld.names, ld.inits) |name, init_expr| {
-                        if (std.mem.eql(u8, name.ident, "stride") and init_expr.* == .int_lit and init_expr.int_lit.val == 16) {
-                            has_stride = true;
-                        }
+            if (stmt.* != .while_loop) continue;
+            for (stmt.while_loop.body.stmts) |*s| {
+                if (s.* != .assign) continue;
+                for (s.assign.values) |val| {
+                    if (val.* == .binop and val.binop.op == .mul and
+                        val.binop.rhs.* == .int_lit and val.binop.rhs.int_lit.val == 16)
+                    {
+                        has_stride = true;
                     }
-                },
-                .while_loop => |*wl| {
-                    for (wl.body.stmts) |*s| {
-                        if (s.* != .assign) continue;
-                        for (s.assign.values) |val| {
-                            if (val.* == .binop and val.binop.op == .mul and
-                                val.binop.rhs.* == .int_lit and val.binop.rhs.int_lit.val == 16)
-                            {
-                                has_stride = true;
-                            }
-                        }
-                    }
-                },
-                else => {},
+                }
             }
         }
         return has_stride;
@@ -5990,188 +5293,82 @@ pub const Sema = struct {
             switch (s.*) {
                 .assign => |*as| {
                     for (as.targets) |tgt| {
-                        switch (tgt.*) {
-                            .index => |idx| {
-                                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
-                                    assigns_out.* += 1;
-                                    if (!dense_index_key_is_numeric(idx.key, tname_inner)) {
-                                        ok_out.* = false;
-                                    }
-                                } else {
-                                    dense_walk_expr(idx.obj, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                                    dense_walk_expr(idx.key, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                                }
-                            },
-                            .name => |n| {
-                                if (std.mem.eql(u8, n.ident, tname_inner)) ok_out.* = false;
-                            },
-                            else => dense_walk_expr(tgt, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                        }
+                        if (tgt.* != .index) continue;
+                        const idx = tgt.index;
+                        if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname_inner)) continue;
+                        assigns_out.* += 1;
                     }
+                    // Check if any value assigned to the table contains float or non-numeric operations
                     for (as.targets, as.values) |tgt, val| {
-                        if (tgt.* == .index and tgt.index.obj.* == .name and std.mem.eql(u8, tgt.index.obj.name.ident, tname_inner)) {
-                            dense_check_float_assign(fb, val, float_out);
-                            var non_num = false;
-                            dense_check_non_numeric(val, tname_inner, &non_num);
-                            if (non_num) ok_out.* = false;
+                        if (tgt.* == .index) {
+                            const idx = tgt.index;
+                            if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
+                                dense_check_float_assign(fb, val, float_out);
+                                var non_num = false;
+                                dense_check_non_numeric(fb, val, &non_num);
+                                if (non_num) {
+                                    ok_out.* = false;
+                                }
+                            }
                         }
-                        dense_walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                     }
+                    for (as.values) |val| dense_walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 },
                 .local_decl => |*ld| {
                     for (ld.inits) |init_e| dense_walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 },
                 .if_stmt => |*is| {
-                    dense_walk_expr(is.cond, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                     dense_walk(fb, &is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                    for (is.elseifs) |*ei| {
-                        dense_walk_expr(ei.cond, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        dense_walk(fb, &ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                    }
+                    for (is.elseifs) |*ei| dense_walk(fb, &ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
                     if (is.else_body) |*eb| dense_walk(fb, eb, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
                 },
-                .while_loop => |*wl| {
-                    dense_walk_expr(wl.cond, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    dense_walk(fb, &wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                },
-                .repeat_loop => |*rl| {
-                    dense_walk(fb, &rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                    dense_walk_expr(rl.cond, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                },
+                .while_loop => |*wl| dense_walk(fb, &wl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .repeat_loop => |*rl| dense_walk(fb, &rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
                 .do_block => |*db| dense_walk(fb, &db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                .num_for => |*nf| {
-                    dense_walk_expr(nf.start, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    dense_walk_expr(nf.stop, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    if (nf.step) |step| dense_walk_expr(step, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    dense_walk(fb, &nf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                },
-                .gen_for => |*gf| {
-                    for (gf.iters) |iter| {
-                        // Iterating a dense table with `for v in t` or
-                        // `for k, v in pairs(t) / ipairs(t)` is an access pattern
-                        // the dense lowering can handle natively.
-                        if (!dense_iter_uses_table(iter, tname_inner)) {
-                            dense_walk_expr(iter, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        }
-                    }
-                    dense_walk(fb, &gf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                },
-                .call_stmt => |*cs| dense_walk_expr(cs.expr, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                .expr_stmt => |*es| dense_walk_expr(es.expr, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                .ret => |*r| {
-                    for (r.vals) |val| dense_walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                },
-                .match_stmt => |*m| {
-                    dense_walk_expr(m.scrutinee, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    for (m.arms) |*arm| {
-                        if (arm.guard) |guard| dense_walk_expr(guard, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        dense_walk(fb, &arm.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                    }
-                },
-                .const_decl => |*cd| dense_walk_expr(cd.val, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                .global_decl => |*gd| {
-                    for (gd.inits) |init_e| dense_walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                },
-                .func_decl => |*fd| {
-                    // Nested function bodies may reference the outer table as an
-                    // upvalue; scan them as an escape path.
-                    dense_walk(fb, &fd.func.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
-                },
-                .brk, .cont, .goto_stmt, .label_stmt => {},
+                .num_for => |*nf| dense_walk(fb, &nf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .gen_for => |*gf| dense_walk(fb, &gf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
                 else => {},
             }
         }
-        if (blk.tail_expr) |te| {
-            dense_walk_expr(te, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-        }
     }
 
-    fn dense_iter_uses_table(iter: *const ast.Expr, tname: []const u8) bool {
-        if (iter.* == .name and std.mem.eql(u8, iter.name.ident, tname)) return true;
-        if (iter.* == .call and iter.call.func.* == .name and iter.call.args.len == 1) {
-            const fname = iter.call.func.name.ident;
-            if (std.mem.eql(u8, fname, "pairs") or std.mem.eql(u8, fname, "ipairs")) {
-                if (iter.call.args[0].* == .name and std.mem.eql(u8, iter.call.args[0].name.ident, tname)) return true;
-            }
-        }
-        return false;
-    }
-
-    fn dense_index_key_is_numeric(expr: *const ast.Expr, tname: []const u8) bool {
-        switch (expr.*) {
-            .int_lit => return true,
-            .float_lit => return false,
-            .name => |n| return !std.mem.eql(u8, n.ident, tname),
-            .unop => |u| {
-                switch (u.op) {
-                    .neg, .len, .bnot => return dense_index_key_is_numeric(u.operand, tname),
-                    else => return false,
-                }
-            },
-            .binop => |b| {
-                switch (b.op) {
-                    .add,
-                    .sub,
-                    .mul,
-                    .div,
-                    .idiv,
-                    .mod,
-                    .band,
-                    .bor,
-                    .bxor,
-                    .lshift,
-                    .rshift,
-                    => return dense_index_key_is_numeric(b.lhs, tname) and dense_index_key_is_numeric(b.rhs, tname),
-                    else => return false,
-                }
-            },
-            else => return false,
-        }
-    }
-
-    fn dense_check_non_numeric(expr: *const ast.Expr, tname: []const u8, non_numeric_out: *bool) void {
+    fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
         if (non_numeric_out.*) return;
         switch (expr.*) {
-            .int_lit, .float_lit => {},
-            .name => |n| {
-                if (std.mem.eql(u8, n.ident, tname)) non_numeric_out.* = true;
-            },
-            .unop => |u| {
-                switch (u.op) {
-                    .neg, .len, .bnot => {},
-                    else => non_numeric_out.* = true,
-                }
-            },
+            .string_lit => non_numeric_out.* = true,
+            .table => non_numeric_out.* = true,
+            .true_lit => non_numeric_out.* = true,
+            .false_lit => non_numeric_out.* = true,
+            .nil => non_numeric_out.* = true,
             .binop => |b| {
-                switch (b.op) {
-                    .add,
-                    .sub,
-                    .mul,
-                    .div,
-                    .idiv,
-                    .mod,
-                    .band,
-                    .bor,
-                    .bxor,
-                    .lshift,
-                    .rshift,
-                    .@"and",
-                    .@"or",
-                    => {
-                        dense_check_non_numeric(b.lhs, tname, non_numeric_out);
-                        dense_check_non_numeric(b.rhs, tname, non_numeric_out);
-                    },
-                    else => non_numeric_out.* = true,
-                }
-            },
-            .index => |idx| {
-                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname)) {
-                    // Self-read of a numeric dense table stays numeric.
-                } else {
+                if (b.op == .concat) {
                     non_numeric_out.* = true;
+                } else {
+                    dense_check_non_numeric(fb, b.lhs, non_numeric_out);
+                    dense_check_non_numeric(fb, b.rhs, non_numeric_out);
                 }
             },
-            else => non_numeric_out.* = true,
+            .call => |c| {
+                if (c.func.* == .name) {
+                    const name = c.func.name.ident;
+                    if (std.mem.eql(u8, name, "tostring") or
+                        std.mem.eql(u8, name, "valtype_to_c") or
+                        std.mem.eql(u8, name, "req") or
+                        std.mem.eql(u8, name, "error"))
+                    {
+                        non_numeric_out.* = true;
+                    }
+                } else if (c.func.* == .field) {
+                    const f = c.func.field;
+                    if (f.obj.* == .name) {
+                        const obj_name = f.obj.name.ident;
+                        if (std.mem.eql(u8, obj_name, "string") or std.mem.eql(u8, obj_name, "table")) {
+                            non_numeric_out.* = true;
+                        }
+                    }
+                }
+            },
+            else => {},
         }
     }
 
@@ -6226,90 +5423,16 @@ pub const Sema = struct {
 
     fn dense_walk_expr(expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
         switch (expr.*) {
-            .name => |n| {
-                if (std.mem.eql(u8, n.ident, tname_inner)) ok_out.* = false;
-            },
             .index => |idx| {
-                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
+                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner))
                     reads_out.* += 1;
-                    dense_walk_expr(idx.key, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    if (!dense_index_key_is_numeric(idx.key, tname_inner)) {
-                        ok_out.* = false;
-                    }
-                } else {
-                    dense_walk_expr(idx.obj, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                    dense_walk_expr(idx.key, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                }
-            },
-            .field => |f| {
-                if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, tname_inner)) {
-                    ok_out.* = false;
-                } else {
-                    dense_walk_expr(f.obj, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                }
-            },
-            .method_call => |m| {
-                if (m.obj.* == .name and std.mem.eql(u8, m.obj.name.ident, tname_inner)) {
-                    ok_out.* = false;
-                }
-                for (m.args) |a| dense_walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-            },
-            .call => |c| {
-                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, tname_inner)) {
-                    ok_out.* = false;
-                } else {
-                    dense_walk_expr(c.func, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                }
-                for (c.args) |a| dense_walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
             },
             .binop => |b| {
                 dense_walk_expr(b.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 dense_walk_expr(b.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
             },
-            .unop => |u| {
-                dense_walk_expr(u.operand, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-            },
-            .contains_expr => |c| {
-                dense_walk_expr(c.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                dense_walk_expr(c.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-            },
-            .sequence => |s| {
-                for (s.exprs) |e| dense_walk_expr(e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-            },
-            .table => |t| {
-                for (t.fields) |f| {
-                    switch (f) {
-                        .indexed => |idx| {
-                            dense_walk_expr(idx.key, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                            dense_walk_expr(idx.val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                        },
-                        .named => |nf| dense_walk_expr(nf.val, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                        .positional => |v| dense_walk_expr(v, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-                    }
-                }
-            },
-            .list_comp => |lc| {
-                dense_walk_expr(lc.iter, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                dense_walk_expr(lc.value, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                if (lc.filter) |filt| dense_walk_expr(filt, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-            },
-            .try_expr => |t| dense_walk_expr(t.operand, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-            .unwrap_expr => |u| dense_walk_expr(u.operand, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-            .await_expr => |a| dense_walk_expr(a.operand, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-            .quote => |q| dense_walk_expr(q.expr, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-            .unquote => |u| dense_walk_expr(u.expr, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
-            .macro_call => |mc| {
-                for (mc.args) |a| dense_walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-            },
-            .match_expr => {
-                // Conservatively treat match expressions as escapes; they are
-                // not used in any dense-table benchmark patterns.
-                ok_out.* = false;
-            },
-            .func_expr => {
-                // A function expression may close over the table; conservatively
-                // disable dense lowering rather than track captures precisely.
-                ok_out.* = false;
+            .call => |c| {
+                for (c.args) |a| dense_walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
             },
             else => {},
         }
@@ -6428,44 +5551,6 @@ pub const Sema = struct {
         return null;
     }
 
-    fn resolve_int_local_const(fb: *const ast.FuncBody, name: []const u8) ?i64 {
-        for (fb.body.stmts) |*s| {
-            if (s.* != .local_decl) continue;
-            const ld = s.local_decl;
-            if (ld.names.len != 1 or ld.inits.len != 1) continue;
-            if (!std.mem.eql(u8, ld.names[0].ident, name)) continue;
-            if (ld.inits[0].* == .int_lit) return ld.inits[0].int_lit.val;
-        }
-        return null;
-    }
-
-    fn try_fold_loop_bound_cap(alloc: std.mem.Allocator, fb: *const ast.FuncBody, bound: *const ast.Expr) !?[]const u8 {
-        switch (bound.*) {
-            .int_lit => |il| return try std.fmt.allocPrint(alloc, "{d}", .{il.val}),
-            .name => |n| {
-                if (resolve_int_local_const(fb, n.ident)) |v| {
-                    return try std.fmt.allocPrint(alloc, "{d}", .{v});
-                }
-            },
-            .binop => |b| {
-                if (b.op != .mul) return null;
-                var lhs_val: ?i64 = null;
-                var rhs_val: ?i64 = null;
-                if (b.lhs.* == .int_lit) lhs_val = b.lhs.int_lit.val;
-                if (b.rhs.* == .int_lit) rhs_val = b.rhs.int_lit.val;
-                if (b.lhs.* == .name) lhs_val = resolve_int_local_const(fb, b.lhs.name.ident);
-                if (b.rhs.* == .name) rhs_val = resolve_int_local_const(fb, b.rhs.name.ident);
-                if (lhs_val) |lv| {
-                    if (rhs_val) |rv| {
-                        return try std.fmt.allocPrint(alloc, "{d}", .{lv * rv});
-                    }
-                }
-            },
-            else => {},
-        }
-        return null;
-    }
-
     fn detect_dense_table(fb: *ast.FuncBody, alloc: std.mem.Allocator) SemaError!void {
         var table_names: std.ArrayList([]const u8) = .empty;
         defer table_names.deinit(alloc);
@@ -6554,19 +5639,6 @@ pub const Sema = struct {
                         break;
                     }
                 }
-                if (!found_any_cap) {
-                    for (fb.body.stmts) |*stmt| {
-                        if (stmt.* != .while_loop) continue;
-                        const cond = stmt.while_loop.cond;
-                        if (cond.* != .binop) continue;
-                        if (cond.binop.op != .leq and cond.binop.op != .lt) continue;
-                        if (try try_fold_loop_bound_cap(alloc, fb, cond.binop.rhs)) |folded| {
-                            cap = folded;
-                            found_any_cap = true;
-                            break;
-                        }
-                    }
-                }
                 if (!found_any_cap) return;
             }
         }
@@ -6581,8 +5653,21 @@ pub const Sema = struct {
             if (cond.* != .binop) continue;
             if (cond.binop.op != .leq and cond.binop.op != .lt) continue;
             const bound = cond.binop.rhs;
-            if (try try_fold_loop_bound_cap(alloc, fb, bound)) |folded| {
-                cap = folded;
+            if (bound.* == .name) {
+                const bname = bound.name.ident;
+                for (fb.body.stmts) |*s2| {
+                    if (s2.* != .local_decl) continue;
+                    const ld2 = s2.local_decl;
+                    if (ld2.names.len != 1 or ld2.inits.len != 1) continue;
+                    if (std.mem.eql(u8, ld2.names[0].ident, bname)) {
+                        if (ld2.inits[0].* == .int_lit) {
+                            // Inline the constant value — the allocation
+                            // happens before the local decl is emitted.
+                            const val = ld2.inits[0].int_lit.val;
+                            cap = try std.fmt.allocPrint(alloc, "{d}", .{val});
+                        }
+                    }
+                }
             }
         }
 
@@ -6634,7 +5719,7 @@ pub const Sema = struct {
             if (!has_float_assign) {
                 has_float_assign = check_table_passed_as_float(fb, tname);
             }
-            if (ok and (assigns > 0 or has_loop_init)) {
+            if (assigns > 0 or has_loop_init) {
                 try qualifying.append(alloc, tname);
                 try qualifying_floats.append(alloc, has_float_assign);
             }
@@ -6709,12 +5794,9 @@ pub const Sema = struct {
     // ── Native type inference for plain Lua ───────────────────────────────────
 
     fn unify_numeric(a: RT, b: RT) ?RT {
-        if (a == .any and b == .any) return .any;
-        if (a == .any) return if (b.is_native() or b == .bool) b else null;
-        if (b == .any) return if (a.is_native() or a == .bool) a else null;
+        if (a == .any) return if (b.is_numeric() or b == .bool) b else null;
+        if (b == .any) return if (a.is_numeric() or a == .bool) a else null;
         if (a == .bool and b == .bool) return .bool;
-        if (a == .str and b == .str) return .str;
-        if (a == .str or b == .str) return null;
         if (a.is_float() or b.is_float()) return .f64;
         if (a.is_integer() and b.is_integer()) {
             if (a == .i32 or b == .i32) return .i32;
@@ -6730,8 +5812,6 @@ pub const Sema = struct {
             .self_name = self_name,
             .param_tys = try self.alloc.alloc(RT, fb.params.len),
             .local_tys = std.StringHashMap(RT).init(self.alloc),
-            .copy_pairs = .empty,
-            .dynamic_copy_locals = std.StringHashMap(void).init(self.alloc),
             .ret_tys = .empty,
             .ok = true,
         };
@@ -6740,11 +5820,6 @@ pub const Sema = struct {
 
         if (!infer.collect_local_types(&fb.body)) return;
         try infer.infer_block(&fb.body);
-        infer.finalize_copy_component_types();
-        // Re-run after copy-component merge so downstream uses (#, concat, return)
-        // see types propagated through identity chains.
-        try infer.infer_block(&fb.body);
-        infer.finalize_copy_component_types();
 
         if (!infer.ok or infer.ret_tys.items.len == 0) return;
 
@@ -6754,15 +5829,11 @@ pub const Sema = struct {
         }
         if (!ret_t.is_native()) return;
 
-        var params_all_native = true;
         for (infer.param_tys) |pt| {
-            // Dynamic lua_Value parameters may coexist with native ones; only
-            // abort when a parameter is provably non-scalar (string/table/etc.).
-            if (!pt.is_native() and pt != .any) return;
-            if (pt == .any) params_all_native = false;
+            if (!pt.is_native()) return;
         }
+
         for (fb.params, infer.param_tys) |*p, pt| {
-            if (!pt.is_native()) continue;
             if (types.rt_to_type_name(pt)) |name| {
                 p.typ = .{ .named = name };
             } else return;
@@ -6770,51 +5841,7 @@ pub const Sema = struct {
         if (types.rt_to_type_name(ret_t)) |name| {
             fb.ret_type = .{ .named = name };
         } else return;
-        annotate_native_inferred_locals(&fb.body, &infer.local_tys);
-        // Full monomorphic signature only when every parameter is native.
-        if (params_all_native) fb.is_typed = true;
-    }
-
-    fn local_init_accepts_inferred_native(init_expr: *const ast.Expr, rt: RT) bool {
-        return switch (rt) {
-            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => init_expr.* == .int_lit,
-            .f32, .f64 => init_expr.* == .float_lit,
-            .bool => init_expr.* == .true_lit or init_expr.* == .false_lit,
-            .str => init_expr.* == .string_lit,
-            else => false,
-        };
-    }
-
-    fn annotate_native_inferred_locals(blk: *ast.Block, local_tys: *const std.StringHashMap(RT)) void {
-        for (blk.stmts) |*stmt| {
-            switch (stmt.*) {
-                .local_decl => |*ld| {
-                    for (ld.names, 0..) |*lname, i| {
-                        if (lname.typ != .inferred) continue;
-                        const rt = local_tys.get(lname.ident) orelse continue;
-                        if (!rt.is_native()) continue;
-                        if (i < ld.inits.len and !local_init_accepts_inferred_native(ld.inits[i], rt)) continue;
-                        if (types.rt_to_type_name(rt)) |type_name| {
-                            lname.typ = .{ .named = type_name };
-                        }
-                    }
-                },
-                .if_stmt => |*is| {
-                    annotate_native_inferred_locals(&is.then, local_tys);
-                    for (is.elseifs) |*ei| annotate_native_inferred_locals(&ei.body, local_tys);
-                    if (is.else_body) |*eb| annotate_native_inferred_locals(eb, local_tys);
-                },
-                .while_loop => |*wl| annotate_native_inferred_locals(&wl.body, local_tys),
-                .repeat_loop => |*rl| annotate_native_inferred_locals(&rl.body, local_tys),
-                .do_block => |*db| annotate_native_inferred_locals(&db.body, local_tys),
-                .num_for => |*nf| annotate_native_inferred_locals(&nf.body, local_tys),
-                .gen_for => |*gf| annotate_native_inferred_locals(&gf.body, local_tys),
-                .match_stmt => |*m| {
-                    for (m.arms) |*arm| annotate_native_inferred_locals(&arm.body, local_tys);
-                },
-                else => {},
-            }
-        }
+        fb.is_typed = true;
     }
 
     const NativeInfer = struct {
@@ -6823,15 +5850,11 @@ pub const Sema = struct {
         self_name: ?[]const u8,
         param_tys: []RT,
         local_tys: std.StringHashMap(RT),
-        copy_pairs: std.ArrayList([2][]const u8),
-        dynamic_copy_locals: std.StringHashMap(void),
         ret_tys: std.ArrayList(RT),
         ok: bool,
 
         fn deinit(self: *NativeInfer) void {
             self.local_tys.deinit();
-            self.copy_pairs.deinit(self.sema.alloc);
-            self.dynamic_copy_locals.deinit();
             self.ret_tys.deinit(self.sema.alloc);
             self.sema.alloc.free(self.param_tys);
         }
@@ -6843,163 +5866,43 @@ pub const Sema = struct {
             return null;
         }
 
-        fn rt_same(a: RT, b: RT) bool {
-            return std.meta.eql(a, b);
-        }
-
         fn unify_param(self: *NativeInfer, idx: usize, hint: RT) void {
             if (!self.ok) return;
-            if (hint == .any) return;
             const merged = unify_numeric(self.param_tys[idx], hint) orelse {
                 self.ok = false;
                 return;
             };
-            if (rt_same(self.param_tys[idx], merged)) return;
             self.param_tys[idx] = merged;
-            self.propagate_binding_type(self.fb.params[idx].name);
         }
 
         fn unify_local(self: *NativeInfer, name: []const u8, hint: RT) void {
             if (!self.ok) return;
-            if (hint == .any) return;
+            if (hint == .str) {
+                if (self.local_tys.getPtr(name)) |entry| {
+                    if (entry.* != .str and entry.* != .any) self.ok = false;
+                    entry.* = .str;
+                } else {
+                    self.local_tys.put(name, .str) catch {
+                        self.ok = false;
+                    };
+                }
+                return;
+            }
             if (self.local_tys.getPtr(name)) |entry| {
                 const merged = unify_numeric(entry.*, hint) orelse {
                     self.ok = false;
                     return;
                 };
-                if (rt_same(entry.*, merged)) return;
                 entry.* = merged;
-            } else if (hint.is_native() or hint == .bool) {
+            } else if (hint.is_native()) {
                 self.local_tys.put(name, hint) catch {
                     self.ok = false;
-                    return;
                 };
-            } else return;
-            self.propagate_binding_type(name);
-        }
-
-        fn propagate_binding_type(self: *NativeInfer, start: []const u8) void {
-            if (!self.ok) return;
-            var pending: std.ArrayList([]const u8) = .empty;
-            defer pending.deinit(self.sema.alloc);
-            var seen = std.StringHashMap(void).init(self.sema.alloc);
-            defer seen.deinit();
-
-            pending.append(self.sema.alloc, start) catch {
-                self.ok = false;
-                return;
-            };
-            seen.put(start, {}) catch {
-                self.ok = false;
-                return;
-            };
-
-            while (pending.pop()) |name| {
-                const t = self.binding_type(name);
-                if (t == .any) continue;
-                if (!t.is_native() and t != .bool) continue;
-                for (self.copy_pairs.items) |pair| {
-                    const other = if (std.mem.eql(u8, pair[0], name))
-                        pair[1]
-                    else if (std.mem.eql(u8, pair[1], name))
-                        pair[0]
-                    else
-                        continue;
-                    if (!self.set_binding_type_no_propagate(other, t)) continue;
-                    if (seen.contains(other)) continue;
-                    pending.append(self.sema.alloc, other) catch {
-                        self.ok = false;
-                        return;
-                    };
-                    seen.put(other, {}) catch {
-                        self.ok = false;
-                        return;
-                    };
-                }
             }
-        }
-
-        fn binding_type(self: *NativeInfer, name: []const u8) RT {
-            if (self.param_index(name)) |pi| return self.param_tys[pi];
-            return self.local_tys.get(name) orelse .any;
-        }
-
-        fn set_binding_type_no_propagate(self: *NativeInfer, name: []const u8, t: RT) bool {
-            if (!self.ok) return false;
-            if (self.param_index(name)) |pi| {
-                const merged = unify_numeric(self.param_tys[pi], t) orelse return false;
-                if (rt_same(self.param_tys[pi], merged)) return false;
-                self.param_tys[pi] = merged;
-                return true;
-            }
-            if (self.local_tys.getPtr(name)) |entry| {
-                const merged = unify_numeric(entry.*, t) orelse return false;
-                if (rt_same(entry.*, merged)) return false;
-                entry.* = merged;
-                return true;
-            }
-            return false;
-        }
-
-        fn copy_partner_merged_type(self: *NativeInfer, name: []const u8) RT {
-            var merged: RT = .any;
-            var found = false;
-            for (self.copy_pairs.items) |pair| {
-                const other = if (std.mem.eql(u8, pair[0], name))
-                    pair[1]
-                else if (std.mem.eql(u8, pair[1], name))
-                    pair[0]
-                else
-                    continue;
-                if (unify_numeric(merged, self.binding_type(other))) |t| {
-                    merged = t;
-                    found = true;
-                }
-            }
-            return if (found) merged else .any;
-        }
-
-        fn finalize_copy_component_types(self: *NativeInfer) void {
-            if (!self.ok) return;
-            var progress = true;
-            while (progress) {
-                progress = false;
-                for (self.copy_pairs.items) |pair| {
-                    const ta = self.binding_type(pair[0]);
-                    const tb = self.binding_type(pair[1]);
-                    const merged = unify_numeric(ta, tb) orelse continue;
-                    if (!merged.is_native() and merged != .bool) continue;
-                    if (self.set_binding_type_no_propagate(pair[0], merged)) progress = true;
-                    if (self.set_binding_type_no_propagate(pair[1], merged)) progress = true;
-                }
-            }
-            for (self.copy_pairs.items) |pair| {
-                self.propagate_binding_type(pair[0]);
-                self.propagate_binding_type(pair[1]);
-            }
-        }
-
-        fn unify_binding_names(self: *NativeInfer, a: []const u8, b: []const u8) void {
-            if (!self.ok) return;
-            const ta = self.binding_type(a);
-            const tb = self.binding_type(b);
-            const merged = unify_numeric(ta, tb) orelse return;
-            if (!merged.is_native() and merged != .bool) return;
-            if (self.set_binding_type_no_propagate(a, merged)) self.propagate_binding_type(a);
-            if (self.set_binding_type_no_propagate(b, merged)) self.propagate_binding_type(b);
         }
 
         fn expr_type(self: *NativeInfer, expr: *const ast.Expr) RT {
             return self.sema.type_map.get(expr) orelse .any;
-        }
-
-        fn expr_inferred_type(self: *NativeInfer, expr: *const ast.Expr) RT {
-            return switch (expr.*) {
-                .name => |n| self.binding_type(n.ident),
-                .int_lit => .i64,
-                .float_lit => .f64,
-                else => self.expr_type(expr),
-            };
         }
 
         fn expr_has_float(self: *NativeInfer, expr: *const ast.Expr) bool {
@@ -7010,19 +5913,6 @@ pub const Sema = struct {
                 .name => false,
                 else => false,
             };
-        }
-
-        fn expr_is_unproven_bare_binding(self: *NativeInfer, expr: *const ast.Expr) bool {
-            if (expr.* != .name) return false;
-            return self.binding_type(expr.name.ident) == .any;
-        }
-
-        fn expr_is_numeric_literal(expr: *const ast.Expr) bool {
-            return expr.* == .int_lit or expr.* == .float_lit;
-        }
-
-        fn expr_is_dynamic_projection(expr: *const ast.Expr) bool {
-            return expr.* == .field or expr.* == .index;
         }
 
         fn is_dynamic_call(func: *const ast.Expr) bool {
@@ -7096,12 +5986,6 @@ pub const Sema = struct {
                     .do_block => |*db| {
                         if (!self.collect_local_types(&db.body)) return false;
                     },
-                    .gen_for => |*gf| {
-                        // The gen_for loop variables are added immediately before
-                        // the body is inferred so they do not shadow outer locals
-                        // in collect_local_types' flat map.
-                        if (!self.collect_local_types(&gf.body)) return false;
-                    },
                     else => {},
                 }
             }
@@ -7127,52 +6011,7 @@ pub const Sema = struct {
                 .assign => |*as| {
                     for (as.targets, 0..) |tgt, i| {
                         const hint = self.target_type(tgt);
-                        if (i < as.values.len) {
-                            const value = as.values[i];
-                            const value_t = self.infer_expr(value, hint);
-                            self.unify_target(tgt, value_t);
-                            if (value.* == .string_lit and tgt.* == .name) {
-                                _ = self.set_binding_type_no_propagate(tgt.name.ident, .str);
-                                self.propagate_binding_type(tgt.name.ident);
-                            }
-                            if (tgt.* == .name) {
-                                switch (value.*) {
-                                    .int_lit => {
-                                        _ = self.set_binding_type_no_propagate(tgt.name.ident, .i64);
-                                        self.propagate_binding_type(tgt.name.ident);
-                                    },
-                                    .float_lit => {
-                                        _ = self.set_binding_type_no_propagate(tgt.name.ident, .f64);
-                                        self.propagate_binding_type(tgt.name.ident);
-                                    },
-                                    .true_lit, .false_lit => {
-                                        _ = self.set_binding_type_no_propagate(tgt.name.ident, .bool);
-                                        self.propagate_binding_type(tgt.name.ident);
-                                    },
-                                    else => {},
-                                }
-                            }
-                            if (tgt.* == .name and value.* == .name) {
-                                self.copy_pairs.append(self.sema.alloc, .{ tgt.name.ident, value.name.ident }) catch {
-                                    self.ok = false;
-                                    return;
-                                };
-                                const src_is_dynamic = blk: {
-                                    if (self.param_index(value.name.ident)) |pi| {
-                                        break :blk self.param_tys[pi] == .any;
-                                    }
-                                    if (self.local_tys.get(value.name.ident)) |lt| break :blk lt == .any;
-                                    break :blk true;
-                                };
-                                if (src_is_dynamic and self.local_tys.contains(tgt.name.ident)) {
-                                    self.dynamic_copy_locals.put(tgt.name.ident, {}) catch {
-                                        self.ok = false;
-                                        return;
-                                    };
-                                }
-                                self.unify_binding_names(tgt.name.ident, value.name.ident);
-                            }
-                        }
+                        if (i < as.values.len) _ = self.infer_expr(as.values[i], hint);
                     }
                 },
                 .ret => |*r| {
@@ -7181,13 +6020,7 @@ pub const Sema = struct {
                         return;
                     }
                     for (r.vals) |v| {
-                        var hint: RT = .any;
-                        if (v.* == .name) {
-                            const merged = self.copy_partner_merged_type(v.name.ident);
-                            if (merged.is_native() or merged == .bool) hint = merged;
-                        }
-                        const t = self.infer_expr(v, hint);
-                        if (v.* == .name) self.unify_target(v, t);
+                        const t = self.infer_expr(v, .any);
                         self.ret_tys.append(self.sema.alloc, t) catch return;
                     }
                 },
@@ -7218,26 +6051,6 @@ pub const Sema = struct {
                 .call_stmt => |*cs| _ = self.infer_expr(cs.expr, .any),
                 .expr_stmt => |*es| _ = self.infer_expr(es.expr, .any),
                 .do_block => |*db| try self.infer_block(&db.body),
-                .gen_for => |*gf| {
-                    for (gf.iters) |it| {
-                        if (it.* == .call and it.call.func.* == .name and
-                            (std.mem.eql(u8, it.call.func.name.ident, "pairs") or
-                                std.mem.eql(u8, it.call.func.name.ident, "ipairs")) and
-                            it.call.args.len > 0)
-                        {
-                            _ = self.infer_expr(it.call.args[0], .any);
-                        } else {
-                            _ = self.infer_expr(it, .any);
-                        }
-                    }
-                    for (gf.vars) |v| {
-                        self.local_tys.put(v, .any) catch {
-                            self.ok = false;
-                            return;
-                        };
-                    }
-                    try self.infer_block(&gf.body);
-                },
                 else => self.ok = false,
             }
         }
@@ -7254,30 +6067,6 @@ pub const Sema = struct {
             };
         }
 
-        fn unify_target(self: *NativeInfer, expr: *const ast.Expr, value_t: RT) void {
-            if (!self.ok) return;
-            if (!value_t.is_native() and value_t != .bool) return;
-            switch (expr.*) {
-                .name => |n| {
-                    if (self.param_index(n.ident)) |pi| {
-                        self.unify_param(pi, value_t);
-                    } else if (self.local_tys.contains(n.ident)) {
-                        self.unify_local(n.ident, value_t);
-                    }
-                },
-                .index => |idx| {
-                    if (self.fb.use_dense_table) {
-                        if (self.fb.dense_table) |dt| {
-                            if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, dt)) {
-                                if (unify_numeric(.i64, value_t) == null) self.ok = false;
-                            }
-                        }
-                    }
-                },
-                else => {},
-            }
-        }
-
         fn target_index_type(self: *NativeInfer, obj: *const ast.Expr, _: *const ast.Expr) RT {
             if (self.fb.use_dense_table) {
                 if (self.fb.dense_table) |dt| {
@@ -7286,7 +6075,7 @@ pub const Sema = struct {
                     }
                 }
             }
-            return .any;
+            return self.expr_type(obj);
         }
 
         fn infer_index_expr(self: *NativeInfer, obj: *const ast.Expr, key: *const ast.Expr, hint: RT) RT {
@@ -7298,44 +6087,15 @@ pub const Sema = struct {
                     }
                 }
             }
-            if (hint.is_numeric() and obj.* == .name) {
-                if (self.param_index(obj.name.ident) != null or self.local_tys.contains(obj.name.ident)) {
-                    _ = self.infer_expr(key, .i64);
-                    return hint;
-                }
-            }
-            _ = self.infer_expr(key, .any);
+            self.ok = false;
+            _ = hint;
             return .any;
         }
 
         fn infer_table_expr(self: *NativeInfer, expr: *const ast.Expr) RT {
             const t = expr.table;
-            if (t.fields.len == 0) return .any;
-            // Literal arrays that codegen lowers to static native arrays do not
-            // prevent native specialization of the surrounding function.
-            for (t.fields) |fld| {
-                const val: *const ast.Expr = switch (fld) {
-                    .positional => |p| p,
-                    .indexed => |idx| blk: {
-                        if (idx.key.* != .int_lit) {
-                            self.ok = false;
-                            return .any;
-                        }
-                        break :blk idx.val;
-                    },
-                    .named => {
-                        self.ok = false;
-                        return .any;
-                    },
-                };
-                switch (val.*) {
-                    .int_lit, .float_lit, .string_lit, .true_lit, .false_lit => {},
-                    else => {
-                        self.ok = false;
-                        return .any;
-                    },
-                }
-            }
+            if (t.fields.len == 0 and self.fb.use_dense_table) return .any;
+            self.ok = false;
             return .any;
         }
 
@@ -7350,21 +6110,11 @@ pub const Sema = struct {
                 .name => |n| blk: {
                     if (self.param_index(n.ident)) |pi| {
                         self.unify_param(pi, hint);
-                        break :blk unify_numeric(self.param_tys[pi], hint) orelse self.param_tys[pi];
+                        break :blk unify_numeric(self.param_tys[pi], hint) orelse .any;
                     }
-                    if (self.local_tys.contains(n.ident)) {
-                        const dynamic_copy = self.dynamic_copy_locals.contains(n.ident);
-                        const current_before = self.binding_type(n.ident);
-                        const block_numeric_copy = dynamic_copy and hint.is_numeric() and current_before == .any;
-                        if (!block_numeric_copy and (!dynamic_copy or hint == .str or hint.is_numeric()))
-                            self.unify_local(n.ident, hint);
-                        const partner = self.copy_partner_merged_type(n.ident);
-                        if (partner != .any and (partner.is_native() or partner == .bool)) {
-                            _ = self.set_binding_type_no_propagate(n.ident, partner);
-                            self.propagate_binding_type(n.ident);
-                        }
-                        const current = self.binding_type(n.ident);
-                        break :blk if (block_numeric_copy) .any else unify_numeric(current, hint) orelse current;
+                    if (self.local_tys.get(n.ident)) |lt| {
+                        self.unify_local(n.ident, hint);
+                        break :blk unify_numeric(lt, hint) orelse lt;
                     }
                     break :blk .any;
                 },
@@ -7372,18 +6122,7 @@ pub const Sema = struct {
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
                         return .f64;
                     }
-                    // Dynamic table/record field reads produce scalars at runtime;
-                    // codegen unboxes via lua_table_get_str_num/cstr/bool.
-                    if (f.obj.* == .name) {
-                        if (self.param_index(f.obj.name.ident) != null or
-                            self.local_tys.contains(f.obj.name.ident))
-                        {
-                            if (hint.is_numeric()) return if (hint == .any) .i64 else hint;
-                            if (hint == .bool) return .bool;
-                            if (hint == .str) return .str;
-                            return .i64;
-                        }
-                    }
+                    self.ok = false;
                     return .any;
                 },
                 .index => |idx| self.infer_index_expr(idx.obj, idx.key, hint),
@@ -7397,7 +6136,7 @@ pub const Sema = struct {
                     const ot = self.infer_expr(u.operand, switch (u.op) {
                         .neg => hint,
                         .not => .bool,
-                        .len => .str,
+                        .len => .i64,
                         .bnot => hint,
                         .compile => hint,
                     });
@@ -7499,18 +6238,9 @@ pub const Sema = struct {
 
         fn infer_binop(self: *NativeInfer, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr, hint: RT) RT {
             return switch (op) {
-                .concat => blk: {
-                    if (lhs.* == .string_lit and lhs.string_lit.val.len == 0) {
-                        _ = self.infer_expr(rhs, .str);
-                        break :blk .str;
-                    }
-                    if (rhs.* == .string_lit and rhs.string_lit.val.len == 0) {
-                        _ = self.infer_expr(lhs, .str);
-                        break :blk .str;
-                    }
-                    _ = self.infer_expr(lhs, .str);
-                    _ = self.infer_expr(rhs, .str);
-                    break :blk .str;
+                .concat => {
+                    self.ok = false;
+                    return .str;
                 },
                 .div, .pow => {
                     _ = self.infer_expr(lhs, .f64);
@@ -7519,20 +6249,9 @@ pub const Sema = struct {
                 },
                 .add, .sub, .mul, .idiv, .mod => blk: {
                     var rt: RT = if (self.expr_has_float(lhs) or self.expr_has_float(rhs)) .f64 else hint;
-                    const implicit_numeric = rt == .any or rt == .bool;
-                    if (implicit_numeric) {
-                        if ((self.expr_is_unproven_bare_binding(lhs) and expr_is_dynamic_projection(rhs)) or
-                            (self.expr_is_unproven_bare_binding(rhs) and expr_is_dynamic_projection(lhs)))
-                        {
-                            _ = self.infer_expr(lhs, .any);
-                            _ = self.infer_expr(rhs, .any);
-                            break :blk .any;
-                        }
-                        rt = .i64;
-                    }
+                    if (rt == .any or rt == .bool) rt = .i64;
                     const lt = self.infer_expr(lhs, rt);
                     const rr = self.infer_expr(rhs, rt);
-                    if (lt == .any or rr == .any) return .any;
                     break :blk unify_numeric(lt, rr) orelse unify_numeric(lt, rt) orelse .any;
                 },
                 .band, .bor, .bxor, .lshift, .rshift => blk: {
@@ -7541,11 +6260,10 @@ pub const Sema = struct {
                     break :blk .i64;
                 },
                 .eq, .neq, .lt, .gt, .leq, .geq => blk: {
-                    const lt = self.expr_inferred_type(lhs);
-                    const rt = self.expr_inferred_type(rhs);
+                    const lt = self.expr_type(lhs);
+                    const rt = self.expr_type(rhs);
                     var cmp_t = unify_numeric(lt, rt) orelse .i64;
                     if (self.expr_has_float(lhs) or self.expr_has_float(rhs)) cmp_t = .f64;
-                    if (cmp_t == .any) cmp_t = .i64;
                     _ = self.infer_expr(lhs, cmp_t);
                     _ = self.infer_expr(rhs, cmp_t);
                     break :blk .bool;
@@ -7664,234 +6382,6 @@ test "sema: untyped function can be specialized to native" {
     try testing.expectEqualStrings("i64", fd.func.params[0].typ.named);
     try testing.expectEqualStrings("i64", fd.func.params[1].typ.named);
     try testing.expectEqualStrings("i64", fd.func.ret_type.named);
-}
-
-test "sema: partial native inference keeps dynamic table param" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function acc(boxed, n)
-        \\  local sum
-        \\  sum = 0
-        \\  local i = 1
-        \\  while i <= n do
-        \\    sum = sum + boxed.x
-        \\    i = i + 1
-        \\  end
-        \\  return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(!fd.func.is_typed);
-    try testing.expectEqualStrings("i64", fd.func.params[1].typ.named);
-    try testing.expectEqualStrings("i64", fd.func.ret_type.named);
-    const sum_name = &fd.func.body.stmts[0].local_decl.names[0];
-    try testing.expectEqualStrings("i64", sum_name.typ.named);
-}
-
-test "sema: numeric while bound infers assigned local and param" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function f(n)
-        \\  local i
-        \\  i = 1
-        \\  while i <= n do
-        \\    i = i + 1
-        \\  end
-        \\  return i
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(fd.func.is_typed);
-    try testing.expectEqualStrings("i64", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("i64", fd.func.ret_type.named);
-    try testing.expectEqualStrings("i64", fd.func.body.stmts[0].local_decl.names[0].typ.named);
-}
-
-test "sema: len copy via identity infers str param" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function len_copy(s)
-        \\  local n
-        \\  n = s
-        \\  return #n
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(fd.func.is_typed);
-    try testing.expectEqualStrings("str", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("i64", fd.func.ret_type.named);
-}
-
-test "sema: str passthrough copy chain infers native str" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function passthrough(s)
-        \\  local _ = #s
-        \\  local name
-        \\  name = s
-        \\  return name
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(fd.func.is_typed);
-    try testing.expectEqualStrings("str", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("str", fd.func.ret_type.named);
-    try testing.expectEqualStrings("str", fd.func.body.stmts[1].local_decl.names[0].typ.named);
-}
-
-test "sema: str evidence on copy local propagates to param" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function passthrough(s)
-        \\  local name
-        \\  name = s
-        \\  local _ = #name
-        \\  return name
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(fd.func.is_typed);
-    try testing.expectEqualStrings("str", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("str", fd.func.ret_type.named);
-    try testing.expectEqualStrings("str", fd.func.body.stmts[0].local_decl.names[0].typ.named);
-}
-
-test "sema: plain Lua string deferred init and len infer native str" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function hello()
-        \\  local name
-        \\  name = "hi"
-        \\  return name
-        \\end
-        \\function len_of(s)
-        \\  return #s
-        \\end
-        \\function len_copy(s)
-        \\  local n
-        \\  n = s
-        \\  return #n
-        \\end
-        \\function join(s)
-        \\  return s .. "x"
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-
-    const hello = mod.body.stmts[0].func_decl;
-    try testing.expectEqualStrings("str", hello.func.ret_type.named);
-    try testing.expectEqualStrings("str", hello.func.body.stmts[0].local_decl.names[0].typ.named);
-
-    const len_of = mod.body.stmts[1].func_decl;
-    try testing.expect(len_of.func.is_typed);
-    try testing.expectEqualStrings("i64", len_of.func.ret_type.named);
-    try testing.expectEqualStrings("str", len_of.func.params[0].typ.named);
-
-    const len_copy = mod.body.stmts[2].func_decl;
-    try testing.expect(len_copy.func.is_typed);
-    try testing.expectEqualStrings("str", len_copy.func.params[0].typ.named);
-    try testing.expectEqualStrings("str", len_copy.func.body.stmts[0].local_decl.names[0].typ.named);
-
-    const join = mod.body.stmts[3].func_decl;
-    try testing.expect(join.func.is_typed);
-    try testing.expectEqualStrings("str", join.func.ret_type.named);
-    try testing.expectEqualStrings("str", join.func.params[0].typ.named);
-}
-
-test "sema: native copy alias cycles do not recurse indefinitely" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function f(a)
-        \\  local x
-        \\  local y
-        \\  x = a
-        \\  y = x
-        \\  x = y
-        \\  return x + 1
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-
-    const f = mod.body.stmts[0].func_decl;
-    if (f.func.is_typed) {
-        try testing.expectEqualStrings("i64", f.func.ret_type.named);
-    }
-}
-
-test "sema: numeric literal reassign on copy local infers param" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function inc(n)
-        \\  local x
-        \\  x = n
-        \\  x = 0
-        \\  return x + 1
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fd = mod.body.stmts[0].func_decl;
-    try testing.expect(fd.func.is_typed);
-    try testing.expectEqualStrings("i64", fd.func.params[0].typ.named);
-    try testing.expectEqualStrings("i64", fd.func.ret_type.named);
-    try testing.expectEqualStrings("i64", fd.func.body.stmts[0].local_decl.names[0].typ.named);
 }
 
 test "sema: integer literal resolves to i64" {
@@ -9336,594 +7826,6 @@ test "sema: tensor add broadcast infers output shape" {
     s.duo_mode = true;
     try s.check_module(&mod);
     try testing.expectEqual(@as(u32, 0), s.errors);
-}
-
-test "sema: dense table identity sum pattern detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function table_array_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = i
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + t[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table);
-    try testing.expect(fb.use_dense_table_identity_sum);
-    try testing.expectEqual(@as(i64, 1), fb.dense_table_fill_scale);
-    try testing.expect(!fb.use_dense_table_sum);
-}
-
-test "sema: scaled dense table fill + full sum uses closed form scale" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function scaled_table_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = i * 5
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + t[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_identity_sum);
-    try testing.expectEqual(@as(i64, 5), fb.dense_table_fill_scale);
-    try testing.expect(!fb.use_dense_table_mod997_sum);
-}
-
-test "sema: affine mod dense table fill + full sum detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function affine_mod_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = (i * 7) % 101
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + t[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_mod997_sum);
-    try testing.expectEqual(@as(i64, 7), fb.dense_table_affine_mul);
-    try testing.expectEqual(@as(i64, 101), fb.dense_table_affine_mod);
-    try testing.expect(!fb.use_dense_table_identity_sum);
-}
-
-test "sema: dense table cap folds size * size local constants after typed dense sum" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function mat_buf()
-        \\    local size = 200
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= size * size do
-        \\        t[i] = i
-        \\        i = i + 1
-        \\    end
-        \\    return t[1]
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table);
-    try testing.expectEqualStrings("40000", fb.dense_table_cap.?);
-}
-
-test "sema: table lookup sum pattern detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function table_lookup_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = i * 3
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    local q = 1
-        \\    while q <= n do
-        \\        local idx = (q * 7) % n + 1
-        \\        sum = sum + t[idx]
-        \\        q = q + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_table_lookup_sum);
-}
-
-test "sema: typed duo dense table identity sum still detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\fun table_array_sum(n: i64): i64
-        \\  local t = {}
-        \\  local i: i64 = 1
-        \\  while i <= n
-        \\    t[i] = i
-        \\    i = i + 1
-        \\  end
-        \\  local sum: i64 = 0
-        \\  i = 1
-        \\  while i <= n
-        \\    sum = sum + t[i]
-        \\    i = i + 1
-        \\  end
-        \\  return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test.duo");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    s.duo_mode = true;
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.is_typed);
-    try testing.expect(fb.use_dense_table_identity_sum);
-}
-
-test "sema: dense table cap folds size * size local constants" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function mat_buf()
-        \\    local size = 200
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= size * size do
-        \\        t[i] = i
-        \\        i = i + 1
-        \\    end
-        \\    return t[1]
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table);
-    try testing.expectEqualStrings("40000", fb.dense_table_cap.?);
-}
-
-test "sema: affine linear dense table fill + full sum detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function offset_table_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = i + 3
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + t[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_identity_sum);
-    try testing.expectEqual(@as(i64, 1), fb.dense_table_fill_scale);
-    try testing.expectEqual(@as(i64, 3), fb.dense_table_fill_offset);
-}
-
-test "sema: square dense table fill + full sum detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function square_table_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = i * i
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + t[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_square_sum);
-    try testing.expect(!fb.use_dense_table_identity_sum);
-}
-
-test "sema: direct affine mod sum without table detected" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function bucket_hash(n)
-        \\    local sum = 0
-        \\    local i = 1
-        \\    while i <= n do
-        \\        sum = sum + (i * 31) % 256
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_mod_histogram_sum);
-    try testing.expectEqual(@as(i64, 31), fb.dense_table_affine_mul);
-    try testing.expectEqual(@as(i64, 256), fb.dense_table_affine_mod);
-}
-
-test "sema: dense table max scan captures affine mod fill params" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function table_max_scan(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = (i * 17) % 100003
-        \\        i = i + 1
-        \\    end
-        \\    local mx = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        if t[i] > mx then
-        \\            mx = t[i]
-        \\        end
-        \\        i = i + 1
-        \\    end
-        \\    return mx
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_max);
-    try testing.expectEqual(@as(i64, 17), fb.dense_table_affine_mul);
-    try testing.expectEqual(@as(i64, 100003), fb.dense_table_affine_mod);
-}
-
-test "sema: fused dense table fill+sum when no closed form applies" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function table_poly_sum(n)
-        \\    local t = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        t[i] = (i + 1) * (i + 2)
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + t[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table);
-    try testing.expect(fb.use_dense_table_fused_fill_sum);
-    try testing.expect(fb.dense_table_fill_expr != null);
-    try testing.expect(!fb.use_dense_table_square_sum);
-    try testing.expect(!fb.use_dense_table_identity_sum);
-}
-
-test "sema: fused dense table fill+sum with num_for loops" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function table_poly_sum(n)
-        \\    local t = {}
-        \\    for i = 1, n do
-        \\        t[i] = (i + 1) * (i + 2)
-        \\    end
-        \\    local sum = 0
-        \\    for j = 1, n do
-        \\        sum = sum + t[j]
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_fused_fill_sum);
-    try testing.expect(fb.dense_table_fill_expr != null);
-    try testing.expectEqualStrings("i", fb.dense_table_fill_index.?);
-}
-
-test "sema: fused dense table two-vector dot when no closed form applies" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function dot_poly_sum(n)
-        \\    local a = {}
-        \\    local b = {}
-        \\    local i = 1
-        \\    while i <= n do
-        \\        a[i] = i + 1
-        \\        b[i] = i + 2
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        sum = sum + a[i] * b[i]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_dense_table_fused_dot_fill_sum);
-    try testing.expect(!fb.use_dot_product_identity);
-    try testing.expect(fb.dense_table_dot_fill_a != null);
-    try testing.expect(fb.dense_table_dot_fill_b != null);
-}
-
-test "sema: strided sparse dot does not use fused two-table dot" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function sparse_dot(n)
-        \\    local stride = 16
-        \\    local len = n * stride
-        \\    local a = {}
-        \\    local b = {}
-        \\    local i = 1
-        \\    while i <= len do
-        \\        a[i] = 0
-        \\        b[i] = 0
-        \\        i = i + 1
-        \\    end
-        \\    i = 1
-        \\    while i <= n do
-        \\        local idx = (i - 1) * stride + 1
-        \\        a[idx] = i
-        \\        b[idx] = n - i + 1
-        \\        i = i + 1
-        \\    end
-        \\    local sum = 0
-        \\    i = 1
-        \\    while i <= n do
-        \\        local idx = (i - 1) * stride + 1
-        \\        sum = sum + a[idx] * b[idx]
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.use_sparse_dot_inline);
-    try testing.expect(!fb.use_dense_table_fused_dot_fill_sum);
-    try testing.expect(!fb.use_dot_product_identity);
-}
-
-test "sema: simd reduction detects while-loop accumulation" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\fun bucket_hash(n: i64): i64
-        \\    sum: i64 = 0
-        \\    i: i64 = 1
-        \\    while i <= n
-        \\        sum = sum + (i * 31) % 256
-        \\        i = i + 1
-        \\    end
-        \\    return sum
-        \\end
-    ;
-    var lex = Lexer.init(src, "test.duo");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    s.duo_mode = true;
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.is_typed);
-    try testing.expect(fb.use_simd_reduction);
-}
-
-test "sema: @simd on function forces simd reduction hints" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\@simd(4)
-        \\fun walk(n: i64): i64
-        \\    s: i64 = 0
-        \\    i: i64 = 1
-        \\    while i <= n
-        \\        s = s + i
-        \\        i = i + 1
-        \\    end
-        \\    return s
-        \\end
-    ;
-    var lex = Lexer.init(src, "test.duo");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    s.duo_mode = true;
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    const fb = mod.body.stmts[0].func_decl.func;
-    try testing.expect(fb.simd_loops);
-    try testing.expect(fb.use_simd_reduction);
-    try testing.expectEqual(@as(?u32, 4), fb.unroll_count);
-}
-
-test "sema: returned local is marked escaping" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\fun get(): { x: i64 }
-        \\  p: { x: i64 } = { x = 1 }
-        \\  return p
-        \\end
-    ;
-    var lex = Lexer.init(src, "test.duo");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    s.duo_mode = true;
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    try testing.expect(s.escape_names.contains("p"));
-}
-
-test "sema: heap local passed to dynamic call is marked escaping" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    const src =
-        \\function f()
-        \\    local s = "hi"
-        \\    local cb = print
-        \\    cb(s)
-        \\end
-    ;
-    var lex = Lexer.init(src, "test");
-    var p = Parser.init(&lex, alloc);
-    var mod = try p.parse_module();
-    var s = Sema.init(alloc);
-    try s.check_module(&mod);
-    try testing.expectEqual(@as(u32, 0), s.errors);
-    try testing.expect(s.escape_names.contains("s"));
 }
 
 test "sema: tensor add broadcast incompatible emits error" {

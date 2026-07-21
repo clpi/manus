@@ -45,6 +45,13 @@ pub fn build(b: *std.Build) void {
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
+    const gpu_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_gpu_benchmark.sh" });
+    gpu_bench_cmd.setCwd(b.path("."));
+    gpu_bench_cmd.step.dependOn(b.getInstallStep());
+    const gpu_bench_step = b.step("gpu-bench", "Run Duo vs GPU Metal benchmark");
+    gpu_bench_step.dependOn(&gpu_bench_cmd.step);
+    test_step.dependOn(&gpu_bench_cmd.step);
+
     const bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark.sh" });
     bench_cmd.setCwd(b.path("."));
     bench_cmd.step.dependOn(b.getInstallStep());

@@ -951,6 +951,11 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                 return .f64;
             if (std.mem.eql(u8, n, "string")) return .str;
             if (std.mem.eql(u8, n, "Table") or std.mem.eql(u8, n, "table")) return .any;
+            if (std.mem.eql(u8, n, "ptr") or std.mem.eql(u8, n, "void*")) {
+                const ptr = try alloc.create(ResolvedType);
+                ptr.* = .void;
+                return ResolvedType{ .pointer = ptr };
+            }
             // Self type: resolves to the enclosing type scope (enum, alias, concept)
             if (std.mem.eql(u8, n, "Self")) {
                 if (sema) |s| {

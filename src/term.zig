@@ -2,30 +2,6 @@ const std = @import("std");
 const Io = std.Io;
 const File = Io.File;
 
-/// Zero-allocation ANSI tokens — comptime only, stripped when `color == false`.
-const ansi = struct {
-    pub const reset = "\x1b[0m";
-    pub const bold = "\x1b[1m";
-    pub const dim = "\x1b[2m";
-    pub const italic = "\x1b[3m";
-    pub const underline = "\x1b[4m";
-    pub const inverse = "\x1b[7m";
-    pub const err = "\x1b[1;31m";
-    pub const warn = "\x1b[1;33m";
-    pub const ok = "\x1b[1;32m";
-    pub const hint = "\x1b[36m";
-    pub const info = "\x1b[34m";
-    pub const accent = "\x1b[1;35m";
-    pub const path = "\x1b[1;36m";
-    pub const num = "\x1b[35m";
-    pub const muted = "\x1b[2m";
-    pub const keyword = "\x1b[1;34m";
-    pub const tree = "\x1b[2m";
-    pub const bench_duo = "\x1b[1;32m";
-    pub const bench_c = "\x1b[1;33m";
-    pub const bench_slow = "\x1b[1;31m";
-};
-
 var stderr_file: File = undefined;
 var stderr_buf: [1024]u8 = undefined;
 var wtr: File.Writer = undefined;
@@ -65,20 +41,9 @@ pub fn clearSource() void {
 fn wprint(comptime fmt: []const u8, args: anytype) void {
     if (initialized) {
         nosuspend (&wtr.interface).print(fmt, args) catch {};
-        // Flush on line boundaries to keep output glanceable while batching
-        // token-level writes (e.g. syntax highlighting) instead of flushing
-        // after every single character.
-        if (fmt.len > 0 and fmt[fmt.len - 1] == '\n') {
-            nosuspend wtr.flush() catch {};
-        }
+        nosuspend wtr.flush() catch {};
     } else {
         nosuspend std.debug.print(fmt, args);
-    }
-}
-
-pub fn flush() void {
-    if (initialized) {
-        nosuspend wtr.flush() catch {};
     }
 }
 
@@ -179,14 +144,14 @@ fn printPathStyled(path: []const u8) void {
     const base = std.fs.path.basename(path);
     const prefix_len = path.len - base.len;
     if (prefix_len > 0) {
-        wprint("{s}{s}{s}", .{ ansi.muted, path[0..prefix_len], ansi.reset });
+        wprint("\x1b[2;4m{s}\x1b[0m", .{path[0..prefix_len]});
     }
-    wprint("{s}{s}{s}", .{ ansi.path, base, ansi.reset });
+    wprint("\x1b[1;4m{s}\x1b[0m", .{base});
 }
 
 fn printLineCol(line: u32, col: u32) void {
     if (color) {
-        wprint("{s}{}{s}:{s}{}{s}", .{ ansi.num, line, ansi.reset, ansi.num, col, ansi.reset });
+        wprint("\x1b[36m{}\x1b[0m:\x1b[35m{}\x1b[0m", .{ line, col });
     } else {
         wprint("{}:{}", .{ line, col });
     }
@@ -363,36 +328,7 @@ fn printDiagnosticHelp(comptime label: []const u8) void {
     }
 }
 
-fn severityColor(comptime label: []const u8) []const u8 {
-    if (!color) return "";
-    if (std.mem.eql(u8, label, "error")) return ansi.err;
-    if (std.mem.eql(u8, label, "warning")) return ansi.warn;
-    if (std.mem.eql(u8, label, "hint")) return ansi.hint;
-    if (std.mem.eql(u8, label, "info")) return ansi.info;
-    return ansi.accent;
-}
-
-fn severityBadge(comptime label: []const u8) void {
-    if (!color) {
-        wprint("{s}", .{label});
-        return;
-    }
-    const c = severityColor(label);
-    if (std.mem.eql(u8, label, "error")) {
-        wprint("{s}✖ {s}{s}", .{ c, label, ansi.reset });
-    } else if (std.mem.eql(u8, label, "warning")) {
-        wprint("{s}⚠ {s}{s}", .{ c, label, ansi.reset });
-    } else if (std.mem.eql(u8, label, "hint")) {
-        wprint("{s}◆ {s}{s}", .{ c, label, ansi.reset });
-    } else if (std.mem.eql(u8, label, "info")) {
-        wprint("{s}● {s}{s}", .{ c, label, ansi.reset });
-    } else {
-        wprint("{s}{s}{s}", .{ c, label, ansi.reset });
-    }
-}
-
-fn printLocDiagnostic(loc: anytype, comptime label: []const u8, comptime fmt: []const u8, args: anytype) void {
-    const color_code = severityColor(label);
+fn printLocDiagnostic(loc: anytype, comptime label: []const u8, color_code: []const u8, comptime fmt: []const u8, args: anytype) void {
     if (plain) {
         wprint("{s}:{}:{}: {s}: ", .{ loc.file, loc.line, loc.col, label });
         wprint(fmt, args);
@@ -400,13 +336,12 @@ fn printLocDiagnostic(loc: anytype, comptime label: []const u8, comptime fmt: []
         return;
     }
     if (color) {
-        wprint("{s}╭─ ", .{color_code});
-        severityBadge(label);
-        wprint("{s} {s}at{s} ", .{ ansi.reset, ansi.bold, ansi.reset });
+        const sym = if (std.mem.eql(u8, label, "error")) "✗" else if (std.mem.eql(u8, label, "warning")) "⚠" else if (std.mem.eql(u8, label, "hint")) "💡" else "ℹ";
+        wprint("{s}{s} {s}\x1b[0m\x1b[1m at \x1b[0m", .{ color_code, sym, label });
         printStyledLoc(loc);
-        wprint("\n{s}│{s} {s}message{s} {s}→{s} ", .{ ansi.tree, ansi.reset, ansi.bold, ansi.reset, ansi.muted, ansi.reset });
+        wprint("\n  \x1b[1mmessage\x1b[0m \x1b[2m→\x1b[0m \x1b[3m", .{});
         wprint(fmt, args);
-        wprint("\n", .{});
+        wprint("\x1b[0m\n", .{});
     } else {
         wprint("{s}:{}:{}: {s}: ", .{ loc.file, loc.line, loc.col, label });
         wprint(fmt, args);
@@ -418,7 +353,7 @@ fn printLocDiagnostic(loc: anytype, comptime label: []const u8, comptime fmt: []
 
 pub fn err(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint(ansi.err ++ "✖ error" ++ ansi.reset ++ " " ++ ansi.muted ++ "→" ++ ansi.reset ++ " " ++ fmt ++ "\n", args);
+        wprint("\x1b[1;31m✗ error:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("error: " ++ fmt ++ "\n", args);
     }
@@ -426,7 +361,7 @@ pub fn err(comptime fmt: []const u8, args: anytype) void {
 
 pub fn warn(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint(ansi.warn ++ "⚠ warn" ++ ansi.reset ++ "  " ++ ansi.muted ++ "→" ++ ansi.reset ++ " " ++ fmt ++ "\n", args);
+        wprint("\x1b[1;33m⚠ warning:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("warning: " ++ fmt ++ "\n", args);
     }
@@ -434,7 +369,7 @@ pub fn warn(comptime fmt: []const u8, args: anytype) void {
 
 pub fn hint(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint(ansi.hint ++ "◆ hint" ++ ansi.reset ++ "  " ++ ansi.muted ++ "→" ++ ansi.reset ++ " " ++ fmt ++ "\n", args);
+        wprint("\x1b[1;36m💡 hint:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("hint: " ++ fmt ++ "\n", args);
     }
@@ -442,22 +377,22 @@ pub fn hint(comptime fmt: []const u8, args: anytype) void {
 
 pub fn ok(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint(ansi.ok ++ "✔" ++ ansi.reset ++ " " ++ fmt ++ "\n", args);
+        wprint("\x1b[1;32m✓ " ++ fmt ++ "\x1b[0m\n", args);
     } else {
-        wprint("ok: " ++ fmt ++ "\n", args);
+        wprint(fmt ++ "\n", args);
     }
 }
 
 pub fn locErr(loc: anytype, comptime fmt: []const u8, args: anytype) void {
-    printLocDiagnostic(loc, "error", fmt, args);
+    printLocDiagnostic(loc, "error", "\x1b[31m", fmt, args);
 }
 
 pub fn locWarn(loc: anytype, comptime fmt: []const u8, args: anytype) void {
-    printLocDiagnostic(loc, "warning", fmt, args);
+    printLocDiagnostic(loc, "warning", "\x1b[33m", fmt, args);
 }
 
 pub fn locHint(loc: anytype, comptime fmt: []const u8, args: anytype) void {
-    printLocDiagnostic(loc, "hint", fmt, args);
+    printLocDiagnostic(loc, "hint", "\x1b[36m", fmt, args);
 }
 
 pub fn locBare(loc: anytype, comptime fmt: []const u8, args: anytype) void {
@@ -479,15 +414,11 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 
 pub fn printRaw(comptime fmt: []const u8, args: anytype) void {
     wprint(fmt, args);
-    // printRaw is used for interactive/raw output (e.g. REPL prompts, usage);
-    // ensure it is emitted immediately even when the format does not end in a
-    // newline.
-    flush();
 }
 
 pub fn dim(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint(ansi.muted ++ fmt ++ ansi.reset ++ "\n", args);
+        wprint("\x1b[2m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint(fmt ++ "\n", args);
     }
@@ -495,7 +426,31 @@ pub fn dim(comptime fmt: []const u8, args: anytype) void {
 
 pub fn bold(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint(ansi.bold ++ fmt ++ ansi.reset ++ "\n", args);
+        wprint("\x1b[1m" ++ fmt ++ "\x1b[0m\n", args);
+    } else {
+        wprint(fmt ++ "\n", args);
+    }
+}
+
+pub fn italic(comptime fmt: []const u8, args: anytype) void {
+    if (color) {
+        wprint("\x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+    } else {
+        wprint(fmt ++ "\n", args);
+    }
+}
+
+pub fn underline(comptime fmt: []const u8, args: anytype) void {
+    if (color) {
+        wprint("\x1b[4m" ++ fmt ++ "\x1b[0m\n", args);
+    } else {
+        wprint(fmt ++ "\n", args);
+    }
+}
+
+pub fn blink(comptime fmt: []const u8, args: anytype) void {
+    if (color) {
+        wprint("\x1b[5m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint(fmt ++ "\n", args);
     }
@@ -503,7 +458,7 @@ pub fn bold(comptime fmt: []const u8, args: anytype) void {
 
 pub fn banner(title: []const u8) void {
     if (color) {
-        wprint("{s}╭─ {s}{s} {s}────────────────────────{s}\n", .{ ansi.accent, ansi.bold, title, ansi.muted, ansi.reset });
+        wprint("\x1b[1;36m╭─ {s}\x1b[0m\n", .{title});
     } else {
         wprint("== {s} ==\n", .{title});
     }
@@ -511,7 +466,7 @@ pub fn banner(title: []const u8) void {
 
 pub fn section(title: []const u8) void {
     if (color) {
-        wprint("{s}{s}{s}\n", .{ ansi.bold, title, ansi.reset });
+        wprint("\x1b[1m{s}\x1b[0m\n", .{title});
     } else {
         wprint("{s}\n", .{title});
     }
@@ -519,7 +474,7 @@ pub fn section(title: []const u8) void {
 
 pub fn kv(key: []const u8, value: []const u8) void {
     if (color) {
-        wprint("  " ++ ansi.muted ++ "{s}" ++ ansi.reset ++ " " ++ ansi.muted ++ "→" ++ ansi.reset ++ " " ++ ansi.path ++ "{s}" ++ ansi.reset ++ "\n", .{ key, value });
+        wprint("  \x1b[2m{s}\x1b[0m \x1b[36m{s}\x1b[0m\n", .{ key, value });
     } else {
         wprint("  {s} {s}\n", .{ key, value });
     }
@@ -527,53 +482,9 @@ pub fn kv(key: []const u8, value: []const u8) void {
 
 pub fn divider() void {
     if (color) {
-        wprint("{s}────────────────────────────────────────{s}\n", .{ ansi.muted, ansi.reset });
+        wprint("\x1b[2m────────────────────────────────────────\x1b[0m\n", .{});
     } else {
         wprint("----------------------------------------\n", .{});
-    }
-}
-
-/// Compile/link finished — glanceable artifact line with optional timing.
-pub fn artifactReady(path: []const u8, elapsed_ms: ?u64) void {
-    if (color) {
-        wprint("{s}✔{s} {s}artifact{s} ", .{ ansi.ok, ansi.reset, ansi.bold, ansi.reset });
-        printPathStyled(path);
-        if (elapsed_ms) |ms| wprint(" {s}({d} ms){s}", .{ ansi.muted, ms, ansi.reset });
-        wprint("\n", .{});
-    } else if (elapsed_ms) |ms| {
-        wprint("ok: {s} ({d} ms)\n", .{ path, ms });
-    } else {
-        wprint("ok: {s}\n", .{path});
-    }
-}
-
-/// Interactive REPL prompt.
-pub fn shellPrompt() void {
-    if (color) {
-        printRaw("{s}duo{s}{s}›{s} ", .{ ansi.path, ansi.bold, ansi.muted, ansi.reset });
-    } else {
-        printRaw("duo> ", .{});
-    }
-}
-
-/// CI gate passed (bench/test summary).
-pub fn gatePass(title: []const u8, detail: []const u8) void {
-    if (color) {
-        wprint("{s}▣ PASS{s} {s}{s}{s} {s}·{s} {s}\n", .{
-            ansi.ok, ansi.reset, ansi.bold, title, ansi.reset, ansi.muted, ansi.reset, detail,
-        });
-    } else {
-        wprint("PASS {s}: {s}\n", .{ title, detail });
-    }
-}
-
-pub fn gateFail(title: []const u8, detail: []const u8) void {
-    if (color) {
-        wprint("{s}▣ FAIL{s} {s}{s}{s} {s}·{s} {s}\n", .{
-            ansi.err, ansi.reset, ansi.bold, title, ansi.reset, ansi.muted, ansi.reset, detail,
-        });
-    } else {
-        wprint("FAIL {s}: {s}\n", .{ title, detail });
     }
 }
 
@@ -588,7 +499,7 @@ pub fn infoMsg(comptime fmt: []const u8, args: anytype) void {
 
 pub fn locInfo(loc: anytype, comptime fmt: []const u8, args: anytype) void {
     if (!info) return;
-    printLocDiagnostic(loc, "info", fmt, args);
+    printLocDiagnostic(loc, "info", "\x1b[34m", fmt, args);
 }
 
 pub fn traceStep(comptime fmt: []const u8, args: anytype) void {
@@ -612,18 +523,16 @@ pub fn traceDone(label: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
         pipelinePhaseComplete(label, elapsed_ms, detail);
         return;
     }
-    var dur_buf: [32]u8 = undefined;
-    const dur = formatDurationMs(elapsed_ms, &dur_buf);
     if (detail) |d| {
         if (color) {
-            wprint("{s}✓{s} {s} {s}({s} — {s}{s}{s}){s}\n", .{ ansi.ok, ansi.reset, label, ansi.muted, dur, ansi.path, d, ansi.reset, ansi.reset });
+            wprint("\x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms — {s})\x1b[0m\n", .{ label, elapsed_ms, d });
         } else {
-            wprint("✓ {s} ({s} — {s})\n", .{ label, dur, d });
+            wprint("✓ {s} ({d} ms — {s})\n", .{ label, elapsed_ms, d });
         }
     } else if (color) {
-        wprint("{s}✓{s} {s} {s}({s}){s}\n", .{ ansi.ok, ansi.reset, label, ansi.muted, dur, ansi.reset });
+        wprint("\x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms)\x1b[0m\n", .{ label, elapsed_ms });
     } else {
-        wprint("✓ {s} ({s})\n", .{ label, dur });
+        wprint("✓ {s} ({d} ms)\n", .{ label, elapsed_ms });
     }
 }
 
@@ -913,42 +822,30 @@ pub fn buildPhaseStart(phase: []const u8, detail: ?[]const u8) void {
     if (build_report == .plain) return;
     if (build_report == .compact and verbose_level == 0) return;
     if (color) {
-        wprint("  \x1b[2m▶\x1b[0m \x1b[1m{s}\x1b[0m", .{phase});
-        if (detail) |d| wprint("  \x1b[2m{s}\x1b[0m", .{d});
+        wprint("  \x1b[2m▸\x1b[0m \x1b[1m{s}\x1b[0m", .{phase});
+        if (detail) |d| wprint(" \x1b[2m({s})\x1b[0m", .{d});
         wprint("\n", .{});
     } else {
         if (detail) |d| {
-            wprint("  > {s}  {s}\n", .{ phase, d });
+            wprint("  > {s} ({s})\n", .{ phase, d });
         } else {
             wprint("  > {s}\n", .{phase});
         }
     }
 }
 
-fn formatDurationMs(ms: u64, buf: *[32]u8) []const u8 {
-    if (ms >= 10_000) {
-        return std.fmt.bufPrint(buf, "{d:.2}s", .{@as(f64, @floatFromInt(ms)) / 1000.0}) catch "?";
-    }
-    if (ms >= 1000) {
-        return std.fmt.bufPrint(buf, "{d:.1}s", .{@as(f64, @floatFromInt(ms)) / 1000.0}) catch "?";
-    }
-    return std.fmt.bufPrint(buf, "{d} ms", .{ms}) catch "?";
-}
-
 pub fn buildPhaseDone(phase: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
     if (build_report == .plain) return;
-    var dur_buf: [32]u8 = undefined;
-    const dur = formatDurationMs(elapsed_ms, &dur_buf);
     if (color) {
-        wprint("  {s}✓{s} {s}{s}{s}  {s}{s}{s}", .{ ansi.ok, ansi.reset, ansi.bold, phase, ansi.reset, ansi.muted, dur, ansi.reset });
-        if (detail) |d| {
-            wprint("  {s}→{s} {s}{s}{s}", .{ ansi.muted, ansi.reset, ansi.path, d, ansi.reset });
-        }
-        wprint("\n", .{});
-    } else if (detail) |d| {
-        wprint("  ok {s}  {s}  -> {s}\n", .{ phase, dur, d });
+        wprint("  \x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms", .{ phase, elapsed_ms });
+        if (detail) |d| wprint(" — {s}", .{d});
+        wprint(")\x1b[0m\n", .{});
     } else {
-        wprint("  ok {s}  {s}\n", .{ phase, dur });
+        if (detail) |d| {
+            wprint("  ok {s} ({d} ms — {s})\n", .{ phase, elapsed_ms, d });
+        } else {
+            wprint("  ok {s} ({d} ms)\n", .{ phase, elapsed_ms });
+        }
     }
 }
 
@@ -1065,17 +962,9 @@ fn testPrintTime(name: []const u8, elapsed: f64) void {
 
 fn testPrintFail(name: []const u8, reason: ?[]const u8) void {
     if (reason) |r| {
-        if (color) {
-            wprint("  {s} {s}{s}{s} {s}·{s} {s}{s}{s}\n", .{
-                testIconFail(), ansi.bold, name, ansi.reset, ansi.muted, ansi.reset, ansi.err, r, ansi.reset,
-            });
-        } else {
-            wprint("  FAIL {s}: {s}\n", .{ name, r });
-        }
-    } else if (color) {
-        wprint("  {s} {s}{s}{s}\n", .{ testIconFail(), ansi.bold, name, ansi.reset });
+        wprint("  {s} \x1b[1m{s}\x1b[0m \x1b[31m{s}\x1b[0m\n", .{ testIconFail(), name, r });
     } else {
-        wprint("  FAIL {s}\n", .{name});
+        wprint("  {s} \x1b[1m{s}\x1b[0m\n", .{ testIconFail(), name });
     }
 }
 
@@ -1097,31 +986,25 @@ pub fn testSummary() void {
     testCompactClose();
     const s = test_stats;
     if (color) {
-        wprint(ansi.muted ++ "╰─ summary " ++ "──────────────────────────" ++ ansi.reset ++ "\n", .{});
+        wprint("\x1b[2m╰─ summary ───────────────────────────\x1b[0m\n", .{});
         if (s.fail == 0 and s.pass > 0) {
             const pct: u32 = if (s.run > 0) @intCast((s.pass * 100) / s.run) else 100;
-            const filled: usize = @min(10, (pct + 9) / 10);
-            wprint("  ", .{});
-            var bar_i: usize = 0;
-            while (bar_i < 10) : (bar_i += 1) {
-                if (bar_i < filled) wprint(ansi.ok ++ "▰" ++ ansi.reset, .{}) else wprint(ansi.muted ++ "▱" ++ ansi.reset, .{});
-            }
-            wprint(" " ++ ansi.ok ++ "{d} passed" ++ ansi.reset ++ " " ++ ansi.muted ++ "({d}%)" ++ ansi.reset ++ "\n", .{ s.pass, pct });
+            wprint("  \x1b[32m▰▰▰▰▰▰▰▰▰▰\x1b[0m \x1b[32m{} passed\x1b[0m ({d}%)\n", .{ s.pass, pct });
         } else if (s.fail > 0) {
-            wprint("  " ++ ansi.err ++ "✖ {d} failed" ++ ansi.reset, .{s.fail});
-            if (s.pass > 0) wprint(" " ++ ansi.muted ++ "·" ++ ansi.reset ++ " " ++ ansi.ok ++ "{d} passed" ++ ansi.reset, .{s.pass});
+            wprint("  \x1b[31m{} failed\x1b[0m", .{s.fail});
+            if (s.pass > 0) wprint(" · \x1b[32m{} passed\x1b[0m", .{s.pass});
             wprint("\n", .{});
         } else {
-            wprint("  {d} run\n", .{s.run});
+            wprint("  {} run\n", .{s.run});
         }
-        wprint("  " ++ ansi.muted ++ "{d} run" ++ ansi.reset, .{s.run});
-        if (s.skip > 0) wprint(" " ++ ansi.muted ++ "·" ++ ansi.reset ++ " " ++ ansi.warn ++ "{d} skipped" ++ ansi.reset, .{s.skip});
-        if (s.flaky > 0) wprint(" " ++ ansi.muted ++ "·" ++ ansi.reset ++ " " ++ ansi.warn ++ "{d} flaky" ++ ansi.reset, .{s.flaky});
-        if (s.bench > 0) wprint(" " ++ ansi.muted ++ "·" ++ ansi.reset ++ " " ++ ansi.accent ++ "{d} bench" ++ ansi.reset, .{s.bench});
-        if (s.timed > 0) wprint(" " ++ ansi.muted ++ "·" ++ ansi.reset ++ " " ++ ansi.hint ++ "{d} timed" ++ ansi.reset, .{s.timed});
+        wprint(" · {} run", .{s.run});
+        if (s.skip > 0) wprint(" · \x1b[33m{} skipped\x1b[0m", .{s.skip});
+        if (s.flaky > 0) wprint(" · \x1b[33m{} flaky\x1b[0m", .{s.flaky});
+        if (s.bench > 0) wprint(" · \x1b[35m{} bench\x1b[0m", .{s.bench});
+        if (s.timed > 0) wprint(" · \x1b[36m{} timed\x1b[0m", .{s.timed});
         wprint("\n", .{});
     } else {
-        wprint("summary: {d} run, {d} pass, {d} fail, {d} skip\n", .{ s.run, s.pass, s.fail, s.skip });
+        wprint("summary: {} run, {} pass, {} fail, {} skip\n", .{ s.run, s.pass, s.fail, s.skip });
     }
 }
 
