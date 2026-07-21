@@ -5297,6 +5297,13 @@ pub const Sema = struct {
                         const idx = tgt.index;
                         if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname_inner)) continue;
                         assigns_out.* += 1;
+                        // Check if the INDEX KEY is numeric. Dense tables are
+                        // integer-indexed arrays — string keys disqualify them.
+                        var key_non_num = false;
+                        dense_check_non_numeric(fb, idx.key, &key_non_num);
+                        if (key_non_num) {
+                            ok_out.* = false;
+                        }
                     }
                     // Check if any value assigned to the table contains float or non-numeric operations
                     for (as.targets, as.values) |tgt, val| {
@@ -5312,10 +5319,10 @@ pub const Sema = struct {
                             }
                         }
                     }
-                    for (as.values) |val| dense_walk_expr(val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                    for (as.values) |val| dense_walk_expr(fb, val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 },
                 .local_decl => |*ld| {
-                    for (ld.inits) |init_e| dense_walk_expr(init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                    for (ld.inits) |init_e| dense_walk_expr(fb, init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 },
                 .if_stmt => |*is| {
                     dense_walk(fb, &is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
@@ -5351,8 +5358,23 @@ pub const Sema = struct {
             .call => |c| {
                 if (c.func.* == .name) {
                     const name = c.func.name.ident;
-                    if (std.mem.eql(u8, name, "tostring") or
-                        std.mem.eql(u8, name, "valtype_to_c") or
+                    // Only known numeric builtins are safe; everything else
+                    // (tostring, req, error, arbitrary user functions) is non-numeric.
+                    if (!std.mem.eql(u8, name, "tostring") and
+                        !std.mem.eql(u8, name, "tonumber") and
+                        !std.mem.eql(u8, name, "floor") and
+                        !std.mem.eql(u8, name, "ceil") and
+                        !std.mem.eql(u8, name, "abs") and
+                        !std.mem.eql(u8, name, "sqrt") and
+                        !std.mem.eql(u8, name, "min") and
+                        !std.mem.eql(u8, name, "max") and
+                        !std.mem.eql(u8, name, "assert") and
+                        !std.mem.eql(u8, name, "error"))
+                    {
+                        // Unknown function — could return non-numeric (string, table, nil).
+                        // Be conservative and mark as non-numeric.
+                        non_numeric_out.* = true;
+                    } else if (std.mem.eql(u8, name, "tostring") or
                         std.mem.eql(u8, name, "req") or
                         std.mem.eql(u8, name, "error"))
                     {
@@ -5362,10 +5384,20 @@ pub const Sema = struct {
                     const f = c.func.field;
                     if (f.obj.* == .name) {
                         const obj_name = f.obj.name.ident;
-                        if (std.mem.eql(u8, obj_name, "string") or std.mem.eql(u8, obj_name, "table")) {
+                        if (std.mem.eql(u8, obj_name, "string") or std.mem.eql(u8, obj_name, "table") or
+                            std.mem.eql(u8, obj_name, "fmt") or std.mem.eql(u8, obj_name, "io") or
+                            std.mem.eql(u8, obj_name, "os") or std.mem.eql(u8, obj_name, "time") or
+                            std.mem.eql(u8, obj_name, "wasm") or std.mem.eql(u8, obj_name, "ward_os"))
+                        {
                             non_numeric_out.* = true;
                         }
+                    } else {
+                        // Field call on non-name object — conservative non-numeric
+                        non_numeric_out.* = true;
                     }
+                } else {
+                    // Method calls (x:method()) — conservative non-numeric
+                    non_numeric_out.* = true;
                 }
             },
             else => {},
@@ -5421,18 +5453,25 @@ pub const Sema = struct {
         }
     }
 
-    fn dense_walk_expr(expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
+    fn dense_walk_expr(fb: *const ast.FuncBody, expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
         switch (expr.*) {
             .index => |idx| {
-                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner))
+                if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
                     reads_out.* += 1;
+                    // Check if the read index is numeric — string keys disqualify dense tables.
+                    var key_non_num = false;
+                    dense_check_non_numeric(fb, idx.key, &key_non_num);
+                    if (key_non_num) {
+                        ok_out.* = false;
+                    }
+                }
             },
             .binop => |b| {
-                dense_walk_expr(b.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
-                dense_walk_expr(b.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                dense_walk_expr(fb, b.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                dense_walk_expr(fb, b.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
             },
             .call => |c| {
-                for (c.args) |a| dense_walk_expr(a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                for (c.args) |a| dense_walk_expr(fb, a, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
             },
             else => {},
         }
@@ -5735,7 +5774,7 @@ pub const Sema = struct {
             if (!has_float_assign) {
                 has_float_assign = check_table_passed_as_float(fb, tname);
             }
-            if (assigns > 0 or has_loop_init) {
+            if ((assigns > 0 or has_loop_init) and ok) {
                 try qualifying.append(alloc, tname);
                 try qualifying_floats.append(alloc, has_float_assign);
             }

@@ -704,9 +704,10 @@ pub fn buildTargetTable(rows: []const BuildTargetRow) void {
 
 fn channelAccent(channel: []const u8) []const u8 {
     if (!color) return "";
+    if (std.mem.eql(u8, channel, "lex")) return "\x1b[35m";
     if (std.mem.eql(u8, channel, "parse")) return "\x1b[36m";
     if (std.mem.eql(u8, channel, "sema")) return "\x1b[34m";
-    if (std.mem.eql(u8, channel, "types")) return "\x1b[35m";
+    if (std.mem.eql(u8, channel, "types")) return "\x1b[95m";
     if (std.mem.eql(u8, channel, "mono")) return "\x1b[33m";
     if (std.mem.eql(u8, channel, "arc")) return "\x1b[32m";
     if (std.mem.eql(u8, channel, "async")) return "\x1b[96m";
@@ -717,11 +718,41 @@ fn channelAccent(channel: []const u8) []const u8 {
     return "\x1b[35m";
 }
 
+/// Per-channel glyph — gives the eye an anchor when scanning trace trees.
+fn channelGlyph(channel: []const u8) []const u8 {
+    if (std.mem.eql(u8, channel, "lex")) return "❖";
+    if (std.mem.eql(u8, channel, "parse")) return "≻";
+    if (std.mem.eql(u8, channel, "sema")) return "⊙";
+    if (std.mem.eql(u8, channel, "types")) return "⊤";
+    if (std.mem.eql(u8, channel, "mono")) return "◐";
+    if (std.mem.eql(u8, channel, "arc")) return "↻";
+    if (std.mem.eql(u8, channel, "async")) return "⧗";
+    if (std.mem.eql(u8, channel, "codegen")) return "⚙";
+    if (std.mem.eql(u8, channel, "build")) return "⚒";
+    if (std.mem.eql(u8, channel, "test")) return "✓";
+    if (std.mem.eql(u8, channel, "link")) return "⛓";
+    return "✶";
+}
+
+/// Small structural mark beside a scope name — semantic signal, not decoration.
+fn scopeMark(scope: []const u8) []const u8 {
+    if (std.mem.eql(u8, scope, "module")) return "⬚";
+    if (std.mem.eql(u8, scope, "function")) return "ƒ";
+    if (std.mem.eql(u8, scope, "struct")) return "◧";
+    if (std.mem.eql(u8, scope, "enum")) return "☰";
+    if (std.mem.eql(u8, scope, "table")) return "▥";
+    if (std.mem.eql(u8, scope, "macro")) return "⧉";
+    if (std.mem.eql(u8, scope, "generic")) return "⟨⟩";
+    if (std.mem.eql(u8, scope, "trait")) return "◆";
+    if (std.mem.eql(u8, scope, "impl")) return "⚑";
+    return "·";
+}
+
 fn debugTreePrefix(depth: u32) void {
     if (depth == 0) return;
     var i: u32 = 0;
     while (i + 1 < depth) : (i += 1) {
-        if (color) wprint("\x1b[2m│ \x1b[0m", .{}) else wprint("| ", .{});
+        if (color) wprint("\x1b[2m│  \x1b[0m", .{}) else wprint("| ", .{});
     }
     if (color) wprint("\x1b[2m├─\x1b[0m ", .{}) else wprint("+- ", .{});
 }
@@ -800,15 +831,31 @@ pub fn debugEventChannel(channel: []const u8, scope: []const u8, comptime fmt: [
     if (!debug_enabled) return;
     const depth = @import("debug_trace.zig").filter().depth;
     if (test_report == .compact and depth > 0 and verbose_level == 0) return;
-    indent(depth);
-    debugTreePrefix(depth);
     const accent = channelAccent(channel);
+    const glyph = channelGlyph(channel);
+    const smark = scopeMark(scope);
+
     if (color) {
-        wprint("{s}◆\x1b[0m \x1b[2m[{s}/{s}]\x1b[0m ", .{ accent, channel, scope });
+        // Depth tree (dim) — eye-anchor for nested traces.
+        if (depth > 0) debugTreePrefix(depth) else wprint("\x1b[2m··\x1b[0m ", .{});
+
+        // Glyph (accent + bold) signals which pipeline phase is emitting.
+        wprint("{s}\x1b[1m{s}\x1b[0m ", .{ accent, glyph });
+        // Bracket channel name bold+accent, scope-mark italic dim, scope italic accent.
+        wprint("\x1b[2m[\x1b[0m{s}\x1b[1m{s}\x1b[0m \x1b[2m/\x1b[0m {s}\x1b[3m{s}\x1b[0m{s} \x1b[3m{s}\x1b[0m\x1b[2m]\x1b[0m", .{
+            accent, channel, accent, smark, accent, scope,
+        });
+        // Dim arrow separates metadata from payload.
+        wprint(" \x1b[2m→\x1b[0m ", .{});
+        // Payload: italic + accent — semantic content stands apart from chrome.
+        wprint("\x1b[3m{s}", .{accent});
         wprint(fmt, args);
-        wprint("\n", .{});
+        wprint("\x1b[0m\n", .{});
     } else {
-        wprint("debug [{s}/{s}] ", .{ channel, scope });
+        var i: u32 = 0;
+        while (i < depth) : (i += 1) wprint("  ", .{});
+        if (depth > 0) wprint("- ", .{});
+        wprint("{s} debug [{s}/{s} {s}] ", .{ glyph, channel, scope, smark });
         wprint(fmt, args);
         wprint("\n", .{});
     }
