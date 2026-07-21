@@ -233,6 +233,7 @@ std.inspect = req "std.inspect"
 std.random = req "std.random"
 std.regex = req "std.regex"
 std.log = req "std.log"
+std.trace = req "std.trace"
 std.fmt = req "std.fmt"
 std.strings = req "std.strings"
 std.strconv = req "std.strconv"
@@ -276,7 +277,8 @@ std.tools = {
     package = req "std.package",
     debug = req "std.debug",
     color = req "std.color",
-    term = req "std.term"
+    term = req "std.term",
+    trace = req "std.trace"
 }
 
 -- Testing helpers

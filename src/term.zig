@@ -355,7 +355,7 @@ fn printLocDiagnostic(loc: anytype, comptime label: []const u8, color_code: []co
 
 pub fn err(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;31m✗ error:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;4;31m✗ error\x1b[0m\x1b[1;31m:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("error: " ++ fmt ++ "\n", args);
     }
@@ -363,7 +363,7 @@ pub fn err(comptime fmt: []const u8, args: anytype) void {
 
 pub fn warn(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;33m⚠ warning:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;4;33m⚠ warning\x1b[0m\x1b[1;33m:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("warning: " ++ fmt ++ "\n", args);
     }
@@ -371,7 +371,7 @@ pub fn warn(comptime fmt: []const u8, args: anytype) void {
 
 pub fn hint(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;36m💡 hint:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;4;36m💡 hint\x1b[0m\x1b[1;36m:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("hint: " ++ fmt ++ "\n", args);
     }
@@ -379,7 +379,7 @@ pub fn hint(comptime fmt: []const u8, args: anytype) void {
 
 pub fn ok(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;32m✓ " ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;4;32m✓\x1b[0m \x1b[1;32m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint(fmt ++ "\n", args);
     }
@@ -954,23 +954,23 @@ pub fn testSessionEnd() void {
 }
 
 fn testIconPass() []const u8 {
-    return if (color) "\x1b[32m✓\x1b[0m" else "ok";
+    return if (color) "\x1b[1;32m✓\x1b[0m" else "ok";
 }
 
 fn testIconFail() []const u8 {
-    return if (color) "\x1b[31m✗\x1b[0m" else "FAIL";
+    return if (color) "\x1b[1;31m✗\x1b[0m" else "FAIL";
 }
 
 fn testIconSkip() []const u8 {
-    return if (color) "\x1b[33m⊘\x1b[0m" else "SKIP";
+    return if (color) "\x1b[1;33m⊘\x1b[0m" else "SKIP";
 }
 
 fn testIconRun() []const u8 {
-    return if (color) "\x1b[36m▶\x1b[0m" else "RUN";
+    return if (color) "\x1b[1;36m▶\x1b[0m" else "RUN";
 }
 
 fn testIconBench() []const u8 {
-    return if (color) "\x1b[35m⏱\x1b[0m" else "BENCH";
+    return if (color) "\x1b[1;35m⏱\x1b[0m" else "BENCH";
 }
 
 fn testIconFlaky() []const u8 {
@@ -1058,22 +1058,22 @@ pub fn testSummary() void {
     testCompactClose();
     const s = test_stats;
     if (color) {
-        wprint("\x1b[2m╰─ summary ───────────────────────────\x1b[0m\n", .{});
+        wprint("\x1b[2m╰─\x1b[0m \x1b[1;4;36msummary\x1b[0m \x1b[2m┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\x1b[0m\n", .{});
         if (s.fail == 0 and s.pass > 0) {
             const pct: u32 = if (s.run > 0) @intCast((s.pass * 100) / s.run) else 100;
-            wprint("  \x1b[32m▰▰▰▰▰▰▰▰▰▰\x1b[0m \x1b[32m{} passed\x1b[0m ({d}%)\n", .{ s.pass, pct });
+            wprint("  \x1b[1;32m▰▰▰▰▰▰▰▰▰▰\x1b[0m \x1b[1;32m{} passed\x1b[0m \x1b[3m({d}%)\x1b[0m\n", .{ s.pass, pct });
         } else if (s.fail > 0) {
-            wprint("  \x1b[31m{} failed\x1b[0m", .{s.fail});
-            if (s.pass > 0) wprint(" · \x1b[32m{} passed\x1b[0m", .{s.pass});
+            wprint("  \x1b[1;31m{} failed\x1b[0m", .{s.fail});
+            if (s.pass > 0) wprint(" \x1b[2m·\x1b[0m \x1b[1;32m{} passed\x1b[0m", .{s.pass});
             wprint("\n", .{});
         } else {
-            wprint("  {} run\n", .{s.run});
+            wprint("  \x1b[1;37m{} run\x1b[0m\n", .{s.run});
         }
-        wprint(" · {} run", .{s.run});
-        if (s.skip > 0) wprint(" · \x1b[33m{} skipped\x1b[0m", .{s.skip});
-        if (s.flaky > 0) wprint(" · \x1b[33m{} flaky\x1b[0m", .{s.flaky});
-        if (s.bench > 0) wprint(" · \x1b[35m{} bench\x1b[0m", .{s.bench});
-        if (s.timed > 0) wprint(" · \x1b[36m{} timed\x1b[0m", .{s.timed});
+        wprint("  \x1b[2m│\x1b[0m \x1b[1m{} run\x1b[0m", .{s.run});
+        if (s.skip > 0) wprint(" \x1b[2m·\x1b[0m \x1b[1;33m{} skipped\x1b[0m", .{s.skip});
+        if (s.flaky > 0) wprint(" \x1b[2m·\x1b[0m \x1b[1;33m{} flaky\x1b[0m", .{s.flaky});
+        if (s.bench > 0) wprint(" \x1b[2m·\x1b[0m \x1b[1;35m{} bench\x1b[0m", .{s.bench});
+        if (s.timed > 0) wprint(" \x1b[2m·\x1b[0m \x1b[1;36m{} timed\x1b[0m", .{s.timed});
         wprint("\n", .{});
     } else {
         wprint("summary: {} run, {} pass, {} fail, {} skip\n", .{ s.run, s.pass, s.fail, s.skip });
