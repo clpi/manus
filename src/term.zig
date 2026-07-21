@@ -302,10 +302,12 @@ fn printSourceContext(loc: anytype, severity_color: []const u8) void {
 fn printDiagnosticNote(comptime label: []const u8, body: []const u8, is_last: bool) void {
     if (color) {
         const branch = if (is_last) "╰─" else "├─";
-        const label_color = if (std.mem.eql(u8, label, "help")) "\x1b[1;36m" else "\x1b[1;37m";
-        wprint("  \x1b[2m{s}\x1b[0m {s}{s}\x1b[0m \x1b[2m→\x1b[0m {s}\n", .{
+        const label_color = if (std.mem.eql(u8, label, "help")) "\x1b[1;36m" else if (std.mem.eql(u8, label, "detail")) "\x1b[1;34m" else "\x1b[1;37m";
+        const glyph: []const u8 = if (std.mem.eql(u8, label, "help")) "💡" else if (std.mem.eql(u8, label, "detail")) "ℹ" else "·";
+        wprint("  \x1b[2m{s}\x1b[0m {s}{s} {s}\x1b[0m \x1b[2m→\x1b[0m \x1b[3m{s}\x1b[0m\n", .{
             branch,
             label_color,
+            glyph,
             label,
             body,
         });
@@ -458,7 +460,7 @@ pub fn blink(comptime fmt: []const u8, args: anytype) void {
 
 pub fn banner(title: []const u8) void {
     if (color) {
-        wprint("\x1b[1;36m╭─ {s}\x1b[0m\n", .{title});
+        wprint("\x1b[1;36m╭─ {s}\x1b[0m \x1b[2m┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\x1b[0m\n", .{title});
     } else {
         wprint("== {s} ==\n", .{title});
     }
@@ -466,7 +468,7 @@ pub fn banner(title: []const u8) void {
 
 pub fn section(title: []const u8) void {
     if (color) {
-        wprint("\x1b[1m{s}\x1b[0m\n", .{title});
+        wprint("\x1b[1;4m{s}\x1b[0m\n", .{title});
     } else {
         wprint("{s}\n", .{title});
     }
@@ -474,15 +476,15 @@ pub fn section(title: []const u8) void {
 
 pub fn kv(key: []const u8, value: []const u8) void {
     if (color) {
-        wprint("  \x1b[2m{s}\x1b[0m \x1b[36m{s}\x1b[0m\n", .{ key, value });
+        wprint("  \x1b[2m{s}\x1b[0m \x1b[2m·\x1b[0m \x1b[36m{s}\x1b[0m\n", .{ key, value });
     } else {
-        wprint("  {s} {s}\n", .{ key, value });
+        wprint("  {s} : {s}\n", .{ key, value });
     }
 }
 
 pub fn divider() void {
     if (color) {
-        wprint("\x1b[2m────────────────────────────────────────\x1b[0m\n", .{});
+        wprint("\x1b[2m┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\x1b[0m\n", .{});
     } else {
         wprint("----------------------------------------\n", .{});
     }
@@ -491,7 +493,7 @@ pub fn divider() void {
 pub fn infoMsg(comptime fmt: []const u8, args: anytype) void {
     if (!info) return;
     if (color) {
-        wprint("\x1b[34m● info\x1b[0m \x1b[2m→\x1b[0m " ++ fmt ++ "\n", args);
+        wprint("\x1b[1;34mℹ info\x1b[0m \x1b[2m→\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
     } else {
         wprint("info: " ++ fmt ++ "\n", args);
     }
@@ -511,9 +513,11 @@ pub fn traceStep(comptime fmt: []const u8, args: anytype) void {
         return;
     }
     if (color) {
-        wprint("\x1b[2m…\x1b[0m " ++ fmt ++ "\n", args);
+        wprint("\x1b[2;36m⟳\x1b[0m \x1b[3;36m", .{});
+        wprint(fmt, args);
+        wprint("\x1b[0m \x1b[2m…\x1b[0m\n", .{});
     } else {
-        wprint("… " ++ fmt ++ "\n", args);
+        wprint("⟳ " ++ fmt ++ " …\n", args);
     }
 }
 
@@ -523,14 +527,16 @@ pub fn traceDone(label: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
         pipelinePhaseComplete(label, elapsed_ms, detail);
         return;
     }
+    // Color the elapsed time by intensity (green fast → yellow slow) — semantic signal.
+    const ms_color = if (!color) "" else if (elapsed_ms < 50) "\x1b[32m" else if (elapsed_ms < 500) "\x1b[33m" else "\x1b[31m";
     if (detail) |d| {
         if (color) {
-            wprint("\x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms — {s})\x1b[0m\n", .{ label, elapsed_ms, d });
+            wprint("\x1b[1;32m✓\x1b[0m \x1b[1m{s}\x1b[0m \x1b[2m(\x1b[0m{s}{d} ms\x1b[0m\x1b[2m — \x1b[3m{s}\x1b[0m\x1b[2m)\x1b[0m\n", .{ label, ms_color, elapsed_ms, d });
         } else {
             wprint("✓ {s} ({d} ms — {s})\n", .{ label, elapsed_ms, d });
         }
     } else if (color) {
-        wprint("\x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms)\x1b[0m\n", .{ label, elapsed_ms });
+        wprint("\x1b[1;32m✓\x1b[0m \x1b[1m{s}\x1b[0m \x1b[2m(\x1b[0m{s}{d} ms\x1b[0m\x1b[2m)\x1b[0m\n", .{ label, ms_color, elapsed_ms });
     } else {
         wprint("✓ {s} ({d} ms)\n", .{ label, elapsed_ms });
     }
@@ -539,9 +545,9 @@ pub fn traceDone(label: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
 pub fn traceSummary(label: []const u8, comptime fmt: []const u8, args: anytype) void {
     if (!trace) return;
     if (color) {
-        wprint("\x1b[1m{s}\x1b[0m \x1b[2m→\x1b[0m ", .{label});
+        wprint("\x1b[1;4m{s}\x1b[0m \x1b[2m┄▶\x1b[0m \x1b[3m", .{label});
         wprint(fmt, args);
-        wprint("\n", .{});
+        wprint("\x1b[0m\n", .{});
     } else {
         wprint("{s}: ", .{label});
         wprint(fmt, args);
@@ -565,7 +571,7 @@ pub fn pipelineBegin(title: []const u8) void {
     pipeline_step = 0;
     pipeline_peak_ms = 0;
     if (color) {
-        wprint("\x1b[1;36m╭─ {s}\x1b[0m \x1b[2m────────────────────────\x1b[0m\n", .{title});
+        wprint("\x1b[1;36m╭─ {s}\x1b[0m \x1b[2m┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\x1b[0m\n", .{title});
     } else {
         wprint("== {s} ==\n", .{title});
     }
@@ -574,11 +580,18 @@ pub fn pipelineBegin(title: []const u8) void {
 fn microBar(elapsed_ms: u64, peak_ms: u64, width: usize) void {
     const pk = if (peak_ms == 0) 1 else peak_ms;
     const filled = @min(width, (elapsed_ms * width) / pk);
+    // Intensity gradient: green (fast) → yellow → red (slowest phase seen).
+    const bar_color: []const u8 = blk: {
+        if (!color) break :blk "";
+        if (elapsed_ms < 50) break :blk "\x1b[32m";
+        if (elapsed_ms < 500) break :blk "\x1b[33m";
+        break :blk "\x1b[31m";
+    };
     if (color) {
         wprint("\x1b[2m ", .{});
         var i: usize = 0;
         while (i < width) : (i += 1) {
-            if (i < filled) wprint("\x1b[32m▰\x1b[0m", .{}) else wprint("\x1b[2m▱\x1b[0m", .{});
+            if (i < filled) wprint("{s}▰\x1b[0m", .{bar_color}) else wprint("\x1b[2m▱\x1b[0m", .{});
         }
     } else {
         var i: usize = 0;
@@ -592,7 +605,7 @@ pub fn pipelinePhaseActive(label: []const u8) void {
     if (!richPipeline()) return;
     pipeline_step += 1;
     if (color) {
-        wprint("  \x1b[2m│\x1b[0m \x1b[36m{d}\x1b[0m \x1b[1m{s}\x1b[0m \x1b[2m…\x1b[0m\n", .{ pipeline_step, label });
+        wprint("  \x1b[2m│\x1b[0m \x1b[2;36m#{}\x1b[0m \x1b[2;35m⠋\x1b[0m \x1b[1m{s}\x1b[0m \x1b[2m…\x1b[0m\n", .{ pipeline_step, label });
     } else {
         wprint("  {d}. {s} …\n", .{ pipeline_step, label });
     }
@@ -601,12 +614,18 @@ pub fn pipelinePhaseActive(label: []const u8) void {
 pub fn pipelinePhaseComplete(label: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
     if (!richPipeline()) return;
     if (elapsed_ms > pipeline_peak_ms) pipeline_peak_ms = elapsed_ms;
+    const ms_color: []const u8 = blk: {
+        if (!color) break :blk "";
+        if (elapsed_ms < 50) break :blk "\x1b[32m";
+        if (elapsed_ms < 500) break :blk "\x1b[33m";
+        break :blk "\x1b[31m";
+    };
     if (color) {
-        wprint("  \x1b[2m│\x1b[0m \x1b[36m{d}\x1b[0m \x1b[32m✓\x1b[0m {s} ", .{ pipeline_step, label });
+        wprint("  \x1b[2m│\x1b[0m \x1b[2;36m#{}\x1b[0m \x1b[1;32m✓\x1b[0m \x1b[1m{s}\x1b[0m ", .{ pipeline_step, label });
         microBar(elapsed_ms, pipeline_peak_ms, 12);
-        wprint(" \x1b[2m{d} ms", .{elapsed_ms});
-        if (detail) |d| wprint(" — {s}", .{d});
-        wprint("\x1b[0m\n", .{});
+        wprint(" {s}\x1b[1m{d} ms\x1b[0m", .{ ms_color, elapsed_ms });
+        if (detail) |d| wprint(" \x1b[2m⟶\x1b[0m \x1b[3;36m{s}\x1b[0m", .{d});
+        wprint("\n", .{});
     } else {
         wprint("  {d}. ok {s} ({d} ms", .{ pipeline_step, label, elapsed_ms });
         if (detail) |d| wprint(" — {s}", .{d});
@@ -618,7 +637,7 @@ pub fn pipelineEnd(total_ms: u64, footer: []const u8) void {
     if (!pipeline_open) return;
     pipeline_open = false;
     if (color) {
-        wprint("\x1b[2m╰─\x1b[0m \x1b[1m{d} ms\x1b[0m \x1b[2m→\x1b[0m {s}\n", .{ total_ms, footer });
+        wprint("\x1b[2m╰─\x1b[0m \x1b[1;4m{d} ms\x1b[0m \x1b[1;36m⟶\x1b[0m \x1b[3;36m{s}\x1b[0m\n", .{ total_ms, footer });
     } else {
         wprint("total {d} ms → {s}\n", .{ total_ms, footer });
     }
@@ -869,24 +888,30 @@ pub fn buildPhaseStart(phase: []const u8, detail: ?[]const u8) void {
     if (build_report == .plain) return;
     if (build_report == .compact and verbose_level == 0) return;
     if (color) {
-        wprint("  \x1b[2m▸\x1b[0m \x1b[1m{s}\x1b[0m", .{phase});
-        if (detail) |d| wprint(" \x1b[2m({s})\x1b[0m", .{d});
-        wprint("\n", .{});
+        wprint("  \x1b[2;36m▸\x1b[0m \x1b[1m{s}\x1b[0m", .{phase});
+        if (detail) |d| wprint(" \x1b[2m·\x1b[0m \x1b[3;36m{s}\x1b[0m", .{d});
+        wprint(" \x1b[2m…\x1b[0m\n", .{});
     } else {
         if (detail) |d| {
-            wprint("  > {s} ({s})\n", .{ phase, d });
+            wprint("  > {s} ({s}) …\n", .{ phase, d });
         } else {
-            wprint("  > {s}\n", .{phase});
+            wprint("  > {s} …\n", .{phase});
         }
     }
 }
 
 pub fn buildPhaseDone(phase: []const u8, elapsed_ms: u64, detail: ?[]const u8) void {
     if (build_report == .plain) return;
+    const ms_color: []const u8 = blk: {
+        if (!color) break :blk "";
+        if (elapsed_ms < 50) break :blk "\x1b[32m";
+        if (elapsed_ms < 500) break :blk "\x1b[33m";
+        break :blk "\x1b[31m";
+    };
     if (color) {
-        wprint("  \x1b[32m✓\x1b[0m {s} \x1b[2m({d} ms", .{ phase, elapsed_ms });
-        if (detail) |d| wprint(" — {s}", .{d});
-        wprint(")\x1b[0m\n", .{});
+        wprint("  \x1b[1;32m✓\x1b[0m \x1b[1m{s}\x1b[0m \x1b[2m(\x1b[0m{s}\x1b[1m{d} ms\x1b[0m", .{ phase, ms_color, elapsed_ms });
+        if (detail) |d| wprint("\x1b[2m · \x1b[0m\x1b[3;36m{s}\x1b[0m", .{d});
+        wprint("\x1b[2m)\x1b[0m\n", .{});
     } else {
         if (detail) |d| {
             wprint("  ok {s} ({d} ms — {s})\n", .{ phase, elapsed_ms, d });
@@ -899,8 +924,8 @@ pub fn buildPhaseDone(phase: []const u8, elapsed_ms: u64, detail: ?[]const u8) v
 pub fn buildTargetCard(name: []const u8, src: []const u8, kind: []const u8) void {
     if (build_report == .plain) return;
     if (color) {
-        wprint("\x1b[1;36m╭─ target\x1b[0m \x1b[1m{s}\x1b[0m \x1b[2m({s})\x1b[0m\n", .{ name, kind });
-        wprint("  \x1b[2msrc\x1b[0m \x1b[36m{s}\x1b[0m\n", .{src});
+        wprint("\x1b[1;36m╭─ target\x1b[0m \x1b[1;4m{s}\x1b[0m \x1b[2m({s})\x1b[0m\n", .{ name, kind });
+        wprint("  \x1b[2m│\x1b[0m \x1b[2msrc\x1b[0m \x1b[2m·\x1b[0m \x1b[4;36m{s}\x1b[0m\n", .{src});
     } else {
         wprint("target {s} ({s})\n  src {s}\n", .{ name, kind, src });
     }
@@ -915,7 +940,7 @@ pub fn testSessionBegin(bench_mode: bool) void {
     }
     if (test_report == .plain) return;
     if (color) {
-        wprint("\x1b[2m╭─ run ─────────────────────────────────\x1b[0m\n", .{});
+        wprint("\x1b[1;36m╭─ run\x1b[0m \x1b[2m┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\x1b[0m\n", .{});
     } else {
         wprint("--- run ---\n", .{});
     }
