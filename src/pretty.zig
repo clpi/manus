@@ -1028,8 +1028,8 @@ test "pretty: match expression" {
     defer arena.deinit();
     try expectRoundTrip(arena.allocator(),
         \\match x
-        \\  1 then print(1)
-        \\  _ then print(0)
+        \\  1 => print(1)
+        \\  _ => print(0)
         \\end
         \\
     );
@@ -1050,8 +1050,8 @@ test "pretty: match normalizes legacy case arms" {
     defer alloc.free(out);
     try testing.expectEqualStrings(
         \\match x
-        \\  1 then print(1)
-        \\  _ then print(0)
+        \\  1 => print(1)
+        \\  _ => print(0)
         \\end
         \\
     , out);

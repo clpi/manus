@@ -2773,6 +2773,14 @@ pub const CodeGen = struct {
             self.p("    int64_t first = (b * duo_mod_inverse_i64(a, mod)) % mod;\n", .{});
             self.p("    return first < terms ? 1 + (terms - 1 - first) / mod : 0;\n", .{});
             self.p("}}\n", .{});
+            self.p("static inline int64_t duo_count_linear_congruence_precomputed_i64(int64_t start, int64_t terms, int64_t g, int64_t mod, int64_t inv_a) {{\n", .{});
+            self.p("    if ((start % g) != 0) return 0;\n", .{});
+            self.p("    if (mod == 1) return terms;\n", .{});
+            self.p("    int64_t b = (-(start / g)) % mod;\n", .{});
+            self.p("    if (b < 0) b += mod;\n", .{});
+            self.p("    int64_t first = (b * inv_a) % mod;\n", .{});
+            self.p("    return first < terms ? 1 + (terms - 1 - first) / mod : 0;\n", .{});
+            self.p("}}\n", .{});
             self.p("static inline int64_t duo_sum_affine_periodic_gcd_i64(int64_t n, int64_t period, int64_t mul, int64_t add) {{\n", .{});
             self.p("    if (n <= 0 || period <= 0) return 0;\n", .{});
             self.p("    int64_t phi_stack[10001];\n", .{});
@@ -2790,6 +2798,13 @@ pub const CodeGen = struct {
             self.p("        int64_t inv_mul = duo_mod_inverse_i64(mul_mod, period);\n", .{});
             self.p("        for (int64_t divisor = 1; divisor <= period; ++divisor) {{\n", .{});
             self.p("            int64_t phi_divisor = phi[divisor];\n", .{});
+            self.p("            int64_t g = duo_gcd_i64(period, divisor);\n", .{});
+            self.p("            int64_t mod = divisor / g;\n", .{});
+            self.p("            int64_t inv_a = 0;\n", .{});
+            self.p("            if (mod != 1) {{\n", .{});
+            self.p("                int64_t a = (period / g) % mod;\n", .{});
+            self.p("                inv_a = duo_mod_inverse_i64(a, mod);\n", .{});
+            self.p("            }}\n", .{});
             self.p("            for (int64_t v = divisor; v <= period; v += divisor) {{\n", .{});
             self.p("                int64_t target = (v - 1 - add) % period;\n", .{});
             self.p("                if (target < 0) target += period;\n", .{});
@@ -2797,7 +2812,7 @@ pub const CodeGen = struct {
             self.p("                if (r == 0) r = period;\n", .{});
             self.p("                if (r <= last) {{\n", .{});
             self.p("                    int64_t terms = (n - r) / period + 1;\n", .{});
-            self.p("                    total += phi_divisor * duo_count_linear_congruence_i64(r, period, divisor, terms);\n", .{});
+            self.p("                    total += phi_divisor * duo_count_linear_congruence_precomputed_i64(r, terms, g, mod, inv_a);\n", .{});
             self.p("                }}\n", .{});
             self.p("            }}\n", .{});
             self.p("        }}\n", .{});

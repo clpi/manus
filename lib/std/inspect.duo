@@ -299,28 +299,59 @@ fun caller_info(level: any): any
 end
 
 -- stack_trace: return a formatted stack trace string.
-fun stack_trace(level: any, max_depth: any): str
+--   stack_trace(level?, max_depth?, pretty?)
+--   pretty = true => ANSI-colored, icon-signed frames (cyan-underlined
+--   locations, magenta-italic function names, dim caller meta).
+fun stack_trace(level: any, max_depth: any, pretty: any): str
     if level == nil then level = 2 end
     if max_depth == nil then max_depth = 20 end
+    local color_ok = false
+    if pretty then
+        local pcall_ok, env_val = pcall(os.getenv, "NO_COLOR")
+        if pcall_ok and env_val ~= nil and env_val ~= "" then
+            color_ok = false
+        else
+            color_ok = true
+        end
+    end
+    local C_RESET, C_DIM, C_CYAN, C_MAGENTA, C_YELLOW, C_UNDER, C_ITALIC
+    if color_ok then
+        C_RESET  = "\x1b[0m"
+        C_DIM    = "\x1b[2m"
+        C_ITALIC = "\x1b[3m"
+        C_UNDER  = "\x1b[4m"
+        C_CYAN   = "\x1b[36m"
+        C_MAGENTA= "\x1b[35m"
+        C_YELLOW = "\x1b[33m"
+    end
     lines = {}
     i = level
     while i < level + max_depth
-        info = debug.getinfo(i)
+        info = debug.getinfo(i, "Snl")
         if info == nil then break end
-        line = ""
-        if info.name ~= nil then
-            line = info.name .. "()"
-        else
-            line = "?"
-        end
-        if info.source ~= nil then
-            line = line .. " [" .. info.source
-            if info.currentline > 0 then
-                line = line .. ":" .. tostring(info.currentline)
+        fname = info.name
+        if fname == nil or fname == "" then fname = "?" end
+        src = info.short_src
+        if src == nil then src = info.source end
+        if src == nil then src = "?" end
+        if color_ok then
+            frame = "  " .. C_DIM .. "↳ " .. C_RESET ..
+                    C_MAGENTA .. C_ITALIC .. fname .. "()" .. C_RESET
+            loc = src
+            if info.currentline and info.currentline > 0 then
+                loc = src .. C_DIM .. ":" .. C_RESET .. C_YELLOW .. tostring(info.currentline) .. C_RESET
             end
-            line = line .. "]"
+            frame = frame .. "  " .. C_DIM .. "⟨" .. C_RESET ..
+                    C_UNDER .. loc .. C_RESET .. C_DIM .. "⟩" .. C_RESET
+        else
+            frame = fname .. "()"
+            if info.currentline and info.currentline > 0 then
+                frame = frame .. " [" .. src .. ":" .. tostring(info.currentline) .. "]"
+            else
+                frame = frame .. " [" .. src .. "]"
+            end
         end
-        lines[rawlen(lines) + 1] = line
+        lines[rawlen(lines) + 1] = frame
         i += 1
     end
     table.concat(lines, "\n")

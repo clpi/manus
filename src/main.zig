@@ -78,6 +78,9 @@ fn apply_env_flags(init: std.process.Init) void {
     if (map.get("NO_COLOR")) |v| {
         if (v.len > 0) term.color = false;
     }
+    if (map.get("DUO_COLOR")) |v| {
+        if (env_value_truthy(v)) term.color = true;
+    }
 }
 
 fn apply_cli_flags(trace_flag: bool, info_flag: bool, hints_flag: bool, plain_diag: bool, debug_flag: bool, debug_list: ?[]const u8, debug_depth: ?u32, test_report: ?[]const u8, build_report: ?[]const u8, no_color: bool, verbose_count: u8) void {

@@ -118,6 +118,7 @@ pub const TokenKind = enum {
     dcolon, // ::
     arrow, // ->
     pipe_gt, // |>
+    fat_arrow, // =>
     plus_assign, // +=
     minus_assign, // -=
     star_assign, // *=
@@ -225,6 +226,7 @@ pub const TokenKind = enum {
             .dcolon => "::",
             .arrow => "->",
             .pipe_gt => "|>",
+            .fat_arrow => "=>",
             .plus_assign => "+=",
             .minus_assign => "-=",
             .star_assign => "*=",
@@ -759,6 +761,9 @@ pub const Lexer = struct {
             '=' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
                 break :blk Token{ .kind = .eq, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else if (self.peek_char() == '>') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .fat_arrow, .loc = l, .text = self.src[p - 1 .. self.pos] };
             } else Token{ .kind = .assign, .loc = l, .text = self.src[p - 1 .. p] },
             '~' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();

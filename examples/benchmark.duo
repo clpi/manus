@@ -2,13 +2,13 @@
 -- Exercises numeric hot loops and stdlib (string, math, table) paths.
 
 -- 1. Recursive Fibonacci (lowered to iterative by the compiler)
-function fib(n)
+fun fib(n)
     if n <= 1 then return n end
     return fib(n - 1) + fib(n - 2)
 end
 
 -- 2. Prime counting (trial division in source; Eratosthenes sieve in codegen)
-function count_primes(limit)
+fun count_primes(limit)
     local count = 0
     local n = 2
     while n <= limit do
@@ -29,7 +29,7 @@ function count_primes(limit)
 end
 
 -- 3. Mandelbrot core iteration
-function mandel_iter(cx: f64, cy: f64): i64
+fun mandel_iter(cx: f64, cy: f64): i64
     local zx: f64 = 0.0
     local zy: f64 = 0.0
     local i: i64 = 0
@@ -47,11 +47,11 @@ function mandel_iter(cx: f64, cy: f64): i64
 end
 
 -- 4. Spectral-norm style grid
-function eval_A(i: i64, j: i64): f64
+fun eval_A(i: i64, j: i64): f64
     return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
 end
 
-function compute_grid_sum(size: i64): f64
+fun compute_grid_sum(size: i64): f64
     local total: f64 = 0.0
     local i: i64 = 0
     while i < size do
@@ -66,7 +66,7 @@ function compute_grid_sum(size: i64): f64
 end
 
 -- 5. N-body physics
-function simulate_nbody(steps: i64): f64
+fun simulate_nbody(steps: i64): f64
     local x1: f64 = 0.0
     local y1: f64 = 0.0
     local vx1: f64 = 0.0
@@ -115,7 +115,7 @@ function simulate_nbody(steps: i64): f64
 end
 
 -- 6. String stdlib: rep + len + byte checksum
-function string_byte_sum(n)
+fun string_byte_sum(n)
     local s = string.rep("The quick brown fox jumps over the lazy dog. ", n)
     local sum = 0
     local i = 1
@@ -128,7 +128,7 @@ function string_byte_sum(n)
 end
 
 -- 7. Table stdlib pattern: fill indexed table and sum (dense array lowering)
-function table_array_sum(n)
+fun table_array_sum(n: i64)
     local t = {}
     local i = 1
     while i <= n do
@@ -145,7 +145,7 @@ function table_array_sum(n)
 end
 
 -- 8. Math stdlib: sin/cos accumulation
-function trig_sum(n)
+fun trig_sum(n)
     local sum = 0.0
     local i = 0
     while i < n do
@@ -156,7 +156,7 @@ function trig_sum(n)
 end
 
 -- 9. String stdlib chain: len + rep in a hot loop
-function string_len_chain(n: i64): i64
+fun string_len_chain(n: i64): i64
     local s = string.rep("a", 1000)
     local total = 0
     local i = 1
@@ -168,7 +168,7 @@ function string_len_chain(n: i64): i64
 end
 
 -- 10. Integer hash using string.byte on a long literal
-function string_hash_roll(n)
+fun string_hash_roll(n)
     local s = string.rep("benchmark", n)
     local h = 0
     local i = 1
@@ -181,7 +181,7 @@ function string_hash_roll(n)
 end
 
 -- 11. Math stdlib mix: floor + max (common game / layout logic)
-function math_floor_max(n)
+fun math_floor_max(n)
     local acc = 0.0
     local peak = 0.0
     local i = 0
@@ -195,7 +195,7 @@ function math_floor_max(n)
 end
 
 -- 12. Dense table scan: max value (table-as-array pattern)
-function table_max_scan(n)
+fun table_max_scan(n)
     local t = {}
     local i = 1
     while i <= n do
@@ -214,7 +214,7 @@ function table_max_scan(n)
 end
 
 -- 13. Math stdlib: pow + sqrt accumulation
-function math_pow_sqrt(n)
+fun math_pow_sqrt(n)
     local sum = 0.0
     local i = 1
     while i <= n do
@@ -225,7 +225,7 @@ function math_pow_sqrt(n)
 end
 
 -- 14. Sorted-array binary search (config lookup / game entity ID)
-function binary_search_scan(n)
+fun binary_search_scan(n)
     local t = {}
     local i = 1
     while i <= n do
@@ -255,7 +255,7 @@ function binary_search_scan(n)
 end
 
 -- 15. Filter / predicate count (analytics, log filtering)
-function filter_count(n)
+fun filter_count(n)
     local count = 0
     local i = 1
     while i <= n do
@@ -269,7 +269,7 @@ function filter_count(n)
 end
 
 -- 16. Dot product of two vectors (ML features, physics, graphics)
-function dot_product(n)
+fun dot_product(n)
     local a = {}
     local b = {}
     local i = 1
@@ -288,7 +288,7 @@ function dot_product(n)
 end
 
 -- 17. Clamp / saturate accumulation (color, audio, game stats)
-function clamp_sum(n)
+fun clamp_sum(n)
     local sum = 0
     local i = 0
     while i < n do
@@ -299,7 +299,7 @@ function clamp_sum(n)
 end
 
 -- 18. Bucket / histogram key hash (sharding, metrics tags)
-function bucket_hash(n)
+fun bucket_hash(n)
     local sum = 0
     local i = 1
     while i <= n do
@@ -310,7 +310,7 @@ function bucket_hash(n)
 end
 
 -- 19. Exponential moving average (metrics, smoothing)
-function ema_smooth(n)
+fun ema_smooth(n)
     local avg = 0.0
     local i = 0
     while i < n do
@@ -321,7 +321,7 @@ function ema_smooth(n)
 end
 
 -- 20. Token / word count (log parsing, CSV fields)
-function token_count(n)
+fun token_count(n)
     local s = string.rep("alpha beta gamma ", n)
     local count = 0
     local i = 1
@@ -336,7 +336,7 @@ function token_count(n)
 end
 
 -- 21. Config / JSON-ish delimiter scan
-function config_parse_sum(n)
+fun config_parse_sum(n)
     local s = string.rep('{"id":1,"name":"item","ok":true},', n)
     local sum = 0
     local i = 1
@@ -352,7 +352,7 @@ function config_parse_sum(n)
 end
 
 -- 22. Indexed table lookup accumulation (cache / entity table)
-function table_lookup_sum(n)
+fun table_lookup_sum(n)
     local t = {}
     local i = 1
     while i <= n do
@@ -370,7 +370,7 @@ function table_lookup_sum(n)
 end
 
 -- 23. Table insert churn then aggregate (metrics buffers)
-function table_insert_churn(n)
+fun table_insert_churn(n)
     local t = {}
     local i = 1
     while i <= n do
@@ -387,7 +387,7 @@ function table_insert_churn(n)
 end
 
 -- 24. Small matrix multiply (nested loop + indexed table access)
-function matmul(n: i64): i64
+fun matmul(n: i64): i64
     local size: i64 = 200
     local a = {}
     local b = {}
@@ -428,7 +428,7 @@ function matmul(n: i64): i64
 end
 
 -- 25. Prefix sum scan (serial scan pattern)
-function prefix_sum(n)
+fun prefix_sum(n)
     local t = {}
     local i = 1
     while i <= n do
@@ -444,7 +444,7 @@ function prefix_sum(n)
 end
 
 -- 26. GCD reduction (Euclidean algorithm, branch-heavy)
-function gcd_reduce(n)
+fun gcd_reduce(n)
     local sum = 0
     local i = 1
     while i <= n do
@@ -462,7 +462,7 @@ function gcd_reduce(n)
 end
 
 -- 27. Collatz chain length accumulation (unpredictable branching)
-function collatz_sum(n: i64): i64
+fun collatz_sum(n: i64): i64
     local total: i64 = 0
     local i: i64 = 1
     while i <= n do
@@ -483,7 +483,7 @@ function collatz_sum(n: i64): i64
 end
 
 -- 28. XOR fold / bit manipulation reduction
-function xor_fold(n)
+fun xor_fold(n)
     local acc = 0
     local i = 1
     while i <= n do
@@ -494,7 +494,7 @@ function xor_fold(n)
 end
 
 -- 29. Ring buffer write/read simulation (modulo indexing)
-function ring_buffer(n)
+fun ring_buffer(n)
     local size = 1024
     local buf = {}
     local i = 1
@@ -514,7 +514,7 @@ function ring_buffer(n)
 end
 
 -- 30. Conditional swap reduce (sorting-kernel pattern)
-function cond_swap(n)
+fun cond_swap(n)
     local t = {}
     local i = 1
     while i <= n do
@@ -545,14 +545,14 @@ function cond_swap(n)
 end
 
 -- 31. Ackermann-like (bounded recursion stress)
-function ack(m, n)
+fun ack(m, n)
     if m == 0 then return n + 1 end
     if n == 0 then return ack(m - 1, 1) end
     return ack(m - 1, ack(m, n - 1))
 end
 
 -- 32. Levenshtein distance (2D DP table)
-function leven(n)
+fun leven(n)
     local sum = 0
     local rep = 0
     while rep < n do
@@ -595,7 +595,7 @@ function leven(n)
 end
 
 -- 33. Sieve of Eratosthenes (boolean array)
-function sieve(n: i64): i64
+fun sieve(n: i64): i64
     local is_prime = {}
     local i: i64 = 0
     while i <= n do
@@ -625,7 +625,7 @@ function sieve(n: i64): i64
 end
 
 -- 34. Fenwick tree (point update + prefix query)
-function fenwick(size: i64): i64
+fun fenwick(size: i64): i64
     local tree = {}
     local i: i64 = 0
     while i <= size do
@@ -656,7 +656,7 @@ function fenwick(size: i64): i64
 end
 
 -- 35. Linear interpolation table lookup
-function interp(n)
+fun interp(n)
     local tbl_size = 1024
     local tbl = {}
     local i = 0
@@ -677,7 +677,7 @@ function interp(n)
 end
 
 -- 36. Run-length encoding count (byte comparison)
-function run_len(n)
+fun run_len(n)
     local s = string.rep("aaabbccddddeefffff", n)
     local count = 0
     local i = 2
@@ -692,7 +692,7 @@ function run_len(n)
 end
 
 -- 37. Population count / Hamming weight reduction
-function bitcount(n: i64): i64
+fun bitcount(n: i64): i64
     local sum: i64 = 0
     local i: i64 = 1
     while i <= n do
@@ -709,7 +709,7 @@ function bitcount(n: i64): i64
 end
 
 -- 38. CORDIC-style sin approximation (shift+add, no math.sin)
-function cordic(n)
+fun cordic(n)
     local sum = 0.0
     local i = 0
     while i < n do
@@ -729,7 +729,7 @@ function cordic(n)
 end
 
 -- 39. Sparse vector dot (stride access pattern)
-function sparse_dot(n)
+fun sparse_dot(n)
     local stride = 16
     local len = n * stride
     local a = {}
@@ -758,7 +758,7 @@ function sparse_dot(n)
 end
 
 -- 40. Game of Life step (2D grid neighbor count)
-function life(steps)
+fun life(steps)
     local W = 128
     local H = 128
     local grid = {}
