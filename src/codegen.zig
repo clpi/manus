@@ -8680,11 +8680,11 @@ pub const CodeGen = struct {
                     } else if (ft == .bool) {
                         self.p("lua_table_get_str_bool(", .{});
                         try self.emit_expr(f.obj);
-                        self.p(", \"{s}\", {d}u, {d}))", .{ f.field, hash, f.field.len });
+                        self.p(", \"{s}\", {d}u, {d})", .{ f.field, hash, f.field.len });
                     } else if (ft == .str) {
                         self.p("lua_table_get_str_cstr(", .{});
                         try self.emit_expr(f.obj);
-                        self.p(", \"{s}\", {d}u, {d}))", .{ f.field, hash, f.field.len });
+                        self.p(", \"{s}\", {d}u, {d})", .{ f.field, hash, f.field.len });
                     } else {
                         self.p("lua_table_get_str_lit(", .{});
                         try self.emit_expr(f.obj);

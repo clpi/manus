@@ -5602,12 +5602,28 @@ pub const Sema = struct {
         }
         if (table_names.items.len == 0) return;
 
-        // Determine the capacity for each table. Empty tables need a param or
-        // local constant as the bound. Literal-init tables use their field count.
         var cap: []const u8 = "";
+        var param_is_bound = false;
         if (fb.params.len == 1) {
-            cap = fb.params[0].name;
-        } else {
+            const pcap = fb.params[0].name;
+            for (fb.body.stmts) |*stmt| {
+                if (stmt.* == .while_loop) {
+                    const cond = stmt.while_loop.cond;
+                    if (cond.* == .binop and (cond.binop.op == .leq or cond.binop.op == .lt)) {
+                        if (cond.binop.rhs.* == .name and std.mem.eql(u8, cond.binop.rhs.name.ident, pcap)) {
+                            param_is_bound = true;
+                        }
+                    }
+                } else if (stmt.* == .num_for) {
+                    if (stmt.num_for.stop.* == .name and std.mem.eql(u8, stmt.num_for.stop.name.ident, pcap)) {
+                        param_is_bound = true;
+                    }
+                }
+            }
+            if (param_is_bound) cap = pcap;
+        }
+        
+        if (!param_is_bound) {
             // No param — find a literal-init table and use its field count as cap.
             var found_lit_cap = false;
             for (fb.body.stmts) |*stmt| {
