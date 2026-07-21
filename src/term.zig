@@ -173,7 +173,7 @@ fn printHighlightedLine(line: []const u8) void {
     while (i < line.len) {
         const c = line[i];
         if (c == '-' and i + 1 < line.len and line[i + 1] == '-') {
-            wprint("\x1b[2;32m{s}\x1b[0m", .{line[i..]});
+            wprint("\x1b[2;3;32m{s}\x1b[0m", .{line[i..]});
             return;
         }
         if (c == '"' or c == '\'') {
@@ -208,7 +208,7 @@ fn printHighlightedLine(line: []const u8) void {
             if (isKeyword(word)) {
                 wprint("\x1b[1;34m{s}\x1b[0m", .{word});
             } else if (isTypeWord(word)) {
-                wprint("\x1b[36m{s}\x1b[0m", .{word});
+                wprint("\x1b[1;36m{s}\x1b[0m", .{word});
             } else if (isLiteralWord(word)) {
                 wprint("\x1b[1;35m{s}\x1b[0m", .{word});
             } else {
@@ -217,7 +217,7 @@ fn printHighlightedLine(line: []const u8) void {
             continue;
         }
         if (isOperatorChar(c)) {
-            wprint("\x1b[33m{c}\x1b[0m", .{c});
+            wprint("\x1b[1;33m{c}\x1b[0m", .{c});
             i += 1;
             continue;
         }
@@ -264,7 +264,7 @@ fn printCaret(col: u32, line: []const u8, width: usize, severity_color: []const 
         }
     }
     if (color) {
-        wprint("{s}╰─ here\x1b[0m\n", .{severity_color});
+        wprint("{s}▲ \x1b[1;3mhere\x1b[0m\n", .{severity_color});
     } else {
         wprint("^\n", .{});
     }
@@ -275,7 +275,7 @@ fn printSourceContext(loc: anytype, severity_color: []const u8) void {
     const width = @max(decimalDigits(loc.line), @as(usize, 1));
 
     if (color) {
-        wprint("  \x1b[2m╭─[\x1b[0m", .{});
+        wprint("  \x1b[2m├─[\x1b[0m", .{});
         printStyledLoc(loc);
         wprint("\x1b[2m]\x1b[0m\n", .{});
     } else {
@@ -339,9 +339,10 @@ fn printLocDiagnostic(loc: anytype, comptime label: []const u8, color_code: []co
     }
     if (color) {
         const sym = if (std.mem.eql(u8, label, "error")) "✗" else if (std.mem.eql(u8, label, "warning")) "⚠" else if (std.mem.eql(u8, label, "hint")) "💡" else "ℹ";
-        wprint("{s}{s} {s}\x1b[0m\x1b[1m at \x1b[0m", .{ color_code, sym, label });
+        wprint("{s} {s} \x1b[1;4m{s}\x1b[0m\x1b[2m ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\x1b[0m\n", .{ color_code, sym, label });
+        wprint("  \x1b[2m┌─\x1b[0m ", .{});
         printStyledLoc(loc);
-        wprint("\n  \x1b[1mmessage\x1b[0m \x1b[2m→\x1b[0m \x1b[3m", .{});
+        wprint("\n  \x1b[2m│\x1b[0m \x1b[1mmessage\x1b[0m \x1b[2m→\x1b[0m \x1b[1;3m", .{});
         wprint(fmt, args);
         wprint("\x1b[0m\n", .{});
     } else {

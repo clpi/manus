@@ -1823,7 +1823,7 @@ pub const Parser = struct {
                     if (depth == 0) return false;
                     depth -= 1;
                 },
-                .kw_then, .kw_do => return depth == 0,
+                .kw_then, .kw_do, .fat_arrow => return depth == 0,
                 else => {},
             }
         }
@@ -1850,12 +1850,12 @@ pub const Parser = struct {
         }
 
         const separator = try self.pk();
-        if (separator.kind == .kw_then or separator.kind == .kw_do) {
+        if (separator.kind == .kw_then or separator.kind == .kw_do or separator.kind == .fat_arrow) {
             _ = try self.adv();
         } else if (case_syntax or else_syntax) {
             // `case pattern statement` remains accepted for older local sources.
         } else {
-            term.locErr(separator.loc, "expected 'then' or 'do', got '{s}'", .{separator.kind.spelling()});
+            term.locErr(separator.loc, "expected '=>', 'then' or 'do', got '{s}'", .{separator.kind.spelling()});
             return ParseError.ExpectedToken;
         }
 
@@ -2437,9 +2437,64 @@ pub const Parser = struct {
         return self.parse_suffixed_expr();
     }
 
+    fn parse_closure_expr(self: *Parser) ParseError!*ast.Expr {
+        const l = (try self.expect(.pipe)).loc;
+        var params: std.ArrayList(ast.FuncParam) = .empty;
+        if ((try self.pk()).kind != .pipe) {
+            try params.append(self.alloc, try self.parse_param());
+            while (try self.eat(.comma) != null) {
+                try params.append(self.alloc, try self.parse_param());
+            }
+        }
+        _ = try self.expect(.pipe);
+
+        const sep = try self.pk();
+        if (sep.kind == .fat_arrow) {
+            _ = try self.adv();
+            const expr = try self.parse_expr();
+            var stmts: std.ArrayList(ast.Stmt) = .empty;
+            const vals = try self.alloc.alloc(*ast.Expr, 1);
+            vals[0] = expr;
+            try stmts.append(self.alloc, .{ .ret = .{ .loc = expr.loc(), .vals = vals } });
+            return self.new_expr(.{ .func_expr = try self.new_fb(.{
+                .loc = l,
+                .params = try params.toOwnedSlice(self.alloc),
+                .vararg = false,
+                .body = .{ .loc = expr.loc(), .stmts = try stmts.toOwnedSlice(self.alloc) },
+                .ret_type = .inferred,
+            }) });
+        } else if (sep.kind == .kw_do) {
+            _ = try self.adv();
+            const body = try self.parse_block();
+            _ = try self.expect(.kw_end);
+            return self.new_expr(.{ .func_expr = try self.new_fb(.{
+                .loc = l,
+                .params = try params.toOwnedSlice(self.alloc),
+                .vararg = false,
+                .body = body,
+                .ret_type = .inferred,
+            }) });
+        } else {
+            // Short closure: |x| x + 1 (implicit fat arrow if no do/arrow)
+            const expr = try self.parse_expr();
+            var stmts: std.ArrayList(ast.Stmt) = .empty;
+            const vals = try self.alloc.alloc(*ast.Expr, 1);
+            vals[0] = expr;
+            try stmts.append(self.alloc, .{ .ret = .{ .loc = expr.loc(), .vals = vals } });
+            return self.new_expr(.{ .func_expr = try self.new_fb(.{
+                .loc = l,
+                .params = try params.toOwnedSlice(self.alloc),
+                .vararg = false,
+                .body = .{ .loc = expr.loc(), .stmts = try stmts.toOwnedSlice(self.alloc) },
+                .ret_type = .inferred,
+            }) });
+        }
+    }
+
     fn parse_simple_expr(self: *Parser) ParseError!*ast.Expr {
         const tok = try self.pk();
         return switch (tok.kind) {
+            .pipe => self.parse_closure_expr(),
             .int_lit => blk: {
                 _ = try self.adv();
                 break :blk self.new_expr(.{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });

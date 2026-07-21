@@ -392,7 +392,7 @@ pub const PrettyPrinter = struct {
                 try self.write(" if ");
                 try self.printExpr(g, 0);
             }
-            try self.write(" then");
+            try self.write(" =>");
             if (arm.body.stmts.len == 1) {
                 try self.write(" ");
                 try self.printStmt(&arm.body.stmts[0]);
@@ -626,7 +626,61 @@ pub const PrettyPrinter = struct {
             },
             .enum_def => |ed| try self.printEnumDef(&ed),
             .concept_def => |cd| try self.printConceptDef(&cd),
-            .alias_def => {}, // skip alias defs in pretty-print
+            .alias_def => |ad| {
+                for (ad.attributes) |attr| {
+                    try self.print("@{s}", .{attr.name});
+                    if (attr.args) |args| try self.print("({s})", .{args});
+                    try self.nl();
+                }
+                if (ad.target) |target| {
+                    if (target == .record) {
+                        try self.print("{s}: ", .{ad.name});
+                        try self.printTypeExpr(target);
+                    } else {
+                        try self.write("type ");
+                        try self.write(ad.name);
+                        if (ad.type_params) |tps| {
+                            try self.write("<");
+                            for (tps, 0..) |tp, i| {
+                                if (i > 0) try self.write(", ");
+                                try self.printTypeExpr(tp);
+                            }
+                            try self.write(">");
+                        }
+                        try self.write(" = ");
+                        try self.printTypeExpr(target);
+                    }
+                } else {
+                    try self.print("alias {s}", .{ad.name});
+                    if (ad.type_params) |tps| {
+                        try self.write("<");
+                        for (tps, 0..) |tp, i| {
+                            if (i > 0) try self.write(", ");
+                            try self.printTypeExpr(tp);
+                        }
+                        try self.write(">");
+                    }
+                    if (ad.parent) |p| try self.print(" extends {s}", .{p});
+                    self.indent();
+                    for (ad.fields) |f| {
+                        try self.nl();
+                        if (f.is_private) try self.write("_");
+                        try self.print("{s}: ", .{f.name});
+                        try self.printTypeExpr(f.typ);
+                        if (f.default_val) |dv| {
+                            try self.write(" = ");
+                            try self.printExpr(dv, 0);
+                        }
+                    }
+                    for (ad.methods) |*m| {
+                        try self.nl();
+                        try self.printFuncDecl(m);
+                    }
+                    self.dedent();
+                    try self.nl();
+                    try self.write("end");
+                }
+            },
             .cinclude => |ci| try self.print("@cinclude(\"{s}\")\n", .{ci.header}),
             .directive => |dir| {
                 try self.print("@{s}", .{dir.attr.name});
@@ -677,6 +731,25 @@ pub const PrettyPrinter = struct {
     }
 
     pub fn printFuncBody(self: *PrettyPrinter, fb: *const ast.FuncBody) Error!void {
+        if (self.mode == .duo and fb.body.stmts.len == 1 and fb.body.tail_expr == null) {
+            const stmt = fb.body.stmts[0];
+            if (stmt == .ret) {
+                if (stmt.ret.vals.len == 1) {
+                    try self.write("|");
+                    for (fb.params, 0..) |param, i| {
+                        if (i > 0) try self.write(", ");
+                        try self.write(param.name);
+                        if (param.typ != .inferred) {
+                            try self.write(": ");
+                            try self.printTypeExpr(param.typ);
+                        }
+                    }
+                    try self.write("| ");
+                    try self.printExpr(stmt.ret.vals[0], 0);
+                    return;
+                }
+            }
+        }
         try self.printFuncSig(fb);
         try self.printBlock(&fb.body);
         try self.nl();
