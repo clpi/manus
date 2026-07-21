@@ -1,5 +1,7 @@
--- std.json is loaded in lsp_main() after duo_modules is initialized
+-- Duo LSP Server — full LSP implementation in Duo
 io.lsp = {}
+
+-- ── byte predicates ──────────────────────────────────────────────────────────
 fun is_ident_start(b: any) -> bool
   return b >= 65 and b <= 90 or b >= 97 and b <= 122 or b == 95
 end
@@ -12,6 +14,8 @@ end
 fun is_space_byte(b: any) -> bool
   return b == 32 or b == 9 or b == 10 or b == 13
 end
+
+-- ── string helpers ───────────────────────────────────────────────────────────
 fun find_from(s, sub, start) -> i64
   if s == nil then
     return 0
@@ -112,6 +116,22 @@ fun count_char(s, ch) -> i64
   end
   c
 end
+fun substring_after(s, sep) -> str
+  p = find_from(s, sep, 1)
+  if p == 0 then
+    return s
+  end
+  string.sub(s, p + string.len(sep))
+end
+fun substring_before(s, sep) -> str
+  p = find_from(s, sep, 1)
+  if p == 0 then
+    return s
+  end
+  string.sub(s, 1, p - 1)
+end
+
+-- ── line offsets ─────────────────────────────────────────────────────────────
 fun compute_line_offs(text) -> any
   lo = {}
   lo[rawlen(lo) + 1] = 1
@@ -170,141 +190,53 @@ fun offset_at_lo(text, lo, pos) -> i64
   end
   off
 end
-fun first_ident(s) -> any
-  if s == nil then
-    return nil
+fun word_end_lo(text, lo, line, col) -> i64
+  ln = get_line_lo(text, lo, line)
+  if ln == nil then
+    return col + 1
   end
-  -- Find the position of the first identifier in the untrimmed string
-  n = string.len(s)
-  if n == 0 then
-    return nil
-  end
-  start_pos = 1
-  -- Skip leading spaces/tabs to get actual column
-  while start_pos <= n and is_space_byte(string.byte(s, start_pos))
-    start_pos = start_pos + 1
-  end
-  if start_pos > n then
-    return nil
-  end
-  b = string.byte(s, start_pos)
-  if not is_ident_start(b) then
-    return nil
-  end
-  i = start_pos
-  while i <= n and is_ident_char(string.byte(s, i))
-    i = i + 1
-  end
-  r = {}
-  r.name = string.sub(s, start_pos, i - 1)
-  r.rest = string.sub(s, i)
-  r.col_offset = start_pos - 1  -- 0-based column offset
-  r
-end
-fun count_keyword(s, word) -> i64
-  c = 0
-  if s == nil then
-    return c
-  end
-  n = string.len(s)
-  wn = string.len(word)
-  i = 1
-  while i <= n
-    b = string.byte(s, i)
-    if is_ident_start(b) then
-      j = i
-      while j <= n and is_ident_char(string.byte(s, j))
-        j = j + 1
-      end
-      if j - i == wn and string.sub(s, i, j - 1) == word then
-        c = c + 1
-      end
-      i = j
+  n = string.len(ln)
+  e = col
+  while e < n
+    b = string.byte(ln, e + 1)
+    if is_word_char_byte(b) then
+      e = e + 1
     else
-      i = i + 1
+      break
     end
   end
-  c
+  if e == col then
+    return col + 1
+  end
+  e
 end
-fun count_end(s) -> i64
-  return count_keyword(s, "end")
-end
-fun starts_keyword(s, kw) -> bool
-  r = trim(s)
-  if not starts_with(r, kw) then
-    return false
+fun word_at_lo(text, lo, line, col) -> str
+  ln = get_line_lo(text, lo, line)
+  if ln == nil then
+    return ""
   end
-  n = string.len(r)
-  k = string.len(kw)
-  if n == k then
-    return true
+  n = string.len(ln)
+  if col < 0 then
+    col = 0
   end
-  return not is_ident_char(string.byte(r, k + 1))
-end
-fun trim_after_keyword(s, kw) -> any
-  r = trim(s)
-  if starts_keyword(r, kw) then
-    return trim(string.sub(r, string.len(kw) + 2))
+  if col > n then
+    col = n
   end
-  r
-end
-fun name_after_keywords(rest) -> any
-  -- Track column offset through keyword stripping
-  offset = 0
-  r = rest
-  
-  -- Skip leading spaces and track
-  while string.len(r) > 0 and r[1] == " "
-    offset = offset + 1
-    r = string.sub(r, 2)
+  if col == 0 then
+    return ""
   end
-  
-  if starts_keyword(r, "local") or starts_keyword(r, "global") then
-    kw_len = string.len("local")
-    if starts_keyword(r, "global") then kw_len = string.len("global") end
-    r = string.sub(r, kw_len + 1)
-    -- Skip space after keyword
-    while string.len(r) > 0 and r[1] == " "
-      offset = offset + 1
-      r = string.sub(r, 2)
-    end
+  start = col
+  while start > 1 and is_word_char_byte(string.byte(ln, start - 1))
+    start = start - 1
   end
-  
-  if starts_keyword(r, "async") then
-    r = string.sub(r, string.len("async") + 1)
-    while string.len(r) > 0 and r[1] == " "
-      offset = offset + 1
-      r = string.sub(r, 2)
-    end
+  en = col
+  while en < n and is_word_char_byte(string.byte(ln, en + 1))
+    en = en + 1
   end
-  
-  kw_len = 0
-  if starts_keyword(r, "fun") then kw_len = string.len("fun")
-  elseif starts_keyword(r, "function") then kw_len = string.len("function")
+  if start > en then
+    return ""
   end
-  if kw_len > 0 then
-    r = string.sub(r, kw_len + 1)
-    while string.len(r) > 0 and r[1] == " "
-      offset = offset + 1
-      r = string.sub(r, 2)
-    end
-  end
-  
-  -- Now find the identifier in the remaining string
-  result = first_ident(r)
-  if result ~= nil then
-    result.col_offset = result.col_offset + offset
-  end
-  result
-end
-fun split_prefix_after_dot(prefix) -> str
-  out = prefix
-  p = find_from(out, ".", 1)
-  while p ~= 0
-    out = string.sub(out, p + 1)
-    p = find_from(out, ".", 1)
-  end
-  out
+  string.sub(ln, start, en)
 end
 fun word_prefix_lo(text, lo, line, col) -> str
   ln = get_line_lo(text, lo, line)
@@ -330,6 +262,17 @@ fun word_prefix_lo(text, lo, line, col) -> str
   end
   split_prefix_after_dot(string.sub(ln, start, col - 1))
 end
+fun split_prefix_after_dot(prefix) -> str
+  out = prefix
+  p = find_from(out, ".", 1)
+  while p ~= 0
+    out = string.sub(out, p + 1)
+    p = find_from(out, ".", 1)
+  end
+  out
+end
+
+-- ── comment / keyword helpers ────────────────────────────────────────────────
 fun strip_comment(line) -> str
   n = string.len(line)
   i = 1
@@ -369,7 +312,7 @@ fun head_keyword(line) -> any
   if not is_ident_start(b) then
     r = {}
     r.kw = ""
-    r.rest = code  -- Return untrimmed code for position calculation
+    r.rest = code
     r.indent = indent
     return r
   end
@@ -380,11 +323,50 @@ fun head_keyword(line) -> any
   end
   r = {}
   r.kw = string.sub(ctrim, 1, i - 1)
-  -- Find the untrimmed rest for position calculation
-  kw_len = string.len(r.kw)
-  r.rest = string.sub(code, kw_len + 1)  -- Untrimmed after keyword
+  kw_len: any = string.len(r.kw)
+  r.rest = string.sub(code, kw_len + 1)
   r.indent = indent
   r
+end
+fun starts_keyword(s, kw) -> bool
+  r = trim(s)
+  if not starts_with(r, kw) then
+    return false
+  end
+  n = string.len(r)
+  k = string.len(kw)
+  if n == k then
+    return true
+  end
+  return not is_ident_char(string.byte(r, k + 1))
+end
+fun count_keyword(s, word) -> i64
+  c = 0
+  if s == nil then
+    return c
+  end
+  n = string.len(s)
+  wn = string.len(word)
+  i = 1
+  while i <= n
+    b = string.byte(s, i)
+    if is_ident_start(b) then
+      j = i
+      while j <= n and is_ident_char(string.byte(s, j))
+        j = j + 1
+      end
+      if j - i == wn and string.sub(s, i, j - 1) == word then
+        c = c + 1
+      end
+      i = j
+    else
+      i = i + 1
+    end
+  end
+  c
+end
+fun count_end(s) -> i64
+  return count_keyword(s, "end")
 end
 fun is_block_opener(kw: any) -> bool
   return kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" or kw == "match" or kw == "if" or kw == "while" or kw == "for" or kw == "do" or kw == "begin" or kw == "struct"
@@ -422,20 +404,76 @@ fun kind_label(k) -> str
   end
   "variable"
 end
-fun is_upper(name) -> bool
-  n = string.len(name)
-  if n == 0 then
-    return false
+
+-- ── name extraction ──────────────────────────────────────────────────────────
+fun first_ident(s) -> any
+  if s == nil then
+    return nil
   end
-  i = 1
-  while i <= n
-    b = string.byte(name, i)
-    if not (b >= 65 and b <= 90 or b == 95 or b >= 48 and b <= 57) then
-      return false
-    end
+  n = string.len(s)
+  if n == 0 then
+    return nil
+  end
+  start_pos = 1
+  while start_pos <= n and is_space_byte(string.byte(s, start_pos))
+    start_pos = start_pos + 1
+  end
+  if start_pos > n then
+    return nil
+  end
+  b = string.byte(s, start_pos)
+  if not is_ident_start(b) then
+    return nil
+  end
+  i = start_pos
+  while i <= n and is_ident_char(string.byte(s, i))
     i = i + 1
   end
-  true
+  r = {}
+  r.name = string.sub(s, start_pos, i - 1)
+  r.rest = string.sub(s, i)
+  r.col_offset = start_pos - 1
+  r
+end
+fun name_after_keywords(rest) -> any
+  offset = 0
+  r = rest
+  while string.len(r) > 0 and r[1] == " "
+    offset = offset + 1
+    r = string.sub(r, 2)
+  end
+  if starts_keyword(r, "local") or starts_keyword(r, "global") then
+    kw_len = string.len("local")
+    if starts_keyword(r, "global") then kw_len = string.len("global") end
+    r = string.sub(r, kw_len + 1)
+    while string.len(r) > 0 and r[1] == " "
+      offset = offset + 1
+      r = string.sub(r, 2)
+    end
+  end
+  if starts_keyword(r, "async") then
+    r = string.sub(r, string.len("async") + 1)
+    while string.len(r) > 0 and r[1] == " "
+      offset = offset + 1
+      r = string.sub(r, 2)
+    end
+  end
+  kw_len = 0
+  if starts_keyword(r, "fun") then kw_len = string.len("fun")
+  elseif starts_keyword(r, "function") then kw_len = string.len("function")
+  end
+  if kw_len > 0 then
+    r = string.sub(r, kw_len + 1)
+    while string.len(r) > 0 and r[1] == " "
+      offset = offset + 1
+      r = string.sub(r, 2)
+    end
+  end
+  result = first_ident(r)
+  if result ~= nil then
+    result.col_offset = result.col_offset + offset
+  end
+  result
 end
 fun match_typed(code) -> any
   n = string.len(code)
@@ -487,7 +525,9 @@ fun match_plain_assign(code) -> any
   end
   nil
 end
-fun mk_sym(name, kind, line, col, raw_line) -> any
+
+-- ── symbol construction ──────────────────────────────────────────────────────
+fun mk_sym(name, kind, line, col, container, raw_line) -> any
   s = {}
   s.name = name
   s.kind = kind
@@ -496,13 +536,35 @@ fun mk_sym(name, kind, line, col, raw_line) -> any
   s.endLine = line
   s.endCol = string.len(raw_line)
   s.detail = trim(raw_line)
+  s.container = container
   s
 end
+fun mk_ref(uri, line, col, end_col) -> any
+  r = {}
+  r.uri = uri
+  r.line = line
+  r.col = col
+  r.endCol = end_col
+  r
+end
+fun mk_edit(uri, line, col, end_col, new_name) -> any
+  e = {}
+  e.uri = uri
+  e.line = line
+  e.col = col
+  e.endCol = end_col
+  e.newName = new_name
+  e
+end
+
+-- ── symbol scanning ──────────────────────────────────────────────────────────
 fun scan_symbols_lo(text, lo) -> any
   syms = {}
   depth = 0
   brace = 0
   n = rawlen(lo)
+  container = ""
+  container_kind = 0
   i = 1
   while i <= n
     raw = get_line_lo(text, lo, i - 1)
@@ -527,11 +589,17 @@ fun scan_symbols_lo(text, lo) -> any
       if depth < 0 then
         depth = 0
       end
+      if depth == 0 then
+        container = ""
+        container_kind = 0
+      end
     elseif top and (kw == "local" or kw == "global") then
       if starts_keyword(rest, "fun") or starts_keyword(rest, "function") then
         id = name_after_keywords(rest)
         if id ~= nil then
-          syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent + string.len(kw) + id.col_offset, raw)
+          syms[rawlen(syms) + 1] = mk_sym(id.name, 12, i - 1, indent + string.len(kw) + id.col_offset, "", raw)
+          container = id.name
+          container_kind = 12
         end
       else
         id = first_ident(rest)
@@ -540,29 +608,33 @@ fun scan_symbols_lo(text, lo) -> any
           if kw == "global" or is_upper(id.name) then
             k = 14
           end
-          syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent + string.len(kw) + id.col_offset, raw)
+          syms[rawlen(syms) + 1] = mk_sym(id.name, k, i - 1, indent + string.len(kw) + id.col_offset, "", raw)
         end
       end
     elseif kw == "const" then
       id = first_ident(rest)
       if id ~= nil then
-        syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent + string.len(kw) + id.col_offset, raw)
+        syms[rawlen(syms) + 1] = mk_sym(id.name, 14, i - 1, indent + string.len(kw) + id.col_offset, "", raw)
       end
     elseif is_block_opener(kw) and kw ~= "do" and kw ~= "begin" then
       if kw == "fun" or kw == "function" or kw == "enum" or kw == "concept" then
         id = first_ident(rest)
         if id ~= nil then
-          syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent + string.len(kw) + id.col_offset, raw)
+          syms[rawlen(syms) + 1] = mk_sym(id.name, kind_of(kw), i - 1, indent + string.len(kw) + id.col_offset, container, raw)
+          if container == "" then
+            container = id.name
+            container_kind = kind_of(kw)
+          end
         end
       end
     else
       tb = match_typed(code)
       if tb ~= nil then
-        syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, raw)
+        syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, container, raw)
       else
         pa = match_plain_assign(code)
         if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
-          syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, raw)
+          syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, container, raw)
         end
       end
     end
@@ -585,60 +657,486 @@ fun symbol_at(syms, line, col) -> any
   end
   nil
 end
-fun word_end_lo(text, lo, line, col) -> i64
-  ln = get_line_lo(text, lo, line)
-  if ln == nil then
-    return col + 1
+fun is_upper(name) -> bool
+  n = string.len(name)
+  if n == 0 then
+    return false
   end
-  n = string.len(ln)
-  e = col
-  while e < n
-    b = string.byte(ln, e + 1)
-    if is_word_char_byte(b) then
-      e = e + 1
-    else
-      break
-    end
-  end
-  if e == col then
-    return col + 1
-  end
-  e
-end
-fun mk_pos(line, ch) -> any
-  p = {}
-  p.line = line
-  p.character = ch
-  p
-end
-fun mk_range(sl, sc, ec) -> any
-  r = {}
-  r.start = mk_pos(sl, sc)
-  r["end"] = mk_pos(sl, ec)
-  r
-end
-fun parse_digits(s, i) -> any
-  n = string.len(s)
-  v = 0
-  any = false
+  i = 1
   while i <= n
-    b = string.byte(s, i)
-    if b >= 48 and b <= 57 then
-      v = v * 10 + b - 48
-      any = true
-      i = i + 1
-    else
+    b = string.byte(name, i)
+    if not (b >= 65 and b <= 90 or b == 95 or b >= 48 and b <= 57) then
+      return false
+    end
+    i = i + 1
+  end
+  true
+end
+
+-- ── reference finding ────────────────────────────────────────────────────────
+fun find_refs_in_text(text, lo, name, uri) -> any
+  refs = {}
+  if name == nil or name == "" then
+    return refs
+  end
+  n = rawlen(lo)
+  i = 1
+  while i <= n
+    raw = get_line_lo(text, lo, i - 1)
+    if raw == nil then
       break
     end
+    p = 1
+    rn = string.len(raw)
+    nn = string.len(name)
+    while p <= rn
+      b = string.byte(raw, p)
+      if is_ident_start(b) then
+        j = p
+        while j <= rn and is_ident_char(string.byte(raw, j))
+          j = j + 1
+        end
+        if j - p == nn then
+          is_match = true
+          k = 0
+          while k < nn
+            if string.byte(raw, p + k) ~= string.byte(name, k + 1) then
+              is_match = false
+              break
+            end
+            k = k + 1
+          end
+          if is_match then
+            before_ok = true
+            if p > 1 then
+              pb = string.byte(raw, p - 1)
+              if is_ident_char(pb) then
+                before_ok = false
+              end
+            end
+            after_ok = true
+            if j <= rn then
+              ab = string.byte(raw, j)
+              if is_ident_char(ab) then
+                after_ok = false
+              end
+            end
+            if before_ok and after_ok then
+              refs[rawlen(refs) + 1] = mk_ref(uri, i - 1, p - 1, j - 1)
+            end
+          end
+        end
+        p = j
+      else
+        p = p + 1
+      end
+    end
+    i = i + 1
   end
-  if not any then
-    return nil
-  end
-  r = {}
-  r.val = v
-  r.next = i
-  r
+  refs
 end
+
+-- ── rename edits ─────────────────────────────────────────────────────────────
+fun find_rename_edits_in_text(text, lo, name, new_name, uri) -> any
+  edits = {}
+  if name == nil or name == "" or new_name == nil or new_name == "" then
+    return edits
+  end
+  n = rawlen(lo)
+  i = 1
+  while i <= n
+    raw = get_line_lo(text, lo, i - 1)
+    if raw == nil then
+      break
+    end
+    p = 1
+    rn = string.len(raw)
+    nn = string.len(name)
+    while p <= rn
+      b = string.byte(raw, p)
+      if is_ident_start(b) then
+        j = p
+        while j <= rn and is_ident_char(string.byte(raw, j))
+          j = j + 1
+        end
+        if j - p == nn then
+          is_match = true
+          k = 0
+          while k < nn
+            if string.byte(raw, p + k) ~= string.byte(name, k + 1) then
+              is_match = false
+              break
+            end
+            k = k + 1
+          end
+          if is_match then
+            before_ok = true
+            if p > 1 then
+              pb = string.byte(raw, p - 1)
+              if is_ident_char(pb) then
+                before_ok = false
+              end
+            end
+            after_ok = true
+            if j <= rn then
+              ab = string.byte(raw, j)
+              if is_ident_char(ab) then
+                after_ok = false
+              end
+            end
+            if before_ok and after_ok then
+              edits[rawlen(edits) + 1] = mk_edit(uri, i - 1, p - 1, j - 1, new_name)
+            end
+          end
+        end
+        p = j
+      else
+        p = p + 1
+      end
+    end
+    i = i + 1
+  end
+  edits
+end
+
+-- ── folding ranges ───────────────────────────────────────────────────────────
+fun compute_folding_ranges(text, lo) -> any
+  folds = {}
+  n = rawlen(lo)
+  i = 1
+  while i <= n
+    raw = get_line_lo(text, lo, i - 1)
+    if raw == nil then
+      break
+    end
+    code = strip_comment(raw)
+    ctrim = trim(code)
+    if ctrim ~= "" then
+      b = string.byte(ctrim, 1)
+      is_block = false
+      if is_ident_start(b) then
+        kw = ""
+        j = 1
+        cn = string.len(ctrim)
+        while j <= cn and is_ident_char(string.byte(ctrim, j))
+          j = j + 1
+        end
+        kw = string.sub(ctrim, 1, j - 1)
+        is_block = is_block_opener(kw) or kw == "do" or kw == "begin"
+      end
+      if not is_block then
+        if count_char(code, "{") > 0 then
+          is_block = true
+        end
+      end
+      if is_block then
+        f = {}
+        f.startLine = i - 1
+        f.startCharacter = 0
+        -- find matching end line
+        k = i
+        depth = 1
+        while k <= n and depth > 0
+          eraw = get_line_lo(text, lo, k)
+          if eraw == nil then
+            break
+          end
+          ecode = strip_comment(eraw)
+          depth = depth - count_end(ecode)
+          if depth <= 0 then
+            f.endLine = k
+            f.endCharacter = 0
+          end
+          k = k + 1
+        end
+        if f.endLine ~= nil then
+          folds[rawlen(folds) + 1] = f
+        end
+      end
+    end
+    i = i + 1
+  end
+  folds
+end
+
+-- ── workspace index ──────────────────────────────────────────────────────────
+fun ws_index_new() -> any
+  idx = {}
+  idx.entries = {}
+  idx.paths = {}
+  idx
+end
+fun ws_index_add(idx, uri, text) -> any
+  lo = compute_line_offs(text)
+  syms = scan_symbols_lo(text, lo)
+  idx.entries[uri] = syms
+end
+fun ws_index_remove(idx, uri)
+  idx.entries[uri] = nil
+end
+fun ws_find_all_refs(idx, name, exclude_uri) -> any
+  refs = {}
+  for uri, syms in idx.entries
+    if uri ~= exclude_uri then
+      lo = compute_line_offs(idx._texts[uri] or "")
+      if idx._texts[uri] ~= nil then
+        r = find_refs_in_text(idx._texts[uri], lo, name, uri)
+        j = 1
+        while j <= rawlen(r)
+          refs[rawlen(refs) + 1] = r[j]
+          j = j + 1
+        end
+      end
+    end
+  end
+  refs
+end
+fun ws_find_all_edits(idx, name, new_name, exclude_uri) -> any
+  edits = {}
+  for uri, syms in idx.entries
+    if uri ~= exclude_uri then
+      txt = idx._texts[uri]
+      if txt ~= nil then
+        lo = compute_line_offs(txt)
+        r = find_rename_edits_in_text(txt, lo, name, new_name, uri)
+        j = 1
+        while j <= rawlen(r)
+          edits[rawlen(edits) + 1] = r[j]
+          j = j + 1
+        end
+      end
+    end
+  end
+  edits
+end
+fun ws_search_symbols(idx, query) -> any
+  results = {}
+  seen = {}
+  for uri, syms in idx.entries
+    j = 1
+    while j <= rawlen(syms)
+      s = syms[j]
+      is_public = string.sub(s.name, 1, 1) ~= "_"
+      if is_public and seen[s.name] == nil then
+        if query == "" or completion_matches(s.name, query) then
+          o = {}
+          o.name = s.name
+          o.kind = s.kind
+          o.location = {}
+          o.location.uri = uri
+          o.location.range = mk_range(s.line, s.col, s.col + string.len(s.name))
+          o.containerName = s.container
+          results[rawlen(results) + 1] = o
+          seen[s.name] = true
+        end
+      end
+      j = j + 1
+    end
+  end
+  results
+end
+
+-- ── document highlight ───────────────────────────────────────────────────────
+fun find_doc_highlights(text, lo, syms, line, col) -> any
+  name = word_at_lo(text, lo, line, col)
+  if name == "" then
+    return {}
+  end
+  -- check if cursor is on a declared symbol
+  s = symbol_at(syms, line, col)
+  kind = 1
+  if s ~= nil and s.name == name then
+    kind = 2
+  end
+  highlights = {}
+  n = rawlen(lo)
+  i = 1
+  while i <= n
+    raw = get_line_lo(text, lo, i - 1)
+    if raw == nil then
+      break
+    end
+    p = 1
+    rn = string.len(raw)
+    nn = string.len(name)
+    while p <= rn
+      b = string.byte(raw, p)
+      if is_ident_start(b) then
+        j = p
+        while j <= rn and is_ident_char(string.byte(raw, j))
+          j = j + 1
+        end
+        if j - p == nn then
+          is_match = true
+          k = 0
+          while k < nn
+            if string.byte(raw, p + k) ~= string.byte(name, k + 1) then
+              is_match = false
+              break
+            end
+            k = k + 1
+          end
+          if is_match then
+            before_ok = true
+            if p > 1 then
+              pb = string.byte(raw, p - 1)
+              if is_ident_char(pb) then
+                before_ok = false
+              end
+            end
+            after_ok = true
+            if j <= rn then
+              ab = string.byte(raw, j)
+              if is_ident_char(ab) then
+                after_ok = false
+              end
+            end
+            if before_ok and after_ok then
+              h = {}
+              h.range = mk_range(i - 1, p - 1, j - 1)
+              h.kind = kind
+              highlights[rawlen(highlights) + 1] = h
+            end
+          end
+        end
+        p = j
+      else
+        p = p + 1
+      end
+    end
+    i = i + 1
+  end
+  highlights
+end
+
+-- ── JSON helpers ─────────────────────────────────────────────────────────────
+fun shell_quote(s) -> str
+  return "'" .. string.gsub(s, "'", "'\\''") .. "'"
+end
+fun resolve_check_flags() -> str
+  f = os.getenv("DUO_LSP_CHECK_FLAGS")
+  if f ~= nil and f ~= "" then
+    return f .. " "
+  end
+  h = os.getenv("DUO_LSP_HINTS")
+  if h ~= nil and (h == "1" or h == "true" or h == "yes") then
+    return "--hints "
+  end
+  ""
+end
+fun resolve_duo_bin() -> any
+  b = os.getenv("DUO_LSP_DUO_BIN")
+  if b ~= nil and b ~= "" then
+    return b
+  end
+  b = os.getenv("DUO_BIN")
+  if b ~= nil and b ~= "" then
+    return b
+  end
+  f = io.popen("which duo 2>/dev/null", "r")
+  if f ~= nil then
+    out = f:read("*a")
+    f:close()
+    out = trim(out)
+    if out ~= "" then
+      return out
+    end
+  end
+  nil
+end
+fun doc_ext(uri) -> str
+  if ends_with(uri, ".duo") then
+    return ".duo"
+  end
+  if ends_with(uri, ".lua") then
+    return ".lua"
+  end
+  ".duo"
+end
+
+-- ── LSP protocol ────────────────────────────────────────────────────────────
+fun send_message(t) -> void
+  body = io.lsp.json.encode(t)
+  header = string.format("Content-Length: %d\r\n\r\n", string.len(body))
+  io.write(header, body)
+  io.flush()
+end
+fun reply(id, result) -> void
+  m = {}
+  m.jsonrpc = "2.0"
+  m.id = id
+  m.result = result
+  send_message(m)
+end
+fun reply_error(id, code, message) -> void
+  e = {}
+  e.code = code
+  e.message = message
+  m = {}
+  m.jsonrpc = "2.0"
+  m.id = id
+  m.error = e
+  send_message(m)
+end
+fun send_diagnostics(uri, diags) -> void
+  params = {}
+  params.uri = uri
+  params.diagnostics = diags
+  m = {}
+  m.jsonrpc = "2.0"
+  m.method = "textDocument/publishDiagnostics"
+  m.params = params
+  send_message(m)
+end
+
+-- ── document store ───────────────────────────────────────────────────────────
+io.lsp.docs = {}
+io.lsp.duo_bin = nil
+io.lsp.check_flags = ""
+io.lsp.counter = 0
+io.lsp.shutdown = false
+io.lsp.do_exit = false
+io.lsp.ws = ws_index_new()
+io.lsp.ws._texts = {}
+io.lsp.root_uri = nil
+
+fun now_secs() -> i64
+  return os.time()
+end
+fun doc_for(uri) -> any
+  d = io.lsp.docs[uri]
+  if d == nil then
+    d = {}
+    d.text = ""
+    d.version = 0
+    d.tmp = nil
+    d.lo = nil
+    d.syms = nil
+    d.syms_version = -1
+    d.dirty = false
+    d.last_t = 0
+    io.lsp.docs[uri] = d
+  end
+  d
+end
+fun ensure_lo(d) -> void
+  if d.lo == nil then
+    d.lo = compute_line_offs(d.text)
+  end
+end
+fun ensure_syms(d) -> void
+  ensure_lo(d)
+  if d.syms == nil or d.syms_version ~= d.version then
+    d.syms = scan_symbols_lo(d.text, d.lo)
+    d.syms_version = d.version
+  end
+end
+fun invalidate(d) -> void
+  d.lo = nil
+  d.syms = nil
+end
+
+-- ── diagnostics ──────────────────────────────────────────────────────────────
 fun parse_diag_line(line) -> any
   n = string.len(line)
   p = find_from(line, ".line = ", 1)
@@ -671,6 +1169,12 @@ fun parse_diag_line(line) -> any
     elseif starts_with(rest, "warning: ") then
       sev = 2
       msg = string.sub(rest, 10)
+    elseif starts_with(rest, "hint: ") then
+      sev = 4
+      msg = string.sub(rest, 7)
+    elseif starts_with(rest, "info: ") then
+      sev = 3
+      msg = string.sub(rest, 7)
     end
     r = {}
     r.line = lnum - 1
@@ -681,6 +1185,8 @@ fun parse_diag_line(line) -> any
   end
   e = find_from(line, ": error: ", 1)
   w = find_from(line, ": warning: ", 1)
+  h = find_from(line, ": hint: ", 1)
+  inf = find_from(line, ": info: ", 1)
   marker = 0
   mlen = 0
   sev = 1
@@ -692,6 +1198,14 @@ fun parse_diag_line(line) -> any
     marker = w
     mlen = 11
     sev = 2
+  elseif h ~= 0 then
+    marker = h
+    mlen = 8
+    sev = 4
+  elseif inf ~= 0 then
+    marker = inf
+    mlen = 8
+    sev = 3
   else
     return nil
   end
@@ -718,6 +1232,28 @@ fun parse_diag_line(line) -> any
   r.col = cnum - 1
   r.severity = sev
   r.message = msg
+  r
+end
+fun parse_digits(s, i) -> any
+  n = string.len(s)
+  v = 0
+  any = false
+  while i <= n
+    b = string.byte(s, i)
+    if b >= 48 and b <= 57 then
+      v = v * 10 + b - 48
+      any = true
+      i = i + 1
+    else
+      break
+    end
+  end
+  if not any then
+    return nil
+  end
+  r = {}
+  r.val = v
+  r.next = i
   r
 end
 fun parse_diagnostics(out, lo, text) -> any
@@ -750,6 +1286,160 @@ fun parse_diagnostics(out, lo, text) -> any
   end
   diags
 end
+fun run_check(uri) -> void
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return
+  end
+  if io.lsp.duo_bin == nil then
+    send_diagnostics(uri, {})
+    return
+  end
+  ext = doc_ext(uri)
+  if d.tmp == nil then
+    io.lsp.counter = io.lsp.counter + 1
+    d.tmp = os.tmpname() .. "_" .. tostring(io.lsp.counter) .. ext
+  end
+  f = io.open(d.tmp, "w")
+  if f ~= nil then
+    f:write(d.text)
+    f:close()
+  end
+  cmd = shell_quote(io.lsp.duo_bin) .. " check --plain-diagnostics " .. io.lsp.check_flags .. shell_quote(d.tmp) .. " 2>&1"
+  p = io.popen(cmd, "r")
+  if p == nil then
+    return
+  end
+  out = p:read("*a")
+  p:close()
+  ensure_lo(d)
+  diags = parse_diagnostics(out, d.lo, d.text)
+  send_diagnostics(uri, diags)
+end
+fun schedule_check(uri) -> void
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return
+  end
+  if io.lsp.duo_bin == nil then
+    send_diagnostics(uri, {})
+    return
+  end
+  t = now_secs()
+  if d.last_t == 0 or t > d.last_t then
+    run_check(uri)
+    d.last_t = t
+    d.dirty = false
+  else
+    d.dirty = true
+  end
+end
+fun flush_dirty() -> void
+  docs = io.lsp.docs
+  t = now_secs()
+  for uri, d in docs
+    if d.dirty then
+      if t > d.last_t then
+        run_check(uri)
+        d.last_t = t
+        d.dirty = false
+      end
+    end
+  end
+end
+
+-- ── workspace indexing ───────────────────────────────────────────────────────
+fun scan_workspace() -> void
+  if io.lsp.root_uri == nil then
+    return
+  end
+  root = io.lsp.root_uri
+  if starts_with(root, "file://") then
+    root = string.sub(root, 8)
+  end
+  cmd = "find " .. shell_quote(root) .. " -name '*.duo' -o -name '*.lua' 2>/dev/null | head -200"
+  p = io.popen(cmd, "r")
+  if p == nil then
+    return
+  end
+  out = p:read("*a")
+  p:close()
+  pos = 1
+  n = string.len(out)
+  while pos <= n
+    nl = find_from(out, "\n", pos)
+    fp = ""
+    if nl == 0 then
+      fp = trim(string.sub(out, pos))
+      pos = n + 1
+    else
+      fp = trim(string.sub(out, pos, nl - 1))
+      pos = nl + 1
+    end
+    if fp ~= "" then
+      f = io.open(fp, "r")
+      if f ~= nil then
+        txt = f:read("*a")
+        f:close()
+        -- reconstruct file:// URI
+        uri = "file://" .. fp
+        io.lsp.ws._texts[uri] = txt
+        ws_index_add(io.lsp.ws, uri, txt)
+      end
+    end
+  end
+end
+
+-- ── message I/O ──────────────────────────────────────────────────────────────
+fun read_line() -> any
+  out = {}
+  while true
+    c = io.read(1)
+    if c == nil then
+      if rawlen(out) == 0 then
+        return nil
+      end
+      break
+    end
+    if c == "\n" then
+      break
+    end
+    if c ~= "\r" then
+      out[rawlen(out) + 1] = c
+    end
+  end
+  table.concat(out)
+end
+fun read_message() -> any
+  content_length = -1
+  while true
+    line = read_line()
+    if line == nil then
+      return nil
+    end
+    if line == "" then
+      break
+    end
+    p = find_from(line, "Content-Length:", 1)
+    if p ~= 0 then
+      rest = trim(string.sub(line, p + 15))
+      n = tonumber(rest)
+      if n ~= nil then
+        content_length = n
+      end
+    end
+  end
+  if content_length < 0 then
+    return nil
+  end
+  body = io.read(content_length)
+  if body == nil then
+    return nil
+  end
+  io.lsp.json.decode(body)
+end
+
+-- ── text sync ────────────────────────────────────────────────────────────────
 fun offset_at(text, pos) -> i64
   line = pos.line
   chcol = pos.character
@@ -795,6 +1485,8 @@ fun apply_changes(text, changes) -> str
   end
   out
 end
+
+-- ── completion helpers ───────────────────────────────────────────────────────
 fun completion_matches(name, prefix) -> bool
   if prefix == "" then
     return true
@@ -998,241 +1690,72 @@ fun add_static_completions(out, seen, prefix) -> void
   add_snippet_completion(out, seen, "match", "match expression", "match ${1:value}\n    case ${2:pattern} then\n        ${0}\nend", prefix, "s_match")
   add_snippet_completion(out, seen, "enum", "enum declaration", "enum ${1:Name}\n    ${2:Variant}\nend", prefix, "s_enum")
   add_snippet_completion(out, seen, "concept", "concept declaration", "concept ${1:Name}\n    ${2:method}(${3:arg}: ${4:any}): ${5:any}\nend", prefix, "s_concept")
+  add_snippet_completion(out, seen, "@inline", "inline function", "@inline", prefix, "d_inline")
+  add_snippet_completion(out, seen, "@hot", "hot function (optimize)", "@hot", prefix, "d_hot")
+  add_snippet_completion(out, seen, "@cold", "cold function", "@cold", prefix, "d_cold")
+  add_snippet_completion(out, seen, "@raw", "raw native ABI (no wrapper)", "@raw", prefix, "d_raw")
+  add_snippet_completion(out, seen, "@packed", "packed struct layout", "@packed", prefix, "d_packed")
+  add_snippet_completion(out, seen, "@derive", "derive trait impl", "@derive(${1:Display, Eq})", prefix, "d_derive")
+  add_snippet_completion(out, seen, "@ffi", "FFI declaration", "@ffi(\"${1:name}\")", prefix, "d_ffi")
+  add_snippet_completion(out, seen, "@export", "export with C ABI", "@export(\"${1:name}\")", prefix, "d_export")
+  add_snippet_completion(out, seen, "@c.include", "include C header", "@c.include(\"${1:header.h}\")", prefix, "d_c_include")
+  add_snippet_completion(out, seen, "@c.emit", "emit raw C code", "@c.emit(\"${1:code}\")", prefix, "d_c_emit")
+  add_snippet_completion(out, seen, "@c.export", "export to C", "@c.export(\"${1:name}\")", prefix, "d_c_export")
+  add_snippet_completion(out, seen, "@c.import", "import C declarations", "@c.import(\"${1:header.h}\")", prefix, "d_c_import")
+  add_snippet_completion(out, seen, "@device", "target device", "@device(${1:.auto})", prefix, "d_device")
+  add_snippet_completion(out, seen, "@autodiff", "automatic differentiation", "@autodiff", prefix, "d_autodiff")
+  add_snippet_completion(out, seen, "@(", "compile-time eval", "@(${1:expr})", prefix, "d_comptime")
+  add_snippet_completion(out, seen, "struct", "struct definition", "${1:Name} = struct\n    ${2:x}: ${3:i64}\nend", prefix, "s_struct")
 end
-fun shell_quote(s) -> str
-  return "'" .. string.gsub(s, "'", "'\\''") .. "'"
+
+-- ── range helpers ────────────────────────────────────────────────────────────
+fun mk_pos(line, ch) -> any
+  p = {}
+  p.line = line
+  p.character = ch
+  p
 end
-fun resolve_duo_bin() -> any
-  b = os.getenv("DUO_LSP_DUO_BIN")
-  if b ~= nil and b ~= "" then
-    return b
-  end
-  b = os.getenv("DUO_BIN")
-  if b ~= nil and b ~= "" then
-    return b
-  end
-  f = io.popen("which duo 2>/dev/null", "r")
-  if f ~= nil then
-    out = f:read("*a")
-    f:close()
-    out = trim(out)
-    if out ~= "" then
-      return out
-    end
-  end
-  nil
+fun mk_range(sl, sc, ec) -> any
+  r = {}
+  r.start = mk_pos(sl, sc)
+  r["end"] = mk_pos(sl, ec)
+  r
 end
-fun doc_ext(uri) -> str
-  if ends_with(uri, ".duo") then
-    return ".duo"
-  end
-  if ends_with(uri, ".lua") then
-    return ".lua"
-  end
-  ".duo"
-end
-fun send_message(t) -> void
-  body = io.lsp.json.encode(t)
-  header = string.format("Content-Length: %d\r\n\r\n", string.len(body))
-  io.write(header, body)
-  io.flush()
-end
-fun reply(id, result) -> void
-  m = {}
-  m.jsonrpc = "2.0"
-  m.id = id
-  m.result = result
-  send_message(m)
-end
-fun reply_error(id, code, message) -> void
-  e = {}
-  e.code = code
-  e.message = message
-  m = {}
-  m.jsonrpc = "2.0"
-  m.id = id
-  m.error = e
-  send_message(m)
-end
-fun send_diagnostics(uri, diags) -> void
-  params = {}
-  params.uri = uri
-  params.diagnostics = diags
-  m = {}
-  m.jsonrpc = "2.0"
-  m.method = "textDocument/publishDiagnostics"
-  m.params = params
-  send_message(m)
-end
-io.lsp.docs = {}
-io.lsp.duo_bin = nil
-io.lsp.counter = 0
-io.lsp.shutdown = false
-io.lsp.do_exit = false
-fun now_secs() -> i64
-  return os.time()
-end
-fun doc_for(uri) -> any
-  d = io.lsp.docs[uri]
-  if d == nil then
-    d = {}
-    d.text = ""
-    d.version = 0
-    d.tmp = nil
-    d.lo = nil
-    d.syms = nil
-    d.syms_version = -1
-    d.dirty = false
-    d.last_t = 0
-    io.lsp.docs[uri] = d
-  end
-  d
-end
-fun ensure_lo(d) -> void
-  if d.lo == nil then
-    d.lo = compute_line_offs(d.text)
-  end
-end
-fun ensure_syms(d) -> void
-  ensure_lo(d)
-  if d.syms == nil or d.syms_version ~= d.version then
-    d.syms = scan_symbols_lo(d.text, d.lo)
-    d.syms_version = d.version
-  end
-end
-fun invalidate(d) -> void
-  d.lo = nil
-  d.syms = nil
-end
-fun run_check(uri) -> void
-  d = io.lsp.docs[uri]
-  if d == nil then
-    return
-  end
-  if io.lsp.duo_bin == nil then
-    send_diagnostics(uri, {})
-    return
-  end
-  ext = doc_ext(uri)
-  if d.tmp == nil then
-    io.lsp.counter = io.lsp.counter + 1
-    d.tmp = os.tmpname() .. "_" .. tostring(io.lsp.counter) .. ext
-  end
-  f = io.open(d.tmp, "w")
-  if f ~= nil then
-    f:write(d.text)
-    f:close()
-  end
-  cmd = shell_quote(io.lsp.duo_bin) .. " check " .. shell_quote(d.tmp) .. " 2>&1"
-  p = io.popen(cmd, "r")
-  if p == nil then
-    return
-  end
-  out = p:read("*a")
-  p:close()
-  ensure_lo(d)
-  diags = parse_diagnostics(out, d.lo, d.text)
-  send_diagnostics(uri, diags)
-end
-fun schedule_check(uri) -> void
-  d = io.lsp.docs[uri]
-  if d == nil then
-    return
-  end
-  if io.lsp.duo_bin == nil then
-    send_diagnostics(uri, {})
-    return
-  end
-  t = now_secs()
-  if d.last_t == 0 or t > d.last_t then
-    run_check(uri)
-    d.last_t = t
-    d.dirty = false
-  else
-    d.dirty = true
-  end
-end
-fun flush_dirty() -> void
-  docs = io.lsp.docs
-  t = now_secs()
-  for uri, d in pairs(docs)
-    if d.dirty then
-      if t > d.last_t then
-        run_check(uri)
-        d.last_t = t
-        d.dirty = false
-      end
-    end
-  end
-end
-fun read_line() -> any
-  out = {}
-  while true
-    c = io.read(1)
-    if c == nil then
-      if rawlen(out) == 0 then
-        return nil
-      end
-      break
-    end
-    if c == "\n" then
-      break
-    end
-    if c ~= "\r" then
-      out[rawlen(out) + 1] = c
-    end
-  end
-  table.concat(out)
-end
-fun read_message() -> any
-  content_length = -1
-  while true
-    line = read_line()
-    if line == nil then
-      return nil
-    end
-    if line == "" then
-      break
-    end
-    p = find_from(line, "Content-Length:", 1)
-    if p ~= 0 then
-      rest = trim(string.sub(line, p + 15))
-      n = tonumber(rest)
-      if n ~= nil then
-        content_length = n
-      end
-    end
-  end
-  if content_length < 0 then
-    return nil
-  end
-  body = io.read(content_length)
-  if body == nil then
-    return nil
-  end
-  io.lsp.json.decode(body)
-end
+
+-- ── LSP handlers ─────────────────────────────────────────────────────────────
+
 fun handle_initialize(params) -> any
+  if params ~= nil and params.rootUri ~= nil then
+    io.lsp.root_uri = params.rootUri
+  end
+  scan_workspace()
   caps = {}
   caps.textDocumentSync = 2
   caps.documentSymbolProvider = true
   caps.hoverProvider = true
   caps.definitionProvider = true
+  caps.referencesProvider = true
+  caps.renameProvider = true
+  caps.foldingRangeProvider = true
+  caps.documentHighlightProvider = true
+  caps.workspaceSymbolProvider = true
   cp = {}
   cp.resolveProvider = false
   triggers = {}
   triggers[rawlen(triggers) + 1] = "."
   triggers[rawlen(triggers) + 1] = ":"
+  triggers[rawlen(triggers) + 1] = "("
   cp.triggerCharacters = triggers
   caps.completionProvider = cp
   info = {}
   info.name = "duo-lsp"
-  info.version = "0.2.0"
+  info.version = "0.3.0"
   r = {}
   r.capabilities = caps
   r.serverInfo = info
   r
 end
+
 fun handle_did_open(params) -> void
   td = params.textDocument
   if td == nil then
@@ -1252,8 +1775,13 @@ fun handle_did_open(params) -> void
     d.version = 0
   end
   invalidate(d)
+  -- update workspace index
+  io.lsp.ws._texts[uri] = d.text
+  ensure_lo(d)
+  ws_index_add(io.lsp.ws, uri, d.text)
   schedule_check(uri)
 end
+
 fun handle_did_change(params) -> void
   td = params.textDocument
   if td == nil then
@@ -1271,8 +1799,13 @@ fun handle_did_change(params) -> void
   d.version = new_version
   d.text = apply_changes(d.text, params.contentChanges)
   invalidate(d)
+  -- update workspace index
+  io.lsp.ws._texts[uri] = d.text
+  ensure_lo(d)
+  ws_index_add(io.lsp.ws, uri, d.text)
   schedule_check(uri)
 end
+
 fun handle_did_close(params) -> void
   td = params.textDocument
   if td == nil then
@@ -1284,8 +1817,11 @@ fun handle_did_close(params) -> void
     os.remove(d.tmp)
   end
   io.lsp.docs[uri] = nil
+  ws_index_remove(io.lsp.ws, uri)
+  io.lsp.ws._texts[uri] = nil
   send_diagnostics(uri, {})
 end
+
 fun handle_did_save(params) -> void
   td = params.textDocument
   if td == nil then
@@ -1297,12 +1833,16 @@ fun handle_did_save(params) -> void
     if params.text ~= nil then
       d.text = params.text
       invalidate(d)
+      io.lsp.ws._texts[uri] = d.text
+      ensure_lo(d)
+      ws_index_add(io.lsp.ws, uri, d.text)
     end
     run_check(uri)
     d.last_t = now_secs()
     d.dirty = false
   end
 end
+
 fun handle_document_symbol(params) -> any
   uri = params.textDocument.uri
   d = io.lsp.docs[uri]
@@ -1321,11 +1861,15 @@ fun handle_document_symbol(params) -> any
     o.kind = s.kind
     o.range = mk_range(s.line, s.col, s.endCol)
     o.selectionRange = mk_range(s.line, s.col, s.col + string.len(s.name))
+    if s.container ~= nil and s.container ~= "" then
+      o.containerName = s.container
+    end
     out[rawlen(out) + 1] = o
     i = i + 1
   end
   out
 end
+
 fun handle_hover(params) -> any
   uri = params.textDocument.uri
   d = io.lsp.docs[uri]
@@ -1346,11 +1890,15 @@ fun handle_hover(params) -> any
   c = {}
   c.kind = "markdown"
   c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
+  if s.container ~= nil and s.container ~= "" then
+    c.value = c.value .. "  (in " .. s.container .. ")"
+  end
   r = {}
   r.contents = c
   r.range = mk_range(s.line, s.col, s.col + string.len(s.name))
   r
 end
+
 fun handle_definition(params) -> any
   uri = params.textDocument.uri
   d = io.lsp.docs[uri]
@@ -1367,6 +1915,121 @@ fun handle_definition(params) -> any
   r.range = mk_range(s.line, s.col, s.col + string.len(s.name))
   r
 end
+
+fun handle_references(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return {}
+  end
+  ensure_syms(d)
+  s = symbol_at(d.syms, params.position.line, params.position.character)
+  if s == nil then
+    return {}
+  end
+  refs = find_refs_in_text(d.text, d.lo, s.name, uri)
+  -- also search open workspace files
+  for wuri, wd in io.lsp.docs
+    if wuri ~= uri and wd ~= nil then
+      ensure_lo(wd)
+      r = find_refs_in_text(wd.text, wd.lo, s.name, wuri)
+      j = 1
+      while j <= rawlen(r)
+        refs[rawlen(refs) + 1] = r[j]
+        j = j + 1
+      end
+    end
+  end
+  out = {}
+  i = 1
+  while i <= rawlen(refs)
+    rr = {}
+    rr.uri = refs[i].uri
+    rr.range = mk_range(refs[i].line, refs[i].col, refs[i].endCol)
+    out[rawlen(out) + 1] = rr
+    i = i + 1
+  end
+  out
+end
+
+fun handle_rename(params) -> any
+  uri = params.textDocument.uri
+  new_name = params.newName
+  if new_name == nil or new_name == "" then
+    return nil
+  end
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return nil
+  end
+  ensure_syms(d)
+  s = symbol_at(d.syms, params.position.line, params.position.character)
+  if s == nil then
+    return nil
+  end
+  old_name = s.name
+  -- collect edits from current doc
+  edits = find_rename_edits_in_text(d.text, d.lo, old_name, new_name, uri)
+  -- collect edits from open workspace docs
+  for wuri, wd in io.lsp.docs
+    if wuri ~= uri and wd ~= nil then
+      ensure_lo(wd)
+      r = find_rename_edits_in_text(wd.text, wd.lo, old_name, new_name, wuri)
+      j = 1
+      while j <= rawlen(r)
+        edits[rawlen(edits) + 1] = r[j]
+        j = j + 1
+      end
+    end
+  end
+  -- build WorkspaceEdit
+  changes = {}
+  i = 1
+  while i <= rawlen(edits)
+    e = edits[i]
+    if changes[e.uri] == nil then
+      changes[e.uri] = {}
+    end
+    te = {}
+    te.range = mk_range(e.line, e.col, e.endCol)
+    te.newText = e.newName
+    changes[e.uri][rawlen(changes[e.uri]) + 1] = te
+    i = i + 1
+  end
+  we = {}
+  we.changes = changes
+  we
+end
+
+fun handle_folding_range(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return {}
+  end
+  ensure_lo(d)
+  compute_folding_ranges(d.text, d.lo)
+end
+
+fun handle_document_highlight(params) -> any
+  uri = params.textDocument.uri
+  d = io.lsp.docs[uri]
+  if d == nil then
+    return {}
+  end
+  ensure_syms(d)
+  ensure_lo(d)
+  find_doc_highlights(d.text, d.lo, d.syms, params.position.line, params.position.character)
+end
+
+fun handle_workspace_symbol(params) -> any
+  query = params.query
+  if query == nil then
+    query = ""
+  end
+  ws_search_symbols(io.lsp.ws, query)
+end
+
 fun handle_completion(params) -> any
   uri = params.textDocument.uri
   d = io.lsp.docs[uri]
@@ -1389,9 +2052,29 @@ fun handle_completion(params) -> any
     end
     i = i + 1
   end
+  -- add workspace symbols not already in local scope
+  for uri2, syms2 in io.lsp.ws.entries
+    if uri2 ~= uri then
+      j = 1
+      while j <= rawlen(syms2)
+        s2 = syms2[j]
+        is_public = string.sub(s2.name, 1, 1) ~= "_"
+        if is_public and completion_matches(s2.name, prefix) then
+          detail = kind_label(s2.kind)
+          if s2.container ~= nil and s2.container ~= "" then
+            detail = detail .. " (in " .. s2.container .. ")"
+          end
+          add_completion(out, seen, s2.name, completion_kind_for_symbol(s2.kind), detail, nil, "z_" .. s2.name)
+        end
+        j = j + 1
+      end
+    end
+  end
   add_static_completions(out, seen, prefix)
   out
 end
+
+-- ── message dispatch ─────────────────────────────────────────────────────────
 fun handle_message(msg) -> void
   method = msg.method
   id = msg.id
@@ -1422,14 +2105,27 @@ fun handle_message(msg) -> void
     reply(id, handle_hover(params))
   elseif method == "textDocument/definition" then
     reply(id, handle_definition(params))
+  elseif method == "textDocument/references" then
+    reply(id, handle_references(params))
+  elseif method == "textDocument/rename" then
+    reply(id, handle_rename(params))
+  elseif method == "textDocument/foldingRange" then
+    reply(id, handle_folding_range(params))
+  elseif method == "textDocument/documentHighlight" then
+    reply(id, handle_document_highlight(params))
+  elseif method == "workspace/symbol" then
+    reply(id, handle_workspace_symbol(params))
   elseif method == "textDocument/completion" then
     reply(id, handle_completion(params))
   elseif id ~= nil then
     reply_error(id, -32601, "method not found: " .. tostring(method))
   end
 end
+
+-- ── main loop ────────────────────────────────────────────────────────────────
 fun lsp_main() -> void
   io.lsp.duo_bin = resolve_duo_bin()
+  io.lsp.check_flags = resolve_check_flags()
   io.lsp.json = require("std.json")
   while true
     msg = read_message()
