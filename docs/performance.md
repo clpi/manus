@@ -8631,3 +8631,15 @@ Measured impact:
 | --- | --- |
 | `scripts/run_gpu_benchmark.sh` | PASS; GPU benchmark compiles, 108.9x speedup over CPU on Apple M2 Pro, max error within tolerance (0.00062) |
 | `zig build test` | PASS; layout-intrinsics AST simplification caused no regression |
+
+### 2026-07-20: Fix duo-lsp private symbol completion and dense table parens
+
+- Fixed an issue where  private symbols were leaked into  completion lists from other modules.
+- Fixed a compilation error in  caused by naive loop bound detection in , by ensuring the parameter is explicitly used as a bound.
+- Fixed a code generation bug emitting extraneous parentheses for  and  struct properties in  for .
+
+### 2026-07-20: Fix duo-lsp private symbol completion and dense table parens
+
+- Fixed an issue where `_` private symbols were leaked into `duo-lsp` completion lists from other modules.
+- Fixed a compilation error in `duo-lsp` caused by naive loop bound detection in `detect_dense_table`, by ensuring the parameter is explicitly used as a bound.
+- Fixed a code generation bug emitting extraneous parentheses for `.bool` and `.str` struct properties in `emit_expr` for `.field`.
