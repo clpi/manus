@@ -608,6 +608,9 @@ pub const CodeGen = struct {
             "package",  "math", "utf8", "debug",  "coroutine",   "string",        "table",
             "io",       "os",   "jit",  "ffi",    "duo_modules", "current_input", "current_output",
             "_VERSION", "net",  "mem",  "atomic", "__constexpr",
+            "req", "require", "print", "tostring", "tonumber", "type", "assert",
+            "error", "pcall", "xpcall", "select", "rawlen", "rawequal", "rawget", "rawset",
+            "setmetatable", "getmetatable", "pairs", "ipairs", "next", "unpack",
         };
         for (runtime_globals) |g| {
             if (std.mem.eql(u8, name, g)) return true;
