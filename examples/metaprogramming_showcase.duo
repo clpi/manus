@@ -1,0 +1,296 @@
+-- =============================================================================
+-- Duo Metaprogramming Showcase
+-- Comprehensive demo of ALL compile-time intrinsics, concepts, @derive,
+-- type targeting, and structural typing features.
+-- Run: duo run examples/metaprogramming_showcase.duo
+-- =============================================================================
+
+print("=== Duo Metaprogramming Showcase ===")
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 1. COMPILE-TIME EVALUATION: @(expr)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 1. Compile-time evaluation --")
+
+-- Arithmetic at compile time
+COMPUTE_RESULT = @(42 * 10 + 8)
+print("42 * 10 + 8 = " .. tostring(COMPUTE_RESULT))
+
+-- String operations at compile time
+GREETING = @("Hello" .. ", " .. "Duo!")
+print("GREETING = " .. GREETING)
+
+-- Compile-time conditional
+IS_RELEASE = @(true)
+BUILD_MODE = @comptime_if(IS_RELEASE, "release", "debug")
+print("BUILD_MODE = " .. BUILD_MODE)
+
+-- Compile-time constants
+MAX_BUFFER = @(64 * 1024)
+PI_APPROX = @(3.14159)
+print("MAX_BUFFER = " .. tostring(MAX_BUFFER))
+print("PI_APPROX = " .. tostring(PI_APPROX))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 2. TYPE INTROSPECTION: @type_name, @type_id, @is_type, @typeinfo
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 2. Type introspection --")
+
+x: i64 = 42
+s: str = "hello"
+f: f64 = 3.14
+
+print("type_name(x) = " .. @type_name(x))
+print("type_name(s) = " .. @type_name(s))
+print("type_name(f) = " .. @type_name(f))
+
+id1: i64 = @type_id(x)
+id2: i64 = @type_id(s)
+print("type_id(x) = " .. tostring(id1))
+print("type_id(s) = " .. tostring(id2))
+print("type_ids_differ = " .. tostring(id1 ~= id2))
+
+print("is_type(x, i64) = " .. tostring(@is_type(x, "i64")))
+print("is_type(s, str) = " .. tostring(@is_type(s, "str")))
+print("is_type(x, str) = " .. tostring(@is_type(x, "str")))
+
+print("typeinfo(x) = " .. @typeinfo(x))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 3. MEMORY LAYOUT: @sizeof, @alignof
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 3. Memory layout --")
+
+print("sizeof(i64) = " .. tostring(@sizeof(i64)))
+print("sizeof(f64) = " .. tostring(@sizeof(f64)))
+print("sizeof(i32) = " .. tostring(@sizeof(i32)))
+print("sizeof(bool) = " .. tostring(@sizeof(bool)))
+print("alignof(i64) = " .. tostring(@alignof(i64)))
+print("alignof(f64) = " .. tostring(@alignof(f64)))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 4. STATIC ASSERTIONS: @static_assert
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 4. Static assertions --")
+
+@static_assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
+@static_assert("sizeof(double) == 8", "f64 must be 8 bytes")
+print("All static assertions passed")
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 5. EXPLICIT TYPE CASTING: @as, @as_type
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 5. Type casting --")
+
+-- @as(Type, expr) — cast expression to type
+val_f: f64 = @as(f64, 42)
+print("@as(f64, 42) = " .. tostring(val_f))
+
+-- @as_type(expr, "type") — reversed argument order (string type name)
+val_i: i64 = @as_type(3.14, "int64_t")
+print("@as_type(3.14, 'int64_t') = " .. tostring(val_i))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 6. BIT INTRINSICS: @popcount, @ctz, @clz, @bswap
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 6. Bit intrinsics --")
+
+bits: i64 = 0xFF00
+print("popcount(0xFF00) = " .. tostring(@popcount(bits)))
+print("ctz(0xFF00) = " .. tostring(@ctz(bits)))
+print("clz(0xFF00) = " .. tostring(@clz(bits)))
+print("bswap(0xFF00) = " .. tostring(@bswap(bits)))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 7. BRANCH HINTS: @likely, @unlikely
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 7. Branch hints --")
+
+x_val: i64 = 42
+if @likely(x_val > 0) then
+    print("x is positive (likely branch)")
+end
+if @unlikely(x_val < 0) then
+    print("x is negative (unlikely branch)")
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 8. COMPILE-TIME CONDITIONAL: @comptime_if
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 8. Compile-time conditional --")
+
+platform = @comptime_if(true, "native", "wasm")
+print("platform = " .. platform)
+
+debug_level = @comptime_if(false, "verbose", "quiet")
+print("debug_level = " .. debug_level)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 9. CONCEPTS (Structural Typing)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 9. Concepts --")
+
+concept Printable
+    fun to_string(self): str
+end
+
+concept Counter
+    fun increment(self): void
+    fun value(self): i64
+end
+
+-- Create types that satisfy concepts
+counter = { _val = 0 }
+counter.increment = fun(self): void
+    self._val = self._val + 1
+end
+counter.value = fun(self): i64
+    self._val
+end
+counter.to_string = fun(self): str
+    "Counter(" .. tostring(self._val) .. ")"
+end
+
+-- Use : method syntax
+counter:increment()
+counter:increment()
+counter:increment()
+print("Counter: " .. counter:to_string())
+print("Counter value: " .. tostring(counter:value()))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 10. @derive (Auto-generated metamethods)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 10. @derive --")
+
+-- @derive generates metamethods and methods for alias types:
+-- Display  → __tostring, :to_string()
+-- Eq       → __eq, :eq()
+-- Add      → __add
+-- Sub      → __sub
+-- Mul      → __mul
+-- Div      → __div
+-- Rem      → __mod
+-- Neg      → __unm
+-- BitAnd   → __band
+-- BitOr    → __bor
+-- BitXor   → __bxor
+-- BitNot   → __bnot
+-- Shl      → __shl
+-- Shr      → __shr
+-- Len      → __len
+-- Hash     → :hash()
+-- Clone    → :clone()
+-- Default  → TypeName.default()
+
+@derive(Display, Eq, Add, Sub, Mul, Neg, Len, Hash, Clone, Default)
+type Vec2 = { x: f64, y: f64 }
+
+@derive(Div, Rem)
+type Rat = { num: f64, den: f64 }
+
+-- Derived Enum
+@derive("Display", "Eq")
+enum Color
+    Red
+    Green
+    Blue
+end
+
+c1 = Color.Red
+c2 = Color.Green
+print("Enum c1 = " .. tostring(c1))
+print("Enum c2 = " .. tostring(c2))
+print("c1 == c1: " .. tostring(c1 == c1))
+print("c1 == c2: " .. tostring(c1 == c2))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 11. @derive Division and Modulo
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 11. RUNTIME METAMETHODS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 12. Runtime metamethods --")
+
+vector_mt = {}
+vector_mt.__index = vector_mt
+
+vector_mt.new = fun(x, y)
+    setmetatable({ x = x, y = y }, vector_mt)
+end
+
+vector_mt.__add = fun(a, b)
+    vector_mt.new(a.x + b.x, a.y + b.y)
+end
+
+vector_mt.__tostring = fun(self)
+    "Vec(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
+end
+
+v1 = vector_mt.new(1, 2)
+v2 = vector_mt.new(3, 4)
+v3 = v1 + v2
+print("v1 = " .. tostring(v1))
+print("v2 = " .. tostring(v2))
+print("v1 + v2 = " .. tostring(v3))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 13. COMPILE-TIME STRING OPERATIONS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 13. Compile-time string operations --")
+
+upper = @(string.upper("hello world"))
+len = @(string.len("duo language"))
+print("comptime upper = " .. upper)
+print("comptime len = " .. tostring(len))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 14. HAS METAMETHOD CHECK
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 14. Has metamethod --")
+
+print("v1 has __add = " .. tostring(@has_metamethod(v1, "__add")))
+print("v1 has __mul = " .. tostring(@has_metamethod(v1, "__mul")))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 15. COMPILE-TIME DIAGNOSTICS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 15. Compile-time diagnostics --")
+
+@compile_log("This is a compile-time log message")
+@comptime_warn("This is a compile-time warning")
+print("Compile-time diagnostics emitted")
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 16. TYPE ALIASES
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n-- 17. Type aliases --")
+
+-- Type aliases create named types for documentation
+-- but the underlying C type is what matters for assignment
+uid: i64 = 12345
+sc: f64 = 98.6
+print("UserId(12345) = " .. tostring(uid))
+print("Score(98.6) = " .. tostring(sc))
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SUMMARY
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+print("\n=== All metaprogramming features demonstrated ===")

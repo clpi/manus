@@ -211,8 +211,102 @@ Keep it in sync with `docs/src/roadmap.md`.
   - [x] `#t` type recovery: `expr_type` now returns `.f64` for `#t` on untyped
     values, eliminating `lua_leq` in loop conditions like `while i <= #t` (2026-07-15).
   - [x] Support float-valued dense tables (`double*` allocation) (2026-07-15).
-  - [ ] Support literal-init tables (`local t = {10, 20, 30}`).
-  - [ ] Generalize `detect_dense_table_sum_patterns` emitters for typed functions.
+  - [x] Support literal-init tables (`local t = {10, 20, 30}`) when dense-table
+    analysis proves all observed uses are array-like indexed reads/writes or `#t`
+    (2026-07-22).
+  - [x] Keep analyzer-proven identity sum, lookup sum, mod997 churn, and max
+    dense-table specializations enabled after partial typed/inferred-return
+    native inference; generic non-identity reductions still use the normal
+    dense-table path unless a detector proves a closed form (2026-07-22).
+  - [x] Generalize sequential dense-table sum reductions for affine fills
+    (`t[i] = i * k + c` / `c + k * i`) using the same proof-gated loop analysis
+    as the identity sum path, while keeping nonlinear fills on native dense
+    arrays (2026-07-22).
+  - [x] Generalize sequential dense-table sum reductions for square fills
+    (`t[i] = i * i`) with the standard `n(n+1)(2n+1)/6` closed form under the
+    same single-assignment proof used by affine dense reductions (2026-07-22).
+  - [x] Generalize sequential dense-table reductions for simple quadratic fills
+    (`t[i] = a*i*i + b*i + c`, including `i * (i + c)`) with a degree-limited
+    polynomial normalizer and cubic rejection tests (2026-07-22).
+  - [x] Generalize sequential dense-table reductions for simple cubic fills
+    (`t[i] = a*i*i*i + b*i*i + c*i + d`, including shifted products such as
+    `i * (i + 1) * (i + 2)`) with quartic rejection tests (2026-07-22).
+  - [x] Generalize sequential dense-table reductions for simple quartic fills
+    (`t[i] = a*i^4 + b*i^3 + c*i*i + d*i + e`, including shifted products
+    such as `i * (i + 1) * (i + 2) * (i + 3)`) with quintic rejection tests
+    (2026-07-22).
+  - [x] Generalize sequential dense-table reductions for simple quintic fills
+    (`t[i] = a*i^5 + b*i^4 + c*i^3 + d*i*i + e*i + f`, including shifted
+    products such as `i * (i + 1) * (i + 2) * (i + 3) * (i + 4)`) with sextic
+    rejection tests (2026-07-22).
+  - [x] Generalize sequential dense-table reductions for simple sextic fills
+    (`t[i] = a*i^6 + b*i^5 + c*i^4 + d*i^3 + e*i*i + f*i + g`, including
+    shifted products such as `i * (i + 1) * ... * (i + 5)`) with degree-seven
+    rejection tests (2026-07-22).
+  - [x] Generalize sequential dense-table reductions for simple degree-seven
+    fills
+    (`t[i] = a*i^7 + b*i^6 + c*i^5 + d*i^4 + e*i^3 + f*i*i + g*i + h`,
+    including shifted products such as `i * (i + 1) * ... * (i + 6)`) with
+    degree-eight rejection tests (2026-07-22).
+  - [x] Replace fixed-degree dense-table fill proofs with a bounded coefficient
+    vector normalizer and add simple degree-eight fills
+    (`t[i] = a*i^8 + b*i^7 + c*i^6 + d*i^5 + e*i^4 + f*i^3 + g*i*i + h*i + k`,
+    including shifted products such as `i * (i + 1) * ... * (i + 7)`) with
+    degree-nine rejection tests (2026-07-22).
+  - [x] Add simple degree-nine dense-table reductions using the coefficient-vector
+    proof
+    (`t[i] = a*i^9 + b*i^8 + c*i^7 + d*i^6 + e*i^5 + f*i^4 + g*i^3 + h*i*i + j*i + k`,
+    including shifted products such as `i * (i + 1) * ... * (i + 8)`) with
+    degree-ten rejection tests (2026-07-22).
+  - [x] Add simple degree-ten dense-table reductions using the coefficient-vector
+    proof
+    (`t[i] = a*i^10 + b*i^9 + c*i^8 + d*i^7 + e*i^6 + f*i^5 + g*i^4 + h*i^3 + j*i*i + k*i + m`,
+    including shifted products such as `i * (i + 1) * ... * (i + 9)`) with
+    degree-eleven rejection tests (2026-07-22).
+  - [x] Add a bounded Faulhaber coefficient-vector dense-table reduction fallback
+    for degree-eleven fills
+    (`t[i] = c11*i^11 + ... + c1*i + c0`, including shifted products such as
+    `i * (i + 1) * ... * (i + 10)`) with degree-twelve rejection tests
+    (2026-07-22).
+  - [x] Extend the bounded Faulhaber coefficient-vector dense-table fallback to
+    degree-twelve fills
+    (`t[i] = c12*i^12 + ... + c1*i + c0`, including shifted products such as
+    `i * (i + 1) * ... * (i + 11)`) with degree-thirteen rejection tests
+    (2026-07-22).
+  - [x] Harden generated-C correctness for degree-twelve Faulhaber dense-table
+    reductions by asserting the odd-power intermediates used by `sum(i^10)` and
+    `sum(i^12)`, correcting the shared `sum(i^8)` closed form, and verifying a
+    real shifted degree-twelve compile/run result (2026-07-22).
+  - [x] Fold affine reduction addends on proven dense-table polynomial fills,
+    such as `sum += t[i] * k + c`, by composing the reduction with the existing
+    fill polynomial and rejecting constant-only or non-affine addends
+    (2026-07-22).
+  - [x] Fold bounded polynomial reduction addends on proven dense-table fills,
+    such as `sum += t[i] * t[i] + c`, by composing reduction and fill
+    polynomials only when the composed degree remains <= 12 (2026-07-22).
+  - [x] Accept unary-negated polynomial terms in proven dense-table fills and
+    reductions, such as `t[i] = -i * (i + 1)` and
+    `sum += -(t[i] * t[i]) + c`, without widening the bounded polynomial proof
+    beyond degree 12 (2026-07-22).
+  - [x] Accept integer-power spelling in proven dense-table polynomial fills
+    and reductions, such as `t[i] = (i + 1) ^ 2` and `sum += t[i] ^ 2 + c`,
+    while rejecting negative, dynamic, fractional, over-12, or composed
+    over-degree exponents (2026-07-22).
+  - [x] Accept unmodified local integer constants as coefficients and offsets
+    in proven dense-table polynomial fills and reductions, while rejecting
+    reassigned or shadowed locals so mutable values stay on the ordinary
+    dense-table path (2026-07-22).
+  - [x] Accept unmodified local integer constants as polynomial exponents in
+    proven dense-table fills and reductions, such as `p = 2; t[i] = i ^ p`
+    and `sum += t[i] ^ p`, while rejecting reassigned/shadowed/dynamic
+    exponent names (2026-07-22).
+  - [x] Accept integer `const` declarations in native inference and proven
+    dense-table polynomial fills/reductions, such as
+    `const p = 2; t[i] = (i + 1) ^ p`, while rejecting nested shadowing and
+    non-integer const values (2026-07-22).
+  - [ ] Generalize additional dense-table reductions beyond the currently
+    proven identity/affine/square/quadratic/cubic/quartic/quintic/sextic/degree-seven/degree-eight/degree-nine/degree-ten/degree-eleven/degree-twelve/lookup/mod997/max
+    emitters.
 
 ## Additional high-value
 

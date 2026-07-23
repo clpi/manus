@@ -200,7 +200,7 @@ fun fp16_decode(bits: i64): f64
         if mantissa == 0 then
             return sign == 0 and 1e30 or -1e30
         end
-        return 0  -- NaN
+        return 0.0  -- NaN
     else
         value = (1.0 + mantissa / 1024.0) * (2 ^ (exp - 15))
     end

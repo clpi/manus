@@ -398,8 +398,17 @@ pub const Parser = struct {
 
     fn parse_stmt(self: *Parser) ParseError!ast.Stmt {
         const tok = try self.pk();
+        // A bare `type` keyword at statement start usually means a type alias
+        // (`type Foo = ...`). But `type(x)` is the Lua builtin call form, so
+        // disambiguate by peeking the next token: an `lparen` means a call.
         if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
-            return self.parse_alias_def_with_attrs(&.{});
+            const saved = self.lex.saveState();
+            _ = try self.adv();
+            const after = try self.pk();
+            self.lex.restoreState(saved);
+            if (after.kind != .lparen) {
+                return self.parse_alias_def_with_attrs(&.{});
+            }
         }
 
         return switch (tok.kind) {
@@ -483,29 +492,19 @@ pub const Parser = struct {
             }
             const is_build = std.mem.eql(u8, attr_name.text, "build") or std.mem.startsWith(u8, attr_name.text, "build.");
             const is_debug = std.mem.eql(u8, attr_name.text, "debug") or std.mem.startsWith(u8, attr_name.text, "debug.");
-            if (is_build or is_debug) {
-                while ((try self.pk()).kind == .dot) {
-                    _ = try self.adv();
-                    _ = try self.expect(.name);
-                }
-                if ((try self.pk()).kind == .lparen) {
-                    var depth: u32 = 0;
-                    while (true) {
-                        const tok = try self.adv();
-                        switch (tok.kind) {
-                            .lparen => depth += 1,
-                            .rparen => {
-                                depth -= 1;
-                                if (depth == 0) break;
-                            },
-                            .eof => return false,
-                            else => {},
-                        }
-                    }
-                }
-                return true;
+            const is_trace = std.mem.eql(u8, attr_name.text, "trace") or std.mem.startsWith(u8, attr_name.text, "trace.");
+            const is_directive = is_build or is_debug or is_trace;
+            const is_known = is_directive or
+                (is_c_export or is_known_attribute(attr_name.text));
+            if (!is_known) return false;
+            // Consume any dotted continuation (e.g. `@test.unit`, `@build.exe`,
+            // `@trace.parse`) and any balanced `(...)` argument block. The
+            // caller restores the cursor before the real parse, so this is
+            // strictly lookahead.
+            while ((try self.pk()).kind == .dot) {
+                _ = try self.adv();
+                _ = try self.expect(.name);
             }
-            if (!is_c_export and !is_known_attribute(attr_name.text)) return false;
             if ((try self.pk()).kind == .lparen) {
                 var depth: u32 = 0;
                 while (true) {
@@ -521,6 +520,7 @@ pub const Parser = struct {
                     }
                 }
             }
+            if (is_directive) return true;
         }
         const tok = try self.pk();
         return switch (tok.kind) {
@@ -758,6 +758,37 @@ pub const Parser = struct {
 
     fn attach_attrs_to_names(names: []ast.LocalName, attrs: []ast.Attribute) void {
         for (names) |*n| n.attributes = attrs;
+    }
+
+    /// Accept a `.name` token or any keyword token as a field-name-like token,
+    /// returning its text. Statements/blocks use a fixed vocabulary; after `.`
+    /// a programmer may legitimately use a reserved word as a method/field name
+    /// (e.g. `string.match(...)`, `str.repeat(...)`, `obj.end`). Statement
+    /// terminators (`end`, `else`, `elseif`, `until`) are NOT accepted here so
+    /// they keep their role as block closers.
+    fn is_name_like_kind(k: TK) bool {
+        return switch (k) {
+            .name => true,
+            .kw_end, .kw_else, .kw_elseif, .kw_until => false,
+            else => blk: {
+                const s = k.spelling();
+                break :blk s.len > 0 and std.ascii.isAlphabetic(s[0]);
+            },
+        };
+    }
+
+    fn accept_name_like(self: *Parser) ?[]const u8 {
+        const tok = self.pk() catch return null;
+        if (!is_name_like_kind(tok.kind)) return null;
+        _ = self.adv() catch return null;
+        return tok.text;
+    }
+
+    fn expect_name_like(self: *Parser) ParseError![]const u8 {
+        if (self.accept_name_like()) |t| return t;
+        // Generate the standard "expected 'name'" diagnostic via expect().
+        _ = try self.expect(.name);
+        unreachable;
     }
 
     /// Parse a single attribute: `@name`, `@name.sub`, or `@name(args)`
@@ -1754,24 +1785,24 @@ pub const Parser = struct {
             switch (tok.kind) {
                 .dot => {
                     _ = try self.adv();
-                    const fld = try self.expect(.name);
-                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld.text } });
+                    const fld = try self.expect_name_like();
+                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
                 .colon => {
                     _ = try self.adv();
-                    const method = try self.expect(.name);
+                    const method = try self.expect_name_like();
                     // Only allow parenthesized call args after method
                     if ((try self.pk()).kind == .lparen) {
                         const callargs = try self.parse_call_args();
                         e = try self.new_expr(.{ .method_call = .{
                             .loc = tok.loc,
                             .obj = e,
-                            .method = method.text,
+                            .method = method,
                             .args = callargs,
                         } });
                     } else {
                         // method with no args — treat as field access
-                        e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = method.text } });
+                        e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = method } });
                     }
                 },
                 .lparen => {
@@ -2060,6 +2091,19 @@ pub const Parser = struct {
     }
 
     fn parse_expr_stmt(self: *Parser) ParseError!ast.Stmt {
+        // Check for unary operators (not, #, -, ~, ##, comptime, await) — these
+        // need full expression parsing, not parse_suffixed_expr which only handles
+        // suffixed expressions (names, literals, calls, field access).
+        const first_tok = try self.pk();
+        const is_unary = switch (first_tok.kind) {
+            .kw_not, .hash, .hash_hash, .kw_comptime, .minus, .tilde, .kw_await, .backtick => true,
+            else => false,
+        };
+        if (is_unary) {
+            const expr = try self.parse_expr();
+            return ast.Stmt{ .expr_stmt = .{ .loc = expr.loc(), .expr = expr } };
+        }
+
         const first = try self.parse_suffixed_expr();
 
         // If the next token continues the expression (binary op, etc.),
@@ -2633,6 +2677,8 @@ pub const Parser = struct {
             .{ .public = "comptimeprint", .internal = "__comptimeprint" },
             .{ .public = "comptime_warn", .internal = "__comptimewarn" },
             .{ .public = "comptimewarn", .internal = "__comptimewarn" },
+            .{ .public = "compile_log", .internal = "__comptimeprint" },
+            .{ .public = "compile_error", .internal = "__comptimeerror" },
             .{ .public = "comptime_error", .internal = "__comptimeerror" },
             .{ .public = "comptimeerror", .internal = "__comptimeerror" },
             .{ .public = "static_assert", .internal = "__static_assert" },
@@ -2755,8 +2801,8 @@ pub const Parser = struct {
             switch (tok.kind) {
                 .dot => {
                     _ = try self.adv();
-                    const fld = try self.expect(.name);
-                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld.text } });
+                    const fld = try self.expect_name_like();
+                    e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
                 .lbracket => {
                     _ = try self.adv();
@@ -2800,12 +2846,12 @@ pub const Parser = struct {
                     }
                     // Not a typed binding — treat as method call
                     _ = try self.adv(); // consume ':'
-                    const method = try self.expect(.name);
+                    const method = try self.expect_name_like();
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .method_call = .{
                         .loc = tok.loc,
                         .obj = e,
-                        .method = method.text,
+                        .method = method,
                         .args = callargs,
                     } });
                 },

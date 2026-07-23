@@ -1,0 +1,2 @@
+Vec: { x: i64, y: i64 }
+print("Vec type defined")

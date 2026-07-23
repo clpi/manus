@@ -63,7 +63,7 @@ fun find(list: any, fn_ref: any): any
 end
 
 -- find_index: return the 1-based index of the first matching element, or nil.
-fun find_index(list: any, fn_ref: any): i64
+fun find_index(list: any, fn_ref: any): any
     if list == nil then return nil end
     i = 1
     while i <= rawlen(list)

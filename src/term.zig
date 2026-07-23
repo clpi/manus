@@ -144,14 +144,14 @@ fn printPathStyled(path: []const u8) void {
     const base = std.fs.path.basename(path);
     const prefix_len = path.len - base.len;
     if (prefix_len > 0) {
-        wprint("\x1b[2;4m{s}\x1b[0m", .{path[0..prefix_len]});
+        wprint("\x1b[2m{s}\x1b[0m", .{path[0..prefix_len]});
     }
-    wprint("\x1b[1;4m{s}\x1b[0m", .{base});
+    wprint("\x1b[1m{s}\x1b[0m", .{base});
 }
 
 fn printLineCol(line: u32, col: u32) void {
     if (color) {
-        wprint("\x1b[36m{}\x1b[0m:\x1b[35m{}\x1b[0m", .{ line, col });
+        wprint("\x1b[36m{}\x1b[0m:\x1b[33m{}\x1b[0m", .{ line, col });
     } else {
         wprint("{}:{}", .{ line, col });
     }
@@ -302,17 +302,16 @@ fn printSourceContext(loc: anytype, severity_color: []const u8) void {
 fn printDiagnosticNote(comptime label: []const u8, body: []const u8, is_last: bool) void {
     if (color) {
         const branch = if (is_last) "╰─" else "├─";
-        const label_color = if (std.mem.eql(u8, label, "help")) "\x1b[1;36m" else if (std.mem.eql(u8, label, "detail")) "\x1b[1;34m" else "\x1b[1;37m";
+        const label_color = if (std.mem.eql(u8, label, "help")) "\x1b[36m" else if (std.mem.eql(u8, label, "detail")) "\x1b[34m" else "\x1b[37m";
         const glyph: []const u8 = if (std.mem.eql(u8, label, "help")) "💡" else if (std.mem.eql(u8, label, "detail")) "ℹ" else "·";
-        wprint("  \x1b[2m{s}\x1b[0m {s}{s} {s}\x1b[0m \x1b[2m→\x1b[0m \x1b[3m{s}\x1b[0m\n", .{
+        wprint("  \x1b[2m{s}\x1b[0m {s}{s}\x1b[0m {s}\n", .{
             branch,
             label_color,
             glyph,
-            label,
             body,
         });
     } else {
-        wprint("  = {s}: {s}\n", .{ label, body });
+        wprint("  {s}: {s}\n", .{ label, body });
     }
 }
 
@@ -339,12 +338,12 @@ fn printLocDiagnostic(loc: anytype, comptime label: []const u8, color_code: []co
     }
     if (color) {
         const sym = if (std.mem.eql(u8, label, "error")) "✗" else if (std.mem.eql(u8, label, "warning")) "⚠" else if (std.mem.eql(u8, label, "hint")) "💡" else "ℹ";
-        wprint("{s} {s} \x1b[1;4m{s}\x1b[0m\x1b[2m ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\x1b[0m\n", .{ color_code, sym, label });
-        wprint("  \x1b[2m┌─\x1b[0m ", .{});
+        wprint("{s}{s} {s}\n", .{ color_code, sym, label });
+        wprint("  ", .{});
         printStyledLoc(loc);
-        wprint("\n  \x1b[2m│\x1b[0m \x1b[1mmessage\x1b[0m \x1b[2m→\x1b[0m \x1b[1;3m", .{});
+        wprint("\n", .{});
         wprint(fmt, args);
-        wprint("\x1b[0m\n", .{});
+        wprint("\n", .{});
     } else {
         wprint("{s}:{}:{}: {s}: ", .{ loc.file, loc.line, loc.col, label });
         wprint(fmt, args);
@@ -356,31 +355,45 @@ fn printLocDiagnostic(loc: anytype, comptime label: []const u8, color_code: []co
 
 pub fn err(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;4;31m✗ error\x1b[0m\x1b[1;31m:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;31m✗ error:\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        wprint("error: " ++ fmt ++ "\n", args);
+        wprint("error: ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     }
 }
 
 pub fn warn(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;4;33m⚠ warning\x1b[0m\x1b[1;33m:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;33m⚠ warning:\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        wprint("warning: " ++ fmt ++ "\n", args);
+        wprint("warning: ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     }
 }
 
 pub fn hint(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;4;36m💡 hint\x1b[0m\x1b[1;36m:\x1b[0m \x1b[3m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;36m💡 hint:\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
-        wprint("hint: " ++ fmt ++ "\n", args);
+        wprint("hint: ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     }
 }
 
 pub fn ok(comptime fmt: []const u8, args: anytype) void {
     if (color) {
-        wprint("\x1b[1;4;32m✓\x1b[0m \x1b[1;32m" ++ fmt ++ "\x1b[0m\n", args);
+        wprint("\x1b[1;32m✓\x1b[0m ", .{});
+        wprint(fmt, args);
+        wprint("\n", .{});
     } else {
         wprint(fmt ++ "\n", args);
     }

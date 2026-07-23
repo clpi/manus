@@ -936,12 +936,14 @@ fn run_test_sources(
     test_filter: ?[]const u8,
     link_flags: []const []const u8,
 ) !void {
-    term.banner(if (bench_only) "bench" else "test");
-    term.kv("report", @tagName(term.test_report));
-    if (test_filter) |f| term.kv("filter", f);
+    if (term.test_report != .json) {
+        term.banner(if (bench_only) "bench" else "test");
+        term.kv("report", @tagName(term.test_report));
+        if (test_filter) |f| term.kv("filter", f);
+    }
     var failures: u32 = 0;
     for (sources, 0..) |file, idx| {
-        term.kv("source", file);
+        if (term.test_report != .json) term.kv("source", file);
         const out = if (output_file != null and sources.len == 1)
             output_file.?
         else
@@ -1611,7 +1613,10 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
         const log_ns = Io.Timestamp.now(io, .awake).nanoseconds;
         const log_path = try std.fmt.allocPrint(alloc, "/tmp/duo_test_{x}.log", .{@as(u64, @intCast(log_ns))});
         defer alloc.free(log_path);
-        const cmd = try std.fmt.allocPrint(alloc, "{s} 2>{s}", .{ out_path, log_path });
+        const cmd = if (term.test_report == .json)
+            try std.fmt.allocPrint(alloc, "{s} >/dev/null 2>{s}", .{ out_path, log_path })
+        else
+            try std.fmt.allocPrint(alloc, "{s} 2>{s}", .{ out_path, log_path });
         defer alloc.free(cmd);
         const argv = [_][]const u8{ "/bin/sh", "-c", cmd };
         var child = try std.process.spawn(io, .{
@@ -1876,23 +1881,21 @@ fn do_compile(
         var args: std.ArrayList([]const u8) = .empty;
         if (is_wasm) {
             try args.appendSlice(alloc, &.{
-                "zig",                          "cc",
-                "--target=wasm32-wasi",         opt,
-                "-ffast-math",                  "-flto",
-                "-fomit-frame-pointer",         "-funroll-loops",
-                "-ffp-contract=fast",           "-fno-trapping-math",
-                "-fno-math-errno",              "-Wl,--no-entry",
-                "-Wl,--gc-sections",            "-Wl,--strip-debug",
-                "-std=gnu99",                   "-lm",
-                "-Wno-deprecated-declarations",
+                "zig",                  "cc",
+                "--target=wasm32-wasi", opt,
+                "-ffast-math",          "-flto",
+                "-fomit-frame-pointer", "-funroll-loops",
+                "-ffp-contract=fast",   "-fno-trapping-math",
+                "-fno-math-errno",      "-Wl,--gc-sections",
+                "-Wl,--strip-debug",    "-std=gnu99",
+                "-lm",                  "-Wno-deprecated-declarations",
             });
             if (lib_mode) {
                 try args.appendSlice(alloc, &.{
                     "-mexec-model=reactor",
+                    "-Wl,--no-entry",
                     "-Wl,--export-dynamic",
                 });
-            } else {
-                try args.append(alloc, "-Wl,--export=main");
             }
             if (shared_mem) {
                 try args.appendSlice(alloc, &.{ "-matomics", "-mbulk-memory", "-mmutable-globals" });
@@ -2026,7 +2029,7 @@ fn do_compile(
         term.buildPhaseDone("compile", total_ms, out_path);
     }
 
-    if (!run_after) {
+    if (!run_after and !(test_mode and term.test_report == .json)) {
         term.ok("✓ {s}", .{out_path});
     }
 

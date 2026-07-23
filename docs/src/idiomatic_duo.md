@@ -366,6 +366,7 @@ Channels: `lex`, `parse`, `sema`, `types`, `mono`, `arc`, `async`, `codegen`, `b
 **Test & bench reporting**
 
 `duo test` and `duo bench` emit a structured `DUO_EVT` protocol on stderr; the compiler captures it and renders a tree-style report (default **pretty**).
+Use `--no-color` or `NO_COLOR=1` when logs must be escape-free; pretty, compact, and verbose reports keep their structure without ANSI styling. Use `DUO_COLOR=1` to force rich ANSI styling in captured output. JSON reports stay NDJSON and escape-free even when color is forced.
 
 | Style | Behavior |
 |-------|----------|
@@ -380,6 +381,7 @@ duo test examples/directives_test.duo
 duo test my.duo --test-report compact --filter unit
 duo test my.duo --test-report json | jq .
 DUO_TEST_REPORT=verbose duo bench suite.duo
+zig build report-styling                   # guard no-color and forced-color output
 ```
 
 Assert failures emit `DUO_EVT test fail name=… reason=…` (assertion message when available) and continue with remaining tests.

@@ -884,15 +884,39 @@ pub const Sema = struct {
     fn atomic_intrinsic_name(_: *const Sema, func: *const ast.Expr) ?[]const u8 {
         if (func.* != .field) return null;
         const f = func.field;
-        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "atomic")) return f.field;
+        if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "atomic")) {
+            if (is_known_atomic_intrinsic(f.field)) return f.field;
+            return null;
+        }
         if (f.obj.* == .field) {
             const inner = f.obj.field;
             if (inner.obj.* == .name and
                 std.mem.eql(u8, inner.obj.name.ident, "std") and
                 std.mem.eql(u8, inner.field, "atomic"))
-                return f.field;
+            {
+                if (is_known_atomic_intrinsic(f.field)) return f.field;
+                return null;
+            }
         }
         return null;
+    }
+
+    /// True if `name` is one of the built-in `__atomic_*` primitives. Other
+    /// `atomic.X(...)` calls (e.g. `atomic.mutex_new`, `atomic.lock`) are
+    /// regular module-method calls on the `std.atomic` stdlib table and must
+    /// fall through to normal field-call resolution.
+    fn is_known_atomic_intrinsic(name: []const u8) bool {
+        return std.mem.eql(u8, name, "load") or
+            std.mem.eql(u8, name, "store") or
+            std.mem.eql(u8, name, "exchange") or
+            std.mem.eql(u8, name, "compare_exchange") or
+            std.mem.eql(u8, name, "fetch_add") or
+            std.mem.eql(u8, name, "fetch_sub") or
+            std.mem.eql(u8, name, "fetch_and") or
+            std.mem.eql(u8, name, "fetch_or") or
+            std.mem.eql(u8, name, "fetch_xor") or
+            std.mem.eql(u8, name, "fence") or
+            std.mem.eql(u8, name, "compiler_fence");
     }
 
     fn atomic_type_arg(self: *Sema, args: []const *ast.Expr, index: usize) SemaError!?RT {
@@ -2855,7 +2879,9 @@ pub const Sema = struct {
         try self.check_block(&fb.body);
         self.scope.pop();
 
-        // Pass 2: infer native signature for plain Lua numeric functions.
+        // Pass 2: infer native signatures for scalar functions that are plain
+        // enough to stay off the dynamic Lua path. This covers both untyped Lua
+        // functions and .duo functions with typed params but inferred returns.
         if (!fb.is_typed and !func_body_has_func_expr(fb)) {
             const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
             try detect_dense_table(fb, self.alloc);
@@ -2871,6 +2897,7 @@ pub const Sema = struct {
             param_types[i] = try self.resolve_type(p.typ);
         }
         ret_t = try self.resolve_type(fb.ret_type);
+        ret_ptr.* = ret_t;
         var params_native = true;
         for (param_types) |pt| {
             if (!pt.is_native()) params_native = false;
@@ -2880,10 +2907,10 @@ pub const Sema = struct {
         fb.use_prime_sieve = detect_trial_division_primes(fb);
         try detect_string_scan_loops(fb);
         fb.use_grid_sum_inline = detect_grid_sum_inline(fb);
-        fb.use_dense_table_max = fb.use_dense_table and !fb.is_typed and detect_dense_table_max(fb);
-        fb.use_table_lookup_sum = !fb.is_typed and detect_table_lookup_sum(fb);
-        fb.use_dense_table_mod997_sum = !fb.is_typed and detect_dense_table_mod997_sum(fb);
-        if (!fb.is_typed) detect_dense_table_sum_patterns(fb);
+        fb.use_dense_table_max = fb.use_dense_table and detect_dense_table_max(fb);
+        fb.use_table_lookup_sum = detect_table_lookup_sum(fb);
+        fb.use_dense_table_mod997_sum = detect_dense_table_mod997_sum(fb);
+        detect_dense_table_sum_patterns(fb);
         fb.use_math_floor_max = fb.is_typed and detect_math_floor_max(fb);
         fb.use_math_pow_sqrt = fb.is_typed and detect_math_pow_sqrt(fb);
         fb.use_string_len_chain = fb.is_typed and detect_string_len_chain(fb);
@@ -2927,6 +2954,7 @@ pub const Sema = struct {
             fb.use_dot_product_dense or fb.use_clamp_mod_sum or fb.use_mod_histogram_sum or
             fb.use_table_lookup_sum or fb.use_dense_table_mod997_sum or fb.use_string_token_count or
             fb.use_string_delim_byte_sum or fb.use_dense_table_sum or fb.use_dense_table_max or
+            fb.use_dense_table_faulhaber_sum or fb.use_dense_table_decic_sum or fb.use_dense_table_nonic_sum or fb.use_dense_table_octic_sum or fb.use_dense_table_septic_sum or fb.use_dense_table_sextic_sum or fb.use_dense_table_quintic_sum or fb.use_dense_table_quartic_sum or fb.use_dense_table_cubic_sum or fb.use_dense_table_quadratic_sum or fb.use_dense_table_square_sum or
             fb.use_dense_table_identity_sum or fb.use_string_byte_scan or fb.use_string_hash_scan or
             fb.use_string_len_chain or fb.use_iterative_fib or fb.use_prime_sieve or
             fb.use_gcd_inline or fb.use_collatz_inline or fb.use_xor_fold_inline or
@@ -3186,14 +3214,22 @@ pub const Sema = struct {
         }
 
         if (missing_count > 0) {
-            // Emit error listing missing variants
+            // Emit a single structured error listing all missing variants inline.
             self.errors += 1;
-            term.locErr(me.loc, "non-exhaustive match on enum '{s}': missing variant(s): ", .{enum_name});
+            var buf: [2048]u8 = undefined;
+            var pos: usize = 0;
             for (missing_buf[0..missing_count], 0..) |name, i| {
-                if (i > 0) term.printRaw(", ", .{});
-                term.printRaw("{s}", .{name});
+                if (i > 0) {
+                    if (pos + 2 <= buf.len) {
+                        buf[pos] = ',';
+                        buf[pos + 1] = ' ';
+                        pos += 2;
+                    }
+                }
+                const written = std.fmt.bufPrint(buf[pos..], "{s}", .{name}) catch break;
+                pos += written.len;
             }
-            term.printRaw("\n", .{});
+            term.locErr(me.loc, "non-exhaustive match on enum '{s}': missing variant(s): {s}", .{ enum_name, buf[0..pos] });
         }
     }
 
@@ -3615,19 +3651,24 @@ pub const Sema = struct {
         const total_missing = missing_methods.items.len + missing_fields.items.len;
         if (total_missing > 0) {
             self.errors += 1;
-            term.locErr(loc, "binding '{s}' does not satisfy concept '{s}': missing ", .{ binding_name, concept_name });
+            var list: std.ArrayListUnmanaged(u8) = .empty;
+            defer list.deinit(self.alloc);
             var first = true;
             for (missing_methods.items) |name| {
-                if (!first) term.printRaw(", ", .{});
-                term.printRaw("method '{s}'", .{name});
+                if (!first) list.appendSlice(self.alloc, ", ") catch {};
+                var tmp: [256]u8 = undefined;
+                const rendered = std.fmt.bufPrint(&tmp, "method '{s}'", .{name}) catch "method";
+                list.appendSlice(self.alloc, rendered) catch {};
                 first = false;
             }
             for (missing_fields.items) |name| {
-                if (!first) term.printRaw(", ", .{});
-                term.printRaw("field '{s}'", .{name});
+                if (!first) list.appendSlice(self.alloc, ", ") catch {};
+                var tmp: [256]u8 = undefined;
+                const rendered = std.fmt.bufPrint(&tmp, "field '{s}'", .{name}) catch "field";
+                list.appendSlice(self.alloc, rendered) catch {};
                 first = false;
             }
-            term.printRaw("\n", .{});
+            term.locErr(loc, "binding '{s}' does not satisfy concept '{s}': missing {s}", .{ binding_name, concept_name, list.items });
         }
     }
 
@@ -3712,40 +3753,489 @@ pub const Sema = struct {
             fb.use_dense_table_mod997_sum)
             return;
         const tname = fb.dense_table orelse return;
-        var identity_fill = false;
-        var has_sum = false;
 
-        for (fb.body.stmts) |*stmt| {
+        var table_assignments: usize = 0;
+        var poly_fill: ?DenseTablePolyFill = null;
+        var reduction_assignments: usize = 0;
+        var reduction: ?DenseTablePolyFill = null;
+        const limit_name = if (fb.params.len == 1) fb.params[0].name else return;
+        const consts = collect_dense_table_int_consts(fb);
+
+        for (fb.body.stmts, 0..) |*stmt, i| {
             if (stmt.* != .while_loop) continue;
-            for (stmt.while_loop.body.stmts) |*s| {
+            const wl = &stmt.while_loop;
+            const idx_name = while_loop_index_name(wl.cond, limit_name) orelse continue;
+            if (i == 0 or !stmt_sets_name_to_one(&fb.body.stmts[i - 1], idx_name)) continue;
+
+            var loop_table_assigns: usize = 0;
+            var loop_poly_fill: ?DenseTablePolyFill = null;
+
+            for (wl.body.stmts) |*s| {
                 if (s.* != .assign) continue;
                 const as = s.assign;
                 for (as.targets, as.values) |tgt, val| {
-                    if (tgt.* != .index) continue;
-                    const idx = tgt.index;
-                    if (idx.obj.* != .name or !std.mem.eql(u8, idx.obj.name.ident, tname)) continue;
-                    if (val.* == .name and idx.key.* == .name and
-                        std.mem.eql(u8, val.name.ident, idx.key.name.ident))
-                    {
-                        identity_fill = true;
+                    if (dense_table_assign_poly(tgt, val, tname, idx_name, &consts)) |poly| {
+                        loop_table_assigns += 1;
+                        loop_poly_fill = poly;
+                    } else if (is_dense_table_assign_target(tgt, tname)) {
+                        loop_table_assigns += 1;
+                    } else if (dense_table_sum_reduction(tgt, val, tname, idx_name, &consts)) |poly| {
+                        reduction_assignments += 1;
+                        reduction = poly;
                     }
                 }
-                for (as.values) |val| {
-                    if (val.* != .binop or val.binop.op != .add) continue;
-                    const rhs = val.binop.rhs;
-                    if (rhs.* != .index) continue;
-                    const idx = rhs.index;
-                    if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname))
-                        has_sum = true;
-                }
             }
+
+            table_assignments += loop_table_assigns;
+            if (loop_poly_fill) |poly| poly_fill = poly;
         }
 
-        if (has_sum and identity_fill) {
-            fb.use_dense_table_identity_sum = true;
-        } else if (has_sum) {
-            fb.use_dense_table_sum = true;
+        if (table_assignments != 1 or reduction_assignments != 1) return;
+        if (poly_fill) |poly| {
+            const reduced = compose_dense_table_reduction(poly, reduction.?) orelse return;
+            const degree = poly_degree(reduced) orelse return;
+            if (degree == 1 and reduced.coeffs[1] == 1 and reduced.coeffs[0] == 0) {
+                fb.use_dense_table_identity_sum = true;
+            } else if (degree == 1) {
+                fb.use_dense_table_sum = true;
+                fb.dense_table_sum_mul = reduced.coeffs[1];
+                fb.dense_table_sum_add = reduced.coeffs[0];
+            } else if (degree == 2 and reduced.coeffs[2] == 1 and reduced.coeffs[1] == 0 and reduced.coeffs[0] == 0) {
+                fb.use_dense_table_square_sum = true;
+            } else if (degree == 2) {
+                fb.use_dense_table_quadratic_sum = true;
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 3) {
+                fb.use_dense_table_cubic_sum = true;
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 4) {
+                fb.use_dense_table_quartic_sum = true;
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 5) {
+                fb.use_dense_table_quintic_sum = true;
+                fb.dense_table_sum_quintic_mul = reduced.coeffs[5];
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 6) {
+                fb.use_dense_table_sextic_sum = true;
+                fb.dense_table_sum_sextic_mul = reduced.coeffs[6];
+                fb.dense_table_sum_quintic_mul = reduced.coeffs[5];
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 7) {
+                fb.use_dense_table_septic_sum = true;
+                fb.dense_table_sum_septic_mul = reduced.coeffs[7];
+                fb.dense_table_sum_sextic_mul = reduced.coeffs[6];
+                fb.dense_table_sum_quintic_mul = reduced.coeffs[5];
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 8) {
+                fb.use_dense_table_octic_sum = true;
+                fb.dense_table_sum_octic_mul = reduced.coeffs[8];
+                fb.dense_table_sum_septic_mul = reduced.coeffs[7];
+                fb.dense_table_sum_sextic_mul = reduced.coeffs[6];
+                fb.dense_table_sum_quintic_mul = reduced.coeffs[5];
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 9) {
+                fb.use_dense_table_nonic_sum = true;
+                fb.dense_table_sum_nonic_mul = reduced.coeffs[9];
+                fb.dense_table_sum_octic_mul = reduced.coeffs[8];
+                fb.dense_table_sum_septic_mul = reduced.coeffs[7];
+                fb.dense_table_sum_sextic_mul = reduced.coeffs[6];
+                fb.dense_table_sum_quintic_mul = reduced.coeffs[5];
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 10) {
+                fb.use_dense_table_decic_sum = true;
+                fb.dense_table_sum_decic_mul = reduced.coeffs[10];
+                fb.dense_table_sum_nonic_mul = reduced.coeffs[9];
+                fb.dense_table_sum_octic_mul = reduced.coeffs[8];
+                fb.dense_table_sum_septic_mul = reduced.coeffs[7];
+                fb.dense_table_sum_sextic_mul = reduced.coeffs[6];
+                fb.dense_table_sum_quintic_mul = reduced.coeffs[5];
+                fb.dense_table_sum_quartic_mul = reduced.coeffs[4];
+                fb.dense_table_sum_cube_mul = reduced.coeffs[3];
+                fb.dense_table_sum_square_mul = reduced.coeffs[2];
+                fb.dense_table_sum_linear_mul = reduced.coeffs[1];
+                fb.dense_table_sum_const = reduced.coeffs[0];
+            } else if (degree == 11 or degree == 12) {
+                fb.use_dense_table_faulhaber_sum = true;
+                fb.dense_table_sum_coeffs = reduced.coeffs;
+            } else {
+                return;
+            }
         }
+    }
+
+    const DenseTablePolyFill = struct {
+        coeffs: [13]i64,
+    };
+
+    const DenseTableIntConst = struct {
+        name: []const u8,
+        value: i64,
+        valid: bool = true,
+    };
+
+    const DenseTableIntConstSet = struct {
+        items: [32]DenseTableIntConst = undefined,
+        len: usize = 0,
+    };
+
+    fn collect_dense_table_int_consts(fb: *const ast.FuncBody) DenseTableIntConstSet {
+        var out = DenseTableIntConstSet{};
+        for (fb.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    if (ld.names.len != 1 or ld.inits.len != 1 or ld.inits[0].* != .int_lit) continue;
+                    dense_table_add_int_const(&out, ld.names[0].ident, ld.inits[0].int_lit.val);
+                },
+                .const_decl => |*cd| {
+                    if (cd.val.* != .int_lit) continue;
+                    dense_table_add_int_const(&out, cd.ident, cd.val.int_lit.val);
+                },
+                else => {},
+            }
+        }
+        for (fb.body.stmts) |*stmt| {
+            dense_table_invalidate_assigned_consts(&out, stmt, false);
+        }
+        return out;
+    }
+
+    fn dense_table_add_int_const(consts: *DenseTableIntConstSet, name: []const u8, value: i64) void {
+        for (consts.items[0..consts.len]) |*item| {
+            if (std.mem.eql(u8, item.name, name)) {
+                item.valid = false;
+                return;
+            }
+        }
+        if (consts.len >= consts.items.len) return;
+        consts.items[consts.len] = .{ .name = name, .value = value };
+        consts.len += 1;
+    }
+
+    fn dense_table_invalidate_assigned_consts(consts: *DenseTableIntConstSet, stmt: *const ast.Stmt, nested: bool) void {
+        switch (stmt.*) {
+            .assign => |*as| {
+                for (as.targets) |target| {
+                    if (target.* == .name) dense_table_invalidate_const(consts, target.name.ident);
+                }
+            },
+            .local_decl => |*ld| {
+                if (nested) {
+                    for (ld.names) |name| dense_table_invalidate_const(consts, name.ident);
+                } else {
+                    for (ld.names, 0..) |name, i| {
+                        if (i >= ld.inits.len or ld.inits[i].* != .int_lit) {
+                            dense_table_invalidate_const(consts, name.ident);
+                        }
+                    }
+                }
+            },
+            .const_decl => |*cd| {
+                if (nested or cd.val.* != .int_lit) dense_table_invalidate_const(consts, cd.ident);
+            },
+            .while_loop => |*wl| {
+                for (wl.body.stmts) |*child| dense_table_invalidate_assigned_consts(consts, child, true);
+            },
+            .if_stmt => |*is| {
+                for (is.then.stmts) |*child| dense_table_invalidate_assigned_consts(consts, child, true);
+                for (is.elseifs) |*elseif| {
+                    for (elseif.body.stmts) |*child| dense_table_invalidate_assigned_consts(consts, child, true);
+                }
+                if (is.else_body) |*else_body| {
+                    for (else_body.stmts) |*child| dense_table_invalidate_assigned_consts(consts, child, true);
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn dense_table_invalidate_const(consts: *DenseTableIntConstSet, name: []const u8) void {
+        for (consts.items[0..consts.len]) |*item| {
+            if (std.mem.eql(u8, item.name, name)) item.valid = false;
+        }
+    }
+
+    fn dense_table_int_const_value(consts: *const DenseTableIntConstSet, name: []const u8) ?i64 {
+        for (consts.items[0..consts.len]) |item| {
+            if (item.valid and std.mem.eql(u8, item.name, name)) return item.value;
+        }
+        return null;
+    }
+
+    fn stmt_sets_name_to_one(stmt: *const ast.Stmt, name: []const u8) bool {
+        switch (stmt.*) {
+            .local_decl => |*ld| {
+                if (ld.names.len != 1 or ld.inits.len != 1) return false;
+                return std.mem.eql(u8, ld.names[0].ident, name) and is_int_one(ld.inits[0]);
+            },
+            .assign => |*as| {
+                if (as.targets.len != 1 or as.values.len != 1) return false;
+                const tgt = as.targets[0];
+                return tgt.* == .name and std.mem.eql(u8, tgt.name.ident, name) and is_int_one(as.values[0]);
+            },
+            else => return false,
+        }
+    }
+
+    fn is_dense_table_assign_target(tgt: *const ast.Expr, tname: []const u8) bool {
+        if (tgt.* != .index) return false;
+        const idx = &tgt.index;
+        return idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname);
+    }
+
+    fn dense_table_assign_poly(tgt: *const ast.Expr, val: *const ast.Expr, tname: []const u8, idx_name: []const u8, consts: *const DenseTableIntConstSet) ?DenseTablePolyFill {
+        if (!is_dense_table_assign_target(tgt, tname)) return null;
+        const idx = &tgt.index;
+        if (idx.key.* != .name or !std.mem.eql(u8, idx.key.name.ident, idx_name)) return null;
+        const poly = expr_poly_in_index(val, idx_name, consts) orelse return null;
+        if (poly_degree(poly) == null) return null;
+        return poly;
+    }
+
+    fn dense_table_sum_reduction(tgt: *const ast.Expr, val: *const ast.Expr, tname: []const u8, idx_name: []const u8, consts: *const DenseTableIntConstSet) ?DenseTablePolyFill {
+        if (tgt.* != .name) return null;
+        const poly = dense_table_accum_reduction(val, tgt.name.ident, tname, idx_name, consts) orelse return null;
+        const degree = poly_degree(poly) orelse return null;
+        return if (degree > 0) poly else null;
+    }
+
+    fn dense_table_accum_reduction(expr: *const ast.Expr, accum_name: []const u8, tname: []const u8, idx_name: []const u8, consts: *const DenseTableIntConstSet) ?DenseTablePolyFill {
+        if (expr.* != .binop) return null;
+        const b = expr.binop;
+        switch (b.op) {
+            .add => {
+                if (expr_is_name(b.lhs, accum_name)) return expr_poly_in_table_value(b.rhs, tname, idx_name, consts);
+                if (expr_is_name(b.rhs, accum_name)) return expr_poly_in_table_value(b.lhs, tname, idx_name, consts);
+                return null;
+            },
+            .sub => {
+                if (!expr_is_name(b.lhs, accum_name)) return null;
+                const rhs = expr_poly_in_table_value(b.rhs, tname, idx_name, consts) orelse return null;
+                return scale_poly(rhs, -1);
+            },
+            else => return null,
+        }
+    }
+
+    fn compose_dense_table_reduction(fill: DenseTablePolyFill, reduction: DenseTablePolyFill) ?DenseTablePolyFill {
+        var out: DenseTablePolyFill = .{ .coeffs = @splat(0) };
+        var power: DenseTablePolyFill = .{ .coeffs = @splat(0) };
+        power.coeffs[0] = 1;
+        const max_degree = poly_degree(reduction) orelse return null;
+
+        for (reduction.coeffs[0 .. max_degree + 1], 0..) |coeff, degree| {
+            if (coeff != 0) {
+                const scaled = scale_poly(power, coeff);
+                out = add_poly(out, scaled) orelse return null;
+            }
+            if (degree < max_degree) {
+                power = multiply_poly(power, fill) orelse return null;
+            }
+        }
+        return out;
+    }
+
+    fn poly_degree(poly: DenseTablePolyFill) ?usize {
+        var i: usize = poly.coeffs.len;
+        while (i > 0) {
+            i -= 1;
+            if (poly.coeffs[i] != 0) return i;
+        }
+        return null;
+    }
+
+    fn expr_poly_in_index(expr: *const ast.Expr, idx_name: []const u8, consts: *const DenseTableIntConstSet) ?DenseTablePolyFill {
+        if (expr.* == .name and std.mem.eql(u8, expr.name.ident, idx_name)) {
+            var coeffs: [13]i64 = @splat(0);
+            coeffs[1] = 1;
+            return .{ .coeffs = coeffs };
+        }
+        if (expr.* == .name) {
+            if (dense_table_int_const_value(consts, expr.name.ident)) |value| {
+                var coeffs: [13]i64 = @splat(0);
+                coeffs[0] = value;
+                return .{ .coeffs = coeffs };
+            }
+        }
+        if (expr.* == .int_lit) {
+            var coeffs: [13]i64 = @splat(0);
+            coeffs[0] = expr.int_lit.val;
+            return .{ .coeffs = coeffs };
+        }
+        if (expr.* == .unop and expr.unop.op == .neg) {
+            const inner = expr_poly_in_index(expr.unop.operand, idx_name, consts) orelse return null;
+            return scale_poly(inner, -1);
+        }
+        if (expr.* != .binop) return null;
+        const b = expr.binop;
+        switch (b.op) {
+            .add, .sub => {
+                const lhs = expr_poly_in_index(b.lhs, idx_name, consts) orelse return null;
+                const rhs = expr_poly_in_index(b.rhs, idx_name, consts) orelse return null;
+                var coeffs: [13]i64 = @splat(0);
+                for (&coeffs, 0..) |*coeff, i| {
+                    coeff.* = if (b.op == .add)
+                        lhs.coeffs[i] + rhs.coeffs[i]
+                    else
+                        lhs.coeffs[i] - rhs.coeffs[i];
+                }
+                return .{ .coeffs = coeffs };
+            },
+            .mul => {
+                const lhs = expr_poly_in_index(b.lhs, idx_name, consts) orelse return null;
+                const rhs = expr_poly_in_index(b.rhs, idx_name, consts) orelse return null;
+                var coeffs: [13]i64 = @splat(0);
+                for (lhs.coeffs, 0..) |lc, li| {
+                    if (lc == 0) continue;
+                    for (rhs.coeffs, 0..) |rc, ri| {
+                        if (rc == 0) continue;
+                        if (li + ri >= coeffs.len) return null;
+                        coeffs[li + ri] += lc * rc;
+                    }
+                }
+                return .{ .coeffs = coeffs };
+            },
+            .pow => {
+                const exponent = dense_table_int_exponent(b.rhs, consts) orelse return null;
+                const lhs = expr_poly_in_index(b.lhs, idx_name, consts) orelse return null;
+                return pow_poly(lhs, exponent);
+            },
+            else => return null,
+        }
+    }
+
+    fn expr_poly_in_table_value(expr: *const ast.Expr, tname: []const u8, idx_name: []const u8, consts: *const DenseTableIntConstSet) ?DenseTablePolyFill {
+        if (expr_is_dense_table_index(expr, tname, idx_name)) {
+            var coeffs: [13]i64 = @splat(0);
+            coeffs[1] = 1;
+            return .{ .coeffs = coeffs };
+        }
+        if (expr.* == .name) {
+            if (dense_table_int_const_value(consts, expr.name.ident)) |value| {
+                var coeffs: [13]i64 = @splat(0);
+                coeffs[0] = value;
+                return .{ .coeffs = coeffs };
+            }
+        }
+        if (expr.* == .int_lit) {
+            var coeffs: [13]i64 = @splat(0);
+            coeffs[0] = expr.int_lit.val;
+            return .{ .coeffs = coeffs };
+        }
+        if (expr.* == .unop and expr.unop.op == .neg) {
+            const inner = expr_poly_in_table_value(expr.unop.operand, tname, idx_name, consts) orelse return null;
+            return scale_poly(inner, -1);
+        }
+        if (expr.* != .binop) return null;
+        const b = expr.binop;
+        switch (b.op) {
+            .add, .sub => {
+                const lhs = expr_poly_in_table_value(b.lhs, tname, idx_name, consts) orelse return null;
+                const rhs = expr_poly_in_table_value(b.rhs, tname, idx_name, consts) orelse return null;
+                var coeffs: [13]i64 = @splat(0);
+                for (&coeffs, 0..) |*coeff, i| {
+                    coeff.* = if (b.op == .add)
+                        lhs.coeffs[i] + rhs.coeffs[i]
+                    else
+                        lhs.coeffs[i] - rhs.coeffs[i];
+                }
+                return .{ .coeffs = coeffs };
+            },
+            .mul => {
+                const lhs = expr_poly_in_table_value(b.lhs, tname, idx_name, consts) orelse return null;
+                const rhs = expr_poly_in_table_value(b.rhs, tname, idx_name, consts) orelse return null;
+                return multiply_poly(lhs, rhs);
+            },
+            .pow => {
+                const exponent = dense_table_int_exponent(b.rhs, consts) orelse return null;
+                const lhs = expr_poly_in_table_value(b.lhs, tname, idx_name, consts) orelse return null;
+                return pow_poly(lhs, exponent);
+            },
+            else => return null,
+        }
+    }
+
+    fn add_poly(lhs: DenseTablePolyFill, rhs: DenseTablePolyFill) ?DenseTablePolyFill {
+        var out: DenseTablePolyFill = .{ .coeffs = @splat(0) };
+        for (&out.coeffs, 0..) |*coeff, i| {
+            coeff.* = lhs.coeffs[i] + rhs.coeffs[i];
+        }
+        return out;
+    }
+
+    fn multiply_poly(lhs: DenseTablePolyFill, rhs: DenseTablePolyFill) ?DenseTablePolyFill {
+        var out: DenseTablePolyFill = .{ .coeffs = @splat(0) };
+        for (lhs.coeffs, 0..) |lc, li| {
+            if (lc == 0) continue;
+            for (rhs.coeffs, 0..) |rc, ri| {
+                if (rc == 0) continue;
+                if (li + ri >= out.coeffs.len) return null;
+                out.coeffs[li + ri] += lc * rc;
+            }
+        }
+        return out;
+    }
+
+    fn pow_poly(base: DenseTablePolyFill, exponent: i64) ?DenseTablePolyFill {
+        if (exponent < 0 or exponent > 12) return null;
+        var out: DenseTablePolyFill = .{ .coeffs = @splat(0) };
+        out.coeffs[0] = 1;
+        var i: i64 = 0;
+        while (i < exponent) : (i += 1) {
+            out = multiply_poly(out, base) orelse return null;
+        }
+        return out;
+    }
+
+    fn dense_table_int_exponent(expr: *const ast.Expr, consts: *const DenseTableIntConstSet) ?i64 {
+        if (expr.* == .int_lit) return expr.int_lit.val;
+        if (expr.* == .name) return dense_table_int_const_value(consts, expr.name.ident);
+        return null;
+    }
+
+    fn scale_poly(poly: DenseTablePolyFill, scale: i64) DenseTablePolyFill {
+        var out = poly;
+        for (&out.coeffs) |*coeff| coeff.* *= scale;
+        return out;
+    }
+
+    fn expr_is_name(expr: *const ast.Expr, name: []const u8) bool {
+        return expr.* == .name and std.mem.eql(u8, expr.name.ident, name);
+    }
+
+    fn expr_is_dense_table_index(expr: *const ast.Expr, tname: []const u8, idx_name: []const u8) bool {
+        if (expr.* != .index) return false;
+        const idx = &expr.index;
+        return idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname) and
+            idx.key.* == .name and std.mem.eql(u8, idx.key.name.ident, idx_name);
     }
 
     fn detect_math_floor_max(fb: *ast.FuncBody) bool {
@@ -5324,6 +5814,11 @@ pub const Sema = struct {
                 .local_decl => |*ld| {
                     for (ld.inits) |init_e| dense_walk_expr(fb, init_e, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 },
+                .call_stmt => |*cs| dense_walk_expr(fb, cs.expr, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
+                .expr_stmt => |*es| dense_walk_expr(fb, es.expr, tname_inner, cap_inner, assigns_out, reads_out, ok_out),
+                .ret => |*r| {
+                    for (r.vals) |val| dense_walk_expr(fb, val, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+                },
                 .if_stmt => |*is| {
                     dense_walk(fb, &is.then, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
                     for (is.elseifs) |*ei| dense_walk(fb, &ei.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
@@ -5455,6 +5950,9 @@ pub const Sema = struct {
 
     fn dense_walk_expr(fb: *const ast.FuncBody, expr: *const ast.Expr, tname_inner: []const u8, cap_inner: []const u8, assigns_out: *usize, reads_out: *usize, ok_out: *bool) void {
         switch (expr.*) {
+            .name => |n| {
+                if (std.mem.eql(u8, n.ident, tname_inner)) ok_out.* = false;
+            },
             .index => |idx| {
                 if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
                     reads_out.* += 1;
@@ -5466,6 +5964,13 @@ pub const Sema = struct {
                     }
                 }
             },
+            .unop => |u| {
+                if (u.op == .len and u.operand.* == .name and std.mem.eql(u8, u.operand.name.ident, tname_inner)) {
+                    reads_out.* += 1;
+                    return;
+                }
+                dense_walk_expr(fb, u.operand, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
+            },
             .binop => |b| {
                 dense_walk_expr(fb, b.lhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
                 dense_walk_expr(fb, b.rhs, tname_inner, cap_inner, assigns_out, reads_out, ok_out);
@@ -5475,6 +5980,38 @@ pub const Sema = struct {
             },
             else => {},
         }
+    }
+
+    fn positional_numeric_literal_count(fb: *const ast.FuncBody, tname: []const u8) usize {
+        for (fb.body.stmts) |*stmt| {
+            var name: []const u8 = "";
+            var init_expr: *ast.Expr = undefined;
+            if (stmt.* == .local_decl) {
+                const ld = stmt.local_decl;
+                if (ld.names.len != 1 or ld.inits.len != 1) continue;
+                name = ld.names[0].ident;
+                init_expr = ld.inits[0];
+            } else if (stmt.* == .assign) {
+                const as = stmt.assign;
+                if (as.targets.len != 1 or as.values.len != 1) continue;
+                if (as.targets[0].* != .name) continue;
+                name = as.targets[0].name.ident;
+                init_expr = as.values[0];
+            } else {
+                continue;
+            }
+            if (!std.mem.eql(u8, name, tname)) continue;
+            if (init_expr.* != .table or init_expr.table.fields.len == 0) return 0;
+            for (init_expr.table.fields) |f| {
+                const v = switch (f) {
+                    .positional => |val| val,
+                    else => return 0,
+                };
+                if (v.* != .int_lit and v.* != .float_lit) return 0;
+            }
+            return init_expr.table.fields.len;
+        }
+        return 0;
     }
 
     fn calc_lua_hash(s: []const u8) u32 {
@@ -5661,7 +6198,7 @@ pub const Sema = struct {
             }
             if (param_is_bound) cap = pcap;
         }
-        
+
         if (!param_is_bound) {
             // No param — find a literal-init table and use its field count as cap.
             var found_lit_cap = false;
@@ -5774,6 +6311,8 @@ pub const Sema = struct {
             if (!has_float_assign) {
                 has_float_assign = check_table_passed_as_float(fb, tname);
             }
+            const literal_count = positional_numeric_literal_count(fb, tname);
+            if (literal_count > 0) assigns += literal_count;
             if ((assigns > 0 or has_loop_init) and ok) {
                 try qualifying.append(alloc, tname);
                 try qualifying_floats.append(alloc, has_float_assign);
@@ -5872,6 +6411,8 @@ pub const Sema = struct {
         };
         defer infer.deinit();
         @memset(infer.param_tys, .any);
+        infer.seed_declared_param_types();
+        if (!infer.ok) return;
 
         if (!infer.collect_local_types(&fb.body)) return;
         try infer.infer_block(&fb.body);
@@ -5912,6 +6453,21 @@ pub const Sema = struct {
             self.local_tys.deinit();
             self.ret_tys.deinit(self.sema.alloc);
             self.sema.alloc.free(self.param_tys);
+        }
+
+        fn seed_declared_param_types(self: *NativeInfer) void {
+            for (self.fb.params, 0..) |p, i| {
+                if (p.typ == .inferred) continue;
+                const pt = self.sema.resolve_type(p.typ) catch {
+                    self.ok = false;
+                    return;
+                };
+                if (!pt.is_numeric() and pt != .bool) {
+                    self.ok = false;
+                    return;
+                }
+                self.param_tys[i] = pt;
+            }
         }
 
         fn param_index(self: *NativeInfer, name: []const u8) ?usize {
@@ -6062,6 +6618,10 @@ pub const Sema = struct {
                             _ = self.infer_expr(ld.inits[i], lt);
                         }
                     }
+                },
+                .const_decl => |*cd| {
+                    const ct = self.local_tys.get(cd.ident) orelse .any;
+                    _ = self.infer_expr(cd.val, ct);
                 },
                 .assign => |*as| {
                     for (as.targets, 0..) |tgt, i| {

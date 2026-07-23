@@ -108,7 +108,7 @@ Every push runs:
 
 - `zig build` — compiler build
 - `zig build unit-test` — all 393 unit tests
-- `zig build test` — compile-fail tests
+- `zig build test` — unit tests, compile-fail tests, and report-styling guard
 - WASM compilation smoke test
 - WASM codegen compatibility tests
 - WASI execution tests (wasmtime + wabt)

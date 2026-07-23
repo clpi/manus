@@ -141,10 +141,45 @@ collect_min_times() {
   rm -f "$tmp"
 }
 
+count_results() {
+  awk '/^RESULT / { n++ } END { print n + 0 }' "$1"
+}
+
+capture_results() {
+  local label="$1"
+  local out="$2"
+  shift 2
+  local err="${out}.err"
+  local attempt
+  local status=0
+  local count=0
+
+  for attempt in 1 2; do
+    status=0
+    "$@" > "$out" 2>"$err" || status=$?
+    count=$(count_results "$out")
+    if [ "$status" -eq 0 ] && [ "$count" -eq "$BENCHES" ]; then
+      rm -f "$err"
+      return 0
+    fi
+    if [ "$attempt" -eq 1 ]; then
+      echo "warning: $label produced $count/$BENCHES RESULT rows (status $status), retrying..." >&2
+    fi
+  done
+
+  echo "error: $label produced $count/$BENCHES RESULT rows after retry (status $status)" >&2
+  echo "error: command: $*" >&2
+  if [ -s "$err" ]; then
+    echo "error: stderr from $label:" >&2
+    sed -n '1,40p' "$err" >&2
+  fi
+  return 1
+}
+
 echo "=== Correctness (RESULT lines) ==="
-"$DUO" run examples/benchmark.lua > /tmp/duo_bench_results.txt 2>/dev/null
-"$DUO" run examples/benchmark.duo > /tmp/duo_bench_duo_results.txt 2>/dev/null
-/tmp/c_bench.out > /tmp/c_bench_results.txt 2>/dev/null
+capture_results "Duo benchmark.lua" /tmp/duo_bench_results.txt "$DUO" run examples/benchmark.lua
+capture_results "Duo benchmark.duo" /tmp/duo_bench_duo_results.txt "$DUO" run examples/benchmark.duo
+capture_results "reference C benchmark" /tmp/c_bench_results.txt /tmp/c_bench.out
 
 RESULT_FAIL=0
 if ! compare_results /tmp/duo_bench_results.txt /tmp/c_bench_results.txt; then

@@ -1106,6 +1106,11 @@ pub const CodeGen = struct {
             {
                 if (self.type_from_c_name(e.call.args[0].string_lit.val)) |target| return target;
             }
+            if (e.call.func.* == .name and std.mem.eql(u8, e.call.func.name.ident, "__as_type") and
+                e.call.args.len == 2 and e.call.args[1].* == .string_lit)
+            {
+                if (self.type_from_c_name(e.call.args[1].string_lit.val)) |target| return target;
+            }
             const callee_type = self.expr_type(e.call.func);
             if (e.call.func.* == .name) {
                 var name_buf: [256]u8 = undefined;
@@ -1810,6 +1815,10 @@ pub const CodeGen = struct {
                     if (fd.path.len != 1) return false;
                     if (fd.func.vararg or fd.func.vararg_name != null) return false;
                     if (fd.func.is_async) return false;
+                    // Test/bench/debug/trace directives require the full runtime.
+                    if (@import("directives.zig").attrsMarkTest(fd.attributes)) return false;
+                    if (@import("directives.zig").attrsWantBench(fd.attributes)) return false;
+                    if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return false;
                     // Allow closures and methods — they compile to C functions.
                     if (fd.func.type_params != null) return false;
                     if (!self.type_expr_is_native_scalar(fd.func.ret_type)) return false;
@@ -2172,7 +2181,7 @@ pub const CodeGen = struct {
 
     fn expr_needs_native_scalar_string_h(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
-            .binop => |b| self.expr_needs_native_scalar_string_h(b.lhs) or self.expr_needs_native_scalar_string_h(b.rhs),
+            .binop => |b| (b.op == .concat and (self.expr_type(b.lhs) == .str or self.expr_type(b.rhs) == .str)) or self.expr_needs_native_scalar_string_h(b.lhs) or self.expr_needs_native_scalar_string_h(b.rhs),
             .unop => |un| (un.op == .len and self.expr_type(un.operand) == .str) or self.expr_needs_native_scalar_string_h(un.operand),
             .call => |call| blk: {
                 if (self.expr_needs_native_scalar_string_h(call.func)) break :blk true;
@@ -2265,7 +2274,7 @@ pub const CodeGen = struct {
 
     fn expr_needs_native_scalar_stdlib_h(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
-            .binop => |b| self.expr_needs_native_scalar_stdlib_h(b.lhs) or self.expr_needs_native_scalar_stdlib_h(b.rhs),
+            .binop => |b| (b.op == .concat and (self.expr_type(b.lhs) == .str or self.expr_type(b.rhs) == .str)) or self.expr_needs_native_scalar_stdlib_h(b.lhs) or self.expr_needs_native_scalar_stdlib_h(b.rhs),
             .unop => |un| self.expr_needs_native_scalar_stdlib_h(un.operand),
             .call => |call| blk: {
                 if (call.func.* == .name and std.mem.eql(u8, call.func.name.ident, "__emit")) break :blk true;
@@ -2720,18 +2729,34 @@ pub const CodeGen = struct {
         if (!self.native_scalar_mode) {
             // ML kernel declarations (guarded by #ifndef, harmless if unused)
             ml_kernels.emitDecls(self);
-            self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
-            self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
-            self.p("    size_t len = strlen(s);\n", .{});
-            self.p("    size_t total = len * (size_t)n;\n", .{});
-            self.p("    char* out = (char*)malloc(total + 1);\n", .{});
-            self.p("    if (!out) return (char*)s;\n", .{});
-            self.p("    char* p = out;\n", .{});
-            self.p("    for (int64_t i = 0; i < n; ++i) {{ memcpy(p, s, len); p += len; }}\n", .{});
-            self.p("    *p = '\\0';\n", .{});
-            self.p("    return out;\n", .{});
-            self.p("}}\n", .{});
         }
+        // Native string helpers and basic includes — always needed.
+        // In native_scalar_mode the full lua_* runtime prelude (which includes
+        // string.h/stdlib.h) is skipped, so we must include them here.
+        if (self.native_scalar_mode) {
+            self.p("#include <stdlib.h>\n", .{});
+            self.p("#include <string.h>\n", .{});
+        }
+        // duo_str_concat — native heap string concatenation (replaces lua_concat in native_scalar_mode)
+        self.p("static inline char* duo_str_concat(const char* a, const char* b) {{\n", .{});
+        self.p("    size_t la = strlen(a), lb = strlen(b);\n", .{});
+        self.p("    char* out = (char*)malloc(la + lb + 1);\n", .{});
+        self.p("    if (!out) return (char*)a;\n", .{});
+        self.p("    memcpy(out, a, la); memcpy(out + la, b, lb); out[la + lb] = '\\0';\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        // duo_str_rep — native string repetition (replaces lua_str_rep in native_scalar_mode)
+        self.p("static inline char* duo_str_rep(const char* s, int64_t n) {{\n", .{});
+        self.p("    if (n <= 0) {{ char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e; }}\n", .{});
+        self.p("    size_t len = strlen(s);\n", .{});
+        self.p("    size_t total = len * (size_t)n;\n", .{});
+        self.p("    char* out = (char*)malloc(total + 1);\n", .{});
+        self.p("    if (!out) return (char*)s;\n", .{});
+        self.p("    char* p = out;\n", .{});
+        self.p("    for (int64_t i = 0; i < n; ++i) {{ memcpy(p, s, len); p += len; }}\n", .{});
+        self.p("    *p = '\\0';\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
             self.p("__attribute__((always_inline)) static inline int64_t lua_idiv_i64(int64_t a, int64_t b) {{\n", .{});
@@ -3613,7 +3638,15 @@ pub const CodeGen = struct {
     //   Add      — __add metamethod
     //   Sub      — __sub metamethod
     //   Mul      — __mul metamethod
+    //   Div      — __div metamethod
+    //   Rem      — __mod metamethod
     //   Neg      — __unm metamethod
+    //   BitAnd   — __band metamethod
+    //   BitOr    — __bor metamethod
+    //   BitXor   — __bxor metamethod
+    //   BitNot   — __bnot metamethod
+    //   Shl      — __shl metamethod
+    //   Shr      — __shr metamethod
     //   AsInt    — :as_int() method
     //   FromInt  — TypeName.from_int(n) constructor
     //   Len      — __len metamethod (field count)
@@ -3685,6 +3718,38 @@ pub const CodeGen = struct {
                 self.ind();
                 self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__len\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_len__lua));", .{ ad.name, calc_lua_hash("__len"), ad.name });
             }
+            if (alias_has_derive(ad.attributes, "Div")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__div\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_div__lua));", .{ ad.name, calc_lua_hash("__div"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Rem")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__mod\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_rem__lua));", .{ ad.name, calc_lua_hash("__mod"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "BitAnd")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__band\", {d}, 6, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_and__lua));", .{ ad.name, calc_lua_hash("__band"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "BitOr")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__bor\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_or__lua));", .{ ad.name, calc_lua_hash("__bor"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "BitXor")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__bxor\", {d}, 6, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_xor__lua));", .{ ad.name, calc_lua_hash("__bxor"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "BitNot")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__bnot\", {d}, 6, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_not__lua));", .{ ad.name, calc_lua_hash("__bnot"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Shl")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__shl\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_shl__lua));", .{ ad.name, calc_lua_hash("__shl"), ad.name });
+            }
+            if (alias_has_derive(ad.attributes, "Shr")) {
+                self.ind();
+                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__shr\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_shr__lua));", .{ ad.name, calc_lua_hash("__shr"), ad.name });
+            }
 
             // Set __index = metatable itself (method lookup)
             self.ind();
@@ -3750,6 +3815,30 @@ pub const CodeGen = struct {
             }
             if (alias_has_derive(ad.attributes, "Clone")) {
                 try self.emit_derive_clone(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Div")) {
+                try self.emit_derive_binop(ad.name, fields, "div", "/");
+            }
+            if (alias_has_derive(ad.attributes, "Rem")) {
+                try self.emit_derive_binop(ad.name, fields, "rem", "%");
+            }
+            if (alias_has_derive(ad.attributes, "BitAnd")) {
+                try self.emit_derive_binop(ad.name, fields, "bit_and", "&");
+            }
+            if (alias_has_derive(ad.attributes, "BitOr")) {
+                try self.emit_derive_binop(ad.name, fields, "bit_or", "|");
+            }
+            if (alias_has_derive(ad.attributes, "BitXor")) {
+                try self.emit_derive_binop(ad.name, fields, "bit_xor", "^");
+            }
+            if (alias_has_derive(ad.attributes, "BitNot")) {
+                try self.emit_derive_bitnot(ad.name, fields);
+            }
+            if (alias_has_derive(ad.attributes, "Shl")) {
+                try self.emit_derive_binop(ad.name, fields, "shl", "<<");
+            }
+            if (alias_has_derive(ad.attributes, "Shr")) {
+                try self.emit_derive_binop(ad.name, fields, "shr", ">>");
             }
         }
     }
@@ -3831,9 +3920,16 @@ pub const CodeGen = struct {
         self.p("static lua_Value duo_{s}_{s}__lua(lua_Value _a) {{\n", .{ name, op_name });
         self.p("    lua_Value _b = lua_mret_get(0);\n", .{});
         self.p("    lua_Value _r = lua_table_new_with_capacity(0, {d});\n", .{fields.len});
+        const is_bitwise = std.mem.eql(u8, op, "&") or std.mem.eql(u8, op, "|") or std.mem.eql(u8, op, "^") or std.mem.eql(u8, op, "<<") or std.mem.eql(u8, op, ">>");
         for (fields) |f| {
             const hash = calc_lua_hash(f.name);
-            self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(lua_table_get_str_num(_a, \"{s}\", {d}u, {d}) {s} lua_table_get_str_num(_b, \"{s}\", {d}u, {d})));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len, op, f.name, hash, f.name.len });
+            if (std.mem.eql(u8, op, "%")) {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(fmod(lua_table_get_str_num(_a, \"{s}\", {d}u, {d}), lua_table_get_str_num(_b, \"{s}\", {d}u, {d}))));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len, f.name, hash, f.name.len });
+            } else if (is_bitwise) {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num((double)((int64_t)lua_table_get_str_num(_a, \"{s}\", {d}u, {d}) {s} (int64_t)lua_table_get_str_num(_b, \"{s}\", {d}u, {d}))));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len, op, f.name, hash, f.name.len });
+            } else {
+                self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(lua_table_get_str_num(_a, \"{s}\", {d}u, {d}) {s} lua_table_get_str_num(_b, \"{s}\", {d}u, {d})));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len, op, f.name, hash, f.name.len });
+            }
         }
         self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
         self.p("    return _r;\n", .{});
@@ -3846,6 +3942,18 @@ pub const CodeGen = struct {
         for (fields) |f| {
             const hash = calc_lua_hash(f.name);
             self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num(-lua_table_get_str_num(_a, \"{s}\", {d}u, {d})));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
+        }
+        self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
+        self.p("    return _r;\n", .{});
+        self.p("}}\n\n", .{});
+    }
+
+    fn emit_derive_bitnot(self: *CodeGen, name: []const u8, fields: []const types.FieldType) E!void {
+        self.p("static lua_Value duo_{s}_bit_not__lua(lua_Value _a) {{\n", .{name});
+        self.p("    lua_Value _r = lua_table_new_with_capacity(0, {d});\n", .{fields.len});
+        for (fields) |f| {
+            const hash = calc_lua_hash(f.name);
+            self.p("    lua_table_set_raw_lit(_r, \"{s}\", {d}, {d}, lua_val_from_num((double)(~(int64_t)lua_table_get_str_num(_a, \"{s}\", {d}u, {d}))));\n", .{ f.name, hash, f.name.len, f.name, hash, f.name.len });
         }
         self.p("    lua_setmetatable(_r, duo_mt_{s});\n", .{name});
         self.p("    return _r;\n", .{});
@@ -5432,7 +5540,9 @@ pub const CodeGen = struct {
         self.pl("for ({s} __n = 3; __n <= {s} / __n; __n += 2) {{", .{ ct, limit });
         self.indent += 1;
         self.pl("if (!__prime[__n >> 1]) continue;", .{});
-        self.pl("for ({s} __d = __n * __n; __d <= {s}; __d += (__n << 1)) __prime[__d >> 1] = 0;", .{ ct, limit });
+        self.pl("uint8_t* __restrict __p = __prime + ((__n * __n) >> 1);", .{});
+        self.pl("uint8_t* __restrict __end = __prime + ({s} >> 1);", .{limit});
+        self.pl("for (; __p <= __end; __p += __n) *__p = 0;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("{s} __count = 1;", .{ct});
@@ -8893,6 +9003,22 @@ pub const CodeGen = struct {
                     }
                     return;
                 }
+                // __as_type(expr, "ctype") — explicit typed coercion (reversed arg order from __as)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__as_type") and c.args.len == 2) {
+                    if (c.args[1].* != .string_lit) {
+                        self.p("/* __as_type: second arg must be type name */0", .{});
+                        return;
+                    }
+                    const target_name = c.args[1].string_lit.val;
+                    if (self.type_from_c_name(target_name)) |target| {
+                        try self.emit_arg_for_param(c.args[0], target);
+                    } else {
+                        self.p("(({s})(", .{target_name});
+                        try self.emit_expr(c.args[0]);
+                        self.p("))", .{});
+                    }
+                    return;
+                }
                 // __typeinfo(expr) — returns string type name at compile time
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__typeinfo") and c.args.len == 1) {
                     const rt = self.expr_type(c.args[0]);
@@ -9311,6 +9437,34 @@ pub const CodeGen = struct {
                     if (c.func.* == .name and self.emit_lua_global_fn(c.func.name.ident)) {} else {
                         try self.emit_expr(c.func);
                     }
+                    self.p(";\n", .{});
+                    self.ind();
+                    if (c.args.len == 0) {
+                        self.pl("lua_invoke(__fn, 0, NULL);", .{});
+                    } else {
+                        self.p("lua_Value __argv[{d}] = {{", .{c.args.len});
+                        for (c.args, 0..) |arg, i| {
+                            if (i > 0) self.p(", ", .{});
+                            try self.emit_as_lua_value(arg);
+                        }
+                        self.p("}};\n", .{});
+                        self.ind();
+                        self.p("lua_invoke(__fn, {d}, __argv);\n", .{c.args.len});
+                    }
+                    self.indent -= 1;
+                    self.ind();
+                    self.p("}})", .{});
+                    return;
+                }
+                // Field access on a dynamic (any-typed) table returns a lua_Value,
+                // not a C function pointer. Route through lua_invoke even when
+                // expr_type resolved the field to .func via table_field_types.
+                if (c.func.* == .field and self.expr_type(c.func.field.obj) == .any) {
+                    self.p("({{\n", .{});
+                    self.indent += 1;
+                    self.ind();
+                    self.p("lua_Value __fn = ", .{});
+                    try self.emit_expr(c.func);
                     self.p(";\n", .{});
                     self.ind();
                     if (c.args.len == 0) {
@@ -9753,11 +9907,19 @@ pub const CodeGen = struct {
                     try self.emit_as_lua_value(b.rhs);
                     self.p(")", .{});
                 } else if (b.op == .concat) {
-                    self.p("lua_concat(", .{});
-                    try self.emit_as_lua_value(b.lhs);
-                    self.p(", ", .{});
-                    try self.emit_as_lua_value(b.rhs);
-                    self.p(")", .{});
+                    if (lt == .str and rt == .str and !self.expr_emits_lua_value(b.lhs) and !self.expr_emits_lua_value(b.rhs)) {
+                        self.p("duo_str_concat(", .{});
+                        try self.emit_expr(b.lhs);
+                        self.p(", ", .{});
+                        try self.emit_expr(b.rhs);
+                        self.p(")", .{});
+                    } else {
+                        self.p("lua_concat(", .{});
+                        try self.emit_as_lua_value(b.lhs);
+                        self.p(", ", .{});
+                        try self.emit_as_lua_value(b.rhs);
+                        self.p(")", .{});
+                    }
                 } else if (b.op == .pow) {
                     if (lt == .any or rt == .any) {
                         self.p("lua_pow(", .{});
@@ -11541,6 +11703,7 @@ pub const CodeGen = struct {
         return std.mem.eql(u8, name, "__emit") or
             std.mem.eql(u8, name, "__c_call") or
             std.mem.eql(u8, name, "__as") or
+            std.mem.eql(u8, name, "__as_type") or
             std.mem.eql(u8, name, "__sizeof") or
             std.mem.eql(u8, name, "__alignof") or
             std.mem.eql(u8, name, "__offsetof") or
@@ -11548,9 +11711,51 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__volatile");
     }
 
+    fn expr_is_recognized_stdlib_module(self: *CodeGen, name: []const u8) bool {
+        _ = self;
+        const modules = [_][]const u8{
+            "math", "string", "table", "io", "os", "utf8", "debug",
+            "coroutine", "jit", "ffi", "net", "mem", "atomic", "fmt",
+            "package",
+        };
+        for (modules) |m| {
+            if (std.mem.eql(u8, name, m)) return true;
+        }
+        return false;
+    }
+
     fn expr_emits_lua_value(self: *CodeGen, e: *const ast.Expr) bool {
         if (self.expr_is_raw_c_intrinsic(e)) return false;
-        if (self.expr_type(e) == .any) return true;
+        // Field-call on any-typed object goes through lua_invoke -> returns lua_Value
+        // regardless of what expr_type resolved the return type to (from function signatures).
+        // Exception: recognized stdlib module calls (string.*, table.*, io.*, math.*, etc.)
+        // go through emit_boxed_runtime_call which applies coercion -> native C.
+        if (e.* == .call and e.call.func.* == .field and
+            self.expr_type(e.call.func.field.obj) == .any and
+            !(e.call.func.field.obj.* == .name and
+              self.expr_is_recognized_stdlib_module(e.call.func.field.obj.name.ident))) return true;
+        if (self.expr_type(e) == .any) {
+            // Binops on dynamic table field reads produce native C values
+            // (e.g. lua_table_get_str_num returns double), not lua_Value.
+            if (e.* == .binop) {
+                if (self.expr_is_dynamic_table_field(e.binop.lhs) or
+                    self.expr_is_dynamic_table_field(e.binop.rhs))
+                    return false;
+                if (self.dynamic_binop_operand_is_safe_native_unbox(e.binop.lhs) and
+                    self.dynamic_binop_operand_is_safe_native_unbox(e.binop.rhs))
+                    return false;
+                if (e.binop.lhs.* == .binop and !self.expr_emits_lua_value(e.binop.lhs)) return false;
+                if (e.binop.rhs.* == .binop and !self.expr_emits_lua_value(e.binop.rhs)) return false;
+            }
+            // Dynamic table field reads (lua_table_get_str_num/cstr/bool) return native C types.
+            if (self.expr_is_dynamic_table_field(e)) return false;
+            // Native math calls (math.sqrt etc.) emit native C (sqrt), not lua_Value.
+            if (e.* == .call and e.call.func.* == .field and
+                e.call.func.field.obj.* == .name and
+                std.mem.eql(u8, e.call.func.field.obj.name.ident, "math"))
+                return false;
+            return true;
+        }
         return false;
     }
 
@@ -22993,8 +23198,6 @@ test "prime sieve specialization uses odd-only byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "memset(__prime, 1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t __n = 2; __n <= limit") == null);
     try testing.expect(std.mem.indexOf(u8, output, "if (!__prime[__n >> 1]) continue;") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__prime[__d >> 1] = 0") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__d += (__n << 1)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__builtin_assume_aligned(__prime_alloc, 16)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__count = 1") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__prime_chunk)") != null);

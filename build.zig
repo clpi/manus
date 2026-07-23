@@ -45,6 +45,15 @@ pub fn build(b: *std.Build) void {
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
+    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "bash", "scripts/assert_no_ansi_reports.sh" });
+    no_ansi_reports_cmd.setCwd(b.path("."));
+    no_ansi_reports_cmd.step.dependOn(b.getInstallStep());
+    const no_ansi_reports_step = b.step("no-ansi-reports", "Assert report ANSI/no-color styling contract");
+    no_ansi_reports_step.dependOn(&no_ansi_reports_cmd.step);
+    const report_styling_step = b.step("report-styling", "Assert rich and no-color test report styling");
+    report_styling_step.dependOn(&no_ansi_reports_cmd.step);
+    test_step.dependOn(&no_ansi_reports_cmd.step);
+
     const gpu_bench_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_gpu_benchmark.sh" });
     gpu_bench_cmd.setCwd(b.path("."));
     gpu_bench_cmd.step.dependOn(b.getInstallStep());

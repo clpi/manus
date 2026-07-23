@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("ast.zig");
+const term = @import("term.zig");
 
 pub const EvalError = error{
     UnsupportedExpression,
@@ -300,7 +301,15 @@ pub const Evaluator = struct {
             if (std.mem.eql(u8, name, "__comptimeprint") and args.len >= 1) {
                 const val = try self.eval(args[0]);
                 if (val == .string) {
-                    std.debug.print("[comptime] {s}\n", .{val.string});
+                    term.locHint(args[0].loc(), "{s}", .{val.string});
+                }
+                return .nil;
+            }
+            // __comptimewarn — compile-time warning (returns nil)
+            if (std.mem.eql(u8, name, "__comptimewarn") and args.len >= 1) {
+                const val = try self.eval(args[0]);
+                if (val == .string) {
+                    term.locWarn(args[0].loc(), "{s}", .{val.string});
                 }
                 return .nil;
             }
@@ -308,7 +317,7 @@ pub const Evaluator = struct {
             if (std.mem.eql(u8, name, "__comptimeerror") and args.len >= 1) {
                 const val = try self.eval(args[0]);
                 if (val == .string) {
-                    std.debug.print("[comptime error] {s}\n", .{val.string});
+                    term.locErr(args[0].loc(), "{s}", .{val.string});
                 }
                 return error.UnsupportedExpression;
             }

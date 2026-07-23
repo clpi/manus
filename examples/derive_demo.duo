@@ -23,19 +23,19 @@ point.to_string = fun(self): str
     "Point(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
 end
 
--- Use derive patterns
-cloned = point.clone(point)
-print("Original: " .. point.to_string(point))
-print("Cloned:   " .. point.to_string(cloned))
-print("Eq:       " .. tostring(point.eq(point, cloned)))
+-- Use derive patterns with : method syntax
+cloned = point:clone()
+print("Original: " .. point:to_string())
+print("Cloned:   " .. cloned:to_string())
+print("Eq:       " .. tostring(point:eq(cloned)))
 
 -- Reflection: inspect what methods a type has
 print("\nPoint fields:")
 fields = {}
-for k, _ in point
+for k, _ in point do
     fields[#fields + 1] = k
 end
-for _, name in fields
+for _, name in fields do
     print("  " .. name .. ": " .. type(point[name]))
 end
 

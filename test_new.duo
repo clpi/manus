@@ -1,0 +1,11 @@
+-- Test short closure
+local square = |x| x * x
+print(square(5))
+
+-- Test match with fat arrow
+local val = 2
+match val
+  1 => print("one")
+  2 => print("two")
+  _ => print("many")
+end

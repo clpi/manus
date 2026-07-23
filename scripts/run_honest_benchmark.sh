@@ -8,23 +8,161 @@ cd "$(dirname "$0")/.."
 DUO=./zig-out/bin/duo
 RUNS=5
 SLACK=1.03  # 3% tolerance (measurement noise)
+BENCH_NAMES="matmul qsort hashtable bsearch nbody fnv"
+EXPECTED_ROWS=6
+if [ -n "${HONEST_WORK_DIR:-}" ]; then
+    WORK_DIR=$HONEST_WORK_DIR
+    mkdir -p "$WORK_DIR"
+    CLEAN_WORK_DIR=0
+else
+    WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/duo-honest.XXXXXX")
+    CLEAN_WORK_DIR=1
+fi
+DUO_BIN="$WORK_DIR/honest_duo"
+C_BIN="$WORK_DIR/honest_c"
+DUO_PROBE_OUT="$WORK_DIR/duo_probe.out"
+DUO_PROBE_ERR="$WORK_DIR/duo_probe.err"
+C_PROBE_OUT="$WORK_DIR/c_probe.out"
+C_PROBE_ERR="$WORK_DIR/c_probe.err"
+
+cleanup() {
+    if [ "$CLEAN_WORK_DIR" -eq 1 ]; then
+        rm -rf "$WORK_DIR"
+    fi
+}
+trap cleanup EXIT
+
+count_result_rows() {
+    awk 'BEGIN { n = 0 } /^RESULT / { n += 1 } END { print n }' "$1"
+}
+
+count_time_rows() {
+    awk 'BEGIN { n = 0 } /^Time / { n += 1 } END { print n }' "$1"
+}
+
+dump_capture_failure() {
+    label=$1
+    status=$2
+    stdout_file=$3
+    stderr_file=$4
+    shift 4
+
+    echo "$label failed or produced incomplete output."
+    echo "status: $status"
+    echo "command: $*"
+    if [ -s "$stderr_file" ]; then
+        echo "--- stderr ---"
+        sed -n '1,40p' "$stderr_file"
+    fi
+    if [ -s "$stdout_file" ]; then
+        echo "--- stdout head ---"
+        sed -n '1,40p' "$stdout_file"
+    fi
+}
+
+capture_program() {
+    label=$1
+    stdout_file=$2
+    stderr_file=$3
+    shift 3
+
+    set +e
+    "$@" > "$stdout_file" 2> "$stderr_file"
+    status=$?
+    set -e
+
+    if [ "$status" -ne 0 ]; then
+        dump_capture_failure "$label" "$status" "$stdout_file" "$stderr_file" "$@"
+        exit 1
+    fi
+}
+
+capture_probe() {
+    label=$1
+    stdout_file=$2
+    stderr_file=$3
+    shift 3
+
+    capture_program "$label" "$stdout_file" "$stderr_file" "$@"
+    rows=$(count_result_rows "$stdout_file")
+    if [ "$rows" -ne "$EXPECTED_ROWS" ]; then
+        echo "$label RESULT count mismatch: got $rows expected $EXPECTED_ROWS"
+        dump_capture_failure "$label" 0 "$stdout_file" "$stderr_file" "$@"
+        exit 1
+    fi
+}
+
+capture_timing_run() {
+    label=$1
+    stdout_file=$2
+    stderr_file=$3
+    shift 3
+
+    capture_program "$label" "$stdout_file" "$stderr_file" "$@"
+    rows=$(count_time_rows "$stdout_file")
+    if [ "$rows" -ne "$EXPECTED_ROWS" ]; then
+        echo "$label Time count mismatch: got $rows expected $EXPECTED_ROWS"
+        dump_capture_failure "$label" 0 "$stdout_file" "$stderr_file" "$@"
+        exit 1
+    fi
+}
+
+result_value() {
+    file=$1
+    name=$2
+    awk -v name="$name" '$1 == "RESULT" && $2 == name { print $3 }' "$file"
+}
+
+check_exact_result() {
+    name=$1
+    description=$2
+    duo_value=$(result_value "$DUO_PROBE_OUT" "$name")
+    c_value=$(result_value "$C_PROBE_OUT" "$name")
+
+    if [ -z "$duo_value" ] || [ -z "$c_value" ]; then
+        echo "RESULT $name missing: Duo=$duo_value C=$c_value"
+        exit 1
+    fi
+    if [ "$duo_value" != "$c_value" ]; then
+        echo "RESULT $name mismatch: Duo=$duo_value C=$c_value"
+        exit 1
+    fi
+    echo "$description matches C exactly."
+}
+
+check_float_result() {
+    name=$1
+    description=$2
+    tolerance=$3
+    duo_value=$(result_value "$DUO_PROBE_OUT" "$name")
+    c_value=$(result_value "$C_PROBE_OUT" "$name")
+
+    if [ -z "$duo_value" ] || [ -z "$c_value" ]; then
+        echo "RESULT $name missing: Duo=$duo_value C=$c_value"
+        exit 1
+    fi
+    if ! awk "BEGIN { d=$duo_value; c=$c_value; diff=d-c; if (diff < 0) diff=-diff; exit !(diff <= $tolerance) }"; then
+        echo "RESULT $name mismatch: Duo=$duo_value C=$c_value"
+        exit 1
+    fi
+    echo "$description matches C within $tolerance."
+}
 
 echo "=== Honest Benchmark: Duo vs C (runtime-seeded observable workloads) ==="
 echo ""
 
 # Compile Duo
 echo "Compiling Duo..."
-$DUO compile examples/bench_honest.duo -o /tmp/honest_duo 2>&1 | grep -v "^$"
+$DUO compile examples/bench_honest.duo -o "$DUO_BIN" 2>&1 | grep -v "^$"
 
 # Compile C with same flags Duo uses internally
 echo "Compiling C reference..."
 SDK=$(xcrun --show-sdk-path 2>/dev/null || echo "")
 CFLAGS="-O3 -ffast-math -march=native -flto -lm"
 if [ -n "$SDK" ]; then CFLAGS="$CFLAGS -isysroot $SDK"; fi
-clang $CFLAGS -o /tmp/honest_c examples/bench_honest_c.c
+clang $CFLAGS -o "$C_BIN" examples/bench_honest_c.c
 echo ""
 
-BENCH_NAMES="matmul qsort hashtable bsearch nbody fnv"
 HONEST_SEED="${HONEST_SEED:-123456789}"
 export HONEST_SEED
 
@@ -32,94 +170,60 @@ echo "Seed: $HONEST_SEED"
 echo
 
 echo "--- Correctness Check ---"
-duo_probe=$(/tmp/honest_duo)
-c_probe=$(/tmp/honest_c)
-duo_matmul=$(echo "$duo_probe" | awk '/^RESULT matmul / { print $3 }')
-c_matmul=$(echo "$c_probe" | awk '/^RESULT matmul / { print $3 }')
-if [ -z "$duo_matmul" ] || [ -z "$c_matmul" ]; then
-    echo "RESULT matmul missing: Duo=$duo_matmul C=$c_matmul"
-    exit 1
-fi
-if ! awk "BEGIN { d=$duo_matmul; c=$c_matmul; diff=d-c; if (diff < 0) diff=-diff; exit !(diff <= 1e-9) }"; then
-    echo "RESULT matmul mismatch: Duo=$duo_matmul C=$c_matmul"
-    exit 1
-fi
-duo_qsort=$(echo "$duo_probe" | awk '/^RESULT qsort / { print $3 }')
-c_qsort=$(echo "$c_probe" | awk '/^RESULT qsort / { print $3 }')
-if [ -z "$duo_qsort" ] || [ -z "$c_qsort" ]; then
-    echo "RESULT qsort missing: Duo=$duo_qsort C=$c_qsort"
-    exit 1
-fi
-if [ "$duo_qsort" != "$c_qsort" ]; then
-    echo "RESULT qsort mismatch: Duo=$duo_qsort C=$c_qsort"
-    exit 1
-fi
-duo_bsearch=$(echo "$duo_probe" | awk '/^RESULT bsearch / { print $3 }')
-c_bsearch=$(echo "$c_probe" | awk '/^RESULT bsearch / { print $3 }')
-if [ -z "$duo_bsearch" ] || [ -z "$c_bsearch" ]; then
-    echo "RESULT bsearch missing: Duo=$duo_bsearch C=$c_bsearch"
-    exit 1
-fi
-if [ "$duo_bsearch" != "$c_bsearch" ]; then
-    echo "RESULT bsearch mismatch: Duo=$duo_bsearch C=$c_bsearch"
-    exit 1
-fi
-duo_hashtable=$(echo "$duo_probe" | awk '/^RESULT hashtable / { print $3 }')
-c_hashtable=$(echo "$c_probe" | awk '/^RESULT hashtable / { print $3 }')
-if [ -z "$duo_hashtable" ] || [ -z "$c_hashtable" ]; then
-    echo "RESULT hashtable missing: Duo=$duo_hashtable C=$c_hashtable"
-    exit 1
-fi
-if [ "$duo_hashtable" != "$c_hashtable" ]; then
-    echo "RESULT hashtable mismatch: Duo=$duo_hashtable C=$c_hashtable"
-    exit 1
-fi
-duo_nbody=$(echo "$duo_probe" | awk '/^RESULT nbody / { print $3 }')
-c_nbody=$(echo "$c_probe" | awk '/^RESULT nbody / { print $3 }')
-if [ -z "$duo_nbody" ] || [ -z "$c_nbody" ]; then
-    echo "RESULT nbody missing: Duo=$duo_nbody C=$c_nbody"
-    exit 1
-fi
-if ! awk "BEGIN { d=$duo_nbody; c=$c_nbody; diff=d-c; if (diff < 0) diff=-diff; exit !(diff <= 1e-9) }"; then
-    echo "RESULT nbody mismatch: Duo=$duo_nbody C=$c_nbody"
-    exit 1
-fi
-duo_fnv=$(echo "$duo_probe" | awk '/^RESULT fnv / { print $3 }')
-c_fnv=$(echo "$c_probe" | awk '/^RESULT fnv / { print $3 }')
-if [ -z "$duo_fnv" ] || [ -z "$c_fnv" ]; then
-    echo "RESULT fnv missing: Duo=$duo_fnv C=$c_fnv"
-    exit 1
-fi
-if [ "$duo_fnv" != "$c_fnv" ]; then
-    echo "RESULT fnv mismatch: Duo=$duo_fnv C=$c_fnv"
-    exit 1
-fi
-echo "Matmul checksum matches C within 1e-9."
-echo "Qsort checksum matches C exactly."
-echo "Bsearch hit count matches C exactly."
-echo "Hashtable hit count matches C exactly."
-echo "Nbody energy matches C within 1e-9."
-echo "FNV checksum matches C exactly."
+capture_probe "Duo correctness probe" "$DUO_PROBE_OUT" "$DUO_PROBE_ERR" "$DUO_BIN"
+capture_probe "C correctness probe" "$C_PROBE_OUT" "$C_PROBE_ERR" "$C_BIN"
+check_float_result matmul "Matmul checksum" "1e-9"
+check_exact_result qsort "Qsort checksum"
+check_exact_result bsearch "Bsearch hit count"
+check_exact_result hashtable "Hashtable hit count"
+check_float_result nbody "Nbody energy" "1e-9"
+check_exact_result fnv "FNV checksum"
 echo
 
 # Run both multiple times, extract min times
 for name in $BENCH_NAMES; do
-    echo -n "" > "/tmp/honest_duo_${name}"
-    echo -n "" > "/tmp/honest_c_${name}"
+    echo -n "" > "$WORK_DIR/duo_${name}.times"
+    echo -n "" > "$WORK_DIR/c_${name}.times"
 done
 
 echo "Running Duo ($RUNS iterations)..."
 for i in $(seq 1 $RUNS); do
-    /tmp/honest_duo | grep "^Time " | while read -r _ name time _; do
-        echo "$time" >> "/tmp/honest_duo_${name}"
-    done
+    run_out="$WORK_DIR/duo_run_${i}.out"
+    run_err="$WORK_DIR/duo_run_${i}.err"
+    capture_timing_run "Duo timing run $i" "$run_out" "$run_err" "$DUO_BIN"
+    while read -r tag name time _; do
+        if [ "$tag" != "Time" ]; then
+            continue
+        fi
+        case " $BENCH_NAMES " in
+            *" $name "*) ;;
+            *)
+                echo "Duo timing run $i reported unknown benchmark: $name"
+                exit 1
+                ;;
+        esac
+        echo "$time" >> "$WORK_DIR/duo_${name}.times"
+    done < "$run_out"
 done
 
 echo "Running C ($RUNS iterations)..."
 for i in $(seq 1 $RUNS); do
-    /tmp/honest_c | grep "^Time " | while read -r _ name time _; do
-        echo "$time" >> "/tmp/honest_c_${name}"
-    done
+    run_out="$WORK_DIR/c_run_${i}.out"
+    run_err="$WORK_DIR/c_run_${i}.err"
+    capture_timing_run "C timing run $i" "$run_out" "$run_err" "$C_BIN"
+    while read -r tag name time _; do
+        if [ "$tag" != "Time" ]; then
+            continue
+        fi
+        case " $BENCH_NAMES " in
+            *" $name "*) ;;
+            *)
+                echo "C timing run $i reported unknown benchmark: $name"
+                exit 1
+                ;;
+        esac
+        echo "$time" >> "$WORK_DIR/c_${name}.times"
+    done < "$run_out"
 done
 
 echo ""
@@ -130,8 +234,8 @@ printf "%-16s %12s %12s %10s %8s\n" "----------------" "------------" "---------
 
 OVERALL_PASS=1
 for name in $BENCH_NAMES; do
-    duo_min=$(sort -n "/tmp/honest_duo_${name}" | head -1)
-    c_min=$(sort -n "/tmp/honest_c_${name}" | head -1)
+    duo_min=$(sort -n "$WORK_DIR/duo_${name}.times" | head -1)
+    c_min=$(sort -n "$WORK_DIR/c_${name}.times" | head -1)
     
     if [ -z "$duo_min" ] || [ -z "$c_min" ]; then
         printf "%-16s %12s %12s %10s %8s\n" "$name" "N/A" "N/A" "N/A" "SKIP"
@@ -149,7 +253,7 @@ for name in $BENCH_NAMES; do
     
     printf "%-16s %12.6f %12.6f %10sx %8s\n" "$name" "$duo_min" "$c_min" "$ratio" "$winner"
     
-    rm -f "/tmp/honest_duo_${name}" "/tmp/honest_c_${name}"
+    rm -f "$WORK_DIR/duo_${name}.times" "$WORK_DIR/c_${name}.times"
 done
 
 echo ""

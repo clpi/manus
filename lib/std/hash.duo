@@ -38,7 +38,7 @@ fun simple(s: str): i64
     for i = 1, string.len(s)
         h = ((h << 5) - h + string.byte(s, i)) % (2^32)
     end
-    math.abs(h)
+    @as(i64, math.abs(h))
 end
 
 M = {}

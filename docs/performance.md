@@ -52,9 +52,9 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 | `zig build bench` | **YES (CI)** | 40 numeric/stdlib kernels | 40 `RESULT` lines vs `benchmark_c.c` | Min of 10 runs; Duo .lua **and** .duo must ≤ C + 5% (instantaneous rows exempt) | `scripts/run_benchmark.sh`, `examples/benchmark.{lua,duo}`, `examples/benchmark_c.c` |
 | `zig build ml-bench` | Soft (warn) | 5 ML kernels | 5 `RESULT` lines vs `bench_ml_c.c` | Min of 5 runs; 5% slack; warns on failure | `scripts/run_ml_benchmark.sh`, `examples/bench_ml.{duo}`, `examples/bench_ml_c.c` |
 | `zig build honest-bench` | Soft | 6 runtime-seeded observable workloads | `RESULT` checksums | Min of 5 runs; 3% slack | `scripts/run_honest_benchmark.sh`, `examples/bench_honest.{duo}`, `examples/bench_honest_c.c` |
-| `zig build compile-size-bench` | Soft | 1 typed checksum program | stdout checksum vs C | Min of 5 compile runs; reports only | `scripts/run_compile_size_benchmark.sh` |
+| `zig build compile-size-bench` | Soft | typed checksum, generated 1k/10k-line function-chain projects, ML binary-size sample | stdout checksum vs C for scalar/function-chain workloads; 5 ML `RESULT` rows with float tolerance | Min of 5 compile runs; reports only | `scripts/run_compile_size_benchmark.sh` |
 | `zig build cross-bench` | No | 23 subset of 40 | Partial | Min of 3 runs | `scripts/run_cross_benchmark.sh` — needs `lua`, `luajit` on PATH |
-| `zig build wasm-bench` | No | WASM runtimes | — | — | `scripts/run_wasm_benchmark.sh` |
+| `zig build wasm-bench` | No | WASM runtimes | 40 runtime `RESULT` rows; first two compatible runtimes compared when available | Min of N runs; baseline regression check | `scripts/run_wasm_benchmark.sh` |
 | `scripts/run_gpu_benchmark.sh` | No (opt-in) | Metal matmul | — | — | macOS + Metal only |
 
 ### 40-benchmark categories (hard gate)
@@ -94,7 +94,7 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 
 ---
 
-## Current Snapshot (last verified 2026-07-16)
+## Current Snapshot (last verified 2026-07-22)
 
 > Re-run `zig build bench` and update this table after any codegen change.
 
@@ -106,36 +106,36 @@ Many 40-benchmark rows show `0.000000s` because constant-folding and native emit
 
 | Benchmark | Best Duo (s) | C (s) | Duo vs C | Mechanism |
 | --- | ---: | ---: | ---: | --- |
-| Game of Life | 3.5e-05 | 0.002694 | ~77× faster | Period-2 cycle skip (3-buffer memcmp) |
-| Mandelbrot | 0.017166 | 0.407100 | ~24× | Symmetry/cardioid native paths |
-| Collatz sum | 0.002379 | 0.059512 | ~25× | Memo table |
-| GCD reduce | 0.001071 | 0.054839 | ~51× | Coprime divisor-multiple iteration |
-| Sieve | 0.000334 | 0.001472 | ~4.4× | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
+| Game of Life | 4.0e-05 | 0.003144 | ~79× faster | Period-2 cycle skip (3-buffer memcmp) |
+| Mandelbrot | 0.017776 | 0.430123 | ~24× faster | Symmetry/cardioid native paths |
+| Collatz sum | 0.002452 | 0.062879 | ~26× faster | Memo table |
+| GCD reduce | 0.000666 | 0.057922 | ~87× faster | Coprime divisor-multiple iteration |
+| Sieve | 0.000343 | 0.001576 | ~4.6× faster | Wheel-6 byte flags + 8-composite marking unroll + 32-byte popcount count |
 
 Most other rows are at timer resolution (`0.000000s`) via compile-time reduction or native emitters.
 
-### ML gate (`zig build ml-bench`) — macOS arm64, 2026-07-14
+### ML gate (`zig build ml-bench`) — macOS arm64, 2026-07-22
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
-| matmul_256 | 0.000979 | 0.002525 | 0.39× | ✓ Duo faster (4x8 register blocked GEMM) |
-| conv2d | 0.000617 | 0.000807 | 0.76× | ✓ Duo faster (direct vector loads + 4-wide SIMD ox strip) |
-| softmax_1k | 0.006383 | 0.026878 | 0.24× | ✓ Duo ~4.2× faster |
-| attention | 0.002750 | 0.004400 | 0.63× | ✓ Duo ~1.6× faster (v4 dot + polynomial exp in softmax) |
-| **mlp_forward** | **0.052892** | **0.143276** | **0.37×** | **✅ Duo ~2.7× faster** (split TU + row-major dots) |
+| matmul_256 | 0.000983 | 0.002550 | 0.39× | ✓ Duo faster (4x8 register blocked GEMM) |
+| conv2d | 0.000626 | 0.000802 | 0.78× | ✓ Duo faster (direct vector loads + 4-wide SIMD ox strip) |
+| softmax_1k | 0.006494 | 0.027117 | 0.24× | ✓ Duo ~4.2× faster |
+| attention | 0.002887 | 0.004475 | 0.65× | ✓ Duo ~1.6× faster (v4 dot + polynomial exp in softmax) |
+| **mlp_forward** | **0.053638** | **0.150479** | **0.36×** | **✓ Duo ~2.8× faster** (split TU + row-major dots) |
 
 **Status:** All 5 ML workloads beat or tie C (5% slack).
 
-### Honest gate (`zig build honest-bench`) — 2026-07-16
+### Honest gate (`zig build honest-bench`) — 2026-07-22
 
 | Benchmark | Duo (s) | C (s) | Ratio | Status |
 | --- | ---: | ---: | ---: | --- |
-| matmul | 0.000064 | 0.000184 | 0.348x | ✓ Duo 65% faster (`sum(A*B)` contraction) |
-| qsort | 0.000000 | 0.004284 | 0.00x | ✓ Duo/Tie (signed i64 radix sort) |
-| hashtable | 0.000000 | 0.000924 | 0.00x | ✓ Duo/Tie (8-way unrolled probes, branchless hits) |
-| bsearch | 0.000000 | 0.018335 | 0.00x | ✓ Duo/Tie (8-way bitset occupancy + direct xorshift slots) |
-| nbody | 0.000000 | 0.028793 | 0.00x | ✓ Duo/Tie (full i+j loop unroll + __builtin_expect) |
-| fnv | 0.042743 | 0.076441 | 0.559x | ✓ Duo 44% faster (4-window unrolled 16-chain FNV + prefetch + branchless wrap) |
+| matmul | 0.000066 | 0.000187 | 0.353x | ✓ Duo faster (`sum(A*B)` contraction) |
+| qsort | 0.001016 | 0.004362 | 0.233x | ✓ Duo faster (signed i64 radix sort) |
+| hashtable | 0.000775 | 0.000952 | 0.814x | ✓ Duo faster (8-way unrolled probes, branchless hits) |
+| bsearch | 0.006951 | 0.019238 | 0.361x | ✓ Duo faster (8-way bitset occupancy + direct xorshift slots) |
+| nbody | 0.012972 | 0.029491 | 0.440x | ✓ Duo faster (full i+j loop unroll + __builtin_expect) |
+| fnv | 0.043645 | 0.078038 | 0.559x | ✓ Duo faster (4-window unrolled 16-chain FNV + prefetch + branchless wrap) |
 
 **Status:** PASS — Duo unambiguously beats C on all 6 honest benchmarks. All `RESULT` rows validated. No more parity/slack rows.
 
@@ -158,8 +158,8 @@ Most other rows are at timer resolution (`0.000000s`) via compile-time reduction
 
 | Area | Why it matters | Proposed benchmark |
 | --- | --- | --- |
-| **Compile time** | Build-tool goal (xmake-class) | Current `compile-size-bench` still tracks only a small typed checksum; add 1k/10k LOC project cases |
-| **Binary size** | ML deploy (<1 MB goal) | Current `compile-size-bench` tracks a minimal typed checksum; add stripped ML binary size vs C |
+| **Compile time** | Build-tool goal (xmake-class) | `compile-size-bench` now tracks typed checksum plus generated 1k/10k-line typed projects; fixed real-project tarballs are still needed |
+| **Binary size** | ML deploy (<1 MB goal) | `compile-size-bench` now tracks minimal typed, generated 1k/10k-line, and stripped ML benchmark binary sizes; fixed real-app samples remain open |
 | **GPU backends** | `@device(.metal/.cuda)` | Extend `run_gpu_benchmark.sh` into CI on Apple Silicon |
 | **WASM perf** | Edge ML | `wasm-bench` parity vs native C for matmul/dot |
 | **Alloc / GC pressure** | Dynamic Lua paths | Table churn at scale with `collectgarbage` disabled |
@@ -8643,3 +8643,2226 @@ Measured impact:
 - Fixed an issue where `_` private symbols were leaked into `duo-lsp` completion lists from other modules.
 - Fixed a compilation error in `duo-lsp` caused by naive loop bound detection in `detect_dense_table`, by ensuring the parameter is explicitly used as a bound.
 - Fixed a code generation bug emitting extraneous parentheses for `.bool` and `.str` struct properties in `emit_expr` for `.field`.
+
+### 2026-07-22: Expand compile-size tracking with generated typed project workloads
+
+Commands:
+
+```sh
+zig fmt src/sema.zig --check
+bash -n scripts/run_compile_size_benchmark.sh
+RUNS=1 zig build compile-size-bench
+zig build
+zig build unit-test --summary all
+zig build test
+zig build compile-size-bench
+zig build bench
+```
+
+Result gate: **PASS** — compiler build, unit tests, compile-fail/full test step, the expanded compile-size tracker, and the hard 40-benchmark gate all passed. A later rebuild-backed run also passed after adding `ml_binary` and repairing native-scalar string-helper header gating.
+
+Additional changes:
+
+- Extended `scripts/run_compile_size_benchmark.sh` from one tiny typed checksum to four workloads:
+  `typed_checksum`, `function_chain_1k`, `function_chain_10k`, and `ml_binary`.
+- `function_chain_1k` generates 180 typed functions by default (`CHAIN_FUNCS_1K=180`, or legacy `CHAIN_FUNCS`) plus an equivalent C file.
+- `function_chain_10k` generates 1500 typed functions by default (`CHAIN_FUNCS_10K=1500`), yielding about 10.5k source lines for both Duo and C without adding checked-in generated sources.
+- The script now uses an isolated temp directory, cleans it on exit, reports compiler stderr when a timed command fails, and uses the platform linker dead-code flag (`-dead_strip` on Darwin, `--gc-sections` elsewhere).
+- `ml_binary` compiles `examples/bench_ml.duo` and `examples/bench_ml_c.c`, verifies all five ML `RESULT` rows with float tolerance, then reports unstripped and stripped executable sizes.
+- The output now includes source line and byte counts next to compile time and executable size, so compile-time and binary-size ratios can be read against workload scale.
+- Repaired current-tree sema diagnostic builders to compile against the pinned Zig 0.17 nightly while preserving the improved one-line concept and enum error output.
+- Repaired current-tree native-scalar string-helper emission so pure typed scalar programs do not emit heap string helpers without `<stdlib.h>` and `<string.h>`, and dynamic field-call string concatenation uses the existing `expr_emits_lua_value` predicate.
+
+Measured impact:
+
+| Workload | Metric | Duo | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| `typed_checksum` | source_lines | 24 | 26 | 0.923x |
+| `typed_checksum` | source_bytes | 355 | 502 | 0.707x |
+| `typed_checksum` | compile_s | 0.154159 | 0.118420 | 1.302x |
+| `typed_checksum` | binary_bytes | 33440 | 33440 | 1.000x |
+| `function_chain_1k` | source_lines | 1274 | 1276 | 0.998x |
+| `function_chain_1k` | source_bytes | 24159 | 29637 | 0.815x |
+| `function_chain_1k` | compile_s | 0.251576 | 0.192415 | 1.307x |
+| `function_chain_1k` | binary_bytes | 33448 | 33440 | 1.000x |
+| `function_chain_10k` | source_lines | 10514 | 10516 | 1.000x |
+| `function_chain_10k` | source_bytes | 204775 | 249853 | 0.820x |
+| `function_chain_10k` | compile_s | 1.475550 | 0.899117 | 1.641x |
+| `function_chain_10k` | binary_bytes | 83000 | 83000 | 1.000x |
+| `ml_binary` | source_lines | 75 | 249 | 0.301x |
+| `ml_binary` | source_bytes | 2057 | 10267 | 0.200x |
+| `ml_binary` | compile_s | 1.017936 | 0.248621 | 4.094x |
+| `ml_binary` | binary_bytes | 143248 | 33688 | 4.252x |
+| `ml_binary` | stripped_bytes | 136936 | 33728 | 4.060x |
+
+Remaining targets:
+
+- `compile-size-bench` still needs fixed real-project tarball scenarios and stripped real-app binary-size coverage before it fully closes the structural compile-time and binary-size gaps.
+
+### Follow-up (2026-07-22): ML binary-size tracking and Mandelbrot correctness rollback
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+bash -n scripts/run_compile_size_benchmark.sh
+zig build
+zig build unit-test --summary all
+zig build test
+zig build compile-size-bench
+zig build bench
+```
+
+Result gate: **PASS** — the expanded compile-size tracker passed with `ml_binary`, unit/full tests passed, and the hard 40-benchmark gate again reported all `RESULT` rows match C with Duo `.lua`/`.duo >= C`.
+
+Additional changes:
+
+- Added `ml_binary` to `scripts/run_compile_size_benchmark.sh`.
+- `ml_binary` compiles `examples/bench_ml.duo` and `examples/bench_ml_c.c`, compares all five ML `RESULT` rows with float tolerance, and reports unstripped plus stripped executable size.
+- Fixed native-scalar string-helper emission so pure typed scalar programs do not emit `duo_str_concat` / `duo_str_rep` without the required C headers.
+- Reused `expr_emits_lua_value` for typed concat safety when a dynamic table field call emits `lua_Value`.
+- Removed the in-progress 4-wide Mandelbrot native emitter path because `zig build bench` caught a correctness regression (`Duo=139308337`, `C=139309713`). The scalar cardioid/bulb Mandelbrot native path is restored and remains about 24x faster than C in the hard gate.
+
+Measured impact:
+
+| Workload | Metric | Duo | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| `typed_checksum` | compile_s | 0.154923 | 0.123832 | 1.251x |
+| `function_chain_1k` | compile_s | 0.257764 | 0.194085 | 1.328x |
+| `function_chain_10k` | compile_s | 1.475550 | 0.899117 | 1.641x |
+| `ml_binary` | compile_s | 1.017936 | 0.248621 | 4.094x |
+| `ml_binary` | binary_bytes | 143248 | 33688 | 4.252x |
+| `ml_binary` | stripped_bytes | 136936 | 33728 | 4.060x |
+| `zig build bench` Mandelbrot | best Duo(s) | 0.017759 | 0.422465 | 0.042x |
+
+Rejected:
+
+- Keeping the 4-wide Mandelbrot vector loop without a proof harness. It was faster-looking work in the right area, but it changed the benchmark checksum, so it was removed until it can be reintroduced behind exact scalar-equivalence tests.
+
+### Follow-up (2026-07-22): fixed metaprogramming app binary-size sample
+
+Commands:
+
+```sh
+bash -n scripts/run_compile_size_benchmark.sh
+zig fmt src/codegen.zig --check
+RUNS=1 zig build compile-size-bench
+zig build compile-size-bench
+```
+
+Result gate: **PASS** — `examples/metaprogramming_test.duo` compiles, runs, and prints `ALL METAPROGRAMMING TESTS PASSED` inside the compile-size tracker.
+
+Additional changes:
+
+- Added `metaprogramming_app` to `scripts/run_compile_size_benchmark.sh`.
+- The new workload is a fixed real Duo program rather than a generated source, so binary-size tracking now covers a public metaprogramming/introspection scenario with executable verification.
+- The workload is Duo-only; C columns are intentionally blank because there is no equivalent hand-written C reference for Duo's public `@` metaprogramming surface.
+
+Measured impact:
+
+| Workload | Metric | Duo | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| `typed_checksum` | compile_s | 0.161107 | 0.123964 | 1.300x |
+| `function_chain_1k` | compile_s | 0.260376 | 0.196785 | 1.323x |
+| `function_chain_10k` | compile_s | 1.488280 | 0.906788 | 1.641x |
+| `ml_binary` | compile_s | 1.022029 | 0.249429 | 4.097x |
+| `ml_binary` | stripped_bytes | 136936 | 33728 | 4.060x |
+| `metaprogramming_app` | source_lines | 115 | — | — |
+| `metaprogramming_app` | source_bytes | 6846 | — | — |
+| `metaprogramming_app` | compile_s | 0.763530 | — | — |
+| `metaprogramming_app` | binary_bytes | 127144 | — | — |
+| `metaprogramming_app` | stripped_bytes | 120544 | — | — |
+
+Remaining targets:
+
+- Add a fixed larger application sample with external modules and a C or other native baseline where an equivalent comparison is meaningful.
+
+### Follow-up (2026-07-22): analyzer-gated literal-init dense tables
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig src/sema.zig --check
+zig test src/codegen.zig --test-filter "literal numeric table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** — 602/602 unit tests passed, the full test target passed, all 40 hard benchmark `RESULT` rows matched C for `.lua` and `.duo`, and the final hard-gate summary reported `All benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Removed the unsafe non-analyzed literal table static-array fallback from `src/codegen.zig`; normal escaped literal tables now keep Lua table semantics.
+- Extended dense-table analysis in `src/sema.zig` so numeric positional literal tables such as `{10, 20, 30}` qualify for native storage only when all observed uses remain array-like indexed reads/writes or `#t`.
+- Added direct dense-table length lowering so `#t` on an analyzer-qualified dense table becomes the proven capacity instead of `lua_len_num(__dt_t)`.
+- Added codegen regression tests covering both the native literal-array path and the escaped literal-table path.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000385 | 0.000414 | 0.000389 | Tie within hard-gate slack |
+| Table max | seconds | 0.000305 | 0.000309 | 0.000314 | Duo faster |
+| Table lookup | seconds | 0.000341 | 0.000343 | 0.000351 | Duo faster |
+| Table churn | seconds | 0.000271 | 0.000271 | 0.000266 | Tie within hard-gate slack |
+
+Rejected:
+
+- Keeping the broad static-array lowering for any all-numeric literal table. It was fast-looking but unsound because escaped values such as `print(t)` or returned tables must remain `lua_Value` tables with Lua semantics.
+
+### Follow-up (2026-07-22): partial typed dense-table native inference
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig src/sema.zig --check
+zig test src/codegen.zig --test-filter "literal numeric table"
+zig test src/codegen.zig --test-filter "partial typed dense table"
+zig test src/codegen.zig --test-filter "inferred dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the full unit-test target passed, the full test target
+passed, all 40 hard benchmark `RESULT` rows matched C for `.lua` and `.duo`,
+and the final hard-gate summary reported `All benchmarks: results match and
+Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- `src/sema.zig` now seeds native inference from declared scalar parameter
+  types, so functions such as `fun table_array_sum(n: i64)` can infer native
+  returns instead of falling back to boxed Lua values because only the return
+  type was omitted.
+- Dense-table closed-form emitters that are already analyzer-proven now remain
+  active after inference makes a function typed: identity sum, lookup sum,
+  mod997 churn sum, and max scan.
+- `src/codegen.zig` adds regression coverage for partial typed identity folds,
+  non-identity dense sums staying on the normal dense-table path, max scans,
+  lookup sums, and mod997 churn sums.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000399 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000318 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000373 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000267 | Duo faster |
+
+Rejected / corrected during validation:
+
+- A broad `use_dense_table_sum` fallback for any dense-table sum with a fill
+  loop was removed after `zig build bench` caught incorrect `lookup` and
+  `churn` `RESULT` lines. The identity closed form is now only enabled when
+  the analyzer proves `t[i] = i`; other fills require their own detector.
+- Initial native inference disabled table max, lookup, and churn because those
+  emitters were still behind old `!fb.is_typed` gates. The gates were removed
+  only for the existing analyzer-proven emitters, restoring the benchmark rows
+  without changing dynamic table semantics.
+
+### Follow-up (2026-07-22): affine dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - 608/608 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, and the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- `src/sema.zig` now proves a general sequential dense-table reduction shape:
+  initialize the loop index to `1`, fill `t[i]` with `i * k` or `k * i`, reset
+  the scan index to `1`, and accumulate `sum += t[i]` through the same single
+  parameter bound.
+- `src/codegen.zig` reuses the existing `use_dense_table_sum` flag for that
+  proven affine family and emits `k * n * (n + 1) / 2` through `__int128`
+  intermediates, avoiding allocation and scan work for real table-as-array
+  reductions.
+- Offset fills such as `t[i] = i * 3 + 1` were deliberately held back in this
+  slice and later generalized below. The detector still refuses extra table
+  assignments, so overwrite patterns keep Lua-compatible dense-table execution
+  instead of a guessed closed form.
+- Added codegen regression tests for affine folding and non-affine rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000415 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000377 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000368 | Duo faster |
+
+Held back for the next proof:
+
+- Extending affine folding to shifted fills such as `t[i] = i * 3 + 1`.
+  That follow-up is now implemented in the next section; richer polynomial
+  reductions remain open.
+
+### Follow-up (2026-07-22): offset affine dense-table reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, the unit-test target passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, and the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- The dense-table reduction proof now records both multiplier and offset for
+  fills shaped like `t[i] = i * k + c`, `t[i] = c + k * i`, `t[i] = i + c`,
+  and `t[i] = c`.
+- Codegen emits the folded sum as
+  `k * n * (n + 1) / 2 + c * n` through `__int128` intermediates.
+- Added regression coverage for shifted affine folding and polynomial
+  rejection. `t[i] = i * i` was held back in this slice and is now implemented
+  in the square-reduction follow-up below.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000403 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000364 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000325 | Duo faster |
+
+Held back for the next proof:
+
+- Polynomial dense-table reductions such as `t[i] = i * i`. They are
+  mathematically foldable, but they needed a separate detector and tests for
+  overflow behavior, operator shape, and table overwrite safety. The square
+  case is now implemented in the next section; mixed polynomial products remain
+  open.
+
+### Follow-up (2026-07-22): square dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - 610/610 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, and the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an explicit `use_dense_table_square_sum` analyzer flag and preserved it
+  through macro expansion.
+- `src/sema.zig` now recognizes the square fill `t[i] = i * i` only when the
+  same sequential dense-table proof holds: one table assignment, index initialized
+  to `1`, loop bound tied to the single parameter, and a matching `sum += t[i]`
+  scan.
+- `src/codegen.zig` emits the standard square-sum closed form
+  `n * (n + 1) * (2n + 1) / 6` through `__int128` intermediates, avoiding dense
+  allocation and scan work for this common numeric reduction family.
+- Added regression coverage for square folding. The broader polynomial product
+  `t[i] = i * (i + 1)` is implemented in the quadratic follow-up below.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000420 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000358 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000001 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000319 | Duo faster |
+
+Held back for the next proof:
+
+- Broader polynomial dense-table reductions such as `t[i] = i * (i + 1)` or
+  quadratic expressions with several terms. They need a more general polynomial
+  normalizer and overflow-policy tests rather than one-off expression matching.
+  The quadratic case is now implemented in the next section; cubic and richer
+  polynomial reductions remain open.
+
+### Follow-up (2026-07-22): quadratic dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, 611/611 unit tests passed, the full test target passed including
+the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C for `.lua`
+and `.duo`, and the final hard-gate summary reported `All benchmarks: results
+match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an analyzer-level quadratic dense-table reduction flag plus explicit
+  square, linear, and constant coefficients, and preserved those fields through
+  macro expansion.
+- Added a degree-limited normalizer for dense-table fills that proves
+  expressions shaped like `a*i*i + b*i + c`, including `i * (i + c)` and
+  `(i + c) * i`, while rejecting degree-greater-than-two products such as
+  `i * i * i`.
+- `src/codegen.zig` emits the combined closed form
+  `a*n*(n+1)*(2n+1)/6 + b*n*(n+1)/2 + c*n` through `__int128` intermediates
+  and avoids dense allocation/scan work only after the same single-assignment
+  sequential-table proof succeeds.
+- Added regression coverage for quadratic product folding and cubic rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000409 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000369 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000329 | Duo faster |
+| Mandelbrot | seconds | 0.017650 | 0.017673 | 0.421672 | Duo faster |
+| Collatz sum | seconds | 0.002441 | 0.002461 | 0.061999 | Duo faster |
+| GCD reduce | seconds | 0.000652 | 0.000667 | 0.057393 | Duo faster |
+| Sieve | seconds | 0.000345 | 0.000340 | 0.001545 | Duo faster |
+| Game of Life | seconds | 0.000039 | 0.000039 | 0.003101 | Duo faster |
+
+Held back for the next proof:
+
+- Cubic and higher-degree dense-table reductions remain on the ordinary
+  dense-table path. The analyzer has an explicit rejection test for
+  `t[i] = i * i * i` in this slice; the cubic case is now implemented in the
+  next section, while quartic and richer polynomial reductions remain open.
+
+### Follow-up (2026-07-22): cubic dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, 613/613 unit tests passed, the full test target passed including
+the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C for `.lua`
+and `.duo`, and the final hard-gate summary reported `All benchmarks: results
+match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an analyzer-level cubic dense-table reduction flag plus an explicit
+  cubic coefficient, reusing the existing square, linear, and constant
+  coefficient fields for the lower-degree terms.
+- Added a degree-limited cubic normalizer for dense-table fills that proves
+  expressions shaped like `a*i*i*i + b*i*i + c*i + d`, including shifted
+  products such as `i * (i + 1) * (i + 2)`, while rejecting degree-four
+  products.
+- `src/codegen.zig` emits the combined closed form
+  `a*(n(n+1)/2)^2 + b*n(n+1)(2n+1)/6 + c*n(n+1)/2 + d*n` through `__int128`
+  intermediates and avoids dense allocation/scan work only under the same
+  single-assignment sequential-table proof used by the affine, square, and
+  quadratic paths.
+- Added regression coverage for simple cubic folding, shifted cubic product
+  folding, and quartic rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000428 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000344 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000316 | Duo faster |
+| Mandelbrot | seconds | 0.017946 | 0.017885 | 0.416614 | Duo faster |
+| Collatz sum | seconds | 0.002452 | 0.002439 | 0.061492 | Duo faster |
+| GCD reduce | seconds | 0.000658 | 0.000683 | 0.057154 | Duo faster |
+| Sieve | seconds | 0.000344 | 0.000344 | 0.001499 | Duo faster |
+| Game of Life | seconds | 0.000038 | 0.000037 | 0.003113 | Duo faster |
+
+Held back for the next proof:
+
+- Quartic and higher-degree dense-table reductions remain on the ordinary
+  dense-table path in this slice. The analyzer has a quartic rejection test for
+  `t[i] = i * i * i * i`; the quartic case is now implemented in the next
+  section, while quintic and richer polynomial reductions remain open.
+
+### Follow-up (2026-07-22): quartic dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, the unit-test target passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, and the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an analyzer-level quartic dense-table reduction flag plus an explicit
+  quartic coefficient, reusing the cubic, square, linear, and constant
+  coefficient fields for the lower-degree terms.
+- Added a degree-limited quartic normalizer for dense-table fills that proves
+  expressions shaped like `a*i^4 + b*i^3 + c*i*i + d*i + e`, including shifted
+  products such as `i * (i + 1) * (i + 2) * (i + 3)`, while rejecting
+  degree-five products.
+- `src/codegen.zig` emits the combined closed form
+  `a*n(n+1)(2n+1)(3n^2+3n-1)/30 + b*(n(n+1)/2)^2 + c*n(n+1)(2n+1)/6 + d*n(n+1)/2 + e*n`
+  through `__int128` intermediates and avoids dense allocation/scan work only
+  under the same single-assignment sequential-table proof used by the lower
+  polynomial paths.
+- Added regression coverage for simple quartic folding, shifted quartic
+  product folding, and quintic rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000421 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000366 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000317 | Duo faster |
+| Mandelbrot | seconds | 0.017929 | 0.017912 | 0.423025 | Duo faster |
+| Collatz sum | seconds | 0.002536 | 0.002463 | 0.062375 | Duo faster |
+| GCD reduce | seconds | 0.000668 | 0.000670 | 0.057329 | Duo faster |
+| Sieve | seconds | 0.000361 | 0.000342 | 0.001542 | Duo faster |
+| Game of Life | seconds | 0.000040 | 0.000039 | 0.003145 | Duo faster |
+
+Held back for the next proof:
+
+- Quintic and higher-degree dense-table reductions remain on the ordinary
+  dense-table path in this slice. The analyzer has a quintic rejection test for
+  `t[i] = i * i * i * i * i`; the quintic case is now implemented in the next
+  section, while sextic and richer polynomial reductions remain open.
+
+### Follow-up (2026-07-22): quintic dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, the unit-test target passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, and the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an analyzer-level quintic dense-table reduction flag plus an explicit
+  quintic coefficient, reusing quartic, cubic, square, linear, and constant
+  coefficient fields for the lower-degree terms.
+- Added a degree-limited quintic normalizer for dense-table fills that proves
+  expressions shaped like `a*i^5 + b*i^4 + c*i^3 + d*i*i + e*i + f`,
+  including shifted products such as
+  `i * (i + 1) * (i + 2) * (i + 3) * (i + 4)`, while rejecting degree-six
+  products.
+- `src/codegen.zig` emits the combined closed form using
+  `sum(i^5) = (n(n+1)/2)^2 * (2n^2 + 2n - 1) / 3` plus the existing lower
+  degree sums through `__int128` intermediates and avoids dense allocation/scan
+  work only under the same single-assignment sequential-table proof.
+- Added regression coverage for simple quintic folding, shifted quintic product
+  folding, and sextic rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000415 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000373 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000327 | Duo faster |
+| Mandelbrot | seconds | 0.017902 | 0.017969 | 0.424891 | Duo faster |
+| Collatz sum | seconds | 0.002515 | 0.002452 | 0.061972 | Duo faster |
+| GCD reduce | seconds | 0.000672 | 0.000668 | 0.057717 | Duo faster |
+| Sieve | seconds | 0.000344 | 0.000346 | 0.001538 | Duo faster |
+| Game of Life | seconds | 0.000039 | 0.000037 | 0.003101 | Duo faster |
+
+Held back for the next proof:
+
+- Sextic and higher-degree dense-table reductions remain on the ordinary
+  dense-table path in this slice. The analyzer has a sextic rejection test for
+  `t[i] = i * i * i * i * i * i`; the sextic case is now implemented in the
+  next section, while degree-seven and richer polynomial reductions remain open.
+
+### Follow-up (2026-07-22): sextic dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, 619/619 unit tests passed, the full test target passed including
+the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C for `.lua`
+and `.duo`, and the final hard-gate summary reported `All benchmarks: results
+match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an analyzer-level sextic dense-table reduction flag plus an explicit
+  sextic coefficient, reusing the lower-degree coefficient fields for the rest
+  of the polynomial.
+- Added a degree-limited sextic normalizer for dense-table fills that proves
+  expressions shaped like `a*i^6 + b*i^5 + c*i^4 + d*i^3 + e*i*i + f*i + g`,
+  including shifted products such as `i * (i + 1) * ... * (i + 5)`, while
+  rejecting degree-seven products.
+- `src/codegen.zig` emits the combined closed form using
+  `sum(i^6) = n(n+1)(2n+1)(3n^4 + 6n^3 - 3n + 1) / 42` plus the existing lower
+  degree sums through `__int128` intermediates, still under the same
+  single-assignment sequential-table proof.
+- Added regression coverage for simple sextic folding, shifted sextic product
+  folding, and degree-seven rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000398 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000338 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000264 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000318 | Duo faster |
+| Mandelbrot | seconds | 0.017984 | 0.018177 | 0.426445 | Duo faster |
+| Collatz sum | seconds | 0.002471 | 0.002574 | 0.062846 | Duo faster |
+| GCD reduce | seconds | 0.000668 | 0.000684 | 0.058059 | Duo faster |
+| Sieve | seconds | 0.000343 | 0.000373 | 0.001510 | Duo faster |
+| Game of Life | seconds | 0.000038 | 0.000043 | 0.003131 | Duo faster |
+
+Rejected / held back:
+
+- Degree-eight and higher dense-table reductions remain on the ordinary
+  dense-table path. The degree-seven case is now implemented in the next
+  section. Further extension should consolidate the repeated fixed-degree
+  structs into a coefficient-vector representation before adding more formulas.
+
+### Follow-up (2026-07-22): degree-seven dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "partial typed dense table sum"
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table tests passed, the compiler
+build passed, 621/621 unit tests passed, the full test target passed including
+the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C for `.lua`
+and `.duo`, and the final hard-gate summary reported `All benchmarks: results
+match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Added an analyzer-level degree-seven dense-table reduction flag plus an
+  explicit degree-seven coefficient, reusing the lower-degree coefficient
+  fields for the rest of the polynomial.
+- Added a degree-limited normalizer for dense-table fills that proves
+  expressions shaped like
+  `a*i^7 + b*i^6 + c*i^5 + d*i^4 + e*i^3 + f*i*i + g*i + h`, including
+  shifted products such as `i * (i + 1) * ... * (i + 6)`, while rejecting
+  degree-eight products.
+- `src/codegen.zig` emits the combined closed form using
+  `sum(i^7) = (n(n+1)/2)^2 * (3n^4 + 6n^3 - n^2 - 4n + 2) / 6` plus the
+  existing lower-degree sums through `__int128` intermediates, still under the
+  same single-assignment sequential-table proof.
+- Added regression coverage for simple degree-seven folding, shifted
+  degree-seven product folding, and degree-eight rejection.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000395 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000348 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000261 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000318 | Duo faster |
+| Mandelbrot | seconds | 0.017553 | 0.017449 | 0.414736 | Duo faster |
+| Collatz sum | seconds | 0.002397 | 0.002423 | 0.061245 | Duo faster |
+| GCD reduce | seconds | 0.000647 | 0.000646 | 0.056710 | Duo faster |
+| Sieve | seconds | 0.000342 | 0.000345 | 0.001495 | Duo faster |
+| Game of Life | seconds | 0.000038 | 0.000037 | 0.003110 | Duo faster |
+
+Rejected / held back:
+
+- Degree-eight and higher dense-table reductions remain on the ordinary
+  dense-table path in this slice. The degree-eight case is now implemented in
+  the next section through a bounded coefficient-vector proof.
+
+### Follow-up (2026-07-22): coefficient-vector dense-table proof and degree-eight sums
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table/polynomial tests passed, the
+compiler build passed, 601/601 unit tests passed on the current tree, the full
+test target passed including the Metal GPU smoke, all 40 hard benchmark
+`RESULT` rows matched C for `.lua` and `.duo`, and the final hard-gate summary
+reported `All benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Replaced the dense-table sum detector's fixed per-degree matching cascade
+  with a bounded coefficient-vector normalizer over integer polynomials in the
+  loop index.
+- The normalizer composes `+`, `-`, and `*` by coefficient arithmetic and
+  rejects products above degree eight before they can select a closed-form
+  emitter.
+- Restored codegen dispatch for analyzer-proven polynomial dense-table sums in
+  the current dirty tree, keeping affine through degree-seven folds active and
+  adding degree-eight.
+- Added the degree-eight sum closed form
+  `sum(i^8) = n(n+1)(2n+1)(5n^6 + 15n^5 + 5n^4 - 15n^3 - n^2 + 9n - 3) / 90`
+  through `__int128` intermediates.
+- Added regression coverage for a shifted degree-eight product
+  `i * (i + 1) * ... * (i + 7)` with exact coefficients and a degree-nine
+  rejection case.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000380 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000366 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000315 | Duo faster |
+| Mandelbrot | seconds | 0.017872 | 0.017918 | 0.425990 | Duo faster |
+| Collatz sum | seconds | 0.002482 | 0.002481 | 0.062739 | Duo faster |
+| GCD reduce | seconds | 0.000676 | 0.000673 | 0.057926 | Duo faster |
+| Sieve | seconds | 0.000343 | 0.000351 | 0.001566 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000038 | 0.003139 | Duo faster |
+
+Rejected / held back:
+
+- Degree-ten and higher dense-table reductions remain on the ordinary
+  dense-table path. The degree-nine case is now implemented in the follow-up
+  section below; further polynomial work should either raise the bounded
+  coefficient-vector limit with a corresponding closed-form identity or move to
+  a generic Bernoulli/Faulhaber emitter with independent proof coverage.
+
+### Follow-up (2026-07-22): honest-bench regression audit after dense-table work
+
+Commands:
+
+```sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - both serial honest-bench runs compiled Duo and C,
+validated all six `RESULT` rows before timing, and reported Duo/Tie for every
+runtime-seeded workload. This audits the recent dense-table/codegen work against
+the non-fixed-result benchmark contract without changing the honest suite.
+
+Measured impact:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000067 | 0.000185 | 0.362x | Duo faster |
+| `123456789` | qsort | 0.001006 | 0.004393 | 0.229x | Duo faster |
+| `123456789` | hashtable | 0.000780 | 0.000951 | 0.820x | Duo faster |
+| `123456789` | bsearch | 0.007042 | 0.019167 | 0.367x | Duo faster |
+| `123456789` | nbody | 0.013087 | 0.029254 | 0.447x | Duo faster |
+| `123456789` | fnv | 0.043788 | 0.077915 | 0.562x | Duo faster |
+| `987654321` | matmul | 0.000068 | 0.000180 | 0.378x | Duo faster |
+| `987654321` | qsort | 0.001016 | 0.004461 | 0.228x | Duo faster |
+| `987654321` | hashtable | 0.000774 | 0.000971 | 0.797x | Duo faster |
+| `987654321` | bsearch | 0.007029 | 0.019256 | 0.365x | Duo faster |
+| `987654321` | nbody | 0.013086 | 0.029350 | 0.446x | Duo faster |
+| `987654321` | fnv | 0.044039 | 0.078699 | 0.560x | Duo faster |
+
+Follow-up:
+
+- No honest-bench row currently needs a defensive regression fix. Future
+  runtime-seeded work should focus on transferable compile-time/codegen wins or
+  add stricter user-program coverage rather than changing these already-winning
+  benchmark kernels.
+
+### Follow-up (2026-07-22): degree-nine dense-table guard audit
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/comptime.zig src/macro_expand.zig src/parser.zig src/sema.zig --check
+zig test src/codegen.zig --test-filter "dense table sum closed forms"
+zig test src/codegen.zig --test-filter "dense table polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the new focused closed-form guard test passed, the
+degree-nine polynomial regression passed, the compiler build passed, 602/602
+unit tests passed, the full test target passed including the Metal GPU smoke,
+all 40 hard benchmark `RESULT` rows matched C for `.lua` and `.duo`, and the
+final hard-gate summary reported `All benchmarks: results match and Duo
+.lua/.duo >= C`.
+
+Additional changes:
+
+- Removed stale fixed-degree dense-table helper structs and detectors that were
+  superseded by the coefficient-vector polynomial normalizer. The single
+  `DenseTablePolyFill` path is now the authoritative analyzer for degree-one
+  through degree-nine dense-table reductions.
+- Added explicit `n <= 0` guards to every dense-table sum closed-form emitter
+  (identity, affine, square, quadratic, cubic, quartic, quintic, sextic,
+  septic, octic, and nonic). The original loops initialize `i = 1`, so
+  non-positive bounds perform zero iterations; the emitted formulas now
+  preserve that behavior instead of relying on positive benchmark inputs.
+- Added a codegen regression that checks representative identity, affine,
+  square, octic, and nonic emitters all produce the zero-iteration guard.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000388 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000388 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000282 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000324 | Duo faster |
+| Mandelbrot | seconds | 0.017858 | 0.017736 | 0.424944 | Duo faster |
+| Collatz sum | seconds | 0.002556 | 0.002596 | 0.062760 | Duo faster |
+| GCD reduce | seconds | 0.000664 | 0.000676 | 0.057822 | Duo faster |
+| Sieve | seconds | 0.000351 | 0.000348 | 0.001493 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000038 | 0.002797 | Duo faster |
+
+Rejected / held back:
+
+- Did not add any broader dense-table pattern recognizer in this slice. The
+  semantic fix only hardens already-proven closed forms; new recognized
+  families still need their own analyzer proof and benchmark entry.
+
+### Follow-up (2026-07-22): hard-bench result capture diagnostics
+
+Commands:
+
+```sh
+bash -n scripts/run_benchmark.sh
+zig build bench
+```
+
+Result gate: **PASS** - the benchmark harness compiled Duo `.lua`, Duo `.duo`,
+and reference C, captured all 40 `RESULT` rows for each implementation, and
+the final hard-gate summary reported `All benchmarks: results match and Duo
+.lua/.duo >= C`.
+
+Additional changes:
+
+- Added `capture_results` to `scripts/run_benchmark.sh` so correctness-output
+  collection validates the expected 40 `RESULT` rows immediately for Duo
+  `.lua`, Duo `.duo`, and reference C before comparing values.
+- If a result-producing command exits non-zero or emits too few rows, the
+  harness now retries once and then reports the command label, exit status,
+  observed row count, command, and first stderr lines. This hardens the audit
+  path against transient empty captures while preserving strict failure on real
+  mismatches.
+- Kept timing comparison logic unchanged; this is benchmark infrastructure
+  diagnostics, not a benchmark-kernel optimization.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000404 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000380 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000258 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000301 | Duo faster |
+| Mandelbrot | seconds | 0.017414 | 0.017576 | 0.417081 | Duo faster |
+| Collatz sum | seconds | 0.002506 | 0.002522 | 0.061161 | Duo faster |
+| GCD reduce | seconds | 0.000643 | 0.000656 | 0.056903 | Duo faster |
+| Sieve | seconds | 0.000343 | 0.000340 | 0.001489 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000039 | 0.002782 | Duo faster |
+
+Rejected / held back:
+
+- Did not relax `compare_results` or the 40-row requirement. Empty, truncated,
+  or crashing reference-output captures still fail the hard gate after one
+  diagnostic retry.
+
+### Follow-up (2026-07-22): degree-nine dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - the focused dense-table/polynomial tests passed, the
+compiler build passed, 602/602 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, and the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Widened the coefficient-vector dense-table proof from degree eight to degree
+  nine.
+- Added analyzer and codegen fields for the degree-nine/nonic coefficient.
+- Added the degree-nine sum closed form
+  `sum(i^9) = (2n^10 + 10n^9 + 15n^8 - 14n^6 + 10n^4 - 3n^2) / 20` through
+  `__int128` intermediates.
+- Added shifted degree-nine product coverage for
+  `i * (i + 1) * ... * (i + 8)` with exact coefficients and a degree-ten
+  rejection case.
+- Kept the non-positive bound guard on the new nonic closed-form emitter.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000419 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000348 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000316 | Duo faster |
+| Mandelbrot | seconds | 0.017956 | 0.017989 | 0.425928 | Duo faster |
+| Collatz sum | seconds | 0.002452 | 0.002686 | 0.062937 | Duo faster |
+| GCD reduce | seconds | 0.000669 | 0.000701 | 0.058002 | Duo faster |
+| Sieve | seconds | 0.000345 | 0.000377 | 0.001567 | Duo faster |
+| Game of Life | seconds | 0.000038 | 0.000042 | 0.003161 | Duo faster |
+
+Rejected / held back:
+
+- Degree-eleven and higher dense-table reductions remain on the ordinary
+  dense-table path. The degree-ten case is now implemented in the follow-up
+  section below. The next extension should either introduce a generic
+  Bernoulli/Faulhaber emitter or add another narrowly proven closed form with
+  independent coefficient and rejection coverage.
+
+### Follow-up (2026-07-22): degree-ten dense-table sum reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - the focused dense-table/polynomial tests passed, the
+compiler build passed, 602/602 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, the final hard-gate summary reported `All benchmarks:
+results match and Duo .lua/.duo >= C`, and both honest-bench seeds passed
+against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Widened the coefficient-vector dense-table proof from degree nine to degree
+  ten.
+- Added analyzer and codegen fields for the degree-ten/decic coefficient.
+- Added the degree-ten sum closed form
+  `sum(i^10) = (6n^11 + 33n^10 + 55n^9 - 66n^7 + 66n^5 - 33n^3 + 5n) / 66`
+  through `__int128` intermediates.
+- Added shifted degree-ten product coverage for
+  `i * (i + 1) * ... * (i + 9)` with exact coefficients and a degree-eleven
+  rejection case.
+- Kept the non-positive bound guard on the new decic closed-form emitter.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000403 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000346 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000267 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000336 | Duo faster |
+| Mandelbrot | seconds | 0.017846 | 0.017866 | 0.424955 | Duo faster |
+| Collatz sum | seconds | 0.002488 | 0.002469 | 0.062749 | Duo faster |
+| GCD reduce | seconds | 0.000678 | 0.000681 | 0.057326 | Duo faster |
+| Sieve | seconds | 0.000344 | 0.000344 | 0.001474 | Duo faster |
+| Game of Life | seconds | 0.000039 | 0.000039 | 0.003154 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000066 | 0.000183 | 0.361x | Duo faster |
+| `123456789` | qsort | 0.001012 | 0.004448 | 0.228x | Duo faster |
+| `123456789` | hashtable | 0.000772 | 0.000954 | 0.809x | Duo faster |
+| `123456789` | bsearch | 0.006979 | 0.019195 | 0.364x | Duo faster |
+| `123456789` | nbody | 0.013176 | 0.029258 | 0.450x | Duo faster |
+| `123456789` | fnv | 0.043769 | 0.078056 | 0.561x | Duo faster |
+| `987654321` | matmul | 0.000066 | 0.000184 | 0.359x | Duo faster |
+| `987654321` | qsort | 0.001023 | 0.004497 | 0.227x | Duo faster |
+| `987654321` | hashtable | 0.000772 | 0.000947 | 0.815x | Duo faster |
+| `987654321` | bsearch | 0.007009 | 0.019193 | 0.365x | Duo faster |
+| `987654321` | nbody | 0.013038 | 0.029330 | 0.445x | Duo faster |
+| `987654321` | fnv | 0.043972 | 0.078290 | 0.562x | Duo faster |
+
+Rejected / held back:
+
+- Degree-twelve and higher dense-table reductions remain on the ordinary
+  dense-table path. The degree-eleven case is now implemented in the bounded
+  Faulhaber-vector follow-up below; higher-degree work should extend that
+  vector emitter with independent formula and rejection coverage.
+
+### Follow-up (2026-07-22): bounded Faulhaber dense-table vector reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - the focused dense-table/polynomial tests passed, the
+compiler build passed, 602/602 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, the final hard-gate summary reported `All benchmarks:
+results match and Duo .lua/.duo >= C`, and both honest-bench seeds passed
+against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Added a bounded Faulhaber coefficient-vector fallback for analyzer-proven
+  dense-table sum reductions above the existing bespoke degree-ten path.
+- Added `use_dense_table_faulhaber_sum` plus a fixed coefficient vector to the
+  function metadata copied through macro expansion.
+- Kept the analyzer proof unchanged: one dense table assignment, an induction
+  variable initialized to one, and a later sum of the same table/index pair.
+- Added the degree-eleven sum closed form
+  `sum(i^11) = (2n^12 + 12n^11 + 22n^10 - 33n^8 + 44n^6 - 33n^4 + 10n^2) / 24`
+  through `__int128` intermediates.
+- Added shifted degree-eleven product coverage for
+  `i * (i + 1) * ... * (i + 10)` with exact coefficients and a degree-twelve
+  rejection case.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000373 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000361 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000266 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000326 | Duo faster |
+| Mandelbrot | seconds | 0.017913 | 0.017742 | 0.421586 | Duo faster |
+| Collatz sum | seconds | 0.002454 | 0.002505 | 0.062259 | Duo faster |
+| GCD reduce | seconds | 0.000667 | 0.000672 | 0.057176 | Duo faster |
+| Sieve | seconds | 0.000346 | 0.000347 | 0.001507 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000039 | 0.003103 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000067 | 0.000181 | 0.370x | Duo faster |
+| `123456789` | qsort | 0.001048 | 0.004358 | 0.240x | Duo faster |
+| `123456789` | hashtable | 0.000774 | 0.000948 | 0.816x | Duo faster |
+| `123456789` | bsearch | 0.006988 | 0.019111 | 0.366x | Duo faster |
+| `123456789` | nbody | 0.013027 | 0.029225 | 0.446x | Duo faster |
+| `123456789` | fnv | 0.043837 | 0.078538 | 0.558x | Duo faster |
+| `987654321` | matmul | 0.000068 | 0.000179 | 0.380x | Duo faster |
+| `987654321` | qsort | 0.001047 | 0.004349 | 0.241x | Duo faster |
+| `987654321` | hashtable | 0.000790 | 0.000963 | 0.820x | Duo faster |
+| `987654321` | bsearch | 0.007088 | 0.019111 | 0.371x | Duo faster |
+| `987654321` | nbody | 0.013151 | 0.029348 | 0.448x | Duo faster |
+| `987654321` | fnv | 0.044105 | 0.078163 | 0.564x | Duo faster |
+
+Rejected / held back:
+
+- Degree-thirteen and higher dense-table reductions remain on the ordinary
+  dense-table path. The degree-twelve case is now implemented in the follow-up
+  section below. Extending the vector path further requires adding the next
+  Faulhaber identity and focused rejection coverage.
+
+### Follow-up (2026-07-22): degree-twelve Faulhaber dense-table reductions
+
+Commands:
+
+```sh
+zig fmt src/ast.zig src/codegen.zig src/sema.zig src/macro_expand.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - the focused dense-table/polynomial tests passed, the
+compiler build passed, 602/602 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, the final hard-gate summary reported `All benchmarks:
+results match and Duo .lua/.duo >= C`, and both honest-bench seeds passed
+against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Widened the bounded Faulhaber coefficient-vector fallback from degree eleven
+  to degree twelve.
+- Added the degree-twelve sum closed form
+  `sum(i^12) = (210n^13 + 1365n^12 + 2730n^11 - 5005n^9 + 8580n^7 - 9009n^5 + 4550n^3 - 691n) / 2730`
+  through `__int128` intermediates.
+- Added shifted degree-twelve product coverage for
+  `i * (i + 1) * ... * (i + 11)` with exact coefficients and a
+  degree-thirteen rejection case.
+- Kept the same analyzer proof shape and non-positive bound guard as the lower
+  dense-table closed-form reductions.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000415 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000349 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000266 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000352 | Duo faster |
+| Mandelbrot | seconds | 0.017780 | 0.017698 | 0.421163 | Duo faster |
+| Collatz sum | seconds | 0.002465 | 0.002485 | 0.062015 | Duo faster |
+| GCD reduce | seconds | 0.000672 | 0.000672 | 0.057157 | Duo faster |
+| Sieve | seconds | 0.000348 | 0.000343 | 0.001558 | Duo faster |
+| Game of Life | seconds | 0.000039 | 0.000038 | 0.003130 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000067 | 0.000187 | 0.358x | Duo faster |
+| `123456789` | qsort | 0.001015 | 0.004429 | 0.229x | Duo faster |
+| `123456789` | hashtable | 0.000769 | 0.000959 | 0.802x | Duo faster |
+| `123456789` | bsearch | 0.007097 | 0.019154 | 0.371x | Duo faster |
+| `123456789` | nbody | 0.013105 | 0.029405 | 0.446x | Duo faster |
+| `123456789` | fnv | 0.043852 | 0.077952 | 0.563x | Duo faster |
+| `987654321` | matmul | 0.000066 | 0.000184 | 0.359x | Duo faster |
+| `987654321` | qsort | 0.001018 | 0.004415 | 0.231x | Duo faster |
+| `987654321` | hashtable | 0.000766 | 0.000946 | 0.810x | Duo faster |
+| `987654321` | bsearch | 0.006948 | 0.019338 | 0.359x | Duo faster |
+| `987654321` | nbody | 0.013047 | 0.029285 | 0.446x | Duo faster |
+| `987654321` | fnv | 0.044087 | 0.077810 | 0.567x | Duo faster |
+
+Rejected / held back:
+
+- Degree-thirteen and higher dense-table reductions remain on the ordinary
+  dense-table path. Extending the vector path requires another exact power-sum
+  identity plus a focused fold/rejection test pair.
+
+### Follow-up (2026-07-22): Faulhaber dense-table generated-C correctness
+
+Commands:
+
+```sh
+zig fmt src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - the focused dense-table/polynomial tests passed, the
+compiler build passed, 602/602 unit tests passed, the full test target passed
+including the Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C
+for `.lua` and `.duo`, the final hard-gate summary reported `All benchmarks:
+results match and Duo .lua/.duo >= C`, and both honest-bench seeds passed
+against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Fixed the generated C for degree-twelve Faulhaber reductions by declaring the
+  odd powers `__duo_n3`, `__duo_n5`, and `__duo_n7` before using them in the
+  `sum(i^10)` and `sum(i^12)` closed forms.
+- Corrected the shared `sum(i^8)` closed form used by the octic, nonic, decic,
+  and Faulhaber dense-table emitters to
+  `n(n+1)(2n+1)(5n^6 + 15n^5 + 5n^4 - 15n^3 - n^2 + 9n - 3) / 90`.
+- Strengthened codegen coverage so the degree-twelve generated output asserts
+  the missing declarations and the corrected `__duo_s8` formula.
+- Verified a real generated-C compile/run case for
+  `sum(i * (i + 1) * ... * (i + 11), i=1..3)`: expected
+  `50295168000`, actual `50295168000`.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000426 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000363 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000267 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000321 | Duo faster |
+| Mandelbrot | seconds | 0.017761 | 0.018007 | 0.425333 | Duo faster |
+| Collatz sum | seconds | 0.002515 | 0.002489 | 0.062758 | Duo faster |
+| GCD reduce | seconds | 0.000685 | 0.000682 | 0.057632 | Duo faster |
+| Sieve | seconds | 0.000363 | 0.000347 | 0.001523 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000039 | 0.003112 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000067 | 0.000177 | 0.379x | Duo faster |
+| `123456789` | qsort | 0.001039 | 0.004394 | 0.236x | Duo faster |
+| `123456789` | hashtable | 0.000764 | 0.000959 | 0.797x | Duo faster |
+| `123456789` | bsearch | 0.006989 | 0.019213 | 0.364x | Duo faster |
+| `123456789` | nbody | 0.013119 | 0.029421 | 0.446x | Duo faster |
+| `123456789` | fnv | 0.044114 | 0.078069 | 0.565x | Duo faster |
+| `987654321` | matmul | 0.000070 | 0.000180 | 0.389x | Duo faster |
+| `987654321` | qsort | 0.001072 | 0.004376 | 0.245x | Duo faster |
+| `987654321` | hashtable | 0.000804 | 0.000964 | 0.834x | Duo faster |
+| `987654321` | bsearch | 0.008171 | 0.019423 | 0.421x | Duo faster |
+| `987654321` | nbody | 0.013651 | 0.029281 | 0.466x | Duo faster |
+| `987654321` | fnv | 0.043895 | 0.078106 | 0.562x | Duo faster |
+
+Rejected / held back:
+
+- No degree-thirteen or broader recognizer was added in this fix. The change
+  only corrected the existing closed forms and made generated-C coverage catch
+  the missing-intermediate and `sum(i^8)` formula failures.
+
+### Follow-up (2026-07-22): affine dense-table reduction addends
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+duo compile /private/tmp/duo_weighted_quadratic.duo -o /private/tmp/duo_weighted_quadratic
+/private/tmp/duo_weighted_quadratic
+duo dump-c /private/tmp/duo_weighted_quadratic.duo
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table/polynomial tests passed, the
+compiler build passed, the real weighted dense-table compile/run printed
+`178`, 603/603 unit tests passed, the full test target passed including the
+Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C for `.lua` and
+`.duo`, the final hard-gate summary reported `All benchmarks: results match
+and Duo .lua/.duo >= C`, and both honest-bench seeds passed against
+runtime-seeded observable workloads.
+
+Additional changes:
+
+- Generalized the dense-table polynomial reduction proof from direct `sum +=
+  t[i]` addends to affine addends such as `sum += t[i] * k + c`.
+- The analyzer composes the already-proven fill polynomial with the reduction
+  addend before selecting the existing degree-bounded closed-form emitter, so
+  no new generated-C formula family was added.
+- Tightened the reduction detector so the assignment target must be the
+  accumulator and the addend must actually contain the dense-table value; loop
+  increments such as `i += 1` and constant-only reductions are not accepted.
+- Added focused coverage for `t[i] = i * (i + 2)` reduced by
+  `sum += t[i] * 3 + 7`, proving the resulting coefficients
+  `3*i^2 + 6*i + 7` and verifying the generated C has no dense-table
+  allocation for that function.
+- Verified the same weighted quadratic example through real compile/run:
+  `weighted_quadratic_sum(4)` produced `178`, and `duo dump-c` emitted the
+  direct closed form rather than a `__dt_t` allocation in the optimized
+  function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000413 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000362 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000266 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000317 | Duo faster |
+| Mandelbrot | seconds | 0.017589 | 0.017906 | 0.421673 | Duo faster |
+| Collatz sum | seconds | 0.002489 | 0.002498 | 0.062389 | Duo faster |
+| GCD reduce | seconds | 0.000651 | 0.000668 | 0.057515 | Duo faster |
+| Sieve | seconds | 0.000344 | 0.000343 | 0.001497 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000038 | 0.003099 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000105 | 0.000177 | 0.593x | Duo faster |
+| `123456789` | qsort | 0.001023 | 0.004435 | 0.231x | Duo faster |
+| `123456789` | hashtable | 0.000768 | 0.000959 | 0.801x | Duo faster |
+| `123456789` | bsearch | 0.007081 | 0.019234 | 0.368x | Duo faster |
+| `123456789` | nbody | 0.013234 | 0.029516 | 0.448x | Duo faster |
+| `123456789` | fnv | 0.046383 | 0.078608 | 0.590x | Duo faster |
+| `987654321` | matmul | 0.000065 | 0.000183 | 0.355x | Duo faster |
+| `987654321` | qsort | 0.001014 | 0.004471 | 0.227x | Duo faster |
+| `987654321` | hashtable | 0.000789 | 0.000973 | 0.811x | Duo faster |
+| `987654321` | bsearch | 0.007059 | 0.019315 | 0.365x | Duo faster |
+| `987654321` | nbody | 0.013093 | 0.029199 | 0.448x | Duo faster |
+| `987654321` | fnv | 0.044150 | 0.078330 | 0.564x | Duo faster |
+
+Rejected / held back:
+
+- Constant-only accumulator updates are deliberately not treated as dense-table
+  reductions. They do not depend on the proven table fill and would turn loop
+  induction updates into false positives.
+- Non-affine reduction addends such as `sum += t[i] * t[i]` remain on the
+  ordinary dense-table path. They need a separate proof because the reduction
+  changes the polynomial degree instead of only scaling and offsetting the
+  existing fill polynomial.
+
+### Follow-up (2026-07-22): bounded polynomial dense-table reduction addends
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "polynomial"
+zig build
+duo compile /private/tmp/duo_square_value_reduction.duo -o /private/tmp/duo_square_value_reduction
+/private/tmp/duo_square_value_reduction
+duo dump-c /private/tmp/duo_square_value_reduction.duo
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table/polynomial tests passed, the
+compiler build passed, the real composed dense-table compile/run printed
+`604`, 604/604 unit tests passed, the full test target passed including the
+Metal GPU smoke, all 40 hard benchmark `RESULT` rows matched C for `.lua` and
+`.duo`, the final hard-gate summary reported `All benchmarks: results match
+and Duo .lua/.duo >= C`, and both honest-bench seeds passed against
+runtime-seeded observable workloads.
+
+Additional changes:
+
+- Generalized the dense-table polynomial reduction proof from affine addends to
+  bounded polynomial addends in the table value, such as
+  `sum += t[i] * t[i] + c`.
+- The analyzer now composes the reduction polynomial with the already-proven
+  fill polynomial, then reuses the existing degree-bounded closed-form emitter
+  when the composed degree remains at most 12.
+- Generalized reduction-expression multiplication so two table-value
+  polynomial operands can combine, while overflow or over-degree intermediate
+  products reject the closed-form path.
+- Added focused coverage for `t[i] = i * (i + 1)` reduced by
+  `sum += t[i] * t[i] + 5`, proving the resulting coefficients
+  `i^4 + 2*i^3 + i^2 + 5` and verifying generated C has no dense-table
+  allocation for that function.
+- Added an over-degree rejection case for `t[i] = i^7` reduced by
+  `sum += t[i] * t[i]`, which would compose to degree 14 and must stay on the
+  ordinary dense-table path.
+- Verified the same square-value example through real compile/run:
+  `square_value_reduction(4)` produced `604`, and `duo dump-c` emitted the
+  direct quartic closed form rather than a `__dt_t` allocation in the optimized
+  function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000373 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000361 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000321 | Duo faster |
+| Mandelbrot | seconds | 0.018276 | 0.017926 | 0.425462 | Duo faster |
+| Collatz sum | seconds | 0.002576 | 0.002473 | 0.062262 | Duo faster |
+| GCD reduce | seconds | 0.000694 | 0.000682 | 0.057813 | Duo faster |
+| Sieve | seconds | 0.000383 | 0.000351 | 0.001498 | Duo faster |
+| Game of Life | seconds | 0.000040 | 0.000039 | 0.003104 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000067 | 0.000181 | 0.370x | Duo faster |
+| `123456789` | qsort | 0.001049 | 0.004488 | 0.234x | Duo faster |
+| `123456789` | hashtable | 0.000807 | 0.000952 | 0.848x | Duo faster |
+| `123456789` | bsearch | 0.007212 | 0.019400 | 0.372x | Duo faster |
+| `123456789` | nbody | 0.013295 | 0.029698 | 0.448x | Duo faster |
+| `123456789` | fnv | 0.046415 | 0.079052 | 0.587x | Duo faster |
+| `987654321` | matmul | 0.000066 | 0.000179 | 0.369x | Duo faster |
+| `987654321` | qsort | 0.001037 | 0.004390 | 0.236x | Duo faster |
+| `987654321` | hashtable | 0.000764 | 0.000948 | 0.806x | Duo faster |
+| `987654321` | bsearch | 0.006958 | 0.019056 | 0.365x | Duo faster |
+| `987654321` | nbody | 0.012959 | 0.028878 | 0.449x | Duo faster |
+| `987654321` | fnv | 0.043424 | 0.076668 | 0.566x | Duo faster |
+
+Rejected / held back:
+
+- Compositions above degree 12 remain on the ordinary dense-table path because
+  there is no closed-form emitter beyond the bounded Faulhaber vector.
+- Arbitrary non-polynomial reductions, including division, modulo, calls, and
+  dynamic table reads, remain rejected until a separate proof can preserve
+  their observable behavior.
+- Constant-only accumulator updates still are not treated as dense-table
+  reductions because they do not depend on the proven table fill.
+
+### Follow-up (2026-07-22): unary-negated dense-table polynomial terms
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+duo compile /private/tmp/duo_negated_dense.duo -o /private/tmp/duo_negated_dense
+/private/tmp/duo_negated_dense
+duo dump-c /private/tmp/duo_negated_dense.duo
+zig test src/codegen.zig --test-filter "polynomial"
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table and polynomial tests passed, the
+compiler build passed, the real negated dense-table compile/run printed `-92`,
+605/605 unit tests passed, the full test target passed including no-color
+diagnostic checks and the Metal GPU smoke, all 40 hard benchmark `RESULT` rows
+matched C for `.lua` and `.duo`, the final hard-gate summary reported `All
+benchmarks: results match and Duo .lua/.duo >= C`, and both honest-bench seeds
+passed against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Extended the dense-table polynomial normalizer to accept unary minus in
+  proven fill expressions, such as `t[i] = -i * (i + 1)`.
+- Extended the same unary-minus support to polynomial reductions in the table
+  value, such as `sum += -(t[i] * t[i]) + c`.
+- Kept the proof boundary unchanged: only integer polynomial expressions over
+  the loop index or the proven `t[i]` value are accepted, and composition still
+  rejects over-degree or non-polynomial cases.
+- Added focused coverage proving `t[i] = -i * (i + 1)` reduced by
+  `sum += t[i] * 2 - 3` folds to `-2*i^2 - 2*i - 3`.
+- Added focused coverage proving `sum += -(t[i] * t[i]) + 4` folds to
+  `-i^2 + 4`.
+- Verified the negated-fill case through real compile/run:
+  `negated_dense(4)` produced `-92`, and `duo dump-c` emitted the direct
+  quadratic closed form rather than a `__dt_t` allocation in the optimized
+  function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000360 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000342 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000266 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000314 | Duo faster |
+| Mandelbrot | seconds | 0.017880 | 0.017807 | 0.422665 | Duo faster |
+| Collatz sum | seconds | 0.002549 | 0.002444 | 0.062398 | Duo faster |
+| GCD reduce | seconds | 0.000678 | 0.000676 | 0.057428 | Duo faster |
+| Sieve | seconds | 0.000343 | 0.000344 | 0.001528 | Duo faster |
+| Game of Life | seconds | 0.000037 | 0.000038 | 0.002813 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000066 | 0.000179 | 0.369x | Duo faster |
+| `123456789` | qsort | 0.001013 | 0.004407 | 0.230x | Duo faster |
+| `123456789` | hashtable | 0.000775 | 0.000959 | 0.808x | Duo faster |
+| `123456789` | bsearch | 0.007022 | 0.019262 | 0.365x | Duo faster |
+| `123456789` | nbody | 0.013180 | 0.029472 | 0.447x | Duo faster |
+| `123456789` | fnv | 0.044145 | 0.078004 | 0.566x | Duo faster |
+| `987654321` | matmul | 0.000066 | 0.000177 | 0.373x | Duo faster |
+| `987654321` | qsort | 0.001012 | 0.004430 | 0.228x | Duo faster |
+| `987654321` | hashtable | 0.000765 | 0.000948 | 0.807x | Duo faster |
+| `987654321` | bsearch | 0.006950 | 0.018969 | 0.366x | Duo faster |
+| `987654321` | nbody | 0.013020 | 0.029052 | 0.448x | Duo faster |
+| `987654321` | fnv | 0.043579 | 0.077415 | 0.563x | Duo faster |
+
+Rejected / held back:
+
+- Unary `not`, length, bit-not, calls, division, modulo, float literals, and
+  dynamic table reads remain outside the dense-table polynomial proof.
+- This does not add new generated-C closed-form families; it only lets more
+  source spellings reach the existing bounded polynomial emitter.
+
+### Follow-up (2026-07-22): integer-power dense-table polynomial spelling
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+duo compile /private/tmp/duo_power_spelled.duo -o /private/tmp/duo_power_spelled
+/private/tmp/duo_power_spelled
+duo dump-c /private/tmp/duo_power_spelled.duo
+zig test src/codegen.zig --test-filter "polynomial"
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table and polynomial tests passed, the
+compiler build passed, the real power-spelled dense-table compile/run printed
+`359`, 606/606 unit tests passed, the full test target passed including
+diagnostic color/no-color checks and the Metal GPU smoke, all 40 hard
+benchmark `RESULT` rows matched C for `.lua` and `.duo`, the final hard-gate
+summary reported `All benchmarks: results match and Duo .lua/.duo >= C`, and
+both honest-bench seeds passed against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Extended the dense-table polynomial normalizer to accept integer power
+  spelling in proven fill expressions, such as `t[i] = (i + 1) ^ 2`.
+- Extended the same bounded proof to polynomial reductions in the table value,
+  such as `sum += t[i] ^ 2 + c`.
+- Added a shared `pow_poly` helper that only accepts non-negative integer
+  exponents up to 12, then uses the existing bounded polynomial multiplication
+  so over-degree terms still reject naturally.
+- Added focused coverage proving `(i + 1) ^ 2` reduced by `t[i] ^ 2 + 2`
+  folds to `i^4 + 4*i^3 + 6*i^2 + 4*i + 3`.
+- Added focused coverage proving `i ^ 5` reduced by `t[i] ^ 3` rejects because
+  the composed degree would be 15.
+- Verified the same power-spelled example through real compile/run:
+  `power_spelled(3)` produced `359`, and `duo dump-c` emitted the direct
+  quartic closed form rather than a `__dt_t` allocation in the optimized
+  function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000418 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000357 | Duo faster |
+| Table churn | seconds | 0.000001 | 0.000000 | 0.000266 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000323 | Duo faster |
+| Mandelbrot | seconds | 0.018761 | 0.017963 | 0.422222 | Duo faster |
+| Collatz sum | seconds | 0.002589 | 0.002529 | 0.062237 | Duo faster |
+| GCD reduce | seconds | 0.000703 | 0.000682 | 0.057240 | Duo faster |
+| Sieve | seconds | 0.000368 | 0.000349 | 0.001496 | Duo faster |
+| Game of Life | seconds | 0.000041 | 0.000043 | 0.003126 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000067 | 0.000183 | 0.366x | Duo faster |
+| `123456789` | qsort | 0.001038 | 0.004555 | 0.228x | Duo faster |
+| `123456789` | hashtable | 0.000784 | 0.000993 | 0.790x | Duo faster |
+| `123456789` | bsearch | 0.006991 | 0.019027 | 0.367x | Duo faster |
+| `123456789` | nbody | 0.013241 | 0.029341 | 0.451x | Duo faster |
+| `123456789` | fnv | 0.044293 | 0.079052 | 0.560x | Duo faster |
+| `987654321` | matmul | 0.000066 | 0.000185 | 0.357x | Duo faster |
+| `987654321` | qsort | 0.001006 | 0.004383 | 0.230x | Duo faster |
+| `987654321` | hashtable | 0.000771 | 0.000947 | 0.814x | Duo faster |
+| `987654321` | bsearch | 0.007047 | 0.019315 | 0.365x | Duo faster |
+| `987654321` | nbody | 0.013300 | 0.029170 | 0.456x | Duo faster |
+| `987654321` | fnv | 0.043722 | 0.077806 | 0.562x | Duo faster |
+
+Rejected / held back:
+
+- Negative, dynamic, fractional, and over-12 exponents remain outside the
+  dense-table polynomial proof.
+- This does not lower general runtime `^` calls differently. It only admits
+  integer-power spellings into the existing analyzer-proven dense-table
+  closed-form path.
+
+### Follow-up (2026-07-22): local integer constants in dense-table polynomials
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+duo compile /private/tmp/duo_const_weighted.duo -o /private/tmp/duo_const_weighted
+/private/tmp/duo_const_weighted
+duo dump-c /private/tmp/duo_const_weighted.duo
+zig test src/codegen.zig --test-filter "polynomial"
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table and polynomial tests passed, the
+compiler build passed, the real local-constant dense-table compile/run printed
+`122`, 607/607 unit tests passed, the full test target passed including
+diagnostic color/no-color checks and the Metal GPU smoke, all 40 hard
+benchmark `RESULT` rows matched C for `.lua` and `.duo`, the final hard-gate
+summary reported `All benchmarks: results match and Duo .lua/.duo >= C`, and
+both honest-bench seeds passed against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Added a narrow local integer-constant collector for dense-table polynomial
+  proofs. It accepts top-level `local name = <int>` bindings in the function
+  only when the name is not reassigned or shadowed in nested bodies.
+- Extended fill and reduction polynomial normalizers so immutable-looking
+  local constants can act as coefficients or offsets, such as
+  `t[i] = i * scale + bias` and `sum += t[i] * scale + bias`.
+- Kept mutable locals out of the proof: a candidate like `scale = 4` after
+  `local scale = 3` invalidates that name and leaves the function on the
+  ordinary dense-table path.
+- Added focused coverage proving `scale = 3`, `bias = 2` folds
+  `(3*i + 2) * 3 + 2` to `9*i + 8`.
+- Added focused coverage proving a reassigned `scale` does not trigger the
+  closed-form specialization.
+- Verified the accepted case through real compile/run:
+  `const_weighted(4)` produced `122`, and `duo dump-c` emitted the direct
+  affine closed form rather than a `__dt_t` allocation in the optimized
+  function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000421 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000395 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000305 | Duo faster |
+| Mandelbrot | seconds | 0.017803 | 0.017764 | 0.424628 | Duo faster |
+| Collatz sum | seconds | 0.002530 | 0.002526 | 0.062870 | Duo faster |
+| GCD reduce | seconds | 0.000672 | 0.000677 | 0.058020 | Duo faster |
+| Sieve | seconds | 0.000345 | 0.000345 | 0.001556 | Duo faster |
+| Game of Life | seconds | 0.000039 | 0.000039 | 0.003113 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000070 | 0.000181 | 0.387x | Duo faster |
+| `123456789` | qsort | 0.001081 | 0.004477 | 0.241x | Duo faster |
+| `123456789` | hashtable | 0.000799 | 0.000988 | 0.809x | Duo faster |
+| `123456789` | bsearch | 0.007200 | 0.019627 | 0.367x | Duo faster |
+| `123456789` | nbody | 0.013544 | 0.029930 | 0.453x | Duo faster |
+| `123456789` | fnv | 0.054703 | 0.080121 | 0.683x | Duo faster |
+| `987654321` | matmul | 0.000065 | 0.000177 | 0.367x | Duo faster |
+| `987654321` | qsort | 0.001030 | 0.004455 | 0.231x | Duo faster |
+| `987654321` | hashtable | 0.000764 | 0.000953 | 0.802x | Duo faster |
+| `987654321` | bsearch | 0.007021 | 0.019162 | 0.366x | Duo faster |
+| `987654321` | nbody | 0.013066 | 0.029299 | 0.446x | Duo faster |
+| `987654321` | fnv | 0.043755 | 0.078316 | 0.559x | Duo faster |
+
+Rejected / held back:
+
+- Reassigned, shadowed, dynamic, non-integer, and non-top-level locals remain
+  outside this proof. Those values keep ordinary runtime semantics.
+- This does not introduce a general constant-propagation pass; it only feeds
+  safe literal coefficients into the existing dense-table polynomial analyzer.
+
+### Follow-up (2026-07-22): local integer exponent constants in dense-table polynomials
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig build
+duo compile /private/tmp/duo_const_power.duo -o /private/tmp/duo_const_power
+/private/tmp/duo_const_power
+duo dump-c /private/tmp/duo_const_power.duo
+zig test src/codegen.zig --test-filter "polynomial"
+zig build unit-test --summary all
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table and polynomial tests passed, the
+compiler build passed, the real local-exponent dense-table compile/run printed
+`356`, 608/608 unit tests passed, the full test target passed, all 40 hard
+benchmark `RESULT` rows matched C for `.lua` and `.duo`, the final hard-gate
+summary reported `All benchmarks: results match and Duo .lua/.duo >= C`, and
+both honest-bench seeds passed against runtime-seeded observable workloads.
+
+Additional changes:
+
+- Extended the dense-table polynomial `^` normalizer so an exponent can be an
+  integer literal or a local integer constant proven by the existing
+  dense-table constant collector.
+- Reused the same invalidation rules as coefficient/offset constants:
+  reassigned, shadowed, dynamic, and non-top-level local exponent names stay on
+  the ordinary dense-table path.
+- Kept the exponent bounded by the existing `pow_poly` contract: only
+  nonnegative integer exponents up to 12 are accepted, and composed
+  over-degree polynomials are rejected.
+- Added focused coverage proving `p = 2`, `add = 1`,
+  `t[i] = (i + add) ^ p`, and `sum += t[i] ^ p + add` folds to the quartic
+  polynomial `i^4 + 4*i^3 + 6*i^2 + 4*i + 2`.
+- Added focused coverage proving a reassigned exponent constant does not
+  trigger the closed-form specialization.
+- Verified the accepted case through real compile/run:
+  `const_power(3)` produced `356`, and `duo dump-c` emitted the direct quartic
+  closed form rather than a `__dt_t` allocation in the optimized function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000385 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000379 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000266 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000318 | Duo faster |
+| Mandelbrot | seconds | 0.019633 | 0.017882 | 0.417918 | Duo faster |
+| Collatz sum | seconds | 0.002609 | 0.002454 | 0.061847 | Duo faster |
+| GCD reduce | seconds | 0.000710 | 0.000676 | 0.057048 | Duo faster |
+| Sieve | seconds | 0.000369 | 0.000344 | 0.001501 | Duo faster |
+| Game of Life | seconds | 0.000042 | 0.000039 | 0.003093 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000110 | 0.000182 | 0.604x | Duo faster |
+| `123456789` | qsort | 0.001067 | 0.004512 | 0.236x | Duo faster |
+| `123456789` | hashtable | 0.000783 | 0.000998 | 0.785x | Duo faster |
+| `123456789` | bsearch | 0.007141 | 0.019898 | 0.359x | Duo faster |
+| `123456789` | nbody | 0.013934 | 0.030255 | 0.461x | Duo faster |
+| `123456789` | fnv | 0.050049 | 0.079867 | 0.627x | Duo faster |
+| `987654321` | matmul | 0.000065 | 0.000186 | 0.349x | Duo faster |
+| `987654321` | qsort | 0.001023 | 0.004442 | 0.230x | Duo faster |
+| `987654321` | hashtable | 0.000775 | 0.000968 | 0.801x | Duo faster |
+| `987654321` | bsearch | 0.007050 | 0.019103 | 0.369x | Duo faster |
+| `987654321` | nbody | 0.012901 | 0.029183 | 0.442x | Duo faster |
+| `987654321` | fnv | 0.043589 | 0.077804 | 0.560x | Duo faster |
+
+Rejected / held back:
+
+- Reassigned, shadowed, dynamic, non-integer, fractional, negative, and over-12
+  exponent names remain outside the dense-table polynomial proof.
+- This does not lower general runtime `^` calls differently. It only admits
+  safe local integer exponent constants into the existing analyzer-proven
+  dense-table closed-form path.
+
+### Follow-up (2026-07-22): const integer names in dense-table polynomials
+
+Commands:
+
+```sh
+zig fmt src/sema.zig src/codegen.zig --check
+zig test src/codegen.zig --test-filter "dense table"
+zig test src/codegen.zig --test-filter "native"
+zig build
+zig build unit-test --summary all
+duo compile /private/tmp/duo_const_decl_power_run.duo -o /private/tmp/duo_const_decl_power_run
+/private/tmp/duo_const_decl_power_run
+duo dump-c /private/tmp/duo_const_decl_power_run.duo
+zig build test
+zig build bench
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+```
+
+Result gate: **PASS** - focused dense-table and native-specialization tests
+passed, the compiler build passed, 609/609 unit tests passed, the real
+const-declaration dense-table compile/run printed `112`, the full test target
+passed including the Metal GPU smoke and compile-fail/example/property checks,
+all 40 hard benchmark `RESULT` rows matched C for `.lua` and `.duo`, the final
+hard-gate summary reported `All benchmarks: results match and Duo .lua/.duo >=
+C`, and both honest-bench seeds passed against runtime-seeded observable
+workloads.
+
+Additional changes:
+
+- Extended the dense-table integer-constant collector to accept single integer
+  `const` declarations in function bodies, such as `const p = 2`, alongside
+  the existing single local integer bindings.
+- Added `const_decl` handling to native function inference. This fixes a real
+  typed-codegen gap where a function containing scalar `const` declarations
+  could fail native specialization even when all params, locals, and returns
+  were native numeric.
+- Reused the existing dense-table invalidation rules: duplicate names,
+  non-integer const values, nested shadowing, and dynamic expressions remain
+  outside the proof.
+- Added focused coverage proving `const p = 2`, `const add = 1`,
+  `t[i] = (i + add) ^ p`, and `sum += t[i] * p + add` fold to the quadratic
+  polynomial `2*i^2 + 4*i + 3`.
+- Added focused coverage proving a nested `const scale = ...` shadow rejects
+  the closed-form specialization.
+- Verified the accepted case through real compile/run:
+  `const_decl_power(4)` produced `112`, and `duo dump-c` emitted a native
+  `int64_t const_decl_power(int64_t n)` closed form rather than a dense-table
+  allocation in the optimized function.
+
+Measured impact:
+
+| Workload | Metric | DuoLua | DuoDuo | C | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | 40/40 | PASS |
+| Table array | seconds | 0.000000 | 0.000000 | 0.000392 | Duo faster |
+| Table lookup | seconds | 0.000000 | 0.000000 | 0.000382 | Duo faster |
+| Table churn | seconds | 0.000000 | 0.000000 | 0.000265 | Duo faster |
+| Table max | seconds | 0.000000 | 0.000000 | 0.000328 | Duo faster |
+| Mandelbrot | seconds | 0.017776 | 0.017858 | 0.430123 | Duo faster |
+| Collatz sum | seconds | 0.002460 | 0.002452 | 0.062879 | Duo faster |
+| GCD reduce | seconds | 0.000666 | 0.000673 | 0.057922 | Duo faster |
+| Sieve | seconds | 0.000351 | 0.000343 | 0.001576 | Duo faster |
+| Game of Life | seconds | 0.000040 | 0.000040 | 0.003144 | Duo faster |
+
+Honest-bench audit:
+
+| Seed | Workload | Duo(s) | C(s) | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `123456789` | matmul | 0.000066 | 0.000187 | 0.353x | Duo faster |
+| `123456789` | qsort | 0.001016 | 0.004362 | 0.233x | Duo faster |
+| `123456789` | hashtable | 0.000775 | 0.000952 | 0.814x | Duo faster |
+| `123456789` | bsearch | 0.006951 | 0.019238 | 0.361x | Duo faster |
+| `123456789` | nbody | 0.012972 | 0.029491 | 0.440x | Duo faster |
+| `123456789` | fnv | 0.043645 | 0.078038 | 0.559x | Duo faster |
+| `987654321` | matmul | 0.000066 | 0.000192 | 0.344x | Duo faster |
+| `987654321` | qsort | 0.001035 | 0.004493 | 0.230x | Duo faster |
+| `987654321` | hashtable | 0.000765 | 0.000955 | 0.801x | Duo faster |
+| `987654321` | bsearch | 0.007229 | 0.019111 | 0.378x | Duo faster |
+| `987654321` | nbody | 0.013111 | 0.029773 | 0.440x | Duo faster |
+| `987654321` | fnv | 0.044013 | 0.081398 | 0.541x | Duo faster |
+
+Rejected / held back:
+
+- Multi-name local declarations and non-integer `const` values remain outside
+  this proof. The dense-table constant collector stays intentionally small and
+  predictable.
+- Nested `const` shadowing invalidates the top-level candidate, even when a
+  human could prove the nested block does not affect the hot loops. Keeping
+  this conservative avoids scope-sensitive proof mistakes.
+- This does not add a general constant-propagation pass. It only feeds safe
+  integer `const` names into native inference and the existing dense-table
+  polynomial analyzer.
+
+### Follow-up (2026-07-22): compile-size ML result capture diagnostics
+
+Commands:
+
+```sh
+bash -n scripts/run_compile_size_benchmark.sh
+RUNS=1 zig build compile-size-bench
+zig build compile-size-bench
+```
+
+Result gate: **PASS** - shell syntax passed, the one-run tracker smoke passed,
+and the default five-run compile-size tracker passed. The first sandboxed
+`RUNS=1` attempt failed before benchmark execution with Zig
+`manifest_create PermissionDenied`; rerunning the tracker with normal cache
+permissions produced the measurements below.
+
+Additional changes:
+
+- Added `capture_result_rows` to `scripts/run_compile_size_benchmark.sh`.
+- The `ml_binary` workload now captures Duo and C stdout to temporary files,
+  extracts sorted `RESULT` rows, verifies the expected five rows before Python
+  value comparison, and prints the command, exit status, stderr, and stdout
+  head if output is empty or truncated.
+- Kept compile-time, binary-size, stripped-size, and tolerance logic unchanged.
+  This is tracking-benchmark diagnostics, not a benchmark-kernel optimization.
+
+Measured impact (`zig build compile-size-bench`, default `RUNS=5`):
+
+| Workload | Metric | Duo | C | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| `typed_checksum` | source_lines | 24 | 26 | 0.923x |
+| `typed_checksum` | source_bytes | 355 | 502 | 0.707x |
+| `typed_checksum` | compile_s | 0.100807 | 0.058287 | 1.729x |
+| `typed_checksum` | binary_bytes | 33440 | 33440 | 1.000x |
+| `function_chain_1k` | source_lines | 1274 | 1276 | 0.998x |
+| `function_chain_1k` | source_bytes | 24159 | 29637 | 0.815x |
+| `function_chain_1k` | compile_s | 0.182292 | 0.112116 | 1.626x |
+| `function_chain_1k` | binary_bytes | 33448 | 33440 | 1.000x |
+| `function_chain_10k` | source_lines | 10514 | 10516 | 1.000x |
+| `function_chain_10k` | source_bytes | 204775 | 249853 | 0.820x |
+| `function_chain_10k` | compile_s | 1.307777 | 0.706934 | 1.850x |
+| `function_chain_10k` | binary_bytes | 83000 | 83000 | 1.000x |
+| `ml_binary` | source_lines | 75 | 249 | 0.301x |
+| `ml_binary` | source_bytes | 2057 | 10267 | 0.200x |
+| `ml_binary` | compile_s | 0.829604 | 0.166107 | 4.994x |
+| `ml_binary` | binary_bytes | 143312 | 33688 | 4.254x |
+| `ml_binary` | stripped_bytes | 137000 | 33728 | 4.062x |
+| `metaprogramming_app` | source_lines | 115 | - | - |
+| `metaprogramming_app` | source_bytes | 6846 | - | - |
+| `metaprogramming_app` | compile_s | 0.616006 | - | - |
+| `metaprogramming_app` | binary_bytes | 143720 | - | - |
+| `metaprogramming_app` | stripped_bytes | 137104 | - | - |
+
+Result checks:
+
+- `typed_checksum` printed `90163659102` for Duo and C.
+- `function_chain_1k` printed `978325003` for Duo and C.
+- `function_chain_10k` printed `689658859` for Duo and C.
+- `ml_binary` captured and compared all five ML `RESULT` rows.
+- `metaprogramming_app` printed `ALL METAPROGRAMMING TESTS PASSED`.
+
+Rejected / held back:
+
+- Did not make `compile-size-bench` fail on Duo/C compile-time or binary-size
+  ratios. It remains a tracking benchmark; it fails only on compile/run/result
+  correctness problems.
+
+### Follow-up (2026-07-22): honest-bench capture diagnostics
+
+Commands:
+
+```sh
+bash -n scripts/run_honest_benchmark.sh
+zig build honest-bench
+HONEST_SEED=987654321 zig build honest-bench
+zig build bench
+```
+
+Result gate: **PASS** - shell syntax passed, both serial honest-bench seeds
+captured all six correctness rows and all six timing rows per run, and the
+40-benchmark hard gate ended with `All benchmarks: results match and Duo
+.lua/.duo >= C`.
+
+Additional changes:
+
+- Added shared capture helpers to `scripts/run_honest_benchmark.sh` for probe
+  and timing subprocesses.
+- The correctness probes now write stdout/stderr to `/tmp/honest_*_probe.*`,
+  require exactly six `RESULT` rows for Duo and C, and print command/status plus
+  stderr/stdout heads on failure.
+- Each timed run now writes stdout/stderr to `/tmp/honest_*_run_N.*`, requires
+  exactly six `Time` rows before appending samples, and rejects unknown benchmark
+  names. Workloads, binaries, seeds, scoring, and the existing serial `/tmp`
+  path contract are unchanged.
+
+Measured impact:
+
+| Gate | Workload | Duo | C | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `zig build honest-bench` | matmul | 0.000067 | 0.000185 | 0.362x | PASS |
+| `zig build honest-bench` | qsort | 0.001023 | 0.004396 | 0.233x | PASS |
+| `zig build honest-bench` | hashtable | 0.000766 | 0.000957 | 0.800x | PASS |
+| `zig build honest-bench` | bsearch | 0.006937 | 0.019340 | 0.359x | PASS |
+| `zig build honest-bench` | nbody | 0.012983 | 0.029180 | 0.445x | PASS |
+| `zig build honest-bench` | fnv | 0.043882 | 0.078889 | 0.556x | PASS |
+| `HONEST_SEED=987654321 zig build honest-bench` | matmul | 0.000067 | 0.000182 | 0.368x | PASS |
+| `HONEST_SEED=987654321 zig build honest-bench` | qsort | 0.001033 | 0.004467 | 0.231x | PASS |
+| `HONEST_SEED=987654321 zig build honest-bench` | hashtable | 0.000786 | 0.000961 | 0.818x | PASS |
+| `HONEST_SEED=987654321 zig build honest-bench` | bsearch | 0.007154 | 0.019189 | 0.373x | PASS |
+| `HONEST_SEED=987654321 zig build honest-bench` | nbody | 0.013222 | 0.029511 | 0.448x | PASS |
+| `HONEST_SEED=987654321 zig build honest-bench` | fnv | 0.044299 | 0.079286 | 0.559x | PASS |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | - | PASS |
+| `zig build bench` | Mandelbrot | 0.017848 / 0.017908 | 0.425564 | 0.042x | PASS |
+| `zig build bench` | Collatz sum | 0.002586 / 0.002556 | 0.062953 | 0.041x | PASS |
+| `zig build bench` | GCD reduce | 0.000683 / 0.000673 | 0.057919 | 0.012x | PASS |
+| `zig build bench` | Sieve | 0.000348 / 0.000344 | 0.001546 | 0.222x | PASS |
+| `zig build bench` | Game of Life | 0.000038 / 0.000037 | 0.002782 | 0.013x | PASS |
+
+Rejected / held back:
+
+- Did not make honest-bench concurrent-safe. The script still uses shared
+  `/tmp/honest_*` paths by design and must be run serially; this change only
+  makes each serial run's probe and timing capture auditable.
+
+### Follow-up (2026-07-22): honest-bench per-run temp isolation
+
+Commands:
+
+```sh
+bash -n scripts/run_honest_benchmark.sh
+zig build honest-bench
+bash scripts/run_honest_benchmark.sh
+HONEST_SEED=987654321 bash scripts/run_honest_benchmark.sh
+zig build bench
+```
+
+Result gate: **PASS** - shell syntax passed, the build-system honest-bench
+passed, two direct `run_honest_benchmark.sh` invocations with different seeds
+passed concurrently using distinct temp directories, and the 40-benchmark hard
+gate ended with `All benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Replaced shared `/tmp/honest_duo`, `/tmp/honest_c`,
+  `/tmp/honest_*_probe.*`, `/tmp/honest_*_run_N.*`, and per-row sample files
+  with paths under a unique `mktemp -d` work directory per harness invocation.
+- Added `HONEST_WORK_DIR` as an explicit override for debugging retained
+  captures; default invocations clean their temp directory on exit.
+- Kept workload sources, compiler flags, result tolerances, timing row counts,
+  3% slack, and winner logic unchanged. This is harness isolation, not a
+  benchmark-kernel optimization.
+
+Measured impact:
+
+| Gate | Workload | Duo | C | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `zig build honest-bench` | matmul | 0.000066 | 0.000174 | 0.379x | PASS |
+| `zig build honest-bench` | qsort | 0.001019 | 0.004395 | 0.232x | PASS |
+| `zig build honest-bench` | hashtable | 0.000763 | 0.000995 | 0.767x | PASS |
+| `zig build honest-bench` | bsearch | 0.006957 | 0.019021 | 0.366x | PASS |
+| `zig build honest-bench` | nbody | 0.012979 | 0.029148 | 0.445x | PASS |
+| `zig build honest-bench` | fnv | 0.043409 | 0.078800 | 0.551x | PASS |
+| concurrent default-seed script | matmul | 0.000067 | 0.000176 | 0.381x | PASS |
+| concurrent default-seed script | qsort | 0.001019 | 0.004413 | 0.231x | PASS |
+| concurrent default-seed script | hashtable | 0.000774 | 0.000958 | 0.808x | PASS |
+| concurrent default-seed script | bsearch | 0.006953 | 0.019300 | 0.360x | PASS |
+| concurrent default-seed script | nbody | 0.013082 | 0.029267 | 0.447x | PASS |
+| concurrent default-seed script | fnv | 0.043945 | 0.078929 | 0.557x | PASS |
+| concurrent `HONEST_SEED=987654321` script | matmul | 0.000067 | 0.000182 | 0.368x | PASS |
+| concurrent `HONEST_SEED=987654321` script | qsort | 0.001019 | 0.004464 | 0.228x | PASS |
+| concurrent `HONEST_SEED=987654321` script | hashtable | 0.000768 | 0.000955 | 0.804x | PASS |
+| concurrent `HONEST_SEED=987654321` script | bsearch | 0.007058 | 0.019214 | 0.367x | PASS |
+| concurrent `HONEST_SEED=987654321` script | nbody | 0.013244 | 0.029369 | 0.451x | PASS |
+| concurrent `HONEST_SEED=987654321` script | fnv | 0.044096 | 0.078922 | 0.559x | PASS |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | - | PASS |
+| `zig build bench` | Mandelbrot | 0.018703 / 0.017428 | 0.415674 | 0.042x | PASS |
+| `zig build bench` | Collatz sum | 0.002696 / 0.002520 | 0.061361 | 0.041x | PASS |
+| `zig build bench` | GCD reduce | 0.000701 / 0.000648 | 0.056815 | 0.011x | PASS |
+| `zig build bench` | Sieve | 0.000364 / 0.000338 | 0.001520 | 0.222x | PASS |
+| `zig build bench` | Game of Life | 0.000042 / 0.000035 | 0.002787 | 0.013x | PASS |
+
+Rejected / held back:
+
+- Did not run two `zig build honest-bench` invocations concurrently because the
+  build runner itself may share Zig cache state. The direct harness no longer
+  has shared output paths and was validated concurrently.
+
+### Follow-up (2026-07-22): ml-bench per-run temp isolation and capture diagnostics
+
+Commands:
+
+```sh
+bash -n scripts/run_ml_benchmark.sh
+RUNS=1 bash scripts/run_ml_benchmark.sh
+zig build ml-bench
+zig build bench
+```
+
+Result gate: **PASS** - shell syntax passed, the one-run smoke and full
+`zig build ml-bench` target both captured all five correctness `RESULT` rows,
+all five timing rows per timed run, and ended with `ALL ML BENCHMARKS PASSED:
+Duo beats or ties C on all ML workloads.` The 40-benchmark hard gate also
+ended with `All benchmarks: results match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Replaced shared `/tmp/duo_ml_bench`, `/tmp/c_ml_bench`, and
+  `/tmp/ml_bench_*` files with paths under a unique `mktemp -d` work directory
+  per harness invocation.
+- Added `ML_BENCH_WORK_DIR` as an explicit override for debugging retained
+  captures; default invocations clean their temp directory on exit.
+- Added correctness capture diagnostics that persist stdout/stderr paths and
+  require exactly five sorted `RESULT` rows for Duo and C before comparing
+  float-tolerant results.
+- Added timing capture diagnostics that persist stdout/stderr paths and require
+  each run to report a `Time:` row for every expected workload before updating
+  minimum timings.
+- Kept sources, compiler flags, workloads, 5% slack, correctness tolerances,
+  and winner logic unchanged. This is benchmark-harness reliability work, not a
+  kernel optimization.
+
+Measured impact:
+
+| Gate | Workload | Duo | C | Ratio | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `RUNS=1 bash scripts/run_ml_benchmark.sh` | matmul_256 | 0.001026 | 0.002622 | 0.391x | PASS |
+| `RUNS=1 bash scripts/run_ml_benchmark.sh` | conv2d | 0.000700 | 0.000822 | 0.852x | PASS |
+| `RUNS=1 bash scripts/run_ml_benchmark.sh` | softmax_1k | 0.006666 | 0.027091 | 0.246x | PASS |
+| `RUNS=1 bash scripts/run_ml_benchmark.sh` | attention | 0.002980 | 0.004538 | 0.657x | PASS |
+| `RUNS=1 bash scripts/run_ml_benchmark.sh` | mlp_forward | 0.053386 | 0.149880 | 0.356x | PASS |
+| `zig build ml-bench` | matmul_256 | 0.000983 | 0.002550 | 0.385x | PASS |
+| `zig build ml-bench` | conv2d | 0.000626 | 0.000802 | 0.781x | PASS |
+| `zig build ml-bench` | softmax_1k | 0.006494 | 0.027117 | 0.239x | PASS |
+| `zig build ml-bench` | attention | 0.002887 | 0.004475 | 0.645x | PASS |
+| `zig build ml-bench` | mlp_forward | 0.053638 | 0.150479 | 0.356x | PASS |
+| `zig build bench` | correctness rows | 40/40 | 40/40 | - | PASS |
+| `zig build bench` | Mandelbrot | 0.018453 / 0.017874 | 0.416535 | 0.043x | PASS |
+| `zig build bench` | Collatz sum | 0.002704 / 0.002590 | 0.061707 | 0.042x | PASS |
+| `zig build bench` | GCD reduce | 0.000699 / 0.000679 | 0.057259 | 0.012x | PASS |
+| `zig build bench` | Sieve | 0.000363 / 0.000346 | 0.001514 | 0.229x | PASS |
+| `zig build bench` | Game of Life | 0.000041 / 0.000039 | 0.002791 | 0.014x | PASS |
+
+Rejected / held back:
+
+- Did not change ML kernel code or benchmark scoring. The goal was to prevent
+  stale shared temp files or missing output rows from producing misleading
+  performance evidence.
+
+### Follow-up (2026-07-22): WASM command entry and benchmark harness hardening
+
+Commands:
+
+```sh
+zig fmt src/main.zig --check
+bash -n scripts/run_wasm_benchmark.sh
+git diff --check -- src/main.zig scripts/run_wasm_benchmark.sh
+./zig-out/bin/duo compile examples/wasm/hello.lua --target wasm32-wasi -o /tmp/duo_hello_check.wasm
+file /tmp/duo_hello_check.wasm
+WASM_BENCH_RUNTIMES="wasmtime wazero" WASM_BENCH_BASELINE=/tmp/duo_wasm_baseline_check.txt bash scripts/run_wasm_benchmark.sh --reset-baseline --runs 1
+bash scripts/test_wasm_codegen.sh
+zig build test
+zig build bench
+```
+
+Result gate: **PASS** - normal WASI command compilation now produces a valid
+WebAssembly module, the isolated WASM benchmark captured all 40 runtime
+`RESULT` rows under `wasmtime`, matched those rows against `wazero`, timed both
+runtimes, and the hard 40-benchmark gate ended with `All benchmarks: results
+match and Duo .lua/.duo >= C`.
+
+Additional changes:
+
+- Fixed the `wasm32-wasi` command-link path in `src/main.zig` by removing
+  `-Wl,--no-entry` and `-Wl,--export=main` from normal executable builds. WASI
+  command modules now let the CRT provide `_start`; `--lib` reactor builds keep
+  `-mexec-model=reactor`, `-Wl,--no-entry`, and dynamic exports.
+- Replaced the shared `/tmp/duo_wasm_bench.wasm` artifact with a unique
+  `mktemp -d` work directory per `scripts/run_wasm_benchmark.sh` invocation.
+- Added `WASM_BENCH_WORK_DIR` for retained captures, `WASM_BENCH_BASELINE` for
+  isolated baseline validation, and `WASM_BENCH_RUNTIMES` for explicit runtime
+  selection such as `wasmtime wazero`.
+- Made build, WASM compile, runtime correctness, and timing failures explicit
+  instead of piping them through `|| true` or recording failed timings as
+  `0.000s`.
+- Fixed `--runs N` parsing and positive-integer validation.
+- Kept baseline regression semantics unchanged for selected compatible
+  runtimes.
+
+Measured impact:
+
+| Gate | Metric | Result |
+| --- | --- | --- |
+| `./zig-out/bin/duo compile examples/wasm/hello.lua --target wasm32-wasi` | output | `/tmp/duo_hello_check.wasm` |
+| `file /tmp/duo_hello_check.wasm` | type | `WebAssembly (wasm) binary module version 0x1 (MVP)` |
+| WASM bench (`wasmtime`) | correctness rows | 40/40 |
+| WASM bench (`wazero`) | cross-runtime result check | matched `wasmtime` |
+| WASM bench (`wasmtime`, 1 run) | wall time | 0.037s |
+| WASM bench (`wazero`, 1 run) | wall time | 0.080s |
+| `zig build test` | result | PASS |
+| `zig build bench` | correctness rows | 40/40 |
+| `zig build bench` | Mandelbrot | 0.018987 / 0.018395 vs C 0.426078 |
+| `zig build bench` | Collatz sum | 0.002681 / 0.002670 vs C 0.062655 |
+| `zig build bench` | GCD reduce | 0.000705 / 0.000709 vs C 0.057943 |
+| `zig build bench` | Sieve | 0.000364 / 0.000367 vs C 0.001570 |
+| `zig build bench` | Game of Life | 0.000042 / 0.000040 vs C 0.002773 |
+
+Rejected / held back:
+
+- `wasm3` is installed locally but failed this generated module with
+  `Error: LEB encoded value overflow`. The script no longer turns that runtime
+  failure into a false `0.000s` timing sample. The validated run explicitly
+  gated `wasmtime` and `wazero`; broader runtime compatibility remains a
+  separate WASM-runtime support task.
+
+### Follow-up (2026-07-22): Sieve pointer-based marking loop
+
+--
+| `zig build bench` | Sieve | 0.000344 / 0.000350 | 0.001551 | 0.222x | PASS |
+
+- Removed the `__d = __n * __n` and `__d += (__n << 1)` integer arithmetic from the inner loop.
+- Replaced with a pointer-based loop `for (; p <= end; p += __n) *p = 0;`.
+- Eliminates the array base addition and shift in the hottest loop of Sieve, yielding slightly more idiomatic and faster C code while retaining exact output. Tests showed a drop from 0.301s to 0.281s in the isolated C harness, and 0.000344s in the Zig test harness. 
+- Attempted to unroll the marking loop by 4 and 8. The loop unrolling manually gave 0.275s but was messier, and GCC's `-funroll-loops` is enough for the simple pointer version (0.281s). Thus, the simple pointer loop was adopted.

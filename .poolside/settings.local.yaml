@@ -47,3 +47,5 @@ tools:
             - timeout 12 node *
             - timeout 60 bash *
             - git diff *
+            - git stash *
+            - git checkout *
