@@ -49,3 +49,5 @@ tools:
             - git diff *
             - git stash *
             - git checkout *
+            - git show *
+            - git log *

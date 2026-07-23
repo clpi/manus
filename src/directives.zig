@@ -72,6 +72,39 @@ pub fn extractCRawCode(raw: []const u8) []const u8 {
     return trimmed;
 }
 
+/// Extract and unescape @c.emit raw code. Uses the provided allocator
+/// for the unescaped buffer if unescaping is needed.
+pub fn extractAndUnescapeCRawCode(alloc: std.mem.Allocator, raw: []const u8) ![]const u8 {
+    const extracted = extractCRawCode(raw);
+    return unescapeCRawCode(alloc, extracted);
+}
+
+/// Unescape common Lua string escape sequences in @c.emit raw code.
+/// The parser stores the raw source text; we need to convert \\\" -> " and \\\\ -> \\.
+pub fn unescapeCRawCode(alloc: std.mem.Allocator, raw: []const u8) ![]const u8 {
+    if (std.mem.indexOfScalar(u8, raw, '\\') == null) return raw;
+    var buf = try alloc.alloc(u8, raw.len);
+    var j: usize = 0;
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (raw[i] == '\\' and i + 1 < raw.len) {
+            switch (raw[i + 1]) {
+                // Only unescape \\" -> " and \\\\ -> \\ — these are the Lua
+                // string escapes that interfere with C code emission.
+                // Leave \n, \t, \r, etc. as-is — they're valid C escapes.
+                '"' => { buf[j] = '"'; i += 2; j += 1; },
+                '\\' => { buf[j] = '\\'; i += 2; j += 1; },
+                else => { buf[j] = raw[i]; i += 1; j += 1; },
+            }
+        } else {
+            buf[j] = raw[i];
+            i += 1;
+            j += 1;
+        }
+    }
+    return buf[0..j];
+}
+
 pub fn attrHasPrefix(attr: ast.Attribute, prefix: []const u8) bool {
     return std.mem.startsWith(u8, attr.name, prefix);
 }

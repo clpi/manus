@@ -1,0 +1,6 @@
+fn missing_end() {
+    print("hi")
+
+fn type_error() {
+    let a: i64 = "string"
+}

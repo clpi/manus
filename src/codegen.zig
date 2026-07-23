@@ -2952,7 +2952,7 @@ pub const CodeGen = struct {
         // file-scope functions in the generated C.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* == .directive and std.mem.eql(u8, stmt.directive.attr.name, "c.emit")) {
-                const code = @import("directives.zig").extractCRawCode(stmt.directive.attr.args orelse "");
+                const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, stmt.directive.attr.args orelse "") catch "";
                 const trimmed = std.mem.trim(u8, code, " \t\r\n");
                 if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
                     self.p("{s};\n", .{code})
@@ -6603,10 +6603,14 @@ pub const CodeGen = struct {
             .cinclude => {},
             .directive => |dir| {
                 if (std.mem.eql(u8, dir.attr.name, "c.emit")) {
-                    const code = @import("directives.zig").extractCRawCode(dir.attr.args orelse "");
+                    const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, dir.attr.args orelse "") catch "";
                     self.ind();
                     const trimmed = std.mem.trim(u8, code, " \t\r\n");
-                    if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
+                    // Don't append ';' for preprocessor directives (#if, #endif, etc.)
+                    // or lines that already end with ';' or '}'.
+                    if (trimmed.len > 0 and trimmed[0] == '#')
+                        self.p("{s}\n", .{trimmed})
+                    else if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
                         self.p("{s};\n", .{trimmed})
                     else
                         self.p("{s}\n", .{code});
@@ -11353,6 +11357,12 @@ pub const CodeGen = struct {
             self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "require") or std.mem.eql(u8, name, "req")) {
+            // Don't intercept req/require if the user defined their own function.
+            var name_buf: [256]u8 = undefined;
+            const mangled = self.mangled_name(name, &name_buf);
+            if (self.func_bodies.contains(mangled)) {
+                return false; // Let the normal call path handle it
+            }
             self.p("lua_require(", .{});
             if (args.len > 0) {
                 try self.emit_as_lua_value(args[0]);
@@ -14009,7 +14019,7 @@ pub const CodeGen = struct {
         // file-scope functions in the submodule.
         for (submod.body.stmts) |*stmt| {
             if (stmt.* == .directive and std.mem.eql(u8, stmt.directive.attr.name, "c.emit")) {
-                const code = @import("directives.zig").extractCRawCode(stmt.directive.attr.args orelse "");
+                const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, stmt.directive.attr.args orelse "") catch "";
                 const trimmed = std.mem.trim(u8, code, " \t\r\n");
                 if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
                     self.p("{s};\n", .{code})

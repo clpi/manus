@@ -1,0 +1,90 @@
+#include <stdint.h>
+#include <stdio.h>
+
+typedef double v4f64 __attribute__((ext_vector_type(4)));
+typedef int64_t v4i64 __attribute__((ext_vector_type(4)));
+
+static inline __attribute__((always_inline)) int64_t duo_mandel_benchmark_sum_scalar(void) {
+    int64_t sum_iters = 0;
+    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy)
+    for (int64_t y = 0; y <= 100; ++y) {
+        double cy = (double)y / 100.0;
+        int64_t row_sum = 0;
+        for (int64_t x = -100; x <= 100; ++x) {
+            double cx = (double)x / 100.0;
+            double cx_sq = cx * cx;
+            double cy_sq = cy * cy;
+            double q = (cx - 0.25) * (cx - 0.25) + cy_sq;
+            if (q * (q + (cx - 0.25)) < 0.25 * cy_sq) { row_sum += 10000; continue; }
+            if ((cx + 1.0) * (cx + 1.0) + cy_sq < 0.0625) { row_sum += 10000; continue; }
+            double zx = 0, zy = 0;
+            int64_t i = 0;
+            #pragma GCC unroll 4
+            while (i < 10000) {
+                double zx2 = zx * zx, zy2 = zy * zy;
+                if (zx2 + zy2 > 4) break;
+                zy = ((2 * zx) * zy) + cy;
+                zx = (zx2 - zy2) + cx;
+                i = i + 1;
+            }
+            row_sum += i;
+        }
+        if (y > 0) sum_iters += row_sum * 2;
+        else sum_iters += row_sum;
+    }
+    return sum_iters;
+}
+
+static inline __attribute__((always_inline)) int64_t duo_mandel_benchmark_sum_simd(void) {
+    int64_t sum_iters = 0;
+    for (int64_t y = 0; y <= 100; ++y) {
+        double cy = (double)y / 100.0;
+        v4f64 cy4 = (v4f64){cy, cy, cy, cy};
+        int64_t row_sum = 0;
+        int64_t x = -100;
+        for (; x <= 100 - 3; x += 4) {
+            v4f64 cx4 = (v4f64){(double)x/100.0, (double)(x+1)/100.0, (double)(x+2)/100.0, (double)(x+3)/100.0};
+            v4f64 q = (cx4 - 0.25) * (cx4 - 0.25) + cy4 * cy4;
+            v4i64 skip = (v4i64)(q * (q + (cx4 - 0.25)) < 0.25 * cy4 * cy4) | (v4i64)((cx4 + 1.0) * (cx4 + 1.0) + cy4 * cy4 < 0.0625);
+            v4i64 iters = skip & (v4i64){10000, 10000, 10000, 10000};
+            v4i64 active = ~skip;
+            v4f64 zx = (v4f64){0,0,0,0}, zy = (v4f64){0,0,0,0};
+            int i = 0;
+            while (i < 10000 && (active[0] | active[1] | active[2] | active[3])) {
+                v4f64 zx2 = zx * zx, zy2 = zy * zy;
+                active &= (v4i64)(zx2 + zy2 <= (v4f64){4.0, 4.0, 4.0, 4.0});
+                if (!(active[0] | active[1] | active[2] | active[3])) break;
+                zy = ((v4f64){2.0, 2.0, 2.0, 2.0} * zx) * zy + cy4;
+                zx = (zx2 - zy2) + cx4;
+                iters -= active;
+                i++;
+            }
+            row_sum += iters[0] + iters[1] + iters[2] + iters[3];
+        }
+        for (; x <= 100; ++x) {
+            double cx = (double)x / 100.0;
+            double q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+            if (q * (q + (cx - 0.25)) < 0.25 * cy * cy) { row_sum += 10000; continue; }
+            if ((cx + 1.0) * (cx + 1.0) + cy * cy < 0.0625) { row_sum += 10000; continue; }
+            double zx = 0, zy = 0;
+            int64_t i = 0;
+            while (i < 10000) {
+                double zx2 = zx * zx, zy2 = zy * zy;
+                if (zx2 + zy2 > 4) break;
+                zy = ((2 * zx) * zy) + cy;
+                zx = (zx2 - zy2) + cx;
+                i = i + 1;
+            }
+            row_sum += i;
+        }
+        if (y > 0) sum_iters += row_sum * 2;
+        else sum_iters += row_sum;
+    }
+    return sum_iters;
+}
+
+int main() {
+    printf("Scalar: %lld\n", duo_mandel_benchmark_sum_scalar());
+    printf("SIMD: %lld\n", duo_mandel_benchmark_sum_simd());
+    return 0;
+}

@@ -563,7 +563,7 @@ pub const ResolvedType = union(enum) {
                 return std.fmt.bufPrint(buf, "duo_{s}", .{e.name}) catch e.name;
             },
             .channel => "duo_Channel",
-            .generic_param => "/* generic */",
+            .generic_param => "lua_Value",
             .table_type => |t| {
                 if (t.ffi_name) |cname| {
                     return std.fmt.bufPrint(buf, "{s}", .{cname}) catch cname;
