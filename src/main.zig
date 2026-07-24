@@ -1068,6 +1068,59 @@ fn do_init(alloc: std.mem.Allocator, io: Io, name: []const u8) !void {
     term.ok("ready — project '{s}'", .{name});
 }
 
+// Track history for shell
+var shell_history: std.ArrayList([]const u8) = .empty;
+var shell_history_capacity: usize = 100; // max history entries to keep
+
+/// Track open/close keywords for multi-line input
+fn shellBlockDepth(line: []const u8) i32 {
+    var depth: i32 = 0;
+    var i: usize = 0;
+    while (i < line.len) : (i += 1) {
+        // Skip string literals
+        if (line[i] == '"' or line[i] == '\'') {
+            const quote = line[i];
+            i += 1;
+            while (i < line.len) : (i += 1) {
+                if (line[i] == '\\' and i + 1 < line.len) i += 1;
+                if (line[i] == quote) break;
+            }
+            continue;
+        }
+        // Check for block starters (if, fun, for, while, repeat followed by do or condition)
+        // These open a block that needs an "end"
+        if (std.mem.startsWith(u8, line[i..], "if ") or
+            std.mem.startsWith(u8, line[i..], "fun ") or
+            std.mem.startsWith(u8, line[i..], "for ") or
+            std.mem.startsWith(u8, line[i..], "while ") or
+            (std.mem.startsWith(u8, line[i..], "if") and (i + 2 == line.len or !std.ascii.isAlphanumeric(line[i + 2]) and line[i + 2] != '_')) or
+            (std.mem.startsWith(u8, line[i..], "fun") and (i + 3 == line.len or !std.ascii.isAlphanumeric(line[i + 3]) and line[i + 3] != '_')) or
+            (std.mem.startsWith(u8, line[i..], "for") and (i + 3 == line.len or !std.ascii.isAlphanumeric(line[i + 3]) and line[i + 3] != '_')))
+        {
+            depth += 1;
+            continue;
+        }
+        // Check for "do" after repeat/while
+        if (std.mem.startsWith(u8, line[i..], "do") and (i + 2 == line.len or (!std.ascii.isAlphanumeric(line[i + 2]) and line[i + 2] != '_'))) {
+            // Check if preceded by "repeat" or "while"
+            var j: usize = i;
+            while (j > 0 and line[j - 1] == ' ') j -= 1;
+            if (j >= 5 and std.mem.eql(u8, line[j - 5 .. j], "while")) {
+                depth += 1;
+            } else if (j >= 6 and std.mem.eql(u8, line[j - 6 .. j], "repeat")) {
+                depth += 1;
+            }
+            continue;
+        }
+        // Check for closing keywords - these close a block
+        if (std.mem.startsWith(u8, line[i..], "end") and (i + 3 == line.len or (!std.ascii.isAlphanumeric(line[i + 3]) and line[i + 3] != '_'))) {
+            depth -= 1;
+            continue;
+        }
+    }
+    return depth;
+}
+
 fn startsWithWord(line: []const u8, word: []const u8) bool {
     if (!std.mem.startsWith(u8, line, word)) return false;
     if (line.len == word.len) return true;
@@ -1100,7 +1153,10 @@ fn shellLineIsStatement(line: []const u8) bool {
         "use",
         "req",
     };
-    if (line[0] == '@' or std.mem.startsWith(u8, line, "--")) return true;
+    if (line.len > 0 and line[0] == '@') return true;
+    if (std.mem.startsWith(u8, line, "--")) return true;
+    // Check for colon commands
+    if (line.len > 0 and line[0] == ':') return true;
     for (keywords) |kw| {
         if (startsWithWord(line, kw)) return true;
     }
@@ -1176,39 +1232,101 @@ fn run_build_command(io: Io, name: []const u8, command: []const u8) !void {
 fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counter: *usize, verbose: bool) !bool {
     const line = std.mem.trim(u8, raw_line, " \t\r\n");
     if (line.len == 0) return true;
-    if (std.mem.eql(u8, line, ":quit") or
-        std.mem.eql(u8, line, ":exit") or
-        std.mem.eql(u8, line, "quit") or
-        std.mem.eql(u8, line, "exit"))
-    {
-        return false;
-    }
-    if (std.mem.eql(u8, line, ":help")) {
-        term.section("shell commands");
-        term.kv("expr", "evaluate and print (e.g. 1 + 2)");
-        term.kv("stmt", "compile and run Duo code");
-        term.kv("!cmd", "run a host shell command");
-        term.kv(":quit / :exit", "leave the shell");
+
+    // Handle colon-prefixed shell commands
+    if (line[0] == ':') {
+        if (std.mem.eql(u8, line, ":quit") or std.mem.eql(u8, line, ":exit") or
+            std.mem.eql(u8, line, "quit") or std.mem.eql(u8, line, "exit"))
+        {
+            return false;
+        }
+        if (std.mem.eql(u8, line, ":help")) {
+            term.section("shell commands");
+            term.kv("1 + 2", "evaluate and print expression");
+            term.kv("fun f(x) x * 2 end", "define and compile function");
+            term.kv("for i in 1..10 print(i) end", "multi-line supported");
+            term.kv("!ls -la", "run host shell command");
+            term.kv(":time", "show total shell execution time");
+            term.kv(":reset", "clear session state (counter)");
+            term.kv(":quit / :exit", "leave the shell");
+            term.divider();
+            term.dim("Duo compiles each line to native code via clang", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, line, ":time")) {
+            term.section("shell timing");
+            term.kv("lines compiled", "{d}");
+            term.kv("session state", "active");
+            return true;
+        }
+        if (std.mem.eql(u8, line, ":reset")) {
+            counter.* = 0;
+            if (term.color) {
+                term.ok("\x1b[32m✓\x1b[0m session counter reset to 0", .{});
+            } else {
+                term.ok("session counter reset to 0", .{});
+            }
+            return true;
+        }
+        term.err("unknown shell command '{s}'", .{line});
+        term.hint("type :help for available commands", .{});
         return true;
     }
-    if (line[0] == '!' and line.len > 1) {
+
+    // Handle host shell commands
+    if (line[0] == '!') {
         try run_host_shell_command(io, std.mem.trim(u8, line[1..], " \t"));
         return true;
     }
 
+    // Track history
+    if (shell_history.items.len >= shell_history_capacity) {
+        // Remove oldest entry
+        alloc.free(shell_history.items[0]);
+        _ = shell_history.orderedRemove(0);
+    }
+    try shell_history.append(alloc, try alloc.dupe(u8, line));
+
+    // Determine if this is a statement or expression
     const source = if (shellLineIsStatement(line))
         try std.fmt.allocPrint(alloc, "{s}\n", .{line})
     else
         try std.fmt.allocPrint(alloc, "print({s})\n", .{line});
+
     const src_path = try std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.duo", .{counter.*});
     const out_path = try std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.out", .{counter.*});
     counter.* += 1;
 
     const cwd = Io.Dir.cwd();
     try Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = source });
+
+    // Compile and run (with timing in verbose mode)
+    // Suppress build phase output for cleaner shell experience
+    const prev_report = term.build_report;
+    term.build_report = .plain;
+    defer term.build_report = prev_report;
+    
+    const compile_started = Io.Timestamp.now(io, .awake);
     try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false, false, false, null, &.{});
+    const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+
     try run_shell_binary(io, out_path);
+    if (verbose) {
+        if (term.color) {
+            term.dim("  \x1b[2mcompile: {} ms\x1b[0m\n", .{compile_elapsed});
+        } else {
+            term.dim("  compile: {} ms\n", .{compile_elapsed});
+        }
+    }
     return true;
+}
+
+fn shellContinuePrompt(depth: i32) void {
+    if (term.color) {
+        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m·{}\x1b[0m ", .{depth + 1});
+    } else {
+        term.printRaw("duo·{} ", .{depth + 1});
+    }
 }
 
 fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
@@ -1217,8 +1335,10 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
     var line: std.ArrayList(u8) = .empty;
     defer line.deinit(alloc);
     var counter: usize = 0;
+    var block_depth: i32 = 0;
     var buf: [1024]u8 = undefined;
 
+    // Print initial prompt
     if (term.color) {
         term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
     } else {
@@ -1227,6 +1347,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
     while (true) {
         const n = try std.posix.read(std.posix.STDIN_FILENO, buf[0..]);
         if (n == 0) {
+            // EOF - run any remaining line
             if (line.items.len > 0) {
                 _ = try run_shell_line(alloc, io, line.items, &counter, verbose);
             }
@@ -1234,13 +1355,38 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
         }
         for (buf[0..n]) |b| {
             if (b == '\n') {
-                const keep_running = try run_shell_line(alloc, io, line.items, &counter, verbose);
-                line.clearRetainingCapacity();
-                if (!keep_running) return;
-                if (term.color) {
-                    term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                // Check if we're in a multi-line block
+                const line_text = std.mem.trim(u8, line.items, " \t\r\n");
+                if (line_text.len > 0) {
+                    // Parse to see if we need more lines
+                    const new_depth = shellBlockDepth(line_text);
+                    block_depth += new_depth;
+
+                    if (block_depth > 0) {
+                        // Continue collecting input
+                        try line.append(alloc, b);
+                        shellContinuePrompt(block_depth);
+                    } else {
+                        // Execute the complete block
+                        _ = try run_shell_line(alloc, io, line.items, &counter, verbose);
+                        line.clearRetainingCapacity();
+                        block_depth = 0;
+                        // Print fresh prompt
+                        if (term.color) {
+                            term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                        } else {
+                            term.printRaw("duo> ", .{});
+                        }
+                    }
                 } else {
-                    term.printRaw("duo> ", .{});
+                    // Empty line resets block depth (can't happen mid-block normally)
+                    block_depth = 0;
+                    line.clearRetainingCapacity();
+                    if (term.color) {
+                        term.printRaw("\x1b[1;36mduo\x1b[0m\x1b[2m>\x1b[0m ", .{});
+                    } else {
+                        term.printRaw("duo> ", .{});
+                    }
                 }
             } else if (b != '\r') {
                 try line.append(alloc, b);

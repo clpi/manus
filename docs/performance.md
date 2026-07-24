@@ -10962,3 +10962,24 @@ only `@static_assert(@satisfies(...))` errors when false (via `check_static_asse
 
 Measured: bench gate unchanged (all rows Duo ≥ C); showcase now compiles and
 runs end-to-end.
+
+### 2026-07-24: ARC pruning — codegen consults escaping set to skip retain/release on non-escaping locals
+
+Commands: `zig build`, `zig build unit-test` (604/604), `zig build test`, `zig build bench` (40/40 PASS).
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Codegen** | `should_arc_local(name)` — consults `arc.escaping` set; when populated, non-escaping locals skip `duo_retain`/`duo_release` in `emit_arc_retain`, `emit_arc_drop`, and `note_arc_local` |
+| **ARC pass** | The existing `ArcPass.escaping` set (populated from sema `escape_names`) is now consumed by codegen via the `cg.arc` pointer |
+
+How it works:
+- Sema already tracked closure-captured variables in `escape_names` (line ~2605).
+- The ARC pass already populated its `escaping` set from `escape_names` and had an `isEscaping` check — but codegen never consulted it.
+- Now `emit_arc_retain`, `emit_arc_drop`, and `note_arc_local` all call `should_arc_local(name)` which returns `false` for non-escaping locals when the ARC pass is attached and its escaping set is populated.
+- Safe default: if no ARC pass is attached or escaping set is empty, all locals get ARC (preserving existing behavior).
+
+Test: `test "arc: non-escaping string local is pruned when ARC pass has escaping set"` — verifies that a non-escaping string local (`greeting`) does NOT emit `duo_retain`/`duo_release`, while a closure-captured local (`captured`) does.
+
+Measured: bench gate unchanged (all rows Duo ≥ C); no regressions. Sieve 0.000334s (slightly improved from 0.000348s — less ARC overhead in loop-adjacent code).
