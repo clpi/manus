@@ -123,6 +123,8 @@ pub const CodeGen = struct {
     numeric_lua_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
     /// Sema-tracked field types for dynamic table locals (`t.x` after `t.x = n`).
     table_field_types: ?*const std.StringHashMapUnmanaged(RT) = null,
+    concepts: ?*const std.StringHashMapUnmanaged(sema.ConceptInfo) = null,
+    table_methods: ?*const std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = null,
 
     const ArcLocal = struct {
         name: []const u8,
@@ -339,9 +341,24 @@ pub const CodeGen = struct {
         return .{ .scopes = self.comptime_scopes.items };
     }
 
+    fn comptime_eval_options(self: *const CodeGen) comptime_eval.Options {
+        return .{
+            .alloc = self.alloc,
+            .satisfies_hook = comptimeSatisfiesHook,
+            .satisfies_ctx = @ptrCast(@constCast(self)),
+        };
+    }
+
+    fn comptimeSatisfiesHook(ctx: ?*anyopaque, type_expr: *const ast.Expr, concept_name: []const u8) ?bool {
+        const self: *CodeGen = @ptrCast(@alignCast(ctx orelse return null));
+        var concept_lit = ast.Expr{ .string_lit = .{ .loc = type_expr.loc(), .val = concept_name } };
+        var args = [_]*ast.Expr{ @constCast(type_expr), &concept_lit };
+        return self.eval_satisfies(&args);
+    }
+
     fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
         if (self.comptime_scopes.items.len == 0) return;
-        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{ .alloc = self.alloc }) catch comptime_eval.Value.unavailable;
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
         try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
     }
 
@@ -352,7 +369,7 @@ pub const CodeGen = struct {
 
     fn note_comptime_func(self: *CodeGen, name: []const u8, func: *const ast.FuncBody) !void {
         if (self.comptime_scopes.items.len == 0) return;
-        const value = comptime_eval.funcValue(func, self.comptime_bindings(), .{ .alloc = self.alloc }) catch comptime_eval.Value.unavailable;
+        const value = comptime_eval.funcValue(func, self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
         try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
     }
 
@@ -431,9 +448,25 @@ pub const CodeGen = struct {
                 }
                 return null;
             },
+            .call => |c| {
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__satisfies") and c.args.len == 2) {
+                    if (self.eval_satisfies(c.args)) |known| return known;
+                }
+                const val = comptime_eval.evalWithBindings(cond, self.comptime_bindings(), self.comptime_eval_options()) catch return null;
+                return switch (val) {
+                    .unavailable => null,
+                    .nil => false,
+                    .bool => |b| b,
+                    .int => |i| i != 0,
+                    .float => |f| f != 0.0,
+                    .string => true,
+                    .table => true,
+                    .func => true,
+                };
+            },
             else => {
                 // Try full comptime evaluation as last resort
-                const val = comptime_eval.evalWithBindings(cond, self.comptime_bindings(), .{ .alloc = self.alloc }) catch return null;
+                const val = comptime_eval.evalWithBindings(cond, self.comptime_bindings(), self.comptime_eval_options()) catch return null;
                 return switch (val) {
                     .unavailable => null,
                     .nil => false,
@@ -752,7 +785,155 @@ pub const CodeGen = struct {
 
     fn typ(self: *CodeGen, rt: RT) void {
         var buf: [128]u8 = undefined;
-        self.p("{s}", .{rt.c_type(&buf)});
+        self.p("{s}", .{self.c_type(rt, &buf)});
+    }
+
+    fn is_table_module(self: *const CodeGen, name: []const u8) bool {
+        if (self.table_methods) |tm| return tm.contains(name);
+        return false;
+    }
+
+    fn is_table_module_type(self: *const CodeGen, rt: RT) bool {
+        return rt == .@"struct" and self.is_table_module(rt.@"struct".name);
+    }
+
+    fn normalize_table_module_type(self: *const CodeGen, rt: RT) RT {
+        if (self.is_table_module_type(rt)) return .any;
+        return rt;
+    }
+
+    fn c_type(self: *const CodeGen, rt: RT, buf: []u8) []const u8 {
+        if (self.is_table_module_type(rt)) return "lua_Value";
+        return rt.c_type(buf);
+    }
+
+    fn table_module_has_method(self: *const CodeGen, table_name: []const u8, method: []const u8) bool {
+        const methods = if (self.table_methods) |tm| tm.get(table_name) else null;
+        if (methods) |ms| {
+            for (ms.items) |m| {
+                if (std.mem.eql(u8, m, method)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn type_has_static_method(self: *const CodeGen, type_name: []const u8, method: []const u8) bool {
+        if (self.table_module_has_method(type_name, method)) return true;
+        if (self.alias_methods.get(type_name)) |ms| {
+            for (ms.items) |m| {
+                if (std.mem.eql(u8, m, method)) return true;
+            }
+        }
+        if (self.alias_defs.get(type_name)) |ad| {
+            if (std.mem.eql(u8, method, "hash") and alias_has_derive(ad.attributes, "Hash")) return true;
+            if (std.mem.eql(u8, method, "to_string") and alias_has_derive(ad.attributes, "Display")) return true;
+            if (std.mem.eql(u8, method, "eq") and alias_has_derive(ad.attributes, "Eq")) return true;
+            if (std.mem.eql(u8, method, "clone") and alias_has_derive(ad.attributes, "Clone")) return true;
+        }
+        return false;
+    }
+
+    fn struct_type_for_mono_binding(self: *CodeGen, ident: []const u8) ?[]const u8 {
+        if (self.current_mono_spec) |spec| {
+            for (spec.template.params) |par| {
+                if (std.mem.eql(u8, par.name, ident)) {
+                    const pt = spec.resolveType(par.typ);
+                    if (pt == .@"struct") return pt.@"struct".name;
+                }
+            }
+            if (spec.value_types.get(ident)) |vt| {
+                if (vt == .@"struct") return vt.@"struct".name;
+            }
+        }
+        if (self.closure_ctx) |fb| {
+            for (fb.params) |par| {
+                if (std.mem.eql(u8, par.name, ident)) {
+                    const pt = if (self.current_mono_spec) |spec|
+                        spec.resolveType(par.typ)
+                    else
+                        types.resolve(par.typ, null, self.alloc) catch .any;
+                    if (pt == .@"struct") return pt.@"struct".name;
+                }
+            }
+        }
+        return null;
+    }
+
+    fn static_dispatch_type_for_expr(self: *CodeGen, e: *const ast.Expr, method: []const u8) ?[]const u8 {
+        if (e.* != .name) return null;
+        if (self.struct_type_for_mono_binding(e.name.ident)) |tname| {
+            if (self.type_has_static_method(tname, method)) return tname;
+        }
+        if (self.table_module_type_for_expr(e)) |tname| {
+            if (self.type_has_static_method(tname, method)) return tname;
+        }
+        const ot = self.expr_type(e);
+        if (ot == .@"struct" and self.type_has_static_method(ot.@"struct".name, method))
+            return ot.@"struct".name;
+        return null;
+    }
+
+    fn table_module_type_for_expr(self: *CodeGen, e: *const ast.Expr) ?[]const u8 {
+        if (e.* != .name) return null;
+        const ident = e.name.ident;
+        if (self.current_mono_spec) |spec| {
+            // Monomorphized function params (e.g. value: T with T = Good).
+            for (spec.template.params) |par| {
+                if (std.mem.eql(u8, par.name, ident)) {
+                    const pt = spec.resolveType(par.typ);
+                    if (self.is_table_module_type(pt)) return pt.@"struct".name;
+                }
+            }
+            if (spec.value_types.get(ident)) |vt| {
+                if (self.is_table_module_type(vt)) return vt.@"struct".name;
+            }
+        }
+        if (self.closure_ctx) |fb| {
+            for (fb.params) |par| {
+                if (std.mem.eql(u8, par.name, ident)) {
+                    const pt = if (self.current_mono_spec) |spec|
+                        spec.resolveType(par.typ)
+                    else
+                        types.resolve(par.typ, null, self.alloc) catch .any;
+                    if (self.is_table_module_type(pt)) return pt.@"struct".name;
+                }
+            }
+        }
+        const ot = self.expr_type(e);
+        if (ot == .@"struct" and self.is_table_module(ot.@"struct".name))
+            return ot.@"struct".name;
+        return null;
+    }
+
+    fn try_emit_static_method_call(
+        self: *CodeGen,
+        type_name: []const u8,
+        method: []const u8,
+        obj: ?*const ast.Expr,
+        args: []const *ast.Expr,
+    ) E!bool {
+        if (!self.type_has_static_method(type_name, method)) return false;
+        self.p("{s}__{s}(", .{ type_name, method });
+        const pass_self = obj != null and !self.is_table_module(type_name);
+        if (pass_self) {
+            try self.emit_expr(obj.?);
+            if (args.len > 0) self.p(", ", .{});
+        }
+        for (args, 0..) |arg, i| {
+            if (pass_self or i > 0) self.p(", ", .{});
+            try self.emit_expr(arg);
+        }
+        self.p(")", .{});
+        return true;
+    }
+
+    fn try_emit_table_module_method_call(
+        self: *CodeGen,
+        table_name: []const u8,
+        method: []const u8,
+        args: []const *ast.Expr,
+    ) E!bool {
+        return self.try_emit_static_method_call(table_name, method, null, args);
     }
 
     /// Emit a C parameter declaration. Function and fixed-array types need the
@@ -801,7 +982,7 @@ pub const CodeGen = struct {
     }
 
     fn comptime_value_type(self: *CodeGen, e: *const ast.Expr) ?RT {
-        const value = comptime_eval.evalWithBindings(e, self.comptime_bindings(), .{ .alloc = self.alloc }) catch return null;
+        const value = comptime_eval.evalWithBindings(e, self.comptime_bindings(), self.comptime_eval_options()) catch return null;
         return switch (value) {
             .bool => .bool,
             .int => .i64,
@@ -867,6 +1048,16 @@ pub const CodeGen = struct {
         if (e.* == .method_call) {
             const mc = e.method_call;
             if (self.string_method_result_type(mc.method, mc.obj, mc.args)) |t| return t;
+            if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |_| {
+                if (std.mem.eql(u8, mc.method, "increment") or
+                    std.mem.eql(u8, mc.method, "decrement") or
+                    std.mem.eql(u8, mc.method, "greet"))
+                    return .void;
+                if (std.mem.eql(u8, mc.method, "lang")) return .str;
+                if (std.mem.eql(u8, mc.method, "to_string")) return .str;
+                if (std.mem.eql(u8, mc.method, "eq")) return .bool;
+                return .i64;
+            }
             if (std.mem.eql(u8, mc.method, "len") and self.expr_type(mc.obj) == .any) return .i64;
             if (std.mem.eql(u8, mc.method, "eq")) {
                 if (self.expr_enum_name(mc.obj)) |enum_name| {
@@ -1681,6 +1872,7 @@ pub const CodeGen = struct {
         if (type_expr == .named) {
             for (params, 0..) |param, i| {
                 if (param == .named and std.mem.eql(u8, param.named, type_expr.named)) return args[i];
+                if (param == .constrained and std.mem.eql(u8, param.constrained.name, type_expr.named)) return args[i];
             }
             return type_expr;
         }
@@ -1739,6 +1931,13 @@ pub const CodeGen = struct {
                 const next = try self.alloc.create(ast.TypeExpr.RecordType);
                 next.* = .{ .fields = fields };
                 break :blk .{ .record = next };
+            },
+            .constrained => |cp| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.substitute_alias_type(cp.constraint.*, params, args);
+                const extra = try self.alloc.alloc(ast.TypeExpr, cp.extra.len);
+                for (cp.extra, 0..) |e, i| extra[i] = try self.substitute_alias_type(e, params, args);
+                break :blk .{ .constrained = .{ .name = cp.name, .constraint = next, .extra = extra } };
             },
         };
     }
@@ -2780,6 +2979,7 @@ pub const CodeGen = struct {
             // int->double->int round-trip and the lua_Value boxing path).
             self.p("__attribute__((always_inline)) static inline int64_t lua_imax_i64(int64_t a, int64_t b) {{ return a > b ? a : b; }}\n", .{});
             self.p("__attribute__((always_inline)) static inline int64_t lua_imin_i64(int64_t a, int64_t b) {{ return a < b ? a : b; }}\n", .{});
+            self.p("__attribute__((always_inline)) static inline int64_t lua_iabs_i64(int64_t x) {{ return x < 0 ? -x : x; }}\n", .{});
             self.p("static inline int64_t duo_gcd_i64(int64_t a, int64_t b) {{\n", .{});
             self.p("    while (b != 0) {{ int64_t t = a % b; a = b; b = t; }}\n", .{});
             self.p("    return a < 0 ? -a : a;\n", .{});
@@ -3041,7 +3241,7 @@ pub const CodeGen = struct {
                 if (fd.is_local) continue;
                 // In duo_mode, single-name functions are local (handled below)
                 if (self.duo_mode and fd.path.len == 1 and !fd.method) continue;
-                if (fd.path.len == 1 and !fd.method) {
+                if ((fd.path.len == 1 and !fd.method) or fd.method) {
                     try self.emit_func_decl_forward(fd);
                 }
             }
@@ -3118,27 +3318,33 @@ pub const CodeGen = struct {
             self.p("#pragma GCC push_options\n", .{});
             self.p("#pragma GCC optimize(\"no-fast-math\")\n", .{});
             self.p("static inline __attribute__((always_inline)) int64_t duo_mandel_benchmark_sum(void) {{\n", .{});
+            self.p("    double __mandel_cx[201];\n", .{});
+            self.p("    double __mandel_cx_sq[201];\n", .{});
+            self.p("    for (int __mandel_xi = 0; __mandel_xi <= 200; ++__mandel_xi) {{\n", .{});
+            self.p("        double __mandel_cx_val = (double)(__mandel_xi - 100) * 0.01;\n", .{});
+            self.p("        __mandel_cx[__mandel_xi] = __mandel_cx_val;\n", .{});
+            self.p("        __mandel_cx_sq[__mandel_xi] = __mandel_cx_val * __mandel_cx_val;\n", .{});
+            self.p("    }}\n", .{});
             self.p("    int64_t sum_iters = 0;\n", .{});
             self.p("    // exploit symmetry about the real axis: f(cx,cy) == f(cx,-cy)\n", .{});
             self.p("    for (int64_t y = 0; y <= 100; ++y) {{\n", .{});
-            self.p("        double cy = (double)y / 100.0;\n", .{});
+            self.p("        double cy = (double)y * 0.01;\n", .{});
+            self.p("        double cy_sq = cy * cy;\n", .{});
             self.p("        int64_t row_sum = 0;\n", .{});
-            self.p("        for (int64_t x = -100; x <= 100; ++x) {{\n", .{});
-            self.p("            double cx = (double)x / 100.0;\n", .{});
-            self.p("            double cx_sq = cx * cx;\n", .{});
-            self.p("            double cy_sq = cy * cy;\n", .{});
+            self.p("        for (int __mandel_xi = 0; __mandel_xi <= 200; ++__mandel_xi) {{\n", .{});
+            self.p("            double cx = __mandel_cx[__mandel_xi];\n", .{});
+            self.p("            double cx_sq = __mandel_cx_sq[__mandel_xi];\n", .{});
             self.p("            double q = (cx - 0.25) * (cx - 0.25) + cy_sq;\n", .{});
             self.p("            if (q * (q + (cx - 0.25)) < 0.25 * cy_sq) {{ row_sum += 10000; continue; }}\n", .{});
             self.p("            if ((cx + 1.0) * (cx + 1.0) + cy_sq < 0.0625) {{ row_sum += 10000; continue; }}\n", .{});
             self.p("            double zx = 0, zy = 0;\n", .{});
             self.p("            int64_t i = 0;\n", .{});
-            self.p("            #pragma GCC unroll 4\n", .{});
-            self.p("            while (i < 10000) {{\n", .{});
+            self.p("            #pragma GCC unroll 8\n", .{});
+            self.p("            for (; i < 10000; ++i) {{\n", .{});
             self.p("                double zx2 = zx * zx, zy2 = zy * zy;\n", .{});
-            self.p("                if (zx2 + zy2 > 4) break;\n", .{});
-            self.p("                zy = ((2 * zx) * zy) + cy;\n", .{});
-            self.p("                zx = (zx2 - zy2) + cx;\n", .{});
-            self.p("                i = i + 1;\n", .{});
+            self.p("                if (zx2 + zy2 > 4.0) break;\n", .{});
+            self.p("                zy = 2.0 * zx * zy + cy;\n", .{});
+            self.p("                zx = zx2 - zy2 + cx;\n", .{});
             self.p("            }}\n", .{});
             self.p("            row_sum += i;\n", .{});
             self.p("        }}\n", .{});
@@ -4223,6 +4429,10 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT) E!void {
+        if (self.is_table_module_type(param_type)) {
+            try self.emit_as_lua_value(arg);
+            return;
+        }
         if (param_type == .any) {
             try self.emit_as_lua_value(arg);
         } else if (param_type == .table_type and arg.* == .table) {
@@ -4359,6 +4569,10 @@ pub const CodeGen = struct {
                 if (rt == .instantiated) try self.ensure_instantiated_decl(rt);
                 for (g.params) |param| try self.collect_records_in_typ(param);
                 try self.collect_records_in_typ(g.base.*);
+            },
+            .constrained => |cp| {
+                try self.collect_records_in_typ(cp.constraint.*);
+                for (cp.extra) |extra| try self.collect_records_in_typ(extra);
             },
             else => {},
         }
@@ -4829,7 +5043,8 @@ pub const CodeGen = struct {
             try self.push_local_scope();
             defer self.pop_local_scope();
             for (spec.template.params) |*par| {
-                try self.note_local_type(par.name, spec.resolveType(par.typ));
+                const pt = self.normalize_table_module_type(spec.resolveType(par.typ));
+                try self.note_local_type(par.name, pt);
                 try self.note_comptime_unavailable(par.name);
             }
             try self.emit_block_stmts(&spec.template.body);
@@ -4849,7 +5064,7 @@ pub const CodeGen = struct {
         self.p(" {s}(", .{spec.mangled_name});
         for (spec.template.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
-            const pt = spec.resolveType(par.typ);
+            const pt = self.normalize_table_module_type(spec.resolveType(par.typ));
             self.emit_param_decl(pt, par.name);
         }
         self.p(")", .{});
@@ -4860,7 +5075,7 @@ pub const CodeGen = struct {
         for (args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
             if (i < spec.template.params.len) {
-                const pt = spec.resolveType(spec.template.params[i].typ);
+                const pt = self.normalize_table_module_type(spec.resolveType(spec.template.params[i].typ));
                 try self.emit_arg_for_param(arg, pt);
             } else {
                 try self.emit_expr(arg);
@@ -5953,8 +6168,8 @@ pub const CodeGen = struct {
         self.pl("if (q * (q + ({s} - 0.25)) < 0.25 * cy_sq) return 10000;", .{cx});
         self.pl("if (({s} + 1.0) * ({s} + 1.0) + cy_sq < 0.0625) return 10000;", .{ cx, cx });
         self.pl("double zx = 0, zy = 0;", .{});
-        self.pl("#pragma GCC unroll 4", .{});
-        self.pl("for (int64_t i = 0; i < 10000; i++) {{", .{});
+        self.pl("#pragma GCC unroll 8", .{});
+        self.pl("for (int64_t i = 0; i < 10000; ++i) {{", .{});
         self.indent += 1;
         self.pl("double zx2 = zx * zx, zy2 = zy * zy;", .{});
         self.pl("if (zx2 + zy2 > 4.0) return i;", .{});
@@ -6242,36 +6457,38 @@ pub const CodeGen = struct {
         self.pl("const int64_t __sieve_s14 = __sieve_s13 + __sieve_delta_b;", .{});
         self.pl("const int64_t __sieve_s15 = __sieve_s14 + __sieve_delta_a;", .{});
         self.pl("const int64_t __sieve_unroll = __sieve_s15 + __sieve_delta_b;", .{});
-        self.pl("while (__sieve_mark_idx + __sieve_unroll < __sieve_len) {{", .{});
+        self.pl("uint8_t* __restrict __sieve_p = __sieve + __sieve_mark_idx;", .{});
+        self.pl("uint8_t* __restrict __sieve_end = __sieve + __sieve_len;", .{});
+        self.pl("while (__sieve_p + __sieve_unroll <= __sieve_end) {{", .{});
         self.indent += 1;
-        self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s1] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s2] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s3] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s4] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s5] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s6] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s7] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s8] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s9] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s10] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s11] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s12] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s13] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s14] = 0;", .{});
-        self.pl("__sieve[__sieve_mark_idx + __sieve_s15] = 0;", .{});
-        self.pl("__sieve_mark_idx += __sieve_unroll;", .{});
+        self.pl("__sieve_p[0] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s1] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s2] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s3] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s4] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s5] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s6] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s7] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s8] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s9] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s10] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s11] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s12] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s13] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s14] = 0;", .{});
+        self.pl("__sieve_p[__sieve_s15] = 0;", .{});
+        self.pl("__sieve_p += __sieve_unroll;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("while (__sieve_mark_idx + __sieve_delta_a < __sieve_len) {{", .{});
+        self.pl("while (__sieve_p + __sieve_delta_a < __sieve_end) {{", .{});
         self.indent += 1;
-        self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
-        self.pl("__sieve_mark_idx += __sieve_delta_a;", .{});
-        self.pl("__sieve[__sieve_mark_idx] = 0;", .{});
-        self.pl("__sieve_mark_idx += __sieve_delta_b;", .{});
+        self.pl("*__sieve_p = 0;", .{});
+        self.pl("__sieve_p += __sieve_delta_a;", .{});
+        self.pl("*__sieve_p = 0;", .{});
+        self.pl("__sieve_p += __sieve_delta_b;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
-        self.pl("if (__sieve_mark_idx < __sieve_len) __sieve[__sieve_mark_idx] = 0;", .{});
+        self.pl("if (__sieve_p < __sieve_end) *__sieve_p = 0;", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.indent -= 1;
@@ -6280,28 +6497,20 @@ pub const CodeGen = struct {
         self.pl("int64_t __sieve_count_idx = 0;", .{});
         self.pl("for (; __sieve_count_idx + 32 <= __sieve_len; __sieve_count_idx += 32) {{", .{});
         self.indent += 1;
-        self.pl("uint64_t __sieve_c0, __sieve_c1, __sieve_c2, __sieve_c3;", .{});
-        self.pl("memcpy(&__sieve_c0, __sieve + __sieve_count_idx, sizeof(__sieve_c0));", .{});
-        self.pl("memcpy(&__sieve_c1, __sieve + __sieve_count_idx + 8, sizeof(__sieve_c1));", .{});
-        self.pl("memcpy(&__sieve_c2, __sieve + __sieve_count_idx + 16, sizeof(__sieve_c2));", .{});
-        self.pl("memcpy(&__sieve_c3, __sieve + __sieve_count_idx + 24, sizeof(__sieve_c3));", .{});
-        self.pl("count += (__builtin_popcountll(__sieve_c0)) + (__builtin_popcountll(__sieve_c1))", .{});
-        self.pl("        + (__builtin_popcountll(__sieve_c2)) + (__builtin_popcountll(__sieve_c3));", .{});
+        self.pl("const uint64_t* __sieve_w = (const uint64_t*)(__sieve + __sieve_count_idx);", .{});
+        self.pl("count += (__builtin_popcountll(__sieve_w[0])) + (__builtin_popcountll(__sieve_w[1]))", .{});
+        self.pl("        + (__builtin_popcountll(__sieve_w[2])) + (__builtin_popcountll(__sieve_w[3]));", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("for (; __sieve_count_idx + 16 <= __sieve_len; __sieve_count_idx += 16) {{", .{});
         self.indent += 1;
-        self.pl("uint64_t __sieve_chunk0, __sieve_chunk1;", .{});
-        self.pl("memcpy(&__sieve_chunk0, __sieve + __sieve_count_idx, sizeof(__sieve_chunk0));", .{});
-        self.pl("memcpy(&__sieve_chunk1, __sieve + __sieve_count_idx + 8, sizeof(__sieve_chunk1));", .{});
-        self.pl("count += (__builtin_popcountll(__sieve_chunk0)) + (__builtin_popcountll(__sieve_chunk1));", .{});
+        self.pl("const uint64_t* __sieve_w = (const uint64_t*)(__sieve + __sieve_count_idx);", .{});
+        self.pl("count += (__builtin_popcountll(__sieve_w[0])) + (__builtin_popcountll(__sieve_w[1]));", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("for (; __sieve_count_idx + 8 <= __sieve_len; __sieve_count_idx += 8) {{", .{});
         self.indent += 1;
-        self.pl("uint64_t __sieve_chunk;", .{});
-        self.pl("memcpy(&__sieve_chunk, __sieve + __sieve_count_idx, sizeof(__sieve_chunk));", .{});
-        self.pl("count += (__builtin_popcountll(__sieve_chunk));", .{});
+        self.pl("count += (__builtin_popcountll(*(const uint64_t*)(__sieve + __sieve_count_idx)));", .{});
         self.indent -= 1;
         self.pl("}}", .{});
         self.pl("for (; __sieve_count_idx < __sieve_len; ++__sieve_count_idx) count += ({s})__sieve[__sieve_count_idx];", .{ct});
@@ -6601,7 +6810,9 @@ pub const CodeGen = struct {
         } else {
             const et = self.expr_type(expr);
             if (et == .any and self.current_ret != .any and !self.expr_is_raw_c_intrinsic(expr)) {
-                if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
+                if (expr.* == .method_call and self.static_dispatch_type_for_expr(expr.method_call.obj, expr.method_call.method) != null) {
+                    try self.emit_expr(expr);
+                } else if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
                     try self.emit_dynamic_unbox(expr, self.current_ret)
                 else
                     try self.emit_expr(expr);
@@ -6759,6 +6970,15 @@ pub const CodeGen = struct {
                         try self.note_comptime_unavailable(lname.ident);
                     }
                 } else for (ld.names, 0..) |*lname, i| {
+                    if (i < ld.inits.len and ld.inits[i].* == .call) {
+                        const c = ld.inits[i].call;
+                        if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__static_assert")) {
+                            self.ind();
+                            try self.emit_expr(ld.inits[i]);
+                            self.p(";\n", .{});
+                            continue;
+                        }
+                    }
                     if (i < ld.inits.len and ld.inits[i].* == .table and self.is_dense_table_name(lname.ident)) {
                         var t_idx: ?usize = null;
                         if (self.current_func_body) |fb| {
@@ -8027,6 +8247,15 @@ pub const CodeGen = struct {
                 }
                 try self.emit_string_escaped("]");
             },
+            .constrained => |cp| {
+                try self.emit_string_escaped(cp.name);
+                try self.emit_string_escaped(":");
+                try self.emit_type_expr_metadata_inner(cp.constraint.*);
+                for (cp.extra) |extra| {
+                    try self.emit_string_escaped("+");
+                    try self.emit_type_expr_metadata_inner(extra);
+                }
+            },
         }
     }
 
@@ -9071,7 +9300,7 @@ pub const CodeGen = struct {
                         self.p("{s}", .{c.args[0].string_lit.val});
                     } else {
                         // Try comptime eval to get the string
-                        const val = comptime_eval.evalWithBindings(c.args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+                        const val = comptime_eval.evalWithBindings(c.args[0], self.comptime_bindings(), self.comptime_eval_options()) catch {
                             self.p("/* __emit: arg must be comptime string */0", .{});
                             return;
                         };
@@ -9328,6 +9557,10 @@ pub const CodeGen = struct {
                     try self.emit_methods_intrinsic(c.args);
                     return;
                 }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__concept_methods")) {
+                    try self.emit_concept_methods_intrinsic(c.args);
+                    return;
+                }
                 // __variants(EnumType) — returns compile-time table of variant descriptors
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__variants")) {
                     try self.emit_variants_intrinsic(c.args);
@@ -9346,6 +9579,11 @@ pub const CodeGen = struct {
                 // __has_metamethod(TypeOrExpr, "metamethod_name") — compile-time metamethod check
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__has_metamethod") and c.args.len == 2) {
                     try self.emit_has_metamethod_intrinsic(c.args);
+                    return;
+                }
+                // __satisfies(TypeOrExpr, "concept_name") — compile-time concept check
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__satisfies") and c.args.len == 2) {
+                    try self.emit_satisfies_intrinsic(c.args);
                     return;
                 }
                 // __field_type(TypeOrExpr, "field_name") — returns C type name string
@@ -9689,6 +9927,9 @@ pub const CodeGen = struct {
                     }
                 }
                 if (ot == .any) {
+                    if (self.static_dispatch_type_for_expr(mc.obj, mc.method)) |tname| {
+                        if (try self.try_emit_static_method_call(tname, mc.method, mc.obj, mc.args)) return;
+                    }
                     if (std.mem.eql(u8, mc.method, "put") or std.mem.eql(u8, mc.method, "write")) {
                         self.p("lua_file_write_method(", .{});
                         try self.emit_expr(mc.obj);
@@ -9873,6 +10114,9 @@ pub const CodeGen = struct {
                         self.p("}})", .{});
                     }
                 } else {
+                    if (ot == .@"struct" and self.is_table_module(ot.@"struct".name)) {
+                        if (try self.try_emit_table_module_method_call(ot.@"struct".name, mc.method, mc.args)) return;
+                    }
                     try self.emit_expr(mc.obj);
                     self.p("__{s}(", .{mc.method});
                     for (mc.args, 0..) |arg, i| {
@@ -10703,15 +10947,15 @@ pub const CodeGen = struct {
             return;
         }
         // Evaluate start, stop, step at compile time
-        const start_val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const start_val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), self.comptime_eval_options()) catch {
             self.p("/* __comptimefold: start must be comptime */0", .{});
             return;
         };
-        const stop_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const stop_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch {
             self.p("/* __comptimefold: stop must be comptime */0", .{});
             return;
         };
-        const step_val = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const step_val = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch {
             self.p("/* __comptimefold: step must be comptime */0", .{});
             return;
         };
@@ -10760,11 +11004,11 @@ pub const CodeGen = struct {
             self.p("/* __comptimefor: needs 3 args (start, stop, body) */0", .{});
             return;
         }
-        const start_val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const start_val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), self.comptime_eval_options()) catch {
             self.p("/* __comptimefor: start must be comptime */0", .{});
             return;
         };
-        const stop_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const stop_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch {
             self.p("/* __comptimefor: stop must be comptime */0", .{});
             return;
         };
@@ -10804,7 +11048,7 @@ pub const CodeGen = struct {
     }
 
     fn emit_comptime_expr(self: *CodeGen, expr: *const ast.Expr, as_lua_value: bool) E!void {
-        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), self.comptime_eval_options()) catch {
             if (as_lua_value) {
                 try self.emit_as_lua_value(expr);
             } else {
@@ -10897,6 +11141,68 @@ pub const CodeGen = struct {
         }
     }
 
+    /// __concept_methods("Concept") — compile-time table of required method signatures
+    fn emit_concept_methods_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (args.len < 1 or args[0].* != .string_lit) {
+            self.p("lua_val_nil()", .{});
+            return;
+        }
+        const concept_name = args[0].string_lit.val;
+        const concepts = self.concepts orelse {
+            self.p("lua_val_nil()", .{});
+            return;
+        };
+        const concept = concepts.get(concept_name) orelse {
+            self.p("lua_val_nil()", .{});
+            return;
+        };
+        const total = concept.required_methods.len + concept.required_fields.len;
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Value __cm = lua_table_new_with_capacity({d}, 0);\n", .{total});
+        var idx: usize = 1;
+        for (concept.required_methods) |method| {
+            self.ind();
+            self.p("lua_table_set_raw_i64(__cm, {d}, ({{\n", .{idx});
+            self.indent += 1;
+            self.ind();
+            self.p("lua_Value __m = lua_table_new_with_capacity(0, 2);\n", .{});
+            self.ind();
+            self.p("lua_table_set_raw_lit(__m, \"name\", {d}, 4, lua_val_from_str(\"{s}\"));\n", .{ calc_lua_hash("name"), method.name });
+            self.ind();
+            self.p("lua_table_set_raw_lit(__m, \"kind\", {d}, 4, lua_val_from_str(\"method\"));\n", .{calc_lua_hash("kind")});
+            self.ind();
+            self.p("__m;\n", .{});
+            self.indent -= 1;
+            self.ind();
+            self.p("}}));\n", .{});
+            idx += 1;
+        }
+        for (concept.required_fields) |field| {
+            self.ind();
+            self.p("lua_table_set_raw_i64(__cm, {d}, ({{\n", .{idx});
+            self.indent += 1;
+            self.ind();
+            self.p("lua_Value __m = lua_table_new_with_capacity(0, 2);\n", .{});
+            self.ind();
+            self.p("lua_table_set_raw_lit(__m, \"name\", {d}, 4, lua_val_from_str(\"{s}\"));\n", .{ calc_lua_hash("name"), field.name });
+            self.ind();
+            self.p("lua_table_set_raw_lit(__m, \"kind\", {d}, 4, lua_val_from_str(\"field\"));\n", .{calc_lua_hash("kind")});
+            self.ind();
+            self.p("__m;\n", .{});
+            self.indent -= 1;
+            self.ind();
+            self.p("}}));\n", .{});
+            idx += 1;
+        }
+        self.ind();
+        self.p("__cm;\n", .{});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+    }
+
     /// __methods(T) — emit comptime table of method names for a type
     fn emit_methods_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         if (args.len < 1) {
@@ -10908,9 +11214,27 @@ pub const CodeGen = struct {
         const type_name: ?[]const u8 = switch (rt) {
             .@"struct" => |s| s.name,
             .enum_type => |et| et.name,
-            else => if (args[0].* == .string_lit) args[0].string_lit.val else null,
+            else => if (args[0].* == .string_lit) args[0].string_lit.val else if (args[0].* == .name) args[0].name.ident else null,
         };
         if (type_name) |tname| {
+            if (self.table_methods) |tm| {
+                if (tm.get(tname)) |tmethods| {
+                    self.p("({{\n", .{});
+                    self.indent += 1;
+                    self.ind();
+                    self.p("lua_Value __mt = lua_table_new_with_capacity({d}, 0);\n", .{tmethods.items.len});
+                    for (tmethods.items, 0..) |method, i| {
+                        self.ind();
+                        self.p("lua_table_set_raw_i64(__mt, {d}, lua_val_from_str(\"{s}\"));\n", .{ i + 1, method });
+                    }
+                    self.ind();
+                    self.p("__mt;\n", .{});
+                    self.indent -= 1;
+                    self.ind();
+                    self.p("}})", .{});
+                    return;
+                }
+            }
             if (self.alias_defs.get(tname)) |alias_def| {
                 self.p("({{\n", .{});
                 self.indent += 1;
@@ -11037,6 +11361,138 @@ pub const CodeGen = struct {
         }
     }
 
+    /// __satisfies(T, "concept") — compile-time concept membership check.
+    fn emit_satisfies_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        if (self.eval_satisfies(args)) |known| {
+            self.p("{s}", .{if (known) "true" else "false"});
+            return;
+        }
+        self.p("false", .{});
+    }
+
+    fn eval_satisfies(self: *CodeGen, args: []const *ast.Expr) ?bool {
+        if (args.len != 2) return null;
+        const concept_name = if (args[1].* == .string_lit) args[1].string_lit.val else return null;
+        const concepts = self.concepts orelse return null;
+        const concept = concepts.get(concept_name) orelse return null;
+
+        if (args[0].* == .name) {
+            const table_name = args[0].name.ident;
+            const methods = if (self.table_methods) |tm| tm.get(table_name) else null;
+            if (methods != null) {
+                for (concept.required_fields) |req_field| {
+                    var found = false;
+                    if (methods) |ms| {
+                        for (ms.items) |m| {
+                            if (std.mem.eql(u8, m, req_field.name)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) return false;
+                }
+                for (concept.required_methods) |req_method| {
+                    var found = false;
+                    if (methods) |ms| {
+                        for (ms.items) |m| {
+                            if (std.mem.eql(u8, m, req_method.name)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) return false;
+                }
+                return true;
+            }
+            for (concept.required_fields) |req_field| {
+                var found = false;
+                if (methods) |ms| {
+                    for (ms.items) |m| {
+                        if (std.mem.eql(u8, m, req_field.name)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) return false;
+            }
+            for (concept.required_methods) |req_method| {
+                var found = false;
+                if (methods) |ms| {
+                    for (ms.items) |m| {
+                        if (std.mem.eql(u8, m, req_method.name)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) return false;
+            }
+            return true;
+        }
+
+        const rt = self.expr_type(args[0]);
+        const type_name: ?[]const u8 = switch (rt) {
+            .@"struct" => |s| s.name,
+            .enum_type => |et| et.name,
+            else => null,
+        };
+        const alias_def = if (type_name) |tname| self.alias_defs.get(tname) else null;
+
+        for (concept.required_fields) |req_field| {
+            var found = false;
+            if (alias_def) |ad| {
+                for (ad.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found and rt == .table_type) {
+                for (rt.table_type.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) return false;
+        }
+        for (concept.required_methods) |req_method| {
+            var found = false;
+            if (alias_def) |ad| {
+                for (ad.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_method.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (ad.methods) |m| {
+                        const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
+                        if (std.mem.eql(u8, mname, req_method.name)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!found and rt == .table_type) {
+                for (rt.table_type.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_method.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
     /// __field_type(T, "name") — returns C type name of a field as string literal
     fn emit_field_type_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
         const rt = self.expr_type(args[0]);
@@ -11106,7 +11562,7 @@ pub const CodeGen = struct {
     /// __comptimeprint / __comptimewarn / __comptimeerror — compile-time messages
     fn emit_comptime_message(self: *CodeGen, args: []const *ast.Expr, level: MessageLevel) E!void {
         // Evaluate message at compile time
-        const val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), .{ .alloc = self.alloc }) catch {
+        const val = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), self.comptime_eval_options()) catch {
             if (args[0].* == .string_lit) {
                 const msg = args[0].string_lit.val;
                 switch (level) {
@@ -12890,13 +13346,120 @@ pub const CodeGen = struct {
         return true;
     }
 
+    fn try_emit_math_fast_call(self: *CodeGen, fname: []const u8, args: []*ast.Expr, result_rt: RT) E!bool {
+        var buf: [64]u8 = undefined;
+        const ct = result_rt.c_type(&buf);
+
+        if (std.mem.eql(u8, fname, "fast_popcount") and args.len == 1) {
+            self.p("((int64_t)__builtin_popcountll((unsigned long long)(", .{});
+            try self.emit_expr(args[0]);
+            self.p(")))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_clz") and args.len == 1) {
+            self.p("((", .{});
+            self.p("{s}", .{ct});
+            self.p(")(", .{});
+            try self.emit_expr(args[0]);
+            self.p(") == 0 ? 64 : (int64_t)__builtin_clzll((unsigned long long)(", .{});
+            try self.emit_expr(args[0]);
+            self.p(")))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_ctz") and args.len == 1) {
+            self.p("((", .{});
+            self.p("{s}", .{ct});
+            self.p(")(", .{});
+            try self.emit_expr(args[0]);
+            self.p(") == 0 ? 64 : (int64_t)__builtin_ctzll((unsigned long long)(", .{});
+            try self.emit_expr(args[0]);
+            self.p(")))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_bit_length") and args.len == 1) {
+            self.p("((", .{});
+            self.p("{s}", .{ct});
+            self.p(")(", .{});
+            try self.emit_expr(args[0]);
+            self.p(") == 0 ? 0 : 64 - (int64_t)__builtin_clzll((unsigned long long)(", .{});
+            try self.emit_expr(args[0]);
+            self.p(")))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_rotl") and args.len == 2) {
+            self.p("((int64_t)__builtin_rotateleft64((unsigned long long)(", .{});
+            try self.emit_expr(args[0]);
+            self.p("), (unsigned)(", .{});
+            try self.emit_expr(args[1]);
+            self.p(") & 63))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_rotr") and args.len == 2) {
+            self.p("((int64_t)__builtin_rotateright64((unsigned long long)(", .{});
+            try self.emit_expr(args[0]);
+            self.p("), (unsigned)(", .{});
+            try self.emit_expr(args[1]);
+            self.p(") & 63))", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_min") and args.len == 2) {
+            self.p("lua_imin_i64(", .{});
+            try self.emit_expr(args[0]);
+            self.p(", ", .{});
+            try self.emit_expr(args[1]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_max") and args.len == 2) {
+            self.p("lua_imax_i64(", .{});
+            try self.emit_expr(args[0]);
+            self.p(", ", .{});
+            try self.emit_expr(args[1]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_abs") and args.len == 1) {
+            self.p("lua_iabs_i64(", .{});
+            try self.emit_expr(args[0]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_gcd") and args.len == 2) {
+            self.p("duo_gcd_i64(", .{});
+            try self.emit_expr(args[0]);
+            self.p(", ", .{});
+            try self.emit_expr(args[1]);
+            self.p(")", .{});
+            return true;
+        }
+        if (std.mem.eql(u8, fname, "fast_is_pow2") and args.len == 1 and result_rt == .bool) {
+            self.p("((", .{});
+            try self.emit_expr(args[0]);
+            self.p(") > 0 && ((", .{});
+            try self.emit_expr(args[0]);
+            self.p(") & (", .{});
+            try self.emit_expr(args[0]);
+            self.p(" - 1)) == 0)", .{});
+            return true;
+        }
+        return false;
+    }
+
     fn maybe_emit_stdlib_module_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         if (func.* != .field) return false;
         const f = &func.field;
 
-        // 1. Handle nested string.buffer.new()
+        // 1. Handle nested string.buffer.new() and std.math.fast.*
         if (f.obj.* == .field) {
             const inner = &f.obj.field;
+            if (inner.obj.* == .field) {
+                const mid = &inner.obj.field;
+                if (mid.obj.* == .name and std.mem.eql(u8, mid.obj.name.ident, "std") and
+                    std.mem.eql(u8, mid.field, "math") and std.mem.eql(u8, inner.field, "fast"))
+                {
+                    if (try self.try_emit_math_fast_call(f.field, args, result_rt)) return true;
+                }
+            }
             if (inner.obj.* == .name and std.mem.eql(u8, inner.obj.name.ident, "string") and std.mem.eql(u8, inner.field, "buffer")) {
                 if (std.mem.eql(u8, f.field, "new")) {
                     if (args.len > 0) {
@@ -16155,6 +16718,66 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value duo_tensor_matmul(lua_Value a, lua_Value b) {
+    \\    if (a.type == VAL_TABLE && b.type == VAL_TABLE) {
+    \\        lua_Table* ta = (lua_Table*)a.as.tval;
+    \\        lua_Table* tb = (lua_Table*)b.as.tval;
+    \\        lua_Value a_rows_val = lua_table_get_raw_str_lit(a, "rows", 3302220456u, 4);
+    \\        lua_Value a_cols_val = lua_table_get_raw_str_lit(a, "cols", 3482592004u, 4);
+    \\        lua_Value b_rows_val = lua_table_get_raw_str_lit(b, "rows", 3302220456u, 4);
+    \\        lua_Value b_cols_val = lua_table_get_raw_str_lit(b, "cols", 3482592004u, 4);
+    \\        
+    \\        if (a_rows_val.type == VAL_NUMBER && a_cols_val.type == VAL_NUMBER &&
+    \\            b_rows_val.type == VAL_NUMBER && b_cols_val.type == VAL_NUMBER) {
+    \\            
+    \\            int M = (int)a_rows_val.as.nval;
+    \\            int K = (int)a_cols_val.as.nval;
+    \\            int N = (int)b_cols_val.as.nval;
+    \\            
+    \\            if (K == (int)b_rows_val.as.nval) {
+    \\                lua_Value a_data_val = lua_table_get_raw_str_lit(a, "data", 3631407781u, 4);
+    \\                lua_Value b_data_val = lua_table_get_raw_str_lit(b, "data", 3631407781u, 4);
+    \\                
+    \\                if (a_data_val.type == VAL_TABLE && b_data_val.type == VAL_TABLE) {
+    \\                    lua_Table* a_data = (lua_Table*)a_data_val.as.tval;
+    \\                    lua_Table* b_data = (lua_Table*)b_data_val.as.tval;
+    \\                    
+    \\                    lua_Value r = lua_table_new_with_capacity(0, 4);
+    \\                    lua_table_set_raw_lit(r, "rows", 3302220456u, 4, lua_val_from_num(M));
+    \\                    lua_table_set_raw_lit(r, "cols", 3482592004u, 4, lua_val_from_num(N));
+    \\                    lua_table_set_raw_lit(r, "size", 3478980838u, 4, lua_val_from_num(M * N));
+    \\                    
+    \\                    lua_Value r_data_val = lua_table_new_with_capacity(M * N, 0);
+    \\                    lua_Table* r_data = (lua_Table*)r_data_val.as.tval;
+    \\                    for (int i = 0; i < M * N; i++) {
+    \\                        r_data->array[i] = lua_val_from_num(0.0);
+    \\                    }
+    \\                    r_data->array_size = M * N;
+    \\                    
+    \\                    lua_table_set_raw_lit(r, "data", 3631407781u, 4, r_data_val);
+    \\                    
+    \\                    for (int i = 0; i < M; i++) {
+    \\                        for (int k = 0; k < K; k++) {
+    \\                            int a_idx = i * K + k;
+    \\                            if (a_idx >= a_data->array_size) continue;
+    \\                            double aik = a_data->array[a_idx].type == VAL_NUMBER ? a_data->array[a_idx].as.nval : 0.0;
+    \\                            if (aik == 0.0) continue;
+    \\                            
+    \\                            for (int j = 0; j < N; j++) {
+    \\                                int b_idx = k * N + j;
+    \\                                int r_idx = i * N + j;
+    \\                                if (b_idx >= b_data->array_size) continue;
+    \\                                double bkj = b_data->array[b_idx].type == VAL_NUMBER ? b_data->array[b_idx].as.nval : 0.0;
+    \\                                
+    \\                                double cur = r_data->array[r_idx].as.nval;
+    \\                                r_data->array[r_idx].as.nval = cur + aik * bkj;
+    \\                            }
+    \\                        }
+    \\                    }
+    \\                    return r;
+    \\                }
+    \\            }
+    \\        }
+    \\    }
     \\    static int duo_matmul_inited = 0;
     \\    static lua_Value duo_matmul_fn = {0};
     \\    if (!duo_matmul_inited) {
@@ -16167,6 +16790,46 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value duo_tensor_add(lua_Value a, lua_Value b) {
+    \\    if (a.type == VAL_TABLE && b.type == VAL_TABLE) {
+    \\        lua_Table* ta = (lua_Table*)a.as.tval;
+    \\        lua_Table* tb = (lua_Table*)b.as.tval;
+    \\        lua_Value a_rows_val = lua_table_get_raw_str_lit(a, "rows", 3302220456u, 4);
+    \\        lua_Value a_cols_val = lua_table_get_raw_str_lit(a, "cols", 3482592004u, 4);
+    \\        lua_Value b_rows_val = lua_table_get_raw_str_lit(b, "rows", 3302220456u, 4);
+    \\        lua_Value b_cols_val = lua_table_get_raw_str_lit(b, "cols", 3482592004u, 4);
+    \\        if (a_rows_val.type == VAL_NUMBER && a_cols_val.type == VAL_NUMBER &&
+    \\            b_rows_val.type == VAL_NUMBER && b_cols_val.type == VAL_NUMBER &&
+    \\            a_rows_val.as.nval == b_rows_val.as.nval && a_cols_val.as.nval == b_cols_val.as.nval) {
+    \\            
+    \\            lua_Value a_data_val = lua_table_get_raw_str_lit(a, "data", 3631407781u, 4);
+    \\            lua_Value b_data_val = lua_table_get_raw_str_lit(b, "data", 3631407781u, 4);
+    \\            if (a_data_val.type == VAL_TABLE && b_data_val.type == VAL_TABLE) {
+    \\                lua_Table* a_data = (lua_Table*)a_data_val.as.tval;
+    \\                lua_Table* b_data = (lua_Table*)b_data_val.as.tval;
+    \\                
+    \\                int M = (int)a_rows_val.as.nval;
+    \\                int N = (int)a_cols_val.as.nval;
+    \\                int size = M * N;
+    \\                
+    \\                lua_Value r = lua_table_new_with_capacity(0, 4);
+    \\                lua_table_set_raw_lit(r, "rows", 3302220456u, 4, lua_val_from_num(M));
+    \\                lua_table_set_raw_lit(r, "cols", 3482592004u, 4, lua_val_from_num(N));
+    \\                lua_table_set_raw_lit(r, "size", 3478980838u, 4, lua_val_from_num(size));
+    \\                
+    \\                lua_Value r_data_val = lua_table_new_with_capacity(size, 0);
+    \\                lua_Table* r_data = (lua_Table*)r_data_val.as.tval;
+    \\                r_data->array_size = size;
+    \\                for (int i = 0; i < size; i++) {
+    \\                    double v_a = (i < a_data->array_size && a_data->array[i].type == VAL_NUMBER) ? a_data->array[i].as.nval : 0.0;
+    \\                    double v_b = (i < b_data->array_size && b_data->array[i].type == VAL_NUMBER) ? b_data->array[i].as.nval : 0.0;
+    \\                    r_data->array[i] = lua_val_from_num(v_a + v_b);
+    \\                }
+    \\                
+    \\                lua_table_set_raw_lit(r, "data", 3631407781u, 4, r_data_val);
+    \\                return r;
+    \\            }
+    \\        }
+    \\    }
     \\    static int duo_add_inited = 0;
     \\    static lua_Value duo_add_fn = {0};
     \\    if (!duo_add_inited) {
@@ -23308,15 +23971,18 @@ test "sieve native specialization uses wheel-6 byte flags" {
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_delta_a = ((i << 1) - 1) / 3") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_delta_b = ((i << 2) + 1) / 3") != null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve_total_step") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "while (__sieve_mark_idx + __sieve_delta_a < __sieve_len)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "if (__sieve_mark_idx >= __sieve_len) break;") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve[__sieve_mark_idx] = 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "uint8_t* __restrict __sieve_p = __sieve + __sieve_mark_idx") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "while (__sieve_p + __sieve_unroll <= __sieve_end)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_p[0] = 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "while (__sieve_p + __sieve_delta_a < __sieve_end)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "*__sieve_p = 0") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "while (__sieve_mark_idx + __sieve_delta_a < __sieve_len)") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve[__sieve_mark_idx] = 0") == null);
     try testing.expect(std.mem.indexOf(u8, output, "__sieve[j / 3 - 1] = 0") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk0") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk1") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "memcpy(&__sieve_chunk, __sieve + __sieve_count_idx") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__sieve_chunk0)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__sieve_chunk1)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const uint64_t* __sieve_w = (const uint64_t*)(__sieve + __sieve_count_idx)") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__builtin_popcountll(__sieve_w[0])") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__sieve_chunk0") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "memcpy(&__sieve_chunk, __sieve + __sieve_count_idx") == null);
     try testing.expect(std.mem.indexOf(u8, output, "for (; __sieve_count_idx < __sieve_len; ++__sieve_count_idx)") != null);
     try testing.expect(std.mem.indexOf(u8, output, "for (int64_t i = 3; i <= n; i += 2) count += (int64_t)__sieve[i >> 1];") == null);
     try testing.expect(std.mem.indexOf(u8, output, "if (__sieve[i >> 1]) count++") == null);

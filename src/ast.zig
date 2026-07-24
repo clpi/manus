@@ -18,6 +18,8 @@ pub const TypeExpr = union(enum) {
     /// structural and anonymous (no name). The codegen mints a C `struct`
     /// for each unique record shape (deduplicated by content hash).
     record: *RecordType,
+    /// Generic type parameter with optional concept constraint(s): `T: Hashable` or `T: A + B`.
+    constrained: struct { name: []const u8, constraint: *TypeExpr, extra: []TypeExpr },
 
     pub const RecordType = struct {
         fields: []RecordField,
@@ -104,6 +106,18 @@ pub const TypeExpr = union(enum) {
                 .tuple => |tb| blk: {
                     if (ta.len != tb.len) break :blk false;
                     for (ta, tb) |ea, eb| {
+                        if (!ea.eql(eb)) break :blk false;
+                    }
+                    break :blk true;
+                },
+                else => false,
+            },
+            .constrained => |ca| switch (b) {
+                .constrained => |cb| blk: {
+                    if (!std.mem.eql(u8, ca.name, cb.name) or !ca.constraint.eql(cb.constraint.*))
+                        break :blk false;
+                    if (ca.extra.len != cb.extra.len) break :blk false;
+                    for (ca.extra, cb.extra) |ea, eb| {
                         if (!ea.eql(eb)) break :blk false;
                     }
                     break :blk true;

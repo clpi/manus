@@ -1088,6 +1088,34 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             }
             return ResolvedType{ .table_type = .{ .fields = fields } };
         },
+        .constrained => |cp| {
+            var concepts: std.ArrayListUnmanaged([]const u8) = .empty;
+            defer concepts.deinit(alloc);
+            switch (cp.constraint.*) {
+                .named => |n| try concepts.append(alloc, n),
+                else => {},
+            }
+            for (cp.extra) |extra| {
+                switch (extra) {
+                    .named => |n| try concepts.append(alloc, n),
+                    else => {},
+                }
+            }
+            if (concepts.items.len == 0) {
+                return ResolvedType{ .generic_param = .{ .name = cp.name, .constraint = null } };
+            }
+            if (concepts.items.len == 1) {
+                return ResolvedType{ .generic_param = .{ .name = cp.name, .constraint = concepts.items[0] } };
+            }
+            var combined: std.ArrayListUnmanaged(u8) = .empty;
+            defer combined.deinit(alloc);
+            for (concepts.items, 0..) |name, i| {
+                if (i > 0) try combined.append(alloc, '|');
+                try combined.appendSlice(alloc, name);
+            }
+            const owned = try combined.toOwnedSlice(alloc);
+            return ResolvedType{ .generic_param = .{ .name = cp.name, .constraint = owned } };
+        },
         .tuple => {
             // Tuple types represent multi-return values. At the runtime level
             // Duo uses Lua-style multi-return (caller assigns to multiple locals),

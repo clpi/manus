@@ -9,9 +9,14 @@ pub const EvalError = error{
     StepLimitExceeded,
 };
 
+pub const SatisfiesHook = *const fn (ctx: ?*anyopaque, type_expr: *const ast.Expr, concept_name: []const u8) ?bool;
+
 pub const Options = struct {
     step_limit: usize = 100_000,
     alloc: ?std.mem.Allocator = null,
+    /// Optional hook for __satisfies(Type, "Concept") during @(expr) folding.
+    satisfies_hook: ?SatisfiesHook = null,
+    satisfies_ctx: ?*anyopaque = null,
 };
 
 pub const Value = union(enum) {
@@ -348,6 +353,35 @@ pub const Evaluator = struct {
                 }
                 return error.UnsupportedExpression;
             }
+            // __satisfies(TypeOrValue, "Concept") — compile-time concept membership
+            if (std.mem.eql(u8, name, "__satisfies") and args.len == 2) {
+                const concept_val = try self.eval(args[1]);
+                if (concept_val != .string) return error.UnsupportedExpression;
+                if (self.options.satisfies_hook) |hook| {
+                    if (hook(self.options.satisfies_ctx, args[0], concept_val.string)) |known| {
+                        return .{ .bool = known };
+                    }
+                }
+                return error.UnsupportedExpression;
+            }
+            // __comptimefor(start, stop, "template") — fold simple numeric templates at comptime
+            if (std.mem.eql(u8, name, "__comptimefor") and args.len == 3) {
+                const start_v = try self.eval(args[0]);
+                const stop_v = try self.eval(args[1]);
+                if (start_v != .int or stop_v != .int) return error.UnsupportedExpression;
+                if (args[2].* != .string_lit) return error.UnsupportedExpression;
+                const tmpl = args[2].string_lit.val;
+                if (std.mem.eql(u8, tmpl, "%i")) {
+                    var sum: i64 = 0;
+                    var i = start_v.int;
+                    while (i < stop_v.int) : (i += 1) sum += i;
+                    return .{ .int = sum };
+                }
+                if (std.mem.eql(u8, tmpl, "1")) {
+                    return .{ .int = @max(stop_v.int - start_v.int, 0) };
+                }
+                return error.UnsupportedExpression;
+            }
         }
         const callee = try self.eval(func_expr);
         if (callee != .func) return error.UnsupportedExpression;
@@ -454,6 +488,64 @@ pub const Evaluator = struct {
                     }
                 }
                 return .{ .int = 0 };
+            }
+            if (std.mem.eql(u8, name, "match") and args.len >= 2) {
+                const pattern = try self.eval(args[1]);
+                if (pattern != .string) return error.UnsupportedExpression;
+                const start_i: usize = if (args.len >= 3) blk: {
+                    const sv = try self.eval(args[2]);
+                    const s = numericAsInt(sv) orelse 1;
+                    break :blk @max(1, @as(usize, @intCast(s - 1)));
+                } else 0;
+                if (start_i >= a.string.len) return .nil;
+                if (pattern.string.len == 0) return .{ .string = "" };
+                if (pattern.string.len > a.string.len - start_i) return .nil;
+                const limit = a.string.len - pattern.string.len;
+                var pos: usize = start_i;
+                while (pos <= limit) : (pos += 1) {
+                    if (std.mem.eql(u8, a.string[pos .. pos + pattern.string.len], pattern.string)) {
+                        return .{ .string = pattern.string };
+                    }
+                }
+                return .nil;
+            }
+            if (std.mem.eql(u8, name, "split") and args.len == 2) {
+                const sep_val = try self.eval(args[1]);
+                if (sep_val != .string) return error.UnsupportedExpression;
+                const sep = sep_val.string;
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                var entries: std.ArrayListUnmanaged(Value.TableEntry) = .empty;
+                if (sep.len == 0) {
+                    for (a.string, 0..) |c, idx| {
+                        var buf = alloc.alloc(u8, 1) catch return error.UnsupportedExpression;
+                        buf[0] = c;
+                        entries.append(alloc, .{ .key = .{ .int = @intCast(idx + 1) }, .val = .{ .string = buf } }) catch return error.UnsupportedExpression;
+                    }
+                } else {
+                    var pos: usize = 0;
+                    var i: i64 = 1;
+                    while (pos <= a.string.len) {
+                        const rest = a.string[pos..];
+                        const found = std.mem.indexOf(u8, rest, sep);
+                        const end = if (found) |f| pos + f else a.string.len;
+                        const part = a.string[pos..end];
+                        const owned = alloc.dupe(u8, part) catch return error.UnsupportedExpression;
+                        entries.append(alloc, .{ .key = .{ .int = i }, .val = .{ .string = owned } }) catch return error.UnsupportedExpression;
+                        if (found == null) break;
+                        pos = end + sep.len;
+                        i += 1;
+                    }
+                }
+                return .{ .table = entries.toOwnedSlice(alloc) catch return error.UnsupportedExpression };
+            }
+            if (std.mem.eql(u8, name, "trim") and args.len == 1) {
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                var start: usize = 0;
+                var end: usize = a.string.len;
+                while (start < end and std.ascii.isWhitespace(a.string[start])) start += 1;
+                while (end > start and std.ascii.isWhitespace(a.string[end - 1])) end -= 1;
+                const owned = alloc.dupe(u8, a.string[start..end]) catch return error.UnsupportedExpression;
+                return .{ .string = owned };
             }
             if (std.mem.eql(u8, name, "char") and args.len >= 2) {
                 const byte_val = try self.eval(args[1]);
@@ -661,6 +753,29 @@ pub const Evaluator = struct {
             const entries = alloc.alloc(Value.TableEntry, tbl.table.len) catch return error.UnsupportedExpression;
             @memcpy(entries, tbl.table);
             return .{ .table = entries };
+        }
+        if (std.mem.eql(u8, name, "keys") and args.len == 1) {
+            const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            var new_entries = alloc.alloc(Value.TableEntry, tbl.table.len) catch return error.UnsupportedExpression;
+            for (tbl.table, 0..) |entry, i| {
+                if (entry.name) |n| {
+                    new_entries[i] = .{ .key = .{ .int = @intCast(i + 1) }, .val = .{ .string = n } };
+                } else if (entry.key) |k| {
+                    new_entries[i] = .{ .key = .{ .int = @intCast(i + 1) }, .val = k };
+                }
+            }
+            return .{ .table = new_entries };
+        }
+        if (std.mem.eql(u8, name, "has") and args.len == 2) {
+            const key = try self.eval(args[1]);
+            for (tbl.table) |entry| {
+                if (entry.name) |n| {
+                    if (key == .string and std.mem.eql(u8, key.string, n)) return .{ .bool = true };
+                } else if (entry.key) |k| {
+                    if (k.eql(key)) return .{ .bool = true };
+                }
+            }
+            return .{ .bool = false };
         }
         return error.UnsupportedExpression;
     }
@@ -1378,6 +1493,17 @@ test "comptime eval: function values snapshot lexical captures" {
     try scope.put(alloc, "base", .{ .int = 20 });
 
     try std.testing.expectEqual(Value{ .int = 15 }, try evalWithBindings(folded_init, .{ .scopes = &scopes }, .{ .alloc = alloc }));
+}
+
+test "comptime eval: comptimefor sum template" {
+    const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
+    var zero = ast.Expr{ .int_lit = .{ .loc = loc, .val = 0 } };
+    var five = ast.Expr{ .int_lit = .{ .loc = loc, .val = 5 } };
+    var tmpl = ast.Expr{ .string_lit = .{ .loc = loc, .val = "%i" } };
+    var func = ast.Expr{ .name = .{ .loc = loc, .ident = "__comptimefor" } };
+    var args = [_]*ast.Expr{ &zero, &five, &tmpl };
+    var call = ast.Expr{ .call = .{ .loc = loc, .func = &func, .args = &args } };
+    try std.testing.expectEqual(Value{ .int = 10 }, try eval(&call));
 }
 
 test "comptime eval: step limit" {

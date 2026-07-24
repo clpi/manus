@@ -222,6 +222,9 @@ pub const Parser = struct {
             },
             .name => {
                 const t = try self.adv();
+                if (try self.eat(.colon) != null) {
+                    return try self.parse_constrained_type_param(t.text);
+                }
                 return .{ .named = t.text };
             },
             .int_lit => {
@@ -1363,14 +1366,37 @@ pub const Parser = struct {
         return self.parse_async_func_decl_with_attrs(&.{});
     }
 
+    fn parse_constrained_type_param(self: *Parser, param_name: []const u8) ParseError!ast.TypeExpr {
+        const constraint_ptr = try self.alloc.create(ast.TypeExpr);
+        constraint_ptr.* = try self.parse_type();
+        var extra: std.ArrayList(ast.TypeExpr) = .empty;
+        while (try self.eat(.plus) != null) {
+            try extra.append(self.alloc, try self.parse_type());
+        }
+        return .{ .constrained = .{
+            .name = param_name,
+            .constraint = constraint_ptr,
+            .extra = try extra.toOwnedSlice(self.alloc),
+        } };
+    }
+
+    /// Parse a generic type parameter: `T` or `T: Concept` or `T: A + B`.
+    fn parse_type_param(self: *Parser) ParseError!ast.TypeExpr {
+        const t = try self.expect(.name);
+        if (try self.eat(.colon) != null) {
+            return try self.parse_constrained_type_param(t.text);
+        }
+        return .{ .named = t.text };
+    }
+
     fn parse_func_body(self: *Parser, l: ast.Loc) ParseError!ast.FuncBody {
         // Check for type parameters: <T, U>
         var type_params: ?[]ast.TypeExpr = null;
         if (try self.eat(.lt) != null) {
             var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
-            try tp_list.append(self.alloc, try self.parse_type());
+            try tp_list.append(self.alloc, try self.parse_type_param());
             while (try self.eat(.comma) != null) {
-                try tp_list.append(self.alloc, try self.parse_type());
+                try tp_list.append(self.alloc, try self.parse_type_param());
             }
             _ = try self.expect(.gt);
             type_params = try tp_list.toOwnedSlice(self.alloc);
@@ -1425,9 +1451,9 @@ pub const Parser = struct {
         var type_params: ?[]ast.TypeExpr = null;
         if (try self.eat(.lt) != null) {
             var tp_list: std.ArrayList(ast.TypeExpr) = .empty;
-            try tp_list.append(self.alloc, try self.parse_type());
+            try tp_list.append(self.alloc, try self.parse_type_param());
             while (try self.eat(.comma) != null) {
-                try tp_list.append(self.alloc, try self.parse_type());
+                try tp_list.append(self.alloc, try self.parse_type_param());
             }
             _ = try self.expect(.gt);
             type_params = try tp_list.toOwnedSlice(self.alloc);
@@ -2758,10 +2784,12 @@ pub const Parser = struct {
             .{ .public = "is_type", .internal = "__is_type" },
             .{ .public = "fields", .internal = "__fields" },
             .{ .public = "methods", .internal = "__methods" },
+            .{ .public = "concept_methods", .internal = "__concept_methods" },
             .{ .public = "variants", .internal = "__variants" },
             .{ .public = "has_field", .internal = "__has_field" },
             .{ .public = "has_method", .internal = "__has_method" },
             .{ .public = "has_metamethod", .internal = "__has_metamethod" },
+            .{ .public = "satisfies", .internal = "__satisfies" },
             .{ .public = "field_type", .internal = "__field_type" },
             .{ .public = "field_offset", .internal = "__field_offset" },
             .{ .public = "field_size", .internal = "__field_size" },
@@ -4243,6 +4271,41 @@ test "parse: @c.import is an imported C header directive" {
     , &arena);
     try testing.expect(mod.body.stmts[0] == .cinclude);
     try testing.expectEqualStrings("math.h", mod.body.stmts[0].cinclude.header);
+}
+
+test "parse: generic type parameter with concept constraint" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Hashable
+        \\  fun hash(self) -> i64
+        \\end
+        \\fun use<T: Hashable>(x: T): i64
+        \\  x:hash()
+        \\end
+    , &arena);
+    try testing.expect(mod.body.stmts[1] == .func_decl);
+    const fb = mod.body.stmts[1].func_decl.func;
+    try testing.expect(fb.type_params != null);
+    try testing.expectEqual(@as(usize, 1), fb.type_params.?.len);
+    try testing.expect(fb.type_params.?[0] == .constrained);
+    try testing.expectEqualStrings("T", fb.type_params.?[0].constrained.name);
+    try testing.expectEqual(@as(usize, 0), fb.type_params.?[0].constrained.extra.len);
+    try testing.expect(fb.type_params.?[0].constrained.constraint.* == .named);
+    try testing.expectEqualStrings("Hashable", fb.type_params.?[0].constrained.constraint.*.named);
+}
+
+test "parse: generic type parameter with multiple concept constraints" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\fun f<T: Hashable + Counter>(x: T): i64
+        \\  0
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    try testing.expectEqual(@as(usize, 1), fb.type_params.?[0].constrained.extra.len);
+    try testing.expectEqualStrings("Counter", fb.type_params.?[0].constrained.extra[0].named);
 }
 
 test "parse: @specialize is a standalone module directive" {

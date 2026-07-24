@@ -787,6 +787,13 @@ pub const Expander = struct {
                 out.* = .{ .fields = try self.cloneRecordFields(record.fields, ctx) };
                 break :blk .{ .record = out };
             },
+            .constrained => |cp| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.cloneTypeExpr(cp.constraint.*, ctx);
+                const extra = try self.alloc.alloc(ast.TypeExpr, cp.extra.len);
+                for (cp.extra, 0..) |e, i| extra[i] = try self.cloneTypeExpr(e, ctx);
+                break :blk .{ .constrained = .{ .name = cp.name, .constraint = next, .extra = extra } };
+            },
             .tuple => |elems| .{ .tuple = try self.cloneTypeExprSlice(elems, ctx) },
         };
     }

@@ -436,7 +436,10 @@ pub const Monomorphizer = struct {
     /// Static type of an argument expression, with the active substitution
     /// environment applied to any residual type-parameter type.
     fn argType(self: *Self, arg: *const ast.Expr, env: Env, param_type: ?ast.TypeExpr) RT {
-        const base = self.type_map.get(arg) orelse .any;
+        var base = self.type_map.get(arg) orelse .any;
+        if (base == .any and arg.* == .name) {
+            base = .{ .@"struct" = .{ .name = arg.name.ident } };
+        }
         if (env) |e| {
             if (arg.* == .name) {
                 if (e.value_types.get(arg.name.ident)) |t| return t;
@@ -743,6 +746,7 @@ fn splitTopLevelArgs(alloc: Allocator, raw: []const u8) ![]const []const u8 {
 fn typeParamName(tp: ast.TypeExpr) []const u8 {
     return switch (tp) {
         .named => |n| n,
+        .constrained => |cp| cp.name,
         else => "_",
     };
 }

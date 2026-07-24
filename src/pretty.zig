@@ -119,6 +119,15 @@ pub const PrettyPrinter = struct {
                 }
                 try self.write(" }");
             },
+            .constrained => |cp| {
+                try self.write(cp.name);
+                try self.write(": ");
+                try self.printTypeExpr(cp.constraint.*);
+                for (cp.extra) |extra| {
+                    try self.write(" + ");
+                    try self.printTypeExpr(extra);
+                }
+            },
             .tuple => |elems| {
                 try self.write("(");
                 for (elems, 0..) |elem, i| {

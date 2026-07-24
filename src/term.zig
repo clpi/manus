@@ -992,13 +992,21 @@ fn testIconFlaky() []const u8 {
 
 fn testPrintRun(name: []const u8) void {
     if (test_report == .compact) return;
-    wprint("  {s} \x1b[1m{s}\x1b[0m\n", .{ testIconRun(), name });
+    if (color) {
+        wprint("  {s} \x1b[1m{s}\x1b[0m\n", .{ testIconRun(), name });
+    } else {
+        wprint("  {s} {s}\n", .{ testIconRun(), name });
+    }
 }
 
 fn testPrintPass(name: []const u8, flaky: bool) void {
     if (test_report == .compact) return;
     if (flaky) {
-        wprint("  {s} {s} \x1b[2m(flaky)\x1b[0m\n", .{ testIconFlaky(), name });
+        if (color) {
+            wprint("  {s} {s} \x1b[2m(flaky)\x1b[0m\n", .{ testIconFlaky(), name });
+        } else {
+            wprint("  {s} {s} (flaky)\n", .{ testIconFlaky(), name });
+        }
     } else if (color) {
         wprint("  {s} {s}\n", .{ testIconPass(), name });
     } else {
@@ -1009,7 +1017,11 @@ fn testPrintPass(name: []const u8, flaky: bool) void {
 fn testPrintSkip(name: []const u8, reason: ?[]const u8) void {
     if (test_report == .compact and reason == null) return;
     if (reason) |r| {
-        wprint("  {s} {s} \x1b[2m— {s}\x1b[0m\n", .{ testIconSkip(), name, r });
+        if (color) {
+            wprint("  {s} {s} \x1b[2m— {s}\x1b[0m\n", .{ testIconSkip(), name, r });
+        } else {
+            wprint("  {s} {s} — {s}\n", .{ testIconSkip(), name, r });
+        }
     } else {
         wprint("  {s} {s}\n", .{ testIconSkip(), name });
     }
@@ -1017,7 +1029,11 @@ fn testPrintSkip(name: []const u8, reason: ?[]const u8) void {
 
 fn testPrintBench(name: []const u8, warmup: u32, iter: u32, elapsed: f64, per_us: f64) void {
     if (test_report == .compact) {
-        wprint("  {s} {s} \x1b[2m{d:.3} µs/iter\x1b[0m\n", .{ testIconBench(), name, per_us });
+        if (color) {
+            wprint("  {s} {s} \x1b[2m{d:.3} µs/iter\x1b[0m\n", .{ testIconBench(), name, per_us });
+        } else {
+            wprint("  {s} {s} {d:.3} us/iter\n", .{ testIconBench(), name, per_us });
+        }
         return;
     }
     if (color) {
@@ -1047,9 +1063,17 @@ fn testPrintTime(name: []const u8, elapsed: f64) void {
 
 fn testPrintFail(name: []const u8, reason: ?[]const u8) void {
     if (reason) |r| {
-        wprint("  {s} \x1b[1m{s}\x1b[0m \x1b[31m{s}\x1b[0m\n", .{ testIconFail(), name, r });
+        if (color) {
+            wprint("  {s} \x1b[1m{s}\x1b[0m \x1b[31m{s}\x1b[0m\n", .{ testIconFail(), name, r });
+        } else {
+            wprint("  {s} {s} {s}\n", .{ testIconFail(), name, r });
+        }
     } else {
-        wprint("  {s} \x1b[1m{s}\x1b[0m\n", .{ testIconFail(), name });
+        if (color) {
+            wprint("  {s} \x1b[1m{s}\x1b[0m\n", .{ testIconFail(), name });
+        } else {
+            wprint("  {s} {s}\n", .{ testIconFail(), name });
+        }
     }
 }
 

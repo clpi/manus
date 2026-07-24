@@ -239,6 +239,8 @@ pub const Sema = struct {
     /// Populated when setmetatable(x, mt) is called and mt is a table literal
     /// with known __index. Enables compile-time method resolution.
     metatable_types: std.StringHashMapUnmanaged(RT) = .{},
+    /// Methods registered via `fun Table:method()` at module scope.
+    table_methods: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .{},
     errors: u32,
     warnings: u32,
     hints: u32,
@@ -254,6 +256,8 @@ pub const Sema = struct {
     duo_mode: bool = false,
     /// When type-checking a named top-level function body, its Duo name (for table field keys).
     current_func_name: ?[]const u8 = null,
+    /// Active generic type parameters while checking a generic function body.
+    current_func_type_params: ?[]const ast.TypeExpr = null,
     /// When inside an enum_def, alias_def, or concept_def, the name of the type
     /// being defined. Used by types.resolve() to resolve `Self` to the enclosing type.
     current_type_name: ?[]const u8 = null,
@@ -352,6 +356,7 @@ pub const Sema = struct {
             // Metaprogramming: type introspection & reflection
             std.mem.eql(u8, name, "__fields") or
             std.mem.eql(u8, name, "__methods") or
+            std.mem.eql(u8, name, "__concept_methods") or
             std.mem.eql(u8, name, "__variants") or
             std.mem.eql(u8, name, "__has_field") or
             std.mem.eql(u8, name, "__has_method") or
@@ -434,6 +439,11 @@ pub const Sema = struct {
         self.escape_names.deinit(self.alloc);
         self.metatable_types.deinit(self.alloc);
         self.table_field_types.deinit(self.alloc);
+        var tm_it = self.table_methods.iterator();
+        while (tm_it.next()) |entry| {
+            entry.value_ptr.deinit(self.alloc);
+        }
+        self.table_methods.deinit(self.alloc);
     }
 
     fn note_global(self: *Sema, name: []const u8, t: RT) !void {
@@ -1276,6 +1286,23 @@ pub const Sema = struct {
     // ── Block / statements ────────────────────────────────────────────────────
 
     fn resolve_type(self: *Sema, type_expr: ast.TypeExpr) Allocator.Error!RT {
+        if (type_expr == .named) {
+            if (self.current_func_type_params) |tps| {
+                for (tps) |tp| {
+                    switch (tp) {
+                        .constrained => |cp| {
+                            if (std.mem.eql(u8, cp.name, type_expr.named))
+                                return self.resolve_type(tp);
+                        },
+                        .named => |n| {
+                            if (std.mem.eql(u8, n, type_expr.named))
+                                return RT{ .generic_param = .{ .name = n, .constraint = null } };
+                        },
+                        else => {},
+                    }
+                }
+            }
+        }
         if (type_expr == .generic and type_expr.generic.base.* == .named) {
             if (self.alias_defs.get(type_expr.generic.base.named)) |ad| {
                 if (ad.type_params) |type_params| {
@@ -1356,6 +1383,13 @@ pub const Sema = struct {
                 const next = try self.alloc.create(ast.TypeExpr.RecordType);
                 next.* = .{ .fields = fields };
                 break :blk .{ .record = next };
+            },
+            .constrained => |cp| blk: {
+                const next = try self.alloc.create(ast.TypeExpr);
+                next.* = try self.substitute_alias_type(cp.constraint.*, params, args);
+                const extra = try self.alloc.alloc(ast.TypeExpr, cp.extra.len);
+                for (cp.extra, 0..) |e, i| extra[i] = try self.substitute_alias_type(e, params, args);
+                break :blk .{ .constrained = .{ .name = cp.name, .constraint = next, .extra = extra } };
             },
         };
     }
@@ -2032,7 +2066,10 @@ pub const Sema = struct {
                     {
                         return .any;
                     }
-                    if (std.mem.eql(u8, bn, "__static_assert")) return .any;
+                    if (std.mem.eql(u8, bn, "__static_assert")) {
+                        self.check_static_assert(c.func.name.loc, c.args);
+                        return .any;
+                    }
                     if (std.mem.eql(u8, bn, "__typeof")) return .any;
                     if (std.mem.eql(u8, bn, "__as")) return .any;
                     if (std.mem.eql(u8, bn, "__select") and c.args.len >= 2) {
@@ -2041,6 +2078,7 @@ pub const Sema = struct {
                     // Metaprogramming: type introspection — return table of field/method info
                     if (std.mem.eql(u8, bn, "__fields") or
                         std.mem.eql(u8, bn, "__methods") or
+                        std.mem.eql(u8, bn, "__concept_methods") or
                         std.mem.eql(u8, bn, "__variants"))
                     {
                         return .any; // returns comptime table
@@ -2051,6 +2089,15 @@ pub const Sema = struct {
                         std.mem.eql(u8, bn, "__has_metamethod") or
                         std.mem.eql(u8, bn, "__is_type"))
                     {
+                        return .bool;
+                    }
+                    if (std.mem.eql(u8, bn, "__satisfies") and c.args.len == 2) {
+                        // `@satisfies(T, "C")` is a pure comptime boolean — it must
+                        // never error on its own. Only `@static_assert(@satisfies(...))`
+                        // errors when false. Folding here would break legitimate
+                        // uses such as `tostring(@satisfies(M, "Printable"))` where
+                        // the result is expected to be `false`.
+                        _ = self.eval_satisfies_expr(c.args);
                         return .bool;
                     }
                     // Metaprogramming: type name / id
@@ -2873,6 +2920,21 @@ pub const Sema = struct {
             self.err(fd.loc, "unknown or misplaced attribute '@{s}'", .{bad});
         }
 
+        if (fd.path.len >= 2 and fd.method) {
+            const table_name = fd.path[0];
+            const method_name = fd.path[fd.path.len - 1];
+            const gop = try self.table_methods.getOrPut(self.alloc, table_name);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            var dup = false;
+            for (gop.value_ptr.items) |existing| {
+                if (std.mem.eql(u8, existing, method_name)) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) try gop.value_ptr.append(self.alloc, method_name);
+        }
+
         directives.applyMlFuncAttrs(fd.attributes, fb);
 
         if (directives.attrsHaveDebug(fd.attributes)) {
@@ -2910,14 +2972,17 @@ pub const Sema = struct {
         const prev_ret = self.current_ret;
         const prev_nopanic = self.current_nopanic;
         const prev_func_name = self.current_func_name;
+        const prev_type_params = self.current_func_type_params;
         self.current_ret = ret_t;
         // Check if this function has the @nopanic attribute
         self.current_nopanic = has_nopanic_attr(fd.attributes);
         self.current_func_name = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
+        self.current_func_type_params = fb.type_params;
         defer {
             self.current_ret = prev_ret;
             self.current_nopanic = prev_nopanic;
             self.current_func_name = prev_func_name;
+            self.current_func_type_params = prev_type_params;
         }
         for (fb.params) |*p| {
             if (p.default_val) |default_val| _ = try self.check_expr(default_val);
@@ -3589,15 +3654,26 @@ pub const Sema = struct {
         for (sig.params, 0..) |p, i| {
             if (p != .generic_param) continue;
             if (i >= args.len) continue;
-            const at = self.type_map.get(args[i]) orelse .any;
+            var at = self.type_map.get(args[i]) orelse .any;
+            if (at == .any and args[i].* == .name) {
+                at = .{ .@"struct" = .{ .name = args[i].name.ident } };
+            }
             try type_args.append(self.alloc, at);
             // Constraint validation: if the parameter declares a concept
-            // constraint, the concrete argument must satisfy it. We only have
-            // the resolved type here, so we check named-struct args against the
-            // concept registry.
+            // constraint, the concrete argument must satisfy it.
             if (p.generic_param.constraint) |constraint| {
-                if (at != .any and self.concepts.get(constraint) == null) {
-                    self.err(loc, "type parameter '{s}' of '{s}' has unknown constraint '{s}'", .{ p.generic_param.name, name, constraint });
+                var concept_iter = std.mem.splitScalar(u8, constraint, '|');
+                while (concept_iter.next()) |concept_name| {
+                    if (concept_name.len == 0) continue;
+                    if (self.concepts.get(concept_name)) |_| {
+                        if (at != .any and !self.type_satisfies_concept(at, concept_name)) {
+                            var buf: [128]u8 = undefined;
+                            const type_name = at.duo_name(&buf);
+                            self.err(loc, "type '{s}' does not satisfy concept '{s}' required by generic '{s}'", .{ type_name, concept_name, name });
+                        }
+                    } else if (at != .any) {
+                        self.err(loc, "type parameter '{s}' of '{s}' has unknown constraint '{s}'", .{ p.generic_param.name, name, concept_name });
+                    }
                 }
             }
         }
@@ -3719,6 +3795,167 @@ pub const Sema = struct {
                 first = false;
             }
             term.locErr(loc, "binding '{s}' does not satisfy concept '{s}': missing {s}", .{ binding_name, concept_name, list.items });
+        }
+    }
+
+    /// Returns true when a resolved type provides all fields/methods required by a concept.
+    fn type_satisfies_concept(self: *Sema, rt: RT, concept_name: []const u8) bool {
+        const concept = self.concepts.get(concept_name) orelse return false;
+
+        const type_name: ?[]const u8 = switch (rt) {
+            .@"struct" => |s| s.name,
+            .enum_type => |et| et.name,
+            else => null,
+        };
+        const alias_def = if (type_name) |tname| self.alias_defs.get(tname) else null;
+
+        for (concept.required_fields) |req_field| {
+            var found = false;
+            if (alias_def) |ad| {
+                for (ad.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found and rt == .table_type) {
+                for (rt.table_type.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) return false;
+        }
+
+        for (concept.required_methods) |req_method| {
+            var found = false;
+            if (type_name) |tname| {
+                if (self.table_methods.get(tname)) |methods| {
+                    for (methods.items) |m| {
+                        if (std.mem.eql(u8, m, req_method.name)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!found) {
+                if (alias_def) |ad| {
+                    for (ad.fields) |rec_field| {
+                        if (std.mem.eql(u8, rec_field.name, req_method.name)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        for (ad.methods) |m| {
+                            const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
+                            if (std.mem.eql(u8, mname, req_method.name)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!found and rt == .table_type) {
+                for (rt.table_type.fields) |rec_field| {
+                    if (std.mem.eql(u8, rec_field.name, req_method.name)) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    fn eval_satisfies_expr(self: *Sema, args: []const *ast.Expr) ?bool {
+        if (args.len != 2) return null;
+        const concept_name = if (args[1].* == .string_lit) args[1].string_lit.val else return null;
+        if (self.concepts.get(concept_name) == null) return null;
+
+        if (args[0].* == .name) {
+            const table_name = args[0].name.ident;
+            if (self.table_methods.get(table_name)) |_| {
+                return self.type_satisfies_concept(.{ .@"struct" = .{ .name = table_name } }, concept_name);
+            }
+            if (self.scope.lookup(table_name)) |binding| {
+                if (binding.typ != .any)
+                    return self.type_satisfies_concept(binding.typ, concept_name);
+            }
+            return self.type_satisfies_concept(.{ .@"struct" = .{ .name = table_name } }, concept_name);
+        }
+
+        const rt = self.type_map.get(args[0]) orelse .any;
+        if (rt == .any) return null;
+        return self.type_satisfies_concept(rt, concept_name);
+    }
+
+    fn try_eval_const_condition(self: *Sema, cond: *const ast.Expr) ?bool {
+        return switch (cond.*) {
+            .true_lit => true,
+            .false_lit => false,
+            .int_lit => |i| i.val != 0,
+            .unop => |u| switch (u.op) {
+                .not => if (self.try_eval_const_condition(u.operand)) |v| !v else null,
+                else => null,
+            },
+            .binop => |b| {
+                if (b.op == .@"and") {
+                    const lhs = self.try_eval_const_condition(b.lhs);
+                    if (lhs != null and !lhs.?) return false;
+                    const rhs = self.try_eval_const_condition(b.rhs);
+                    if (lhs != null and lhs.? and rhs != null) return rhs.?;
+                    return null;
+                }
+                if (b.op == .@"or") {
+                    const lhs = self.try_eval_const_condition(b.lhs);
+                    if (lhs != null and lhs.?) return true;
+                    const rhs = self.try_eval_const_condition(b.rhs);
+                    if (lhs != null and !lhs.? and rhs != null) return rhs.?;
+                    return null;
+                }
+                if (b.lhs.* == .int_lit and b.rhs.* == .int_lit) {
+                    const lv = b.lhs.int_lit.val;
+                    const rv = b.rhs.int_lit.val;
+                    return switch (b.op) {
+                        .eq => lv == rv,
+                        .neq => lv != rv,
+                        .lt => lv < rv,
+                        .gt => lv > rv,
+                        .leq => lv <= rv,
+                        .geq => lv >= rv,
+                        else => null,
+                    };
+                }
+                return null;
+            },
+            .call => |c| {
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__satisfies") and c.args.len == 2)
+                    return self.eval_satisfies_expr(c.args);
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__static_assert") and c.args.len >= 1)
+                    return self.try_eval_const_condition(c.args[0]);
+                return null;
+            },
+            else => null,
+        };
+    }
+
+    fn check_static_assert(self: *Sema, loc: ast.Loc, args: []const *ast.Expr) void {
+        if (args.len == 0) return;
+        if (self.try_eval_const_condition(args[0])) |known| {
+            if (!known) {
+                const msg = if (args.len >= 2 and args[1].* == .string_lit)
+                    args[1].string_lit.val
+                else
+                    "static assertion failed";
+                self.err(loc, "{s}", .{msg});
+            }
         }
     }
 
@@ -5178,6 +5415,13 @@ pub const Sema = struct {
     fn detect_ack_inline(fb: *ast.FuncBody) bool {
         if (fb.params.len != 2) return false;
         if (fb.body.stmts.len < 2) return false;
+        // Ackermann is recursive-if only; GCD-style helpers use loops.
+        for (fb.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .while_loop, .repeat_loop => return false,
+                else => {},
+            }
+        }
         // Only match integer-returning functions
         const is_int = switch (fb.ret_type) {
             .named => |n| for ([_][]const u8{

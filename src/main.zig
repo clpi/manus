@@ -1835,6 +1835,8 @@ fn do_compile(
         var buf: [65536]u8 = undefined;
         var fw: Io.File.Writer = .init(cf, io, &buf);
         var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types);
+        cg.concepts = &ps.sem.concepts;
+        cg.table_methods = &ps.sem.table_methods;
         if (mono) |*m| cg.mono = m;
         if (arc_pass) |*a| cg.arc = a;
         if (async_pass) |*a| cg.async_lower = a;
@@ -2304,6 +2306,8 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     var buf: [65536]u8 = undefined;
     var fw: Io.File.Writer = .init(stdout, io, &buf);
     var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types);
+    cg.concepts = &ps.sem.concepts;
+    cg.table_methods = &ps.sem.table_methods;
     cg.mono = &mono;
     cg.arc = &arc_pass;
     cg.async_lower = &async_pass;
