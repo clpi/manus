@@ -210,6 +210,11 @@ pub const AsyncLower = struct {
                 try self.discoverExpr(c.lhs, enclosing_name);
                 try self.discoverExpr(c.rhs, enclosing_name);
             },
+            .range => |r| {
+                try self.discoverExpr(r.start, enclosing_name);
+                try self.discoverExpr(r.end, enclosing_name);
+                if (r.step) |s| try self.discoverExpr(s, enclosing_name);
+            },
             .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
             .sequence => |seq| {
@@ -398,6 +403,11 @@ pub const AsyncLower = struct {
             .contains_expr => |c| {
                 try self.scanExpr(c.lhs, ctx);
                 try self.scanExpr(c.rhs, ctx);
+            },
+            .range => |r| {
+                try self.scanExpr(r.start, ctx);
+                try self.scanExpr(r.end, ctx);
+                if (r.step) |s| try self.scanExpr(s, ctx);
             },
             .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},

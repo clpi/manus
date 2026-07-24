@@ -554,6 +554,7 @@ pub const Parser = struct {
             "autodiff",
             "cold",
             "concurrent",
+            "consteval",
             "debug",
             "deprecated",
             "device",
@@ -561,6 +562,7 @@ pub const Parser = struct {
             "derive",
             "export",
             "ffi",
+            "flatten",
             "hot",
             "implements",
             "inline",
@@ -569,11 +571,14 @@ pub const Parser = struct {
             "noreturn",
             "packed",
             "profile",
+            "pure",
             "raw",
             "repr",
             "restrict",
+            "section",
             "simd",
             "specialize",
+            "target",
             "test",
             "time",
             "trace",
@@ -583,8 +588,6 @@ pub const Parser = struct {
             "prefetch",
             "likely",
             "unlikely",
-            "flatten",
-            "pure",
         };
         for (known) |item| {
             if (std.mem.eql(u8, name, item)) return true;
@@ -1483,6 +1486,30 @@ pub const Parser = struct {
 
     fn parse_if(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
+        // `if let pattern = expr then ... end` — desugars to match
+        if ((try self.pk()).kind == .kw_let) {
+            _ = try self.adv(); // consume `let`
+            const pattern = try self.parse_pattern();
+            _ = try self.expect(.assign);
+            const scrutinee = try self.parse_expr();
+            _ = try self.eat(.kw_then);
+            const then_body = try self.parse_block();
+            // Parse optional else
+            var else_body: ?ast.Block = null;
+            if (try self.eat(.kw_else) != null) {
+                else_body = try self.parse_block();
+            }
+            _ = try self.expect(.kw_end);
+            // Build match arms
+            var arms = try self.alloc.alloc(ast.MatchArm, if (else_body != null) 2 else 1);
+            arms[0] = .{ .pattern = pattern, .guard = null, .body = then_body };
+            if (else_body) |eb| {
+                arms[1] = .{ .pattern = .wildcard, .guard = null, .body = eb };
+            }
+            const match_expr = try self.new_expr(.{ .match_expr = try self.alloc.create(ast.MatchExpr) });
+            match_expr.match_expr.* = .{ .loc = l, .scrutinee = scrutinee, .arms = arms };
+            return ast.Stmt{ .expr_stmt = .{ .loc = l, .expr = match_expr } };
+        }
         const cond = try self.parse_expr();
         _ = try self.eat(.kw_then); // `then` is optional in .duo files
         const then = try self.parse_block();
@@ -1511,6 +1538,31 @@ pub const Parser = struct {
 
     fn parse_while(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
+        // `while let pattern = expr do ... end` — desugars to while + match
+        if ((try self.pk()).kind == .kw_let) {
+            _ = try self.adv(); // consume `let`
+            const pattern = try self.parse_pattern();
+            _ = try self.expect(.assign);
+            const scrutinee = try self.parse_expr();
+            _ = try self.eat(.kw_do);
+            const body = try self.parse_block();
+            _ = try self.expect(.kw_end);
+            // Build: while true do match scrutinee case pattern then body case _ then break end end
+            var break_arm_body_stmts = try self.alloc.alloc(ast.Stmt, 1);
+            break_arm_body_stmts[0] = .{ .brk = l };
+            var match_arms = try self.alloc.alloc(ast.MatchArm, 2);
+            match_arms[0] = .{ .pattern = pattern, .guard = null, .body = body };
+            match_arms[1] = .{ .pattern = .wildcard, .guard = null, .body = .{ .loc = l, .stmts = break_arm_body_stmts } };
+            const match_expr_ptr = try self.alloc.create(ast.MatchExpr);
+            match_expr_ptr.* = .{ .loc = l, .scrutinee = scrutinee, .arms = match_arms };
+            const match_e = try self.new_expr(.{ .match_expr = match_expr_ptr });
+            var inner_stmts = try self.alloc.alloc(ast.Stmt, 1);
+            inner_stmts[0] = .{ .expr_stmt = .{ .loc = l, .expr = match_e } };
+            const inner_body = ast.Block{ .loc = l, .stmts = inner_stmts };
+            // while true do inner_body end
+            const true_lit = try self.new_expr(.{ .true_lit = l });
+            return ast.Stmt{ .while_loop = .{ .loc = l, .cond = true_lit, .body = inner_body } };
+        }
         const cond = try self.parse_expr();
         _ = try self.eat(.kw_do); // do is optional in Duo
         const body = try self.parse_block();
@@ -2455,6 +2507,22 @@ pub const Parser = struct {
                 .lhs = lhs,
                 .rhs = rhs,
             } });
+            // `a..b by step` — after parsing `a..b` as concat, check for `by step`
+            if (inf.op == .concat) {
+                const next = try self.pk();
+                if (next.kind == .kw_by) {
+                    _ = try self.adv(); // consume `by`
+                    const step = try self.parse_prec(inf.right);
+                    // Unwrap the concat binop into a range expression
+                    const binop = lhs.binop;
+                    lhs = try self.new_expr(.{ .range = .{
+                        .loc = binop.lhs.loc(),
+                        .start = binop.lhs,
+                        .end = binop.rhs,
+                        .step = step,
+                    } });
+                }
+            }
         }
         return lhs;
     }

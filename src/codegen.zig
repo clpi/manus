@@ -4592,6 +4592,18 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn func_attr_args(attrs: []const ast.Attribute, name: []const u8) ?[]const u8 {
+        for (attrs) |attr| {
+            if (std.mem.eql(u8, attr.name, name)) {
+                if (attr.args) |raw| {
+                    if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
+                    if (raw.len > 0) return raw;
+                }
+            }
+        }
+        return null;
+    }
+
     fn func_export_name(fd: *const ast.FuncDecl) ?[]const u8 {
         for (fd.attributes) |attr| {
             if (std.mem.eql(u8, attr.name, "c.export")) {
@@ -4625,6 +4637,12 @@ pub const CodeGen = struct {
         const cold_attr = func_has_attr(fd.attributes, "cold");
         const hot_attr = func_has_attr(fd.attributes, "hot");
         const raw_attr = func_has_attr(fd.attributes, "raw");
+        const pure_attr = func_has_attr(fd.attributes, "pure");
+        const flatten_attr = func_has_attr(fd.attributes, "flatten");
+        const noreturn_attr = func_has_attr(fd.attributes, "noreturn");
+        const consteval_attr = func_has_attr(fd.attributes, "consteval");
+        const target_args = func_attr_args(fd.attributes, "target");
+        const section_args = func_attr_args(fd.attributes, "section");
         // Pattern-specialized functions are algorithmically hot: they were
         // detected as recognizable algorithm shapes and get native C bodies.
         // Auto-apply `hot` so the C compiler places them in the hot text
@@ -4653,8 +4671,10 @@ pub const CodeGen = struct {
         }
 
         const emit_hot = hot_attr or pattern_hot;
+        const any_func_attr = inline_attr or noinline_attr or cold_attr or emit_hot or raw_attr or
+            pure_attr or flatten_attr or noreturn_attr or consteval_attr or target_args != null or section_args != null;
         var first_attr = true;
-        if (inline_attr or noinline_attr or cold_attr or emit_hot or raw_attr) {
+        if (any_func_attr) {
             self.p("__attribute__((", .{});
             if (inline_attr) {
                 self.p("always_inline", .{});
@@ -4678,6 +4698,36 @@ pub const CodeGen = struct {
             if (raw_attr) {
                 if (!first_attr) self.p(", ", .{});
                 self.p("naked", .{});
+                first_attr = false;
+            }
+            if (pure_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("const", .{});
+                first_attr = false;
+            }
+            if (flatten_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("flatten", .{});
+                first_attr = false;
+            }
+            if (noreturn_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("noreturn", .{});
+                first_attr = false;
+            }
+            if (consteval_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("consteval", .{});
+                first_attr = false;
+            }
+            if (target_args) |ta| {
+                if (!first_attr) self.p(", ", .{});
+                self.p("target(\"{s}\")", .{ta});
+                first_attr = false;
+            }
+            if (section_args) |sa| {
+                if (!first_attr) self.p(", ", .{});
+                self.p("section(\"{s}\")", .{sa});
             }
             self.p(")) ", .{});
         }
@@ -10506,6 +10556,18 @@ pub const CodeGen = struct {
                 try self.emit_expr(ce.lhs);
                 self.p(")", .{});
                 if (as_lua) self.p(")", .{});
+            },
+            .range => |r| {
+                // TODO: proper range codegen — for now emit as runtime trio
+                self.p("duo_range(", .{});
+                try self.emit_expr(r.start);
+                self.p(", ", .{});
+                try self.emit_expr(r.end);
+                if (r.step) |s| {
+                    self.p(", ", .{});
+                    try self.emit_expr(s);
+                }
+                self.p(")", .{});
             },
         }
     }

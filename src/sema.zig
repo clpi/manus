@@ -445,6 +445,39 @@ pub const Sema = struct {
         }
     }
 
+    /// Infer a concrete type from a literal expression for better codegen.
+    /// `OP_NOP = 0x01` → `.i64`, `PI = 3.14` → `.f64`, `name = "hi"` → `.str`.
+    /// Falls back to `.any` for non-literal initializers.
+    fn infer_literal_type(self: *Sema, e: *const ast.Expr) RT {
+        return switch (e.*) {
+            .int_lit => .i64,
+            .float_lit => .f64,
+            .string_lit => .str,
+            .true_lit, .false_lit => .bool,
+            .nil => .any,
+            // Simple binops on integer literals: 0x01 << 4 → i64
+            .binop => |b| if (b.op == .band or b.op == .bor or b.op == .bxor or
+                b.op == .lshift or b.op == .rshift or b.op == .add or b.op == .sub or
+                b.op == .mul)
+            {
+                const lt = switch (b.lhs.*) {
+                    .int_lit => .i64,
+                    .binop => self.infer_literal_type(b.lhs),
+                    else => .any,
+                };
+                const rt = switch (b.rhs.*) {
+                    .int_lit => .i64,
+                    .binop => self.infer_literal_type(b.rhs),
+                    else => .any,
+                };
+                if (lt == .i64 and rt == .i64) return .i64;
+                if (lt == .f64 or rt == .f64) return .f64;
+                return .any;
+            } else .any,
+            else => .any,
+        };
+    }
+
     fn type_annotation_accepts_init(ann: RT, init_t: RT) bool {
         if (ann.eql(init_t)) return true;
         if (ann.is_integer() and init_t.is_integer()) return true;
@@ -1568,6 +1601,17 @@ pub const Sema = struct {
                     _ = try self.check_expr(tgt);
                     if (i < as.values.len and tgt.* == .name) {
                         try self.maybe_register_meta_concept(tgt.name.ident, as.values[i]);
+                        // At module scope in duo mode, infer type from literal
+                        // initializer and register as global for better codegen.
+                        if (self.duo_mode and self.scope.maps.items.len == 1) {
+                            const inferred = self.infer_literal_type(as.values[i]);
+                            if (inferred != .any) {
+                                try self.note_global(tgt.name.ident, inferred);
+                                if (self.scope.lookupPtr(tgt.name.ident)) |sym| {
+                                    sym.typ = inferred;
+                                }
+                            }
+                        }
                     }
                     // Track reassignment for mutable upvalue detection
                     if (tgt.* == .name) {
@@ -2276,6 +2320,12 @@ pub const Sema = struct {
                 if (seq.exprs.len == 0) return .nil;
                 for (seq.exprs) |e| _ = try self.check_expr(e);
                 return try self.check_expr(seq.exprs[0]);
+            },
+            .range => |r| {
+                _ = try self.check_expr(r.start);
+                _ = try self.check_expr(r.end);
+                if (r.step) |s| _ = try self.check_expr(s);
+                return .any;
             },
         };
     }
@@ -6782,6 +6832,10 @@ pub const Sema = struct {
                     break :blk .any;
                 },
                 .contains_expr => .bool,
+                .range => blk: {
+                    self.ok = false;
+                    break :blk .any;
+                },
                 .quote, .unquote, .macro_call => blk: {
                     self.ok = false;
                     break :blk .any;
@@ -7663,13 +7717,14 @@ test "sema: duo mode — global binding is marked is_global" {
     try testing.expect(s.module_globals.get("myvar") != null);
 }
 
-test "sema: duo mode — let is not a keyword, usable as identifier" {
-    // Requirement 1.7: let is NOT a reserved word, can be used as variable name
+test "sema: duo mode — let is a keyword for if let / while let" {
+    // let is now a keyword for pattern matching sugar: if let / while let
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const src =
-        \\let = 5
-        \\print(let)
+        \\if let x = 1 then
+        \\  print(x)
+        \\end
     ;
     const s = try runSemaDuo(src, &arena);
     try testing.expectEqual(@as(u32, 0), s.errors);

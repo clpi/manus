@@ -326,6 +326,15 @@ pub const PrettyPrinter = struct {
                 try self.write(" in ");
                 try self.printExpr(x.rhs, 3);
             },
+            .range => |x| {
+                try self.printExpr(x.start, 0);
+                if (x.step) |s| {
+                    try self.write(" ..<");
+                    try self.printExpr(s, 0);
+                }
+                try self.write(" .. ");
+                try self.printExpr(x.end, 0);
+            },
         }
         if (needs_parens) try self.write(")");
     }

@@ -353,6 +353,12 @@ pub const Expander = struct {
                 .lhs = try self.cloneExpr(x.lhs, ctx),
                 .rhs = try self.cloneExpr(x.rhs, ctx),
             } },
+            .range => |x| .{ .range = .{
+                .loc = x.loc,
+                .start = try self.cloneExpr(x.start, ctx),
+                .end = try self.cloneExpr(x.end, ctx),
+                .step = if (x.step) |s| try self.cloneExpr(s, ctx) else null,
+            } },
             .quote => |x| .{ .quote = .{ .loc = x.loc, .expr = try self.cloneExpr(x.expr, ctx) } },
             .unquote => |x| try self.cloneUnquote(x.expr, ctx),
             .macro_call => unreachable,

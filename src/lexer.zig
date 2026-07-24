@@ -74,6 +74,8 @@ pub const TokenKind = enum {
     kw_extends,
     kw_macro,
     kw_comptime,
+    kw_by,
+    kw_let,
 
     // Single-char punctuation
     lparen,
@@ -186,6 +188,8 @@ pub const TokenKind = enum {
             .kw_extends => "extends",
             .kw_macro => "macro",
             .kw_comptime => "comptime",
+            .kw_by => "by",
+            .kw_let => "let",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -646,7 +650,7 @@ pub const Lexer = struct {
             "i16",     "i32",   "i64",      "u8",    "u16",     "u32",    "u64",
             "f32",     "f64",   "bool",     "void",  "str",     "match",  "try",
             "catch",   "defer", "async",    "await", "concept", "alias",  "private",
-            "extends", "macro", "comptime",
+            "extends", "macro", "comptime", "by", "let",
         };
         const kinds = [_]TokenKind{
             .kw_and,     .kw_break, .kw_continue, .kw_do,    .kw_else,    .kw_elseif, .kw_end,
@@ -656,7 +660,7 @@ pub const Lexer = struct {
             .kw_i16,     .kw_i32,   .kw_i64,      .kw_u8,    .kw_u16,     .kw_u32,    .kw_u64,
             .kw_f32,     .kw_f64,   .kw_bool,     .kw_void,  .kw_str,     .kw_match,  .kw_try,
             .kw_catch,   .kw_defer, .kw_async,    .kw_await, .kw_concept, .kw_alias,  .kw_private,
-            .kw_extends, .kw_macro, .kw_comptime,
+            .kw_extends, .kw_macro, .kw_comptime, .kw_by,    .kw_let,
         };
         for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
         return null;

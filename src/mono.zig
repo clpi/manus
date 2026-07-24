@@ -396,6 +396,11 @@ pub const Monomorphizer = struct {
                 try self.collectSitesExpr(c.lhs, env);
                 try self.collectSitesExpr(c.rhs, env);
             },
+            .range => |r| {
+                try self.collectSitesExpr(r.start, env);
+                try self.collectSitesExpr(r.end, env);
+                if (r.step) |s| try self.collectSitesExpr(s, env);
+            },
             .quote, .unquote, .macro_call => unreachable,
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
             .sequence => |seq| {

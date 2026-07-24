@@ -404,6 +404,13 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
             std.mem.eql(u8, attr.name, "differentiable") or
             std.mem.eql(u8, attr.name, "profile") or
             std.mem.eql(u8, attr.name, "unroll") or
+            std.mem.eql(u8, attr.name, "pure") or
+            std.mem.eql(u8, attr.name, "flatten") or
+            std.mem.eql(u8, attr.name, "noreturn") or
+            std.mem.eql(u8, attr.name, "restrict") or
+            std.mem.eql(u8, attr.name, "target") or
+            std.mem.eql(u8, attr.name, "section") or
+            std.mem.eql(u8, attr.name, "consteval") or
             std.mem.startsWith(u8, attr.name, "concurrent") or
             std.mem.startsWith(u8, attr.name, "implements"))
         {

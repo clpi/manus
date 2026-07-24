@@ -363,6 +363,7 @@ pub const Expr = union(enum) {
     unquote: struct { loc: Loc, expr: *Expr },
     macro_call: MacroCall,
     sequence: struct { loc: Loc, exprs: []*Expr }, // a, b multi-value
+    range: struct { loc: Loc, start: *Expr, end: *Expr, step: ?*Expr }, // a..b, a..b by step
 
     pub fn loc(self: Expr) Loc {
         return switch (self) {
@@ -392,6 +393,7 @@ pub const Expr = union(enum) {
             .unquote => |x| x.loc,
             .macro_call => |x| x.loc,
             .sequence => |x| x.loc,
+            .range => |x| x.loc,
         };
     }
 };
