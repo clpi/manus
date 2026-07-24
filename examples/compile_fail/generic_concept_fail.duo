@@ -1,0 +1,12 @@
+-- compile_fail: generic concept constraint violation
+concept Hashable
+    fun hash(self) -> i64
+end
+
+Bad = {}
+
+fun tagged<T: Hashable>(x: T): i64
+    0
+end
+
+tagged(Bad)

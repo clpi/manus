@@ -95,6 +95,9 @@ run_fail examples/compile_fail/tensor_matmul_k_mismatch.duo "tensor matmul inner
 run_fail examples/compile_fail/tensor_matmul_symbolic_k_mismatch.duo "tensor matmul inner dimension mismatch"
 run_fail examples/compile_fail/tensor_broadcast_incompatible.duo "tensor broadcast incompatible shapes"
 run_fail examples/compile_fail/tensor_return_mismatch.duo "return type mismatch"
+run_fail examples/compile_fail/generic_concept_fail.duo "does not satisfy concept 'Hashable'"
+run_fail examples/compile_fail/satisfies_fail.duo "Empty lacks hash"
+run_fail examples/compile_fail/multi_concept_fail.duo "does not satisfy concept 'Counter'"
 run_ok   tests/test.lua
 run_ok   examples/hello.lua
 run_ok   examples/fib.lua

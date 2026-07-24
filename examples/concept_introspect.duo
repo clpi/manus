@@ -1,0 +1,15 @@
+-- Concept introspection: query required members at compile time
+
+concept Hashable
+    fun hash(self): i64
+end
+
+M = {}
+fun M:hash(): i64
+    42
+end
+
+members = @concept_methods("Hashable")
+print("@concept_methods('Hashable') entries: " .. tostring(#members))
+print("@methods(M) entries: " .. tostring(#@methods(M)))
+print("@satisfies(M, Hashable): " .. tostring(@satisfies(M, "Hashable")))

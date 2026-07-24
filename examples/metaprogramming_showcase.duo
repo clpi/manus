@@ -167,6 +167,47 @@ counter:increment()
 print("Counter: " .. counter:to_string())
 print("Counter value: " .. tostring(counter:value()))
 
+-- @satisfies — compile-time concept check on table modules (fun T:method syntax)
+M = {}
+fun M:hash(): i64
+    42
+end
+
+@static_assert(not @satisfies(M, "Printable"), "M lacks to_string")
+print("@satisfies(M, Printable) = " .. tostring(@satisfies(M, "Printable")))
+
+Ctable = {}
+fun Ctable:increment(): void
+end
+fun Ctable:value(): i64
+    0
+end
+@static_assert(@satisfies(Ctable, "Counter"), "Ctable satisfies Counter")
+print("@satisfies(Ctable, Counter) = " .. tostring(@satisfies(Ctable, "Counter")))
+
+-- Generic constraints: compile-time check + monomorphic dispatch
+concept Hashable
+    fun hash(self): i64
+end
+
+Bump = {}
+fun Bump:hash(): i64
+    100
+end
+
+fun bump<T: Hashable>(target: T): i64
+    target:hash() + 1
+end
+
+@static_assert(@satisfies(Bump, "Hashable"), "Bump satisfies Hashable")
+print("bump(Bump) = " .. tostring(bump(Bump)))
+
+-- Concept introspection: required members as compile-time table
+hashable_members = @concept_methods("Hashable")
+print("@concept_methods('Hashable') count = " .. tostring(#hashable_members))
+
+-- Multi-concept: T: A + B — see examples/multi_concept.duo
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 10. @derive (Auto-generated metamethods)
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,9 @@
+-- compile-fail: @static_assert(@satisfies(...)) must error when concept not satisfied
+
+concept HasHash
+    fun hash(self): i64
+end
+
+Empty = {}
+
+@static_assert(@satisfies(Empty, "HasHash"), "Empty lacks hash")

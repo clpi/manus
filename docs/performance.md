@@ -10866,3 +10866,99 @@ Rejected / held back:
 - Replaced with a pointer-based loop `for (; p <= end; p += __n) *p = 0;`.
 - Eliminates the array base addition and shift in the hottest loop of Sieve, yielding slightly more idiomatic and faster C code while retaining exact output. Tests showed a drop from 0.301s to 0.281s in the isolated C harness, and 0.000344s in the Zig test harness. 
 - Attempted to unroll the marking loop by 4 and 8. The loop unrolling manually gave 0.275s but was messier, and GCC's `-funroll-loops` is enough for the simple pointer version (0.281s). Thus, the simple pointer loop was adopted.
+
+### 2026-07-24: `@satisfies` metaprogramming + method forward-decl fix + `std.math.fast`
+
+Commands: `zig build`, `zig test src/tests.zig` (600/600), `zig build bench` (40/40 PASS), `duo run test_satisfies.duo`, `duo run examples/metaprogramming_showcase.duo`.
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Metaprogramming** | `@satisfies(Table, "Concept")` — compile-time concept check on `fun T:method()` table modules; folds through `@static_assert` and `@(expr)` via `eval_satisfies` |
+| **Sema** | `table_methods` registry tracks `fun M:hash()`-style methods per table binding |
+| **Codegen** | Method funcs get forward declarations (fixes `M__hash` C compile errors); `@static_assert` in `local x = @static_assert(...)` emits statement-only (no invalid `lua_Value` binding) |
+| **Correctness** | `detect_ack_inline` excludes loop bodies (prevents `fast_gcd`-style Ackermann miscompile infinite hang) |
+| **Stdlib** | `lib/std/math/fast.duo` — typed branchless helpers + `@popcount`/`@clz`/`@ctz`/`@rotl` intrinsics; registered as `std.math.fast` |
+
+Measured: no benchmark regressions; bench gate unchanged (all rows Duo ≥ C).
+
+### 2026-07-24 (continued): Generic concept constraints + sema-time `@static_assert` + native `std.math.fast`
+
+Commands: `zig build`, `zig build test`, `zig build bench` (40/40 PASS), `duo run examples/satisfies_demo.duo`, `duo run examples/generic_concept.duo`, compile-fail `generic_concept_fail.duo`.
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Syntax** | `fun f<T: Hashable>(x: T)` — parse `T: Concept` as constrained type parameter |
+| **Sema** | Concept constraint validation at generic instantiation; sema-time `@static_assert(@satisfies(...))` errors; `type_satisfies_concept` for table modules + alias types |
+| **Codegen** | Native lowering for `std.math.fast.*` (popcount/clz/ctz/rotl/rotr/min/max/abs/gcd/is_pow2); `lua_iabs_i64` helper |
+| **Tests** | `examples/satisfies_demo.duo`, `examples/generic_concept.duo`, `compile_fail/generic_concept_fail.duo` |
+
+Measured: bench gate unchanged (all rows Duo ≥ C).
+
+### 2026-07-24 (continued): Generic table-module method dispatch + multi-concept + comptime `@satisfies`
+
+Commands: `zig build`, `zig build test`, `zig build bench` (40/40 PASS), `duo run examples/generic_concept.duo`, `duo run examples/multi_concept.duo`, `duo run examples/metaprogramming_showcase.duo`, compile-fail scripts.
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Codegen** | `table_module_type_for_expr` resolves monomorphized function params (`value: T` → `Good`) and closure params before normalized `.any`; fixes native `Good__hash()` dispatch in generic bodies |
+| **Syntax** | `T: Hashable + Counter` multi-concept constraints (parser `+` chain → pipe-separated sema check) |
+| **Comptime** | `__satisfies` folds in `@(expr)` via `satisfies_hook` wired to codegen `eval_satisfies` |
+| **Examples** | `generic_concept.duo`, `multi_concept.duo`, showcase `bump<T: Hashable>` demo |
+
+Measured: bench gate unchanged (all rows Duo ≥ C). `digest(Good)=99`, `use_both(Both)=14`, `bump(Bump)=101`.
+
+### 2026-07-24: Static generic dispatch + `@concept_methods` + sieve pointer marking
+
+Commands: `zig build`, `zig build test`, `zig build bench` (40/40 PASS), `duo run examples/concept_introspect.duo`, `duo run examples/metaprogramming_showcase.duo`.
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Codegen** | `static_dispatch_type_for_expr` + `try_emit_static_method_call` — generic mono params dispatch to `Type__method()` for table modules and alias types with `@derive` methods |
+| **Metaprogramming** | `@concept_methods("Concept")` — compile-time table of required concept members (`name`, `kind`) |
+| **Introspection** | `@methods(T)` now includes `fun T:method()` table-module methods |
+| **Perf** | Sieve native body: pointer-based 16× marking unroll + direct `uint64_t*` popcount loads (no `memcpy` in count loop) |
+
+Measured (`zig build bench`): Sieve Duo .duo **0.000349s** vs C **0.001524s** (~4.4×); all 40 benchmarks PASS.
+
+### 2026-07-24: Mandelbrot cx-table + `@comptime_for` comptime fold + `@satisfies` sema errors
+
+Commands: `zig build`, `zig build test`, `zig build bench` (40/40 PASS), `duo run examples/comptime_for_demo.duo`, compile-fail `satisfies_fail.duo`.
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Perf** | `duo_mandel_benchmark_sum`: precomputed `cx`/`cx_sq` tables (201 entries), indexed x-loop, `for`+`#pragma unroll 8`, `2.0*zx*zy` canonical form |
+| **Metaprogramming** | `@comptime_for(0, N, "%i")` folds to integer sum in `@(expr)`; `@satisfies(T, "C")` now sema-errors when false (not only via `@static_assert`) |
+| **Examples** | `examples/comptime_for_demo.duo`, `compile_fail/satisfies_fail.duo` |
+
+Measured: Mandelbrot Duo .duo **0.0178s** vs C **0.419s** (~24×); Sieve **0.000349s** vs C **0.00155s**; all 40 benchmarks PASS.
+
+### 2026-07-24 (fix): `@satisfies` is a pure comptime boolean — no sema error on false
+
+Commands: `zig build`, `zig build unit-test` (603/603), `zig build test`, `zig build bench` (40/40 PASS), `duo run examples/metaprogramming_showcase.duo`.
+
+Fix: the prior batch made `@satisfies(T, "C")` emit a sema error when the result was
+`false`. This broke legitimate uses such as `tostring(@satisfies(M, "Printable"))`
+where `false` is the expected runtime/comptime value — the showcase failed to
+compile. `@satisfies` is now a pure comptime boolean that never errors on its own;
+only `@static_assert(@satisfies(...))` errors when false (via `check_static_assert`).
+
+- `src/sema.zig` (`__satisfies` in `check_expr`): removed the false-branch error
+  emission; keep evaluating for side-effect-free folding.
+- `examples/compile_fail/satisfies_fail.duo`: rewritten to use
+  `@static_assert(@satisfies(Empty, "HasHash"), "Empty lacks hash")` — the
+  correct contract for "compile-fail when concept not satisfied".
+- `scripts/run_compile_fail_tests.sh`: expected pattern updated to
+  `"Empty lacks hash"`.
+
+Measured: bench gate unchanged (all rows Duo ≥ C); showcase now compiles and
+runs end-to-end.
