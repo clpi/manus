@@ -76,6 +76,12 @@ pub const CodeGen = struct {
     lib_mode: bool = false,
     duo_mode: bool = false,
     native_scalar_mode: bool = false,
+    /// Per-function native scalar: when true, the module has both native-eligible
+    /// and non-native functions. Native-eligible functions get C codegen; the rest
+    /// use Lua thunks. The full Lua runtime is included.
+    mixed_scalar_mode: bool = false,
+    /// Set of function names that are native-eligible in mixed mode.
+    native_scalar_funcs: std.StringHashMapUnmanaged(void) = .empty,
     test_mode: bool = false,
     bench_mode: bool = false,
     test_structured_output: bool = false,
@@ -483,6 +489,7 @@ pub const CodeGen = struct {
 
     fn note_arc_local(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) !void {
         if (self.arc_scopes.items.len == 0 or !self.codegen_needs_arc(rt)) return;
+        if (!self.should_arc_local(name)) return;
         try self.arc_scopes.items[self.arc_scopes.items.len - 1].append(self.alloc, .{
             .name = name,
             .ty = rt,
@@ -492,6 +499,7 @@ pub const CodeGen = struct {
 
     fn emit_arc_retain(self: *CodeGen, name: []const u8, rt: RT) void {
         if (!self.codegen_needs_arc(rt)) return;
+        if (!self.should_arc_local(name)) return;
         self.ind();
         self.p("duo_retain((void*)(", .{});
         self.emit_var_name(name);
@@ -500,6 +508,7 @@ pub const CodeGen = struct {
 
     fn emit_arc_drop(self: *CodeGen, name: []const u8, rt: RT, is_close: bool) void {
         if (!self.codegen_needs_arc(rt)) return;
+        if (!self.should_arc_local(name)) return;
         if (is_close) {
             self.ind();
             self.p("duo_close((void*)(", .{});
@@ -524,6 +533,19 @@ pub const CodeGen = struct {
             .str, .array, .pointer, .func, .@"struct" => true,
             .result, .option, .channel, .instantiated, .generic_param => true,
         };
+    }
+
+    /// Returns true if this local variable should actually get ARC retain/release.
+    /// When the ARC pass has populated its escaping set, non-escaping locals are
+    /// pruned (no retain/release). If no ARC pass is attached or the escaping set
+    /// is empty, we keep ARC for all locals (safe default).
+    fn should_arc_local(self: *CodeGen, name: []const u8) bool {
+        if (self.arc) |pass| {
+            // When the escaping set is populated, only escaping names get ARC.
+            if (pass.escaping.count() > 0)
+                return pass.escaping.contains(name);
+        }
+        return true;
     }
 
     fn attr_is_close(attrib: ?[]const u8) bool {
@@ -2074,6 +2096,41 @@ pub const CodeGen = struct {
         return true;
     }
 
+    /// Per-function native scalar check: scans the module and populates
+    /// `native_scalar_funcs` with the names of functions that can be emitted
+    /// as native C (scalar params, scalar body, no varargs/generics/async).
+    /// Returns true if at least one function is native-eligible.
+    pub fn compute_native_scalar_funcs(self: *CodeGen, mod: *const ast.Module) bool {
+        self.native_scalar_funcs.clearRetainingCapacity();
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1) continue;
+            if (fd.func.vararg or fd.func.vararg_name != null) continue;
+            if (fd.func.is_async) continue;
+            if (@import("directives.zig").attrsMarkTest(fd.attributes)) continue;
+            if (@import("directives.zig").attrsWantBench(fd.attributes)) continue;
+            if (@import("directives.zig").attrsHaveDebug(fd.attributes)) continue;
+            if (fd.func.type_params != null) continue;
+            if (!self.type_expr_is_native_scalar(fd.func.ret_type)) continue;
+            var params_ok = true;
+            for (fd.func.params) |param| {
+                if (param.default_val != null) {
+                    params_ok = false;
+                    break;
+                }
+                if (!self.type_expr_is_native_scalar(param.typ)) {
+                    params_ok = false;
+                    break;
+                }
+            }
+            if (!params_ok) continue;
+            if (!self.block_is_native_scalar(fd.func.body, true)) continue;
+            self.native_scalar_funcs.put(self.alloc, fd.path[0], {}) catch {};
+        }
+        return self.native_scalar_funcs.count() > 0;
+    }
+
     fn block_is_native_scalar(self: *CodeGen, block: ast.Block, allow_return: bool) bool {
         if (block.tail_expr) |expr| {
             if (!allow_return) {
@@ -2821,7 +2878,12 @@ pub const CodeGen = struct {
         try self.populate_func_bodies(mod);
 
         self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
-        if (native_diag) std.debug.print("[native-diag] emit_module native_scalar_mode={} src={s}\n", .{ self.native_scalar_mode, self.src_path });
+        if (!self.native_scalar_mode and self.duo_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
+            if (self.compute_native_scalar_funcs(mod)) {
+                self.mixed_scalar_mode = true;
+            }
+        }
+        if (native_diag) std.debug.print("[native-diag] emit_module native_scalar_mode={} mixed={} src={s}\n", .{ self.native_scalar_mode, self.mixed_scalar_mode, self.src_path });
         const native_scalar_plain = self.native_scalar_mode and !self.module_has_cinclude(mod);
 
         // File header
@@ -23774,6 +23836,60 @@ test "arc: enum-typed locals do not retain or release whole enum values" {
     try testing.expect(std.mem.indexOf(u8, output, "duo_release((void*)(circ))") == null);
     try testing.expect(std.mem.indexOf(u8, output, "duo_retain((void*)(unit))") == null);
     try testing.expect(std.mem.indexOf(u8, output, "duo_release((void*)(unit))") == null);
+}
+
+test "arc: non-escaping string local is pruned when ARC pass has escaping set" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\fun greet(name: str): str
+        \\    local greeting = "hello, " .. name
+        \\    return greeting
+        \\end
+        \\fun use_closure(): str
+        \\    local captured = "world"
+        \\    local inner = fun(): str
+        \\        return captured
+        \\    end
+        \\    return inner()
+        \\end
+    ;
+
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var lex = Lexer.init(src, "arc_prune.duo");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    // Run ARC pass with the sema escape set
+    var arc_pass = arc.ArcPass.init(alloc, &semantic.type_map);
+    defer arc_pass.deinit();
+    {
+        var it = semantic.escape_names.iterator();
+        while (it.next()) |entry| {
+            arc_pass.markEscaping(entry.key_ptr.*) catch {};
+        }
+    }
+    arc_pass.run(&module) catch {};
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types);
+    cg.arc = &arc_pass;
+    try cg.emit_module(&module);
+    const output = aw.written();
+
+    // greeting is a non-escaping local — should NOT get retain/release
+    try testing.expect(std.mem.indexOf(u8, output, "duo_retain((void*)(greeting))") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_release((void*)(greeting))") == null);
+
+    // captured IS escaping (captured by closure) — SHOULD get retain/release
+    // (at least one retain for the captured upvalue)
+    try testing.expect(std.mem.indexOf(u8, output, "duo_retain") != null);
 }
 
 test "ring buffer specialization eliminates storage for fixed lag read" {

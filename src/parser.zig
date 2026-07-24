@@ -13,6 +13,34 @@ pub const ParseError = error{
     ExpectedToken,
 } || @import("lexer.zig").LexError || Allocator.Error;
 
+fn findMatchingParen(s: []const u8, start: usize) usize {
+    var depth: i32 = 1;
+    var i: usize = start + 1;
+    var in_string = false;
+    var quote_char: u8 = 0;
+    while (i < s.len) : (i += 1) {
+        if (in_string) {
+            if (s[i] == '\\' and i + 1 < s.len) {
+                i += 1;
+                continue;
+            }
+            if (s[i] == quote_char) in_string = false;
+            continue;
+        }
+        if (s[i] == '"' or s[i] == '\'') {
+            in_string = true;
+            quote_char = s[i];
+            continue;
+        }
+        if (s[i] == '(') depth += 1;
+        if (s[i] == ')') {
+            depth -= 1;
+            if (depth == 0) return i;
+        }
+    }
+    return s.len;
+}
+
 pub const Parser = struct {
     lex: *Lexer,
     alloc: Allocator,
@@ -43,11 +71,9 @@ pub const Parser = struct {
         var i: u8 = 0;
         while (i < count) : (i += 1) {
             const hint_text = hints[i] orelse continue;
-            // Parse "inline", "cold", "hot", "noinline", "unroll(N)", etc.
-            // Split at '(' for args
             if (std.mem.indexOfScalar(u8, hint_text, '(')) |paren_pos| {
                 const name = hint_text[0..paren_pos];
-                const end_paren = std.mem.indexOfScalar(u8, hint_text, ')') orelse hint_text.len;
+                const end_paren = findMatchingParen(hint_text, paren_pos);
                 const args = hint_text[paren_pos + 1 .. end_paren];
                 attrs[i] = .{ .name = name, .args = args };
             } else {
@@ -57,17 +83,25 @@ pub const Parser = struct {
         return attrs[0..count];
     }
 
-    /// Turn `--- @build.*` / `--- @debug.*` comment hints into module directive statements.
+    /// Turn `--- @` comment hints into module directive statements or defer them
+    /// for the next function/type declaration.  Module-level directives that must
+    /// execute in order (C includes, raw C emission, specialization, build,
+    /// debug) are flushed immediately; everything else is deferred.
     fn flush_module_hint_directives(self: *Parser, stmts: *std.ArrayList(ast.Stmt)) ParseError!void {
-        const directives_mod = @import("directives.zig");
         while (self.lex.hasPendingHints()) {
             const hint_attrs = try self.consumeLexerHints();
             defer self.alloc.free(hint_attrs);
             var emitted = false;
             for (hint_attrs) |attr| {
-                if (directives_mod.isBuildDirective(attr.name) or directives_mod.isDebugDirective(attr.name)) {
+                if (is_module_level_hint(attr)) {
                     const loc = (try self.pk()).loc;
-                    try stmts.append(self.alloc, .{ .directive = .{ .loc = loc, .attr = attr } });
+                    // @c.include / @c.import become cinclude statements
+                    if (std.mem.eql(u8, attr.name, "c.include") or std.mem.eql(u8, attr.name, "c.import")) {
+                        const header = @import("directives.zig").extractCRawCode(attr.args orelse "");
+                        try stmts.append(self.alloc, .{ .cinclude = .{ .loc = loc, .header = header } });
+                    } else {
+                        try stmts.append(self.alloc, .{ .directive = .{ .loc = loc, .attr = attr } });
+                    }
                     emitted = true;
                 } else {
                     try self.deferred_hint_attrs.append(self.alloc, attr);
@@ -75,6 +109,22 @@ pub const Parser = struct {
             }
             if (!emitted) break;
         }
+    }
+
+    /// Returns true for hints that must be emitted as module-level directives
+    /// (in source order) rather than deferred to the next function/type.
+    fn is_module_level_hint(attr: ast.Attribute) bool {
+        const directives = @import("directives.zig");
+        if (directives.isBuildDirective(attr.name)) return true;
+        if (directives.isDebugDirective(attr.name)) return true;
+        // C interface directives are module-level (order matters for #include)
+        if (std.mem.eql(u8, attr.name, "c.include") or
+            std.mem.eql(u8, attr.name, "c.import") or
+            std.mem.eql(u8, attr.name, "c.emit"))
+            return true;
+        // @specialize is a module-level directive
+        if (std.mem.eql(u8, attr.name, "specialize")) return true;
+        return false;
     }
 
     fn merge_deferred_hints(self: *Parser, hint_attrs: []ast.Attribute) ParseError![]ast.Attribute {
