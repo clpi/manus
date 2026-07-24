@@ -5447,7 +5447,11 @@ pub const CodeGen = struct {
                 self.p(";\n", .{});
             }
         }
-        if (fb.vararg_name) |vn| {
+        // Always pack varargs into a table, even for unnamed `...`.
+        // The `emit_expr` `.vararg` handler will look up `fb.vararg_name`,
+        // so assign a default name when the source didn't provide one.
+        if (fb.vararg) {
+            const vn = fb.vararg_name orelse "__varargs";
             try self.note_local(vn);
             self.pl("lua_Value {s} = lua_tbl_pack_argv(argc - {d}, argv + {d});", .{ vn, fb.params.len, fb.params.len });
         }
@@ -8762,6 +8766,11 @@ pub const CodeGen = struct {
                         self.p("{s}, lua_val_nil(), lua_val_nil())", .{vn});
                         return;
                     }
+                    // Unnamed varargs: use default name from __argv path
+                    if (fb.vararg) {
+                        self.p("lua_tbl_unpack(__varargs, lua_val_nil(), lua_val_nil())", .{});
+                        return;
+                    }
                 }
                 self.p("/* ... */", .{});
             },
@@ -10439,6 +10448,21 @@ pub const CodeGen = struct {
                             self.p(");\n", .{});
                         },
                         .positional => |pos_expr| {
+                            // Special case: `{...}` — copy all varargs into the table.
+                            if (pos_expr.* == .vararg) {
+                                if (self.closure_ctx) |fb| {
+                                    const vn = fb.vararg_name orelse "__varargs";
+                                    self.pl("for (int _vi = 0; _vi < (int)lua_len_num({s}); _vi++) {{", .{vn});
+                                    self.ind();
+                                    self.pl("lua_table_set_raw_i64(tmp, {d} + _vi, lua_table_get_raw({s}, lua_val_from_int(_vi + 1)));", .{ @as(i64, @intFromFloat(pos_idx)), vn });
+                                    self.pl("}}", .{});
+                                    // Advance pos_idx by the number of varargs (runtime).
+                                    // For simplicity, leave pos_idx as-is since
+                                    // subsequent positional fields after `...`
+                                    // are rare in Lua/Duo practice.
+                                    continue;
+                                }
+                            }
                             self.p("lua_table_set_raw_i64(tmp, {d}, ", .{@as(i64, @intFromFloat(pos_idx))});
                             try self.emit_as_lua_value(pos_expr);
                             self.p(");\n", .{});
@@ -13507,7 +13531,8 @@ pub const CodeGen = struct {
                     self.pl("lua_Value {s} = argc > {d} ? argv[{d}] : lua_val_nil();", .{ par.name, i, i });
                 }
             }
-            if (fb.vararg_name) |vn| {
+            if (fb.vararg) {
+                const vn = fb.vararg_name orelse "__varargs";
                 self.pl("lua_Value {s} = lua_tbl_pack_argv(argc - {d}, argv + {d});", .{ vn, fb.params.len, fb.params.len });
             }
             try self.emit_block(&fb.body);

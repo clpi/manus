@@ -1,5 +1,4 @@
-fun req(m: str): str return "loaded: " .. m end
-
+-- Test stdlib modules using builtin req (lua_require)
 log = req "std.log"
 memo = req "std.memo"
 json = req "std.json"
