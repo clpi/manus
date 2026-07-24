@@ -286,6 +286,10 @@ NAMES=(
 
 FAIL=0
 echo
+echo "══════════════════════════════════════════════════════════════════════════════"
+echo "                       Duo Performance Benchmark Suite"
+echo "══════════════════════════════════════════════════════════════════════════════"
+echo
 printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "Benchmark" "DuoLua(s)" "DuoDuo(s)" "C(s)" "LuaJIT(s)" "Lua5.5(s)" "Nelua(s)" "Winner"
 printf "%-16s %12s %12s %12s %12s %12s %12s %8s\n" "----------------" "------------" "------------" "------------" "------------" "------------" "------------" "--------"
 
@@ -316,9 +320,10 @@ done < <(paste -d '|' <(echo "$DUO_TIMES") <(echo "$DUO_FILE_TIMES") <(echo "$C_
 
 if [ "$FAIL" -ne 0 ]; then
   echo
-  echo "Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test."
+  echo "❌ Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test."
   exit 1
 fi
 
-echo
-echo "All benchmarks: results match and Duo .lua/.duo >= C"
+echo "══════════════════════════════════════════════════════════════════════════════"
+echo "✓ All benchmarks: results match and Duo .lua/.duo >= C"
+echo "══════════════════════════════════════════════════════════════════════════════"

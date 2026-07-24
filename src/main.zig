@@ -1255,8 +1255,12 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
         }
         if (std.mem.eql(u8, line, ":time")) {
             term.section("shell timing");
-            term.kv("lines compiled", "{d}");
-            term.kv("session state", "active");
+            var buf: [32]u8 = undefined;
+            const lc = std.fmt.bufPrint(&buf, "{}", .{counter.*}) catch "error";
+            term.kv("lines compiled", lc);
+            var buf2: [32]u8 = undefined;
+            const hi = std.fmt.bufPrint(&buf2, "{}", .{shell_history.items.len}) catch "error";
+            term.kv("history entries", hi);
             return true;
         }
         if (std.mem.eql(u8, line, ":reset")) {
