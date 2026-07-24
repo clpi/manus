@@ -396,6 +396,7 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
             std.mem.eql(u8, attr.name, "arc") or
             std.mem.eql(u8, attr.name, "nopanic") or
             std.mem.eql(u8, attr.name, "packed") or
+            std.mem.eql(u8, attr.name, "raw") or
             std.mem.eql(u8, attr.name, "align") or
             std.mem.eql(u8, attr.name, "deprecated") or
             std.mem.eql(u8, attr.name, "device") or

@@ -391,6 +391,688 @@ fun derive_iter(val: any): any
     return pairs(val)
 end
 
+-- ─────────────────────────────────────────────────────────────
+-- Functional programming: higher-order collection transforms
+-- ─────────────────────────────────────────────────────────────
+
+-- map: transform each element of an array
+fun map(t: any, f: any): any
+    out = {}
+    i = 1
+    while i <= #t
+        out[i] = f(t[i], i)
+        i += 1
+    end
+    out
+end
+
+-- mapk: transform each key-value pair
+fun mapk(t: any, f: any): any
+    out = {}
+    for k, v in pairs(t)
+        out[k] = f(v, k)
+    end
+    out
+end
+
+-- filter: keep elements where predicate returns true
+fun filter(t: any, pred: any): any
+    out = {}
+    n = 0
+    i = 1
+    while i <= #t
+        if pred(t[i], i) then
+            n += 1
+            out[n] = t[i]
+        end
+        i += 1
+    end
+    out
+end
+
+-- filterk: keep entries where predicate(value, key) returns true
+fun filterk(t: any, pred: any): any
+    out = {}
+    for k, v in pairs(t)
+        if pred(v, k) then
+            out[k] = v
+        end
+    end
+    out
+end
+
+-- reduce: fold array left-to-right with accumulator
+fun reduce(t: any, f: any, init: any): any
+    acc = init
+    i = 1
+    while i <= #t
+        acc = f(acc, t[i], i)
+        i += 1
+    end
+    acc
+end
+
+-- reducek: fold table with (accumulator, value, key)
+fun reducek(t: any, f: any, init: any): any
+    acc = init
+    for k, v in pairs(t)
+        acc = f(acc, v, k)
+    end
+    acc
+end
+
+-- each: call side-effecting function on each element
+fun each(t: any, f: any): void
+    i = 1
+    while i <= #t
+        f(t[i], i)
+        i += 1
+    end
+end
+
+-- eachk: call side-effecting function on each key-value pair
+fun eachk(t: any, f: any): void
+    for k, v in pairs(t)
+        f(v, k)
+    end
+end
+
+-- find: return first element matching predicate, or nil
+fun find(t: any, pred: any): any
+    i = 1
+    while i <= #t
+        if pred(t[i], i) then return t[i] end
+        i += 1
+    end
+    nil
+end
+
+-- findk: return first key whose value matches predicate
+fun findk(t: any, pred: any): any
+    for k, v in pairs(t)
+        if pred(v, k) then return k end
+    end
+    nil
+end
+
+-- find_index: return 1-based index of first matching element, or 0
+fun find_index(t: any, pred: any): i64
+    i = 1
+    while i <= #t
+        if pred(t[i], i) then return i end
+        i += 1
+    end
+    0
+end
+
+-- includes: check if any element equals value
+fun includes(t: any, value: any): bool
+    i = 1
+    while i <= #t
+        if t[i] == value then return true end
+        i += 1
+    end
+    false
+end
+
+-- count: count elements matching predicate
+fun count(t: any, pred: any): i64
+    n = 0
+    i = 1
+    while i <= #t
+        if pred(t[i], i) then n += 1 end
+        i += 1
+    end
+    n
+end
+
+-- all: true if every element matches predicate
+fun all(t: any, pred: any): bool
+    i = 1
+    while i <= #t
+        if not pred(t[i], i) then return false end
+        i += 1
+    end
+    true
+end
+
+-- any: true if at least one element matches predicate
+fun any(t: any, pred: any): bool
+    i = 1
+    while i <= #t
+        if pred(t[i], i) then return true end
+        i += 1
+    end
+    false
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: collection builders
+-- ─────────────────────────────────────────────────────────────
+
+-- flatten: one-level flatten of array of arrays
+fun flatten(t: any): any
+    out = {}
+    n = 0
+    i = 1
+    while i <= #t
+        sub = t[i]
+        if type(sub) == "table" then
+            j = 1
+            while j <= #sub
+                n += 1
+                out[n] = sub[j]
+                j += 1
+            end
+        else
+            n += 1
+            out[n] = sub
+        end
+        i += 1
+    end
+    out
+end
+
+-- flat_map: map then flatten one level
+fun flat_map(t: any, f: any): any
+    flatten(map(t, f))
+end
+
+-- zip: combine N arrays into array of tuples
+fun zip(...): any
+    local args = {...}
+    if #args == 0 then return {} end
+    min_len = #args[1]
+    i = 2
+    while i <= #args
+        if #args[i] < min_len then min_len = #args[i] end
+        i += 1
+    end
+    out = {}
+    j = 1
+    while j <= min_len
+        tuple = {}
+        k = 1
+        while k <= #args
+            tuple[k] = args[k][j]
+            k += 1
+        end
+        out[j] = tuple
+        j += 1
+    end
+    out
+end
+
+-- enumerate: array to array of {index, value} pairs
+fun enumerate(t: any): any
+    out = {}
+    i = 1
+    while i <= #t
+        out[i] = { index = i, value = t[i] }
+        i += 1
+    end
+    out
+end
+
+-- take: first n elements
+fun take(t: any, n: i64): any
+    out = {}
+    limit = n
+    if limit > #t then limit = #t end
+    i = 1
+    while i <= limit
+        out[i] = t[i]
+        i += 1
+    end
+    out
+end
+
+-- drop: skip first n elements
+fun drop(t: any, n: i64): any
+    out = {}
+    start = n + 1
+    if start > #t then return out end
+    i = start
+    j = 1
+    while i <= #t
+        out[j] = t[i]
+        i += 1
+        j += 1
+    end
+    out
+end
+
+-- reverse: return new reversed array
+fun reverse(t: any): any
+    out = {}
+    n = #t
+    i = 1
+    while i <= n
+        out[i] = t[n - i + 1]
+        i += 1
+    end
+    out
+end
+
+-- unique: remove duplicate elements (preserves first occurrence)
+fun unique(t: any): any
+    seen = {}
+    out = {}
+    n = 0
+    i = 1
+    while i <= #t
+        v = t[i]
+        key = tostring(v)
+        if not seen[key] then
+            seen[key] = true
+            n += 1
+            out[n] = v
+        end
+        i += 1
+    end
+    out
+end
+
+-- partition: split array into {matching, rest} based on predicate
+fun partition(t: any, pred: any): any
+    yes = {}
+    no = {}
+    ny = 0
+    nn = 0
+    i = 1
+    while i <= #t
+        if pred(t[i], i) then
+            ny += 1
+            yes[ny] = t[i]
+        else
+            nn += 1
+            no[nn] = t[i]
+        end
+        i += 1
+    end
+    { yes, no }
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: sorting
+-- ─────────────────────────────────────────────────────────────
+
+-- sort: return new sorted array (ascending)
+fun sort(t: any): any
+    out = {}
+    i = 1
+    while i <= #t
+        out[i] = t[i]
+        i += 1
+    end
+    i = 2
+    while i <= #out
+        key = out[i]
+        j = i - 1
+        while j >= 1 and out[j] > key
+            out[j + 1] = out[j]
+            j -= 1
+        end
+        out[j + 1] = key
+        i += 1
+    end
+    out
+end
+
+-- sort_by: sort by key function
+fun sort_by(t: any, key_fn: any): any
+    indexed = {}
+    i = 1
+    while i <= #t
+        indexed[i] = { val = t[i], key = key_fn(t[i]) }
+        i += 1
+    end
+    i = 2
+    while i <= #indexed
+        entry = indexed[i]
+        j = i - 1
+        while j >= 1 and indexed[j].key > entry.key
+            indexed[j + 1] = indexed[j]
+            j -= 1
+        end
+        indexed[j + 1] = entry
+        i += 1
+    end
+    out = {}
+    i = 1
+    while i <= #indexed
+        out[i] = indexed[i].val
+        i += 1
+    end
+    out
+end
+
+-- sort_desc: descending order
+fun sort_desc(t: any): any
+    return reverse(sort(t))
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: grouping and aggregation
+-- ─────────────────────────────────────────────────────────────
+
+-- group_by: group array elements by key function
+fun group_by(t: any, key_fn: any): any
+    groups = {}
+    i = 1
+    while i <= #t
+        k = tostring(key_fn(t[i]))
+        if groups[k] == nil then groups[k] = {} end
+        groups[k][rawlen(groups[k]) + 1] = t[i]
+        i += 1
+    end
+    groups
+end
+
+-- count_by: count elements grouped by key function
+fun count_by(t: any, key_fn: any): any
+    counts = {}
+    i = 1
+    while i <= #t
+        k = tostring(key_fn(t[i]))
+        if counts[k] == nil then counts[k] = 0 end
+        counts[k] += 1
+        i += 1
+    end
+    counts
+end
+
+-- sum_by: sum numeric values extracted by key function
+fun sum_by(t: any, key_fn: any): any
+    total = 0
+    i = 1
+    while i <= #t
+        total += key_fn(t[i])
+        i += 1
+    end
+    total
+end
+
+-- min_by / max_by: find element with min/max key
+fun min_by(t: any, key_fn: any): any
+    if #t == 0 then return nil end
+    best = t[1]
+    best_key = key_fn(t[1])
+    i = 2
+    while i <= #t
+        k = key_fn(t[i])
+        if k < best_key then
+            best = t[i]
+            best_key = k
+        end
+        i += 1
+    end
+    best
+end
+
+fun max_by(t: any, key_fn: any): any
+    if #t == 0 then return nil end
+    best = t[1]
+    best_key = key_fn(t[1])
+    i = 2
+    while i <= #t
+        k = key_fn(t[i])
+        if k > best_key then
+            best = t[i]
+            best_key = k
+        end
+        i += 1
+    end
+    best
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: composition and chaining
+-- ─────────────────────────────────────────────────────────────
+
+-- pipe: left-to-right function composition
+fun pipe(...): any
+    local funcs = {...}
+    return function(x)
+        local result = x
+        i = 1
+        while i <= #funcs
+            result = funcs[i](result)
+            i += 1
+        end
+        return result
+    end
+end
+
+-- compose: right-to-left function composition
+fun compose(...): any
+    local funcs = {...}
+    return function(x)
+        local result = x
+        i = #funcs
+        while i >= 1
+            result = funcs[i](result)
+            i -= 1
+        end
+        return result
+    end
+end
+
+-- partial: partially apply a function with leading args
+fun partial(f: any, ...): any
+    local partial_args = {...}
+    return function(...)
+        local all = {}
+        local n = 0
+        i = 1
+        while i <= #partial_args
+            n += 1
+            all[n] = partial_args[i]
+            i += 1
+        end
+        local extra = {...}
+        i = 1
+        while i <= #extra
+            n += 1
+            all[n] = extra[i]
+            i += 1
+        end
+        return f(table.unpack(all, 1, n))
+    end
+end
+
+-- tap: side-effecting pass-through
+fun tap(value: any, f: any): any
+    f(value)
+    value
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: numeric aggregation
+-- ─────────────────────────────────────────────────────────────
+
+fun sum(t: any): any
+    total = 0
+    i = 1
+    while i <= #t
+        total += t[i]
+        i += 1
+    end
+    total
+end
+
+fun product(t: any): any
+    total = 1
+    i = 1
+    while i <= #t
+        total *= t[i]
+        i += 1
+    end
+    total
+end
+
+fun min(t: any): any
+    if #t == 0 then return nil end
+    best = t[1]
+    i = 2
+    while i <= #t
+        if t[i] < best then best = t[i] end
+        i += 1
+    end
+    best
+end
+
+fun max(t: any): any
+    if #t == 0 then return nil end
+    best = t[1]
+    i = 2
+    while i <= #t
+        if t[i] > best then best = t[i] end
+        i += 1
+    end
+    best
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: key-value transforms
+-- ─────────────────────────────────────────────────────────────
+
+-- map_values: transform only values, keep keys
+fun map_values(t: any, f: any): any
+    out = {}
+    for k, v in pairs(t)
+        out[k] = f(v, k)
+    end
+    out
+end
+
+-- map_keys: transform only keys, keep values
+fun map_keys(t: any, f: any): any
+    out = {}
+    for k, v in pairs(t)
+        out[f(v, k)] = v
+    end
+    out
+end
+
+-- key_by: array to table keyed by extract function
+fun key_by(t: any, key_fn: any): any
+    out = {}
+    i = 1
+    while i <= #t
+        k = tostring(key_fn(t[i]))
+        out[k] = t[i]
+        i += 1
+    end
+    out
+end
+
+-- invert: swap keys and values
+fun invert(t: any): any
+    out = {}
+    for k, v in pairs(t)
+        out[tostring(v)] = k
+    end
+    out
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: predicate builders
+-- ─────────────────────────────────────────────────────────────
+
+-- eq: build equality predicate
+fun eq(val: any): any
+    return function(x) return x == val end
+end
+
+-- gt / lt / gte / lte: comparison predicates
+fun gt(val: any): any
+    return function(x) return x > val end
+end
+
+fun lt(val: any): any
+    return function(x) return x < val end
+end
+
+fun gte(val: any): any
+    return function(x) return x >= val end
+end
+
+fun lte(val: any): any
+    return function(x) return x <= val end
+end
+
+-- notf: negate a predicate
+fun notf(pred: any): any
+    return function(x) return not pred(x) end
+end
+
+-- andf / orf: combine predicates
+fun andf(...): any
+    local preds = {...}
+    return function(x)
+        i = 1
+        while i <= #preds
+            if not preds[i](x) then return false end
+            i += 1
+        end
+        return true
+    end
+end
+
+fun orf(...): any
+    local preds = {...}
+    return function(x)
+        i = 1
+        while i <= #preds
+            if preds[i](x) then return true end
+            i += 1
+        end
+        return false
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: utility
+-- ─────────────────────────────────────────────────────────────
+
+-- identity: return value unchanged
+fun identity(x: any): any
+    x
+end
+
+-- always / never: constant predicates
+fun always(): bool
+    true
+end
+
+fun never(): bool
+    false
+end
+
+-- noop: do nothing
+fun noop(): void
+end
+
+-- ─────────────────────────────────────────────────────────────
+-- Functional: numeric helpers
+-- ─────────────────────────────────────────────────────────────
+
+fun clamp(value: any, lo: any, hi: any): any
+    if value < lo then return lo end
+    if value > hi then return hi end
+    value
+end
+
+fun lerp(a: any, b: any, t: any): any
+    a + (b - a) * t
+end
+
+fun abs(x: any): any
+    if x < 0 then return -x end
+    x
+end
+
 -- Module table — everything exported
 M = {}
 -- Reflection
@@ -438,4 +1120,72 @@ M.derive_format = derive_format
 M.derive_len = derive_len
 M.derive_contains = derive_contains
 M.derive_iter = derive_iter
-M
+-- Functional: transforms
+M.map = map
+M.mapk = mapk
+M.map_values = map_values
+M.map_keys = map_keys
+M.filter = filter
+M.filterk = filterk
+M.reduce = reduce
+M.reducek = reducek
+M.each = each
+M.eachk = eachk
+M.find = find
+M.findk = findk
+M.find_index = find_index
+M.includes = includes
+M.count = count
+M.all = all
+M.any = any
+-- Functional: collection builders
+M.flatten = flatten
+M.flat_map = flat_map
+M.zip = zip
+M.enumerate = enumerate
+M.take = take
+M.drop = drop
+M.reverse = reverse
+M.unique = unique
+M.partition = partition
+-- Functional: sorting
+M.sort = sort
+M.sort_by = sort_by
+M.sort_desc = sort_desc
+-- Functional: grouping
+M.group_by = group_by
+M.count_by = count_by
+M.sum_by = sum_by
+M.min_by = min_by
+M.max_by = max_by
+-- Functional: composition
+M.pipe = pipe
+M.compose = compose
+M.partial = partial
+M.tap = tap
+-- Functional: aggregation
+M.sum = sum
+M.product = product
+M.min = min
+M.max = max
+-- Functional: key-value
+M.key_by = key_by
+M.invert = invert
+-- Functional: predicates
+M.eq = eq
+M.gt = gt
+M.lt = lt
+M.gte = gte
+M.lte = lte
+M.notf = notf
+M.andf = andf
+M.orf = orf
+-- Functional: utility
+M.identity = identity
+M.always = always
+M.never = never
+M.noop = noop
+-- Functional: numeric
+M.clamp = clamp
+M.lerp = lerp
+M.abs = abs

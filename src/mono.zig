@@ -221,6 +221,14 @@ pub const Monomorphizer = struct {
         return self.order.items.len;
     }
 
+    /// Non-allocating check: does `name` have at least one specialization?
+    pub fn hasSpecializations(self: *const Self, name: []const u8) bool {
+        for (self.order.items) |spec| {
+            if (std.mem.eql(u8, spec.generic_name, name)) return true;
+        }
+        return false;
+    }
+
     /// All specializations of `name`, in discovery order (caller frees).
     pub fn getSpecializations(self: *Self, name: []const u8) ![]*Specialization {
         var out: std.ArrayListUnmanaged(*Specialization) = .empty;

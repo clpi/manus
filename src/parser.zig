@@ -569,6 +569,7 @@ pub const Parser = struct {
             "noreturn",
             "packed",
             "profile",
+            "raw",
             "repr",
             "restrict",
             "simd",

@@ -826,6 +826,10 @@ pub const CodeGen = struct {
                 }
             }
             if (self.local_type(e.name.ident)) |rt| return rt;
+            // Check module-level globals (e.g. OP_NOP = 0x01) — these are
+            // typed via the const_decl/global_decl type map and should produce
+            // native comparisons instead of falling through to lua_eq.
+            if (self.global_type(e.name.ident)) |rt| return rt;
         }
         if (e.* == .index) {
             const idx = e.index;
@@ -4471,6 +4475,21 @@ pub const CodeGen = struct {
 
     fn emit_func_decl_forward(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        // Skip forward declaration for monomorphized generic functions —
+        // the monomorphized versions have their own forward declarations.
+        if (fb.type_params != null and fb.type_params.?.len > 0) {
+            if (self.mono) |m| {
+                if (m.hasSpecializations(duo_func_name(fd))) {
+                    // Still register the function name for potential dynamic dispatch.
+                    if (fd.path.len == 1) {
+                        if (func_ffi_name(fd.attributes)) |ffi_name| {
+                            try self.function_c_names.put(self.alloc, fd.path[0], ffi_name);
+                        }
+                    }
+                    return;
+                }
+            }
+        }
         var name_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &name_buf);
         if (fd.path.len == 1) {
@@ -4605,6 +4624,7 @@ pub const CodeGen = struct {
         const noinline_attr = func_has_attr(fd.attributes, "noinline");
         const cold_attr = func_has_attr(fd.attributes, "cold");
         const hot_attr = func_has_attr(fd.attributes, "hot");
+        const raw_attr = func_has_attr(fd.attributes, "raw");
         // Pattern-specialized functions are algorithmically hot: they were
         // detected as recognizable algorithm shapes and get native C bodies.
         // Auto-apply `hot` so the C compiler places them in the hot text
@@ -4634,7 +4654,7 @@ pub const CodeGen = struct {
 
         const emit_hot = hot_attr or pattern_hot;
         var first_attr = true;
-        if (inline_attr or noinline_attr or cold_attr or emit_hot) {
+        if (inline_attr or noinline_attr or cold_attr or emit_hot or raw_attr) {
             self.p("__attribute__((", .{});
             if (inline_attr) {
                 self.p("always_inline", .{});
@@ -4653,6 +4673,11 @@ pub const CodeGen = struct {
             if (emit_hot) {
                 if (!first_attr) self.p(", ", .{});
                 self.p("hot", .{});
+                first_attr = false;
+            }
+            if (raw_attr) {
+                if (!first_attr) self.p(", ", .{});
+                self.p("naked", .{});
             }
             self.p(")) ", .{});
         }
@@ -5151,8 +5176,27 @@ pub const CodeGen = struct {
 
     fn emit_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        // Generic functions that have been monomorphized: skip the generic
+        // fallback body. The monomorphized versions (duo_<name>_<type>) handle
+        // all typed call sites. The generic body would use lua_Value arithmetic
+        // (e.g. `a + b` on lua_Value) which is invalid C. We still emit the lua
+        // thunk below for potential dynamic dispatch.
+        const is_monomorphized_generic = blk: {
+            if (fb.type_params != null and fb.type_params.?.len > 0) {
+                if (self.mono) |m| {
+                    const fname = duo_func_name(fd);
+                    if (m.hasSpecializations(fname)) break :blk true;
+                }
+            }
+            break :blk false;
+        };
         // `@ffi` functions are extern C symbols — emit only the lua thunk if applicable.
         if (func_ffi_name(fd.attributes) != null) {
+            try self.emit_lua_thunk(fd);
+            return;
+        }
+        // For monomorphized generics, emit only the thunk — skip the broken body.
+        if (is_monomorphized_generic) {
             try self.emit_lua_thunk(fd);
             return;
         }

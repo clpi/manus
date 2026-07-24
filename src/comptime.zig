@@ -210,6 +210,9 @@ pub const Evaluator = struct {
             if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string")) {
                 return self.evalStringBuiltin(f.field, args);
             }
+            if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "table")) {
+                return self.evalTableBuiltin(f.field, args);
+            }
         }
         // Handle global builtins: type(), tostring(), tonumber()
         if (func_expr.* == .name) {
@@ -234,6 +237,30 @@ pub const Evaluator = struct {
                     .int => val,
                     .float => val,
                     else => error.UnsupportedExpression,
+                };
+            }
+            if (std.mem.eql(u8, name, "tostring") and args.len == 1) {
+                const val = try self.eval(args[0]);
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                return switch (val) {
+                    .string => val,
+                    .int => blk: {
+                        var buf: [20]u8 = undefined;
+                        const written = std.fmt.bufPrint(&buf, "{d}", .{val.int}) catch "??";
+                        const owned = alloc.dupe(u8, written) catch return error.UnsupportedExpression;
+                        break :blk .{ .string = owned };
+                    },
+                    .float => blk: {
+                        var buf: [30]u8 = undefined;
+                        const written = std.fmt.bufPrint(&buf, "{d}", .{val.float}) catch "??";
+                        const owned = alloc.dupe(u8, written) catch return error.UnsupportedExpression;
+                        break :blk .{ .string = owned };
+                    },
+                    .bool => .{ .string = if (val.bool) "true" else "false" },
+                    .nil => .{ .string = "nil" },
+                    .func => .{ .string = "<function>" },
+                    .table => .{ .string = "<table>" },
+                    .unavailable => .{ .string = "<unavailable>" },
                 };
             }
             // __has_field / __has_method — compile-time structural queries
@@ -408,6 +435,232 @@ pub const Evaluator = struct {
                 const ei: usize = @intCast(e);
                 return .{ .string = a.string[si..ei] };
             }
+            if (std.mem.eql(u8, name, "find") and args.len >= 2) {
+                const pattern = try self.eval(args[1]);
+                if (pattern != .string) return error.UnsupportedExpression;
+                const start_i: usize = if (args.len >= 3) blk: {
+                    const sv = try self.eval(args[2]);
+                    const s = numericAsInt(sv) orelse 1;
+                    break :blk @max(1, @as(usize, @intCast(s - 1)));
+                } else 0;
+                if (start_i >= a.string.len) return .{ .int = 0 };
+                if (pattern.string.len == 0) return .{ .int = @intCast(start_i + 1) };
+                if (pattern.string.len > a.string.len - start_i) return .{ .int = 0 };
+                const limit = a.string.len - pattern.string.len;
+                var pos: usize = start_i;
+                while (pos <= limit) : (pos += 1) {
+                    if (std.mem.eql(u8, a.string[pos .. pos + pattern.string.len], pattern.string)) {
+                        return .{ .int = @intCast(pos + 1) };
+                    }
+                }
+                return .{ .int = 0 };
+            }
+            if (std.mem.eql(u8, name, "char") and args.len >= 2) {
+                const byte_val = try self.eval(args[1]);
+                const byte_num = numericAsInt(byte_val) orelse return error.UnsupportedExpression;
+                if (byte_num < 0 or byte_num > 255) return error.UnsupportedExpression;
+                const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                const buf = alloc.alloc(u8, 1) catch return error.UnsupportedExpression;
+                buf[0] = @intCast(byte_num);
+                return .{ .string = buf };
+            }
+            if (std.mem.eql(u8, name, "format")) {
+                return self.evalStringFormat(a, args[1..]);
+            }
+        }
+        return error.UnsupportedExpression;
+    }
+
+    fn evalStringFormat(self: *Evaluator, fmt: Value, extra_args: []const *ast.Expr) EvalError!Value {
+        const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+        var result: std.ArrayListUnmanaged(u8) = .empty;
+        defer result.deinit(alloc);
+        var arg_idx: usize = 0;
+        var i: usize = 0;
+        while (i < fmt.string.len) : (i += 1) {
+            const c = fmt.string[i];
+            if (c != '%') {
+                result.append(alloc, c) catch return error.UnsupportedExpression;
+                continue;
+            }
+            i += 1;
+            if (i >= fmt.string.len) break;
+            const spec = fmt.string[i];
+            if (spec == '%') {
+                result.append(alloc, '%') catch return error.UnsupportedExpression;
+                continue;
+            }
+            if (arg_idx >= extra_args.len) return error.UnsupportedExpression;
+            const arg = try self.eval(extra_args[arg_idx]);
+            arg_idx += 1;
+            var buf: [30]u8 = undefined;
+            switch (spec) {
+                's' => {
+                    const s = switch (arg) {
+                        .string => arg.string,
+                        .int => blk: {
+                            const written = std.fmt.bufPrint(&buf, "{d}", .{arg.int}) catch "??";
+                            break :blk written;
+                        },
+                        .float => blk: {
+                            const written = std.fmt.bufPrint(&buf, "{d}", .{arg.float}) catch "??";
+                            break :blk written;
+                        },
+                        .bool => if (arg.bool) "true" else "false",
+                        .nil => "nil",
+                        else => "??",
+                    };
+                    result.appendSlice(alloc, s) catch return error.UnsupportedExpression;
+                },
+                'd', 'i' => {
+                    const written = switch (arg) {
+                        .int => std.fmt.bufPrint(&buf, "{d}", .{arg.int}) catch "??",
+                        .float => std.fmt.bufPrint(&buf, "{d}", .{@as(i64, @intFromFloat(arg.float))}) catch "??",
+                        else => "??",
+                    };
+                    result.appendSlice(alloc, written) catch return error.UnsupportedExpression;
+                },
+                'f' => {
+                    const written = switch (arg) {
+                        .float => std.fmt.bufPrint(&buf, "{d}", .{arg.float}) catch "??",
+                        .int => std.fmt.bufPrint(&buf, "{d}", .{@as(f64, @floatFromInt(arg.int))}) catch "??",
+                        else => "??",
+                    };
+                    result.appendSlice(alloc, written) catch return error.UnsupportedExpression;
+                },
+                'x' => {
+                    const written = switch (arg) {
+                        .int => std.fmt.bufPrint(&buf, "{x}", .{@as(u64, @bitCast(arg.int))}) catch "??",
+                        else => "??",
+                    };
+                    result.appendSlice(alloc, written) catch return error.UnsupportedExpression;
+                },
+                else => return error.UnsupportedExpression,
+            }
+        }
+        return .{ .string = result.toOwnedSlice(alloc) catch return error.UnsupportedExpression };
+    }
+
+    /// Evaluate table.* standard library functions at compile time.
+    fn evalTableBuiltin(self: *Evaluator, name: []const u8, args: []const *ast.Expr) EvalError!Value {
+        if (args.len == 0) return error.UnsupportedExpression;
+        const tbl = try self.eval(args[0]);
+        if (tbl != .table) return error.UnsupportedExpression;
+        if (std.mem.eql(u8, name, "insert") and args.len == 2) {
+            const val = try self.eval(args[1]);
+            const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            var new_entries = alloc.alloc(Value.TableEntry, tbl.table.len + 1) catch return error.UnsupportedExpression;
+            @memcpy(new_entries[0..tbl.table.len], tbl.table);
+            new_entries[tbl.table.len] = .{ .key = .{ .int = @intCast(tbl.table.len + 1) }, .val = val };
+            return .{ .table = new_entries };
+        }
+        if (std.mem.eql(u8, name, "insert") and args.len == 3) {
+            const pos_val = try self.eval(args[1]);
+            const pos = numericAsInt(pos_val) orelse return error.UnsupportedExpression;
+            const val = try self.eval(args[2]);
+            const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            const new_len = tbl.table.len + 1;
+            var new_entries = alloc.alloc(Value.TableEntry, new_len) catch return error.UnsupportedExpression;
+            const insert_idx: usize = @intCast(@max(0, @min(pos - 1, @as(i64, @intCast(tbl.table.len)))));
+            if (insert_idx > 0) @memcpy(new_entries[0..insert_idx], tbl.table[0..insert_idx]);
+            new_entries[insert_idx] = .{ .key = .{ .int = pos }, .val = val };
+            if (insert_idx < tbl.table.len) @memcpy(new_entries[insert_idx + 1 .. new_len], tbl.table[insert_idx..tbl.table.len]);
+            return .{ .table = new_entries };
+        }
+        if (std.mem.eql(u8, name, "remove") and args.len >= 2) {
+            const pos_val = try self.eval(args[1]);
+            const pos = numericAsInt(pos_val) orelse return error.UnsupportedExpression;
+            const idx: usize = if (pos >= 1 and pos <= @as(i64, @intCast(tbl.table.len)))
+                @intCast(pos - 1)
+            else
+                return .nil;
+            const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            if (tbl.table.len <= 1) return .{ .table = &.{} };
+            var new_entries = alloc.alloc(Value.TableEntry, tbl.table.len - 1) catch return error.UnsupportedExpression;
+            if (idx > 0) @memcpy(new_entries[0..idx], tbl.table[0..idx]);
+            const rest = tbl.table.len - idx - 1;
+            if (rest > 0) @memcpy(new_entries[idx .. idx + rest], tbl.table[idx + 1 .. tbl.table.len]);
+            return .{ .table = new_entries };
+        }
+        if (std.mem.eql(u8, name, "concat")) {
+            var result: std.ArrayListUnmanaged(u8) = .empty;
+            const result_alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            defer result.deinit(result_alloc);
+            var i: usize = 0;
+            const sep_val: ?Value = if (args.len >= 2) try self.eval(args[1]) else null;
+            const sep: []const u8 = if (sep_val) |sv| switch (sv) {
+                .string => sv.string,
+                else => "",
+            } else "";
+            while (i < tbl.table.len) : (i += 1) {
+                if (i > 0 and sep.len > 0) result.appendSlice(result_alloc, sep) catch return error.UnsupportedExpression;
+                const v = tbl.table[i].val;
+                const s = switch (v) {
+                    .string => v.string,
+                    .int => blk: {
+                        var buf: [32]u8 = undefined;
+                        const written = std.fmt.bufPrint(&buf, "{d}", .{v.int}) catch return error.UnsupportedExpression;
+                        const out = result_alloc.dupe(u8, written) catch return error.UnsupportedExpression;
+                        break :blk out;
+                    },
+                    .float => blk: {
+                        var buf: [32]u8 = undefined;
+                        const written = std.fmt.bufPrint(&buf, "{d}", .{v.float}) catch return error.UnsupportedExpression;
+                        const out = result_alloc.dupe(u8, written) catch return error.UnsupportedExpression;
+                        break :blk out;
+                    },
+                    .bool => if (v.bool) "true" else "false",
+                    .nil => "nil",
+                    else => return error.UnsupportedExpression,
+                };
+                result.appendSlice(result_alloc, s) catch return error.UnsupportedExpression;
+            }
+            return .{ .string = result.toOwnedSlice(result_alloc) catch return error.UnsupportedExpression };
+        }
+        if (std.mem.eql(u8, name, "sort") and args.len == 1) {
+            const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            var entries = alloc.alloc(Value.TableEntry, tbl.table.len) catch return error.UnsupportedExpression;
+            @memcpy(entries, tbl.table);
+            var j: usize = 1;
+            while (j < entries.len) : (j += 1) {
+                const key = entries[j];
+                var k = j;
+                while (k > 0) : (k -= 1) {
+                    const prev = entries[k - 1];
+                    const dominated = switch (prev.val) {
+                        .int => |pv| switch (key.val) {
+                            .int => |kv| pv > kv,
+                            .float => |kvf| @as(f64, @floatFromInt(pv)) > kvf,
+                            else => false,
+                        },
+                        .float => |pv| switch (key.val) {
+                            .int => |kv| pv > @as(f64, @floatFromInt(kv)),
+                            .float => |kv| pv > kv,
+                            else => false,
+                        },
+                        .string => |ps| switch (key.val) {
+                            .string => |ks| std.mem.order(u8, ps, ks) == .gt,
+                            else => false,
+                        },
+                        .bool => |pb| switch (key.val) {
+                            .bool => !pb and key.val.bool,
+                            else => false,
+                        },
+                        else => false,
+                    };
+                    if (!dominated) break;
+                    entries[k] = entries[k - 1];
+                    entries[k - 1] = key;
+                }
+            }
+            return .{ .table = entries };
+        }
+        if (std.mem.eql(u8, name, "sort") and args.len == 2) {
+            _ = try self.eval(args[1]);
+            const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+            const entries = alloc.alloc(Value.TableEntry, tbl.table.len) catch return error.UnsupportedExpression;
+            @memcpy(entries, tbl.table);
+            return .{ .table = entries };
         }
         return error.UnsupportedExpression;
     }
