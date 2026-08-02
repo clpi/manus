@@ -566,7 +566,10 @@ pub const Evaluator = struct {
                 return .{ .string = buf };
             }
             if (std.mem.eql(u8, name, "format")) {
-                return self.evalStringFormat(a, args[1..]);
+                // Fold disabled: the comptime spec parser did not handle width/precision
+                // (e.g. "%.3f"), so it baked wrong literals. Let it run at runtime via
+                // the C lua_str_format (codegen.zig), which now parses full printf specs.
+                return error.UnsupportedExpression;
             }
         }
         return error.UnsupportedExpression;

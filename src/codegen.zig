@@ -18682,8 +18682,18 @@ const duo_runtime =
     \\    int arg_idx = 0;
     \\    while (*f) {
     \\        if (*f == '%' && *(f+1)) {
-    \\            f++;
+    \\            const char* spec_start = f;  /* points at '%' */
+    \\            f++;  /* past '%' */
+    \\            /* skip flags, width, precision, length modifiers to find the conversion char */
+    \\            while (*f=='-'||*f=='+'||*f==' '||*f=='#'||*f=='0') f++;
+    \\            while (*f>='0'&&*f<='9') f++;
+    \\            if (*f=='.') { f++; while (*f>='0'&&*f<='9') f++; }
+    \\            while (*f=='h'||*f=='l'||*f=='L'||*f=='j'||*f=='z'||*f=='t') f++;
     \\            char spec = *f;
+    \\            int spec_len = (int)(f - spec_start) + 1;  /* '%' .. conversion inclusive */
+    \\            char fmtb[24];
+    \\            if (spec_len > 0 && spec_len < (int)sizeof(fmtb) - 1) { memcpy(fmtb, spec_start, spec_len); fmtb[spec_len] = '\0'; }
+    \\            else { fmtb[0]='%'; fmtb[1]=spec; fmtb[2]='\0'; }
     \\            lua_Value arg = lua_val_nil();
     \\            if (arg_idx == 0) arg = a1;
     \\            else if (arg_idx == 1) arg = a2;
@@ -18695,13 +18705,17 @@ const duo_runtime =
     \\                memcpy(p, s, slen);
     \\                p += slen;
     \\            } else if (spec == 'd' || spec == 'i') {
-    \\                p += sprintf(p, "%lld", (long long)lua_to_num(arg));
-    \\            } else if (spec == 'f' || spec == 'g') {
-    \\                p += sprintf(p, "%g", lua_to_num(arg));
+    \\                p += sprintf(p, fmtb, (long long)lua_to_num(arg));
+    \\            } else if (spec == 'f' || spec == 'g' || spec == 'e' || spec == 'F' || spec == 'G' || spec == 'E') {
+    \\                p += sprintf(p, fmtb, lua_to_num(arg));
+    \\            } else if (spec == 'x' || spec == 'X' || spec == 'o' || spec == 'u') {
+    \\                p += sprintf(p, fmtb, (unsigned long long)(long long)lua_to_num(arg));
+    \\            } else if (spec == 'c') {
+    \\                *p++ = (char)lua_to_num(arg);
     \\            } else if (spec == '%') {
     \\                *p++ = '%';
     \\            } else {
-    \\                *p++ = spec;
+    \\                memcpy(p, spec_start, spec_len); p += spec_len;
     \\            }
     \\            f++;
     \\        } else {
