@@ -49,3 +49,22 @@ tools:
             - git diff *
             - git stash *
             - git checkout *
+            - git build
+            - /Users/clp/.local/share/mise/installs/zig/master/bin/zig build
+            - find *
+            - /zig-out/bin/duo *
+            - zig-out/bin/duo run *
+            - git apply *
+            - bash *
+            - diffuser cc apple *
+            - /Users/clp/x/duo/zig-out/bin/duo compile *
+            - ./std_metaprogramming_modules_smoke.out
+            - chmod *
+            - timeout 5 *
+            - /Users/clp/.local/share/mise/installs/zig/master/zig build
+            - ./scripts/duo_lock.sh
+paths:
+    allow:
+        - path: /Users/clp/x/duo-mcp/**
+        - path: /private/tmp/duo-recovery/src/**
+        - path: /private/tmp/**

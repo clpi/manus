@@ -2,6 +2,7 @@
 /// @time, @bench, and related debugging/benchmark annotations.
 const std = @import("std");
 const ast = @import("ast.zig");
+const meta_module = @import("meta_module.zig");
 
 pub const ParseError = error{ InvalidDirective, OutOfMemory };
 
@@ -441,6 +442,7 @@ pub fn validateModuleDirective(attr: ast.Attribute) ?[]const u8 {
         return null;
     }
     if (isDebugDirective(attr.name)) return null;
+    if (meta_module.isMetaAttribute(attr.name)) return null;
     if (std.mem.eql(u8, attr.name, "specialize")) return null;
     return attr.name;
 }

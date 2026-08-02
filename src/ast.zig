@@ -197,6 +197,13 @@ pub const MacroCall = struct {
     args: []*Expr,
 };
 
+pub const IfExpr = struct {
+    loc: Loc,
+    cond: *Expr,
+    then_expr: *Expr,
+    else_expr: *Expr,
+};
+
 pub const FuncParam = struct {
     name: []const u8,
     typ: TypeExpr,
@@ -370,6 +377,7 @@ pub const Expr = union(enum) {
     list_comp: ListComprehension,
     try_expr: struct { loc: Loc, operand: *Expr }, // expr?
     unwrap_expr: struct { loc: Loc, operand: *Expr }, // expr!
+    if_expr: *IfExpr,
     match_expr: *MatchExpr,
     await_expr: struct { loc: Loc, operand: *Expr },
     contains_expr: struct { loc: Loc, lhs: *Expr, rhs: *Expr }, // x in y
@@ -400,6 +408,7 @@ pub const Expr = union(enum) {
             .list_comp => |x| x.loc,
             .try_expr => |x| x.loc,
             .unwrap_expr => |x| x.loc,
+            .if_expr => |x| x.loc,
             .match_expr => |m| m.loc,
             .await_expr => |x| x.loc,
             .contains_expr => |x| x.loc,

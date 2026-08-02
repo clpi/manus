@@ -325,6 +325,15 @@ pub const PrettyPrinter = struct {
                 try self.printExpr(x.operand, 0);
                 try self.write("!");
             },
+            .if_expr => |x| {
+                try self.write("if ");
+                try self.printExpr(x.cond, 0);
+                try self.write(" ");
+                try self.printExpr(x.then_expr, 0);
+                try self.write(" else ");
+                try self.printExpr(x.else_expr, 0);
+                try self.write(" end");
+            },
             .match_expr => |m| try self.printMatchExpr(m),
             .await_expr => |x| {
                 try self.write("await ");

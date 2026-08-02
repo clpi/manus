@@ -3,7 +3,7 @@
 fun std_maps_clone(m: any): any
     if m == nil then return {} end
     out = {}
-    for k, v in pairs(m)
+    for k, v in m
         out[k] = v
     end
     out
@@ -13,7 +13,7 @@ fun std_maps_copy(dst: any, src: any): i64
     if dst == nil then return 0 end
     if src == nil then return 0 end
     count = 0
-    for k, v in pairs(src)
+    for k, v in src
         dst[k] = v
         count += 1
     end
@@ -31,11 +31,11 @@ fun std_maps_equal(m1: any, m2: any): bool
     if m1 == nil and m2 == nil then return true end
     if m1 == nil or m2 == nil then return false end
     c1 = 0
-    for _ in pairs(m1) do c1 += 1 end
+    for _k, _v in m1 do c1 += 1 end
     c2 = 0
-    for _ in pairs(m2) do c2 += 1 end
+    for _k, _v in m2 do c2 += 1 end
     if c1 ~= c2 then return false end
-    for k, v in pairs(m1)
+    for k, v in m1
         if m2[k] ~= v then return false end
     end
     true
@@ -45,11 +45,11 @@ fun std_maps_equal_func(m1: any, m2: any, eq: any): bool
     if m1 == nil and m2 == nil then return true end
     if m1 == nil or m2 == nil then return false end
     c1 = 0
-    for _ in pairs(m1) do c1 += 1 end
+    for _k, _v in m1 do c1 += 1 end
     c2 = 0
-    for _ in pairs(m2) do c2 += 1 end
+    for _k, _v in m2 do c2 += 1 end
     if c1 ~= c2 then return false end
-    for k, v in pairs(m1)
+    for k, v in m1
         v2 = m2[k]
         if v2 == nil then return false end
         if not eq(v, v2) then return false end
@@ -60,21 +60,21 @@ end
 fun std_maps_keys(m: any): any
     if m == nil then return {} end
     out = {}
-    for k in pairs(m) do out[rawlen(out) + 1] = k end
+    for k, _ in m do out[rawlen(out) + 1] = k end
     out
 end
 
 fun std_maps_values(m: any): any
     if m == nil then return {} end
     out = {}
-    for _, v in pairs(m) do out[rawlen(out) + 1] = v end
+    for _, v in m do out[rawlen(out) + 1] = v end
     out
 end
 
 fun std_maps_entries(m: any): any
     if m == nil then return {} end
     out = {}
-    for k, v in pairs(m) do out[rawlen(out) + 1] = {key = k, value = v} end
+    for k, v in m do out[rawlen(out) + 1] = {key = k, value = v} end
     out
 end
 
@@ -99,14 +99,14 @@ end
 fun std_maps_size(m: any): i64
     if m == nil then return 0 end
     c = 0
-    for _ in pairs(m) do c += 1 end
+    for _k, _v in m do c += 1 end
     c
 end
 
 fun std_maps_merge(dst: any, src: any): any
     if dst == nil then dst = {} end
     if src == nil then return dst end
-    for k, v in pairs(src)
+    for k, v in src
         if dst[k] == nil then dst[k] = v end
     end
     dst
@@ -115,7 +115,7 @@ end
 fun std_maps_merge_overwrite(dst: any, src: any): any
     if dst == nil then dst = {} end
     if src == nil then return dst end
-    for k, v in pairs(src)
+    for k, v in src
         dst[k] = v
     end
     dst

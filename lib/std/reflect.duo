@@ -7,18 +7,22 @@ fun std_reflect_typeof(v: any): str
     return type(v)
 end
 
+fun eq_str(a: str, b: str): bool
+    string.find(a, b, 1, true) == 1 and #a == #b
+end
+
 -- kind: return a more detailed kind string.
 fun kind(v: any): str
     t = type(v)
-    if t == "number" then
+    if eq_str(t, "number") then
         if v == math.floor(v) then return "int" end
         "float"
-    elseif t == "table" then
+    elseif eq_str(t, "table") then
         -- check if it's an array (all integer keys 1..n)
-        n = rawlen(v)
+        n = #v
         if n > 0 then
             count = 0
-            for _ in pairs(v) do count += 1 end
+            for _ in v do count += 1 end
             if count == n then return "array" end
         end
         "map"
@@ -35,7 +39,7 @@ fun size(v: any): i64
         n = rawlen(v)
         if n > 0 then return n end
         count = 0
-        for _ in pairs(v) do count += 1 end
+        for _k, _v in v do count += 1 end
         return count
     end
     if t == "string" then return string.len(v) end
@@ -97,7 +101,7 @@ end
 fun std_reflect_fields(v: any): any
     if v == nil or type(v) ~= "table" then return {} end
     out = {}
-    for k, val in pairs(v)
+    for k, val in v
         out[rawlen(out) + 1] = {key = k, value = val, type = type(val)}
     end
     out
@@ -107,7 +111,7 @@ end
 fun field_names(v: any): any
     if v == nil or type(v) ~= "table" then return {} end
     out = {}
-    for k in pairs(v) do out[rawlen(out) + 1] = k end
+    for k, _ in v do out[rawlen(out) + 1] = k end
     out
 end
 
@@ -145,11 +149,11 @@ fun deep_equal(a: any, b: any): bool
     if type(a) ~= "table" then return a == b end
     -- compare table key counts
     ca = 0
-    for _ in pairs(a) do ca += 1 end
+    for _k, _v in a do ca += 1 end
     cb = 0
-    for _ in pairs(b) do cb += 1 end
+    for _k, _v in b do cb += 1 end
     if ca ~= cb then return false end
-    for k, va in pairs(a)
+    for k, va in a
         vb = b[k]
         if not deep_equal(va, vb) then return false end
     end
@@ -161,7 +165,7 @@ fun deep_copy(v: any): any
     if v == nil then return nil end
     if type(v) ~= "table" then return v end
     out = {}
-    for k, val in pairs(v)
+    for k, val in v
         out[k] = deep_copy(val)
     end
     out
@@ -171,7 +175,7 @@ end
 fun map_keys(v: any): any
     if v == nil or type(v) ~= "table" then return {} end
     out = {}
-    for k in pairs(v) do out[rawlen(out) + 1] = k end
+    for k, _ in v do out[rawlen(out) + 1] = k end
     out
 end
 
@@ -179,7 +183,7 @@ end
 fun map_values(v: any): any
     if v == nil or type(v) ~= "table" then return {} end
     out = {}
-    for _, val in pairs(v) do out[rawlen(out) + 1] = val end
+    for _, val in v do out[rawlen(out) + 1] = val end
     out
 end
 

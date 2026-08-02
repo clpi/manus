@@ -2026,6 +2026,39 @@ pub const Sema = struct {
                     }
                     if (std.mem.eql(u8, bn, "__typeinfo")) return .str;
                     if (std.mem.eql(u8, bn, "__typeof")) return .str;
+                    if (std.mem.eql(u8, bn, "__metaladder") or
+                        std.mem.eql(u8, bn, "__metacatalog") or
+                        std.mem.eql(u8, bn, "__metaagentcatalog") or
+                        std.mem.eql(u8, bn, "__metaagentladder") or
+                        std.mem.eql(u8, bn, "__metaagenthooks") or
+                        std.mem.eql(u8, bn, "__metaagentdedupe") or
+                        std.mem.eql(u8, bn, "__metaagentgaps") or
+                        std.mem.eql(u8, bn, "__metaagentgrammar") or
+                        std.mem.eql(u8, bn, "__moduletypenames") or
+                        std.mem.eql(u8, bn, "__concepttypenames") or
+                        std.mem.eql(u8, bn, "__comptimemap") or
+                        std.mem.eql(u8, bn, "__comptimeeach") or
+                        std.mem.eql(u8, bn, "__comptimepower") or
+                        std.mem.eql(u8, bn, "__comptimepermute") or
+                        std.mem.eql(u8, bn, "__comptimechoose") or
+                        std.mem.eql(u8, bn, "__metagrammar") or
+                        std.mem.eql(u8, bn, "__metaweave") or
+                        std.mem.eql(u8, bn, "__metatemplate") or
+                        std.mem.eql(u8, bn, "__metagenerate") or
+                        std.mem.eql(u8, bn, "__metascheme") or
+                        std.mem.eql(u8, bn, "__metaschemeclauses") or
+                        std.mem.eql(u8, bn, "__derivechoose") or
+                        std.mem.eql(u8, bn, "__derivepower") or
+                        std.mem.eql(u8, bn, "__rewrite_describe"))
+                    {
+                        return .str;
+                    }
+                    if (std.mem.eql(u8, bn, "__strcontains")) return .bool;
+                    if (std.mem.eql(u8, bn, "__strcountlines") or
+                        std.mem.eql(u8, bn, "__strsplitcount") or
+                        std.mem.eql(u8, bn, "__concept_count") or
+                        std.mem.eql(u8, bn, "__rewrite_rulecount"))
+                        return .i64;
                     if (std.mem.eql(u8, bn, "__fields")) return .any;
                     if (std.mem.eql(u8, bn, "__emit")) return .any;
                     if (std.mem.eql(u8, bn, "__c_call")) return .any;
@@ -2348,6 +2381,13 @@ pub const Sema = struct {
                 }
                 // The unwrapped value has the same type as the operand.
                 return operand_t;
+            },
+            .if_expr => |ie| {
+                _ = try self.check_expr(ie.cond);
+                const then_t = try self.check_expr(ie.then_expr);
+                const else_t = try self.check_expr(ie.else_expr);
+                if (then_t.eql(else_t)) return then_t;
+                return .any;
             },
             .match_expr => |me| {
                 return try self.check_match_expr(me);
@@ -7070,6 +7110,12 @@ pub const Sema = struct {
                 .try_expr, .unwrap_expr, .await_expr => blk: {
                     self.ok = false;
                     break :blk .any;
+                },
+                .if_expr => |ie| blk: {
+                    _ = self.infer_expr(ie.cond, .bool);
+                    const then_t = self.infer_expr(ie.then_expr, hint);
+                    const else_t = self.infer_expr(ie.else_expr, hint);
+                    break :blk unify_numeric(then_t, else_t) orelse if (then_t.eql(else_t)) then_t else .any;
                 },
                 .match_expr => blk: {
                     self.ok = false;

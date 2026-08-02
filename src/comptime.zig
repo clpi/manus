@@ -9,11 +9,19 @@ pub const EvalError = error{
     StepLimitExceeded,
 };
 
+pub const CommandOutput = struct {
+    ok: bool,
+    stdout: []const u8,
+    stderr: []const u8,
+};
+
 pub const SatisfiesHook = *const fn (ctx: ?*anyopaque, type_expr: *const ast.Expr, concept_name: []const u8) ?bool;
 
 pub const Options = struct {
     step_limit: usize = 100_000,
     alloc: ?std.mem.Allocator = null,
+    /// Optional cache allocator for comptime caching (separate from arena for permanent storage)
+    comptime_cache_alloc: ?std.mem.Allocator = null,
     /// Optional hook for __satisfies(Type, "Concept") during @(expr) folding.
     satisfies_hook: ?SatisfiesHook = null,
     satisfies_ctx: ?*anyopaque = null,
@@ -130,7 +138,8 @@ pub const Evaluator = struct {
                 return;
             }
         }
-        return error.UnsupportedExpression;
+        // Duo mode: create new local for bare assignment
+        _ = try self.pushLocal(name, value);
     }
 
     pub fn eval(self: *Evaluator, expr: *const ast.Expr) EvalError!Value {
@@ -856,6 +865,7 @@ pub const Evaluator = struct {
             },
             .len => switch (value) {
                 .string => |v| .{ .int = @intCast(v.len) },
+                .table => |v| .{ .int = @intCast(v.len) },
                 else => error.UnsupportedOperator,
             },
         };
@@ -1082,6 +1092,30 @@ pub fn funcValue(func: *const ast.FuncBody, bindings: Bindings, options: Options
     var evaluator: Evaluator = .{ .bindings = bindings, .options = options };
     defer if (options.alloc) |alloc| evaluator.locals.deinit(alloc);
     return evaluator.makeFunc(func);
+}
+
+pub fn callFunctionValue(func: Value, args: []const Value, bindings: Bindings, options: Options) EvalError!Value {
+    var evaluator: Evaluator = .{ .bindings = bindings, .options = options };
+    defer if (options.alloc) |alloc| evaluator.locals.deinit(alloc);
+    if (func != .func) return error.UnsupportedExpression;
+    const body = func.func.body;
+    if (body.vararg or args.len > body.params.len) return error.UnsupportedExpression;
+
+    const mark = evaluator.locals.items.len;
+    defer evaluator.popLocals(mark);
+    for (func.func.captures) |capture| {
+        _ = try evaluator.pushLocal(capture.name, capture.value);
+    }
+    for (body.params, 0..) |param, i| {
+        const value = if (i < args.len)
+            args[i]
+        else if (param.default_val) |default_val|
+            try evaluator.eval(default_val)
+        else
+            Value.nil;
+        _ = try evaluator.pushLocal(param.name, value);
+    }
+    return evaluator.evalBlockValue(&body.body);
 }
 
 fn tableFieldLookup(obj: Value, field: []const u8) EvalError!Value {

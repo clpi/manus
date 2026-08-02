@@ -120,3 +120,68 @@ When writing `.duo` files, follow these conventions:
 - Keep quantitative before/after data in `docs/performance.md` for benchmark-affecting changes, including rejected experiments.
 - Performance-sensitive changes must still clear correctness first: `zig fmt src/codegen.zig --check`, `zig build unit-test --summary all` when codegen/runtime tests are affected, `zig build`, `zig build test`, and `zig build bench`.
 
+## Known Parallel Agents
+
+Duo is actively developed by 5+ concurrent agents working in parallel. Known agents include:
+
+- devin
+- oh-my-pi
+- codex
+- claude-code
+- agy
+- ollama
+- hermes
+- kiro-cli
+- cursor/agent
+- opencode
+- pool
+- kimi-code
+- junie
+- trae
+- kilo (kilo-code CLI)
+- qodercli (qoder-ai)
+
+All agents must follow the rules in this file. Before starting work, read the full AGENTS.md and the relevant docs. Coordinate via git commits and docs/performance.md entries to avoid conflicts.
+
+## Duo Grammar Rules (Canonical)
+
+These rules are authoritative. Compiler, stdlib, docs, and all agents must stay aligned.
+
+### @-Directive Syntax
+- NO `@const` or `@comptime` — these are NOT valid Duo directives.
+- Use `@(expr)` for compile-time evaluation of an expression.
+- Use `@comp.*` for module-scope compile-time transforms (e.g. `@comp.derive`, `@comp.specialize`).
+- `@comp.*` is the PRIMARY metaprogramming module. `@meta.*` and `@compiler.*` are aliases and map to the same functionality.
+- NO underscores in @-directive names: write `@comp.foo.bar`, NEVER `@comp.foo_bar`.
+
+### Function Declaration
+- Bare function declarations are preferred in new .duo code — the `fun` or `function` keyword is optional when the context is unambiguous at file/module scope.
+- Example: `add(a: i64, b: i64): i64 = a + b`
+- `fun` remains valid and may be used for clarity inside blocks.
+
+### If-Expressions
+- Duo supports if as an expression: `x = if a < b value else value * 2 end`
+- The `end` closes the if-expression. No `then` keyword.
+
+### Table Keys
+- Identifier keys NEVER need `[]`: write `{ x = 1, y = 2 }` not `{ [x] = 1 }`.
+- Computed/dynamic keys use `[]`: `{ [key_expr] = value }`.
+
+## Ultimate Lowering Goal
+
+Duo lowers to WHATEVER native format achieves maximum performance — C, assembly, machine code, GPU kernels (CUDA/Metal/WebGPU), SIMD intrinsics, or WASM. The output is NOT limited to C. C emission is the default fallback; specialized backends target asm, SIMD, and GPU kernels where they outperform C.
+
+## NO LUA BOXED VALUES (Critical Rule)
+
+**ALL typed and comptime paths MUST lower to native C scalars and structs. lua_Value intermediaries are NEVER acceptable on any typed/comptime path.**
+
+- Typed function parameters and return values become C types directly (e.g. `i64` → `int64_t`, `float` → `double`, `str` → `const char*`).
+- Comptime-evaluated expressions must fold to C literals or typed struct initializers.
+- Introducing a `lua_Value` (tagged union / boxed value) on a typed path is a correctness AND performance bug. Reject any codegen change that does this.
+- Untyped/dynamic paths may still use lua_Value — this is expected for fully dynamic Lua-compatible code.
+
+## Companion Repositories
+
+- **duo-mcp**: ~/x/duo-mcp/ — canonical MCP (Model Context Protocol) server for Duo. Provides tool definitions and AI integration for Duo language services.
+- **duo-lsp**: ~/x/duo-lsp/ — canonical LSP (Language Server Protocol) implementation for Duo. Provides editor integration, completion, and diagnostics.
+

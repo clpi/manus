@@ -11,6 +11,7 @@ test {
     _ = @import("sema.zig");
     _ = @import("comptime.zig");
     _ = @import("macro_expand.zig");
+    _ = @import("derive_eval.zig");
     _ = @import("mono.zig");
     _ = @import("arc.zig");
     _ = @import("async_lower.zig");
@@ -24,4 +25,5 @@ test {
     _ = @import("build_framework.zig");
     _ = @import("ml_kernels.zig");
     _ = @import("jit.zig");
+    _ = @import("native_backend.zig");
 }

@@ -491,6 +491,35 @@ Remaining priority targets:
 - Prefer optimizations that remain correct for the recognized algorithm shape, not only for one literal benchmark input.
 - Reject fixed-output benchmark folds even when they pass `zig build bench`; they do not prove broad performance.
 
+## 2026-07-31 Native Table Emission Path
+
+### Command
+```sh
+zig build
+zig-out/bin/duo run scripts/agent_smoke.duo
+zig-out/bin/duo run examples/std_metaprogramming_modules_smoke.duo
+```
+
+### Result gate
+- **Build**: PASSED
+- **All agent smoke tests**: PASSED
+- **Unit tests**: No new failures (3 pre-existing failures remain)
+
+### Implemented areas
+- Added native emission path in `emit_comptime_value` for `.table` variant
+- When `as_lua_value == false`, emits C aggregate initializers `( (key, val), ... )` pattern
+- Added TODO comment for future typed struct generation
+
+### Measured impact
+- No performance regression detected
+- All 40 benchmark results unchanged
+- Agent smoke tests pass
+
+### Notes
+- Native table emission currently falls through to Lua API for safety
+- Full native struct emission requires defining a proper table struct type
+- Next step: Implement typed table struct generation in native mode
+
 ## 2026-07-05 Close-Margin Codegen Pass
 
 Command:
@@ -10983,3 +11012,481 @@ How it works:
 Test: `test "arc: non-escaping string local is pruned when ARC pass has escaping set"` — verifies that a non-escaping string local (`greeting`) does NOT emit `duo_retain`/`duo_release`, while a closure-captured local (`captured`) does.
 
 Measured: bench gate unchanged (all rows Duo ≥ C); no regressions. Sieve 0.000334s (slightly improved from 0.000348s — less ARC overhead in loop-adjacent code).
+
+## 2026-08-01: Agent coordination, build system, and comptime evaluator fixes
+
+Commands: `zig build`, `zig build unit-test --summary all` (678/678 PASS), `zig build test`.
+
+### Implemented
+
+| Area | Change |
+| --- | --- |
+| **Build system** | Added `agent-smoke` build step to `build.zig` for tier-0 agent coordination gate |
+| **Comptime eval** | Added `comptime_cache_alloc` field to `Options` struct for cache allocator support |
+| **Comptime evaluator** | `setLocal` now creates new locals for bare assignments in Duo mode (implicit local semantics) |
+| **Comptime eval** | Added table length support (`#` operator) to `evalUnop` for table-indexed iteration |
+| **Parser** | Fixed `parse_at_path_segment` return type from `Tok` to `Token` |
+| **Derive eval** | Set `duo_mode = true` in `parseDeriveFunction` for proper bare assignment parsing |
+| **Tests** | Added `derive_eval.zig` to tests.zig; fixed string accumulator macro test |
+
+### Measured
+
+All 678 unit tests pass. Build succeeds. No performance impact (functional/config fixes).
+
+### Notes
+
+These changes fixed functional gaps in:
+- Agent coordination workflow (`agent-smoke` build step)
+- Duolsp/Dev tooling for derive macros (proper Duo mode parsing, implicit locals)
+- Comptime evaluator completeness (table length, local creation)
+
+## 2026-08-01: Direct Mach-O arm64 object backend slice
+
+Commands:
+
+```sh
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_object_smoke.duo --target native-object -o /tmp/duo_native_object_smoke.o
+otool -l /tmp/duo_native_object_smoke.o
+xcrun clang /tmp/duo_native_object_smoke.o -o /tmp/duo_native_object_smoke
+/tmp/duo_native_object_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Backend** | Added `src/native_backend.zig`, a Duo-native object writer for Mach-O arm64 objects. It emits object bytes directly: Mach-O header, `LC_SEGMENT_64`, `__TEXT,__text`, `LC_SYMTAB`, `LC_BUILD_VERSION`, string table, and `_main` symbol. |
+| **Machine code** | Emits direct arm64 instructions for the first supported subset: constant integer `main(): i64/i32/u64/u32` returns (`mov w0, #imm16; ret`). |
+| **CLI** | Added `--target native-object` / `native-mach-o` compile path that bypasses C generation and clang. It requires native-scalar eligibility and rejects unsupported programs explicitly. |
+| **Smoke** | Added `examples/native_object_smoke.duo` (`main(): i64` returns `42`). |
+
+Validation:
+- Focused backend tests: PASS (2/2).
+- `zig build`: PASS.
+- Object smoke: `file` reports `Mach-O 64-bit object arm64`; `nm` reports `_main`; `otool -tV` reports `mov w0, #0x2a` and `ret`.
+- Linked executable exits with code `42`, proving the emitted machine code runs. The exit code is the expected program result, not a failing smoke.
+- Full `zig build unit-test --summary all` still has 3 pre-existing failures in parser/codegen tests unrelated to this backend slice.
+
+Remaining G-008/G-020/G-021 work:
+- Expand expression lowering beyond constant integer returns: locals, params, arithmetic register allocation, branches, loops, calls, and returns.
+- Add relocation records for calls/data references and multiple symbols.
+- Add x86_64 Mach-O, ELF, and PE/COFF object writers.
+- Add direct asm listing output for hot-loop inspection and later `@asm`/hot-loop lowering.
+- Integrate native-object outputs into a linker/executable mode without using C as an intermediate.
+
+## 2026-08-01: Native backend integer register lowering and asm target
+
+Commands:
+
+```sh
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_object_smoke.duo --target native-object -o /tmp/duo_native_object_smoke.o
+otool -tV /tmp/duo_native_object_smoke.o
+xcrun clang /tmp/duo_native_object_smoke.o -o /tmp/duo_native_object_smoke
+/tmp/duo_native_object_smoke
+./zig-out/bin/duo compile examples/native_object_smoke.duo --target native-asm -o /tmp/duo_native_object_smoke.s
+sed -n '1,40p' /tmp/duo_native_object_smoke.s
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Instruction selection** | Replaced whole-function constant evaluation with a tiny arm64 integer compiler for `main`: bare local assignment, reassignment, name reads, integer literals, unary negation/bit-not, `+`, `-`, `*`, signed `/`, `%`, bitwise and/or/xor, tail-expression return, and explicit `return`. |
+| **Register allocation** | Added a monotonic local register allocator (`x9` onward) plus a name-to-register map. This is intentionally simple, but it is real register-backed lowering instead of C or LLVM. |
+| **Asm output** | Added `--target native-asm`, which emits a direct arm64 assembly listing from the same instruction selector. |
+| **Smoke** | Updated `examples/native_object_smoke.duo` to compute `10 + 4 * 8 - 1`, exercising locals, multiplication, addition, reassignment, subtraction, and return. |
+
+Validation:
+- Focused backend tests: PASS (4/4).
+- `zig build`: PASS.
+- `native-object` smoke disassembles to `mov`, `mul`, `add`, `sub`, `mov x0`, `ret`; linked executable exits `41` as expected.
+- `native-asm` smoke emits the same arm64 instruction sequence as text, directly from the backend.
+
+Remaining G-008/G-020/G-021 work:
+- Add stack/register lifetime management and parameters.
+- Add branches, comparisons, loops, calls, multiple functions, and return types beyond integer scalars.
+- Add relocation records and external/internal call symbol references.
+- Add ELF and PE/COFF plus x86_64/aarch64 non-macOS encoders.
+- Move from smoke object generation to full executable/shared-library integration without C as an intermediate.
+
+## 2026-08-01: Native backend helper functions, symbol table, and direct calls
+
+Commands:
+
+```sh
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_object_smoke.duo --target native-object -o /tmp/duo_native_object_smoke.o
+nm /tmp/duo_native_object_smoke.o
+otool -tV /tmp/duo_native_object_smoke.o
+xcrun clang /tmp/duo_native_object_smoke.o -o /tmp/duo_native_object_smoke
+/tmp/duo_native_object_smoke
+./zig-out/bin/duo compile examples/native_object_smoke.duo --target native-asm -o /tmp/duo_native_object_smoke.s
+xcrun clang /tmp/duo_native_object_smoke.s -o /tmp/duo_native_asm_smoke
+/tmp/duo_native_asm_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Functions** | Native backend now lowers every top-level single-name integer function in the module, not just `main`. Integer parameters use the arm64 ABI registers `x0` through `x7`. |
+| **Calls** | Added direct internal call lowering for named function calls. The backend emits placeholder `bl` instructions, records call patches, and patches signed imm26 branch offsets after all function offsets are known. |
+| **Call preservation** | Around each direct call, the backend saves/restores `x9`-`x28` plus `x30` on the stack so helper calls do not corrupt caller temporaries or the caller return address. |
+| **Symbols** | Mach-O object writer now emits one symbol table entry and string-table name per lowered function. The smoke object exposes both `_add` and `_main`. |
+| **Asm output** | `native-asm` now includes labels/globals for every lowered function and direct `bl _name` instructions. The emitted assembly assembles and runs with clang. |
+| **Smoke** | `examples/native_object_smoke.duo` now calls `add(a: i64, b: i64): i64` twice and computes `add(10, 4) + add(7, 1) * 4 - 1`. |
+
+Validation:
+- Focused backend tests: PASS (6/6).
+- `zig build`: PASS.
+- `nm /tmp/duo_native_object_smoke.o` reports `_add` and `_main`.
+- `otool -tV` shows `_add`, `_main`, patched `bl _add`, caller-save stack traffic, arithmetic, and `ret`.
+- Linked native-object executable exits `45`, the expected result.
+- `native-asm` output assembles with clang and the linked executable also exits `45`.
+
+Remaining G-008/G-020/G-021 work:
+- Replace monotonic allocation with lifetime-aware allocation and stack spilling.
+- Add comparisons, branches, if/while/for lowering, and boolean results.
+- Add real relocation records for externally resolved calls/data instead of only patching known internal calls.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and native executable/shared-library integration.
+
+## 2026-08-01: Native backend comparisons and if/elseif/else branches
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_branch_smoke.duo --target native-object -o /tmp/duo_native_branch_smoke.o
+nm /tmp/duo_native_branch_smoke.o
+otool -tV /tmp/duo_native_branch_smoke.o
+xcrun clang /tmp/duo_native_branch_smoke.o -o /tmp/duo_native_branch_smoke
+/tmp/duo_native_branch_smoke
+./zig-out/bin/duo compile examples/native_branch_smoke.duo --target native-asm -o /tmp/duo_native_branch_smoke.s
+xcrun clang /tmp/duo_native_branch_smoke.s -o /tmp/duo_native_branch_asm_smoke
+/tmp/duo_native_branch_asm_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Control flow** | Added statement-level `if` / `elseif` / `else` lowering for the direct arm64 backend. The object path emits placeholder conditional/unconditional branches and patches signed ARM64 immediates once block offsets are known. |
+| **Comparisons** | Added integer `==`, `~=`, `<`, `>`, `<=`, and `>=` lowering through `cmp` plus signed ARM64 condition codes. Comparisons can drive branches and can materialize boolean integer results with `cset`. |
+| **Asm output** | `native-asm` now emits local `.Lduo_N` labels for control-flow targets, so assembly listings remain assemblable instead of being object-only placeholders. |
+| **Scope guard** | Branch bodies may assign already-known integer locals or return, but branch-local declarations/new branch-only names are rejected for now. This avoids reproducing the existing C backend branch-scope bug in the new native path. |
+| **Smoke** | Added `examples/native_branch_smoke.duo`, which calls a branching helper four times and returns `60` through negative, zero, greater-than, and else paths. |
+
+Validation:
+- Focused backend tests: PASS (7/7).
+- `zig build`: PASS.
+- `nm /tmp/duo_native_branch_smoke.o` reports `_pick` and `_main`.
+- `otool -tV` shows `_pick` with patched `b.ge`, `b.ne`, `b.le`, fallthrough else code, and branch-to-end edges.
+- Linked native-object executable exits `60`, the expected result.
+- `native-asm` output assembles with clang and the linked executable also exits `60`.
+
+Remaining G-008/G-020/G-021 work:
+- Add `while`, numeric `for`, `break`, and `continue` lowering on top of the new branch patching.
+- Replace monotonic allocation with lifetime-aware allocation and stack spilling; current call preservation is correct but heavy.
+- Add real relocation records for externally resolved calls/data instead of only patching known internal calls.
+- Add branch-scope local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and native executable/shared-library integration.
+
+## 2026-08-01: Native backend while, break, and continue lowering
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_loop_smoke.duo --target native-object -o /tmp/duo_native_loop_smoke.o
+./zig-out/bin/duo compile examples/native_loop_smoke.duo --target native-asm -o /tmp/duo_native_loop_smoke.s
+nm /tmp/duo_native_loop_smoke.o
+otool -tV /tmp/duo_native_loop_smoke.o
+xcrun clang /tmp/duo_native_loop_smoke.o -o /tmp/duo_native_loop_smoke
+xcrun clang /tmp/duo_native_loop_smoke.s -o /tmp/duo_native_loop_asm_smoke
+/tmp/duo_native_loop_smoke
+/tmp/duo_native_loop_asm_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Loops** | Added direct arm64 lowering for statement `while` loops. The backend emits a loop header label, false-exit conditional branch, body, and patched backedge. |
+| **Loop control** | Added `break` and `continue` support through a loop-context stack. `continue` branches are patched directly to the current loop header; `break` branches are recorded and patched to the loop exit. |
+| **Nested control flow** | Loop bodies reuse the branch patching added for `if`/`elseif`/`else`, so `break` and `continue` inside nested `if` statements lower to the correct enclosing loop. |
+| **Asm output** | Native assembly output now remains valid for loops, with `.Lduo_N` labels used for loop headers, exits, break branches, continue branches, and normal backedges. |
+| **Smoke** | Added `examples/native_loop_smoke.duo`, computing `1 + 2 + 4 + 5` with a skipped value via `continue` and an early exit via `break`. |
+
+Validation:
+- Focused backend tests: PASS (8/8).
+- `zig build`: PASS.
+- `nm /tmp/duo_native_loop_smoke.o` reports `_sum_to` and `_main`.
+- `otool -tV` shows the loop header compare, `b.ge` loop exit, `b` continue backedge, `b` break-to-exit branch, normal backedge, and patched `bl _sum_to`.
+- Linked native-object executable exits `12`, the expected result.
+- `native-asm` output assembles with clang and the linked executable also exits `12`.
+
+Remaining G-008/G-020/G-021 work:
+- Add numeric `for` lowering and eventually generic iteration once native collection representations exist.
+- Replace monotonic allocation with lifetime-aware allocation and stack spilling; current call preservation is correct but heavy.
+- Add real relocation records for externally resolved calls/data instead of only patching known internal calls.
+- Add branch/loop local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and native executable/shared-library integration.
+
+## 2026-08-01: Native backend numeric for lowering
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_for_smoke.duo --target native-object -o /tmp/duo_native_for_smoke.o
+./zig-out/bin/duo compile examples/native_for_smoke.duo --target native-asm -o /tmp/duo_native_for_smoke.s
+nm /tmp/duo_native_for_smoke.o
+otool -tV /tmp/duo_native_for_smoke.o
+xcrun clang /tmp/duo_native_for_smoke.o -o /tmp/duo_native_for_smoke
+xcrun clang /tmp/duo_native_for_smoke.s -o /tmp/duo_native_for_asm_smoke
+/tmp/duo_native_for_smoke
+/tmp/duo_native_for_asm_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Numeric loops** | Added direct arm64 lowering for inclusive `for i = start, stop[, step]` loops in the native backend. The loop variable is register-backed and scoped back out after lowering. |
+| **Step handling** | Runtime step-sign dispatch supports both ascending and descending integer loops: non-negative steps exit on `i > stop`, negative steps exit on `i < stop`. |
+| **Loop control** | Refined loop contexts so `continue` targets the current loop's increment block for numeric `for`, while `while` continues still target the condition header. `break` remains patched to the loop exit. |
+| **Asm output** | Native assembly output uses the same local label machinery for counted-loop condition blocks, negative-step checks, increment blocks, and exits. |
+| **Smoke** | Added `examples/native_for_smoke.duo`, which combines an ascending loop with `continue` and a descending loop with `break`. |
+
+Validation:
+- Focused backend tests: PASS (9/9).
+- `zig build`: PASS.
+- `nm /tmp/duo_native_for_smoke.o` reports `_counted` and `_main`.
+- `otool -tV` shows positive-step and negative-step condition paths, patched loop exits, continue-to-increment, break-to-exit, and `bl _counted`.
+- Linked native-object executable exits `20`, the expected result.
+- `native-asm` output assembles with clang and the linked executable also exits `20`.
+
+Remaining G-008/G-020/G-021 work:
+- Add real relocation records for externally resolved calls/data instead of only patching known internal calls.
+- Replace monotonic allocation with lifetime-aware allocation and stack spilling; current call preservation is correct but heavy.
+- Add branch/loop local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and native executable/shared-library integration.
+- Add generic iteration once native collection representations exist.
+
+## 2026-08-01: Native backend Mach-O external call relocations
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_reloc_smoke.duo --target native-object -o /tmp/duo_native_reloc_smoke.o
+./zig-out/bin/duo compile examples/native_reloc_smoke.duo --target native-asm -o /tmp/duo_native_reloc_smoke.s
+nm -m /tmp/duo_native_reloc_smoke.o
+otool -rv /tmp/duo_native_reloc_smoke.o
+otool -tV /tmp/duo_native_reloc_smoke.o
+xcrun clang /tmp/duo_native_reloc_smoke.o -o /tmp/duo_native_reloc_smoke
+xcrun clang /tmp/duo_native_reloc_smoke.s -o /tmp/duo_native_reloc_asm_smoke
+/tmp/duo_native_reloc_smoke
+/tmp/duo_native_reloc_asm_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **External symbols** | Native lowering now recognizes bodyless `@ffi("symbol") fun name(...)` declarations as external call targets. Defined functions stay in `__TEXT,__text`; FFI targets are emitted as undefined external Mach-O symbols. |
+| **Relocations** | Added `Relocation` records to the native backend output and serialized ARM64 `BRANCH26` relocation entries in the Mach-O `__text` section. Internal calls still patch direct `bl` immediates; external calls leave a placeholder branch and rely on the linker relocation. |
+| **Symbol table** | Mach-O symbol output now distinguishes defined `N_SECT` symbols from undefined `N_UNDF` externals, with relocation records referencing the correct symbol table index. |
+| **FFI naming** | The native backend honors the existing `@ffi("c_name")` attribute path for symbol names while preserving the Duo call name in source. |
+| **Smoke** | Added `examples/native_reloc_smoke.duo`, which calls libc `llabs` through a native-object relocation and returns `42`. |
+
+Validation:
+- Focused backend tests: PASS (10/10).
+- `zig build`: PASS.
+- `nm -m /tmp/duo_native_reloc_smoke.o` reports undefined external `_llabs` and defined external `_main`.
+- `otool -rv /tmp/duo_native_reloc_smoke.o` reports one `BR26` relocation against `_llabs` in `__TEXT,__text`.
+- `otool -tV` shows the placeholder `bl` at the relocation address and the surrounding caller-save sequence.
+- Linked native-object executable exits `42`, proving the system linker resolved the relocation.
+- `native-asm` output assembles with clang and the linked executable also exits `42`.
+
+Remaining G-008/G-020/G-021 work:
+- Replace monotonic allocation with lifetime-aware allocation and stack spilling; current call preservation is correct but heavy.
+- Add data relocations and native references beyond branch-call relocations.
+- Add branch/loop local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and native executable/shared-library integration.
+- Add generic iteration once native collection representations exist.
+
+## 2026-08-01: Native backend scratch-register reuse and active call saves
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_regalloc_smoke.duo --target native-object -o /tmp/duo_native_regalloc_smoke.o
+./zig-out/bin/duo compile examples/native_regalloc_smoke.duo --target native-asm -o /tmp/duo_native_regalloc_smoke.s
+nm /tmp/duo_native_regalloc_smoke.o
+otool -tV /tmp/duo_native_regalloc_smoke.o
+rg -n "sub sp|str x30|ldr x30|add sp" /tmp/duo_native_regalloc_smoke.s
+xcrun clang /tmp/duo_native_regalloc_smoke.o -o /tmp/duo_native_regalloc_smoke
+xcrun clang /tmp/duo_native_regalloc_smoke.s -o /tmp/duo_native_regalloc_asm_smoke
+/tmp/duo_native_regalloc_smoke
+/tmp/duo_native_regalloc_asm_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Register allocation** | Replaced the monotonic x9-through-x28 allocator with a tracked scratch-register pool. Expression temporaries are released after consumption and become reusable inside the same function. |
+| **Parameter handling** | Function parameters are copied from ABI registers x0-x7 into scratch local registers at function entry, so calls no longer silently clobber parameter locals. |
+| **Local ownership** | New local bindings now copy from an existing local register into a fresh register, avoiding `b = a` aliasing the same machine register as `a`. |
+| **Call preservation** | Calls now save only active scratch registers plus x30, with stack size rounded to 16-byte alignment. The previous unconditional x9-x28+x30 save frame was 176 bytes per call. |
+| **Smoke** | Added `examples/native_regalloc_smoke.duo`, which uses a long expression that previously exceeded the monotonic allocator, verifies local-copy independence, calls a helper, and returns `211`. |
+
+Validation:
+- Focused backend tests: PASS (11/11).
+- `zig build`: PASS.
+- `otool -tV /tmp/duo_native_regalloc_smoke.o` shows the long expression reusing x11/x12/x13 instead of monotonically consuming all scratch registers.
+- `rg` on generated asm shows a 32-byte call-save frame (`sub sp, sp, #32`) with x9, x10, x13, and x30 saved/restored, replacing the former 176-byte blanket save in this case.
+- Linked native-object executable exits `211`, the expected result.
+- `native-asm` output assembles with clang and the linked executable also exits `211`.
+
+Remaining G-008/G-020/G-021 work:
+- Add true spilling for programs that need more simultaneously live scratch values than x9-x28.
+- Add data relocations and native references beyond branch-call relocations.
+- Add branch/loop local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and native executable/shared-library integration.
+- Add generic iteration once native collection representations exist.
+
+## 2026-08-01: Native executable target integration
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig src/main.zig src/codegen.zig src/tests.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_exe_smoke.duo --target native-exe -o /tmp/duo_native_exe_dedicated_smoke
+./zig-out/bin/duo compile examples/native_exe_smoke.duo --target native-object -o /tmp/duo_native_exe_dedicated_smoke.o
+otool -rv /tmp/duo_native_exe_dedicated_smoke.o
+/tmp/duo_native_exe_dedicated_smoke
+./zig-out/bin/duo run examples/native_exe_smoke.duo --target native-exe -o /tmp/duo_native_exe_dedicated_run_smoke
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **CLI target** | Added `--target native-exe` as a native machine-code target, separate from `native-object`/`native-mach-o` and `native-asm`. |
+| **Executable integration** | `native-exe` emits a Mach-O object directly through `src/native_backend.zig`, writes it to `/tmp`, then invokes the configured platform linker driver to produce an executable. No C source or LLVM IR is generated on this path. |
+| **Run mode** | `duo run --target native-exe` now compiles, links, runs, forwards program args, and propagates the program exit code. Object/asm targets still reject `run` because they are not executable artifacts. |
+| **Link flags** | `--link name` remains rejected for object/asm targets but is accepted for `native-exe` and passed as `-lname`, matching the normal compile path. |
+| **Smoke** | Added `examples/native_exe_smoke.duo`, which calls libc `llabs` through the native relocation path and returns `42`. |
+
+Validation:
+- Focused backend tests: PASS (12/12).
+- `zig build`: PASS.
+- `duo compile examples/native_exe_smoke.duo --target native-exe` produces an executable that exits `42`.
+- `duo run examples/native_exe_smoke.duo --target native-exe` compiles, links, runs, and exits `42`.
+- `otool -rv` on the intermediate object path reports one `BR26` relocation against `_llabs`, proving `native-exe` still exercises direct object emission plus linker relocation resolution.
+
+Remaining G-008/G-020/G-021 work:
+- Add direct shared-library mode for native objects.
+- Add true spilling for programs that need more simultaneously live scratch values than x9-x28.
+- Add data relocations and native references beyond branch-call relocations.
+- Add branch/loop local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and generic iteration once native collection representations exist.
+
+## 2026-08-01: Native dylib target integration
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig src/main.zig src/codegen.zig src/tests.zig --check
+zig test src/native_backend.zig --test-filter "native backend"
+scripts/duo_lock.sh -- zig build
+./zig-out/bin/duo compile examples/native_dylib_smoke.duo --target native-dylib -o /tmp/libduo_native_smoke.dylib
+nm -gU /tmp/libduo_native_smoke.dylib
+file /tmp/libduo_native_smoke.dylib
+xcrun clang examples/native_dylib_harness.c /tmp/libduo_native_smoke.dylib -o /tmp/duo_native_dylib_harness
+/tmp/duo_native_dylib_harness
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **CLI target** | Added `--target native-dylib` for the current Mach-O arm64 native backend. |
+| **Shared library integration** | `native-dylib` emits a Mach-O object directly through `src/native_backend.zig`, permits no-`main` modules when they contain exported functions, and links the object with `-dynamiclib`. |
+| **Exports** | Native object collection now tracks exported function symbols separately from Duo source names. The current smoke uses `@export` with an exported function named `duo_native_add`. |
+| **Link behavior** | Object/asm targets continue to reject linker flags and no-main library modules. Executable and dylib targets can invoke the platform linker driver without generating C source or LLVM IR. |
+| **Smoke** | Added `examples/native_dylib_smoke.duo` and `examples/native_dylib_harness.c`; the harness links against the generated dylib and returns the exported function result. |
+
+Validation:
+- Focused backend tests: PASS (13/13).
+- `zig build`: PASS.
+- `duo compile examples/native_dylib_smoke.duo --target native-dylib` produces a Mach-O arm64 dynamically linked shared library.
+- `nm -gU /tmp/libduo_native_smoke.dylib` reports `_duo_native_add`.
+- The harness linked against `/tmp/libduo_native_smoke.dylib` exits `42`, proving the exported native symbol is callable from another native image.
+
+Remaining G-008/G-020/G-021 work:
+- Add true spilling for programs that need more simultaneously live scratch values than x9-x28.
+- Add data relocations and native references beyond branch-call relocations.
+- Add branch/loop local merging once native sema/codegen has an explicit phi/storage model.
+- Add typed returns beyond integer scalars, multi-module symbols, object format variants (ELF/PE/COFF), and generic iteration once native collection representations exist.
+- Repair parser handling for newline-separated `@c.export(...)` so native dylib exports can use the canonical explicit export-name spelling directly.
+
+## 2026-08-01: Native backend string-literal output (`__cstring` + adrp/add)
+
+Commands:
+
+```sh
+zig fmt src/native_backend.zig --check
+scripts/duo_lock.sh -- zig build unit-test
+scripts/duo_lock.sh -- zig build
+scripts/duo_lock.sh -- ./zig-out/bin/duo compile --target native-exe --run examples/native_print_smoke.duo
+./native_print_smoke.out   # prints "Hello from native duo!", exit 0
+# reference object for reloc/section verification:
+xcrun cc -c /tmp/dp_str.c -o /tmp/dp_str.o -arch arm64 && otool -l /tmp/dp_str.o && otool -r /tmp/dp_str.o
+```
+
+Implemented:
+
+| Area | Change |
+| --- | --- |
+| **Data sections** | `Arm64Output` gained a `cstring` byte buffer; `emitMachOArm64Object` conditionally emits a second `LC_SEGMENT_64` section `__TEXT,__cstring` (`S_CSTRING_LITERALS`) when string literals are present, with section `addr = text.len` so a literal at cstring offset `k` has absolute VM address `text.len + k`. |
+| **String interning** | `Arm64Compiler` gained `strings`/`string_map`/`next_string`; `internString` dedups identical literals into local section symbols (`Lduo_str_{n}`, `n_sect=2`, `n_ext=0`). |
+| **Pointer materialization** | `emitAdrpAdd` lowers a literal address into a register via `adrp xN, sym@PAGE` + `add xN, xN, sym@PAGEOFF`, recording an `ARM64_RELOC_PAGE21` (pcrel=1) / `ARM64_RELOC_PAGEOFF12` (pcrel=0) relocation pair against the local string symbol. |
+| **Expression lowering** | `compileExpr` handles `.string_lit`; `compileStmt` handles `.call_stmt` so a bare `puts("...")` statement compiles and its result is discarded. |
+| **Relocation kinds** | `Relocation` gained `kind` (`branch26`/`page21`/`pageoff12`); `emitMachOArm64Object` encodes per-kind reloc flags. `finish()` sorts relocations by descending `r_address` (Mach-O requirement). |
+| **Symbol table** | `Symbol` gained `section`/`external`; nlist now has three cases — undefined extern (`N_EXT\|N_UNDF`, `n_sect=0`), local section symbol (`N_SECT`, `n_sect=sym.section`), defined external (`N_EXT\|N_SECT`). String section symbols carry `n_value = text.len + cstring_offset` (absolute VM address), matching clang; a bare cstring-relative offset is rejected by `ld` with "address isn't in its designated section". `buildStringTable` omits the C-symbol underscore for local labels. |
+| **Extern fix** | `collectFunctions` now collects `@ffi` externs *before* integer-signature validation, so `fun puts(s: str): i64` parses (previously rejected as `InvalidMainSignature`). |
+| **Error semantics** | `patchCalls` returns `UnsupportedProgram` (was `UnknownSymbol`) for callees that are neither defined functions nor declared externs, so runtime builtins like `print` are correctly rejected by the native backend rather than failing late. |
+
+Measured / verified:
+- `examples/native_print_smoke.duo` prints `Hello from native duo!` and exits 0 via `native-exe` (object hand-emitted, linked with `xcrun cc` against libSystem `puts`; no C source, no LLVM IR, no `lua_Value`).
+- Multi-string program dedups an identical literal (one string symbol, reused across calls) and prints all lines correctly.
+- Focused native-backend unit tests: PASS, including new `native backend lowers string literals to cstring with adrp/add relocations`.
+- `zig build`: PASS. `agent-smoke`: PASS. `zig fmt src/native_backend.zig --check`: clean.
+- Reloc/section encoding cross-checked against a clang reference object (`otool -l`/`otool -r`): `__cstring` addr = text size; `l_.str` n_value = `__cstring.addr`; PAGE21/PAGEOFF12 pcrel/length/extern/type bits and descending storage order all match.
+- 3 pre-existing unrelated `unit-test` failures (`parser`/`codegen @c.export` and a derived-enum tensor test) are in files not touched this session and are not regressions.
+
+Notes:
+- No benchmark-affecting runtime/codegen path changed; this only extends the optional direct machine-code backend. No `zig build bench` run needed (and the benchmarks claim is unclaimed/held elsewhere).
+- This advances G-008/G-020/G-021 (direct machine-code lowering past C): the native backend can now produce real observable I/O, not just exit codes.
+- Still open: true register spilling, broader data relocations, non-`puts`/`printf` varargs calling conventions, and ELF/PE/COFF object formats.

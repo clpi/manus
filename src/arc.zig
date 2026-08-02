@@ -342,6 +342,11 @@ pub const ArcPass = struct {
             },
             .try_expr => |t| try self.processExpr(t.operand),
             .unwrap_expr => |u| try self.processExpr(u.operand),
+            .if_expr => |ie| {
+                try self.processExpr(ie.cond);
+                try self.processExpr(ie.then_expr);
+                try self.processExpr(ie.else_expr);
+            },
             .match_expr => |m| try self.processMatch(m),
             .await_expr => |a| try self.processExpr(a.operand),
             .contains_expr => |c| {

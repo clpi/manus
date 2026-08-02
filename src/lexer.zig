@@ -793,7 +793,10 @@ pub const Lexer = struct {
             } else Token{ .kind = .colon, .loc = l, .text = self.src[p - 1 .. p] },
             '@' => Token{ .kind = .at, .loc = l, .text = self.src[p - 1 .. p] },
             '?' => Token{ .kind = .question, .loc = l, .text = self.src[p - 1 .. p] },
-            '!' => Token{ .kind = .bang, .loc = l, .text = self.src[p - 1 .. p] },
+            '!' => if (self.peek_char() == '=') blk: {
+                _ = self.adv();
+                break :blk Token{ .kind = .neq, .loc = l, .text = self.src[p - 1 .. self.pos] };
+            } else Token{ .kind = .bang, .loc = l, .text = self.src[p - 1 .. p] },
             '`' => Token{ .kind = .backtick, .loc = l, .text = self.src[p - 1 .. p] },
             else => LexError.UnexpectedChar,
         };
@@ -1056,11 +1059,11 @@ test "lex: single-char operators" {
 }
 
 test "lex: multi-char operators" {
-    var l = Lexer.init("== ~= <= >= << >> // .. ... ## -> :: += -= *= /= %= ^=", "test");
+    var l = Lexer.init("== ~= != <= >= << >> // .. ... ## -> :: += -= *= /= %= ^=", "test");
     const expected = [_]TokenKind{
-        .eq,          .neq,          .leq,            .geq,          .lshift, .rshift,      .idiv,
-        .concat,      .dots,         .hash_hash,      .arrow,        .dcolon, .plus_assign, .minus_assign,
-        .star_assign, .slash_assign, .percent_assign, .caret_assign,
+        .eq,          .neq,          .neq,          .leq,            .geq,          .lshift, .rshift,
+        .idiv,        .concat,       .dots,         .hash_hash,      .arrow,        .dcolon, .plus_assign,
+        .minus_assign, .star_assign, .slash_assign, .percent_assign, .caret_assign,
     };
     for (expected) |kind| try testing.expectEqual(kind, (try l.next()).kind);
 }

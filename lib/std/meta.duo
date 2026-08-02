@@ -64,7 +64,7 @@ end
 -- Get all keys of a table (both array and hash parts)
 fun fields(t: any)
     ks = {}
-    for k, _ in pairs(t)
+    for k, _ in t
         ks[#ks + 1] = k
     end
     ks
@@ -73,7 +73,7 @@ end
 -- Get field names (string keys only)
 fun field_names(t: any)
     ks = {}
-    for k, _ in pairs(t)
+    for k, _ in t
         if type(k) == "string" then
             ks[#ks + 1] = k
         end
@@ -84,7 +84,7 @@ end
 -- Get method names (function-valued fields)
 fun method_names(t: any)
     ms = {}
-    for k, v in pairs(t)
+    for k, v in t
         if type(k) == "string" and type(v) == "function" then
             ms[#ms + 1] = k
         end
@@ -127,13 +127,13 @@ end
 fun satisfies_concept(val: any, concept_def: any): bool
     if val == nil or concept_def == nil then return false end
     if concept_def.required_fields ~= nil then
-        for _, f in ipairs(concept_def.required_fields)
+        for _, f in concept_def.required_fields
             name = concept_member_name(f)
             if name == nil or val[name] == nil then return false end
         end
     end
     if concept_def.required_methods ~= nil then
-        for _, m in ipairs(concept_def.required_methods)
+        for _, m in concept_def.required_methods
             name = concept_member_name(m)
             if name == nil or type(val[name]) ~= "function" then return false end
         end
@@ -141,18 +141,22 @@ fun satisfies_concept(val: any, concept_def: any): bool
     true
 end
 
-fun concept_member(member: any): any
+fun concept_member(member: any, kind: str): any
     if type(member) == "string" then
-        return { name = member }
+        return { name = member, kind = kind }
+    end
+    if member.kind == nil then member.kind = kind end
+    if kind == "method" and member.param_count == nil and member.params ~= nil then
+        member.param_count = #member.params
     end
     member
 end
 
-fun concept_member_list(items: any): any
+fun concept_member_list(items: any, kind: str): any
     out = {}
     if items == nil then return out end
-    for _, item in ipairs(items)
-        out[#out + 1] = concept_member(item)
+    for _, item in items
+        out[#out + 1] = concept_member(item, kind)
     end
     out
 end
@@ -166,8 +170,8 @@ fun make_concept(name: str, spec: any): any
     desc = {
         __duo_kind = "concept",
         name = name,
-        required_fields = concept_member_list(concept_fields),
-        required_methods = concept_member_list(concept_methods),
+        required_fields = concept_member_list(concept_fields, "field"),
+        required_methods = concept_member_list(concept_methods, "method"),
     }
     setmetatable(desc, {
         __duo_kind = "concept_metatable",
@@ -186,7 +190,7 @@ end
 
 fun keys(t: any)
     ks = {}
-    for k, _ in pairs(t)
+    for k, _ in t
         ks[#ks + 1] = k
     end
     ks
@@ -194,7 +198,7 @@ end
 
 fun values(t: any)
     vs = {}
-    for _, v in pairs(t)
+    for _, v in t
         vs[#vs + 1] = v
     end
     vs
@@ -208,14 +212,14 @@ end
 fun clone(t: any)
     if type(t) ~= "table" then return t end
     c = {}
-    for k, v in pairs(t)
+    for k, v in t
         c[k] = v
     end
     c
 end
 
 fun merge(dst: any, src: any): any
-    for k, v in pairs(src)
+    for k, v in src
         dst[k] = v
     end
     dst
@@ -224,7 +228,7 @@ end
 fun deep_clone(t: any)
     if type(t) ~= "table" then return t end
     c = {}
-    for k, v in pairs(t)
+    for k, v in t
         if type(v) == "table" then
             c[k] = deep_clone(v)
         else
@@ -238,10 +242,10 @@ end
 fun shallow_eq(a: any, b: any): bool
     if a == b then return true end
     if type(a) ~= "table" or type(b) ~= "table" then return false end
-    for k, v in pairs(a)
+    for k, v in a
         if b[k] ~= v then return false end
     end
-    for k, _ in pairs(b)
+    for k, _ in b
         if a[k] == nil then return false end
     end
     true
@@ -289,7 +293,7 @@ fun derive_display(val: any): str
     if type(val) == "string" then return val end
     if type(val) == "table" then
         parts = {}
-        for k, v in pairs(val)
+        for k, v in val
             if type(k) == "string" then
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
@@ -302,7 +306,7 @@ end
 fun derive_deep_clone(val: any): any
     if type(val) ~= "table" then return val end
     c = {}
-    for k, v in pairs(val)
+    for k, v in val
         if type(v) == "table" then
             c[k] = derive_deep_clone(v)
         else
@@ -331,7 +335,7 @@ fun derive_hash(val: any): u64
     end
     if type(val) == "table" then
         h = 0
-        for _, v in pairs(val)
+        for _, v in val
             h = (h + derive_hash(v)) % 4294967296
         end
         return h
@@ -379,7 +383,7 @@ end
 
 fun derive_contains(val: any, elem: any): bool
     if type(val) == "table" then
-        for _, v in pairs(val)
+        for _, v in val
             if v == elem then return true end
         end
     end
@@ -388,7 +392,7 @@ end
 
 fun derive_iter(val: any): any
     if type(val) ~= "table" then return fun() return nil end end
-    return pairs(val)
+    val
 end
 
 -- ─────────────────────────────────────────────────────────────
@@ -409,7 +413,7 @@ end
 -- mapk: transform each key-value pair
 fun mapk(t: any, f: any): any
     out = {}
-    for k, v in pairs(t)
+    for k, v in t
         out[k] = f(v, k)
     end
     out
@@ -433,7 +437,7 @@ end
 -- filterk: keep entries where predicate(value, key) returns true
 fun filterk(t: any, pred: any): any
     out = {}
-    for k, v in pairs(t)
+    for k, v in t
         if pred(v, k) then
             out[k] = v
         end
@@ -455,7 +459,7 @@ end
 -- reducek: fold table with (accumulator, value, key)
 fun reducek(t: any, f: any, init: any): any
     acc = init
-    for k, v in pairs(t)
+    for k, v in t
         acc = f(acc, v, k)
     end
     acc
@@ -472,7 +476,7 @@ end
 
 -- eachk: call side-effecting function on each key-value pair
 fun eachk(t: any, f: any): void
-    for k, v in pairs(t)
+    for k, v in t
         f(v, k)
     end
 end
@@ -489,7 +493,7 @@ end
 
 -- findk: return first key whose value matches predicate
 fun findk(t: any, pred: any): any
-    for k, v in pairs(t)
+    for k, v in t
         if pred(v, k) then return k end
     end
     nil
@@ -940,7 +944,7 @@ end
 -- map_values: transform only values, keep keys
 fun map_values(t: any, f: any): any
     out = {}
-    for k, v in pairs(t)
+    for k, v in t
         out[k] = f(v, k)
     end
     out
@@ -949,7 +953,7 @@ end
 -- map_keys: transform only keys, keep values
 fun map_keys(t: any, f: any): any
     out = {}
-    for k, v in pairs(t)
+    for k, v in t
         out[f(v, k)] = v
     end
     out
@@ -970,7 +974,7 @@ end
 -- invert: swap keys and values
 fun invert(t: any): any
     out = {}
-    for k, v in pairs(t)
+    for k, v in t
         out[tostring(v)] = k
     end
     out

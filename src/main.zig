@@ -15,6 +15,7 @@ const term = @import("term.zig");
 const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
+const native_backend = @import("native_backend.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
@@ -141,7 +142,7 @@ const usage =
     \\  -o <name>         output binary name (default: <stem>.out or <stem>.wasm)
     \\  -O<n>             optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
-    \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi)
+    \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi, native-object, native-exe, native-dylib)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
@@ -1309,7 +1310,7 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
     const prev_report = term.build_report;
     term.build_report = .plain;
     defer term.build_report = prev_report;
-    
+
     const compile_started = Io.Timestamp.now(io, .awake);
     try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false, false, false, null, &.{});
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
@@ -1758,6 +1759,23 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
     }
 }
 
+fn link_native_object(alloc: std.mem.Allocator, io: Io, obj_path: []const u8, out_path: []const u8, cc: []const u8, link_flags: []const []const u8, quiet: bool, shared: bool) !void {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    if (@import("builtin").os.tag == .macos and !macos_sdkroot_configured) {
+        try argv.appendSlice(alloc, &.{ "xcrun", cc });
+    } else {
+        try argv.append(alloc, cc);
+    }
+    try argv.append(alloc, obj_path);
+    if (shared) try argv.append(alloc, "-dynamiclib");
+    try argv.appendSlice(alloc, &.{ "-o", out_path, "-lm" });
+    for (link_flags) |lib| {
+        try argv.append(alloc, try std.fmt.allocPrint(alloc, "-l{s}", .{lib}));
+    }
+    try run_child_process(io, argv.items, "native linker", quiet);
+}
+
 fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8, bench_mode: bool) !u8 {
     if (term.testUsesStructuredOutput()) {
         const log_ns = Io.Timestamp.now(io, .awake).nanoseconds;
@@ -1868,7 +1886,7 @@ fn do_compile(
         return;
     }
 
-    var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types);
+    var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
     native_scalar_precheck.src_path = src_path;
     native_scalar_precheck.stdlib_root = compiler_lib_root;
     native_scalar_precheck.target = target;
@@ -1882,6 +1900,101 @@ fn do_compile(
     native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
+
+    if (native_backend.isNativeMachineTarget(target)) {
+        if (run_after and !native_backend.isNativeExecutableTarget(target)) {
+            term.err("only --target native-exe can run through the native machine-code backend", .{});
+            std.process.exit(1);
+        }
+        if (load_chunk or lib_mode or shared_mem or pgo) {
+            term.err("native machine-code target does not use C-only compile options yet", .{});
+            std.process.exit(1);
+        }
+        if (!native_backend.isNativeExecutableTarget(target) and !native_backend.isNativeSharedTarget(target) and link_flags.len != 0) {
+            term.err("native object/asm targets do not link libraries; use --target native-exe or native-dylib", .{});
+            std.process.exit(1);
+        }
+        if (!native_scalar_candidate) {
+            term.err("native machine-code backend requires a fully typed native-scalar module", .{});
+            term.hint("{s}", .{native_backend.unsupportedReason(target)});
+            std.process.exit(1);
+        }
+        if (native_backend.isNativeExecutableTarget(target)) {
+            const obj = native_backend.emitObject(alloc, &ps.mod, "native-object") catch |e| {
+                term.err("native machine-code backend error: {}", .{e});
+                term.hint("{s}", .{native_backend.unsupportedReason(target)});
+                std.process.exit(1);
+            };
+            const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
+            const cwd = Io.Dir.cwd();
+            try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+            try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, run_after and !verbose, false);
+            if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
+            if (term.build_report != .plain and !test_mode) {
+                const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                term.buildPhaseDone("compile", total_ms, out_path);
+            }
+            if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+            if (run_after) {
+                var run_args: std.ArrayList([]const u8) = .empty;
+                try run_args.append(alloc, out_path);
+                try run_args.appendSlice(alloc, forwarded_program_args);
+                defer run_args.deinit(alloc);
+                var run_child = try std.process.spawn(io, .{
+                    .argv = run_args.items,
+                    .stdin = .inherit,
+                    .stdout = .inherit,
+                    .stderr = .inherit,
+                });
+                const run_term = try run_child.wait(io);
+                switch (run_term) {
+                    .exited => |code| std.process.exit(code),
+                    .signal => std.process.exit(128),
+                    else => {
+                        term.print("program terminated abnormally", .{});
+                        std.process.exit(1);
+                    },
+                }
+            }
+            return;
+        }
+        if (native_backend.isNativeSharedTarget(target)) {
+            const obj = native_backend.emitSharedObjectInput(alloc, &ps.mod) catch |e| {
+                term.err("native machine-code backend error: {}", .{e});
+                term.hint("{s}", .{native_backend.unsupportedReason(target)});
+                std.process.exit(1);
+            };
+            const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
+            const cwd = Io.Dir.cwd();
+            try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+            try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true);
+            if (phase_timer) |*t| trace_phase(io, t, "native dylib", out_path);
+            if (term.build_report != .plain and !test_mode) {
+                const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                term.buildPhaseDone("compile", total_ms, out_path);
+            }
+            if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+            return;
+        }
+        const native_output = if (native_backend.isNativeAsmTarget(target))
+            native_backend.emitAssembly(alloc, &ps.mod, target)
+        else
+            native_backend.emitObject(alloc, &ps.mod, target);
+        const obj = native_output catch |e| {
+            term.err("native machine-code backend error: {}", .{e});
+            term.hint("{s}", .{native_backend.unsupportedReason(target)});
+            std.process.exit(1);
+        };
+        const cwd = Io.Dir.cwd();
+        try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = obj });
+        if (phase_timer) |*t| trace_phase(io, t, "native object", out_path);
+        if (term.build_report != .plain and !test_mode) {
+            const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+            term.buildPhaseDone("compile", total_ms, out_path);
+        }
+        if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+        return;
+    }
 
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("monomorphize", .{});
@@ -1984,8 +2097,7 @@ fn do_compile(
 
         var buf: [65536]u8 = undefined;
         var fw: Io.File.Writer = .init(cf, io, &buf);
-        var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types);
-        cg.concepts = &ps.sem.concepts;
+        var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
         cg.table_methods = &ps.sem.table_methods;
         if (mono) |*m| cg.mono = m;
         if (arc_pass) |*a| cg.arc = a;
@@ -2455,8 +2567,7 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     const stdout = Io.File.stdout();
     var buf: [65536]u8 = undefined;
     var fw: Io.File.Writer = .init(stdout, io, &buf);
-    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types);
-    cg.concepts = &ps.sem.concepts;
+    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &fw.interface, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
     cg.table_methods = &ps.sem.table_methods;
     cg.mono = &mono;
     cg.arc = &arc_pass;

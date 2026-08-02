@@ -390,6 +390,11 @@ pub const Monomorphizer = struct {
             },
             .try_expr => |t| try self.collectSitesExpr(t.operand, env),
             .unwrap_expr => |u| try self.collectSitesExpr(u.operand, env),
+            .if_expr => |ie| {
+                try self.collectSitesExpr(ie.cond, env);
+                try self.collectSitesExpr(ie.then_expr, env);
+                try self.collectSitesExpr(ie.else_expr, env);
+            },
             .match_expr => |m| try self.collectSitesMatch(m, env),
             .await_expr => |a| try self.collectSitesExpr(a.operand, env),
             .contains_expr => |c| {

@@ -342,6 +342,16 @@ pub const Expander = struct {
             } },
             .try_expr => |x| .{ .try_expr = .{ .loc = x.loc, .operand = try self.cloneExpr(x.operand, ctx) } },
             .unwrap_expr => |x| .{ .unwrap_expr = .{ .loc = x.loc, .operand = try self.cloneExpr(x.operand, ctx) } },
+            .if_expr => |x| blk: {
+                const if_expr = try self.alloc.create(ast.IfExpr);
+                if_expr.* = .{
+                    .loc = x.loc,
+                    .cond = try self.cloneExpr(x.cond, ctx),
+                    .then_expr = try self.cloneExpr(x.then_expr, ctx),
+                    .else_expr = try self.cloneExpr(x.else_expr, ctx),
+                };
+                break :blk .{ .if_expr = if_expr };
+            },
             .match_expr => |x| blk: {
                 const match = try self.alloc.create(ast.MatchExpr);
                 match.* = try self.expandMatchWithContext(x.*, ctx);

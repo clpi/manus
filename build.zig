@@ -96,4 +96,12 @@ pub fn build(b: *std.Build) void {
     compile_size_bench_cmd.step.dependOn(b.getInstallStep());
     const compile_size_bench_step = b.step("compile-size-bench", "Track compile time and binary size vs C");
     compile_size_bench_step.dependOn(&compile_size_bench_cmd.step);
+
+    // Agent-smoke gate (tier-0): validates agent coordination, stdlib, metaprogramming
+    const agent_smoke_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
+    agent_smoke_cmd.setCwd(b.path("."));
+    agent_smoke_cmd.step.dependOn(b.getInstallStep());
+    const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (coordination, stdlib, meta)");
+    agent_smoke_step.dependOn(&agent_smoke_cmd.step);
+    test_step.dependOn(agent_smoke_step);
 }

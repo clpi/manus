@@ -8,7 +8,7 @@ end
 fun std_table_keys(t: any): any
     out = {}
     if t == nil then return out end
-    for k, _ in pairs(t)
+    for k, _ in t
         out[rawlen(out) + 1] = k
     end
     out
@@ -17,7 +17,7 @@ end
 fun std_table_values(t: any): any
     out = {}
     if t == nil then return out end
-    for _, v in pairs(t)
+    for _, v in t
         out[rawlen(out) + 1] = v
     end
     out
@@ -26,7 +26,7 @@ end
 fun std_table_clone(t: any): any
     out = {}
     if t == nil then return out end
-    for k, v in pairs(t)
+    for k, v in t
         out[k] = v
     end
     out
@@ -35,7 +35,7 @@ end
 fun std_table_merge(a: any, b: any): any
     out = std_table_clone(a)
     if b ~= nil then
-        for k, v in pairs(b)
+        for k, v in b
             out[k] = v
         end
     end
@@ -115,14 +115,20 @@ end
 
 fun std_table_clear(t: any): void
     if t == nil then return end
-    for k, _ in pairs(t)
-        t[k] = nil
+    ks = std_table_keys(t)
+    i = 1
+    while i <= #ks
+        rawset(t, ks[i], nil)
+        i += 1
     end
 end
 
 fun std_table_is_empty(t: any): bool
     if t == nil then return true end
-    next(t) == nil
+    for _, v in t
+        if v ~= nil then return false end
+    end
+    true
 end
 
 fun std_table_slice(t: any, start_idx: any, end_idx: any): any
@@ -268,7 +274,7 @@ end
 fun std_table_to_pairs(t: any): any
     out = {}
     if t == nil then return out end
-    for k, v in pairs(t)
+    for k, v in t
         out[rawlen(out) + 1] = {k, v}
     end
     out
@@ -299,7 +305,7 @@ fun std_table_omit(t: any, keys: any): any
             i += 1
         end
     end
-    for k, v in pairs(t)
+    for k, v in t
         if not omit_set[k] then
             out[k] = v
         end
