@@ -135,13 +135,22 @@ Duo is actively developed by 5+ concurrent agents working in parallel. Known age
 - cursor/agent
 - opencode
 - pool
-- kimi-code
+- kilo (npm @kilocode/cli)
+- kimi-code (`kimi` binary — `sudo npm install -g kimi-code --allow-scripts=keytar`)
 - junie
 - trae
-- kilo (kilo-code CLI)
-- qodercli (qoder-ai)
+- qodercli (@qoder-ai/qodercli)
+
+NOTE on Serena: if Serena appears in a Cursor session it is a project-plugin cache artefact from the wax workspace — not a Duo MCP tool. Dismiss it.
 
 All agents must follow the rules in this file. Before starting work, read the full AGENTS.md and the relevant docs. Coordinate via git commits and docs/performance.md entries to avoid conflicts.
+
+**NEVER `git stash` work away.** Do not stash to reach a "clean tree", dodge a
+conflict, or clear the tree for a parallel agent — the stash hides work from
+`git status`, all other agents keep building against stale copies, and it caused
+one full 23-file rescue (2026-08-01). Commit early on a branch, coordinate via
+claims in `.agents/AGENT_COORDINATION.md`, or export a visible `.patch` file.
+`git stash list` must stay EMPTY.
 
 ## Duo Grammar Rules (Canonical)
 

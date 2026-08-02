@@ -184,8 +184,18 @@ fun json_string(cur): any
             end
             cur.i = cur.i + 1
         else
-            out[rawlen(out) + 1] = string.sub(s, cur.i, cur.i)
+            -- accumulate a run of plain chars up to the next quote/backslash
+            -- (one chunk per run, not one char per byte — avoids the O(n*chars)
+            -- concat cliff that made large decodes take >100s). Manual byte scan,
+            -- no Lua patterns (immune to F-13813-5).
+            start = cur.i
             cur.i = cur.i + 1
+            while cur.i <= n
+                b2 = string.byte(s, cur.i)
+                if b2 == 34 or b2 == 92 then break end
+                cur.i = cur.i + 1
+            end
+            out[rawlen(out) + 1] = string.sub(s, start, cur.i - 1)
         end
     end
     table.concat(out)
@@ -243,6 +253,7 @@ fun json_value(cur): any
     if b == 91 then
         cur.i = cur.i + 1
         arr = {}
+        arrn = 0
         json_skip_ws(cur)
         if string.byte(cur.s, cur.i) == 93 then
             cur.i = cur.i + 1
@@ -250,7 +261,8 @@ fun json_value(cur): any
         end
         while true
             val = json_value(cur)
-            arr[rawlen(arr) + 1] = val
+            arrn = arrn + 1
+            arr[arrn] = val
             json_skip_ws(cur)
             b2 = string.byte(cur.s, cur.i)
             if b2 == 44 then

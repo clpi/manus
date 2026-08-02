@@ -16,8 +16,8 @@ fun digest<T: Hashable>(value: T): i64
     value:hash()
 end
 
-@static_assert(@satisfies(Good, "Hashable"), "Good satisfies Hashable")
-@static_assert(not @satisfies(Bad, "Hashable"), "Bad lacks hash")
+@comp.assert(@satisfies(Good, "Hashable"), "Good satisfies Hashable")
+@comp.assert(not @satisfies(Bad, "Hashable"), "Bad lacks hash")
 
 result = digest(Good)
 print("digest(Good): " .. tostring(result))

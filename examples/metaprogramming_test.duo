@@ -61,12 +61,12 @@ print("sizeof(f64) = " .. tostring(sz_f64))
 print("alignof(i64) = " .. tostring(align_i64))
 
 -- ═══════════════════════════════════════════════════════════════
--- @static_assert — compile-time assertions
+-- @comp.assert — compile-time assertions
 -- ═══════════════════════════════════════════════════════════════
 
 -- These will fail compilation if false
-@static_assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
-@static_assert("sizeof(double) == 8", "f64 must be 8 bytes")
+@comp.assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
+@comp.assert("sizeof(double) == 8", "f64 must be 8 bytes")
 
 -- ═══════════════════════════════════════════════════════════════
 -- @has_metamethod — runtime metamethod check

@@ -1,0 +1,240 @@
+-- build_symbol_index.duo — build a symbol-level VECTOR EMBEDDING index of the
+-- entire Duo compiler + stdlib, written to docs/symbol_index.json.
+--
+-- Pure Duo (no Python / no shell). Used by the `duo_embed_symbols` MCP tool so it
+-- is genuine semantic search, not keyword `find`.
+--
+-- Run:  scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/build_symbol_index.duo -- docs/symbol_index.json
+-- (the MCP tool invokes this when force_rebuild or the index is missing)
+
+global vector = req "std.vector"
+global fs = req "std.fs"
+global json = req "std.json"
+global osmod = req "std.os"
+
+global DIM = 256
+
+-- ---- small char-level helpers (no Lua patterns; F-13813-5) ------------------
+
+trim(s: str): str
+    n = string.len(s)
+    a = 1
+    while a <= n
+        c = string.byte(s, a)
+        if c == 32 or (c >= 9 and c <= 13)
+            a = a + 1
+        else
+            break
+        end
+    end
+    b = n
+    while b >= a
+        c = string.byte(s, b)
+        if c == 32 or (c >= 9 and c <= 13)
+            b = b - 1
+        else
+            break
+        end
+    end
+    if b < a then return "" end
+    string.sub(s, a, b)
+end
+
+starts_with(s: str, p: str): bool
+    string.find(s, p, 1, true) == 1
+end
+
+ends_with(s: str, p: str): bool
+    n = string.len(s)
+    m = string.len(p)
+    if m > n then return false end
+    string.sub(s, n - m + 1, n) == p
+end
+
+is_ident_byte(c: i64): bool
+    (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+end
+
+-- read identifier starting at 1-indexed pos; return {name, end_pos}
+read_ident(s: str, pos: i64): any
+    n = string.len(s)
+    i = pos
+    while i <= n and is_ident_byte(string.byte(s, i))
+        i = i + 1
+    end
+    { name = string.sub(s, pos, i - 1), next = i }
+end
+
+global KEYWORDS = { print = true, assert = true, req = true, require = true, error = true,
+    tostring = true, tonumber = true, pcall = true, xpcall = true, pairs = true,
+    ipairs = true, rawset = true, rawget = true, rawlen = true, type = true,
+    ["return"] = true, ["if"] = true, ["while"] = true, ["for"] = true, ["local"] = true, ["global"] = true,
+    ["end"] = true, ["do"] = true, ["then"] = true, ["else"] = true, ["elseif"] = true, ["in"] = true,
+    ["repeat"] = true, ["until"] = true, ["break"] = true, ["continue"] = true, ["fun"] = true, ["function"] = true,
+    ["and"] = true, ["or"] = true, ["not"] = true, ["nil"] = true, ["true"] = true, ["false"] = true,
+    math = true, string = true, table = true, io = true, os = true }
+
+-- Zig definition: `fn NAME(` / `const NAME`.
+zig_def(t: str): any
+    -- fn NAME
+    p = string.find(t, "fn ", 1, true)
+    if p ~= nil
+        before = p - 1
+        ok = (before == 0)
+        if before >= 1
+            bc = string.byte(t, before)
+            ok = not is_ident_byte(bc)
+        end
+        if ok
+            r = read_ident(t, p + 3)
+            if r.name ~= "" and r.name ~= "fn"
+                return { name = r.name, kind = "fn" }
+            end
+        end
+    end
+    -- const NAME
+    if starts_with(t, "const ")
+        r = read_ident(t, 7)
+        if r.name ~= "" and r.name ~= "const"
+            return { name = r.name, kind = "const" }
+        end
+    end
+    nil
+end
+
+-- Duo definition: `fun NAME(`, bare typed `NAME(...:...)`, assign-form `NAME = (`,
+-- or module const `NAME = `.
+duo_def(t: str): any
+    -- local fun NAME(  /  fun NAME(
+    fp = string.find(t, "fun ", 1, true)
+    if fp ~= nil
+        r = read_ident(t, fp + 4)
+        nm = r.name
+        if nm ~= "" and nm ~= "fun" and KEYWORDS[nm] == nil
+            return { name = nm, kind = "fn" }
+        end
+    end
+    -- bare typed def: first token IDENT immediately followed by '(' and header has ':'
+    r0 = read_ident(t, 1)
+    nm0 = r0.name
+    if nm0 ~= "" and KEYWORDS[nm0] == nil
+        after = r0.next
+        if after <= string.len(t) and string.byte(t, after) == 40   -- '('
+            -- require a ':' within the header parens (typed param => bare def, per GR-001)
+            paren_end = string.find(t, ")", after, true)
+            if paren_end ~= nil
+                colon = string.find(t, ":", after, true)
+                if colon ~= nil and colon < paren_end
+                    return { name = nm0, kind = "fn" }
+                end
+            end
+        end
+        -- assign-form closure only: NAME = (  (dropped: treating every
+        -- assignment as a const symbol flooded the index with locals).
+        eqp = string.find(t, " = ", after, true)
+        if eqp ~= nil
+            if eqp - after < 4
+                rest = trim(string.sub(t, eqp + 3))
+                if starts_with(rest, "(") or starts_with(rest, "fun") or starts_with(rest, "function")
+                    return { name = nm0, kind = "fn" }
+                end
+            end
+        end
+    end
+    nil
+end
+
+-- dispatch on language so process_file uses a single typed assignment
+-- (avoids F-13813-3 nil-init->void* and F-13813-4 branch-scope).
+detect_def(t: str, is_zig: bool): any
+    if is_zig
+        return zig_def(t)
+    end
+    return duo_def(t)
+end
+
+-- ---- file walkers -----------------------------------------------------------
+
+collect(root: str, out: any): void
+    names = fs.read_dir(root)
+    for _, name in names
+        skip = (name == ".git") or (name == "zig-cache") or (name == ".zig-cache") or (name == "zig-out") or (name == "node_modules") or (name == "vendor")
+        if not skip
+            full = root .. "/" .. name
+            -- os.execute returns a boolean in Duo (true == exit 0); std.fs.is_dir is
+            -- broken by `== 0`, so test the directory directly here.
+            is_dir_entry = os.execute("test -d '" .. full .. "'")
+            if is_dir_entry
+                collect(full, out)
+            else
+                out[#out + 1] = full
+            end
+        end
+    end
+end
+
+process_file(path: str, is_zig: bool, symbols: any): void
+    pending = ""
+    lines = fs.read_lines(path)
+    for _, line in lines
+        t = trim(line)
+        if t == ""
+            pending = ""
+        elseif starts_with(t, "---") or starts_with(t, "--") or starts_with(t, "///") or starts_with(t, "//")
+            -- doc comment: strip markers, cap length
+            body = t
+            if starts_with(body, "---") then body = string.sub(body, 4)
+            elseif starts_with(body, "--") then body = string.sub(body, 3)
+            elseif starts_with(body, "///") then body = string.sub(body, 4)
+            else body = string.sub(body, 3) end
+            body = trim(body)
+            if string.len(pending) < 160
+                if pending == "" then pending = body else pending = pending .. " " .. body end
+            end
+        else
+            -- only detect definitions at column 0 (top-level decls); indented
+            -- lines are locals/closures and would flood the index.
+            firstc = string.byte(line, 1)
+            at_top = (firstc ~= 32) and (firstc ~= 9)
+            if at_top
+                def = detect_def(t, is_zig)
+                if def ~= nil
+                    text = def.name .. " " .. (pending or "")
+                    vec = vector.embed(text, DIM)
+                    symbols[#symbols + 1] = { name = def.name, kind = def.kind,
+                                              file = path, doc = pending, vec = vec }
+                end
+            end
+            pending = ""
+        end
+    end
+end
+
+-- ---- main -------------------------------------------------------------------
+
+main(): void
+    out_path = "docs/symbol_index.json"
+    args = osmod.args()
+    if args ~= nil and #args > 0 and args[1] ~= nil then out_path = args[1] end
+
+    files = {}
+    collect("src", files)
+    collect("lib/std", files)
+    -- duo-mcp lives in a sibling repo; include if present relative to repo root
+    if os.execute("test -d '../duo-mcp'") then collect("../duo-mcp", files) end
+
+    symbols = {}
+    for _, path in files
+        is_z = ends_with(path, ".zig")
+        is_d = ends_with(path, ".duo")
+        if is_z or is_d
+            process_file(path, is_z, symbols)
+        end
+    end
+
+    doc = { dim = DIM, count = #symbols, symbols = symbols }
+    fs.write_file(out_path, json.encode(doc))
+    print("symbol_index: wrote " .. #symbols .. " symbols (" .. out_path .. ")")
+end
+
+main()

@@ -25,7 +25,7 @@ fun use_both<T: Hashable + Counter>(target: T): i64
     target:hash() + target:value()
 end
 
-@static_assert(@satisfies(Both, "Hashable"), "Both is Hashable")
-@static_assert(@satisfies(Both, "Counter"), "Both is Counter")
+@comp.assert(@satisfies(Both, "Hashable"), "Both is Hashable")
+@comp.assert(@satisfies(Both, "Counter"), "Both is Counter")
 
 print("use_both(Both): " .. tostring(use_both(Both)))

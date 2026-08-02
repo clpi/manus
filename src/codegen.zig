@@ -3651,7 +3651,24 @@ pub const CodeGen = struct {
             self.pl("return (duo_tests_failed > 0) ? 1 : 0;", .{});
         } else {
             if (!self.native_scalar_mode) self.pl("duo_run_gc_finalizers();", .{});
-            self.pl("return 0;", .{});
+            if (find_top_level_func(mod, "main")) |mfd| {
+                // A user-defined top-level `main` is the entry point: call it
+                // and, when it returns a native scalar, use it as the exit code.
+                // Skip the auto-call when module scope already invokes main.
+                if (mfd.func.params.len == 0 and !module_scope_calls_main(mod)) {
+                    const mret = self.resolve_type(mfd.func.ret_type);
+                    if (mret.is_numeric() or mret == .bool) {
+                        self.pl("return (int)duo_entry_main();", .{});
+                    } else {
+                        self.pl("(void)duo_entry_main();", .{});
+                        self.pl("return 0;", .{});
+                    }
+                } else {
+                    self.pl("return 0;", .{});
+                }
+            } else {
+                self.pl("return 0;", .{});
+            }
         }
         self.indent = 0;
         self.p("}}\n", .{});
@@ -3664,6 +3681,28 @@ pub const CodeGen = struct {
             if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], name)) return fd;
         }
         return null;
+    }
+
+    /// True when module scope already invokes `main(...)` directly. In that case
+    /// the runtime driver must not also call it as the entry point, or the user
+    /// code would run twice.
+    fn module_scope_calls_main(mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*stmt| {
+            const e: ?*const ast.Expr = switch (stmt.*) {
+                .call_stmt => |cs| cs.expr,
+                .expr_stmt => |es| es.expr,
+                else => null,
+            };
+            if (e) |ex| {
+                if (ex.* == .call and ex.call.func.* == .name and
+                    std.mem.eql(u8, ex.call.func.name.ident, "main")) return true;
+            }
+        }
+        if (mod.body.tail_expr) |e| {
+            if (e.* == .call and e.call.func.* == .name and
+                std.mem.eql(u8, e.call.func.name.ident, "main")) return true;
+        }
+        return false;
     }
 
     fn test_entry_matches_filter(self: *const CodeGen, func_name: []const u8) bool {
@@ -4909,6 +4948,13 @@ pub const CodeGen = struct {
         if (fd.path.len == 1) {
             if (func_ffi_name(fd.attributes)) |ffi_name| {
                 try self.function_c_names.put(self.alloc, fd.path[0], ffi_name);
+            } else if (!self.lib_mode and !self.load_chunk and !fd.method and
+                std.mem.eql(u8, fd.path[0], "main") and func_export_name(fd) == null)
+            {
+                // Keep call sites in sync with the mangled C name. `cname`
+                // points into a stack buffer, so dupe it into the arena.
+                const owned = try self.alloc.dupe(u8, cname);
+                try self.function_c_names.put(self.alloc, fd.path[0], owned);
             }
         }
         if (fb.vararg_name != null or fb.vararg) {
@@ -4963,6 +5009,15 @@ pub const CodeGen = struct {
 
     fn emit_func_c_name(self: *CodeGen, fd: *const ast.FuncDecl, buf: []u8) []const u8 {
         if (func_ffi_name(fd.attributes)) |name| return name;
+        // A user-defined top-level `main` would collide with the runtime
+        // driver's `int main(...)`. In executable builds, mangle it so the
+        // driver can call it as the entry point (see emit_module).
+        if (!self.lib_mode and !self.load_chunk and fd.path.len == 1 and !fd.method and
+            std.mem.eql(u8, fd.path[0], "main") and func_export_name(fd) == null)
+        {
+            @memcpy(buf[0.."duo_entry_main".len], "duo_entry_main");
+            return buf[0.."duo_entry_main".len];
+        }
         var pos: usize = 0;
         if (self.current_module_cname.len > 0) {
             const cm = self.current_module_cname;
@@ -7008,9 +7063,11 @@ pub const CodeGen = struct {
                 const prev = self.emit_stmt_blocks_as_returns;
                 self.emit_stmt_blocks_as_returns = true;
                 defer self.emit_stmt_blocks_as_returns = prev;
+                try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
                 try self.emit_stmt(&blk.stmts[i]);
                 return;
             }
+            try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
             try self.emit_stmt(&blk.stmts[i]);
             i += 1;
         }
@@ -7236,6 +7293,218 @@ pub const CodeGen = struct {
         self.pl("int64_t sum_iters = duo_mandel_benchmark_sum();", .{});
         idx.* += 3;
         return true;
+    }
+
+    /// Control statements (if/while/repeat/for/do/match/try) that contain an
+    /// implicit-local assignment whose value is later *read* outside the branch
+    /// where it was assigned. In Duo's implicit-local model a bare `y = ...`
+    /// inside a branch is a function-scoped local (Python-style), but codegen
+    /// declares it inside the branch's C scope, so a read after the branch hits
+    /// `use of undeclared identifier`. Pre-scan and hoist such names to the
+    /// current block scope with a type unified across the assigning branches.
+    fn hoist_control_implicit_locals(
+        self: *CodeGen,
+        stmt: *const ast.Stmt,
+        remaining: []const ast.Stmt,
+        tail: ?*const ast.Expr,
+    ) E!void {
+        if (!self.duo_mode) return;
+        switch (stmt.*) {
+            .if_stmt, .while_loop, .repeat_loop, .num_for, .gen_for, .do_block, .match_stmt, .try_stmt => {},
+            else => return,
+        }
+        var assigned: std.StringHashMap(RT) = .init(self.alloc);
+        defer assigned.deinit();
+        var excluded: std.StringHashMap(void) = .init(self.alloc);
+        defer excluded.deinit();
+        try self.collect_subtree_assigns(stmt, &assigned, &excluded);
+
+        var it = assigned.iterator();
+        while (it.next()) |e| {
+            const name = e.key_ptr.*;
+            const rt = e.value_ptr.*;
+            const read_later = blk: {
+                for (remaining) |*s| if (stmt_references_name(s, name)) break :blk true;
+                if (tail) |t| if (expr_references_name(t, name)) break :blk true;
+                break :blk false;
+            };
+            if (!read_later and !self.stmt_has_cross_branch_read(stmt, name)) continue;
+            // Hoist a scalar (or boxed) declaration before the control statement.
+            const effective: RT = if (rt == .any or rt.is_numeric() or rt == .bool or rt == .str)
+                rt
+            else
+                .any;
+            try self.note_local(name);
+            try self.note_local_type(name, effective);
+            self.ind();
+            switch (effective) {
+                .any => self.pl("lua_Value {s} = lua_val_nil();", .{name}),
+                .bool => self.pl("bool {s} = false;", .{name}),
+                .str => self.pl("const char* {s} = 0;", .{name}),
+                else => {
+                    var buf: [64]u8 = undefined;
+                    self.pl("{s} {s} = 0;", .{ effective.c_type(&buf), name });
+                },
+            }
+        }
+    }
+
+    fn collect_subtree_assigns(
+        self: *CodeGen,
+        stmt: *const ast.Stmt,
+        out: *std.StringHashMap(RT),
+        excluded: *std.StringHashMap(void),
+    ) E!void {
+        switch (stmt.*) {
+            .assign => |as| {
+                for (as.targets, 0..) |tgt, i| {
+                    if (tgt.* != .name) continue;
+                    const name = tgt.name.ident;
+                    if (excluded.contains(name)) continue;
+                    if (self.is_local_name(name) or self.is_global_name(name) or is_runtime_global(name)) continue;
+                    const vt = if (i < as.values.len) self.expr_type(as.values[i]) else .any;
+                    if (out.get(name)) |prev| {
+                        try out.put(name, self.merge_assigned_types(prev, vt));
+                    } else {
+                        try out.put(name, vt);
+                    }
+                }
+            },
+            .local_decl => |ld| {
+                for (ld.names) |ln| try excluded.put(ln.ident, {});
+            },
+            .const_decl => |cd| try excluded.put(cd.ident, {}),
+            .global_decl => |gd| {
+                for (gd.names) |ln| try excluded.put(ln.ident, {});
+            },
+            .func_decl => {}, // nested function bodies have their own scope
+            .if_stmt => |is| {
+                try self.collect_block_assigns(&is.then, out, excluded);
+                for (is.elseifs) |ei| try self.collect_block_assigns(&ei.body, out, excluded);
+                if (is.else_body) |eb| try self.collect_block_assigns(&eb, out, excluded);
+            },
+            .while_loop => |wl| try self.collect_block_assigns(&wl.body, out, excluded),
+            .repeat_loop => |rl| try self.collect_block_assigns(&rl.body, out, excluded),
+            .num_for => |nf| {
+                try excluded.put(nf.var_name, {});
+                try self.collect_block_assigns(&nf.body, out, excluded);
+            },
+            .gen_for => |gf| {
+                for (gf.vars) |v| try excluded.put(v, {});
+                try self.collect_block_assigns(&gf.body, out, excluded);
+            },
+            .do_block => |db| try self.collect_block_assigns(&db.body, out, excluded),
+            .match_stmt => |m| {
+                for (m.arms) |arm| try self.collect_block_assigns(&arm.body, out, excluded);
+            },
+            .try_stmt => |ts| {
+                try self.collect_block_assigns(&ts.body, out, excluded);
+                for (ts.catches) |c| try self.collect_block_assigns(&c.body, out, excluded);
+            },
+            else => {},
+        }
+    }
+
+    fn collect_block_assigns(
+        self: *CodeGen,
+        blk: *const ast.Block,
+        out: *std.StringHashMap(RT),
+        excluded: *std.StringHashMap(void),
+    ) E!void {
+        for (blk.stmts) |*s| try self.collect_subtree_assigns(s, out, excluded);
+    }
+
+    fn merge_assigned_types(self: *CodeGen, a: RT, b: RT) RT {
+        _ = self;
+        if (a == .any) return if (b.is_numeric() or b == .bool) b else .any;
+        if (b == .any) return if (a.is_numeric() or a == .bool) a else .any;
+        if (a.eql(b)) return a;
+        if (a == .bool and b == .bool) return .bool;
+        if (a.is_float() or b.is_float()) return .f64;
+        if (a.is_integer() and b.is_integer()) {
+            if (a == .i32 or b == .i32) return .i32;
+            return .i64;
+        }
+        return .any;
+    }
+
+    /// True when the control statement is an `if`/`if-elseif` and `name` is read
+    /// in a branch that does not itself assign it (the canonical cross-branch
+    /// case: assigned in `then`, read in `else`, or vice versa).
+    fn stmt_has_cross_branch_read(self: *CodeGen, stmt: *const ast.Stmt, name: []const u8) bool {
+        if (stmt.* != .if_stmt) return false;
+        const is = &stmt.if_stmt;
+        if (self.branch_has_unassigned_read(&is.then, name)) return true;
+        for (is.elseifs) |ei| {
+            if (self.branch_has_unassigned_read(&ei.body, name)) return true;
+        }
+        if (is.else_body) |eb| {
+            if (self.branch_has_unassigned_read(&eb, name)) return true;
+        }
+        return false;
+    }
+
+    fn branch_has_unassigned_read(self: *CodeGen, blk: *const ast.Block, name: []const u8) bool {
+        return block_references_name(blk, name) and !self.block_assigns_name(blk, name);
+    }
+
+    fn block_assigns_name(self: *CodeGen, blk: *const ast.Block, name: []const u8) bool {
+        for (blk.stmts) |*s| {
+            if (self.stmt_assigns_name(s, name)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_assigns_name(self: *CodeGen, stmt: *const ast.Stmt, name: []const u8) bool {
+        return switch (stmt.*) {
+            .assign => |as| blk: {
+                for (as.targets) |tgt| {
+                    if (tgt.* == .name and std.mem.eql(u8, tgt.name.ident, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .local_decl => |ld| blk: {
+                for (ld.names) |ln| {
+                    if (std.mem.eql(u8, ln.ident, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .const_decl => |cd| std.mem.eql(u8, cd.ident, name),
+            .num_for => |nf| blk: {
+                if (std.mem.eql(u8, nf.var_name, name)) break :blk true;
+                break :blk self.block_assigns_name(&nf.body, name);
+            },
+            .gen_for => |gf| blk: {
+                for (gf.vars) |v| {
+                    if (std.mem.eql(u8, v, name)) break :blk true;
+                }
+                break :blk self.block_assigns_name(&gf.body, name);
+            },
+            .if_stmt => |is| blk: {
+                if (self.block_assigns_name(&is.then, name)) break :blk true;
+                for (is.elseifs) |ei| {
+                    if (self.block_assigns_name(&ei.body, name)) break :blk true;
+                }
+                break :blk if (is.else_body) |eb| self.block_assigns_name(&eb, name) else false;
+            },
+            .while_loop => |wl| self.block_assigns_name(&wl.body, name),
+            .repeat_loop => |rl| self.block_assigns_name(&rl.body, name),
+            .do_block => |db| self.block_assigns_name(&db.body, name),
+            .match_stmt => |m| blk: {
+                for (m.arms) |arm| {
+                    if (self.block_assigns_name(&arm.body, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            .try_stmt => |ts| blk: {
+                if (self.block_assigns_name(&ts.body, name)) break :blk true;
+                for (ts.catches) |c| {
+                    if (self.block_assigns_name(&c.body, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            else => false,
+        };
     }
 
     fn emit_stmt(self: *CodeGen, stmt: *const ast.Stmt) E!void {
@@ -10429,6 +10698,12 @@ pub const CodeGen = struct {
                         self.p(", ", .{});
                         if (mc.args.len > 1) try self.emit_as_lua_value(mc.args[1]) else self.p("lua_val_nil()", .{});
                         self.p(")", .{});
+                    } else if (std.mem.eql(u8, mc.method, "setvbuf")) {
+                        // setvbuf is only a buffering hint; the C runtime's default stdio
+                        // buffering is fine, so this is a no-op that returns the file
+                        // handle (matches Lua's file:setvbuf contract). Previously fell
+                        // through to the generic method lookup, found nil, and crashed.
+                        try self.emit_expr(mc.obj);
                     } else if (std.mem.eql(u8, mc.method, "contains")) {
                         self.p("lua_val_from_bool(duo_contains(", .{});
                         try self.emit_as_lua_value(mc.obj);
@@ -22372,6 +22647,47 @@ test "codegen: mixed native/boxed binops unbox only the dynamic side" {
     try testing.expect(std.mem.indexOf(u8, fn_body, "(int64_t)lua_table_get_str_num(") != null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num(lua_table_get_str_lit") == null);
     try testing.expect(std.mem.indexOf(u8, fn_body, "lua_add(") == null);
+}
+
+test "codegen: branch-first implicit locals hoist above the control statement" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\pick(x: i64) -> i64
+        \\  if x > 0
+        \\    y = x * 2
+        \\  else
+        \\    y = x * 3
+        \\  end
+        \\  y
+        \\end
+        \\print(pick(5))
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    const fn_start = std.mem.indexOf(u8, output, "static inline int64_t pick(") orelse return error.TestExpectedEqual;
+    const fn_end = std.mem.indexOf(u8, output[fn_start..], "return y;") orelse return error.TestExpectedEqual;
+    const fn_body = output[fn_start .. fn_start + fn_end + "return y;".len];
+    // The declaration must be hoisted before the `if`, not re-declared per branch,
+    // and the read after the `if` must stay native (no lua boxing).
+    try testing.expect(std.mem.indexOf(u8, fn_body, "int64_t y = 0;") != null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "int64_t y = (x * 2)") == null);
+    try testing.expect(std.mem.indexOf(u8, fn_body, "lua_to_num(y)") == null);
 }
 
 test "codegen: integer table index unboxes into numeric context" {

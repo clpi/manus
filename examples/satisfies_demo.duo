@@ -19,8 +19,8 @@ fun X:nope() -> i64
     return 0
 end
 
-@static_assert(@satisfies(M, "Hashable"), "M is Hashable")
-@static_assert(@satisfies(S, "Hashable"), "S is Hashable")
-@static_assert(not @satisfies(X, "Hashable"), "X is not Hashable")
+@comp.assert(@satisfies(M, "Hashable"), "M is Hashable")
+@comp.assert(@satisfies(S, "Hashable"), "S is Hashable")
+@comp.assert(not @satisfies(X, "Hashable"), "X is not Hashable")
 
 print("satisfies demo ok")

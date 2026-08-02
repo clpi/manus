@@ -72,13 +72,13 @@ print("alignof(i64) = " .. tostring(@alignof(i64)))
 print("alignof(f64) = " .. tostring(@alignof(f64)))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 4. STATIC ASSERTIONS: @static_assert
+-- 4. STATIC ASSERTIONS: @comp.assert
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 4. Static assertions --")
 
-@static_assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
-@static_assert("sizeof(double) == 8", "f64 must be 8 bytes")
+@comp.assert("sizeof(int64_t) == 8", "i64 must be 8 bytes")
+@comp.assert("sizeof(double) == 8", "f64 must be 8 bytes")
 print("All static assertions passed")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -173,7 +173,7 @@ fun M:hash(): i64
     42
 end
 
-@static_assert(not @satisfies(M, "Printable"), "M lacks to_string")
+@comp.assert(not @satisfies(M, "Printable"), "M lacks to_string")
 print("@satisfies(M, Printable) = " .. tostring(@satisfies(M, "Printable")))
 
 Ctable = {}
@@ -182,7 +182,7 @@ end
 fun Ctable:value(): i64
     0
 end
-@static_assert(@satisfies(Ctable, "Counter"), "Ctable satisfies Counter")
+@comp.assert(@satisfies(Ctable, "Counter"), "Ctable satisfies Counter")
 print("@satisfies(Ctable, Counter) = " .. tostring(@satisfies(Ctable, "Counter")))
 
 -- Generic constraints: compile-time check + monomorphic dispatch
@@ -199,7 +199,7 @@ fun bump<T: Hashable>(target: T): i64
     target:hash() + 1
 end
 
-@static_assert(@satisfies(Bump, "Hashable"), "Bump satisfies Hashable")
+@comp.assert(@satisfies(Bump, "Hashable"), "Bump satisfies Hashable")
 print("bump(Bump) = " .. tostring(bump(Bump)))
 
 -- Concept introspection: required members as compile-time table

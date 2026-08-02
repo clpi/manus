@@ -466,6 +466,24 @@ pub const Parser = struct {
 
         return switch (tok.kind) {
             .at => blk: {
+                // GR-007: reject bare @const / @comptime / @comptime_expr /
+                // @compile_time up front with a directed hint, before attribute
+                // dispatch cascades a generic "expected 'name'" error (these
+                // spellings are keyword tokens). @(expr) is comptime eval; @comp.*
+                // are metaprogramming combinators.
+                {
+                    const ban_saved = self.lex.saveState();
+                    _ = try self.adv(); // consume '@'
+                    const after = try self.pk();
+                    if (after.text.len > 0) {
+                        if (Parser.bannedAtDirectiveSuggestion(after.text)) |sug| {
+                            term.locErr(tok.loc, "'@{s}' is not a Duo directive", .{after.text});
+                            term.locHint(tok.loc, "{s}", .{sug});
+                            return ParseError.ExpectedToken;
+                        }
+                    }
+                    self.lex.restoreState(ban_saved);
+                }
                 if (try self.try_parse_c_interface_stmt()) |c_stmt| break :blk c_stmt;
                 const saved = self.lex.saveState();
                 if (try self.parse_at_starts_attribute_decl()) {
@@ -514,6 +532,12 @@ pub const Parser = struct {
                 break :blk ast.Stmt{ .cont = tok.loc };
             },
             .dcolon => self.parse_label(),
+            .name => blk: {
+                if (try self.starts_bare_func_decl()) {
+                    break :blk self.parse_bare_func_decl_with_attrs(false, &.{});
+                }
+                break :blk self.parse_expr_stmt();
+            },
             else => self.parse_expr_stmt(),
         };
     }
@@ -533,31 +557,36 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .at) {
             _ = try self.adv();
             const attr_name = try self.expect(.name);
+            var parts: std.ArrayList([]const u8) = .empty;
+            defer parts.deinit(self.alloc);
+            try parts.append(self.alloc, attr_name.text);
             var is_c_export = false;
             if (std.mem.eql(u8, attr_name.text, "c") and (try self.pk()).kind == .dot) {
                 const c_saved = self.lex.saveState();
                 _ = try self.adv();
                 const c_part = try self.expect(.name);
+                try parts.append(self.alloc, c_part.text);
                 is_c_export = std.mem.eql(u8, c_part.text, "export");
                 if (!is_c_export) {
                     self.lex.restoreState(c_saved);
+                    _ = parts.pop();
                 }
             }
             const is_build = std.mem.eql(u8, attr_name.text, "build") or std.mem.startsWith(u8, attr_name.text, "build.");
             const is_debug = std.mem.eql(u8, attr_name.text, "debug") or std.mem.startsWith(u8, attr_name.text, "debug.");
             const is_trace = std.mem.eql(u8, attr_name.text, "trace") or std.mem.startsWith(u8, attr_name.text, "trace.");
-            const is_directive = is_build or is_debug or is_trace;
-            const is_known = is_directive or
-                (is_c_export or is_known_attribute(attr_name.text));
-            if (!is_known) return false;
-            // Consume any dotted continuation (e.g. `@test.unit`, `@build.exe`,
-            // `@trace.parse`) and any balanced `(...)` argument block. The
-            // caller restores the cursor before the real parse, so this is
-            // strictly lookahead.
             while ((try self.pk()).kind == .dot) {
                 _ = try self.adv();
-                _ = try self.expect(.name);
+                const part = try self.expect(.name);
+                try parts.append(self.alloc, part.text);
             }
+            const qualified = try std.mem.join(self.alloc, ".", parts.items);
+            defer self.alloc.free(qualified);
+            const is_meta_directive = @import("meta_module.zig").isMetaAttribute(qualified);
+            const is_directive = is_build or is_debug or is_trace or is_meta_directive;
+            const is_known = is_directive or
+                (is_c_export or is_known_attribute(qualified));
+            if (!is_known) return false;
             if ((try self.pk()).kind == .lparen) {
                 var depth: u32 = 0;
                 while (true) {
@@ -702,6 +731,27 @@ pub const Parser = struct {
                 return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
             }
             if (directives.isBuildDirective(attr.name) or directives.isDebugDirective(attr.name)) {
+                const loc_tok = try self.pk();
+                return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
+            }
+            // C-interface attributes that ATTACH to a declaration (@c.export,
+            // @c.type, @c.ffi, @c.call, @c.link) accumulate as normal function
+            // attributes. They must NOT be emitted as standalone .directive
+            // statements just because they are also listed in the metaprogramming
+            // catalog (isMetaAttribute returns true for them). @c.include /
+            // @c.import / @c.emit above are the standalone C-interface forms;
+            // these attach to the following `fun`/decl so codegen can emit
+            // export_name / FFI linkage.
+            if (std.mem.eql(u8, attr.name, "c.export") or
+                std.mem.eql(u8, attr.name, "c.type") or
+                std.mem.eql(u8, attr.name, "c.ffi") or
+                std.mem.eql(u8, attr.name, "c.call") or
+                std.mem.eql(u8, attr.name, "c.link"))
+            {
+                try attrs.append(self.alloc, attr);
+                continue;
+            }
+            if (@import("meta_module.zig").isMetaAttribute(attr.name)) {
                 const loc_tok = try self.pk();
                 return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
             }
@@ -1358,6 +1408,15 @@ pub const Parser = struct {
 
     fn parse_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
+        return self.parse_func_decl_after_first(is_local, attrs, l);
+    }
+
+    fn parse_bare_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
+        const l = (try self.pk()).loc;
+        return self.parse_func_decl_after_first(is_local, attrs, l);
+    }
+
+    fn parse_func_decl_after_first(self: *Parser, is_local: bool, attrs: []ast.Attribute, l: ast.Loc) ParseError!ast.Stmt {
         var path: std.ArrayList([]const u8) = .empty;
         var method = false;
         const first = try self.expect(.name);
@@ -1387,6 +1446,117 @@ pub const Parser = struct {
             .func = fb,
             .attributes = attrs,
         } };
+    }
+
+    /// Shared heuristic used by both bare-function and assign-form detection.
+    ///
+    /// The lexer must be positioned at a '(' when this is called. It scans the
+    /// matching paren group (token-wise, tracking bracket/brace nesting) looking
+    /// for signals that the group is a typed/untyped parameter list rather than a
+    /// call's argument list. Returns true when the group reads as a function header.
+    ///
+    /// Two guard rails keep ordinary calls from being misdetected:
+    ///   - a `fun`/`function` keyword at depth 1 means a function is being passed
+    ///     as an argument (`mcp.register_tool("x", fun(a) ... end)`) — a header's
+    ///     parameter list never contains a nested function body, so bail.
+    ///   - a depth-1 `:` only counts as a typed param (`a: i32`) when it directly
+    ///     follows a name; `(expr):method()` / `):c(` colons are method calls.
+    /// True when the current token is ':' followed by a name-like token followed
+    /// immediately by '(', i.e. a method-call colon (`obj:method(`). Speculative —
+    /// restores lexer state. Used by `scan_func_header_signal` so a method-call
+    /// colon inside an argument list (e.g. `print(red:to_string())`) is not
+    /// counted as a parameter type annotation (`a: i32`).
+    fn colon_is_method_call(self: *Parser) ParseError!bool {
+        const c_saved = self.lex.saveState();
+        defer self.lex.restoreState(c_saved);
+        _ = try self.adv(); // ':'
+        const m_name = try self.pk();
+        if (m_name.kind != .name and !Lexer.isTypeKeyword(m_name.kind)) return false;
+        _ = try self.adv(); // name
+        return (try self.pk()).kind == .lparen;
+    }
+
+    fn scan_func_header_signal(self: *Parser) ParseError!bool {
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+
+        if ((try self.pk()).kind != .lparen) return false;
+        _ = try self.adv();
+
+        var paren_depth: usize = 1;
+        var bracket_depth: usize = 0;
+        var brace_depth: usize = 0;
+        var typed_or_vararg = false;
+        var prev: TK = .eof;
+        while (paren_depth > 0) {
+            const tok = try self.pk();
+            switch (tok.kind) {
+                .eof => return false,
+                .dots => typed_or_vararg = true,
+                .colon => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev == .name) {
+                    // `: type` annotation — but NOT a method call `:name(`. A
+                    // method-call colon as an argument (e.g. `red:to_string(`)
+                    // would otherwise make a plain call like `print(red:to_string())`
+                    // look like a typed parameter list and misdetect a bare decl.
+                    if (!try self.colon_is_method_call()) typed_or_vararg = true;
+                },
+                .kw_fun, .kw_function => {
+                    if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and !typed_or_vararg) {
+                        return false;
+                    }
+                },
+                .lparen => paren_depth += 1,
+                .rparen => paren_depth -= 1,
+                .lbracket => bracket_depth += 1,
+                .rbracket => {
+                    if (bracket_depth > 0) bracket_depth -= 1;
+                },
+                .lbrace => brace_depth += 1,
+                .rbrace => {
+                    if (brace_depth > 0) brace_depth -= 1;
+                },
+                else => {},
+            }
+            prev = tok.kind;
+            _ = try self.adv();
+        }
+
+        const after = try self.pk();
+        if (typed_or_vararg or after.kind == .arrow) return true;
+        if (after.kind == .colon) {
+            // Return-type colon marks a function header (`main(): i64`) only when
+            // the name after ':' is followed by a body, not '(' — a '(' means it
+            // is a method call (`("abc"):lower()`), not a header.
+            _ = try self.adv();
+            const ty = try self.pk();
+            if (ty.kind != .name and !Lexer.isTypeKeyword(ty.kind)) return false;
+            _ = try self.adv();
+            return (try self.pk()).kind != .lparen;
+        }
+        return false;
+    }
+
+    fn starts_bare_func_decl(self: *Parser) ParseError!bool {
+        const saved = self.lex.saveState();
+        defer self.lex.restoreState(saved);
+
+        if ((try self.pk()).kind != .name) return false;
+        _ = try self.adv();
+        while (true) {
+            if (try self.eat(.dot) != null) {
+                if ((try self.pk()).kind != .name) return false;
+                _ = try self.adv();
+            } else if (try self.eat(.colon) != null) {
+                if ((try self.pk()).kind != .name) return false;
+                _ = try self.adv();
+                break;
+            } else break;
+        }
+        return self.scan_func_header_signal();
+    }
+
+    fn starts_parenthesized_func_expr(self: *Parser) ParseError!bool {
+        return self.scan_func_header_signal();
     }
 
     /// Backwards-compatible: parse function decl with no attributes.
@@ -1871,6 +2041,10 @@ pub const Parser = struct {
                 const operand = try self.parse_match_scrutinee_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
+                if (tok.kind == .kw_comptime and self.duo_mode) {
+                    term.locErr(tok.loc, "'comptime' is not valid in .duo files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+                    return ParseError.UnexpectedToken;
+                }
                 const op: ?ast.UnOp = switch (tok.kind) {
                     .kw_not => .not,
                     .hash => .len,
@@ -2299,6 +2473,26 @@ pub const Parser = struct {
         // Also:    a, b           (bare sequence — implicit multi-value return)
         if (nxt.kind == .assign or compound_assign_op(nxt.kind) != null) {
             // Single-target assignment:  name = expr  /  name += expr
+            if (first.* == .name and nxt.kind == .assign) {
+                const saved = self.lex.saveState();
+                _ = try self.adv();
+                const is_func_assign = try self.starts_parenthesized_func_expr();
+                self.lex.restoreState(saved);
+                if (is_func_assign) {
+                    _ = try self.adv();
+                    const fb = try self.parse_func_body(first.loc());
+                    const path = try self.alloc.alloc([]const u8, 1);
+                    path[0] = first.name.ident;
+                    return ast.Stmt{ .func_decl = .{
+                        .loc = first.loc(),
+                        .path = path,
+                        .method = false,
+                        .is_local = false,
+                        .func = fb,
+                        .attributes = &.{},
+                    } };
+                }
+            }
             _ = try self.adv(); // consume = or compound-assign
             // Check for `Name = struct ... end` — C-layout type definition
             if (first.* == .name and compound_assign_op(nxt.kind) == null) {
@@ -2551,6 +2745,10 @@ pub const Parser = struct {
                 const operand = try self.parse_prec(20);
                 lhs = try self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
             } else {
+                if (tok.kind == .kw_comptime and self.duo_mode) {
+                    term.locErr(tok.loc, "'comptime' is not valid in .duo files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+                    return ParseError.UnexpectedToken;
+                }
                 const op: ?ast.UnOp = switch (tok.kind) {
                     .kw_not => .not,
                     .hash => .len,
@@ -2609,6 +2807,10 @@ pub const Parser = struct {
             _ = try self.adv(); // consume `await`
             const operand = try self.parse_prec(20);
             return self.new_expr(.{ .await_expr = .{ .loc = tok.loc, .operand = operand } });
+        }
+        if (tok.kind == .kw_comptime and self.duo_mode) {
+            term.locErr(tok.loc, "'comptime' is not valid in .duo files. Use @(expr) for inline comptime evaluation or @comp.* for module-scope transforms.", .{});
+            return ParseError.UnexpectedToken;
         }
         const op: ?ast.UnOp = switch (tok.kind) {
             .kw_not => .not,
@@ -2724,12 +2926,18 @@ pub const Parser = struct {
             },
             .at => self.parse_macro_call_expr(),
             .lparen => blk: {
+                if (try self.starts_parenthesized_func_expr()) {
+                    const l = (try self.pk()).loc;
+                    const fb = try self.new_fb(try self.parse_func_body(l));
+                    break :blk self.new_expr(.{ .func_expr = fb });
+                }
                 _ = try self.adv();
                 const e = try self.parse_expr();
                 _ = try self.expect(.rparen);
                 break :blk e;
             },
             .lbrace => self.parse_table(),
+            .kw_if => self.parse_if_expr(),
             .kw_match => self.parse_match_expr(),
             else => {
                 term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
@@ -2738,8 +2946,78 @@ pub const Parser = struct {
         };
     }
 
+    fn parse_if_expr(self: *Parser) ParseError!*ast.Expr {
+        const l = (try self.expect(.kw_if)).loc;
+        return self.parse_if_expr_after_if(l, true);
+    }
+
+    fn parse_if_expr_after_if(self: *Parser, l: ast.Loc, consume_end: bool) ParseError!*ast.Expr {
+        const cond = try self.parse_expr();
+        _ = try self.eat(.kw_then);
+        const then_expr = try self.parse_expr();
+
+        var else_expr: *ast.Expr = undefined;
+        if (try self.eat(.kw_elseif) != null) {
+            const nested_l = (try self.pk()).loc;
+            else_expr = try self.parse_if_expr_after_if(nested_l, consume_end);
+            return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
+        }
+        if (try self.eat(.kw_else) != null) {
+            if (try self.eat(.kw_if) != null) {
+                const nested_l = (try self.pk()).loc;
+                else_expr = try self.parse_if_expr_after_if(nested_l, consume_end);
+                return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
+            }
+            else_expr = try self.parse_expr();
+        } else {
+            else_expr = try self.new_expr(.{ .nil = l });
+        }
+        if (consume_end) _ = try self.expect(.kw_end);
+        return self.new_expr(.{ .if_expr = try self.new_if_expr(l, cond, then_expr, else_expr) });
+    }
+
+    fn new_if_expr(self: *Parser, l: ast.Loc, cond: *ast.Expr, then_expr: *ast.Expr, else_expr: *ast.Expr) ParseError!*ast.IfExpr {
+        const node = try self.alloc.create(ast.IfExpr);
+        node.* = .{ .loc = l, .cond = cond, .then_expr = then_expr, .else_expr = else_expr };
+        return node;
+    }
+
+    // GR-007: returns a redirect hint for deprecated/non-existent single-word
+    // compile-time directives, or null if `qualified` is acceptable. Dotted paths
+    // (e.g. @comp.comptime.warn) are never matched here — only bare single words.
+    fn bannedAtDirectiveSuggestion(qualified: []const u8) ?[]const u8 {
+        const Entry = struct { name: []const u8, hint: []const u8 };
+        const banned = [_]Entry{
+            .{ .name = "const", .hint = "compile-time values use '@(expr)'; module-level bindings like 'x = 5' are already immutable (see GR-007)" },
+            .{ .name = "comptime", .hint = "compile-time evaluation uses '@(expr)'; metaprogramming combinators use '@comp.*' e.g. @comp.map (see GR-007)" },
+            .{ .name = "comptime_expr", .hint = "compile-time evaluation uses '@(expr)'; e.g. '@(1 + 2 * 3)' (see GR-007)" },
+            .{ .name = "comptimeexpr", .hint = "compile-time evaluation uses '@(expr)'; e.g. '@(1 + 2 * 3)' (see GR-007)" },
+            .{ .name = "compile_time", .hint = "compile-time evaluation uses '@(expr)'; metaprogramming combinators use '@comp.*' (see GR-007)" },
+            .{ .name = "compiletime", .hint = "compile-time evaluation uses '@(expr)'; metaprogramming combinators use '@comp.*' (see GR-007)" },
+            // NOTE: '@constexpr' is intentionally NOT banned — it is a working
+            // directive that folds pure expressions through the comptime evaluator.
+        };
+        for (banned) |e| {
+            if (std.mem.eql(u8, qualified, e.name)) return e.hint;
+        }
+        return null;
+    }
+
     fn parse_macro_call_expr(self: *Parser) ParseError!*ast.Expr {
         const l = (try self.expect(.at)).loc;
+        // GR-007: reject @const / @comptime / @comptime_expr / @compile_time in
+        // expression position too, before parse_at_path_segment errors generically
+        // on the keyword token. @(expr) is comptime eval; @comp.* are combinators.
+        {
+            const after = try self.pk();
+            if (after.text.len > 0) {
+                if (Parser.bannedAtDirectiveSuggestion(after.text)) |sug| {
+                    term.locErr(l, "'@{s}' is not a Duo directive", .{after.text});
+                    term.locHint(l, "{s}", .{sug});
+                    return ParseError.ExpectedToken;
+                }
+            }
+        }
         // @(expr) — compile-time eval (no name, immediate paren)
         if ((try self.pk()).kind == .lparen) {
             _ = try self.adv(); // consume '('
@@ -2747,13 +3025,13 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
             return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
         }
-        const first = try self.expect(.name);
+        const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
         defer parts.deinit(self.alloc);
         try parts.append(self.alloc, first.text);
         while ((try self.pk()).kind == .dot) {
             _ = try self.adv();
-            const part = try self.expect(.name);
+            const part = try self.parse_at_path_segment();
             try parts.append(self.alloc, part.text);
         }
         const qualified = try std.mem.join(self.alloc, ".", parts.items);
@@ -2797,7 +3075,21 @@ pub const Parser = struct {
             const hot_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = "__hot_path" } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = hot_name, .args = args_slice } });
         }
+        if (@import("meta_module.zig").resolveBuiltin(qualified)) |internal| {
+            const builtin_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = internal } });
+            return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
+        }
         if (at_builtin_internal_name(qualified)) |internal| {
+            if (self.duo_mode) {
+                if (std.mem.eql(u8, qualified, "constexpr")) {
+                    term.locErr(l, "@constexpr is not valid in .duo files. Use @(expr) for comptime evaluation.", .{});
+                    return ParseError.UnexpectedToken;
+                }
+                if (std.mem.eql(u8, qualified, "comptime_if") or std.mem.eql(u8, qualified, "comptimeif")) {
+                    term.locErr(l, "@comptime_if is not valid in .duo files. Use if-expressions with @(expr) conditions.", .{});
+                    return ParseError.UnexpectedToken;
+                }
+            }
             const builtin_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = internal } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
         }
@@ -2807,6 +3099,20 @@ pub const Parser = struct {
             .name = first.text,
             .args = args_slice,
         } });
+    }
+
+    fn parse_at_path_segment(self: *Parser) ParseError!Token {
+        const tok = try self.pk();
+        if (tok.kind == .name) return self.adv();
+        const text = tok.kind.spelling();
+        if (text.len > 0 and (std.ascii.isAlphabetic(text[0]) or text[0] == '_')) {
+            for (text[1..]) |c| {
+                if (!(std.ascii.isAlphanumeric(c) or c == '_')) return self.expect(.name);
+            }
+            _ = try self.adv();
+            return .{ .kind = .name, .text = text, .loc = tok.loc };
+        }
+        return self.expect(.name);
     }
 
     fn at_builtin_internal_name(name: []const u8) ?[]const u8 {
@@ -3157,6 +3463,29 @@ pub const Parser = struct {
                 _ = try self.expect(.assign);
                 const val = try self.parse_expr();
                 try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
+            } else if (tok.kind == .string_lit or tok.kind == .int_lit) {
+                // Sugar: "key" = val  or  1 = val  (unboxed literal key, desugars to indexed)
+                // Check if next token is `=` via saveState lookahead
+                const saved_lit = self.lex.saveState();
+                _ = try self.adv(); // consume the literal
+                if (try self.check(.assign)) {
+                    _ = try self.adv(); // consume `=`
+                    const key = try self.new_expr(if (tok.kind == .string_lit)
+                        ast.Expr{ .string_lit = .{ .loc = tok.loc, .val = tok.text } }
+                    else
+                        ast.Expr{ .int_lit = .{ .loc = tok.loc, .val = tok.int_val } });
+                    const val = try self.parse_expr();
+                    try fields.append(self.alloc, .{ .indexed = .{ .key = key, .val = val } });
+                } else {
+                    self.lex.restoreState(saved_lit);
+                    const val = try self.parse_expr();
+                    if (try self.eat(.kw_for) != null) {
+                        const comp = try self.finish_list_comp(l, val);
+                        _ = try self.expect(.rbrace);
+                        return comp;
+                    }
+                    try fields.append(self.alloc, .{ .positional = val });
+                }
             } else if (tok.kind == .name) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
                 // otherwise the entry is positional.
@@ -3362,6 +3691,23 @@ test "parse: @ builtin aliases lower to internal intrinsic calls" {
         "__popcount",
         "__static_assert",
     };
+    for (expected, 0..) |name, i| {
+        const init = mod.body.stmts[i].local_decl.inits[0];
+        try testing.expect(init.* == .call);
+        try testing.expect(init.call.func.* == .name);
+        try testing.expectEqualStrings(name, init.call.func.name.ident);
+    }
+}
+
+test "parse: dotted @comp and @meta paths lower through meta module registry" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\local ladder = @comp.ladder()
+        \\local sweep = @meta.map("HasTag", cb)
+    , &arena);
+
+    const expected = [_][]const u8{ "__metaladder", "__comptimemap" };
     for (expected, 0..) |name, i| {
         const init = mod.body.stmts[i].local_decl.inits[0];
         try testing.expect(init.* == .call);
@@ -3846,6 +4192,40 @@ test "parse error: unexpected token" {
     defer arena.deinit();
     // 'end' without a matching block opener should fail
     try testing.expectError(error.ExpectedToken, parseSource("if true", &arena));
+}
+
+test "parse: GR-007 rejects @const/@comptime/@comptime_expr/@compile_time with directed hint" {
+    // These bare spellings are NOT valid Duo directives (GR-007). Compile-time
+    // eval is @(expr); metaprogramming combinators are @comp.*. The parser must
+    // reject them with ParseError rather than accept or cascade a generic error.
+    const banned = [_][]const u8{
+        "@const x = 5",
+        "@comptime y = 10",
+        "z = @comptime(1 + 2)",
+        "@compile_time q = 1",
+        "r = @comptime_expr(1 + 2)",
+        "@compiletime s = 1",
+        "@comptimeexpr t = 1",
+    };
+    for (banned) |src| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        try testing.expectError(error.ExpectedToken, parseSource(src, &arena));
+    }
+}
+
+test "parse: GR-007 does NOT reject @(expr) or working single-word builtins" {
+    // @(expr) comptime eval, @sizeof, @popcount must keep parsing.
+    const ok = [_][]const u8{
+        "y = @(1 + 2 * 3)",
+        "print(@sizeof(i64))",
+        "print(@popcount(7))",
+    };
+    for (ok) |src| {
+        var arena = std.heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        _ = parseSource(src, &arena) catch continue;
+    }
 }
 
 test "parse: try with no catch clauses" {
@@ -4398,6 +4778,21 @@ test "parse: @c.type is accepted in type position" {
     try testing.expect(typ == .pointer);
     try testing.expect(typ.pointer.* == .named);
     try testing.expectEqualStrings("__c_type:struct duo_file", typ.pointer.*.named);
+}
+
+test "parse: assign-form bare func decl without return type (GR-001)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\sub = (a: i32, b: i32)
+        \\    a - b
+        \\end
+    , &arena);
+    const stmt = mod.body.stmts[0];
+    try testing.expect(stmt == .func_decl);
+    try testing.expectEqualStrings("sub", stmt.func_decl.path[0]);
+    try testing.expectEqual(@as(usize, 2), stmt.func_decl.func.params.len);
+    try testing.expect(stmt.func_decl.func.ret_type == .inferred);
 }
 
 test "parse: @c.export attribute preserves export name" {

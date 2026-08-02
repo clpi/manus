@@ -6751,6 +6751,15 @@ pub const Sema = struct {
         if (!infer.collect_local_types(&fb.body)) return;
         try infer.infer_block(&fb.body);
 
+        // Implicit returns (tail expressions) also contribute a return type.
+        // `infer_block` computes the tail type but discards it, so a function
+        // like `sub = (a: i32, b: i32) a - b end` with no explicit return type
+        // would otherwise stay `.any` and box its result through lua_Value.
+        if (fb.body.tail_expr) |e| {
+            const t = infer.infer_expr(e, .any);
+            infer.ret_tys.append(infer.sema.alloc, t) catch return;
+        }
+
         if (!infer.ok or infer.ret_tys.items.len == 0) return;
 
         var ret_t: RT = .any;

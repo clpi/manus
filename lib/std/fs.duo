@@ -11,13 +11,14 @@ end
 fun std_fs_read_file(path: any): any
     f = io.open(path, "r")
     if f == nil then return "" end
-    data = ""
-    line = f:read()
-    while line ~= nil
-        data = data .. line .. "\n"
-        line = f:read()
-    end
+    -- Read the WHOLE file in one C-level call (f:read("*a")). The previous
+    -- line-by-line `data = data .. line .. "\n"` loop was (a) O(n^2) and (b)
+    -- triggered a runtime large-string-concat corruption (extra bytes +
+    -- scrambled content past ~10KB), which broke json.decode of the symbol
+    -- index (apparent "1029 truncation") and any large-file read.
+    data = f:read("*a")
     f:close()
+    if data == nil then return "" end
     data
 end
 
@@ -62,17 +63,17 @@ end
 
 fun std_fs_mkdir(path: str): bool
     if path == nil then return false end
-    os.execute("mkdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+    os.execute("mkdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
 fun std_fs_mkdir_all(path: str): bool
     if path == nil then return false end
-    os.execute("mkdir -p '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+    os.execute("mkdir -p '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
 fun std_fs_copy(src: str, dest: str): bool
     if src == nil or dest == nil then return false end
-    os.execute("cp '" .. string.gsub(src, "'", "'\\''") .. "' '" .. string.gsub(dest, "'", "'\\''") .. "' 2>/dev/null") == 0
+    os.execute("cp '" .. string.gsub(src, "'", "'\\''") .. "' '" .. string.gsub(dest, "'", "'\\''") .. "' 2>/dev/null")
 end
 
 fun std_fs_read_dir(path: str): any
@@ -91,22 +92,22 @@ end
 
 fun std_fs_is_dir(path: str): bool
     if path == nil then return false end
-    os.execute("test -d '" .. string.gsub(path, "'", "'\\''") .. "'") == 0
+    os.execute("test -d '" .. string.gsub(path, "'", "'\\''") .. "'")
 end
 
 fun std_fs_is_file(path: str): bool
     if path == nil then return false end
-    os.execute("test -f '" .. string.gsub(path, "'", "'\\''") .. "'") == 0
+    os.execute("test -f '" .. string.gsub(path, "'", "'\\''") .. "'")
 end
 
 fun std_fs_rmdir(path: str): bool
     if path == nil then return false end
-    os.execute("rmdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+    os.execute("rmdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
 fun std_fs_chmod(path: str, mode: str): bool
     if path == nil or mode == nil then return false end
-    os.execute("chmod " .. mode .. " '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null") == 0
+    os.execute("chmod " .. mode .. " '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
 fun std_fs_size(path: str): i64
