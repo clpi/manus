@@ -1,7 +1,7 @@
 -- Metaprogramming test: exercises public @ compile-time intrinsics
 
 -- ═══════════════════════════════════════════════════════════════
--- Type introspection: @comp.type.name, @comp.type.id, @is_type
+-- Type introspection: @comp.type.name, @comp.type.id, @comp.type.is
 -- ═══════════════════════════════════════════════════════════════
 
 local x: i64 = 42
@@ -20,7 +20,7 @@ print("type_id(x) = " .. tostring(id1))
 print("type_id(s) = " .. tostring(id2))
 print("type_ids_differ = " .. tostring(id1 ~= id2))
 
--- @is_type checks type at compile time
+-- @comp.type.is checks type at compile time
 print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
 print("is_type(s, str) = " .. tostring(@comp.type.is(s, "str")))
 print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
