@@ -9,7 +9,7 @@ fun M:hash(): i64
     42
 end
 
-members = @concept_methods("Hashable")
-print("@concept_methods('Hashable') entries: " .. tostring(#members))
+members = @comp.concepts.methods("Hashable")
+print("@comp.concepts.methods('Hashable') entries: " .. tostring(#members))
 print("@methods(M) entries: " .. tostring(#@methods(M)))
 print("@satisfies(M, Hashable): " .. tostring(@satisfies(M, "Hashable")))

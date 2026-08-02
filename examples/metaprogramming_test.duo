@@ -1,29 +1,29 @@
 -- Metaprogramming test: exercises public @ compile-time intrinsics
 
 -- ═══════════════════════════════════════════════════════════════
--- Type introspection: @type_name, @type_id, @is_type
+-- Type introspection: @comp.type.name, @comp.type.id, @is_type
 -- ═══════════════════════════════════════════════════════════════
 
 local x: i64 = 42
 local s: str = "hello"
 local f: f64 = 3.14
 
--- @type_name returns the C type name as a string literal
-print("type_name(x) = " .. @type_name(x))
-print("type_name(s) = " .. @type_name(s))
-print("type_name(f) = " .. @type_name(f))
+-- @comp.type.name returns the C type name as a string literal
+print("type_name(x) = " .. @comp.type.name(x))
+print("type_name(s) = " .. @comp.type.name(s))
+print("type_name(f) = " .. @comp.type.name(f))
 
--- @type_id returns a stable integer hash of the type
-local id1: i64 = @type_id(x)
-local id2: i64 = @type_id(s)
+-- @comp.type.id returns a stable integer hash of the type
+local id1: i64 = @comp.type.id(x)
+local id2: i64 = @comp.type.id(s)
 print("type_id(x) = " .. tostring(id1))
 print("type_id(s) = " .. tostring(id2))
 print("type_ids_differ = " .. tostring(id1 ~= id2))
 
 -- @is_type checks type at compile time
-print("is_type(x, i64) = " .. tostring(@is_type(x, "i64")))
-print("is_type(s, str) = " .. tostring(@is_type(s, "str")))
-print("is_type(x, str) = " .. tostring(@is_type(x, "str")))
+print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
+print("is_type(s, str) = " .. tostring(@comp.type.is(s, "str")))
+print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
 
 -- ═══════════════════════════════════════════════════════════════
 -- Compile-time evaluation: @(expr)
@@ -39,14 +39,14 @@ local function factorial(n: i64): i64
     return n * factorial(n - 1)
 end
 
-local fact10 = @constexpr(factorial(10))
+local fact10 = @(factorial(10))
 print("factorial(10) = " .. tostring(fact10))
 
 -- ═══════════════════════════════════════════════════════════════
--- @comptime_if — compile-time conditional
+-- @comp.if — compile-time conditional
 -- ═══════════════════════════════════════════════════════════════
 
-local platform_msg = @comptime_if(true, "compiled_path_a", "compiled_path_b")
+local platform_msg = @comp.if(true, "compiled_path_a", "compiled_path_b")
 print("comptimeif = " .. platform_msg)
 
 -- ═══════════════════════════════════════════════════════════════
@@ -69,20 +69,20 @@ print("alignof(i64) = " .. tostring(align_i64))
 @comp.assert("sizeof(double) == 8", "f64 must be 8 bytes")
 
 -- ═══════════════════════════════════════════════════════════════
--- @has_metamethod — runtime metamethod check
+-- @comp.has.metamethod — runtime metamethod check
 -- ═══════════════════════════════════════════════════════════════
 
 local obj = {}
 setmetatable(obj, { __index = function(t, k) return "default" end })
-print("has __index = " .. tostring(@has_metamethod(obj, "__index")))
-print("has __add = " .. tostring(@has_metamethod(obj, "__add")))
+print("has __index = " .. tostring(@comp.has.metamethod(obj, "__index")))
+print("has __add = " .. tostring(@comp.has.metamethod(obj, "__add")))
 
 -- ═══════════════════════════════════════════════════════════════
--- @typeinfo — C type string
+-- @comp.type.info — C type string
 -- ═══════════════════════════════════════════════════════════════
 
-print("typeinfo(x) = " .. @typeinfo(x))
-print("typeinfo(s) = " .. @typeinfo(s))
+print("typeinfo(x) = " .. @comp.type.info(x))
+print("typeinfo(s) = " .. @comp.type.info(s))
 
 -- ═══════════════════════════════════════════════════════════════
 -- Low-level intrinsics
@@ -95,7 +95,7 @@ print("clz(0xFF00) = " .. tostring(@clz(bits)))
 print("bswap(0xFF00) = " .. tostring(@bswap(bits)))
 
 -- ═══════════════════════════════════════════════════════════════
--- @comptime_for — compile-time loop unrolling
+-- @comp.for — compile-time loop unrolling
 -- ═══════════════════════════════════════════════════════════════
 
 -- Unroll a sum at compile time

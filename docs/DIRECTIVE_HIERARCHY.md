@@ -46,4 +46,25 @@ MCP: `duo_directive_hierarchy_read`, `duo_meta_catalog`, `duo_meta_ladder`.
 2. **Extend the `meta_module.zig:1397` guard to ALSO scan `parser.zig`'s legacy table** so flat/underscore names can't sneak back.
 3. Make flat forms emit a GR-007-style deprecation hint pointing to `@comp.*`, then eventually hard-remove.
 
-**Done (non-colliding):** all `@static_assert` call sites migrated to `@comp.assert` (6 example files; verified `duo check` clean). Remaining legacy names still need catalog entries (locked) before their call sites can move.
+**Done (non-colliding):** all `@static_assert` call sites migrated to `@comp.assert` (6 example files; verified `duo check` clean).
+
+**Canonical `@comp.*` dotted forms now REGISTERED** (meta_module.zig catalog; verified `zig build` green + 696/696 unit tests; `@comp.type.name(x)`→`"int64_t"`, `@comp.type.is`→bool, `@comp.type.id`→i64 all fold correctly). Migration mapping (legacy flat → canonical, same internal):
+
+| Legacy flat | Canonical `@comp.*` |
+| --- | --- |
+| `static_assert` | `@comp.assert` |
+| `type_name` | `@comp.type.name` |
+| `type_id` | `@comp.type.id` |
+| `is_type` | `@comp.type.is` |
+| `typeinfo` | `@comp.type.info` |
+| `concept_methods` | `@comp.concepts.methods` |
+| `has_field` / `has_method` / `has_metamethod` | `@comp.has.field` / `.method` / `.metamethod` |
+| `field_type` / `field_offset` / `field_size` | `@comp.field.type` / `.offset` / `.size` |
+| `embed_str` / `embed_file` | `@comp.embed.str` / `.file` |
+| `make_type` / `as_type` | `@comp.make.type` / `@comp.as.type` |
+| `comptime_if` / `comptime_for` | `@comp.if` / `@comp.for` |
+| `bitfield` | `@comp.bit.field` |
+| `compile_log` / `comptime_warn` / `compile_error` | `@comp.compile.log` / `@comp.compile.warn` / `@comp.compile.error` (pre-existing) |
+| `fields` / `methods` / `variants` / `satisfies` | `@comp.fields` / `@comp.methods` / `@comp.variants` / `@comp.satisfies` |
+
+Example call sites migrated to canonical forms: `metaprogramming_test.duo`, `metaprogramming_showcase.duo`, `concept_introspect.duo` (all `duo check` clean). The flat aliases in `parser.zig` still work (deprecated); removing them + extending the `meta_module.zig:1397` guard to scan `parser.zig` is the remaining cleanup. NOTE: `@comp.type.of` was NOT added — `__typeof` emits the C `typeof` keyword (a type-specifier, not a value expression), same quirk as legacy `@typeof`.

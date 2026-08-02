@@ -23,7 +23,7 @@ print("GREETING = " .. GREETING)
 
 -- Compile-time conditional
 IS_RELEASE = @(true)
-BUILD_MODE = @comptime_if(IS_RELEASE, "release", "debug")
+BUILD_MODE = @comp.if(IS_RELEASE, "release", "debug")
 print("BUILD_MODE = " .. BUILD_MODE)
 
 -- Compile-time constants
@@ -33,7 +33,7 @@ print("MAX_BUFFER = " .. tostring(MAX_BUFFER))
 print("PI_APPROX = " .. tostring(PI_APPROX))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 2. TYPE INTROSPECTION: @type_name, @type_id, @is_type, @typeinfo
+-- 2. TYPE INTROSPECTION: @comp.type.name, @comp.type.id, @is_type, @comp.type.info
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 2. Type introspection --")
@@ -42,21 +42,21 @@ x: i64 = 42
 s: str = "hello"
 f: f64 = 3.14
 
-print("type_name(x) = " .. @type_name(x))
-print("type_name(s) = " .. @type_name(s))
-print("type_name(f) = " .. @type_name(f))
+print("type_name(x) = " .. @comp.type.name(x))
+print("type_name(s) = " .. @comp.type.name(s))
+print("type_name(f) = " .. @comp.type.name(f))
 
-id1: i64 = @type_id(x)
-id2: i64 = @type_id(s)
+id1: i64 = @comp.type.id(x)
+id2: i64 = @comp.type.id(s)
 print("type_id(x) = " .. tostring(id1))
 print("type_id(s) = " .. tostring(id2))
 print("type_ids_differ = " .. tostring(id1 ~= id2))
 
-print("is_type(x, i64) = " .. tostring(@is_type(x, "i64")))
-print("is_type(s, str) = " .. tostring(@is_type(s, "str")))
-print("is_type(x, str) = " .. tostring(@is_type(x, "str")))
+print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
+print("is_type(s, str) = " .. tostring(@comp.type.is(s, "str")))
+print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
 
-print("typeinfo(x) = " .. @typeinfo(x))
+print("typeinfo(x) = " .. @comp.type.info(x))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 3. MEMORY LAYOUT: @sizeof, @alignof
@@ -82,7 +82,7 @@ print("\n-- 4. Static assertions --")
 print("All static assertions passed")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 5. EXPLICIT TYPE CASTING: @as, @as_type
+-- 5. EXPLICIT TYPE CASTING: @as, @comp.as.type
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 5. Type casting --")
@@ -91,9 +91,9 @@ print("\n-- 5. Type casting --")
 val_f: f64 = @as(f64, 42)
 print("@as(f64, 42) = " .. tostring(val_f))
 
--- @as_type(expr, "type") — reversed argument order (string type name)
-val_i: i64 = @as_type(3.14, "int64_t")
-print("@as_type(3.14, 'int64_t') = " .. tostring(val_i))
+-- @comp.as.type(expr, "type") — reversed argument order (string type name)
+val_i: i64 = @comp.as.type(3.14, "int64_t")
+print("@comp.as.type(3.14, 'int64_t') = " .. tostring(val_i))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 6. BIT INTRINSICS: @popcount, @ctz, @clz, @bswap
@@ -122,15 +122,15 @@ if @unlikely(x_val < 0) then
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 8. COMPILE-TIME CONDITIONAL: @comptime_if
+-- 8. COMPILE-TIME CONDITIONAL: @comp.if
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 8. Compile-time conditional --")
 
-platform = @comptime_if(true, "native", "wasm")
+platform = @comp.if(true, "native", "wasm")
 print("platform = " .. platform)
 
-debug_level = @comptime_if(false, "verbose", "quiet")
+debug_level = @comp.if(false, "verbose", "quiet")
 print("debug_level = " .. debug_level)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -203,8 +203,8 @@ end
 print("bump(Bump) = " .. tostring(bump(Bump)))
 
 -- Concept introspection: required members as compile-time table
-hashable_members = @concept_methods("Hashable")
-print("@concept_methods('Hashable') count = " .. tostring(#hashable_members))
+hashable_members = @comp.concepts.methods("Hashable")
+print("@comp.concepts.methods('Hashable') count = " .. tostring(#hashable_members))
 
 -- Multi-concept: T: A + B — see examples/multi_concept.duo
 
@@ -304,8 +304,8 @@ print("comptime len = " .. tostring(len))
 
 print("\n-- 14. Has metamethod --")
 
-print("v1 has __add = " .. tostring(@has_metamethod(v1, "__add")))
-print("v1 has __mul = " .. tostring(@has_metamethod(v1, "__mul")))
+print("v1 has __add = " .. tostring(@comp.has.metamethod(v1, "__add")))
+print("v1 has __mul = " .. tostring(@comp.has.metamethod(v1, "__mul")))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 15. COMPILE-TIME DIAGNOSTICS
@@ -313,8 +313,8 @@ print("v1 has __mul = " .. tostring(@has_metamethod(v1, "__mul")))
 
 print("\n-- 15. Compile-time diagnostics --")
 
-@compile_log("This is a compile-time log message")
-@comptime_warn("This is a compile-time warning")
+@comp.compile.log("This is a compile-time log message")
+@comp.compile.warn("This is a compile-time warning")
 print("Compile-time diagnostics emitted")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
