@@ -1,0 +1,40 @@
+-- std.meta.bundles — @comp.derive.bundle catalog and helpers
+-- One line on a type → many generated trait implementations.
+-- Bare syntax + implicit module-scope table (G-033/G-039).
+
+bundles = {
+    Serializable = { "Display", "Eq", "Hash", "Serialize", "Deserialize" },
+    Comparable = { "Eq", "Ord", "Hash" },
+    Numeric = { "Add", "Sub", "Mul", "Div", "Neg", "Eq", "Default" },
+    Collection = { "Len", "Clone", "Eq", "Display" },
+    Debug = { "Display", "Eq", "Clone" },
+    Full = { "Debug", "Comparable", "Default" },
+}
+
+fun names(): any
+    out = {}
+    for name, _ in bundles
+        out[#out + 1] = name
+    end
+    out
+end
+
+traits(bundle_name: str): any
+    bundles[bundle_name] or {}
+end
+
+contains(bundle_name: str, trait: str): bool
+    rows = traits(bundle_name)
+    for _, t in rows
+        if t == trait
+            return true
+        end
+    end
+    false
+end
+
+describe(bundle_name: str): str
+    rows = traits(bundle_name)
+    bundle_name .. " => " .. table.concat(rows, ", ")
+end
+

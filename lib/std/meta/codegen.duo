@@ -1,0 +1,184 @@
+-- std.meta.codegen — compile-time C code generation helpers
+-- Use with @meta.define.derive, @meta.fields.map, @meta.loop, @meta.map, and @c.emit
+-- to turn O(1) descriptions into O(n) generated code.
+
+-- Expand a template once per field name in a comptime field table.
+-- fields: result of @fields(T) — each entry has .name and .type
+-- tmpl: string with %n=field name, %t=field type, %i=index
+fun fields_map(fields: any, tmpl: str): str
+    acc = ""
+    for i, f in fields
+        row = tmpl
+        row = string.gsub(row, "%n", f.name)
+        row = string.gsub(row, "%t", f.type)
+        row = string.gsub(row, "%i", tostring(i - 1))
+        acc = acc .. row
+    end
+    acc
+end
+
+-- Generate C struct typedef from field descriptors (for @c.emit injection).
+fun c_struct(name: str, fields: any): str
+    lines = { "typedef struct " .. name .. " {" }
+    for _, f in fields
+        lines[#lines + 1] = "    " .. f.type .. " " .. f.name .. ";"
+    end
+    lines[#lines + 1] = "} " .. name .. ";"
+    table.concat(lines, "\n")
+end
+
+-- Generate field-wise hash combine (FNV-style) for @derive(Hash) style macros.
+fun c_hash_combine(type_name: str, fields: any): str
+    acc = "static uint64_t " .. type_name .. "_hash(const " .. type_name .. "* v) {\n"
+    acc = acc .. "    uint64_t h = 14695981039346656037ULL;\n"
+    for _, f in fields
+        if f.type == "int64_t" or f.type == "integer" or f.type == "i64"
+            acc = acc .. "    h ^= (uint64_t)v->" .. f.name .. "; h *= 1099511628211ULL;\n"
+        else
+            acc = acc .. "    h ^= (uint64_t)(*(uint64_t*)&v->" .. f.name .. "); h *= 1099511628211ULL;\n"
+        end
+    end
+    acc = acc .. "    return h;\n}\n"
+    acc
+end
+
+-- Generate getters: one static inline per field.
+fun c_getters(type_name: str, fields: any): str
+    fields_map(fields, "static inline %t get_%n(const " .. type_name .. "* self) { return self->%n; }\n")
+end
+
+-- Canonical @meta.map callback: emit a C comment per matching type.
+fun c_type_comment(meta): str
+    "/* " .. meta.name .. " */\n"
+end
+
+-- Canonical @meta.map callback: semicolon-separated type registry line.
+fun type_registry_line(meta): str
+    meta.name .. ";"
+end
+
+-- Canonical @meta.product callback: cross-product type pair signature.
+fun type_pair_line(a, b): str
+    a.name .. "x" .. b.name .. ";"
+end
+
+-- Document @meta.expand / @meta.pow / @meta.ceiling stacking.
+-- Usage:
+--   @c.emit(@meta.pow("Concept", DeriveApi))
+--   @c.emit(@meta.ceiling("ConceptA", DeriveApi, "ConceptB"))
+--   @meta.emit.derive("Concept", DeriveApi)
+fun expand_hint(): str
+    "@meta.pow(concept, derive[, map_fn])"
+end
+
+fun ceiling_hint(): str
+    "@meta.ceiling(concept_a, derive, concept_b)"
+end
+
+fun burst_hint(): str
+    "@meta.burst(concept_a, derive, concept_b) — derive.all + emit.omni"
+end
+
+fun transcend_hint(): str
+    "@meta.transcend(concept_a, derive, concept_b, concept_c) — burst + cubic derive.tensor"
+end
+
+fun infinity_hint(): str
+    "@meta.infinity(concept_a, derive, concept_b, concept_c, concept_d) — transcend + quartic derive.nfold"
+end
+
+fun nfold_hint(): str
+    "@meta.nfold({ concepts... }, fn) — O(types^k); @meta.derive.nfold({ ... }, Derive)"
+end
+
+fun str_contains_hint(): str
+    "@meta.str.contains(haystack, needle) — native strstr / comptime fold, no lua_str_find"
+end
+
+fun str_prefix_suffix_hint(): str
+    "@meta.str.starts.with(s, prefix) / @meta.str.ends.with(s, suffix) — native C predicates / comptime fold"
+end
+
+fun catalog_hint(): str
+    "@meta.catalog([category|grouped]) — combinators | define | emit | introspection | transform | compile | all | grouped"
+end
+
+fun ladder_hint(): str
+    "@meta.ladder() — exponential scaling ladder (map → derive → product → tensor → transcend)"
+end
+
+fun agent_catalog_hint(): str
+    "@meta.agent.catalog() — grouped @meta.* paths for agent discoverability"
+end
+
+fun agent_hooks_hint(): str
+    "@comp.agent.hooks() + std.agent — coordination, recipes, build_gates, multiplier_for"
+end
+
+fun template_hint(): str
+    "@comp.template(instances, body[, fn]) — O(n) parametric axis; $0/$1/$name/$ctype placeholders"
+end
+
+fun generate_hint(): str
+    "@comp.generate(spec, body[, fn]) — comma-list alias or ops×types constraint cartesian"
+end
+
+fun scheme_hint(): str
+    "@comp.scheme(declarations, template[, fn]) — pipe-separated type/fn units; $kind/$fields/$params"
+end
+
+fun scheme_clauses_hint(): str
+    "@comp.scheme.clauses(\"name: body; name2: body2\"[, fn]) — O(clauses) named clause emission"
+end
+
+fun grammar_hint(): str
+    "@comp.grammar(spec, fn) — EBNF → O(b^d) expansion fragments"
+end
+
+fun weave_hint(): str
+    "@comp.weave(module, concept, fn) — cross-module concept sweep O(N×M)"
+end
+
+fun each_hint(): str
+    "@comp.each(source, fn) / @comp.chain(source, fn) — split combinator output; chain generate→each, power→each, etc."
+end
+
+fun chain_hint(): str
+    "@comp.chain(source, fn) — alias of @comp.each; composition glue for exponential combinator algebra"
+end
+
+-- Canonical @meta.tensor callback: triple cross-product signature line.
+fun type_triple_line(a, b, c): str
+    a.name .. "x" .. b.name .. "x" .. c.name .. ";"
+end
+
+M = {
+    fields_map = fields_map,
+    c_struct = c_struct,
+    c_hash_combine = c_hash_combine,
+    c_getters = c_getters,
+    c_type_comment = c_type_comment,
+    type_registry_line = type_registry_line,
+    type_pair_line = type_pair_line,
+    expand_hint = expand_hint,
+    ceiling_hint = ceiling_hint,
+    burst_hint = burst_hint,
+    transcend_hint = transcend_hint,
+    infinity_hint = infinity_hint,
+    nfold_hint = nfold_hint,
+    str_contains_hint = str_contains_hint,
+    str_prefix_suffix_hint = str_prefix_suffix_hint,
+    catalog_hint = catalog_hint,
+    ladder_hint = ladder_hint,
+    agent_catalog_hint = agent_catalog_hint,
+    agent_hooks_hint = agent_hooks_hint,
+    template_hint = template_hint,
+    generate_hint = generate_hint,
+    scheme_hint = scheme_hint,
+    scheme_clauses_hint = scheme_clauses_hint,
+    grammar_hint = grammar_hint,
+    weave_hint = weave_hint,
+    each_hint = each_hint,
+    chain_hint = chain_hint,
+    type_triple_line = type_triple_line,
+}
