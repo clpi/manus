@@ -3956,9 +3956,16 @@ pub const Parser = struct {
                 }
                 try fields.append(self.alloc, .{ .positional = val });
             }
-            // Field separator: comma and semicolon are optional (newlines suffice).
-            _ = try self.eat(.comma);
-            _ = try self.eat(.semi);
+            // Field separator: comma and semicolon are optional when the next
+            // token can start another field (name, [, .., string, number, or }).
+            // Without this check, the parser would consume past the table end.
+            if (try self.eat(.comma) == null and try self.eat(.semi) == null) {
+                const next = try self.pk();
+                switch (next.kind) {
+                    .name, .lbracket, .concat, .string_lit, .int_lit, .rbrace => {},
+                    else => break,
+                }
+            }
         }
         _ = try self.expect(.rbrace);
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
