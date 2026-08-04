@@ -1,0 +1,10 @@
+{
+    "zig.path": "/Users/clp/.local/share/mise/installs/zig/master/zig",
+    "zig.zls.path": "/Users/clp/.local/share/mise/installs/zls/latest/zls",
+    "zig.zls.checkOnSave": true,
+    "zig.formattingProvider": "zig_fmt",
+    "editor.formatOnSave": false,
+    "[zig]": {
+        "editor.defaultFormatter": "ziglang.vscode-zig"
+    }
+}

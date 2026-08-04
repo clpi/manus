@@ -2107,6 +2107,9 @@ pub const CodeGen = struct {
         if (self.current_mono_spec) |spec| return spec.resolveType(te);
         if (te == .named) {
             if (self.record_aliases.get(te.named)) |rt| return rt;
+            if (self.foreign_records) |fr| {
+                if (fr.get(te.named)) |rt| return rt;
+            }
         } else if (te == .generic and te.generic.base.* == .named) {
             if (self.alias_defs.get(te.generic.base.named)) |ad| {
                 if (ad.type_params) |type_params| {
@@ -2554,8 +2557,11 @@ pub const CodeGen = struct {
     }
 
     /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
+    /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
     fn moduleNeedsLuaRuntime(self: *const CodeGen) bool {
-        return !self.native_scalar_mode and !self.mixed_scalar_mode;
+        // Mixed mode needs the runtime for non-native functions.
+        // Only full native_scalar_mode excludes it entirely.
+        return !self.native_scalar_mode;
     }
 
     /// Per-function native lowering (full-native module or mixed-mode allowlist).
