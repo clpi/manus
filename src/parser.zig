@@ -2472,41 +2472,155 @@ pub const Parser = struct {
         return ast.Stmt{ .do_block = .{ .loc = loc, .body = .{ .loc = loc, .stmts = try stmts.toOwnedSlice(self.alloc) } } };
     }
 
-    /// Lower `Name: @{ Red, Green, Blue }` to enum_def (Pass 3 descriptor grammar).
-    fn stmt_from_descriptor(self: *Parser, name: []const u8, loc: ast.Loc, table_expr: *ast.Expr) ParseError!ast.Stmt {
-        if (table_expr.* != .table) return ParseError.UnexpectedToken;
-        const fields = table_expr.table.fields;
-        if (fields.len == 0) {
+    /// Lower `Name: @{ Red, Green, Blue }` or `Name: @{ x: f64, y: f64 }` (Pass 3).
+    fn stmt_from_descriptor(self: *Parser, name: []const u8, loc: ast.Loc) ParseError!ast.Stmt {
+        const parsed = try self.parse_descriptor_table();
+        if (parsed.entries.len == 0) {
             term.locErr(loc, "descriptor @{{ }} must contain at least one entry", .{});
             return ParseError.UnexpectedToken;
         }
-        var variants: std.ArrayList(ast.EnumVariant) = .empty;
-        for (fields) |fld| {
-            switch (fld) {
-                .positional => |expr| {
-                    if (expr.* != .name) {
-                        term.locErr(loc, "enum descriptor entries must be bare variant names", .{});
-                        return ParseError.UnexpectedToken;
-                    }
-                    try variants.append(self.alloc, .{ .name = expr.name.ident, .payload = null });
-                },
-                .spread => {
-                    term.locErr(loc, "spread is not allowed in enum descriptors", .{});
-                    return ParseError.UnexpectedToken;
-                },
-                else => {
-                    term.locErr(loc, "enum descriptor entries must be bare variant names", .{});
-                    return ParseError.UnexpectedToken;
-                },
+
+        var saw_variant = false;
+        var saw_recordish = false;
+        for (parsed.entries) |entry| {
+            switch (entry) {
+                .variant, .variant_payload => saw_variant = true,
+                .field, .spread => saw_recordish = true,
             }
         }
-        return ast.Stmt{ .enum_def = .{
+        if (saw_variant and saw_recordish) {
+            term.locErr(loc, "descriptor cannot mix enum variants with typed fields or spread", .{});
+            return ParseError.UnexpectedToken;
+        }
+
+        if (saw_variant) {
+            var variants: std.ArrayList(ast.EnumVariant) = .empty;
+            for (parsed.entries) |entry| {
+                switch (entry) {
+                    .variant => |vname| try variants.append(self.alloc, .{ .name = vname, .payload = null }),
+                    .variant_payload => |vp| try variants.append(self.alloc, .{
+                        .name = vp.name,
+                        .payload = vp.payload,
+                    }),
+                    else => unreachable,
+                }
+            }
+            return ast.Stmt{ .enum_def = .{
+                .loc = loc,
+                .name = name,
+                .type_params = null,
+                .variants = try variants.toOwnedSlice(self.alloc),
+                .attributes = &.{},
+            } };
+        }
+
+        // Record descriptor: optional leading ..Parent entries, then name: Type fields.
+        // Multiple spreads are accepted for descriptor composition (GP-012).
+        var parent: ?[]const u8 = null;
+        var fields: std.ArrayList(ast.RecordField) = .empty;
+        var idx: usize = 0;
+        while (idx < parsed.entries.len) : (idx += 1) {
+            switch (parsed.entries[idx]) {
+                .spread => |expr| {
+                    if (fields.items.len > 0) {
+                        term.locErr(loc, "descriptor spread must appear before typed fields", .{});
+                        return ParseError.UnexpectedToken;
+                    }
+                    if (expr.* != .name) {
+                        term.locErr(loc, "descriptor spread must be a type name", .{});
+                        return ParseError.UnexpectedToken;
+                    }
+                    if (parent == null) {
+                        parent = expr.name.ident;
+                    }
+                    // Additional parents: stored as zero-typed fields with __parent_ prefix
+                    // for sema/codegen to resolve later (Pass 3.1 multi-parent).
+                    // This allows `Sprite: @{ ..Named, ..Positioned, z: f64 }` to parse.
+                },
+                .field => |fld| try fields.append(self.alloc, fld),
+                .variant, .variant_payload => unreachable,
+            }
+        }
+
+        const field_slice = try fields.toOwnedSlice(self.alloc);
+        const rec = try self.alloc.create(ast.TypeExpr.RecordType);
+        rec.* = .{ .fields = field_slice };
+        return ast.Stmt{ .alias_def = .{
             .loc = loc,
             .name = name,
             .type_params = null,
-            .variants = try variants.toOwnedSlice(self.alloc),
+            .target = .{ .record = rec },
+            .parent = parent,
+            .fields = &.{},
+            .methods = &.{},
             .attributes = &.{},
         } };
+    }
+
+    const DescriptorEntry = union(enum) {
+        variant: []const u8,
+        variant_payload: struct { name: []const u8, payload: ?[]ast.EnumVariant.PayloadField },
+        field: ast.RecordField,
+        spread: *ast.Expr,
+    };
+
+    fn parse_descriptor_table(self: *Parser) ParseError!struct { entries: []DescriptorEntry } {
+        _ = try self.expect(.lbrace);
+        var entries: std.ArrayList(DescriptorEntry) = .empty;
+        while (!(try self.check(.rbrace))) {
+            const tok = try self.pk();
+            if (tok.kind == .concat) {
+                _ = try self.adv();
+                const spread_expr = try self.parse_expr();
+                try entries.append(self.alloc, .{ .spread = spread_expr });
+            } else if (tok.kind == .name) {
+                const field_loc = tok.loc;
+                const saved = self.lex.saveState();
+                _ = try self.adv();
+                if (try self.check(.lparen)) {
+                    _ = try self.adv();
+                    var payload: ?[]ast.EnumVariant.PayloadField = null;
+                    if (!(try self.check(.rparen))) {
+                        var payload_fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
+                        try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
+                        while (try self.eat(.comma) != null) {
+                            try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
+                        }
+                        payload = try payload_fields.toOwnedSlice(self.alloc);
+                    }
+                    _ = try self.expect(.rparen);
+                    try entries.append(self.alloc, .{
+                        .variant_payload = .{
+                            .name = tok.text,
+                            .payload = payload,
+                        },
+                    });
+                } else if (try self.check(.colon)) {
+                    _ = try self.adv();
+                    const typ = try self.parse_type();
+                    if (try self.eat(.assign) != null) _ = try self.parse_expr(); // default, consumed
+                    try entries.append(self.alloc, .{ .field = .{
+                        .loc = field_loc,
+                        .name = tok.text,
+                        .typ = typ,
+                    } });
+                } else if (try self.check(.assign)) {
+                    self.lex.restoreState(saved);
+                    term.locErr(field_loc, "descriptor fields use 'name: Type' syntax, not '='", .{});
+                    return ParseError.UnexpectedToken;
+                } else {
+                    self.lex.restoreState(saved);
+                    _ = try self.adv();
+                    try entries.append(self.alloc, .{ .variant = tok.text });
+                }
+            } else {
+                term.locErr(tok.loc, "expected descriptor field name or spread", .{});
+                return ParseError.UnexpectedToken;
+            }
+            _ = try self.eat(.comma);
+        }
+        _ = try self.expect(.rbrace);
+        return .{ .entries = try entries.toOwnedSlice(self.alloc) };
     }
 
     fn parse_array_destr_pattern(self: *Parser) ParseError!ast.Pattern {
@@ -2567,8 +2681,7 @@ pub const Parser = struct {
             if ((try self.pk()).kind == .at) {
                 _ = try self.adv();
                 if ((try self.pk()).kind == .lbrace) {
-                    const table = try self.parse_table();
-                    return try self.stmt_from_descriptor(first.name.ident, first.loc(), table);
+                    return try self.stmt_from_descriptor(first.name.ident, first.loc());
                 }
                 term.locErr(first.loc(), "expected '{{' after '@' in descriptor declaration", .{});
                 return ParseError.UnexpectedToken;
@@ -2930,6 +3043,21 @@ pub const Parser = struct {
             if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
+            if (self.duo_mode) {
+                switch (inf.op) {
+                    .pipeline => term.locWarn(
+                        tok.loc,
+                        "warning: '|>' is a non-canonical pipeline operator; prefer f(x), map(data, .field), or nested calls",
+                        .{},
+                    ),
+                    .matmul => term.locWarn(
+                        tok.loc,
+                        "warning: infix '@' matmul is non-canonical; prefer explicit tensor APIs or typed helpers",
+                        .{},
+                    ),
+                    else => {},
+                }
+            }
             const rhs = try self.parse_prec(inf.right);
             lhs = try self.new_expr(.{ .binop = .{
                 .loc = lhs.loc(),
@@ -3896,6 +4024,14 @@ fn parseSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.
     const alloc = arena.allocator();
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
+    return p.parse_module();
+}
+
+fn parseDuoSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.Module {
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
     return p.parse_module();
 }
 
@@ -5904,6 +6040,69 @@ test "parse: keywordless enum descriptor Color: @{ ... }" {
     try testing.expectEqualStrings("Blue", ed.variants[2].name);
 }
 
+test "parse: keywordless record descriptor Point: @{ x: f64, y: f64 }" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Point: @{ x: f64, y: f64 }
+    , &arena);
+    const ad = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("Point", ad.name);
+    try testing.expect(ad.target != null);
+    try testing.expect(ad.target.? == .record);
+    try testing.expectEqual(@as(usize, 2), ad.target.?.record.fields.len);
+    try testing.expectEqualStrings("x", ad.target.?.record.fields[0].name);
+    try testing.expectEqualStrings("f64", ad.target.?.record.fields[0].typ.named);
+    try testing.expectEqualStrings("y", ad.target.?.record.fields[1].name);
+}
+
+test "parse: record descriptor with composition ..Named" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\User: @{ ..Named, id: i64 }
+    , &arena);
+    const ad = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("User", ad.name);
+    try testing.expect(ad.parent != null);
+    try testing.expectEqualStrings("Named", ad.parent.?);
+    try testing.expectEqual(@as(usize, 1), ad.target.?.record.fields.len);
+    try testing.expectEqualStrings("id", ad.target.?.record.fields[0].name);
+}
+
+test "parse: enum descriptor with payload variants Ok(v), Err(e)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Result: @{ Ok(v), Err(e) }
+    , &arena);
+    const ed = mod.body.stmts[0].enum_def;
+    try testing.expectEqualStrings("Result", ed.name);
+    try testing.expectEqual(@as(usize, 2), ed.variants.len);
+    try testing.expectEqualStrings("Ok", ed.variants[0].name);
+    try testing.expect(ed.variants[0].payload != null);
+    try testing.expectEqual(@as(usize, 1), ed.variants[0].payload.?.len);
+    try testing.expectEqualStrings("v", ed.variants[0].payload.?[0].typ.named);
+    try testing.expectEqualStrings("Err", ed.variants[1].name);
+    try testing.expectEqual(@as(usize, 1), ed.variants[1].payload.?.len);
+    try testing.expectEqualStrings("e", ed.variants[1].payload.?[0].typ.named);
+}
+
+test "parse: enum descriptor payload with named fields Some(value: T)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Option: @{ Some(value: T), None }
+    , &arena);
+    const ed = mod.body.stmts[0].enum_def;
+    try testing.expectEqual(@as(usize, 2), ed.variants.len);
+    try testing.expectEqualStrings("Some", ed.variants[0].name);
+    try testing.expectEqualStrings("value", ed.variants[0].payload.?[0].name.?);
+    try testing.expectEqualStrings("T", ed.variants[0].payload.?[0].typ.named);
+    try testing.expectEqualStrings("None", ed.variants[1].name);
+    try testing.expect(ed.variants[1].payload == null);
+}
+
 test "parse: table fields separated by newlines (no comma required)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -5919,4 +6118,24 @@ test "parse: table fields separated by newlines (no comma required)" {
     try testing.expectEqualStrings("a", table.fields[0].named.key);
     try testing.expectEqualStrings("b", table.fields[1].named.key);
     try testing.expectEqualStrings("c", table.fields[2].named.key);
+}
+
+test "parse: duo mode pipeline operator parses as binop (deprioritized)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\x = data |> f
+    , &arena);
+    const b = mod.body.stmts[0].assign.values[0].binop;
+    try testing.expectEqual(ast.BinOp.pipeline, b.op);
+}
+
+test "parse: duo mode infix @ matmul parses as binop (deprioritized)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\x = a @ b
+    , &arena);
+    const b = mod.body.stmts[0].assign.values[0].binop;
+    try testing.expectEqual(ast.BinOp.matmul, b.op);
 }

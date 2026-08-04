@@ -81,6 +81,23 @@
 
 ---
 
+## Deprioritized symbolic operators (compat only — not canonical)
+
+These forms parse and may lower natively, but **must not** appear in new `.duo` code,
+stdlib, docs, or agent-generated examples. Prefer the canonical alternative.
+
+| ID | Form | Example | Canonical alternative | Notes |
+| --- | --- | --- | --- | --- |
+| GR-DP01 | Pipeline `\|>` | `data \|> f` | `f(data)` | Parser warns in `.duo` mode |
+| GR-DP02 | Chained `\|>` + projection | `p \|> .x \|> .y` | `p.x.y` | Legacy fuse only; do not teach |
+| GR-DP03 | Infix tensor `@` | `a @ b` | `duo_tensor_matmul(a, b)` | Conflicts mentally with `@comp.*` |
+| GR-DP04 | Method-chain as `\|>` | `xs \|> map \|> filter` | `filter(map(xs, f), p)` | Use calls, not F#/Elixir pipe mimicry |
+
+**Agent rule:** When suggesting data transforms, use **function call syntax** and
+**field projections in argument position** (`map(items, .name)`), never `|>` chains.
+
+---
+
 ## Scoring Rubric (0–5 each)
 
 | Dimension | Weight |
@@ -133,7 +150,8 @@ codec = @(make_codec(Packet))
 ## Implementation Priority
 
 1. **Free wins (already Lua semantics):** GP-007, GP-014
-2. **High leverage, bounded scope:** GP-001 (projections), GP-008 (direct iteration), GP-004 (spread)
+2. **High leverage, bounded scope:** GP-001 (projections in **call position**), GP-008, GP-004
 3. **Architectural (descriptor grammar):** GP-009, GP-010, GP-012, GP-013
-4. **Medium scope:** GP-003 (destructuring), GP-006 (binding conditions), GP-017 (selective import)
-5. **Future (blocked on prerequisites):** GP-011, GP-016, GP-018, GP-019
+4. **Medium scope:** GP-003, GP-006, GP-017
+5. **Future (blocked):** GP-011, GP-016, GP-018, GP-019
+6. **Do not expand:** GR-DP01–04 (`|>`, infix `@`) — compat warnings only
