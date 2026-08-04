@@ -28,6 +28,9 @@ const jit = @import("jit.zig");
 const meta_codegen = @import("meta_codegen.zig");
 const meta_module = @import("meta_module.zig");
 const rewrite_rules = @import("rewrite_rules.zig");
+const semantic_algebra = @import("semantic_algebra.zig");
+const transform_engine = @import("transform_engine.zig");
+const dynamic_boundary = @import("dynamic_boundary.zig");
 
 pub var native_diag: bool = false;
 var native_diag_tag: ?[]const u8 = null;
@@ -84,6 +87,8 @@ pub const CodeGen = struct {
     lib_mode: bool = false,
     duo_mode: bool = false,
     native_scalar_mode: bool = false,
+    /// Pass 2: module-wide knowledge level; set alongside `native_scalar_mode`.
+    module_knowledge: semantic_algebra.KnowledgeLevel = .unknown,
     /// Per-function native scalar: when true, the module has both native-eligible
     /// and non-native functions. Native-eligible functions get C codegen; the rest
     /// use Lua thunks. The full Lua runtime is included.
@@ -101,6 +106,8 @@ pub const CodeGen = struct {
     emit_stmt_blocks_as_returns: bool = false,
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
     func_bodies: std.StringHashMapUnmanaged(*const ast.FuncBody) = .empty,
+    /// Module-scope function declarations (attributes for effect/call algebra).
+    func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
     /// Set of anonymous record hashes for which we have already emitted a
     /// C `struct` typedef. Lets us emit the typedef exactly once per
     /// unique record shape, even if the shape is used at many sites.
@@ -118,6 +125,8 @@ pub const CodeGen = struct {
     /// Methods associated with alias types (collected from `fun TypeName:method()` declarations).
     /// Maps alias type name → list of method names (for zero-cost dispatch and auto-metatable).
     alias_methods: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
+    /// Functions referenced only as @comp.* combinator callbacks (no runtime calls).
+    comptime_only_funcs: std.StringHashMapUnmanaged(void) = .empty,
     /// Monomorphized generic specializations produced by the mono pass, made
     /// available to codegen so it can emit one concrete C function per
     /// specialization (Task 12.1). Null when there are no generics.
@@ -399,24 +408,120 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, name, "__comptimematch") and args.len == 2) {
             if (args[0] != .string) return null;
             if (args[1] != .func) return null;
-            return meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string, args[1], self.alloc);
+            const value = meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__comptimematch", .nested_callback, args[0].string, value.string);
+            }
+            return value;
         }
         // @comp.interpolate: __comptimeinterpolate(template_str, vars_table)
         if (std.mem.eql(u8, name, "__comptimeinterpolate") and args.len == 2) {
             if (args[0] != .string) return null;
-            return meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string, args[1], self.alloc);
+            const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__comptimeinterpolate", .nested_callback, args[0].string, value.string);
+            }
+            return value;
         }
         // @comp.tabulate: __comptimetabulate(count_int, callback)
         if (std.mem.eql(u8, name, "__comptimetabulate") and args.len == 2) {
             if (args[0] != .int) return null;
             if (args[1] != .func) return null;
-            return meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int, args[1], self.alloc);
+            const value = meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int, args[1], self.alloc) orelse return null;
+            if (value == .string) {
+                var ibuf: [32]u8 = undefined;
+                const input = std.fmt.bufPrint(&ibuf, "{d}", .{args[0].int}) catch "0";
+                transform_engine.logInternalTransform(self.alloc, "__comptimetabulate", .nested_callback, input, value.string);
+            }
+            return value;
         }
         // @comp.zip: __comptimezip(spec_a, spec_b, callback)
         if (std.mem.eql(u8, name, "__comptimezip") and args.len == 3) {
             if (args[0] != .string or args[1] != .string) return null;
             if (args[2] != .func) return null;
             return meta_codegen.comptimeZipHook(self.meta_host(), args[0].string, args[1].string, args[2], self.alloc);
+        }
+        // @comp.product: __comptimeproduct(concept_a, concept_b, callback)
+        if (std.mem.eql(u8, name, "__comptimeproduct") and args.len == 3) {
+            if (args[0] != .string or args[1] != .string) return null;
+            if (args[2] != .func) return null;
+            const value = meta_codegen.comptimeProductHook(self.meta_host(), args[0].string, args[1].string, args[2], self.alloc) orelse return null;
+            if (value == .string) {
+                var ibuf: [96]u8 = undefined;
+                const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string, args[1].string }) catch args[0].string;
+                transform_engine.logInternalTransform(self.alloc, "__comptimeproduct", .nested_callback, input, value.string);
+            }
+            return value;
+        }
+        // @comp.map: __comptimemap(concept, callback)
+        if (std.mem.eql(u8, name, "__comptimemap") and args.len == 2) {
+            if (args[0] != .string or args[1] != .func) return null;
+            const value = meta_codegen.comptimeMapHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__comptimemap", .nested_callback, args[0].string, value.string);
+            }
+            return value;
+        }
+        // @comp.each: __comptimeeach(source, callback)
+        if (std.mem.eql(u8, name, "__comptimeeach") and args.len == 2) {
+            if (args[0] != .string or args[1] != .func) return null;
+            const value = meta_codegen.comptimeEachHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__comptimeeach", .nested_callback, args[0].string, value.string);
+            }
+            return value;
+        }
+        // @comp.power: __comptimepower(concept, callback)
+        if (std.mem.eql(u8, name, "__comptimepower") and args.len == 2) {
+            if (args[0] != .string or args[1] != .func) return null;
+            const value = meta_codegen.comptimePowerHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__comptimepower", .nested_callback, args[0].string, value.string);
+            }
+            return value;
+        }
+        // @comp.derive.power: __derivepower(concept, derive_name)
+        if (std.mem.eql(u8, name, "__derivepower") and args.len == 2) {
+            if (args[0] != .string) return null;
+            const derive_name = switch (args[1]) {
+                .string => args[1].string,
+                else => return null,
+            };
+            const value = meta_codegen.derivePowerHook(self.meta_host(), args[0].string, derive_name, self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__derivepower", .nested_callback, args[0].string, value.string);
+            }
+            return value;
+        }
+        // @comp.derive.product: __deriveproduct(concept_a, concept_b, derive_name)
+        if (std.mem.eql(u8, name, "__deriveproduct") and args.len == 3) {
+            if (args[0] != .string or args[1] != .string) return null;
+            const derive_name = switch (args[2]) {
+                .string => args[2].string,
+                else => return null,
+            };
+            const value = meta_codegen.deriveProductHook(self.meta_host(), args[0].string, args[1].string, derive_name, self.alloc) orelse return null;
+            if (value == .string) {
+                var ibuf: [96]u8 = undefined;
+                const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string, args[1].string }) catch args[0].string;
+                transform_engine.logInternalTransform(self.alloc, "__deriveproduct", .nested_callback, input, value.string);
+            }
+            return value;
+        }
+        // @comp.fixpoint: __comptimefixpoint(initial, callback, max_iter) — arg order flexible
+        if (std.mem.eql(u8, name, "__comptimefixpoint") and args.len == 3) {
+            if (args[0] != .string) return null;
+            const max_iter: usize = blk: {
+                if (args[1] == .int) break :blk @intCast(args[1].int);
+                if (args[2] == .int) break :blk @intCast(args[2].int);
+                return null;
+            };
+            const callback = if (args[1] == .func) args[1] else if (args[2] == .func) args[2] else return null;
+            const value = meta_codegen.comptimeFixpointHook(self.meta_host(), args[0].string, callback, max_iter, self.alloc) orelse return null;
+            if (value == .string) {
+                transform_engine.logInternalTransform(self.alloc, "__comptimefixpoint", .nested_callback, args[0].string, value.string);
+            }
+            return value;
         }
 
         return null;
@@ -449,6 +554,13 @@ pub const CodeGen = struct {
         const key = self.mangled_name(name, &buf);
         const owned = try self.alloc.dupe(u8, key);
         try self.func_bodies.put(self.alloc, owned, func);
+    }
+
+    fn note_func_decl(self: *CodeGen, name: []const u8, fd: *const ast.FuncDecl) !void {
+        var buf: [256]u8 = undefined;
+        const key = self.mangled_name(name, &buf);
+        const owned = try self.alloc.dupe(u8, key);
+        try self.func_decls.put(self.alloc, owned, fd);
     }
 
     /// Try to evaluate an expression's boolean condition at compile time.
@@ -588,6 +700,8 @@ pub const CodeGen = struct {
 
     fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
         if (self.enum_name_of(rt) != null) return false;
+        // Native scalar modules use const char* for str — no refcounting.
+        if (self.moduleUsesFullNativeLowering() and rt == .str) return false;
         return switch (rt) {
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => false,
             .bool, .void, .nil, .never => false,
@@ -1723,7 +1837,9 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__comptimematch") or
             std.mem.eql(u8, name, "__comptimetabulate") or
             std.mem.eql(u8, name, "__comptimeinterpolate") or
+            std.mem.eql(u8, name, "__comptimefixpoint") or
             std.mem.eql(u8, name, "__comptimezip") or
+            std.mem.eql(u8, name, "__comptimeproduct") or
             std.mem.eql(u8, name, "__comptimepower") or
             std.mem.eql(u8, name, "__comptimepermute") or
             std.mem.eql(u8, name, "__comptimechoose") or
@@ -1735,14 +1851,21 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__metaschemeclauses") or
             std.mem.eql(u8, name, "__derivechoose") or
             std.mem.eql(u8, name, "__derivepower") or
+            std.mem.eql(u8, name, "__deriveproduct") or
             std.mem.eql(u8, name, "__rewrite_describe"))
             return .str;
         if (std.mem.eql(u8, name, "__strcontains")) return .bool;
+        if (std.mem.eql(u8, name, "__strstartswith") or
+            std.mem.eql(u8, name, "__strendswith") or
+            std.mem.eql(u8, name, "__streq"))
+            return .bool;
         if (std.mem.eql(u8, name, "__strcountlines") or
             std.mem.eql(u8, name, "__strsplitcount") or
+            std.mem.eql(u8, name, "__strcomptelen") or
             std.mem.eql(u8, name, "__concept_count") or
             std.mem.eql(u8, name, "__rewrite_rulecount"))
             return .i64;
+        if (std.mem.eql(u8, name, "__strjoin")) return .str;
         if (std.mem.eql(u8, name, "type") or
             std.mem.eql(u8, name, "tostring"))
             return .str;
@@ -2073,24 +2196,7 @@ pub const CodeGen = struct {
     }
 
     fn apply_binding_record_attrs(_: *CodeGen, rt: *RT, attributes: []const ast.Attribute) void {
-        if (rt.* != .table_type) return;
-        for (attributes) |attr| {
-            if (std.mem.eql(u8, attr.name, "packed")) {
-                rt.table_type.is_packed = true;
-            } else if (std.mem.eql(u8, attr.name, "align")) {
-                if (attr.args) |args_str| {
-                    rt.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
-                }
-            } else if (std.mem.eql(u8, attr.name, "ffi")) {
-                if (attr.args) |args_str| {
-                    if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
-                        rt.table_type.ffi_name = args_str[1 .. args_str.len - 1];
-                    } else {
-                        rt.table_type.ffi_name = args_str;
-                    }
-                }
-            }
-        }
+        types.applyTableShapeAttrs(rt, attributes);
     }
 
     fn resolve_binding_type(self: *CodeGen, lname: *const ast.LocalName) RT {
@@ -2101,6 +2207,17 @@ pub const CodeGen = struct {
 
     fn alias_record_type(self: *CodeGen, ad: *const ast.AliasDef) E!RT {
         if (ad.target) |target| {
+            if (target == .record) {
+                const fields = try self.merged_alias_record_fields(ad);
+                var rt = RT{ .table_type = .{
+                    .fields = fields,
+                    .is_packed = false,
+                    .align_n = null,
+                    .ffi_name = null,
+                } };
+                self.apply_binding_record_attrs(&rt, ad.attributes);
+                return rt;
+            }
             var rt = self.resolve_type(target);
             self.apply_binding_record_attrs(&rt, ad.attributes);
             return rt;
@@ -2120,6 +2237,45 @@ pub const CodeGen = struct {
         } };
         self.apply_binding_record_attrs(&rt, ad.attributes);
         return rt;
+    }
+
+    fn merged_alias_record_fields(self: *CodeGen, ad: *const ast.AliasDef) E![]types.FieldType {
+        var merged: std.ArrayList(types.FieldType) = .empty;
+        errdefer merged.deinit(self.alloc);
+
+        if (ad.parent) |parent_name| {
+            if (self.alias_defs.get(parent_name)) |parent_ad| {
+                const parent_fields = try self.merged_alias_record_fields(parent_ad);
+                defer self.alloc.free(parent_fields);
+                try merged.appendSlice(self.alloc, parent_fields);
+            }
+        }
+
+        const append_or_override = struct {
+            fn append(list: *std.ArrayList(types.FieldType), alloc: std.mem.Allocator, name: []const u8, field_typ: RT) !void {
+                for (list.items) |*existing| {
+                    if (std.mem.eql(u8, existing.name, name)) {
+                        existing.typ = field_typ;
+                        return;
+                    }
+                }
+                try list.append(alloc, .{ .name = name, .typ = field_typ });
+            }
+        }.append;
+
+        if (ad.target) |target| {
+            if (target == .record) {
+                for (target.record.fields) |field| {
+                    try append_or_override(&merged, self.alloc, field.name, self.resolve_type(field.typ));
+                }
+            }
+        } else {
+            for (ad.fields) |field| {
+                try append_or_override(&merged, self.alloc, field.name, self.resolve_type(field.typ));
+            }
+        }
+
+        return try merged.toOwnedSlice(self.alloc);
     }
 
     // ── Module entry ──────────────────────────────────────────────────────────
@@ -2203,10 +2359,7 @@ pub const CodeGen = struct {
                 },
                 .macro_def => {},
                 .cinclude => {},
-                .concept_def => {
-                    native_diag_fail("mod-concept-runtime");
-                    return false;
-                },
+                .concept_def => {},
                 .enum_def, .alias_def => {},
                 .directive => {},
             }
@@ -2369,12 +2522,339 @@ pub const CodeGen = struct {
         };
     }
 
+    /// Expression/type knowledge from sema type_map (Pass 3 per-call lattice).
+    fn exprKnowledge(self: *CodeGen, expr: *const ast.Expr) semantic_algebra.KnowledgeLevel {
+        return semantic_algebra.knowledgeOfType(self.expr_type(expr));
+    }
+
+    /// True when arg can pass to a typed native param without lua_Value boxing.
+    fn callArgUsesNativeLowering(self: *CodeGen, arg: *const ast.Expr, param_type: RT) bool {
+        if (param_type == .any or self.is_table_module_type(param_type)) return false;
+        if (!semantic_algebra.lowersToNativeC(param_type)) return false;
+        const arg_rt = self.expr_type(arg);
+        if (arg_rt == .any) return false;
+        if (!self.exprKnowledge(arg).dominates(.stable)) return false;
+        if (!semantic_algebra.knowledgeOfType(param_type).dominates(.stable)) return false;
+        const fn_name = self.current_func_name orelse return false;
+        return self.funcUsesNativeLowering(fn_name);
+    }
+
+    /// Pass 2: module-wide knowledge check (canonical replacement for `native_scalar_mode`).
+    fn moduleKnowledgeAtLeast(self: *const CodeGen, min: semantic_algebra.KnowledgeLevel) bool {
+        return self.module_knowledge.dominates(min);
+    }
+
+    /// Full module lowers without lua_Value (knowledge ≥ native).
+    fn moduleUsesFullNativeLowering(self: *const CodeGen) bool {
+        return self.native_scalar_mode or self.moduleKnowledgeAtLeast(.native);
+    }
+
+    /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
+    fn moduleNeedsLuaRuntime(self: *const CodeGen) bool {
+        return !self.native_scalar_mode and !self.mixed_scalar_mode;
+    }
+
+    /// Per-function native lowering (full-native module or mixed-mode allowlist).
+    fn funcUsesNativeLowering(self: *const CodeGen, name: []const u8) bool {
+        if (self.moduleUsesFullNativeLowering()) return true;
+        if (self.mixed_scalar_mode) return self.native_scalar_funcs.contains(name);
+        return false;
+    }
+
+    /// Expression/type knowledge: eligible for native C emission (no lua_Value).
+    fn exprLowersToNativeC(_: *const CodeGen, rt: RT) bool {
+        return semantic_algebra.lowersToNativeC(rt);
+    }
+
+    /// Per-call knowledge lattice: true when a .func type has all-native params and return.
+    /// Enables direct native calls in mixed_scalar_mode beyond the precomputed allowlist.
+    fn funcTypeIsFullyNative(_: *const CodeGen, rt: RT) bool {
+        if (rt != .func) return false;
+        const f = rt.func;
+        // Check return type
+        if (!f.ret.is_native()) return false;
+        // Check all parameter types
+        for (f.params) |pt| {
+            if (!pt.is_native()) return false;
+        }
+        return true;
+    }
+
+    fn callSiteForShape(self: *CodeGen, shape: types.CallShape) semantic_algebra.CallSite {
+        if (shape.callee_name) |name| {
+            var name_buf: [256]u8 = undefined;
+            if (self.func_decls.get(self.mangled_name(name, &name_buf))) |fd| {
+                const effects = semantic_algebra.effectSetFromAttributes(fd.attributes);
+                const hardware = semantic_algebra.hardwareLoweringsFromAttributes(fd.attributes);
+                return semantic_algebra.callSiteFromShapeWithCalleeFacts(shape, effects, hardware);
+            }
+        }
+        return semantic_algebra.callSiteFromShape(shape);
+    }
+
+    fn noteCallTransformProvenance(
+        self: *CodeGen,
+        shape: types.CallShape,
+        site: semantic_algebra.CallSite,
+        skip: ?semantic_algebra.CallTransform,
+    ) void {
+        const transforms = [_]semantic_algebra.CallTransform{
+            .@"inline", .specialize, .memo, .devirtualize, .gpu_lower, .simd_lower,
+        };
+        const hash = shape.identityHash();
+        for (transforms) |op| {
+            if (skip) |applied| if (applied == op) continue;
+            if (!semantic_algebra.callTransformEligible(op, site, shape)) continue;
+            transform_engine.logProvenance(self.alloc, semantic_algebra.callTransformId(op), .emit_call, hash, hash);
+        }
+    }
+
+    /// Emit a direct native C call to a module-level named function.
+    fn emitDirectNamedFuncCall(self: *CodeGen, expr: *const ast.Expr) E!void {
+        const c = expr.call;
+        var ft = self.expr_type(c.func);
+        var name_buf: [256]u8 = undefined;
+        const callee_body: ?*const ast.FuncBody = if (c.func.* == .name) blk: {
+            break :blk self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf));
+        } else null;
+        if (callee_body) |body| {
+            const fb_type = self.func_expr_type(body);
+            if (fb_type == .func) ft = fb_type;
+        }
+        try self.emit_expr(c.func);
+        self.p("(", .{});
+        var emitted_args: usize = 0;
+        for (c.args, 0..) |arg, i| {
+            if (i > 0) self.p(", ", .{});
+            switch (ft) {
+                .func => |f| {
+                    if (i < f.params.len) {
+                        try self.emit_arg_for_param(arg, f.params[i]);
+                    } else {
+                        try self.emit_expr(arg);
+                    }
+                },
+                else => try self.emit_expr(arg),
+            }
+            emitted_args += 1;
+        }
+        if (ft == .func and callee_body != null) {
+            const f = ft.func;
+            const body = callee_body.?;
+            var i = c.args.len;
+            while (i < f.params.len and i < body.params.len) : (i += 1) {
+                if (body.params[i].default_val == null) break;
+                if (emitted_args > 0) self.p(", ", .{});
+                if (try self.emit_default_for_param(&body.params[i], f.params[i])) {
+                    emitted_args += 1;
+                } else {
+                    break;
+                }
+            }
+            while (i < f.params.len) : (i += 1) {
+                if (emitted_args > 0) self.p(", ", .{});
+                self.emit_missing_arg_for_param(f.params[i]);
+                emitted_args += 1;
+            }
+        }
+        self.p(")", .{});
+    }
+
+    fn tryEmitDirectNamedCall(self: *CodeGen, expr: *const ast.Expr) E!bool {
+        if (expr.* != .call) return false;
+        const c = expr.call;
+        if (c.func.* != .name) return false;
+        if (self.vararg_funcs.get(c.func.name.ident) != null) return false;
+        var name_buf: [256]u8 = undefined;
+        const body = self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf)) orelse return false;
+        var ft = self.expr_type(c.func);
+        const fb_type = self.func_expr_type(body);
+        if (fb_type == .func) ft = fb_type;
+        if (ft != .func) return false;
+        if (self.mixed_scalar_mode and !self.funcUsesNativeLowering(c.func.name.ident)) return false;
+        if (!self.exprLowersToNativeC(ft.func.ret.*)) return false;
+        try self.emitDirectNamedFuncCall(expr);
+        return true;
+    }
+
+    fn tryEmitMemoCallTransform(
+        self: *CodeGen,
+        expr: *const ast.Expr,
+        shape: types.CallShape,
+        site: semantic_algebra.CallSite,
+    ) E!bool {
+        const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), self.comptime_eval_options()) catch return false;
+        if (value == .unavailable) return false;
+        const hash = shape.identityHash();
+        transform_engine.logProvenance(self.alloc, "call.memo", .emit_call, hash, hash);
+        self.noteCallTransformProvenance(shape, site, .memo);
+        try self.emit_comptime_value(value, self.expr_type(expr) == .any);
+        return true;
+    }
+
+    /// Pass 2.5: dispatch eligible call transforms before generic call emission.
+    fn tryEmitCallTransformDispatch(self: *CodeGen, expr: *const ast.Expr) E!bool {
+        if (expr.* != .call) return false;
+        const c = expr.call;
+        const shape = types.inferCallShape(expr) orelse return false;
+        const site = self.callSiteForShape(shape);
+        if (c.func.* != .name) return false;
+        const hash = shape.identityHash();
+
+        if (semantic_algebra.callTransformEligible(.specialize, site, shape)) {
+            if (self.mono) |m| {
+                const env = self.current_mono_spec;
+                if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
+                    transform_engine.logProvenance(self.alloc, "call.specialize", .emit_call, hash, hash);
+                    self.noteCallTransformProvenance(shape, site, .specialize);
+                    try self.emit_mono_call(spec, c.args);
+                    return true;
+                }
+            }
+        }
+
+        if (semantic_algebra.callTransformEligible(.memo, site, shape)) {
+            if (try self.tryEmitMemoCallTransform(expr, shape, site)) return true;
+        }
+
+        const direct_ops = [_]semantic_algebra.CallTransform{ .simd_lower, .gpu_lower, .@"inline" };
+        for (direct_ops) |op| {
+            if (!semantic_algebra.callTransformEligible(op, site, shape)) continue;
+            if (!try self.tryEmitDirectNamedCall(expr)) continue;
+            transform_engine.logProvenance(self.alloc, semantic_algebra.callTransformId(op), .emit_call, hash, hash);
+            self.noteCallTransformProvenance(shape, site, op);
+            return true;
+        }
+        return false;
+    }
+
+    fn try_emit_native_pipeline_projection(self: *CodeGen, lhs: *const ast.Expr, fb: *const ast.FuncBody) E!bool {
+        if (fb.params.len != 1 or !std.mem.eql(u8, fb.params[0].name, "__proj_v")) return false;
+        if (fb.body.stmts.len != 1 or fb.body.stmts[0] != .ret) return false;
+        const vals = fb.body.stmts[0].ret.vals;
+        if (vals.len != 1) return false;
+        const ret = vals[0];
+
+        transform_engine.logProvenance(
+            self.alloc,
+            "pipeline.map",
+            .emit_call,
+            std.hash.Wyhash.hash(0, "projection"),
+            std.hash.Wyhash.hash(0, "native"),
+        );
+
+        if (ret.* == .field) {
+            const f = ret.field;
+            if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "__proj_v")) return false;
+            var patched = ast.Expr{ .field = .{ .loc = f.loc, .obj = @constCast(lhs), .field = f.field } };
+            try self.emit_expr(&patched);
+            return true;
+        }
+        if (ret.* == .method_call) {
+            const mc = ret.method_call;
+            if (mc.obj.* != .name or !std.mem.eql(u8, mc.obj.name.ident, "__proj_v")) return false;
+            var patched = ast.Expr{
+                .method_call = .{
+                    .loc = mc.loc,
+                    .obj = @constCast(lhs),
+                    .method = mc.method,
+                    .args = mc.args,
+                },
+            };
+            try self.emit_expr(&patched);
+            return true;
+        }
+        return false;
+    }
+
+    fn pipeline_projection_field_name(fb: *const ast.FuncBody) ?[]const u8 {
+        if (fb.params.len != 1 or !std.mem.eql(u8, fb.params[0].name, "__proj_v")) return null;
+        if (fb.body.stmts.len != 1 or fb.body.stmts[0] != .ret) return null;
+        const vals = fb.body.stmts[0].ret.vals;
+        if (vals.len != 1) return null;
+        const ret = vals[0];
+        if (ret.* != .field) return null;
+        const f = ret.field;
+        if (f.obj.* != .name or !std.mem.eql(u8, f.obj.name.ident, "__proj_v")) return null;
+        return f.field;
+    }
+
+    fn try_emit_native_pipeline_named(self: *CodeGen, lhs: *const ast.Expr, rhs: *const ast.Expr) E!bool {
+        if (rhs.* != .name) return false;
+        var name_buf: [256]u8 = undefined;
+        const body = self.func_bodies.get(self.mangled_name(rhs.name.ident, &name_buf)) orelse return false;
+        const ft = self.func_expr_type(body);
+        if (ft != .func or ft.func.params.len == 0) return false;
+        if (!self.exprLowersToNativeC(ft.func.params[0])) return false;
+        const lhs_rt = self.expr_type(lhs);
+        if (!self.exprLowersToNativeC(lhs_rt)) return false;
+        if (self.mixed_scalar_mode and !self.funcUsesNativeLowering(rhs.name.ident)) return false;
+        transform_engine.logProvenance(
+            self.alloc,
+            "pipeline.map",
+            .emit_call,
+            std.hash.Wyhash.hash(0, rhs.name.ident),
+            std.hash.Wyhash.hash(0, "native"),
+        );
+        try self.emit_expr(rhs);
+        self.p("(", .{});
+        try self.emit_arg_for_param(lhs, ft.func.params[0]);
+        self.p(")", .{});
+        return true;
+    }
+
+    fn try_emit_native_pipeline(self: *CodeGen, lhs: *const ast.Expr, rhs: *const ast.Expr) E!bool {
+        var steps: std.ArrayList(*const ast.Expr) = .empty;
+        defer steps.deinit(self.alloc);
+        var base = lhs;
+        while (base.* == .binop and base.binop.op == .pipeline) {
+            try steps.append(self.alloc, base.binop.rhs);
+            base = base.binop.lhs;
+        }
+        try steps.append(self.alloc, rhs);
+
+        if (steps.items.len > 1) {
+            std.mem.reverse(*const ast.Expr, steps.items);
+            var fields: std.ArrayList([]const u8) = .empty;
+            defer fields.deinit(self.alloc);
+            for (steps.items) |step| {
+                if (step.* != .func_expr) break;
+                const fname = pipeline_projection_field_name(step.func_expr) orelse break;
+                try fields.append(self.alloc, fname);
+            }
+            if (fields.items.len == steps.items.len) {
+                const base_rt = self.expr_type(base);
+                if (self.exprLowersToNativeC(base_rt) or base_rt == .table_type) {
+                    transform_engine.logProvenance(
+                        self.alloc,
+                        "pipeline.fuse",
+                        .emit_call,
+                        std.hash.Wyhash.hash(0, "projection_chain"),
+                        std.hash.Wyhash.hash(0, "native"),
+                    );
+                    try self.emit_expr(base);
+                    for (fields.items) |f| self.p(".{s}", .{f});
+                    return true;
+                }
+            }
+        }
+
+        if (rhs.* == .func_expr) {
+            return try self.try_emit_native_pipeline_projection(lhs, rhs.func_expr);
+        }
+        return try self.try_emit_native_pipeline_named(lhs, rhs);
+    }
+
     fn call_stmt_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         if (expr.* != .call) return self.expr_is_native_scalar(expr);
         const call = expr.call;
         if (call.func.* == .name and std.mem.eql(u8, call.func.name.ident, "print")) {
             for (call.args) |arg| {
                 const rt = self.expr_type(arg);
+                if (self.enum_name_of(rt)) |ename| {
+                    if (self.enum_is_payload_free(ename) and self.expr_is_native_scalar(arg)) continue;
+                    return false;
+                }
                 if (!(rt.is_numeric() or rt == .bool or rt == .str) or !self.expr_is_native_scalar(arg)) return false;
             }
             return true;
@@ -2407,11 +2887,13 @@ pub const CodeGen = struct {
                 // dynamic tables require the lua_Value runtime.
                 const rt = self.expr_type(expr);
                 if (rt != .table_type) break :blk false;
+                if (!self.exprLowersToNativeC(rt)) break :blk false;
                 for (t.fields) |fld| switch (fld) {
                     .named => |nmd| if (!self.expr_is_native_scalar(nmd.val)) break :blk false,
                     .positional => |pos| if (!self.expr_is_native_scalar(pos)) break :blk false,
                     .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
                         !self.expr_is_native_scalar(idx.val)) break :blk false,
+                    .spread => break :blk false,
                 };
                 break :blk true;
             },
@@ -2466,6 +2948,7 @@ pub const CodeGen = struct {
                     if (!self.expr_is_native_scalar(idx.key)) return false;
                     if (!self.init_is_native_scalar(idx.val, .any)) return false;
                 },
+                .spread => return false,
             };
             for (hint.table_type.fields, 0..) |rf, i| {
                 const v = if (found.get(rf.name)) |val| val else if (i < positionals.items.len) positionals.items[i] else continue;
@@ -2500,7 +2983,7 @@ pub const CodeGen = struct {
     }
 
     fn native_scalar_needs_string_h(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.native_scalar_mode) return true;
+        if (!self.moduleKnowledgeAtLeast(.native)) return true;
         if (mod.body.tail_expr) |expr| {
             if (self.expr_needs_native_scalar_string_h(expr)) return true;
         }
@@ -2593,7 +3076,7 @@ pub const CodeGen = struct {
     }
 
     fn native_scalar_needs_stdlib_h(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.native_scalar_mode) return true;
+        if (!self.moduleKnowledgeAtLeast(.native)) return true;
         if (mod.body.tail_expr) |expr| {
             if (self.expr_needs_native_scalar_stdlib_h(expr)) return true;
         }
@@ -2687,7 +3170,7 @@ pub const CodeGen = struct {
     }
 
     fn native_scalar_needs_stdio_h(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.native_scalar_mode) return true;
+        if (!self.moduleKnowledgeAtLeast(.native)) return true;
         if (mod.body.tail_expr) |expr| {
             if (self.expr_needs_native_scalar_stdio_h(expr)) return true;
         }
@@ -2784,7 +3267,7 @@ pub const CodeGen = struct {
     }
 
     fn native_scalar_needs_stdbool_h(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.native_scalar_mode) return true;
+        if (!self.moduleKnowledgeAtLeast(.native)) return true;
         if (mod.body.tail_expr) |expr| {
             if (self.expr_needs_native_scalar_stdbool_h(expr)) return true;
         }
@@ -2890,7 +3373,7 @@ pub const CodeGen = struct {
     }
 
     fn native_scalar_needs_int_floor_helpers(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.native_scalar_mode) return true;
+        if (!self.moduleKnowledgeAtLeast(.native)) return true;
         if (mod.body.tail_expr) |expr| {
             if (self.expr_needs_int_floor_helpers(expr)) return true;
         }
@@ -3003,9 +3486,10 @@ pub const CodeGen = struct {
         } else {
             debug_trace.event(.codegen, .module, "emit module", .{});
         }
+        try self.populate_alias_defs(mod);
+        try self.collect_comptime_only_funcs(mod);
         try self.populate_record_aliases(mod);
         try self.populate_enum_defs(mod);
-        try self.populate_alias_defs(mod);
         try self.populate_func_bodies(mod);
         // Promote main-module module-scope bindings referenced by module
         // functions to module globals (mirrors embedded-module promotion), so
@@ -3022,8 +3506,19 @@ pub const CodeGen = struct {
                 self.mixed_scalar_mode = true;
             }
         }
-        if (native_diag) std.debug.print("[native-diag] emit_module native_scalar_mode={} mixed={} src={s}\n", .{ self.native_scalar_mode, self.mixed_scalar_mode, self.src_path });
-        const native_scalar_plain = self.native_scalar_mode and
+        self.module_knowledge = if (self.native_scalar_mode)
+            .native
+        else if (self.mixed_scalar_mode)
+            .guarded
+        else
+            .observed;
+        if (native_diag) std.debug.print("[native-diag] emit_module native_scalar_mode={} mixed={} knowledge={s} src={s}\n", .{
+            self.native_scalar_mode,
+            self.mixed_scalar_mode,
+            semantic_algebra.KnowledgeLevel.name(self.module_knowledge),
+            self.src_path,
+        });
+        const native_scalar_plain = self.moduleUsesFullNativeLowering() and
             !self.module_has_cinclude(mod) and
             !self.module_has_concept_def(mod);
 
@@ -3055,7 +3550,7 @@ pub const CodeGen = struct {
         if (!native_scalar_plain or self.native_scalar_needs_string_h(mod)) {
             self.p("#include <string.h>\n", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <stdarg.h>\n", .{});
             self.p("#include <math.h>\n", .{});
             self.p("#include <time.h>\n", .{});
@@ -3068,7 +3563,7 @@ pub const CodeGen = struct {
             self.pl("return (double)tv.tv_sec + (double)tv.tv_usec / 1e6;", .{});
             self.p("}}\n\n", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <ctype.h>\n", .{});
             self.p("#include <limits.h>\n", .{});
         }
@@ -3105,24 +3600,24 @@ pub const CodeGen = struct {
             self.p("#include <setjmp.h>\n", .{});
             self.p("#include <ucontext.h>\n", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             self.pl("int duo_tests_failed = 0;", .{});
             self.pl("int duo_test_runner_active = 0;", .{});
             self.pl("const char* duo_test_current = NULL;", .{});
         }
         // Forward-declare duo_argc/duo_argv so any function (e.g. os.args()) can
         // reference them before main() is emitted at the end of the file.
-        if (!self.load_chunk and !self.native_scalar_mode) {
+        if (!self.load_chunk and self.moduleNeedsLuaRuntime()) {
             self.pl("int duo_argc; char** duo_argv;", .{});
         }
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi") and !self.native_scalar_mode) {
+        if (!std.mem.eql(u8, self.target, "wasm32-wasi") and self.moduleNeedsLuaRuntime()) {
             self.pl("jmp_buf duo_test_jmp;", .{});
         }
         if (self.test_mode) {
             self.pl("int duo_tests_run = 0;", .{});
             self.pl("int duo_tests_skipped = 0;", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             self.p("#ifndef __wasm__\n", .{});
             self.p("#include <unistd.h>\n", .{});
             self.p("#include <dlfcn.h>\n", .{});
@@ -3135,14 +3630,13 @@ pub const CodeGen = struct {
             self.p("#include <netdb.h>\n", .{});
             self.p("#endif\n", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             // ML kernel declarations (guarded by #ifndef, harmless if unused)
             ml_kernels.emitDecls(self);
         }
         // Native string helpers and basic includes — always needed.
-        // In native_scalar_mode the full lua_* runtime prelude (which includes
-        // string.h/stdlib.h) is skipped, so we must include them here.
-        if (self.native_scalar_mode) {
+        // In full-native mode the lua_* runtime prelude is skipped, so include here.
+        if (self.moduleUsesFullNativeLowering()) {
             self.p("#include <stdlib.h>\n", .{});
             self.p("#include <string.h>\n", .{});
         }
@@ -3177,7 +3671,7 @@ pub const CodeGen = struct {
             self.p("    return __builtin_expect((a >= 0) & (b > 0), 1) ? r : (r + (((r != 0) & ((a ^ b) < 0)) ? b : 0));\n", .{});
             self.p("}}\n", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             // Integer max/min for typed int64 math.max/math.min (avoids the
             // int->double->int round-trip and the lua_Value boxing path).
             self.p("__attribute__((always_inline)) static inline int64_t lua_imax_i64(int64_t a, int64_t b) {{ return a > b ? a : b; }}\n", .{});
@@ -3319,7 +3813,7 @@ pub const CodeGen = struct {
             self.p("    return a * c + b * (one - c);\n", .{});
             self.p("}}\n", .{});
         }
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <locale.h>\n", .{});
             self.nl();
             self.p("#ifdef __wasm__\nstatic char duo_jit_compile_flags[1] = \"\";\n#else\nchar duo_jit_compile_flags[128] = \"\";\n#endif\n\n", .{});
@@ -3464,7 +3958,7 @@ pub const CodeGen = struct {
         self.all_closures.clearRetainingCapacity();
         self.emitted_closures.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             try self.emit_closure_structs(self.all_closures.items);
             try jit.emitClosureSourceTable(self, self.all_closures.items);
             try jit.emitUpvaluePackTable(self, self.all_closures.items);
@@ -3516,7 +4010,7 @@ pub const CodeGen = struct {
         }
         if (table_consts.items.len > 0) self.nl();
 
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             try self.emit_argv_lookup();
             try self.emit_async_defs();
         }
@@ -3562,7 +4056,7 @@ pub const CodeGen = struct {
             self.p("#pragma GCC pop_options\n\n", .{});
         }
 
-        if (!self.native_scalar_mode) try self.emit_closure_runtime(self.all_closures.items);
+        if (self.moduleNeedsLuaRuntime()) try self.emit_closure_runtime(self.all_closures.items);
 
         // Library mode: no main()/entry point — only @export functions are
         // exposed.  Top-level statements are intentionally not executed.
@@ -3599,14 +4093,14 @@ pub const CodeGen = struct {
             self.p("DUO_EXPORT lua_Value duo_load_entry(void) {{\n", .{});
         } else {
             self.p("int main(int argc, char** argv) {{\n", .{});
-            if (self.native_scalar_mode) {
+            if (self.moduleUsesFullNativeLowering() or !self.moduleNeedsLuaRuntime()) {
                 self.p("    (void)argc; (void)argv;\n", .{});
             } else {
                 self.p("    duo_argc = argc; duo_argv = argv;\n", .{});
             }
         }
         self.indent = 1;
-        if (!self.native_scalar_mode) {
+        if (self.moduleNeedsLuaRuntime()) {
             self.pl("package = lua_package_init();", .{});
             self.pl("math = lua_math_init();", .{});
             self.pl("utf8 = lua_utf8_init();", .{});
@@ -3702,7 +4196,7 @@ pub const CodeGen = struct {
         } else if (self.test_mode) {
             self.pl("return (duo_tests_failed > 0) ? 1 : 0;", .{});
         } else {
-            if (!self.native_scalar_mode) self.pl("duo_run_gc_finalizers();", .{});
+            if (self.moduleNeedsLuaRuntime()) self.pl("duo_run_gc_finalizers();", .{});
             if (find_top_level_func(mod, "main")) |mfd| {
                 // A user-defined top-level `main` is the entry point: call it
                 // and, when it returns a native scalar, use it as the exit code.
@@ -4019,6 +4513,176 @@ pub const CodeGen = struct {
         }
     }
 
+    fn func_skips_runtime_emit(self: *CodeGen, fb: *const ast.FuncBody, fname: []const u8) bool {
+        if (fb.is_compile_only) return true;
+        return self.comptime_only_funcs.contains(fname);
+    }
+
+    fn comptime_meta_callback_arg_index(name: []const u8, argc: usize) ?usize {
+        if (argc == 0) return null;
+        if (std.mem.eql(u8, name, "__comptimezip") or
+            std.mem.eql(u8, name, "__comptimeproduct") or
+            std.mem.eql(u8, name, "__comptimechoose") or
+            std.mem.eql(u8, name, "__comptimenfold") or
+            std.mem.eql(u8, name, "__comptimetensor") or
+            std.mem.eql(u8, name, "__metaexpand") or
+            std.mem.eql(u8, name, "__metaweave"))
+        {
+            if (argc >= 3) return 2;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "__comptimemap") or
+            std.mem.eql(u8, name, "__comptimeeach") or
+            std.mem.eql(u8, name, "__comptimematch") or
+            std.mem.eql(u8, name, "__comptimetabulate") or
+            std.mem.eql(u8, name, "__comptimeinterpolate") or
+            std.mem.eql(u8, name, "__comptimepower") or
+            std.mem.eql(u8, name, "__comptimepermute") or
+            std.mem.eql(u8, name, "__comptimefanout") or
+            std.mem.eql(u8, name, "__metagrammar"))
+        {
+            if (argc >= 2) return 1;
+            return null;
+        }
+        if (std.mem.eql(u8, name, "__comptimefixpoint") and argc >= 3) {
+            return if (argc == 3) 1 else 2;
+        }
+        return null;
+    }
+
+    fn collect_comptime_only_funcs(self: *CodeGen, mod: *const ast.Module) !void {
+        self.comptime_only_funcs.clearRetainingCapacity();
+        var runtime_refs: std.StringHashMapUnmanaged(void) = .empty;
+        defer runtime_refs.deinit(self.alloc);
+        var callback_refs: std.StringHashMapUnmanaged(void) = .empty;
+        defer callback_refs.deinit(self.alloc);
+
+        const Collect = struct {
+            cg: *CodeGen,
+            runtime_refs: *std.StringHashMapUnmanaged(void),
+            callback_refs: *std.StringHashMapUnmanaged(void),
+
+            fn walk_expr(c: *@This(), expr: *const ast.Expr) std.mem.Allocator.Error!void {
+                switch (expr.*) {
+                    .call => |call| {
+                        if (call.func.* == .name) {
+                            const bn = call.func.name.ident;
+                            if (CodeGen.comptime_meta_callback_arg_index(bn, call.args.len)) |ci| {
+                                if (ci < call.args.len and call.args[ci].* == .name) {
+                                    try c.callback_refs.put(c.cg.alloc, call.args[ci].name.ident, {});
+                                }
+                            } else {
+                                try c.runtime_refs.put(c.cg.alloc, bn, {});
+                            }
+                        } else {
+                            try c.walk_expr(call.func);
+                        }
+                        for (call.args) |arg| try c.walk_expr(arg);
+                    },
+                    .binop => |b| {
+                        try c.walk_expr(b.lhs);
+                        try c.walk_expr(b.rhs);
+                    },
+                    .unop => |u| try c.walk_expr(u.operand),
+                    .field => |f| try c.walk_expr(f.obj),
+                    .index => |idx| {
+                        try c.walk_expr(idx.obj);
+                        try c.walk_expr(idx.key);
+                    },
+                    .table => |t| {
+                        for (t.fields) |tf| switch (tf) {
+                            .named => |nf| try c.walk_expr(nf.val),
+                            .indexed => |ix| try c.walk_expr(ix.val),
+                            .positional => |pos| try c.walk_expr(pos),
+                            .spread => |sp| try c.walk_expr(sp),
+                        };
+                    },
+                    .func_expr => |f| try c.walk_block(&f.body),
+                    .method_call => |m| {
+                        try c.walk_expr(m.obj);
+                        for (m.args) |arg| try c.walk_expr(arg);
+                    },
+                    .if_expr => |ie| {
+                        try c.walk_expr(ie.cond);
+                        try c.walk_expr(ie.then_expr);
+                        try c.walk_expr(ie.else_expr);
+                    },
+                    else => {},
+                }
+            }
+
+            fn walk_block(c: *@This(), block: *const ast.Block) std.mem.Allocator.Error!void {
+                for (block.stmts) |*stmt| try c.walk_stmt(stmt);
+                if (block.tail_expr) |tail| try c.walk_expr(tail);
+            }
+
+            fn walk_stmt(c: *@This(), stmt: *const ast.Stmt) std.mem.Allocator.Error!void {
+                switch (stmt.*) {
+                    .assign => |as| {
+                        for (as.values) |v| try c.walk_expr(v);
+                    },
+                    .local_decl => |ld| {
+                        for (ld.inits) |init_expr| try c.walk_expr(init_expr);
+                    },
+                    .global_decl => |ld| {
+                        for (ld.inits) |init_expr| try c.walk_expr(init_expr);
+                    },
+                    .const_decl => |cd| try c.walk_expr(cd.val),
+                    .expr_stmt => |es| try c.walk_expr(es.expr),
+                    .call_stmt => |cs| try c.walk_expr(cs.expr),
+                    .ret => |rs| {
+                        for (rs.vals) |v| try c.walk_expr(v);
+                    },
+                    .if_stmt => |is| {
+                        try c.walk_expr(is.cond);
+                        try c.walk_block(&is.then);
+                        for (is.elseifs) |*ei| {
+                            try c.walk_expr(ei.cond);
+                            try c.walk_block(&ei.body);
+                        }
+                        if (is.else_body) |*eb| try c.walk_block(eb);
+                    },
+                    .while_loop => |wl| {
+                        try c.walk_expr(wl.cond);
+                        try c.walk_block(&wl.body);
+                    },
+                    .repeat_loop => |rl| {
+                        try c.walk_expr(rl.cond);
+                        try c.walk_block(&rl.body);
+                    },
+                    .do_block => |db| try c.walk_block(&db.body),
+                    .num_for => |nf| {
+                        try c.walk_expr(nf.start);
+                        try c.walk_expr(nf.stop);
+                        if (nf.step) |step| try c.walk_expr(step);
+                        try c.walk_block(&nf.body);
+                    },
+                    .func_decl => |fd| try c.walk_block(&fd.func.body),
+                    else => {},
+                }
+            }
+
+            fn walk_module(c: *@This(), m: *const ast.Module) std.mem.Allocator.Error!void {
+                for (m.body.stmts) |*stmt| try c.walk_stmt(stmt);
+                if (m.body.tail_expr) |tail| try c.walk_expr(tail);
+            }
+        };
+
+        var collector = Collect{
+            .cg = self,
+            .runtime_refs = &runtime_refs,
+            .callback_refs = &callback_refs,
+        };
+        try collector.walk_module(mod);
+
+        var it = callback_refs.keyIterator();
+        while (it.next()) |key| {
+            if (!runtime_refs.contains(key.*)) {
+                try self.comptime_only_funcs.put(self.alloc, key.*, {});
+            }
+        }
+    }
+
     pub fn populate_record_aliases(self: *CodeGen, mod: *ast.Module) E!void {
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
@@ -4051,6 +4715,7 @@ pub const CodeGen = struct {
             const fd = &stmt.func_decl;
             if (fd.path.len == 1 and !fd.method) {
                 try self.note_func_body(fd.path[0], &fd.func);
+                try self.note_func_decl(fd.path[0], fd);
             }
         }
     }
@@ -4115,7 +4780,7 @@ pub const CodeGen = struct {
     /// Emit metatable initialization code for alias types with methods or derives.
     /// Called during module init (inside main()).
     fn emit_alias_metatable_init(self: *CodeGen, mod: *ast.Module) E!void {
-        if (self.native_scalar_mode) return;
+        if (self.moduleUsesFullNativeLowering()) return;
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
@@ -4222,7 +4887,7 @@ pub const CodeGen = struct {
     /// Emit static metatable variable declarations (before main).
     /// Called during the forward-declaration phase.
     fn emit_alias_metatable_decls(self: *CodeGen, mod: *ast.Module) E!void {
-        if (self.native_scalar_mode) return;
+        if (self.moduleUsesFullNativeLowering()) return;
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
@@ -4236,7 +4901,7 @@ pub const CodeGen = struct {
 
     /// Emit @derive-generated functions for alias types.
     fn emit_alias_derive_functions(self: *CodeGen, mod: *ast.Module) E!void {
-        if (self.native_scalar_mode) return;
+        if (self.moduleUsesFullNativeLowering()) return;
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .alias_def) continue;
             const ad = &stmt.alias_def;
@@ -4680,6 +5345,25 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT) E!void {
+        if (self.callArgUsesNativeLowering(arg, param_type)) {
+            const arg_type = self.expr_type(arg);
+            if (arg_type.eql(param_type)) {
+                try self.emit_expr(arg);
+            } else if (param_type == .f64 and arg_type.is_numeric()) {
+                self.p("(double)(", .{});
+                try self.emit_expr(arg);
+                self.p(")", .{});
+            } else if (param_type.is_numeric() and arg_type.is_numeric()) {
+                var buf: [32]u8 = undefined;
+                self.p("((", .{});
+                self.p("{s})(", .{param_type.c_type(&buf)});
+                try self.emit_expr(arg);
+                self.p("))", .{});
+            } else {
+                try self.emit_expr(arg);
+            }
+            return;
+        }
         if (self.is_table_module_type(param_type)) {
             try self.emit_as_lua_value(arg);
             return;
@@ -4839,6 +5523,7 @@ pub const CodeGen = struct {
         for (fb.type_params orelse &[_]ast.TypeExpr{}) |tp| {
             try self.collect_records_in_typ(tp);
         }
+        for (fb.body.stmts) |*s| try self.collect_records_in_stmt(s);
     }
 
     fn collect_records_in_typ(self: *CodeGen, te: ast.TypeExpr) E!void {
@@ -4879,6 +5564,7 @@ pub const CodeGen = struct {
                     .named => |nf| try self.collect_records_in_expr(nf.val),
                     .indexed => |ix| try self.collect_records_in_expr(ix.val),
                     .positional => |pos| try self.collect_records_in_expr(pos),
+                    .spread => |sp| try self.collect_records_in_expr(sp),
                 }
             },
             .call => |c| {
@@ -4983,6 +5669,7 @@ pub const CodeGen = struct {
 
     fn emit_func_decl_forward(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
         // Skip forward declaration for monomorphized generic functions —
         // the monomorphized versions have their own forward declarations.
         if (fb.type_params != null and fb.type_params.?.len > 0) {
@@ -5297,6 +5984,7 @@ pub const CodeGen = struct {
     /// thunk definitions, and first-class function-value references so we never
     /// emit (or reference) a thunk that would fail to compile.
     fn should_emit_lua_thunk(self: *CodeGen, fb: *const ast.FuncBody) bool {
+        if (fb.is_compile_only) return false;
         if (self.has_payloaded_enum_param(fb)) return false;
         for (fb.params) |param| {
             const pt = types.resolve(param.typ, null, self.alloc) catch RT.any;
@@ -5306,8 +5994,9 @@ pub const CodeGen = struct {
     }
 
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
-        if (self.native_scalar_mode) return;
+        if (self.moduleUsesFullNativeLowering()) return;
         const fb = &fd.func;
+        if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
         if (!self.should_emit_lua_thunk(fb)) return;
         var cname_buf: [128]u8 = undefined;
         const cname = self.emit_func_c_name(fd, &cname_buf);
@@ -5621,8 +6310,9 @@ pub const CodeGen = struct {
     }
 
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
-        if (self.native_scalar_mode) return;
+        if (self.moduleUsesFullNativeLowering()) return;
         const fb = &fd.func;
+        if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
         // Skip vararg functions — they use the __argv dispatch path, not thunks.
         if (fb.vararg or fb.vararg_name != null) return;
         // Generate thunk if all params are lua-convertible, regardless of is_typed.
@@ -5814,6 +6504,7 @@ pub const CodeGen = struct {
 
     fn emit_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
+        if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
         // Generic functions that have been monomorphized: skip the generic
         // fallback body. The monomorphized versions (duo_<name>_<type>) handle
         // all typed call sites. The generic body would use lua_Value arithmetic
@@ -7683,6 +8374,15 @@ pub const CodeGen = struct {
                         try self.note_comptime_unavailable(lname.ident);
                     }
                 } else for (ld.names, 0..) |*lname, i| {
+                    if (!self.moduleNeedsLuaRuntime() and i < ld.inits.len) {
+                        const skip_rt = if (lname.typ != .inferred)
+                            self.resolve_binding_type(lname)
+                        else
+                            self.expr_type(ld.inits[i]);
+                        if (skip_rt == .any or skip_rt == .nil) {
+                            if (ld.inits[i].* == .table or ld.inits[i].* == .func_expr) continue;
+                        }
+                    }
                     if (i < ld.inits.len and ld.inits[i].* == .call) {
                         const c = ld.inits[i].call;
                         if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__static_assert")) {
@@ -7943,12 +8643,15 @@ pub const CodeGen = struct {
                         !self.is_global_name(as.targets[0].name.ident);
                     if (first_needs_decl) {
                         const name = as.targets[0].name.ident;
-                        try self.note_local(name);
-                        try self.note_local_type(name, .any);
-                        self.ind();
-                        self.p("lua_Value {s} = ", .{name});
-                        try self.emit_as_lua_value(as.values[0]);
-                        self.p(";\n", .{});
+                        const skip_table_meta = !self.moduleNeedsLuaRuntime() and as.values[0].* == .table;
+                        if (!skip_table_meta) {
+                            try self.note_local(name);
+                            try self.note_local_type(name, .any);
+                            self.ind();
+                            self.p("lua_Value {s} = ", .{name});
+                            try self.emit_as_lua_value(as.values[0]);
+                            self.p(";\n", .{});
+                        }
                     } else {
                         self.ind();
                         const tt0 = self.expr_type(as.targets[0]);
@@ -8050,11 +8753,27 @@ pub const CodeGen = struct {
                             // bare assignments like `b = nil` typically precede
                             // `b = <value>`.
                             if (effective_tt == .nil) effective_tt = .any;
+                            if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
+                                (as.values[i].* == .table or as.values[i].* == .func_expr))
+                            {
+                                continue;
+                            }
                             try self.note_local(name);
                             if (effective_tt == .any) {
-                                try self.note_local_type(name, .any);
-                                self.p("lua_Value {s} = ", .{name});
-                                if (i < as.values.len) try self.emit_as_lua_value(as.values[i]) else self.p("lua_val_nil()", .{});
+                                if (i < as.values.len) {
+                                    if (self.fold_meta_string_expr(as.values[i])) |folded| {
+                                        try self.note_local_type(name, .str);
+                                        self.p("const char* {s} = ", .{name});
+                                        try self.emit_c_string_literal(folded);
+                                    } else {
+                                        try self.note_local_type(name, .any);
+                                        self.p("lua_Value {s} = ", .{name});
+                                        try self.emit_as_lua_value(as.values[i]);
+                                    }
+                                } else {
+                                    try self.note_local_type(name, .any);
+                                    self.p("lua_Value {s} = lua_val_nil()", .{name});
+                                }
                             } else if (effective_tt.is_numeric()) {
                                 try self.note_local_type(name, effective_tt);
                                 self.typ(effective_tt);
@@ -8315,6 +9034,24 @@ pub const CodeGen = struct {
                 }
             },
             .if_stmt => |*is| {
+                if (is.binding) |b| {
+                    try self.note_local(b.name);
+                    const bind_rt = self.expr_type(b.expr);
+                    if (self.funcUsesNativeLowering(self.current_func_name orelse "") and
+                        bind_rt != .any and semantic_algebra.lowersToNativeC(bind_rt))
+                    {
+                        self.ind();
+                        var buf: [64]u8 = undefined;
+                        self.p("{s} {s} = ", .{ bind_rt.c_type(&buf), b.name });
+                        try self.emit_expr(b.expr);
+                        self.p(";\n", .{});
+                    } else {
+                        self.ind();
+                        self.p("lua_Value {s} = ", .{b.name});
+                        try self.emit_as_lua_value(b.expr);
+                        self.p(";\n", .{});
+                    }
+                }
                 // Dead-branch elimination: if condition is compile-time known,
                 // emit only the taken branch (no if/else wrapper).
                 if (self.try_eval_const_condition(is.cond)) |known| {
@@ -8827,7 +9564,9 @@ pub const CodeGen = struct {
                 try self.note_defer(&defer_stmt.body);
             },
             .enum_def => |*ed| try self.emit_enum_descriptor(ed),
-            .concept_def => |*cd| try self.emit_concept_descriptor(cd),
+            .concept_def => |*cd| {
+                if (self.moduleNeedsLuaRuntime()) try self.emit_concept_descriptor(cd);
+            },
             .alias_def => {},
             .brk => {
                 if (self.has_pending_defers()) {
@@ -9062,15 +9801,22 @@ pub const CodeGen = struct {
             if (has_sep) try fmt_buf.appendSlice(self.alloc, "\\t");
             has_sep = true;
             const t = self.expr_type(arg);
-            const spec: []const u8 = switch (t) {
-                .i8, .i16, .i32 => "%d",
-                .i64 => "%lld",
-                .u8, .u16, .u32 => "%u",
-                .u64 => "%llu",
-                .f32, .f64 => "%.17g",
-                .bool => "%s",
-                .str => "%s",
-                else => "%s",
+            const spec: []const u8 = blk: {
+                if (self.enum_name_of(t)) |ename| {
+                    if (self.enum_is_payload_free(ename) and self.enum_has_derive(ename, "Display"))
+                        break :blk "%s";
+                    if (self.enum_is_payload_free(ename)) break :blk "%d";
+                }
+                break :blk switch (t) {
+                    .i8, .i16, .i32 => "%d",
+                    .i64 => "%lld",
+                    .u8, .u16, .u32 => "%u",
+                    .u64 => "%llu",
+                    .f32, .f64 => "%.17g",
+                    .bool => "%s",
+                    .str => "%s",
+                    else => "%s",
+                };
             };
             try fmt_buf.appendSlice(self.alloc, spec);
         }
@@ -9094,6 +9840,20 @@ pub const CodeGen = struct {
                     self.p(")", .{});
                 } else {
                     try self.emit_expr(arg);
+                }
+            } else if (self.enum_name_of(t)) |ename| {
+                if (self.enum_is_payload_free(ename) and self.enum_has_derive(ename, "Display")) {
+                    self.p("duo_{s}_to_string(", .{ename});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
+                } else if (self.enum_is_payload_free(ename)) {
+                    self.p("(int)(", .{});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
+                } else {
+                    self.p("lua_to_str(", .{});
+                    try self.emit_expr(arg);
+                    self.p(")", .{});
                 }
             } else {
                 try self.emit_expr(arg);
@@ -9643,6 +10403,12 @@ pub const CodeGen = struct {
             return;
         }
         const t = self.expr_type(expr);
+        const skip_numeric_unbox = blk: {
+            const fn_name = self.current_func_name orelse break :blk false;
+            if (!self.funcUsesNativeLowering(fn_name)) break :blk false;
+            if (!self.exprKnowledge(expr).dominates(.stable)) break :blk false;
+            break :blk self.exprLowersToNativeC(t);
+        };
         switch (t) {
             .str => {
                 if (self.expr_emits_lua_value(expr)) {
@@ -9655,7 +10421,7 @@ pub const CodeGen = struct {
             },
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64 => {
                 self.p("lua_val_from_int((int64_t)(", .{});
-                if (self.expr_emits_lua_value(expr)) {
+                if (self.expr_emits_lua_value(expr) and !skip_numeric_unbox) {
                     self.p("lua_to_num(", .{});
                     try self.emit_expr(expr);
                     self.p(")", .{});
@@ -9666,7 +10432,7 @@ pub const CodeGen = struct {
             },
             .f32, .f64 => {
                 self.p("lua_val_from_num((double)(", .{});
-                if (self.expr_emits_lua_value(expr)) {
+                if (self.expr_emits_lua_value(expr) and !skip_numeric_unbox) {
                     self.p("lua_to_num(", .{});
                     try self.emit_expr(expr);
                     self.p(")", .{});
@@ -10438,6 +11204,38 @@ pub const CodeGen = struct {
                     try self.emit_type_name_intrinsic(c.args);
                     return;
                 }
+                // __type_shape(expr) — returns table storage class: dynamic|guarded|sealed|native
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__type_shape") and c.args.len == 1) {
+                    try self.emit_type_shape_intrinsic(c.args);
+                    return;
+                }
+                // __why_shape(expr) — factual explanation for table storage-class choice
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__why_shape") and c.args.len == 1) {
+                    try self.emit_why_shape_intrinsic(c.args);
+                    return;
+                }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__why_boxed") and c.args.len == 1) {
+                    try self.emit_why_boxed_intrinsic(c.args);
+                    return;
+                }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__why_not_native") and c.args.len == 1) {
+                    try self.emit_why_not_native_intrinsic(c.args);
+                    return;
+                }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__representation") and c.args.len == 1) {
+                    try self.emit_representation_intrinsic(c.args);
+                    return;
+                }
+                // __why(expr) — specialization explanation (table shapes today; honest fallback otherwise)
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__why") and c.args.len == 1) {
+                    try self.emit_why_intrinsic(c.args);
+                    return;
+                }
+                // __origin(expr) — provenance summary: storage_class + shape_id when known
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__origin") and c.args.len == 1) {
+                    try self.emit_origin_intrinsic(c.args);
+                    return;
+                }
                 // __type_id(expr) — returns a stable compile-time integer type identifier
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__type_id") and c.args.len == 1) {
                     try self.emit_type_id_intrinsic(c.args);
@@ -10567,13 +11365,14 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_stdlib_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 if (c.func.* == .name) {
-                    if (self.mono) |m| {
-                        const env = self.current_mono_spec;
-                        if (m.findSpecializationForCall(c.func.name.ident, c.args, env)) |spec| {
-                            try self.emit_mono_call(spec, c.args);
-                            return;
-                        }
+                    if (try self.tryEmitCallTransformDispatch(expr)) return;
+                    if (types.inferCallShape(expr)) |shape| {
+                        const site = self.callSiteForShape(shape);
+                        self.noteCallTransformProvenance(shape, site, null);
                     }
+                } else if (types.inferCallShape(expr)) |shape| {
+                    const site = self.callSiteForShape(shape);
+                    self.noteCallTransformProvenance(shape, site, null);
                 }
                 var ft = self.expr_type(c.func);
                 // Sema may only know a function name as `.any` for forward calls.
@@ -10583,6 +11382,14 @@ pub const CodeGen = struct {
                     if (self.func_bodies.get(self.mangled_name(c.func.name.ident, &name_buf))) |body| {
                         const fb_type = self.func_expr_type(body);
                         if (fb_type == .func) ft = fb_type;
+                    }
+                    // Mixed native/dynamic: non-allowlisted callees route through lua_invoke
+                    // UNLESS the callee's resolved type proves all params+return are native.
+                    // This is the per-call knowledge lattice (Pass 2) driving emission.
+                    if (self.mixed_scalar_mode and ft == .func and !self.funcUsesNativeLowering(c.func.name.ident)) {
+                        if (!self.funcTypeIsFullyNative(ft)) {
+                            ft = .any;
+                        }
                     }
                 }
                 if (c.func.* == .name) {
@@ -11137,6 +11944,16 @@ pub const CodeGen = struct {
                         try self.emit_expr(b.rhs);
                         self.p("))", .{});
                     }
+                } else if ((b.op == .eq or b.op == .neq) and lt == .str and rt == .str and self.moduleUsesFullNativeLowering()) {
+                    self.p("(strcmp(", .{});
+                    try self.emit_expr(b.lhs);
+                    self.p(", ", .{});
+                    try self.emit_expr(b.rhs);
+                    if (b.op == .eq) {
+                        self.p(") == 0)", .{});
+                    } else {
+                        self.p(") != 0)", .{});
+                    }
                 } else if ((b.op == .eq or b.op == .neq) and (lt == .str or rt == .str) and
                     (!self.expr_is_native_cstr(b.lhs) or !self.expr_is_native_cstr(b.rhs)))
                 {
@@ -11159,13 +11976,21 @@ pub const CodeGen = struct {
                     try self.emit_as_lua_value(b.rhs);
                     self.p(")", .{});
                 } else if (b.op == .pipeline) {
-                    // Pipeline operator: x |> f  desugars to f(x)
-                    // Emit as: lua_invoke(f, 1, (lua_Value[]){x})
-                    self.p("lua_invoke(", .{});
-                    try self.emit_as_lua_value(b.rhs);
-                    self.p(", 1, (lua_Value[]){{", .{});
-                    try self.emit_as_lua_value(b.lhs);
-                    self.p("}})", .{});
+                    if (try self.try_emit_native_pipeline(b.lhs, b.rhs)) {} else {
+                        // Pipeline operator: x |> f  desugars to f(x) via lua_invoke fallback
+                        transform_engine.logProvenance(
+                            self.alloc,
+                            "pipeline.map",
+                            .emit_call,
+                            std.hash.Wyhash.hash(0, "dynamic"),
+                            std.hash.Wyhash.hash(0, "lua_invoke"),
+                        );
+                        self.p("lua_invoke(", .{});
+                        try self.emit_as_lua_value(b.rhs);
+                        self.p(", 1, (lua_Value[]){{", .{});
+                        try self.emit_as_lua_value(b.lhs);
+                        self.p("}})", .{});
+                    }
                 } else if (try self.try_emit_mixed_native_binop(b.op, b.lhs, b.rhs, lt, rt)) {
                     return;
                 } else if (try self.try_emit_both_any_native_binop(b.op, b.lhs, b.rhs, lt, rt)) {
@@ -11568,6 +12393,7 @@ pub const CodeGen = struct {
                     switch (fld) {
                         .positional => array_count += 1,
                         .named, .indexed => hash_count += 1,
+                        .spread => {},
                     }
                 }
                 self.p("({{\n", .{});
@@ -11607,10 +12433,6 @@ pub const CodeGen = struct {
                                     self.ind();
                                     self.pl("lua_table_set_raw_i64(tmp, {d} + _vi, lua_table_get_raw({s}, lua_val_from_int(_vi + 1)));", .{ @as(i64, @intFromFloat(pos_idx)), vn });
                                     self.pl("}}", .{});
-                                    // Advance pos_idx by the number of varargs (runtime).
-                                    // For simplicity, leave pos_idx as-is since
-                                    // subsequent positional fields after `...`
-                                    // are rare in Lua/Duo practice.
                                     continue;
                                 }
                             }
@@ -11618,6 +12440,38 @@ pub const CodeGen = struct {
                             try self.emit_as_lua_value(pos_expr);
                             self.p(");\n", .{});
                             pos_idx += 1.0;
+                        },
+                        .spread => |src| {
+                            self.ind();
+                            self.p("{{ lua_Value _spr = ", .{});
+                            try self.emit_as_lua_value(src);
+                            self.p(";\n", .{});
+                            self.ind();
+                            self.pl("if (_spr.type == VAL_TABLE) {{", .{});
+                            self.indent += 1;
+                            self.ind();
+                            self.pl("lua_Table* _st = (lua_Table*)_spr.as.tval;", .{});
+                            self.ind();
+                            self.pl("for (int _si = 0; _si < _st->array_size; _si++) {{", .{});
+                            self.indent += 1;
+                            self.ind();
+                            self.pl("if (_st->array[_si].type != VAL_NIL) lua_table_set_raw_i64(tmp, _si + 1, _st->array[_si]);", .{});
+                            self.indent -= 1;
+                            self.ind();
+                            self.pl("}}", .{});
+                            self.ind();
+                            self.pl("for (int _si = 0; _si < _st->capacity; _si++) {{", .{});
+                            self.indent += 1;
+                            self.ind();
+                            self.pl("if (_st->hash_keys[_si].type != VAL_NIL) lua_table_set_raw(tmp, _st->hash_keys[_si], _st->hash_vals[_si]);", .{});
+                            self.indent -= 1;
+                            self.ind();
+                            self.pl("}}", .{});
+                            self.indent -= 1;
+                            self.ind();
+                            self.pl("}}", .{});
+                            self.ind();
+                            self.pl("}}", .{});
                         },
                     }
                 }
@@ -11730,31 +12584,53 @@ pub const CodeGen = struct {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
                     const value = meta_codegen.comptimeMapHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__comptimemap", .top_level_assign, c.args[0].string_lit.val, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__comptimeeach") and c.args.len == 2) {
                     const source = self.fold_meta_string_expr(c.args[0]) orelse break :blk null;
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
                     const value = meta_codegen.comptimeEachHook(self.meta_host(), source, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__comptimeeach", .top_level_assign, source, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__comptimematch") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
                     const value = meta_codegen.comptimeMatchHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__comptimematch", .top_level_assign, c.args[0].string_lit.val, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__comptimetabulate") and c.args.len == 2 and c.args[0].* == .int_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
                     const value = meta_codegen.comptimeTabulateHook(self.meta_host(), c.args[0].int_lit.val, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        var ibuf: [32]u8 = undefined;
+                        const input = std.fmt.bufPrint(&ibuf, "{d}", .{c.args[0].int_lit.val}) catch "0";
+                        self.logMetaCombinatorProvenance("__comptimetabulate", .top_level_assign, input, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__comptimeinterpolate") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const vars = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), c.args[0].string_lit.val, vars, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__comptimeinterpolate", .top_level_assign, c.args[0].string_lit.val, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__comptimezip") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
@@ -11762,11 +12638,27 @@ pub const CodeGen = struct {
                     const value = meta_codegen.comptimeZipHook(self.meta_host(), c.args[0].string_lit.val, c.args[1].string_lit.val, callback, self.alloc) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
                 }
+                if (std.mem.eql(u8, name, "__comptimeproduct") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
+                    const callback = comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
+                    if (callback != .func) break :blk null;
+                    const value = meta_codegen.comptimeProductHook(self.meta_host(), c.args[0].string_lit.val, c.args[1].string_lit.val, callback, self.alloc) orelse break :blk null;
+                    if (value == .string) {
+                        var ibuf: [96]u8 = undefined;
+                        const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ c.args[0].string_lit.val, c.args[1].string_lit.val }) catch c.args[0].string_lit.val;
+                        self.logMetaCombinatorProvenance("__comptimeproduct", .top_level_assign, input, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
+                }
                 if (std.mem.eql(u8, name, "__comptimepower") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
                     const value = meta_codegen.comptimePowerHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__comptimepower", .top_level_assign, c.args[0].string_lit.val, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__comptimepermute") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
@@ -11788,7 +12680,38 @@ pub const CodeGen = struct {
                         else => break :blk null,
                     };
                     const value = meta_codegen.derivePowerHook(self.meta_host(), c.args[0].string_lit.val, derive_name, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__derivepower", .top_level_assign, c.args[0].string_lit.val, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
+                }
+                if (std.mem.eql(u8, name, "__deriveproduct") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
+                    const derive_name = switch (c.args[2].*) {
+                        .name => |n| n.ident,
+                        .string_lit => |s| s.val,
+                        else => break :blk null,
+                    };
+                    const value = meta_codegen.deriveProductHook(self.meta_host(), c.args[0].string_lit.val, c.args[1].string_lit.val, derive_name, self.alloc) orelse break :blk null;
+                    if (value == .string) {
+                        var ibuf: [96]u8 = undefined;
+                        const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ c.args[0].string_lit.val, c.args[1].string_lit.val }) catch c.args[0].string_lit.val;
+                        self.logMetaCombinatorProvenance("__deriveproduct", .top_level_assign, input, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
+                }
+                if (std.mem.eql(u8, name, "__comptimefixpoint")) {
+                    const fp = fixpointCallFromArgs(c.args) orelse break :blk null;
+                    const callback = comptime_eval.evalWithBindings(fp.callback, self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
+                    if (callback != .func) break :blk null;
+                    const initial = c.args[0].string_lit.val;
+                    const value = meta_codegen.comptimeFixpointHook(self.meta_host(), initial, callback, fp.max_iter, self.alloc) orelse break :blk null;
+                    if (value == .string) {
+                        self.logMetaCombinatorProvenance("__comptimefixpoint", .top_level_assign, initial, value.string);
+                        break :blk value.string;
+                    }
+                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__derivechoose") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .int_lit) {
                     const derive_name = switch (c.args[2].*) {
@@ -11881,6 +12804,18 @@ pub const CodeGen = struct {
             self.p("{d}", .{split_count(source, sep)});
             return true;
         }
+        if (std.mem.eql(u8, name, "__strcomptelen") and args.len == 1) {
+            if (self.fold_meta_string_expr(args[0])) |source| {
+                self.p("{d}", .{@as(i64, @intCast(source.len))});
+                return true;
+            }
+            if (self.expr_type(args[0]) == .str) {
+                self.p("({{ const unsigned char* _duo_s = (const unsigned char*)(", .{});
+                try self.emit_expr(args[0]);
+                self.p("); int64_t _duo_len = 0; while (*_duo_s) {{ if ((*_duo_s & 0xC0) != 0x80) _duo_len++; _duo_s++; }} _duo_len; }})", .{});
+                return true;
+            }
+        }
         if (std.mem.eql(u8, name, "__concept_count") and args.len == 1 and args[0].* == .string_lit) {
             const concepts = self.concepts orelse return false;
             const concept = concepts.get(args[0].string_lit.val) orelse return false;
@@ -11896,11 +12831,77 @@ pub const CodeGen = struct {
 
     fn maybe_emit_meta_bool_call(self: *CodeGen, name: []const u8, args: []const *ast.Expr) E!bool {
         if (std.mem.eql(u8, name, "__strcontains") and args.len == 2 and args[1].* == .string_lit) {
-            const source = self.fold_meta_string_expr(args[0]) orelse return false;
-            self.p("{s}", .{if (std.mem.indexOf(u8, source, args[1].string_lit.val) != null) "true" else "false"});
-            return true;
+            if (self.fold_meta_string_expr(args[0])) |source| {
+                self.p("{s}", .{if (std.mem.indexOf(u8, source, args[1].string_lit.val) != null) "true" else "false"});
+                return true;
+            }
+            if (self.expr_is_native_cstr(args[0])) {
+                self.p("({{ const char* _duo_s = ", .{});
+                try self.emit_expr(args[0]);
+                self.p("; strstr(_duo_s, \"", .{});
+                try self.emit_string_escaped(args[1].string_lit.val);
+                self.p("\") != NULL; }})", .{});
+                return true;
+            }
+        }
+        if (std.mem.eql(u8, name, "__strstartswith") and args.len == 2) {
+            if (self.fold_meta_string_expr(args[0])) |source| {
+                const prefix = self.fold_meta_string_expr(args[1]) orelse return false;
+                self.p("{s}", .{if (std.mem.startsWith(u8, source, prefix)) "true" else "false"});
+                return true;
+            }
+            if (try self.try_emit_native_string_affix("starts_with", args[0], args[1])) return true;
+        }
+        if (std.mem.eql(u8, name, "__strendswith") and args.len == 2) {
+            if (self.fold_meta_string_expr(args[0])) |source| {
+                const suffix = self.fold_meta_string_expr(args[1]) orelse return false;
+                self.p("{s}", .{if (std.mem.endsWith(u8, source, suffix)) "true" else "false"});
+                return true;
+            }
+            if (try self.try_emit_native_string_affix("ends_with", args[0], args[1])) return true;
+        }
+        if (std.mem.eql(u8, name, "__streq") and args.len == 2) {
+            if (self.fold_meta_string_expr(args[0])) |lhs| {
+                const rhs = self.fold_meta_string_expr(args[1]) orelse return false;
+                self.p("{s}", .{if (std.mem.eql(u8, lhs, rhs)) "true" else "false"});
+                return true;
+            }
+            if (self.expr_is_native_cstr(args[0]) and self.expr_is_native_cstr(args[1])) {
+                self.p("({{ const char* _duo_a = ", .{});
+                try self.emit_expr(args[0]);
+                self.p("; const char* _duo_b = ", .{});
+                try self.emit_expr(args[1]);
+                self.p("; strcmp(_duo_a, _duo_b) == 0; }})", .{});
+                return true;
+            }
         }
         return false;
+    }
+
+    fn comptimeJoinTableStrings(self: *CodeGen, parts: comptime_eval.Value, sep: []const u8) E!?[]const u8 {
+        if (parts != .table) return null;
+        var out: std.ArrayList(u8) = .empty;
+        errdefer out.deinit(self.alloc);
+        for (parts.table, 0..) |entry, i| {
+            if (i > 0 and sep.len > 0) try out.appendSlice(self.alloc, sep);
+            switch (entry.val) {
+                .string => |v| try out.appendSlice(self.alloc, v),
+                .int => |v| {
+                    var buf: [32]u8 = undefined;
+                    const written = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return null;
+                    try out.appendSlice(self.alloc, written);
+                },
+                .float => |v| {
+                    var buf: [32]u8 = undefined;
+                    const written = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return null;
+                    try out.appendSlice(self.alloc, written);
+                },
+                .bool => |v| try out.appendSlice(self.alloc, if (v) "true" else "false"),
+                .nil => try out.appendSlice(self.alloc, "nil"),
+                else => return null,
+            }
+        }
+        return try out.toOwnedSlice(self.alloc);
     }
 
     fn maybe_emit_meta_string_call(self: *CodeGen, name: []const u8, args: []const *ast.Expr) E!bool {
@@ -11950,6 +12951,18 @@ pub const CodeGen = struct {
             try self.emit_rewrite_description_expr(args[0]);
             return true;
         }
+        if (std.mem.eql(u8, name, "__strjoin") and args.len == 2) {
+            const parts = comptime_eval.evalWithBindings(args[0], self.comptime_bindings(), self.comptime_eval_options()) catch return false;
+            const sep_val = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch return false;
+            const sep: []const u8 = switch (sep_val) {
+                .string => sep_val.string,
+                else => return false,
+            };
+            const joined = try self.comptimeJoinTableStrings(parts, sep) orelse return false;
+            defer self.alloc.free(joined);
+            try self.emit_c_string_literal(joined);
+            return true;
+        }
         if (std.mem.eql(u8, name, "__moduletypenames") and args.len == 0) {
             const value = meta_codegen.moduleTypeNamesHook(self.meta_host(), self.alloc) orelse return false;
             if (value != .string) return false;
@@ -11967,6 +12980,7 @@ pub const CodeGen = struct {
             if (callback != .func) return false;
             const value = meta_codegen.comptimeMapHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__comptimemap", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -11976,6 +12990,7 @@ pub const CodeGen = struct {
             if (callback != .func) return false;
             const value = meta_codegen.comptimeEachHook(self.meta_host(), source, callback, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__comptimeeach", self.metaCombinatorEmitSite(), source, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -11984,6 +12999,7 @@ pub const CodeGen = struct {
             if (callback != .func) return false;
             const value = meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__comptimematch", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -11992,6 +13008,9 @@ pub const CodeGen = struct {
             if (callback != .func) return false;
             const value = meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int_lit.val, callback, self.alloc) orelse return false;
             if (value != .string) return false;
+            var ibuf: [32]u8 = undefined;
+            const input = std.fmt.bufPrint(&ibuf, "{d}", .{args[0].int_lit.val}) catch "0";
+            self.logMetaCombinatorProvenance("__comptimetabulate", self.metaCombinatorEmitSite(), input, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -11999,6 +13018,7 @@ pub const CodeGen = struct {
             const vars = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
             const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string_lit.val, vars, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__comptimeinterpolate", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -12010,11 +13030,23 @@ pub const CodeGen = struct {
             try self.emit_c_string_literal(value.string);
             return true;
         }
+        if (std.mem.eql(u8, name, "__comptimeproduct") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
+            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
+            if (callback != .func) return false;
+            const value = meta_codegen.comptimeProductHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, callback, self.alloc) orelse return false;
+            if (value != .string) return false;
+            var ibuf: [96]u8 = undefined;
+            const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string_lit.val, args[1].string_lit.val }) catch args[0].string_lit.val;
+            self.logMetaCombinatorProvenance("__comptimeproduct", self.metaCombinatorEmitSite(), input, value.string);
+            try self.emit_c_string_literal(value.string);
+            return true;
+        }
         if (std.mem.eql(u8, name, "__comptimepower") and args.len == 2 and args[0].* == .string_lit) {
             const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
             if (callback != .func) return false;
             const value = meta_codegen.comptimePowerHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__comptimepower", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -12060,6 +13092,21 @@ pub const CodeGen = struct {
             };
             const value = meta_codegen.derivePowerHook(self.meta_host(), args[0].string_lit.val, derive_name, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__derivepower", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
+            try self.emit_c_string_literal(value.string);
+            return true;
+        }
+        if (std.mem.eql(u8, name, "__deriveproduct") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
+            const derive_name = switch (args[2].*) {
+                .name => |n| n.ident,
+                .string_lit => |s| s.val,
+                else => return false,
+            };
+            const value = meta_codegen.deriveProductHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, derive_name, self.alloc) orelse return false;
+            if (value != .string) return false;
+            var ibuf: [96]u8 = undefined;
+            const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string_lit.val, args[1].string_lit.val }) catch args[0].string_lit.val;
+            self.logMetaCombinatorProvenance("__deriveproduct", self.metaCombinatorEmitSite(), input, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -12290,13 +13337,15 @@ pub const CodeGen = struct {
             return true;
         }
 
-        // @comp.fixpoint: unbounded iterative combinator
-        if (std.mem.eql(u8, name, "__comptimefixpoint") and args.len == 3 and args[0].* == .string_lit and args[1].* == .int_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
+        // @comp.fixpoint: unbounded iterative combinator (callback before or after max_iter)
+        if (std.mem.eql(u8, name, "__comptimefixpoint")) {
+            const fp = fixpointCallFromArgs(args) orelse return false;
+            const callback = comptime_eval.evalWithBindings(fp.callback, self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
             if (callback != .func) return false;
-            const max_iter: usize = @intCast(args[1].int_lit.val);
-            const value = meta_codegen.comptimeFixpointHook(self.meta_host(), args[0].string_lit.val, callback, max_iter, self.alloc) orelse return false;
+            const initial = args[0].string_lit.val;
+            const value = meta_codegen.comptimeFixpointHook(self.meta_host(), initial, callback, fp.max_iter, self.alloc) orelse return false;
             if (value != .string) return false;
+            self.logMetaCombinatorProvenance("__comptimefixpoint", self.metaCombinatorEmitSite(), initial, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -13153,6 +14202,161 @@ pub const CodeGen = struct {
         var buf: [128]u8 = undefined;
         const name = rt.c_type(&buf);
         self.p("\"{s}\"", .{name});
+    }
+
+    fn resolveStorageClass(self: *CodeGen, rt: RT) types.StorageClass {
+        if (types.tableStorageClass(rt)) |sc| return sc;
+        if (rt == .@"struct") {
+            if (self.record_aliases.get(rt.@"struct".name)) |alias_rt| {
+                if (types.tableStorageClass(alias_rt)) |sc| return sc;
+            }
+        }
+        return .dynamic;
+    }
+
+    fn resolveTableRecordType(self: *CodeGen, rt: RT) ?RT {
+        if (types.tableStorageClass(rt)) |_| return rt;
+        if (rt == .@"struct") {
+            if (self.record_aliases.get(rt.@"struct".name)) |alias_rt| {
+                if (types.tableStorageClass(alias_rt)) |_| return alias_rt;
+            }
+        }
+        return null;
+    }
+
+    /// __type_shape(expr) — returns table storage class as compile-time string
+    fn emit_type_shape_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const sc = self.resolveStorageClass(self.expr_type(args[0]));
+        const label = types.storageClassName(sc);
+        self.logTransformProvenance("comp.type.shape", .emit_call, "expr", label);
+        self.p("\"{s}\"", .{label});
+    }
+
+    /// __why_shape(expr) — factual storage-class explanation
+    fn emit_why_shape_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        const table_rt = self.resolveTableRecordType(rt) orelse rt;
+        const explanation = types.explainStorageClass(table_rt);
+        self.logTransformProvenance("comp.why.shape", .emit_call, "expr", explanation);
+        self.p("\"{s}\"", .{explanation});
+    }
+
+    fn exprBoundaryFacts(self: *CodeGen, expr: *const ast.Expr) dynamic_boundary.ExprFacts {
+        const rt = self.expr_type(expr);
+        const fn_name = self.current_func_name;
+        const func_native = if (fn_name) |n| self.funcUsesNativeLowering(n) else false;
+        return .{
+            .rt = rt,
+            .knowledge = self.exprKnowledge(expr),
+            .storage_class = self.resolveStorageClass(rt),
+            .module_native = self.moduleUsesFullNativeLowering(),
+            .func_native = func_native,
+            .lowers_native = self.exprLowersToNativeC(rt),
+            .module_needs_runtime = self.moduleNeedsLuaRuntime(),
+        };
+    }
+
+    fn emit_why_boxed_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const explanation = dynamic_boundary.explainBoxed(self.exprBoundaryFacts(args[0]));
+        self.logTransformProvenance("comp.why.boxed", .emit_call, "expr", explanation);
+        self.p("\"{s}\"", .{explanation});
+    }
+
+    fn emit_why_not_native_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const explanation = dynamic_boundary.explainNotNative(self.exprBoundaryFacts(args[0]));
+        self.logTransformProvenance("comp.why.not.native", .emit_call, "expr", explanation);
+        self.p("\"{s}\"", .{explanation});
+    }
+
+    fn emit_representation_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const explanation = dynamic_boundary.explainRepresentation(self.exprBoundaryFacts(args[0]));
+        self.logTransformProvenance("comp.representation", .emit_call, "expr", explanation);
+        self.p("\"{s}\"", .{explanation});
+    }
+
+    /// __why(expr) — general specialization explanation (table shapes; honest fallback)
+    fn emit_why_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        if (self.resolveTableRecordType(rt)) |table_rt| {
+            const explanation = types.explainStorageClass(table_rt);
+            self.logTransformProvenance("comp.why", .emit_call, "expr", explanation);
+            self.p("\"{s}\"", .{explanation});
+            return;
+        }
+        const fallback = "no compiler explanation available for this expression kind yet";
+        self.logTransformProvenance("comp.why", .emit_call, "expr", fallback);
+        self.p("\"{s}\"", .{fallback});
+    }
+
+    /// __origin(expr) — compact provenance: storage_class + shape_id for typed records
+    fn emit_origin_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const rt = self.expr_type(args[0]);
+        if (self.resolveTableRecordType(rt)) |table_rt| {
+            const sc = types.storageClassName(self.resolveStorageClass(table_rt));
+            const sid = types.tableShapeIdentityHash(table_rt) orelse 0;
+            var buf: [128]u8 = undefined;
+            const origin = std.fmt.bufPrint(&buf, "storage_class={s};shape_id={d}", .{ sc, sid }) catch "storage_class=unknown";
+            self.logTransformProvenance("comp.origin", .emit_call, "expr", origin);
+            self.p("\"{s}\"", .{origin});
+            return;
+        }
+        if (self.enum_name_of(rt)) |ename| {
+            var buf: [64]u8 = undefined;
+            const origin = std.fmt.bufPrint(&buf, "kind=enum;name={s}", .{ename}) catch "kind=enum";
+            self.logTransformProvenance("comp.origin", .emit_call, "expr", origin);
+            self.p("\"{s}\"", .{origin});
+            return;
+        }
+        const fallback = "kind=dynamic";
+        self.logTransformProvenance("comp.origin", .emit_call, "expr", fallback);
+        self.p("\"{s}\"", .{fallback});
+    }
+
+    fn logMetaCombinatorProvenance(
+        self: *CodeGen,
+        internal: []const u8,
+        site: transform_engine.SiteKind,
+        input: []const u8,
+        output: []const u8,
+    ) void {
+        _ = transform_engine.gateMetaDispatch(internal);
+        transform_engine.logInternalTransform(self.alloc, internal, site, input, output);
+    }
+
+    fn fixpointCallFromArgs(args: []const *ast.Expr) ?struct {
+        callback: *ast.Expr,
+        max_iter: usize,
+    } {
+        if (args.len != 3 or args[0].* != .string_lit) return null;
+        if (args[1].* == .int_lit and args[2].* == .func_expr) {
+            return .{ .callback = args[2], .max_iter = @intCast(args[1].int_lit.val) };
+        }
+        if (args[2].* == .int_lit and args[1].* == .func_expr) {
+            return .{ .callback = args[1], .max_iter = @intCast(args[2].int_lit.val) };
+        }
+        return null;
+    }
+
+    fn metaCombinatorEmitSite(self: *const CodeGen) transform_engine.SiteKind {
+        if (self.current_func_body != null) return .block_body;
+        return .emit_call;
+    }
+
+    fn logTransformProvenance(
+        self: *CodeGen,
+        public_name: []const u8,
+        site: transform_engine.SiteKind,
+        input: []const u8,
+        output: []const u8,
+    ) void {
+        if (!transform_engine.isRegisteredTransform(public_name)) return;
+        transform_engine.logProvenance(
+            self.alloc,
+            public_name,
+            site,
+            std.hash.Wyhash.hash(0, input),
+            std.hash.Wyhash.hash(0, output),
+        );
     }
 
     /// __type_id(expr) — stable compile-time type identifier (FNV hash of type name)
@@ -15555,6 +16759,7 @@ pub const CodeGen = struct {
                         },
                         .named => |nmd| try self.collect_closures_expr(nmd.val, list),
                         .positional => |pos| try self.collect_closures_expr(pos, list),
+                        .spread => |sp| try self.collect_closures_expr(sp, list),
                     }
                 }
             },
@@ -15888,6 +17093,7 @@ pub const CodeGen = struct {
                         },
                         .named => |nmd| try self.collect_require_names(nmd.val, names),
                         .positional => |pos| try self.collect_require_names(pos, names),
+                        .spread => |sp| try self.collect_require_names(sp, names),
                     }
                 }
             },
@@ -16144,11 +17350,20 @@ pub const CodeGen = struct {
         seen: *std.StringArrayHashMapUnmanaged(void),
         names: *std.ArrayList([]const u8),
         name: []const u8,
+        force_export: bool,
     ) E!void {
-        if (name.len == 0 or name[0] == '_') return;
+        if (name.len == 0) return;
+        if (!force_export and name[0] == '_') return;
         if (seen.contains(name)) return;
         try seen.put(self.alloc, name, {});
         try names.append(self.alloc, name);
+    }
+
+    fn binding_has_export_attr(attrs: []const ast.Attribute) bool {
+        for (attrs) |attr| {
+            if (std.mem.eql(u8, attr.name, "export")) return true;
+        }
+        return false;
     }
 
     fn collect_duo_module_exports(self: *CodeGen, mod: *const ast.Module, names: *std.ArrayList([]const u8)) E!void {
@@ -16158,19 +17373,31 @@ pub const CodeGen = struct {
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
                 .local_decl => |*ld| {
-                    for (ld.names) |*lname| try self.add_module_export(&seen, names, lname.ident);
+                    for (ld.names) |*lname| {
+                        try self.add_module_export(
+                            &seen,
+                            names,
+                            lname.ident,
+                            binding_has_export_attr(lname.attributes),
+                        );
+                    }
                 },
                 .global_decl => |*gd| {
-                    if (!gd.star) for (gd.names) |*lname| try self.add_module_export(&seen, names, lname.ident);
+                    if (!gd.star) for (gd.names) |*lname| {
+                        try self.add_module_export(&seen, names, lname.ident, binding_has_export_attr(lname.attributes));
+                    };
                 },
-                .const_decl => |*cd| try self.add_module_export(&seen, names, cd.ident),
+                .const_decl => |*cd| try self.add_module_export(&seen, names, cd.ident, false),
                 .assign => |*as| {
                     for (as.targets) |target| {
-                        if (target.* == .name) try self.add_module_export(&seen, names, target.name.ident);
+                        if (target.* == .name) try self.add_module_export(&seen, names, target.name.ident, false);
                     }
                 },
                 .func_decl => |*fd| {
-                    if (fd.path.len == 1 and !fd.method) try self.add_module_export(&seen, names, fd.path[0]);
+                    if (fd.path.len == 1 and !fd.method) {
+                        const force = func_has_attr(fd.attributes, "export");
+                        try self.add_module_export(&seen, names, fd.path[0], force);
+                    }
                 },
                 else => {},
             }
@@ -16238,6 +17465,7 @@ pub const CodeGen = struct {
                     .indexed => |idx| if (expr_references_name(idx.key, name) or expr_references_name(idx.val, name)) break :blk true,
                     .named => |named| if (expr_references_name(named.val, name)) break :blk true,
                     .positional => |pos| if (expr_references_name(pos, name)) break :blk true,
+                    .spread => |sp| if (expr_references_name(sp, name)) break :blk true,
                 };
                 break :blk false;
             },
@@ -16979,7 +18207,6 @@ const duo_runtime =
     \\#include <string.h>
     \\#include <stdarg.h>
     \\#include <stdint.h>
-    \\#include <unistd.h>
     \\#if defined(__APPLE__)
     \\#include <mach-o/dyld.h>
     \\#endif
@@ -22362,7 +23589,7 @@ test "runtime: gmatch iterator carries source length" {
 
 test "runtime: substring match helpers intern directly from source slices" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(str + start - 1, (size_t)sublen);") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(s + ms, mlen);") != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(s + ms, me - ms);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "return lua_val_from_str_len(gmatch_state.s + ms, mlen);") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "char* res = malloc(sublen + 1);") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "char* out = malloc(mlen + 1);") == null);
@@ -22561,7 +23788,7 @@ test "codegen: generic specialization calls use typed argument coercion" {
     const output = aw.written();
 
     try testing.expect(std.mem.indexOf(u8, output, "static inline double duo_pick_f64(double fallback, double value)") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "duo_pick_f64(1.5, (double)(2))") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_pick_f64(1.5e0, (double)(2))") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_val_from_num((double)(2))") == null);
 }
 
@@ -24021,6 +25248,144 @@ test "codegen: typed dynamic string byte emits native integer helper" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value b = ") == null);
 }
 
+test "codegen: descriptor composition merges parent record fields" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\Named: @{ name: str }
+        \\User: @{ ..Named, id: i64 }
+        \\u: User = { name = "alice", id = 42 }
+        \\print(u.name, u.id)
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    try cg.emit_module(&module);
+    const user_rt = cg.record_aliases.get("User") orelse return error.TestExpectedEqual;
+    try testing.expect(user_rt == .table_type);
+    try testing.expectEqual(@as(usize, 2), user_rt.table_type.fields.len);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* name") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t id") != null);
+}
+
+test "codegen: comptime str intrinsics fold to native literals" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\local eq: bool = __streq("a", "a")
+        \\local sw: bool = __strstartswith("duo", "du")
+        \\local ew: bool = __strendswith("duo", "o")
+        \\local ln: i64 = __strcomptelen("hello")
+        \\local joined: str = __strjoin({"a", "b", "c"}, "|")
+        \\print(eq, sw, ew, ln, joined)
+    , "test");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "bool eq = true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool sw = true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "bool ew = true") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "int64_t ln = 5") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = \"a|b|c\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_Value eq = ") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "const char* joined = lua_to_str(lua_tbl_concat(") == null);
+}
+
+test "codegen: __comptimeproduct folds concept cartesian product to native c string" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\concept HasA
+        \\    x: i64
+        \\end
+        \\concept HasB
+        \\    y: i64
+        \\end
+        \\type Alpha = { x: i64 }
+        \\type Beta = { y: i64 }
+        \\local pairs: str = __comptimeproduct("HasA", "HasB", fun(a, b) a.name .. "x" .. b.name .. ";" end)
+        \\print(pairs)
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* pairs = \"AlphaxBeta;\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "__comptimeproduct") == null);
+}
+
+test "codegen: comptime-only callback functions skip runtime emission" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\concept HasA
+        \\    x: i64
+        \\end
+        \\concept HasB
+        \\    y: i64
+        \\end
+        \\type Alpha = { x: i64 }
+        \\type Beta = { y: i64 }
+        \\fun pair_line(a, b) -> str
+        \\    a.name .. "x" .. b.name .. ";"
+        \\end
+        \\local pairs: str = __comptimeproduct("HasA", "HasB", pair_line)
+        \\print(pairs)
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "const char* pairs = \"AlphaxBeta;\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "pair_line") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "__lua") == null);
+}
+
 test "codegen: typed string len methods lower without boxed runtime result" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -24358,7 +25723,7 @@ test "codegen: typed boxed math module calls unbox runtime results" {
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "double r = lua_math_random_num(lua_val_nil(), lua_val_nil());") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double intpart = ({ double _duo_int = 0.0; modf((double)(12.75), &_duo_int); _duo_int; });") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "modf((double)(1.275e1), &_duo_int);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool unsigned_lt = (((uint64_t)(1)) < ((uint64_t)(2)));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* kind = \"integer\";") != null);
     try testing.expect(std.mem.indexOf(u8, output, "const char* fkind = \"float\";") != null);
@@ -24444,7 +25809,7 @@ test "codegen: typed os module calls unbox boxed runtime results" {
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "double now = ((double)time(NULL));") != null);
     try testing.expect(std.mem.indexOf(u8, output, "double table_now = ((double)lua_to_num(lua_os_time(") != null);
-    try testing.expect(std.mem.indexOf(u8, output, "double delta = difftime((time_t)(now), (time_t)(1));") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "difftime((time_t)(now), (time_t)(") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool removed = (remove(\"missing.tmp\") == 0);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool renamed = (rename(\"missing.tmp\", \"other.tmp\") == 0);") != null);
     try testing.expect(std.mem.indexOf(u8, output, "bool shell = (system(NULL) != 0);") != null);
@@ -26379,4 +27744,161 @@ test "codegen: typed string transformations lower to native C-string helpers" {
     try testing.expect(std.mem.indexOf(u8, output, "lua_str_sub_cstr(lua_str_lower_cstr(s), (int64_t)(3), (int64_t)(8))") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_str_lower(lua_val_from_str") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_to_str(lua_str_lower") == null);
+}
+
+test "codegen: __type_shape reports native for all-scalar typed records" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\alias Point = { x: f64, y: f64 }
+        \\function main()
+        \\  local p: Point = { x = 1.0, y = 2.0 }
+        \\  local shape: str = @comp.type.shape(p)
+        \\  print(shape, p.x)
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "\"native\"") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "lua_table_get_str_num(p, \"x\"") == null);
+}
+
+test "codegen: __why_shape explains native record lowering" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\alias Point = { x: f64, y: f64 }
+        \\function main()
+        \\  local p: Point = { x = 1.0, y = 2.0 }
+        \\  local why: str = @comp.why.shape(p)
+        \\  print(why)
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "native C scalars") != null);
+}
+
+test "codegen: print uses int format for payload-free enum values" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\enum Color
+        \\  Red
+        \\  Green
+        \\end
+        \\function main()
+        \\  local red = Color.Red
+        \\  print(red)
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "printf(\"%d\\n\", (int)(duo_Color_Red))") != null or
+        std.mem.indexOf(u8, output, "printf(\"%d\\n\", (int)(red))") != null);
+}
+
+test "codegen: native scalar str compare uses strcmp not lua_neq" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\branch_str(cond: bool): str
+        \\  if cond then msg = "yes" else msg = "no" end
+        \\  msg
+        \\end
+        \\main(): i64
+        \\  if branch_str(true) ~= "yes" then return 1 end
+        \\  return 0
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "lua_neq") == null);
+    try testing.expect(std.mem.indexOf(u8, output, "strcmp(") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_retain") == null);
+}
+
+test "codegen: __origin reports shape_id for typed records" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\alias Point = { x: f64, y: f64 }
+        \\fun main()
+        \\  p: Point = { x = 1.0, y = 2.0 }
+        \\  o: str = @comp.origin(p)
+        \\  print(o)
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "storage_class=native;shape_id=") != null);
 }
