@@ -106,16 +106,15 @@
 | **Prerequisite** | Stack-frame spill slots |
 | **Status** | Open |
 
-### 9. Per-expression knowledge not used for call dispatch
+### 9. Per-expression knowledge now gates call dispatch
 
 | Field | Value |
 | --- | --- |
-| **Location** | `codegen.zig:~10700` call emission |
-| **Barrier** | `exprKnowledge()`/`symbolKnowledge()` defined but not consumed |
-| **Impact** | Calls that COULD be direct still go through `lua_invoke` in mixed mode |
-| **Class** | ANALYSIS |
-| **Prerequisite** | Wire lattice queries into call-emission decision |
-| **Status** | Open — Pass 2 spine exists, needs codegen wiring |
+| **Location** | `codegen.zig:~11372` call emission |
+| **Barrier** | ~~`exprKnowledge()` defined but not consumed~~ |
+| **Impact** | Typed callee signatures now enable direct calls in mixed mode |
+| **Class** | ~~ANALYSIS~~ RESOLVED |
+| **Status** | ✅ Fixed — `funcTypeIsFullyNative()` added (2026-08-04) |
 
 ### 10. Return packs always materialize for >1 value
 
