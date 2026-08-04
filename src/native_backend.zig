@@ -806,11 +806,18 @@ const Arm64Compiler = struct {
     }
 
     fn compileExprFp(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
-        // Pure-f64 lowering. f64 literals (PC-relative literal-pool load) are a
-        // follow-up; params + arithmetic already cover matmul-style kernels and
-        // verify the FP register file + AAPCS float calling convention.
+        // Pure-f64 lowering. f64 literals materialize via emitMovImm (bit
+        // pattern into an x-reg) + FMOV general->FP — no literal pool / data
+        // section needed. Params arrive in d0-d7; arithmetic covers kernels.
         return switch (expr.*) {
-            .float_lit => error.UnsupportedProgram,
+            .float_lit => |fl| blk: {
+                const tmp = try self.allocReg();
+                try self.emitMovImm(tmp, @bitCast(fl.val));
+                const dst = try self.allocFpReg();
+                try self.emitFmovFromGpr(dst, tmp);
+                self.releaseReg(tmp);
+                break :blk dst;
+            },
             .name => |name| self.fp_locals.get(name.ident) orelse error.UndefinedName,
             .binop => |bin| blk: {
                 const lhs = try self.compileExprFp(bin.lhs);
@@ -1133,6 +1140,13 @@ const Arm64Compiler = struct {
     fn emitFmovReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
         // FMOV <Dd>,<Dn> — ground-truth base 0x1E604000 (fmov d0,d2 => 0x1E604040).
         try self.emitFmt(0x1e604000 | (@as(u32, src) << 5) | @as(u32, dst), "fmov d{d}, d{d}", .{ dst, src });
+    }
+
+    fn emitFmovFromGpr(self: *Arm64Compiler, dreg: u5, xreg: u5) Error!void {
+        // FMOV <Dd>,<Xn> — general-register to FP (64-bit). Ground-truth base
+        // 0x9E670000 (fmov d0,x1 => 0x9E670020). Used to materialize an f64
+        // literal: load its bit pattern into an x-reg, then transfer to d.
+        try self.emitFmt(0x9e670000 | (@as(u32, xreg) << 5) | @as(u32, dreg), "fmov d{d}, x{d}", .{ dreg, xreg });
     }
 
     fn patchCalls(self: *Arm64Compiler) Error!void {
