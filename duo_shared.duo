@@ -88,7 +88,7 @@ fun agent_smoke(timeout: int): any
     else
         rc = script.run(locked)
     end
-    { exit_code = rc, passed = rc == 0, gate = "agent-smoke" }
+    return { exit_code = rc, passed = rc == 0, gate = "agent-smoke" }
 end
 
 fun build_run(gate: str, timeout: int): any
@@ -107,7 +107,7 @@ fun build_run(gate: str, timeout: int): any
     else
         rc = script.run(script.lock_cmd(cmd))
     end
-    { exit_code = rc, passed = rc == 0, gate = gate }
+    return { exit_code = rc, passed = rc == 0, gate = gate }
 end
 
 -- === Repo tooling ===
@@ -125,7 +125,7 @@ fun repo_tooling(script_name: str, args: str): any
     end
     if args ~= "" then full = full .. " " .. args end
     rc = script.run(full)
-    { exit_code = rc, passed = rc == 0, script = script_name }
+    return { exit_code = rc, passed = rc == 0, script = script_name }
 end
 
 -- === Native boxing audit ===
@@ -162,7 +162,7 @@ fun audit_native_boxing(file_path: str): any
     for _ in string.gmatch(c_code, "const char%*")
         const_count = const_count + 1
     end
-    {
+    return {
         file = file_path,
         boxing_hits = hits,
         boxing_hit_count = #hits,
@@ -648,7 +648,7 @@ Example:
         end
     end
     
-    { error = "Question not recognized. Try: " .. table.concat({k for k in questions}, ", ") }
+    return { error = "Question not recognized. Try: " .. table.concat({k for k in questions}, ", ") }
 end
 
 fun combinator_info(path: str): any
@@ -712,7 +712,7 @@ fun combinator_info(path: str): any
         return result[path]
     end
     
-    { error = "Unknown combinator: " .. path .. ". Available: " .. table.concat(table.keys(result), ", ") }
+    return { error = "Unknown combinator: " .. path .. ". Available: " .. table.concat(table.keys(result), ", ") }
 end
 
 -- ====================================
