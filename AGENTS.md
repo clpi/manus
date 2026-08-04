@@ -143,6 +143,7 @@ Duo MUST achieve compile, runtime, and startup speeds that are better than ANY p
 - Pass 3: [`docs/plans/pass3_directive_grammar_convergence.md`](docs/plans/pass3_directive_grammar_convergence.md) — grammar/directives
 - Pass 4: [`docs/plans/pass4_native_compilation.md`](docs/plans/pass4_native_compilation.md) — native backend
 - Pass 5: [`docs/plans/pass5_semantic_interchange.md`](docs/plans/pass5_semantic_interchange.md) — cross-language
+- Pass 6: [`docs/plans/pass6_reconciliation.md`](docs/plans/pass6_reconciliation.md) — architectural reconciliation
 
 **Catalogs:** [`docs/catalogs/keywords.md`](docs/catalogs/keywords.md) | [`docs/catalogs/directives.md`](docs/catalogs/directives.md) | [`docs/catalogs/grammar_compactness.md`](docs/catalogs/grammar_compactness.md) | [`docs/catalogs/native_barriers.md`](docs/catalogs/native_barriers.md)
 

@@ -82,11 +82,31 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 | Pass 5 plan | `docs/plans/pass5_semantic_interchange.md` | ✅ |
 | SIM v0 | `src/sim.zig` | 🔄 partial |
 | Native export | `duo sim <file.duo>` | ✅ |
-| C import (Layer B) | `@c.import` include-only today | ⬜ Phase 2 |
-| First milestone P5-M1 | C `CPoint`/`distance2` → direct call | ⬜ |
+| C import (Layer B) | `duo sim --import-c <header>` | 🔄 partial |
+| Foreign descriptors (P5-05) | `@c.import` → sema + codegen | 🔄 partial |
+| First milestone P5-M1 | `examples/pass5/c_point_smoke.duo` | 🔄 partial (direct C call + link + abi.specialize done; MCP/LSP partial) |
 | Agent JSON | `duo catalog` → `pass5` section | ✅ |
 
 **Constraint:** Pass 5 must not outrun Pass 4. Foreign work reuses SIM + transforms, not text templates.
+
+---
+
+## Current phase (Pass 6 — Architectural reconciliation)
+
+**Pass 6** integrates Passes 1–5 against repository truth. **No new language features.**
+
+| Track | Doc / command | Status |
+| --- | --- | --- |
+| Pass 6 plan | `docs/plans/pass6_architectural_reconciliation.md` | 🔄 partial |
+| Duplication matrix | `duo catalog` → `pass6.duplications` | 🔄 8 entries |
+| Dependency DAG | `pass6.dependency_dag` | 🔄 partial |
+| Risk register | `pass6.risks` (AR-001 … AR-008) | 🔄 partial |
+| Scorecard | `pass6.scorecard` | 🔄 partial |
+| Rejected ideas | `docs/catalogs/rejected_ideas.md` | 🔄 partial |
+| Agent JSON | `duo catalog` → `pass6` section | ✅ |
+
+**Top priority:** P6-07 transform dispatch convergence (`codegen` → `transform_engine`).  
+**Governing question:** If this subsystem disappeared, would the compiler become simpler?
 
 ---
 
@@ -207,6 +227,7 @@ Before merging **any** new or changed `@comp.*` combinator / fold / meta hook:
 | **Pass 3 directive/grammar** | `docs/plans/pass3_directive_grammar_convergence.md` |
 | **Pass 3 catalogs** | `docs/catalogs/README.md` + `duo catalog` |
 | **Pass 2 convergence** | `docs/plans/pass2_convergence.md` |
+| **Pass 6 reconciliation** | `docs/plans/pass6_reconciliation.md` |
 | Architecture plan | `docs/semantic_universe.md` |
 | Agent rules | `AGENTS.md` |
 | Claims, gaps, log | `.agents/AGENT_COORDINATION.md` |
