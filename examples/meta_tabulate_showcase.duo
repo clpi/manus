@@ -1,0 +1,25 @@
+-- @comp.tabulate — compile-time lookup table generator (unrolled loop of codegen)
+-- Calls callback for 0..count-1 with {index, count}, concatenates comma-separated.
+-- O(1) author input → O(count) output. Replaces runtime init with compile-time static.
+-- Comptime-only — folds to native C string, never lua_Value.
+
+-- Generate a 16-entry square table at compile time
+squares = @comp.tabulate(16, fun(m)
+    tostring(m.index * m.index)
+end)
+print("=== @comp.tabulate: squares ===")
+print(squares)
+
+-- Generate a C static array initializer from compile-time computation
+init = @comp.tabulate(8, fun(m)
+    tostring(m.index * 3 + 1)
+end)
+print("=== @comp.tabulate: arithmetic progression ===")
+print(init)
+
+-- Generate even/odd flags at compile time
+parity = @comp.tabulate(10, fun(m)
+    tostring(m.index % 2)
+end)
+print("=== @comp.tabulate: parity ===")
+print(parity)

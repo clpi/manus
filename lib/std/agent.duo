@@ -188,6 +188,7 @@ fun smoke_targets(): any
         "examples/meta_generative_stack_showcase.duo",
         "examples/meta_algebra_showcase.duo",
         "examples/meta_match_showcase.duo",
+        "examples/meta_tabulate_showcase.duo",
         "examples/embedded_bare_bundles_smoke.duo",
         "examples/vector_embed_smoke.duo",
     }

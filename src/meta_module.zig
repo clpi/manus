@@ -181,6 +181,13 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.match", .internal = "__comptimematch" },
     .{ .public = "compiler.match", .internal = "__comptimematch" },
 
+    // `@comp.tabulate` — compile-time lookup table generator (unrolled loop of codegen)
+    // Calls callback for 0..count-1 with {index, count}, concatenates comma-separated.
+    // O(1) author input → O(count) output. Replaces runtime init with compile-time static.
+    .{ .public = "meta.tabulate", .internal = "__comptimetabulate" },
+    .{ .public = "comp.tabulate", .internal = "__comptimetabulate" },
+    .{ .public = "compiler.tabulate", .internal = "__comptimetabulate" },
+
     // ── Type introspection ──
     .{ .public = "meta.type.name", .internal = "__type_name" },
     .{ .public = "comp.type.name", .internal = "__type_name" },
@@ -903,6 +910,7 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         "comp.choose",         "comp.derive.choose",   "comp.permute",
         "comp.derive.permute",
         "comp.each",           "comp.chain",           "comp.match",
+        "comp.tabulate",
     };
     for (combinators) |c| {
         if (std.mem.eql(u8, path, c)) return "combinators";

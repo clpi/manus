@@ -2061,6 +2061,42 @@ pub fn comptimeMatchHook(host: Host, patterns: []const u8, callback: comptime_ev
     return .{ .string = buf.toOwnedSlice(alloc) catch return null };
 }
 
+/// `@comp.tabulate(count, callback)` — compile-time lookup table generator.
+/// Calls the callback for each index 0..count-1, passing {index, count}.
+/// Concatenates all callback outputs into one native C string (comma-separated).
+///
+/// This is the "unrolled loop of codegen" — replaces runtime array initialization
+/// with compile-time computed static values. O(1) author input → O(count) output.
+/// Comptime-only — folds to native C string, never `lua_Value`.
+///
+/// Example: `@comp.tabulate(16, fun(i) tostring(i * i) end)` → "0,1,4,9,16,25,36,49,64,81,100,121,144,169,196,225"
+pub fn comptimeTabulateHook(host: Host, count: i64, callback: comptime_eval.Value, alloc: std.mem.Allocator) ?comptime_eval.Value {
+    if (count <= 0) return .{ .string = alloc.dupe(u8, "") catch return null };
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    var index: i64 = 0;
+    while (index < count) : (index += 1) {
+        var entries: [2]comptime_eval.Value.TableEntry = .{
+            .{ .name = "index", .val = .{ .int = index } },
+            .{ .name = "count", .val = .{ .int = count } },
+        };
+        const owned_entries = alloc.dupe(comptime_eval.Value.TableEntry, &entries) catch return null;
+        const meta_val: comptime_eval.Value = .{ .table = owned_entries };
+
+        const piece = comptime_eval.callFunctionValue(callback, &.{meta_val}, host.bindings, host.options) catch {
+            continue;
+        };
+        if (piece == .string) {
+            if (index > 0) buf.appendSlice(alloc, ",") catch return null;
+            buf.appendSlice(alloc, piece.string) catch return null;
+        }
+    }
+
+    return .{ .string = buf.toOwnedSlice(alloc) catch return null };
+}
+
 /// `@comp.fixpoint(initial, fn[, max_iter])` — iterate a generator callback until
 /// convergence (output == input) or max_iter reached. The ONLY unbounded combinator:
 /// O(1) author input → O(max_iter) output. The callback receives a table with

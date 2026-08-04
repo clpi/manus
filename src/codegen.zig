@@ -1686,6 +1686,7 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__comptimemap") or
             std.mem.eql(u8, name, "__comptimeeach") or
             std.mem.eql(u8, name, "__comptimematch") or
+            std.mem.eql(u8, name, "__comptimetabulate") or
             std.mem.eql(u8, name, "__comptimepower") or
             std.mem.eql(u8, name, "__comptimepermute") or
             std.mem.eql(u8, name, "__comptimechoose") or
@@ -7872,7 +7873,9 @@ pub const CodeGen = struct {
                         try self.note_local(name);
                         try self.note_local_type(name, .any);
                         self.ind();
-                        self.p("lua_Value {s} = lua_mret_get(0);\n", .{name});
+                        self.p("lua_Value {s} = ", .{name});
+                        try self.emit_as_lua_value(as.values[0]);
+                        self.p(";\n", .{});
                     } else {
                         self.ind();
                         const tt0 = self.expr_type(as.targets[0]);
@@ -11662,6 +11665,12 @@ pub const CodeGen = struct {
                     const value = meta_codegen.comptimeMatchHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
                 }
+                if (std.mem.eql(u8, name, "__comptimetabulate") and c.args.len == 2 and c.args[0].* == .int_lit) {
+                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
+                    if (callback != .func) break :blk null;
+                    const value = meta_codegen.comptimeTabulateHook(self.meta_host(), c.args[0].int_lit.val, callback, self.alloc) orelse break :blk null;
+                    break :blk if (value == .string) value.string else null;
+                }
                 if (std.mem.eql(u8, name, "__comptimepower") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
@@ -11883,6 +11892,14 @@ pub const CodeGen = struct {
             const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
             if (callback != .func) return false;
             const value = meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
+            if (value != .string) return false;
+            try self.emit_c_string_literal(value.string);
+            return true;
+        }
+        if (std.mem.eql(u8, name, "__comptimetabulate") and args.len == 2 and args[0].* == .int_lit) {
+            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
+            if (callback != .func) return false;
+            const value = meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int_lit.val, callback, self.alloc) orelse return false;
             if (value != .string) return false;
             try self.emit_c_string_literal(value.string);
             return true;
@@ -19770,195 +19787,223 @@ const duo_runtime =
     \\    return c == lit;
     \\}
     \\
-    \\static int duo_lp_match(const char* s, size_t slen, size_t si, const char* pat, const char* pat_end, size_t* ms, size_t* me) {
-    \\    if (pat < pat_end && *pat == '^') {
-    \\        if (si != 0) return 0;
-    \\        pat++;
+    \\#define DUO_LP_MAXCAP 32
+    \\
+    \\/* Skip one pattern item (no quantifier). Returns pointer past the item. */
+    \\static const char* duo_lp_skip_item(const char* p, const char* end) {
+    \\    if (p >= end) return end;
+    \\    if (*p == '.') return p + 1;
+    \\    if (*p == '[') {
+    \\        const char* q = p + 1;
+    \\        if (q < end && *q == '^') q++;
+    \\        if (q < end && *q == ']') q++;
+    \\        while (q < end && *q != ']') {
+    \\            if (*q == '%' && q + 1 < end) q += 2;
+    \\            else q++;
+    \\        }
+    \\        if (q < end && *q == ']') q++;
+    \\        return q;
     \\    }
-    \\    int anchor_end = (pat_end > pat && pat_end[-1] == '$');
-    \\    if (anchor_end) pat_end--;
-    \\    const char* p = pat;
-    \\    size_t i = si;
-    \\    while (p < pat_end) {
-    \\        if (*p == '(') {
-    \\            p++;
-    \\            if (p < pat_end && *p == ')') { p++; continue; }
-    \\            size_t cap_start = i;
-    \\            const char* sub = p;
-    \\            int depth = 1;
-    \\            while (p < pat_end && depth > 0) {
-    \\                if (*p == '(') depth++;
-    \\                else if (*p == ')') depth--;
-    \\                p++;
-    \\            }
-    \\            if (depth != 0) return 0;
-    \\            const char* sub_end = p - 1;
-    \\            size_t cap_end = i;
-    \\            if (!duo_lp_match(s, slen, i, sub, sub_end, &cap_start, &cap_end)) return 0;
-    \\            i = cap_end;
-    \\            continue;
-    \\        }
-    \\        if (*p == '%' && p + 1 < pat_end && p[1] == 'b') {
-    \\            p += 2;
-    \\            if (p + 1 >= pat_end) return 0;
-    \\            char open = *p++; char close = *p++;
-    \\            if (i >= slen || s[i] != open) return 0;
-    \\            int depth = 1;
-    \\            size_t j = i + 1;
-    \\            while (j < slen && depth > 0) {
-    \\                if (s[j] == open) depth++;
-    \\                else if (s[j] == close) depth--;
-    \\                j++;
-    \\            }
-    \\            if (depth != 0) return 0;
-    \\            i = j;
-    \\            continue;
-    \\        }
-    \\        char c = *p;
-    \\        if (c == '*' || c == '+' || c == '-' || c == '?') {
-    \\            return 0;
-    \\        }
-    \\        if (i >= slen) return 0;
-    \\        if (!duo_lp_item_match((unsigned char)s[i], &p, pat_end)) return 0;
-    \\        i++;
+    \\    if (*p == '%' && p + 1 < end) {
+    \\        if (p[1] == 'b') return (p + 4 <= end) ? p + 4 : end;
+    \\        return p + 2;
     \\    }
-    \\    if (anchor_end && i != slen) return 0;
-    \\    *ms = si;
-    \\    *me = i;
-    \\    return 1;
+    \\    if (*p == '(') {
+    \\        const char* q = p + 1;
+    \\        int depth = 1;
+    \\        while (q < end && depth > 0) {
+    \\            if (*q == '(') depth++;
+    \\            else if (*q == ')') depth--;
+    \\            q++;
+    \\        }
+    \\        return q;
+    \\    }
+    \\    return p + 1;
     \\}
     \\
-    \\static int duo_lp_match_star(const char* s, size_t slen, size_t si, const char* item, const char* item_end, char op, const char* rest, const char* pat_end, size_t* ms, size_t* me) {
-    \\    size_t orig = si;
-    \\    size_t max_i = si;
-    \\    while (max_i < slen) {
-    \\        const char* p = item;
-    \\        if (!duo_lp_item_match((unsigned char)s[max_i], &p, item_end)) break;
-    \\        max_i++;
+    \\/* Match one occurrence of item [p, item_end) at subject offset si.
+    \\   Returns 1 on match and sets *consumed (may be >1 for %bXY). */
+    \\static int duo_lp_item_at(const char* s, size_t slen, size_t si,
+    \\                          const char* p, const char* end, size_t* consumed) {
+    \\    if (si >= slen) return 0;
+    \\    if (p >= end) return 0;
+    \\    int c = (unsigned char)s[si];
+    \\    if (*p == '.') { *consumed = 1; return c != 0; }
+    \\    if (*p == '[') {
+    \\        const char* pp = p;
+    \\        int m = duo_lp_class_test(c, &pp, end);
+    \\        *consumed = 1;
+    \\        return m;
     \\    }
-    \\    if (op == '+') {
-    \\        if (max_i == orig) return 0;
-    \\        for (size_t i = max_i; i > orig; i--) {
-    \\            size_t tms, tme;
-    \\            if (duo_lp_match(s, slen, i, rest, pat_end, &tms, &tme)) {
-    \\                *ms = orig;
-    \\                *me = tme;
-    \\                return 1;
+    \\    if (*p == '%' && p + 1 < end && p[1] == 'b') {
+    \\        if (p + 3 >= end) return 0;
+    \\        char open = p[2], close = p[3];
+    \\        if (c != open) return 0;
+    \\        int depth = 1;
+    \\        size_t j = si + 1;
+    \\        while (j < slen && depth > 0) {
+    \\            if (s[j] == open) depth++;
+    \\            else if (s[j] == close) depth--;
+    \\            j++;
+    \\        }
+    \\        if (depth != 0) return 0;
+    \\        *consumed = j - si;
+    \\        return 1;
+    \\    }
+    \\    {
+    \\        const char* pp = p;
+    \\        int m = duo_lp_item_match(c, &pp, end);
+    \\        *consumed = 1;
+    \\        return m;
+    \\    }
+    \\}
+    \\
+    \\/* Backtracking matcher with capture recording. Matches pattern [p, end)
+    \\   starting at subject offset si. Returns final offset or (size_t)-1.
+    \\   Capture spans appended to cap_s/cap_e; *ncap tracks the count. */
+    \\static size_t duo_lp_match_rec(const char* s, size_t slen, size_t si,
+    \\                               const char* p, const char* end,
+    \\                               size_t* cap_s, size_t* cap_e, int* ncap) {
+    \\    if (p >= end) return si;
+    \\    if (*p == '$' && p + 1 == end) return (si == slen) ? si : (size_t)-1;
+    \\    if (*p == ')') return (size_t)-1;
+    \\    if (*p == '(') {
+    \\        const char* close = p + 1;
+    \\        int depth = 1;
+    \\        while (close < end) {
+    \\            if (*close == '(') depth++;
+    \\            else if (*close == ')') { depth--; if (depth == 0) break; }
+    \\            close++;
+    \\        }
+    \\        if (close >= end) return (size_t)-1;
+    \\        const char* after = close + 1;
+    \\        char op = (after < end) ? *after : '\\0';
+    \\        if (op == '*' || op == '+' || op == '-' || op == '?') {
+    \\            /* quantified capture group: the group records its LAST iteration */
+    \\            const char* rest = after + 1;
+    \\            size_t maxn = 0;
+    \\            size_t* poss = malloc((slen - si + 1) * sizeof(size_t));
+    \\            if (!poss) return (size_t)-1;
+    \\            poss[0] = si;
+    \\            size_t cur = si;
+    \\            while (cur < slen) {
+    \\                int save = *ncap;
+    \\                size_t r = duo_lp_match_rec(s, slen, cur, p + 1, close, cap_s, cap_e, ncap);
+    \\                if (r == (size_t)-1 || r == cur) { *ncap = save; break; }
+    \\                cur = r;
+    \\                maxn++;
+    \\                poss[maxn] = cur;
     \\            }
-    \\        }
-    \\        return 0;
-    \\    }
-    \\    if (op == '*') {
-    \\        for (size_t i = max_i + 1; i > orig; i--) {
-    \\            size_t tms, tme;
-    \\            if (duo_lp_match(s, slen, i - 1, rest, pat_end, &tms, &tme)) {
-    \\                *ms = orig;
-    \\                *me = tme;
-    \\                return 1;
+    \\            size_t minn = (op == '+') ? 1 : 0;
+    \\            size_t maxc = (op == '?') ? (maxn > 0 ? 1 : 0) : maxn;
+    \\            if (maxc < minn) { free(poss); return (size_t)-1; }
+    \\            size_t res = (size_t)-1;
+    \\            size_t slot = (size_t)*ncap;
+    \\            if (op == '-') {
+    \\                for (size_t n = minn; n <= maxc; n++) {
+    \\                    int save = *ncap;
+    \\                    cap_s[slot] = poss[0];
+    \\                    cap_e[slot] = poss[n];
+    \\                    *ncap = (int)slot + 1;
+    \\                    size_t r = duo_lp_match_rec(s, slen, poss[n], rest, end, cap_s, cap_e, ncap);
+    \\                    if (r != (size_t)-1) { res = r; break; }
+    \\                    *ncap = save;
+    \\                }
+    \\            } else {
+    \\                size_t n = maxc;
+    \\                while (1) {
+    \\                    int save = *ncap;
+    \\                    cap_s[slot] = poss[0];
+    \\                    cap_e[slot] = poss[n];
+    \\                    *ncap = (int)slot + 1;
+    \\                    size_t r = duo_lp_match_rec(s, slen, poss[n], rest, end, cap_s, cap_e, ncap);
+    \\                    if (r != (size_t)-1) { res = r; break; }
+    \\                    *ncap = save;
+    \\                    if (n == minn) break;
+    \\                    n--;
+    \\                }
     \\            }
+    \\            free(poss);
+    \\            return res;
     \\        }
-    \\        return 0;
+    \\        cap_s[*ncap] = si;
+    \\        size_t r = duo_lp_match_rec(s, slen, si, p + 1, close, cap_s, cap_e, ncap);
+    \\        if (r == (size_t)-1) return (size_t)-1;
+    \\        cap_e[*ncap] = r;
+    \\        (*ncap)++;
+    \\        return duo_lp_match_rec(s, slen, r, after, end, cap_s, cap_e, ncap);
     \\    }
-    \\    if (op == '-') {
-    \\        for (size_t i = orig; i <= max_i; i++) {
-    \\            size_t tms, tme;
-    \\            if (duo_lp_match(s, slen, i, rest, pat_end, &tms, &tme)) {
-    \\                *ms = orig;
-    \\                *me = tme;
-    \\                return 1;
+    \\    {
+    \\        const char* item_end = duo_lp_skip_item(p, end);
+    \\        if (item_end == p) return (size_t)-1;
+    \\        char op = (item_end < end) ? *item_end : '\\0';
+    \\        if (op == '*' || op == '+' || op == '-' || op == '?') {
+    \\            const char* rest = item_end + 1;
+    \\            size_t maxn = 0;
+    \\            size_t* poss = malloc((slen - si + 1) * sizeof(size_t));
+    \\            if (!poss) return (size_t)-1;
+    \\            poss[0] = si;
+    \\            size_t cur = si;
+    \\            while (cur < slen) {
+    \\                size_t consumed;
+    \\                if (!duo_lp_item_at(s, slen, cur, p, item_end, &consumed)) break;
+    \\                cur += consumed;
+    \\                maxn++;
+    \\                poss[maxn] = cur;
     \\            }
+    \\            size_t minn = (op == '+') ? 1 : 0;
+    \\            size_t maxc = (op == '?') ? (maxn > 0 ? 1 : 0) : maxn;
+    \\            if (maxc < minn) { free(poss); return (size_t)-1; }
+    \\            size_t res = (size_t)-1;
+    \\            if (op == '-') {
+    \\                for (size_t n = minn; n <= maxc; n++) {
+    \\                    int save = *ncap;
+    \\                    size_t r = duo_lp_match_rec(s, slen, poss[n], rest, end, cap_s, cap_e, ncap);
+    \\                    if (r != (size_t)-1) { res = r; break; }
+    \\                    *ncap = save;
+    \\                }
+    \\            } else {
+    \\                size_t n = maxc;
+    \\                while (1) {
+    \\                    int save = *ncap;
+    \\                    size_t r = duo_lp_match_rec(s, slen, poss[n], rest, end, cap_s, cap_e, ncap);
+    \\                    if (r != (size_t)-1) { res = r; break; }
+    \\                    *ncap = save;
+    \\                    if (n == minn) break;
+    \\                    n--;
+    \\                }
+    \\            }
+    \\            free(poss);
+    \\            return res;
     \\        }
-    \\        return 0;
+    \\        if (si >= slen) return (size_t)-1;
+    \\        size_t consumed;
+    \\        if (!duo_lp_item_at(s, slen, si, p, item_end, &consumed)) return (size_t)-1;
+    \\        return duo_lp_match_rec(s, slen, si + consumed, item_end, end, cap_s, cap_e, ncap);
     \\    }
-    \\    if (op == '?') {
-    \\        size_t tms, tme;
-    \\        if (duo_lp_match(s, slen, orig, rest, pat_end, &tms, &tme)) {
-    \\            *ms = orig;
-    \\            *me = tme;
-    \\            return 1;
-    \\        }
-    \\        if (orig < max_i && duo_lp_match(s, slen, orig + 1, rest, pat_end, &tms, &tme)) {
-    \\            *ms = orig;
-    \\            *me = tme;
-    \\            return 1;
-    \\        }
-    \\        return 0;
+    \\}
+    \\
+    \\/* Try to match pattern at/after start. Returns 1 with match span + captures. */
+    \\static int duo_lp_match_caps(const char* s, size_t slen, size_t start,
+    \\                             const char* pat, const char* pat_end,
+    \\                             size_t* ms, size_t* me,
+    \\                             size_t* cap_s, size_t* cap_e, int* ncap) {
+    \\    int anchored = 0;
+    \\    if (pat < pat_end && *pat == '^') { anchored = 1; pat++; }
+    \\    if (anchored) {
+    \\        if (start != 0) return 0;
+    \\        *ncap = 0;
+    \\        size_t r = duo_lp_match_rec(s, slen, 0, pat, pat_end, cap_s, cap_e, ncap);
+    \\        if (r == (size_t)-1) return 0;
+    \\        *ms = 0; *me = r;
+    \\        return 1;
+    \\    }
+    \\    for (size_t i = start; i <= slen; i++) {
+    \\        *ncap = 0;
+    \\        size_t r = duo_lp_match_rec(s, slen, i, pat, pat_end, cap_s, cap_e, ncap);
+    \\        if (r != (size_t)-1) { *ms = i; *me = r; return 1; }
     \\    }
     \\    return 0;
-    \\}
-    \\
-    \\static int duo_lp_match_full(const char* s, size_t slen, size_t si, const char* pat, const char* pat_end, size_t* ms, size_t* me) {
-    \\    size_t start_i = si;
-    \\    const char* p = pat;
-    \\    if (p < pat_end && *p == '^') { if (si != 0) return 0; p++; }
-    \\    int anchor_end = (pat_end > p && pat_end[-1] == '$');
-    \\    const char* endpat = pat_end;
-    \\    if (anchor_end) endpat--;
-    \\    while (p < endpat) {
-    \\        const char* item_start = p;
-    \\        if (*p == '(') {
-    \\            p++;
-    \\            if (p < endpat && *p == ')') { p++; continue; }
-    \\            int depth = 1;
-    \\            while (p < endpat && depth > 0) {
-    \\                if (*p == '(') depth++;
-    \\                else if (*p == ')') depth--;
-    \\                p++;
-    \\            }
-    \\            const char* item_end = p;
-    \\            char op = (p < endpat) ? *p : '\0';
-    \\            if (op == '*' || op == '+' || op == '-' || op == '?') {
-    \\                p++;
-    \\                return duo_lp_match_star(s, slen, si, item_start, item_end, op, p, pat_end, ms, me);
-    \\            }
-    \\            size_t cap_ms = si, cap_me = si;
-    \\            if (!duo_lp_match_full(s, slen, si, item_start, item_end - 1, &cap_ms, &cap_me)) return 0;
-    \\            si = cap_me;
-    \\            continue;
-    \\        }
-    \\        if (*p == '%' && p + 1 < endpat && p[1] == 'b') {
-    \\            item_start = p;
-    \\            p += 4;
-    \\            char op = (p < endpat) ? *p : '\0';
-    \\            if (op == '*' || op == '+' || op == '-' || op == '?') {
-    \\                p++;
-    \\                return duo_lp_match_star(s, slen, si, item_start, p - 1, op, p, pat_end, ms, me);
-    \\            }
-    \\            if (si >= slen || s[si] != item_start[2]) return 0;
-    \\            char open = item_start[2]; char close = item_start[3];
-    \\            int depth = 1; size_t j = si + 1;
-    \\            while (j < slen && depth > 0) {
-    \\                if (s[j] == open) depth++;
-    \\                else if (s[j] == close) depth--;
-    \\                j++;
-    \\            }
-    \\            if (depth != 0) return 0;
-    \\            si = j;
-    \\            continue;
-    \\        }
-    \\        if (*p == '[') {
-    \\            duo_lp_class_test(0, &p, endpat);
-    \\        } else if (*p == '%' && p + 1 < endpat) {
-    \\            p += 2;
-    \\        } else if (*p == '.') {
-    \\            p++;
-    \\        } else {
-    \\            p++;
-    \\        }
-    \\        char op = (p < endpat) ? *p : '\0';
-    \\        if (op == '*' || op == '+' || op == '-' || op == '?') {
-    \\            p++;
-    \\            return duo_lp_match_star(s, slen, si, item_start, p - 1, op, p, pat_end, ms, me);
-    \\        }
-    \\        if (si >= slen) return 0;
-    \\        const char* pp = item_start;
-    \\        if (!duo_lp_item_match((unsigned char)s[si], &pp, endpat)) return 0;
-    \\        si++;
-    \\    }
-    \\    if (anchor_end && si != slen) return 0;
-    \\    *ms = start_i;
-    \\    *me = si;
-    \\    return 1;
     \\}
     \\
     \\static int duo_lp_find_at(const char* s, size_t slen, const char* pat, size_t start, size_t* ms, size_t* me) {
@@ -19972,14 +20017,9 @@ const duo_runtime =
     \\        *me = *ms + plen;
     \\        return 1;
     \\    }
-    \\    if (pat < pat_end && *pat == '^') {
-    \\        if (start != 0) return 0;
-    \\        return duo_lp_match_full(s, slen, 0, pat, pat_end, ms, me);
-    \\    }
-    \\    for (size_t i = start; i <= slen; i++) {
-    \\        if (duo_lp_match_full(s, slen, i, pat, pat_end, ms, me)) return 1;
-    \\    }
-    \\    return 0;
+    \\    size_t cap_s[DUO_LP_MAXCAP], cap_e[DUO_LP_MAXCAP];
+    \\    int ncap = 0;
+    \\    return duo_lp_match_caps(s, slen, start, pat, pat_end, ms, me, cap_s, cap_e, &ncap);
     \\}
     \\
     \\static inline lua_Value lua_str_find(lua_Value s, lua_Value pat_val, lua_Value init_val, lua_Value plain_val) {
@@ -20303,9 +20343,41 @@ const duo_runtime =
     \\    const char* pat = lua_to_str(pat_val);
     \\    size_t slen = lua_str_byte_len(s_val);
     \\    size_t ms = 0, me = 0;
-    \\    if (!duo_lp_find_at(s, slen, pat, 0, &ms, &me)) return lua_val_nil();
-    \\    size_t mlen = me - ms;
-    \\    return lua_val_from_str_len(s + ms, mlen);
+    \\    size_t cap_s[DUO_LP_MAXCAP], cap_e[DUO_LP_MAXCAP];
+    \\    int ncap = 0;
+    \\    if (!duo_lp_match_caps(s, slen, 0, pat, pat + strlen(pat), &ms, &me, cap_s, cap_e, &ncap)) return lua_val_nil();
+    \\    if (ncap > 0) {
+    \\        for (int i = 1; i < ncap; i++) {
+    \\            lua_mret_push(lua_val_from_str_len(s + cap_s[i], cap_e[i] - cap_s[i]));
+    \\        }
+    \\        return lua_val_from_str_len(s + cap_s[0], cap_e[0] - cap_s[0]);
+    \\    }
+    \\    return lua_val_from_str_len(s + ms, me - ms);
+    \\}
+    \\
+    \\static size_t duo_repl_expand(const char* repl, size_t rlen, char* out,
+    \\                              const char* s,
+    \\                              const size_t* cap_s, const size_t* cap_e, int ncap) {
+    \\    size_t n = 0;
+    \\    for (size_t i = 0; i < rlen; i++) {
+    \\        char c = repl[i];
+    \\        if (c == '%' && i + 1 < rlen) {
+    \\            char d = repl[i + 1];
+    \\            if (d == '%') { out[n++] = '%'; i++; continue; }
+    \\            if (d >= '1' && d <= '9') {
+    \\                int idx = d - '1';
+    \\                if (idx < ncap) {
+    \\                    size_t cs = cap_s[idx], ce = cap_e[idx];
+    \\                    memcpy(out + n, s + cs, ce - cs);
+    \\                    n += ce - cs;
+    \\                }
+    \\                i++;
+    \\                continue;
+    \\            }
+    \\        }
+    \\        out[n++] = c;
+    \\    }
+    \\    return n;
     \\}
     \\
     \\static inline lua_Value lua_str_gsub(lua_Value s_val, lua_Value pat_val, lua_Value repl_val) {
@@ -20318,24 +20390,31 @@ const duo_runtime =
     \\    char* buf = NULL;
     \\    size_t len = 0, cap = 0;
     \\    int count = 0;
+    \\    char* erbuf = malloc(rlen + slen + 1);
+    \\    if (!erbuf) erbuf = NULL;
     \\    while (1) {
     \\        size_t ms = 0, me = 0;
-    \\        if (!duo_lp_find_at(s, slen, pat, pos, &ms, &me)) break;
-    \\        if (len + (ms - pos) + rlen > cap) {
+    \\        size_t cap_s[DUO_LP_MAXCAP], cap_e[DUO_LP_MAXCAP];
+    \\        int ncap = 0;
+    \\        if (!duo_lp_match_caps(s, slen, pos, pat, pat + strlen(pat), &ms, &me, cap_s, cap_e, &ncap)) break;
+    \\        size_t elen = erbuf ? duo_repl_expand(repl, rlen, erbuf, s, cap_s, cap_e, ncap) : rlen;
+    \\        const char* erepl = erbuf ? erbuf : repl;
+    \\        if (len + (ms - pos) + elen > cap) {
     \\            size_t nc = cap ? cap : 64;
-    \\            while (len + (ms - pos) + rlen > nc) nc *= 2;
+    \\            while (len + (ms - pos) + elen > nc) nc *= 2;
     \\            buf = realloc(buf, nc);
     \\            cap = nc;
     \\        }
     \\        memcpy(buf + len, s + pos, ms - pos);
     \\        len += ms - pos;
-    \\        memcpy(buf + len, repl, rlen);
-    \\        len += rlen;
+    \\        memcpy(buf + len, erepl, elen);
+    \\        len += elen;
     \\        count++;
     \\        pos = me;
     \\        if (me == ms && pos < slen) pos++;
     \\        if (pos > slen) break;
     \\    }
+    \\    if (erbuf) free(erbuf);
     \\    if (count == 0) return s_val;
     \\    if (len + (slen - pos) + 1 > cap) {
     \\        buf = realloc(buf, len + (slen - pos) + 1);
