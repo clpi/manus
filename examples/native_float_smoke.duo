@@ -18,3 +18,8 @@ end
 fun duo_scale(a: f64): f64
     a * 3.14
 end
+
+@export
+fun duo_wrap(a: f64, b: f64): f64
+    duo_fadd(a, b)
+end

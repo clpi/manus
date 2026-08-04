@@ -832,6 +832,27 @@ const Arm64Compiler = struct {
                 }
                 break :blk dst;
             },
+            .call => |call| blk: {
+                // f64 function call: args in d0-d7, f64 result in d0 (AAPCS).
+                // NOTE: no d-reg spill yet — correct when the call's result is
+                // consumed immediately (e.g. as the whole return expr) so no
+                // f64 value is live across the call. Composable calls (live
+                // params/temps across a call) need d-reg save/restore — tracked
+                // follow-up. lr is still saved via emitSaveCallerRegs.
+                if (call.func.* != .name) return error.UnsupportedProgram;
+                if (call.args.len > 8) return error.UnsupportedProgram;
+                for (call.args, 0..) |arg, i| {
+                    const d = try self.compileExprFp(arg);
+                    const idx: u5 = @intCast(i);
+                    if (d != idx) try self.emitFmovReg(idx, d);
+                }
+                const save_set = try self.emitSaveCallerRegs();
+                try self.emitBl(call.func.name.ident);
+                try self.emitRestoreCallerRegs(save_set);
+                const dst = try self.allocFpReg();
+                try self.emitFmovReg(dst, 0);
+                break :blk dst;
+            },
             else => error.UnsupportedProgram,
         };
     }
