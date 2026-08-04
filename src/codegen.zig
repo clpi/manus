@@ -364,6 +364,8 @@ pub const CodeGen = struct {
             .alloc = self.alloc,
             .satisfies_hook = comptimeSatisfiesHook,
             .satisfies_ctx = @ptrCast(@constCast(self)),
+            .meta_hook = comptimeMetaHook,
+            .meta_ctx = @ptrCast(@constCast(self)),
         };
     }
 
@@ -385,6 +387,39 @@ pub const CodeGen = struct {
         var concept_lit = ast.Expr{ .string_lit = .{ .loc = type_expr.loc(), .val = concept_name } };
         var args = [_]*ast.Expr{ @constCast(type_expr), &concept_lit };
         return self.eval_satisfies(&args);
+    }
+
+    /// G-059: Meta hook for @comp.* combinator calls inside comptime callback bodies.
+    /// Receives pre-evaluated Value args from the comptime evaluator (callback
+    /// locals like m.pattern are already resolved to Values).
+    fn comptimeMetaHook(ctx: ?*anyopaque, name: []const u8, args: []const comptime_eval.Value) ?comptime_eval.Value {
+        const self: *CodeGen = @ptrCast(@alignCast(ctx orelse return null));
+
+        // @comp.match: __comptimematch(spec_str, callback)
+        if (std.mem.eql(u8, name, "__comptimematch") and args.len == 2) {
+            if (args[0] != .string) return null;
+            if (args[1] != .func) return null;
+            return meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string, args[1], self.alloc);
+        }
+        // @comp.interpolate: __comptimeinterpolate(template_str, vars_table)
+        if (std.mem.eql(u8, name, "__comptimeinterpolate") and args.len == 2) {
+            if (args[0] != .string) return null;
+            return meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string, args[1], self.alloc);
+        }
+        // @comp.tabulate: __comptimetabulate(count_int, callback)
+        if (std.mem.eql(u8, name, "__comptimetabulate") and args.len == 2) {
+            if (args[0] != .int) return null;
+            if (args[1] != .func) return null;
+            return meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int, args[1], self.alloc);
+        }
+        // @comp.zip: __comptimezip(spec_a, spec_b, callback)
+        if (std.mem.eql(u8, name, "__comptimezip") and args.len == 3) {
+            if (args[0] != .string or args[1] != .string) return null;
+            if (args[2] != .func) return null;
+            return meta_codegen.comptimeZipHook(self.meta_host(), args[0].string, args[1].string, args[2], self.alloc);
+        }
+
+        return null;
     }
 
     fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
@@ -8571,6 +8606,13 @@ pub const CodeGen = struct {
                     self.pl("lua_Value _gf_mm_r = lua_invoke(_gf_mm, 1, _gf_mm_args);", .{});
                     self.pl("lua_mret_prepend(_gf_mm_r);", .{});
                     self.pl("_gf_tmp = lua_mret_get(0);", .{});
+                    self.indent -= 1;
+                    self.pl("}} else if (tbl.type == VAL_FUNC || tbl.type == VAL_CLOSURE) {{", .{});
+                    self.indent += 1;
+                    self.ind();
+                    self.pl("lua_mret_clear();", .{});
+                    self.ind();
+                    self.pl("_gf_tmp = tbl;", .{});
                     self.indent -= 1;
                     self.pl("}} else {{", .{});
                     self.indent += 1;
@@ -20062,12 +20104,17 @@ const duo_runtime =
     \\    if (plain) {
     \\        /* Plain text search */
     \\        size_t plen = strlen(pat);
-    \\        if (plen == 0) { if (start <= slen) return lua_val_from_num((double)(start + 1)); return lua_val_nil(); }
+    \\        if (plen == 0) { if (start <= slen) { lua_mret_clear(); return lua_val_from_num((double)(start + 1)); } return lua_val_nil(); }
     \\        if (start >= slen) return lua_val_nil();
     \\        const char* found = strstr(str + start, pat);
-    \\        return found ? lua_val_from_num((double)((found - str) + 1)) : lua_val_nil();
+    \\        if (!found) return lua_val_nil();
+    \\        lua_mret_clear();
+    \\        lua_mret_push(lua_val_from_num((double)((found - str) + (int)plen)));
+    \\        return lua_val_from_num((double)((found - str) + 1));
     \\    }
     \\    if (duo_lp_find_at(str, slen, pat, start, &ms, &me)) {
+    \\        lua_mret_clear();
+    \\        lua_mret_push(lua_val_from_num((double)(me + 1)));
     \\        return lua_val_from_num((double)(ms + 1));
     \\    }
     \\    return lua_val_nil();

@@ -25,7 +25,18 @@ pub const Options = struct {
     /// Optional hook for __satisfies(Type, "Concept") during @(expr) folding.
     satisfies_hook: ?SatisfiesHook = null,
     satisfies_ctx: ?*anyopaque = null,
+    /// Optional hook for @comp.* metaprogramming combinators during callback
+    /// evaluation. When the evaluator encounters a __comptime* call it doesn't
+    /// handle internally, it delegates to this hook. This enables nested
+    /// combinator calls inside callback bodies (G-059 fix).
+    meta_hook: ?MetaHookFn = null,
+    meta_ctx: ?*anyopaque = null,
 };
+
+/// Hook type for @comp.* combinator evaluation inside comptime callbacks.
+/// Receives pre-evaluated Value args from the comptime evaluator.
+/// Returns the computed Value (typically a .string) or null if not handled.
+pub const MetaHookFn = *const fn (ctx: ?*anyopaque, name: []const u8, args: []const Value) ?Value;
 
 pub const Value = union(enum) {
     pub const TableEntry = struct {
@@ -373,7 +384,7 @@ pub const Evaluator = struct {
                 }
                 return error.UnsupportedExpression;
             }
-            // __comptimefor(start, stop, "template") — fold simple numeric templates at comptime
+            // __comptimefor — fold simple numeric templates at comptime
             if (std.mem.eql(u8, name, "__comptimefor") and args.len == 3) {
                 const start_v = try self.eval(args[0]);
                 const stop_v = try self.eval(args[1]);
@@ -390,6 +401,28 @@ pub const Evaluator = struct {
                     return .{ .int = @max(stop_v.int - start_v.int, 0) };
                 }
                 return error.UnsupportedExpression;
+            }
+            // G-059: Route __comptime* metaprogramming combinators to the
+            // codegen-provided meta_hook. This enables nested combinator calls
+            // inside callback bodies (e.g. @comp.match callback calling @comp.interpolate).
+            // Args are pre-evaluated so the hook can use them directly (with
+            // callback-local variables like m.pattern already resolved).
+            if (std.mem.startsWith(u8, name, "__comptime")) {
+                if (self.options.meta_hook) |hook| {
+                    // Evaluate all args to Values first (resolving callback locals)
+                    const alloc = self.options.alloc orelse return error.UnsupportedExpression;
+                    const evaluated = alloc.alloc(Value, args.len) catch return error.UnsupportedExpression;
+                    defer alloc.free(evaluated);
+                    var ok = true;
+                    for (args, 0..) |arg, i| {
+                        evaluated[i] = self.eval(arg) catch { ok = false; break; };
+                    }
+                    if (ok) {
+                        if (hook(self.options.meta_ctx, name, evaluated)) |result| {
+                            return result;
+                        }
+                    }
+                }
             }
         }
         const callee = try self.eval(func_expr);
