@@ -1687,6 +1687,7 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__comptimeeach") or
             std.mem.eql(u8, name, "__comptimematch") or
             std.mem.eql(u8, name, "__comptimetabulate") or
+            std.mem.eql(u8, name, "__comptimeinterpolate") or
             std.mem.eql(u8, name, "__comptimepower") or
             std.mem.eql(u8, name, "__comptimepermute") or
             std.mem.eql(u8, name, "__comptimechoose") or
@@ -11671,6 +11672,11 @@ pub const CodeGen = struct {
                     const value = meta_codegen.comptimeTabulateHook(self.meta_host(), c.args[0].int_lit.val, callback, self.alloc) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
                 }
+                if (std.mem.eql(u8, name, "__comptimeinterpolate") and c.args.len == 2 and c.args[0].* == .string_lit) {
+                    const vars = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
+                    const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), c.args[0].string_lit.val, vars, self.alloc) orelse break :blk null;
+                    break :blk if (value == .string) value.string else null;
+                }
                 if (std.mem.eql(u8, name, "__comptimepower") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
@@ -11900,6 +11906,13 @@ pub const CodeGen = struct {
             const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
             if (callback != .func) return false;
             const value = meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int_lit.val, callback, self.alloc) orelse return false;
+            if (value != .string) return false;
+            try self.emit_c_string_literal(value.string);
+            return true;
+        }
+        if (std.mem.eql(u8, name, "__comptimeinterpolate") and args.len == 2 and args[0].* == .string_lit) {
+            const vars = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
+            const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string_lit.val, vars, self.alloc) orelse return false;
             if (value != .string) return false;
             try self.emit_c_string_literal(value.string);
             return true;

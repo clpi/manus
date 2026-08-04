@@ -2097,6 +2097,72 @@ pub fn comptimeTabulateHook(host: Host, count: i64, callback: comptime_eval.Valu
     return .{ .string = buf.toOwnedSlice(alloc) catch return null };
 }
 
+/// `@comp.interpolate(template, vars)` — compile-time string interpolation.
+/// Takes a template string with `{name}` placeholders and a table of
+/// {name: value} mappings. Substitutes all placeholders at compile time,
+/// producing a native C string. Unknown placeholders are left as-is.
+///
+/// This is the "code template injection" combinator — write a C/Duo template
+/// with comptime-evaluated holes. O(template_size) per call. Comptime-only.
+///
+/// Example: `@comp.interpolate("int64_t {name}(int64_t a) { return a + {delta}; }", {name="add_one", delta=1})`
+/// → "int64_t add_one(int64_t a) { return a + 1; }"
+pub fn comptimeInterpolateHook(host: Host, template: []const u8, vars: comptime_eval.Value, alloc: std.mem.Allocator) ?comptime_eval.Value {
+    if (vars != .table) return .{ .string = alloc.dupe(u8, template) catch return null };
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    var i: usize = 0;
+    while (i < template.len) {
+        if (template[i] == '{') {
+            // Look for closing }
+            const start = i + 1;
+            var j = start;
+            while (j < template.len and template[j] != '}') j += 1;
+            if (j < template.len) {
+                // Found {name} — look up in vars table
+                const var_name = template[start..j];
+                var found = false;
+                for (vars.table) |entry| {
+                    if (entry.name) |ename| {
+                        if (std.mem.eql(u8, ename, var_name)) {
+                        switch (entry.val) {
+                            .string => |s| buf.appendSlice(alloc, s) catch return null,
+                            .int => |n| {
+                                var num_buf: [32]u8 = undefined;
+                                const s = std.fmt.bufPrint(&num_buf, "{d}", .{n}) catch break;
+                                buf.appendSlice(alloc, s) catch return null;
+                            },
+                            .float => |f| {
+                                var num_buf: [32]u8 = undefined;
+                                const s = std.fmt.bufPrint(&num_buf, "{e}", .{f}) catch break;
+                                buf.appendSlice(alloc, s) catch return null;
+                            },
+                            .bool => |b| buf.appendSlice(alloc, if (b) "true" else "false") catch return null,
+                            else => buf.appendSlice(alloc, "nil") catch return null,
+                        }
+                        found = true;
+                        break;
+                        }
+                    }
+                }
+                if (!found) {
+                    // Unknown placeholder — keep as-is
+                    buf.appendSlice(alloc, template[i .. j + 1]) catch return null;
+                }
+                i = j + 1;
+                continue;
+            }
+        }
+        buf.append(alloc, template[i]) catch return null;
+        i += 1;
+    }
+
+    _ = host;
+    return .{ .string = buf.toOwnedSlice(alloc) catch return null };
+}
+
 /// `@comp.fixpoint(initial, fn[, max_iter])` — iterate a generator callback until
 /// convergence (output == input) or max_iter reached. The ONLY unbounded combinator:
 /// O(1) author input → O(max_iter) output. The callback receives a table with

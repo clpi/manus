@@ -188,6 +188,12 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.tabulate", .internal = "__comptimetabulate" },
     .{ .public = "compiler.tabulate", .internal = "__comptimetabulate" },
 
+    // `@comp.interpolate` — compile-time string interpolation (code template injection)
+    // Takes template with {name} placeholders + {name=value} vars table, substitutes at compile time.
+    .{ .public = "meta.interpolate", .internal = "__comptimeinterpolate" },
+    .{ .public = "comp.interpolate", .internal = "__comptimeinterpolate" },
+    .{ .public = "compiler.interpolate", .internal = "__comptimeinterpolate" },
+
     // ── Type introspection ──
     .{ .public = "meta.type.name", .internal = "__type_name" },
     .{ .public = "comp.type.name", .internal = "__type_name" },
@@ -911,6 +917,7 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         "comp.derive.permute",
         "comp.each",           "comp.chain",           "comp.match",
         "comp.tabulate",
+        "comp.interpolate",
     };
     for (combinators) |c| {
         if (std.mem.eql(u8, path, c)) return "combinators";
