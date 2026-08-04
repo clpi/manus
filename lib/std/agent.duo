@@ -178,6 +178,7 @@ fun smoke_targets(): any
         "examples/syntax_not_neq_smoke.duo",
         "examples/missing_args_nil_smoke.duo",
         "examples/nested_tail_call_statement_smoke.duo",
+        "examples/implicit_concat_tail_smoke.duo",
         "examples/meta_template_showcase.duo",
         "examples/meta_template_callback_showcase.duo",
         "examples/meta_scheme_showcase.duo",

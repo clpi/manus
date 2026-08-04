@@ -1,11 +1,15 @@
 -- Truly-exponential metaprogramming: power-set (2^n) and permutation (n!) combinators.
 --
 -- These complete the scaling ladder ABOVE the fixed-k cartesian products:
---   map:O(n) → product:O(n²) → tensor:O(n³) → nfold:O(n^k)
---   → power:O(2^n) → permute:O(n!)
+--   map:O(n) -> product:O(n^2) -> tensor:O(n^3) -> nfold:O(n^k)
+--   -> power:O(2^n) -> permute:O(n!)
 --
 -- One source line produces 2^n (or n!) generated C fragments.
--- All output is native C — no lua_Value intermediaries at runtime.
+-- All output is native C const char* string literals -- no lua_Value
+-- intermediaries at runtime (verified: each result lowers to a bare C literal).
+--
+-- Canonical form is @comp.* (@meta.* is a backward-compat alias that maps to the
+-- same internal hooks). This showcase exercises the canonical @comp.* spellings.
 
 concept HasXY
     x: f64
@@ -13,30 +17,36 @@ concept HasXY
 end
 
 type Vec2 = { x: f64, y: f64 }
-type Vec3 = { x: f64, y: f64 }
+type Vec3 = { x: f64, y: f64, z: f64 }
 type Pt = { x: f64, y: f64 }
 
--- 1. @meta.power — power-set enumeration: O(2^n).
---    For 3 matching types → 2^3 - 1 = 7 non-empty subsets.
+-- 1. @comp.power -- power-set enumeration: O(2^n).
+--    For 3 matching types -> 2^3 - 1 = 7 non-empty subsets.
 fun power_sig(subset) -> str
     subset.name .. ";"
 end
 
-POWER = @meta.power("HasXY", power_sig)
-print("=== @meta.power (2^3 - 1 = 7 subsets) ===")
+POWER = @comp.power("HasXY", power_sig)
+print("=== @comp.power (2^3 - 1 = 7 subsets) ===")
 print(POWER)
 
--- 2. @meta.permute — permutation enumeration: O(n!).
---    For 3 matching types → 3! = 6 permutations.
+-- 2. @comp.powerset -- canonical alias of @comp.power (same O(2^n) hook).
+--    Exercised here because it is otherwise unused anywhere in the codebase.
+PSET = @comp.powerset("HasXY", power_sig)
+print("=== @comp.powerset (7 subsets, same hook as power) ===")
+print(PSET)
+
+-- 3. @comp.permute -- permutation enumeration: O(n!).
+--    For 3 matching types -> 3! = 6 permutations.
 fun perm_sig(ordered) -> str
     ordered.name .. ";"
 end
 
-PERMUTE = @meta.permute("HasXY", perm_sig)
-print("=== @meta.permute (3! = 6 orderings) ===")
+PERMUTE = @comp.permute("HasXY", perm_sig)
+print("=== @comp.permute (3! = 6 orderings) ===")
 print(PERMUTE)
 
--- 3. Count verification: power over a set of n types yields 2^n - 1 fragments.
+-- 4. Count verification: power over a set of n types yields 2^n - 1 fragments.
 fun count_semicolons(s) -> i64
     n = 0
     for i = 1, #s
@@ -46,24 +56,26 @@ fun count_semicolons(s) -> i64
 end
 
 POWER_COUNT = count_semicolons(POWER)
+PSET_COUNT = count_semicolons(PSET)
 PERMUTE_COUNT = count_semicolons(PERMUTE)
-print("power fragments  = " .. POWER_COUNT .. "  (expect 7 = 2^3-1)")
-print("permute fragments = " .. PERMUTE_COUNT .. "  (expect 6 = 3!)")
+print("power fragments   = " .. POWER_COUNT .. "  (expect 7 = 2^3-1)")
+print("powerset fragments = " .. PSET_COUNT .. "  (expect 7 = 2^3-1)")
+print("permute fragments  = " .. PERMUTE_COUNT .. "  (expect 6 = 3!)")
 
--- 4. @meta.derive.power — apply a derive macro to every non-empty subset.
-@meta.define.derive("SubsetStub", fun generate(meta) -> str
+-- 5. @comp.derive.power -- apply a derive macro to every non-empty subset.
+@comp.define.derive("SubsetStub", fun generate(meta) -> str
     "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " count=" .. tostring(meta.count) .. " */\n"
 end)
 
-SUBSET_CODE = @meta.derive.power("HasXY", SubsetStub)
-print("=== @meta.derive.power (7 derive fragments) ===")
+SUBSET_CODE = @comp.derive.power("HasXY", SubsetStub)
+print("=== @comp.derive.power (7 derive fragments) ===")
 print(SUBSET_CODE)
 
--- 5. The scaling ladder now documents the full exponential family.
-LADDER = @meta.ladder()
-print("=== @meta.ladder (updated) ===")
+-- 6. The scaling ladder now documents the full exponential family.
+LADDER = @comp.ladder()
+print("=== @comp.ladder (updated) ===")
 print(LADDER)
 
-ok = (POWER_COUNT == 7 and PERMUTE_COUNT == 6)
+ok = (POWER_COUNT == 7 and PSET_COUNT == 7 and PERMUTE_COUNT == 6)
 print("=== RESULT ===")
 print("power_and_permute_ok = " .. tostring(ok))

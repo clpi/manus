@@ -577,7 +577,7 @@ pub const Parser = struct {
             const is_trace = std.mem.eql(u8, attr_name.text, "trace") or std.mem.startsWith(u8, attr_name.text, "trace.");
             while ((try self.pk()).kind == .dot) {
                 _ = try self.adv();
-                const part = try self.expect(.name);
+                const part = try self.parse_at_path_segment();
                 try parts.append(self.alloc, part.text);
             }
             const qualified = try std.mem.join(self.alloc, ".", parts.items);
@@ -901,12 +901,12 @@ pub const Parser = struct {
     /// Parse a single attribute: `@name`, `@name.sub`, or `@name(args)`
     fn parse_one_attribute(self: *Parser) ParseError!ast.Attribute {
         _ = try self.expect(.at); // consume `@`
-        const first = try self.expect(.name);
+        const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
         try parts.append(self.alloc, first.text);
         while ((try self.pk()).kind == .dot) {
             _ = try self.adv();
-            const part = try self.expect(.name);
+            const part = try self.parse_at_path_segment();
             try parts.append(self.alloc, part.text);
         }
         const name = try std.mem.join(self.alloc, ".", parts.items);
@@ -3187,6 +3187,7 @@ pub const Parser = struct {
             .{ .public = "rotr", .internal = "__rotr" },
             .{ .public = "bitcast", .internal = "__bitcast" },
             .{ .public = "volatile", .internal = "__volatile" },
+            .{ .public = "hot_path", .internal = "__hot_path", .canonical = "hot" },
         };
         for (pairs) |pair| {
             if (std.mem.eql(u8, name, pair.public)) {
@@ -3342,6 +3343,18 @@ pub const Parser = struct {
                     }
                 },
                 .lparen, .string_lit => {
+                    // F-13813-1: a string on a new line, or immediately before '..',
+                    // starts a fresh expression — not a bash-style call argument.
+                    if (tok.kind == .string_lit) {
+                        if (tok.loc.line > e.loc().line) break;
+                        const saved = self.lex.saveState();
+                        _ = try self.adv();
+                        const after = try self.pk();
+                        self.lex.restoreState(saved);
+                        if (after.kind == .concat) break;
+                    } else if (tok.loc.line > e.loc().line) {
+                        break;
+                    }
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
                 },
@@ -5369,4 +5382,41 @@ test "parse: Tensor[M,N,f32] type with numeric dims" {
     try testing.expect(ty == .generic);
     try testing.expectEqualStrings("Tensor", ty.generic.base.*.named);
     try testing.expectEqual(@as(usize, 3), ty.generic.params.len);
+}
+
+test "parse: stmt then implicit concat tail (F-13813-1)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\with_side_effect(id: str, kind: str): str
+        \\    print("side")
+        \\    "ok: " .. id .. " (" .. kind .. ")"
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    try testing.expectEqual(@as(usize, 1), fb.body.stmts.len);
+    try testing.expect(fb.body.stmts[0] == .call_stmt);
+    try testing.expect(fb.body.tail_expr != null);
+    const tail = fb.body.tail_expr.?;
+    try testing.expect(tail.* == .binop);
+    try testing.expect(tail.binop.op == .concat);
+    try testing.expect(tail.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+}
+
+test "parse: same-line void call then concat (F-13813-1)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\g(id: str, kind: str): str
+        \\    print("hi") "ok: " .. id .. " (" .. kind .. ")"
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    try testing.expect(fb.body.tail_expr != null);
+    const tail = fb.body.tail_expr.?;
+    try testing.expect(tail.* == .binop);
+    try testing.expect(tail.binop.op == .concat);
+    try testing.expect(tail.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
 }

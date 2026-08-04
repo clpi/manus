@@ -48,3 +48,28 @@ all_sigs = @comp.zip("i32|i64|f64", "add|sub|mul", fun(p)
 end)
 print("=== Level 6: @comp.zip → 9 function signatures ===")
 print(all_sigs)
+
+-- Level 7: NESTED @comp.match inside @comp.match (arbitrary composition depth)
+nested = @comp.match("i32|i64", fun(m)
+    @comp.match("add|sub", fun(p)
+        p.pattern .. "_" .. m.pattern .. " "
+    end)
+end)
+print("=== Level 7: nested @comp.match → 4 type×op names ===")
+print(nested)
+
+-- Level 8: NESTED @comp.interpolate inside @comp.match
+typed = @comp.match("i32|i64|f64", fun(m)
+    @comp.interpolate("typedef {name} variant_{idx};\n", {name = m.pattern, idx = tostring(m.index)})
+end)
+print("=== Level 8: nested @comp.interpolate → 3 typedefs ===")
+print(typed)
+
+-- Level 9: NESTED @comp.tabulate inside @comp.match
+expanded = @comp.match("vec|mat", fun(m)
+    @comp.tabulate(4, fun(i)
+        m.pattern .. "_comp" .. tostring(i.index) .. " "
+    end)
+end)
+print("=== Level 9: nested @comp.tabulate → 8 component names ===")
+print(expanded)

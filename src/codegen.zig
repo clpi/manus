@@ -7177,8 +7177,44 @@ pub const CodeGen = struct {
         self.p(";\n", .{});
     }
 
+    fn expr_is_void_side_effect_call(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* == .call and e.call.func.* == .name and
+            std.mem.eql(u8, e.call.func.name.ident, "print")) return true;
+        if (e.* == .call or e.* == .method_call) {
+            const rt = self.expr_type(e);
+            return rt == .void or rt == .nil;
+        }
+        return false;
+    }
+
+    fn emit_side_effect_expr_stmt(self: *CodeGen, e: *const ast.Expr) E!void {
+        if (e.* == .call and e.call.func.* == .name and
+            std.mem.eql(u8, e.call.func.name.ident, "print"))
+        {
+            try self.emit_print_call(e.call.args);
+            return;
+        }
+        self.ind();
+        try self.emit_expr(e);
+        self.p(";\n", .{});
+    }
+
     fn emit_implicit_return(self: *CodeGen, expr: *const ast.Expr) E!void {
         if (self.has_pending_defers()) try self.emit_all_pending_defers();
+        // F-13813-1: void side-effect call .. value — emit call(s) as statements,
+        // then return the concat/value tail (handles same-line fs_write() .. "msg").
+        if (self.current_ret != .void and expr.* == .binop and expr.binop.op == .concat) {
+            var cur: *const ast.Expr = expr;
+            var peeled = false;
+            while (cur.* == .binop and cur.binop.op == .concat and
+                self.expr_is_void_side_effect_call(cur.binop.lhs))
+            {
+                try self.emit_side_effect_expr_stmt(cur.binop.lhs);
+                peeled = true;
+                cur = cur.binop.rhs;
+            }
+            if (peeled) return self.emit_implicit_return(cur);
+        }
         self.ind();
         const ret_name = if (expr.* == .name) expr.name.ident else "";
         if (self.dense_table) |dt| {

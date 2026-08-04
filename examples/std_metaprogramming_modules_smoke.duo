@@ -90,7 +90,7 @@ end
 if not string.find(c_report.c_wrappers, "int64_t arg1")
     error("concept C report should lower i64 parameters")
 end
-if not string.find(c_report.c_wrappers, "hash(self, arg1)")
+if not string.find(c_report.c_wrappers, "hash(self, arg1)", 1, true)
     error("concept C report should call the target method slot")
 end
 if not string.find(c_report.c_accessors, "static inline int64_t UserAdapter_get_id")
