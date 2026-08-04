@@ -16855,6 +16855,11 @@ const duo_runtime =
     \\#include <stdlib.h>
     \\#include <string.h>
     \\#include <stdarg.h>
+    \\#include <stdint.h>
+    \\#include <unistd.h>
+    \\#if defined(__APPLE__)
+    \\#include <mach-o/dyld.h>
+    \\#endif
     \\
     \\#define LUA_LIKELY(x)   __builtin_expect(!!(x), 1)
     \\#define LUA_UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -21171,6 +21176,31 @@ const duo_runtime =
     \\};
     \\
     \\static const char* duo_compiler_path(void) {
+    \\    /* Prefer the running executable's own path: it just compiled the main
+    \\       program, so it is the correct compiler for req()'d modules too,
+    \\       regardless of CWD. Fixes req-module-load crashing when CWD is not
+    \\       the duo source tree (a bare "duo" then resolved via PATH to a
+    \\       different/wrong binary that panicked). Falls through to the prior
+    \\       DUO-env / CWD-relative / PATH logic if self-path is unavailable. */
+    \\    static char self_path[4096];
+    \\    static int self_resolved = 0;
+    \\    if (!self_resolved) {
+    \\        self_resolved = 1;
+    \\        self_path[0] = '\\0';
+    \\#if defined(__APPLE__)
+    \\        uint32_t sz = sizeof self_path;
+    \\        if (_NSGetExecutablePath(self_path, &sz) == 0) {
+    \\            char real[4096];
+    \\            if (realpath(self_path, real) && strlen(real) < sizeof self_path) {
+    \\                strcpy(self_path, real);
+    \\            }
+    \\        }
+    \\#elif defined(__linux__)
+    \\        ssize_t n = readlink("/proc/self/exe", self_path, sizeof self_path - 1);
+    \\        if (n > 0) self_path[n] = '\\0';
+    \\#endif
+    \\    }
+    \\    if (self_path[0] && access(self_path, X_OK) == 0) return self_path;
     \\    const char* from_env = getenv("DUO");
     \\    if (from_env && from_env[0]) return from_env;
     \\    if (access("./zig-out/bin/duo", X_OK) == 0) return "./zig-out/bin/duo";
