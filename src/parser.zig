@@ -3079,7 +3079,7 @@ pub const Parser = struct {
             const builtin_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = internal } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
         }
-        if (at_builtin_internal_name(qualified)) |internal| {
+        if (at_builtin_internal_name(qualified, l)) |internal| {
             if (self.duo_mode) {
                 if (std.mem.eql(u8, qualified, "constexpr")) {
                     term.locErr(l, "@constexpr is not valid in .duo files. Use @(expr) for comptime evaluation.", .{});
@@ -3115,44 +3115,60 @@ pub const Parser = struct {
         return self.expect(.name);
     }
 
-    fn at_builtin_internal_name(name: []const u8) ?[]const u8 {
-        const pairs = [_]struct { public: []const u8, internal: []const u8 }{
+    const AtBuiltinEntry = struct {
+        public: []const u8,
+        internal: []const u8,
+        /// When non-null, `public` is a legacy underscore form whose canonical
+        /// dotted form is `canonical`. The parser emits a deprecation warning
+        /// pointing users at `canonical` so the legacy entry can eventually be
+        /// removed without breaking existing source.
+        canonical: ?[]const u8 = null,
+    };
+
+    fn at_builtin_internal_name(name: []const u8, loc: ast.Loc) ?[]const u8 {
+        const pairs = [_]AtBuiltinEntry{
             .{ .public = "constexpr", .internal = "__constexpr" },
-            .{ .public = "comptime_if", .internal = "__comptimeif" },
+            // Legacy underscore spellings. Each carries its canonical @comp.*
+            // dotted form so the parser can warn on use without breaking
+            // backward compatibility. The non-underscore variants
+            // (e.g. `comptimeif`) are kept as silent aliases: they are not the
+            // documented public form and only exist for legacy tokens that
+            // pre-dated the underscore convention.
+            .{ .public = "comptime_if", .internal = "__comptimeif", .canonical = "comp.if" },
             .{ .public = "comptimeif", .internal = "__comptimeif" },
-            .{ .public = "comptime_fold", .internal = "__comptimefold" },
+            .{ .public = "comptime_fold", .internal = "__comptimefold", .canonical = "comp.fold" },
             .{ .public = "comptimefold", .internal = "__comptimefold" },
-            .{ .public = "comptime_for", .internal = "__comptimefor" },
+            .{ .public = "comptime_for", .internal = "__comptimefor", .canonical = "comp.for" },
             .{ .public = "comptimefor", .internal = "__comptimefor" },
-            .{ .public = "comptime_print", .internal = "__comptimeprint" },
+            .{ .public = "comptime_print", .internal = "__comptimeprint", .canonical = "comp.compile.log" },
             .{ .public = "comptimeprint", .internal = "__comptimeprint" },
-            .{ .public = "comptime_warn", .internal = "__comptimewarn" },
+            .{ .public = "comptime_warn", .internal = "__comptimewarn", .canonical = "comp.compile.warn" },
             .{ .public = "comptimewarn", .internal = "__comptimewarn" },
-            .{ .public = "compile_log", .internal = "__comptimeprint" },
-            .{ .public = "compile_error", .internal = "__comptimeerror" },
-            .{ .public = "comptime_error", .internal = "__comptimeerror" },
+            .{ .public = "compile_log", .internal = "__comptimeprint", .canonical = "comp.compile.log" },
+            .{ .public = "compile_error", .internal = "__comptimeerror", .canonical = "comp.compile.error" },
+            .{ .public = "comptime_error", .internal = "__comptimeerror", .canonical = "comp.compile.error" },
             .{ .public = "comptimeerror", .internal = "__comptimeerror" },
-            .{ .public = "static_assert", .internal = "__static_assert" },
+            .{ .public = "static_assert", .internal = "__static_assert", .canonical = "comp.assert" },
             .{ .public = "typeinfo", .internal = "__typeinfo" },
             .{ .public = "typeof", .internal = "__typeof" },
-            .{ .public = "type_name", .internal = "__type_name" },
-            .{ .public = "type_id", .internal = "__type_id" },
-            .{ .public = "is_type", .internal = "__is_type" },
+            .{ .public = "type_name", .internal = "__type_name", .canonical = "comp.type.name" },
+            .{ .public = "type_id", .internal = "__type_id", .canonical = "comp.type.id" },
+            .{ .public = "is_type", .internal = "__is_type", .canonical = "comp.type.is" },
             .{ .public = "fields", .internal = "__fields" },
             .{ .public = "methods", .internal = "__methods" },
-            .{ .public = "concept_methods", .internal = "__concept_methods" },
+            .{ .public = "concept_methods", .internal = "__concept_methods", .canonical = "comp.concepts.methods" },
             .{ .public = "variants", .internal = "__variants" },
-            .{ .public = "has_field", .internal = "__has_field" },
-            .{ .public = "has_method", .internal = "__has_method" },
-            .{ .public = "has_metamethod", .internal = "__has_metamethod" },
+            .{ .public = "has_field", .internal = "__has_field", .canonical = "comp.has.field" },
+            .{ .public = "has_method", .internal = "__has_method", .canonical = "comp.has.method" },
+            .{ .public = "has_metamethod", .internal = "__has_metamethod", .canonical = "comp.has.metamethod" },
             .{ .public = "satisfies", .internal = "__satisfies" },
-            .{ .public = "field_type", .internal = "__field_type" },
-            .{ .public = "field_offset", .internal = "__field_offset" },
-            .{ .public = "field_size", .internal = "__field_size" },
-            .{ .public = "embed_str", .internal = "__embed_str" },
-            .{ .public = "embed_file", .internal = "__embed_file" },
-            .{ .public = "make_type", .internal = "__make_type" },
-            .{ .public = "as_type", .internal = "__as_type" },
+            .{ .public = "field_type", .internal = "__field_type", .canonical = "comp.field.type" },
+            .{ .public = "field_offset", .internal = "__field_offset", .canonical = "comp.field.offset" },
+            .{ .public = "field_size", .internal = "__field_size", .canonical = "comp.field.size" },
+            .{ .public = "embed_str", .internal = "__embed_str", .canonical = "comp.embed.str" },
+            .{ .public = "embed_file", .internal = "__embed_file", .canonical = "comp.embed.file" },
+            .{ .public = "make_type", .internal = "__make_type", .canonical = "comp.make.type" },
+            .{ .public = "as_type", .internal = "__as_type", .canonical = "comp.as.type" },
             .{ .public = "bitfield", .internal = "__bitfield" },
             .{ .public = "union", .internal = "__union" },
             .{ .public = "select", .internal = "__select" },
@@ -3173,7 +3189,16 @@ pub const Parser = struct {
             .{ .public = "volatile", .internal = "__volatile" },
         };
         for (pairs) |pair| {
-            if (std.mem.eql(u8, name, pair.public)) return pair.internal;
+            if (std.mem.eql(u8, name, pair.public)) {
+                if (pair.canonical) |canonical| {
+                    term.locWarn(
+                        loc,
+                        "warning: @{s} is deprecated, use @{s} instead",
+                        .{ pair.public, canonical },
+                    );
+                }
+                return pair.internal;
+            }
         }
         return null;
     }

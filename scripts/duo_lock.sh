@@ -62,6 +62,19 @@ cmd_status() {
     fi
 }
 
+# --- G-057: Fork-safety pre-check (delegates to duo_gate.sh if available) ---
+check_fork_safety() {
+    local gate_script="$ROOT/scripts/duo_gate.sh"
+    if [[ -x "$gate_script" ]] && [[ -z "${DUO_GATE_HELD:-}" ]]; then
+        if ! "$gate_script" status >/dev/null 2>&1; then
+            # Gate says system is under fork pressure — wait for it to clear
+            local gate_wait="${DUO_GATE_WAIT:-120}"
+            echo "duo_lock: waiting up to ${gate_wait}s for fork safety (G-057)..." >&2
+            "$gate_script" --timeout "$gate_wait" -- true 2>/dev/null || true
+        fi
+    fi
+}
+
 main() {
     local timeout=1800
     case "${1:-}" in
@@ -73,10 +86,18 @@ main() {
         echo "duo_lock: no command given (usage: duo_lock.sh [--timeout N] -- <cmd...>)" >&2
         exit 64
     fi
+    # G-057: pre-check fork safety before acquiring the build lock
+    check_fork_safety
     acquire "$timeout"
     trap release EXIT INT TERM
     export DUO_LOCK_HELD=1
     export DUO_BUILD_LOCK="$LOCK_DIR"
+    # G-057: also register a gate slot while the build runs
+    local gate_dir="${DUO_GATE_DIR:-/tmp/duo-gate}"
+    if [[ -d "$gate_dir" ]] || mkdir -p "$gate_dir" 2>/dev/null; then
+        printf '%s %s\n' "$$" "$(date +%s)" >"$gate_dir/slot_$$" 2>/dev/null || true
+        trap 'rm -f "'"$gate_dir"'/slot_$$" 2>/dev/null; release' EXIT INT TERM
+    fi
     "$@"
 }
 

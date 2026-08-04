@@ -32,6 +32,27 @@ All compile-time and compiler directives use **dotted module paths**, not unders
 | Permute | `@comp.permute` | O(n!) |
 | Glue | `@comp.each`, `@comp.chain` | composes any combinator output (`chain` ≡ `each`) |
 | Introspection | `@comp.str.countlines`, `@comp.str.splitcount`, `@comp.str.len`, `@comp.str.eq`, `@comp.str.join`, `@comp.str.contains`, `@comp.concepts.count`, `@comp.rewrite.describe`, `@comp.rewrite.rulecount` | native comptime utilities (no lua) |
+| Combinatorics | `@comp.sweep`, `@comp.pow`, `@comp.stack`, `@comp.powerset` | O(n) sweep, O(2^n) power/powerset, stack-based composition |
+| Type introspection | `@comp.type.names`, `@comp.type.of` | list type names, C `typeof` type-specifier |
+| C ABI | `@comp.c.link`, `@comp.c.emit.file` | C linkage, C file emission |
+| Hints | `@comp.hint.hot`, `@comp.hint.volatile` | hot-path optimization hint, volatile annotation |
+| Register/Rewrite | `@comp.register.rewrite`, `@comp.rewrite.describe`, `@comp.rewrite.rulecount` | register rewrite rules, describe bundles, count active rules |
+| Compile control | `@comp.compile.native`, `@comp.compile.only`, `@comp.compile.differentiable` | native target, compile-only callback, differentiable function |
+| Emit | `@comp.emit.derive`, `@comp.emit.omni`, `@comp.emit.file`, `@comp.emit` (bare) | derive/omni emission, file emission, bare emit (raw C injection) |
+| Asm | `@comp.asm` (bare) | inline assembly injection |
+| String ops | `@comp.str.*` family (`countlines`, `splitcount`, `len`, `eq`, `join`, `contains`) | native comptime string utilities |
+
+## Path mismatch corrections (2026-08-02)
+
+The following directives were documented under `@comp.derive.*` but are actually implemented under different module paths:
+
+| Documented (incorrect) | Actual (correct) |
+| --- | --- |
+| `@comp.derive.define` | `@comp.define.derive` |
+| `@comp.derive.register` | `@comp.register.derive` |
+| `@comp.derive.bundle` | `@comp.define.bundle` |
+
+All call sites and documentation should use the actual (correct) forms.
 
 **Generative algebra:** chain `template` / `generate` / `scheme` through `@comp.each` — see `examples/meta_generative_stack_showcase.duo`. Batch native audit: MCP `duo_audit_metaprogramming_smokes()`.
 
@@ -68,3 +89,19 @@ MCP: `duo_directive_hierarchy_read`, `duo_meta_catalog`, `duo_meta_ladder`.
 | `fields` / `methods` / `variants` / `satisfies` | `@comp.fields` / `@comp.methods` / `@comp.variants` / `@comp.satisfies` |
 
 Example call sites migrated to canonical forms: `metaprogramming_test.duo`, `metaprogramming_showcase.duo`, `concept_introspect.duo` (all `duo check` clean). The flat aliases in `parser.zig` still work (deprecated); removing them + extending the `meta_module.zig:1397` guard to scan `parser.zig` is the remaining cleanup. NOTE: `@comp.type.of` was NOT added — `__typeof` emits the C `typeof` keyword (a type-specifier, not a value expression), same quirk as legacy `@typeof`.
+
+## G-056 reconciliation (2026-08-03) — one canonical name per intrinsic
+
+`__comptimeif` / `__comptimefor` had **two** public names each (`@comp.when`/`@comp.loop` AND `@comp.if`/`@comp.for`).
+
+**Decision — canonical forms (matching the migration table above):**
+
+| Internal | Canonical | Alias (kept, working) |
+| --- | --- | --- |
+| `__comptimeif` | `@comp.if` | `@comp.when`, `@comp.meta.when`, `@comp.compiler.when` |
+| `__comptimefor` | `@comp.for` | `@comp.loop`, `@comp.meta.loop`, `@comp.compiler.loop` |
+
+- Parser legacy deprecation hints (`@comptime_if`, `@comptime_for`) now point at `@comp.if` / `@comp.for`.
+- The alias forms remain registered in `meta_module.zig` (no call-site breakage); they are not advertised in docs/catalog.
+- Pending (needs build verification when machine load permits): confirm no unit test asserts the old `comp.when`/`comp.loop` hint text.
+- NOTE: AGENTS.md §2 sketches the future `@comp.compile.*` home (`when`/`loop`/`fold`/…). A future coordinated rename `comp.if`→`comp.compile.when` etc. would be a breaking change; do NOT do it piecemeal — track as one atomic migration.
