@@ -1,0 +1,53 @@
+-- Exponential Metaprogramming Showcase
+
+-- 1. @cached — comptime memoization (O(2^n) → O(n))
+-- With @cached, fib only computes each n once.
+@cached
+fun fib(n)
+  if n < 2 then return 1 end
+  return fib(n - 1) + fib(n - 2)
+end
+
+const fib15 = @(fib(15))
+print("fib(15) = " .. fib15)
+
+-- 2. @modify — type validation at specialization sites
+-- The modifier runs once per concrete type argument.
+fun validate_numeric(type_args)
+  for i = 1, #type_args
+    local t = type_args[i]
+    if t == "str" then
+      print("validate_numeric error: 'str' is not numeric")
+      return false
+    end
+  end
+  return true
+end
+
+@modify(validate_numeric)
+fun add<T>(a: T, b: T) -> T
+  return a + b
+end
+
+print("add(1, 2) = " .. add(1, 2))
+print("add(3.0, 4.0) = " .. add(3.0, 4.0))
+
+-- 3. @meta.define.derive — user-defined derive macros
+-- One @meta.define.derive generates a macro; each @derive on a type
+-- calls it to produce per-field code. (check-time only for now)
+@meta.define.derive("Getter", fun(meta)
+  local code = "// Getters for " .. meta.name .. "\n"
+  for i = 1, #meta.fields
+    local f = meta.fields[i]
+    code = code .. "static inline " .. f.type .. " get_" .. f.name
+    code = code .. "(" .. meta.name .. "* self) {\n"
+    code = code .. "  return self->" .. f.name .. ";\n"
+    code = code .. "}\n"
+  end
+  return code
+end)
+
+@derive(Getter)
+type Point = { x: f64, y: f64 }
+
+print("all done")

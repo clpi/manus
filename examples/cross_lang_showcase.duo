@@ -1,0 +1,82 @@
+-- Cross-language metaprogramming paths that are implemented today.
+--
+-- Run: duo run examples/cross_lang_showcase.duo
+
+--- @c.include("math.h")
+--- @c.include("string.h")
+
+@meta.ffi("string.h")
+
+@schema("examples/schemas/point.json")
+
+@run("printf 'static const char harness_tag[] = \"duo-cross\";'")
+
+@c.emit([[
+static double sigmoid(double x) {
+    return 1.0 / (1.0 + exp(-x));
+}
+
+static double relu(double x) {
+    return x > 0.0 ? x : 0.0;
+}
+
+static long fibonacci(long n) {
+    if (n <= 1) return n;
+    long a = 0;
+    long b = 1;
+    for (long i = 2; i <= n; ++i) {
+        long next = a + b;
+        a = b;
+        b = next;
+    }
+    return b;
+}
+
+static long gcd_long(long a, long b) {
+    while (b != 0) {
+        long t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+static double vec2_dot(double x1, double y1, double x2, double y2) {
+    return x1 * x2 + y1 * y2;
+}
+
+static double vec2_len(double x, double y) {
+    return sqrt(x * x + y * y);
+}
+]])
+
+@c.emit(@run("printf 'static const double sin_lut[8] = {0.00000000,0.38268343,0.70710678,0.92387953,1.00000000,0.92387953,0.70710678,0.38268343}; static double sin_lut_at(long i) { return sin_lut[i & 7]; }'"))
+
+EMBEDDED = @embed("examples/run_smoke.duo")
+HOST = @run("hostname")
+PY = @run("python3 --version 2>&1")
+ZIG_VER = @run("zig version 2>/dev/null || echo zig-unavailable")
+
+print("=== Duo Cross-Language Metaprogramming Showcase ===")
+print("")
+
+print("-- Generated native C via @run --")
+@c.call("printf", "  tag = %s\n", @(harness_tag))
+@c.call("printf", "  sigmoid(1.0) = %.6f\n", @c.call("sigmoid", @(1.0)))
+@c.call("printf", "  relu(-5.0) = %.1f\n", @c.call("relu", @(-5.0)))
+@c.call("printf", "  fibonacci(10) = %ld\n", @c.call("fibonacci", @(10)))
+@c.call("printf", "  gcd(12, 8) = %ld\n", @c.call("gcd_long", @(12), @(8)))
+@c.call("printf", "  vec2_dot(1,2,3,4) = %.1f\n", @c.call("vec2_dot", @(1.0), @(2.0), @(3.0), @(4.0)))
+@c.call("printf", "  vec2_len(3,4) = %.1f\n", @c.call("vec2_len", @(3.0), @(4.0)))
+@c.call("printf", "  sin_lut[2] = %.8f\n", @c.call("sin_lut_at", @(2)))
+print("")
+
+print("-- Header/schema/embed surfaces --")
+@c.call("printf", "  strlen(\"duo\") = %zu\n", @c.call("strlen", "duo"))
+print("  embedded file bytes = " .. tostring(#EMBEDDED))
+print("  host = " .. HOST)
+print("  python = " .. PY)
+print("  zig = " .. ZIG_VER)
+print("")
+
+print("=== done ===")

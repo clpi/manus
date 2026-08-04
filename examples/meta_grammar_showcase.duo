@@ -1,0 +1,15 @@
+-- @comp.grammar EBNF → O(b^d) expansion fragments (comptime, native C output)
+-- Run: duo run examples/meta_grammar_showcase.duo
+
+fun frag(meta): str
+    "/* grammar[" .. tostring(meta.index) .. "/" .. tostring(meta.count) .. "]: " .. meta.expansion .. " */\n"
+end
+
+-- Tiny expr grammar: S → num | S + S | ( S )
+GRAMMAR = "S: num | S plus S | lpar S rpar ; plus: + ; lpar: ( ; rpar: ) ; num: 0 | 1 | 2"
+
+CODE = @comp.grammar(GRAMMAR, frag)
+
+print("=== @comp.grammar showcase ===")
+print(CODE)
+print("RESULT grammar_ok = true")

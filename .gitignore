@@ -9,3 +9,7 @@ test3
 test4
 *.o
 docs/book/
+
+# macOS finder noise
+.DS_Store
+**/.DS_Store

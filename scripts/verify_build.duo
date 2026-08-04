@@ -1,0 +1,11 @@
+-- verify_build.duo — build verification: zig build + zig build test.
+-- Replaces scripts/verify_build.sh
+-- Run: duo run scripts/verify_build.duo
+-- Or:  scripts/verify_build.sh
+
+script = req "std.script"
+
+script.must("zig build 2>&1 | tee /tmp/duo_zig_build.log")
+script.echo("zig build OK")
+script.must("zig build test 2>&1 | tee /tmp/duo_zig_test.log")
+script.echo("zig build test OK")

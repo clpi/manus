@@ -1,0 +1,69 @@
+-- Truly-exponential metaprogramming: power-set (2^n) and permutation (n!) combinators.
+--
+-- These complete the scaling ladder ABOVE the fixed-k cartesian products:
+--   map:O(n) → product:O(n²) → tensor:O(n³) → nfold:O(n^k)
+--   → power:O(2^n) → permute:O(n!)
+--
+-- One source line produces 2^n (or n!) generated C fragments.
+-- All output is native C — no lua_Value intermediaries at runtime.
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Vec2 = { x: f64, y: f64 }
+type Vec3 = { x: f64, y: f64 }
+type Pt = { x: f64, y: f64 }
+
+-- 1. @meta.power — power-set enumeration: O(2^n).
+--    For 3 matching types → 2^3 - 1 = 7 non-empty subsets.
+fun power_sig(subset) -> str
+    subset.name .. ";"
+end
+
+POWER = @meta.power("HasXY", power_sig)
+print("=== @meta.power (2^3 - 1 = 7 subsets) ===")
+print(POWER)
+
+-- 2. @meta.permute — permutation enumeration: O(n!).
+--    For 3 matching types → 3! = 6 permutations.
+fun perm_sig(ordered) -> str
+    ordered.name .. ";"
+end
+
+PERMUTE = @meta.permute("HasXY", perm_sig)
+print("=== @meta.permute (3! = 6 orderings) ===")
+print(PERMUTE)
+
+-- 3. Count verification: power over a set of n types yields 2^n - 1 fragments.
+fun count_semicolons(s) -> i64
+    n = 0
+    for i = 1, #s
+        if string.sub(s, i, i) == ";" then n += 1 end
+    end
+    n
+end
+
+POWER_COUNT = count_semicolons(POWER)
+PERMUTE_COUNT = count_semicolons(PERMUTE)
+print("power fragments  = " .. POWER_COUNT .. "  (expect 7 = 2^3-1)")
+print("permute fragments = " .. PERMUTE_COUNT .. "  (expect 6 = 3!)")
+
+-- 4. @meta.derive.power — apply a derive macro to every non-empty subset.
+@meta.define.derive("SubsetStub", fun generate(meta) -> str
+    "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " count=" .. tostring(meta.count) .. " */\n"
+end)
+
+SUBSET_CODE = @meta.derive.power("HasXY", SubsetStub)
+print("=== @meta.derive.power (7 derive fragments) ===")
+print(SUBSET_CODE)
+
+-- 5. The scaling ladder now documents the full exponential family.
+LADDER = @meta.ladder()
+print("=== @meta.ladder (updated) ===")
+print(LADDER)
+
+ok = (POWER_COUNT == 7 and PERMUTE_COUNT == 6)
+print("=== RESULT ===")
+print("power_and_permute_ok = " .. tostring(ok))

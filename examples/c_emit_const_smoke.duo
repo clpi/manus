@@ -1,0 +1,3 @@
+UNROLL = @(@meta.loop(0, 2, "/* slot %i */\n"))
+@c.emit(UNROLL)
+print("ok")

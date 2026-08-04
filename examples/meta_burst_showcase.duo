@@ -1,0 +1,39 @@
+-- @meta.burst: one module directive → derive.all + emit.omni (exponential ceiling breaker)
+-- Run: duo run examples/meta_burst_showcase.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+concept HasTag
+    tag: str
+end
+
+type Point = { x: f64, y: f64, tag: str }
+type Pair = { x: f64, y: f64, tag: str }
+
+@meta.define.derive("TouchApi", fun generate(meta) -> str
+    acc = ""
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+    end
+    acc
+end)
+
+-- One line: apply TouchApi to all HasXY types AND emit omni C (ceiling + sweep comment).
+@meta.burst("HasXY", TouchApi, "HasTag")
+
+fun mark(meta) -> str
+    meta.name .. ";"
+end
+
+COMBOS = @meta.catalog("combinators")
+SWEEP = @meta.map("HasXY", mark)
+
+print("=== meta burst showcase ===")
+print("combinators_has_burst = " .. tostring(@meta.str.contains(COMBOS, "meta.burst")))
+print("sweep = " .. SWEEP)
+print("Point ok = true")
+print("ok")

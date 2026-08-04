@@ -1,0 +1,7 @@
+{
+  "name": "point",
+  "x": 1,
+  "y": 2.5,
+  "tags": ["a", "b"],
+  "nested": { "ok": true }
+}

@@ -1,0 +1,71 @@
+#!/usr/bin/env duo
+-- agent_dedup.duo — check claim status before editing shared files.
+-- Replaces scripts/agent_dedup_check.sh
+-- Usage: duo run scripts/agent_dedup.duo [file1 ...]
+
+agent = req "std.agent"
+fs = req "std.fs"
+io = req "std.io.util"
+script = req "std.script"
+osmod = req "std.os"
+
+coord_path = agent.coordination_file()
+canon_path = agent.canonical_index_file()
+gaps_path = "docs/AGENT_GAPS.md"
+args = osmod.args()
+
+print("=== Duo Agent Dedup Check ===")
+
+-- 1. Check canonical files exist
+for _, p in {coord_path, canon_path, gaps_path}
+    if not fs.exists(p)
+        print("WARNING:", p, "not found")
+    end
+end
+print("Gaps route:", agent.gaps_file())
+
+-- 2. Read coordination buffer and show active claims
+content = io.read_file(coord_path)
+start = string.find(content, "## Active claims")
+if start
+    section = string.sub(content, start)
+    _end = string.find(section, "\n## ")
+    if _end then section = string.sub(section, 1, _end - 1) end
+    print("--- Active Claims ---")
+    for line in string.gmatch(section, "| [^|]+ | [^|]+ | [^|]+ | [^|]+ |")
+        if not string.find(line, "Area.*Agent")
+            print(line)
+        end
+    end
+end
+
+-- 3. Show open P0 gaps from coordination
+p0_count = 0
+for line in string.gmatch(content, "| G-[^|]+ |[^|]+ | P0 |[^|]+ |[^|]+ |")
+    p0_count = p0_count + 1
+    print("P0 gap found:", line)
+end
+print("--- Open P0 gaps:", p0_count, "---")
+
+-- 4. Check specified files for claims
+if #args > 0
+    print("--- File claim check ---")
+    for i = 1, #args
+        f = args[i]
+        if string.find(content, f)
+            print("WARNING:", f, "may be claimed by another agent (found in coordination buffer)")
+        else
+            print("OK:", f, "not claimed")
+        end
+    end
+end
+
+-- 5. Check build lock status
+lock_owner = script.build_lock_owner()
+if lock_owner and #lock_owner > 0
+    print("--- Build lock held by:", lock_owner, "---")
+else
+    print("--- Build lock: FREE ---")
+end
+
+print("=== Done ===")

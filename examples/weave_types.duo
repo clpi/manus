@@ -1,0 +1,11 @@
+-- Foreign module for @comp.weave cross-module type sweep
+-- Run via: examples/meta_weave_showcase.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Point = { x: f64, y: f64 }
+type Pair = { x: f64, y: f64 }
+type TagOnly = { tag: str }

@@ -1,0 +1,85 @@
+-- assert_no_ansi_reports.duo — verify ANSI escape handling in test reporter output.
+-- Replaces scripts/assert_no_ansi_reports.sh
+-- Run: duo run scripts/assert_no_ansi_reports.duo
+
+global s = req "std.script"
+
+global DUO: str = tostring(s.getenv_or("DUO"))
+if string.len(DUO) == 0
+    DUO = "./zig-out/bin/duo"
+end
+
+-- Build if needed
+if not s.fs_exists(DUO)
+    s.must("zig build")
+end
+
+-- ESC_GREP: grep pattern that matches a literal ESC (0x1b) byte via $'...' bash quoting
+global ESC_GREP: str = "$'\\033'"
+
+fun temp_file(): str
+    local tmp = tostring(s.fs_tmp())
+    if string.len(tmp) == 0
+        tmp = "/tmp/duo_ansi_test_" .. tostring(os.time())
+    end
+    return string.gsub(tmp, "\n", "")
+end
+
+-- assert_escape_free: fail if ESC bytes appear in the captured output file
+fun assert_escape_free_file(label: str, tmpfile: str)
+    local found = s.run("LC_ALL=C grep -q " .. ESC_GREP .. " '" .. tmpfile .. "' 2>/dev/null")
+    if found == 0
+        s.echo("ANSI escape sequence leaked in " .. label)
+        os.exit(1)
+    end
+    s.echo("ok no-ansi " .. label)
+end
+
+-- assert_has_escape: fail if ESC bytes do NOT appear in the captured output file
+fun assert_has_escape_file(label: str, tmpfile: str)
+    local found = s.run("LC_ALL=C grep -q " .. ESC_GREP .. " '" .. tmpfile .. "' 2>/dev/null")
+    if found ~= 0
+        s.echo("ANSI styling missing in " .. label)
+        os.exit(1)
+    end
+    s.echo("ok ansi " .. label)
+end
+
+fun check_flag_report(style: str)
+    local tmp = temp_file()
+    s.run(DUO .. " test examples/directives_test.duo --no-color --test-report " .. style .. " >" .. tmp .. " 2>&1")
+    assert_escape_free_file("--no-color " .. style, tmp)
+    os.remove(tmp)
+end
+
+fun check_env_report(style: str)
+    local tmp = temp_file()
+    s.run("NO_COLOR=1 " .. DUO .. " test examples/directives_test.duo --test-report " .. style .. " >" .. tmp .. " 2>&1")
+    assert_escape_free_file("NO_COLOR=1 " .. style, tmp)
+    os.remove(tmp)
+end
+
+fun check_forced_color_report(style: str)
+    local tmp = temp_file()
+    s.run("DUO_COLOR=1 " .. DUO .. " test examples/directives_test.duo --test-report " .. style .. " >" .. tmp .. " 2>&1")
+    assert_has_escape_file("DUO_COLOR=1 " .. style, tmp)
+    os.remove(tmp)
+end
+
+fun check_json_report()
+    local tmp = temp_file()
+    s.run("DUO_COLOR=1 " .. DUO .. " test examples/directives_test.duo --test-report json >" .. tmp .. " 2>&1")
+    assert_escape_free_file("DUO_COLOR=1 json", tmp)
+    -- Validate JSON lines via python3
+    s.must("python3 -c '\nimport json, sys\nlines = [line for line in open(\"" .. tmp .. "\").read().splitlines() if line.strip()]\nif not lines: raise SystemExit(\"json report produced no events\")\nfor line in lines: json.loads(line)\nif not any(json.loads(line).get(\"event\") == \"summary\" for line in lines): raise SystemExit(\"json report missing summary event\")\nprint(\"ok json DUO_COLOR=1 json\")\n'")
+    os.remove(tmp)
+end
+
+local styles = {"pretty", "compact", "verbose"}
+for _, style in styles
+    check_flag_report(style)
+    check_env_report(style)
+    check_forced_color_report(style)
+end
+
+check_json_report()

@@ -1,0 +1,72 @@
+-- @comp.* hierarchy: canonical dotted compiler module (replaces flat @foo_bar)
+--
+-- Expression hooks (comptime expansion):
+--   @comp.map / @comp.sweep   concept sweep
+--   @comp.derive              derive sweep over concept matches
+--   @comp.expand / @comp.pow     derive sweep (+ optional sweep comment)
+--   @comp.ceiling                derive sweep + cartesian derive product
+--   @comp.omni / @comp.stack     ceiling + optional sweep comment
+--   @comp.product             cartesian product of two concepts
+--   @comp.derive.product      derive × cartesian product
+--   @comp.fields.map          field template expansion
+--   @comp.diff                type migration codegen
+--   @comp.satisfies           concept membership
+--   @comp.assert              static assertion
+--   @comp.when                  comptime conditional (not @comp.if — keyword)
+--   @comp.catalog()             discover all parseable @comp.* paths
+--
+-- Exponential scaling (one declaration → multiplicative output):
+--   @meta.map                   O(types)
+--   @meta.derive                O(types × fields)
+--   @meta.product               O(types²)
+--   @meta.derive.product        O(types² × fields)
+--   @meta.ceiling               derive sweep + cartesian derive product
+--   @meta.tensor                O(types³) callback sweep
+--   @meta.derive.tensor         O(types³ × fields)
+--   @meta.nfold                  O(types^k) callback sweep (generalizes product/tensor)
+--   @meta.derive.nfold           O(types^k × fields)
+--   @meta.burst                 module: derive.all + O(types² × fields) emit
+--   @meta.transcend             module: burst + O(types³ × fields) emit
+--   @meta.infinity              module: transcend + O(types⁴ × fields) emit
+--
+-- Module directives (file-level transforms):
+--   @meta.define.derive       register user derive macro
+--   @meta.define.bundle       register derive trait bundle
+--   @meta.derive.all          apply derive to all concept matches
+--   @meta.emit.derive         emit derive C at module level (no @c.emit wrapper)
+--   @meta.emit.omni           emit omni/stack C at module level
+--   @meta.burst               derive.all + quadratic derive.product emit
+--   @meta.transcend           burst + cubic derive.tensor emit
+--   @meta.pipeline            staged comptime pipeline
+--
+-- Type attributes:
+--   @meta.derive.bundle       expand named trait bundle on a type
+--
+-- @meta.* remains a compatibility alias; new features use dotted @comp.* paths.
+-- Run: duo run examples/meta_hierarchy_showcase.duo
+
+concept HasTag
+    tag: str
+end
+
+type Alpha = { tag: str, n: i64 }
+type Beta = { tag: str, x: f64 }
+
+fun mark(meta) -> str
+    meta.name .. ";"
+end
+
+SWEEP = @comp.map("HasTag", mark)
+NAMES = @comp.type.names()
+TAG_TYPES = @comp.types.with("HasTag")
+CATALOG = @comp.catalog()
+LADDER = @comp.ladder()
+
+print("=== meta hierarchy showcase ===")
+print("catalog_has_map = true")
+print("ladder_has_tensor = true")
+print("sweep = " .. SWEEP)
+print("all_types = " .. NAMES)
+print("tag_types = " .. TAG_TYPES)
+print("Alpha ok = true")
+print("ok")

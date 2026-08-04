@@ -1,0 +1,13 @@
+-- @comp.compile.cached persists cacheable comptime results across compiler runs.
+
+@comp.compile.cached
+fun cached_fib(n: i64) -> i64
+    if n < 2
+        return 1
+    end
+    return cached_fib(n - 1) + cached_fib(n - 2)
+end
+
+RESULT: i64 = @(cached_fib(12))
+
+print("RESULT cached_persistence = " .. RESULT)

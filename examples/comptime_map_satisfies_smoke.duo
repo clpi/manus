@@ -1,0 +1,24 @@
+-- @meta.satisfies + @meta.map on typed records (type X = { ... })
+-- Run: duo run examples/comptime_map_satisfies_smoke.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Point = { x: f64, y: f64 }
+type IdOnly = { id: i64 }
+
+@meta.assert(@meta.satisfies(Point, "HasXY"), "Point has x and y")
+@meta.assert(not @meta.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
+
+fun mark(meta) -> str
+    meta.name .. ";"
+end
+
+MARKS = @meta.map("HasXY", mark)
+
+print("satisfies Point = " .. tostring(@meta.satisfies(Point, "HasXY")))
+print("satisfies IdOnly = " .. tostring(@meta.satisfies(IdOnly, "HasXY")))
+print("marks = " .. MARKS)
+print("ok")

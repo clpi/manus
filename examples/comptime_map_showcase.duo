@@ -1,0 +1,31 @@
+-- @meta.map: one concept + one fn → code for every matching type in the module
+-- Run: duo run examples/comptime_map_showcase.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Point = { x: f64, y: f64 }
+type Pair = { x: f64, y: f64 }
+type IdOnly = { id: i64 }
+
+@meta.assert(@meta.satisfies(Point, "HasXY"), "Point has x and y")
+@meta.assert(not @meta.satisfies(IdOnly, "HasXY"), "IdOnly lacks x/y")
+
+fun c_type_comment(meta) -> str
+    "/* " .. meta.name .. " */\n"
+end
+
+fun type_registry_line(meta) -> str
+    meta.name .. ";"
+end
+
+@c.emit(@meta.map("HasXY", c_type_comment))
+
+TYPE_MARKS = @meta.map("HasXY", type_registry_line)
+
+print("=== comptime_map showcase ===")
+print("satisfies Point = " .. tostring(@meta.satisfies(Point, "HasXY")))
+print("type_marks = " .. TYPE_MARKS)
+print("ok")

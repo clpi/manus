@@ -1,0 +1,31 @@
+-- @comp.generate → @comp.each — O(ops×types) cartesian then per-fragment re-expansion
+-- Run: duo run examples/meta_generate_each_showcase.duo
+
+CONSTRAINTS = [[
+ops: add|sub
+types: i64:int64_t|f64:double
+template: /* gen[$0:$1] */
+]]
+
+GEN = @comp.generate(CONSTRAINTS, "")
+
+fun stamp(frag) -> str
+    "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
+end
+
+EXPANDED = @comp.each(GEN, stamp)
+
+fun count_lines(s) -> i64
+    n = 0
+    for i = 1, #s
+        if string.sub(s, i, i) == "\n" then n += 1 end
+    end
+    n
+end
+
+LINES = count_lines(EXPANDED)
+
+print("=== @comp.generate → @comp.each ===")
+print(EXPANDED)
+print("fragments = " .. tostring(LINES) .. "  (expect 4 = 2 ops × 2 types)")
+print("RESULT generate_each_ok = " .. tostring(LINES == 4))

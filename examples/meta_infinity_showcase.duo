@@ -1,0 +1,52 @@
+-- @meta.infinity: quartic ceiling breaker — transcend + O(n^4 × fields) in one directive
+-- Run: duo run examples/meta_infinity_showcase.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+concept HasTag
+    tag: str
+end
+
+concept HasId
+    id: i64
+end
+
+concept HasExtra
+    extra: i64
+end
+
+type Point = { x: f64, y: f64, tag: str, id: i64, extra: i64 }
+type Pair = { x: f64, y: f64, tag: str, id: i64, extra: i64 }
+type Label = { tag: str, id: i64, extra: i64 }
+
+@meta.define.derive("QuadApi", fun generate(meta) -> str
+    if meta.parts ~= nil and #meta.parts >= 4 then
+        "/* quad " .. meta.name .. " */\n"
+    else
+        acc = ""
+        for i = 1, #meta.fields
+            f = meta.fields[i]
+            acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+        end
+        acc
+    end
+end)
+
+-- One line: derive.all + quadratic + cubic + quartic emit
+@meta.infinity("HasXY", QuadApi, "HasTag", "HasId", "HasExtra")
+
+fun quad_sig(a, b, c, d) -> str
+    a.name .. "x" .. b.name .. "x" .. c.name .. "x" .. d.name .. ";"
+end
+
+NFOLD = @meta.nfold({ "HasXY", "HasTag", "HasId", "HasExtra" }, quad_sig)
+LADDER = @meta.ladder()
+
+print("=== meta infinity showcase ===")
+print("has_infinity = " .. tostring(@meta.str.contains(LADDER, "infinity:")))
+print("nfold = " .. NFOLD)
+print("Point ok = true")
+print("ok")

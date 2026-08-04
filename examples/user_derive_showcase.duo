@@ -1,0 +1,41 @@
+-- User-defined @meta.define.derive + @meta.fields.map exponential codegen showcase
+-- Run: duo run examples/user_derive_showcase.duo
+
+@meta.define.derive("CStruct", fun generate(meta) -> str
+    acc = "typedef struct " .. meta.name .. " {\n"
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "    " .. f.type .. " " .. f.name .. ";\n"
+    end
+    acc = acc .. "} " .. meta.name .. ";\n"
+    acc
+end)
+
+@meta.define.derive("GetterBundle", fun generate(meta) -> str
+    acc = ""
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "static inline " .. f.type .. " " .. meta.name .. "_get_" .. f.name .. "(const " .. meta.name .. "* v) { return v->" .. f.name .. "; }\n"
+    end
+    acc
+end)
+
+@derive(CStruct, GetterBundle)
+type Vec3 = { x: f64, y: f64, z: f64 }
+
+@derive(CStruct)
+type RGB = { r: f64, g: f64, b: f64 }
+
+v3: Vec3 = { x = 1.0, y = 2.0, z = 3.0 }
+rgb: RGB = { r = 1.0, g = 0.5, b = 0.0 }
+
+FIELD_MAP = @meta.fields.map(v3, "/* %n:%t */")
+
+UNROLL = @(@meta.loop(0, 5, "slot_%i=0;"))
+
+print("=== user derive showcase ===")
+print("field_map = " .. FIELD_MAP)
+print("unrolled = " .. UNROLL)
+print("Vec3 fields = " .. tostring(#@fields(v3)))
+print("RGB fields = " .. tostring(#@fields(rgb)))
+print("ok")

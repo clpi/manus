@@ -1,0 +1,45 @@
+-- Exponential ceiling: stacked @meta.* metaprogramming (concept sweep + migration + derive)
+-- Run: duo run examples/exponential_ceiling_showcase.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Point = { x: f64, y: f64 }
+type BadXY = { x: i64, y: f64 }
+type Pair = { x: f64, y: f64 }
+
+@meta.define.derive("TouchApi", fun generate(meta) -> str
+    acc = ""
+    for i = 1, #meta.fields
+        f = meta.fields[i]
+        acc = acc .. "void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+    end
+    acc
+end)
+
+@meta.assert(@meta.satisfies(Point, "HasXY"))
+@meta.assert(not @meta.satisfies(BadXY, "HasXY"))
+
+fun registry_line(meta) -> str
+    meta.name .. ";"
+end
+
+-- One @meta.expand line → O(types × fields) C for every concept match
+@c.emit(@meta.expand("HasXY", TouchApi))
+
+TYPED_SWEEP = @meta.map("HasXY", registry_line)
+
+type UserV1 = { id: i64, nick: str }
+type UserV2 = { id: i64, email: str }
+
+MIGRATION = @meta.diff(UserV1, UserV2)
+@c.emit(MIGRATION)
+
+print("=== exponential ceiling showcase ===")
+print("typed_sweep = " .. TYPED_SWEEP)
+print("migration_lines = " .. tostring(#MIGRATION))
+print("Point satisfies HasXY = " .. tostring(@meta.satisfies(Point, "HasXY")))
+print("BadXY satisfies HasXY = " .. tostring(@meta.satisfies(BadXY, "HasXY")))
+print("ok")
