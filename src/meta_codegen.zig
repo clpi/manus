@@ -2121,38 +2121,55 @@ pub fn comptimeInterpolateHook(host: Host, template: []const u8, vars: comptime_
             var j = start;
             while (j < template.len and template[j] != '}') j += 1;
             if (j < template.len) {
-                // Found {name} — look up in vars table
+                // Only treat as a placeholder if the content is a valid
+                // identifier (alphanumeric + underscore, no spaces/special).
+                // This avoids matching C code braces like `{ return x; }`.
                 const var_name = template[start..j];
-                var found = false;
-                for (vars.table) |entry| {
-                    if (entry.name) |ename| {
-                        if (std.mem.eql(u8, ename, var_name)) {
-                        switch (entry.val) {
-                            .string => |s| buf.appendSlice(alloc, s) catch return null,
-                            .int => |n| {
-                                var num_buf: [32]u8 = undefined;
-                                const s = std.fmt.bufPrint(&num_buf, "{d}", .{n}) catch break;
-                                buf.appendSlice(alloc, s) catch return null;
-                            },
-                            .float => |f| {
-                                var num_buf: [32]u8 = undefined;
-                                const s = std.fmt.bufPrint(&num_buf, "{e}", .{f}) catch break;
-                                buf.appendSlice(alloc, s) catch return null;
-                            },
-                            .bool => |b| buf.appendSlice(alloc, if (b) "true" else "false") catch return null,
-                            else => buf.appendSlice(alloc, "nil") catch return null,
-                        }
-                        found = true;
-                        break;
+                const is_valid_ident = var_name.len > 0 and blk: {
+                    for (var_name) |c| {
+                        if (!std.ascii.isAlphanumeric(c) and c != '_') break :blk false;
+                    }
+                    break :blk true;
+                };
+                if (is_valid_ident) {
+                    var found = false;
+                    for (vars.table) |entry| {
+                        if (entry.name) |ename| {
+                            if (std.mem.eql(u8, ename, var_name)) {
+                                switch (entry.val) {
+                                    .string => |s| buf.appendSlice(alloc, s) catch return null,
+                                    .int => |n| {
+                                        var num_buf: [32]u8 = undefined;
+                                        const s = std.fmt.bufPrint(&num_buf, "{d}", .{n}) catch break;
+                                        buf.appendSlice(alloc, s) catch return null;
+                                    },
+                                    .float => |f| {
+                                        var num_buf: [32]u8 = undefined;
+                                        const s = std.fmt.bufPrint(&num_buf, "{e}", .{f}) catch break;
+                                        buf.appendSlice(alloc, s) catch return null;
+                                    },
+                                    .bool => |b| buf.appendSlice(alloc, if (b) "true" else "false") catch return null,
+                                    else => buf.appendSlice(alloc, "nil") catch return null,
+                                }
+                                found = true;
+                                break;
+                            }
                         }
                     }
+                    if (!found) {
+                        buf.appendSlice(alloc, template[i .. j + 1]) catch return null;
+                    }
+                    i = j + 1;
+                    continue;
                 }
-                if (!found) {
-                    // Unknown placeholder — keep as-is
-                    buf.appendSlice(alloc, template[i .. j + 1]) catch return null;
-                }
-                i = j + 1;
+                // Not a valid identifier — output the { literally
+                buf.append(alloc, template[i]) catch return null;
+                i += 1;
                 continue;
+            } else {
+                // No closing } found — output rest literally
+                buf.appendSlice(alloc, template[i..]) catch return null;
+                break;
             }
         }
         buf.append(alloc, template[i]) catch return null;
