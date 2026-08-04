@@ -791,6 +791,8 @@ const Arm64Compiler = struct {
                     .band => try self.emitAndReg(dst, lhs, rhs),
                     .bor => try self.emitOrrReg(dst, lhs, rhs),
                     .bxor => try self.emitEorReg(dst, lhs, rhs),
+                    .lshift => try self.emitLslReg(dst, lhs, rhs),
+                    .rshift => try self.emitAsrReg(dst, lhs, rhs),
                     .eq, .neq, .lt, .gt, .leq, .geq => try self.emitCompareResult(dst, lhs, rhs, conditionForComparison(bin.op)),
                     else => return error.UnsupportedProgram,
                 }
@@ -993,6 +995,17 @@ const Arm64Compiler = struct {
 
     fn emitEorReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
         try self.emitFmt(0xca000000 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "eor x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
+    }
+
+    // Variable (register-amount) shifts — Data-processing (2 source), 64-bit.
+    // Rm=rhs (shift amount, bits 16-20), Rn=lhs (value, bits 5-9), Rd=dst.
+    // Matches the C backend's int64_t << / >> (LSL / arithmetic ASR on arm64).
+    fn emitLslReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.emitFmt(0x9ac02000 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "lsl x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
+    }
+
+    fn emitAsrReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.emitFmt(0x9ac02800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "asr x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
     }
 
     fn patchCalls(self: *Arm64Compiler) Error!void {
