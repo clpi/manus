@@ -23,6 +23,17 @@ retirement, compact grammar, and toolchain catalogs. Read
 [`plans/pass3_directive_grammar_convergence.md`](plans/pass3_directive_grammar_convergence.md)
 and `docs/catalogs/`. Export: `duo catalog` (Pass 3 JSON), `duo algebra` (Pass 2 JSON).
 
+**Pass 4 (2026-08-04):** Native end-to-end compilation — eliminate boxed architecture as
+center, establish Duo-owned pipeline layers, modular runtime, direct backend, self-hosting
+roadmap. Read [`plans/pass4_native_end_to_end.md`](plans/pass4_native_end_to_end.md),
+`docs/catalogs/bootstrap_dependencies.md`, and `docs/catalogs/performance_barriers.md` (PB-011+).
+Export: `duo catalog` includes `pass4` JSON.
+
+**Pass 5 (2026-08-04):** Semantic Interchange Model (SIM) for cross-language import,
+transformation, and ecosystem tooling — must not outrun Pass 4. Read
+[`plans/pass5_semantic_interchange.md`](plans/pass5_semantic_interchange.md).
+Export: `duo sim <file>` (SIM v0 JSON), `duo catalog` includes `pass5` JSON.
+
 Full plan: [`plans/semantic_graph_architecture.md`](plans/semantic_graph_architecture.md)
 Convergence audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_foundational_convergence.md)
 
@@ -61,7 +72,45 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 
 ---
 
-## Current phase (Pass 3 — Directive surface + grammar minimalism)
+## Current phase (Pass 5 — Semantic interchange + cross-language)
+
+**Pass 4** native boundaries and P4-M1 milestone are in place.
+**Pass 5** extends Duo semantics across language boundaries via SIM — without reversing Pass 4.
+
+| Track | Doc / command | Status |
+| --- | --- | --- |
+| Pass 5 plan | `docs/plans/pass5_semantic_interchange.md` | ✅ |
+| SIM v0 | `src/sim.zig` | 🔄 partial |
+| Native export | `duo sim <file.duo>` | ✅ |
+| C import (Layer B) | `@c.import` include-only today | ⬜ Phase 2 |
+| First milestone P5-M1 | C `CPoint`/`distance2` → direct call | ⬜ |
+| Agent JSON | `duo catalog` → `pass5` section | ✅ |
+
+**Constraint:** Pass 5 must not outrun Pass 4. Foreign work reuses SIM + transforms, not text templates.
+
+---
+
+## Previous phase (Pass 4 — Native end-to-end + self-hosting)
+
+**Pass 3** (directive surface, grammar catalogs) is largely complete.
+**Pass 4** establishes implementation boundaries: no universal boxing, Duo-owned pipeline,
+modular runtime, direct native backend, incremental self-hosting.
+
+| Track | Doc / command | Status |
+| --- | --- | --- |
+| Pass 4 plan | `docs/plans/pass4_native_end_to_end.md` | ✅ |
+| Barrier catalog | `docs/catalogs/performance_barriers.md` (PB-011+) | 🔄 |
+| Bootstrap catalog | `docs/catalogs/bootstrap_dependencies.md` | ✅ |
+| First milestone | `examples/pass4_native_milestone.duo` | ✅ C + direct arm64 |
+| Direct backend | `src/native_backend.zig` (arm64 Mach-O) | 🔄 partial |
+| Agent JSON | `duo catalog` → `pass4` section | ✅ |
+
+**Pass 4 invariants:** Preserve observable Lua semantics; replace boxed VM architecture
+where specialization permits. See P4-01–P4-09 in the Pass 4 plan.
+
+---
+
+## Previous phase (Pass 3 — Directive surface + grammar minimalism)
 
 **Pass 2 spine** (algebras, transform registry, G-061 parity) is largely in place.
 **Pass 3** operationalizes convergence across directives, keywords, compact grammar, and tooling.
@@ -75,6 +124,10 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 | Convergence map | `docs/catalogs/convergence.md` | ✅ |
 | Performance barriers | `docs/catalogs/performance_barriers.md` | ✅ |
 | Agent JSON | `duo catalog` / `duo algebra` | ✅ |
+
+**Symbolic operators (deprioritized):** Do not teach or expand `|>` pipeline infix or
+infix `@` matmul in new `.duo` code — prefer `f(x)`, `map(data, .field)`, and explicit
+tensor APIs. Parser warns in `.duo` mode; see `docs/catalogs/grammar_compactness.md` GR-DP01–04.
 
 Pass 2 audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_foundational_convergence.md)
 
@@ -149,6 +202,8 @@ Before merging **any** new or changed `@comp.*` combinator / fold / meta hook:
 | Read | Path |
 | --- | --- |
 | **This compass** | `docs/AGENT_ALIGNMENT.md` |
+| **Pass 5 cross-language** | `docs/plans/pass5_semantic_interchange.md` |
+| **Pass 4 native** | `docs/plans/pass4_native_compilation.md` |
 | **Pass 3 directive/grammar** | `docs/plans/pass3_directive_grammar_convergence.md` |
 | **Pass 3 catalogs** | `docs/catalogs/README.md` + `duo catalog` |
 | **Pass 2 convergence** | `docs/plans/pass2_convergence.md` |
