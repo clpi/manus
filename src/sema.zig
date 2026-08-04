@@ -6168,6 +6168,66 @@ pub const Sema = struct {
         }
     }
 
+    /// Check if a name is known to hold a numeric value at compile time.
+    /// Used by dense_check_non_numeric to decide whether a `.name` index key
+    /// or assigned value is safe for a dense int64_t/double array.
+    /// Returns true for: numeric for-loop variables, integer literal locals,
+    /// and function parameters with numeric type annotations.
+    fn is_known_numeric_name(fb: *const ast.FuncBody, name: []const u8) bool {
+        // Check numeric for-loop variables (i = 1, n)
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* == .num_for) {
+                const nf = stmt.num_for;
+                if (std.mem.eql(u8, nf.var_name, name)) return true;
+            }
+        }
+        // Check function parameters with numeric type annotations
+        for (fb.params) |p| {
+            if (std.mem.eql(u8, p.name, name)) {
+                // Parameters with array/int/float type annotations are numeric
+                if (p.typ == .array) return true;
+                if (p.typ == .named) {
+                    const tn = p.typ.named;
+                    if (std.mem.eql(u8, tn, "int") or
+                        std.mem.eql(u8, tn, "i32") or
+                        std.mem.eql(u8, tn, "i64") or
+                        std.mem.eql(u8, tn, "float") or
+                        std.mem.eql(u8, tn, "double") or
+                        std.mem.eql(u8, tn, "f32") or
+                        std.mem.eql(u8, tn, "f64") or
+                        std.mem.eql(u8, tn, "u32") or
+                        std.mem.eql(u8, tn, "u64")) return true;
+                }
+            }
+        }
+        // Check local declarations with integer/float literal initializers
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* == .local_decl) {
+                const ld = stmt.local_decl;
+                if (ld.names.len == 1 and ld.inits.len == 1) {
+                    if (std.mem.eql(u8, ld.names[0].ident, name)) {
+                        const init_e = ld.inits[0];
+                        if (init_e.* == .int_lit or init_e.* == .float_lit) return true;
+                        // Arithmetic on known-numeric names is numeric
+                        if (init_e.* == .binop) {
+                            // Conservative: only accept if both sides are names/int/float
+                            // (avoids recursion into unknown calls)
+                            const b = init_e.binop;
+                            if (b.op != .concat) {
+                                const lhs_ok = b.lhs.* == .int_lit or b.lhs.* == .float_lit or
+                                    (b.lhs.* == .name and is_known_numeric_name(fb, b.lhs.name.ident));
+                                const rhs_ok = b.rhs.* == .int_lit or b.rhs.* == .float_lit or
+                                    (b.rhs.* == .name and is_known_numeric_name(fb, b.rhs.name.ident));
+                                if (lhs_ok and rhs_ok) return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
         if (non_numeric_out.*) return;
         switch (expr.*) {
@@ -6176,6 +6236,24 @@ pub const Sema = struct {
             .true_lit => non_numeric_out.* = true,
             .false_lit => non_numeric_out.* = true,
             .nil => non_numeric_out.* = true,
+            // Field access (e.g. `rec.field`) returns an unknown type —
+            // could be a string, table, or any value. G-054: this was
+            // missing, so `seen[t]` where `t = f.members[i].type` (a
+            // string from a field access) was not caught as non-numeric,
+            // causing the empty `{}` table to be misclassified as a
+            // dense int64_t* array.
+            .field => non_numeric_out.* = true,
+            // A bare `.name` could hold any type at runtime. Check if it
+            // is a known numeric loop variable or integer local; if not,
+            // conservatively mark it non-numeric. This is the key fix for
+            // G-054: variables like `t` (assigned from a field access)
+            // were falling through to the `else => {}` case, which
+            // assumed numeric by default.
+            .name => |n| {
+                if (!is_known_numeric_name(fb, n.ident)) {
+                    non_numeric_out.* = true;
+                }
+            },
             .binop => |b| {
                 if (b.op == .concat) {
                     non_numeric_out.* = true;
