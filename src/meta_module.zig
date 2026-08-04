@@ -462,6 +462,11 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.select", .internal = "__select" },
     .{ .public = "compiler.select", .internal = "__select" },
 
+    // ── Typeof (type-specifier, not value expression) ──
+    .{ .public = "meta.typeof", .internal = "__typeof" },
+    .{ .public = "comp.typeof", .internal = "__typeof" },
+    .{ .public = "compiler.typeof", .internal = "__typeof" },
+
     // ── Bit intrinsics (bare-name + hierarchy aliases for ergonomics) ──
     .{ .public = "meta.bit.popcount", .internal = "__popcount" },
     .{ .public = "comp.bit.popcount", .internal = "__popcount" },
