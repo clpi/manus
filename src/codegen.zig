@@ -150,6 +150,10 @@ pub const CodeGen = struct {
     table_field_types: ?*const std.StringHashMapUnmanaged(RT) = null,
     concepts: ?*const std.StringHashMapUnmanaged(sema.ConceptInfo) = null,
     table_methods: ?*const std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = null,
+    /// Pass 5: imported C record descriptors from sema.
+    foreign_records: ?*const std.StringHashMapUnmanaged(RT) = null,
+    /// Pass 5: imported C function descriptors from sema.
+    foreign_functions: ?*const std.StringHashMapUnmanaged(@import("foreign_adapter.zig").ForeignFunc) = null,
 
     const ArcLocal = struct {
         name: []const u8,
@@ -2961,9 +2965,11 @@ pub const CodeGen = struct {
 
     fn type_expr_is_native_scalar(self: *CodeGen, type_expr: ast.TypeExpr) bool {
         const rt = self.resolve_type(type_expr);
+        // .any requires lua_Value boxing — NOT native scalar.
+        // .func as a value type also requires boxing (closure/function pointer).
         return rt.is_numeric() or rt == .bool or rt == .str or rt == .void or
             rt == .array or rt == .@"struct" or rt == .enum_type or
-            rt == .table_type or rt == .pointer or rt == .any or rt == .func;
+            rt == .table_type or rt == .pointer;
     }
 
     fn module_has_cinclude(self: *CodeGen, mod: *const ast.Module) bool {
@@ -3489,6 +3495,7 @@ pub const CodeGen = struct {
         try self.populate_alias_defs(mod);
         try self.collect_comptime_only_funcs(mod);
         try self.populate_record_aliases(mod);
+        try self.populate_foreign_aliases();
         try self.populate_enum_defs(mod);
         try self.populate_func_bodies(mod);
         // Promote main-module module-scope bindings referenced by module
@@ -3532,8 +3539,14 @@ pub const CodeGen = struct {
         // declarations can use library types.
         for (mod.body.stmts) |*stmt| {
             if (stmt.* != .cinclude) continue;
-            self.p("#include <{s}>\n", .{stmt.cinclude.header});
+            const header = stmt.cinclude.header;
+            if (std.mem.indexOf(u8, header, "/") != null) {
+                self.p("#include \"{s}\"\n", .{header});
+            } else {
+                self.p("#include <{s}>\n", .{header});
+            }
         }
+        try self.emit_foreign_func_decls();
         if (!native_scalar_plain) {
             self.p("#include <stddef.h>\n", .{});
         }
@@ -4690,6 +4703,31 @@ pub const CodeGen = struct {
             if (ad.type_params != null) continue;
             const rt = try self.alias_record_type(ad);
             try self.record_aliases.put(self.alloc, ad.name, rt);
+        }
+    }
+
+    fn populate_foreign_aliases(self: *CodeGen) E!void {
+        const map = self.foreign_records orelse return;
+        var it = map.iterator();
+        while (it.next()) |entry| {
+            try self.record_aliases.put(self.alloc, entry.key_ptr.*, entry.value_ptr.*);
+        }
+    }
+
+    fn emit_foreign_func_decls(self: *CodeGen) E!void {
+        const map = self.foreign_functions orelse return;
+        var it = map.iterator();
+        while (it.next()) |entry| {
+            const ff = entry.value_ptr.*;
+            try self.function_c_names.put(self.alloc, ff.name, ff.c_symbol);
+            self.p("extern ", .{});
+            self.typ(ff.ret);
+            self.p(" {s}(", .{ff.c_symbol});
+            for (ff.params, 0..) |pt, i| {
+                if (i > 0) self.p(", ", .{});
+                self.typ(pt);
+            }
+            self.p(");\n", .{});
         }
     }
 
