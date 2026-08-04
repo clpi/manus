@@ -191,6 +191,7 @@ fun smoke_targets(): any
         "examples/meta_tabulate_showcase.duo",
         "examples/meta_interpolate_showcase.duo",
         "examples/meta_zip_showcase.duo",
+        "examples/meta_composition_showcase.duo",
         "examples/embedded_bare_bundles_smoke.duo",
         "examples/vector_embed_smoke.duo",
     }
