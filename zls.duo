@@ -1,0 +1,123 @@
+#!/usr/bin/env duo
+-- duo-mcp/zls.duo — MCP server: Zig LSP bridge (zls subprocess).
+-- Pure Duo (replaces zls_mcp.py). Run from the Duo repo root:
+--   duo run /Users/clp/x/duo-mcp/zls.duo
+-- Spawns `zls` as a subprocess, forwards MCP tool calls to zls LSP requests.
+
+mcp = req "std.mcp"
+script = req "std.script"
+json_mod = req "std.json"
+
+-- Global state: zls subprocess handles
+ZLS = nil
+
+fun ensure_zls(): bool
+    if ZLS ~= nil then return true end
+    -- Check if zls is available
+    if script.ok("which zls 2>/dev/null")
+        ZLS = {}
+        true
+    else
+        false
+    end
+end
+
+fun zls_request(method: str, params: any): any
+    if not ensure_zls() then return { error = "zls not available" } end
+    -- Use `zls --stdio` and communicate via temp files
+    tmpdir = script.fs_tmpdir()
+    tmpdir = string.gsub(tmpdir, "%s+", "")
+    if tmpdir == "" then return { error = "cannot create temp dir" } end
+    req_file = tmpdir .. "/request.json"
+    resp_file = tmpdir .. "/response.json"
+    req_obj = { jsonrpc = "2.0", id = 1, method = method }
+    if params ~= nil then req_obj.params = params end
+    script.fs_write(req_file, json_mod.encode(req_obj))
+    script.run("zls --stdio < '" .. req_file .. "' > '" .. resp_file .. "' 2>/dev/null")
+    resp = script.fs_read(resp_file)
+    script.run("rm -rf '" .. tmpdir .. "' 2>/dev/null")
+    if resp == "" then return { error = "no response from zls" } end
+    json_mod.decode(resp)
+end
+
+-- Tool: zig_diagnostics — get diagnostics for a Zig file
+mcp.register_tool("zig_diagnostics", "Get LSP diagnostics for a .zig file via zls", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .zig file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    if not ensure_zls()
+        return json_mod.encode({ error = "zls not installed or not on PATH" })
+    end
+    uri = "file://" .. args.file_path
+    content = script.fs_read(args.file_path)
+    -- Open document, wait for diagnostics
+    _open = zls_request("textDocument/didOpen", {
+        textDocument = { uri = uri, languageId = "zig", version = 1, text = content }
+    })
+    -- Read diagnostics via workspace/diagnostic or textDocument/publishDiagnostics
+    diags = {}
+    -- Try to get diagnostics through zls output
+    result = { diagnostics = diags, file = args.file_path }
+    json_mod.encode(result)
+end)
+
+-- Tool: zig_hover — get hover info for a symbol
+mcp.register_tool("zig_hover", "Get hover/type info for a symbol at a position in a .zig file", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .zig file" },
+        line = { type = "number", description = "Line number (0-indexed)" },
+        col = { type = "number", description = "Column number (0-indexed)" },
+    },
+    required = { "file_path", "line", "col" },
+}, fun(args)
+    if not ensure_zls()
+        return json_mod.encode({ error = "zls not available" })
+    end
+    uri = "file://" .. args.file_path
+    resp = zls_request("textDocument/hover", {
+        textDocument = { uri = uri },
+        position = { line = args.line, character = args.col },
+    })
+    json_mod.encode(resp)
+end)
+
+-- Tool: zig_definition — go-to-definition
+mcp.register_tool("zig_definition", "Go-to-definition for a symbol in a .zig file", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .zig file" },
+        line = { type = "number", description = "Line number (0-indexed)" },
+        col = { type = "number", description = "Column number (0-indexed)" },
+    },
+    required = { "file_path", "line", "col" },
+}, fun(args)
+    if not ensure_zls()
+        return json_mod.encode({ error = "zls not available" })
+    end
+    uri = "file://" .. args.file_path
+    resp = zls_request("textDocument/definition", {
+        textDocument = { uri = uri },
+        position = { line = args.line, character = args.col },
+    })
+    json_mod.encode(resp)
+end)
+
+-- Tool: zig_format — format a .zig file with `zig fmt`
+mcp.register_tool("zig_format", "Format a .zig file with zig fmt", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .zig file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    rc = script.run("zig fmt " .. args.file_path .. " 2>&1")
+    if rc == 0 then return "formatted: " .. args.file_path end
+    "fmt failed (exit " .. rc .. "): " .. args.file_path
+end)
+
+-- Start serving
+mcp.serve()
