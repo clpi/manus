@@ -7,6 +7,7 @@ const ast = @import("ast.zig");
 const types = @import("types.zig");
 const term = @import("term.zig");
 const meta_module = @import("meta_module.zig");
+const legacy_directives = @import("legacy_directives.zig");
 const debug_trace = @import("debug_trace.zig");
 
 pub const ParseError = error{
@@ -159,6 +160,18 @@ pub const Parser = struct {
     fn eat(self: *Parser, kind: TK) ParseError!?Token {
         if ((try self.pk()).kind == kind) return try self.adv();
         return null;
+    }
+
+    /// Consume a deprecated keyword (then/do) if present. In .duo mode, emit a
+    /// hint suggesting the keyword can be omitted. Used for `then` after `if`
+    /// and `do` after `while`/`for` in canonical Duo.
+    fn eat_deprecated(self: *Parser, kind: TK) ParseError!void {
+        if ((try self.pk()).kind == kind) {
+            const tok = try self.adv();
+            if (self.duo_mode) {
+                term.locHint(tok.loc, "'{s}' is optional in .duo files and can be omitted", .{kind.spelling()});
+            }
+        }
     }
 
     fn check(self: *Parser, kind: TK) ParseError!bool {
@@ -921,6 +934,7 @@ pub const Parser = struct {
             args = try self.parse_attribute_args();
             _ = try self.expect(.rparen);
         }
+        self.warnDeprecatedAtQualified(first.loc, name);
         return ast.Attribute{ .name = name, .args = args };
     }
 
@@ -1412,8 +1426,24 @@ pub const Parser = struct {
     // For concept satisfaction, attach `@implements(C)` to the binding.
 
     fn parse_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
-        const l = (try self.adv()).loc;
-        return self.parse_func_decl_after_first(is_local, attrs, l);
+        const tok = try self.adv();
+        const hint_loc = tok.loc;
+        const result = try self.parse_func_decl_after_first(is_local, attrs, tok.loc);
+        // Emit hint only in .duo mode and only when the function has typed params
+        // (bare syntax requires at least one typed param for disambiguation).
+        if (self.duo_mode) {
+            if (result == .func_decl) {
+                const fb = result.func_decl.func;
+                var has_typed = false;
+                for (fb.params) |p| {
+                    if (p.typ != .inferred) { has_typed = true; break; }
+                }
+                if (has_typed or fb.vararg) {
+                    term.locHint(hint_loc, "'{s}' is unnecessary here; bare function syntax works: name(params) body end", .{tok.kind.spelling()});
+                }
+            }
+        }
+        return result;
     }
 
     fn parse_bare_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
@@ -1759,7 +1789,7 @@ pub const Parser = struct {
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
             const scrutinee = try self.parse_expr();
-            _ = try self.eat(.kw_then);
+            try self.eat_deprecated(.kw_then);
             const then_body = try self.parse_block();
             // Parse optional else
             var else_body: ?ast.Block = null;
@@ -1784,14 +1814,14 @@ pub const Parser = struct {
             if ((try self.pk()).kind == .assign) {
                 _ = try self.adv();
                 const rhs = try self.parse_expr();
-                _ = try self.eat(.kw_then);
+                try self.eat_deprecated(.kw_then);
                 const then_body = try self.parse_block();
                 var elseifs: std.ArrayList(ast.ElseIf) = .empty;
                 var else_body: ?ast.Block = null;
                 while (true) {
                     if (try self.eat(.kw_elseif) != null) {
                         const ec = try self.parse_expr();
-                        _ = try self.eat(.kw_then);
+                        try self.eat_deprecated(.kw_then);
                         const eb = try self.parse_block();
                         try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
                     } else if (try self.eat(.kw_else) != null) {
@@ -1814,14 +1844,14 @@ pub const Parser = struct {
             }
         }
         const cond = try self.parse_expr();
-        _ = try self.eat(.kw_then);
+        try self.eat_deprecated(.kw_then);
         const then = try self.parse_block();
         var elseifs: std.ArrayList(ast.ElseIf) = .empty;
         var else_body: ?ast.Block = null;
         while (true) {
             if (try self.eat(.kw_elseif) != null) {
                 const ec = try self.parse_expr();
-                _ = try self.eat(.kw_then);
+                try self.eat_deprecated(.kw_then);
                 const eb = try self.parse_block();
                 try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
             } else if (try self.eat(.kw_else) != null) {
@@ -1848,7 +1878,7 @@ pub const Parser = struct {
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
             const scrutinee = try self.parse_expr();
-            _ = try self.eat(.kw_do);
+            try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             var break_arm_body_stmts = try self.alloc.alloc(ast.Stmt, 1);
@@ -1866,7 +1896,7 @@ pub const Parser = struct {
             return ast.Stmt{ .while_loop = .{ .loc = l, .cond = true_lit, .body = inner_body } };
         }
         const cond = try self.parse_expr();
-        _ = try self.eat(.kw_do);
+        try self.eat_deprecated(.kw_do);
         const body = try self.parse_block();
         _ = try self.expect(.kw_end);
         return ast.Stmt{ .while_loop = .{ .loc = l, .cond = cond, .body = body } };
@@ -1892,7 +1922,7 @@ pub const Parser = struct {
             const stop = try self.parse_expr();
             var step: ?*ast.Expr = null;
             if (try self.eat(.comma) != null) step = try self.parse_expr();
-            _ = try self.eat(.kw_do);
+            try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .num_for = .{
@@ -1916,7 +1946,7 @@ pub const Parser = struct {
             try iters.append(self.alloc, try self.parse_expr());
             while (try self.eat(.comma) != null)
                 try iters.append(self.alloc, try self.parse_expr());
-            _ = try self.eat(.kw_do);
+            try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .gen_for = .{
@@ -3433,13 +3463,7 @@ pub const Parser = struct {
         const qualified = try std.mem.join(self.alloc, ".", parts.items);
         defer self.alloc.free(qualified);
 
-        if (std.mem.startsWith(u8, qualified, "meta.")) {
-            term.locWarn(l, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len ..]});
-        } else if (std.mem.startsWith(u8, qualified, "compiler.")) {
-            term.locWarn(l, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len ..]});
-        } else if (std.mem.eql(u8, qualified, "pipeline")) {
-            term.locWarn(l, "warning: @pipeline is deprecated, use @comp.pipeline instead", .{});
-        }
+        self.warnDeprecatedAtQualified(l, qualified);
 
         if (std.mem.eql(u8, qualified, "sizeof") or std.mem.eql(u8, qualified, "alignof") or std.mem.eql(u8, qualified, "typeof") or std.mem.eql(u8, qualified, "fields")) {
             return self.parse_layout_intrinsic_call(l, qualified);
@@ -3483,7 +3507,7 @@ pub const Parser = struct {
             const builtin_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = internal } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
         }
-        if (at_builtin_internal_name(qualified, l)) |internal| {
+        if (at_builtin_internal_name(self, qualified)) |internal| {
             if (self.duo_mode) {
                 if (std.mem.eql(u8, qualified, "constexpr")) {
                     term.locErr(l, "@constexpr is not valid in .duo files. Use @(expr) for comptime evaluation.", .{});
@@ -3519,91 +3543,41 @@ pub const Parser = struct {
         return self.expect(.name);
     }
 
-    const AtBuiltinEntry = struct {
-        public: []const u8,
-        internal: []const u8,
-        /// When non-null, `public` is a legacy underscore form whose canonical
-        /// dotted form is `canonical`. The parser emits a deprecation warning
-        /// pointing users at `canonical` so the legacy entry can eventually be
-        /// removed without breaking existing source.
-        canonical: ?[]const u8 = null,
-    };
-
-    fn at_builtin_internal_name(name: []const u8, loc: ast.Loc) ?[]const u8 {
-        const pairs = [_]AtBuiltinEntry{
-            .{ .public = "constexpr", .internal = "__constexpr" },
-            // Legacy underscore spellings. Each carries its canonical @comp.*
-            // dotted form so the parser can warn on use without breaking
-            // backward compatibility. The non-underscore variants
-            // (e.g. `comptimeif`) are kept as silent aliases: they are not the
-            // documented public form and only exist for legacy tokens that
-            // pre-dated the underscore convention.
-            .{ .public = "comptime_if", .internal = "__comptimeif", .canonical = "comp.if" },
-            .{ .public = "comptimeif", .internal = "__comptimeif" },
-            .{ .public = "comptime_fold", .internal = "__comptimefold", .canonical = "comp.fold" },
-            .{ .public = "comptimefold", .internal = "__comptimefold" },
-            .{ .public = "comptime_for", .internal = "__comptimefor", .canonical = "comp.for" },
-            .{ .public = "comptimefor", .internal = "__comptimefor" },
-            .{ .public = "comptime_print", .internal = "__comptimeprint", .canonical = "comp.compile.log" },
-            .{ .public = "comptimeprint", .internal = "__comptimeprint" },
-            .{ .public = "comptime_warn", .internal = "__comptimewarn", .canonical = "comp.compile.warn" },
-            .{ .public = "comptimewarn", .internal = "__comptimewarn" },
-            .{ .public = "compile_log", .internal = "__comptimeprint", .canonical = "comp.compile.log" },
-            .{ .public = "compile_error", .internal = "__comptimeerror", .canonical = "comp.compile.error" },
-            .{ .public = "comptime_error", .internal = "__comptimeerror", .canonical = "comp.compile.error" },
-            .{ .public = "comptimeerror", .internal = "__comptimeerror" },
-            .{ .public = "static_assert", .internal = "__static_assert", .canonical = "comp.assert" },
-            .{ .public = "typeinfo", .internal = "__typeinfo", .canonical = "comp.type.info" },
-            .{ .public = "typeof", .internal = "__typeof", .canonical = "comp.typeof" },
-            .{ .public = "type_name", .internal = "__type_name", .canonical = "comp.type.name" },
-            .{ .public = "type_id", .internal = "__type_id", .canonical = "comp.type.id" },
-            .{ .public = "is_type", .internal = "__is_type", .canonical = "comp.type.is" },
-            .{ .public = "fields", .internal = "__fields", .canonical = "comp.fields" },
-            .{ .public = "methods", .internal = "__methods", .canonical = "comp.methods" },
-            .{ .public = "concept_methods", .internal = "__concept_methods", .canonical = "comp.concepts.methods" },
-            .{ .public = "variants", .internal = "__variants", .canonical = "comp.variants" },
-            .{ .public = "has_field", .internal = "__has_field", .canonical = "comp.has.field" },
-            .{ .public = "has_method", .internal = "__has_method", .canonical = "comp.has.method" },
-            .{ .public = "has_metamethod", .internal = "__has_metamethod", .canonical = "comp.has.metamethod" },
-            .{ .public = "satisfies", .internal = "__satisfies", .canonical = "comp.satisfies" },
-            .{ .public = "field_type", .internal = "__field_type", .canonical = "comp.field.type" },
-            .{ .public = "field_offset", .internal = "__field_offset", .canonical = "comp.field.offset" },
-            .{ .public = "field_size", .internal = "__field_size", .canonical = "comp.field.size" },
-            .{ .public = "embed_str", .internal = "__embed_str", .canonical = "comp.embed.str" },
-            .{ .public = "embed_file", .internal = "__embed_file", .canonical = "comp.embed.file" },
-            .{ .public = "make_type", .internal = "__make_type", .canonical = "comp.make.type" },
-            .{ .public = "as_type", .internal = "__as_type", .canonical = "comp.as.type" },
-            .{ .public = "bitfield", .internal = "__bitfield", .canonical = "comp.bit.field" },
-            .{ .public = "union", .internal = "__union", .canonical = "comp.union" },
-            .{ .public = "select", .internal = "__select", .canonical = "comp.select" },
-            .{ .public = "likely", .internal = "__likely", .canonical = "comp.hint.likely" },
-            .{ .public = "unlikely", .internal = "__unlikely", .canonical = "comp.hint.unlikely" },
-            .{ .public = "prefetch", .internal = "__prefetch", .canonical = "comp.hint.prefetch" },
-            .{ .public = "assume", .internal = "__assume", .canonical = "comp.hint.assume" },
-            .{ .public = "unreachable", .internal = "__unreachable", .canonical = "comp.hint.unreachable" },
-            .{ .public = "trap", .internal = "__trap", .canonical = "comp.hint.trap" },
-            .{ .public = "fence", .internal = "__fence", .canonical = "comp.hint.fence" },
-            .{ .public = "ctz", .internal = "__ctz", .canonical = "comp.bit.ctz" },
-            .{ .public = "clz", .internal = "__clz", .canonical = "comp.bit.clz" },
-            .{ .public = "popcount", .internal = "__popcount", .canonical = "comp.bit.popcount" },
-            .{ .public = "bswap", .internal = "__bswap", .canonical = "comp.bit.bswap" },
-            .{ .public = "rotl", .internal = "__rotl", .canonical = "comp.bit.rotl" },
-            .{ .public = "rotr", .internal = "__rotr", .canonical = "comp.bit.rotr" },
-            .{ .public = "bitcast", .internal = "__bitcast", .canonical = "comp.bit.bitcast" },
-            .{ .public = "volatile", .internal = "__volatile", .canonical = "comp.hint.volatile" },
-            .{ .public = "hot_path", .internal = "__hot_path", .canonical = "hot" },
-        };
-        for (pairs) |pair| {
-            if (std.mem.eql(u8, name, pair.public)) {
-                if (pair.canonical) |canonical| {
-                    term.locWarn(
-                        loc,
-                        "warning: @{s} is deprecated, use @{s} instead",
-                        .{ pair.public, canonical },
-                    );
-                }
-                return pair.internal;
+    /// Pass 3 (P3-08): deprecation warnings for flat/legacy @-directive aliases in .duo mode.
+    fn warnDeprecatedAtQualified(self: *Parser, loc: ast.Loc, qualified: []const u8) void {
+        if (!self.duo_mode) return;
+        if (std.mem.startsWith(u8, qualified, "meta.")) {
+            term.locWarn(loc, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len ..]});
+            return;
+        }
+        if (std.mem.startsWith(u8, qualified, "compiler.")) {
+            term.locWarn(loc, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len ..]});
+            return;
+        }
+        if (std.mem.eql(u8, qualified, "pipeline")) {
+            term.locWarn(loc, "warning: @pipeline is deprecated, use @comp.pipeline instead", .{});
+            return;
+        }
+        if (std.mem.eql(u8, qualified, "emit")) {
+            term.locWarn(loc, "warning: @emit is deprecated, use @comp.c.emit instead", .{});
+            return;
+        }
+        if (std.mem.startsWith(u8, qualified, "c.") and !std.mem.startsWith(u8, qualified, "comp.")) {
+            var buf: [128]u8 = undefined;
+            const replacement = std.fmt.bufPrint(&buf, "comp.{s}", .{qualified}) catch return;
+            term.locWarn(loc, "warning: @{s} is deprecated, use @{s} instead", .{ qualified, replacement });
+            return;
+        }
+        if (legacy_directives.resolvePublic(qualified)) |entry| {
+            if (entry.canonical) |canonical| {
+                term.locWarn(loc, "warning: @{s} is deprecated, use @{s} instead", .{ entry.public, canonical });
             }
+        }
+    }
+
+    fn at_builtin_internal_name(_: *Parser, name: []const u8) ?[]const u8 {
+        if (legacy_directives.resolvePublic(name)) |entry| {
+            return entry.internal;
         }
         return null;
     }
@@ -6138,4 +6112,20 @@ test "parse: duo mode infix @ matmul parses as binop (deprioritized)" {
     , &arena);
     const b = mod.body.stmts[0].assign.values[0].binop;
     try testing.expectEqual(ast.BinOp.matmul, b.op);
+}
+
+test "parse: duo mode legacy @comptime_fold warns" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = try parseDuoSource(
+        \\x = @comptime_fold(0, 2, 1, "0", "%a + 1")
+    , &arena);
+}
+
+test "parse: duo mode @c.emit warns toward @comp.c.emit" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = try parseDuoSource(
+        \\@c.emit("int x = 1;")
+    , &arena);
 }
