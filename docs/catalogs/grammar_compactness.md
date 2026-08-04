@@ -33,6 +33,7 @@
 | GS-012 | Implicit return | `add(a, b) a + b end` | — | Tail expression |
 | GS-013 | `_` private prefix | `_helper()` not exported | — | Convention, not keyword |
 | GS-014 | One-line if-expr | `mode = if debug "debug" else "release"` | GR-002 | No `end` when single-expr |
+| GS-015 | Newline field sep | `{ a = 1\n b = 2 }` | GP-013 | Commas optional between fields |
 
 ---
 
@@ -42,21 +43,21 @@
 | --- | --- | --- | --- | --- |
 | GP-001 | Field projections | `users:map(.name)` | ~~Parser `.name` in call context~~ | ✅ DONE |
 | GP-002 | Method references | `items:each(:close)` | ~~Parser `:name` in call context~~ | ✅ DONE |
-| GP-003 | Named destructuring | `{ name, age } = user` | Sema field-match | Medium |
-| GP-004 | Table spread | `{ ..source, x = 1 }` | Parser `..expr` in tables | High |
+| GP-003 | Named destructuring | `{ name, age } = user` | Sema field-match | ✅ DONE |
+| GP-004 | Table spread | `{ ..source, x = 1 }` | ~~Parser `..expr` in tables~~ | ✅ DONE |
 | GP-005 | Descriptor spread | `User: @{ ..Named, id: i64 }` | Descriptor algebra | Medium |
-| GP-006 | Binding conditions | `if file = open(path) ... end` | Parser assign-in-cond | Medium |
+| GP-006 | Binding conditions | `if file = open(path) ... end` | Parser assign-in-cond | ✅ DONE |
 | GP-007 | Short-circuit control | `ready or return` | Already works (Lua semantics) | Free |
-| GP-008 | Direct iteration | `for v in values ... end` | Iterator protocol | High |
-| GP-009 | Keywordless enum | `Color: @{ Red, Green, Blue }` | `@{}` descriptor parser | High |
+| GP-008 | Direct iteration | `for v in values ... end` | Iterator protocol | ✅ DONE |
+| GP-009 | Keywordless enum | `Color: @{ Red, Green, Blue }` | `@{}` descriptor parser | 🔄 PARTIAL |
 | GP-010 | Keywordless record | `Point: @{ x: f64, y: f64 }` | `@{}` descriptor parser | High |
 | GP-011 | Payload variants | `Result: @{ Ok(v), Err(e) }` | Variant grammar in `@{}` | Medium |
 | GP-012 | Descriptor composition | `Sprite = Named + Positioned` | Descriptor algebra ops | High |
-| GP-013 | Compact separators | Newline instead of comma in `@{}` | Parser newline-as-sep | Low risk |
+| GP-013 | Compact separators | Newline instead of comma in `@{}` | ~~Parser newline-as-sep~~ | ✅ DONE |
 | GP-014 | Failure propagation | `file = open(path) or return` | Already works | Free |
-| GP-015 | `@export` visibility | `@export run(args) ...` | Parser attribute-on-decl | Medium |
+| GP-015 | `@export` visibility | `@export run(args) ...` | Parser attribute-on-decl | ✅ DONE |
 | GP-016 | Storage directives | `buf = @stack [1024]u8` | Representation selection | Future |
-| GP-017 | Selective import | `{ encode, decode } = req "std.json"` | Destructuring + req | Medium |
+| GP-017 | Selective import | `{ encode, decode } = req "std.json"` | Destructuring + req | ✅ DONE |
 | GP-018 | Dispatch tables | `handlers[color](value)` | Pattern recognition transform | Future |
 | GP-019 | Descriptor methods | `Point: @{ x: f64, length(self) ... end }` | Descriptor grammar | Future |
 | GP-020 | Positional init | `point: Point = { 3, 4 }` | Known-shape mapping | Medium |

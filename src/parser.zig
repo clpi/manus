@@ -2472,6 +2472,43 @@ pub const Parser = struct {
         return ast.Stmt{ .do_block = .{ .loc = loc, .body = .{ .loc = loc, .stmts = try stmts.toOwnedSlice(self.alloc) } } };
     }
 
+    /// Lower `Name: @{ Red, Green, Blue }` to enum_def (Pass 3 descriptor grammar).
+    fn stmt_from_descriptor(self: *Parser, name: []const u8, loc: ast.Loc, table_expr: *ast.Expr) ParseError!ast.Stmt {
+        if (table_expr.* != .table) return ParseError.UnexpectedToken;
+        const fields = table_expr.table.fields;
+        if (fields.len == 0) {
+            term.locErr(loc, "descriptor @{{ }} must contain at least one entry", .{});
+            return ParseError.UnexpectedToken;
+        }
+        var variants: std.ArrayList(ast.EnumVariant) = .empty;
+        for (fields) |fld| {
+            switch (fld) {
+                .positional => |expr| {
+                    if (expr.* != .name) {
+                        term.locErr(loc, "enum descriptor entries must be bare variant names", .{});
+                        return ParseError.UnexpectedToken;
+                    }
+                    try variants.append(self.alloc, .{ .name = expr.name.ident, .payload = null });
+                },
+                .spread => {
+                    term.locErr(loc, "spread is not allowed in enum descriptors", .{});
+                    return ParseError.UnexpectedToken;
+                },
+                else => {
+                    term.locErr(loc, "enum descriptor entries must be bare variant names", .{});
+                    return ParseError.UnexpectedToken;
+                },
+            }
+        }
+        return ast.Stmt{ .enum_def = .{
+            .loc = loc,
+            .name = name,
+            .type_params = null,
+            .variants = try variants.toOwnedSlice(self.alloc),
+            .attributes = &.{},
+        } };
+    }
+
     fn parse_array_destr_pattern(self: *Parser) ParseError!ast.Pattern {
         _ = try self.adv(); // consume `[`
         var patterns: std.ArrayList(ast.Pattern) = .empty;
@@ -2526,6 +2563,16 @@ pub const Parser = struct {
         // parse_suffixed_expr breaks on ':' when followed by a type-like token.
         if (first.* == .name and nxt.kind == .colon) {
             _ = try self.adv(); // consume ':'
+            // Pass 3: `Color: @{ Red, Green, Blue }` keywordless enum descriptor
+            if ((try self.pk()).kind == .at) {
+                _ = try self.adv();
+                if ((try self.pk()).kind == .lbrace) {
+                    const table = try self.parse_table();
+                    return try self.stmt_from_descriptor(first.name.ident, first.loc(), table);
+                }
+                term.locErr(first.loc(), "expected '{{' after '@' in descriptor declaration", .{});
+                return ParseError.UnexpectedToken;
+            }
             const typ = try self.parse_type();
 
             // Jai-like type definition: `Name: { fields }` with no initializer
@@ -3258,6 +3305,14 @@ pub const Parser = struct {
         const qualified = try std.mem.join(self.alloc, ".", parts.items);
         defer self.alloc.free(qualified);
 
+        if (std.mem.startsWith(u8, qualified, "meta.")) {
+            term.locWarn(l, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len ..]});
+        } else if (std.mem.startsWith(u8, qualified, "compiler.")) {
+            term.locWarn(l, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len ..]});
+        } else if (std.mem.eql(u8, qualified, "pipeline")) {
+            term.locWarn(l, "warning: @pipeline is deprecated, use @comp.pipeline instead", .{});
+        }
+
         if (std.mem.eql(u8, qualified, "sizeof") or std.mem.eql(u8, qualified, "alignof") or std.mem.eql(u8, qualified, "typeof") or std.mem.eql(u8, qualified, "fields")) {
             return self.parse_layout_intrinsic_call(l, qualified);
         }
@@ -3524,6 +3579,11 @@ pub const Parser = struct {
                     }
                     if (after_colon.kind == .lbrace) {
                         // name : { ... } — record type annotation (Jai-like syntax); don't consume
+                        self.lex.restoreState(saved);
+                        break;
+                    }
+                    if (after_colon.kind == .at) {
+                        // name : @{ ... } — Pass 3 descriptor declaration; don't consume
                         self.lex.restoreState(saved);
                         break;
                     }
@@ -3794,7 +3854,9 @@ pub const Parser = struct {
                 }
                 try fields.append(self.alloc, .{ .positional = val });
             }
-            if (try self.eat(.comma) == null and try self.eat(.semi) == null) break;
+            // Field separator: comma and semicolon are optional (newlines suffice).
+            _ = try self.eat(.comma);
+            _ = try self.eat(.semi);
         }
         _ = try self.expect(.rbrace);
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
@@ -5743,4 +5805,118 @@ test "parse: method reference :write(output) captures outer arg" {
     try testing.expectEqual(@as(usize, 1), mc.args.len);
     try testing.expect(mc.args[0].* == .name);
     try testing.expectEqualStrings("output", mc.args[0].name.ident);
+}
+
+test "parse: table spread ..source in table literal" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\t = { ..base, x = 1 }
+    , &arena);
+    const table = mod.body.stmts[0].assign.values[0].table;
+    try testing.expectEqual(@as(usize, 2), table.fields.len);
+    try testing.expect(table.fields[0] == .spread);
+    try testing.expect(table.fields[0].spread.* == .name);
+    try testing.expectEqualStrings("base", table.fields[0].spread.name.ident);
+    try testing.expect(table.fields[1] == .named);
+    try testing.expectEqualStrings("x", table.fields[1].named.key);
+}
+
+test "parse: if binding condition if x = expr" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\if v = get() v > 0
+        \\  print(v)
+        \\end
+    , &arena);
+    const is = mod.body.stmts[0].if_stmt;
+    try testing.expect(is.binding != null);
+    try testing.expectEqualStrings("v", is.binding.?.name);
+    try testing.expect(is.binding.?.expr.* == .call);
+    try testing.expect(is.cond.* == .name);
+    try testing.expectEqualStrings("v", is.cond.name.ident);
+}
+
+test "parse: named table destructure assign" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\{ name, age } = user
+    , &arena);
+    const db = mod.body.stmts[0].do_block;
+    try testing.expectEqual(@as(usize, 2), db.body.stmts.len);
+    try testing.expect(db.body.stmts[0] == .assign);
+    try testing.expectEqualStrings("name", db.body.stmts[0].assign.targets[0].name.ident);
+}
+
+test "parse: compile-time table descriptor @ { ... }" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = @ { Red, Green, Blue }
+    , &arena);
+    const unop = mod.body.stmts[0].assign.values[0].unop;
+    try testing.expectEqual(ast.UnOp.compile, unop.op);
+    try testing.expect(unop.operand.* == .table);
+    try testing.expectEqual(@as(usize, 3), unop.operand.table.fields.len);
+}
+
+test "parse: selective import destructure from req module" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\{ encode, decode } = req "std.json"
+    , &arena);
+    const db = mod.body.stmts[0].do_block;
+    try testing.expectEqual(@as(usize, 2), db.body.stmts.len);
+    const field = db.body.stmts[0].assign.values[0].field;
+    try testing.expectEqualStrings("encode", field.field);
+    try testing.expect(field.obj.* == .call);
+    try testing.expectEqualStrings("req", field.obj.call.func.name.ident);
+}
+
+test "parse: @export on underscored function is allowed" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@export
+        \\fun _api(): i64
+        \\  return 1
+        \\end
+    , &arena);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqualStrings("_api", fd.path[0]);
+    try testing.expect(std.mem.eql(u8, fd.attributes[0].name, "export"));
+}
+
+test "parse: keywordless enum descriptor Color: @{ ... }" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Color: @{ Red, Green, Blue }
+    , &arena);
+    const ed = mod.body.stmts[0].enum_def;
+    try testing.expectEqualStrings("Color", ed.name);
+    try testing.expectEqual(@as(usize, 3), ed.variants.len);
+    try testing.expectEqualStrings("Red", ed.variants[0].name);
+    try testing.expectEqualStrings("Green", ed.variants[1].name);
+    try testing.expectEqualStrings("Blue", ed.variants[2].name);
+}
+
+test "parse: table fields separated by newlines (no comma required)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = {
+        \\    a = 1
+        \\    b = 2
+        \\    c = 3
+        \\}
+    , &arena);
+    const table = mod.body.stmts[0].assign.values[0].table;
+    try testing.expectEqual(@as(usize, 3), table.fields.len);
+    try testing.expectEqualStrings("a", table.fields[0].named.key);
+    try testing.expectEqualStrings("b", table.fields[1].named.key);
+    try testing.expectEqualStrings("c", table.fields[2].named.key);
 }
