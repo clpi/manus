@@ -902,6 +902,7 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         "comp.powerset",       "comp.derive.power",    "comp.derive.powerset",
         "comp.choose",         "comp.derive.choose",   "comp.permute",
         "comp.derive.permute",
+        "comp.each",           "comp.chain",           "comp.match",
     };
     for (combinators) |c| {
         if (std.mem.eql(u8, path, c)) return "combinators";
