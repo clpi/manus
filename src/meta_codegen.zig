@@ -2180,6 +2180,84 @@ pub fn comptimeInterpolateHook(host: Host, template: []const u8, vars: comptime_
     return .{ .string = buf.toOwnedSlice(alloc) catch return null };
 }
 
+/// `@comp.zip(spec_a, spec_b, callback)` — compile-time cartesian zip codegen.
+/// Splits two pipe-separated specs, calls callback for every (a, b) pair,
+/// passing {a, b, index, count}. Concatenates all outputs.
+///
+/// O(n*m) from one line — quadratic combinator. The callback decides
+/// what code to generate for each pair. Comptime-only (no lua_Value).
+///
+/// Example: `@comp.zip("i32|i64", "add|sub", fun(p) p.a .. "_" .. p.b .. " " end)`
+/// → "i32_add i32_sub i64_add i64_sub "
+pub fn comptimeZipHook(host: Host, spec_a: []const u8, spec_b: []const u8, callback: comptime_eval.Value, alloc: std.mem.Allocator) ?comptime_eval.Value {
+    // Split spec_a on |
+    var alts_a: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer alts_a.deinit(alloc);
+    {
+        var start: usize = 0;
+        var i: usize = 0;
+        while (i < spec_a.len) : (i += 1) {
+            if (spec_a[i] == '|') {
+                const frag = std.mem.trim(u8, spec_a[start..i], " \t\r\n");
+                if (frag.len > 0) alts_a.append(alloc, frag) catch return null;
+                start = i + 1;
+            }
+        }
+        if (start < spec_a.len) {
+            const frag = std.mem.trim(u8, spec_a[start..], " \t\r\n");
+            if (frag.len > 0) alts_a.append(alloc, frag) catch return null;
+        }
+    }
+    // Split spec_b on |
+    var alts_b: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer alts_b.deinit(alloc);
+    {
+        var start: usize = 0;
+        var i: usize = 0;
+        while (i < spec_b.len) : (i += 1) {
+            if (spec_b[i] == '|') {
+                const frag = std.mem.trim(u8, spec_b[start..i], " \t\r\n");
+                if (frag.len > 0) alts_b.append(alloc, frag) catch return null;
+                start = i + 1;
+            }
+        }
+        if (start < spec_b.len) {
+            const frag = std.mem.trim(u8, spec_b[start..], " \t\r\n");
+            if (frag.len > 0) alts_b.append(alloc, frag) catch return null;
+        }
+    }
+    const total: i64 = @intCast(alts_a.items.len * alts_b.items.len);
+    if (total == 0) return .{ .string = alloc.dupe(u8, "") catch return null };
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    var index: i64 = 0;
+    for (alts_a.items) |a| {
+        for (alts_b.items) |b| {
+            const owned_a = alloc.dupe(u8, a) catch return null;
+            const owned_b = alloc.dupe(u8, b) catch return null;
+            var entries: [4]comptime_eval.Value.TableEntry = .{
+                .{ .name = "a", .val = .{ .string = owned_a } },
+                .{ .name = "b", .val = .{ .string = owned_b } },
+                .{ .name = "index", .val = .{ .int = index } },
+                .{ .name = "count", .val = .{ .int = total } },
+            };
+            const owned_entries = alloc.dupe(comptime_eval.Value.TableEntry, &entries) catch return null;
+            const meta_val: comptime_eval.Value = .{ .table = owned_entries };
+
+            const piece = comptime_eval.callFunctionValue(callback, &.{meta_val}, host.bindings, host.options) catch {
+                index += 1;
+                continue;
+            };
+            if (piece == .string) buf.appendSlice(alloc, piece.string) catch return null;
+            index += 1;
+        }
+    }
+
+    return .{ .string = buf.toOwnedSlice(alloc) catch return null };
+}
+
 /// `@comp.fixpoint(initial, fn[, max_iter])` — iterate a generator callback until
 /// convergence (output == input) or max_iter reached. The ONLY unbounded combinator:
 /// O(1) author input → O(max_iter) output. The callback receives a table with

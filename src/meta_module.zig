@@ -194,6 +194,12 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.interpolate", .internal = "__comptimeinterpolate" },
     .{ .public = "compiler.interpolate", .internal = "__comptimeinterpolate" },
 
+    // `@comp.zip` — compile-time cartesian zip codegen (quadratic combinator)
+    // Two pipe-separated specs, callback for every (a, b) pair with {a, b, index, count}.
+    .{ .public = "meta.zip", .internal = "__comptimezip" },
+    .{ .public = "comp.zip", .internal = "__comptimezip" },
+    .{ .public = "compiler.zip", .internal = "__comptimezip" },
+
     // ── Type introspection ──
     .{ .public = "meta.type.name", .internal = "__type_name" },
     .{ .public = "comp.type.name", .internal = "__type_name" },
@@ -918,6 +924,7 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         "comp.each",           "comp.chain",           "comp.match",
         "comp.tabulate",
         "comp.interpolate",
+        "comp.zip",
     };
     for (combinators) |c| {
         if (std.mem.eql(u8, path, c)) return "combinators";
