@@ -16,7 +16,7 @@ All compile-time and compiler directives use **dotted module paths**, not unders
 1. **Never add** `@comp.foo_bar` or `@meta_foo` underscore spellings — use `@comp.foo.bar`.
 2. **Internal desugar** targets (`__emit`, `__comptimemap`) are Zig-only; not user-facing.
 3. **Module directives** (file scope): `@comp.pipeline`, `@comp.embed.json`, `@comp.wasm`.
-4. **Expression combinators**: `@comp.map`, `@comp.grammar`, `@comp.template`, `@comp.generate`, `@comp.scheme`, `@comp.scheme.clauses`, `@comp.weave`, `@comp.each`.
+4. **Expression combinators**: `@comp.map`, `@comp.match`, `@comp.grammar`, `@comp.template`, `@comp.generate`, `@comp.scheme`, `@comp.scheme.clauses`, `@comp.weave`, `@comp.each`.
 5. **Agent hooks** (Duo development): `@comp.agent.catalog()`, `.gaps()`, `.grammar()`, `.dedupe()`.
 6. **Bit intrinsics**: prefer `@comp.bit.popcount` or bare `@popcount`; not `@pop_count`.
 
@@ -24,7 +24,7 @@ All compile-time and compiler directives use **dotted module paths**, not unders
 
 | Rung | Construct | Scaling |
 | --- | --- | --- |
-| Linear | `@comp.map`, `@comp.template`, `@comp.generate`, `@comp.scheme` | O(n) |
+| Linear | `@comp.map`, `@comp.template`, `@comp.generate`, `@comp.scheme`, `@comp.match` | O(n) |
 | Quadratic | `@comp.product`, `@comp.derive.product` | O(n²) |
 | Cubic+ | `@comp.tensor`, `@comp.burst`, `@comp.transcend` | O(n³)+ |
 | Grammar | `@comp.grammar` | O(b^d) |

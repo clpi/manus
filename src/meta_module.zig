@@ -174,6 +174,13 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.chain", .internal = "__comptimeeach" },
     .{ .public = "compiler.chain", .internal = "__comptimeeach" },
 
+    // `@comp.match` — compile-time pattern-match codegen (switch/case of codegen)
+    // Splits pattern spec on `|`, calls callback for each alternative with {pattern, index, count}.
+    // One declarative line → N specialized branches. Composes with @comp.each, @comp.burst, etc.
+    .{ .public = "meta.match", .internal = "__comptimematch" },
+    .{ .public = "comp.match", .internal = "__comptimematch" },
+    .{ .public = "compiler.match", .internal = "__comptimematch" },
+
     // ── Type introspection ──
     .{ .public = "meta.type.name", .internal = "__type_name" },
     .{ .public = "comp.type.name", .internal = "__type_name" },

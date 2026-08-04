@@ -1685,6 +1685,7 @@ pub const CodeGen = struct {
             std.mem.eql(u8, name, "__concepttypenames") or
             std.mem.eql(u8, name, "__comptimemap") or
             std.mem.eql(u8, name, "__comptimeeach") or
+            std.mem.eql(u8, name, "__comptimematch") or
             std.mem.eql(u8, name, "__comptimepower") or
             std.mem.eql(u8, name, "__comptimepermute") or
             std.mem.eql(u8, name, "__comptimechoose") or
@@ -7170,11 +7171,12 @@ pub const CodeGen = struct {
             return;
         }
         // print() returns nothing in Lua — an implicit `return print(...)`
-        // yields nil, not printf's int result. Without this, a trailing print
-        // in a lua_Value function emits `return printf(...)` (invalid C).
+        // yields nil, not printf's int result. Emit the print call itself as a
+        // statement first (so a trailing print is not dropped), then return nil.
         if (self.current_ret != .void and expr.* == .call and expr.call.func.* == .name and
             std.mem.eql(u8, expr.call.func.name.ident, "print"))
         {
+            try self.emit_print_call(expr.call.args);
             self.p("return lua_val_nil();\n", .{});
             return;
         }
@@ -11654,6 +11656,12 @@ pub const CodeGen = struct {
                     const value = meta_codegen.comptimeEachHook(self.meta_host(), source, callback, self.alloc) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
                 }
+                if (std.mem.eql(u8, name, "__comptimematch") and c.args.len == 2 and c.args[0].* == .string_lit) {
+                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
+                    if (callback != .func) break :blk null;
+                    const value = meta_codegen.comptimeMatchHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
+                    break :blk if (value == .string) value.string else null;
+                }
                 if (std.mem.eql(u8, name, "__comptimepower") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
                     if (callback != .func) break :blk null;
@@ -11867,6 +11875,14 @@ pub const CodeGen = struct {
             const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
             if (callback != .func) return false;
             const value = meta_codegen.comptimeEachHook(self.meta_host(), source, callback, self.alloc) orelse return false;
+            if (value != .string) return false;
+            try self.emit_c_string_literal(value.string);
+            return true;
+        }
+        if (std.mem.eql(u8, name, "__comptimematch") and args.len == 2 and args[0].* == .string_lit) {
+            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
+            if (callback != .func) return false;
+            const value = meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
             if (value != .string) return false;
             try self.emit_c_string_literal(value.string);
             return true;

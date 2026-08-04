@@ -2003,6 +2003,64 @@ pub fn comptimeEachHook(host: Host, source: []const u8, callback: comptime_eval.
     return .{ .string = buf.toOwnedSlice(alloc) catch return null };
 }
 
+/// `@comp.match(patterns, callback)` — compile-time pattern-match codegen.
+/// Splits the pattern spec on `|` and calls the callback for each alternative,
+/// passing a table with {pattern, index, count}. The callback returns a string
+/// fragment for each pattern, and all fragments are concatenated.
+///
+/// This is the "switch/case of codegen" — one declarative line produces N
+/// specialized branches. Composes with @comp.each, @comp.burst, etc.
+/// Comptime-only — folds to native C string, never `lua_Value`.
+///
+/// Example: `@comp.match("i32|i64|f64", fun(m) "typedef " .. m.pattern .. " variant_" .. m.index .. ";\n" end)`
+/// → `typedef i32 variant_0;\ntypedef i64 variant_1;\ntypedef f64 variant_2;\n`
+pub fn comptimeMatchHook(host: Host, patterns: []const u8, callback: comptime_eval.Value, alloc: std.mem.Allocator) ?comptime_eval.Value {
+    // Split on `|` — each alternative is a pattern to match against.
+    var alts: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer alts.deinit(alloc);
+    {
+        var start: usize = 0;
+        var i: usize = 0;
+        while (i < patterns.len) : (i += 1) {
+            if (patterns[i] == '|') {
+                const frag = std.mem.trim(u8, patterns[start..i], " \t\r\n");
+                if (frag.len > 0) alts.append(alloc, frag) catch return null;
+                start = i + 1;
+            }
+        }
+        if (start < patterns.len) {
+            const frag = std.mem.trim(u8, patterns[start..], " \t\r\n");
+            if (frag.len > 0) alts.append(alloc, frag) catch return null;
+        }
+    }
+    const count: i64 = @intCast(alts.items.len);
+    if (count == 0) return .{ .string = alloc.dupe(u8, "") catch return null };
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    var index: i64 = 0;
+    for (alts.items) |alt| {
+        const owned_pattern = alloc.dupe(u8, alt) catch return null;
+        var entries: [3]comptime_eval.Value.TableEntry = .{
+            .{ .name = "pattern", .val = .{ .string = owned_pattern } },
+            .{ .name = "index", .val = .{ .int = index } },
+            .{ .name = "count", .val = .{ .int = count } },
+        };
+        const owned_entries = alloc.dupe(comptime_eval.Value.TableEntry, &entries) catch return null;
+        const meta_val: comptime_eval.Value = .{ .table = owned_entries };
+
+        const piece = comptime_eval.callFunctionValue(callback, &.{meta_val}, host.bindings, host.options) catch {
+            index += 1;
+            continue;
+        };
+        if (piece == .string) buf.appendSlice(alloc, piece.string) catch return null;
+        index += 1;
+    }
+
+    return .{ .string = buf.toOwnedSlice(alloc) catch return null };
+}
+
 /// `@comp.fixpoint(initial, fn[, max_iter])` — iterate a generator callback until
 /// convergence (output == input) or max_iter reached. The ONLY unbounded combinator:
 /// O(1) author input → O(max_iter) output. The callback receives a table with
