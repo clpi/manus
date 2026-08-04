@@ -5,36 +5,29 @@ global M = {}
 M.tools = {}
 
 fun mcp_read_message(): any
+    -- MCP stdio transport = newline-delimited JSON-RPC: one JSON object per
+    -- line, no embedded newlines (Model Context Protocol spec). This is NOT
+    -- LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
+    -- …) sends newline-delimited JSON, so the prior framed transport never
+    -- completed a handshake. Blank lines are skipped; EOF (nil) terminates.
     io_mod = req "std.io"
     json_mod = req "std.json"
-    content_length = -1
     while true
         line = io_mod.read_line(io_mod.input())
         if line == nil then return nil end
-        if line == "\r" or line == "" then
-            break
-        end
-        if string.starts_with(line, "Content-Length: ") then
-            len_str = string.sub(line, 17, -1)
-            len_str = string.gsub(len_str, "\r", "")
-            content_length = tonumber(len_str)
-        end
+        line = string.gsub(line, "[\r\n]", "")
+        if line != "" then break end
     end
-    if content_length < 0 then
-        return nil
-    end
-    body = io_mod.read_bytes(io_mod.input(), content_length)
-    if body == nil then return nil end
-    json_mod.decode(body)
+    json_mod.decode(line)
 end
 
 fun mcp_send_message(obj: any): void
+    -- MCP stdio: one compact JSON object per line. json.encode emits no
+    -- embedded newlines, so the trailing "\n" is the sole delimiter.
     json_mod = req "std.json"
     io_mod = req "std.io"
     body = json_mod.encode(obj)
-    len = string.len(body)
-    header = "Content-Length: " .. tostring(len) .. "\r\n\r\n"
-    io_mod.write_bytes(io_mod.output(), header .. body)
+    io_mod.write_bytes(io_mod.output(), body .. "\n")
     io_mod.flush(io_mod.output())
 end
 
