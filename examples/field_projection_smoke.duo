@@ -1,0 +1,35 @@
+-- Field projection syntax: .name desugars to (__proj_v) __proj_v.name
+-- Enables concise pipeline-style access: items:map(.name)
+
+-- Helper: simple map function
+fun map(t, f)
+    result = {}
+    for i = 1, #t do
+        result[i] = f(t[i])
+    end
+    return result
+end
+
+-- Test data
+users = {
+    { name = "Alice", age = 30 },
+    { name = "Bob", age = 25 },
+    { name = "Charlie", age = 35 }
+}
+
+-- Basic projection as callback: .name extracts the name field
+names = map(users, .name)
+print("RESULT projection_map " .. names[1] .. "," .. names[2] .. "," .. names[3])
+
+-- Projection extracting a different field
+ages = map(users, .age)
+print("RESULT projection_ages " .. tostring(ages[1] + ages[2] + ages[3]))
+
+-- Chained projection: .profile.score
+records = {
+    { profile = { score = 10 } },
+    { profile = { score = 20 } },
+    { profile = { score = 30 } }
+}
+scores = map(records, .profile.score)
+print("RESULT projection_chain " .. tostring(scores[1] + scores[2] + scores[3]))
