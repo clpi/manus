@@ -174,7 +174,7 @@ fn collectFunctions(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_m
             try appendUniqueExternal(alloc, &externs, fd.path[0], ffi_name);
             continue;
         }
-        try validateIntegerFunction(fd, std.mem.eql(u8, fd.path[0], "main"));
+        try validateFunction(fd, std.mem.eql(u8, fd.path[0], "main"));
         if (std.mem.eql(u8, fd.path[0], "main")) {
             seen_main = true;
         }
@@ -189,19 +189,54 @@ fn collectFunctions(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_m
     };
 }
 
-fn validateIntegerFunction(fd: *const ast.FuncDecl, is_main: bool) Error!void {
+fn validateFunction(fd: *const ast.FuncDecl, is_main: bool) Error!void {
     if (fd.func.vararg or fd.func.vararg_name != null) {
         return error.InvalidMainSignature;
     }
     if (is_main and fd.func.params.len != 0) return error.InvalidMainSignature;
     if (fd.func.params.len > 8) return error.UnsupportedProgram;
     for (fd.func.params) |param| {
-        if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
         if (param.default_val != null) return error.UnsupportedProgram;
     }
-    if (!returnsInteger(fd.func.ret_type) and !returnsVoid(fd.func.ret_type)) {
+    // main is the integer (exit-code) entry point — floats not allowed there.
+    if (is_main) {
+        for (fd.func.params) |param| {
+            if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
+        }
+        if (!returnsInteger(fd.func.ret_type) and !returnsVoid(fd.func.ret_type)) {
+            return error.InvalidMainSignature;
+        }
+        return;
+    }
+    // non-main: accept a PURE-integer OR a PURE-f64 function (no mixing yet).
+    const ret_float = returnsFloat(fd.func.ret_type);
+    const ret_int = returnsInteger(fd.func.ret_type);
+    if (!ret_int and !ret_float and !returnsVoid(fd.func.ret_type)) {
         return error.InvalidMainSignature;
     }
+    for (fd.func.params) |param| {
+        if (ret_float) {
+            if (!isFloatAnnotation(param.typ)) return error.InvalidMainSignature;
+        } else {
+            if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
+        }
+    }
+}
+
+fn isFloatAnnotation(t: ast.TypeExpr) bool {
+    return t.is_float(); // named == "f32" or "f64"
+}
+
+fn returnsFloat(t: ast.TypeExpr) bool {
+    return isFloatAnnotation(t);
+}
+
+fn isPureFloatFunction(fd: *const ast.FuncDecl) bool {
+    if (!returnsFloat(fd.func.ret_type)) return false;
+    for (fd.func.params) |param| {
+        if (!isFloatAnnotation(param.typ)) return false;
+    }
+    return true;
 }
 
 fn appendUniqueExternal(alloc: std.mem.Allocator, externs: *std.ArrayList(ExternalSymbol), local_name: []const u8, symbol_name: []const u8) Error!void {
@@ -255,6 +290,12 @@ const Arm64Compiler = struct {
     strings: std.ArrayList(StringSymbol) = .empty,
     string_map: std.StringHashMapUnmanaged(u32) = .empty,
     next_string: u32 = 0,
+    // f64 native lowering: per-function FP state. cur_func_float routes a
+    // pure-f64 function (all params + return f64) through compileExprFp.
+    // FP params arrive in d0-d7 (caller-saved) and the result returns in d0.
+    cur_func_float: bool = false,
+    fp_locals: std.StringHashMapUnmanaged(u5) = .empty,
+    used_fp_regs: [32]bool = @splat(false),
 
     const CallPatch = struct {
         offset: u32,
@@ -300,6 +341,7 @@ const Arm64Compiler = struct {
         }
         self.strings.deinit(self.alloc);
         self.string_map.deinit(self.alloc);
+        self.fp_locals.deinit(self.alloc);
     }
 
     fn emitAsmHeader(self: *Arm64Compiler) Error!void {
@@ -414,6 +456,9 @@ const Arm64Compiler = struct {
         self.locals.clearRetainingCapacity();
         self.used_regs = @splat(false);
         self.returned = false;
+        self.fp_locals.clearRetainingCapacity();
+        self.used_fp_regs = @splat(false);
+        self.cur_func_float = false;
 
         const name = func.symbol_name;
         const offset: u32 = @intCast(self.code.items.len);
@@ -430,11 +475,22 @@ const Arm64Compiler = struct {
         try self.asm_text.appendSlice(self.alloc, name);
         try self.asm_text.appendSlice(self.alloc, ":\n");
 
-        for (fd.func.params, 0..) |param, i| {
-            const local_reg = try self.allocReg();
-            const abi_reg: u5 = @intCast(i);
-            try self.emitMovReg(local_reg, abi_reg);
-            try self.locals.put(self.alloc, param.name, local_reg);
+        self.cur_func_float = isPureFloatFunction(fd);
+        if (self.cur_func_float) {
+            // f64 params arrive in d0-d7 (AAPCS); bind names directly to those
+            // d-regs and mark them used so FP scratch allocates above them.
+            for (fd.func.params, 0..) |param, i| {
+                const dreg: u5 = @intCast(i);
+                self.used_fp_regs[dreg] = true;
+                try self.fp_locals.put(self.alloc, param.name, dreg);
+            }
+        } else {
+            for (fd.func.params, 0..) |param, i| {
+                const local_reg = try self.allocReg();
+                const abi_reg: u5 = @intCast(i);
+                try self.emitMovReg(local_reg, abi_reg);
+                try self.locals.put(self.alloc, param.name, local_reg);
+            }
         }
 
         try self.compileBlock(fd.func.body, fd.func.ret_type);
@@ -735,6 +791,13 @@ const Arm64Compiler = struct {
     }
 
     fn emitReturnExpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!void {
+        if (self.cur_func_float) {
+            const d = try self.compileExprFp(expr);
+            if (d != 0) try self.emitFmovReg(0, d);
+            try self.emitRet();
+            self.returned = true;
+            return;
+        }
         const reg = try self.compileExpr(expr);
         if (reg != 0) try self.emitMovReg(0, reg);
         self.releaseReg(reg);
@@ -742,7 +805,32 @@ const Arm64Compiler = struct {
         self.returned = true;
     }
 
+    fn compileExprFp(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
+        // Pure-f64 lowering. f64 literals (PC-relative literal-pool load) are a
+        // follow-up; params + arithmetic already cover matmul-style kernels and
+        // verify the FP register file + AAPCS float calling convention.
+        return switch (expr.*) {
+            .float_lit => error.UnsupportedProgram,
+            .name => |name| self.fp_locals.get(name.ident) orelse error.UndefinedName,
+            .binop => |bin| blk: {
+                const lhs = try self.compileExprFp(bin.lhs);
+                const rhs = try self.compileExprFp(bin.rhs);
+                const dst = try self.allocFpReg();
+                switch (bin.op) {
+                    .add => try self.emitFaddReg(dst, lhs, rhs),
+                    .sub => try self.emitFsubReg(dst, lhs, rhs),
+                    .mul => try self.emitFmulReg(dst, lhs, rhs),
+                    .div, .idiv => try self.emitFdivReg(dst, lhs, rhs),
+                    else => return error.UnsupportedProgram,
+                }
+                break :blk dst;
+            },
+            else => error.UnsupportedProgram,
+        };
+    }
+
     fn compileExpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
+        if (self.cur_func_float) return self.compileExprFp(expr);
         return switch (expr.*) {
             .int_lit => |lit| blk: {
                 const reg = try self.allocReg();
@@ -1006,6 +1094,45 @@ const Arm64Compiler = struct {
 
     fn emitAsrReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
         try self.emitFmt(0x9ac02800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "asr x{d}, x{d}, x{d}", .{ dst, lhs, rhs });
+    }
+
+    // --- f64 (scalar double) lowering. Verified encodings (from `as`/objdump
+    // ground truth): double FADD=0x1E602800, FSUB=0x1E603800, FMUL=0x1E600800,
+    // FDIV=0x1E601800, FMOV <Dd>,<Dn>=0x1E604000. (0x1EE0xxxx is HALF-precision,
+    // a trap from miscounting the type field.) Register layout matches the
+    // integer 2-source ops: Rm=rhs (bits 16-20), Rn=lhs (bits 5-9), Rd (0-4).
+    fn allocFpReg(self: *Arm64Compiler) Error!u5 {
+        // d0-d7 are caller-saved; params occupy the low ones, scratch takes the
+        // next free. Sufficient for leaf kernels with a handful of f64 params.
+        var reg: u5 = 0;
+        while (reg < 8) : (reg += 1) {
+            if (!self.used_fp_regs[reg]) {
+                self.used_fp_regs[reg] = true;
+                return reg;
+            }
+        }
+        return error.RegisterExhausted;
+    }
+
+    fn emitFaddReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.emitFmt(0x1e602800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "fadd d{d}, d{d}, d{d}", .{ dst, lhs, rhs });
+    }
+
+    fn emitFsubReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.emitFmt(0x1e603800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "fsub d{d}, d{d}, d{d}", .{ dst, lhs, rhs });
+    }
+
+    fn emitFmulReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.emitFmt(0x1e600800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "fmul d{d}, d{d}, d{d}", .{ dst, lhs, rhs });
+    }
+
+    fn emitFdivReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
+        try self.emitFmt(0x1e601800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "fdiv d{d}, d{d}, d{d}", .{ dst, lhs, rhs });
+    }
+
+    fn emitFmovReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
+        // FMOV <Dd>,<Dn> — ground-truth base 0x1E604000 (fmov d0,d2 => 0x1E604040).
+        try self.emitFmt(0x1e604000 | (@as(u32, src) << 5) | @as(u32, dst), "fmov d{d}, d{d}", .{ dst, src });
     }
 
     fn patchCalls(self: *Arm64Compiler) Error!void {
