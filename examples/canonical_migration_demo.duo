@@ -1,0 +1,35 @@
+-- Before: duo fmt --canonical converts this legacy code...
+--
+-- function add(x: i64, y: i64): i64
+--     return x + y
+-- end
+--
+-- fun distance(a: Point, b: Point): f64
+--     local dx = a.x - b.x
+--     local dy = a.y - b.y
+--     return math.sqrt(dx * dx + dy * dy)
+-- end
+--
+-- if x > 0 then print("yes") end
+-- for i = 1, 10 do print(i) end
+--
+-- ...into canonical Duo (below):
+
+add(x: i64, y: i64) -> i64
+  return x + y
+end
+
+Point: @{ x: f64, y: f64 }
+
+distance(a: Point, b: Point) -> f64
+  dx = a.x - b.x
+  dy = a.y - b.y
+  return math.sqrt(dx * dx + dy * dy)
+end
+
+-- No 'function', 'fun', 'local', 'then', or 'do' needed.
+-- Same semantics, fewer tokens, cleaner visual appearance.
+
+p: Point = { x = 3.0, y = 4.0 }
+print("RESULT distance " .. tostring(distance(p, { x = 0.0, y = 0.0 })))
+print("RESULT add " .. tostring(add(20, 22)))
