@@ -1,0 +1,11 @@
+-- Pass 9 — validator stack metadata smoke (P9-WS5).
+-- Catalog: duo catalog | jq '.pass9.wasm_semantic_gen.validator_table.entries[0]'
+
+Inst = req "std.wasm.instruction"
+
+main(): i64
+    if Inst.generator_owner() ~= "src/wasm_semantic_gen.zig" then return 1 end
+    if Inst.mvp_instruction_count() ~= 63 then return 2 end
+    if Inst.opcode_table_size() ~= 256 then return 3 end
+    0
+end
