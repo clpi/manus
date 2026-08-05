@@ -12,6 +12,8 @@ const pass7_catalog = @import("pass7_catalog.zig");
 const pass8_catalog = @import("pass8_catalog.zig");
 const pass9_catalog = @import("pass9_catalog.zig");
 const pass10_catalog = @import("pass10_catalog.zig");
+const pass11_catalog = @import("pass11_catalog.zig");
+const pass12_catalog = @import("pass12_catalog.zig");
 
 pub const CatalogPaths = struct {
     pub const plan = "docs/plans/pass3_directive_grammar_convergence.md";
@@ -163,6 +165,10 @@ pub fn writePass3Json(w: *std.Io.Writer) !void {
     try pass9_catalog.writePass9Json(w);
     try w.print(",", .{});
     try pass10_catalog.writePass10Json(w);
+    try w.print(",", .{});
+    try pass11_catalog.writePass11Json(w);
+    try w.print(",", .{});
+    try pass12_catalog.writePass12Json(w);
     try w.print("}}\n", .{});
 }
 
@@ -187,6 +193,8 @@ test "pass3_catalog: writePass3Json emits valid structure" {
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass8\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass9\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass10\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass11\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass12\"") != null);
 }
 
 test "pass3_catalog: all pipeline ops registered in transform engine" {

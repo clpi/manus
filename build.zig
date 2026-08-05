@@ -103,6 +103,11 @@ pub fn build(b: *std.Build) void {
     const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths (Pass 10 A19)");
     public_safety_step.dependOn(&public_safety_cmd.step);
 
+    const repo_hygiene_cmd = b.addSystemCommand(&.{ "bash", "./scripts/repo_hygiene.sh" });
+    repo_hygiene_cmd.setCwd(b.path("."));
+    const repo_hygiene_step = b.step("repo-hygiene", "Pass 11 WP-12: forbidden root artifacts and tracked agent noise");
+    repo_hygiene_step.dependOn(&repo_hygiene_cmd.step);
+
     // Agent-smoke gate (tier-0): public safety + coordination/stdlib/meta smokes
     const agent_smoke_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
     agent_smoke_cmd.setCwd(b.path("."));

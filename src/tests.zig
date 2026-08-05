@@ -65,6 +65,17 @@ test {
     _ = @import("wasm_decode_differential.zig");
     _ = @import("pass10_repo_audit.zig");
     _ = @import("pass10_catalog.zig");
+    _ = @import("pass11_catalog.zig");
+    _ = @import("pass12_catalog.zig");
+    _ = @import("proof_carrying.zig");
+    _ = @import("semantic_compression.zig");
+    _ = @import("token_semantic.zig");
+    _ = @import("token_classify_gen.zig");
+    _ = @import("semantic_context.zig");
+    _ = @import("semantic_cli.zig");
+    _ = @import("semantic_transaction.zig");
+    _ = @import("backend_identity.zig");
+    _ = @import("semantic_ownership.zig");
     _ = @import("pass6_dispatch_tests.zig");
     _ = @import("sim_pipeline.zig");
     _ = @import("pass4_native_tests.zig");

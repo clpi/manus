@@ -136,60 +136,6 @@ pub const TokenKind = enum {
             .int_lit => "integer",
             .float_lit => "float",
             .string_lit => "string",
-            .kw_and => "and",
-            .kw_break => "break",
-            .kw_continue => "continue",
-            .kw_do => "do",
-            .kw_else => "else",
-            .kw_elseif => "elseif",
-            .kw_end => "end",
-            .kw_false => "false",
-            .kw_for => "for",
-            .kw_function => "function",
-            .kw_fun => "fun",
-            .kw_global => "global",
-            .kw_goto => "goto",
-            .kw_if => "if",
-            .kw_in => "in",
-            .kw_local => "local",
-            .kw_nil => "nil",
-            .kw_not => "not",
-            .kw_or => "or",
-            .kw_repeat => "repeat",
-            .kw_return => "return",
-            .kw_then => "then",
-            .kw_true => "true",
-            .kw_until => "until",
-            .kw_while => "while",
-            .kw_const => "const",
-            .kw_enum => "enum",
-            .kw_i8 => "i8",
-            .kw_i16 => "i16",
-            .kw_i32 => "i32",
-            .kw_i64 => "i64",
-            .kw_u8 => "u8",
-            .kw_u16 => "u16",
-            .kw_u32 => "u32",
-            .kw_u64 => "u64",
-            .kw_f32 => "f32",
-            .kw_f64 => "f64",
-            .kw_bool => "bool",
-            .kw_void => "void",
-            .kw_str => "str",
-            .kw_match => "match",
-            .kw_try => "try",
-            .kw_catch => "catch",
-            .kw_defer => "defer",
-            .kw_async => "async",
-            .kw_await => "await",
-            .kw_concept => "concept",
-            .kw_alias => "alias",
-            .kw_private => "private",
-            .kw_extends => "extends",
-            .kw_macro => "macro",
-            .kw_comptime => "comptime",
-            .kw_by => "by",
-            .kw_let => "let",
             .lparen => "(",
             .rparen => ")",
             .lbracket => "[",
@@ -238,6 +184,10 @@ pub const TokenKind = enum {
             .percent_assign => "%=",
             .caret_assign => "^=",
             .eof => "<eof>",
+            else => blk: {
+                const entry = @import("token_semantic.zig").entryForKind(self) orelse unreachable;
+                break :blk entry.text;
+            },
         };
     }
 };
@@ -641,29 +591,7 @@ pub const Lexer = struct {
     }
 
     fn lookup_kw(text: []const u8) ?TokenKind {
-        // Parallel arrays: word list and corresponding token kind.
-        const words = [_][]const u8{
-            "and",     "break", "continue", "do",    "else",    "elseif", "end",
-            "false",   "for",   "function", "fun",   "global",  "goto",   "if",
-            "in",      "local", "nil",      "not",   "or",      "repeat", "return",
-            "then",    "true",  "until",    "while", "const",   "enum",   "i8",
-            "i16",     "i32",   "i64",      "u8",    "u16",     "u32",    "u64",
-            "f32",     "f64",   "bool",     "void",  "str",     "match",  "try",
-            "catch",   "defer", "async",    "await", "concept", "alias",  "private",
-            "extends", "macro", "comptime", "by", "let",
-        };
-        const kinds = [_]TokenKind{
-            .kw_and,     .kw_break, .kw_continue, .kw_do,    .kw_else,    .kw_elseif, .kw_end,
-            .kw_false,   .kw_for,   .kw_function, .kw_fun,   .kw_global,  .kw_goto,   .kw_if,
-            .kw_in,      .kw_local, .kw_nil,      .kw_not,   .kw_or,      .kw_repeat, .kw_return,
-            .kw_then,    .kw_true,  .kw_until,    .kw_while, .kw_const,   .kw_enum,   .kw_i8,
-            .kw_i16,     .kw_i32,   .kw_i64,      .kw_u8,    .kw_u16,     .kw_u32,    .kw_u64,
-            .kw_f32,     .kw_f64,   .kw_bool,     .kw_void,  .kw_str,     .kw_match,  .kw_try,
-            .kw_catch,   .kw_defer, .kw_async,    .kw_await, .kw_concept, .kw_alias,  .kw_private,
-            .kw_extends, .kw_macro, .kw_comptime, .kw_by,    .kw_let,
-        };
-        for (words, kinds) |w, k| if (std.mem.eql(u8, text, w)) return k;
-        return null;
+        return @import("token_semantic.zig").lookupKeyword(text);
     }
 
     fn next_tok(self: *Lexer) LexError!Token {

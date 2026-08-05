@@ -36,6 +36,9 @@ const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const pass3_catalog = @import("pass3_catalog.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
+const token_classify_gen = @import("token_classify_gen.zig");
+const semantic_cli = @import("semantic_cli.zig");
+const semantic_transaction = @import("semantic_transaction.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
@@ -188,6 +191,7 @@ const usage =
     \\  realize    <file>   export realization plan + persistent evidence (Pass 8)
     \\  algebra             export Pass 2 convergence catalog JSON
     \\  catalog             export Pass 3 keyword/directive/grammar catalog JSON
+    \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
     \\  wasm-tables emit    regenerate lib/std/wasm/opcode_lookup.duo + ward_mvp_opcodes.duo
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
@@ -254,7 +258,9 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "explain") or
             std.mem.eql(u8, args[1], "algebra") or
             std.mem.eql(u8, args[1], "catalog") or
+            std.mem.eql(u8, args[1], "semantic") or
             std.mem.eql(u8, args[1], "wasm-tables") or
+            std.mem.eql(u8, args[1], "token-tables") or
             std.mem.eql(u8, args[1], "completion") or
             std.mem.eql(u8, args[1], "help") or
             std.mem.eql(u8, args[1], "--help") or
@@ -548,6 +554,15 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
+    if (std.mem.eql(u8, cmd, "semantic")) {
+        const sub = input_file orelse {
+            term.err("usage: duo semantic <intent|compare|proof|obligations|projections|context> [entity]", .{});
+            std.process.exit(1);
+        };
+        try do_semantic(alloc, io, sub, extra_arg);
+        return;
+    }
+
     if (std.mem.eql(u8, cmd, "wasm-tables")) {
         const sub = input_file orelse {
             term.err("usage: duo wasm-tables emit", .{});
@@ -561,6 +576,20 @@ pub fn main(init: std.process.Init) !void {
         try wasm_semantic_gen.emitWardMvpOpcodesFile(alloc, io, "lib/std/wasm/ward_mvp_opcodes.duo");
         term.print("wrote lib/std/wasm/opcode_lookup.duo\n", .{});
         term.print("wrote lib/std/wasm/ward_mvp_opcodes.duo\n", .{});
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "token-tables")) {
+        const sub = input_file orelse {
+            term.err("usage: duo token-tables emit", .{});
+            std.process.exit(1);
+        };
+        if (!std.mem.eql(u8, sub, "emit")) {
+            term.err("unknown token-tables subcommand '{s}' (expected: emit)", .{sub});
+            std.process.exit(1);
+        }
+        try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/std/token/classify.duo");
+        term.print("wrote lib/std/token/classify.duo\n", .{});
         return;
     }
 
@@ -1383,6 +1412,37 @@ fn do_catalog(alloc: std.mem.Allocator, io: Io) !void {
     var buf: [65536]u8 = undefined;
     var fw: std.Io.File.Writer = .init(stdout, io, &buf);
     try pass3_catalog.writeCatalogJson(&fw.interface, alloc);
+    try fw.interface.flush();
+}
+
+fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[]const u8) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [65536]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    const entity = entity_arg orelse "duo:lexer:keyword_classifier";
+    if (std.mem.eql(u8, sub, "intent")) {
+        try semantic_cli.writeIntentJson(&fw.interface, entity);
+    } else if (std.mem.eql(u8, sub, "compare") or std.mem.eql(u8, sub, "candidates")) {
+        try semantic_cli.writeCandidateCompareJson(&fw.interface, alloc);
+    } else if (std.mem.eql(u8, sub, "proof") or std.mem.eql(u8, sub, "bundle")) {
+        try semantic_cli.writeProofBundleJson(&fw.interface, alloc, entity);
+    } else if (std.mem.eql(u8, sub, "obligations")) {
+        try semantic_cli.writeProofObligationsJson(&fw.interface, entity);
+    } else if (std.mem.eql(u8, sub, "projections")) {
+        try semantic_cli.writeProjectionsJson(&fw.interface);
+    } else if (std.mem.eql(u8, sub, "context")) {
+        try semantic_cli.writeContextJson(&fw.interface, entity_arg);
+    } else if (std.mem.eql(u8, sub, "preview")) {
+        try semantic_cli.writeTransactionPreviewJson(&fw.interface, entity_arg);
+    } else if (std.mem.eql(u8, sub, "validate")) {
+        try semantic_cli.writeTransactionValidateJson(&fw.interface, entity_arg);
+    } else if (std.mem.eql(u8, sub, "transforms")) {
+        try semantic_cli.writeTransformProofLogJson(&fw.interface);
+    } else {
+        term.err("unknown semantic subcommand '{s}' (expected: intent, compare, proof, obligations, projections, context, preview, validate, transforms)", .{sub});
+        std.process.exit(1);
+    }
+    try fw.interface.writeAll("\n");
     try fw.interface.flush();
 }
 

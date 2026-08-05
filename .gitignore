@@ -66,4 +66,12 @@ docs/book/
 /test_io*
 /test_mandel*
 /bench_simd*
-/examples/_*
+/.run_all_bench_cmds.sh
+/.all_bench_output.log
+/_*.out
+
+# Agent tool local state (never tracked)
+.antigravitycli/
+.kiro/
+.poolside/
+.serena/

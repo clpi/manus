@@ -89,6 +89,28 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 - **P10-M0 partial:** initial pollution audit (15+ findings, 6 canonical docs missing)
 - **High blockers:** duplicate pass plans, untracked pass9 smokes, flat `src/` hierarchy
 
+## Pass 11 — Canonical Compiler Closure
+
+- **Mission:** Honest release architecture — explicit backends, no silent fallback, trustworthy benchmarks
+- Plan: `docs/plans/pass11_release_proof.md`; catalog: `duo catalog` → `pass11`
+- **Profile A (default):** `--backend=c` (generated C → Clang)
+- **Profile B (experimental):** `--backend=direct` (ARM64 Mach-O subset)
+- **WP-01 partial:** `bench_mode` no longer forces boxing; `--bench-backend` + manifest
+- **WP-02 partial:** `backend_identity.zig`, DNB codes, `--backend` flag
+- **WP-10 partial:** `semantic_ownership.zig` module classifications
+
+## Pass 12 — Semantic Autonomy & Proof-Carrying Development
+
+- **Mission:** AI proposes; Duo proves — one semantic source drives many validated artifacts
+- Plan: `docs/plans/pass12_semantic_autonomy.md`; catalog: `duo catalog | jq '.pass12'`
+- **P12-WS2 partial:** intent/obligation schema in `src/proof_carrying.zig`
+- **P12-WS3 partial:** `transform_engine.buildTransformProofRecord` + proof log on `logProvenance`
+- **P12-WS4 partial:** `realization.compareCandidates` for bounded selection
+- **P12-WS10 partial:** `seed_capabilities` + `effectiveClaimStatus` claim dependency graph
+- **P12-WS11 partial:** `src/semantic_compression.zig` M1 baseline metrics
+- **P12-M1 partial:** `src/token_semantic.zig` → `lexer.zig` keyword lookup integrated
+- **P12-M2 partial:** Ward dispatch via `wasm_semantic_gen.zig`
+
 ## Current Proven Capabilities
 
 ```
@@ -98,7 +120,7 @@ duo compile file.duo --target native-exe  # Linked executable (no C)
 duo graph file.duo                        # Semantic graph JSON
 duo sim file.duo                          # SIM v0 export
 duo fmt --canonical file.duo              # Strip deprecated keywords
-duo catalog                               # Pass 3–9 tracking JSON
+duo catalog                               # Pass 3–12 tracking JSON
 duo explain file.duo                      # Knowledge + outcomes + realizations
 duo realize file.duo                      # Realization plan + persistent cache
 ```
