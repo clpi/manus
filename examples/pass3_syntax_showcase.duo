@@ -1,0 +1,66 @@
+-- Pass 3 Syntax Showcase: Duo's compact, expressive grammar
+-- Every feature here is IMPLEMENTED and working (2026-08-04)
+
+-- ═══ Keywordless Records (GP-010) ═══
+Point: @{
+    x: f64
+    y: f64
+}
+
+-- ═══ Keywordless Enums (GP-009) ═══
+Direction: @{ North, South, East, West }
+
+-- ═══ Compact separators: newlines suffice (GP-013) ═══
+config = {
+    debug = true
+    workers = 8
+    name = "duo"
+}
+
+-- ═══ Table spread (GP-004) ═══
+defaults = { color = "blue", size = 10 }
+custom = { ..defaults, color = "red" }
+
+-- ═══ Field projections (GP-001) ═══
+fun map(t, f)
+    result = {}
+    for i = 1, #t do result[i] = f(t[i]) end
+    return result
+end
+
+users = {
+    { name = "Alice", score = 95 },
+    { name = "Bob", score = 87 },
+    { name = "Charlie", score = 92 }
+}
+names = map(users, .name)
+scores = map(users, .score)
+
+-- ═══ Direct iteration (GP-008) ═══
+total = 0
+for s in scores do
+    total = total + s
+end
+
+-- ═══ Record construction ═══
+origin: Point = { x = 0.0, y = 0.0 }
+target: Point = { x = 3.0, y = 4.0 }
+
+-- ═══ If-expressions (GS-003) ═══
+label = if total > 250 then "high" else "normal" end
+
+-- ═══ Implicit return, no 'then', no 'do' (GS-005/006/012) ═══
+fun distance(a: Point, b: Point): f64
+    dx = a.x - b.x
+    dy = a.y - b.y
+    return math.sqrt(dx * dx + dy * dy)
+end
+
+-- ═══ Results ═══
+print("RESULT names " .. names[1] .. "," .. names[2] .. "," .. names[3])
+print("RESULT total_score " .. tostring(total))
+print("RESULT custom_color " .. custom.color)
+print("RESULT spread_size " .. tostring(custom.size))
+print("RESULT distance " .. tostring(distance(origin, target)))
+print("RESULT label " .. label)
+print("RESULT config " .. config.name .. " w=" .. tostring(config.workers))

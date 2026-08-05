@@ -1,0 +1,11 @@
+@meta.define.derive("TagOnly", fun generate(meta) -> str
+    "/* tagged " .. meta.name .. " */\n"
+end)
+
+@meta.derive.bundle("Debug")
+type Tiny = { n: i64 }
+
+@derive(TagOnly)
+type Also = { v: f64 }
+
+print("bundle ok")

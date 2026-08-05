@@ -1,0 +1,3 @@
+print("Start")
+local mcp = req("std.mcp")
+print("Done")

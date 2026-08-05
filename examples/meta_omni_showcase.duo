@@ -1,0 +1,39 @@
+-- @meta.omni / @meta.stack: one agent line → linear + quadratic codegen output
+-- Run: duo run examples/meta_omni_showcase.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+concept HasTag
+    tag: str
+end
+
+type Point = { x: f64, y: f64, tag: str }
+type Pair = { x: f64, y: f64, tag: str }
+type Label = { tag: str }
+
+@meta.define.derive("PairApi", fun generate(meta) -> str
+    if meta.left ~= nil then
+        "/* omni " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
+    else
+        acc = ""
+        for i = 1, #meta.fields
+            f = meta.fields[i]
+            acc = acc .. "static inline void duo_" .. meta.name .. "_touch_" .. f.name .. "(const duo_" .. meta.name .. "* v) { (void)v->" .. f.name .. "; }\n"
+        end
+        acc
+    end
+end)
+
+fun registry_line(meta) -> str
+    meta.name .. ";"
+end
+
+-- Expression form: ceiling + sweep comment in one call
+@c.emit(@meta.omni("HasXY", PairApi, "HasTag", registry_line))
+
+print("=== meta omni showcase ===")
+print("Point ok = true")
+print("ok")

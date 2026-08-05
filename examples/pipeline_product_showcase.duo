@@ -1,0 +1,36 @@
+-- @pipeline product: one descriptor emits types x take policies
+-- Run: duo run examples/pipeline_product_showcase.duo
+
+@pipeline({
+    name = "sum",
+    types = "i64:int64_t:0 | f64:double:0.0",
+    takes = "all: | first2:2",
+    kind = "reduce",
+})
+
+@c.emit([[
+static const int64_t ints[] = { 1, 2, 3, 4 };
+static const double floats[] = { 1.5, 2.0, 2.5, 3.0 };
+]])
+
+fun int_all(): i64
+    @c.call("sum_i64_all", @(ints), @(4))
+end
+
+fun int_first2(): i64
+    @c.call("sum_i64_first2", @(ints), @(4))
+end
+
+fun float_all(): f64
+    @c.call("sum_f64_all", @(floats), @(4))
+end
+
+fun float_first2(): f64
+    @c.call("sum_f64_first2", @(floats), @(4))
+end
+
+print("=== @pipeline product showcase ===")
+print("sum_i64_all = " .. tostring(int_all()))
+print("sum_i64_first2 = " .. tostring(int_first2()))
+print("sum_f64_all = " .. tostring(float_all()))
+print("sum_f64_first2 = " .. tostring(float_first2()))

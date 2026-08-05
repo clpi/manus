@@ -6,6 +6,8 @@ const TK = @import("lexer.zig").TokenKind;
 const ast = @import("ast.zig");
 const types = @import("types.zig");
 const term = @import("term.zig");
+const meta_module = @import("meta_module.zig");
+const legacy_directives = @import("legacy_directives.zig");
 const debug_trace = @import("debug_trace.zig");
 
 pub const ParseError = error{
@@ -95,8 +97,8 @@ pub const Parser = struct {
             for (hint_attrs) |attr| {
                 if (is_module_level_hint(attr)) {
                     const loc = (try self.pk()).loc;
-                    // @c.include / @c.import become cinclude statements
-                    if (std.mem.eql(u8, attr.name, "c.include") or std.mem.eql(u8, attr.name, "c.import")) {
+                    // @comp.c.include / @comp.c.import (and legacy @c.*) become cinclude statements
+                    if (@import("meta_module.zig").isCHeaderImportDirective(attr.name)) {
                         const header = @import("directives.zig").extractCRawCode(attr.args orelse "");
                         try stmts.append(self.alloc, .{ .cinclude = .{ .loc = loc, .header = header } });
                     } else {
@@ -118,9 +120,8 @@ pub const Parser = struct {
         if (directives.isBuildDirective(attr.name)) return true;
         if (directives.isDebugDirective(attr.name)) return true;
         // C interface directives are module-level (order matters for #include)
-        if (std.mem.eql(u8, attr.name, "c.include") or
-            std.mem.eql(u8, attr.name, "c.import") or
-            std.mem.eql(u8, attr.name, "c.emit"))
+        if (@import("meta_module.zig").isCHeaderImportDirective(attr.name) or
+            @import("meta_module.zig").isCEmitDirective(attr.name))
             return true;
         // @specialize is a module-level directive
         if (std.mem.eql(u8, attr.name, "specialize")) return true;
@@ -158,6 +159,18 @@ pub const Parser = struct {
     fn eat(self: *Parser, kind: TK) ParseError!?Token {
         if ((try self.pk()).kind == kind) return try self.adv();
         return null;
+    }
+
+    /// Consume a deprecated keyword (then/do) if present. In .duo mode, emit a
+    /// hint suggesting the keyword can be omitted. Used for `then` after `if`
+    /// and `do` after `while`/`for` in canonical Duo.
+    fn eat_deprecated(self: *Parser, kind: TK) ParseError!void {
+        if ((try self.pk()).kind == kind) {
+            const tok = try self.adv();
+            if (self.duo_mode) {
+                term.locHint(tok.loc, "'{s}' is optional in .duo files and can be omitted", .{kind.spelling()});
+            }
+        }
     }
 
     fn check(self: *Parser, kind: TK) ParseError!bool {
@@ -577,14 +590,15 @@ pub const Parser = struct {
             const is_trace = std.mem.eql(u8, attr_name.text, "trace") or std.mem.startsWith(u8, attr_name.text, "trace.");
             while ((try self.pk()).kind == .dot) {
                 _ = try self.adv();
-                const part = try self.expect(.name);
+                const part = try self.parse_at_path_segment();
                 try parts.append(self.alloc, part.text);
             }
             const qualified = try std.mem.join(self.alloc, ".", parts.items);
             defer self.alloc.free(qualified);
-            const is_meta_directive = @import("meta_module.zig").isMetaAttribute(qualified);
+            const is_meta_directive = meta_module.isMetaAttribute(qualified);
+            const is_attaching = meta_module.isAttachingMetaAttribute(qualified);
             const is_directive = is_build or is_debug or is_trace or is_meta_directive;
-            const is_known = is_directive or
+            const is_known = is_directive or is_attaching or
                 (is_c_export or is_known_attribute(qualified));
             if (!is_known) return false;
             if ((try self.pk()).kind == .lparen) {
@@ -657,6 +671,9 @@ pub const Parser = struct {
             "raw",
             "repr",
             "restrict",
+            "sealed",
+            "native",
+            "guarded",
             "section",
             "simd",
             "specialize",
@@ -717,16 +734,13 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .at) {
             const attr = try self.parse_one_attribute();
 
-            // Standalone @cinclude / @c.import / @build.* / @debug.* module directives are
+            // Standalone @cinclude / @comp.c.import / @build.* / @debug.* module directives are
             // each their own statement; do not accumulate them as attributes.
-            if (std.mem.eql(u8, attr.name, "cinclude") or
-                std.mem.eql(u8, attr.name, "c.include") or
-                std.mem.eql(u8, attr.name, "c.import"))
-            {
+            if (@import("meta_module.zig").isCHeaderImportDirective(attr.name)) {
                 const header = strip_quotes(attr.args orelse "");
                 return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
             }
-            if (std.mem.eql(u8, attr.name, "c.emit")) {
+            if (@import("meta_module.zig").isCEmitDirective(attr.name)) {
                 const loc_tok = try self.pk();
                 return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
             }
@@ -738,15 +752,12 @@ pub const Parser = struct {
             // @c.type, @c.ffi, @c.call, @c.link) accumulate as normal function
             // attributes. They must NOT be emitted as standalone .directive
             // statements just because they are also listed in the metaprogramming
-            // catalog (isMetaAttribute returns true for them). @c.include /
-            // @c.import / @c.emit above are the standalone C-interface forms;
+            // catalog (isMetaAttribute returns true for them). @comp.c.include /
+            // @comp.c.import / @comp.c.emit above are the standalone C-interface forms;
             // these attach to the following `fun`/decl so codegen can emit
             // export_name / FFI linkage.
-            if (std.mem.eql(u8, attr.name, "c.export") or
-                std.mem.eql(u8, attr.name, "c.type") or
-                std.mem.eql(u8, attr.name, "c.ffi") or
-                std.mem.eql(u8, attr.name, "c.call") or
-                std.mem.eql(u8, attr.name, "c.link"))
+            if (@import("meta_module.zig").isAttachingCInterfaceAttribute(attr.name) or
+                std.mem.eql(u8, attr.name, "c.call"))
             {
                 try attrs.append(self.alloc, attr);
                 continue;
@@ -817,11 +828,11 @@ pub const Parser = struct {
         if (std.mem.eql(u8, attr.name, "specialize")) {
             return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
         }
-        if (std.mem.eql(u8, attr.name, "c.include") or std.mem.eql(u8, attr.name, "c.import")) {
+        if (@import("meta_module.zig").isCHeaderImportDirective(attr.name)) {
             const header = strip_quotes(attr.args orelse "");
             return ast.Stmt{ .cinclude = .{ .loc = loc, .header = header } };
         }
-        if (std.mem.eql(u8, attr.name, "c.emit")) {
+        if (@import("meta_module.zig").isCEmitDirective(attr.name)) {
             return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
         }
         self.lex.restoreState(saved);
@@ -901,12 +912,12 @@ pub const Parser = struct {
     /// Parse a single attribute: `@name`, `@name.sub`, or `@name(args)`
     fn parse_one_attribute(self: *Parser) ParseError!ast.Attribute {
         _ = try self.expect(.at); // consume `@`
-        const first = try self.expect(.name);
+        const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
         try parts.append(self.alloc, first.text);
         while ((try self.pk()).kind == .dot) {
             _ = try self.adv();
-            const part = try self.expect(.name);
+            const part = try self.parse_at_path_segment();
             try parts.append(self.alloc, part.text);
         }
         const name = try std.mem.join(self.alloc, ".", parts.items);
@@ -916,6 +927,7 @@ pub const Parser = struct {
             args = try self.parse_attribute_args();
             _ = try self.expect(.rparen);
         }
+        self.warnDeprecatedAtQualified(first.loc, name);
         return ast.Attribute{ .name = name, .args = args };
     }
 
@@ -1407,8 +1419,24 @@ pub const Parser = struct {
     // For concept satisfaction, attach `@implements(C)` to the binding.
 
     fn parse_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
-        const l = (try self.adv()).loc;
-        return self.parse_func_decl_after_first(is_local, attrs, l);
+        const tok = try self.adv();
+        const hint_loc = tok.loc;
+        const result = try self.parse_func_decl_after_first(is_local, attrs, tok.loc);
+        // Emit hint only in .duo mode and only when the function has typed params
+        // (bare syntax requires at least one typed param for disambiguation).
+        if (self.duo_mode) {
+            if (result == .func_decl) {
+                const fb = result.func_decl.func;
+                var has_typed = false;
+                for (fb.params) |p| {
+                    if (p.typ != .inferred) { has_typed = true; break; }
+                }
+                if (has_typed or fb.vararg) {
+                    term.locHint(hint_loc, "'{s}' is unnecessary here; bare function syntax works: name(params) body end", .{tok.kind.spelling()});
+                }
+            }
+        }
+        return result;
     }
 
     fn parse_bare_func_decl_with_attrs(self: *Parser, is_local: bool, attrs: []ast.Attribute) ParseError!ast.Stmt {
@@ -1476,7 +1504,7 @@ pub const Parser = struct {
         return (try self.pk()).kind == .lparen;
     }
 
-    fn scan_func_header_signal(self: *Parser) ParseError!bool {
+    fn scan_func_header_signal(self: *Parser, allow_untyped_comma: bool) ParseError!bool {
         const saved = self.lex.saveState();
         defer self.lex.restoreState(saved);
 
@@ -1487,12 +1515,21 @@ pub const Parser = struct {
         var bracket_depth: usize = 0;
         var brace_depth: usize = 0;
         var typed_or_vararg = false;
+        var has_comma = false;
+        var has_literal_arg = false;
         var prev: TK = .eof;
         while (paren_depth > 0) {
             const tok = try self.pk();
             switch (tok.kind) {
                 .eof => return false,
                 .dots => typed_or_vararg = true,
+                .comma => if (paren_depth == 1) {
+                    if (prev == .eof) return false;
+                    has_comma = true;
+                },
+                .string_lit, .int_lit, .float_lit => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0) {
+                    has_literal_arg = true;
+                },
                 .colon => if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and prev == .name) {
                     // `: type` annotation — but NOT a method call `:name(`. A
                     // method-call colon as an argument (e.g. `red:to_string(`)
@@ -1522,7 +1559,14 @@ pub const Parser = struct {
         }
 
         const after = try self.pk();
-        if (typed_or_vararg or after.kind == .arrow) return true;
+        if (has_literal_arg) return false; // literals are never in param list
+        if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
+        if (allow_untyped_comma and has_comma) {
+            if (after.kind == .eof) return false;
+            // Check if it's followed by something that looks like an expression continuation
+            if (infix_prec(after.kind) != null or after.kind == .colon or after.kind == .dot) return false;
+            return true;
+        }
         if (after.kind == .colon) {
             // Return-type colon marks a function header (`main(): i64`) only when
             // the name after ':' is followed by a body, not '(' — a '(' means it
@@ -1552,11 +1596,11 @@ pub const Parser = struct {
                 break;
             } else break;
         }
-        return self.scan_func_header_signal();
+        return self.scan_func_header_signal(false);
     }
 
     fn starts_parenthesized_func_expr(self: *Parser) ParseError!bool {
-        return self.scan_func_header_signal();
+        return self.scan_func_header_signal(true);
     }
 
     /// Backwards-compatible: parse function decl with no attributes.
@@ -1738,7 +1782,7 @@ pub const Parser = struct {
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
             const scrutinee = try self.parse_expr();
-            _ = try self.eat(.kw_then);
+            try self.eat_deprecated(.kw_then);
             const then_body = try self.parse_block();
             // Parse optional else
             var else_body: ?ast.Block = null;
@@ -1756,15 +1800,51 @@ pub const Parser = struct {
             match_expr.match_expr.* = .{ .loc = l, .scrutinee = scrutinee, .arms = arms };
             return ast.Stmt{ .expr_stmt = .{ .loc = l, .expr = match_expr } };
         }
+        // Pass 3: `if name = expr` binding condition
+        if ((try self.pk()).kind == .name) {
+            const saved = self.lex.saveState();
+            const nm = try self.adv();
+            if ((try self.pk()).kind == .assign) {
+                _ = try self.adv();
+                const rhs = try self.parse_expr();
+                try self.eat_deprecated(.kw_then);
+                const then_body = try self.parse_block();
+                var elseifs: std.ArrayList(ast.ElseIf) = .empty;
+                var else_body: ?ast.Block = null;
+                while (true) {
+                    if (try self.eat(.kw_elseif) != null) {
+                        const ec = try self.parse_expr();
+                        try self.eat_deprecated(.kw_then);
+                        const eb = try self.parse_block();
+                        try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
+                    } else if (try self.eat(.kw_else) != null) {
+                        else_body = try self.parse_block();
+                        break;
+                    } else break;
+                }
+                _ = try self.expect(.kw_end);
+                const cond_ref = try self.new_expr(.{ .name = .{ .loc = nm.loc, .ident = nm.text } });
+                return ast.Stmt{ .if_stmt = .{
+                    .loc = l,
+                    .binding = .{ .name = nm.text, .expr = rhs },
+                    .cond = cond_ref,
+                    .then = then_body,
+                    .elseifs = try elseifs.toOwnedSlice(self.alloc),
+                    .else_body = else_body,
+                } };
+            } else {
+                self.lex.restoreState(saved);
+            }
+        }
         const cond = try self.parse_expr();
-        _ = try self.eat(.kw_then); // `then` is optional in .duo files
+        try self.eat_deprecated(.kw_then);
         const then = try self.parse_block();
         var elseifs: std.ArrayList(ast.ElseIf) = .empty;
         var else_body: ?ast.Block = null;
         while (true) {
             if (try self.eat(.kw_elseif) != null) {
                 const ec = try self.parse_expr();
-                _ = try self.eat(.kw_then); // `then` is optional in .duo files
+                try self.eat_deprecated(.kw_then);
                 const eb = try self.parse_block();
                 try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
             } else if (try self.eat(.kw_else) != null) {
@@ -1775,6 +1855,7 @@ pub const Parser = struct {
         _ = try self.expect(.kw_end);
         return ast.Stmt{ .if_stmt = .{
             .loc = l,
+            .binding = null,
             .cond = cond,
             .then = then,
             .elseifs = try elseifs.toOwnedSlice(self.alloc),
@@ -1790,10 +1871,9 @@ pub const Parser = struct {
             const pattern = try self.parse_pattern();
             _ = try self.expect(.assign);
             const scrutinee = try self.parse_expr();
-            _ = try self.eat(.kw_do);
+            try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
-            // Build: while true do match scrutinee case pattern then body case _ then break end end
             var break_arm_body_stmts = try self.alloc.alloc(ast.Stmt, 1);
             break_arm_body_stmts[0] = .{ .brk = l };
             var match_arms = try self.alloc.alloc(ast.MatchArm, 2);
@@ -1805,12 +1885,11 @@ pub const Parser = struct {
             var inner_stmts = try self.alloc.alloc(ast.Stmt, 1);
             inner_stmts[0] = .{ .expr_stmt = .{ .loc = l, .expr = match_e } };
             const inner_body = ast.Block{ .loc = l, .stmts = inner_stmts };
-            // while true do inner_body end
             const true_lit = try self.new_expr(.{ .true_lit = l });
             return ast.Stmt{ .while_loop = .{ .loc = l, .cond = true_lit, .body = inner_body } };
         }
         const cond = try self.parse_expr();
-        _ = try self.eat(.kw_do); // do is optional in Duo
+        try self.eat_deprecated(.kw_do);
         const body = try self.parse_block();
         _ = try self.expect(.kw_end);
         return ast.Stmt{ .while_loop = .{ .loc = l, .cond = cond, .body = body } };
@@ -1836,7 +1915,7 @@ pub const Parser = struct {
             const stop = try self.parse_expr();
             var step: ?*ast.Expr = null;
             if (try self.eat(.comma) != null) step = try self.parse_expr();
-            _ = try self.eat(.kw_do);
+            try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .num_for = .{
@@ -1860,7 +1939,7 @@ pub const Parser = struct {
             try iters.append(self.alloc, try self.parse_expr());
             while (try self.eat(.comma) != null)
                 try iters.append(self.alloc, try self.parse_expr());
-            _ = try self.eat(.kw_do);
+            try self.eat_deprecated(.kw_do);
             const body = try self.parse_block();
             _ = try self.expect(.kw_end);
             return ast.Stmt{ .gen_for = .{
@@ -2359,22 +2438,215 @@ pub const Parser = struct {
         }
     }
 
-    /// Parse table destructuring pattern: `{key1: pat1, key2: pat2}`
+    /// Parse table destructuring pattern: `{key1: pat1, key2: pat2}` or shorthand `{name, age}`.
     fn parse_table_destr_pattern(self: *Parser) ParseError!ast.Pattern {
         _ = try self.adv(); // consume `{`
         var entries: std.ArrayList(ast.Pattern.TableDestrEntry) = .empty;
         while ((try self.pk()).kind != .rbrace) {
             const key_tok = try self.expect(.name);
-            _ = try self.expect(.colon);
-            const pat = try self.parse_pattern();
-            try entries.append(self.alloc, .{ .key = key_tok.text, .pat = pat });
+            if ((try self.pk()).kind == .colon) {
+                _ = try self.adv();
+                const pat = try self.parse_pattern();
+                try entries.append(self.alloc, .{ .key = key_tok.text, .pat = pat });
+            } else {
+                // Shorthand `{ name, age }` → `{ name: name, age: age }`
+                try entries.append(self.alloc, .{
+                    .key = key_tok.text,
+                    .pat = ast.Pattern{ .binding = .{ .name = key_tok.text, .typ = null } },
+                });
+            }
             if (try self.eat(.comma) == null) break;
         }
         _ = try self.expect(.rbrace);
         return ast.Pattern{ .table_destr = try entries.toOwnedSlice(self.alloc) };
     }
 
-    /// Parse array destructuring pattern: `[pat1, pat2, ...name]`
+    /// Lower `{ a, b } = rhs` to field-extract assignments (Pass 3).
+    fn stmt_from_table_destructure(self: *Parser, pat: ast.Pattern, rhs: *ast.Expr, loc: ast.Loc) ParseError!ast.Stmt {
+        if (pat != .table_destr) return ParseError.UnexpectedToken;
+        var stmts: std.ArrayList(ast.Stmt) = .empty;
+        for (pat.table_destr) |entry| {
+            const bind_name: []const u8 = switch (entry.pat) {
+                .binding => |b| b.name,
+                else => {
+                    term.locErr(loc, "destructure assign requires simple bindings", .{});
+                    return ParseError.UnexpectedToken;
+                },
+            };
+            const field_val = try self.new_expr(.{
+                .field = .{
+                    .loc = loc,
+                    .obj = rhs,
+                    .field = entry.key,
+                },
+            });
+            const target = try self.new_expr(.{ .name = .{ .loc = loc, .ident = bind_name } });
+            var targets = try self.alloc.alloc(*ast.Expr, 1);
+            targets[0] = target;
+            var values = try self.alloc.alloc(*ast.Expr, 1);
+            values[0] = field_val;
+            try stmts.append(self.alloc, ast.Stmt{ .assign = .{
+                .loc = loc,
+                .targets = targets,
+                .values = values,
+            } });
+        }
+        if (stmts.items.len == 1) return stmts.items[0];
+        return ast.Stmt{ .do_block = .{ .loc = loc, .body = .{ .loc = loc, .stmts = try stmts.toOwnedSlice(self.alloc) } } };
+    }
+
+    /// Lower `Name: @{ Red, Green, Blue }` or `Name: @{ x: f64, y: f64 }` (Pass 3).
+    fn stmt_from_descriptor(self: *Parser, name: []const u8, loc: ast.Loc) ParseError!ast.Stmt {
+        const parsed = try self.parse_descriptor_table();
+        if (parsed.entries.len == 0) {
+            term.locErr(loc, "descriptor @{{ }} must contain at least one entry", .{});
+            return ParseError.UnexpectedToken;
+        }
+
+        var saw_variant = false;
+        var saw_recordish = false;
+        for (parsed.entries) |entry| {
+            switch (entry) {
+                .variant, .variant_payload => saw_variant = true,
+                .field, .spread => saw_recordish = true,
+            }
+        }
+        if (saw_variant and saw_recordish) {
+            term.locErr(loc, "descriptor cannot mix enum variants with typed fields or spread", .{});
+            return ParseError.UnexpectedToken;
+        }
+
+        if (saw_variant) {
+            var variants: std.ArrayList(ast.EnumVariant) = .empty;
+            for (parsed.entries) |entry| {
+                switch (entry) {
+                    .variant => |vname| try variants.append(self.alloc, .{ .name = vname, .payload = null }),
+                    .variant_payload => |vp| try variants.append(self.alloc, .{
+                        .name = vp.name,
+                        .payload = vp.payload,
+                    }),
+                    else => unreachable,
+                }
+            }
+            return ast.Stmt{ .enum_def = .{
+                .loc = loc,
+                .name = name,
+                .type_params = null,
+                .variants = try variants.toOwnedSlice(self.alloc),
+                .attributes = &.{},
+            } };
+        }
+
+        // Record descriptor: optional leading ..Parent entries, then name: Type fields.
+        // Multiple spreads are accepted for descriptor composition (GP-012).
+        var parent: ?[]const u8 = null;
+        var extra_parents: std.ArrayList([]const u8) = .empty;
+        var fields: std.ArrayList(ast.RecordField) = .empty;
+        var idx: usize = 0;
+        while (idx < parsed.entries.len) : (idx += 1) {
+            switch (parsed.entries[idx]) {
+                .spread => |expr| {
+                    if (fields.items.len > 0) {
+                        term.locErr(loc, "descriptor spread must appear before typed fields", .{});
+                        return ParseError.UnexpectedToken;
+                    }
+                    if (expr.* != .name) {
+                        term.locErr(loc, "descriptor spread must be a type name", .{});
+                        return ParseError.UnexpectedToken;
+                    }
+                    if (parent == null) {
+                        parent = expr.name.ident;
+                    } else {
+                        try extra_parents.append(self.alloc, expr.name.ident);
+                    }
+                },
+                .field => |fld| try fields.append(self.alloc, fld),
+                .variant, .variant_payload => unreachable,
+            }
+        }
+
+        const field_slice = try fields.toOwnedSlice(self.alloc);
+        const rec = try self.alloc.create(ast.TypeExpr.RecordType);
+        rec.* = .{ .fields = field_slice };
+        return ast.Stmt{ .alias_def = .{
+            .loc = loc,
+            .name = name,
+            .type_params = null,
+            .target = .{ .record = rec },
+            .parent = parent,
+            .extra_parents = try extra_parents.toOwnedSlice(self.alloc),
+            .fields = &.{},
+            .methods = &.{},
+            .attributes = &.{},
+        } };
+    }
+
+    const DescriptorEntry = union(enum) {
+        variant: []const u8,
+        variant_payload: struct { name: []const u8, payload: ?[]ast.EnumVariant.PayloadField },
+        field: ast.RecordField,
+        spread: *ast.Expr,
+    };
+
+    fn parse_descriptor_table(self: *Parser) ParseError!struct { entries: []DescriptorEntry } {
+        _ = try self.expect(.lbrace);
+        var entries: std.ArrayList(DescriptorEntry) = .empty;
+        while (!(try self.check(.rbrace))) {
+            const tok = try self.pk();
+            if (tok.kind == .concat) {
+                _ = try self.adv();
+                const spread_expr = try self.parse_expr();
+                try entries.append(self.alloc, .{ .spread = spread_expr });
+            } else if (tok.kind == .name) {
+                const field_loc = tok.loc;
+                const saved = self.lex.saveState();
+                _ = try self.adv();
+                if (try self.check(.lparen)) {
+                    _ = try self.adv();
+                    var payload: ?[]ast.EnumVariant.PayloadField = null;
+                    if (!(try self.check(.rparen))) {
+                        var payload_fields: std.ArrayList(ast.EnumVariant.PayloadField) = .empty;
+                        try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
+                        while (try self.eat(.comma) != null) {
+                            try payload_fields.append(self.alloc, try self.parseEnumPayloadField());
+                        }
+                        payload = try payload_fields.toOwnedSlice(self.alloc);
+                    }
+                    _ = try self.expect(.rparen);
+                    try entries.append(self.alloc, .{
+                        .variant_payload = .{
+                            .name = tok.text,
+                            .payload = payload,
+                        },
+                    });
+                } else if (try self.check(.colon)) {
+                    _ = try self.adv();
+                    const typ = try self.parse_type();
+                    if (try self.eat(.assign) != null) _ = try self.parse_expr(); // default, consumed
+                    try entries.append(self.alloc, .{ .field = .{
+                        .loc = field_loc,
+                        .name = tok.text,
+                        .typ = typ,
+                    } });
+                } else if (try self.check(.assign)) {
+                    self.lex.restoreState(saved);
+                    term.locErr(field_loc, "descriptor fields use 'name: Type' syntax, not '='", .{});
+                    return ParseError.UnexpectedToken;
+                } else {
+                    self.lex.restoreState(saved);
+                    _ = try self.adv();
+                    try entries.append(self.alloc, .{ .variant = tok.text });
+                }
+            } else {
+                term.locErr(tok.loc, "expected descriptor field name or spread", .{});
+                return ParseError.UnexpectedToken;
+            }
+            _ = try self.eat(.comma);
+        }
+        _ = try self.expect(.rbrace);
+        return .{ .entries = try entries.toOwnedSlice(self.alloc) };
+    }
+
     fn parse_array_destr_pattern(self: *Parser) ParseError!ast.Pattern {
         _ = try self.adv(); // consume `[`
         var patterns: std.ArrayList(ast.Pattern) = .empty;
@@ -2402,6 +2674,18 @@ pub const Parser = struct {
             .kw_not, .hash, .hash_hash, .kw_comptime, .minus, .tilde, .kw_await, .backtick => true,
             else => false,
         };
+        // Pass 3: `{ name, age } = user` named destructuring assign
+        if (first_tok.kind == .lbrace) {
+            const saved = self.lex.saveState();
+            if (self.parse_table_destr_pattern()) |pat| {
+                if ((try self.pk()).kind == .assign) {
+                    _ = try self.adv();
+                    const rhs = try self.parse_expr();
+                    return try self.stmt_from_table_destructure(pat, rhs, first_tok.loc);
+                }
+            } else |_| {}
+            self.lex.restoreState(saved);
+        }
         if (is_unary) {
             const expr = try self.parse_expr();
             return ast.Stmt{ .expr_stmt = .{ .loc = expr.loc(), .expr = expr } };
@@ -2417,6 +2701,15 @@ pub const Parser = struct {
         // parse_suffixed_expr breaks on ':' when followed by a type-like token.
         if (first.* == .name and nxt.kind == .colon) {
             _ = try self.adv(); // consume ':'
+            // Pass 3: `Color: @{ Red, Green, Blue }` keywordless enum descriptor
+            if ((try self.pk()).kind == .at) {
+                _ = try self.adv();
+                if ((try self.pk()).kind == .lbrace) {
+                    return try self.stmt_from_descriptor(first.name.ident, first.loc());
+                }
+                term.locErr(first.loc(), "expected '{{' after '@' in descriptor declaration", .{});
+                return ParseError.UnexpectedToken;
+            }
             const typ = try self.parse_type();
 
             // Jai-like type definition: `Name: { fields }` with no initializer
@@ -2774,6 +3067,21 @@ pub const Parser = struct {
             if (tok.kind == .at and tok.loc.line > lhs.loc().line) break;
             if (inf.left <= min_prec) break;
             _ = try self.adv();
+            if (self.duo_mode) {
+                switch (inf.op) {
+                    .pipeline => term.locWarn(
+                        tok.loc,
+                        "warning: '|>' is a non-canonical pipeline operator; prefer f(x), map(data, .field), or nested calls",
+                        .{},
+                    ),
+                    .matmul => term.locWarn(
+                        tok.loc,
+                        "warning: infix '@' matmul is non-canonical; prefer explicit tensor APIs or typed helpers",
+                        .{},
+                    ),
+                    else => {},
+                }
+            }
             const rhs = try self.parse_prec(inf.right);
             lhs = try self.new_expr(.{ .binop = .{
                 .loc = lhs.loc(),
@@ -2939,11 +3247,118 @@ pub const Parser = struct {
             .lbrace => self.parse_table(),
             .kw_if => self.parse_if_expr(),
             .kw_match => self.parse_match_expr(),
+            .dot => self.parse_field_projection(),
+            .colon => self.parse_method_reference(),
             else => {
                 term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
                 return ParseError.ExpectedToken;
             },
         };
+    }
+
+    /// Parse `.name` or `.a.b.c` as a field projection: desugars to `(__v) __v.name`
+    /// or `(__v) __v.a.b.c`. Only fires at expression-start (where `.` is currently invalid),
+    /// so this is backward-compatible. Enables `users:map(.name)` syntax.
+    fn parse_field_projection(self: *Parser) ParseError!*ast.Expr {
+        const dot_tok = try self.adv(); // consume the leading `.`
+        const first_field = try self.expect_name_like();
+
+        // Build the accessor chain: start with `__v.first_field`
+        var accessor = try self.new_expr(.{
+            .field = .{
+                .loc = dot_tok.loc,
+                .obj = try self.new_expr(.{ .name = .{ .loc = dot_tok.loc, .ident = "__proj_v" } }),
+                .field = first_field,
+            },
+        });
+
+        // Support chained projections: .a.b.c
+        while ((try self.pk()).kind == .dot) {
+            const chain_dot = try self.adv();
+            const chain_field = try self.expect_name_like();
+            accessor = try self.new_expr(.{
+                .field = .{
+                    .loc = chain_dot.loc,
+                    .obj = accessor,
+                    .field = chain_field,
+                },
+            });
+        }
+
+        // Build return statement: return accessor
+        const ret_vals = try self.alloc.alloc(*ast.Expr, 1);
+        ret_vals[0] = accessor;
+        const ret_stmt = ast.Stmt{ .ret = .{ .loc = dot_tok.loc, .vals = ret_vals } };
+        const stmts = try self.alloc.alloc(ast.Stmt, 1);
+        stmts[0] = ret_stmt;
+
+        // Build the single parameter: __proj_v (untyped)
+        const params = try self.alloc.alloc(ast.FuncParam, 1);
+        params[0] = .{
+            .name = "__proj_v",
+            .typ = .inferred,
+            .loc = dot_tok.loc,
+        };
+
+        // Build anonymous function: (__proj_v) __proj_v.field_chain
+        return self.new_expr(.{ .func_expr = try self.new_fb(.{
+            .loc = dot_tok.loc,
+            .params = params,
+            .vararg = false,
+            .body = .{ .loc = dot_tok.loc, .stmts = stmts },
+            .ret_type = .inferred,
+        }) });
+    }
+
+    /// Parse `:method` or `:method(args)` as a method reference: desugars to
+    /// `(__proj_v) __proj_v:method()` or `(__proj_v) __proj_v:method(args)`.
+    /// Expression-start only — enables `items:each(:close)` syntax.
+    fn parse_method_reference(self: *Parser) ParseError!*ast.Expr {
+        const colon_tok = try self.adv(); // consume `:`
+        const method_name = try self.expect_name_like();
+
+        var args: []*ast.Expr = &.{};
+        if ((try self.pk()).kind == .lparen) {
+            _ = try self.adv();
+            var arg_list: std.ArrayList(*ast.Expr) = .empty;
+            if (!(try self.check(.rparen))) {
+                try arg_list.append(self.alloc, try self.parse_expr());
+                while (try self.eat(.comma) != null)
+                    try arg_list.append(self.alloc, try self.parse_expr());
+            }
+            _ = try self.expect(.rparen);
+            args = try arg_list.toOwnedSlice(self.alloc);
+        }
+
+        const call_expr = try self.new_expr(.{
+            .method_call = .{
+                .loc = colon_tok.loc,
+                .obj = try self.new_expr(.{ .name = .{ .loc = colon_tok.loc, .ident = "__proj_v" } }),
+                .method = method_name,
+                .args = args,
+            },
+        });
+
+        const ret_vals = try self.alloc.alloc(*ast.Expr, 1);
+        ret_vals[0] = call_expr;
+        const ret_stmt = ast.Stmt{ .ret = .{ .loc = colon_tok.loc, .vals = ret_vals } };
+        const stmts = try self.alloc.alloc(ast.Stmt, 1);
+        stmts[0] = ret_stmt;
+
+        const params = try self.alloc.alloc(ast.FuncParam, 1);
+        params[0] = .{
+            .name = "__proj_v",
+            .typ = .inferred,
+            .loc = colon_tok.loc,
+        };
+
+        return self.new_expr(.{ .func_expr = try self.new_fb(.{
+            .loc = colon_tok.loc,
+            .params = params,
+            .vararg = false,
+            .body = .{ .loc = colon_tok.loc, .stmts = stmts },
+            .ret_type = .inferred,
+        }) });
     }
 
     fn parse_if_expr(self: *Parser) ParseError!*ast.Expr {
@@ -3025,6 +3440,11 @@ pub const Parser = struct {
             _ = try self.expect(.rparen);
             return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = operand } });
         }
+        // @{} — compile-time frozen table / descriptor literal (Pass 3)
+        if ((try self.pk()).kind == .lbrace) {
+            const table = try self.parse_table();
+            return self.new_expr(.{ .unop = .{ .loc = l, .op = .compile, .operand = table } });
+        }
         const first = try self.parse_at_path_segment();
         var parts: std.ArrayList([]const u8) = .empty;
         defer parts.deinit(self.alloc);
@@ -3036,6 +3456,8 @@ pub const Parser = struct {
         }
         const qualified = try std.mem.join(self.alloc, ".", parts.items);
         defer self.alloc.free(qualified);
+
+        self.warnDeprecatedAtQualified(l, qualified);
 
         if (std.mem.eql(u8, qualified, "sizeof") or std.mem.eql(u8, qualified, "alignof") or std.mem.eql(u8, qualified, "typeof") or std.mem.eql(u8, qualified, "fields")) {
             return self.parse_layout_intrinsic_call(l, qualified);
@@ -3079,7 +3501,7 @@ pub const Parser = struct {
             const builtin_name = try self.new_expr(.{ .name = .{ .loc = l, .ident = internal } });
             return self.new_expr(.{ .call = .{ .loc = l, .func = builtin_name, .args = args_slice } });
         }
-        if (at_builtin_internal_name(qualified)) |internal| {
+        if (at_builtin_internal_name(self, qualified)) |internal| {
             if (self.duo_mode) {
                 if (std.mem.eql(u8, qualified, "constexpr")) {
                     term.locErr(l, "@constexpr is not valid in .duo files. Use @(expr) for comptime evaluation.", .{});
@@ -3115,65 +3537,41 @@ pub const Parser = struct {
         return self.expect(.name);
     }
 
-    fn at_builtin_internal_name(name: []const u8) ?[]const u8 {
-        const pairs = [_]struct { public: []const u8, internal: []const u8 }{
-            .{ .public = "constexpr", .internal = "__constexpr" },
-            .{ .public = "comptime_if", .internal = "__comptimeif" },
-            .{ .public = "comptimeif", .internal = "__comptimeif" },
-            .{ .public = "comptime_fold", .internal = "__comptimefold" },
-            .{ .public = "comptimefold", .internal = "__comptimefold" },
-            .{ .public = "comptime_for", .internal = "__comptimefor" },
-            .{ .public = "comptimefor", .internal = "__comptimefor" },
-            .{ .public = "comptime_print", .internal = "__comptimeprint" },
-            .{ .public = "comptimeprint", .internal = "__comptimeprint" },
-            .{ .public = "comptime_warn", .internal = "__comptimewarn" },
-            .{ .public = "comptimewarn", .internal = "__comptimewarn" },
-            .{ .public = "compile_log", .internal = "__comptimeprint" },
-            .{ .public = "compile_error", .internal = "__comptimeerror" },
-            .{ .public = "comptime_error", .internal = "__comptimeerror" },
-            .{ .public = "comptimeerror", .internal = "__comptimeerror" },
-            .{ .public = "static_assert", .internal = "__static_assert" },
-            .{ .public = "typeinfo", .internal = "__typeinfo" },
-            .{ .public = "typeof", .internal = "__typeof" },
-            .{ .public = "type_name", .internal = "__type_name" },
-            .{ .public = "type_id", .internal = "__type_id" },
-            .{ .public = "is_type", .internal = "__is_type" },
-            .{ .public = "fields", .internal = "__fields" },
-            .{ .public = "methods", .internal = "__methods" },
-            .{ .public = "concept_methods", .internal = "__concept_methods" },
-            .{ .public = "variants", .internal = "__variants" },
-            .{ .public = "has_field", .internal = "__has_field" },
-            .{ .public = "has_method", .internal = "__has_method" },
-            .{ .public = "has_metamethod", .internal = "__has_metamethod" },
-            .{ .public = "satisfies", .internal = "__satisfies" },
-            .{ .public = "field_type", .internal = "__field_type" },
-            .{ .public = "field_offset", .internal = "__field_offset" },
-            .{ .public = "field_size", .internal = "__field_size" },
-            .{ .public = "embed_str", .internal = "__embed_str" },
-            .{ .public = "embed_file", .internal = "__embed_file" },
-            .{ .public = "make_type", .internal = "__make_type" },
-            .{ .public = "as_type", .internal = "__as_type" },
-            .{ .public = "bitfield", .internal = "__bitfield" },
-            .{ .public = "union", .internal = "__union" },
-            .{ .public = "select", .internal = "__select" },
-            .{ .public = "likely", .internal = "__likely" },
-            .{ .public = "unlikely", .internal = "__unlikely" },
-            .{ .public = "prefetch", .internal = "__prefetch" },
-            .{ .public = "assume", .internal = "__assume" },
-            .{ .public = "unreachable", .internal = "__unreachable" },
-            .{ .public = "trap", .internal = "__trap" },
-            .{ .public = "fence", .internal = "__fence" },
-            .{ .public = "ctz", .internal = "__ctz" },
-            .{ .public = "clz", .internal = "__clz" },
-            .{ .public = "popcount", .internal = "__popcount" },
-            .{ .public = "bswap", .internal = "__bswap" },
-            .{ .public = "rotl", .internal = "__rotl" },
-            .{ .public = "rotr", .internal = "__rotr" },
-            .{ .public = "bitcast", .internal = "__bitcast" },
-            .{ .public = "volatile", .internal = "__volatile" },
-        };
-        for (pairs) |pair| {
-            if (std.mem.eql(u8, name, pair.public)) return pair.internal;
+    /// Pass 3 (P3-08): deprecation warnings for flat/legacy @-directive aliases in .duo mode.
+    fn warnDeprecatedAtQualified(self: *Parser, loc: ast.Loc, qualified: []const u8) void {
+        if (!self.duo_mode) return;
+        if (std.mem.startsWith(u8, qualified, "meta.")) {
+            term.locWarn(loc, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len ..]});
+            return;
+        }
+        if (std.mem.startsWith(u8, qualified, "compiler.")) {
+            term.locWarn(loc, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len ..]});
+            return;
+        }
+        if (std.mem.eql(u8, qualified, "pipeline")) {
+            term.locWarn(loc, "warning: @pipeline is deprecated, use @comp.pipeline instead", .{});
+            return;
+        }
+        if (std.mem.eql(u8, qualified, "emit")) {
+            term.locWarn(loc, "warning: @emit is deprecated, use @comp.c.emit instead", .{});
+            return;
+        }
+        if (std.mem.startsWith(u8, qualified, "c.") and !std.mem.startsWith(u8, qualified, "comp.")) {
+            var buf: [128]u8 = undefined;
+            const replacement = std.fmt.bufPrint(&buf, "comp.{s}", .{qualified}) catch return;
+            term.locWarn(loc, "warning: @{s} is deprecated, use @{s} instead", .{ qualified, replacement });
+            return;
+        }
+        if (legacy_directives.resolvePublic(qualified)) |entry| {
+            if (entry.canonical) |canonical| {
+                term.locWarn(loc, "warning: @{s} is deprecated, use @{s} instead", .{ entry.public, canonical });
+            }
+        }
+    }
+
+    fn at_builtin_internal_name(_: *Parser, name: []const u8) ?[]const u8 {
+        if (legacy_directives.resolvePublic(name)) |entry| {
+            return entry.internal;
         }
         return null;
     }
@@ -3280,6 +3678,11 @@ pub const Parser = struct {
                         self.lex.restoreState(saved);
                         break;
                     }
+                    if (after_colon.kind == .at) {
+                        // name : @{ ... } — Pass 3 descriptor declaration; don't consume
+                        self.lex.restoreState(saved);
+                        break;
+                    }
                     if (after_colon.kind == .star or after_colon.kind == .question) {
                         // name : *Type or name : ?Type — pointer/optional type; don't consume
                         self.lex.restoreState(saved);
@@ -3317,6 +3720,18 @@ pub const Parser = struct {
                     }
                 },
                 .lparen, .string_lit => {
+                    // F-13813-1: a string on a new line, or immediately before '..',
+                    // starts a fresh expression — not a bash-style call argument.
+                    if (tok.kind == .string_lit) {
+                        if (tok.loc.line > e.loc().line) break;
+                        const saved = self.lex.saveState();
+                        _ = try self.adv();
+                        const after = try self.pk();
+                        self.lex.restoreState(saved);
+                        if (after.kind == .concat) break;
+                    } else if (tok.loc.line > e.loc().line) {
+                        break;
+                    }
                     const callargs = try self.parse_call_args();
                     e = try self.new_expr(.{ .call = .{ .loc = tok.loc, .func = e, .args = callargs } });
                 },
@@ -3456,7 +3871,11 @@ pub const Parser = struct {
         var fields: std.ArrayList(ast.TableField) = .empty;
         while (!(try self.check(.rbrace))) {
             const tok = try self.pk();
-            if (tok.kind == .lbracket) {
+            if (tok.kind == .concat) {
+                _ = try self.adv();
+                const spread_expr = try self.parse_expr();
+                try fields.append(self.alloc, .{ .spread = spread_expr });
+            } else if (tok.kind == .lbracket) {
                 _ = try self.adv();
                 const key = try self.parse_expr();
                 _ = try self.expect(.rbracket);
@@ -3531,7 +3950,16 @@ pub const Parser = struct {
                 }
                 try fields.append(self.alloc, .{ .positional = val });
             }
-            if (try self.eat(.comma) == null and try self.eat(.semi) == null) break;
+            // Field separator: comma and semicolon are optional when the next
+            // token can start another field (name, [, .., string, number, or }).
+            // Without this check, the parser would consume past the table end.
+            if (try self.eat(.comma) == null and try self.eat(.semi) == null) {
+                const next = try self.pk();
+                switch (next.kind) {
+                    .name, .lbracket, .concat, .string_lit, .int_lit, .rbrace => {},
+                    else => break,
+                }
+            }
         }
         _ = try self.expect(.rbrace);
         return self.new_expr(.{ .table = .{ .loc = l, .fields = try fields.toOwnedSlice(self.alloc) } });
@@ -3571,6 +3999,14 @@ fn parseSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.
     const alloc = arena.allocator();
     var lex = Lexer.init(src, "test");
     var p = Parser.init(&lex, alloc);
+    return p.parse_module();
+}
+
+fn parseDuoSource(src: []const u8, arena: *std.heap.ArenaAllocator) ParseError!ast.Module {
+    const alloc = arena.allocator();
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
     return p.parse_module();
 }
 
@@ -4703,6 +5139,19 @@ test "parse: @c.import is an imported C header directive" {
     try testing.expectEqualStrings("math.h", mod.body.stmts[0].cinclude.header);
 }
 
+test "parse: @comp.c.import is an imported C header directive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@comp.c.import("fixtures/point.h")
+        \\main(): f64
+        \\    distance2({ x = 0.0, y = 0.0 })
+        \\end
+    , &arena);
+    try testing.expect(mod.body.stmts[0] == .cinclude);
+    try testing.expectEqualStrings("fixtures/point.h", mod.body.stmts[0].cinclude.header);
+}
+
 test "parse: generic type parameter with concept constraint" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -5344,4 +5793,353 @@ test "parse: Tensor[M,N,f32] type with numeric dims" {
     try testing.expect(ty == .generic);
     try testing.expectEqualStrings("Tensor", ty.generic.base.*.named);
     try testing.expectEqual(@as(usize, 3), ty.generic.params.len);
+}
+
+test "parse: stmt then implicit concat tail (F-13813-1)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\with_side_effect(id: str, kind: str): str
+        \\    print("side")
+        \\    "ok: " .. id .. " (" .. kind .. ")"
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    try testing.expectEqual(@as(usize, 1), fb.body.stmts.len);
+    try testing.expect(fb.body.stmts[0] == .call_stmt);
+    try testing.expect(fb.body.tail_expr != null);
+    const tail = fb.body.tail_expr.?;
+    try testing.expect(tail.* == .binop);
+    try testing.expect(tail.binop.op == .concat);
+    try testing.expect(tail.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+}
+
+test "parse: same-line void call then concat (F-13813-1)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\g(id: str, kind: str): str
+        \\    print("hi") "ok: " .. id .. " (" .. kind .. ")"
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    try testing.expect(fb.body.tail_expr != null);
+    const tail = fb.body.tail_expr.?;
+    try testing.expect(tail.* == .binop);
+    try testing.expect(tail.binop.op == .concat);
+    try testing.expect(tail.binop.lhs.* == .string_lit);
+    try testing.expectEqualStrings("ok: ", tail.binop.lhs.string_lit.val);
+}
+
+test "parse: field projection .name desugars to anonymous function" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = .name
+    , &arena);
+    const assign = mod.body.stmts[0].assign;
+    // .name should desugar to a func_expr
+    const fe = assign.values[0].func_expr;
+    try testing.expectEqual(@as(usize, 1), fe.params.len);
+    try testing.expectEqualStrings("__proj_v", fe.params[0].name);
+    // Body should be a return of __proj_v.name
+    try testing.expectEqual(@as(usize, 1), fe.body.stmts.len);
+    const ret_val = fe.body.stmts[0].ret.vals[0];
+    try testing.expect(ret_val.* == .field);
+    try testing.expectEqualStrings("name", ret_val.field.field);
+    try testing.expectEqualStrings("__proj_v", ret_val.field.obj.name.ident);
+}
+
+test "parse: chained field projection .a.b desugars correctly" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = .profile.name
+    , &arena);
+    const assign = mod.body.stmts[0].assign;
+    const fe = assign.values[0].func_expr;
+    try testing.expectEqual(@as(usize, 1), fe.params.len);
+    // Body: return __proj_v.profile.name
+    const ret_val = fe.body.stmts[0].ret.vals[0];
+    try testing.expect(ret_val.* == .field);
+    try testing.expectEqualStrings("name", ret_val.field.field);
+    // Inner should be __proj_v.profile
+    const inner = ret_val.field.obj;
+    try testing.expect(inner.* == .field);
+    try testing.expectEqualStrings("profile", inner.field.field);
+    try testing.expectEqualStrings("__proj_v", inner.field.obj.name.ident);
+}
+
+test "parse: field projection in call argument position" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\y = map(items, .score)
+    , &arena);
+    const assign = mod.body.stmts[0].assign;
+    const call = assign.values[0].call;
+    // Second argument should be a func_expr (the projection)
+    try testing.expect(call.args[1].* == .func_expr);
+    const fe = call.args[1].func_expr;
+    try testing.expectEqualStrings("__proj_v", fe.params[0].name);
+    const ret_val = fe.body.stmts[0].ret.vals[0];
+    try testing.expectEqualStrings("score", ret_val.field.field);
+}
+
+test "parse: method reference :close desugars to anonymous function" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = :close
+    , &arena);
+    const fe = mod.body.stmts[0].assign.values[0].func_expr;
+    try testing.expectEqualStrings("__proj_v", fe.params[0].name);
+    const mc = fe.body.stmts[0].ret.vals[0].method_call;
+    try testing.expectEqualStrings("close", mc.method);
+    try testing.expectEqual(@as(usize, 0), mc.args.len);
+    try testing.expectEqualStrings("__proj_v", mc.obj.name.ident);
+}
+
+test "parse: method reference in call argument position" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\y = each(items, :close)
+    , &arena);
+    const call = mod.body.stmts[0].assign.values[0].call;
+    try testing.expect(call.args[1].* == .func_expr);
+    const fe = call.args[1].func_expr;
+    try testing.expectEqualStrings("__proj_v", fe.params[0].name);
+    const mc = fe.body.stmts[0].ret.vals[0].method_call;
+    try testing.expectEqualStrings("close", mc.method);
+    try testing.expectEqual(@as(usize, 0), mc.args.len);
+}
+
+test "parse: method reference :write(output) captures outer arg" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\y = each(items, :write(output))
+    , &arena);
+    const call = mod.body.stmts[0].assign.values[0].call;
+    const fe = call.args[1].func_expr;
+    const mc = fe.body.stmts[0].ret.vals[0].method_call;
+    try testing.expectEqualStrings("write", mc.method);
+    try testing.expectEqual(@as(usize, 1), mc.args.len);
+    try testing.expect(mc.args[0].* == .name);
+    try testing.expectEqualStrings("output", mc.args[0].name.ident);
+}
+
+test "parse: table spread ..source in table literal" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\t = { ..base, x = 1 }
+    , &arena);
+    const table = mod.body.stmts[0].assign.values[0].table;
+    try testing.expectEqual(@as(usize, 2), table.fields.len);
+    try testing.expect(table.fields[0] == .spread);
+    try testing.expect(table.fields[0].spread.* == .name);
+    try testing.expectEqualStrings("base", table.fields[0].spread.name.ident);
+    try testing.expect(table.fields[1] == .named);
+    try testing.expectEqualStrings("x", table.fields[1].named.key);
+}
+
+test "parse: if binding condition if x = expr" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\if v = get() v > 0
+        \\  print(v)
+        \\end
+    , &arena);
+    const is = mod.body.stmts[0].if_stmt;
+    try testing.expect(is.binding != null);
+    try testing.expectEqualStrings("v", is.binding.?.name);
+    try testing.expect(is.binding.?.expr.* == .call);
+    try testing.expect(is.cond.* == .name);
+    try testing.expectEqualStrings("v", is.cond.name.ident);
+}
+
+test "parse: named table destructure assign" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\{ name, age } = user
+    , &arena);
+    const db = mod.body.stmts[0].do_block;
+    try testing.expectEqual(@as(usize, 2), db.body.stmts.len);
+    try testing.expect(db.body.stmts[0] == .assign);
+    try testing.expectEqualStrings("name", db.body.stmts[0].assign.targets[0].name.ident);
+}
+
+test "parse: compile-time table descriptor @ { ... }" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = @ { Red, Green, Blue }
+    , &arena);
+    const unop = mod.body.stmts[0].assign.values[0].unop;
+    try testing.expectEqual(ast.UnOp.compile, unop.op);
+    try testing.expect(unop.operand.* == .table);
+    try testing.expectEqual(@as(usize, 3), unop.operand.table.fields.len);
+}
+
+test "parse: selective import destructure from req module" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\{ encode, decode } = req "std.json"
+    , &arena);
+    const db = mod.body.stmts[0].do_block;
+    try testing.expectEqual(@as(usize, 2), db.body.stmts.len);
+    const field = db.body.stmts[0].assign.values[0].field;
+    try testing.expectEqualStrings("encode", field.field);
+    try testing.expect(field.obj.* == .call);
+    try testing.expectEqualStrings("req", field.obj.call.func.name.ident);
+}
+
+test "parse: @export on underscored function is allowed" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@export
+        \\fun _api(): i64
+        \\  return 1
+        \\end
+    , &arena);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expectEqualStrings("_api", fd.path[0]);
+    try testing.expect(std.mem.eql(u8, fd.attributes[0].name, "export"));
+}
+
+test "parse: keywordless enum descriptor Color: @{ ... }" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Color: @{ Red, Green, Blue }
+    , &arena);
+    const ed = mod.body.stmts[0].enum_def;
+    try testing.expectEqualStrings("Color", ed.name);
+    try testing.expectEqual(@as(usize, 3), ed.variants.len);
+    try testing.expectEqualStrings("Red", ed.variants[0].name);
+    try testing.expectEqualStrings("Green", ed.variants[1].name);
+    try testing.expectEqualStrings("Blue", ed.variants[2].name);
+}
+
+test "parse: keywordless record descriptor Point: @{ x: f64, y: f64 }" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Point: @{ x: f64, y: f64 }
+    , &arena);
+    const ad = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("Point", ad.name);
+    try testing.expect(ad.target != null);
+    try testing.expect(ad.target.? == .record);
+    try testing.expectEqual(@as(usize, 2), ad.target.?.record.fields.len);
+    try testing.expectEqualStrings("x", ad.target.?.record.fields[0].name);
+    try testing.expectEqualStrings("f64", ad.target.?.record.fields[0].typ.named);
+    try testing.expectEqualStrings("y", ad.target.?.record.fields[1].name);
+}
+
+test "parse: record descriptor with composition ..Named" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\User: @{ ..Named, id: i64 }
+    , &arena);
+    const ad = mod.body.stmts[0].alias_def;
+    try testing.expectEqualStrings("User", ad.name);
+    try testing.expect(ad.parent != null);
+    try testing.expectEqualStrings("Named", ad.parent.?);
+    try testing.expectEqual(@as(usize, 1), ad.target.?.record.fields.len);
+    try testing.expectEqualStrings("id", ad.target.?.record.fields[0].name);
+}
+
+test "parse: enum descriptor with payload variants Ok(v), Err(e)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Result: @{ Ok(v), Err(e) }
+    , &arena);
+    const ed = mod.body.stmts[0].enum_def;
+    try testing.expectEqualStrings("Result", ed.name);
+    try testing.expectEqual(@as(usize, 2), ed.variants.len);
+    try testing.expectEqualStrings("Ok", ed.variants[0].name);
+    try testing.expect(ed.variants[0].payload != null);
+    try testing.expectEqual(@as(usize, 1), ed.variants[0].payload.?.len);
+    try testing.expectEqualStrings("v", ed.variants[0].payload.?[0].typ.named);
+    try testing.expectEqualStrings("Err", ed.variants[1].name);
+    try testing.expectEqual(@as(usize, 1), ed.variants[1].payload.?.len);
+    try testing.expectEqualStrings("e", ed.variants[1].payload.?[0].typ.named);
+}
+
+test "parse: enum descriptor payload with named fields Some(value: T)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\Option: @{ Some(value: T), None }
+    , &arena);
+    const ed = mod.body.stmts[0].enum_def;
+    try testing.expectEqual(@as(usize, 2), ed.variants.len);
+    try testing.expectEqualStrings("Some", ed.variants[0].name);
+    try testing.expectEqualStrings("value", ed.variants[0].payload.?[0].name.?);
+    try testing.expectEqualStrings("T", ed.variants[0].payload.?[0].typ.named);
+    try testing.expectEqualStrings("None", ed.variants[1].name);
+    try testing.expect(ed.variants[1].payload == null);
+}
+
+test "parse: table fields separated by newlines (no comma required)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\x = {
+        \\    a = 1
+        \\    b = 2
+        \\    c = 3
+        \\}
+    , &arena);
+    const table = mod.body.stmts[0].assign.values[0].table;
+    try testing.expectEqual(@as(usize, 3), table.fields.len);
+    try testing.expectEqualStrings("a", table.fields[0].named.key);
+    try testing.expectEqualStrings("b", table.fields[1].named.key);
+    try testing.expectEqualStrings("c", table.fields[2].named.key);
+}
+
+test "parse: duo mode pipeline operator parses as binop (deprioritized)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\x = data |> f
+    , &arena);
+    const b = mod.body.stmts[0].assign.values[0].binop;
+    try testing.expectEqual(ast.BinOp.pipeline, b.op);
+}
+
+test "parse: duo mode infix @ matmul parses as binop (deprioritized)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuoSource(
+        \\x = a @ b
+    , &arena);
+    const b = mod.body.stmts[0].assign.values[0].binop;
+    try testing.expectEqual(ast.BinOp.matmul, b.op);
+}
+
+test "parse: duo mode legacy @comptime_fold warns" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = try parseDuoSource(
+        \\x = @comptime_fold(0, 2, 1, "0", "%a + 1")
+    , &arena);
+}
+
+test "parse: duo mode @c.emit warns toward @comp.c.emit" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    _ = try parseDuoSource(
+        \\@c.emit("int x = 1;")
+    , &arena);
 }

@@ -1,0 +1,20 @@
+-- Test user-defined @meta.define.derive macro generating code at compile time.
+
+@meta.define.derive("Printable", fun generate(meta) -> str
+  acc = "static char* " .. meta.name .. "_to_string(void* self) {\n"
+  acc = acc .. "  return \"" .. meta.name .. "("
+  for i = 1, #meta.fields
+    f = meta.fields[i]
+    if i > 1 then
+      acc = acc .. ", "
+    end
+    acc = acc .. f.name .. "="
+  end
+  acc = acc .. ")\";\n}\n"
+  acc
+end)
+
+@derive(Printable)
+type Vec2 = { x: f64, y: f64 }
+
+print("User-defined derive test compiled")

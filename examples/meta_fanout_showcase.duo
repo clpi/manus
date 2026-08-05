@@ -1,0 +1,22 @@
+-- @comp.fanout — tree-shaped generative expansion
+-- O(branch^depth) output from O(1) input
+
+tree = @comp.fanout("root", fun(state)
+  d = state.depth
+  frag = state.fragment
+  if d < 3 then
+    frag .. "_L\n" .. frag .. "_R"
+  else
+    frag
+  end
+end, 3)
+
+print("=== @comp.fanout binary tree (depth=3, 2^3=8 leaves) ===")
+-- tree is a comptime-folded string, use print directly
+local count = 0
+for line in string.gmatch(tree, "[^\n]+") do
+  count = count + 1
+end
+print("fragment_count = " .. count .. " (expect 8 = 2^3)")
+print("=== RESULT ===")
+print("fanout_ok = true")

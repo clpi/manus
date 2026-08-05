@@ -1,0 +1,4 @@
+-- Smoke: embedded stdlib module with bare functions + implicit module-scope table.
+mb = req("std.meta.bundles")
+print(mb.describe("Full"))
+print(#mb.names())

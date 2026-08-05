@@ -1,0 +1,44 @@
+contracts = req "std.contracts"
+
+concept ContractShape
+    id: i64
+    fun hash(self, salt: i64): i64
+end
+
+@c.emit([[
+typedef struct UserAdapter {
+    int64_t id;
+    int64_t (*hash)(void* self, int64_t salt);
+} UserAdapter;
+
+static int64_t UserAdapter_hash_impl(void* self, int64_t salt) {
+    return ((UserAdapter*)self)->id + salt;
+}
+
+static UserAdapter duo_user_adapter = { 40, UserAdapter_hash_impl };
+]])
+
+c_report = contracts.concept_target_c_report(
+    "ContractShape",
+    "UserAdapter",
+    "user",
+    "UserAdapter",
+    {
+        { name = "hash", kind = "method", ret = "i64", param_count = 2, params = { "UserAdapter", "i64" } },
+        { name = "id", kind = "field", type = "i64" },
+    }
+)
+
+@c.emit(c_report.c_source)
+
+adapter_id: i64 = @c.emit("UserAdapter_get_id(&duo_user_adapter)")
+adapter_hash: i64 = @c.emit("UserAdapter_hash(&duo_user_adapter, 2)")
+
+if adapter_id ~= 40
+    error("concept adapter getter returned wrong id")
+end
+if adapter_hash ~= 42
+    error("concept adapter method wrapper returned wrong hash")
+end
+
+print("RESULT concept_c_emit_adapter ok")

@@ -174,6 +174,32 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "comp.chain", .internal = "__comptimeeach" },
     .{ .public = "compiler.chain", .internal = "__comptimeeach" },
 
+    // `@comp.match` — compile-time pattern-match codegen (switch/case of codegen)
+    // Splits pattern spec on `|`, calls callback for each alternative with {pattern, index, count}.
+    // One declarative line → N specialized branches. Composes with @comp.each, @comp.burst, etc.
+    .{ .public = "meta.match", .internal = "__comptimematch" },
+    .{ .public = "comp.match", .internal = "__comptimematch" },
+    .{ .public = "compiler.match", .internal = "__comptimematch" },
+
+    // `@comp.tabulate` — compile-time lookup table generator (unrolled loop of codegen)
+    // Calls callback for 0..count-1 with {index, count}, concatenates comma-separated.
+    // O(1) author input → O(count) output. Replaces runtime init with compile-time static.
+    .{ .public = "meta.tabulate", .internal = "__comptimetabulate" },
+    .{ .public = "comp.tabulate", .internal = "__comptimetabulate" },
+    .{ .public = "compiler.tabulate", .internal = "__comptimetabulate" },
+
+    // `@comp.interpolate` — compile-time string interpolation (code template injection)
+    // Takes template with {name} placeholders + {name=value} vars table, substitutes at compile time.
+    .{ .public = "meta.interpolate", .internal = "__comptimeinterpolate" },
+    .{ .public = "comp.interpolate", .internal = "__comptimeinterpolate" },
+    .{ .public = "compiler.interpolate", .internal = "__comptimeinterpolate" },
+
+    // `@comp.zip` — compile-time cartesian zip codegen (quadratic combinator)
+    // Two pipe-separated specs, callback for every (a, b) pair with {a, b, index, count}.
+    .{ .public = "meta.zip", .internal = "__comptimezip" },
+    .{ .public = "comp.zip", .internal = "__comptimezip" },
+    .{ .public = "compiler.zip", .internal = "__comptimezip" },
+
     // ── Type introspection ──
     .{ .public = "meta.type.name", .internal = "__type_name" },
     .{ .public = "comp.type.name", .internal = "__type_name" },
@@ -435,6 +461,11 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.select", .internal = "__select" },
     .{ .public = "comp.select", .internal = "__select" },
     .{ .public = "compiler.select", .internal = "__select" },
+
+    // ── Typeof (type-specifier, not value expression) ──
+    .{ .public = "meta.typeof", .internal = "__typeof" },
+    .{ .public = "comp.typeof", .internal = "__typeof" },
+    .{ .public = "compiler.typeof", .internal = "__typeof" },
 
     // ── Bit intrinsics (bare-name + hierarchy aliases for ergonomics) ──
     .{ .public = "meta.bit.popcount", .internal = "__popcount" },
@@ -782,6 +813,35 @@ pub fn isMetaModuleDirective(name: []const u8) bool {
 
 /// True when an attribute prefix refers to a module-level @meta directive (not expression builtins).
 pub fn isMetaAttribute(name: []const u8) bool {
+    // Expression combinators are NOT declaration attributes — they are
+    // expression-position calls that should be parsed as expr_stmt, not
+    // attributed declarations. G-059: without this exclusion, @comp.match(...)
+    // inside a callback body is misclassified as a declaration attribute.
+    const expression_combinators = [_][]const u8{
+        "comp.match", "meta.match", "compiler.match",
+        "comp.tabulate", "meta.tabulate", "compiler.tabulate",
+        "comp.interpolate", "meta.interpolate", "compiler.interpolate",
+        "comp.zip", "meta.zip", "compiler.zip",
+        "comp.each", "meta.each", "compiler.each",
+        "comp.chain", "meta.chain", "compiler.chain",
+        "comp.map", "meta.map", "compiler.map",
+        "comp.sweep", "meta.sweep", "compiler.sweep",
+        "comp.grammar", "meta.grammar", "compiler.grammar",
+        "comp.template", "meta.template", "compiler.template",
+        "comp.generate", "meta.generate", "compiler.generate",
+        "comp.scheme", "meta.scheme", "compiler.scheme",
+        "comp.scheme.clauses", "meta.scheme.clauses", "compiler.scheme.clauses",
+        "comp.weave", "meta.weave", "compiler.weave",
+        "comp.product", "meta.product", "compiler.product",
+        "comp.power", "meta.power", "compiler.power",
+        "comp.powerset", "meta.powerset", "compiler.powerset",
+        "comp.permute", "meta.permute", "compiler.permute",
+        "comp.choose", "meta.choose", "compiler.choose",
+        "comp.fixpoint", "meta.fixpoint", "compiler.fixpoint",
+    };
+    for (expression_combinators) |expr_name| {
+        if (std.mem.eql(u8, name, expr_name)) return false;
+    }
     return isModuleDirective(name);
 }
 
@@ -895,6 +955,10 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         "comp.powerset",       "comp.derive.power",    "comp.derive.powerset",
         "comp.choose",         "comp.derive.choose",   "comp.permute",
         "comp.derive.permute",
+        "comp.each",           "comp.chain",           "comp.match",
+        "comp.tabulate",
+        "comp.interpolate",
+        "comp.zip",
     };
     for (combinators) |c| {
         if (std.mem.eql(u8, path, c)) return "combinators";

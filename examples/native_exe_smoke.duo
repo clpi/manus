@@ -1,0 +1,7 @@
+@ffi("llabs")
+fun llabs(n: i64): i64
+
+main(): i64
+    base = llabs(-30)
+    base + 12
+end

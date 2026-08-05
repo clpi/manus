@@ -9,6 +9,10 @@ const RT = types.ResolvedType;
 const term = @import("term.zig");
 const directives = @import("directives.zig");
 const debug_trace = @import("debug_trace.zig");
+const semantic_algebra = @import("semantic_algebra.zig");
+const c_sim_import = @import("c_sim_import.zig");
+const foreign_adapter = @import("foreign_adapter.zig");
+const abi_specialize = @import("abi_specialize.zig");
 
 pub const SemaError = error{
     TypeMismatch,
@@ -28,11 +32,17 @@ pub const Symbol = struct {
     is_vararg_rest: bool = false,
     /// If non-null, using this symbol emits a deprecation warning.
     deprecated_msg: ?[]const u8 = null,
-    // Escape analysis fields (populated by analyze_closure_upvalues and checking passes)
+    /// Pass 2: knowledge lattice position derived from `typ` (see `Symbol.knowledge`).
+    /// Escape analysis fields (populated by analyze_closure_upvalues and checking passes)
     escapes: bool = false, // true if variable outlives its scope
     address_taken: bool = false, // true if &var is used or stored in table
     captured_by_closure: bool = false, // true if referenced in a nested function
     assigned_after_init: bool = false, // true if reassigned after declaration
+
+    /// Knowledge lattice position for this binding (Pass 2 convergence).
+    pub fn knowledge(self: Symbol) semantic_algebra.KnowledgeLevel {
+        return semantic_algebra.knowledgeOfType(self.typ);
+    }
 };
 
 fn is_const_attrib(attrib: ?[]const u8) bool {
@@ -62,24 +72,7 @@ fn get_deprecated_msg(attributes: []const ast.Attribute) ?[]const u8 {
 }
 
 fn apply_record_layout_attrs(t: *RT, attributes: []const ast.Attribute) void {
-    if (t.* != .table_type) return;
-    for (attributes) |attr| {
-        if (std.mem.eql(u8, attr.name, "packed")) {
-            t.table_type.is_packed = true;
-        } else if (std.mem.eql(u8, attr.name, "align")) {
-            if (attr.args) |args_str| {
-                t.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
-            }
-        } else if (std.mem.eql(u8, attr.name, "ffi")) {
-            if (attr.args) |args_str| {
-                if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
-                    t.table_type.ffi_name = args_str[1 .. args_str.len - 1];
-                } else {
-                    t.table_type.ffi_name = args_str;
-                }
-            }
-        }
-    }
+    types.applyTableShapeAttrs(t, attributes);
 }
 
 /// Check whether attributes contain @arc(false) and validate the argument.
@@ -152,7 +145,7 @@ pub const Scope = struct {
         try self.maps.items[self.maps.items.len - 1].put(name, sym);
     }
 
-    pub fn lookup(self: *Scope, name: []const u8) ?Symbol {
+    pub fn lookup(self: *const Scope, name: []const u8) ?Symbol {
         var i = self.maps.items.len;
         while (i > 0) {
             i -= 1;
@@ -218,6 +211,8 @@ pub const Sema = struct {
     scope: Scope,
     type_map: TypeMap,
     module_globals: std.StringHashMapUnmanaged(RT) = .{},
+    /// Module-scope Duo bindings retained after `check_module` (Pass 2 lattice queries).
+    module_bindings: std.StringHashMapUnmanaged(Symbol) = .{},
     /// Registry of declared enum types for exhaustiveness checking.
     enum_types: std.StringHashMapUnmanaged(RT) = .{},
     /// Registry of declared concepts for satisfaction checking.
@@ -269,6 +264,12 @@ pub const Sema = struct {
     /// Collected `@build.*` module directives from the current module.
     build_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
     debug_directives: std.ArrayListUnmanaged(ast.Attribute) = .empty,
+    /// Pass 5: Duo source path for resolving `@c.import` header paths.
+    source_path: ?[]const u8 = null,
+    /// Imported C record descriptors keyed by foreign type name (e.g. CPoint).
+    foreign_records: std.StringHashMapUnmanaged(RT) = .{},
+    /// Imported C function descriptors keyed by Duo name (e.g. distance2).
+    foreign_functions: std.StringHashMapUnmanaged(foreign_adapter.ForeignFunc) = .{},
 
     pub const TestEntry = struct {
         func_name: []const u8,
@@ -418,10 +419,28 @@ pub const Sema = struct {
         };
     }
 
+    /// Knowledge lattice position for a checked expression (Pass 2).
+    pub fn exprKnowledge(self: *const Sema, expr: *const ast.Expr) semantic_algebra.KnowledgeLevel {
+        const rt = self.type_map.get(expr) orelse return .unknown;
+        return semantic_algebra.knowledgeOfType(rt);
+    }
+
+    /// Knowledge lattice position for a lexical binding, if defined.
+    pub fn symbolKnowledge(self: *const Sema, name: []const u8) semantic_algebra.KnowledgeLevel {
+        if (self.scope.lookup(name)) |sym| return sym.knowledge();
+        if (self.module_bindings.get(name)) |sym| return sym.knowledge();
+        return .unknown;
+    }
+
     pub fn deinit(self: *Sema) void {
         self.scope.deinit();
         self.type_map.deinit();
         self.module_globals.deinit(self.alloc);
+        var mb_it = self.module_bindings.iterator();
+        while (mb_it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+        }
+        self.module_bindings.deinit(self.alloc);
         self.enum_types.deinit(self.alloc);
         self.concepts.deinit(self.alloc);
         // Clean up overload lists.
@@ -444,6 +463,19 @@ pub const Sema = struct {
             entry.value_ptr.deinit(self.alloc);
         }
         self.table_methods.deinit(self.alloc);
+        var fr_it = self.foreign_records.iterator();
+        while (fr_it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+            releaseForeignRecordRt(self.alloc, entry.value_ptr);
+        }
+        self.foreign_records.deinit(self.alloc);
+        var ff_it = self.foreign_functions.iterator();
+        while (ff_it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+            entry.value_ptr.deinit(self.alloc);
+        }
+        self.foreign_functions.deinit(self.alloc);
+        if (self.source_path) |sp| self.alloc.free(sp);
     }
 
     fn note_global(self: *Sema, name: []const u8, t: RT) !void {
@@ -1219,6 +1251,12 @@ pub const Sema = struct {
         self.debug_directives.clearRetainingCapacity();
         self.alias_defs.clearRetainingCapacity();
         self.generic_func_arities.clearRetainingCapacity();
+        // Pass 5: import foreign declarations from @c.import / @cinclude headers first.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .cinclude) {
+                try self.importForeignHeader(stmt.cinclude.header);
+            }
+        }
         try self.scope.push();
         self.seed_globals();
         // Lua 5.5 scripts use implicit globals at module scope; Duo uses implicit locals.
@@ -1261,15 +1299,101 @@ pub const Sema = struct {
                 else => {},
             }
         }
+        try self.registerForeignScopeNames();
         try self.check_block(&mod.body);
+        if (self.duo_mode) try self.snapshotModuleBindings();
         self.scope.pop();
         if (self.info_enabled and self.instantiation_sites.items.len > 0) {
             term.infoMsg("recorded {d} generic instantiation site(s) for monomorphization", .{self.instantiation_sites.items.len});
         }
     }
 
+    fn registerForeignScopeNames(self: *Sema) !void {
+        var rit = self.foreign_records.iterator();
+        while (rit.next()) |entry| {
+            try self.scope.define(entry.key_ptr.*, .{
+                .typ = entry.value_ptr.*,
+                .is_const = true,
+            });
+        }
+        var fit = self.foreign_functions.iterator();
+        while (fit.next()) |entry| {
+            const ff = entry.value_ptr.*;
+            const ret_ptr = try self.alloc.create(RT);
+            ret_ptr.* = ff.ret;
+            const params = try self.alloc.dupe(RT, ff.params);
+            const fn_type = RT{
+                .func = .{
+                    .params = params,
+                    .ret = ret_ptr,
+                    .is_native = true,
+                },
+            };
+            try self.scope.define(entry.key_ptr.*, .{ .typ = fn_type, .is_const = true });
+        }
+    }
+
+    fn importForeignHeader(self: *Sema, header: []const u8) !void {
+        var threaded = std.Io.Threaded.init(self.alloc, .{});
+        const resolved = try foreign_adapter.resolveHeaderPath(self.alloc, threaded.io(), self.source_path, header);
+        defer self.alloc.free(resolved);
+        const cwd = std.Io.Dir.cwd();
+        const src = std.Io.Dir.readFileAlloc(cwd, threaded.io(), resolved, self.alloc, .unlimited) catch {
+            debug_trace.event(.sema, .module, "foreign header not found: {s}", .{resolved});
+            return;
+        };
+        defer self.alloc.free(src);
+        var snap = try c_sim_import.importHeaderSource(self.alloc, resolved, src);
+        defer snap.deinit(self.alloc);
+        try abi_specialize.specializeSnapshot(self.alloc, &snap);
+        var module = try foreign_adapter.adaptSnapshot(self.alloc, &snap);
+        errdefer module.deinit(self.alloc);
+
+        var rit = module.records.iterator();
+        while (rit.next()) |entry| {
+            const name = try self.alloc.dupe(u8, entry.key_ptr.*);
+            const gop = try self.foreign_records.getOrPut(self.alloc, name);
+            if (gop.found_existing) {
+                releaseForeignRecordRt(self.alloc, gop.value_ptr);
+                self.alloc.free(name);
+            } else {
+                gop.key_ptr.* = name;
+            }
+            gop.value_ptr.* = entry.value_ptr.*;
+        }
+        var fit = module.functions.iterator();
+        while (fit.next()) |entry| {
+            const name = try self.alloc.dupe(u8, entry.key_ptr.*);
+            const gop = try self.foreign_functions.getOrPut(self.alloc, name);
+            if (gop.found_existing) {
+                gop.value_ptr.deinit(self.alloc);
+                self.alloc.free(name);
+            } else {
+                gop.key_ptr.* = name;
+            }
+            gop.value_ptr.* = entry.value_ptr.*;
+        }
+        module.records = .empty;
+        module.functions = .empty;
+        module.deinit(self.alloc);
+    }
+
     fn seed_globals(self: *Sema) void {
-        const names = [_][]const u8{
+        const names = seedGlobalNames();
+        for (names) |n| {
+            self.scope.define(n, .{ .typ = .any, .is_const = true }) catch {};
+        }
+    }
+
+    fn isSeedGlobal(name: []const u8) bool {
+        for (seedGlobalNames()) |n| {
+            if (std.mem.eql(u8, n, name)) return true;
+        }
+        return false;
+    }
+
+    fn seedGlobalNames() []const []const u8 {
+        return &[_][]const u8{
             "print",        "math",      "string",   "table",    "io",       "os",
             "package",      "coroutine", "utf8",     "debug",    "jit",      "ffi",
             "ipairs",       "pairs",     "tostring", "tonumber", "type",     "error",
@@ -1278,8 +1402,17 @@ pub const Sema = struct {
             "select",       "unpack",    "load",     "loadfile", "dofile",   "collectgarbage",
             "warn",         "_VERSION",
         };
-        for (names) |n| {
-            self.scope.define(n, .{ .typ = .any, .is_const = true }) catch {};
+    }
+
+    fn snapshotModuleBindings(self: *Sema) !void {
+        self.module_bindings.clearRetainingCapacity();
+        if (self.scope.maps.items.len == 0) return;
+        const top = &self.scope.maps.items[self.scope.maps.items.len - 1];
+        var it = top.iterator();
+        while (it.next()) |entry| {
+            if (isSeedGlobal(entry.key_ptr.*)) continue;
+            const name = try self.alloc.dupe(u8, entry.key_ptr.*);
+            try self.module_bindings.put(self.alloc, name, entry.value_ptr.*);
         }
     }
 
@@ -1671,6 +1804,12 @@ pub const Sema = struct {
                 }
             },
             .if_stmt => |*is| {
+                if (is.binding) |b| {
+                    _ = try self.check_expr(b.expr);
+                    try self.scope.push();
+                    defer self.scope.pop();
+                    try self.scope.define(b.name, .{ .typ = .any, .is_const = false });
+                }
                 _ = try self.check_expr(is.cond);
                 try self.check_block(&is.then);
                 for (is.elseifs) |*ei| {
@@ -1849,6 +1988,7 @@ pub const Sema = struct {
             .ret = ret_ptr,
             .is_native = all_typed and !has_vararg,
             .has_vararg = has_vararg,
+            .is_compile_only = fb.is_compile_only,
         } };
     }
 
@@ -1888,6 +2028,7 @@ pub const Sema = struct {
                     }
                 },
                 .positional => {},
+                .spread => |sp| _ = self.check_expr(sp) catch {},
             }
         }
     }
@@ -2025,6 +2166,13 @@ pub const Sema = struct {
                         return .i64;
                     }
                     if (std.mem.eql(u8, bn, "__typeinfo")) return .str;
+                    if (std.mem.eql(u8, bn, "__type_shape")) return .str;
+                    if (std.mem.eql(u8, bn, "__why_shape")) return .str;
+                    if (std.mem.eql(u8, bn, "__why")) return .str;
+                    if (std.mem.eql(u8, bn, "__origin")) return .str;
+                    if (std.mem.eql(u8, bn, "__why_boxed")) return .str;
+                    if (std.mem.eql(u8, bn, "__why_not_native")) return .str;
+                    if (std.mem.eql(u8, bn, "__representation")) return .str;
                     if (std.mem.eql(u8, bn, "__typeof")) return .str;
                     if (std.mem.eql(u8, bn, "__metaladder") or
                         std.mem.eql(u8, bn, "__metacatalog") or
@@ -2034,13 +2182,25 @@ pub const Sema = struct {
                         std.mem.eql(u8, bn, "__metaagentdedupe") or
                         std.mem.eql(u8, bn, "__metaagentgaps") or
                         std.mem.eql(u8, bn, "__metaagentgrammar") or
+                        std.mem.eql(u8, bn, "__metaagentmultiplier") or
                         std.mem.eql(u8, bn, "__moduletypenames") or
                         std.mem.eql(u8, bn, "__concepttypenames") or
                         std.mem.eql(u8, bn, "__comptimemap") or
                         std.mem.eql(u8, bn, "__comptimeeach") or
+                        std.mem.eql(u8, bn, "__comptimematch") or
+                        std.mem.eql(u8, bn, "__comptimetabulate") or
+                        std.mem.eql(u8, bn, "__comptimeinterpolate") or
+                        std.mem.eql(u8, bn, "__comptimefixpoint") or
+                        std.mem.eql(u8, bn, "__comptimeproduct") or
+                        std.mem.eql(u8, bn, "__comptimetensor") or
+                        std.mem.eql(u8, bn, "__comptimenfold") or
                         std.mem.eql(u8, bn, "__comptimepower") or
                         std.mem.eql(u8, bn, "__comptimepermute") or
                         std.mem.eql(u8, bn, "__comptimechoose") or
+                        std.mem.eql(u8, bn, "__comptimezip") or
+                        std.mem.eql(u8, bn, "__metatranscend") or
+                        std.mem.eql(u8, bn, "__metainfinity") or
+                        std.mem.eql(u8, bn, "__metahyper") or
                         std.mem.eql(u8, bn, "__metagrammar") or
                         std.mem.eql(u8, bn, "__metaweave") or
                         std.mem.eql(u8, bn, "__metatemplate") or
@@ -2049,16 +2209,23 @@ pub const Sema = struct {
                         std.mem.eql(u8, bn, "__metaschemeclauses") or
                         std.mem.eql(u8, bn, "__derivechoose") or
                         std.mem.eql(u8, bn, "__derivepower") or
+                        std.mem.eql(u8, bn, "__deriveproduct") or
                         std.mem.eql(u8, bn, "__rewrite_describe"))
                     {
                         return .str;
                     }
-                    if (std.mem.eql(u8, bn, "__strcontains")) return .bool;
+                    if (std.mem.eql(u8, bn, "__strcontains") or
+                        std.mem.eql(u8, bn, "__strstartswith") or
+                        std.mem.eql(u8, bn, "__strendswith") or
+                        std.mem.eql(u8, bn, "__streq"))
+                        return .bool;
                     if (std.mem.eql(u8, bn, "__strcountlines") or
                         std.mem.eql(u8, bn, "__strsplitcount") or
+                        std.mem.eql(u8, bn, "__strcomptelen") or
                         std.mem.eql(u8, bn, "__concept_count") or
                         std.mem.eql(u8, bn, "__rewrite_rulecount"))
                         return .i64;
+                    if (std.mem.eql(u8, bn, "__strjoin")) return .str;
                     if (std.mem.eql(u8, bn, "__fields")) return .any;
                     if (std.mem.eql(u8, bn, "__emit")) return .any;
                     if (std.mem.eql(u8, bn, "__c_call")) return .any;
@@ -2185,6 +2352,9 @@ pub const Sema = struct {
                     }
                 }
                 const ft = try self.check_expr(c.func);
+                if (ft == .func and ft.func.is_compile_only) {
+                    self.err(c.loc, "function is marked @comp.compile.only and cannot be called at runtime", .{});
+                }
                 for (c.args) |arg| _ = try self.check_expr(arg);
 
                 // Track metatable associations for compile-time method resolution
@@ -2345,6 +2515,9 @@ pub const Sema = struct {
                         },
                         .positional => |p| {
                             _ = try self.check_expr(p);
+                        },
+                        .spread => |sp| {
+                            _ = try self.check_expr(sp);
                         },
                     }
                 }
@@ -2604,6 +2777,9 @@ pub const Sema = struct {
                         .positional => |pos| {
                             if (expr_has_func_expr(pos)) return true;
                         },
+                        .spread => |sp| {
+                            if (expr_has_func_expr(sp)) return true;
+                        },
                     }
                 }
                 return false;
@@ -2852,6 +3028,7 @@ pub const Sema = struct {
                         },
                         .named => |nmd| try collect_upvalue_names_expr(nmd.val, params, body_locals, names, flags, sema),
                         .positional => |pos| try collect_upvalue_names_expr(pos, params, body_locals, names, flags, sema),
+                        .spread => |sp| try collect_upvalue_names_expr(sp, params, body_locals, names, flags, sema),
                     }
                 }
             },
@@ -2910,6 +3087,7 @@ pub const Sema = struct {
             param_types[i] = try self.resolve_type(p.typ);
         }
         var ret_t = try self.resolve_type(fb.ret_type);
+        directives.applyMlFuncAttrs(fd.attributes, fb);
 
         // Register the function before checking the body so recursive calls type-check.
         const ret_ptr = try self.alloc.create(RT);
@@ -2919,6 +3097,7 @@ pub const Sema = struct {
             .ret = ret_ptr,
             .is_native = fb.is_typed and !has_vararg,
             .has_vararg = has_vararg,
+            .is_compile_only = fb.is_compile_only,
         } };
         if (fd.path.len == 1 and !fd.method) {
             const name = fd.path[0];
@@ -2974,8 +3153,6 @@ pub const Sema = struct {
             }
             if (!dup) try gop.value_ptr.append(self.alloc, method_name);
         }
-
-        directives.applyMlFuncAttrs(fd.attributes, fb);
 
         if (directives.attrsHaveDebug(fd.attributes)) {
             debug_trace.pushDepth();
@@ -3139,7 +3316,7 @@ pub const Sema = struct {
             .params = param_types,
             .ret = ret_ptr,
             .is_native = fb.is_typed,
-            .has_vararg = has_vararg,
+            .is_compile_only = fb.is_compile_only,
         } };
         if (fd.path.len == 1 and !fd.method) {
             const name = fd.path[0];
@@ -3576,6 +3753,7 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
+                .spread => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
                 try fields.append(self.alloc, .{ .name = name, .typ = .any });
@@ -3593,6 +3771,7 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
+                .spread => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
                 try methods.append(self.alloc, .{ .name = name, .param_count = 0, .ret_type = .any });
@@ -4100,7 +4279,11 @@ pub const Sema = struct {
             for (wl.body.stmts) |*s| {
                 if (s.* != .assign) continue;
                 const as = s.assign;
-                for (as.targets, as.values) |tgt, val| {
+                const n = @min(as.targets.len, as.values.len);
+                var ii: usize = 0;
+                while (ii < n) : (ii += 1) {
+                    const tgt = as.targets[ii];
+                    const val = as.values[ii];
                     if (dense_table_assign_poly(tgt, val, tname, idx_name, &consts)) |poly| {
                         loop_table_assigns += 1;
                         loop_poly_fill = poly;
@@ -4778,7 +4961,7 @@ pub const Sema = struct {
     }
 
     fn detect_table_lookup_sum(fb: *ast.FuncBody) bool {
-        if (fb.params.len != 1 or !fb.use_dense_table) return false;
+        if (fb.params.len != 1) return false;
         var has_mul3_fill = false;
         var has_mod7_lookup = false;
 
@@ -4801,6 +4984,20 @@ pub const Sema = struct {
                                 {
                                     has_mul3.* = true;
                                 }
+                            }
+                            const n = @min(as.targets.len, as.values.len);
+                            var i: usize = 0;
+                            while (i < n) : (i += 1) {
+                                const tgt = as.targets[i];
+                                const val = as.values[i];
+                                if (tgt.* != .name) continue;
+                                if (val.* != .binop or val.binop.op != .add) continue;
+                                const lhs = val.binop.lhs;
+                                if (lhs.* != .binop or lhs.binop.op != .mod) continue;
+                                const mul = lhs.binop.lhs;
+                                if (mul.* != .binop or mul.binop.op != .mul) continue;
+                                if (mul.binop.rhs.* == .int_lit and mul.binop.rhs.int_lit.val == 7)
+                                    has_mod7.* = true;
                             }
                         },
                         .local_decl => |*ld| {
@@ -6130,7 +6327,11 @@ pub const Sema = struct {
                         }
                     }
                     // Check if any value assigned to the table contains float or non-numeric operations
-                    for (as.targets, as.values) |tgt, val| {
+                    const n = @min(as.targets.len, as.values.len);
+                    var j: usize = 0;
+                    while (j < n) : (j += 1) {
+                        const tgt = as.targets[j];
+                        const val = as.values[j];
                         if (tgt.* == .index) {
                             const idx = tgt.index;
                             if (idx.obj.* == .name and std.mem.eql(u8, idx.obj.name.ident, tname_inner)) {
@@ -6168,6 +6369,66 @@ pub const Sema = struct {
         }
     }
 
+    /// Check if a name is known to hold a numeric value at compile time.
+    /// Used by dense_check_non_numeric to decide whether a `.name` index key
+    /// or assigned value is safe for a dense int64_t/double array.
+    /// Returns true for: numeric for-loop variables, integer literal locals,
+    /// and function parameters with numeric type annotations.
+    fn is_known_numeric_name(fb: *const ast.FuncBody, name: []const u8) bool {
+        // Check numeric for-loop variables (i = 1, n)
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* == .num_for) {
+                const nf = stmt.num_for;
+                if (std.mem.eql(u8, nf.var_name, name)) return true;
+            }
+        }
+        // Check function parameters with numeric type annotations
+        for (fb.params) |p| {
+            if (std.mem.eql(u8, p.name, name)) {
+                // Parameters with array/int/float type annotations are numeric
+                if (p.typ == .array) return true;
+                if (p.typ == .named) {
+                    const tn = p.typ.named;
+                    if (std.mem.eql(u8, tn, "int") or
+                        std.mem.eql(u8, tn, "i32") or
+                        std.mem.eql(u8, tn, "i64") or
+                        std.mem.eql(u8, tn, "float") or
+                        std.mem.eql(u8, tn, "double") or
+                        std.mem.eql(u8, tn, "f32") or
+                        std.mem.eql(u8, tn, "f64") or
+                        std.mem.eql(u8, tn, "u32") or
+                        std.mem.eql(u8, tn, "u64")) return true;
+                }
+            }
+        }
+        // Check local declarations with integer/float literal initializers
+        for (fb.body.stmts) |*stmt| {
+            if (stmt.* == .local_decl) {
+                const ld = stmt.local_decl;
+                if (ld.names.len == 1 and ld.inits.len == 1) {
+                    if (std.mem.eql(u8, ld.names[0].ident, name)) {
+                        const init_e = ld.inits[0];
+                        if (init_e.* == .int_lit or init_e.* == .float_lit) return true;
+                        // Arithmetic on known-numeric names is numeric
+                        if (init_e.* == .binop) {
+                            // Conservative: only accept if both sides are names/int/float
+                            // (avoids recursion into unknown calls)
+                            const b = init_e.binop;
+                            if (b.op != .concat) {
+                                const lhs_ok = b.lhs.* == .int_lit or b.lhs.* == .float_lit or
+                                    (b.lhs.* == .name and is_known_numeric_name(fb, b.lhs.name.ident));
+                                const rhs_ok = b.rhs.* == .int_lit or b.rhs.* == .float_lit or
+                                    (b.rhs.* == .name and is_known_numeric_name(fb, b.rhs.name.ident));
+                                if (lhs_ok and rhs_ok) return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     fn dense_check_non_numeric(fb: *const ast.FuncBody, expr: *const ast.Expr, non_numeric_out: *bool) void {
         if (non_numeric_out.*) return;
         switch (expr.*) {
@@ -6176,6 +6437,24 @@ pub const Sema = struct {
             .true_lit => non_numeric_out.* = true,
             .false_lit => non_numeric_out.* = true,
             .nil => non_numeric_out.* = true,
+            // Field access (e.g. `rec.field`) returns an unknown type —
+            // could be a string, table, or any value. G-054: this was
+            // missing, so `seen[t]` where `t = f.members[i].type` (a
+            // string from a field access) was not caught as non-numeric,
+            // causing the empty `{}` table to be misclassified as a
+            // dense int64_t* array.
+            .field => non_numeric_out.* = true,
+            // A bare `.name` could hold any type at runtime. Check if it
+            // is a known numeric loop variable or integer local; if not,
+            // conservatively mark it non-numeric. This is the key fix for
+            // G-054: variables like `t` (assigned from a field access)
+            // were falling through to the `else => {}` case, which
+            // assumed numeric by default.
+            .name => |n| {
+                if (!is_known_numeric_name(fb, n.ident)) {
+                    non_numeric_out.* = true;
+                }
+            },
             .binop => |b| {
                 if (b.op == .concat) {
                     non_numeric_out.* = true;
@@ -7261,6 +7540,13 @@ const testing = std.testing;
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
 
+fn releaseForeignRecordRt(alloc: Allocator, rt: *RT) void {
+    if (rt.* != .table_type) return;
+    for (rt.table_type.fields) |f| alloc.free(f.name);
+    alloc.free(rt.table_type.fields);
+    if (rt.table_type.ffi_name) |n| alloc.free(n);
+}
+
 fn runSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     const alloc = arena.allocator();
     var lex = Lexer.init(src, "test");
@@ -7290,6 +7576,23 @@ test "sema: multiple locals produce no errors" {
     defer arena.deinit();
     const s = try runSema("local a = 1\nlocal b = 2\nlocal c = a + b", &arena);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: symbol knowledge lattice (Pass 2.1)" {
+    const native_sym = Symbol{ .typ = .i64, .is_const = false };
+    try testing.expectEqual(semantic_algebra.KnowledgeLevel.native, native_sym.knowledge());
+    const dynamic_sym = Symbol{ .typ = .any, .is_const = false };
+    try testing.expectEqual(semantic_algebra.KnowledgeLevel.observed, dynamic_sym.knowledge());
+    var fields: [1]types.FieldType = .{.{ .name = "x", .typ = .i64 }};
+    const table_sym = Symbol{
+        .typ = .{ .table_type = .{
+            .fields = fields[0..],
+            .storage_class = .native,
+        } },
+        .is_const = false,
+    };
+    try testing.expect(semantic_algebra.lowersToNativeC(table_sym.typ));
+    try testing.expectEqual(semantic_algebra.KnowledgeLevel.native, table_sym.knowledge());
 }
 
 test "sema: typed function sets is_typed = true" {

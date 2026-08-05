@@ -1,0 +1,42 @@
+-- Exponential pipeline: @meta.pipeline + @meta.map + @meta.derive stacked
+-- Run: duo run examples/exponential_pipeline_showcase.duo
+
+concept HasN
+    n: i64
+end
+
+type CounterA = { n: i64 }
+type CounterB = { n: i64, tag: str }
+
+@meta.define.derive("CountApi", fun generate(meta) -> str
+    "static inline int64_t duo_" .. meta.name .. "_get_n(const duo_" .. meta.name .. "* v) { return v->n; }\n"
+end)
+
+@meta.pipeline({
+    fn = "sum_n",
+    source = "range",
+    start = 1,
+    stop = 101,
+    elem = "int64_t",
+    kind = "reduce",
+    init = "0",
+})
+
+fun registry_line(meta) -> str
+    meta.name .. ";"
+end
+
+@c.emit(@meta.derive("HasN", CountApi))
+
+TYPED = @meta.map("HasN", registry_line)
+DERIVED = @meta.derive("HasN", CountApi)
+
+fun total(): i64
+    @c.call("sum_n")
+end
+
+print("=== exponential pipeline showcase ===")
+print("sum 1..100 = " .. tostring(total()))
+print("typed_sweep = " .. TYPED)
+print("derive_bytes = " .. tostring(#DERIVED))
+print("ok")

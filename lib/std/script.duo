@@ -1,0 +1,351 @@
+-- std.script — Duo-first scripting ergonomics (prefer over bash/python for repo tooling)
+-- Uses built-in os/io (always available) — no nested req from stdlib modules.
+
+fun echo(msg: str): void
+    print(msg)
+end
+
+fun run(cmd: str): i64
+    rc = os.execute(cmd)
+    if rc == nil return -1 end
+    if rc == true return 0 end
+    if tostring(rc) == "0" return 0 end
+    1
+end
+
+fun ok(cmd: str): bool
+    run(cmd) == 0
+end
+
+fun must(cmd: str): void
+    if not ok(cmd)
+        echo("FAIL: " .. cmd)
+        os.exit(1)
+    end
+end
+
+fun lock_cmd(cmd: str): str
+    "./scripts/duo_lock.sh -- " .. cmd
+end
+
+fun lock_cmd_timeout(cmd: str, timeout: i64): str
+    "./scripts/duo_lock.sh --timeout " .. tostring(timeout) .. " -- " .. cmd
+end
+
+fun locked_run(cmd: str): i64
+    if getenv_or("DUO_LOCK_HELD") == "1"
+        return run(cmd)
+    end
+    run(lock_cmd(cmd))
+end
+
+fun locked_ok(cmd: str): bool
+    return locked_run(cmd) == 0
+end
+
+fun locked_must(cmd: str): void
+    must(lock_cmd(cmd))
+end
+
+fun locked_must_timeout(cmd: str, timeout: i64): void
+    must(lock_cmd_timeout(cmd, timeout))
+end
+
+-- Native build mutex (mkdir + stale-PID reclaim). Used by scripts/duo_lock.duo.
+fun build_lock_dir(): str
+    getenv("DUO_BUILD_LOCK", "/tmp/duo-build.lock")
+end
+
+fun build_lock_owner(): str
+    build_lock_dir() .. "/owner"
+end
+
+fun build_lock_try_acquire(): bool
+    ld = build_lock_dir()
+    return @c.emit("mkdir(ld, 0777) == 0")
+end
+
+fun build_lock_write_owner(): void
+    of = build_lock_owner()
+    @c.emit([[({ FILE* f = fopen(of, "w"); if (f) { fprintf(f, "%d %ld\n", (int)getpid(), (long)time(NULL)); fclose(f); } })]])
+end
+
+fun build_lock_stale(): bool
+    of = build_lock_owner()
+    pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
+    if pid_line == "" return true end
+    return run("kill -0 " .. string.gsub(pid_line, "%s+", "") .. " 2>/dev/null") ~= 0
+end
+
+fun build_lock_release(): void
+    ld = build_lock_dir()
+    of = build_lock_owner()
+    os.remove(of)
+    @c.emit("rmdir(ld)")
+end
+
+fun build_lock_acquire(timeout: i64): bool
+    if getenv_or("DUO_LOCK_HELD") == "1"
+        return true
+    end
+    waited = 0
+    while waited < timeout
+        if build_lock_try_acquire()
+            build_lock_write_owner()
+            return true
+        end
+        stale_now = build_lock_stale()
+        ld = build_lock_dir()
+        of = build_lock_owner()
+        cmd = "sleep 2"
+        if stale_now
+            cmd = "rm -f '" .. of .. "' 2>/dev/null; rmdir '" .. ld .. "' 2>/dev/null"
+        end
+        run(cmd)
+        if not stale_now
+            waited = waited + 2
+        end
+    end
+    false
+end
+
+fun capture(cmd: str): str
+    f = io.popen(cmd, "r")
+    if f == nil return "" end
+    out = ""
+    line = f:read()
+    while line ~= nil
+        out = out .. line .. "\n"
+        line = f:read()
+    end
+    f:close()
+    out
+end
+
+fun duo_bin(): str
+    "./zig-out/bin/duo"
+end
+
+fun duo_run(path: str, bin: str): void
+    echo("agent-smoke: duo run " .. path)
+    must(bin .. " run " .. path)
+end
+
+fun duo_run_all(paths: any, bin: str): void
+    for _, path in paths
+        duo_run(path, bin)
+    end
+end
+
+fun zig_build(): void
+    -- When invoked via the build target the duo binary is already fresh; a second
+    -- `zig build` here would just race other agents on .zig-cache. Skip it then.
+    if os.getenv("DUO_ALREADY_BUILT") == "1"
+        echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
+        return
+    end
+    must("zig build")
+end
+
+fun zig_test_file(path: str): void
+    must("zig test " .. path)
+end
+
+-- === Environment ===
+
+fun getenv(name: str, fallback: str): str
+    v = os.getenv(name)
+    if v == nil return fallback end
+    v
+end
+
+fun getenv_or(name: str): str
+    v = os.getenv(name)
+    if v == nil return "" end
+    v
+end
+
+fun env_set(name: str, value: str): void
+    must("export " .. name .. "='" .. value .. "'")
+end
+
+-- === Path manipulation (makes Duo ergonomic vs Python os.path) ===
+
+fun path_join(a: str, b: str): str
+    if a == "" return b end
+    if b == "" return a end
+    sep = "/"
+    if string.sub(a, -1) == sep
+        return a .. b
+    end
+    a .. sep .. b
+end
+
+fun path_basename(p: str): str
+    -- Find last /
+    pos = 0
+    for i = #p, 1, -1
+        if string.sub(p, i, i) == "/"
+            pos = i
+            break
+        end
+    end
+    if pos == 0 return p end
+    string.sub(p, pos + 1)
+end
+
+fun path_dirname(p: str): str
+    pos = 0
+    for i = #p, 1, -1
+        if string.sub(p, i, i) == "/"
+            pos = i
+            break
+        end
+    end
+    if pos == 0 return "." end
+    if pos == 1 return "/" end
+    string.sub(p, 1, pos - 1)
+end
+
+fun path_ext(p: str): str
+    base = path_basename(p)
+    pos = 0
+    for i = #base, 1, -1
+        if string.sub(base, i, i) == "."
+            pos = i
+            break
+        end
+    end
+    if pos == 0 return "" end
+    string.sub(base, pos)
+end
+
+fun path_stem(p: str): str
+    base = path_basename(p)
+    ext = path_ext(base)
+    if ext == "" return base end
+    string.sub(base, 1, #base - #ext)
+end
+
+-- === File system ===
+
+fun fs_exists(p: str): bool
+    f = io.open(p, "r")
+    if f == nil return false end
+    f:close()
+    true
+end
+
+fun fs_read(p: str): str
+    f = io.open(p, "r")
+    if f == nil return "" end
+    content = f:read("*a")
+    f:close()
+    content
+end
+
+fun fs_write(p: str, content: str): void
+    f = io.open(p, "w")
+    if f == nil
+        echo("FAIL: cannot write " .. p)
+        os.exit(1)
+    end
+    f:write(content)
+    f:close()
+end
+
+fun fs_mkdir(p: str): void
+    must("mkdir -p " .. p)
+end
+
+fun fs_glob(pattern: str): str
+    -- Returns newline-separated list of matching files
+    capture("ls -1 " .. pattern .. " 2>/dev/null")
+end
+
+fun fs_tmp(): str
+    capture("mktemp 2>/dev/null")
+end
+
+fun fs_tmpdir(): str
+    capture("mktemp -d 2>/dev/null")
+end
+
+-- === Process piping (makes Duo ergonomic vs bash pipes) ===
+
+fun pipe(cmd1: str, cmd2: str): str
+    capture(cmd1 .. " | " .. cmd2)
+end
+
+fun pipe_ok(cmd1: str, cmd2: str): bool
+    ok(cmd1 .. " | " .. cmd2)
+end
+
+-- === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
+
+fun args(): any
+    raw = capture("echo $@")
+    -- Simple split on space — for complex parsing use std.cli when available
+    parts = {}
+    for word in string.gmatch(raw, "%S+")
+        parts[#parts + 1] = word
+    end
+    parts
+end
+
+fun arg(n: i64, fallback: str): str
+    a = args()
+    if n < 1 or n > #a return fallback end
+    a[n]
+end
+
+-- === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
+
+fun json_read_file(p: str): any
+    s = req("std.json")
+    content = fs_read(p)
+    s.decode(content)
+end
+
+M = {
+    echo = echo,
+    run = run,
+    ok = ok,
+    must = must,
+    lock_cmd = lock_cmd,
+    lock_cmd_timeout = lock_cmd_timeout,
+    locked_run = locked_run,
+    locked_ok = locked_ok,
+    locked_must = locked_must,
+    locked_must_timeout = locked_must_timeout,
+    build_lock_dir = build_lock_dir,
+    build_lock_acquire = build_lock_acquire,
+    build_lock_release = build_lock_release,
+    build_lock_stale = build_lock_stale,
+    capture = capture,
+    duo_bin = duo_bin,
+    duo_run = duo_run,
+    duo_run_all = duo_run_all,
+    zig_build = zig_build,
+    zig_test_file = zig_test_file,
+    getenv = getenv,
+    getenv_or = getenv_or,
+    env_set = env_set,
+    path_join = path_join,
+    path_basename = path_basename,
+    path_dirname = path_dirname,
+    path_ext = path_ext,
+    path_stem = path_stem,
+    fs_exists = fs_exists,
+    fs_read = fs_read,
+    fs_write = fs_write,
+    fs_mkdir = fs_mkdir,
+    fs_glob = fs_glob,
+    fs_tmp = fs_tmp,
+    fs_tmpdir = fs_tmpdir,
+    pipe = pipe,
+    pipe_ok = pipe_ok,
+    args = args,
+    arg = arg,
+    json_read_file = json_read_file,
+}

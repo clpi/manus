@@ -1,0 +1,21 @@
+-- Smoke for Duo-native locked command helpers.
+
+script = req "std.script"
+
+cmd = script.lock_cmd("printf script_lock")
+cmd_timeout = script.lock_cmd_timeout("printf script_lock", 7)
+
+has_lock = cmd == "./scripts/duo_lock.sh -- printf script_lock"
+has_timeout = cmd_timeout == "./scripts/duo_lock.sh --timeout 7 -- printf script_lock"
+ran = script.locked_ok("printf script_lock >/dev/null")
+
+ok = has_lock and has_timeout and ran
+
+print("=== script lock smoke ===")
+print("lock_cmd_ok = " .. tostring(has_lock))
+print("timeout_cmd_ok = " .. tostring(has_timeout))
+print("locked_run_ok = " .. tostring(ran))
+print("RESULT script_lock_ok = " .. tostring(ok))
+if not ok
+    error("script lock smoke failed")
+end

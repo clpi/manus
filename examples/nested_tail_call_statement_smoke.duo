@@ -1,0 +1,24 @@
+-- Smoke: call expressions at the end of nested blocks must not return from the
+-- enclosing function.
+
+fun append_count(): i64
+    t = {}
+    for i = 1, 3 do
+        if i > 0 then
+            table.insert(t, i * 10)
+        end
+    end
+    return #t
+end
+
+fun direct_if_count(): i64
+    t = {}
+    if true then
+        table.insert(t, 7)
+    end
+    return #t
+end
+
+ok = append_count() == 3 and direct_if_count() == 1
+
+print("RESULT nested_tail_call_statement = " .. tostring(ok))

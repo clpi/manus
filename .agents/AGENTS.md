@@ -39,6 +39,10 @@ Every feature must create "discoverability moments" — the feeling when Zig's c
 
 **Exponential combinators (O(1) → O(n^k)):**
 - `@comp.map` / `@comp.sweep` — O(n) type sweep
+- `@comp.match` — O(n) pattern-match codegen (pipe-separated alternatives → N specialized branches)
+- `@comp.tabulate` — O(n) compile-time lookup table generator (unrolled loop of codegen; 0..count-1)
+- `@comp.interpolate` — O(n) compile-time string interpolation (code template injection with {name} placeholders)
+- `@comp.zip` — O(n*m) compile-time cartesian zip (two pipe-separated specs → all pairs)
 - `@comp.product` — O(n²) cartesian product
 - `@comp.tensor` — O(n³) tensor sweep
 - `@comp.nfold` — O(n^k) N-concept sweep

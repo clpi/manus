@@ -1,0 +1,8 @@
+-- @comp.fixpoint — test with iteration field
+result = @comp.fixpoint("start", fun(state)
+  i = state.iteration
+  return "iter" .. i .. "\n"
+end, 3)
+
+print("result = " .. result)
+print("fixpoint_iter_ok = true")

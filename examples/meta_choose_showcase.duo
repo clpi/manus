@@ -1,0 +1,56 @@
+-- @comp.choose — fixed-size combination generation.
+-- O(1) source input produces O(n choose k) fragments without runtime lua_Value output.
+
+concept HasXY
+    x: i64
+    y: i64
+end
+
+type Vec2 = { x: i64, y: i64 }
+type Vec3 = { x: i64, y: i64, z: i64 }
+type Pt = { x: i64, y: i64 }
+type Ray = { x: i64, y: i64, dx: i64, dy: i64 }
+
+fun combo_sig(meta) -> str
+    meta.name .. ";"
+end
+
+CHOOSE2: str = @comp.choose("HasXY", 2, combo_sig)
+CHOOSE3: str = @comp.choose("HasXY", 3, combo_sig)
+
+fun count_semis(s: str): i64
+    n: i64 = 0
+    for i = 1, #s
+        if string.sub(s, i, i) == ";"
+            n = n + 1
+        end
+    end
+    n
+end
+
+fun stamp(frag) -> str
+    "[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "]" .. frag.name .. "\n"
+end
+
+EXPANDED: str = @comp.each(CHOOSE2, stamp)
+
+choose2_count = count_semis(CHOOSE2)
+choose3_count = count_semis(CHOOSE3)
+expanded_count = count_semis(EXPANDED)
+
+has_first_pair = @comp.str.contains(CHOOSE2, "Vec2_Vec3")
+has_last_pair = @comp.str.contains(CHOOSE2, "Pt_Ray")
+has_triple = @comp.str.contains(CHOOSE3, "Vec2_Vec3_Pt")
+ok = choose2_count == 6 and choose3_count == 4 and expanded_count == 0
+    and has_first_pair and has_last_pair and has_triple
+
+print("=== @comp.choose showcase ===")
+print("choose2 = " .. CHOOSE2)
+print("choose3 = " .. CHOOSE3)
+print("expanded = " .. EXPANDED)
+print("choose2 fragments = " .. tostring(choose2_count) .. "  (expect 6 = C(4,2))")
+print("choose3 fragments = " .. tostring(choose3_count) .. "  (expect 4 = C(4,3))")
+print("RESULT choose_ok = " .. tostring(ok))
+if not ok
+    error("choose combinator failed")
+end

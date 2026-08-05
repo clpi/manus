@@ -1,0 +1,16 @@
+-- Self-extending derive: @meta.register.derive inside @meta.define.derive macro body
+-- Run: duo run examples/self_extending_derive.duo
+
+@meta.define.derive("Factory", fun generate(meta) -> str
+  child = "fun generate(meta) -> str return \"static int \" .. meta.name .. \"_magic() { return 42; }\" end"
+  @meta.register.derive(meta.name .. "Kind", child)
+  ""
+end)
+
+@derive(Factory)
+type Point = { x: f64, y: f64 }
+
+@derive(PointKind)
+type Box = { w: f64, h: f64 }
+
+print("Self-extending derive compiled")

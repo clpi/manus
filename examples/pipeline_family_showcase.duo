@@ -1,0 +1,25 @@
+-- @meta.pipeline family: one descriptor emits multiple typed fused kernels
+-- Run: duo run examples/pipeline_family_showcase.duo
+
+@meta.pipeline({
+    name = "sum_family",
+    variants = "sum_i64:int64_t:0 | sum_f64:double:0.0",
+    kind = "reduce",
+})
+
+@c.emit([[
+static const int64_t ints[] = { 1, 2, 3, 4 };
+static const double floats[] = { 1.5, 2.0, 2.5 };
+]])
+
+fun int_sum(): i64
+    @c.call("sum_i64", @(ints), @(4))
+end
+
+fun float_sum(): f64
+    @c.call("sum_f64", @(floats), @(3))
+end
+
+print("=== @meta.pipeline family showcase ===")
+print("sum_i64 = " .. tostring(int_sum()))
+print("sum_f64 = " .. tostring(float_sum()))

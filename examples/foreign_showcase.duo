@@ -1,0 +1,13 @@
+-- Cross-language @foreign transpilation at compile time
+-- Run: duo run examples/foreign_showcase.duo
+
+@foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
+@foreign("python", "def mul(a, b):\n    return a * b")
+@foreign("c", "static inline int64_t sub(int64_t a, int64_t b) { return a - b; }")
+
+fun total(): i64
+    add(10, 20) + mul(3, 4) + sub(100, 50)
+end
+
+print("=== @foreign showcase ===")
+print("result = " .. tostring(total()))

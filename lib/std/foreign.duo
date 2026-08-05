@@ -1,0 +1,119 @@
+-- std.foreign — Cross-Language AST Bridge
+-- Transpile snippets from Python, Rust, Zig, and other languages into C
+-- at compile time via @run, then inject the result with @c.emit.
+--
+-- Usage:
+--   @foreign("zig", "fn add(a: i64, b: i64) i64 { return a + b; }")
+--   @foreign("python", "def add(a, b): return a + b")
+--
+--   local foreign = req "std.foreign"
+--   local c_code = foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
+--   -- c_code = "int64_t add(int64_t a, int64_t b) { return a + b; }"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Zig → C transpilation
+-- ═══════════════════════════════════════════════════════════════
+
+-- zig_to_c: translate common Zig patterns to C.
+-- Returns the C equivalent as a string.
+fun zig_to_c(code: str): str
+    local result = code
+    result = string.gsub(result, ": u64", ": uint64_t")
+    result = string.gsub(result, ": u32", ": uint32_t")
+    result = string.gsub(result, ": u16", ": uint16_t")
+    result = string.gsub(result, ": u8", ": uint8_t")
+    result = string.gsub(result, ": i64", ": int64_t")
+    result = string.gsub(result, ": i32", ": int32_t")
+    result = string.gsub(result, ": i16", ": int16_t")
+    result = string.gsub(result, ": i8", ": int8_t")
+    result = string.gsub(result, ": f64", ": double")
+    result = string.gsub(result, ": f32", ": float")
+    result = string.gsub(result, ": bool", ": int")
+    result = string.gsub(result, ": void", ": void")
+    result = string.gsub(result, "*const [%d+]u8", "const char*")
+    result = string.gsub(result, "*[%d+]u8", "char*")
+    result = string.gsub(result, "*const u8", "const char*")
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Rust → C transpilation
+-- ═══════════════════════════════════════════════════════════════
+
+-- rust_to_c: translate common Rust patterns to C.
+-- Returns the C equivalent as a string.
+fun rust_to_c(code: str): str
+    local result = code
+    result = string.gsub(result, "pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
+    result = string.gsub(result, "fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
+    result = string.gsub(result, ": u64", ": uint64_t")
+    result = string.gsub(result, ": u32", ": uint32_t")
+    result = string.gsub(result, ": u16", ": uint16_t")
+    result = string.gsub(result, ": u8", ": uint8_t")
+    result = string.gsub(result, ": i64", ": int64_t")
+    result = string.gsub(result, ": i32", ": int32_t")
+    result = string.gsub(result, ": i16", ": int16_t")
+    result = string.gsub(result, ": i8", ": int8_t")
+    result = string.gsub(result, ": f64", ": double")
+    result = string.gsub(result, ": f32", ": float")
+    result = string.gsub(result, ": bool", ": int")
+    result = string.gsub(result, ": usize", ": size_t")
+    result = string.gsub(result, ": isize", ": ssize_t")
+    result = string.gsub(result, "&str", "const char*")
+    result = string.gsub(result, "&[%d+]u8", "const uint8_t*")
+    result = string.gsub(result, "*mut u8", "uint8_t*")
+    result
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Python → C helper
+-- ═══════════════════════════════════════════════════════════════
+
+-- python_func: generate a C function declaration from Python-style metadata.
+-- Returns the C function as a string (caller can pass to @c.emit).
+fun python_func(name: str, params: any, body: str, ret_type: str): str
+    local parts = {}
+    parts[#parts + 1] = "/* [foreign.python] " .. name .. " */"
+    parts[#parts + 1] = ret_type .. " " .. name .. "("
+    if #params > 0
+        for i, p in params
+            if i > 1
+                parts[#parts + 1] = ","
+            end
+            if type(p) == "table"
+                parts[#parts + 1] = "    " .. p[2] .. " " .. p[1]
+            else
+                parts[#parts + 1] = "    double " .. p
+            end
+        end
+    else
+        parts[#parts + 1] = "    void"
+    end
+    parts[#parts + 1] = ") {"
+    parts[#parts + 1] = body
+    parts[#parts + 1] = "}"
+    str_join(parts, "\n")
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- String joining helper
+-- ═══════════════════════════════════════════════════════════════
+
+fun str_join(parts: any, sep: str): str
+    local result = ""
+    for i, part in parts
+        if i > 1
+            result = result .. sep
+        end
+        result = result .. part
+    end
+    result
+end
+
+M = {
+    zig_to_c = zig_to_c,
+    rust_to_c = rust_to_c,
+    python_func = python_func,
+    str_join = str_join,
+}
+M

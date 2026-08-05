@@ -1,0 +1,2 @@
+@c.emit("/* raw ok */\n")
+print("done")

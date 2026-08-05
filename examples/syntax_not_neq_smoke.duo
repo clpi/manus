@@ -1,0 +1,9 @@
+-- Smoke: Python-style not and != lower through normal Duo boolean ops.
+
+same = 4 == 4
+different = 4 != 5
+ok = different and not (4 != 4) and not false and same
+
+grade = if ok 1 else 0 end
+
+print("RESULT syntax_not_neq = " .. tostring(grade))

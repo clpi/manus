@@ -1,0 +1,308 @@
+#!/usr/bin/env duo
+global s = req "std.script"
+
+-- Keep compile progress off stdout
+global DUO_BUILD_REPORT = tostring(s.getenv_or("DUO_BUILD_REPORT"))
+if string.len(DUO_BUILD_REPORT) == 0
+    s.env_set("DUO_BUILD_REPORT", "plain")
+end
+
+fun trim(s: str): str
+    if string.sub(s, -1) == "\n" return string.sub(s, 1, #s - 1) end
+    s
+end
+
+global ROOT = trim(s.capture("git rev-parse --show-toplevel"))
+global DUO = tostring(s.getenv_or("DUO"))
+if string.len(DUO) == 0
+    DUO = ROOT .. "/zig-out/bin/duo"
+end
+DUO = "env DUO_BUILD_REPORT=plain " .. DUO
+
+global CC = tostring(s.getenv_or("CC"))
+if string.len(CC) == 0
+    CC = "clang"
+end
+
+global CFLAGS = "-O3 -ffast-math -march=native -flto -fomit-frame-pointer -funroll-loops -ffp-contract=fast -fno-trapping-math -fno-math-errno -ffunction-sections -fdata-sections -Wl,-dead_strip -std=c99 -lm"
+
+global SDKROOT = tostring(s.getenv_or("SDKROOT"))
+if string.len(SDKROOT) == 0
+    SDKROOT = trim(s.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null || true"))
+end
+if string.len(SDKROOT) ~= 0
+    CFLAGS = CFLAGS .. " -isysroot " .. SDKROOT
+end
+
+s.must("cd " .. ROOT .. " && if [ ! -x zig-out/bin/duo ]; then ${ZIG:-zig} build; fi")
+
+BENCH_PARALLEL_COMPILE = s.getenv_or("BENCH_PARALLEL_COMPILE")
+
+-- Compile Lua-flavoured Duo benchmark with PGO
+if BENCH_PARALLEL_COMPILE == "1"
+    s.run("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out &")
+else
+    s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out")
+end
+
+-- Compile reference C benchmark with PGO
+s.must("cd " .. ROOT .. " && " .. CC .. " " .. CFLAGS .. " -fprofile-instr-generate -o /tmp/c_bench_instr.out examples/benchmark_c.c")
+s.run("env LLVM_PROFILE_FILE=/tmp/c_bench.profraw /tmp/c_bench_instr.out > /dev/null 2>&1 || true")
+s.must("xcrun llvm-profdata merge -output=/tmp/c_bench.profdata /tmp/c_bench.profraw")
+
+if BENCH_PARALLEL_COMPILE == "1"
+    s.run("cd " .. ROOT .. " && " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c &")
+    s.run("wait") -- Wait for background jobs
+else
+    s.must("cd " .. ROOT .. " && " .. CC .. " " .. CFLAGS .. " -fprofile-instr-use=/tmp/c_bench.profdata -o /tmp/c_bench.out examples/benchmark_c.c")
+end
+
+-- Compile the .duo mirror
+s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.duo -o /tmp/duo_bench_duo.out")
+
+global BENCHES: i64 = 40
+
+fun extract_times(out: str): table
+    times = {}
+    for line in string.gmatch(out, "([^\n]+)")
+        if string.find(line, "Time") ~= nil
+            for word in string.gmatch(line, "([^%s]+)")
+                num = tonumber(word)
+                if num ~= nil
+                    table.insert(times, num)
+                    break
+                end
+            end
+        end
+    end
+    times
+end
+
+fun extract_results(out: str): table
+    res = {}
+    for line in string.gmatch(out, "([^\n]+)")
+        id, val = string.match(line, "^RESULT%s+([^%s]+)%s+([^%s]+)")
+        if id ~= nil
+            table.insert(res, { id = id, val = val })
+        end
+    end
+    res
+end
+
+fun compare_results(name: str, duo_res: table, c_res: table): bool
+    if #duo_res ~= BENCHES or #c_res ~= BENCHES
+        print("RESULT count mismatch for " .. name .. ": Duo=" .. tostring(#duo_res) .. " C=" .. tostring(#c_res) .. " (expected " .. tostring(BENCHES) .. ")")
+        return false
+    end
+    fail = false
+    for i = 1, BENCHES
+        if duo_res[i].id ~= c_res[i].id
+            print("RESULT mismatch: id order differs (" .. duo_res[i].id .. " vs " .. c_res[i].id .. ")")
+            fail = true
+        else
+            a = duo_res[i].val
+            b = c_res[i].val
+            if a ~= b
+                da = tonumber(a)
+                db = tonumber(b)
+                if da == nil or db == nil
+                    print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
+                    fail = true
+                else
+                    abs_a = math.abs(da)
+                    abs_b = math.abs(db)
+                    if abs_a < 1e-6 and abs_b < 1e-6
+                        if math.abs(abs_a - abs_b) > 1e-12
+                            print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
+                            fail = true
+                        end
+                    else
+                        diff = math.abs(da - db)
+                        base = math.max(abs_a, abs_b)
+                        tol = 1e-9
+                        if base ~= 0
+                            tol = base * 1e-6
+                        end
+                        if tol < 1e-9 then tol = 1e-9 end
+                        if base > 1e6 and tol < 1 then tol = 1 end
+                        if diff > tol
+                            print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
+                            fail = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    not fail
+end
+
+fun _collect_min_times_impl(cmd: str, min_times: table): table
+    runs = 10
+    for i = 1, runs
+        out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
+        times = extract_times(out)
+        for j = 1, #times
+            t = tonumber(times[j])
+            m = tonumber(min_times[j])
+            if m == nil or (t ~= nil and t < m)
+                min_times[j] = t
+            end
+        end
+    end
+    min_times
+end
+
+fun collect_min_times(cmd: str): table
+    _collect_min_times_impl(cmd, {})
+end
+
+fun capture_results(label: str, cmd: str): table
+    status = 0
+    res = {}
+    for attempt = 1, 2
+        out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
+        res = extract_results(out)
+        if #res == BENCHES
+            return res
+        end
+        if attempt == 1
+            s.echo("warning: " .. label .. " produced " .. tostring(#res) .. "/" .. tostring(BENCHES) .. " RESULT rows, retrying...")
+        end
+    end
+    s.echo("error: " .. label .. " produced " .. tostring(#res) .. "/" .. tostring(BENCHES) .. " RESULT rows after retry")
+    os.exit(1)
+    res
+end
+
+print("=== Correctness (RESULT lines) ===")
+duo_bench_res = capture_results("Duo benchmark.lua", "/tmp/duo_bench.out")
+duo_bench_duo_res = capture_results("Duo benchmark.duo", "/tmp/duo_bench_duo.out")
+c_bench_res = capture_results("reference C benchmark", "/tmp/c_bench.out")
+
+RESULT_FAIL = false
+if not compare_results("Duo .lua", duo_bench_res, c_bench_res)
+    RESULT_FAIL = true
+end
+if not compare_results("Duo .duo", duo_bench_duo_res, c_bench_res)
+    RESULT_FAIL = true
+end
+
+if RESULT_FAIL
+    print("")
+    print("Benchmark failed: Duo .lua and .duo results must match reference C.")
+    os.exit(1)
+end
+print("All " .. tostring(BENCHES) .. " benchmark results match reference C for .lua and .duo.")
+
+s.must("cat << 'EOF' > /tmp/timer.c\n#include <sys/time.h>\n#include <lua.h>\n#include <lauxlib.h>\nstatic int l_now(lua_State *L) {\n    struct timeval tv;\n    gettimeofday(&tv, NULL);\n    lua_pushnumber(L, (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0);\n    return 1;\n}\nint luaopen_timer(lua_State *L) {\n    lua_pushcfunction(L, l_now);\n    return 1;\n}\nEOF")
+s.run("clang -shared -undefined dynamic_lookup -o /tmp/timer.so /tmp/timer.c 2>/dev/null || true")
+
+s.must("cd " .. ROOT .. " && sed -E 's/:[ ]*[a-zA-Z0-9_]+//g' examples/benchmark.lua > /tmp/lua_bench.lua")
+s.must("sed -i '' '1i\\\nlocal ok, t = pcall(require, \"timer\"); if ok and type(t) == \"function\" then os.clock = t end\\\n' /tmp/lua_bench.lua")
+
+print("")
+print("=== Duo (Lua AOT) ===")
+DUO_TIMES = collect_min_times("/tmp/duo_bench.out")
+
+print("=== Duo (.duo AOT) ===")
+DUO_FILE_TIMES = collect_min_times("/tmp/duo_bench_duo.out")
+
+print("=== Reference C ===")
+C_TIMES = collect_min_times("/tmp/c_bench.out")
+
+print("=== LuaJIT ===")
+LUAJIT_TIMES = collect_min_times("LUA_CPATH=\"/tmp/?.so;;\" luajit /tmp/lua_bench.lua")
+
+print("=== Lua 5.5 ===")
+LUA55_TIMES = collect_min_times("LUA_CPATH=\"/tmp/?.so;;\" lua /tmp/lua_bench.lua")
+
+RUN_NELUA_BENCH = s.getenv_or("RUN_NELUA_BENCH")
+NELUA_TIMES = {}
+if RUN_NELUA_BENCH == "1" and s.run("command -v nelua >/dev/null 2>&1") == 0
+    print("=== Nelua ===")
+    NELUA_TIMES = collect_min_times("nelua /tmp/lua_bench.lua 2>/dev/null || true")
+else
+    print("=== Nelua (skipped; set RUN_NELUA_BENCH=1 to enable) ===")
+end
+
+global NAMES = {
+    "Fibonacci(40)", "Prime sieve", "Mandelbrot", "Grid matrix", "N-body", "String bytes",
+    "Table array", "Trig sum", "String chain", "String hash", "Math floor/max", "Table max",
+    "Pow/sqrt", "Binary search", "Filter count", "Dot product", "Clamp sum", "Bucket hash",
+    "EMA smooth", "Token count", "Config parse", "Table lookup", "Table churn", "Matrix multiply",
+    "Prefix sum", "GCD reduce", "Collatz sum", "XOR fold", "Ring buffer", "Cond swap",
+    "Ackermann", "Levenshtein", "Sieve", "Fenwick tree", "Interpolation", "Run-length",
+    "Bitcount", "CORDIC sin", "Sparse dot", "Game of Life"
+}
+
+global RESULT_FAIL_FLAG: i64 = 0
+
+FAIL = false
+print("")
+print("══════════════════════════════════════════════════════════════════════════════")
+print("                       Duo Performance Benchmark Suite")
+print("══════════════════════════════════════════════════════════════════════════════")
+print("")
+s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"Benchmark\" \"DuoLua(s)\" \"DuoDuo(s)\" \"C(s)\" \"LuaJIT(s)\" \"Lua5.5(s)\" \"Nelua(s)\" \"Winner\"")
+s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"----------------\" \"------------\" \"------------\" \"------------\" \"------------\" \"------------\" \"------------\" \"--------\"")
+
+for i = 1, BENCHES
+    name = NAMES[i]
+    if name == nil then name = "bench-" .. tostring(i) end
+    
+    d = DUO_TIMES[i]
+    duo_file = DUO_FILE_TIMES[i]
+    c = C_TIMES[i]
+    lj = LUAJIT_TIMES[i]
+    l5 = LUA55_TIMES[i]
+    n = NELUA_TIMES[i]
+    
+    eps = 1e-7
+    if c ~= nil
+        if c > 0 then eps = c * 0.05 end
+        if c < 0.01 and eps < 5e-5 then eps = 5e-5 end
+    end
+    
+    c_wins = 1
+    if d ~= nil and duo_file ~= nil and c ~= nil
+        if (d <= c + eps) and (duo_file <= c + eps)
+            c_wins = 0
+        end
+    end
+    
+    winner = "Duo"
+    if c_wins == 1
+        winner = "C"
+        RESULT_FAIL_FLAG = 1
+    end
+    d_fmt = "N/A"
+    if d ~= nil d_fmt = string.format("%g", d) end
+    
+    duo_file_fmt = "N/A"
+    if duo_file ~= nil duo_file_fmt = string.format("%g", duo_file) end
+    
+    c_fmt = "N/A"
+    if c ~= nil c_fmt = string.format("%g", c) end
+    
+    lj_fmt = "N/A"
+    if lj ~= nil lj_fmt = string.format("%g", lj) end
+    
+    l5_fmt = "N/A"
+    if l5 ~= nil l5_fmt = string.format("%g", l5) end
+    
+    n_fmt = "N/A"
+    if n ~= nil n_fmt = string.format("%g", n) end
+    
+    s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"" .. name .. "\" \"" .. d_fmt .. "\" \"" .. duo_file_fmt .. "\" \"" .. c_fmt .. "\" \"" .. lj_fmt .. "\" \"" .. l5_fmt .. "\" \"" .. n_fmt .. "\" \"" .. winner .. "\"")
+end
+
+if RESULT_FAIL_FLAG == 1
+    print("")
+    print("❌ Benchmark failed: Duo .lua and .duo must beat or tie reference C on every test.")
+    os.exit(1)
+end
+
+print("══════════════════════════════════════════════════════════════════════════════")
+print("✓ All benchmarks: results match and Duo .lua/.duo >= C")
+print("══════════════════════════════════════════════════════════════════════════════")

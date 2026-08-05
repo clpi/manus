@@ -1,0 +1,13 @@
+-- Smoke: missing trailing call args are deterministic nil/default values.
+
+fun missing_any(a, b, c, d): bool
+    d == nil
+end
+
+sum_typed(a: i64, b: i64) -> i64
+    a + b
+end
+
+ok = missing_any(1, 2, 3) and sum_typed(4) == 4
+
+print("RESULT missing_args_nil = " .. tostring(ok))

@@ -1,0 +1,820 @@
+/// Unified transformation engine (Phase 0 stub).
+///
+/// Canonical plan: `docs/semantic_universe.md`
+///
+/// All `@comp.*` combinators should eventually register here with contracts,
+/// budgets, and provenance. Phase 0: catalog + parity metadata + provenance log
+/// stub — dispatch still lives in `codegen.zig` / `meta_codegen.zig` until Phase 2.
+const std = @import("std");
+const meta_module = @import("meta_module.zig");
+const semantic_algebra = @import("semantic_algebra.zig");
+
+pub const BudgetClass = enum {
+    constant,
+    linear,
+    polynomial,
+    exponential,
+    factorial,
+};
+
+pub const OutputKind = enum {
+    native_string,
+    native_int,
+    native_bool,
+    c_fragment,
+    type_set,
+    side_effect,
+};
+
+pub const SiteKind = enum {
+    top_level_assign,
+    nested_callback,
+    block_body,
+    emit_call,
+};
+
+pub const Contract = struct {
+    native_only: bool = true,
+    max_matching_types: ?usize = null,
+    requires_callback: bool = false,
+    /// All evaluation sites must behave identically (G-060 lesson).
+    parity_sites: []const SiteKind = &.{},
+};
+
+/// Pass 7: directive hardness — distinguishes preferences from requirements.
+pub const Hardness = enum {
+    /// Compiler may ignore (e.g. @prefer.inline, @hot).
+    preference,
+    /// Compiler warns when unmet (e.g. @expect.vectorized).
+    expectation,
+    /// Compilation fails when unmet (e.g. @require.noalloc).
+    requirement,
+    /// Programmer asserts a fact; compiler verifies or rejects (e.g. @assert.pure).
+    assertion,
+    /// Compilation fails when a measured/estimated limit is exceeded (e.g. @budget.stack(512)).
+    budget,
+    /// Informational — produces compiler output but doesn't constrain (e.g. @comp.why).
+    query,
+
+    pub fn name(self: Hardness) []const u8 {
+        return @tagName(self);
+    }
+
+    /// True if unmet hardness should produce an error (not just a warning).
+    pub fn isHard(self: Hardness) bool {
+        return self == .requirement or self == .assertion or self == .budget;
+    }
+};
+
+pub const Descriptor = struct {
+    public_name: []const u8,
+    internal_name: []const u8,
+    budget: BudgetClass,
+    output: OutputKind,
+    contract: Contract,
+    /// Minimum knowledge required on inputs (Pass 2 convergence).
+    min_knowledge: semantic_algebra.KnowledgeLevel = .observed,
+    /// Default cost hint for portfolio selection (Pass 2 convergence).
+    cost_hint: semantic_algebra.CostVector = semantic_algebra.CostVector.neutral(),
+    /// Pass 7: how strongly this directive constrains the compiler.
+    hardness: Hardness = .preference,
+};
+
+/// Pass 8: classification of evidence supporting a compiler decision.
+/// Every optimization decision, assumption, and realization selection should
+/// record what KIND of evidence supports it.
+pub const Evidence = enum(u8) {
+    /// Proven from semantic facts alone (always valid).
+    semantic_proof = 0,
+    /// Guarded by a runtime check (valid until guard fails).
+    guarded = 1,
+    /// Static cost estimate from compiler model.
+    static_estimate = 2,
+    /// Target-specific cost model estimate.
+    target_estimate = 3,
+    /// Profile observation from execution.
+    profile = 4,
+    /// Benchmark measurement (explicit, reproducible).
+    benchmark = 5,
+    /// User assertion (programmer claims; compiler may verify).
+    user_assertion = 6,
+    /// Imported from foreign metadata.
+    imported = 7,
+    /// Default heuristic (no specific evidence).
+    heuristic = 8,
+
+    pub fn name(self: Evidence) []const u8 {
+        return @tagName(self);
+    }
+
+    /// Evidence reliability ordering (lower = more reliable).
+    pub fn reliability(self: Evidence) u8 {
+        return @intFromEnum(self);
+    }
+
+    /// True if this evidence is deterministic and reproducible.
+    pub fn isDeterministic(self: Evidence) bool {
+        return self == .semantic_proof or self == .static_estimate or self == .target_estimate;
+    }
+};
+
+pub const ProvenanceEntry = struct {
+    public_name: []const u8,
+    site: SiteKind,
+    inputs_hash: u64,
+    output_hash: u64,
+    /// Pass 8: what evidence supports this transformation outcome.
+    evidence: Evidence = .heuristic,
+};
+
+var provenance_log: std.ArrayListUnmanaged(ProvenanceEntry) = .empty;
+var provenance_enabled: bool = false;
+
+/// Provenance log outlives per-compile arenas; never use the caller's arena for storage.
+const provenance_allocator = std.heap.page_allocator;
+
+pub fn deinitProvenance(_: std.mem.Allocator) void {
+    provenance_log.deinit(provenance_allocator);
+    provenance_log = .empty;
+    provenance_enabled = false;
+}
+
+pub fn setProvenanceEnabled(enabled: bool) void {
+    provenance_enabled = enabled;
+    if (!enabled) provenance_log.clearRetainingCapacity();
+}
+
+pub fn provenanceEntries() []const ProvenanceEntry {
+    return provenance_log.items;
+}
+
+pub fn siteKindName(site: SiteKind) []const u8 {
+    return switch (site) {
+        .top_level_assign => "top_level_assign",
+        .nested_callback => "nested_callback",
+        .block_body => "block_body",
+        .emit_call => "emit_call",
+    };
+}
+
+/// Print provenance log to stderr when `DUO_PROVENANCE=1`.
+pub fn dumpProvenanceSummary(io: std.Io, stderr: std.Io.File) void {
+    const entries = provenanceEntries();
+    if (entries.len == 0) return;
+    var buf: [512]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stderr, io, &buf);
+    fw.interface.print("[duo provenance] {d} transform(s)\n", .{entries.len}) catch return;
+    for (entries) |e| {
+        fw.interface.print(
+            "  {s} @ {s} in={x} out={x}\n",
+            .{ e.public_name, siteKindName(e.site), e.inputs_hash, e.output_hash },
+        ) catch return;
+    }
+    fw.interface.flush() catch {};
+}
+
+/// Map internal codegen/comptime hook names to canonical `comp.*` registry ids.
+pub fn publicNameForInternal(internal: []const u8) ?[]const u8 {
+    const table = [_]struct { []const u8, []const u8 }{
+        .{ "__comptimematch", "comp.match" },
+        .{ "__comptimemap", "comp.map" },
+        .{ "__comptimeeach", "comp.each" },
+        .{ "__comptimetabulate", "comp.tabulate" },
+        .{ "__comptimeinterpolate", "comp.interpolate" },
+        .{ "__comptimepower", "comp.power" },
+        .{ "__derivepower", "comp.derive.power" },
+        .{ "__comptimefixpoint", "comp.fixpoint" },
+        .{ "__comptimeproduct", "comp.product" },
+        .{ "__deriveproduct", "comp.derive.product" },
+        .{ "__comptimezip", "comp.zip" },
+    };
+    for (table) |entry| {
+        if (std.mem.eql(u8, internal, entry[0])) return entry[1];
+    }
+    return null;
+}
+
+var meta_dispatch_strict: ?bool = null;
+
+/// When true, mapped internal hooks without registry contract are rejected at dispatch.
+pub fn setMetaDispatchStrict(enabled: bool) void {
+    meta_dispatch_strict = enabled;
+}
+
+pub fn metaDispatchStrictEnabled() bool {
+    if (meta_dispatch_strict) |v| return v;
+    return false;
+}
+
+/// True when codegen/comptime may invoke a mapped internal meta hook (P6-07 gate).
+pub fn requireMetaDispatchBeforeHook(internal: []const u8) bool {
+    if (publicNameForInternal(internal) == null) return true;
+    if (gateMetaDispatch(internal)) |_| return true;
+    return !metaDispatchStrictEnabled();
+}
+
+/// Unified provenance dispatch for internal meta hooks — single entry from codegen (P6-07).
+pub fn dispatchMetaCombinator(
+    alloc: std.mem.Allocator,
+    internal: []const u8,
+    site: SiteKind,
+    input: []const u8,
+    output: []const u8,
+) void {
+    if (gateMetaDispatch(internal)) |_| {
+        logInternalTransform(alloc, internal, site, input, output);
+    }
+}
+
+/// Log provenance for a tier-1/internal meta hook when registered in the transform catalog.
+pub fn logInternalTransform(
+    alloc: std.mem.Allocator,
+    internal: []const u8,
+    site: SiteKind,
+    input: []const u8,
+    output: []const u8,
+) void {
+    const public_name = publicNameForInternal(internal) orelse return;
+    if (!isRegisteredTransform(public_name)) return;
+    logProvenance(
+        alloc,
+        public_name,
+        site,
+        std.hash.Wyhash.hash(0, input),
+        std.hash.Wyhash.hash(0, output),
+    );
+}
+
+pub fn logProvenance(
+    _: std.mem.Allocator,
+    public_name: []const u8,
+    site: SiteKind,
+    inputs_hash: u64,
+    output_hash: u64,
+) void {
+    if (!provenance_enabled) return;
+    provenance_log.append(provenance_allocator, .{
+        .public_name = public_name,
+        .site = site,
+        .inputs_hash = inputs_hash,
+        .output_hash = output_hash,
+    }) catch {};
+}
+
+/// Tier-1 combinators requiring 3-site parity (top-level, nested callback, block body).
+pub const parity_tier1: []const []const u8 = &.{
+    "comp.match",
+    "comp.map",
+    "comp.power",
+    "comp.derive.power",
+    "comp.fixpoint",
+    "comp.tabulate",
+    "comp.interpolate",
+    "comp.each",
+};
+
+pub fn requiresParityTest(public_name: []const u8) bool {
+    for (parity_tier1) |name| {
+        if (std.mem.eql(u8, name, public_name)) return true;
+    }
+    return false;
+}
+
+/// Declared parity sites for a transform (harness / agent introspection).
+pub fn paritySitesFor(public_name: []const u8) ?[]const SiteKind {
+    const d = descriptor(public_name) orelse return null;
+    return d.contract.parity_sites;
+}
+
+/// Sites observed in the current provenance log for a transform id.
+pub fn provenanceSitesObserved(public_name: []const u8) std.EnumSet(SiteKind) {
+    var seen = std.EnumSet(SiteKind).empty;
+    for (provenanceEntries()) |e| {
+        if (std.mem.eql(u8, e.public_name, public_name)) seen.insert(e.site);
+    }
+    return seen;
+}
+
+/// True when every declared parity site for a tier-1 combinator appears in the log.
+pub fn tier1ParityObserved(public_name: []const u8) bool {
+    if (!requiresParityTest(public_name)) return true;
+    const d = descriptor(public_name) orelse return false;
+    const observed = provenanceSitesObserved(public_name);
+    for (d.contract.parity_sites) |site| {
+        if (!observed.contains(site)) return false;
+    }
+    return true;
+}
+
+/// True when a descriptor declares all three G-061 evaluation sites.
+pub fn parityContractSatisfied(d: Descriptor) bool {
+    if (d.contract.parity_sites.len != 3) return false;
+    var seen = std.EnumSet(SiteKind).empty;
+    for (d.contract.parity_sites) |site| seen.insert(site);
+    return seen.contains(.top_level_assign) and
+        seen.contains(.nested_callback) and
+        seen.contains(.block_body);
+}
+
+/// Gate codegen/comptime dispatch: tier-1 hooks must be registered with native contract.
+pub fn gateMetaDispatch(internal: []const u8) ?Descriptor {
+    const public_name = publicNameForInternal(internal) orelse return null;
+    const d = descriptor(public_name) orelse return null;
+    if (!d.contract.native_only) return null;
+    return d;
+}
+
+/// Introspection transforms with fixed O(1) output (no parity sites required).
+fn shapeIntrospectionDescriptor(public_name: []const u8, internal: []const u8) Descriptor {
+    return .{
+        .public_name = public_name,
+        .internal_name = internal,
+        .budget = .constant,
+        .output = .native_string,
+        .contract = .{
+            .native_only = true,
+            .max_matching_types = null,
+            .requires_callback = false,
+            .parity_sites = &[_]SiteKind{},
+        },
+        .min_knowledge = .observed,
+        .hardness = .query,
+        .cost_hint = blk: {
+            var c = semantic_algebra.CostVector.neutral();
+            c.set(.compile_time, 0.01);
+            break :blk c;
+        },
+    };
+}
+
+fn abiSpecializeDescriptor() Descriptor {
+    return .{
+        .public_name = "abi.specialize",
+        .internal_name = "abi.specialize",
+        .budget = .linear,
+        .output = .c_fragment,
+        .contract = .{
+            .native_only = true,
+            .max_matching_types = null,
+            .requires_callback = false,
+            .parity_sites = &[_]SiteKind{ .emit_call },
+        },
+        .min_knowledge = .stable,
+        .cost_hint = blk: {
+            var c = semantic_algebra.CostVector.neutral();
+            c.set(.compile_time, 0.05);
+            break :blk c;
+        },
+    };
+}
+
+/// Static catalog — grows as combinators migrate to the engine (Phase 2).
+pub fn descriptor(public_name: []const u8) ?Descriptor {
+    if (shapeOpFromTransformId(public_name)) |op| {
+        return shapeTransformDescriptor(public_name, op);
+    }
+    if (callTransformFromId(public_name)) |op| {
+        return callTransformDescriptor(public_name, op);
+    }
+    if (pipelineOpFromTransformId(public_name)) |op| {
+        return pipelineTransformDescriptor(public_name, op);
+    }
+    if (std.mem.eql(u8, public_name, "comp.type.shape") or
+        std.mem.eql(u8, public_name, "comp.shape") or
+        std.mem.eql(u8, public_name, "meta.type.shape") or
+        std.mem.eql(u8, public_name, "meta.shape"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__type_shape";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.why.shape") or
+        std.mem.eql(u8, public_name, "meta.why.shape"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__why_shape";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.why.boxed") or
+        std.mem.eql(u8, public_name, "meta.why.boxed"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__why_boxed";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.why.not.native") or
+        std.mem.eql(u8, public_name, "meta.why.not.native"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__why_not_native";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.representation") or
+        std.mem.eql(u8, public_name, "meta.representation"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__representation";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.why") or std.mem.eql(u8, public_name, "meta.why"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__why";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.origin") or std.mem.eql(u8, public_name, "meta.origin"))
+    {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__origin";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "abi.specialize")) {
+        return abiSpecializeDescriptor();
+    }
+    const internal = meta_module.resolveBuiltin(public_name) orelse return null;
+    const budget: BudgetClass = blk: {
+        if (std.mem.endsWith(u8, public_name, ".permute")) break :blk .factorial;
+        if (std.mem.endsWith(u8, public_name, ".power") or
+            std.mem.endsWith(u8, public_name, ".powerset") or
+            std.mem.endsWith(u8, public_name, ".derive.power"))
+            break :blk .exponential;
+        if (std.mem.endsWith(u8, public_name, ".product") or
+            std.mem.endsWith(u8, public_name, ".tensor") or
+            std.mem.endsWith(u8, public_name, ".nfold"))
+            break :blk .polynomial;
+        break :blk .linear;
+    };
+    const max_types: ?usize = if (budget == .exponential) 24 else null;
+    const needs_cb = std.mem.endsWith(u8, public_name, ".match") or
+        std.mem.endsWith(u8, public_name, ".map") or
+        std.mem.endsWith(u8, public_name, ".tabulate") or
+        std.mem.endsWith(u8, public_name, ".fixpoint") or
+        std.mem.endsWith(u8, public_name, ".power") or
+        std.mem.endsWith(u8, public_name, ".each") or
+        std.mem.endsWith(u8, public_name, ".interpolate");
+    const parity = if (requiresParityTest(public_name))
+        &[_]SiteKind{ .top_level_assign, .nested_callback, .block_body }
+    else
+        &[_]SiteKind{};
+    return .{
+        .public_name = public_name,
+        .internal_name = internal,
+        .budget = budget,
+        .output = .native_string,
+        .contract = .{
+            .native_only = true,
+            .max_matching_types = max_types,
+            .requires_callback = needs_cb,
+            .parity_sites = parity,
+        },
+    };
+}
+
+pub fn isRegisteredTransform(public_name: []const u8) bool {
+    return descriptor(public_name) != null;
+}
+
+/// True for Pass 2 shape algebra transforms (`shape.seal`, `shape.lift`, …).
+pub fn isShapeTransform(public_name: []const u8) bool {
+    return shapeOpFromTransformId(public_name) != null;
+}
+
+/// True for Pass 2 pipeline algebra transforms (`pipeline.map`, `pipeline.fuse`, …).
+pub fn isPipelineTransform(public_name: []const u8) bool {
+    inline for (@typeInfo(semantic_algebra.PipelineOp).@"enum".field_values) |value| {
+        const op: semantic_algebra.PipelineOp = @enumFromInt(value);
+        if (std.mem.eql(u8, public_name, semantic_algebra.pipelineTransformId(op))) return true;
+    }
+    return false;
+}
+
+/// True for Pass 2 call algebra transforms (`call.inline`, `call.specialize`, …).
+pub fn isCallTransform(public_name: []const u8) bool {
+    return callTransformFromId(public_name) != null;
+}
+
+/// True for Pass 5 cross-language ABI transforms (`abi.specialize`, …).
+pub fn isAbiTransform(public_name: []const u8) bool {
+    return std.mem.eql(u8, public_name, "abi.specialize");
+}
+
+fn shapeOpFromTransformId(public_name: []const u8) ?semantic_algebra.ShapeOp {
+    return semantic_algebra.shapeOpFromTransformId(public_name);
+}
+
+fn callTransformFromId(public_name: []const u8) ?semantic_algebra.CallTransform {
+    return semantic_algebra.callTransformFromId(public_name);
+}
+
+fn pipelineOpFromTransformId(public_name: []const u8) ?semantic_algebra.PipelineOp {
+    inline for (@typeInfo(semantic_algebra.PipelineOp).@"enum".field_names, @typeInfo(semantic_algebra.PipelineOp).@"enum".field_values) |_, value| {
+        const op: semantic_algebra.PipelineOp = @enumFromInt(value);
+        if (std.mem.eql(u8, public_name, semantic_algebra.pipelineTransformId(op))) return op;
+    }
+    return null;
+}
+
+fn pipelineTransformDescriptor(public_name: []const u8, op: semantic_algebra.PipelineOp) Descriptor {
+    _ = op;
+    return .{
+        .public_name = public_name,
+        .internal_name = public_name,
+        .budget = .linear,
+        .output = .c_fragment,
+        .contract = .{
+            .native_only = false,
+            .max_matching_types = null,
+            .requires_callback = false,
+            .parity_sites = &[_]SiteKind{},
+        },
+        .min_knowledge = .observed,
+        .cost_hint = blk: {
+            var c = semantic_algebra.CostVector.neutral();
+            c.set(.compile_time, 0.05);
+            break :blk c;
+        },
+    };
+}
+
+fn shapeTransformDescriptor(public_name: []const u8, op: semantic_algebra.ShapeOp) Descriptor {
+    return .{
+        .public_name = public_name,
+        .internal_name = public_name,
+        .budget = .constant,
+        .output = .c_fragment,
+        .contract = .{
+            .native_only = true,
+            .max_matching_types = null,
+            .requires_callback = false,
+            .parity_sites = &[_]SiteKind{},
+        },
+        .min_knowledge = shapeTransformMinKnowledge(op),
+        .cost_hint = blk: {
+            var c = semantic_algebra.CostVector.neutral();
+            c.set(.compile_time, 0.05);
+            break :blk c;
+        },
+    };
+}
+
+fn shapeTransformMinKnowledge(op: semantic_algebra.ShapeOp) semantic_algebra.KnowledgeLevel {
+    return switch (op) {
+        .lower, .specialize => .at_comptime,
+        .lift => .observed,
+        else => .observed,
+    };
+}
+
+fn callTransformDescriptor(public_name: []const u8, op: semantic_algebra.CallTransform) Descriptor {
+    const budget: BudgetClass = switch (op) {
+        .memo => .constant,
+        .@"inline", .specialize, .devirtualize => .linear,
+        .gpu_lower, .simd_lower => .polynomial,
+    };
+    const min_k: semantic_algebra.KnowledgeLevel = switch (op) {
+        .memo => .at_comptime,
+        .@"inline", .specialize, .devirtualize => .stable,
+        .gpu_lower, .simd_lower => .native,
+    };
+    return .{
+        .public_name = public_name,
+        .internal_name = public_name,
+        .budget = budget,
+        .output = .c_fragment,
+        .contract = .{
+            .native_only = true,
+            .max_matching_types = null,
+            .requires_callback = false,
+            .parity_sites = &[_]SiteKind{ .emit_call },
+        },
+        .min_knowledge = min_k,
+        .cost_hint = blk: {
+            var c = semantic_algebra.CostVector.neutral();
+            c.set(.compile_time, switch (op) {
+                .memo => 0.02,
+                .@"inline" => 0.05,
+                .specialize => 0.1,
+                .devirtualize => 0.08,
+                .gpu_lower, .simd_lower => 0.2,
+            });
+            c.set(.latency, switch (op) {
+                .memo, .@"inline", .specialize, .devirtualize => -0.1,
+                .gpu_lower, .simd_lower => -0.3,
+            });
+            break :blk c;
+        },
+    };
+}
+
+/// Expression-position `@comp.*` must NOT parse as block `.directive` (G-060).
+pub fn mustParseAsExpression(public_name: []const u8) bool {
+    if (meta_module.resolveBuiltin(public_name) != null) {
+        return !meta_module.isMetaAttribute(public_name);
+    }
+    return false;
+}
+
+test "transform_engine: derive.power registered with exponential budget" {
+    const d = descriptor("comp.derive.power") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.exponential, d.budget);
+    try std.testing.expectEqual(@as(?usize, 24), d.contract.max_matching_types);
+    try std.testing.expect(requiresParityTest("comp.derive.power"));
+}
+
+test "transform_engine: derive.power must parse as expression in blocks" {
+    try std.testing.expect(mustParseAsExpression("comp.derive.power"));
+    try std.testing.expect(!meta_module.isMetaAttribute("comp.derive.power"));
+}
+
+test "transform_engine: define.derive remains module directive" {
+    try std.testing.expect(meta_module.isMetaAttribute("comp.define.derive"));
+    try std.testing.expect(!mustParseAsExpression("comp.define.derive"));
+}
+
+test "transform_engine: internal hook maps to tier-1 public name" {
+    try std.testing.expectEqualStrings("comp.match", publicNameForInternal("__comptimematch").?);
+    try std.testing.expectEqualStrings("comp.map", publicNameForInternal("__comptimemap").?);
+    try std.testing.expect(isRegisteredTransform("comp.match"));
+    try std.testing.expect(requiresParityTest("comp.match"));
+}
+
+test "transform_engine: provenance log" {
+    const alloc = std.testing.allocator;
+    defer deinitProvenance(alloc);
+    setProvenanceEnabled(true);
+    logProvenance(alloc, "comp.match", .nested_callback, 1, 2);
+    try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
+    try std.testing.expectEqualStrings("comp.match", provenanceEntries()[0].public_name);
+}
+
+test "transform_engine: comp.shape registered as constant introspection" {
+    const d = descriptor("comp.shape") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.constant, d.budget);
+    try std.testing.expectEqual(OutputKind.native_string, d.output);
+    try std.testing.expect(d.contract.native_only);
+    try std.testing.expect(!requiresParityTest("comp.shape"));
+}
+
+test "transform_engine: comp.type.shape registered as constant introspection" {
+    const d = descriptor("comp.type.shape") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.constant, d.budget);
+    try std.testing.expectEqualStrings("__type_shape", d.internal_name);
+}
+
+test "transform_engine: comp.why.boxed registered as constant introspection" {
+    const d = descriptor("comp.why.boxed") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.constant, d.budget);
+    try std.testing.expectEqualStrings("__why_boxed", d.internal_name);
+}
+
+test "transform_engine: comp.representation registered as constant introspection" {
+    const d = descriptor("comp.representation") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.constant, d.budget);
+    try std.testing.expectEqualStrings("__representation", d.internal_name);
+}
+
+test "transform_engine: comp.why.shape registered as constant introspection" {
+    const d = descriptor("comp.why.shape") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.constant, d.budget);
+    try std.testing.expectEqualStrings("__why_shape", d.internal_name);
+    try std.testing.expectEqual(semantic_algebra.KnowledgeLevel.observed, d.min_knowledge);
+}
+
+test "transform_engine: shape.seal registered as shape algebra transform" {
+    const d = descriptor("shape.seal") orelse return error.TestExpectedEqual;
+    try std.testing.expect(isShapeTransform("shape.seal"));
+    try std.testing.expectEqual(BudgetClass.constant, d.budget);
+    try std.testing.expectEqual(OutputKind.c_fragment, d.output);
+    try std.testing.expectEqual(semantic_algebra.KnowledgeLevel.observed, d.min_knowledge);
+}
+
+test "transform_engine: all ShapeOp ids registered" {
+    inline for (
+        @typeInfo(semantic_algebra.ShapeOp).@"enum".field_names,
+        @typeInfo(semantic_algebra.ShapeOp).@"enum".field_values,
+    ) |_, value| {
+        const op: semantic_algebra.ShapeOp = @enumFromInt(value);
+        const id = semantic_algebra.shapeTransformId(op);
+        try std.testing.expect(isRegisteredTransform(id));
+    }
+}
+
+test "transform_engine: call.specialize registered as call algebra transform" {
+    const d = descriptor("call.specialize") orelse return error.TestExpectedEqual;
+    try std.testing.expect(isCallTransform("call.specialize"));
+    try std.testing.expectEqual(BudgetClass.linear, d.budget);
+    try std.testing.expectEqual(semantic_algebra.KnowledgeLevel.stable, d.min_knowledge);
+    try std.testing.expectEqual(@as(usize, 1), d.contract.parity_sites.len);
+    try std.testing.expectEqual(SiteKind.emit_call, d.contract.parity_sites[0]);
+}
+
+test "transform_engine: tier-1 combinators registered with 3-site parity contract" {
+    for (parity_tier1) |name| {
+        const d = descriptor(name) orelse return error.TestExpectedEqual;
+        try std.testing.expect(requiresParityTest(name));
+        try std.testing.expect(parityContractSatisfied(d));
+        try std.testing.expect(mustParseAsExpression(name));
+        try std.testing.expectEqualStrings(name, publicNameForInternal(d.internal_name).?);
+    }
+}
+
+test "transform_engine: dispatchMetaCombinator requires registry gate" {
+    const alloc = std.testing.allocator;
+    defer deinitProvenance(alloc);
+    setProvenanceEnabled(true);
+    dispatchMetaCombinator(alloc, "__comptimemap", .block_body, "a b", "a\n");
+    try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
+    dispatchMetaCombinator(alloc, "__unknown_hook", .block_body, "x", "y");
+    try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
+}
+
+test "transform_engine: requireMetaDispatchBeforeHook strict gate" {
+    setMetaDispatchStrict(false);
+    try std.testing.expect(requireMetaDispatchBeforeHook("__comptimemap"));
+    setMetaDispatchStrict(true);
+    try std.testing.expect(requireMetaDispatchBeforeHook("__comptimemap"));
+    try std.testing.expect(requireMetaDispatchBeforeHook("__metacatalog"));
+    setMetaDispatchStrict(false);
+}
+
+test "transform_engine: logInternalTransform uses registry" {
+    const alloc = std.testing.allocator;
+    defer deinitProvenance(alloc);
+    setProvenanceEnabled(true);
+    logInternalTransform(alloc, "__comptimemap", .block_body, "a b", "a\n");
+    try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
+    try std.testing.expectEqualStrings("comp.map", provenanceEntries()[0].public_name);
+}
+
+test "transform_engine: provenanceSitesObserved tracks tier-1 sites" {
+    const alloc = std.testing.allocator;
+    defer deinitProvenance(alloc);
+    setProvenanceEnabled(true);
+    logInternalTransform(alloc, "__comptimemap", .top_level_assign, "a", "a\n");
+    logInternalTransform(alloc, "__comptimemap", .nested_callback, "a", "a\n");
+    logInternalTransform(alloc, "__comptimemap", .block_body, "a", "a\n");
+    try std.testing.expect(tier1ParityObserved("comp.map"));
+    const observed = provenanceSitesObserved("comp.map");
+    try std.testing.expect(observed.contains(.top_level_assign));
+    try std.testing.expect(observed.contains(.nested_callback));
+    try std.testing.expect(observed.contains(.block_body));
+}
+
+test "transform_engine: pipeline.map registered" {
+    try std.testing.expect(isRegisteredTransform("pipeline.map"));
+    const d = descriptor("pipeline.map") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(BudgetClass.linear, d.budget);
+}
+
+test "transform_engine: all PipelineOp ids registered" {
+    inline for (@typeInfo(semantic_algebra.PipelineOp).@"enum".field_values) |value| {
+        const op: semantic_algebra.PipelineOp = @enumFromInt(value);
+        const id = semantic_algebra.pipelineTransformId(op);
+        try std.testing.expect(isRegisteredTransform(id));
+        try std.testing.expect(isPipelineTransform(id));
+    }
+}
+
+test "transform_engine: abi.specialize registered as Pass 5 ABI transform" {
+    const d = descriptor("abi.specialize") orelse return error.TestExpectedEqual;
+    try std.testing.expect(isAbiTransform("abi.specialize"));
+    try std.testing.expectEqual(BudgetClass.linear, d.budget);
+    try std.testing.expectEqual(semantic_algebra.KnowledgeLevel.stable, d.min_knowledge);
+    try std.testing.expectEqual(@as(usize, 1), d.contract.parity_sites.len);
+    try std.testing.expectEqual(SiteKind.emit_call, d.contract.parity_sites[0]);
+}
+
+test "transform_engine: all CallTransform ids registered" {
+    inline for (
+        @typeInfo(semantic_algebra.CallTransform).@"enum".field_names,
+        @typeInfo(semantic_algebra.CallTransform).@"enum".field_values,
+    ) |_, value| {
+        const op: semantic_algebra.CallTransform = @enumFromInt(value);
+        const id = semantic_algebra.callTransformId(op);
+        try std.testing.expect(isRegisteredTransform(id));
+        try std.testing.expect(isCallTransform(id));
+    }
+}
+
+test "transform_engine: hardness distinguishes preference from requirement" {
+    try std.testing.expect(!Hardness.preference.isHard());
+    try std.testing.expect(!Hardness.expectation.isHard());
+    try std.testing.expect(Hardness.requirement.isHard());
+    try std.testing.expect(Hardness.assertion.isHard());
+    try std.testing.expect(Hardness.budget.isHard());
+    try std.testing.expect(!Hardness.query.isHard());
+}
+
+test "transform_engine: introspection descriptors have query hardness" {
+    const d = descriptor("comp.shape") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(Hardness.query, d.hardness);
+    const d2 = descriptor("comp.why.shape") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(Hardness.query, d2.hardness);
+}
+
+test "transform_engine: default hardness is preference" {
+    const d = descriptor("comp.map") orelse return error.TestExpectedEqual;
+    try std.testing.expectEqual(Hardness.preference, d.hardness);
+}
+
+test "transform_engine: evidence reliability ordering" {
+    try std.testing.expect(Evidence.semantic_proof.reliability() < Evidence.heuristic.reliability());
+    try std.testing.expect(Evidence.guarded.reliability() < Evidence.profile.reliability());
+    try std.testing.expect(Evidence.semantic_proof.isDeterministic());
+    try std.testing.expect(Evidence.static_estimate.isDeterministic());
+    try std.testing.expect(!Evidence.profile.isDeterministic());
+    try std.testing.expect(!Evidence.heuristic.isDeterministic());
+}

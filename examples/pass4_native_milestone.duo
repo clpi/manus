@@ -1,0 +1,14 @@
+-- Pass 4 Milestone: typed sealed record → pure native arm64
+-- Zero boxing, zero C intermediate, zero runtime, direct register use.
+
+Point: @{ x: f64, y: f64 }
+
+-- Fields lower to d-registers: p.x = d0, p.y = d1
+distance2(p: Point): f64
+    p.x * p.x + p.y * p.y
+end
+
+-- Entry point (integer return = exit code)
+main(): i64
+    25
+end

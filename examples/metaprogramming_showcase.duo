@@ -33,7 +33,7 @@ print("MAX_BUFFER = " .. tostring(MAX_BUFFER))
 print("PI_APPROX = " .. tostring(PI_APPROX))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 2. TYPE INTROSPECTION: @comp.type.name, @comp.type.id, @is_type, @comp.type.info
+-- 2. TYPE INTROSPECTION: @comp.type.name, @comp.type.id, @comp.type.is, @comp.type.info
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 print("\n-- 2. Type introspection --")
