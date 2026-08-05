@@ -31,6 +31,7 @@ const rewrite_rules = @import("rewrite_rules.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const meta_dispatch = @import("meta_dispatch.zig");
+const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
 
 pub var native_diag: bool = false;
@@ -98,6 +99,8 @@ pub const CodeGen = struct {
     native_scalar_funcs: std.StringHashMapUnmanaged(void) = .empty,
     test_mode: bool = false,
     bench_mode: bool = false,
+    /// Pass 11 WP-01: explicit benchmark representation profile.
+    bench_backend: backend_identity.BenchBackend = .c_specialized,
     test_structured_output: bool = false,
     test_filter: ?[]const u8 = null,
     test_entries: []const sema_mod.Sema.TestEntry = &.{},
@@ -2234,8 +2237,16 @@ pub const CodeGen = struct {
 
     pub fn can_emit_native_scalar_module(self: *CodeGen, mod: *const ast.Module) bool {
         if (native_diag) std.debug.print("[native-diag] CALLED duo_mode={} target={s} load={} lib={} test={} bench={}\n", .{ self.duo_mode, self.target, self.load_chunk, self.lib_mode, self.test_mode, self.bench_mode });
-        // Pass 11 WP-01: bench_mode no longer forces boxing.
-        // Benchmarks should measure the strongest canonical path (native_scalar when typed).
+        // Pass 11 WP-01: bench_mode no longer forces boxing by default.
+        // Only --bench-backend=c-dynamic explicitly selects the boxed path.
+        if (self.bench_mode and self.bench_backend == .c_dynamic) {
+            native_diag_fail("bench-c-dynamic");
+            return false;
+        }
+        if (self.bench_mode and self.bench_backend == .direct) {
+            native_diag_fail("bench-direct-via-codegen");
+            return false;
+        }
         if (self.load_chunk or self.lib_mode or self.test_mode) {
             native_diag_fail("guard-mode");
             return false;
@@ -12066,16 +12077,68 @@ pub const CodeGen = struct {
                         try self.emit_expr(b.rhs);
                         self.p("))", .{});
                     }
-                } else if ((b.op == .eq or b.op == .neq) and lt == .str and rt == .str and self.moduleUsesFullNativeLowering()) {
-                    self.p("(strcmp(", .{});
-                    try self.emit_expr(b.lhs);
-                    self.p(", ", .{});
-                    try self.emit_expr(b.rhs);
-                    if (b.op == .eq) {
-                        self.p(") == 0)", .{});
+                } else if ((b.op == .eq or b.op == .neq) and lt == .str and rt == .str) {
+                    const lhs_c = self.expr_is_native_cstr(b.lhs);
+                    const rhs_c = self.expr_is_native_cstr(b.rhs);
+                    if (self.moduleUsesFullNativeLowering() or lhs_c or rhs_c) {
+                        self.p("(strcmp(", .{});
+                        if (lhs_c) {
+                            try self.emit_expr(b.lhs);
+                        } else {
+                            self.p("lua_to_str(", .{});
+                            try self.emit_as_lua_value(b.lhs);
+                            self.p(")", .{});
+                        }
+                        self.p(", ", .{});
+                        if (rhs_c) {
+                            try self.emit_expr(b.rhs);
+                        } else {
+                            self.p("lua_to_str(", .{});
+                            try self.emit_as_lua_value(b.rhs);
+                            self.p(")", .{});
+                        }
+                        if (b.op == .eq) {
+                            self.p(") == 0)", .{});
+                        } else {
+                            self.p(") != 0)", .{});
+                        }
                     } else {
-                        self.p(") != 0)", .{});
+                        const func = if (b.op == .eq) "lua_eq" else "lua_neq";
+                        self.p("{s}(", .{func});
+                        try self.emit_as_lua_value(b.lhs);
+                        self.p(", ", .{});
+                        try self.emit_as_lua_value(b.rhs);
+                        self.p(")", .{});
                     }
+                } else if ((b.op == .lt or b.op == .gt or b.op == .leq or b.op == .geq) and lt == .str and rt == .str and
+                    (self.expr_is_native_cstr(b.lhs) or self.expr_is_native_cstr(b.rhs)))
+                {
+                    const cmp_suffix: []const u8 = switch (b.op) {
+                        .lt => "< 0",
+                        .gt => "> 0",
+                        .leq => "<= 0",
+                        .geq => ">= 0",
+                        else => unreachable,
+                    };
+                    const lhs_c = self.expr_is_native_cstr(b.lhs);
+                    const rhs_c = self.expr_is_native_cstr(b.rhs);
+                    self.p("(strcmp(", .{});
+                    if (lhs_c) {
+                        try self.emit_expr(b.lhs);
+                    } else {
+                        self.p("lua_to_str(", .{});
+                        try self.emit_as_lua_value(b.lhs);
+                        self.p(")", .{});
+                    }
+                    self.p(", ", .{});
+                    if (rhs_c) {
+                        try self.emit_expr(b.rhs);
+                    } else {
+                        self.p("lua_to_str(", .{});
+                        try self.emit_as_lua_value(b.rhs);
+                        self.p(")", .{});
+                    }
+                    self.p(") {s})", .{cmp_suffix});
                 } else if ((b.op == .eq or b.op == .neq) and (lt == .str or rt == .str) and
                     (!self.expr_is_native_cstr(b.lhs) or !self.expr_is_native_cstr(b.rhs)))
                 {

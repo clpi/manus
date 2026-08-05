@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/clpi/luo-duo/actions/workflows/ci.yml/badge.svg)](https://github.com/clpi/luo-duo/actions/workflows/ci.yml)
 
-Duo is a Lua-like language that compiles to native C (AOT). This repository includes a 40-benchmark suite comparing Duo against hand-written reference C.
+Duo is an experimental Lua-derived ahead-of-time language and compiler **written in Zig** (not self-hosted). Its **default backend emits C** and invokes Clang or `zig cc` to produce native binaries and Wasm. Duo includes aggressive typed specialization for `.duo` programs and an **experimental direct ARM64 Mach-O backend** for a restricted scalar subset (`--backend=direct`).
+
+**Honest status:** Self-hosting, universal direct native compilation, and globally zero-boxing semantics are **not** complete. See `duo catalog | jq '.pass11'` and [docs/plans/pass11_release_proof.md](docs/plans/pass11_release_proof.md).
 
 ## Documentation
 
@@ -45,8 +47,10 @@ config = {
 size = @(64 * 1024)
 Vec4f = @(Vector(f32, 4))
 
--- Native compilation (arm64, zero boxing)
--- duo compile file.duo --target native-exe
+-- Backends (Pass 11 — explicit, no silent fallback)
+-- duo compile file.duo                         # C backend (default)
+-- duo compile file.duo --backend=direct        # experimental ARM64 Mach-O
+-- duo compile file.duo --target native-exe --backend=direct
 ```
 
 ## Editor support

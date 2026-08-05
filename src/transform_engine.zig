@@ -8,6 +8,8 @@
 const std = @import("std");
 const meta_module = @import("meta_module.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
+const proof_carrying = @import("proof_carrying.zig");
+const evidence_record = @import("evidence_record.zig");
 
 pub const BudgetClass = enum {
     constant,
@@ -136,12 +138,20 @@ const provenance_allocator = std.heap.page_allocator;
 pub fn deinitProvenance(_: std.mem.Allocator) void {
     provenance_log.deinit(provenance_allocator);
     provenance_log = .empty;
+    deinitProofLog(provenance_allocator);
     provenance_enabled = false;
 }
 
 pub fn setProvenanceEnabled(enabled: bool) void {
+    if (enabled) {
+        provenance_log.clearRetainingCapacity();
+        deinitProofLog(provenance_allocator);
+    }
     provenance_enabled = enabled;
-    if (!enabled) provenance_log.clearRetainingCapacity();
+    if (!enabled) {
+        provenance_log.clearRetainingCapacity();
+        deinitProofLog(provenance_allocator);
+    }
 }
 
 pub fn provenanceEntries() []const ProvenanceEntry {
@@ -245,6 +255,170 @@ pub fn logInternalTransform(
     );
 }
 
+pub const TRANSFORM_VERSION = "transform-registry-v0";
+
+/// Pass 12: structured proof record for a logged transform application.
+pub const TransformProofLogEntry = struct {
+    record: proof_carrying.TransformProofRecord,
+    site: SiteKind,
+    inputs_hash: u64,
+    output_hash: u64,
+};
+
+var proof_log: std.ArrayListUnmanaged(TransformProofLogEntry) = .empty;
+const proof_allocator = std.heap.page_allocator;
+
+pub fn deinitProofLog(_: std.mem.Allocator) void {
+    for (proof_log.items) |*e| {
+        freeProofRecord(&e.record, proof_allocator);
+    }
+    proof_log.deinit(proof_allocator);
+    proof_log = .empty;
+}
+
+pub fn proofLogEntries() []const TransformProofLogEntry {
+    return proof_log.items;
+}
+
+pub fn evidenceKind(ev: Evidence) evidence_record.Kind {
+    return switch (ev) {
+        .semantic_proof => .proven_semantic_fact,
+        .guarded => .guarded_fact,
+        .static_estimate => .static_estimate,
+        .target_estimate => .target_model_estimate,
+        .profile => .profile_observation,
+        .benchmark => .benchmark_measurement,
+        .user_assertion => .user_assertion,
+        .imported => .foreign_assertion,
+        .heuristic => .static_estimate,
+    };
+}
+
+/// Build a proof record for a registered transform (canonical P12-WS3 pattern).
+pub fn buildTransformProofRecord(
+    alloc: std.mem.Allocator,
+    public_name: []const u8,
+    site: SiteKind,
+    inputs_hash: u64,
+    output_hash: u64,
+) !proof_carrying.TransformProofRecord {
+    const d = descriptor(public_name) orelse {
+        return .{
+            .transform_id = try alloc.dupe(u8, public_name),
+            .transform_version = TRANSFORM_VERSION,
+            .subject_entity = try alloc.dupe(u8, "duo:transform:unknown"),
+            .result = .unsupported,
+            .obligations = &.{},
+            .evidence = &.{},
+        };
+    };
+
+    const subject = try std.fmt.allocPrint(alloc, "duo:transform:{s}", .{public_name});
+    errdefer alloc.free(subject);
+
+    var result: proof_carrying.TransformResult = .validated_and_applied;
+    var ev: Evidence = .semantic_proof;
+
+    if (!d.contract.native_only) {
+        result = .rejected_contract;
+        ev = .heuristic;
+    } else if (requiresParityTest(public_name) and !tier1ParityObserved(public_name)) {
+        result = .guarded_and_applied;
+        ev = .guarded;
+    } else if (d.hardness.isHard()) {
+        result = .proven_and_applied;
+        ev = .semantic_proof;
+    }
+
+    const obligation_id = try std.fmt.allocPrint(alloc, "obl.{s}.native_only", .{public_name});
+    errdefer alloc.free(obligation_id);
+    const predicate = try std.fmt.allocPrint(alloc, "emit native output at {s}", .{siteKindName(site)});
+    errdefer alloc.free(predicate);
+    const validation = try std.fmt.allocPrint(alloc, "inputs_hash={x} output_hash={x}", .{ inputs_hash, output_hash });
+    errdefer alloc.free(validation);
+
+    const ev_slice = try alloc.alloc(evidence_record.Kind, 1);
+    ev_slice[0] = evidenceKind(ev);
+
+    const obligations = try alloc.alloc(proof_carrying.ProofObligation, 1);
+    obligations[0] = .{
+        .id = obligation_id,
+        .subject_entity = subject,
+        .predicate = predicate,
+        .accepted_evidence = ev_slice,
+        .validation_method = validation,
+        .status = if (result == .rejected_contract) .failed else .discharged,
+        .stage = try alloc.dupe(u8, siteKindName(site)),
+    };
+    // subject owned by record.subject_entity; obligation borrows same pointer.
+
+    return .{
+        .transform_id = try alloc.dupe(u8, public_name),
+        .transform_version = TRANSFORM_VERSION,
+        .subject_entity = subject,
+        .result = result,
+        .obligations = obligations,
+        .evidence = ev_slice,
+        .provenance = try std.fmt.allocPrint(alloc, "transform_engine.log @ {s}", .{siteKindName(site)}),
+    };
+}
+
+fn recordProof(
+    public_name: []const u8,
+    site: SiteKind,
+    inputs_hash: u64,
+    output_hash: u64,
+) void {
+    if (!isRegisteredTransform(public_name)) return;
+    const record = buildTransformProofRecord(proof_allocator, public_name, site, inputs_hash, output_hash) catch return;
+    proof_log.append(proof_allocator, .{
+        .record = record,
+        .site = site,
+        .inputs_hash = inputs_hash,
+        .output_hash = output_hash,
+    }) catch {
+        freeProofRecord(&record, proof_allocator);
+    };
+}
+
+fn freeProofRecord(record: *const proof_carrying.TransformProofRecord, alloc: std.mem.Allocator) void {
+    alloc.free(record.transform_id);
+    // transform_version is always the TRANSFORM_VERSION literal — never heap-allocated.
+    alloc.free(record.subject_entity);
+    for (record.obligations) |o| {
+        alloc.free(o.id);
+        alloc.free(o.predicate);
+        alloc.free(o.validation_method);
+        if (o.stage) |s| alloc.free(s);
+        // o.subject_entity aliases record.subject_entity — freed above.
+    }
+    alloc.free(record.obligations);
+    alloc.free(record.evidence);
+    if (record.provenance) |p| alloc.free(p);
+}
+
+pub fn writeProofLogJson(w: *std.Io.Writer) !void {
+    try w.print("[", .{});
+    for (proofLogEntries(), 0..) |e, i| {
+        if (i > 0) try w.print(",", .{});
+        try w.print("{{\"transform_id\":\"{s}\",\"result\":\"{s}\",\"site\":\"{s}\",\"inputs_hash\":\"{x}\",\"output_hash\":\"{x}\",\"obligations_discharged\":{d}}}", .{
+            e.record.transform_id,
+            e.record.result.name(),
+            siteKindName(e.site),
+            e.inputs_hash,
+            e.output_hash,
+            blk: {
+                var n: usize = 0;
+                for (e.record.obligations) |o| {
+                    if (o.status == .discharged) n += 1;
+                }
+                break :blk n;
+            },
+        });
+    }
+    try w.print("]", .{});
+}
+
 pub fn logProvenance(
     _: std.mem.Allocator,
     public_name: []const u8,
@@ -259,7 +433,9 @@ pub fn logProvenance(
         .inputs_hash = inputs_hash,
         .output_hash = output_hash,
     }) catch {};
+    recordProof(public_name, site, inputs_hash, output_hash);
 }
+
 
 /// Tier-1 combinators requiring 3-site parity (top-level, nested callback, block body).
 pub const parity_tier1: []const []const u8 = &.{
@@ -737,6 +913,11 @@ test "transform_engine: logInternalTransform uses registry" {
     logInternalTransform(alloc, "__comptimemap", .block_body, "a b", "a\n");
     try std.testing.expectEqual(@as(usize, 1), provenanceEntries().len);
     try std.testing.expectEqualStrings("comp.map", provenanceEntries()[0].public_name);
+    try std.testing.expectEqual(@as(usize, 1), proofLogEntries().len);
+    try std.testing.expectEqualStrings("comp.map", proofLogEntries()[0].record.transform_id);
+    try std.testing.expect(proofLogEntries()[0].record.result == .proven_and_applied or
+        proofLogEntries()[0].record.result == .guarded_and_applied or
+        proofLogEntries()[0].record.result == .validated_and_applied);
 }
 
 test "transform_engine: provenanceSitesObserved tracks tier-1 sites" {

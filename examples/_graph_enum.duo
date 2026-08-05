@@ -1,0 +1,9 @@
+enum Color
+    Red
+    Green
+    Blue
+end
+
+fun main()
+    red = Color.Red
+end

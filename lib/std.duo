@@ -303,4 +303,9 @@ std.index = {
 
 std.script = req "std.script"
 
+-- Pass 12 M1 — Duo-native keyword classifier (generated from src/token_semantic.zig)
+std.token = {
+    classify = req "std.token.classify"
+}
+
 std

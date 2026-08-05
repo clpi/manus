@@ -238,6 +238,48 @@ pub const SelectionResult = struct {
     }
 };
 
+/// Pass 12 — structured candidate comparison report (P12-WS4).
+pub const CandidateComparisonReport = struct {
+    subject_entity: []const u8,
+    selected_id: ?[]const u8,
+    rejections: []SelectionRejection,
+    legal_count: usize,
+    compared_count: usize,
+
+    pub fn deinit(self: *CandidateComparisonReport, alloc: std.mem.Allocator) void {
+        alloc.free(self.subject_entity);
+        if (self.selected_id) |s| alloc.free(s);
+        for (self.rejections) |*r| r.deinit(alloc);
+        alloc.free(self.rejections);
+    }
+};
+
+/// Deterministic comparison with explicit rejection reasons (extends selectDeterministic).
+pub fn compareCandidates(alloc: std.mem.Allocator, var_: *Variable) !CandidateComparisonReport {
+    var legal_count: usize = 0;
+    for (var_.candidates) |c| {
+        if (c.legal) legal_count += 1;
+    }
+    var sel = try selectDeterministic(alloc, var_);
+    const subject = try alloc.dupe(u8, var_.subject_entity);
+    const selected = if (sel.selected_id) |s| try alloc.dupe(u8, s) else null;
+    const rejections = try alloc.alloc(SelectionRejection, sel.rejections.len);
+    for (sel.rejections, 0..) |r, i| {
+        rejections[i] = .{
+            .candidate_id = try alloc.dupe(u8, r.candidate_id),
+            .reason = try alloc.dupe(u8, r.reason),
+        };
+    }
+    sel.deinit(alloc);
+    return .{
+        .subject_entity = subject,
+        .selected_id = selected,
+        .rejections = rejections,
+        .legal_count = legal_count,
+        .compared_count = var_.candidates.len,
+    };
+}
+
 pub fn selectDeterministic(alloc: std.mem.Allocator, var_: *Variable) !SelectionResult {
     var rejections: std.ArrayListUnmanaged(SelectionRejection) = .empty;
     errdefer {
@@ -545,6 +587,33 @@ test "realization: selectDeterministic is stable" {
     var r = try selectDeterministic(alloc, &var_);
     defer r.deinit(alloc);
     try std.testing.expectEqualStrings("b", r.selected_id.?);
+}
+
+test "realization: compareCandidates produces report" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var candidates: std.ArrayListUnmanaged(Candidate) = .empty;
+    defer {
+        for (candidates.items) |*c| c.deinit(alloc);
+        candidates.deinit(alloc);
+    }
+    try appendCandidate(alloc, &candidates, "classifier.branch_chain", "Linear scan", "branch_chain", 30, 80, true, null, .proven);
+    try appendCandidate(alloc, &candidates, "classifier.sorted_lookup", "Binary search", "sorted_table", 20, 70, true, null, .proven);
+    try appendCandidate(alloc, &candidates, "classifier.perfect_hash", "Perfect hash", "phf", 10, 40, false, "not generated for keyword set", .estimated);
+    var var_: Variable = .{
+        .id = try alloc.dupe(u8, "realize.keyword_classifier"),
+        .subject_entity = try alloc.dupe(u8, "duo:lexer:keyword_classifier"),
+        .dimension = .algorithm,
+        .candidates = try candidates.toOwnedSlice(alloc),
+        .freedoms = &.{},
+    };
+    defer var_.deinit(alloc);
+    var report = try compareCandidates(alloc, &var_);
+    defer report.deinit(alloc);
+    try std.testing.expectEqual(@as(usize, 2), report.legal_count);
+    try std.testing.expectEqual(@as(usize, 3), report.compared_count);
+    try std.testing.expectEqualStrings("classifier.sorted_lookup", report.selected_id.?);
 }
 
 test "realization: storage class maps to planner candidate" {

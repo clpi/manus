@@ -225,6 +225,7 @@ the wait is bounded and prevents corruption.
 | **semantic graph JSON** (`graph-spine`) | cursor/agent | 2026-08-04 | shape_id + why in graph export — **released 2026-08-04** |
 | native backend / `src/native_backend.zig` | — (released by oh-my-pi 2026-08-01) | — | DONE: native-exe string output via `__cstring` + adrp/add PAGE21/PAGEOFF12 + `@ffi` |
 | metaprogramming / native | Antigravity | 2026-07-31 | Complete direct machine-code lowering, SIMD optimization, and backfill lua intermediaries |
+| **Pass 12 M1 vertical** (`token-classify`) | opencode | 2026-08-04 | P12-WS5/6/7: Duo-native keyword classifier (`lib/std/token/classify.duo` generated from `src/token_semantic.zig`), ≥3 candidate realizations, differential+fuzz proof, self-hosting evidence. Cursor/agent retains WS2/WS10. |
 
 **Claim protocol:** replace `—` with a short id (e.g. `a1`) and your goal
 *before* touching that area. Release (`—`) when done or blocked >30 min.
@@ -942,4 +943,60 @@ UNCHANGED for users. This is an internal substrate evolution.
 
 **Non-negotiables preserved:** Performance gate, Lua superset, @comp.* surface,
 zero-cost abstraction (graph is compile-time only), incremental adoption.
+
+### [2026-08-04T20:15:00Z] cursor/agent — Pass 12 tracking + schema foundation
+
+**Claim:** P12-WS2 (intent/obligation schema), P12-WS10 (release claim seeds), catalog export.
+
+**Shipped:**
+- `src/proof_carrying.zig` — IntentContract, ProofObligation, Counterexample, CandidateImplementation, SemanticProjection, TransformProofRecord, ProofBundle, ReleaseClaim (reuses `evidence_record.Kind`)
+- `src/pass12_catalog.zig` — 8 goals, 12 workstreams, M1/M2 milestones, success criteria; `duo catalog | jq '.pass12'`
+- `docs/plans/pass12_semantic_autonomy.md` — execution order + reuse map
+- Wired into `src/pass3_catalog.zig`, `src/tests.zig`
+
+**Next (dependency order):** P12-WS1 Pass 11 closure → P12-WS7 M1 Duo-native classifier selection → P12-WS8 MCP transaction loop.
+
+**Also shipped this session (continued):**
+- `src/token_semantic.zig` — canonical keyword table; `lexer.zig` delegates lookup (M1 partial)
+- `src/transform_engine.zig` — `buildTransformProofRecord`, proof log on provenance (P12-WS3 partial)
+- `src/realization.zig` — `compareCandidates` report (P12-WS4 partial)
+
+**Status:** ACTIVE — M1 integrated for keywords (Zig host, not Duo-native yet); MCP/LSP not wired.
+
+### [2026-08-04T22:40:00Z] opencode — Pass 12 M1 claim (token-classify)
+
+**Claim:** P12-WS5 (test+counterexample), P12-WS6 (semantic projection generation), P12-WS7 (M1 self-hosted compiler component) — the **Duo-native** half of M1 (Zig host path already shipped by cursor/agent). No overlap with WS2/WS10.
+
+**Plan (from `docs/plans/pass12_semantic_autonomy.md` P12-M1):**
+1. `src/token_classify_gen.zig` — emit `lib/std/token/classify.duo` from the `src/token_semantic.zig` descriptor (mirror `wasm_semantic_gen.zig`).
+2. classify.duo exposes ≥3 candidate realizations (branch chain, trie, sorted lookup, dense table) + comptime-selected canonical `classify(word): str|nil`.
+3. Differential + fuzz harness: every candidate vs host `lookupKeyword` over all keywords + arbitrary byte strings (no false pos/neg), deterministic, bounded reads.
+4. Proof bundle via `src/proof_carrying.zig` (exact classification, no boxing, canonical identity, target-correct).
+5. Self-hosting evidence: bootstrap `duo` compiles classify.duo, uses it to classify tokens of a real stdlib source; evidence recorded in catalog.
+6. Update `src/pass12_catalog.zig` (WS5/WS6/WS7, M1, SC5/SC6), `docs/performance.md`, session log.
+
+**Branch state:** on `kiro/pass2-pass3-convergence`; kiro WIP untouched (cursor/agent edits in lexer/realization/transform_engine not mine).
+
+### [2026-08-04T23:45:00Z] cursor/agent — Pass 12 WS8 CLI + context packages
+
+**Claim:** P12-WS8 (partial — CLI parity, not duo-mcp yet), Audit 6 context compression.
+
+**Shipped:**
+- `src/semantic_context.zig` — bounded `ContextPackage` for M1 keyword classifier (`ctx.m1.keyword_classifier`)
+- `src/semantic_cli.zig` — JSON projections: intent, compare, proof/bundle, obligations, projections, context
+- `duo semantic <sub>` wired in `src/main.zig` (MCP tool name parity without network)
+- `claim.m1_keyword_semantic` + `cap.token_semantic.m1` + `cap.cli.semantic` in `proof_carrying.zig`
+- P12-WS8 + success criterion #7 marked partial in `pass12_catalog.zig`
+
+**Verify:**
+```bash
+duo semantic compare | jq .
+duo semantic proof | jq .
+duo semantic context | jq .
+duo catalog | jq '.pass12.workstreams[] | select(.id=="P12-WS8")'
+```
+
+**Next:** P12-WS7 Duo-native classifier (`lib/std/token/classify.duo`); duo-mcp tool wrappers; P12-WS9 LSP hover for intent/realization.
+
+**Status:** ACTIVE — M1 Zig-integrated; CLI inspectable; Duo-native + MCP wrappers remain open.
 

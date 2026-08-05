@@ -12,6 +12,12 @@ if [ ! -x "$DUO" ]; then
   "${ZIG:-zig}" build
 fi
 
+# Pass 11 WP-01: explicit benchmark manifest (backend must not force boxing).
+BENCH_BACKEND="${BENCH_BACKEND:-c-specialized}"
+BENCH_MANIFEST="backend=${BENCH_BACKEND} representation=specialized runtime=dynamic intermediate=generated-c external_compiler=${CC} duo=$( "$DUO" --version 2>/dev/null || echo unknown )"
+echo "BENCH_MANIFEST ${BENCH_MANIFEST}"
+export DUO_BENCH_MANIFEST="${BENCH_MANIFEST}"
+
 # Compile Lua-flavoured Duo benchmark with PGO (two-pass: instrument, profile, optimise).
 "$DUO" compile --pgo -O3 examples/benchmark.lua -o /tmp/duo_bench.out &
 DUO_COMP_PID=$!
