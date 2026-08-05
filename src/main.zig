@@ -16,6 +16,7 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
+const backend_identity = @import("backend_identity.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const sim = @import("sim.zig");
 const sim_pipeline = @import("sim_pipeline.zig");
@@ -41,6 +42,7 @@ var compiler_lib_root: ?[]const u8 = null;
 var forwarded_program_args: []const []const u8 = &.{};
 var graph_diag_enabled: bool = false;
 var graph_write_enabled: bool = false;
+var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
 var semantic_cache_enabled: bool = true;
 
 fn env_value_truthy(value: []const u8) bool {
@@ -74,6 +76,9 @@ fn apply_env_flags(init: std.process.Init) void {
     }
     if (map.get("DUO_GRAPH_WRITE")) |v| {
         if (env_value_truthy(v)) graph_write_enabled = true;
+    }
+    if (map.get("DUO_BENCH_BACKEND")) |v| {
+        if (backend_identity.BenchBackend.parse(v)) |bb| global_bench_backend = bb;
     }
     if (map.get("DUO_SEMANTIC_CACHE")) |v| {
         if (!env_value_truthy(v)) semantic_cache_enabled = false;
@@ -191,6 +196,8 @@ const usage =
     \\  -O<n>             optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
     \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi, native-object, native-exe, native-dylib)
+    \\  --backend <c|direct>  explicit backend: c (default, generated C) or direct (ARM64 Mach-O, experimental)
+    \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
@@ -259,6 +266,7 @@ pub fn main(init: std.process.Init) !void {
     var cc: []const u8 = "clang";
     var opt_level: []const u8 = "-O3";
     var target: []const u8 = "native";
+    var compile_backend: []const u8 = "c";
     var verbose = false;
     var trace_flag = false;
     var info_flag = false;
@@ -303,6 +311,23 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--target") and i + 1 < args.len) {
             i += 1;
             target = args[i];
+        } else if (std.mem.eql(u8, arg, "--backend") and i + 1 < args.len) {
+            i += 1;
+            compile_backend = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--backend=")) {
+            compile_backend = arg["--backend=".len..];
+        } else if (std.mem.eql(u8, arg, "--bench-backend") and i + 1 < args.len) {
+            i += 1;
+            if (backend_identity.BenchBackend.parse(args[i])) |bb| global_bench_backend = bb else {
+                term.err("unknown --bench-backend '{s}' (expected c-dynamic, c-specialized, or direct)", .{args[i]});
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "--bench-backend=")) {
+            const val = arg["--bench-backend=".len..];
+            if (backend_identity.BenchBackend.parse(val)) |bb| global_bench_backend = bb else {
+                term.err("unknown --bench-backend '{s}'", .{val});
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
         } else if (std.mem.eql(u8, arg, "--lib")) {
@@ -372,6 +397,7 @@ pub fn main(init: std.process.Init) !void {
 
     apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag, debug_flag, debug_list, debug_depth, test_report_style, build_report_style, no_color, verbose_count);
     if (trace_rich and term.build_report == .pretty) term.setBuildReport(.verbose);
+    target = resolveCompileBackend(compile_backend, target);
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         term.printRaw("{s}", .{usage});
@@ -2197,6 +2223,30 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
     };
 }
 
+fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
+    if (std.mem.eql(u8, backend, "direct")) {
+        if (native_backend.isNativeMachineTarget(target_in)) return target_in;
+        return "native-exe";
+    }
+    if (!std.mem.eql(u8, backend, "c")) {
+        term.err("unknown --backend '{s}' (expected c or direct)", .{backend});
+        std.process.exit(1);
+    }
+    if (native_backend.isNativeMachineTarget(target_in)) {
+        term.err("direct machine target '{s}' requires --backend=direct", .{target_in});
+        std.process.exit(1);
+    }
+    return target_in;
+}
+
+fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8) void {
+    var buf: [512]u8 = undefined;
+    const msg = native_backend.describeError(err, target, &buf);
+    term.err("direct backend: {s}", .{msg});
+    term.hint("{s}", .{native_backend.unsupportedReason(target)});
+    _ = io;
+}
+
 fn do_compile(
     alloc: std.mem.Allocator,
     io: Io,
@@ -2288,6 +2338,7 @@ fn do_compile(
     native_scalar_precheck.duo_mode = ps.sem.duo_mode;
     native_scalar_precheck.test_mode = test_mode;
     native_scalar_precheck.bench_mode = bench_mode;
+    native_scalar_precheck.bench_backend = global_bench_backend;
     native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
     native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
@@ -2308,14 +2359,14 @@ fn do_compile(
             std.process.exit(1);
         }
         if (!native_scalar_candidate) {
-            term.err("native machine-code backend requires a fully typed native-scalar module", .{});
-            term.hint("{s}", .{native_backend.unsupportedReason(target)});
+            const diag = native_backend.directDiagnostic(error.UnsupportedProgram, target);
+            term.err("{s}: {s}", .{ diag.code, diag.message });
+            term.hint("use --backend=c for generated C (default portable backend)", .{});
             std.process.exit(1);
         }
         if (native_backend.isNativeExecutableTarget(target)) {
             const obj = native_backend.emitObject(alloc, &ps.mod, "native-object") catch |e| {
-                term.err("native machine-code backend error: {}", .{e});
-                term.hint("{s}", .{native_backend.unsupportedReason(target)});
+                reportDirectBackendError(io, e, target);
                 std.process.exit(1);
             };
             const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
@@ -2353,8 +2404,7 @@ fn do_compile(
         }
         if (native_backend.isNativeSharedTarget(target)) {
             const obj = native_backend.emitSharedObjectInput(alloc, &ps.mod) catch |e| {
-                term.err("native machine-code backend error: {}", .{e});
-                term.hint("{s}", .{native_backend.unsupportedReason(target)});
+                reportDirectBackendError(io, e, target);
                 std.process.exit(1);
             };
             const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
@@ -2374,8 +2424,7 @@ fn do_compile(
         else
             native_backend.emitObject(alloc, &ps.mod, target);
         const obj = native_output catch |e| {
-            term.err("native machine-code backend error: {}", .{e});
-            term.hint("{s}", .{native_backend.unsupportedReason(target)});
+            reportDirectBackendError(io, e, target);
             std.process.exit(1);
         };
         const cwd = Io.Dir.cwd();
@@ -2503,6 +2552,7 @@ fn do_compile(
         cg.duo_mode = ps.sem.duo_mode;
         cg.test_mode = test_mode;
         cg.bench_mode = bench_mode;
+        cg.bench_backend = global_bench_backend;
         cg.test_structured_output = test_mode and term.testUsesStructuredOutput();
         cg.test_filter = test_filter;
         cg.test_entries = ps.sem.test_entries.items;

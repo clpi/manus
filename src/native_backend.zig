@@ -18,6 +18,51 @@ pub const Error = error{
     BranchOutOfRange,
 } || std.mem.Allocator.Error;
 
+/// Pass 11 WP-02: structured direct-backend diagnostic.
+pub const DirectDiag = struct {
+    code: []const u8,
+    message: []const u8,
+};
+
+pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
+    _ = target;
+    return switch (err) {
+        error.UnsupportedTarget => .{ .code = "DNB004", .message = "target object format or host is unsupported by the direct backend" },
+        error.UnsupportedProgram => .{ .code = "DNB001", .message = "program construct is outside the direct backend subset" },
+        error.MissingMain => .{ .code = "DNB006", .message = "direct executable requires main() or an exported entry" },
+        error.InvalidMainSignature => .{ .code = "DNB002", .message = "function signature incompatible with direct ARM64 ABI" },
+        error.RegisterExhausted => .{ .code = "DNB003", .message = "function requires register spilling (not yet implemented)" },
+        error.UndefinedName, error.UnknownSymbol => .{ .code = "DNB007", .message = "undefined symbol in direct backend lowering" },
+        error.DuplicateSymbol => .{ .code = "DNB008", .message = "duplicate symbol in direct backend output" },
+        error.BranchOutOfRange => .{ .code = "DNB009", .message = "branch relocation out of range" },
+        error.IntegerOutOfRange => .{ .code = "DNB010", .message = "integer literal out of range for direct backend" },
+        else => .{ .code = "DNB000", .message = "direct backend internal error" },
+    };
+}
+
+pub fn formatDirectError(err: Error, target: []const u8, buf: []u8) []const u8 {
+    const d = directDiagnostic(err, target);
+    return std.fmt.bufPrint(buf, "{s}: {s}", .{ d.code, d.message }) catch d.message;
+}
+
+pub fn describeError(err: anyerror, target: []const u8, buf: []u8) []const u8 {
+    switch (err) {
+        error.UnsupportedTarget,
+        error.UnsupportedProgram,
+        error.MissingMain,
+        error.InvalidMainSignature,
+        error.IntegerOutOfRange,
+        error.RegisterExhausted,
+        error.UndefinedName,
+        error.DuplicateSymbol,
+        error.UnknownSymbol,
+        error.BranchOutOfRange,
+        => return formatDirectError(@errorCast(err), target, buf),
+        error.OutOfMemory => return "out of memory",
+        else => return @errorName(err),
+    }
+}
+
 pub fn isNativeMachineTarget(target: []const u8) bool {
     return std.mem.eql(u8, target, "native-object") or
         std.mem.eql(u8, target, "native-mach-o") or
@@ -79,10 +124,10 @@ pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []
 }
 
 pub fn unsupportedReason(target: []const u8) []const u8 {
-    if (!isNativeMachineTarget(target)) return "not a Duo native machine-code target";
-    if (builtin.os.tag != .macos) return "first native object writer supports Mach-O on macOS";
-    if (builtin.cpu.arch != .aarch64) return "first native object writer supports arm64";
-    return "program is outside the current direct object subset";
+    if (!isNativeMachineTarget(target)) return "DNB004: not a direct machine-code target (use --backend=direct)";
+    if (builtin.os.tag != .macos) return "DNB004: direct object writer currently supports Mach-O on macOS only";
+    if (builtin.cpu.arch != .aarch64) return "DNB004: direct object writer currently supports AArch64 only";
+    return "DNB001: program is outside the current direct backend subset (use --backend=c)";
 }
 
 const Symbol = struct {
