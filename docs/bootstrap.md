@@ -1,40 +1,69 @@
-# Bootstrap and Build
+# Duo bootstrap architecture (Pass 16)
 
-**Status:** Supported. **Audience:** contributors.
+This document describes the **honest** bootstrap strategy for Duo self-hosting.
+Machine-readable state: `duo catalog` → `pass16.bootstrap_dag`.
 
-## What bootstraps what
+## Current stage: S0
 
-| Component | Built with | Output |
-| --- | --- | --- |
-| Duo compiler | **Zig 0.17.0-dev** | `zig-out/bin/duo` |
-| User programs | `duo compile` / `duo run` | Generated C → `clang` → native binary or WASM |
-| Standard library | Compiled as part of user/embedded modules | Native C via same pipeline |
-| Editor LSP | Duo (`ext/duo-lsp/`) | Separate build in companion repo |
+**S0 (active):** Pinned Zig bootstrap via `mise` + `scripts/ci_zig_version.sh`.
+`zig build` produces `zig-out/bin/duo`, which is the host compiler (Zig implementation).
 
-There is **no** self-hosted Duo compiler yet. Zig is the canonical bootstrap chain.
+No Duo-built compiler binary exists in the production path yet.
 
-## Minimum build
+## Target chain
 
-Requires **Zig 0.17.0-dev** and **`clang`** on `$PATH` (invoked at compile time).
+| Stage | Input | Output | Proof |
+| --- | --- | --- | --- |
+| **S0** | Zig + repo source | Host `duo` binary | CI, unit tests, bench gates |
+| **S1** | S0 + canonical Duo compiler source | First Duo-built compiler | Semantic fingerprint vs S0-oracle |
+| **S2** | S1 + same source | Self-built compiler | Behavioral + test parity with S1 |
+| **S3** | S2 + same source | Third generation | Reproducibility bundle (optional binary identity) |
+
+## Trusted seed requirements
+
+The seed must be:
+
+- Pinned and checksummed
+- Archived and reproducibly obtainable
+- Minimal enough to audit
+- Clearly separated from canonical Duo compiler source
+- Used for bootstrap only — not semantic authority after S2
+
+## Stage comparisons (always required)
+
+- Semantic fingerprints
+- Public capability manifests
+- Optimized IR fingerprints (when applicable)
+- Object structure
+- Binary behavior (test matrix)
+- Diagnostics parity
+
+## Stage comparisons (when declared)
+
+- Compiler performance baselines
+- Binary identity (deterministic builds only)
+
+## Bootstrap subset
+
+The minimum Duo subset required to compile the next compiler stage is a **staged
+capability level** of canonical Duo — not a permanent second language.
+
+Track supported syntax, descriptors, compile-time capabilities, native structures,
+runtime profile, backend capabilities, target, unsupported features, and migration plan
+in `src/pass16_catalog.zig` workstreams.
+
+## Commands
 
 ```bash
-git clone <repo>
-cd duo
-zig build
-./zig-out/bin/duo run examples/benchmark.duo   # smoke
-zig build test                                  # full gate (includes bench)
+duo catalog | rg pass16
+zig build pass16-gate
+duo run examples/pass16_m1_lexer_proof.duo
 ```
 
-## Validation tiers
+## Prohibited claims
 
-| Tier | Command | When |
-| --- | --- | --- |
-| Compiler build | `zig build` | Every change |
-| Unit tests | `zig build unit-test` | Compiler modules |
-| Full gate | `zig build test` | Before merge |
-| Performance | `zig build bench` | Codegen / perf changes |
-| Agent smokes | `duo run scripts/agent_smoke.duo` | Stdlib / example changes |
+- "Self-hosted" when Duo code exists but is not on the production compile path
+- Silent fallback to generated C, Lua VM, or external compiler on the canonical path
+- Undocumented bootstrap binaries or unpinned dependencies
 
-## Self-hosting direction
-
-Goal: compiler subsets expressible in Duo, compiled by the current Zig-built `duo`. Tracked under Pass 4 native end-to-end — see [docs/plans/pass4_native_end_to_end.md](plans/pass4_native_end_to_end.md) (**partial**).
+See `docs/plans/pass16_self_hosted_compiler.md` for the full Pass 16 mission.

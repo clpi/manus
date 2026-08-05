@@ -93,7 +93,7 @@ end
 
 -- discard: a writer that discards all data (returns count written).
 fun discard(): any
-    {n = 0, write = fun(self: any, s: str): any self.n = self.n + string.len(s); self end}
+    return {n = 0, write = fun(self: any, s: str): any self.n = self.n + string.len(s); self end}
 end
 
 -- nopCloser: wrap a reader so it has a no-op close method.

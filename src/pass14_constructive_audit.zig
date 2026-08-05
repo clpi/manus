@@ -41,10 +41,10 @@ pub const audit_groups = [_]struct {
         .{ .id = "P14-A2", .title = "Abandoned work inventory", .status = .partial, .owner = "src/salvage_registry.zig", .finding = "Seed salvage records cover stale pass-name stubs, prunable worktrees, unmerged branch, untracked agent state; more dormancy sweeps pending.", .live = true },
     } },
     .{ .group = "dependency_sovereignty", .entries = &.{
-        .{ .id = "P14-A3", .title = "Dependency sovereignty classification", .status = .open, .owner = "src/dependency_manifest.zig (future)", .finding = "No per-dependency authority/cost/replacement manifest yet. Zig is the current bootstrap host; Clang/`zig cc` is the C-backend compiler; direct backend is sovereign for an ARM64 Mach-O subset.", .live = false },
+        .{ .id = "P14-A3", .title = "Dependency sovereignty classification", .status = .partial, .owner = "src/dependency_manifest.zig", .finding = "Seed manifest classifies Zig/Clang/Lua/wasm/git/MCP/LSP; LLVM marked forbidden_architectural; exit paths recorded.", .live = true },
     } },
     .{ .group = "architecture_parity", .entries = &.{
-        .{ .id = "P14-A4", .title = "Architecture parity matrix", .status = .open, .owner = "src/target_model.zig", .finding = "AArch64 Mach-O subset proven (Pass 11); x86-64/RISC-V/Wasm/GPU realizations open. No machine-readable feature×architecture matrix yet.", .live = false },
+        .{ .id = "P14-A4", .title = "Architecture parity matrix", .status = .partial, .owner = "src/target_model.zig", .finding = "`architecture_matrix` in target_model + pass14 catalog; AArch64 Mach-O subset proven; wasm decode + x86/windows rows honest partial/open.", .live = true },
     } },
     .{ .group = "target_assumptions", .entries = &.{
         .{ .id = "P14-A5", .title = "Target assumptions audit", .status = .partial, .owner = "src/native_backend.zig", .finding = "Direct backend hardcodes ARM64 (pointer width, Mach-O, bl/adrp/add relocations). Assumptions are localized to the backend, not embedded in semantic layers (Pass 14 §2.2).", .live = false },

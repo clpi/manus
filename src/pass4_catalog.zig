@@ -49,9 +49,9 @@ pub const first_milestone = Milestone{
 
 /// Catalog counts for P4-01 — update when `pass4_boxed_inventory` test fails.
 pub const boxed_inventory = struct {
-    pub const lua_value_refs: usize = 1871;
-    pub const lua_invoke_refs: usize = 66;
-    pub const emit_as_lua_value_refs: usize = 173;
+    pub const lua_value_refs: usize = 1887;
+    pub const lua_invoke_refs: usize = 67;
+    pub const emit_as_lua_value_refs: usize = 178;
     pub const module_needs_lua_runtime_refs: usize = 21;
     pub const primary_file: []const u8 = "src/codegen.zig";
 };

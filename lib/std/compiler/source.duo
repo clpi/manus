@@ -1,0 +1,50 @@
+-- std.compiler.source
+-- Duo-native source substrate (Pass 16 WS1/WS2)
+
+type Loc = {
+    file: str,
+    line: i64,
+    col: i64
+}
+
+type ByteCursor = {
+    bytes: str,
+    pos: i64,
+    file: str,
+    line: i64,
+    col: i64
+}
+
+fun format_loc(loc: Loc): str
+    loc.file .. ":" .. tostring(loc.line) .. ":" .. tostring(loc.col)
+end
+
+fun cursor_new(bytes: str, file: str): ByteCursor
+    { bytes = bytes, pos = 1, file = file, line = 1, col = 1 }
+end
+
+fun cursor_eof(c: ByteCursor): bool
+    c.pos > string.len(c.bytes)
+end
+
+fun cursor_peek(c: ByteCursor): i64
+    if cursor_eof(c) return 0 end
+    string.byte(c.bytes, c.pos)
+end
+
+fun cursor_advance(c: ByteCursor): i64
+    if cursor_eof(c) return 0 end
+    ch = string.byte(c.bytes, c.pos)
+    c.pos = c.pos + 1
+    if ch == 10
+        c.line = c.line + 1
+        c.col = 1
+    else
+        c.col = c.col + 1
+    end
+    ch
+end
+
+fun cursor_loc(c: ByteCursor): Loc
+    { file = c.file, line = c.line, col = c.col }
+end

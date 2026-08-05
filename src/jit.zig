@@ -129,9 +129,13 @@ pub fn emitUpvaluePackTable(cg: anytype, list: []const *ast.FuncBody) E!void {
     cg.p("}};\n\n", .{});
 }
 
+fn isHexDigit(c: u8) bool {
+    return (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
+}
+
 fn emitCStringLiteral(cg: anytype, s: []const u8) E!void {
     cg.p("\"", .{});
-    for (s) |c| {
+    for (s, 0..) |c, i| {
         switch (c) {
             '\\' => cg.p("\\\\", .{}),
             '"' => cg.p("\\\"", .{}),
@@ -145,6 +149,14 @@ fn emitCStringLiteral(cg: anytype, s: []const u8) E!void {
                     const hex = "0123456789abcdef";
                     cg.p("\\x", .{});
                     cg.p("{c}{c}", .{ hex[c >> 4], hex[c & 15] });
+                    // C's \x escape greedily consumes any following hex
+                    // digits, so a raw hex-digit byte right after this
+                    // escape would silently merge into it (and can overflow
+                    // char range, which clang rejects outright). Split the
+                    // string literal here; adjacent literals concatenate.
+                    if (i + 1 < s.len and isHexDigit(s[i + 1])) {
+                        cg.p("\"\"", .{});
+                    }
                 }
             },
         }

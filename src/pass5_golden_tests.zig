@@ -24,6 +24,7 @@ test "pass5 golden: C point.h SIM entity ids" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"pass_by\":\"value\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"storage_class\":\"native\"") != null);
 
+    aw.deinit();
     aw = .init(std.testing.allocator);
     try sim.writeSnapshotJson(&snap, &aw.writer);
     try std.testing.expectEqualStrings(json, aw.written());

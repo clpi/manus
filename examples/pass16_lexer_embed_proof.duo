@@ -1,0 +1,11 @@
+-- Pass 16 MP-04 — Duo lexer module embed smoke (Lexer.new; next() proven via tokenize proof).
+
+embed_smoke(): i64
+    Lexer = req "std.compiler.lexer"
+    lex = Lexer.new("fun x end", "proof.duo")
+    0
+end
+
+main(): i64
+    embed_smoke()
+end

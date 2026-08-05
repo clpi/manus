@@ -14,6 +14,11 @@ const pass9_catalog = @import("pass9_catalog.zig");
 const pass10_catalog = @import("pass10_catalog.zig");
 const pass11_catalog = @import("pass11_catalog.zig");
 const pass12_catalog = @import("pass12_catalog.zig");
+const pass13_catalog = @import("pass13_catalog.zig");
+const pass14_catalog = @import("pass14_catalog.zig");
+const pass15_catalog = @import("pass15_catalog.zig");
+const pass16_catalog = @import("pass16_catalog.zig");
+const passes_audit = @import("passes_audit.zig");
 
 pub const CatalogPaths = struct {
     pub const plan = "docs/plans/pass3_directive_grammar_convergence.md";
@@ -97,7 +102,7 @@ fn countRegisteredShapeOps() usize {
 }
 
 /// Emit Pass 3 tracking JSON (catalog paths, workstreams, transform registry summary).
-pub fn writePass3Json(w: *std.Io.Writer) !void {
+pub fn writePass3Json(w: *std.Io.Writer, alloc: std.mem.Allocator) !void {
     try w.print(
         \\{{"pass":3,"mission":"directive surface + grammar minimalism + convergence","catalogs":{{
     , .{});
@@ -169,18 +174,28 @@ pub fn writePass3Json(w: *std.Io.Writer) !void {
     try pass11_catalog.writePass11Json(w);
     try w.print(",", .{});
     try pass12_catalog.writePass12Json(w);
+    try w.print(",", .{});
+    try pass13_catalog.writePass13Json(w, alloc);
+    try w.print(",", .{});
+    try pass14_catalog.writePass14Json(w, alloc);
+    try w.print(",", .{});
+    try pass15_catalog.writePass15Json(w, alloc);
+    try w.print(",", .{});
+    try pass16_catalog.writePass16Json(w, alloc);
+    try w.print(",", .{});
+    try passes_audit.writePassesAuditEmbedJson(w, alloc);
     try w.print("}}\n", .{});
 }
 
 /// CLI entry: `duo catalog` (Pass 3 machine-readable tracking JSON).
-pub fn writeCatalogJson(w: *std.Io.Writer, _: std.mem.Allocator) !void {
-    try writePass3Json(w);
+pub fn writeCatalogJson(w: *std.Io.Writer, alloc: std.mem.Allocator) !void {
+    try writePass3Json(w, alloc);
 }
 
 test "pass3_catalog: writePass3Json emits valid structure" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer aw.deinit();
-    try writePass3Json(&aw.writer);
+    try writePass3Json(&aw.writer, std.testing.allocator);
     const out = aw.written();
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass\":3") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"workstreams\"") != null);
@@ -195,6 +210,18 @@ test "pass3_catalog: writePass3Json emits valid structure" {
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass10\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass11\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass12\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass13\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass14\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass15\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass16\"") != null);
+    var parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, out, .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value == .object);
+    const root = parsed.value.object;
+    try std.testing.expect(root.get("pass11") != null);
+    try std.testing.expect(root.get("pass12") != null);
+    try std.testing.expect(root.get("pass13") != null);
+    try std.testing.expect(root.get("pass14") != null);
 }
 
 test "pass3_catalog: all pipeline ops registered in transform engine" {

@@ -7,8 +7,14 @@
 //! layered over Pass 13's coordination control plane.
 const std = @import("std");
 const pass14_constructive_audit = @import("pass14_constructive_audit.zig");
+const target_model = @import("target_model.zig");
+const dependency_manifest = @import("dependency_manifest.zig");
 const git_preservation = @import("git_preservation.zig");
 const salvage_registry = @import("salvage_registry.zig");
+const arch_currency = @import("arch_currency.zig");
+const lua_readiness = @import("lua_readiness.zig");
+const repo_metrics = @import("repo_metrics.zig");
+const compat_layer_projection = @import("compat_layer_projection.zig");
 
 pub const SCHEMA_VERSION = "pass14-catalog-v0";
 pub const PLAN_PATH = "docs/plans/pass14_constructive_evolution.md";
@@ -45,12 +51,12 @@ pub const Milestone = struct {
 pub const milestones: []const Milestone = &.{
     .{ .id = "P14-M1", .title = "Preservation-aware repository operations", .status = "done", .owner = "src/git_preservation.zig (duo dev preserve)" },
     .{ .id = "P14-M2", .title = "Salvage registry (seeded with real findings)", .status = "done", .owner = "src/salvage_registry.zig" },
-    .{ .id = "P14-M3", .title = "Classified dependency manifest", .status = "open", .owner = "src/dependency_manifest.zig (future)" },
-    .{ .id = "P14-M4", .title = "Cross-architecture target matrix", .status = "open", .owner = "src/target_model.zig extension" },
+    .{ .id = "P14-M3", .title = "Classified dependency manifest", .status = "done", .owner = "src/dependency_manifest.zig" },
+    .{ .id = "P14-M4", .title = "Cross-architecture target matrix", .status = "partial", .owner = "src/target_model.zig (architecture_matrix)" },
     .{ .id = "P14-M5", .title = "Direct low-level substrate proof", .status = "open", .owner = "future" },
     .{ .id = "P14-M6", .title = "Cross-language semantic proof", .status = "partial", .owner = "src/sim.zig + abi.specialize" },
     .{ .id = "P14-M7", .title = "Architecture-specific realization proof", .status = "partial", .owner = "src/native_backend.zig" },
-    .{ .id = "P14-M8", .title = "Architectural currency loop", .status = "open", .owner = "src/arch_currency.zig (future)" },
+    .{ .id = "P14-M8", .title = "Architectural currency loop", .status = "done", .owner = "src/arch_currency.zig" },
     .{ .id = "P14-M9", .title = "Shrink proof (semantic compression)", .status = "partial", .owner = "src/semantic_compression.zig" },
 };
 
@@ -173,6 +179,29 @@ pub const prohibited_outcomes: []const []const u8 = &.{
     "reports completion without integration and proof",
 };
 
+/// Pass 14 §22 Deliverable A — cross-cutting executive summary of the Pass 1–13
+/// audit. Real current findings sourced from the plan docs and the live
+/// preservation/salvage reports.
+pub const ExecutiveFinding = struct {
+    key: []const u8,
+    severity: []const u8,
+    finding: []const u8,
+    source: []const u8,
+};
+
+pub const executive_summary: []const ExecutiveFinding = &.{
+    .{ .key = "preservation_risk", .severity = "caution", .finding = "2 prunable worktrees (duo-recovery at unique rev, opencode detached); ~80 dirty tracked files; CLAUDE.md untracked agent state.", .source = "duo dev preserve + salvage registry" },
+    .{ .key = "dependency_risk", .severity = "caution", .finding = "Zig=bootstrap host, Clang=C-backend compiler, libc+Mach-O linker=platform; no self-hosting yet. Direct backend sovereign for ARM64 Mach-O subset only.", .source = "dependency_manifest + Pass 4 §A" },
+    .{ .key = "architecture_perf_gap", .severity = "high", .finding = "Direct backend is ARM64-macOS-Mach-O only; x86-64/RISC-V/Wasm-emission/GPU open. Low-level + machine IR are open (Pass 4 §C). No native [N]u8 byte type (Ward parses the Wasm magic via @c.emit workaround).", .source = "Pass 9 + Pass 4 §C" },
+    .{ .key = "stale_api_risk", .severity = "low", .finding = "AGENTS.md + AGENT_ALIGNMENT.md stale pass-name refs refitted to canonical (resolved). Internal normalizeDirective still maps dotted paths to underscore canonicals. Pass-shaped filenames (pass1..pass14_catalog) are the current convention vs §16.3.", .source = "salvage registry + AGENTS.md gap" },
+    .{ .key = "compat_layer_cost", .severity = "high", .finding = "~1360 lua_Value/lua_invoke/boxing references remain in codegen (dynamic fallback + stdlib); monolithic C runtime preamble embedded when moduleNeedsLuaRuntime.", .source = "Pass 4 §A + pass4_boxed_inventory" },
+    .{ .key = "compression_opportunity", .severity = "medium", .finding = "codegen.zig ~27k lines with 3 parallel meta-dispatch paths (meta_dispatch.zig created, unify incomplete); duplicate agent docs; pass-shaped hierarchy.", .source = "Pass 6 + Pass 10" },
+    .{ .key = "low_level_gap", .severity = "high", .finding = "Object emission macOS-arm64 only; no Duo-owned linker/assembler/debug-info/unwind; native byte buffer ([N]u8) absent.", .source = "Pass 9 + Pass 4 P4-08" },
+    .{ .key = "lua_opportunity", .severity = "medium", .finding = "AOT via C only; no adaptive JIT, no differential Lua suite, no interpreter-mode startup benchmark.", .source = "Pass 4 §F + Pass 12 Audit 10" },
+    .{ .key = "cross_language_opportunity", .severity = "medium", .finding = "SIM v0 + abi.specialize exist; effects/capabilities/stage/provenance not yet in SIM; Layer D (foreign impl import) + E (re-emission) deferred.", .source = "Pass 5" },
+    .{ .key = "external_currency", .severity = "low", .finding = "Mojo/Zig-comptime/Jai subsumed; LLVM-free backends + Wasm proposals + MCP/LSP standardization are adaptation/architectural candidates.", .source = "arch_currency" },
+};
+
 fn writePillars(w: *std.Io.Writer, key: []const u8, items: []const Pillar) !void {
     try w.print("\"{s}\":[", .{key});
     for (items, 0..) |p, i| {
@@ -229,6 +258,24 @@ pub fn writePass14Json(w: *std.Io.Writer, alloc: std.mem.Allocator) !void {
     try git_preservation.writePreservationReportJson(w, report);
     try w.writeAll(",\"salvage\":");
     try salvage_registry.writeSalvageRegistryJson(w);
+    try w.writeAll(",\"architecture_matrix\":");
+    try target_model.writeArchitectureMatrixJson(w);
+    try w.writeAll(",\"dependency_manifest\":");
+    try dependency_manifest.writeManifestJson(w);
+    try w.writeAll(",\"arch_currency\":");
+    try arch_currency.writeCurrencyJson(w);
+    try w.writeAll(",\"executive_summary\":[");
+    for (executive_summary, 0..) |e, i| {
+        if (i > 0) try w.writeAll(",");
+        try w.print("{{\"key\":\"{s}\",\"severity\":\"{s}\",\"finding\":\"{s}\",\"source\":\"{s}\"}}", .{ e.key, e.severity, e.finding, e.source });
+    }
+    try w.writeAll("]");
+    try w.writeAll(",\"lua_readiness\":");
+    try lua_readiness.writeReadinessJson(w);
+    try w.writeAll(",\"repo_metrics\":");
+    try repo_metrics.writeMetricsJson(w, alloc);
+    try w.writeAll(",\"compat_layer_projection\":");
+    try compat_layer_projection.writeProjectionJson(w);
     try w.writeAll("}");
 }
 
@@ -243,6 +290,14 @@ test "pass14_catalog: writePass14Json structure" {
     try std.testing.expect(std.mem.indexOf(u8, out, "retire_through_replacement") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "forbidden_architectural") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "overall_risk") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "architecture_matrix") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "dependency_manifest") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "arch_currency") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "executive_summary") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "architecture_perf_gap") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "lua_readiness") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "repo_metrics") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "compat_layer_projection") != null);
     // writePass14Json emits a bare "pass14":{...} member (convention: embedded in
     // the root object by pass3_catalog). Wrap it before parsing as a document.
     const wrapped = try std.fmt.allocPrint(std.testing.allocator, "{{{s}}}", .{out});

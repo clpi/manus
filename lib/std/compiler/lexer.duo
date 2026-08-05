@@ -1,0 +1,629 @@
+-- std.compiler.lexer
+-- Duo-native lexer implementation
+
+token = req "std.compiler.token"
+classify = req "std.token.classify"
+
+type Loc = {
+    file: str,
+    line: i64,
+    col: i64
+}
+
+type Tok = {
+    kind: i64,
+    loc: Loc,
+    text: str,
+    int_val: i64,
+    float_val: f64
+}
+
+type State = {
+    pos: i64,
+    line: i64,
+    col: i64,
+    has_peeked: bool,
+    peeked_token: Tok
+}
+
+type Lexer = {
+    src: str,
+    pos: i64,
+    line: i64,
+    col: i64,
+    file: str,
+    has_peeked: bool,
+    peeked_token: Tok,
+    has_error: bool,
+    error_loc: Loc,
+    hint_count: i64,
+    hint_0: str,
+    hint_1: str,
+    hint_2: str,
+    hint_3: str,
+    hint_4: str,
+    hint_5: str,
+    hint_6: str,
+    hint_7: str
+}
+
+fun new(src: str, file: str): Lexer
+    dummy_loc: Loc = { file = "", line = 0, col = 0 }
+    dummy_tok: Tok = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
+    return {
+        src = src,
+        pos = 1,
+        line = 1,
+        col = 1,
+        file = file,
+        has_peeked = false,
+        peeked_token = dummy_tok,
+        has_error = false,
+        error_loc = dummy_loc,
+        hint_count = 0,
+        hint_0 = "",
+        hint_1 = "",
+        hint_2 = "",
+        hint_3 = "",
+        hint_4 = "",
+        hint_5 = "",
+        hint_6 = "",
+        hint_7 = "",
+    }
+end
+
+fun cur_loc(self: Lexer): Loc
+    return { file = self.file, line = self.line, col = self.col }
+end
+
+fun has_pending_hints(self: Lexer): bool
+    self.hint_count > 0
+end
+
+fun consume_hints(self: Lexer): any
+    hints = {}
+    i = 0
+    while i < self.hint_count
+        if i == 0 hints[#hints + 1] = self.hint_0
+        elseif i == 1 hints[#hints + 1] = self.hint_1
+        elseif i == 2 hints[#hints + 1] = self.hint_2
+        elseif i == 3 hints[#hints + 1] = self.hint_3
+        elseif i == 4 hints[#hints + 1] = self.hint_4
+        elseif i == 5 hints[#hints + 1] = self.hint_5
+        elseif i == 6 hints[#hints + 1] = self.hint_6
+        elseif i == 7 hints[#hints + 1] = self.hint_7
+        end
+        i = i + 1
+    end
+    self.hint_count = 0
+    self.hint_0 = ""
+    self.hint_1 = ""
+    self.hint_2 = ""
+    self.hint_3 = ""
+    self.hint_4 = ""
+    self.hint_5 = ""
+    self.hint_6 = ""
+    self.hint_7 = ""
+    hints
+end
+
+fun peek_char(self: Lexer): i64
+    if self.pos > string.len(self.src) return 0 end
+    string.byte(self.src, self.pos)
+end
+
+fun peek_char2(self: Lexer): i64
+    if self.pos + 1 > string.len(self.src) return 0 end
+    string.byte(self.src, self.pos + 1)
+end
+
+fun adv(self: Lexer)
+    if self.pos > string.len(self.src) return end
+    c = string.byte(self.src, self.pos)
+    self.pos = self.pos + 1
+    if c == 10
+        self.line = self.line + 1
+        self.col = 1
+    else
+        self.col = self.col + 1
+    end
+end
+
+fun is_digit(c: i64): bool
+    (c >= 48 and c <= 57)
+end
+
+fun is_alpha(c: i64): bool
+    ((c >= 65 and c <= 90) or (c >= 97 and c <= 122))
+end
+
+fun is_alnum(c: i64): bool
+    is_alpha(c) or is_digit(c)
+end
+
+fun is_hex(c: i64): bool
+    is_digit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)
+end
+
+fun long_bracket_level(self: Lexer): i64
+    i = self.pos
+    if i > string.len(self.src) or string.byte(self.src, i) != 91 return -1 end
+    i = i + 1
+    lvl = 0
+    while i <= string.len(self.src) and string.byte(self.src, i) == 61
+        lvl = lvl + 1
+        i = i + 1
+    end
+    if i > string.len(self.src) or string.byte(self.src, i) != 91 return -1 end
+    lvl
+end
+
+fun skip_long(self: Lexer, level: i64)
+    adv(self)
+    i = 0
+    while i < level
+        adv(self)
+        i = i + 1
+    end
+    adv(self)
+    while self.pos <= string.len(self.src)
+        if peek_char(self) == 93
+            eq = 0
+            adv(self)
+            while peek_char(self) == 61
+                adv(self)
+                eq = eq + 1
+            end
+            if eq == level and peek_char(self) == 93
+                adv(self)
+                return
+            end
+        else
+            adv(self)
+        end
+    end
+    error("UnterminatedLongString")
+end
+
+fun skip_ws(self: Lexer)
+    while self.pos <= string.len(self.src)
+        c = peek_char(self)
+        if c == 32 or c == 9 or c == 13 or c == 10
+            adv(self)
+        elseif c == 35 and peek_char2(self) == 33 and self.pos == 1
+            while self.pos <= string.len(self.src) and peek_char(self) != 10
+                adv(self)
+            end
+        elseif c == 45 and peek_char2(self) == 45
+            self.pos = self.pos + 2
+            self.col = self.col + 2
+            lvl = long_bracket_level(self)
+            if lvl >= 0
+                skip_long(self, lvl)
+            else
+                is_triple = (self.pos <= string.len(self.src) and peek_char(self) == 45)
+                if is_triple
+                    adv(self)
+                end
+                start = self.pos
+                while self.pos <= string.len(self.src) and peek_char(self) != 10
+                    adv(self)
+                end
+                if is_triple and self.hint_count < 8
+                    comment_text = string.sub(self.src, start, self.pos - 1)
+                    if string.len(comment_text) > 0 and string.byte(comment_text, 1) == 64
+                        h = string.sub(comment_text, 2, -1)
+                        if self.hint_count == 0 self.hint_0 = h
+                        elseif self.hint_count == 1 self.hint_1 = h
+                        elseif self.hint_count == 2 self.hint_2 = h
+                        elseif self.hint_count == 3 self.hint_3 = h
+                        elseif self.hint_count == 4 self.hint_4 = h
+                        elseif self.hint_count == 5 self.hint_5 = h
+                        elseif self.hint_count == 6 self.hint_6 = h
+                        elseif self.hint_count == 7 self.hint_7 = h
+                        end
+                        self.hint_count = self.hint_count + 1
+                    end
+                end
+            end
+        else
+            break
+        end
+    end
+end
+
+fun read_long_str(self: Lexer, level: i64): str
+    adv(self)
+    i = 0
+    while i < level
+        adv(self)
+        i = i + 1
+    end
+    adv(self)
+    if peek_char(self) == 10
+        adv(self)
+    elseif peek_char(self) == 13
+        adv(self)
+        if peek_char(self) == 10
+            adv(self)
+        end
+    end
+    start = self.pos
+    while self.pos <= string.len(self.src)
+        if peek_char(self) == 93
+            close_start = self.pos
+            adv(self)
+            eq = 0
+            while peek_char(self) == 61
+                adv(self)
+                eq = eq + 1
+            end
+            if eq == level and peek_char(self) == 93
+                content = string.sub(self.src, start, close_start - 1)
+                adv(self)
+                return content
+            end
+        else
+            adv(self)
+        end
+    end
+    error("UnterminatedLongString")
+end
+
+fun read_str(self: Lexer, quote: i64): str
+    adv(self)
+    start = self.pos
+    while self.pos <= string.len(self.src)
+        c = peek_char(self)
+        if c == quote
+            s = string.sub(self.src, start, self.pos - 1)
+            adv(self)
+            return s
+        end
+        if c == 10 or c == 13 error("UnterminatedString") end
+        if c == 92
+            adv(self)
+            if self.pos > string.len(self.src) error("UnterminatedString") end
+            esc = peek_char(self)
+            if esc == 120
+                adv(self)
+                if self.pos > string.len(self.src) or not is_hex(peek_char(self))
+                    error("InvalidEscape")
+                end
+                adv(self)
+                if self.pos <= string.len(self.src) and is_hex(peek_char(self))
+                    adv(self)
+                end
+            elseif esc == 117
+                adv(self)
+                if peek_char(self) != 123 error("InvalidEscape") end
+                adv(self)
+                has_digit = false
+                while self.pos <= string.len(self.src) and peek_char(self) != 125
+                    if not is_hex(peek_char(self)) error("InvalidEscape") end
+                    has_digit = true
+                    adv(self)
+                end
+                if not has_digit or self.pos > string.len(self.src) or peek_char(self) != 125
+                    error("InvalidEscape")
+                end
+                adv(self)
+            elseif esc == 122
+                adv(self)
+                while self.pos <= string.len(self.src)
+                    ws = peek_char(self)
+                    if ws == 32 or ws == 9 or ws == 13 or ws == 10
+                        adv(self)
+                    else
+                        break
+                    end
+                end
+            elseif esc == 13
+                adv(self)
+                if self.pos <= string.len(self.src) and peek_char(self) == 10
+                    adv(self)
+                end
+            else
+                adv(self)
+            end
+        else
+            adv(self)
+        end
+    end
+    error("UnterminatedString")
+end
+
+fun read_num(self: Lexer): Tok
+    l = cur_loc(self)
+    start = self.pos
+    is_float = false
+    
+    c1 = peek_char(self)
+    c2 = peek_char2(self)
+    if c1 == 48 and (c2 == 120 or c2 == 88)
+        adv(self)
+        adv(self)
+        while is_hex(peek_char(self))
+            adv(self)
+        end
+        if peek_char(self) == 46
+            is_float = true
+            adv(self)
+            while is_hex(peek_char(self))
+            adv(self)
+        end
+        end
+        p = peek_char(self)
+        if p == 112 or p == 80
+            is_float = true
+            adv(self)
+            sgn = peek_char(self)
+            if sgn == 43 or sgn == 45
+                adv(self)
+            end
+            while is_digit(peek_char(self))
+                adv(self)
+            end
+        end
+    else
+        while is_digit(peek_char(self))
+            adv(self)
+        end
+        if peek_char(self) == 46
+            n = peek_char2(self)
+            if is_digit(n)
+                is_float = true
+                adv(self)
+                while is_digit(peek_char(self))
+            adv(self)
+        end
+            end
+        end
+        e = peek_char(self)
+        if e == 101 or e == 69
+            is_float = true
+            adv(self)
+            sgn = peek_char(self)
+            if sgn == 43 or sgn == 45
+                adv(self)
+            end
+            while is_digit(peek_char(self))
+                adv(self)
+            end
+        end
+    end
+    
+    text = string.sub(self.src, start, self.pos - 1)
+    if is_float
+        v = tonumber(text) or 0.0
+        return { kind = token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = v }
+    else
+        v = tonumber(text) or 0
+        return { kind = token.KIND_INT_LIT, loc = l, text = text, int_val = v, float_val = 0.0 }
+    end
+end
+
+fun next_tok(self: Lexer): Tok
+    skip_ws(self)
+    if self.pos > string.len(self.src)
+        return { kind = token.KIND_EOF, loc = cur_loc(self), text = "", int_val = 0, float_val = 0.0 }
+    end
+    
+    l = cur_loc(self)
+    c = peek_char(self)
+    
+    if is_digit(c) or (c == 46 and is_digit(peek_char2(self)))
+        return read_num(self)
+    end
+    
+    if is_alpha(c) or c == 95
+        start = self.pos
+        while self.pos <= string.len(self.src)
+            p = peek_char(self)
+            if is_alnum(p) or p == 95
+                adv(self)
+            else
+                break
+            end
+        end
+        text = string.sub(self.src, start, self.pos - 1)
+        kind = classify.classify(text)
+        if kind == 0
+            kind = token.KIND_NAME
+        end
+        return { kind = kind, loc = l, text = text, int_val = 0, float_val = 0.0 }
+    end
+    
+    if c == 39 or c == 34
+        s = read_str(self, c)
+        return { kind = token.KIND_STRING_LIT, loc = l, text = s, int_val = 0, float_val = 0.0 }
+    end
+    
+    if c == 91
+        lvl = long_bracket_level(self)
+        if lvl >= 0
+            s = read_long_str(self, lvl)
+            return { kind = token.KIND_STRING_LIT, loc = l, text = s, int_val = 0, float_val = 0.0 }
+        end
+    end
+    
+    adv(self)
+    p = self.pos
+    
+    if c == 43
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_PLUS_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_PLUS, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 42
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_STAR_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_STAR, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 37
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_PERCENT_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_PERCENT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 94
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_CARET_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_CARET, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 35
+        if peek_char(self) == 35
+            adv(self)
+            return { kind = token.KIND_HASH_HASH, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_HASH, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 38
+        return { kind = token.KIND_AMP, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 124
+        if self.pos <= string.len(self.src) and string.byte(self.src, self.pos) == 62
+            self.pos = self.pos + 1
+            return { kind = token.KIND_PIPE_GT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_PIPE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 40
+        return { kind = token.KIND_LPAREN, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 41
+        return { kind = token.KIND_RPAREN, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 91
+        return { kind = token.KIND_LBRACKET, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 93
+        return { kind = token.KIND_RBRACKET, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 123
+        return { kind = token.KIND_LBRACE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 125
+        return { kind = token.KIND_RBRACE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 59
+        return { kind = token.KIND_SEMI, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 44
+        return { kind = token.KIND_COMMA, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 45
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_MINUS_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        if peek_char(self) == 62
+            adv(self)
+            return { kind = token.KIND_ARROW, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_MINUS, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 47
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_SLASH_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        if peek_char(self) == 47
+            adv(self)
+            return { kind = token.KIND_IDIV, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_SLASH, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 46
+        if peek_char(self) == 46
+            adv(self)
+            if peek_char(self) == 46
+                adv(self)
+                return { kind = token.KIND_DOTS, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            end
+            return { kind = token.KIND_CONCAT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_DOT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 61
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_EQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        if peek_char(self) == 62
+            adv(self)
+            return { kind = token.KIND_FAT_ARROW, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_ASSIGN, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 126
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_NEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_TILDE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 60
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_LEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        if peek_char(self) == 60
+            adv(self)
+            return { kind = token.KIND_LSHIFT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_LT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 62
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_GEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        if peek_char(self) == 62
+            adv(self)
+            return { kind = token.KIND_RSHIFT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_GT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 58
+        if peek_char(self) == 58
+            adv(self)
+            return { kind = token.KIND_DCOLON, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_COLON, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 64
+        return { kind = token.KIND_AT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 63
+        return { kind = token.KIND_QUESTION, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 33
+        if peek_char(self) == 61
+            adv(self)
+            return { kind = token.KIND_NEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+        end
+        return { kind = token.KIND_BANG, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    elseif c == 96
+        return { kind = token.KIND_BACKTICK, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+    else
+        error("UnexpectedChar")
+    end
+end
+
+fun next(self: Lexer): Tok
+    if self.has_peeked
+        tok = self.peeked_token
+        self.has_peeked = false
+        return tok
+    end
+    return next_tok(self)
+end
+
+fun peek(self: Lexer): Tok
+    if not self.has_peeked
+        self.peeked_token = next_tok(self)
+        self.has_peeked = true
+    end
+    self.peeked_token
+end
+
+fun save_state(self: Lexer): State
+    return {
+        pos = self.pos,
+        line = self.line,
+        col = self.col,
+        has_peeked = self.has_peeked,
+        peeked_token = self.peeked_token,
+    }
+end
+
+fun restore_state(self: Lexer, state: State)
+    self.pos = state.pos
+    self.line = state.line
+    self.col = state.col
+    self.has_peeked = state.has_peeked
+    self.peeked_token = state.peeked_token
+end

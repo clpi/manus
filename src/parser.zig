@@ -616,7 +616,26 @@ pub const Parser = struct {
                     }
                 }
             }
-            if (is_directive) return true;
+            if (is_directive) {
+                // `@comp.hint.fence()` / `@comp.bit.popcount(n)` at statement scope are
+                // expression calls (DNIR hardware path), not standalone module directives.
+                // Only treat as directive when a declaration follows (@comp.derive on a decl).
+                const nxt = try self.pk();
+                return switch (nxt.kind) {
+                    .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias,
+                    .kw_local, .kw_global, .kw_for,
+                    => true,
+                    .name => blk: {
+                        if (std.mem.eql(u8, nxt.text, "type")) break :blk true;
+                        const s2 = self.lex.saveState();
+                        _ = try self.adv();
+                        const after = try self.pk();
+                        self.lex.restoreState(s2);
+                        break :blk after.kind == .colon;
+                    },
+                    else => false,
+                };
+            }
         }
         const tok = try self.pk();
         return switch (tok.kind) {
@@ -937,7 +956,7 @@ pub const Parser = struct {
         const first_tok = try self.pk();
         if (first_tok.kind == .rparen) return "";
 
-        const src = self.lex.src;
+        const src = self.lex.cursor.bytes;
 
         var start: usize = undefined;
         if (first_tok.kind == .string_lit) {
@@ -1559,7 +1578,7 @@ pub const Parser = struct {
         }
 
         const after = try self.pk();
-        if (has_literal_arg) return false; // literals are never in param list
+        if (has_literal_arg and !typed_or_vararg) return false; // literals are never in param list
         if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
         if (allow_untyped_comma and has_comma) {
             if (after.kind == .eof) return false;
@@ -2087,6 +2106,15 @@ pub const Parser = struct {
     /// ```
     fn parse_match_inner(self: *Parser) ParseError!ast.MatchExpr {
         const l = (try self.adv()).loc; // consume `match`
+        // Pass 3 retires `match`/`case` (53 keywords -> 30); dispatch belongs in
+        // `if`/`elseif` or a table, not a dedicated keyword. `match` is also the
+        // slower shape in practice — on ward's WASM interpreter every `match`
+        // form measured worse than the equivalent `if`/`elseif` chain, and a
+        // named `const` used as a pattern silently becomes a catch-all binding
+        // rather than a comparison.
+        if (self.duo_mode) {
+            term.locWarn(l, "warning: 'match'/'case' are deprecated in .duo; use if/elseif or table dispatch", .{});
+        }
         const scrutinee = try self.parse_match_scrutinee();
 
         var arms: std.ArrayList(ast.MatchArm) = .empty;
@@ -2677,14 +2705,31 @@ pub const Parser = struct {
         // Pass 3: `{ name, age } = user` named destructuring assign
         if (first_tok.kind == .lbrace) {
             const saved = self.lex.saveState();
-            if (self.parse_table_destr_pattern()) |pat| {
-                if ((try self.pk()).kind == .assign) {
+            _ = try self.adv(); // consume '{'
+            var is_table_literal = false;
+            const inner = try self.pk();
+            switch (inner.kind) {
+                .lbracket, .concat, .string_lit, .int_lit => is_table_literal = true,
+                .name => {
+                    const name_saved = self.lex.saveState();
                     _ = try self.adv();
-                    const rhs = try self.parse_expr();
-                    return try self.stmt_from_table_destructure(pat, rhs, first_tok.loc);
-                }
-            } else |_| {}
+                    if ((try self.pk()).kind == .assign) is_table_literal = true;
+                    self.lex.restoreState(name_saved);
+                },
+                else => {},
+            }
             self.lex.restoreState(saved);
+            if (!is_table_literal) {
+                const destr_saved = self.lex.saveState();
+                if (self.parse_table_destr_pattern()) |pat| {
+                    if ((try self.pk()).kind == .assign) {
+                        _ = try self.adv();
+                        const rhs = try self.parse_expr();
+                        return try self.stmt_from_table_destructure(pat, rhs, first_tok.loc);
+                    }
+                } else |_| {}
+                self.lex.restoreState(destr_saved);
+            }
         }
         if (is_unary) {
             const expr = try self.parse_expr();
@@ -5944,6 +5989,19 @@ test "parse: table spread ..source in table literal" {
     try testing.expectEqualStrings("base", table.fields[0].spread.name.ident);
     try testing.expect(table.fields[1] == .named);
     try testing.expectEqualStrings("x", table.fields[1].named.key);
+}
+
+test "parse: table literal statement not destructure pattern" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\cur_loc(self: Lexer): Loc
+        \\    { file = self.file, line = self.line, col = self.col }
+        \\end
+    , &arena);
+    const fb = mod.body.stmts[0].func_decl.func;
+    try testing.expect(fb.body.tail_expr != null);
+    try testing.expect(fb.body.tail_expr.?.* == .table);
 }
 
 test "parse: if binding condition if x = expr" {

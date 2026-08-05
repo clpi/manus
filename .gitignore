@@ -75,3 +75,14 @@ docs/book/
 .kiro/
 .poolside/
 .serena/
+.junie/
+.duo/
+
+# Tracked build/reference binaries (must not be in release tree)
+/benchmark_c
+/benchmark_c_fastmath
+/benchmark_c_zigcc
+/bench_alloc_c
+/bench_c
+/bench_simd_matmul_c
+/default.profraw

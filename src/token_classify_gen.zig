@@ -124,12 +124,13 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
     try w.writeAll("    0\nend\n");
 
     // Candidate 3 — sorted binary search.
-    try w.print("\n-- Candidate 3: sorted lookup (binary search over descriptor).\nfun classify_sorted_lookup(w: str): i64\n    lo = 1\n    hi = {d}\n    while lo <= hi\n        mid = (lo + hi) // 2\n        t = SORTED_TEXT[mid]\n        if w == t then return SORTED_ID[mid] end\n        if w < t then\n            hi = mid - 1\n        else\n            lo = mid + 1\n        end\n    end\n    0\nend\n", .{kws.len});
+    try w.print("\n-- Candidate 3: sorted lookup (binary search over descriptor).\nfun classify_sorted_lookup(w: str): i64\n    lo = 1\n    hi = {d}\n    while lo <= hi\n        mid = (lo + hi) // 2\n        if w == SORTED_TEXT[mid] then return SORTED_ID[mid] end\n        if w < SORTED_TEXT[mid] then\n            hi = mid - 1\n        else\n            lo = mid + 1\n        end\n    end\n    0\nend\n", .{kws.len});
 
     // Production entry + metadata projections.
     try w.writeAll(
         \\
         \\-- Production entry (mirrors token_semantic.production_classifier).
+        \\@c.export("duo_keyword_classify")
         \\fun classify(w: str): i64
         \\    classify_branch_chain(w)
         \\end
@@ -157,6 +158,41 @@ pub fn emitTokenClassify(w: *std.Io.Writer) !void {
         \\end
         \\
     );
+}
+
+/// C realization of `classify.duo` production entry — linked into the duo binary (P16-WS3).
+pub fn emitKeywordClassifyNativeC(w: *std.Io.Writer) !void {
+    const kws = token_semantic.keywords;
+    try w.print(
+        \\/* GENERATED from {s} — do not edit by hand.
+        \\ * Regenerate: duo token-tables emit
+        \\ * Canonical Duo projection: lib/std/token/classify.duo (@c.export classify)
+        \\ * Production consumer: src/duo_keyword_bridge.zig → src/lexer.zig
+        \\ */
+        \\#include <stdint.h>
+        \\#include <string.h>
+        \\
+        \\int64_t duo_keyword_classify(const char *w) {{
+        \\
+    , .{PROVENANCE});
+    for (kws) |kw| {
+        try w.print("    if (strcmp(w, \"{s}\") == 0) return {d};\n", .{ kw.text, @intFromEnum(kw.kind) });
+    }
+    try w.writeAll("    return 0;\n}\n");
+}
+
+pub fn emitKeywordClassifyNativeCFile(alloc: std.mem.Allocator, io: std.Io, path: []const u8) !void {
+    if (std.fs.path.dirname(path)) |dir| {
+        if (!std.mem.eql(u8, dir, ".")) {
+            const cwd = std.Io.Dir.cwd();
+            try cwd.createDirPath(io, dir);
+        }
+    }
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try emitKeywordClassifyNativeC(&aw.writer);
+    const cwd = std.Io.Dir.cwd();
+    try std.Io.Dir.writeFile(cwd, io, .{ .sub_path = path, .data = aw.written() });
 }
 
 pub fn emitTokenClassifyFile(alloc: std.mem.Allocator, io: std.Io, path: []const u8) !void {
@@ -198,4 +234,12 @@ test "token_classify_gen: sorted descriptor is lexicographic" {
         const b = token_semantic.keywords[sorted[i]].text;
         try std.testing.expect(std.mem.lessThan(u8, a, b));
     }
+}
+
+test "token_classify_gen: emit native C when EMIT_CLASSIFY_C set" {
+    const path_z = std.c.getenv("EMIT_CLASSIFY_C") orelse return;
+    const path = std.mem.span(path_z);
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    try emitKeywordClassifyNativeCFile(std.testing.allocator, threaded.io(), path);
 }

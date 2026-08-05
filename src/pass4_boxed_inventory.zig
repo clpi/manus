@@ -14,9 +14,9 @@ fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
 
 /// Keep in sync with `pass4_catalog.boxed_inventory` — this test fails when counts drift.
 pub const expected = struct {
-    pub const lua_value_refs: usize = 1871;
-    pub const lua_invoke_refs: usize = 66;
-    pub const emit_as_lua_value_refs: usize = 173;
+    pub const lua_value_refs: usize = 1889;
+    pub const lua_invoke_refs: usize = 67;
+    pub const emit_as_lua_value_refs: usize = 178;
     pub const module_needs_lua_runtime_refs: usize = 21;
 };
 

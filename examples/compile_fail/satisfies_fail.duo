@@ -4,6 +4,6 @@ concept HasHash
     fun hash(self): i64
 end
 
-Empty = {}
+type Empty = {}
 
 @comp.assert(@satisfies(Empty, "HasHash"), "Empty lacks hash")

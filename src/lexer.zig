@@ -1,14 +1,7 @@
 const std = @import("std");
+const source_cursor = @import("source_cursor.zig");
 
-pub const Loc = struct {
-    file: []const u8,
-    line: u32,
-    col: u32,
-
-    pub fn format(self: Loc, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
-        try w.print("{s}:{}:{}", .{ self.file, self.line, self.col });
-    }
-};
+pub const Loc = source_cursor.Loc;
 
 pub const TokenKind = enum {
     // Literals
@@ -210,11 +203,7 @@ pub const LexError = error{
 };
 
 pub const Lexer = struct {
-    src: []const u8,
-    pos: usize,
-    line: u32,
-    col: u32,
-    file: []const u8,
+    cursor: source_cursor.ProductionCursor,
     peeked: ?Token,
     last_error_loc: ?Loc,
     /// Compiler hint directives accumulated from `--- @hint` comments.
@@ -224,18 +213,14 @@ pub const Lexer = struct {
 
     pub fn init(src: []const u8, file: []const u8) Lexer {
         return .{
-            .src = src,
-            .pos = 0,
-            .line = 1,
-            .col = 1,
-            .file = file,
+            .cursor = source_cursor.ProductionCursor.init(src, file),
             .peeked = null,
             .last_error_loc = null,
         };
     }
 
     fn cur_loc(self: *Lexer) Loc {
-        return .{ .file = self.file, .line = self.line, .col = self.col };
+        return self.cursor.loc();
     }
 
     /// Consume pending compiler hints (from `--- @hint` comments).
@@ -257,54 +242,42 @@ pub const Lexer = struct {
     }
 
     fn peek_char(self: *Lexer) u8 {
-        if (self.pos >= self.src.len) return 0;
-        return self.src[self.pos];
+        return self.cursor.peek();
     }
 
     fn peek_char2(self: *Lexer) u8 {
-        if (self.pos + 1 >= self.src.len) return 0;
-        return self.src[self.pos + 1];
+        return self.cursor.peek2();
     }
 
     fn adv(self: *Lexer) u8 {
-        if (self.pos >= self.src.len) return 0;
-        const c = self.src[self.pos];
-        self.pos += 1;
-        if (c == '\n') {
-            self.line += 1;
-            self.col = 1;
-        } else {
-            self.col += 1;
-        }
-        return c;
+        return self.cursor.advance();
     }
 
     fn skip_ws(self: *Lexer) LexError!void {
-        while (self.pos < self.src.len) {
+        while (self.cursor.index < self.cursor.bytes.len) {
             const c = self.peek_char();
             if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
                 _ = self.adv();
-            } else if (c == '#' and self.peek_char2() == '!' and self.pos == 0) {
-                while (self.pos < self.src.len and self.peek_char() != '\n')
+            } else if (c == '#' and self.peek_char2() == '!' and self.cursor.index == 0) {
+                while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
                     _ = self.adv();
             } else if (c == '-' and self.peek_char2() == '-') {
-                self.pos += 2;
-                self.col += 2;
+                self.cursor.bumpCol(2);
                 const level = self.long_bracket_level();
                 if (level >= 0) {
                     try self.skip_long(@intCast(level));
                 } else {
                     // Check for triple-dash hint comment: --- @directive
-                    const is_triple_dash = self.pos < self.src.len and self.peek_char() == '-';
+                    const is_triple_dash = self.cursor.index < self.cursor.bytes.len and self.peek_char() == '-';
                     if (is_triple_dash) {
                         _ = self.adv(); // consume third '-'
                     }
-                    const comment_start = self.pos;
-                    while (self.pos < self.src.len and self.peek_char() != '\n')
+                    const comment_start = self.cursor.index;
+                    while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '\n')
                         _ = self.adv();
                     // If triple-dash, check for @hint pattern
                     if (is_triple_dash) {
-                        const comment_text = self.src[comment_start..self.pos];
+                        const comment_text = self.cursor.bytes[comment_start..self.cursor.index];
                         const trimmed = std.mem.trim(u8, comment_text, " \t");
                         if (trimmed.len > 0 and trimmed[0] == '@' and self.pending_hint_count < 8) {
                             self.pending_hints[self.pending_hint_count] = trimmed[1..]; // strip '@'
@@ -317,15 +290,15 @@ pub const Lexer = struct {
     }
 
     fn long_bracket_level(self: *Lexer) i32 {
-        var i = self.pos;
-        if (i >= self.src.len or self.src[i] != '[') return -1;
+        var i = self.cursor.index;
+        if (i >= self.cursor.bytes.len or self.cursor.bytes[i] != '[') return -1;
         i += 1;
         var lvl: i32 = 0;
-        while (i < self.src.len and self.src[i] == '=') {
+        while (i < self.cursor.bytes.len and self.cursor.bytes[i] == '=') {
             lvl += 1;
             i += 1;
         }
-        if (i >= self.src.len or self.src[i] != '[') return -1;
+        if (i >= self.cursor.bytes.len or self.cursor.bytes[i] != '[') return -1;
         return lvl;
     }
 
@@ -336,7 +309,7 @@ pub const Lexer = struct {
         while (i < level) : (i += 1) _ = self.adv();
         _ = self.adv();
 
-        while (self.pos < self.src.len) {
+        while (self.cursor.index < self.cursor.bytes.len) {
             if (self.adv() == ']') {
                 var eq: u32 = 0;
                 while (self.peek_char() == '=') {
@@ -363,10 +336,10 @@ pub const Lexer = struct {
             _ = self.adv();
             if (self.peek_char() == '\n') _ = self.adv();
         }
-        const start = self.pos;
-        while (self.pos < self.src.len) {
+        const start = self.cursor.index;
+        while (self.cursor.index < self.cursor.bytes.len) {
             if (self.peek_char() == ']') {
-                const close_start = self.pos;
+                const close_start = self.cursor.index;
                 _ = self.adv();
                 var eq: u32 = 0;
                 while (self.peek_char() == '=') {
@@ -374,7 +347,7 @@ pub const Lexer = struct {
                     eq += 1;
                 }
                 if (eq == level and self.peek_char() == ']') {
-                    const content = self.src[start..close_start];
+                    const content = self.cursor.bytes[start..close_start];
                     _ = self.adv();
                     return content;
                 }
@@ -387,41 +360,41 @@ pub const Lexer = struct {
 
     fn read_str(self: *Lexer, quote: u8) LexError![]const u8 {
         _ = self.adv(); // opening quote
-        const start = self.pos;
-        while (self.pos < self.src.len) {
+        const start = self.cursor.index;
+        while (self.cursor.index < self.cursor.bytes.len) {
             const c = self.peek_char();
             if (c == quote) {
-                const s = self.src[start..self.pos];
+                const s = self.cursor.bytes[start..self.cursor.index];
                 _ = self.adv();
                 return s;
             }
             if (c == '\n' or c == '\r') return LexError.UnterminatedString;
             if (c == '\\') {
                 _ = self.adv();
-                if (self.pos >= self.src.len) return LexError.UnterminatedString;
+                if (self.cursor.index >= self.cursor.bytes.len) return LexError.UnterminatedString;
                 const esc = self.peek_char();
                 if (esc == 'x') {
                     _ = self.adv();
-                    if (self.pos >= self.src.len or !std.ascii.isHex(self.peek_char()))
+                    if (self.cursor.index >= self.cursor.bytes.len or !std.ascii.isHex(self.peek_char()))
                         return LexError.InvalidEscape;
                     _ = self.adv();
-                    if (self.pos < self.src.len and std.ascii.isHex(self.peek_char())) _ = self.adv();
+                    if (self.cursor.index < self.cursor.bytes.len and std.ascii.isHex(self.peek_char())) _ = self.adv();
                 } else if (esc == 'u') {
                     _ = self.adv();
                     if (self.peek_char() != '{') return LexError.InvalidEscape;
                     _ = self.adv();
                     var has_digit = false;
-                    while (self.pos < self.src.len and self.peek_char() != '}') {
+                    while (self.cursor.index < self.cursor.bytes.len and self.peek_char() != '}') {
                         if (!std.ascii.isHex(self.peek_char())) return LexError.InvalidEscape;
                         has_digit = true;
                         _ = self.adv();
                     }
-                    if (!has_digit or self.pos >= self.src.len or self.peek_char() != '}')
+                    if (!has_digit or self.cursor.index >= self.cursor.bytes.len or self.peek_char() != '}')
                         return LexError.InvalidEscape;
                     _ = self.adv();
                 } else if (esc == 'z') {
                     _ = self.adv();
-                    while (self.pos < self.src.len) {
+                    while (self.cursor.index < self.cursor.bytes.len) {
                         const ws = self.peek_char();
                         if (ws == ' ' or ws == '\t' or ws == '\r' or ws == '\n') {
                             _ = self.adv();
@@ -429,7 +402,7 @@ pub const Lexer = struct {
                     }
                 } else if (esc == '\r') {
                     _ = self.adv();
-                    if (self.pos < self.src.len and self.peek_char() == '\n') _ = self.adv();
+                    if (self.cursor.index < self.cursor.bytes.len and self.peek_char() == '\n') _ = self.adv();
                 } else {
                     _ = self.adv();
                 }
@@ -541,7 +514,7 @@ pub const Lexer = struct {
 
     fn read_num(self: *Lexer) LexError!Token {
         const l = self.cur_loc();
-        const start = self.pos;
+        const start = self.cursor.index;
         var is_float = false;
 
         if (self.peek_char() == '0' and (self.peek_char2() == 'x' or self.peek_char2() == 'X')) {
@@ -577,7 +550,7 @@ pub const Lexer = struct {
             }
         }
 
-        const text = self.src[start..self.pos];
+        const text = self.cursor.bytes[start..self.cursor.index];
         if (is_float) {
             const v = std.fmt.parseFloat(f64, text) catch return LexError.InvalidNumber;
             return Token{ .kind = .float_lit, .loc = l, .text = text, .float_val = v };
@@ -591,12 +564,12 @@ pub const Lexer = struct {
     }
 
     fn lookup_kw(text: []const u8) ?TokenKind {
-        return @import("token_semantic.zig").lookupKeyword(text);
+        return @import("duo_lexer_bridge.zig").lookupKeyword(text);
     }
 
     fn next_tok(self: *Lexer) LexError!Token {
         try self.skip_ws();
-        if (self.pos >= self.src.len)
+        if (self.cursor.index >= self.cursor.bytes.len)
             return Token{ .kind = .eof, .loc = self.cur_loc(), .text = "" };
 
         const l = self.cur_loc();
@@ -608,11 +581,11 @@ pub const Lexer = struct {
 
         // Identifiers / keywords
         if (std.ascii.isAlphabetic(c) or c == '_') {
-            const start = self.pos;
-            while (self.pos < self.src.len and
+            const start = self.cursor.index;
+            while (self.cursor.index < self.cursor.bytes.len and
                 (std.ascii.isAlphanumeric(self.peek_char()) or self.peek_char() == '_'))
                 _ = self.adv();
-            const text = self.src[start..self.pos];
+            const text = self.cursor.bytes[start..self.cursor.index];
             const kind = lookup_kw(text) orelse .name;
             return Token{ .kind = kind, .loc = l, .text = text };
         }
@@ -633,99 +606,99 @@ pub const Lexer = struct {
         }
 
         _ = self.adv();
-        const p = self.pos;
+        const p = self.cursor.index;
         return switch (c) {
             '+' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .plus_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .plus, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .plus_assign, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .plus, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '*' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .star_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .star, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .star_assign, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .star, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '%' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .percent_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .percent, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .percent_assign, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .percent, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '^' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .caret_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .caret, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .caret_assign, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .caret, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '#' => if (self.peek_char() == '#') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .hash_hash, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .hash, .loc = l, .text = self.src[p - 1 .. p] },
-            '&' => Token{ .kind = .amp, .loc = l, .text = self.src[p - 1 .. p] },
-            '|' => if (self.pos < self.src.len and self.src[self.pos] == '>') blk2: {
-                self.pos += 1;
-                break :blk2 Token{ .kind = .pipe_gt, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .pipe, .loc = l, .text = self.src[p - 1 .. p] },
-            '(' => Token{ .kind = .lparen, .loc = l, .text = self.src[p - 1 .. p] },
-            ')' => Token{ .kind = .rparen, .loc = l, .text = self.src[p - 1 .. p] },
-            '[' => Token{ .kind = .lbracket, .loc = l, .text = self.src[p - 1 .. p] },
-            ']' => Token{ .kind = .rbracket, .loc = l, .text = self.src[p - 1 .. p] },
-            '{' => Token{ .kind = .lbrace, .loc = l, .text = self.src[p - 1 .. p] },
-            '}' => Token{ .kind = .rbrace, .loc = l, .text = self.src[p - 1 .. p] },
-            ';' => Token{ .kind = .semi, .loc = l, .text = self.src[p - 1 .. p] },
-            ',' => Token{ .kind = .comma, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .hash_hash, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .hash, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '&' => Token{ .kind = .amp, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '|' => if (self.cursor.index < self.cursor.bytes.len and self.cursor.bytes[self.cursor.index] == '>') blk2: {
+                self.cursor.index += 1;
+                break :blk2 Token{ .kind = .pipe_gt, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .pipe, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '(' => Token{ .kind = .lparen, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            ')' => Token{ .kind = .rparen, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '[' => Token{ .kind = .lbracket, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            ']' => Token{ .kind = .rbracket, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '{' => Token{ .kind = .lbrace, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '}' => Token{ .kind = .rbrace, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            ';' => Token{ .kind = .semi, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            ',' => Token{ .kind = .comma, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '-' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .minus_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+                break :blk Token{ .kind = .minus_assign, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
             } else if (self.peek_char() == '>') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .arrow, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .minus, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .arrow, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .minus, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '/' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .slash_assign, .loc = l, .text = self.src[p - 1 .. self.pos] };
+                break :blk Token{ .kind = .slash_assign, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
             } else if (self.peek_char() == '/') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .idiv, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .slash, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .idiv, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .slash, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '.' => if (self.peek_char() == '.') blk: {
                 _ = self.adv();
                 if (self.peek_char() == '.') {
                     _ = self.adv();
-                    break :blk Token{ .kind = .dots, .loc = l, .text = self.src[p - 1 .. self.pos] };
+                    break :blk Token{ .kind = .dots, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
                 }
-                break :blk Token{ .kind = .concat, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .dot, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .concat, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .dot, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '=' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .eq, .loc = l, .text = self.src[p - 1 .. self.pos] };
+                break :blk Token{ .kind = .eq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
             } else if (self.peek_char() == '>') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .fat_arrow, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .assign, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .fat_arrow, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .assign, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '~' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .neq, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .tilde, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .neq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .tilde, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '<' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .leq, .loc = l, .text = self.src[p - 1 .. self.pos] };
+                break :blk Token{ .kind = .leq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
             } else if (self.peek_char() == '<') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .lshift, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .lt, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .lshift, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .lt, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '>' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .geq, .loc = l, .text = self.src[p - 1 .. self.pos] };
+                break :blk Token{ .kind = .geq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
             } else if (self.peek_char() == '>') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .rshift, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .gt, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .rshift, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .gt, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             ':' => if (self.peek_char() == ':') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .dcolon, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .colon, .loc = l, .text = self.src[p - 1 .. p] },
-            '@' => Token{ .kind = .at, .loc = l, .text = self.src[p - 1 .. p] },
-            '?' => Token{ .kind = .question, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .dcolon, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .colon, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '@' => Token{ .kind = .at, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '?' => Token{ .kind = .question, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             '!' => if (self.peek_char() == '=') blk: {
                 _ = self.adv();
-                break :blk Token{ .kind = .neq, .loc = l, .text = self.src[p - 1 .. self.pos] };
-            } else Token{ .kind = .bang, .loc = l, .text = self.src[p - 1 .. p] },
-            '`' => Token{ .kind = .backtick, .loc = l, .text = self.src[p - 1 .. p] },
+                break :blk Token{ .kind = .neq, .loc = l, .text = self.cursor.bytes[p - 1 .. self.cursor.index] };
+            } else Token{ .kind = .bang, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
+            '`' => Token{ .kind = .backtick, .loc = l, .text = self.cursor.bytes[p - 1 .. p] },
             else => LexError.UnexpectedChar,
         };
     }
@@ -754,14 +727,19 @@ pub const Lexer = struct {
     /// Save lexer state for speculative parsing / look-ahead.
     pub const State = struct { pos: usize, line: u32, col: u32, peeked: ?Token };
     pub fn saveState(self: *const Lexer) State {
-        return .{ .pos = self.pos, .line = self.line, .col = self.col, .peeked = self.peeked };
+        return .{
+            .pos = self.cursor.index,
+            .line = self.cursor.line,
+            .col = self.cursor.col,
+            .peeked = self.peeked,
+        };
     }
 
     /// Restore lexer state from a saved snapshot.
     pub fn restoreState(self: *Lexer, state: State) void {
-        self.pos = state.pos;
-        self.line = state.line;
-        self.col = state.col;
+        self.cursor.index = state.pos;
+        self.cursor.line = state.line;
+        self.cursor.col = state.col;
         self.peeked = state.peeked;
     }
 

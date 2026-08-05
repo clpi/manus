@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(zig build*)",
+      "Bash(zig fmt*)",
+      "Bash(zig test*)",
+      "Bash(zig build-exe*)",
+      "Bash(zig build-lib*)",
+      "Bash(zig version)",
+      "Bash(./scripts/*.sh*)",
+      "Bash(bash scripts/*.sh*)",
+      "Bash(duo run*)",
+      "Bash(duo build*)",
+      "Bash(wasmtime*)",
+      "Bash(wasmer*)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ],
+    "deny": []
+  }
+}

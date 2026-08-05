@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 const Lexer = @import("lexer.zig").Lexer;
 const Parser = @import("parser.zig").Parser;
@@ -17,6 +18,7 @@ const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
 const backend_identity = @import("backend_identity.zig");
+const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const sim = @import("sim.zig");
 const sim_pipeline = @import("sim_pipeline.zig");
@@ -35,9 +37,24 @@ const abi_specialize = @import("abi_specialize.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
 const pass3_catalog = @import("pass3_catalog.zig");
+const pass14_catalog = @import("pass14_catalog.zig");
+const pass15_catalog = @import("pass15_catalog.zig");
+const pass16_catalog = @import("pass16_catalog.zig");
+const passes_audit = @import("passes_audit.zig");
+const pass_gates = @import("pass_gates.zig");
+const shell_session = @import("shell_session.zig");
+const shell_host = @import("shell_host.zig");
+const dev_control_plane = @import("dev_control_plane.zig");
+const dev_validation_planner = @import("dev_validation_planner.zig");
+const git_preservation = @import("git_preservation.zig");
+const native_barrier_checks = @import("native_barrier_checks.zig");
+const host_run = @import("host_run.zig");
+const pass13_catalog = @import("pass13_catalog.zig");
+const pass13_dev_audit = @import("pass13_dev_audit.zig");
 const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 const token_classify_gen = @import("token_classify_gen.zig");
 const semantic_cli = @import("semantic_cli.zig");
+const selfhost_cli = @import("selfhost_cli.zig");
 const semantic_transaction = @import("semantic_transaction.zig");
 
 var macos_sdkroot_configured = false;
@@ -171,7 +188,7 @@ const usage =
     \\usage: duo [command] [options] [file]
     \\
     \\commands:
-    \\  shell              start the interactive Duo shell (default)
+    \\  shell              persistent semantic shell (Pass 15; default when no args)
     \\  init       [name]   create a new Duo project
     \\  build      [target] build the default or named target from @build metadata
     \\             list     show all @build.* targets (or: duo build --list)
@@ -191,7 +208,13 @@ const usage =
     \\  realize    <file>   export realization plan + persistent evidence (Pass 8)
     \\  algebra             export Pass 2 convergence catalog JSON
     \\  catalog             export Pass 3 keyword/directive/grammar catalog JSON
+    \\  catalog audit       full Pass 1–14 audit JSON (open_items + findings)
+    \\  catalog audit check native gate (fast, cross-platform, exit 0/1)
+    \\  catalog audit gate [all|pass11|pass12|pass13|pass14|pass15|pass16] [--barrier] per-pass native gate
+    \\  catalog audit summary audit without open_items (medium)
+    \\  dev        <sub>    Pass 13 development control plane (snapshot|audit|context|summary|claim|persist|session|validate|integration|coordination)
     \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
+    \\  selfhost   <sub>    Pass 16 self-hosting (manifest|targets|verify|proof|stage|…)
     \\  wasm-tables emit    regenerate lib/std/wasm/opcode_lookup.duo + ward_mvp_opcodes.duo
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
@@ -199,8 +222,9 @@ const usage =
     \\  -o <name>         output binary name (default: <stem>.out or <stem>.wasm)
     \\  -O<n>             optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
-    \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi, native-object, native-exe, native-dylib)
-    \\  --backend <c|direct>  explicit backend: c (default, generated C) or direct (ARM64 Mach-O, experimental)
+    \\  --target <triple> target triple (e.g. wasm32-wasi, aarch64-macos, native-exe)
+    \\  --emit <kind>     output kind with structured triples: obj, exe, dylib, asm, wasm (default exe)
+    \\  --backend <auto|c|direct|native>  lowering: auto (default, machine-first), direct/native (ARM64 Mach-O), c (bootstrap C emit only)
     \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
@@ -258,7 +282,9 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "explain") or
             std.mem.eql(u8, args[1], "algebra") or
             std.mem.eql(u8, args[1], "catalog") or
+            std.mem.eql(u8, args[1], "dev") or
             std.mem.eql(u8, args[1], "semantic") or
+            std.mem.eql(u8, args[1], "selfhost") or
             std.mem.eql(u8, args[1], "wasm-tables") or
             std.mem.eql(u8, args[1], "token-tables") or
             std.mem.eql(u8, args[1], "completion") or
@@ -272,7 +298,8 @@ pub fn main(init: std.process.Init) !void {
     var cc: []const u8 = "clang";
     var opt_level: []const u8 = "-O3";
     var target: []const u8 = "native";
-    var compile_backend: []const u8 = "c";
+    var emit_kind: target_model.EmitKind = .exe;
+    var compile_backend: []const u8 = "auto";
     var verbose = false;
     var trace_flag = false;
     var info_flag = false;
@@ -317,6 +344,18 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--target") and i + 1 < args.len) {
             i += 1;
             target = args[i];
+        } else if (std.mem.eql(u8, arg, "--emit") and i + 1 < args.len) {
+            i += 1;
+            emit_kind = target_model.EmitKind.parse(args[i]) orelse {
+                term.err("unknown --emit '{s}' (expected obj, exe, dylib, asm, wasm)", .{args[i]});
+                std.process.exit(1);
+            };
+        } else if (std.mem.startsWith(u8, arg, "--emit=")) {
+            const val = arg["--emit=".len..];
+            emit_kind = target_model.EmitKind.parse(val) orelse {
+                term.err("unknown --emit '{s}'", .{val});
+                std.process.exit(1);
+            };
         } else if (std.mem.eql(u8, arg, "--backend") and i + 1 < args.len) {
             i += 1;
             compile_backend = args[i];
@@ -403,7 +442,9 @@ pub fn main(init: std.process.Init) !void {
 
     apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag, debug_flag, debug_list, debug_depth, test_report_style, build_report_style, no_color, verbose_count);
     if (trace_rich and term.build_report == .pretty) term.setBuildReport(.verbose);
-    target = resolveCompileBackend(compile_backend, target);
+    target = resolveCompileTarget(target, emit_kind);
+    const backend_mode = compile_backend;
+    target = resolveCompileBackend(backend_mode, target);
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         term.printRaw("{s}", .{usage});
@@ -546,11 +587,38 @@ pub fn main(init: std.process.Init) !void {
     }
 
     if (std.mem.eql(u8, cmd, "catalog")) {
-        if (input_file != null) {
-            term.err("duo catalog takes no file argument", .{});
+        if (input_file) |sub| {
+            if (std.mem.eql(u8, sub, "audit")) {
+                const audit_tail = catalogAuditTail(args);
+                if (audit_tail.len == 0) {
+                    try do_catalog_audit(alloc, io);
+                    return;
+                }
+                const mode = audit_tail[0];
+                if (std.mem.eql(u8, mode, "check")) {
+                    try do_catalog_audit_check(alloc, io);
+                    return;
+                }
+                if (std.mem.eql(u8, mode, "summary")) {
+                    try do_catalog_audit_summary(alloc, io);
+                    return;
+                }
+                if (std.mem.eql(u8, mode, "gate")) {
+                    try do_catalog_audit_gate(alloc, io, args);
+                    return;
+                }
+                term.err("unknown catalog audit mode '{s}' (expected: check, summary, gate)", .{mode});
+                std.process.exit(1);
+            }
+            term.err("unknown catalog subcommand '{s}' (expected: audit)", .{sub});
             std.process.exit(1);
         }
         try do_catalog(alloc, io);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "dev")) {
+        try do_dev(alloc, io, args[start..]);
         return;
     }
 
@@ -560,6 +628,15 @@ pub fn main(init: std.process.Init) !void {
             std.process.exit(1);
         };
         try do_semantic(alloc, io, sub, extra_arg);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "selfhost")) {
+        const sub = input_file orelse {
+            term.err("usage: duo selfhost <manifest|matrix|bootstrap|subset|audits|boundary|capabilities|ledger|catalog|compare|verify|compression|perf|proof|stage|targets|production|migration|summary>", .{});
+            std.process.exit(1);
+        };
+        try do_selfhost(alloc, io, sub);
         return;
     }
 
@@ -589,7 +666,9 @@ pub fn main(init: std.process.Init) !void {
             std.process.exit(1);
         }
         try token_classify_gen.emitTokenClassifyFile(alloc, io, "lib/std/token/classify.duo");
+        try token_classify_gen.emitKeywordClassifyNativeCFile(alloc, io, "src/duo_keyword_classify.c");
         term.print("wrote lib/std/token/classify.duo\n", .{});
+        term.print("wrote src/duo_keyword_classify.c\n", .{});
         return;
     }
 
@@ -645,11 +724,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, false, null, link_flags.items);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, false, null, link_flags.items);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, true, false, verbose, false, false, false, false, false, false, null, link_flags.items);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false, false, false, null, &.{});
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{});
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file, fmt_canonical);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -1043,7 +1122,7 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
     if (t.src) |src| {
         const dummy = try std.fmt.allocPrint(alloc, "/tmp/duo_check_{s}.out", .{std.fs.path.stem(src)});
         defer alloc.free(dummy);
-        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", false, true, false, false, false, false, false, false, false, null, t.link);
+        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link);
         term.ok("'{s}' ok", .{src});
         return;
     }
@@ -1169,7 +1248,7 @@ fn run_test_sources(
         else
             try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, "auto", false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -1415,6 +1494,352 @@ fn do_catalog(alloc: std.mem.Allocator, io: Io) !void {
     try fw.interface.flush();
 }
 
+fn do_catalog_audit(alloc: std.mem.Allocator, io: Io) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [65536]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try passes_audit.writeCatalogAuditJson(&fw.interface, alloc);
+    try fw.interface.flush();
+}
+
+fn do_catalog_audit_summary(alloc: std.mem.Allocator, io: Io) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [65536]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try passes_audit.writeCatalogAuditSummaryJson(&fw.interface, alloc);
+    try fw.interface.flush();
+}
+
+fn do_catalog_audit_check(alloc: std.mem.Allocator, io: Io) !void {
+    const summary = passes_audit.runComprehensiveGateCheck(io, alloc) catch |err| {
+        term.err("passes audit gate failed: {}", .{err});
+        std.process.exit(1);
+    };
+    var line_buf: [256]u8 = undefined;
+    const line = passes_audit.formatGateSummary(summary, &line_buf);
+    const stderr = std.Io.File.stderr();
+    var buf: [512]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stderr, io, &buf);
+    try fw.interface.print("{s}\n", .{line});
+    try fw.interface.flush();
+}
+
+fn catalogAuditTail(args: []const []const u8) []const []const u8 {
+    for (args, 0..) |arg, i| {
+        if (std.mem.eql(u8, arg, "audit") and i + 1 < args.len) return args[i + 1 ..];
+    }
+    return &.{};
+}
+
+fn catalogAuditGateArgs(args: []const []const u8) []const []const u8 {
+    for (args, 0..) |arg, i| {
+        if (std.mem.eql(u8, arg, "gate") and i + 1 < args.len) return args[i + 1 ..];
+    }
+    return &.{};
+}
+
+fn do_catalog_audit_gate(alloc: std.mem.Allocator, io: Io, args: []const []const u8) !void {
+    const gate_args = catalogAuditGateArgs(args);
+    var scope: pass_gates.GateScope = .all;
+    var barrier_m1 = false;
+    for (gate_args) |arg| {
+        if (std.mem.eql(u8, arg, "--barrier")) {
+            barrier_m1 = true;
+            continue;
+        }
+        if (pass_gates.GateScope.parse(arg)) |parsed| {
+            scope = parsed;
+            continue;
+        }
+        term.err("unknown catalog audit gate arg '{s}' (expected: all, pass11, pass12, pass13, pass14, pass15, pass16, --barrier)", .{arg});
+        std.process.exit(1);
+    }
+    if (scope == .pass13 or scope == .all) barrier_m1 = true;
+    pass_gates.runScopedGate(io, alloc, scope, .{ .barrier_m1 = barrier_m1 }) catch |err| {
+        term.err("pass gate {s} failed: {}", .{ scope.name(), err });
+        std.process.exit(1);
+    };
+    const stderr = std.Io.File.stderr();
+    var buf: [256]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stderr, io, &buf);
+    try fw.interface.print("pass-gates: PASS ({s}, cross-platform)\n", .{scope.name()});
+    try fw.interface.flush();
+}
+
+fn do_dev(alloc: std.mem.Allocator, io: Io, dev_args: []const []const u8) !void {
+    if (dev_args.len == 0) {
+        term.err("usage: duo dev <snapshot|audit|context|summary|claim|persist> ...", .{});
+        std.process.exit(1);
+    }
+    const stdout = std.Io.File.stdout();
+    var buf: [65536]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    const sub = dev_args[0];
+    if (std.mem.eql(u8, sub, "snapshot")) {
+        const snap = try dev_control_plane.buildProjectSnapshot(alloc);
+        try dev_control_plane.writeSnapshotJson(&fw.interface, snap);
+    } else if (std.mem.eql(u8, sub, "audit")) {
+        try pass13_dev_audit.writeAuditSummaryJson(&fw.interface);
+    } else if (std.mem.eql(u8, sub, "summary")) {
+        const state = try dev_control_plane.loadState(alloc, io);
+        try dev_control_plane.writeControlPlaneSummaryJson(&fw.interface, state);
+    } else if (std.mem.eql(u8, sub, "persist")) {
+        var state = try dev_control_plane.loadState(alloc, io);
+        try dev_control_plane.saveState(alloc, io, &state);
+        try fw.interface.print("{{\"saved\":\"{s}\",\"active_claims\":{d}}}", .{
+            dev_control_plane.STATE_PATH,
+            state.claims.len,
+        });
+    } else if (std.mem.eql(u8, sub, "context")) {
+        const id = if (dev_args.len >= 2) dev_args[1] else {
+            term.err("usage: duo dev context <work-item-id> (e.g. P13-WS2)", .{});
+            std.process.exit(1);
+        };
+        const snap = try dev_control_plane.buildProjectSnapshot(alloc);
+        const state = try dev_control_plane.loadState(alloc, io);
+        const bundle = try dev_control_plane.generateContextBundle(alloc, snap, id, state);
+        try dev_control_plane.writeContextBundleJson(&fw.interface, bundle);
+    } else if (std.mem.eql(u8, sub, "claim")) {
+        if (dev_args.len < 2) {
+            term.err("usage: duo dev claim <acquire|list|release|heartbeat> ...", .{});
+            std.process.exit(1);
+        }
+        const claim_sub = dev_args[1];
+        var state = try dev_control_plane.loadState(alloc, io);
+        if (std.mem.eql(u8, claim_sub, "list")) {
+            dev_control_plane.expireStaleClaims(&state);
+            try dev_control_plane.writeClaimsListJson(&fw.interface, state);
+        } else if (std.mem.eql(u8, claim_sub, "acquire")) {
+            const owner = dev_control_plane.devFlagValue(dev_args[2..], "--owner") orelse {
+                term.err("usage: duo dev claim acquire --owner <id> --file <path> [--client <id>] [--work-item <id>]", .{});
+                std.process.exit(1);
+            };
+            const file = dev_control_plane.devFlagValue(dev_args[2..], "--file") orelse {
+                term.err("usage: duo dev claim acquire --owner <id> --file <path>", .{});
+                std.process.exit(1);
+            };
+            const client = dev_control_plane.devFlagValue(dev_args[2..], "--client") orelse owner;
+            const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
+            const lease = dev_control_plane.acquireClaim(alloc, &state, .{
+                .owner = owner,
+                .client = client,
+                .work_item_id = work_item,
+                .files = &.{file},
+                .targets = &.{},
+            }) catch |err| switch (err) {
+                error.ClaimOverlap => {
+                    term.err("claim rejected: file or semantic target overlaps active lease", .{});
+                    std.process.exit(1);
+                },
+                else => return err,
+            };
+            try dev_control_plane.saveState(alloc, io, &state);
+            try dev_control_plane.appendAuditEvent(alloc, io, "claim_acquire", owner, lease.claim_id);
+            try dev_control_plane.writeClaimJson(&fw.interface, lease);
+        } else if (std.mem.eql(u8, claim_sub, "release")) {
+            const claim_id = if (dev_args.len >= 3) dev_args[2] else {
+                term.err("usage: duo dev claim release <claim-id>", .{});
+                std.process.exit(1);
+            };
+            const integrate = dev_control_plane.devFlagValue(dev_args[3..], "--integrate") != null;
+            if (integrate) {
+                const rec = try dev_control_plane.releaseClaimWithIntegration(alloc, &state, claim_id);
+                try dev_control_plane.saveState(alloc, io, &state);
+                try dev_control_plane.appendAuditEvent(alloc, io, "claim_release", "cli", claim_id);
+                if (rec) |r| {
+                    try dev_control_plane.appendAuditEvent(alloc, io, "integration_submit", r.owner, r.integration_id);
+                    try fw.interface.print("{{\"released\":\"{s}\",\"integration_id\":\"{s}\",\"work_item_id\":\"{s}\"}}", .{ claim_id, r.integration_id, r.work_item_id });
+                } else {
+                    try fw.interface.print("{{\"released\":\"{s}\",\"integration\":null}}", .{claim_id});
+                }
+            } else {
+                try dev_control_plane.releaseClaim(&state, claim_id);
+                try dev_control_plane.saveState(alloc, io, &state);
+                try dev_control_plane.appendAuditEvent(alloc, io, "claim_release", "cli", claim_id);
+                try fw.interface.print("{{\"released\":\"{s}\"}}", .{claim_id});
+            }
+        } else if (std.mem.eql(u8, claim_sub, "heartbeat")) {
+            const claim_id = if (dev_args.len >= 3) dev_args[2] else {
+                term.err("usage: duo dev claim heartbeat <claim-id> [--ttl <seconds>]", .{});
+                std.process.exit(1);
+            };
+            const ttl_raw = dev_control_plane.devFlagValue(dev_args[3..], "--ttl") orelse "7200";
+            const ttl = std.fmt.parseInt(i64, ttl_raw, 10) catch {
+                term.err("invalid --ttl '{s}'", .{ttl_raw});
+                std.process.exit(1);
+            };
+            try dev_control_plane.heartbeatClaim(&state, claim_id, ttl);
+            try dev_control_plane.saveState(alloc, io, &state);
+            try dev_control_plane.appendAuditEvent(alloc, io, "claim_heartbeat", "cli", claim_id);
+            try fw.interface.print("{{\"heartbeat\":\"{s}\",\"ttl\":{d}}}", .{ claim_id, ttl });
+        } else {
+            term.err("unknown claim subcommand '{s}' (expected: acquire, list, release, heartbeat)", .{claim_sub});
+            std.process.exit(1);
+        }
+    } else if (std.mem.eql(u8, sub, "session")) {
+        if (dev_args.len < 2 or !std.mem.eql(u8, dev_args[1], "start")) {
+            term.err("usage: duo dev session start --owner <id> [--work-item <id>] [--client <id>]", .{});
+            std.process.exit(1);
+        }
+        const owner = dev_control_plane.devFlagValue(dev_args[2..], "--owner") orelse "anonymous";
+        const client = dev_control_plane.devFlagValue(dev_args[2..], "--client") orelse owner;
+        const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
+        const state = try dev_control_plane.loadState(alloc, io);
+        const snap = state.snapshot;
+        try fw.interface.writeAll("{\"schema\":\"dev-session-v0\",\"owner\":\"");
+        try fw.interface.writeAll(owner);
+        try fw.interface.writeAll("\",\"client\":\"");
+        try fw.interface.writeAll(client);
+        try fw.interface.writeAll("\",\"snapshot\":");
+        try dev_control_plane.writeSnapshotJson(&fw.interface, snap);
+        if (work_item) |wi| {
+            const bundle = try dev_control_plane.generateContextBundle(alloc, snap, wi, state);
+            try fw.interface.writeAll(",\"context\":");
+            try dev_control_plane.writeContextBundleJson(&fw.interface, bundle);
+            const plan = dev_validation_planner.planForWorkItem(wi);
+            try fw.interface.writeAll(",\"validation_plan\":");
+            try dev_validation_planner.writePlanJson(&fw.interface, plan);
+        }
+        try fw.interface.writeAll(",\"coordination\":");
+        try dev_control_plane.writeCoordinationExportJson(&fw.interface, state);
+        try fw.interface.writeAll("}");
+        try dev_control_plane.appendAuditEvent(alloc, io, "session_start", owner, client);
+    } else if (std.mem.eql(u8, sub, "validate")) {
+        if (dev_args.len < 2) {
+            term.err("usage: duo dev validate <plan|run> ...", .{});
+            std.process.exit(1);
+        }
+        if (std.mem.eql(u8, dev_args[1], "run")) {
+            const execute = dev_control_plane.devFlagValue(dev_args[2..], "--execute") != null;
+            const file = dev_control_plane.devFlagValue(dev_args[2..], "--file");
+            const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
+            const plan: []const dev_validation_planner.ValidationGate = if (file) |f| blk: {
+                const files = [_][]const u8{f};
+                break :blk dev_validation_planner.planForFiles(&files);
+            } else if (work_item) |wi| dev_validation_planner.planForWorkItem(wi) else {
+                term.err("usage: duo dev validate run (--file <path> | --work-item <id>) [--execute]", .{});
+                std.process.exit(1);
+            };
+            const results = try dev_validation_planner.runPlan(alloc, plan, execute);
+            try dev_validation_planner.writeRunJson(&fw.interface, results);
+        } else if (std.mem.eql(u8, dev_args[1], "plan")) {
+            const file = dev_control_plane.devFlagValue(dev_args[2..], "--file");
+            const work_item = dev_control_plane.devFlagValue(dev_args[2..], "--work-item");
+            if (file != null) {
+                const files = [_][]const u8{file.?};
+                const plan = dev_validation_planner.planForFiles(&files);
+                try dev_validation_planner.writePlanJson(&fw.interface, plan);
+            } else if (work_item) |wi| {
+                const plan = dev_validation_planner.planForWorkItem(wi);
+                try dev_validation_planner.writePlanJson(&fw.interface, plan);
+            } else {
+                term.err("usage: duo dev validate plan (--file <path> | --work-item <id>)", .{});
+                std.process.exit(1);
+            }
+        } else {
+            term.err("usage: duo dev validate <plan|run> ...", .{});
+            std.process.exit(1);
+        }
+    } else if (std.mem.eql(u8, sub, "integration")) {
+        if (dev_args.len < 2) {
+            term.err("usage: duo dev integration <list|submit|complete> ...", .{});
+            std.process.exit(1);
+        }
+        var state = try dev_control_plane.loadState(alloc, io);
+        const int_sub = dev_args[1];
+        if (std.mem.eql(u8, int_sub, "list")) {
+            try dev_control_plane.writeIntegrationsListJson(&fw.interface, state);
+        } else if (std.mem.eql(u8, int_sub, "submit")) {
+            const owner = dev_control_plane.devFlagValue(dev_args[2..], "--owner") orelse {
+                term.err("usage: duo dev integration submit --owner <id> --work-item <id> [--claim-id <id>]", .{});
+                std.process.exit(1);
+            };
+            const wi = dev_control_plane.devFlagValue(dev_args[2..], "--work-item") orelse {
+                term.err("usage: duo dev integration submit --owner <id> --work-item <id>", .{});
+                std.process.exit(1);
+            };
+            const claim_id = dev_control_plane.devFlagValue(dev_args[2..], "--claim-id");
+            const rec = try dev_control_plane.submitIntegration(alloc, &state, wi, owner, claim_id);
+            try dev_control_plane.saveState(alloc, io, &state);
+            try dev_control_plane.appendAuditEvent(alloc, io, "integration_submit", owner, rec.integration_id);
+            try dev_control_plane.writeIntegrationJson(&fw.interface, rec);
+        } else if (std.mem.eql(u8, int_sub, "complete")) {
+            const int_id = if (dev_args.len >= 3) dev_args[2] else {
+                term.err("usage: duo dev integration complete <integration-id>", .{});
+                std.process.exit(1);
+            };
+            try dev_control_plane.completeIntegration(&state, int_id);
+            try dev_control_plane.saveState(alloc, io, &state);
+            try dev_control_plane.appendAuditEvent(alloc, io, "integration_complete", "cli", int_id);
+            try fw.interface.print("{{\"integrated\":\"{s}\"}}", .{int_id});
+        } else {
+            term.err("unknown integration subcommand '{s}'", .{int_sub});
+            std.process.exit(1);
+        }
+    } else if (std.mem.eql(u8, sub, "coordination")) {
+        const state = try dev_control_plane.loadState(alloc, io);
+        if (dev_args.len >= 2 and std.mem.eql(u8, dev_args[1], "status")) {
+            try dev_control_plane.writeCoordinationStatusJson(&fw.interface, state);
+        } else if (dev_args.len >= 2 and std.mem.eql(u8, dev_args[1], "export")) {
+            try dev_control_plane.writeCoordinationExportJson(&fw.interface, state);
+        } else if (dev_args.len >= 2 and std.mem.eql(u8, dev_args[1], "render")) {
+            try dev_control_plane.writeCoordinationMarkdown(&fw.interface, state);
+        } else {
+            term.err("usage: duo dev coordination <export|status|render>", .{});
+            std.process.exit(1);
+        }
+    } else if (std.mem.eql(u8, sub, "work")) {
+        if (dev_args.len < 2 or !std.mem.eql(u8, dev_args[1], "graph")) {
+            term.err("usage: duo dev work graph", .{});
+            std.process.exit(1);
+        }
+        try dev_control_plane.writeWorkGraphJson(&fw.interface);
+    } else if (std.mem.eql(u8, sub, "barrier")) {
+        if (dev_args.len < 3 or !std.mem.eql(u8, dev_args[1], "check")) {
+            term.err("usage: duo dev barrier check <pass12_m1|pass12_m1_sorted|ward_decode|ward_decode_dispatch|ward_opcode_lookup>", .{});
+            std.process.exit(1);
+        }
+        const profile = if (std.mem.eql(u8, dev_args[2], "pass12_m1"))
+            native_barrier_checks.pass12_m1_profile
+        else if (std.mem.eql(u8, dev_args[2], "pass12_m1_sorted"))
+            native_barrier_checks.pass12_m1_sorted_lookup_profile
+        else if (std.mem.eql(u8, dev_args[2], "ward_decode"))
+            native_barrier_checks.ward_decode_profile
+        else if (std.mem.eql(u8, dev_args[2], "ward_decode_dispatch"))
+            native_barrier_checks.ward_decode_dispatch_profile
+        else if (std.mem.eql(u8, dev_args[2], "ward_opcode_lookup"))
+            native_barrier_checks.ward_opcode_lookup_profile
+        else {
+            term.err("unknown barrier profile '{s}' (expected: pass12_m1, pass12_m1_sorted, ward_decode, ward_decode_dispatch, ward_opcode_lookup)", .{dev_args[2]});
+            std.process.exit(1);
+        };
+        const duo_bin = "zig-out/bin/duo";
+        const result = native_barrier_checks.evaluateProfile(alloc, profile, duo_bin) catch |err| switch (err) {
+            error.DuoBinaryMissing, error.DuoDumpFailed => {
+                term.err("barrier check failed: build duo and ensure dump-c works for {s}", .{profile.source_path});
+                std.process.exit(1);
+            },
+            else => return err,
+        };
+        defer alloc.free(result.checks);
+        defer for (result.checks) |c| native_barrier_checks.freeSymbolCheck(alloc, c);
+        try native_barrier_checks.writeProfileResultJson(&fw.interface, profile, result.checks, result.profile_ok);
+        if (!result.profile_ok) std.process.exit(1);
+    } else if (std.mem.eql(u8, sub, "preserve")) {
+        // Pass 14 §5 / Milestone 1 — preservation-aware repository operations.
+        // Inventories stash, dirty work, valuable untracked artifacts, unique
+        // branches, and prunable worktrees so destructive Git ops are auditable.
+        var report = try git_preservation.buildPreservationReport(alloc);
+        defer report.freeReport(alloc);
+        try git_preservation.writePreservationReportJson(&fw.interface, report);
+    } else {
+        term.err("unknown dev subcommand '{s}' (expected: snapshot, audit, context, summary, claim, persist, session, validate, integration, coordination, work, barrier, preserve)", .{sub});
+        std.process.exit(1);
+    }
+    try fw.interface.writeAll("\n");
+    try fw.interface.flush();
+}
+
 fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[]const u8) !void {
     const stdout = std.Io.File.stdout();
     var buf: [65536]u8 = undefined;
@@ -1438,11 +1863,21 @@ fn do_semantic(alloc: std.mem.Allocator, io: Io, sub: []const u8, entity_arg: ?[
         try semantic_cli.writeTransactionValidateJson(&fw.interface, entity_arg);
     } else if (std.mem.eql(u8, sub, "transforms")) {
         try semantic_cli.writeTransformProofLogJson(&fw.interface);
+    } else if (std.mem.eql(u8, sub, "claims")) {
+        try semantic_cli.writeClaimsJson(&fw.interface, alloc);
     } else {
-        term.err("unknown semantic subcommand '{s}' (expected: intent, compare, proof, obligations, projections, context, preview, validate, transforms)", .{sub});
+        term.err("unknown semantic subcommand '{s}' (expected: intent, compare, proof, obligations, projections, context, preview, validate, transforms, claims)", .{sub});
         std.process.exit(1);
     }
     try fw.interface.writeAll("\n");
+    try fw.interface.flush();
+}
+
+fn do_selfhost(alloc: std.mem.Allocator, io: Io, sub: []const u8) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [65536]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try selfhost_cli.dispatch(&fw.interface, alloc, sub);
     try fw.interface.flush();
 }
 
@@ -1623,20 +2058,9 @@ fn run_shell_binary(io: Io, out_path: []const u8) !void {
 }
 
 fn run_host_shell_command(io: Io, command: []const u8) !void {
-    const argv = [_][]const u8{ "/bin/sh", "-c", command };
-    var child = try std.process.spawn(io, .{
-        .argv = &argv,
-        .stdin = .inherit,
-        .stdout = .inherit,
-        .stderr = .inherit,
-    });
-    const result = try child.wait(io);
-    switch (result) {
-        .exited => |code| if (code != 0) {
-            term.print("host command exited with code {}", .{code});
-        },
-        .signal => term.print("host command terminated by signal", .{}),
-        else => term.print("host command terminated abnormally", .{}),
+    const code = try shell_host.runRawShell(io, command);
+    if (code != 0) {
+        term.print("host command exited with code {}", .{code});
     }
 }
 
@@ -1670,7 +2094,7 @@ fn run_build_command(io: Io, name: []const u8, command: []const u8) !void {
     term.buildPhaseDone("command", elapsed_ms, name);
 }
 
-fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counter: *usize, verbose: bool) !bool {
+fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, session: *shell_session.Session, verbose: bool) !bool {
     const line = std.mem.trim(u8, raw_line, " \t\r\n");
     if (line.len == 0) return true;
 
@@ -1689,23 +2113,45 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
             term.kv("!ls -la", "run host shell command");
             term.kv(":time", "show total shell execution time");
             term.kv(":reset", "clear session state (counter)");
+            term.kv(":export", "write canonical .duo from session history");
+            term.kv(":snapshot", "print semantic session JSON");
             term.kv(":quit / :exit", "leave the shell");
             term.divider();
-            term.dim("Duo compiles each line to native code via clang", .{});
+            term.dim("Pass 15 semantic shell — structured Duo; ! prefix is explicit raw {s}", .{shell_host.rawShellLabel()});
+            return true;
+        }
+        if (std.mem.eql(u8, line, ":snapshot")) {
+            const stdout = std.Io.File.stdout();
+            var snap_buf: [4096]u8 = undefined;
+            var fw: std.Io.File.Writer = .init(stdout, io, &snap_buf);
+            try shell_session.writeSnapshotJson(&fw.interface, session);
+            try fw.interface.writeAll("\n");
+            try fw.interface.flush();
+            return true;
+        }
+        if (std.mem.startsWith(u8, line, ":export")) {
+            const mod = try shell_session.exportHistoryModule(alloc, session, 64);
+            defer alloc.free(mod);
+            const out_path = if (line.len > 7) std.mem.trim(u8, line[7..], " \t") else "shell_export.duo";
+            const cwd = std.Io.Dir.cwd();
+            try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = mod });
+            try shell_session.recordHistory(alloc, session, .@"export", line, mod, 0, null);
+            term.ok("exported canonical Duo → {s}", .{out_path});
             return true;
         }
         if (std.mem.eql(u8, line, ":time")) {
             term.section("shell timing");
             var buf: [32]u8 = undefined;
-            const lc = std.fmt.bufPrint(&buf, "{}", .{counter.*}) catch "error";
+            const lc = std.fmt.bufPrint(&buf, "{}", .{session.compile_counter}) catch "error";
             term.kv("lines compiled", lc);
             var buf2: [32]u8 = undefined;
-            const hi = std.fmt.bufPrint(&buf2, "{}", .{shell_history.items.len}) catch "error";
+            const hi = std.fmt.bufPrint(&buf2, "{}", .{session.history.items.len}) catch "error";
             term.kv("history entries", hi);
+            term.kv("session", session.session_id);
             return true;
         }
         if (std.mem.eql(u8, line, ":reset")) {
-            counter.* = 0;
+            session.compile_counter = 0;
             if (term.color) {
                 term.ok("\x1b[32m✓\x1b[0m session counter reset to 0", .{});
             } else {
@@ -1718,29 +2164,28 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
         return true;
     }
 
-    // Handle host shell commands
+    // Handle host shell commands (explicit raw shell — Pass 15 §7.3)
     if (line[0] == '!') {
-        try run_host_shell_command(io, std.mem.trim(u8, line[1..], " \t"));
+        const cmd = std.mem.trim(u8, line[1..], " \t");
+        const canonical = try std.fmt.allocPrint(alloc, "shell(\"{s}\")\n", .{cmd});
+        defer alloc.free(canonical);
+        const code = try shell_host.runRawShell(io, cmd);
+        try shell_session.recordHistory(alloc, session, .raw_shell, line, canonical, @intCast(code), null);
         return true;
     }
 
-    // Track history
-    if (shell_history.items.len >= shell_history_capacity) {
-        // Remove oldest entry
-        alloc.free(shell_history.items[0]);
-        _ = shell_history.orderedRemove(0);
-    }
-    try shell_history.append(alloc, try alloc.dupe(u8, line));
-
-    // Determine if this is a statement or expression
-    const source = if (shellLineIsStatement(line))
-        try std.fmt.allocPrint(alloc, "{s}\n", .{line})
+    const is_stmt = shellLineIsStatement(line);
+    const source = if (is_stmt)
+        try shell_session.wrapStatement(alloc, line)
     else
-        try std.fmt.allocPrint(alloc, "print({s})\n", .{line});
+        try shell_session.wrapExpression(alloc, line);
+    defer alloc.free(source);
 
-    const src_path = try std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.duo", .{counter.*});
-    const out_path = try std.fmt.allocPrint(alloc, "/tmp/duo_shell_{d}.out", .{counter.*});
-    counter.* += 1;
+    const src_path = try shell_session.tempArtifactBasename(alloc, session.compile_counter, "duo");
+    const out_path = try shell_session.tempArtifactBasename(alloc, session.compile_counter, "out");
+    defer alloc.free(src_path);
+    defer alloc.free(out_path);
+    session.compile_counter += 1;
 
     const cwd = Io.Dir.cwd();
     try Io.Dir.writeFile(cwd, io, .{ .sub_path = src_path, .data = source });
@@ -1752,10 +2197,11 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, counte
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", false, false, verbose, false, false, false, false, false, false, null, &.{});
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", "auto", false, false, verbose, false, false, false, false, false, false, null, &.{});
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
+    try shell_session.recordHistory(alloc, session, if (is_stmt) .statement else .expression, line, source, 0, compile_elapsed);
     if (verbose) {
         if (term.color) {
             term.dim("  \x1b[2mcompile: {} ms\x1b[0m\n", .{compile_elapsed});
@@ -1775,11 +2221,12 @@ fn shellContinuePrompt(depth: i32) void {
 }
 
 fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
-    term.banner("Duo shell");
-    term.dim("expressions print results · statements compile+run · :help for commands", .{});
+    term.banner("Duo semantic shell");
+    term.dim("Pass 15 — canonical Duo · :help · :export · ! = explicit raw host shell", .{});
+    var session = try shell_session.newSession(alloc);
+    defer session.deinit(alloc);
     var line: std.ArrayList(u8) = .empty;
     defer line.deinit(alloc);
-    var counter: usize = 0;
     var block_depth: i32 = 0;
     var buf: [1024]u8 = undefined;
 
@@ -1794,7 +2241,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
         if (n == 0) {
             // EOF - run any remaining line
             if (line.items.len > 0) {
-                _ = try run_shell_line(alloc, io, line.items, &counter, verbose);
+                _ = try run_shell_line(alloc, io, line.items, &session, verbose);
             }
             break;
         }
@@ -1813,7 +2260,7 @@ fn do_shell(alloc: std.mem.Allocator, io: Io, verbose: bool) !void {
                         shellContinuePrompt(block_depth);
                     } else {
                         // Execute the complete block
-                        _ = try run_shell_line(alloc, io, line.items, &counter, verbose);
+                        _ = try run_shell_line(alloc, io, line.items, &session, verbose);
                         line.clearRetainingCapacity();
                         block_depth = 0;
                         // Print fresh prompt
@@ -1947,6 +2394,7 @@ fn do_project_build_one(
         t.cc orelse cc_arg,
         t.opt orelse opt_arg,
         target,
+        "auto",
         run_after,
         false,
         verbose,
@@ -2210,7 +2658,7 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
     }
 }
 
-fn link_native_object(alloc: std.mem.Allocator, io: Io, obj_path: []const u8, out_path: []const u8, cc: []const u8, link_flags: []const []const u8, quiet: bool, shared: bool) !void {
+fn link_native_object(alloc: std.mem.Allocator, io: Io, obj_path: []const u8, out_path: []const u8, cc: []const u8, link_flags: []const []const u8, quiet: bool, shared: bool, extra_sources: []const []const u8) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(alloc);
     if (@import("builtin").os.tag == .macos and !macos_sdkroot_configured) {
@@ -2219,6 +2667,7 @@ fn link_native_object(alloc: std.mem.Allocator, io: Io, obj_path: []const u8, ou
         try argv.append(alloc, cc);
     }
     try argv.append(alloc, obj_path);
+    for (extra_sources) |src| try argv.append(alloc, src);
     if (shared) try argv.append(alloc, "-dynamiclib");
     try argv.appendSlice(alloc, &.{ "-o", out_path, "-lm" });
     for (link_flags) |lib| {
@@ -2283,20 +2732,48 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
     };
 }
 
-fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
-    if (std.mem.eql(u8, backend, "direct")) {
-        if (native_backend.isNativeMachineTarget(target_in)) return target_in;
-        return "native-exe";
-    }
-    if (!std.mem.eql(u8, backend, "c")) {
-        term.err("unknown --backend '{s}' (expected c or direct)", .{backend});
-        std.process.exit(1);
-    }
-    if (native_backend.isNativeMachineTarget(target_in)) {
-        term.err("direct machine target '{s}' requires --backend=direct", .{target_in});
-        std.process.exit(1);
+fn resolveCompileTarget(target_in: []const u8, emit: target_model.EmitKind) []const u8 {
+    if (target_model.resolveTargetInput(target_in, emit)) |resolved| {
+        if (resolved.toLegacyTargetName()) |legacy| return legacy;
+        if (term.trace) {
+            var triple_buf: [64]u8 = undefined;
+            const triple_str = resolved.triple.formatTriple(&triple_buf);
+            term.kv("structured_target", triple_str);
+            term.kv("emit", resolved.emit.name());
+        }
     }
     return target_in;
+}
+
+fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
+    const parsed = backend_identity.Backend.parse(backend) orelse {
+        term.err("unknown --backend '{s}' (expected auto, c, direct, or native)", .{backend});
+        std.process.exit(1);
+    };
+    switch (parsed) {
+        .direct => return if (native_backend.isNativeMachineTarget(target_in)) target_in else "native-exe",
+        .auto => return target_in,
+        .c => {
+            if (native_backend.isNativeMachineTarget(target_in)) {
+                term.err("machine target '{s}' requires --backend=auto or --backend=direct (C emit is bootstrap-only)", .{target_in});
+                std.process.exit(1);
+            }
+            return target_in;
+        },
+        .wasm => return target_in,
+    }
+}
+
+fn wantsMachineLowering(backend_mode: []const u8, target: []const u8) bool {
+    const parsed = backend_identity.Backend.parse(backend_mode) orelse return false;
+    if (!parsed.prefersMachineCode()) return false;
+    if (builtin.cpu.arch != .aarch64 or builtin.os.tag != .macos) return false;
+    return std.mem.eql(u8, target, "native") or native_backend.isNativeMachineTarget(target);
+}
+
+fn machineTargetForBackend(target: []const u8) []const u8 {
+    if (native_backend.isNativeMachineTarget(target)) return target;
+    return "native-exe";
 }
 
 fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8) void {
@@ -2315,6 +2792,7 @@ fn do_compile(
     cc: []const u8,
     opt: []const u8,
     target: []const u8,
+    backend_mode: []const u8,
     run_after: bool,
     check_only: bool,
     verbose: bool,
@@ -2405,97 +2883,125 @@ fn do_compile(
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
-    if (native_backend.isNativeMachineTarget(target)) {
-        if (run_after and !native_backend.isNativeExecutableTarget(target)) {
-            term.err("only --target native-exe can run through the native machine-code backend", .{});
-            std.process.exit(1);
-        }
-        if (load_chunk or lib_mode or shared_mem or pgo) {
-            term.err("native machine-code target does not use C-only compile options yet", .{});
-            std.process.exit(1);
-        }
-        if (!native_backend.isNativeExecutableTarget(target) and !native_backend.isNativeSharedTarget(target) and link_flags.len != 0) {
-            term.err("native object/asm targets do not link libraries; use --target native-exe or native-dylib", .{});
-            std.process.exit(1);
-        }
-        if (!native_scalar_candidate) {
-            const diag = native_backend.directDiagnostic(error.UnsupportedProgram, target);
-            term.err("{s}: {s}", .{ diag.code, diag.message });
-            term.hint("use --backend=c for generated C (default portable backend)", .{});
-            std.process.exit(1);
-        }
-        if (native_backend.isNativeExecutableTarget(target)) {
-            const obj = native_backend.emitObject(alloc, &ps.mod, "native-object") catch |e| {
-                reportDirectBackendError(io, e, target);
+    const effective_machine_target: ?[]const u8 = if (wantsMachineLowering(backend_mode, target))
+        machineTargetForBackend(target)
+    else
+        null;
+
+    if (effective_machine_target) |mt| {
+        if (run_after and !native_backend.isNativeExecutableTarget(mt)) {
+            if (std.mem.eql(u8, backend_mode, "auto")) {
+                // fall through to C for auto when run needs executable but target is object/asm
+            } else {
+                term.err("only --target native-exe can run through the native machine-code backend", .{});
                 std.process.exit(1);
-            };
-            const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
-            const cwd = Io.Dir.cwd();
-            try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
-            try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, run_after and !verbose, false);
-            if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
-            if (term.build_report != .plain and !test_mode) {
-                const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
-                term.buildPhaseDone("compile", total_ms, out_path);
             }
-            if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
-            if (run_after) {
-                var run_args: std.ArrayList([]const u8) = .empty;
-                try run_args.append(alloc, out_path);
-                try run_args.appendSlice(alloc, forwarded_program_args);
-                defer run_args.deinit(alloc);
-                var run_child = try std.process.spawn(io, .{
-                    .argv = run_args.items,
-                    .stdin = .inherit,
-                    .stdout = .inherit,
-                    .stderr = .inherit,
-                });
-                const run_term = try run_child.wait(io);
-                switch (run_term) {
-                    .exited => |code| std.process.exit(code),
-                    .signal => std.process.exit(128),
-                    else => {
-                        term.print("program terminated abnormally", .{});
+        } else if (load_chunk or lib_mode or shared_mem or pgo) {
+            if (!std.mem.eql(u8, backend_mode, "auto")) {
+                term.err("native machine-code target does not use C-only compile options yet", .{});
+                std.process.exit(1);
+            }
+        } else if (!native_backend.isNativeExecutableTarget(mt) and !native_backend.isNativeSharedTarget(mt) and link_flags.len != 0) {
+            if (!std.mem.eql(u8, backend_mode, "auto")) {
+                term.err("native object/asm targets do not link libraries; use --target native-exe or native-dylib", .{});
+                std.process.exit(1);
+            }
+        } else {
+            if (native_backend.isNativeExecutableTarget(mt)) {
+                const obj_result = native_backend.emitObject(alloc, &ps.mod, "native-object");
+                if (obj_result) |obj| {
+                    const direct_extra = [_][]const u8{"src/duo_keyword_classify.c"};
+                    const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
+                    const cwd = Io.Dir.cwd();
+                    try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+                    try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, run_after and !verbose, false, &direct_extra);
+                    if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
+                    if (term.build_report != .plain and !test_mode) {
+                        const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                        term.buildPhaseDone("compile", total_ms, out_path);
+                    }
+                    if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+                    if (run_after) {
+                        var run_args: std.ArrayList([]const u8) = .empty;
+                        try run_args.append(alloc, out_path);
+                        try run_args.appendSlice(alloc, forwarded_program_args);
+                        defer run_args.deinit(alloc);
+                        var run_child = try std.process.spawn(io, .{
+                            .argv = run_args.items,
+                            .stdin = .inherit,
+                            .stdout = .inherit,
+                            .stderr = .inherit,
+                        });
+                        const run_term = try run_child.wait(io);
+                        switch (run_term) {
+                            .exited => |code| std.process.exit(code),
+                            .signal => std.process.exit(128),
+                            else => {
+                                term.print("program terminated abnormally", .{});
+                                std.process.exit(1);
+                            },
+                        }
+                    }
+                    return;
+                } else |e| {
+                    if (std.mem.eql(u8, backend_mode, "auto")) {
+                        if (term.info) term.infoMsg("auto backend: direct machine lowering unavailable ({s}) — using C emit bootstrap", .{@errorName(e)});
+                    } else {
+                        reportDirectBackendError(io, e, mt);
                         std.process.exit(1);
-                    },
+                    }
                 }
+            } else if (native_backend.isNativeSharedTarget(mt)) {
+                const obj = native_backend.emitSharedObjectInput(alloc, &ps.mod) catch |e| {
+                    if (std.mem.eql(u8, backend_mode, "auto")) {
+                        if (term.info) term.infoMsg("auto backend: direct dylib lowering unavailable ({s})", .{@errorName(e)});
+                    } else {
+                        reportDirectBackendError(io, e, mt);
+                        std.process.exit(1);
+                    }
+                    return;
+                };
+                const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
+                const cwd = Io.Dir.cwd();
+                try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+                try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, &.{});
+                if (phase_timer) |*t| trace_phase(io, t, "native dylib", out_path);
+                if (term.build_report != .plain and !test_mode) {
+                    const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                    term.buildPhaseDone("compile", total_ms, out_path);
+                }
+                if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+                return;
+            } else {
+                const native_output = if (native_backend.isNativeAsmTarget(mt))
+                    native_backend.emitAssembly(alloc, &ps.mod, mt)
+                else
+                    native_backend.emitObject(alloc, &ps.mod, mt);
+                const obj = native_output catch |e| {
+                    if (std.mem.eql(u8, backend_mode, "auto")) {
+                        if (term.info) term.infoMsg("auto backend: direct object lowering unavailable ({s})", .{@errorName(e)});
+                    } else {
+                        reportDirectBackendError(io, e, mt);
+                        std.process.exit(1);
+                    }
+                    return;
+                };
+                const cwd = Io.Dir.cwd();
+                try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = obj });
+                if (phase_timer) |*t| trace_phase(io, t, "native object", out_path);
+                if (term.build_report != .plain and !test_mode) {
+                    const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                    term.buildPhaseDone("compile", total_ms, out_path);
+                }
+                if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+                return;
             }
-            return;
         }
-        if (native_backend.isNativeSharedTarget(target)) {
-            const obj = native_backend.emitSharedObjectInput(alloc, &ps.mod) catch |e| {
-                reportDirectBackendError(io, e, target);
-                std.process.exit(1);
-            };
-            const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
-            const cwd = Io.Dir.cwd();
-            try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
-            try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true);
-            if (phase_timer) |*t| trace_phase(io, t, "native dylib", out_path);
-            if (term.build_report != .plain and !test_mode) {
-                const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
-                term.buildPhaseDone("compile", total_ms, out_path);
-            }
-            if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
-            return;
-        }
-        const native_output = if (native_backend.isNativeAsmTarget(target))
-            native_backend.emitAssembly(alloc, &ps.mod, target)
-        else
-            native_backend.emitObject(alloc, &ps.mod, target);
-        const obj = native_output catch |e| {
-            reportDirectBackendError(io, e, target);
-            std.process.exit(1);
-        };
-        const cwd = Io.Dir.cwd();
-        try Io.Dir.writeFile(cwd, io, .{ .sub_path = out_path, .data = obj });
-        if (phase_timer) |*t| trace_phase(io, t, "native object", out_path);
-        if (term.build_report != .plain and !test_mode) {
-            const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
-            term.buildPhaseDone("compile", total_ms, out_path);
-        }
-        if (!(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
-        return;
+    }
+
+    if (native_backend.isNativeMachineTarget(target)) {
+        term.err("machine target '{s}' requires --backend=auto or --backend=direct on this host", .{target});
+        std.process.exit(1);
     }
 
     phase_timer = start_trace_timer(io);

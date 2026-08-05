@@ -4,6 +4,7 @@
 //! Projections: compiler metadata, classifier, spelling, formatter, LSP, MCP, tests.
 const std = @import("std");
 const lexer = @import("lexer.zig");
+const duo_keyword_bridge = @import("duo_keyword_bridge.zig");
 const proof_carrying = @import("proof_carrying.zig");
 const realization = @import("realization.zig");
 const evidence_record = @import("evidence_record.zig");
@@ -163,6 +164,9 @@ pub const ClassifierId = enum {
 /// Production classifier — branch chain (smallest code; differential-equivalent peers).
 pub const production_classifier: ClassifierId = .branch_chain;
 
+/// Production authority: Duo classify projection (P16-WS3 M1 integration).
+pub const production_authority: enum { duo_classify, host_branch_chain } = .duo_classify;
+
 pub const LookupFn = *const fn ([]const u8) ?lexer.TokenKind;
 
 pub const SelectionSnapshot = struct {
@@ -176,6 +180,7 @@ pub const SelectionSnapshot = struct {
 pub const legal_classifiers = [_]ClassifierId{ .branch_chain, .sorted_lookup, .length_bucket };
 const bench_negatives = [_][]const u8{ "foo", "bar", "identifier", "notkw", "Function", "asyncio", "matchx" };
 const fuzz_seed: u64 = 0xC12A1F00D;
+pub const differential_fuzz_seed = fuzz_seed;
 
 pub fn lookupKeywordBranchChain(text: []const u8) ?lexer.TokenKind {
     for (keywords) |kw| {
@@ -214,8 +219,16 @@ pub fn classifyWith(id: ClassifierId, text: []const u8) ?lexer.TokenKind {
     };
 }
 
-/// Production entry — fixed classifier (no runtime selection on hot path).
+/// Production entry — Duo-native classify (host branch_chain retained as differential oracle).
 pub fn lookupKeyword(text: []const u8) ?lexer.TokenKind {
+    return switch (production_authority) {
+        .duo_classify => duo_keyword_bridge.lookupKeyword(text),
+        .host_branch_chain => classifyWith(production_classifier, text),
+    };
+}
+
+/// Host differential oracle — branch chain only (must match Duo production path).
+pub fn lookupKeywordOracle(text: []const u8) ?lexer.TokenKind {
     return classifyWith(production_classifier, text);
 }
 
@@ -252,6 +265,8 @@ pub fn entryForKind(kind: lexer.TokenKind) ?KeywordEntry {
 pub fn differentialValidateClassifiers() !void {
     for (keywords) |kw| {
         const ref = lookupKeywordBranchChain(kw.text) orelse return error.ClassifierMismatch;
+        const prod = lookupKeyword(kw.text) orelse return error.ClassifierMismatch;
+        if (prod != ref) return error.ClassifierMismatch;
         for (legal_classifiers) |cid| {
             const got = classifyWith(cid, kw.text) orelse return error.ClassifierMismatch;
             if (got != ref) return error.ClassifierMismatch;
@@ -275,6 +290,8 @@ pub fn differentialCheck(seed: u64) bool {
         random.bytes(buf[0..len]);
         const slice = buf[0..len];
         const ref = lookupKeywordBranchChain(slice);
+        const prod = lookupKeyword(slice);
+        if (prod != ref) return false;
         for (legal_classifiers) |cid| {
             if (classifyWith(cid, slice) != ref) return false;
         }
@@ -357,6 +374,16 @@ fn classifierFromId(id: []const u8) ClassifierId {
 }
 
 /// Static-cost comparison + differential check; production remains `production_classifier`.
+pub fn keywordSelectionSnapshot() SelectionSnapshot {
+    return .{
+        .selected = production_classifier,
+        .model_selected = production_classifier,
+        .legal_candidates = @intCast(legal_classifiers.len),
+        .compared_candidates = @intCast(legal_classifiers.len),
+        .differential_pass = differentialCheck(fuzz_seed),
+    };
+}
+
 pub fn selectClassifier(alloc: std.mem.Allocator) !SelectionSnapshot {
     if (!differentialCheck(fuzz_seed)) return error.DifferentialFailed;
     var report = try compareKeywordClassifiers(alloc);

@@ -59,11 +59,35 @@ Descriptor-defined **keyword/token classifier** used by the **actual** compiler:
 - Proof: exact classification, deterministic, no alloc, no boxing
 - Integration: replace host path in `src/lexer.zig`
 
+**Status (2026-08-05): near-complete — opencode.** Canonical descriptor
+`src/token_semantic.zig` (54 keywords, 3 categories, schema `token-semantic-v0`)
+→ `src/token_classify_gen.zig` (`duo token-tables emit`) → `lib/std/token/classify.duo`.
+Three candidates (branch_chain / sorted_lookup / length_bucket), differential +
+negative proof `examples/pass12_m1_diff.duo` (exit 0), measured harness
+`examples/pass12_m1_bench.duo`. Native lowering verified via `duo dump-c`
+(`classify_branch_chain(const char* w)` emits `strcmp` chains, zero boxing).
+Production integration: the compiler's own lexer uses the Zig projection
+`token_semantic.lookupKeyword` from the SAME canonical descriptor
+(`src/lexer.zig:594`); the Duo classifier is the Duo-facing production surface
+(`std.token.classify`, registered in `lib/std.duo`), differential-validated
+against the Zig host. The compiler cannot bootstrap a Duo module to tokenize
+Duo source (circular), so the host lexer keeps the Zig projection. Remaining:
+run `pass12_m1_bench.duo`, tighten `src/proof_carrying.zig` claim status.
+
+
 ### P12-M2 — Ward dispatch
 
 Descriptor-generated instruction dispatch with proof-carrying selection — reuses M1 infrastructure without Ward-only schemas.
 
----
+**Status (2026-08-05): partial — cursor/agent.** Canonical tables in
+`src/wasm_semantic.zig` → `duo wasm-tables emit` → `lib/std/wasm/opcode_lookup.duo`.
+Dense native lowering: `OPCODE_TO_INDEX[256]`, `INSTRUCTION_IDS`, `STACK_*` as C arrays;
+`instruction_index_for_opcode(op: i64)` emits direct array index (barrier:
+`duo dev barrier check ward_opcode_lookup`). Differential smokes green:
+`examples/pass9/decode_differential_smoke.duo`, `decode_semantic_smoke.duo`.
+Remaining: `decode_instruction` still dynamic (`__lua` wrapper — `ward_decode`
+profile); req-module devirtualization (`Lookup.foo` → direct C call); cursor
+substrate native lowering (P9-WS3).
 
 ## Reuse map (no parallel systems)
 
@@ -98,7 +122,8 @@ duo semantic preview classifier.sorted_lookup | jq .
 duo semantic validate classifier.perfect_hash | jq .
 duo semantic transforms | jq .
 duo semantic context | jq .
-duo semantic intent | jq .
+duo run examples/pass12_m1_diff.duo   # M1 differential (exit 0)
+duo token-tables emit
 duo semantic projections | jq .
 zig test src/proof_carrying.zig
 zig test src/pass12_catalog.zig

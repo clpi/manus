@@ -1,0 +1,104 @@
+-- std.jit — executable code buffers for runtime code generation.
+--
+-- The three primitives a JIT needs and that no pure-Duo code can express:
+-- allocate memory that can be made executable, write machine words into it,
+-- and call it. Written once here so consumers (e.g. a WASM runtime's tier-1
+-- compiler) stay entirely in Duo.
+--
+-- Lifecycle: alloc -> w32/w32_at -> seal -> call*. Writing after seal is
+-- undefined; allocate a fresh buffer instead.
+
+@c.emit([[
+#include <sys/mman.h>
+#if defined(__APPLE__)
+extern void sys_icache_invalidate(void *start, size_t len);
+#endif
+
+/* Publish freshly written code: make it executable and flush the icache.
+ * W^X is respected by never holding write and execute at the same time,
+ * which is also what keeps this working on Apple Silicon without needing
+ * the allow-jit entitlement. Returns 0 on success. */
+static int duo_jit_seal(void* p, long n) {
+    if (mprotect(p, (size_t)n, PROT_READ | PROT_EXEC) != 0) return -1;
+#if defined(__APPLE__)
+    sys_icache_invalidate(p, (size_t)n);
+#else
+    __builtin___clear_cache((char*)p, (char*)p + n);
+#endif
+    return 0;
+}
+
+static const char* duo_jit_arch(void) {
+#if defined(__aarch64__) || defined(__arm64__)
+    return "arm64";
+#elif defined(__x86_64__)
+    return "x86_64";
+#else
+    return "unknown";
+#endif
+}
+]])
+
+-- Reserve `bytes` of writable memory that seal() can later make executable.
+-- Returns a buffer value, or nil if the host refused the mapping.
+fun alloc(bytes: i64): any
+    return __emit([[({ lua_Value _v; _v.type = VAL_BUFFER;
+        void* _p = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANON, -1, 0);
+        _v.as.tval = (_p == MAP_FAILED) ? NULL : _p; _v; })]])
+end
+
+-- Store one 32-bit instruction word at instruction index `idx`.
+fun w32(buf: any, idx: i64, word: i64): void
+    __emit("((uint32_t*)buf.as.tval)[idx] = (uint32_t)word")
+end
+
+-- Read back one 32-bit word (debugging emitted code).
+fun r32(buf: any, idx: i64): i64
+    return __emit("(int64_t)((uint32_t*)buf.as.tval)[idx]")
+end
+
+-- Store one raw byte at byte offset `off`.
+fun w8(buf: any, off: i64, byte: i64): void
+    __emit("((uint8_t*)buf.as.tval)[off] = (uint8_t)byte")
+end
+
+-- Make the first `bytes` executable and flush the instruction cache.
+-- Returns true on success.
+fun seal(buf: any, bytes: i64): bool
+    return __emit("(duo_jit_seal(buf.as.tval, (long)bytes) == 0)")
+end
+
+-- Call the buffer. The arity-specific entry points exist because a raw
+-- function pointer has to be cast to a concrete signature at the call site.
+fun call0(buf: any): i64
+    return __emit("((int64_t(*)(void))buf.as.tval)()")
+end
+fun call1(buf: any, a0: i64): i64
+    return __emit("((int64_t(*)(int64_t))buf.as.tval)(a0)")
+end
+fun call2(buf: any, a0: i64, a1: i64): i64
+    return __emit("((int64_t(*)(int64_t,int64_t))buf.as.tval)(a0, a1)")
+end
+
+fun release(buf: any, bytes: i64): void
+    __emit("munmap(buf.as.tval, (size_t)bytes)")
+end
+
+-- True when this build targets an architecture std.jit can emit for.
+fun arch(): str
+    return __emit("duo_jit_arch()")
+end
+
+M = {}
+M.alloc = alloc
+M.w32 = w32
+M.w8 = w8
+M.r32 = r32
+M.seal = seal
+M.call0 = call0
+M.call1 = call1
+M.call2 = call2
+M.release = release
+M.arch = arch
+M

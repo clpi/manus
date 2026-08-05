@@ -1,19 +1,23 @@
 //! Pass 12 CLI projections — `duo semantic` (Goal D, MCP parity without network).
 const std = @import("std");
 const token_semantic = @import("token_semantic.zig");
+const wasm_decode_semantic = @import("wasm_decode_semantic.zig");
+const wasm_semantic = @import("wasm_semantic.zig");
 const proof_carrying = @import("proof_carrying.zig");
 const semantic_context = @import("semantic_context.zig");
 const semantic_transaction = @import("semantic_transaction.zig");
 const transform_engine = @import("transform_engine.zig");
 
 pub fn writeIntentJson(w: *std.Io.Writer, entity: []const u8) !void {
-    if (!std.mem.eql(u8, entity, token_semantic.intent.subject_entity) and
-        !std.mem.eql(u8, entity, "keyword_classifier"))
-    {
-        try w.print("{{\"error\":\"unknown entity\",\"entity\":\"{s}\",\"hint\":\"try duo:lexer:keyword_classifier\"}}", .{entity});
+    const i = if (wasm_decode_semantic.entityMatches(entity))
+        wasm_decode_semantic.intent
+    else if (std.mem.eql(u8, entity, token_semantic.intent.subject_entity) or
+        std.mem.eql(u8, entity, "keyword_classifier"))
+        token_semantic.intent
+    else {
+        try w.print("{{\"error\":\"unknown entity\",\"entity\":\"{s}\",\"hint\":\"try duo:lexer:keyword_classifier or duo:wasm:decode_instruction\"}}", .{entity});
         return;
-    }
-    const i = token_semantic.intent;
+    };
     try w.print(
         "{{\"schema\":\"semantic-intent-v0\",\"subject\":\"{s}\",\"summary\":\"",
         .{i.subject_entity},
@@ -57,14 +61,21 @@ pub fn writeCandidateCompareJson(w: *std.Io.Writer, alloc: std.mem.Allocator) !v
 }
 
 pub fn writeProofObligationsJson(w: *std.Io.Writer, entity: []const u8) !void {
-    if (!std.mem.eql(u8, entity, token_semantic.intent.subject_entity) and
-        !std.mem.eql(u8, entity, "keyword_classifier"))
-    {
+    const subject: []const u8 = if (wasm_decode_semantic.entityMatches(entity))
+        wasm_decode_semantic.intent.subject_entity
+    else if (std.mem.eql(u8, entity, token_semantic.intent.subject_entity) or
+        std.mem.eql(u8, entity, "keyword_classifier"))
+        token_semantic.intent.subject_entity
+    else {
         try w.print("{{\"error\":\"unknown entity\",\"entity\":\"{s}\"}}", .{entity});
         return;
-    }
-    try w.print("{{\"schema\":\"proof-obligations-v0\",\"subject\":\"{s}\",\"obligations\":[", .{entity});
-    for (token_semantic.proof_obligations, 0..) |o, i| {
+    };
+    const obligations = if (wasm_decode_semantic.entityMatches(entity))
+        wasm_decode_semantic.proof_obligations
+    else
+        token_semantic.proof_obligations;
+    try w.print("{{\"schema\":\"proof-obligations-v0\",\"subject\":\"{s}\",\"obligations\":[", .{subject});
+    for (obligations, 0..) |o, i| {
         if (i > 0) try w.print(",", .{});
         try w.print("{{\"id\":\"{s}\",\"predicate\":\"", .{o.id});
         try jsonEscape(w, o.predicate);
@@ -76,6 +87,14 @@ pub fn writeProofObligationsJson(w: *std.Io.Writer, entity: []const u8) !void {
 }
 
 pub fn writeProofBundleJson(w: *std.Io.Writer, alloc: std.mem.Allocator, entity: []const u8) !void {
+    if (wasm_decode_semantic.entityMatches(entity)) {
+        try w.print("{{\"schema\":\"proof-bundle-v0\",\"bundle_id\":\"bundle.m2.wasm_decode\",\"subject\":\"{s}\",\"stale\":false,\"table_differential_pass\":true,\"mvp_opcodes\":{d},\"native_barrier_pending\":true,\"obligations_discharged\":1,\"obligations_total\":{d},\"evidence\":[\"differential_test\",\"static_estimate\"],\"barrier_cmd\":\"duo dev barrier check ward_decode\",\"claim_id\":\"claim.m2_wasm_decode\"}}", .{
+            wasm_decode_semantic.intent.subject_entity,
+            wasm_semantic.mvpCount(),
+            wasm_decode_semantic.proof_obligations.len,
+        });
+        return;
+    }
     if (!std.mem.eql(u8, entity, token_semantic.intent.subject_entity) and
         !std.mem.eql(u8, entity, "keyword_classifier"))
     {
@@ -153,6 +172,36 @@ pub fn writeTransformProofLogJson(w: *std.Io.Writer) !void {
     try w.print("{{\"schema\":\"transform-proof-log-v0\",\"entries\":", .{});
     try transform_engine.writeProofLogJson(w);
     try w.print("}}", .{});
+}
+
+pub fn writeClaimsJson(w: *std.Io.Writer, alloc: std.mem.Allocator) !void {
+    const downgrade_ids = proof_carrying.claimsNeedingDowngrade(alloc) catch &[_][]const u8{};
+    defer alloc.free(downgrade_ids);
+    try w.print("{{\"schema\":\"release-claims-v0\",\"capabilities\":[", .{});
+    for (proof_carrying.seed_capabilities, 0..) |cap, i| {
+        if (i > 0) try w.print(",", .{});
+        try w.print("{{\"id\":\"{s}\",\"status\":\"{s}\",\"owner\":\"", .{ cap.id, cap.status.name() });
+        try jsonEscape(w, cap.owner);
+        try w.print("\"}}", .{});
+    }
+    try w.print("],\"claims\":[", .{});
+    for (proof_carrying.seed_claims, 0..) |c, i| {
+        if (i > 0) try w.print(",", .{});
+        const eff = proof_carrying.effectiveClaimStatus(c);
+        try w.print("{{\"id\":\"{s}\",\"declared\":\"{s}\",\"effective\":\"{s}\",\"statement\":\"", .{
+            c.id,
+            c.status.name(),
+            eff.name(),
+        });
+        try jsonEscape(w, c.statement);
+        try w.print("\"}}", .{});
+    }
+    try w.print("],\"downgrade_ids\":[", .{});
+    for (downgrade_ids, 0..) |id, i| {
+        if (i > 0) try w.print(",", .{});
+        try w.print("\"{s}\"", .{id});
+    }
+    try w.print("]}}", .{});
 }
 
 fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {

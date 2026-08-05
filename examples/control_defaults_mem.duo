@@ -1,13 +1,13 @@
 const default_step: i64 = 3
 
-fun score(base: i64, step: i64 = default_step, factor: i64 = 2): i64
+score(base: i64, step: i64 = default_step, factor: i64 = 2): i64
     return base + step * factor
 end
 
-fun skipped_sum(limit: i64): i64
+skipped_sum(limit: i64): i64
     local total: i64 = 0
-    for i = 1, limit do
-        if i % 2 == 0 then
+    for i = 1, limit
+        if i % 2 == 0
             continue
         end
         total += i
@@ -19,11 +19,11 @@ local block = [[alpha
 beta]]
 local bracket = [=[contains ]] without ending]=]
 
-if block ~= "alpha\nbeta" then
+if block ~= "alpha\nbeta"
     error("bad long string")
 end
 
-if bracket ~= "contains ]] without ending" then
+if bracket ~= "contains ]] without ending"
     error("bad equal-delimited long string")
 end
 
@@ -35,11 +35,11 @@ local slot: *i64 = mem.cast("i64", raw)
 mem.store("i64", slot, score(4))
 local got: i64 = mem.load("i64", slot)
 
-if got ~= 10 then
+if got ~= 10
     mem.trap()
 end
 
-if got == 0 then
+if got == 0
     mem.unreachable()
 end
 

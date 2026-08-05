@@ -5,6 +5,8 @@ const pass11_catalog = @import("pass11_catalog.zig");
 const semantic_compression = @import("semantic_compression.zig");
 const semantic_transaction = @import("semantic_transaction.zig");
 const token_semantic = @import("token_semantic.zig");
+const wasm_decode_semantic = @import("wasm_decode_semantic.zig");
+const wasm_decode_differential = @import("wasm_decode_differential.zig");
 const transform_engine = @import("transform_engine.zig");
 
 pub const SCHEMA_VERSION = "pass12-catalog-v0";
@@ -35,16 +37,16 @@ pub const Workstream = struct {
 };
 
 pub const workstreams: []const Workstream = &.{
-    .{ .id = "P12-WS1", .title = "Pass 11 closure + repository truth", .status = "partial", .priority = 1, .owner = "pass11_catalog + pass10_repo_audit" },
+    .{ .id = "P12-WS1", .title = "Pass 11 closure + repository truth", .status = "done", .priority = 1, .owner = "pass11_catalog + pass10_repo_audit" },
     .{ .id = "P12-WS2", .title = "Intent + obligation schema", .status = "partial", .priority = 2, .owner = "src/proof_carrying.zig" },
     .{ .id = "P12-WS3", .title = "Transformation proof records", .status = "partial", .priority = 3, .owner = "src/transform_engine.zig" },
     .{ .id = "P12-WS4", .title = "Candidate comparison engine", .status = "partial", .priority = 4, .owner = "src/realization.zig" },
-    .{ .id = "P12-WS5", .title = "Test + counterexample integration", .status = "partial", .priority = 5, .owner = "src/token_semantic.zig" },
-    .{ .id = "P12-WS6", .title = "Semantic projection generation", .status = "partial", .priority = 6, .owner = "src/token_semantic.zig" },
-    .{ .id = "P12-WS7", .title = "Self-hosted compiler component (M1)", .status = "partial", .priority = 7, .owner = "src/token_semantic.zig" },
-    .{ .id = "P12-WS8", .title = "End-user MCP transaction loop", .status = "partial", .priority = 8, .owner = "src/semantic_transaction.zig" },
+    .{ .id = "P12-WS5", .title = "Test + counterexample integration", .status = "done", .priority = 5, .owner = "src/token_semantic.zig" },
+    .{ .id = "P12-WS6", .title = "Semantic projection generation", .status = "done", .priority = 6, .owner = "src/token_semantic.zig" },
+    .{ .id = "P12-WS7", .title = "Self-hosted compiler component (M1)", .status = "done", .priority = 7, .owner = "src/token_semantic.zig" },
+    .{ .id = "P12-WS8", .title = "End-user MCP transaction loop", .status = "partial", .priority = 8, .owner = "src/semantic_transaction.zig + duo-mcp/duo_bench.duo" },
     .{ .id = "P12-WS9", .title = "LSP semantic presentation", .status = "open", .priority = 9, .owner = "~/x/duo-lsp" },
-    .{ .id = "P12-WS10", .title = "Release truth registry", .status = "partial", .priority = 10, .owner = "src/proof_carrying.zig" },
+    .{ .id = "P12-WS10", .title = "Release truth registry", .status = "partial", .priority = 10, .owner = "src/proof_carrying.zig + duo semantic claims + MCP" },
     .{ .id = "P12-WS11", .title = "Workflow compression harness", .status = "partial", .priority = 11, .owner = "src/semantic_compression.zig" },
     .{ .id = "P12-WS12", .title = "Ward transfer proof (M2)", .status = "partial", .priority = 12, .owner = "src/ward_readiness.zig" },
 };
@@ -60,14 +62,14 @@ pub const milestones: []const Milestone = &.{
     .{
         .id = "P12-M1",
         .title = "Descriptor-driven token/lexer component in production path",
-        .status = "partial",
-        .component = "src/token_semantic.zig → lexer (selected classifier + proof)",
+        .status = "done",
+        .component = "src/token_semantic.zig → lexer + lib/std/token/classify.duo (generated)",
     },
     .{
         .id = "P12-M2",
         .title = "Ward instruction dispatch with proof-carrying selection",
         .status = "partial",
-        .component = "lib/std/wasm/decode.duo + src/wasm_semantic_gen.zig",
+        .component = "src/wasm_decode_semantic.zig + lib/std/wasm/decode.duo + native_barrier_checks.ward_decode_profile",
     },
 };
 
@@ -82,10 +84,10 @@ pub const success_criteria: []const SuccessCriterion = &.{
     .{ .id = 2, .title = "Transformations emit structured proof records", .status = "partial" },
     .{ .id = 3, .title = "Deterministic candidate comparison", .status = "partial" },
     .{ .id = 4, .title = "Counterexamples as semantic artifacts", .status = "partial" },
-    .{ .id = 5, .title = "One source → multiple validated projections", .status = "partial" },
-    .{ .id = 6, .title = "Real Duo compiler component in production path", .status = "partial" },
+    .{ .id = 5, .title = "One source → multiple validated projections", .status = "done" },
+    .{ .id = 6, .title = "Real Duo compiler component in production path", .status = "done" },
     .{ .id = 7, .title = "MCP bounded semantic transaction preview/validate", .status = "partial" },
-    .{ .id = 8, .title = "Release claims linked to proof dependencies", .status = "partial" },
+    .{ .id = 8, .title = "Release claims linked to proof dependencies", .status = "done" },
     .{ .id = 9, .title = "Stale evidence invalidates claims", .status = "partial" },
     .{ .id = 10, .title = "Architecture transfers to Ward subsystem", .status = "partial" },
 };
@@ -150,15 +152,18 @@ pub fn writePass12Json(w: *std.Io.Writer) !void {
     });
     try w.print(",\"m1_token_semantic\":", .{});
     try token_semantic.writeCatalogJson(w);
-    try w.print(",\"readiness_summary\":{{\"goals_done\":{d},\"workstreams_done\":{d},\"milestones_done\":{d},\"success_met\":{d},\"success_total\":{d}}}}}",
-        .{
-            countDone("status", goals),
-            countDone("status", workstreams),
-            countDone("status", milestones),
-            countDone("status", success_criteria),
-            success_criteria.len,
-        },
-    );
+    try w.print(",\"m2_wasm_decode\":", .{});
+    try wasm_decode_semantic.writeCatalogJson(w);
+    try w.print(",\"wasm_decode_differential\":", .{});
+    try wasm_decode_differential.writeCatalogJson(w);
+    try w.print(",\"readiness_summary\":{{\"goals_done\":{d},\"workstreams_done\":{d},\"milestones_done\":{d},\"success_met\":{d},\"success_total\":{d}", .{
+        countDone("status", goals),
+        countDone("status", workstreams),
+        countDone("status", milestones),
+        countDone("status", success_criteria),
+        success_criteria.len,
+    });
+    try w.writeAll("}}");
 }
 
 fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {
@@ -175,5 +180,7 @@ test "pass12_catalog: writePass12Json structure" {
     const out = buf.written();
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass\":12") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "P12-M1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "m2_wasm_decode") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "wasm_decode_differential") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "proof_carrying") != null);
 }

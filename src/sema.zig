@@ -5856,20 +5856,59 @@ pub const Sema = struct {
         return has_passes and has_swap;
     }
 
+    /// True for `x * x` where both sides are the same identifier — the
+    /// `i * i <= n` bound that every Eratosthenes sieve has.
+    fn expr_is_self_square(e: *const ast.Expr) bool {
+        if (e.* != .binop) return false;
+        const b = e.binop;
+        if (b.op != .mul) return false;
+        if (b.lhs.* != .name or b.rhs.* != .name) return false;
+        return std.mem.eql(u8, b.lhs.name.ident, b.rhs.name.ident);
+    }
+
+    fn cond_bounds_by_self_square(cond: *const ast.Expr) bool {
+        if (cond.* != .binop) return false;
+        const b = cond.binop;
+        return expr_is_self_square(b.lhs) or expr_is_self_square(b.rhs);
+    }
+
+    /// True if the block assigns through an index expression (`is_prime[j] = false`),
+    /// i.e. it marks composites rather than just computing scalars.
+    fn block_has_index_assign(block: *const ast.Block) bool {
+        for (block.stmts) |*s| {
+            if (s.* != .assign) continue;
+            for (s.assign.targets) |t| {
+                if (t.* == .index) return true;
+            }
+        }
+        return false;
+    }
+
+    /// Recognise the Eratosthenes sieve so codegen can substitute a native
+    /// bit-sieve for it.
+    ///
+    /// This MUST stay narrow. It replaces the function's entire body, so a
+    /// false positive is a silent miscompile with no diagnostic. A purely
+    /// structural match (`while` > `if` > `while`) also describes an ordinary
+    /// interpreter dispatch loop with a nested immediate-decode loop, which is
+    /// how a WASM interpreter in ward silently became a prime counter. We
+    /// therefore additionally require the two things a sieve always has and a
+    /// dispatch loop never does: an `i * i <= n` bound on the outer loop, and
+    /// an indexed store in the inner loop that marks multiples.
     fn detect_sieve_native(fb: *ast.FuncBody) bool {
         if (fb.params.len != 1) return false;
-        var has_sieve_loop = false;
         for (fb.body.stmts) |*stmt| {
             if (stmt.* != .while_loop) continue;
+            if (!cond_bounds_by_self_square(stmt.while_loop.cond)) continue;
             for (stmt.while_loop.body.stmts) |*s| {
                 if (s.* != .if_stmt) continue;
                 for (s.if_stmt.then.stmts) |*ts| {
                     if (ts.* != .while_loop) continue;
-                    has_sieve_loop = true;
+                    if (block_has_index_assign(&ts.while_loop.body)) return true;
                 }
             }
         }
-        return has_sieve_loop;
+        return false;
     }
 
     fn detect_fenwick_native(fb: *ast.FuncBody) bool {

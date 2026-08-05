@@ -171,10 +171,72 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
         try w.print("    {d},\n", .{inst.opcode});
     }
     try w.writeAll("}\n\nOPCODE_TO_INDEX = {\n");
-    for (wasm_semantic.mvp_opcode_index, 0..) |idx, opcode| {
-        if (idx >= 0) try w.print("    [{d}] = {d},\n", .{ opcode, idx });
+    for (wasm_semantic.mvp_opcode_index) |idx| {
+        try w.print("    {d},\n", .{idx});
     }
-    try w.writeAll("}\n\nfun opcode_for_index(idx): i64\n    if idx < 0 or idx >= INSTRUCTION_COUNT then return -1 end\n    INSTRUCTION_OPCODES[idx + 1]\nend\n\nfun generator_owner(): str\n    GENERATOR_OWNER\nend\n\nfun instruction_count(): i64\n    INSTRUCTION_COUNT\nend\n\nfun instruction_index_for_opcode(op): i64\n    idx = OPCODE_TO_INDEX[op]\n    if idx == nil then return -1 end\n    idx\nend\n\nfun semantic_id_for_index(idx): str\n    if idx < 0 or idx >= INSTRUCTION_COUNT then return \"\" end\n    INSTRUCTION_IDS[idx + 1]\nend\n\nfun semantic_id_for_opcode(op): str\n    idx = OPCODE_TO_INDEX[op]\n    if idx == nil then return \"\" end\n    INSTRUCTION_IDS[idx + 1]\nend\n\nfun immediate_form_for_index(idx): str\n    if idx < 0 or idx >= INSTRUCTION_COUNT then return \"none\" end\n    IMMEDIATE_FORMS[idx + 1]\nend\n\nfun stack_pop_for_index(idx): i64\n    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end\n    STACK_POP[idx + 1]\nend\n\nfun stack_push_for_index(idx): i64\n    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end\n    STACK_PUSH[idx + 1]\nend\n\nM = {}\nM.GENERATOR_OWNER = GENERATOR_OWNER\nM.INSTRUCTION_COUNT = INSTRUCTION_COUNT\nM.generator_owner = generator_owner\nM.instruction_count = instruction_count\nM.opcode_for_index = opcode_for_index\nM.instruction_index_for_opcode = instruction_index_for_opcode\nM.semantic_id_for_index = semantic_id_for_index\nM.semantic_id_for_opcode = semantic_id_for_opcode\nM.immediate_form_for_index = immediate_form_for_index\nM.stack_pop_for_index = stack_pop_for_index\nM.stack_push_for_index = stack_push_for_index\n");
+    try w.writeAll(
+        \\}
+        \\
+        \\fun opcode_for_index(idx: i64): i64
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return -1 end
+        \\    INSTRUCTION_OPCODES[idx + 1]
+        \\end
+        \\
+        \\fun generator_owner(): str
+        \\    GENERATOR_OWNER
+        \\end
+        \\
+        \\fun instruction_count(): i64
+        \\    INSTRUCTION_COUNT
+        \\end
+        \\
+        \\fun instruction_index_for_opcode(op: i64): i64
+        \\    if op < 0 or op > 255 then return -1 end
+        \\    idx = OPCODE_TO_INDEX[op + 1]
+        \\    if idx < 0 then return -1 end
+        \\    idx
+        \\end
+        \\
+        \\fun semantic_id_for_index(idx: i64): str
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return "" end
+        \\    INSTRUCTION_IDS[idx + 1]
+        \\end
+        \\
+        \\fun semantic_id_for_opcode(op: i64): str
+        \\    idx = instruction_index_for_opcode(op)
+        \\    if idx < 0 then return "" end
+        \\    INSTRUCTION_IDS[idx + 1]
+        \\end
+        \\
+        \\fun immediate_form_for_index(idx: i64): str
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return "none" end
+        \\    IMMEDIATE_FORMS[idx + 1]
+        \\end
+        \\
+        \\fun stack_pop_for_index(idx: i64): i64
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
+        \\    STACK_POP[idx + 1]
+        \\end
+        \\
+        \\fun stack_push_for_index(idx: i64): i64
+        \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
+        \\    STACK_PUSH[idx + 1]
+        \\end
+        \\
+        \\M = {}
+        \\M.GENERATOR_OWNER = GENERATOR_OWNER
+        \\M.INSTRUCTION_COUNT = INSTRUCTION_COUNT
+        \\M.generator_owner = generator_owner
+        \\M.instruction_count = instruction_count
+        \\M.opcode_for_index = opcode_for_index
+        \\M.instruction_index_for_opcode = instruction_index_for_opcode
+        \\M.semantic_id_for_index = semantic_id_for_index
+        \\M.semantic_id_for_opcode = semantic_id_for_opcode
+        \\M.immediate_form_for_index = immediate_form_for_index
+        \\M.stack_pop_for_index = stack_pop_for_index
+        \\M.stack_push_for_index = stack_push_for_index
+        \\
+    );
 }
 
 fn wardOpcodeFieldName(id: []const u8) []const u8 {
@@ -254,7 +316,6 @@ test "wasm_semantic_gen: emit duo lookup includes i32.add" {
     try emitDuoOpcodeLookup(&aw.writer);
     const out = aw.written();
     try std.testing.expect(std.mem.indexOf(u8, out, "wasm.i32.add") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "[106] =") != null); // 0x6A
 }
 
 test "wasm_semantic_gen: i32.add stack pop 2 push 1" {

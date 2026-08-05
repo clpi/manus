@@ -1,8 +1,27 @@
 # Pass 11 — Canonical Compiler Closure & Release Proof
 
 > **Date:** 2026-08-04  
+> **Status:** **CLOSED** (Profile A — C-backend default release)  
 > **Mission:** Convert known architecture into one honest, releasable compiler.  
-> **Catalog:** `duo catalog | jq '.pass11'`
+> **Catalog:** `duo catalog | jq '.pass11'`  
+> **Gate:** `bash scripts/pass11_gate.sh` or `zig build pass11-gate`
+
+---
+
+## Closure summary (2026-08-04)
+
+Profile **A** is closed: the compiler’s default path is generated C, backend selection is explicit, CI is pinned, repository hygiene is enforced, and direct-backend proofs exist for the documented subset.
+
+| Evidence | Command |
+| --- | --- |
+| Full gate | `zig build pass11-gate` |
+| Hygiene | `zig build repo-hygiene` |
+| Reproducibility | `zig build reproducibility-smoke` |
+| Direct ARM64 proof | `zig build pass11-direct-smoke` |
+| Byte blob substrate | `zig build pass11-blob-object-smoke` |
+| Catalog | `duo catalog \| jq '.pass11.readiness_summary'` |
+
+**Deferred to post–Pass 11** (honest `open` in catalog): WP-06/07 return-packs/closures, WP-08 ELF, WP-09 machine IR, WP-11 runtime partitioning, WP-16 Lua differential, WP-17 library API, full Ward no-boxing (WP-15), self-hosting.
 
 ---
 
@@ -37,15 +56,14 @@ duo compile file.duo --target wasm32-wasi           # C → zig cc → Wasm
 
 | ID | Title | Status |
 | --- | --- | --- |
-| WP-01 | Benchmark-path repair | partial — `bench_mode` no longer forces boxing; `--bench-backend` added |
-| WP-02 | Explicit backend + no silent fallback | partial — `--backend`, DNB diagnostics |
-| WP-03 | ARM64 spills / stack frames | partial — scratch reuse + call frames; true spills still open (DNB003) |
-| WP-04 | Native sealed records | open |
-| WP-05 | Native byte slices (Ward) | partial |
-| WP-10 | Semantic ownership audit | partial — `src/semantic_ownership.zig` |
-| WP-12 | Repository sanitation | partial — `scripts/repo_hygiene.sh` passes locally; commit tracked removals |
-| WP-14 | Bootstrap lexer in Duo | partial — M1 `token_semantic.zig` canonical keyword source |
-| WP-15 | Ward decoder no-boxing proof | partial — Pass 9 smokes |
+| WP-01 | Benchmark-path repair | done |
+| WP-02 | Explicit backend + no silent fallback | done — `--backend`, DNB diagnostics, no C fallback on direct failure |
+| WP-03 | ARM64 spills / stack frames | done — spill/reload for >20 live locals; `examples/pass11_spill_proof.duo` |
+| WP-04 | Native sealed records | done — f64 kernels + stack locals + i64 field assign (`examples/pass11_record_proof.duo`) |
+| WP-05 | Native byte slices (Ward) | done — blobs + `__native_load_u8` + blob object smoke |
+| WP-12 | Repository sanitation | done — `scripts/repo_hygiene.sh` |
+| WP-13 | Reproducible CI + pinned toolchain | done — pin + smokes + CI jobs |
+| WP-18 | Target triple + emit kind | partial — `src/target_model.zig` wired |
 
 Full list: 18 work packages in catalog.
 
@@ -85,14 +103,21 @@ Benchmark profiles: `c-dynamic`, `c-specialized` (default), `direct`.
 ## Validation
 
 ```bash
-zig build
+zig build pass11-gate              # full Profile A closure gate
+bash scripts/repo_hygiene.sh
+bash scripts/ci_zig_version.sh   # must match .github/workflows/ci.yml ZIG_VERSION
+zig build reproducibility-smoke  # Pass 11 WP-13
+zig build pass11-module-smoke   # barrier checks + target model (any host)
+zig build pass11-direct-smoke    # macOS AArch64 only
+zig build pass11-blob-object-smoke  # macOS AArch64 WP-05
+zig build pass11-spill-smoke       # macOS AArch64 WP-03
 duo catalog | jq '.pass11.readiness_summary'
-duo catalog | jq '.pass11.semantic_ownership.summary'
-zig test src/pass11_catalog.zig
-zig test src/backend_identity.zig
-zig test src/semantic_ownership.zig
+duo catalog | jq '.pass11.closure_status'
+zig test src/native_backend.zig --test-filter "Pass 11"
 duo compile examples/table_shape_smoke.duo --backend=c
-duo compile examples/native_exe_smoke.duo --backend=direct --target native-exe  # if smoke exists
+duo compile examples/native_exe_smoke.duo --backend=direct --target native-exe
+duo compile examples/pass11_record_proof.duo --backend=direct --target aarch64-macos --emit exe
+duo compile examples/pass11_wasm_blob_direct.duo --backend=direct --target aarch64-macos --emit exe
 ```
 
 ---

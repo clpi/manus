@@ -1,0 +1,16 @@
+-- Pass 16 MP-04 — Duo lexer embed tokenize (MP4-B01 regression).
+
+embed_tokenize(): i64
+    Lexer = req "std.compiler.lexer"
+    Token = req "std.compiler.token"
+    lex = Lexer.new("fun", "proof.duo")
+    tok = Lexer.next(lex)
+    if tok.kind ~= Token.KIND_FUN return 1 end
+    tok2 = Lexer.next(lex)
+    if tok2.kind ~= Token.KIND_EOF return 2 end
+    0
+end
+
+main(): i64
+    embed_tokenize()
+end

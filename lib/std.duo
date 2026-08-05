@@ -304,6 +304,13 @@ std.index = {
 std.script = req "std.script"
 
 -- Pass 12 M1 — Duo-native keyword classifier (generated from src/token_semantic.zig)
+-- Pass 16 M1 — Duo-native compiler substrate
+std.compiler = {
+    source = req "std.compiler.source",
+    token = req "std.compiler.token",
+    lexer = req "std.compiler.lexer"
+}
+
 std.token = {
     classify = req "std.token.classify"
 }

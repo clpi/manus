@@ -387,9 +387,8 @@ fun classify_sorted_lookup(w: str): i64
     hi = 54
     while lo <= hi
         mid = (lo + hi) // 2
-        t = SORTED_TEXT[mid]
-        if w == t then return SORTED_ID[mid] end
-        if w < t then
+        if w == SORTED_TEXT[mid] then return SORTED_ID[mid] end
+        if w < SORTED_TEXT[mid] then
             hi = mid - 1
         else
             lo = mid + 1
@@ -399,6 +398,7 @@ fun classify_sorted_lookup(w: str): i64
 end
 
 -- Production entry (mirrors token_semantic.production_classifier).
+@c.export("duo_keyword_classify")
 fun classify(w: str): i64
     classify_branch_chain(w)
 end

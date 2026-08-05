@@ -1,25 +1,25 @@
-fun typed_sub(s: str): str
+typed_sub(s: str): str
   local a: str = string.sub(s, 1, 3)
   return a
 end
 
-fun typed_tostring(n: i64): str
+typed_tostring(n: i64): str
   local b: str = tostring(n)
   return b
 end
 
-fun combined(s: str, n: i64): str
+combined(s: str, n: i64): str
   local a: str = string.sub(s, 1, 3)
   local b: str = tostring(n)
   return a .. b
 end
 
-fun typed_find(s: str): i64
+typed_find(s: str): i64
   local p: i64 = string.find(s, "Duo", 1, true)
   return p
 end
 
-fun method_find(s: str): i64
+method_find(s: str): i64
   local p: i64 = s:find("o", 1, true)
   return p
 end

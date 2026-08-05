@@ -36,6 +36,19 @@ const dynamic_boundary = @import("dynamic_boundary.zig");
 
 pub var native_diag: bool = false;
 var native_diag_tag: ?[]const u8 = null;
+/// True when the module body assigns `name` at top level (e.g. `M = {}`).
+/// Such a global stays live even in native-direct modules: its field writes and
+/// the module's `return M` are still emitted, so its declaration must survive.
+fn module_top_level_assigns(mod: *const ast.Module, name: []const u8) bool {
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .assign) continue;
+        for (stmt.assign.targets) |t| {
+            if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) return true;
+        }
+    }
+    return false;
+}
+
 fn native_diag_fail(tag: []const u8) void {
     if (!native_diag) return;
     if (native_diag_tag != null) return;
@@ -48,7 +61,7 @@ pub const CodeGenError = error{
     InternalError,
 } || Allocator.Error || std.Io.Writer.Error;
 
-pub const E = Allocator.Error || std.Io.Writer.Error || error{ NoAllocViolation };
+pub const E = Allocator.Error || std.Io.Writer.Error || error{NoAllocViolation};
 
 const W = *std.Io.Writer;
 
@@ -75,8 +88,28 @@ pub const CodeGen = struct {
     indent: u32,
     w: W,
     current_ret: RT = .void,
+    /// True while emitting module top-level statements into the C `main`
+    /// driver. A bare `return` there must yield `return 0;`, not `return;`,
+    /// since `main` is `int`-returning. This is what makes Lua/Python-style
+    /// implicit entry points (top-level code, no `main` function) work.
+    emitting_main_driver: bool = false,
+    /// True while emitting an embedded module whose export table (`M.foo = foo`)
+    /// names functions. Such a module still hands lua_Values to the parent, so
+    /// its `__lua` thunks must be emitted even when it otherwise qualifies as
+    /// fully native-scalar.
+    embedded_module_exports_funcs: bool = false,
     dense_table: ?[]const u8 = null,
     dense_table_cap: ?[]const u8 = null,
+    /// Module-scope dense literal tables (1-based positional keys) lowered to native C arrays.
+    native_dense_module_tables: std.StringHashMapUnmanaged(NativeDenseModuleTable) = .empty,
+    /// Function-local `t = {}` lowered to `t_items[]` + `t_len` (no lua tables).
+    native_str_list_locals: std.StringHashMapUnmanaged(void) = .empty,
+    /// Local binding name → embedded module C symbol prefix (from `X = req "path"`).
+    req_module_bindings: std.StringHashMapUnmanaged([]const u8) = .empty,
+    /// Req bindings that omit `lua_require` / `duo_g_*` storage (native-direct embedded modules).
+    req_native_direct: std.StringHashMapUnmanaged(void) = .empty,
+    /// File paths of embedded modules (dedupe + dependency-first ordering).
+    embedded_module_paths: std.StringArrayHashMapUnmanaged(void) = .empty,
     src_path: []const u8 = "",
     stdlib_root: ?[]const u8 = null,
     closure_ctx: ?*const ast.FuncBody = null,
@@ -95,6 +128,11 @@ pub const CodeGen = struct {
     /// and non-native functions. Native-eligible functions get C codegen; the rest
     /// use Lua thunks. The full Lua runtime is included.
     mixed_scalar_mode: bool = false,
+    /// All module functions are native-eligible and embedded req deps are native-direct:
+    /// omit Lua runtime/thunks while still compiling via C or direct backend.
+    substrate_native_mode: bool = false,
+    /// True while emitting an embedded req module under a full-native parent.
+    embed_parent_full_native: bool = false,
     /// Set of function names that are native-eligible in mixed mode.
     native_scalar_funcs: std.StringHashMapUnmanaged(void) = .empty,
     test_mode: bool = false,
@@ -163,6 +201,16 @@ pub const CodeGen = struct {
     foreign_records: ?*const std.StringHashMapUnmanaged(RT) = null,
     /// Pass 5: imported C function descriptors from sema.
     foreign_functions: ?*const std.StringHashMapUnmanaged(@import("foreign_adapter.zig").ForeignFunc) = null,
+
+    const NativeDenseElem = enum { i64, f64, str };
+
+    const NativeDenseModuleTable = struct {
+        c_symbol: []const u8,
+        module_cname: []const u8,
+        elem: NativeDenseElem,
+        len: usize,
+        init: *const ast.Expr,
+    };
 
     const ArcLocal = struct {
         name: []const u8,
@@ -632,8 +680,8 @@ pub const CodeGen = struct {
 
     fn codegen_needs_arc(self: *CodeGen, rt: RT) bool {
         if (self.enum_name_of(rt) != null) return false;
-        // Native scalar modules use const char* for str — no refcounting.
-        if (self.moduleUsesFullNativeLowering() and rt == .str) return false;
+        // Native scalar / mixed modules use const char* for str — no refcounting.
+        if (rt == .str and (self.moduleUsesFullNativeLowering() or self.mixed_scalar_mode)) return false;
         return switch (rt) {
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .f32, .f64 => false,
             .bool, .void, .nil, .never => false,
@@ -784,18 +832,40 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn comptime_binding_is_scalar_const(self: *CodeGen, name: []const u8) bool {
+        const val = self.comptime_bindings().get(name) orelse return false;
+        return switch (val) {
+            .int, .float, .bool, .string => true,
+            else => false,
+        };
+    }
+
+    fn emit_comptime_const_var_name(self: *CodeGen, name: []const u8) void {
+        if (self.current_module_cname.len > 0) {
+            self.p("{s}__{s}", .{ self.current_module_cname, name });
+        } else {
+            self.p("{s}", .{name});
+        }
+    }
+
     fn emit_var_name(self: *CodeGen, name: []const u8) void {
+        self.emit_var_name_mode(name, .read);
+    }
+
+    fn emit_var_name_mode(self: *CodeGen, name: []const u8, mode: enum { read, write }) void {
         var name_buf: [256]u8 = undefined;
         if (self.function_c_names.get(name)) |cname| {
             self.p("{s}", .{cname});
-        } else if (self.current_module_cname.len > 0 and !is_runtime_global(name) and self.global_type(name) != null) {
-            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
         } else if (self.is_local_name(name)) {
             if (self.is_dense_table_name(name)) {
                 self.p("__dt_{s}", .{name});
             } else {
                 self.p("{s}", .{name});
             }
+        } else if (mode == .read and self.comptime_binding_is_scalar_const(name)) {
+            self.emit_comptime_const_var_name(name);
+        } else if (self.current_module_cname.len > 0 and !is_runtime_global(name) and self.global_type(name) != null) {
+            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
         } else if (!is_runtime_global(name) and self.global_type(name) != null) {
             if (self.current_module_cname.len > 0) {
                 self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
@@ -839,7 +909,72 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// Native record parameters are passed by pointer so mutating methods
+    /// (e.g. lexer `self.pos = …`) persist across calls.
+    fn native_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
+        if (rt != .table_type) return false;
+        if (self.moduleUsesFullNativeLowering()) return true;
+        if (self.embedded_module_self_param_by_ptr(rt)) return true;
+        if (self.current_func_name) |name| return self.funcUsesNativeLowering(name);
+        return false;
+    }
+
+    /// Embedded req modules (`std.compiler.*`): the first parameter named `self`
+    /// with a record type is always passed by pointer in native emission so
+    /// internal call chains (adv → next_tok) preserve mutating field updates.
+    fn embedded_module_self_param_by_ptr(self: *const CodeGen, rt: RT) bool {
+        if (self.current_module_cname.len == 0) return false;
+        const fb = self.current_func_body orelse return false;
+        if (fb.params.len == 0) return false;
+        const par = &fb.params[0];
+        if (!std.mem.eql(u8, par.name, "self")) return false;
+        const self_rt = @constCast(self).resolve_type(par.typ);
+        return self_rt == .table_type and self_rt.eql(rt);
+    }
+
+    fn funcUsesRecordSelfPointer(self: *CodeGen, fb: *const ast.FuncBody) bool {
+        if (fb.params.len == 0) return false;
+        const par = &fb.params[0];
+        if (!std.mem.eql(u8, par.name, "self")) return false;
+        return self.native_record_param_by_ptr(self.resolve_type(par.typ));
+    }
+
+    fn expr_is_native_record_ptr_param(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .name) return false;
+        const fb = self.current_func_body orelse return false;
+        for (fb.params) |par| {
+            if (std.mem.eql(u8, par.name, e.name.ident)) {
+                return self.native_record_param_by_ptr(self.resolve_type(par.typ));
+            }
+        }
+        return false;
+    }
+
+    fn field_base_is_native_record_ptr(self: *CodeGen, obj: *const ast.Expr) bool {
+        if (self.expr_is_native_record_ptr_param(obj)) return true;
+        if (obj.* == .field) return self.field_base_is_native_record_ptr(obj.field.obj);
+        return false;
+    }
+
+    fn emit_native_field_access(self: *CodeGen, obj: *const ast.Expr, field: []const u8) E!void {
+        if (self.expr_is_native_record_ptr_param(obj)) {
+            try self.emit_expr(obj);
+            self.p("->{s}", .{field});
+        } else if (obj.* == .field) {
+            const use_arrow = self.field_base_is_native_record_ptr(obj.field.obj);
+            try self.emit_native_field_access(obj.field.obj, obj.field.field);
+            if (use_arrow) self.p("->{s}", .{field}) else self.p(".{s}", .{field});
+        } else {
+            try self.emit_expr(obj);
+            self.p(".{s}", .{field});
+        }
+    }
+
     fn emit_lvalue(self: *CodeGen, expr: *const ast.Expr) E!void {
+        if (expr.* == .field and self.field_base_is_native_record_ptr(expr.field.obj)) {
+            try self.emit_native_field_access(expr.field.obj, expr.field.field);
+            return;
+        }
         if (expr.* == .name) {
             // Inside a closure, LOCAL upvalue writes go through the closure struct.
             // Global upvalues are accessed directly via their C name.
@@ -859,7 +994,7 @@ pub const CodeGen = struct {
                     }
                 }
             }
-            self.emit_var_name(expr.name.ident);
+            self.emit_var_name_mode(expr.name.ident, .write);
             return;
         }
         try self.emit_expr(expr);
@@ -939,6 +1074,14 @@ pub const CodeGen = struct {
 
     fn c_type(self: *const CodeGen, rt: RT, buf: []u8) []const u8 {
         if (self.is_table_module_type(rt)) return "lua_Value";
+        if (rt == .@"struct") {
+            if (self.record_aliases.get(rt.@"struct".name)) |alias_rt| {
+                if (alias_rt == .table_type) {
+                    const hash = record_content_hash(alias_rt.table_type);
+                    return std.fmt.bufPrint(buf, "duo_rec_{x}", .{hash}) catch rt.c_type(buf);
+                }
+            }
+        }
         return rt.c_type(buf);
     }
 
@@ -1051,7 +1194,11 @@ pub const CodeGen = struct {
         self.p("{s}__{s}(", .{ type_name, method });
         const pass_self = obj != null and !self.is_table_module(type_name);
         if (pass_self) {
-            try self.emit_expr(obj.?);
+            if (self.record_aliases.get(type_name)) |rt| {
+                try self.emit_arg_for_param(obj.?, rt, true);
+            } else {
+                try self.emit_expr(obj.?);
+            }
             if (args.len > 0) self.p(", ", .{});
         }
         for (args, 0..) |arg, i| {
@@ -1104,8 +1251,13 @@ pub const CodeGen = struct {
                 }
             },
             else => {
-                self.typ(rt);
-                if (name) |n| self.p(" {s}", .{n});
+                if (self.native_record_param_by_ptr(rt)) {
+                    self.typ(rt);
+                    if (name) |n| self.p(" *{s}", .{n}) else self.p(" *", .{});
+                } else {
+                    self.typ(rt);
+                    if (name) |n| self.p(" {s}", .{n});
+                }
             },
         }
     }
@@ -1149,6 +1301,22 @@ pub const CodeGen = struct {
         }
         if (e.* == .index) {
             const idx = e.index;
+            if (idx.obj.* == .name) {
+                if (self.native_dense_module_tables.get(idx.obj.name.ident)) |nd| {
+                    return switch (nd.elem) {
+                        .i64 => .i64,
+                        .f64 => .f64,
+                        .str => .str,
+                    };
+                }
+            }
+            if (self.req_module_dense_index_info(idx.obj)) |nd| {
+                return switch (nd.elem) {
+                    .i64 => .i64,
+                    .f64 => .f64,
+                    .str => .str,
+                };
+            }
             if (self.is_dense_table_index(idx.obj)) return .i64;
             if (self.indexed_element_type(self.expr_type(idx.obj))) |t| return t;
         }
@@ -1167,6 +1335,7 @@ pub const CodeGen = struct {
             if (self.debug_call_result_type(c.func, c.args)) |t| return t;
             if (self.jit_call_result_type(c.func, c.args)) |t| return t;
             if (self.builtin_call_result_type(c.func, c.args)) |t| return t;
+            if (self.infer_req_module_call_return_type(e)) |t| return t;
             if (c.func.* == .name) {
                 if (std.mem.eql(u8, c.func.name.ident, "__constexpr") and c.args.len == 1) {
                     if (self.comptime_value_type(c.args[0])) |rt| return rt;
@@ -1491,8 +1660,31 @@ pub const CodeGen = struct {
                 const else_t = self.expr_type(ie.else_expr);
                 break :blk if (then_t.eql(else_t)) then_t else .any;
             },
+            .call => |c| blk: {
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "tonumber")) break :blk .f64;
+                break :blk null;
+            },
+            .binop => |b| blk: {
+                if (b.op == .@"or" or b.op == .@"and") {
+                    const lt = self.structural_expr_type(b.lhs) orelse self.expr_type(b.lhs);
+                    const rt = self.structural_expr_type(b.rhs) orelse self.expr_type(b.rhs);
+                    if (lt.is_numeric() and rt.is_numeric()) {
+                        break :blk if (lt == .f64 or rt == .f64) .f64 else .i64;
+                    }
+                }
+                break :blk null;
+            },
             else => null,
         };
+    }
+
+    fn register_native_str_list_local(self: *CodeGen, name: []const u8) !void {
+        const owned = try self.alloc.dupe(u8, name);
+        try self.native_str_list_locals.put(self.alloc, owned, {});
+    }
+
+    fn is_native_str_list_local(self: *const CodeGen, name: []const u8) bool {
+        return self.native_str_list_locals.contains(name);
     }
 
     fn func_expr_type(self: *CodeGen, fb: *const ast.FuncBody) RT {
@@ -2163,10 +2355,16 @@ pub const CodeGen = struct {
                     .ffi_name = null,
                 } };
                 self.apply_binding_record_attrs(&rt, ad.attributes);
+                if (rt == .table_type and rt.table_type.storage_class == .dynamic and self.record_type_lowers_native(rt)) {
+                    rt.table_type.storage_class = .native;
+                }
                 return rt;
             }
             var rt = self.resolve_type(target);
             self.apply_binding_record_attrs(&rt, ad.attributes);
+            if (rt == .table_type and rt.table_type.storage_class == .dynamic and self.record_type_lowers_native(rt)) {
+                rt.table_type.storage_class = .native;
+            }
             return rt;
         }
         var fields = try self.alloc.alloc(types.FieldType, ad.fields.len);
@@ -2332,6 +2530,100 @@ pub const CodeGen = struct {
         return true;
     }
 
+    fn all_module_functions_native(self: *CodeGen, mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len != 1) return false;
+            if (self.native_scalar_mode) continue;
+            if (!self.native_scalar_funcs.contains(fd.path[0])) return false;
+        }
+        return true;
+    }
+
+    fn module_top_level_is_native(self: *CodeGen, mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.inits) |init_expr| {
+                        if (req_path_from_expr(init_expr)) |path| {
+                            if (self.find_module_file_for_req(path) == null) return false;
+                        } else if (!self.expr_is_native_scalar(init_expr)) return false;
+                    }
+                },
+                .assign => |*as| {
+                    for (as.values) |value| {
+                        if (req_path_from_expr(value)) |path| {
+                            if (self.req_module_is_native_direct(path)) continue;
+                            return false;
+                        }
+                        if (!self.expr_is_native_scalar(value)) return false;
+                    }
+                },
+                .call_stmt => |*cs| {
+                    if (!self.expr_is_native_scalar(cs.expr)) return false;
+                },
+                .expr_stmt => |*es| {
+                    if (!self.expr_is_native_scalar(es.expr)) return false;
+                },
+                .func_decl, .const_decl, .alias_def, .enum_def, .concept_def, .macro_def, .cinclude, .directive => {},
+                else => return false,
+            }
+        }
+        return true;
+    }
+
+    fn compute_substrate_native_mode(self: *CodeGen, mod: *const ast.Module) bool {
+        if (!self.duo_mode or self.load_chunk or self.lib_mode or self.test_mode or self.bench_mode) return false;
+        if (self.native_scalar_mode) return true;
+        if (!self.mixed_scalar_mode) return false;
+        if (!self.native_scalar_funcs.contains("main")) return false;
+        if (!self.req_deps_are_native_direct(mod)) return false;
+        return self.module_top_level_is_native(mod);
+    }
+
+    /// Transitive req targets are native-direct embeddable modules (lua_require not required).
+    fn req_deps_are_native_direct(self: *CodeGen, mod: *const ast.Module) bool {
+        if (self.src_path.len == 0) return true;
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        self.collect_require_names_block(&mod.body, &names) catch return false;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) {
+                self.collect_require_names_block(&stmt.func_decl.func.body, &names) catch return false;
+            }
+        }
+
+        var seen_paths: std.StringArrayHashMapUnmanaged(void) = .{};
+        defer seen_paths.deinit(self.alloc);
+        var seen_names: std.StringArrayHashMapUnmanaged(void) = .{};
+        defer seen_names.deinit(self.alloc);
+
+        var i: usize = 0;
+        while (i < names.items.len) : (i += 1) {
+            const alias = names.items[i];
+            if (seen_names.contains(alias)) continue;
+            seen_names.put(self.alloc, alias, {}) catch return false;
+            const mod_path = self.find_module_file_for_req(alias) orelse continue;
+            if (seen_paths.contains(mod_path)) continue;
+            seen_paths.put(self.alloc, mod_path, {}) catch return false;
+            if (!self.req_module_is_native_direct(alias)) return false;
+
+            const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path, self.alloc, .unlimited) catch return false;
+            defer self.alloc.free(sub_src);
+            var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
+            var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
+            var sub_mod = sub_parser.parse_module() catch return false;
+            self.collect_require_names_block(&sub_mod.body, &names) catch return false;
+            for (sub_mod.body.stmts) |*sub_stmt| {
+                if (sub_stmt.* == .func_decl) {
+                    self.collect_require_names_block(&sub_stmt.func_decl.func.body, &names) catch return false;
+                }
+            }
+        }
+        return true;
+    }
+
     /// Per-function native scalar check: scans the module and populates
     /// `native_scalar_funcs` with the names of functions that can be emitted
     /// as native C (scalar params, scalar body, no varargs/generics/async).
@@ -2365,6 +2657,138 @@ pub const CodeGen = struct {
             self.native_scalar_funcs.put(self.alloc, fd.path[0], {}) catch {};
         }
         return self.native_scalar_funcs.count() > 0;
+    }
+
+    fn func_decl_is_native_scalar_candidate(self: *CodeGen, fd: *const ast.FuncDecl) bool {
+        if (!self.func_decl_has_native_signature(fd)) return false;
+        return self.block_is_native_scalar(fd.func.body, true);
+    }
+
+    fn func_decl_has_native_signature(self: *CodeGen, fd: *const ast.FuncDecl) bool {
+        if (fd.path.len != 1) return false;
+        if (fd.func.vararg or fd.func.vararg_name != null) return false;
+        if (fd.func.is_async) return false;
+        if (@import("directives.zig").attrsMarkTest(fd.attributes)) return false;
+        if (@import("directives.zig").attrsWantBench(fd.attributes)) return false;
+        if (@import("directives.zig").attrsHaveDebug(fd.attributes)) return false;
+        if (fd.func.type_params != null) return false;
+        if (fd.func.ret_type != .inferred and !self.type_expr_is_native_scalar(fd.func.ret_type)) return false;
+        for (fd.func.params) |param| {
+            if (param.default_val != null) return false;
+            if (!self.type_expr_is_native_scalar(param.typ)) return false;
+        }
+        return true;
+    }
+
+    fn collect_same_module_call_names(self: *CodeGen, expr: *const ast.Expr, out: *std.ArrayList([]const u8)) !void {
+        switch (expr.*) {
+            .call => |c| {
+                if (c.func.* == .name and !is_runtime_global(c.func.name.ident)) {
+                    try out.append(self.alloc, c.func.name.ident);
+                } else if (c.func.* == .field and c.func.field.obj.* == .name) {
+                    // method-style same-module: skip — use name calls only
+                }
+                try self.collect_same_module_call_names(c.func, out);
+                for (c.args) |arg| try self.collect_same_module_call_names(arg, out);
+            },
+            .method_call => |mc| {
+                try self.collect_same_module_call_names(mc.obj, out);
+                for (mc.args) |arg| try self.collect_same_module_call_names(arg, out);
+            },
+            .binop => |b| {
+                try self.collect_same_module_call_names(b.lhs, out);
+                try self.collect_same_module_call_names(b.rhs, out);
+            },
+            .unop => |u| try self.collect_same_module_call_names(u.operand, out),
+            .field => |f| try self.collect_same_module_call_names(f.obj, out),
+            .index => |idx| {
+                try self.collect_same_module_call_names(idx.obj, out);
+                try self.collect_same_module_call_names(idx.key, out);
+            },
+            .if_expr => |ie| {
+                try self.collect_same_module_call_names(ie.cond, out);
+                try self.collect_same_module_call_names(ie.then_expr, out);
+                try self.collect_same_module_call_names(ie.else_expr, out);
+            },
+            else => {},
+        }
+    }
+
+    fn collect_same_module_calls_in_block(self: *CodeGen, block: *const ast.Block, out: *std.ArrayList([]const u8)) !void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |ld| {
+                    for (ld.inits) |init_expr| try self.collect_same_module_call_names(init_expr, out);
+                },
+                .assign => |as| {
+                    for (as.values) |val| try self.collect_same_module_call_names(val, out);
+                },
+                .if_stmt => |is| {
+                    try self.collect_same_module_call_names(is.cond, out);
+                    try self.collect_same_module_calls_in_block(&is.then, out);
+                    for (is.elseifs) |elseif| {
+                        try self.collect_same_module_call_names(elseif.cond, out);
+                        try self.collect_same_module_calls_in_block(&elseif.body, out);
+                    }
+                    if (is.else_body) |*eb| try self.collect_same_module_calls_in_block(eb, out);
+                },
+                .while_loop => |wl| {
+                    try self.collect_same_module_call_names(wl.cond, out);
+                    try self.collect_same_module_calls_in_block(&wl.body, out);
+                },
+                .repeat_loop => |rl| {
+                    try self.collect_same_module_call_names(rl.cond, out);
+                    try self.collect_same_module_calls_in_block(&rl.body, out);
+                },
+                .ret => |r| {
+                    for (r.vals) |val| try self.collect_same_module_call_names(val, out);
+                },
+                .expr_stmt => |es| try self.collect_same_module_call_names(es.expr, out),
+                .call_stmt => |cs| try self.collect_same_module_call_names(cs.expr, out),
+                else => {},
+            }
+        }
+        if (block.tail_expr) |expr| try self.collect_same_module_call_names(expr, out);
+    }
+
+    fn find_embedded_top_level_func(mod: *const ast.Module, name: []const u8) ?*const ast.FuncDecl {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            const fd = &stmt.func_decl;
+            if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], name)) return fd;
+        }
+        return null;
+    }
+
+    fn expand_native_scalar_func_transitive(self: *CodeGen, mod: *const ast.Module) void {
+        var work: std.ArrayList([]const u8) = .empty;
+        defer work.deinit(self.alloc);
+        var it = self.native_scalar_funcs.keyIterator();
+        while (it.next()) |key| work.append(self.alloc, key.*) catch return;
+
+        var i: usize = 0;
+        while (i < work.items.len) : (i += 1) {
+            const fd = find_embedded_top_level_func(mod, work.items[i]) orelse continue;
+            var callees: std.ArrayList([]const u8) = .empty;
+            self.collect_same_module_calls_in_block(&fd.func.body, &callees) catch {
+                callees.deinit(self.alloc);
+                continue;
+            };
+            for (callees.items) |callee| {
+                if (self.native_scalar_funcs.contains(callee)) continue;
+                const cfd = find_embedded_top_level_func(mod, callee) orelse continue;
+                if (!self.func_decl_has_native_signature(cfd)) continue;
+                self.native_scalar_funcs.put(self.alloc, callee, {}) catch {
+                    callees.deinit(self.alloc);
+                    return;
+                };
+                work.append(self.alloc, callee) catch {
+                    callees.deinit(self.alloc);
+                    return;
+                };
+            }
+            callees.deinit(self.alloc);
+        }
     }
 
     fn block_is_native_scalar(self: *CodeGen, block: ast.Block, allow_return: bool) bool {
@@ -2424,8 +2848,17 @@ pub const CodeGen = struct {
                         break :blk false;
                     }
                 }
-                for (as.values) |value| {
-                    if (!self.expr_is_native_scalar(value)) {
+                for (as.values, 0..) |value, i| {
+                    if (req_path_from_expr(value)) |path| {
+                        if (self.req_module_is_native_direct(path)) continue;
+                        native_diag_fail("assign-req-nonnative");
+                        break :blk false;
+                    }
+                    const hint: RT = if (i < as.targets.len and as.targets[i].* == .name)
+                        self.global_type(as.targets[i].name.ident) orelse .any
+                    else
+                        .any;
+                    if (!self.init_is_native_scalar(value, hint)) {
                         native_diag_fail("assign-value");
                         break :blk false;
                     }
@@ -2511,7 +2944,8 @@ pub const CodeGen = struct {
 
     /// Full module lowers without lua_Value (knowledge ≥ native).
     fn moduleUsesFullNativeLowering(self: *const CodeGen) bool {
-        return self.native_scalar_mode or self.moduleKnowledgeAtLeast(.native);
+        return self.native_scalar_mode or self.substrate_native_mode or
+            self.moduleKnowledgeAtLeast(.native);
     }
 
     /// Pass 6: public accessor for driver/link flags (prefer over raw `native_scalar_mode`).
@@ -2528,11 +2962,61 @@ pub const CodeGen = struct {
         return !self.moduleUsesFullNativeLowering();
     }
 
+    /// True when `req` bindings in the current function may bypass lua_require.
+    fn function_allows_native_req(self: *const CodeGen) bool {
+        if (self.moduleUsesFullNativeLowering()) return true;
+        return self.mixed_scalar_mode;
+    }
+
+    /// Embedded native/mixed modules: native functions only, no lua thunks.
+    fn embedded_module_skips_lua_thunks(self: *const CodeGen) bool {
+        // A module that exports functions through its `M` table still needs
+        // thunks: the table stores lua_Values. Skipping them emitted a table
+        // referencing `std_jit__alloc__lua` with no such symbol defined.
+        if (self.embedded_module_exports_funcs) return false;
+        return self.current_module_cname.len > 0 and self.native_scalar_mode;
+    }
+
+    fn skip_lua_thunk_emit(self: *const CodeGen) bool {
+        if (!self.moduleNeedsLuaRuntime()) return true;
+        if (self.moduleUsesFullNativeLowering() and self.current_module_cname.len == 0) return true;
+        if (self.embedded_module_skips_lua_thunks()) return true;
+        if (self.current_module_cname.len > 0 and self.embed_parent_full_native) return true;
+        return false;
+    }
+
     /// Per-function native lowering (full-native module or mixed-mode allowlist).
     fn funcUsesNativeLowering(self: *const CodeGen, name: []const u8) bool {
+        // Substrate-native / full-native entry: every function in embedded modules
+        // must lower without lua_Value (no lua_invoke fallbacks).
         if (self.moduleUsesFullNativeLowering()) return true;
+        if (self.embed_parent_full_native) return true;
+        if (self.current_module_cname.len > 0) {
+            if (self.native_scalar_mode) return true;
+            return self.mixed_scalar_mode and self.native_scalar_funcs.contains(name);
+        }
         if (self.mixed_scalar_mode) return self.native_scalar_funcs.contains(name);
         return false;
+    }
+
+    fn emit_fatal_error(self: *CodeGen, msg_expr: ?*const ast.Expr) E!void {
+        if (!self.moduleNeedsLuaRuntime()) {
+            self.p("duo_fatal(", .{});
+            if (msg_expr) |e| {
+                try self.emit_expr(e);
+            } else {
+                self.p("\"error\"", .{});
+            }
+            self.p(")", .{});
+            return;
+        }
+        self.p("lua_error(", .{});
+        if (msg_expr) |e| {
+            try self.emit_as_lua_value(e);
+        } else {
+            self.p("lua_val_nil()", .{});
+        }
+        self.p(")", .{});
     }
 
     /// Expression/type knowledge: eligible for native C emission (no lua_Value).
@@ -2540,18 +3024,43 @@ pub const CodeGen = struct {
         return semantic_algebra.lowersToNativeC(rt);
     }
 
-    /// Per-call knowledge lattice: true when a .func type has all-native params and return.
-    /// Enables direct native calls in mixed_scalar_mode beyond the precomputed allowlist.
-    fn funcTypeIsFullyNative(_: *const CodeGen, rt: RT) bool {
-        if (rt != .func) return false;
-        const f = rt.func;
-        // Check return type
-        if (!f.ret.is_native()) return false;
-        // Check all parameter types
-        for (f.params) |pt| {
-            if (!pt.is_native()) return false;
+    /// True when a table type lowers to a C struct (including nested native records).
+    fn record_type_lowers_native(self: *CodeGen, rt: RT) bool {
+        if (rt != .table_type) return false;
+        if (rt.table_type.fields.len == 0) return false;
+        for (rt.table_type.fields) |f| {
+            if (self.exprLowersToNativeC(f.typ)) continue;
+            if (self.record_type_lowers_native(f.typ)) continue;
+            return false;
         }
         return true;
+    }
+
+    fn type_lowers_native(self: *CodeGen, rt: RT) bool {
+        if (self.exprLowersToNativeC(rt)) return true;
+        if (rt == .@"struct") {
+            if (self.record_aliases.get(rt.@"struct".name)) |alias_rt| {
+                return self.type_lowers_native(alias_rt);
+            }
+            return false;
+        }
+        return self.record_type_lowers_native(rt);
+    }
+
+    /// Per-call knowledge lattice: true when a .func type lowers to native C for all params and return.
+    fn funcTypeLowersNative(self: *CodeGen, rt: RT) bool {
+        if (rt != .func) return false;
+        const f = rt.func;
+        if (!self.type_lowers_native(f.ret.*)) return false;
+        for (f.params) |pt| {
+            if (!self.type_lowers_native(pt)) return false;
+        }
+        return true;
+    }
+
+    /// Legacy alias — prefer `funcTypeLowersNative`.
+    fn funcTypeIsFullyNative(self: *CodeGen, rt: RT) bool {
+        return self.funcTypeLowersNative(rt);
     }
 
     fn callSiteForShape(self: *CodeGen, shape: types.CallShape) semantic_algebra.CallSite {
@@ -2603,7 +3112,7 @@ pub const CodeGen = struct {
             switch (ft) {
                 .func => |f| {
                     if (i < f.params.len) {
-                        try self.emit_arg_for_param(arg, f.params[i]);
+                        try self.emit_arg_for_param(arg, f.params[i], true);
                     } else {
                         try self.emit_expr(arg);
                     }
@@ -2772,7 +3281,7 @@ pub const CodeGen = struct {
         );
         try self.emit_expr(rhs);
         self.p("(", .{});
-        try self.emit_arg_for_param(lhs, ft.func.params[0]);
+        try self.emit_arg_for_param(lhs, ft.func.params[0], true);
         self.p(")", .{});
         return true;
     }
@@ -2852,7 +3361,10 @@ pub const CodeGen = struct {
             .name => |name| !is_runtime_global(name.ident),
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
             .unop => |un| un.op != .compile and self.expr_is_native_scalar(un.operand),
-            .field => |field| self.expr_is_native_scalar(field.obj),
+            .field => |field| blk: {
+                if (self.expr_is_req_module_const_field(expr)) break :blk true;
+                break :blk self.expr_is_native_scalar(field.obj);
+            },
             .index => |idx| self.expr_is_native_scalar(idx.obj) and self.expr_is_native_scalar(idx.key),
             .table => |t| blk: {
                 // A table literal is native scalar only when it is a typed record
@@ -2860,18 +3372,43 @@ pub const CodeGen = struct {
                 // emit_record_initializer at binding/call/return sites. Untyped
                 // dynamic tables require the lua_Value runtime.
                 const rt = self.expr_type(expr);
-                if (rt != .table_type) break :blk false;
-                if (!self.exprLowersToNativeC(rt)) break :blk false;
-                for (t.fields) |fld| switch (fld) {
-                    .named => |nmd| if (!self.expr_is_native_scalar(nmd.val)) break :blk false,
-                    .positional => |pos| if (!self.expr_is_native_scalar(pos)) break :blk false,
-                    .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
-                        !self.expr_is_native_scalar(idx.val)) break :blk false,
-                    .spread => break :blk false,
-                };
-                break :blk true;
+                if (rt == .table_type and self.type_lowers_native(rt)) {
+                    for (t.fields) |fld| switch (fld) {
+                        .named => |nmd| if (!self.expr_is_native_scalar(nmd.val)) break :blk false,
+                        .positional => |pos| if (!self.expr_is_native_scalar(pos)) break :blk false,
+                        .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
+                            !self.expr_is_native_scalar(idx.val)) break :blk false,
+                        .spread => break :blk false,
+                    };
+                    break :blk true;
+                }
+                if (rt == .any or rt == .@"struct") {
+                    for (t.fields) |fld| switch (fld) {
+                        .named => |nmd| if (!self.expr_is_native_scalar(nmd.val)) break :blk false,
+                        .positional => |pos| if (!self.expr_is_native_scalar(pos)) break :blk false,
+                        .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
+                            !self.expr_is_native_scalar(idx.val)) break :blk false,
+                        .spread => break :blk false,
+                    };
+                    break :blk true;
+                }
+                break :blk false;
             },
             .call => |call| blk: {
+                if (self.req_call_expr_is_native_direct(expr)) break :blk true;
+                if (call.func.* == .field) {
+                    const f = call.func.field;
+                    if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "string") and
+                        std.mem.eql(u8, f.field, "len") and call.args.len == 1)
+                    {
+                        break :blk self.expr_is_native_scalar(call.args[0]);
+                    }
+                    if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
+                        if (self.lookup_req_module_func_type(mod_cname, f.field)) |ft| {
+                            if (self.funcTypeLowersNative(ft)) break :blk true;
+                        }
+                    }
+                }
                 if (call.func.* == .name) {
                     // @c.emit / __emit / __asm: raw C injection — always native scalar.
                     if (std.mem.eql(u8, call.func.name.ident, "__emit") or
@@ -2885,7 +3422,8 @@ pub const CodeGen = struct {
                     if (!self.init_is_native_scalar(arg, hint)) break :blk false;
                 }
                 const rt = self.expr_type(expr);
-                break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void or rt == .any;
+                break :blk rt.is_numeric() or rt == .bool or rt == .str or rt == .void or rt == .any or
+                    self.type_lowers_native(rt);
             },
             else => {
                 native_diag_fail("expr-unhandled");
@@ -2910,6 +3448,9 @@ pub const CodeGen = struct {
 
     fn init_is_native_scalar(self: *CodeGen, expr: *const ast.Expr, hint: RT) bool {
         if (expr.* == .nil and hint == .any) return false;
+        if (req_path_from_expr(expr)) |path| {
+            if (self.req_module_skips_lua_binding(path)) return true;
+        }
         if (expr.* == .table and hint == .table_type) {
             const t = expr.table;
             var found: std.StringHashMapUnmanaged(*const ast.Expr) = .empty;
@@ -3478,13 +4019,18 @@ pub const CodeGen = struct {
         }
         meta_directives.registerModuleDirectives(self.alloc, mod) catch {};
 
+        self.collect_req_module_bindings(mod) catch {};
         self.native_scalar_mode = self.can_emit_native_scalar_module(mod);
+        if (self.native_scalar_mode and !self.req_deps_allow_full_native(mod)) {
+            self.native_scalar_mode = false;
+        }
         if (!self.native_scalar_mode and self.duo_mode and (self.target.len == 0 or std.mem.eql(u8, self.target, "native"))) {
             if (self.compute_native_scalar_funcs(mod)) {
                 self.mixed_scalar_mode = true;
             }
         }
-        self.module_knowledge = if (self.native_scalar_mode)
+        self.substrate_native_mode = self.compute_substrate_native_mode(mod);
+        self.module_knowledge = if (self.native_scalar_mode or self.substrate_native_mode)
             .native
         else if (self.mixed_scalar_mode)
             .guarded
@@ -3496,6 +4042,8 @@ pub const CodeGen = struct {
             semantic_algebra.KnowledgeLevel.name(self.module_knowledge),
             self.src_path,
         });
+        self.current_module = mod;
+        try self.collect_native_dense_module_tables(mod);
         const native_scalar_plain = self.moduleUsesFullNativeLowering() and
             !self.module_has_cinclude(mod) and
             !self.module_has_concept_def(mod);
@@ -3522,7 +4070,7 @@ pub const CodeGen = struct {
             self.p("#include <stddef.h>\n", .{});
         }
         self.p("#include <stdint.h>\n", .{});
-        if (!native_scalar_plain or self.native_scalar_needs_stdbool_h(mod)) {
+        if (!native_scalar_plain or self.native_scalar_needs_stdbool_h(mod) or self.moduleUsesFullNativeLowering()) {
             self.p("#include <stdbool.h>\n", .{});
         }
         if (!native_scalar_plain or self.native_scalar_needs_stdio_h(mod)) {
@@ -3623,6 +4171,8 @@ pub const CodeGen = struct {
         if (self.moduleUsesFullNativeLowering()) {
             self.p("#include <stdlib.h>\n", .{});
             self.p("#include <string.h>\n", .{});
+            self.p("#include <stdio.h>\n", .{});
+            self.p("#include <ctype.h>\n", .{});
         }
         // duo_str_concat — native heap string concatenation (replaces lua_concat in native_scalar_mode)
         self.p("static inline char* duo_str_concat(const char* a, const char* b) {{\n", .{});
@@ -3643,6 +4193,51 @@ pub const CodeGen = struct {
         self.p("    for (int64_t i = 0; i < n; ++i) {{ memcpy(p, s, len); p += len; }}\n", .{});
         self.p("    *p = '\\0';\n", .{});
         self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        // Native substring (no lua_Value — used by embedded native modules).
+        self.p("static inline char* duo_str_sub_cstr(const char* str, int64_t start, int64_t end) {{\n", .{});
+        self.p("    if (!str) str = \"\";\n", .{});
+        self.p("    int64_t len = (int64_t)strlen(str);\n", .{});
+        self.p("    if (start < 0) start = len + start + 1;\n", .{});
+        self.p("    if (end < 0) end = len + end + 1;\n", .{});
+        self.p("    if (start < 1) start = 1;\n", .{});
+        self.p("    if (end > len) end = len;\n", .{});
+        self.p("    if (start > end || start > len || end < 1) {{\n", .{});
+        self.p("        char* e = (char*)malloc(1); if (e) e[0] = '\\0'; return e;\n", .{});
+        self.p("    }}\n", .{});
+        self.p("    int64_t sublen = end - start + 1;\n", .{});
+        self.p("    char* out = (char*)malloc((size_t)sublen + 1);\n", .{});
+        self.p("    if (!out) return (char*)str;\n", .{});
+        self.p("    memcpy(out, str + start - 1, (size_t)sublen); out[sublen] = '\\0';\n", .{});
+        self.p("    return out;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline char* duo_str_lower_cstr(const char* s) {{\n", .{});
+        self.p("    if (!s) s = \"\";\n", .{});
+        self.p("    size_t len = strlen(s);\n", .{});
+        self.p("    char* res = (char*)malloc(len + 1);\n", .{});
+        self.p("    if (!res) return (char*)s;\n", .{});
+        self.p("    for (size_t i = 0; i < len; i++) res[i] = (char)tolower((unsigned char)s[i]);\n", .{});
+        self.p("    res[len] = '\\0'; return res;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline char* duo_str_upper_cstr(const char* s) {{\n", .{});
+        self.p("    if (!s) s = \"\";\n", .{});
+        self.p("    size_t len = strlen(s);\n", .{});
+        self.p("    char* res = (char*)malloc(len + 1);\n", .{});
+        self.p("    if (!res) return (char*)s;\n", .{});
+        self.p("    for (size_t i = 0; i < len; i++) res[i] = (char)toupper((unsigned char)s[i]);\n", .{});
+        self.p("    res[len] = '\\0'; return res;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline char* duo_str_reverse_cstr(const char* s) {{\n", .{});
+        self.p("    if (!s) s = \"\";\n", .{});
+        self.p("    size_t len = strlen(s);\n", .{});
+        self.p("    char* res = (char*)malloc(len + 1);\n", .{});
+        self.p("    if (!res) return (char*)s;\n", .{});
+        self.p("    for (size_t i = 0; i < len; i++) res[i] = s[len - 1 - i];\n", .{});
+        self.p("    res[len] = '\\0'; return res;\n", .{});
+        self.p("}}\n", .{});
+        self.p("static inline __attribute__((noreturn)) void duo_fatal(const char* msg) {{\n", .{});
+        self.p("    fprintf(stderr, \"%%s\\n\", msg);\n", .{});
+        self.p("    abort();\n", .{});
         self.p("}}\n", .{});
         if (self.native_scalar_needs_int_floor_helpers(mod)) {
             // Floor division and floor modulo for typed int64 (Lua // and % semantics)
@@ -3872,6 +4467,9 @@ pub const CodeGen = struct {
             var it = globals.keyIterator();
             while (it.next()) |key| {
                 if (is_runtime_global(key.*)) continue;
+                if (self.is_native_dense_module_table(key.*)) continue;
+                if (self.req_module_bindings.contains(key.*)) continue;
+                if (self.comptime_binding_is_scalar_const(key.*)) continue;
                 const gt = globals.get(key.*) orelse .any;
                 if (self.current_module_cname.len > 0) {
                     self.p("static ", .{});
@@ -3883,6 +4481,7 @@ pub const CodeGen = struct {
                     self.p(" duo_g_{s};\n", .{key.*});
                 }
             }
+            try self.emit_native_dense_module_table_decls();
             self.nl();
         }
 
@@ -3942,12 +4541,17 @@ pub const CodeGen = struct {
         self.all_closures.clearRetainingCapacity();
         self.emitted_closures.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
+        if (self.duo_mode) {
+            try self.emit_required_modules(mod);
+        }
         if (self.moduleNeedsLuaRuntime()) {
             try self.emit_closure_structs(self.all_closures.items);
             try jit.emitClosureSourceTable(self, self.all_closures.items);
             try jit.emitUpvaluePackTable(self, self.all_closures.items);
             try jit.emitJitRuntime(self);
-            try self.emit_required_modules(mod);
+            if (!self.duo_mode) {
+                try self.emit_required_modules(mod);
+            }
         }
 
         var local_funcs: std.ArrayList(*ast.FuncDecl) = .empty;
@@ -4157,7 +4761,9 @@ pub const CodeGen = struct {
                     i += rel;
                     continue;
                 }
+                self.emitting_main_driver = true;
                 try self.emit_stmt(&mod.body.stmts[i]);
+                self.emitting_main_driver = false;
                 i += 1;
             }
         } else {
@@ -4469,6 +5075,10 @@ pub const CodeGen = struct {
         if (t.ffi_name) |_| return; // FFI types are external, don't emit definition
         const hash = record_content_hash(t);
         if (self.emitted_records.contains(hash)) return;
+        // Emit nested record field types before this struct so C sees complete types.
+        for (t.fields) |f| {
+            if (f.typ == .table_type) try self.ensure_record_decl(f.typ);
+        }
         try self.emitted_records.put(self.alloc, hash, {});
 
         var name_buf: [64]u8 = undefined;
@@ -5345,9 +5955,9 @@ pub const CodeGen = struct {
             self.ind();
             self.p(".{s} = ", .{rf.name});
             if (found.get(rf.name)) |val| {
-                try self.emit_arg_for_param(val, rf.typ);
+                try self.emit_arg_for_param(val, rf.typ, false);
             } else if (i < positionals.items.len) {
-                try self.emit_arg_for_param(positionals.items[i], rf.typ);
+                try self.emit_arg_for_param(positionals.items[i], rf.typ, false);
             } else {
                 self.p("0", .{});
             }
@@ -5358,11 +5968,29 @@ pub const CodeGen = struct {
         self.p("}}", .{});
     }
 
-    fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT) E!void {
+    fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT, for_call: bool) E!void {
+        if (for_call and self.native_record_param_by_ptr(param_type)) {
+            if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
+                try self.emit_expr(arg);
+                return;
+            }
+            self.p("&", .{});
+            try self.emit_expr(arg);
+            return;
+        }
         if (param_type == .pointer) {
             const inner = param_type.pointer.*;
             if (inner == .table_type or inner == .@"struct") {
                 if (arg.* == .name) {
+                    const arg_type = self.expr_type(arg);
+                    if (arg_type.eql(param_type)) {
+                        try self.emit_expr(arg);
+                        return;
+                    }
+                    if (!for_call) {
+                        try self.emit_expr(arg);
+                        return;
+                    }
                     self.p("&", .{});
                     try self.emit_expr(arg);
                     return;
@@ -5381,6 +6009,11 @@ pub const CodeGen = struct {
                 return;
             }
             if (arg.* == .name) {
+                const arg_type = self.expr_type(arg);
+                if (arg_type.eql(param_type)) {
+                    try self.emit_expr(arg);
+                    return;
+                }
                 self.p("&", .{});
                 try self.emit_expr(arg);
                 return;
@@ -5523,7 +6156,7 @@ pub const CodeGen = struct {
 
     fn emit_default_for_param(self: *CodeGen, param: *const ast.FuncParam, param_type: RT) E!bool {
         const default_val = param.default_val orelse return false;
-        try self.emit_arg_for_param(default_val, param_type);
+        try self.emit_arg_for_param(default_val, param_type, true);
         return true;
     }
 
@@ -5717,6 +6350,13 @@ pub const CodeGen = struct {
     fn emit_func_decl_forward(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
+        // An embedded module's functions are its API: they are reachable through
+        // its export table, which holds lua_Values. Filtering them by native-scalar
+        // eligibility silently dropped every helper whose signature mentions `any`
+        // while the table still referenced it, so `req "std.jit"` / `"std.mem"`
+        // could not compile at all (BUG C).
+        if (self.current_module_cname.len > 0 and !self.embedded_module_exports_funcs and
+            !self.funcUsesNativeLowering(duo_func_name(fd))) return;
         // Skip forward declaration for monomorphized generic functions —
         // the monomorphized versions have their own forward declarations.
         if (fb.type_params != null and fb.type_params.?.len > 0) {
@@ -5750,7 +6390,10 @@ pub const CodeGen = struct {
             self.p("static lua_Value {s}__argv(int argc, lua_Value* argv);\n", .{cname});
             return;
         }
-        const ret = self.resolve_type(fb.ret_type);
+
+        const prev_func_name = self.current_func_name;
+        self.current_func_name = duo_func_name(fd);
+        defer self.current_func_name = prev_func_name;
 
         // For Ackermann, emit the optimised helper at file scope (forward decl
         // + full definition) before the ack() wrapper function.
@@ -5780,13 +6423,21 @@ pub const CodeGen = struct {
         if (func_ffi_name(fd.attributes) != null) {
             self.p("extern ", .{});
         }
+        const ret_raw = self.resolve_type(fb.ret_type);
+        const ret: RT = if (ret_raw == .any and self.skip_lua_thunk_emit()) .void else ret_raw;
         self.typ(ret);
         self.p(" {s}(", .{cname});
+        const saved_body = self.current_func_body;
+        const saved_name = self.current_func_name;
+        self.current_func_body = fb;
+        self.current_func_name = duo_func_name(fd);
         for (fb.params, 0..) |*par, i| {
             if (i > 0) self.p(", ", .{});
             const pt = self.resolve_type(par.typ);
             self.emit_param_decl(pt, par.name);
         }
+        self.current_func_body = saved_body;
+        self.current_func_name = saved_name;
         self.p(");\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
         if (fb.is_typed or self.should_emit_lua_thunk(fb)) try self.emit_lua_thunk_decls(fd);
@@ -6001,7 +6652,7 @@ pub const CodeGen = struct {
     /// cannot be bridged through lua_Value without extra work.
     fn has_payloaded_enum_param(self: *CodeGen, fb: *const ast.FuncBody) bool {
         for (fb.params) |param| {
-            const pt = types.resolve(param.typ, null, self.alloc) catch continue;
+            const pt = self.resolve_type(param.typ);
             if (self.enum_name_of(pt)) |ename| {
                 if (!self.enum_is_payload_free(ename)) return true;
             }
@@ -6025,6 +6676,19 @@ pub const CodeGen = struct {
         };
     }
 
+    /// True when a lua_Value can be reconstructed into native `t` for __lua thunks
+    /// (includes sealed records exported as lua tables from native constructors).
+    fn rt_is_lua_unboxable(self: *CodeGen, t: RT) bool {
+        if (self.rt_is_lua_convertible(t)) return true;
+        if (t == .table_type) {
+            for (t.table_type.fields) |f| {
+                if (!self.rt_is_lua_unboxable(f.typ)) return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
     /// Whether a valid dynamic-entry (`__lua`) thunk can be generated for `fb`.
     /// A thunk unboxes each lua_Value argument into the native parameter type,
     /// so every parameter must be lua-convertible. Used to gate thunk decls,
@@ -6034,14 +6698,15 @@ pub const CodeGen = struct {
         if (fb.is_compile_only) return false;
         if (self.has_payloaded_enum_param(fb)) return false;
         for (fb.params) |param| {
-            const pt = types.resolve(param.typ, null, self.alloc) catch RT.any;
-            if (!self.rt_is_lua_convertible(pt)) return false;
+            const pt = self.resolve_type(param.typ);
+            if (!self.rt_is_lua_unboxable(pt)) return false;
         }
         return true;
     }
 
     fn emit_lua_thunk_decls(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
-        if (self.moduleUsesFullNativeLowering()) return;
+        // Embedded native modules still export through lua tables — thunks required.
+        if (self.skip_lua_thunk_emit()) return;
         const fb = &fd.func;
         if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
         if (!self.should_emit_lua_thunk(fb)) return;
@@ -6126,7 +6791,7 @@ pub const CodeGen = struct {
             if (i > 0) self.p(", ", .{});
             if (i < spec.template.params.len) {
                 const pt = self.normalize_table_module_type(spec.resolveType(spec.template.params[i].typ));
-                try self.emit_arg_for_param(arg, pt);
+                try self.emit_arg_for_param(arg, pt, true);
             } else {
                 try self.emit_expr(arg);
             }
@@ -6308,6 +6973,136 @@ pub const CodeGen = struct {
         return true;
     }
 
+    fn emit_native_scalar_to_lua_value(self: *CodeGen, ft: RT, c_expr: []const u8) E!void {
+        if (ft == .str) {
+            self.p("lua_val_from_str({s})", .{c_expr});
+        } else if (ft.is_integer() or ft.is_float()) {
+            self.p("lua_val_from_num((double)({s}))", .{c_expr});
+        } else if (ft == .bool) {
+            self.p("lua_val_from_bool({s})", .{c_expr});
+        } else {
+            self.p("lua_val_nil()", .{});
+        }
+    }
+
+    fn emit_native_record_to_lua_table(self: *CodeGen, rt: RT, c_prefix: []const u8, lua_table: []const u8) E!void {
+        for (rt.table_type.fields) |f| {
+            var field_c: [256]u8 = undefined;
+            const field_c_str = std.fmt.bufPrint(&field_c, "{s}.{s}", .{ c_prefix, f.name }) catch unreachable;
+            const hash = calc_lua_hash(f.name);
+            if (f.typ == .table_type) {
+                const sub_lua = std.fmt.allocPrint(self.alloc, "lua_table_get_raw_str_lit({s}, \"{s}\", {d}u, {d})", .{
+                    lua_table, f.name, hash, f.name.len,
+                }) catch return;
+                defer self.alloc.free(sub_lua);
+                try self.emit_native_record_to_lua_table(f.typ, field_c_str, sub_lua);
+            } else {
+                self.ind();
+                self.p("lua_table_set_raw_lit({s}, \"{s}\", {d}, {d}, ", .{ lua_table, f.name, hash, f.name.len });
+                try self.emit_native_scalar_to_lua_value(f.typ, field_c_str);
+                self.p(");\n", .{});
+            }
+        }
+    }
+
+    fn emit_lua_thunk_record_writebacks(self: *CodeGen, fb: *const ast.FuncBody, lua_names: []const []const u8) E!void {
+        for (fb.params, 0..) |par, i| {
+            const pt = self.resolve_type(par.typ);
+            if (!self.native_record_param_by_ptr(pt)) continue;
+            var pn: [8]u8 = undefined;
+            const pname = std.fmt.bufPrint(&pn, "_p{d}", .{i}) catch continue;
+            try self.emit_native_record_to_lua_table(pt, pname, lua_names[i]);
+        }
+    }
+
+    fn emit_thunk_native_arg(self: *CodeGen, pt: RT, c_name: []const u8) void {
+        if (self.native_record_param_by_ptr(pt)) {
+            self.p("&{s}", .{c_name});
+        } else {
+            self.p("{s}", .{c_name});
+        }
+    }
+
+    fn emit_lua_thunk_native_invoke(
+        self: *CodeGen,
+        cname: []const u8,
+        fb: *const ast.FuncBody,
+        ret: RT,
+        ret_ct: []const u8,
+        lua_names: []const []const u8,
+    ) E!void {
+        const saved_body = self.current_func_body;
+        self.current_func_body = fb;
+        defer self.current_func_body = saved_body;
+
+        if (ret == .void) {
+            self.ind();
+            self.p("{s}(", .{cname});
+        } else {
+            self.ind();
+            self.p("{s} _r = {s}(", .{ ret_ct, cname });
+        }
+        for (fb.params, 0..) |par, i| {
+            if (i > 0) self.p(", ", .{});
+            const pt = self.resolve_type(par.typ);
+            var pn: [8]u8 = undefined;
+            const pname = std.fmt.bufPrint(&pn, "_p{d}", .{i}) catch "_p0";
+            self.emit_thunk_native_arg(pt, pname);
+        }
+        self.p(");\n", .{});
+        try self.emit_lua_thunk_record_writebacks(fb, lua_names);
+        if (ret == .void) {
+            self.p("    return lua_val_nil();\n", .{});
+        } else {
+            self.p("    return ", .{});
+            try self.emit_lua_value_from_native(ret, "_r");
+            self.p(";\n", .{});
+        }
+    }
+
+    fn emit_native_field_from_lua_table(self: *CodeGen, ft: RT, table_lua: []const u8, field: []const u8) E!void {
+        const hash = calc_lua_hash(field);
+        if (ft == .str) {
+            self.p("lua_to_str(lua_table_get_raw_str_lit({s}, \"{s}\", {d}u, {d}))", .{ table_lua, field, hash, field.len });
+        } else if (ft.is_integer()) {
+            var buf: [32]u8 = undefined;
+            const ct = ft.c_type(&buf);
+            self.p("(({s})lua_table_get_str_num({s}, \"{s}\", {d}u, {d}))", .{ ct, table_lua, field, hash, field.len });
+        } else if (ft.is_float()) {
+            var buf: [32]u8 = undefined;
+            const ct = ft.c_type(&buf);
+            self.p("(({s})lua_table_get_str_num({s}, \"{s}\", {d}u, {d}))", .{ ct, table_lua, field, hash, field.len });
+        } else if (ft == .bool) {
+            self.p("lua_table_get_str_bool({s}, \"{s}\", {d}u, {d})", .{ table_lua, field, hash, field.len });
+        } else if (self.enum_name_of(ft)) |ename| {
+            if (self.enum_is_payload_free(ename)) {
+                self.p("(duo_{s})(int)lua_table_get_str_num({s}, \"{s}\", {d}u, {d})", .{ ename, table_lua, field, hash, field.len });
+            } else {
+                self.p("lua_table_get_raw_str_lit({s}, \"{s}\", {d}u, {d})", .{ table_lua, field, hash, field.len });
+            }
+        } else if (ft == .table_type) {
+            const sub = std.fmt.allocPrint(self.alloc, "lua_table_get_raw_str_lit({s}, \"{s}\", {d}u, {d})", .{
+                table_lua, field, hash, field.len,
+            }) catch {
+                self.p("lua_val_nil()", .{});
+                return;
+            };
+            defer self.alloc.free(sub);
+            var ct_buf: [128]u8 = undefined;
+            const ct = ft.c_type(&ct_buf);
+            self.p("(({s}){{", .{ct});
+            for (ft.table_type.fields, 0..) |nf, i| {
+                if (i > 0) self.p(" ", .{});
+                self.p(".{s} = ", .{nf.name});
+                try self.emit_native_field_from_lua_table(nf.typ, sub, nf.name);
+                self.p(",", .{});
+            }
+            self.p("}})", .{});
+        } else {
+            self.p("lua_table_get_raw_str_lit({s}, \"{s}\", {d}u, {d})", .{ table_lua, field, hash, field.len });
+        }
+    }
+
     fn emit_native_param_from_lua(self: *CodeGen, pt: RT, c_name: []const u8, lua_name: []const u8) E!void {
         if (pt == .str) {
             self.p("const char* {s} = lua_to_str({s});\n", .{ c_name, lua_name });
@@ -6328,6 +7123,17 @@ pub const CodeGen = struct {
             } else {
                 self.p("lua_Value {s} = {s};\n", .{ c_name, lua_name });
             }
+        } else if (pt == .table_type) {
+            var ct_buf: [128]u8 = undefined;
+            const ct = pt.c_type(&ct_buf);
+            self.p("{s} {s} = ({s}){{", .{ ct, c_name, ct });
+            for (pt.table_type.fields, 0..) |f, i| {
+                if (i > 0) self.p(" ", .{});
+                self.p(".{s} = ", .{f.name});
+                try self.emit_native_field_from_lua_table(f.typ, lua_name, f.name);
+                self.p(",", .{});
+            }
+            self.p("}};\n", .{});
         } else {
             self.p("lua_Value {s} = {s};\n", .{ c_name, lua_name });
         }
@@ -6351,13 +7157,34 @@ pub const CodeGen = struct {
             } else {
                 self.p("lua_val_nil()", .{});
             }
+        } else if (rt == .table_type) {
+            self.p("({{\n", .{});
+            self.p("    lua_Value _tmp = lua_table_new_with_capacity(0, {d});\n", .{rt.table_type.fields.len});
+            for (rt.table_type.fields) |f| {
+                self.p("    lua_table_set_raw_lit(_tmp, \"{s}\", {d}, {d}, ", .{
+                    f.name,
+                    calc_lua_hash(f.name),
+                    f.name.len,
+                });
+                var f_c_expr: [128]u8 = undefined;
+                const f_c_expr_str = std.fmt.bufPrint(&f_c_expr, "{s}.{s}", .{c_expr, f.name}) catch unreachable;
+                try self.emit_lua_value_from_native(f.typ, f_c_expr_str);
+                self.p(");\n", .{});
+            }
+            
+            // If we have an alias name, we might want to attach its metatable.
+            // But we don't have the alias name here, we only have .table_type.
+            // So we just return the plain table.
+            
+            self.p("    _tmp;\n", .{});
+            self.p("}})", .{});
         } else {
             self.p("lua_val_nil()", .{});
         }
     }
 
     fn emit_lua_thunk(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
-        if (self.moduleUsesFullNativeLowering()) return;
+        if (self.skip_lua_thunk_emit()) return;
         const fb = &fd.func;
         if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
         // Skip vararg functions — they use the __argv dispatch path, not thunks.
@@ -6387,44 +7214,32 @@ pub const CodeGen = struct {
             return;
         }
         if (nparams == 1) {
-            const pt = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
+            const pt = self.resolve_type(fb.params[0].typ);
             self.p("static lua_Value {s}__lua(lua_Value _a0) {{\n", .{cname});
             self.ind();
             var pbuf: [32]u8 = undefined;
             const p0 = std.fmt.bufPrint(&pbuf, "_p0", .{}) catch "_p0";
             try self.emit_native_param_from_lua(pt, p0, "_a0");
-            if (ret == .void) {
-                self.p("{s}({s});\n    return lua_val_nil();\n", .{ cname, p0 });
-            } else {
-                self.p("{s} _r = {s}({s});\n    return ", .{ ret_ct, cname, p0 });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{"_a0"});
             self.p("}}\n\n", .{});
             return;
         }
         if (nparams == 2) {
-            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
+            const pt0 = self.resolve_type(fb.params[0].typ);
+            const pt1 = self.resolve_type(fb.params[1].typ);
             self.p("static lua_Value {s}__lua2(lua_Value _a0, lua_Value _a1) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
             self.ind();
             try self.emit_native_param_from_lua(pt1, "_p1", "_a1");
-            if (ret == .void) {
-                self.p("{s}(_p0, _p1);\n    return lua_val_nil();\n", .{cname});
-            } else {
-                self.p("{s} _r = {s}(_p0, _p1);\n    return ", .{ ret_ct, cname });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{ "_a0", "_a1" });
             self.p("}}\n\n", .{});
             return;
         }
         if (nparams == 3) {
-            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
+            const pt0 = self.resolve_type(fb.params[0].typ);
+            const pt1 = self.resolve_type(fb.params[1].typ);
+            const pt2 = self.resolve_type(fb.params[2].typ);
             self.p("static lua_Value {s}__lua3(lua_Value _a0, lua_Value _a1, lua_Value _a2) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -6432,19 +7247,13 @@ pub const CodeGen = struct {
             try self.emit_native_param_from_lua(pt1, "_p1", "_a1");
             self.ind();
             try self.emit_native_param_from_lua(pt2, "_p2", "_a2");
-            if (ret == .void) {
-                self.p("{s}(_p0, _p1, _p2);\n    return lua_val_nil();\n", .{cname});
-            } else {
-                self.p("{s} _r = {s}(_p0, _p1, _p2);\n    return ", .{ ret_ct, cname });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{ "_a0", "_a1", "_a2" });
             self.p("}}\n\n", .{});
         } else if (nparams == 4) {
-            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
-            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
+            const pt0 = self.resolve_type(fb.params[0].typ);
+            const pt1 = self.resolve_type(fb.params[1].typ);
+            const pt2 = self.resolve_type(fb.params[2].typ);
+            const pt3 = self.resolve_type(fb.params[3].typ);
             self.p("static lua_Value {s}__lua4(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -6454,20 +7263,14 @@ pub const CodeGen = struct {
             try self.emit_native_param_from_lua(pt2, "_p2", "_a2");
             self.ind();
             try self.emit_native_param_from_lua(pt3, "_p3", "_a3");
-            if (ret == .void) {
-                self.p("{s}(_p0, _p1, _p2, _p3);\n    return lua_val_nil();\n", .{cname});
-            } else {
-                self.p("{s} _r = {s}(_p0, _p1, _p2, _p3);\n    return ", .{ ret_ct, cname });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{ "_a0", "_a1", "_a2", "_a3" });
             self.p("}}\n\n", .{});
         } else if (nparams == 5) {
-            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
-            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
-            const pt4 = types.resolve(fb.params[4].typ, null, self.alloc) catch .any;
+            const pt0 = self.resolve_type(fb.params[0].typ);
+            const pt1 = self.resolve_type(fb.params[1].typ);
+            const pt2 = self.resolve_type(fb.params[2].typ);
+            const pt3 = self.resolve_type(fb.params[3].typ);
+            const pt4 = self.resolve_type(fb.params[4].typ);
             self.p("static lua_Value {s}__lua5(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -6479,21 +7282,15 @@ pub const CodeGen = struct {
             try self.emit_native_param_from_lua(pt3, "_p3", "_a3");
             self.ind();
             try self.emit_native_param_from_lua(pt4, "_p4", "_a4");
-            if (ret == .void) {
-                self.p("{s}(_p0, _p1, _p2, _p3, _p4);\n    return lua_val_nil();\n", .{cname});
-            } else {
-                self.p("{s} _r = {s}(_p0, _p1, _p2, _p3, _p4);\n    return ", .{ ret_ct, cname });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{ "_a0", "_a1", "_a2", "_a3", "_a4" });
             self.p("}}\n\n", .{});
         } else if (nparams == 6) {
-            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
-            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
-            const pt4 = types.resolve(fb.params[4].typ, null, self.alloc) catch .any;
-            const pt5 = types.resolve(fb.params[5].typ, null, self.alloc) catch .any;
+            const pt0 = self.resolve_type(fb.params[0].typ);
+            const pt1 = self.resolve_type(fb.params[1].typ);
+            const pt2 = self.resolve_type(fb.params[2].typ);
+            const pt3 = self.resolve_type(fb.params[3].typ);
+            const pt4 = self.resolve_type(fb.params[4].typ);
+            const pt5 = self.resolve_type(fb.params[5].typ);
             self.p("static lua_Value {s}__lua6(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4, lua_Value _a5) {{\n", .{cname});
             self.ind();
             try self.emit_native_param_from_lua(pt0, "_p0", "_a0");
@@ -6507,21 +7304,15 @@ pub const CodeGen = struct {
             try self.emit_native_param_from_lua(pt4, "_p4", "_a4");
             self.ind();
             try self.emit_native_param_from_lua(pt5, "_p5", "_a5");
-            if (ret == .void) {
-                self.p("{s}(_p0, _p1, _p2, _p3, _p4, _p5);\n    return lua_val_nil();\n", .{cname});
-            } else {
-                self.p("{s} _r = {s}(_p0, _p1, _p2, _p3, _p4, _p5);\n    return ", .{ ret_ct, cname });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{ "_a0", "_a1", "_a2", "_a3", "_a4", "_a5" });
             self.p("}}\n\n", .{});
         } else if (nparams == 7) {
-            const pt0 = types.resolve(fb.params[0].typ, null, self.alloc) catch .any;
-            const pt1 = types.resolve(fb.params[1].typ, null, self.alloc) catch .any;
-            const pt2 = types.resolve(fb.params[2].typ, null, self.alloc) catch .any;
-            const pt3 = types.resolve(fb.params[3].typ, null, self.alloc) catch .any;
-            const pt4 = types.resolve(fb.params[4].typ, null, self.alloc) catch .any;
-            const pt5 = types.resolve(fb.params[5].typ, null, self.alloc) catch .any;
+            const pt0 = self.resolve_type(fb.params[0].typ);
+            const pt1 = self.resolve_type(fb.params[1].typ);
+            const pt2 = self.resolve_type(fb.params[2].typ);
+            const pt3 = self.resolve_type(fb.params[3].typ);
+            const pt4 = self.resolve_type(fb.params[4].typ);
+            const pt5 = self.resolve_type(fb.params[5].typ);
             const pt6 = types.resolve(fb.params[6].typ, null, self.alloc) catch .any;
             self.p("static lua_Value {s}__lua7(lua_Value _a0, lua_Value _a1, lua_Value _a2, lua_Value _a3, lua_Value _a4, lua_Value _a5, lua_Value _a6) {{\n", .{cname});
             self.ind();
@@ -6538,13 +7329,7 @@ pub const CodeGen = struct {
             try self.emit_native_param_from_lua(pt5, "_p5", "_a5");
             self.ind();
             try self.emit_native_param_from_lua(pt6, "_p6", "_a6");
-            if (ret == .void) {
-                self.p("{s}(_p0, _p1, _p2, _p3, _p4, _p5, _p6);\n    return lua_val_nil();\n", .{cname});
-            } else {
-                self.p("{s} _r = {s}(_p0, _p1, _p2, _p3, _p4, _p5, _p6);\n    return ", .{ ret_ct, cname });
-                try self.emit_lua_value_from_native(ret, "_r");
-                self.p(";\n", .{});
-            }
+            try self.emit_lua_thunk_native_invoke(cname, fb, ret, ret_ct, &[_][]const u8{ "_a0", "_a1", "_a2", "_a3", "_a4", "_a5", "_a6" });
             self.p("}}\n\n", .{});
         }
     }
@@ -6552,6 +7337,7 @@ pub const CodeGen = struct {
     fn emit_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
         const fb = &fd.func;
         if (self.func_skips_runtime_emit(fb, duo_func_name(fd))) return;
+        if (self.current_module_cname.len > 0 and !self.embedded_module_exports_funcs and !self.funcUsesNativeLowering(duo_func_name(fd))) return;
         // Generic functions that have been monomorphized: skip the generic
         // fallback body. The monomorphized versions (duo_<name>_<type>) handle
         // all typed call sites. The generic body would use lua_Value arithmetic
@@ -6581,7 +7367,8 @@ pub const CodeGen = struct {
         // lua-convertible but not "native").
         try self.emit_lua_thunk(fd);
         if (fb.use_mandel_iter_native) self.mandel_native = true;
-        const ret = types.resolve(fb.ret_type, null, self.alloc) catch .any;
+        const ret_raw = self.resolve_type(fb.ret_type);
+        const ret: RT = if (ret_raw == .any and self.skip_lua_thunk_emit()) .void else ret_raw;
         if ((fb.vararg_name != null or fb.vararg) and (ret == .any or ret == .void)) {
             try self.emit_vararg_func_def(fd);
             return;
@@ -6592,10 +7379,12 @@ pub const CodeGen = struct {
         const prev_func_body = self.current_func_body;
         const prev_func_name = self.current_func_name;
         const prev_func_noalloc = self.current_func_noalloc;
+        const prev_str_list_locals = self.native_str_list_locals;
         self.current_ret = ret;
         self.current_func_body = fb;
         self.current_func_name = duo_func_name(fd);
         self.current_func_noalloc = funcRequiresNoalloc(fd.attributes);
+        self.native_str_list_locals = .{};
         if (fb.use_dense_table) {
             self.dense_table = fb.dense_table;
             self.dense_table_cap = fb.dense_table_cap;
@@ -6607,6 +7396,10 @@ pub const CodeGen = struct {
             self.current_func_body = prev_func_body;
             self.current_func_name = prev_func_name;
             self.current_func_noalloc = prev_func_noalloc;
+            var sl_it = self.native_str_list_locals.keyIterator();
+            while (sl_it.next()) |key| self.alloc.free(key.*);
+            self.native_str_list_locals.deinit(self.alloc);
+            self.native_str_list_locals = prev_str_list_locals;
         }
         if (fb.use_fp_strict_always_inline) {
             self.p("#pragma GCC push_options\n", .{});
@@ -6626,6 +7419,7 @@ pub const CodeGen = struct {
         self.p(") {{\n", .{});
         self.indent = 1;
         try self.push_local_scope();
+        try self.precollect_req_bindings_in_block(&fb.body);
         var scope_popped = false;
         defer {
             if (!scope_popped) self.pop_local_scope();
@@ -6786,7 +7580,7 @@ pub const CodeGen = struct {
                 self.ind();
                 self.p("{s} {s} = argc > {d} ? ({s})lua_to_num(argv[{d}]) : ({s})(", .{ ct, par.name, i, ct, i, ct });
                 if (par.default_val) |default_val| {
-                    try self.emit_arg_for_param(default_val, pt);
+                    try self.emit_arg_for_param(default_val, pt, false);
                 } else {
                     self.p("0", .{});
                 }
@@ -6797,7 +7591,7 @@ pub const CodeGen = struct {
                 self.ind();
                 self.p("{s} {s} = argc > {d} ? ({s})lua_to_num(argv[{d}]) : ({s})(", .{ ct, par.name, i, ct, i, ct });
                 if (par.default_val) |default_val| {
-                    try self.emit_arg_for_param(default_val, pt);
+                    try self.emit_arg_for_param(default_val, pt, false);
                 } else {
                     self.p("0", .{});
                 }
@@ -6815,7 +7609,7 @@ pub const CodeGen = struct {
                 self.ind();
                 self.p("const char* {s} = argc > {d} ? lua_to_str(argv[{d}]) : (", .{ par.name, i, i });
                 if (par.default_val) |default_val| {
-                    try self.emit_arg_for_param(default_val, pt);
+                    try self.emit_arg_for_param(default_val, pt, false);
                 } else {
                     self.p("\"\"", .{});
                 }
@@ -6891,7 +7685,7 @@ pub const CodeGen = struct {
                 const is_decl_func = self.function_c_names.get(expr.name.ident) != null or
                     self.func_bodies.get(self.mangled_name(expr.name.ident, &name_buf)) != null;
                 if (is_decl_func) {
-                    try self.emit_native_func_name_as_lua_value(expr.name.ident, ft.func.params, ft.func.is_native);
+                    try self.emit_native_func_name_as_lua_value(expr.name.ident, ft.func.params, ft.func.is_compile_only);
                 } else {
                     try self.emit_expr(expr);
                 }
@@ -6909,7 +7703,11 @@ pub const CodeGen = struct {
         self.p(")", .{});
     }
 
-    fn emit_native_func_name_as_lua_value(self: *CodeGen, raw_name: []const u8, params: []types.ResolvedType, _: bool) E!void {
+    fn emit_native_func_name_as_lua_value(self: *CodeGen, raw_name: []const u8, params: []types.ResolvedType, is_compile_only: bool) E!void {
+        if (self.skip_lua_thunk_emit()) {
+            self.p("lua_val_nil()", .{});
+            return;
+        }
         if (self.vararg_funcs.get(raw_name)) |argv_cname| {
             self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
             return;
@@ -6918,11 +7716,10 @@ pub const CodeGen = struct {
         const cname = self.mangled_name(raw_name, &name_buf);
         const nparams = params.len;
         // A thunk only exists when every parameter is lua-convertible (see
-        // should_emit_lua_thunk). If not, fall back to a direct function-pointer
-        // cast rather than referencing a thunk symbol that was never emitted.
-        var thunkable = true;
+        // should_emit_lua_thunk) and the function is not compile-only.
+        var thunkable = !is_compile_only;
         for (params) |pt| {
-            if (!self.rt_is_lua_convertible(pt)) {
+            if (!self.rt_is_lua_unboxable(pt)) {
                 thunkable = false;
                 break;
             }
@@ -6950,6 +7747,156 @@ pub const CodeGen = struct {
         }
     }
 
+    fn dense_literal_elem(expr: *const ast.Expr) ?NativeDenseElem {
+        return switch (expr.*) {
+            .int_lit => .i64,
+            .float_lit => .f64,
+            .string_lit => .str,
+            .unop => |u| switch (u.op) {
+                .neg => switch (u.operand.*) {
+                    .int_lit => .i64,
+                    .float_lit => .f64,
+                    else => null,
+                },
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    fn emit_dense_literal_elem(self: *CodeGen, expr: *const ast.Expr, elem: NativeDenseElem) E!void {
+        switch (expr.*) {
+            .int_lit => self.p("{d}", .{expr.int_lit.val}),
+            .float_lit => self.p("{e}", .{expr.float_lit.val}),
+            .string_lit => try self.emit_c_string_literal(expr.string_lit.val),
+            .unop => |u| switch (u.op) {
+                .neg => switch (u.operand.*) {
+                    .int_lit => self.p("{d}", .{-u.operand.int_lit.val}),
+                    .float_lit => self.p("{e}", .{-u.operand.float_lit.val}),
+                    else => unreachable,
+                },
+                else => unreachable,
+            },
+            else => unreachable,
+        }
+        _ = elem;
+    }
+
+    fn classify_dense_literal_table(fields: []const ast.TableField) ?NativeDenseElem {
+        if (fields.len == 0) return null;
+        var elem: ?NativeDenseElem = null;
+        for (fields) |f| {
+            const v = switch (f) {
+                .positional => |val| val,
+                else => return null,
+            };
+            const field_elem = dense_literal_elem(v) orelse return null;
+            if (elem) |e| {
+                if (e != field_elem) return null;
+            } else elem = field_elem;
+        }
+        return elem;
+    }
+
+    fn native_dense_c_symbol(self: *const CodeGen, name: []const u8, buf: []u8) []const u8 {
+        if (self.current_module_cname.len > 0) {
+            return std.fmt.bufPrint(buf, "duo_g_{s}_{s}", .{ self.current_module_cname, name }) catch name;
+        }
+        return std.fmt.bufPrint(buf, "duo_g_{s}", .{name}) catch name;
+    }
+
+    fn remove_native_dense_module_tables_for_scope(self: *CodeGen, module_cname: []const u8) !void {
+        var to_remove: std.ArrayList([]const u8) = .empty;
+        defer to_remove.deinit(self.alloc);
+        var it = self.native_dense_module_tables.iterator();
+        while (it.next()) |entry| {
+            if (!std.mem.eql(u8, entry.value_ptr.module_cname, module_cname)) continue;
+            try to_remove.append(self.alloc, entry.key_ptr.*);
+        }
+        for (to_remove.items) |key| {
+            if (self.native_dense_module_tables.fetchRemove(key)) |kv| {
+                self.alloc.free(kv.key);
+                self.alloc.free(kv.value.c_symbol);
+                self.alloc.free(kv.value.module_cname);
+            }
+        }
+    }
+
+    fn collect_native_dense_module_tables(self: *CodeGen, mod: *const ast.Module) !void {
+        if (!self.native_scalar_mode and !self.mixed_scalar_mode and !self.moduleKnowledgeAtLeast(.native)) return;
+        try self.remove_native_dense_module_tables_for_scope(self.current_module_cname);
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .global_decl => |gd| {
+                    for (gd.names, 0..) |*ln, i| {
+                        if (i >= gd.inits.len or gd.inits[i].* != .table) continue;
+                        if (classify_dense_literal_table(gd.inits[i].table.fields)) |elem| {
+                            try self.register_native_dense_module_table(ln.ident, gd.inits[i], elem);
+                        }
+                    }
+                },
+                .assign => |as| {
+                    for (as.targets, 0..) |tgt, i| {
+                        if (tgt.* != .name) continue;
+                        if (i >= as.values.len or as.values[i].* != .table) continue;
+                        if (classify_dense_literal_table(as.values[i].table.fields)) |elem| {
+                            try self.register_native_dense_module_table(tgt.name.ident, as.values[i], elem);
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn register_native_dense_module_table(self: *CodeGen, name: []const u8, init_expr: *const ast.Expr, elem: NativeDenseElem) !void {
+        var buf: [256]u8 = undefined;
+        const csym = try self.alloc.dupe(u8, self.native_dense_c_symbol(name, &buf));
+        const owned_name = try self.alloc.dupe(u8, name);
+        const owned_module = try self.alloc.dupe(u8, self.current_module_cname);
+        try self.native_dense_module_tables.put(self.alloc, owned_name, .{
+            .c_symbol = csym,
+            .module_cname = owned_module,
+            .elem = elem,
+            .len = init_expr.table.fields.len,
+            .init = init_expr,
+        });
+    }
+
+    fn emit_native_dense_module_table_decls(self: *CodeGen) E!void {
+        if (self.native_dense_module_tables.count() == 0) return;
+        var it = self.native_dense_module_tables.iterator();
+        while (it.next()) |entry| {
+            if (!std.mem.eql(u8, entry.value_ptr.module_cname, self.current_module_cname)) continue;
+            const nd = entry.value_ptr.*;
+            const table = nd.init.table;
+            const elem_c: []const u8 = switch (nd.elem) {
+                .i64 => "int64_t",
+                .f64 => "double",
+                .str => "const char*",
+            };
+            self.p("static ", .{});
+            if (nd.elem == .str) self.p("const char* ", .{}) else self.p("{s} ", .{elem_c});
+            self.p("{s}[{d}] = {{", .{ nd.c_symbol, nd.len + 1 });
+            if (nd.elem == .str) self.p(" NULL", .{}) else self.p(" 0", .{});
+            for (table.fields) |f| {
+                const v = switch (f) {
+                    .positional => |val| val,
+                    else => unreachable,
+                };
+                self.p(", ", .{});
+                try self.emit_dense_literal_elem(v, nd.elem);
+            }
+            self.p(" }};\n", .{});
+        }
+        self.nl();
+    }
+
+    fn is_native_dense_module_table(self: *CodeGen, name: []const u8) bool {
+        const nd = self.native_dense_module_tables.get(name) orelse return false;
+        return std.mem.eql(u8, nd.module_cname, self.current_module_cname);
+    }
+
     fn is_dense_table_name(self: *CodeGen, name: []const u8) bool {
         if (self.dense_table) |dt| {
             if (std.mem.eql(u8, name, dt)) return true;
@@ -6968,13 +7915,17 @@ pub const CodeGen = struct {
         if (self.dense_table) |dt| {
             if (std.mem.eql(u8, name, dt)) return true;
         }
-        // Check additional dense tables from the multi-table list.
         if (self.current_func_body) |fb| {
             for (fb.dense_tables) |dt| {
                 if (std.mem.eql(u8, name, dt)) return true;
             }
         }
         return false;
+    }
+
+    fn is_native_dense_module_index(self: *CodeGen, obj: *const ast.Expr) bool {
+        if (obj.* != .name) return false;
+        return self.is_native_dense_module_table(obj.name.ident);
     }
 
     fn emit_prime_sieve_body(self: *CodeGen, limit: []const u8, ret: RT) E!void {
@@ -7853,11 +8804,19 @@ pub const CodeGen = struct {
     }
 
     fn emit_control_block(self: *CodeGen, blk: *const ast.Block) E!void {
-        if (self.emit_stmt_blocks_as_returns) {
+        if (self.emit_stmt_blocks_as_returns or self.control_block_should_return(blk)) {
             try self.emit_returning_block(blk);
         } else {
             try self.emit_block(blk);
         }
+    }
+
+    fn control_block_should_return(self: *CodeGen, blk: *const ast.Block) bool {
+        const tail = blk.tail_expr orelse return false;
+        if (self.current_ret == .void or self.current_ret == .any) return false;
+        if (!semantic_algebra.lowersToNativeC(self.current_ret)) return false;
+        const tail_rt = self.expr_type(tail);
+        return types.ResolvedType.eql(self.current_ret, tail_rt);
     }
 
     fn emit_block_stmts(self: *CodeGen, blk: *const ast.Block, tail_mode: BlockTailMode) E!void {
@@ -7896,13 +8855,8 @@ pub const CodeGen = struct {
             std.mem.eql(u8, expr.call.func.name.ident, "error"))
         {
             self.ind();
-            self.p("lua_error(", .{});
-            if (expr.call.args.len > 0) {
-                try self.emit_as_lua_value(expr.call.args[0]);
-            } else {
-                self.p("lua_val_nil()", .{});
-            }
-            self.p(");\n", .{});
+            try self.emit_fatal_error(if (expr.call.args.len > 0) expr.call.args[0] else null);
+            self.p(";\n", .{});
             return;
         }
         if (expr.* == .sequence) {
@@ -7976,13 +8930,8 @@ pub const CodeGen = struct {
         if (expr.* == .call and expr.call.func.* == .name and
             std.mem.eql(u8, expr.call.func.name.ident, "error"))
         {
-            self.p("lua_error(", .{});
-            if (expr.call.args.len > 0) {
-                try self.emit_as_lua_value(expr.call.args[0]);
-            } else {
-                self.p("lua_val_nil()", .{});
-            }
-            self.p(");\n", .{});
+            try self.emit_fatal_error(if (expr.call.args.len > 0) expr.call.args[0] else null);
+            self.p(";\n", .{});
             return;
         }
         // print() returns nothing in Lua — an implicit `return print(...)`
@@ -8049,10 +8998,19 @@ pub const CodeGen = struct {
         if (self.current_ret != .void) self.p("return ", .{});
         if (self.closure_ctx != null or self.current_ret == .any) {
             try self.emit_as_lua_value(expr);
+        } else if (self.current_ret == .table_type and expr.* == .table) {
+            self.p("(", .{});
+            self.typ(self.current_ret);
+            self.p(")", .{});
+            try self.emit_record_initializer(self.current_ret.table_type.fields, expr);
         } else {
             const et = self.expr_type(expr);
             if (et == .any and self.current_ret != .any and !self.expr_is_raw_c_intrinsic(expr)) {
-                if (expr.* == .method_call and self.static_dispatch_type_for_expr(expr.method_call.obj, expr.method_call.method) != null) {
+                if (!self.moduleNeedsLuaRuntime() and self.expr_is_native_scalar(expr) and
+                    (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str))
+                {
+                    try self.emit_expr(expr);
+                } else if (expr.* == .method_call and self.static_dispatch_type_for_expr(expr.method_call.obj, expr.method_call.method) != null) {
                     try self.emit_expr(expr);
                 } else if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
                     try self.emit_dynamic_unbox(expr, self.current_ret)
@@ -8191,7 +9149,11 @@ pub const CodeGen = struct {
             try self.note_local_type(name, effective);
             self.ind();
             switch (effective) {
-                .any => self.pl("lua_Value {s} = lua_val_nil();", .{name}),
+                .any => if (!self.moduleNeedsLuaRuntime()) {
+                    self.pl("double {s} = 0.0;", .{name});
+                } else {
+                    self.pl("lua_Value {s} = lua_val_nil();", .{name});
+                },
                 .bool => self.pl("bool {s} = false;", .{name}),
                 .str => self.pl("const char* {s} = 0;", .{name}),
                 else => {
@@ -8517,6 +9479,16 @@ pub const CodeGen = struct {
                             continue;
                         }
                     }
+                    if (i < ld.inits.len) {
+                        if (req_path_from_expr(ld.inits[i])) |path| {
+                            try self.try_register_req_binding(lname.ident, path);
+                            if (self.duo_mode and self.req_module_skips_lua_binding(path)) {
+                                try self.mark_req_native_direct(lname.ident);
+                                try self.note_comptime_unavailable(lname.ident);
+                                continue;
+                            }
+                        }
+                    }
                     self.ind();
                     // Determine type
                     const rt: RT = blk: {
@@ -8524,7 +9496,10 @@ pub const CodeGen = struct {
                             break :blk self.resolve_binding_type(lname);
                         }
                         if (i < ld.inits.len) {
-                            break :blk self.expr_type(ld.inits[i]);
+                            const init_rt = self.expr_type(ld.inits[i]);
+                            if (init_rt != .any and init_rt != .nil) break :blk init_rt;
+                            if (self.infer_req_module_call_return_type(ld.inits[i])) |call_rt| break :blk call_rt;
+                            break :blk init_rt;
                         }
                         break :blk .any;
                     };
@@ -8588,7 +9563,7 @@ pub const CodeGen = struct {
                                 (rt.is_numeric() or rt == .bool or rt == .str) and
                                 (init_rt == .any or init_rt.is_numeric() or init_rt == .bool or init_rt == .str))
                             {
-                                try self.emit_arg_for_param(ld.inits[i], rt);
+                                try self.emit_arg_for_param(ld.inits[i], rt, false);
                             } else {
                                 try self.emit_expr(ld.inits[i]);
                             }
@@ -8639,6 +9614,10 @@ pub const CodeGen = struct {
                         }
                     }
                 } else for (gd.names, 0..) |*lname, i| {
+                    if (self.is_native_dense_module_table(lname.ident)) {
+                        if (i < gd.inits.len) try self.note_comptime_binding(lname.ident, gd.inits[i]);
+                        continue;
+                    }
                     self.ind();
                     const rt: RT = blk: {
                         if (lname.typ != .inferred) {
@@ -8680,7 +9659,7 @@ pub const CodeGen = struct {
                 self.p("const ", .{});
                 self.typ(rt);
                 self.p(" {s} = ", .{cd.ident});
-                try self.emit_arg_for_param(cd.val, rt);
+                try self.emit_arg_for_param(cd.val, rt, false);
                 self.p(";\n", .{});
                 try self.note_comptime_binding(cd.ident, cd.val);
             },
@@ -8749,15 +9728,34 @@ pub const CodeGen = struct {
                         if (tgt.* == .name) try self.note_comptime_unavailable(tgt.name.ident);
                     }
                 } else for (as.targets, 0..) |tgt, i| {
+                    if (tgt.* == .name and self.is_native_dense_module_table(tgt.name.ident)) {
+                        if (i < as.values.len) try self.note_comptime_binding(tgt.name.ident, as.values[i]);
+                        continue;
+                    }
                     self.ind();
                     const tt = self.expr_type(tgt);
 
                     // In duo mode, automatically declare local variables for simple name assignments
                     if (self.duo_mode and tgt.* == .name) {
                         const name = tgt.name.ident;
+                        if (i < as.values.len) {
+                            if (req_path_from_expr(as.values[i])) |path| {
+                                try self.try_register_req_binding(name, path);
+                                if (self.req_module_skips_lua_binding(path)) {
+                                    try self.mark_req_native_direct(name);
+                                    try self.note_comptime_unavailable(name);
+                                    continue;
+                                }
+                            }
+                        }
                         const is_loc = self.is_local_name(name);
                         const is_glob = self.is_global_name(name);
                         if (!is_loc and !is_glob) {
+                            if (i < as.values.len) {
+                                if (req_path_from_expr(as.values[i])) |path| {
+                                    try self.try_register_req_binding(name, path);
+                                }
+                            }
                             if (self.is_dense_table_name(name)) {
                                 var t_idx: ?usize = null;
                                 if (self.current_func_body) |fb| {
@@ -8792,12 +9790,16 @@ pub const CodeGen = struct {
                             // This is an undeclared variable, declare it as local
                             // When target type is .any, try to infer from the value's structure/type
                             var effective_tt = tt;
-                            if (tt == .any and i < as.values.len) {
-                                const val_t = self.expr_type(as.values[i]);
-                                if (val_t != .any and val_t != .nil) {
-                                    effective_tt = val_t;
+                            if (i < as.values.len) {
+                                if (self.infer_req_module_call_return_type(as.values[i])) |call_rt| {
+                                    effective_tt = call_rt;
                                 } else if (self.structural_expr_type(as.values[i])) |vt| {
                                     effective_tt = vt;
+                                } else if (tt == .any) {
+                                    const val_t = self.expr_type(as.values[i]);
+                                    if (val_t != .any and val_t != .nil) {
+                                        effective_tt = val_t;
+                                    }
                                 }
                             }
                             // A binding initialized from `nil` must stay `.any`:
@@ -8805,8 +9807,24 @@ pub const CodeGen = struct {
                             // bare assignments like `b = nil` typically precede
                             // `b = <value>`.
                             if (effective_tt == .nil) effective_tt = .any;
+                            if (effective_tt == .@"struct") {
+                                if (self.record_aliases.get(effective_tt.@"struct".name)) |alias_rt| {
+                                    effective_tt = alias_rt;
+                                }
+                            }
                             if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
-                                (as.values[i].* == .table or as.values[i].* == .func_expr))
+                                as.values[i].* == .table and as.values[i].table.fields.len == 0)
+                            {
+                                try self.note_local(name);
+                                try self.note_local_type(name, .any);
+                                try self.register_native_str_list_local(name);
+                                self.p("const char* {s}_items[16] = {{0}};\n", .{name});
+                                self.ind();
+                                self.p("int64_t {s}_len = 0;\n", .{name});
+                                continue;
+                            }
+                            if (!self.moduleNeedsLuaRuntime() and effective_tt == .any and i < as.values.len and
+                                as.values[i].* == .func_expr)
                             {
                                 continue;
                             }
@@ -8817,11 +9835,25 @@ pub const CodeGen = struct {
                                         try self.note_local_type(name, .str);
                                         self.p("const char* {s} = ", .{name});
                                         try self.emit_c_string_literal(folded);
+                                    } else if (!self.moduleNeedsLuaRuntime()) {
+                                        const nt = self.structural_expr_type(as.values[i]) orelse self.expr_type(as.values[i]);
+                                        if (nt != .any and nt != .nil and self.exprLowersToNativeC(nt)) {
+                                            try self.note_local_type(name, nt);
+                                            self.typ(nt);
+                                            self.p(" {s} = ", .{name});
+                                            try self.emit_expr(as.values[i]);
+                                        } else {
+                                            try self.note_local_type(name, .any);
+                                            self.p("void* {s} = NULL", .{name});
+                                        }
                                     } else {
                                         try self.note_local_type(name, .any);
                                         self.p("lua_Value {s} = ", .{name});
                                         try self.emit_as_lua_value(as.values[i]);
                                     }
+                                } else if (!self.moduleNeedsLuaRuntime()) {
+                                    try self.note_local_type(name, .any);
+                                    self.p("void* {s} = NULL", .{name});
                                 } else {
                                     try self.note_local_type(name, .any);
                                     self.p("lua_Value {s} = lua_val_nil()", .{name});
@@ -8832,6 +9864,8 @@ pub const CodeGen = struct {
                                 self.p(" {s} = ", .{name});
                                 if (i < as.values.len) {
                                     try self.emit_dynamic_unbox(as.values[i], effective_tt);
+                                } else if (!self.moduleNeedsLuaRuntime()) {
+                                    self.p("0", .{});
                                 } else {
                                     var buf: [64]u8 = undefined;
                                     self.p("(({s})lua_to_num(lua_val_nil()))", .{effective_tt.c_type(&buf)});
@@ -8839,11 +9873,17 @@ pub const CodeGen = struct {
                             } else if (effective_tt == .bool) {
                                 try self.note_local_type(name, .bool);
                                 self.p("bool {s} = ", .{name});
-                                if (i < as.values.len) try self.emit_dynamic_unbox(as.values[i], .bool) else self.p("lua_to_bool(lua_val_nil())", .{});
+                                if (i < as.values.len) try self.emit_dynamic_unbox(as.values[i], .bool) else if (!self.moduleNeedsLuaRuntime()) self.p("false", .{}) else self.p("lua_to_bool(lua_val_nil())", .{});
                             } else if (effective_tt == .str) {
                                 try self.note_local_type(name, .str);
                                 self.p("const char* {s} = ", .{name});
-                                if (i < as.values.len) try self.emit_dynamic_unbox(as.values[i], .str) else self.p("lua_to_str(lua_val_nil())", .{});
+                                if (i < as.values.len) try self.emit_dynamic_unbox(as.values[i], .str) else if (!self.moduleNeedsLuaRuntime()) self.p("\"\"", .{}) else self.p("lua_to_str(lua_val_nil())", .{});
+                            } else if (self.type_lowers_native(effective_tt)) {
+                                try self.note_local_type(name, effective_tt);
+                                if (effective_tt == .table_type) try self.ensure_record_decl(effective_tt);
+                                self.typ(effective_tt);
+                                self.p(" {s} = ", .{name});
+                                if (i < as.values.len) try self.emit_expr(as.values[i]);
                             } else if (effective_tt == .func) {
                                 try self.note_local_type(name, effective_tt);
                                 self.p("lua_Value {s} = ", .{name});
@@ -8886,7 +9926,13 @@ pub const CodeGen = struct {
                         }
                     } else if (tgt.* == .index) {
                         const idx = &tgt.index;
-                        if (self.is_dense_table_index(idx.obj)) {
+                        if (idx.obj.* == .name and self.is_native_str_list_local(idx.obj.name.ident)) {
+                            is_table_assign = true;
+                            const str_list = idx.obj.name.ident;
+                            self.p("{s}_items[{s}_len++] = ", .{ str_list, str_list });
+                            if (i < as.values.len) try self.emit_expr(as.values[i]) else self.p("NULL", .{});
+                            self.p(";\n", .{});
+                        } else if (self.is_dense_table_index(idx.obj)) {
                             is_table_assign = true;
                             if (idx.obj.* == .name) {
                                 const dt = idx.obj.name.ident;
@@ -8935,12 +9981,16 @@ pub const CodeGen = struct {
                         if (i < as.values.len) {
                             const vt = self.expr_type(as.values[i]);
                             if (tt == .any) {
-                                try self.emit_as_lua_value(as.values[i]);
+                                if (!self.moduleNeedsLuaRuntime()) {
+                                    try self.emit_expr(as.values[i]);
+                                } else {
+                                    try self.emit_as_lua_value(as.values[i]);
+                                }
                             } else if (!self.expr_is_raw_c_intrinsic(as.values[i]) and
                                 (tt.is_numeric() or tt == .bool or tt == .str) and
                                 (vt == .any or vt.is_numeric() or vt == .bool or vt == .str))
                             {
-                                try self.emit_arg_for_param(as.values[i], tt);
+                                try self.emit_arg_for_param(as.values[i], tt, false);
                             } else {
                                 try self.emit_expr(as.values[i]);
                             }
@@ -9025,7 +10075,9 @@ pub const CodeGen = struct {
                     }
                 }
                 if (r.vals.len == 0) {
-                    if (self.current_ret == .any) {
+                    if (self.emitting_main_driver) {
+                        self.p("return 0;\n", .{});
+                    } else if (self.current_ret == .any and self.moduleNeedsLuaRuntime()) {
                         self.p("return lua_val_nil();\n", .{});
                     } else {
                         self.p("return;\n", .{});
@@ -9034,14 +10086,9 @@ pub const CodeGen = struct {
                     r.vals[0].call.func.* == .name and
                     std.mem.eql(u8, r.vals[0].call.func.name.ident, "error"))
                 {
-                    // error() is noreturn — emit lua_error directly without return
-                    self.p("lua_error(", .{});
-                    if (r.vals[0].call.args.len > 0) {
-                        try self.emit_as_lua_value(r.vals[0].call.args[0]);
-                    } else {
-                        self.p("lua_val_nil()", .{});
-                    }
-                    self.p(");\n", .{});
+                    // error() is noreturn — emit fatal directly without return
+                    try self.emit_fatal_error(if (r.vals[0].call.args.len > 0) r.vals[0].call.args[0] else null);
+                    self.p(";\n", .{});
                 } else if (self.closure_ctx != null or self.current_ret == .any) {
                     if (r.vals.len == 1) {
                         self.p("return ", .{});
@@ -9060,29 +10107,45 @@ pub const CodeGen = struct {
                         try self.emit_as_lua_value(r.vals[0]);
                         self.p(";\n", .{});
                     }
-                } else {
+                } else if (self.current_ret == .table_type and r.vals[0].* == .table) {
+                    // Record-typed return initialized from a table
+                    // literal: emit as a C struct initializer, matching
+                    // emit_arg_for_param and local_decl.
+                    self.p("return (", .{});
+                    self.typ(self.current_ret);
+                    self.p(")", .{});
+                    try self.emit_record_initializer(self.current_ret.table_type.fields, r.vals[0]);
+                    self.p(";\n", .{});
+                } else if (r.vals.len == 1) {
                     const et = self.expr_type(r.vals[0]);
                     if (et == .any and self.current_ret != .any and !self.expr_is_raw_c_intrinsic(r.vals[0])) {
                         self.p("return ", .{});
-                        if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
+                        if (!self.moduleNeedsLuaRuntime() and self.expr_is_native_scalar(r.vals[0]) and
+                            (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str))
+                        {
+                            try self.emit_expr(r.vals[0]);
+                        } else if (self.current_ret.is_numeric() or self.current_ret == .bool or self.current_ret == .str)
                             try self.emit_dynamic_unbox(r.vals[0], self.current_ret)
                         else
                             try self.emit_expr(r.vals[0]);
-                        self.p(";\n", .{});
-                    } else if (self.current_ret == .table_type and r.vals[0].* == .table) {
-                        // Record-typed return initialized from a table
-                        // literal: emit as a C struct initializer, matching
-                        // emit_arg_for_param and local_decl.
-                        self.p("return (", .{});
-                        self.typ(self.current_ret);
-                        self.p(")", .{});
-                        try self.emit_record_initializer(self.current_ret.table_type.fields, r.vals[0]);
                         self.p(";\n", .{});
                     } else {
                         self.p("return ", .{});
                         try self.emit_expr(r.vals[0]);
                         self.p(";\n", .{});
                     }
+                } else {
+                    self.pl("lua_mret_clear();", .{});
+                    for (r.vals[1..]) |v| {
+                        self.ind();
+                        self.p("lua_mret_push(", .{});
+                        try self.emit_expr(v);
+                        self.p(");\n", .{});
+                    }
+                    self.ind();
+                    self.p("return ", .{});
+                    try self.emit_expr(r.vals[0]);
+                    self.p(";\n", .{});
                 }
             },
             .if_stmt => |*is| {
@@ -9312,6 +10375,114 @@ pub const CodeGen = struct {
                 }
 
                 if (table_expr) |tbl| {
+                    if (mode == .direct_table and tbl.* == .name and gf.vars.len >= 1 and
+                        self.is_native_dense_module_table(tbl.name.ident))
+                    {
+                        const nd = self.native_dense_module_tables.get(tbl.name.ident).?;
+                        // Module-scope dense literals are native C arrays — never box elements.
+                        const native_for = true;
+                        for (gf.vars) |vname| try self.note_local(vname);
+                        self.pl("{{", .{});
+                        self.indent += 1;
+                        self.ind();
+                        self.p("for (int64_t _gf_idx = 1; _gf_idx <= {d}; _gf_idx++) {{\n", .{nd.len});
+                        self.indent += 1;
+                        self.ind();
+                        switch (nd.elem) {
+                            .str => {
+                                if (gf.vars.len == 1) {
+                                    if (native_for) {
+                                        try self.note_local_type(gf.vars[0], .str);
+                                        self.p("const char* {s} = {s}[_gf_idx];\n", .{ gf.vars[0], nd.c_symbol });
+                                    } else {
+                                        try self.note_local_type(gf.vars[0], .any);
+                                        self.p("lua_Value {s} = lua_val_from_str({s}[_gf_idx]);\n", .{ gf.vars[0], nd.c_symbol });
+                                    }
+                                } else {
+                                    try self.note_local_type(gf.vars[0], .i64);
+                                    if (native_for) {
+                                        self.p("int64_t {s} = _gf_idx;\n", .{gf.vars[0]});
+                                    } else {
+                                        self.p("lua_Value {s} = lua_val_from_num((double)_gf_idx);\n", .{gf.vars[0]});
+                                    }
+                                    if (native_for) {
+                                        try self.note_local_type(gf.vars[1], .str);
+                                        self.p("const char* {s} = {s}[_gf_idx];\n", .{ gf.vars[1], nd.c_symbol });
+                                    } else {
+                                        try self.note_local_type(gf.vars[1], .any);
+                                        self.p("lua_Value {s} = lua_val_from_str({s}[_gf_idx]);\n", .{ gf.vars[1], nd.c_symbol });
+                                    }
+                                }
+                            },
+                            .i64 => {
+                                if (gf.vars.len == 1) {
+                                    if (native_for) {
+                                        try self.note_local_type(gf.vars[0], .i64);
+                                        self.p("int64_t {s} = {s}[_gf_idx];\n", .{ gf.vars[0], nd.c_symbol });
+                                    } else {
+                                        try self.note_local_type(gf.vars[0], .any);
+                                        self.p("lua_Value {s} = lua_val_from_int({s}[_gf_idx]);\n", .{ gf.vars[0], nd.c_symbol });
+                                    }
+                                } else {
+                                    try self.note_local_type(gf.vars[0], .i64);
+                                    if (native_for) {
+                                        self.p("int64_t {s} = _gf_idx;\n", .{gf.vars[0]});
+                                    } else {
+                                        self.p("lua_Value {s} = lua_val_from_num((double)_gf_idx);\n", .{gf.vars[0]});
+                                    }
+                                    if (native_for) {
+                                        try self.note_local_type(gf.vars[1], .i64);
+                                        self.p("int64_t {s} = {s}[_gf_idx];\n", .{ gf.vars[1], nd.c_symbol });
+                                    } else {
+                                        try self.note_local_type(gf.vars[1], .any);
+                                        self.p("lua_Value {s} = lua_val_from_int({s}[_gf_idx]);\n", .{ gf.vars[1], nd.c_symbol });
+                                    }
+                                }
+                            },
+                            .f64 => {
+                                if (gf.vars.len == 1) {
+                                    if (native_for) {
+                                        try self.note_local_type(gf.vars[0], .f64);
+                                        self.p("double {s} = {s}[_gf_idx];\n", .{ gf.vars[0], nd.c_symbol });
+                                    } else {
+                                        try self.note_local_type(gf.vars[0], .any);
+                                        self.p("lua_Value {s} = lua_val_from_num({s}[_gf_idx]);\n", .{ gf.vars[0], nd.c_symbol });
+                                    }
+                                } else {
+                                    try self.note_local_type(gf.vars[0], .i64);
+                                    if (native_for) {
+                                        self.p("int64_t {s} = _gf_idx;\n", .{gf.vars[0]});
+                                    } else {
+                                        self.p("lua_Value {s} = lua_val_from_num((double)_gf_idx);\n", .{gf.vars[0]});
+                                    }
+                                    if (native_for) {
+                                        try self.note_local_type(gf.vars[1], .f64);
+                                        self.p("double {s} = {s}[_gf_idx];\n", .{ gf.vars[1], nd.c_symbol });
+                                    } else {
+                                        try self.note_local_type(gf.vars[1], .any);
+                                        self.p("lua_Value {s} = lua_val_from_num({s}[_gf_idx]);\n", .{ gf.vars[1], nd.c_symbol });
+                                    }
+                                }
+                            },
+                        }
+                        if (gf.vars.len > 2) {
+                            for (gf.vars[2..]) |extra| {
+                                try self.note_local_type(extra, .any);
+                                self.pl("lua_Value {s} = lua_val_nil();", .{extra});
+                            }
+                        }
+                        {
+                            try self.push_break_scope();
+                            defer self.pop_break_scope();
+                            try self.emit_block(&gf.body);
+                        }
+                        self.indent -= 1;
+                        self.ind();
+                        self.pl("}}", .{});
+                        self.indent -= 1;
+                        self.pl("}}", .{});
+                        return;
+                    }
                     for (gf.vars, 0..) |vname, vi| {
                         const is_ipairs_idx = mode == .explicit_ipairs and vi == 0;
                         if (is_ipairs_idx) {
@@ -9916,9 +11087,82 @@ pub const CodeGen = struct {
 
     fn emit_dynamic_unbox(self: *CodeGen, e: *const ast.Expr, want: RT) E!void {
         const et = self.expr_type(e);
+        if (!self.moduleNeedsLuaRuntime()) {
+            if (e.* == .name) {
+                if (self.local_type(e.name.ident)) |lt| {
+                    if (lt.is_numeric() and want.is_numeric()) {
+                        if (lt.eql(want)) {
+                            try self.emit_expr(e);
+                        } else {
+                            var buf: [64]u8 = undefined;
+                            self.p("(({s})(", .{want.c_type(&buf)});
+                            try self.emit_expr(e);
+                            self.p("))", .{});
+                        }
+                        return;
+                    }
+                    if (lt.eql(want)) {
+                        try self.emit_expr(e);
+                        return;
+                    }
+                }
+            }
+            if (et != .any) {
+                if (want.is_numeric() and et.is_numeric()) {
+                    if (want.eql(et)) {
+                        try self.emit_expr(e);
+                    } else {
+                        var buf: [64]u8 = undefined;
+                        self.p("(({s})(", .{want.c_type(&buf)});
+                        try self.emit_expr(e);
+                        self.p("))", .{});
+                    }
+                    return;
+                }
+                if (want.eql(et)) {
+                    try self.emit_expr(e);
+                    return;
+                }
+            }
+        }
+        if (e.* == .index) {
+            if (self.req_module_dense_index_info(e.index.obj)) |nd| {
+                const matches = switch (nd.elem) {
+                    .str => want == .str,
+                    .i64, .f64 => want.is_numeric(),
+                };
+                if (matches) {
+                    try self.emit_expr(e);
+                    return;
+                }
+            }
+        }
+        if (e.* == .index and self.is_native_dense_module_index(e.index.obj)) {
+            // Sema types this as `.any` (it doesn't know about the codegen-only
+            // dense-table classification), but the value codegens to a raw C
+            // array element, not a lua_Value. Emit it directly when the
+            // requested type matches the element's natural representation.
+            const nd = self.native_dense_module_tables.get(e.index.obj.name.ident).?;
+            const matches = switch (nd.elem) {
+                .str => want == .str,
+                .i64, .f64 => want.is_numeric(),
+            };
+            if (matches) {
+                try self.emit_expr(e);
+                return;
+            }
+        }
         if (try self.try_emit_table_projection_unbox(e, want)) return;
         if (want.is_numeric() and et.is_numeric()) {
             if (want.eql(et)) {
+                // A bare C integer literal has type `int` (32-bit) even where a
+                // 64-bit value is wanted. That silently breaks shifts by >= 32
+                // (the count wraps mod 32) and any literal that does not fit in
+                // 32 bits, so give integer literals explicit 64-bit width.
+                if (want == .i64 and e.* == .int_lit) {
+                    self.p("INT64_C({d})", .{e.int_lit.val});
+                    return;
+                }
                 try self.emit_expr(e);
             } else {
                 var buf: [64]u8 = undefined;
@@ -9978,7 +11222,17 @@ pub const CodeGen = struct {
         if (!want.is_numeric() and want != .bool and want != .str) return false;
         switch (e.*) {
             .field => |f| {
-                if (self.expr_type(f.obj) != .any and self.expr_type(e) != .any) return false;
+                if (f.obj.* == .name) {
+                    if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
+                        if (try self.try_emit_req_module_const_field(mod_cname, f.field, want)) return true;
+                    }
+                }
+                const obj_rt = self.expr_type(f.obj);
+                if (self.type_lowers_native(obj_rt)) {
+                    try self.emit_native_field_access(f.obj, f.field);
+                    return true;
+                }
+                if (obj_rt != .any and self.expr_type(e) != .any) return false;
                 const hash = calc_lua_hash(f.field);
                 if (want.is_numeric()) {
                     var buf: [64]u8 = undefined;
@@ -9997,7 +11251,13 @@ pub const CodeGen = struct {
                 return true;
             },
             .index => |idx| {
-                if (self.expr_type(idx.obj) != .any) return false;
+                if (self.req_module_dense_index_info(idx.obj)) |nd| {
+                    self.p("{s}[", .{nd.c_symbol});
+                    try self.emit_expr(idx.key);
+                    self.p("]", .{});
+                    return true;
+                }
+                if (self.is_native_dense_module_index(idx.obj)) return false;
                 if (self.is_integer_key(idx.key) or positive_int_key(idx.key) != null) {
                     if (want.is_numeric()) {
                         var buf: [64]u8 = undefined;
@@ -10056,7 +11316,12 @@ pub const CodeGen = struct {
     /// (including `__index`), but pairs with a numeric-marked local in one-sided binops.
     fn dynamic_binop_operand_is_dynamic_table_read(self: *CodeGen, e: *const ast.Expr) bool {
         return switch (e.*) {
-            .field => self.expr_is_dynamic_table(e.field.obj),
+            .field => |f| blk: {
+                if (self.expr_is_req_module_const_field(e)) break :blk false;
+                const obj_rt = self.expr_type(f.obj);
+                if (obj_rt == .table_type and obj_rt.table_type.storage_class == .native) break :blk false;
+                break :blk self.expr_is_dynamic_table(f.obj);
+            },
             .index => self.expr_is_dynamic_table(e.index.obj),
             else => false,
         };
@@ -10068,7 +11333,11 @@ pub const CodeGen = struct {
         return switch (e.*) {
             .int_lit, .float_lit => true,
             .name => |n| self.is_numeric_lua_local(n.ident),
-            else => self.dynamic_binop_operand_is_numeric_access(e),
+            else => blk: {
+                if (self.expr_is_req_module_const_field(e)) break :blk true;
+                if (self.expr_is_native_record_field(e)) break :blk true;
+                break :blk self.dynamic_binop_operand_is_numeric_access(e);
+            },
         };
     }
 
@@ -10462,7 +11731,16 @@ pub const CodeGen = struct {
     }
 
     fn emit_as_lua_value(self: *CodeGen, expr: *const ast.Expr) E!void {
+        // Full-native programs never box — emit direct C values only.
+        if (!self.moduleNeedsLuaRuntime()) {
+            try self.emit_expr(expr);
+            return;
+        }
         if (expr.* == .name) {
+            if (self.is_native_dense_module_table(expr.name.ident)) {
+                try self.emit_native_dense_module_table_as_lua_value(expr.name.ident);
+                return;
+            }
             if (self.vararg_funcs.get(expr.name.ident)) |argv_cname| {
                 self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
                 return;
@@ -10773,11 +12051,14 @@ pub const CodeGen = struct {
                         }
                     }
                 }
+                if (self.is_native_str_list_local(n.ident)) {
+                    self.p("(void*)0", .{});
+                    return;
+                }
                 self.emit_var_name(n.ident);
             },
             .field => |f| {
                 // Enum variant access: `Color.Green` -> the C enum constant
-                // `duo_Color_Green` (payload-free) or a tag value otherwise.
                 if (f.obj.* == .name and self.enum_has_payload.contains(f.obj.name.ident)) {
                     const ename = f.obj.name.ident;
                     if (self.find_enum_variant_def(ename, f.field) != null) {
@@ -10797,7 +12078,13 @@ pub const CodeGen = struct {
                     }
                     return;
                 }
-                if (self.expr_type(f.obj) == .any) {
+                if (f.obj.* == .name) {
+                    if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
+                        if (try self.try_emit_req_module_const_field(mod_cname, f.field, self.expr_type(expr))) return;
+                    }
+                }
+                const obj_rt = self.expr_type(f.obj);
+                if (obj_rt == .any) {
                     const hash = calc_lua_hash(f.field);
                     const ft = self.expr_type(expr);
                     // When field type is known, extract native value for downstream native ops
@@ -10821,11 +12108,23 @@ pub const CodeGen = struct {
                         self.p(", \"{s}\", {d}u, {d})", .{ f.field, hash, f.field.len });
                     }
                 } else {
-                    try self.emit_expr(f.obj);
-                    self.p(".{s}", .{f.field});
+                    try self.emit_native_field_access(f.obj, f.field);
                 }
             },
             .index => |idx| {
+                if (self.req_module_dense_index_info(idx.obj)) |nd| {
+                    self.p("{s}[", .{nd.c_symbol});
+                    try self.emit_expr(idx.key);
+                    self.p("]", .{});
+                    return;
+                }
+                if (self.is_native_dense_module_index(idx.obj)) {
+                    const nd = self.native_dense_module_tables.get(idx.obj.name.ident).?;
+                    self.p("{s}[", .{nd.c_symbol});
+                    try self.emit_expr(idx.key);
+                    self.p("]", .{});
+                    return;
+                }
                 if (self.is_dense_table_index(idx.obj)) {
                     if (idx.obj.* == .name) {
                         const dt = idx.obj.name.ident;
@@ -11000,7 +12299,7 @@ pub const CodeGen = struct {
                     }
                     const target_name = c.args[0].string_lit.val;
                     if (self.type_from_c_name(target_name)) |target| {
-                        try self.emit_arg_for_param(c.args[1], target);
+                        try self.emit_arg_for_param(c.args[1], target, true);
                     } else {
                         self.p("(({s})(", .{target_name});
                         try self.emit_expr(c.args[1]);
@@ -11016,7 +12315,7 @@ pub const CodeGen = struct {
                     }
                     const target_name = c.args[1].string_lit.val;
                     if (self.type_from_c_name(target_name)) |target| {
-                        try self.emit_arg_for_param(c.args[0], target);
+                        try self.emit_arg_for_param(c.args[0], target, true);
                     } else {
                         self.p("(({s})(", .{target_name});
                         try self.emit_expr(c.args[0]);
@@ -11438,6 +12737,7 @@ pub const CodeGen = struct {
                 if (try self.maybe_emit_math_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_simd_call(c.func, c.args)) return;
                 if (try self.maybe_emit_stdlib_call(c.func, c.args, self.expr_type(expr))) return;
+                if (try self.try_emit_req_module_field_call(c.func, c.args, self.expr_type(expr))) return;
                 if (try self.maybe_emit_stdlib_module_call(c.func, c.args, self.expr_type(expr))) return;
                 if (c.func.* == .name) {
                     if (try self.tryEmitCallTransformDispatch(expr)) return;
@@ -11461,7 +12761,9 @@ pub const CodeGen = struct {
                     // Mixed native/dynamic: non-allowlisted callees route through lua_invoke
                     // UNLESS the callee's resolved type proves all params+return are native.
                     // This is the per-call knowledge lattice (Pass 2) driving emission.
-                    if (self.mixed_scalar_mode and ft == .func and !self.funcUsesNativeLowering(c.func.name.ident)) {
+                    if (self.mixed_scalar_mode and !self.moduleUsesFullNativeLowering() and
+                        ft == .func and !self.funcUsesNativeLowering(c.func.name.ident))
+                    {
                         if (!self.funcTypeIsFullyNative(ft)) {
                             // Embedded modules: keep native ft for same-module calls with
                             // native returns (params may be any → lua_Value in C ABI).
@@ -11470,9 +12772,11 @@ pub const CodeGen = struct {
                             }
                         }
                     }
-                    // Same-module embedded calls (e.g. decode.read_byte in read_i32_imm).
-                    if (ft == .func and self.current_module_cname.len > 0 and
-                        self.exprLowersToNativeC(ft.func.ret.*))
+                    // Same-module embedded calls (e.g. decode.read_byte in read_i32_imm) and
+                    // main-module mixed-native allowlist (e.g. cur_loc/adv in lexer.duo).
+                    if (ft == .func and self.exprLowersToNativeC(ft.func.ret.*) and
+                        (self.current_module_cname.len > 0 or
+                            (c.func.* == .name and self.funcUsesNativeLowering(c.func.name.ident))))
                     {
                         try self.emitDirectNamedFuncCall(expr);
                         return;
@@ -11503,7 +12807,25 @@ pub const CodeGen = struct {
                         return;
                     }
                 }
+                if (ft == .any and !self.moduleNeedsLuaRuntime()) {
+                    if (c.func.* == .name) {
+                        var sm_buf: [256]u8 = undefined;
+                        if (self.func_bodies.get(self.mangled_name(c.func.name.ident, &sm_buf))) |_| {
+                            try self.emitDirectNamedFuncCall(expr);
+                            return;
+                        }
+                    }
+                }
                 if (ft == .any) {
+                    // Same-module embedded calls (e.g. read_immediate in decode_instruction):
+                    // emit direct C call when the callee body is already at file scope.
+                    if (c.func.* == .name and self.current_module_cname.len > 0) {
+                        var sm_buf: [256]u8 = undefined;
+                        if (self.func_bodies.get(self.mangled_name(c.func.name.ident, &sm_buf))) |_| {
+                            try self.emitDirectNamedFuncCall(expr);
+                            return;
+                        }
+                    }
                     if (self.should_bind_field_call(c.func, c.args.len)) {
                         try self.emit_bound_field_call(c);
                         return;
@@ -11511,6 +12833,14 @@ pub const CodeGen = struct {
                     // Special-case print in expression position
                     if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "print")) {
                         try self.emit_print_call(c.args);
+                        return;
+                    }
+                    if (!self.moduleNeedsLuaRuntime()) {
+                        if (c.func.* == .name) {
+                            try self.emitDirectNamedFuncCall(expr);
+                            return;
+                        }
+                        self.p("duo_fatal(\"unlowered native call\")", .{});
                         return;
                     }
                     const invoke_result_rt = self.expr_type(expr);
@@ -11530,7 +12860,7 @@ pub const CodeGen = struct {
                                 try self.emit_native_func_name_as_lua_value(
                                     c.func.name.ident,
                                     fb_type.func.params,
-                                    body.is_typed,
+                                    fb_type.func.is_compile_only,
                                 );
                             } else {
                                 self.p("lua_val_from_func((lua_CFunction){s})", .{mname});
@@ -11626,7 +12956,7 @@ pub const CodeGen = struct {
                     switch (ft) {
                         .func => |f| {
                             if (i < f.params.len) {
-                                try self.emit_arg_for_param(arg, f.params[i]);
+                                try self.emit_arg_for_param(arg, f.params[i], true);
                             } else {
                                 try self.emit_expr(arg);
                             }
@@ -11858,6 +13188,10 @@ pub const CodeGen = struct {
                         if (try self.try_emit_native_string_affix(mc.method, mc.obj, mc.args[0])) return;
                     }
                     if (try self.try_emit_native_string_transform(mc.method, mc.obj, mc.args, self.expr_type(expr))) return;
+                    if (!self.moduleNeedsLuaRuntime()) {
+                        self.p("duo_fatal(\"unlowered native string method\")", .{});
+                        return;
+                    }
                     const mapped: ?[]const u8 = blk: {
                         if (std.mem.eql(u8, mc.method, "len")) break :blk "lua_str_len" else if (std.mem.eql(u8, mc.method, "lower")) break :blk "lua_str_lower" else if (std.mem.eql(u8, mc.method, "upper")) break :blk "lua_str_upper" else if (std.mem.eql(u8, mc.method, "sub")) break :blk "lua_str_sub" else if (std.mem.eql(u8, mc.method, "char")) break :blk "lua_str_char" else if (std.mem.eql(u8, mc.method, "format")) break :blk "lua_str_format" else if (std.mem.eql(u8, mc.method, "rep")) break :blk "lua_str_rep" else if (std.mem.eql(u8, mc.method, "reverse")) break :blk "lua_str_reverse" else if (std.mem.eql(u8, mc.method, "byte")) break :blk "lua_str_byte" else if (std.mem.eql(u8, mc.method, "find")) break :blk "lua_str_find" else if (std.mem.eql(u8, mc.method, "match")) break :blk "lua_str_match" else if (std.mem.eql(u8, mc.method, "gsub")) break :blk "lua_str_gsub" else if (std.mem.eql(u8, mc.method, "gmatch")) break :blk "lua_str_gmatch" else if (std.mem.eql(u8, mc.method, "split")) break :blk "lua_str_split" else if (std.mem.eql(u8, mc.method, "starts_with")) break :blk "lua_str_starts_with" else if (std.mem.eql(u8, mc.method, "ends_with")) break :blk "lua_str_ends_with" else break :blk null;
                     };
@@ -12046,6 +13380,15 @@ pub const CodeGen = struct {
                 const rt = self.expr_type(b.rhs);
                 if (try self.try_emit_lua_and_or_ternary(b)) {
                     return;
+                } else if (try self.try_emit_native_tonumber_or(b)) {
+                    return;
+                } else if ((b.op == .@"and" or b.op == .@"or") and !self.moduleNeedsLuaRuntime()) {
+                    const op_str: []const u8 = if (b.op == .@"and") " && " else " || ";
+                    self.p("(", .{});
+                    try self.emit_expr(b.lhs);
+                    self.p("{s}", .{op_str});
+                    try self.emit_expr(b.rhs);
+                    self.p(")", .{});
                 } else if ((b.op == .@"and" or b.op == .@"or") and self.expr_type(expr) == .any) {
                     const func = if (b.op == .@"and") "lua_and" else "lua_or";
                     self.p("{s}(", .{func});
@@ -12056,6 +13399,12 @@ pub const CodeGen = struct {
                 } else if (b.op == .concat) {
                     if (try self.try_emit_native_str_concat(expr)) {
                         return;
+                    } else if (!self.moduleNeedsLuaRuntime()) {
+                        self.p("duo_str_concat(", .{});
+                        try self.emit_expr(b.lhs);
+                        self.p(", ", .{});
+                        try self.emit_expr(b.rhs);
+                        self.p(")", .{});
                     } else {
                         self.p("lua_concat(", .{});
                         try self.emit_as_lua_value(b.lhs);
@@ -12081,26 +13430,12 @@ pub const CodeGen = struct {
                     const lhs_c = self.expr_is_native_cstr(b.lhs);
                     const rhs_c = self.expr_is_native_cstr(b.rhs);
                     if (self.moduleUsesFullNativeLowering() or lhs_c or rhs_c) {
-                        self.p("(strcmp(", .{});
-                        if (lhs_c) {
-                            try self.emit_expr(b.lhs);
-                        } else {
-                            self.p("lua_to_str(", .{});
-                            try self.emit_as_lua_value(b.lhs);
-                            self.p(")", .{});
-                        }
-                        self.p(", ", .{});
-                        if (rhs_c) {
-                            try self.emit_expr(b.rhs);
-                        } else {
-                            self.p("lua_to_str(", .{});
-                            try self.emit_as_lua_value(b.rhs);
-                            self.p(")", .{});
-                        }
+                        self.p("(", .{});
+                        try self.emitStrCompareOperands(b.lhs, b.rhs, lhs_c, rhs_c);
                         if (b.op == .eq) {
-                            self.p(") == 0)", .{});
+                            self.p(" == 0)", .{});
                         } else {
-                            self.p(") != 0)", .{});
+                            self.p(" != 0)", .{});
                         }
                     } else {
                         const func = if (b.op == .eq) "lua_eq" else "lua_neq";
@@ -12110,7 +13445,27 @@ pub const CodeGen = struct {
                         try self.emit_as_lua_value(b.rhs);
                         self.p(")", .{});
                     }
-                } else if ((b.op == .lt or b.op == .gt or b.op == .leq or b.op == .geq) and lt == .str and rt == .str and
+                } else if ((b.op == .eq or b.op == .neq) and (lt == .str or rt == .str)) {
+                    const lhs_c = self.expr_is_native_cstr(b.lhs);
+                    const rhs_c = self.expr_is_native_cstr(b.rhs);
+                    if (lhs_c or rhs_c) {
+                        self.p("(", .{});
+                        try self.emitStrCompareOperands(b.lhs, b.rhs, lhs_c, rhs_c);
+                        if (b.op == .eq) {
+                            self.p(" == 0)", .{});
+                        } else {
+                            self.p(" != 0)", .{});
+                        }
+                    } else {
+                        const func = if (b.op == .eq) "lua_eq" else "lua_neq";
+                        self.p("{s}(", .{func});
+                        try self.emit_as_lua_value(b.lhs);
+                        self.p(", ", .{});
+                        try self.emit_as_lua_value(b.rhs);
+                        self.p(")", .{});
+                    }
+                } else if ((b.op == .lt or b.op == .gt or b.op == .leq or b.op == .geq) and
+                    (lt == .str or rt == .str) and
                     (self.expr_is_native_cstr(b.lhs) or self.expr_is_native_cstr(b.rhs)))
                 {
                     const cmp_suffix: []const u8 = switch (b.op) {
@@ -12122,32 +13477,9 @@ pub const CodeGen = struct {
                     };
                     const lhs_c = self.expr_is_native_cstr(b.lhs);
                     const rhs_c = self.expr_is_native_cstr(b.rhs);
-                    self.p("(strcmp(", .{});
-                    if (lhs_c) {
-                        try self.emit_expr(b.lhs);
-                    } else {
-                        self.p("lua_to_str(", .{});
-                        try self.emit_as_lua_value(b.lhs);
-                        self.p(")", .{});
-                    }
-                    self.p(", ", .{});
-                    if (rhs_c) {
-                        try self.emit_expr(b.rhs);
-                    } else {
-                        self.p("lua_to_str(", .{});
-                        try self.emit_as_lua_value(b.rhs);
-                        self.p(")", .{});
-                    }
-                    self.p(") {s})", .{cmp_suffix});
-                } else if ((b.op == .eq or b.op == .neq) and (lt == .str or rt == .str) and
-                    (!self.expr_is_native_cstr(b.lhs) or !self.expr_is_native_cstr(b.rhs)))
-                {
-                    const func = if (b.op == .eq) "lua_eq" else "lua_neq";
-                    self.p("{s}(", .{func});
-                    try self.emit_as_lua_value(b.lhs);
-                    self.p(", ", .{});
-                    try self.emit_as_lua_value(b.rhs);
-                    self.p(")", .{});
+                    self.p("(", .{});
+                    try self.emitStrCompareOperands(b.lhs, b.rhs, lhs_c, rhs_c);
+                    self.p(" {s})", .{cmp_suffix});
                 } else if (b.op == .add and lt == .tensor and rt == .tensor) {
                     self.p("duo_tensor_add(", .{});
                     try self.emit_as_lua_value(b.lhs);
@@ -12364,10 +13696,16 @@ pub const CodeGen = struct {
                             // operands are lowered to their integer encoding.
                             const lt2 = self.expr_type(b.lhs);
                             const rt2 = self.expr_type(b.rhs);
+                            // Shifts must be performed at 64-bit width. Without an
+                            // explicit cast the shifted operand keeps its C type, so
+                            // an int-typed literal shifts in 32 bits and only the
+                            // result is widened — `1 << sh` with sh >= 32 wrapped
+                            // (sh = 35 yielded 8). Duo integers are 64-bit.
+                            const widen_lhs = lt2.is_float() or b.op == .lshift or b.op == .rshift;
                             self.p("(({s})((", .{t.c_type(&buf)});
-                            if (lt2.is_float()) self.p("(int64_t)(", .{});
+                            if (widen_lhs) self.p("(int64_t)(", .{});
                             try self.emit_expr(b.lhs);
-                            if (lt2.is_float()) self.p(")", .{});
+                            if (widen_lhs) self.p(")", .{});
                             self.p(") {s} (", .{binop_str(b.op)});
                             if (rt2.is_float()) self.p("(int64_t)(", .{});
                             try self.emit_expr(b.rhs);
@@ -12448,11 +13786,15 @@ pub const CodeGen = struct {
                                         try self.emit_expr(u.operand);
                                         self.p("))", .{});
                                     },
-                                    .len => {
-                                        self.p("lua_len_num(", .{});
-                                        try self.emit_expr(u.operand);
-                                        self.p(")", .{});
-                                    },
+                        .len => {
+                            if (u.operand.* == .name and self.is_native_str_list_local(u.operand.name.ident)) {
+                                self.p("{s}_len", .{u.operand.name.ident});
+                            } else {
+                                self.p("lua_len_num(", .{});
+                                try self.emit_expr(u.operand);
+                                self.p(")", .{});
+                            }
+                        },
                                     .bnot => {
                                         self.p("lua_bnot(", .{});
                                         try self.emit_expr(u.operand);
@@ -12474,6 +13816,19 @@ pub const CodeGen = struct {
                             self.p("))", .{});
                         },
                         .len => {
+                            if (u.operand.* == .name and self.is_native_str_list_local(u.operand.name.ident)) {
+                                self.p("{s}_len", .{u.operand.name.ident});
+                                return;
+                            }
+                            // Native dense module tables codegen to a raw C
+                            // array (not a lua_Value); their length is a
+                            // compile-time constant, not something
+                            // lua_len_num can read off the array.
+                            if (u.operand.* == .name and self.is_native_dense_module_table(u.operand.name.ident)) {
+                                const nd = self.native_dense_module_tables.get(u.operand.name.ident).?;
+                                self.p("{d}", .{nd.len});
+                                return;
+                            }
                             // Untyped operands recover the numeric length
                             // directly while preserving __len dispatch.
                             self.p("lua_len_num(", .{});
@@ -12542,7 +13897,7 @@ pub const CodeGen = struct {
                             }
                         } else if (uv.typ) |t| {
                             if (t == .func) {
-                                try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_native);
+                                try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_compile_only);
                             } else if (upvalue_uses_pointer(outer_uv)) {
                                 self.p("(*cl->up{d})", .{outer_idx});
                             } else {
@@ -12564,7 +13919,7 @@ pub const CodeGen = struct {
                         self.emit_var_name(uv.name);
                     } else if (uv.typ) |t| {
                         if (t == .func) {
-                            try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_native);
+                            try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_compile_only);
                         } else {
                             self.emit_var_name(uv.name);
                         }
@@ -12724,8 +14079,12 @@ pub const CodeGen = struct {
         }
     }
 
+    fn isHexDigitByte(c: u8) bool {
+        return (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
+    }
+
     fn emit_string_escaped(self: *CodeGen, s: []const u8) E!void {
-        for (s) |c| {
+        for (s, 0..) |c, i| {
             switch (c) {
                 '"' => self.p("\\\"", .{}),
                 '\\' => self.p("\\\\", .{}),
@@ -12733,7 +14092,13 @@ pub const CodeGen = struct {
                 '\r' => self.p("\\r", .{}),
                 '\t' => self.p("\\t", .{}),
                 else => {
-                    if (c < 32 or c == 127) self.p("\\x{x:0>2}", .{c}) else self.p("{c}", .{c});
+                    if (c < 32 or c == 127) {
+                        self.p("\\x{x:0>2}", .{c});
+                        // See jit.zig emitCStringLiteral: \x escapes greedily
+                        // consume following hex digits in C, so split the
+                        // literal if the next raw byte is one.
+                        if (i + 1 < s.len and isHexDigitByte(s[i + 1])) self.p("\"\"", .{});
+                    } else self.p("{c}", .{c});
                 },
             }
         }
@@ -13025,6 +14390,18 @@ pub const CodeGen = struct {
             defer self.alloc.free(ladder);
             try self.emit_c_string_literal(ladder);
             return true;
+        }
+        if (std.mem.eql(u8, name, "__metaagentmultiplier")) {
+            if (args.len == 0) {
+                try self.emit_c_string_literal(meta_module.agentMultiplierText());
+                return true;
+            }
+            if (args.len == 1 and args[0].* == .string_lit) {
+                const hint = meta_module.agentMultiplierFor(args[0].string_lit.val);
+                try self.emit_c_string_literal(hint);
+                return true;
+            }
+            return false;
         }
         if (std.mem.eql(u8, name, "__rewrite_describe") and args.len == 1 and args[0].* == .string_lit) {
             const description = rewrite_rules.bundleDescription(args[0].string_lit.val) orelse return false;
@@ -15003,13 +16380,7 @@ pub const CodeGen = struct {
             if (coerced) self.emit_lua_result_coerce_suffix(result_rt);
             return true;
         } else if (std.mem.eql(u8, name, "error")) {
-            self.p("lua_error(", .{});
-            if (args.len > 0) {
-                try self.emit_as_lua_value(args[0]);
-            } else {
-                self.p("lua_val_nil()", .{});
-            }
-            self.p(")", .{});
+            try self.emit_fatal_error(if (args.len > 0) args[0] else null);
             return true;
         } else if (std.mem.eql(u8, name, "pcall")) {
             const want_bool = result_rt == .bool;
@@ -15241,6 +16612,14 @@ pub const CodeGen = struct {
             if (want_cstr) self.p(")", .{});
             return true;
         } else if (std.mem.eql(u8, name, "tonumber")) {
+            if (!self.moduleNeedsLuaRuntime() and args.len == 1 and self.expr_type(args[0]) == .str) {
+                if (result_rt.is_integer()) self.p("((int64_t)(", .{});
+                self.p("strtod(", .{});
+                try self.emit_expr(args[0]);
+                self.p(", NULL)", .{});
+                if (result_rt.is_integer()) self.p(")", .{});
+                return true;
+            }
             if ((result_rt == .f64 or result_rt == .f32) and args.len == 1) {
                 const at = self.expr_type(args[0]);
                 if (at.is_numeric()) {
@@ -15317,8 +16696,52 @@ pub const CodeGen = struct {
         return switch (e.*) {
             .string_lit => true,
             .name => self.expr_type(e) == .str,
+            .index => self.expr_type(e) == .str and (self.is_native_dense_module_index(e.index.obj) or
+                self.req_module_dense_index_info(e.index.obj) != null),
+            // A typed call returning str lowers to a native `const char*` when
+            // the module uses native lowering (native_scalar_mode or module
+            // knowledge >= native). In that mode emit directly; otherwise the
+            // call may still return a boxed value.
+            .call => blk: {
+                if (self.infer_req_module_call_return_type(e)) |rt| {
+                    if (rt == .str) break :blk true;
+                }
+                if (self.expr_type(e) != .str) break :blk false;
+                if (self.moduleUsesFullNativeLowering()) break :blk true;
+                if (self.current_func_name) |name| break :blk self.funcUsesNativeLowering(name);
+                break :blk false;
+            },
             else => false,
         };
+    }
+
+    /// Emit `strcmp(lhs, rhs)` where a native operand emits directly as
+    /// `const char*` and a dynamic operand is unwrapped via `lua_to_str`.
+    /// Shared by ==/!=/< etc. string comparison paths (no boxed dispatch).
+    fn emitStrCompareOperands(
+        self: *CodeGen,
+        lhs: *const ast.Expr,
+        rhs: *const ast.Expr,
+        lhs_c: bool,
+        rhs_c: bool,
+    ) !void {
+        self.p("strcmp(", .{});
+        if (lhs_c) {
+            try self.emit_expr(lhs);
+        } else {
+            self.p("lua_to_str(", .{});
+            try self.emit_as_lua_value(lhs);
+            self.p(")", .{});
+        }
+        self.p(", ", .{});
+        if (rhs_c) {
+            try self.emit_expr(rhs);
+        } else {
+            self.p("lua_to_str(", .{});
+            try self.emit_as_lua_value(rhs);
+            self.p(")", .{});
+        }
+        self.p(")", .{});
     }
 
     fn expr_is_raw_c_intrinsic(_: *CodeGen, e: *const ast.Expr) bool {
@@ -15346,6 +16769,20 @@ pub const CodeGen = struct {
             if (std.mem.eql(u8, name, m)) return true;
         }
         return false;
+    }
+
+    /// True when `emit_expr(e)` produces a pointer into a boxed lua_String
+    /// (whose length header duo_str_len can read): generic lua_Value-emitting
+    /// exprs coerced via lua_to_str, or recognized stdlib string-module calls
+    /// (string.char/sub/rep/...) that lower through lua_str_* and are unwrapped
+    /// with lua_to_str. Plain native strings (concat, params, native calls,
+    /// literals) are NOT lua_String-backed.
+    fn expr_is_boxed_string_ptr(self: *CodeGen, e: *const ast.Expr) bool {
+        if (self.expr_emits_lua_value(e)) return true;
+        if (e.* != .call or e.call.func.* != .field) return false;
+        const f = e.call.func.field;
+        if (f.obj.* != .name or !self.expr_is_recognized_stdlib_module(f.obj.name.ident)) return false;
+        return self.expr_type(e) == .str;
     }
 
     fn expr_emits_lua_value(self: *CodeGen, e: *const ast.Expr) bool {
@@ -16109,18 +17546,31 @@ pub const CodeGen = struct {
         return false;
     }
 
+    fn try_emit_native_tonumber_or(self: *CodeGen, b: anytype) E!bool {
+        if (b.op != .@"or" or self.moduleNeedsLuaRuntime()) return false;
+        if (b.lhs.* != .call or b.lhs.call.func.* != .name) return false;
+        if (!std.mem.eql(u8, b.lhs.call.func.name.ident, "tonumber")) return false;
+        if (b.lhs.call.args.len != 1 or self.expr_type(b.lhs.call.args[0]) != .str) return false;
+        self.p("({ const char* _duo_s = ", .{});
+        try self.emit_expr(b.lhs.call.args[0]);
+        self.p("; char* _duo_ep; double _duo_v = strtod(_duo_s, &_duo_ep); (_duo_ep == _duo_s) ? (", .{});
+        try self.emit_expr(b.rhs);
+        self.p(") : _duo_v; })", .{});
+        return true;
+    }
+
     fn try_emit_native_string_transform(self: *CodeGen, fname: []const u8, obj: *ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         if (result_rt != .str) return false;
         if (std.mem.eql(u8, fname, "lower") or std.mem.eql(u8, fname, "upper") or std.mem.eql(u8, fname, "reverse")) {
             if (args.len != 0) return false;
-            self.p("lua_str_{s}_cstr(", .{fname});
+            self.p("duo_str_{s}_cstr(", .{fname});
             try self.emit_mem_value_as(obj, .str);
             self.p(")", .{});
             return true;
         }
         if (std.mem.eql(u8, fname, "sub")) {
             if (args.len == 0 or args.len > 2) return false;
-            self.p("lua_str_sub_cstr(", .{});
+            self.p("duo_str_sub_cstr(", .{});
             try self.emit_mem_value_as(obj, .str);
             self.p(", ", .{});
             self.p("(int64_t)(", .{});
@@ -16148,11 +17598,17 @@ pub const CodeGen = struct {
                 return true;
             }
             if (self.expr_type(args[0]) == .str) {
+                // Boxed strings (lua_to_str(...) of a boxed value or a recognized
+                // stdlib string call) carry a lua_String header whose len
+                // duo_str_len reads directly. Plain native strings (concat
+                // results, params, native calls, literals) are NOT lua_String-
+                // backed — reading the header reads garbage, so use strlen.
+                const is_boxed = self.expr_is_boxed_string_ptr(args[0]);
                 if (result_rt.is_numeric()) {
                     var buf: [64]u8 = undefined;
-                    self.p("(({s})duo_str_len(", .{result_rt.c_type(&buf)});
+                    self.p("(({s}){s}(", .{ result_rt.c_type(&buf), if (is_boxed) "duo_str_len" else "strlen" });
                 } else {
-                    self.p("((int64_t)duo_str_len(", .{});
+                    self.p("((int64_t){s}(", .{if (is_boxed) "duo_str_len" else "strlen"});
                 }
                 try self.emit_expr(args[0]);
                 self.p("))", .{});
@@ -17461,13 +18917,23 @@ pub const CodeGen = struct {
 
             if (mod_path == null) continue;
             defer self.alloc.free(mod_path.?);
+            const already_embedded = self.embedded_module_paths.contains(mod_path.?);
             const cname = try self.module_c_name(name);
-            if (!self.emit_embedded_module(cname, mod_path.?)) {
-                term.warn("failed to embed module '{s}' from {s}", .{ name, mod_path.? });
-                continue;
+            if (!already_embedded) {
+                if (!self.emit_embedded_module(cname, mod_path.?)) {
+                    term.warn("failed to embed module '{s}' from {s}", .{ name, mod_path.? });
+                    self.alloc.free(cname);
+                    continue;
+                }
             }
             try embedded.append(self.alloc, .{ .name = name, .cname = cname });
-            // Recursively collect nested require names from the embedded module
+            // Recursively collect nested require names from the embedded module.
+            // This must run even when the module was ALREADY embedded (pulled in
+            // as some other module's dependency): emit_embedded_module records
+            // the file but does not add its requires to this discovery worklist,
+            // so skipping it here silently drops every module 3+ hops from the
+            // entry point — they compile in but are never registered, and the
+            // failure only surfaces at runtime as "module not found".
             {
                 const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path.?, self.alloc, .unlimited) catch |e| {
                     term.err("emit_required_modules: re-read failed for {s}: {}", .{ mod_path.?, e });
@@ -17493,6 +18959,8 @@ pub const CodeGen = struct {
         for (embedded.items) |e| {
             if (std.mem.startsWith(u8, e.name, "std.")) std_root_count += 1;
         }
+
+        if (!self.moduleNeedsLuaRuntime()) return;
 
         // Forward-declare duo_build_std_root if needed (defined after duo_register_modules)
         if (needs_std_root) {
@@ -17538,6 +19006,500 @@ pub const CodeGen = struct {
                 try out.append(self.alloc, '_');
         }
         return out.toOwnedSlice(self.alloc);
+    }
+
+    fn req_path_from_expr(expr: *const ast.Expr) ?[]const u8 {
+        if (expr.* != .call) return null;
+        const c = &expr.call;
+        if (c.func.* != .name) return null;
+        const fn_name = c.func.name.ident;
+        if (!std.mem.eql(u8, fn_name, "req") and !std.mem.eql(u8, fn_name, "require")) return null;
+        if (c.args.len != 1 or c.args[0].* != .string_lit) return null;
+        return c.args[0].string_lit.val;
+    }
+
+    /// True when `req("path")` / `require("path")` resolves to an embeddable native module.
+    fn req_call_expr_is_native_direct(self: *CodeGen, expr: *const ast.Expr) bool {
+        const path = req_path_from_expr(expr) orelse return false;
+        return self.req_module_is_native_direct(path);
+    }
+
+    fn for_each_req_path_in_module(mod: *const ast.Module, ctx: *anyopaque, cb: *const fn (ctx: *anyopaque, path: []const u8) void) void {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.inits) |init_expr| {
+                        if (req_path_from_expr(init_expr)) |path| cb(ctx, path);
+                    }
+                },
+                .assign => |*as| {
+                    if (as.values.len == 1) {
+                        if (req_path_from_expr(as.values[0])) |path| cb(ctx, path);
+                    }
+                },
+                .global_decl => |*gd| {
+                    for (gd.inits) |init_expr| {
+                        if (req_path_from_expr(init_expr)) |path| cb(ctx, path);
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn project_root_dir(self: *const CodeGen) []const u8 {
+        if (self.src_path.len == 0) return ".";
+        const dir = std.fs.path.dirname(self.src_path) orelse ".";
+        var d = dir;
+        while (d.len > 0) {
+            var pbuf: [1024]u8 = undefined;
+            const path_to_check = std.fmt.bufPrint(&pbuf, "{s}/src", .{d}) catch break;
+            const cwd = Io.Dir.cwd();
+            var fd = Io.Dir.openDir(cwd, self.io, path_to_check, .{}) catch {
+                if (std.mem.eql(u8, d, ".")) break;
+                d = std.fs.path.dirname(d) orelse ".";
+                continue;
+            };
+            fd.close(self.io);
+            return d;
+        }
+        return dir;
+    }
+
+    fn find_module_file_for_req(self: *CodeGen, req_name: []const u8) ?[]const u8 {
+        const project_root = self.project_root_dir();
+        const vendor_prefix = "vendor.";
+        const core_prefix = "std.core.";
+        const has_vendor = std.mem.startsWith(u8, req_name, vendor_prefix);
+        const has_core = std.mem.startsWith(u8, req_name, core_prefix);
+        const strip_len: usize = if (has_vendor) vendor_prefix.len else if (has_core) core_prefix.len else 0;
+        const mod_path_name = blk: {
+            const s = req_name[strip_len..];
+            var buf: [512]u8 = undefined;
+            if (s.len > buf.len) return null;
+            for (s, 0..) |c, i| {
+                buf[i] = if (c == '.') '/' else c;
+            }
+            break :blk buf[0..s.len];
+        };
+
+        if (self.find_module_path(project_root, mod_path_name)) |path| return path;
+        if (self.stdlib_root) |root| {
+            if (self.find_module_path(root, mod_path_name)) |path| return path;
+        }
+        if (self.find_module_path("lib", mod_path_name)) |path| return path;
+        if (has_vendor) {
+            if (self.find_module_path("vendor", mod_path_name)) |path| return path;
+        }
+        if (has_core) {
+            if (self.find_module_path("lib/core", mod_path_name)) |path| return path;
+        }
+        return null;
+    }
+
+    /// True when `req "path"` resolves to a module already embedded for native-direct dispatch.
+    fn embedded_req_is_native(self: *CodeGen, req_path: []const u8) bool {
+        const mod_path = self.find_module_file_for_req(req_path) orelse return false;
+        return self.embedded_module_paths.contains(mod_path);
+    }
+
+    /// True when a req target is a stdlib/user module that will embed to native C (compile-time).
+    fn req_module_is_native_direct(self: *CodeGen, req_path: []const u8) bool {
+        if (!self.duo_mode) return false;
+        if (self.embedded_req_is_native(req_path)) return true;
+        return self.find_module_file_for_req(req_path) != null;
+    }
+
+    /// True when a `req` binding may omit `lua_require` (embedded native module).
+    fn req_module_skips_lua_binding(self: *CodeGen, path: []const u8) bool {
+        return self.req_module_is_native_direct(path);
+    }
+
+    const ReqDepCtx = struct {
+        cg: *CodeGen,
+        ok: bool = true,
+    };
+
+    fn collect_req_dep_cb(ctx: *anyopaque, path: []const u8) void {
+        const rctx: *ReqDepCtx = @ptrCast(@alignCast(ctx));
+        if (!rctx.ok) return;
+        const mod_path = rctx.cg.find_module_file_for_req(path) orelse return;
+        if (rctx.cg.embedded_module_paths.contains(mod_path)) return;
+        const cname = rctx.cg.module_c_name(path) catch {
+            rctx.ok = false;
+            return;
+        };
+        defer rctx.cg.alloc.free(cname);
+        if (!rctx.cg.emit_embedded_module(cname, mod_path)) rctx.ok = false;
+    }
+
+    fn ensure_req_deps_embedded(self: *CodeGen, mod: *const ast.Module) bool {
+        var ctx: ReqDepCtx = .{ .cg = self };
+        for_each_req_path_in_module(mod, &ctx, collect_req_dep_cb);
+        return ctx.ok;
+    }
+
+    fn type_expr_is_explicit_any(type_expr: ast.TypeExpr) bool {
+        return type_expr == .named and std.mem.eql(u8, type_expr.named, "any");
+    }
+
+    fn func_decl_blocks_full_native_ast(fd: *const ast.FuncDecl) bool {
+        if (type_expr_is_explicit_any(fd.func.ret_type)) return true;
+        for (fd.func.params) |param| {
+            if (type_expr_is_explicit_any(param.typ)) return true;
+        }
+        return false;
+    }
+
+    fn module_ast_blocks_full_native_ast(mod: *const ast.Module) bool {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* != .func_decl) continue;
+            if (func_decl_blocks_full_native_ast(&stmt.func_decl)) return true;
+        }
+        return false;
+    }
+
+    fn module_path_allows_full_native_embed(self: *CodeGen, path: []const u8) bool {
+        const cwd = Io.Dir.cwd();
+        const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch return false;
+        defer self.alloc.free(src);
+        var lex = @import("lexer.zig").Lexer.init(src, path);
+        var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
+        const submod = parser.parse_module() catch return false;
+        return !module_ast_blocks_full_native_ast(&submod);
+    }
+
+    fn req_deps_allow_full_native(self: *CodeGen, mod: *const ast.Module) bool {
+        if (self.src_path.len == 0) return true;
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        self.collect_require_names_block(&mod.body, &names) catch return false;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) {
+                self.collect_require_names_block(&stmt.func_decl.func.body, &names) catch return false;
+            }
+        }
+
+        var seen_paths: std.StringArrayHashMapUnmanaged(void) = .{};
+        defer seen_paths.deinit(self.alloc);
+        var seen_names: std.StringArrayHashMapUnmanaged(void) = .{};
+        defer seen_names.deinit(self.alloc);
+
+        var i: usize = 0;
+        while (i < names.items.len) : (i += 1) {
+            const name = names.items[i];
+            if (seen_names.contains(name)) continue;
+            seen_names.put(self.alloc, name, {}) catch return false;
+            const mod_path = self.find_module_file_for_req(name) orelse continue;
+            if (seen_paths.contains(mod_path)) continue;
+            seen_paths.put(self.alloc, mod_path, {}) catch return false;
+            if (!self.module_path_allows_full_native_embed(mod_path)) return false;
+
+            const sub_src = Io.Dir.readFileAlloc(Io.Dir.cwd(), self.io, mod_path, self.alloc, .unlimited) catch return false;
+            defer self.alloc.free(sub_src);
+            var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
+            var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
+            var sub_mod = sub_parser.parse_module() catch return false;
+            self.collect_require_names_block(&sub_mod.body, &names) catch return false;
+            for (sub_mod.body.stmts) |*sub_stmt| {
+                if (sub_stmt.* == .func_decl) {
+                    self.collect_require_names_block(&sub_stmt.func_decl.func.body, &names) catch return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    fn collect_req_module_bindings(self: *CodeGen, mod: *const ast.Module) !void {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.names, 0..) |*ln, i| {
+                        if (i >= ld.inits.len) continue;
+                        const path = req_path_from_expr(ld.inits[i]) orelse continue;
+                        try self.try_register_req_binding(ln.ident, path);
+                        if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
+                    }
+                },
+                .assign => |*as| {
+                    if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
+                    const path = req_path_from_expr(as.values[0]) orelse continue;
+                    try self.try_register_req_binding(as.targets[0].name.ident, path);
+                    if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(as.targets[0].name.ident);
+                },
+                .global_decl => |*gd| {
+                    for (gd.names, 0..) |*ln, i| {
+                        if (i >= gd.inits.len) continue;
+                        const path = req_path_from_expr(gd.inits[i]) orelse continue;
+                        try self.try_register_req_binding(ln.ident, path);
+                        if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn mark_req_native_direct(self: *CodeGen, name: []const u8) !void {
+        const owned = try self.alloc.dupe(u8, name);
+        try self.req_native_direct.put(self.alloc, owned, {});
+    }
+
+    fn try_register_req_binding(self: *CodeGen, name: []const u8, path: []const u8) !void {
+        const cname = try self.module_c_name(path);
+        if (self.req_module_bindings.get(name)) |existing| {
+            if (std.mem.eql(u8, existing, cname)) return;
+        }
+        const owned = try self.alloc.dupe(u8, name);
+        try self.req_module_bindings.put(self.alloc, owned, cname);
+    }
+
+    fn precollect_req_bindings_in_block(self: *CodeGen, block: *const ast.Block) !void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.names, 0..) |*ln, i| {
+                        if (i >= ld.inits.len) continue;
+                        if (req_path_from_expr(ld.inits[i])) |path| {
+                            try self.try_register_req_binding(ln.ident, path);
+                            if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
+                        }
+                    }
+                },
+                .assign => |*as| {
+                    if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
+                    if (req_path_from_expr(as.values[0])) |path| {
+                        try self.try_register_req_binding(as.targets[0].name.ident, path);
+                        if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(as.targets[0].name.ident);
+                    }
+                },
+                .if_stmt => |*is| {
+                    try self.precollect_req_bindings_in_block(&is.then);
+                    for (is.elseifs) |*ei| try self.precollect_req_bindings_in_block(&ei.body);
+                    if (is.else_body) |*eb| try self.precollect_req_bindings_in_block(eb);
+                },
+                .while_loop => |*wl| try self.precollect_req_bindings_in_block(&wl.body),
+                .repeat_loop => |*rl| try self.precollect_req_bindings_in_block(&rl.body),
+                .do_block => |*db| try self.precollect_req_bindings_in_block(&db.body),
+                else => {},
+            }
+        }
+    }
+
+    /// Module-level numeric assigns (e.g. `KIND_FUN = 14`) as file-scope natives.
+    fn embedded_module_scalar_const_assign(mod: *const ast.Module, name: []const u8) ?*const ast.Expr {
+        for (mod.body.stmts) |*stmt| {
+            const as = switch (stmt.*) {
+                .assign => |*a| a,
+                else => continue,
+            };
+            if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
+            if (!std.mem.eql(u8, as.targets[0].name.ident, name)) continue;
+            const val = as.values[0];
+            switch (val.*) {
+                .int_lit, .float_lit, .true_lit, .false_lit => return val,
+                else => return null,
+            }
+        }
+        return null;
+    }
+
+    fn emit_embedded_module_file_scope_constants(self: *CodeGen, mod: *const ast.Module) E!void {
+        if (self.current_module_cname.len == 0) return;
+        if (!self.native_scalar_mode and !self.mixed_scalar_mode) return;
+        for (mod.body.stmts) |*stmt| {
+            const as = switch (stmt.*) {
+                .assign => |*a| a,
+                else => continue,
+            };
+            if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
+            const val = as.values[0];
+            const rt: RT = switch (val.*) {
+                .int_lit => .i64,
+                .float_lit => .f64,
+                .true_lit, .false_lit => .bool,
+                else => continue,
+            };
+            var name_buf: [256]u8 = undefined;
+            const ident = as.targets[0].name.ident;
+            const mname = self.mangled_name(ident, &name_buf);
+            self.p("static const ", .{});
+            self.typ(rt);
+            self.p(" {s} = ", .{mname});
+            try self.emit_expr(val);
+            self.p(";\n", .{});
+            try self.note_comptime_binding(ident, val);
+        }
+    }
+
+    fn lookup_req_module_dense_table(self: *CodeGen, mod_cname: []const u8, field: []const u8) ?NativeDenseModuleTable {
+        var it = self.native_dense_module_tables.iterator();
+        while (it.next()) |entry| {
+            if (!std.mem.eql(u8, entry.key_ptr.*, field)) continue;
+            if (!std.mem.eql(u8, entry.value_ptr.module_cname, mod_cname)) continue;
+            return entry.value_ptr.*;
+        }
+        return null;
+    }
+
+    fn req_module_dense_index_info(self: *CodeGen, obj: *const ast.Expr) ?NativeDenseModuleTable {
+        if (obj.* != .field) return null;
+        const f = obj.field;
+        if (f.obj.* != .name) return null;
+        const mod_cname = self.req_module_bindings.get(f.obj.name.ident) orelse return null;
+        return self.lookup_req_module_dense_table(mod_cname, f.field);
+    }
+
+    fn try_emit_req_module_const_field(
+        self: *CodeGen,
+        mod_cname: []const u8,
+        field: []const u8,
+        result_rt: RT,
+    ) E!bool {
+        var sym_buf: [384]u8 = undefined;
+        const sym = std.fmt.bufPrint(&sym_buf, "{s}__{s}", .{ mod_cname, field }) catch return false;
+        const cast_rt = result_rt;
+        if (cast_rt.is_integer() or cast_rt.is_float() or cast_rt == .bool) {
+            if (cast_rt.is_integer()) {
+                self.p("((", .{});
+                self.typ(cast_rt);
+                self.p("){s})", .{sym});
+            } else if (cast_rt.is_float()) {
+                self.p("((", .{});
+                self.typ(cast_rt);
+                self.p("){s})", .{sym});
+            } else {
+                self.p("{s}", .{sym});
+            }
+            return true;
+        }
+        if (cast_rt == .str) {
+            self.p("{s}", .{sym});
+            return true;
+        }
+        return false;
+    }
+
+    fn expr_is_req_module_const_field(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .field) return false;
+        if (e.field.obj.* != .name) return false;
+        return self.req_module_bindings.contains(e.field.obj.name.ident);
+    }
+
+    fn expr_is_native_record_field(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .field) return false;
+        const obj_rt = self.expr_type(e.field.obj);
+        return self.type_lowers_native(obj_rt);
+    }
+
+    fn lookup_req_module_func_type(self: *CodeGen, mod_cname: []const u8, field: []const u8) ?RT {
+        var name_buf: [256]u8 = undefined;
+        const saved_cname = self.current_module_cname;
+        self.current_module_cname = mod_cname;
+        const mname = self.mangled_name(field, &name_buf);
+        const body = self.func_bodies.get(mname);
+        const ft: RT = if (body) |b| self.func_expr_type(b) else blk: {
+            if (self.func_decls.get(mname)) |fd| {
+                const ret = self.resolve_type(fd.func.ret_type);
+                const params = self.alloc.alloc(RT, fd.func.params.len) catch break :blk .any;
+                for (fd.func.params, 0..) |par, i| {
+                    params[i] = self.resolve_type(par.typ);
+                }
+                const ret_ptr = self.alloc.create(RT) catch break :blk .any;
+                ret_ptr.* = ret;
+                break :blk .{ .func = .{ .params = params, .ret = ret_ptr, .is_native = fd.func.is_typed, .has_vararg = fd.func.vararg or fd.func.vararg_name != null } };
+            }
+            break :blk .any;
+        };
+        self.current_module_cname = saved_cname;
+        if (ft != .func) return null;
+        return ft;
+    }
+
+    fn infer_req_module_call_return_type(self: *CodeGen, expr: *const ast.Expr) ?RT {
+        if (expr.* != .call) return null;
+        const c = expr.call;
+        if (c.func.* != .field) return null;
+        const f = &c.func.field;
+        if (f.obj.* != .name) return null;
+        const mod_cname = self.req_module_bindings.get(f.obj.name.ident) orelse return null;
+        const ft = self.lookup_req_module_func_type(mod_cname, f.field) orelse return null;
+        var ret = ft.func.ret.*;
+        if (ret == .@"struct") {
+            if (self.record_aliases.get(ret.@"struct".name)) |alias_rt| ret = alias_rt;
+        }
+        return ret;
+    }
+
+    fn try_emit_req_module_field_call(
+        self: *CodeGen,
+        func: *const ast.Expr,
+        args: []*ast.Expr,
+        result_rt: RT,
+    ) E!bool {
+        if (func.* != .field) return false;
+        const f = &func.field;
+        if (f.obj.* != .name) return false;
+        const mod_cname = self.req_module_bindings.get(f.obj.name.ident) orelse return false;
+
+        var name_buf: [256]u8 = undefined;
+        const saved_cname = self.current_module_cname;
+        const saved_body = self.current_func_body;
+        self.current_module_cname = mod_cname;
+        const mname = self.mangled_name(f.field, &name_buf);
+        const body = self.func_bodies.get(mname);
+        const ft: RT = if (body) |b| self.func_expr_type(b) else .any;
+        if (body == null or ft != .func) {
+            self.current_module_cname = saved_cname;
+            return false;
+        }
+        self.current_func_body = body;
+
+        const ret_native = self.type_lowers_native(ft.func.ret.*);
+        const effective_result: RT = if (result_rt == .any and ret_native) ft.func.ret.* else result_rt;
+        const caller_native = self.type_lowers_native(effective_result);
+        const needs_lua_box = blk: {
+            if (!(ret_native and caller_native)) break :blk true;
+            // Native str→str: emit const char* directly (no lua_val_from_str wrapper).
+            if (ret_native and caller_native and ft.func.ret.* == .str) break :blk false;
+            if (self.current_func_name) |fname| {
+                if (self.funcUsesNativeLowering(fname)) break :blk false;
+            }
+            if (self.moduleNeedsLuaRuntime() and ft.func.ret.* == .str) break :blk true;
+            break :blk false;
+        };
+        if (needs_lua_box) {
+            switch (ft.func.ret.*) {
+                .str => self.p("lua_val_from_str(", .{}),
+                .i64, .u64, .i32, .u32, .i16, .u16, .i8, .u8 => self.p("lua_val_from_int((int64_t)(", .{}),
+                .f64, .f32 => self.p("lua_val_from_num((double)(", .{}),
+                .bool => self.p("lua_val_from_bool(", .{}),
+                else => self.p("(", .{}),
+            }
+        }
+        self.p("{s}(", .{mname});
+        for (args, 0..) |arg, i| {
+            if (i > 0) self.p(", ", .{});
+            const pt: RT = if (i < ft.func.params.len) ft.func.params[i] else .any;
+            if (self.native_record_param_by_ptr(pt)) {
+                self.p("&", .{});
+                try self.emit_expr(arg);
+            } else {
+                try self.emit_arg_for_param(arg, pt, true);
+            }
+        }
+        self.p(")", .{});
+        self.current_module_cname = saved_cname;
+        self.current_func_body = saved_body;
+        if (needs_lua_box) {
+            switch (ft.func.ret.*) {
+                .str => self.p(")", .{}),
+                .i64, .u64, .i32, .u32, .i16, .u16, .i8, .u8, .f64, .f32 => self.p("))", .{}),
+                .bool => self.p(")", .{}),
+                else => self.p(")", .{}),
+            }
+        }
+        return true;
     }
 
     fn add_module_export(
@@ -17804,7 +19766,46 @@ pub const CodeGen = struct {
         try self.promote_module_captured_locals(mod, &sem.module_globals, &sem.type_map);
     }
 
+    fn emit_native_dense_module_table_as_lua_value(self: *CodeGen, name: []const u8) E!void {
+        const nd = self.native_dense_module_tables.get(name).?;
+        self.p("({{\n", .{});
+        self.indent += 1;
+        self.ind();
+        self.p("lua_Value tmp = lua_table_new_with_capacity({d}, 0);\n", .{nd.len});
+        var i: usize = 0;
+        while (i < nd.len) : (i += 1) {
+            self.ind();
+            const slot: i64 = @intCast(i + 1);
+            switch (nd.elem) {
+                .i64 => {
+                    self.p("lua_table_set_raw_i64(tmp, {d}, lua_val_from_int((int64_t)", .{slot});
+                    self.p("{s}[{d}]));\n", .{ nd.c_symbol, slot });
+                },
+                .f64 => {
+                    self.p("lua_table_set_raw_i64(tmp, {d}, lua_val_from_num((double)", .{slot});
+                    self.p("{s}[{d}]));\n", .{ nd.c_symbol, slot });
+                },
+                .str => {
+                    self.p("lua_table_set_raw_i64(tmp, {d}, lua_val_from_str({s}[{d}]));\n", .{ slot, nd.c_symbol, slot });
+                },
+            }
+        }
+        self.ind();
+        self.p("tmp;\n", .{});
+        self.indent -= 1;
+        self.ind();
+        self.p("}})", .{});
+    }
+
     fn emit_duo_module_return_table(self: *CodeGen, mod: *const ast.Module) E!void {
+        // Native-direct embedded modules: exports are C symbols; no lua thunk table.
+        if (self.skip_lua_thunk_emit()) {
+            self.ind();
+            self.pl("(void)0; /* native-direct module — use req field calls, not lua_require */", .{});
+            self.ind();
+            self.p("return lua_val_nil();\n", .{});
+            return;
+        }
         var names: std.ArrayList([]const u8) = .empty;
         defer names.deinit(self.alloc);
         try self.collect_duo_module_exports(mod, &names);
@@ -17821,12 +19822,18 @@ pub const CodeGen = struct {
             if (find_duo_module_func(mod, name)) |fd| {
                 const ft = self.func_expr_type(&fd.func);
                 if (ft == .func) {
-                    try self.emit_native_func_name_as_lua_value(name, ft.func.params, ft.func.is_native);
+                    try self.emit_native_func_name_as_lua_value(name, ft.func.params, ft.func.is_compile_only);
                 } else {
                     try self.emit_as_lua_value(&name_expr);
                 }
             } else if (find_duo_module_const(mod, name)) |cval| {
                 try self.emit_as_lua_value(cval);
+            } else if (embedded_module_scalar_const_assign(mod, name)) |_| {
+                self.p("lua_val_from_int((int64_t)(", .{});
+                self.emit_comptime_const_var_name(name);
+                self.p("))", .{});
+            } else if (self.is_native_dense_module_table(name)) {
+                try self.emit_native_dense_module_table_as_lua_value(name);
             } else if (self.module_globals) |globals| {
                 if (globals.get(name) != null) {
                     // `find_duo_module_func` above already handled declared
@@ -17847,7 +19854,36 @@ pub const CodeGen = struct {
         self.p("return __duo_module;\n", .{});
     }
 
+    /// True when two paths name the same file on disk. Falls back to a byte
+    /// comparison when either path cannot be resolved (in-memory tests).
+    fn same_source_file(alloc: Allocator, io: Io, a: []const u8, b: []const u8) bool {
+        if (std.mem.eql(u8, a, b)) return true;
+        const cwd = Io.Dir.cwd();
+        const ra = Io.Dir.realPathFileAlloc(cwd, io, a, alloc) catch return false;
+        defer alloc.free(ra);
+        const rb = Io.Dir.realPathFileAlloc(cwd, io, b, alloc) catch return false;
+        defer alloc.free(rb);
+        return std.mem.eql(u8, ra, rb);
+    }
+
     fn emit_embedded_module(self: *CodeGen, cname: []const u8, path: []const u8) bool {
+        if (self.embedded_module_paths.contains(path)) return true;
+        // A module that transitively requires the entry module must not
+        // re-embed it: the entry module's file-scope @c.emit blocks and
+        // typedefs are already in the output, so embedding it again emits
+        // them twice and the C compiler rejects the redefinitions. Circular
+        // requires (a requires b, b requires a) make this reachable.
+        if (self.src_path.len > 0 and same_source_file(self.alloc, self.io, path, self.src_path)) return true;
+        const owned_path = self.alloc.dupe(u8, path) catch {
+            term.err("emit_embedded_module: oom tracking {s}", .{path});
+            return false;
+        };
+        self.embedded_module_paths.put(self.alloc, owned_path, {}) catch {
+            self.alloc.free(owned_path);
+            term.err("emit_embedded_module: oom tracking {s}", .{path});
+            return false;
+        };
+
         const cwd = Io.Dir.cwd();
         const src = Io.Dir.readFileAlloc(cwd, self.io, path, self.alloc, .unlimited) catch |e| {
             term.err("emit_embedded_module: readFileAlloc failed for {s}: {}", .{ path, e });
@@ -17880,13 +19916,47 @@ pub const CodeGen = struct {
         const old_duo_mode = self.duo_mode;
         const old_module_globals = self.module_globals;
         const old_module_cname = self.current_module_cname;
+        const old_native_scalar = self.native_scalar_mode;
+        const old_mixed_scalar = self.mixed_scalar_mode;
+        const old_native_funcs = self.native_scalar_funcs;
+        const old_substrate_native = self.substrate_native_mode;
+        const old_module_knowledge = self.module_knowledge;
+        const parent_full_native = self.moduleUsesFullNativeLowering();
+        self.embed_parent_full_native = parent_full_native;
         self.duo_mode = subsem.duo_mode;
         self.module_globals = &subsem.module_globals;
         self.current_module_cname = cname;
+        const old_req_bindings = self.req_module_bindings;
+        self.req_module_bindings = .{};
+        const old_alias_defs = self.alias_defs.clone(self.alloc) catch self.alias_defs;
         defer {
+            var req_it = self.req_module_bindings.iterator();
+            while (req_it.next()) |entry| {
+                self.alloc.free(entry.key_ptr.*);
+            }
+            self.req_module_bindings.deinit(self.alloc);
+            self.alias_defs.deinit(self.alloc);
+            self.alias_defs = old_alias_defs;
+            // record_aliases: submodule aliases remain merged in the parent map.
+            self.req_module_bindings = old_req_bindings;
             self.duo_mode = old_duo_mode;
             self.module_globals = old_module_globals;
             self.current_module_cname = old_module_cname;
+            self.native_scalar_mode = old_native_scalar;
+            self.mixed_scalar_mode = old_mixed_scalar;
+            self.native_scalar_funcs.deinit(self.alloc);
+            self.native_scalar_funcs = old_native_funcs;
+            self.substrate_native_mode = old_substrate_native;
+            self.module_knowledge = old_module_knowledge;
+            self.embed_parent_full_native = false;
+        }
+        self.collect_req_module_bindings(&submod) catch |e| {
+            term.err("emit_embedded_module: req module bindings failed for {s}: {}", .{ path, e });
+            return false;
+        };
+        if (!self.ensure_req_deps_embedded(&submod)) {
+            term.err("emit_embedded_module: req dependency embed failed for {s}", .{path});
+            return false;
         }
         // Copy submodule type map into main type map so codegen can resolve types
         // for submodule expressions.
@@ -17898,16 +19968,47 @@ pub const CodeGen = struct {
             };
         }
 
+        self.populate_alias_defs(&submod) catch {};
+        self.populate_record_aliases(&submod) catch {};
+
         // Promote module-level mutable globals to static file-scope storage.
         // Functions are emitted at file scope, so they cannot see locals that were
         // declared inside the module-init function.  Static storage makes the
         // shared module state visible to every function in the module.
+        self.current_module = &submod;
+        self.native_scalar_mode = self.can_emit_native_scalar_module(&submod);
+        self.mixed_scalar_mode = false;
+        self.native_scalar_funcs = .empty;
+        if (!self.native_scalar_mode and self.compute_native_scalar_funcs(&submod)) {
+            self.mixed_scalar_mode = true;
+        }
+        if (self.mixed_scalar_mode) self.expand_native_scalar_func_transitive(&submod);
+        self.emit_embedded_module_file_scope_constants(&submod) catch |e| {
+            term.err("emit_embedded_module: file-scope constants failed for {s}: {}", .{ path, e });
+            return false;
+        };
+        self.collect_native_dense_module_tables(&submod) catch |e| {
+            term.err("emit_embedded_module: native dense table collect failed for {s}: {}", .{ path, e });
+            return false;
+        };
         if (self.module_globals) |globals| {
             var globals_it = globals.iterator();
             var any_global = false;
             while (globals_it.next()) |entry| {
-                any_global = true;
+                if (self.is_native_dense_module_table(entry.key_ptr.*)) continue;
+                if (embedded_module_scalar_const_assign(&submod, entry.key_ptr.*) != null) continue;
+                if (self.req_native_direct.contains(entry.key_ptr.*)) continue;
                 const rt = entry.value_ptr.*;
+                // Native-direct modules turn most `.any` globals into plain C
+                // symbols, so their declarations are dropped. A global the
+                // module body actually assigns at top level (the `M = {}`
+                // export-table idiom) is still live: its field writes and the
+                // `return M` are emitted, so dropping the declaration produces
+                // "use of undeclared identifier". Keep those.
+                if (self.skip_lua_thunk_emit() and rt == .any and
+                    !module_top_level_assigns(&submod, entry.key_ptr.*)) continue;
+                if (!self.moduleNeedsLuaRuntime() and rt == .any) continue;
+                any_global = true;
                 if (rt == .any) {
                     self.p("static lua_Value duo_g_{s}_{s};\n", .{ self.current_module_cname, entry.key_ptr.* });
                 } else {
@@ -17915,6 +20016,10 @@ pub const CodeGen = struct {
                     self.p("static {s} duo_g_{s}_{s};\n", .{ rt.c_type(&buf), self.current_module_cname, entry.key_ptr.* });
                 }
             }
+            self.emit_native_dense_module_table_decls() catch |e| {
+                term.err("emit_embedded_module: native dense table decl failed for {s}: {}", .{ path, e });
+                return false;
+            };
             if (any_global) self.p("\n", .{});
         }
 
@@ -18000,32 +20105,57 @@ pub const CodeGen = struct {
             return false;
         };
 
-        // Submodule-native lowering: compute per-submodule scalar eligibility so
-        // same-module calls (e.g. decode.read_byte inside read_i32_imm) emit direct
-        // C calls instead of broken lua_invoke function-pointer blocks.
+        // Submodule-native lowering: preserve per-submodule scalar eligibility
+        // (computed above) for direct C calls during function emission.
         const saved_native_scalar = self.native_scalar_mode;
         const saved_mixed_scalar = self.mixed_scalar_mode;
-        const saved_native_funcs = self.native_scalar_funcs;
-        self.native_scalar_funcs = .empty;
-        self.native_scalar_mode = self.can_emit_native_scalar_module(&submod);
-        self.mixed_scalar_mode = false;
-        if (!self.native_scalar_mode) {
-            if (self.compute_native_scalar_funcs(&submod)) {
-                self.mixed_scalar_mode = true;
-            }
-        }
         defer {
-            self.native_scalar_funcs.deinit(self.alloc);
-            self.native_scalar_funcs = saved_native_funcs;
             self.native_scalar_mode = saved_native_scalar;
             self.mixed_scalar_mode = saved_mixed_scalar;
+            self.current_module = null;
         }
+
+        self.collect_and_emit_record_decls(&submod) catch |e| {
+            term.err("emit_embedded_module: collect_and_emit_record_decls failed for {s}: {}", .{ path, e });
+            return false;
+        };
+
+        // Functions named by the module's export table (`M.foo = foo`) must be
+        // emitted even when they are not native-scalar eligible. The table holds
+        // lua_Values, so the `__lua` thunk has to exist; skipping them left the
+        // table entry referencing a bare, undefined identifier and the C compiler
+        // rejected the module (this is what broke `req "std.jit"` — every helper
+        // returning `any` was dropped, and only `arch`, which returns `str`,
+        // survived because it was devirtualized to a direct call).
+        var exported_fn_names: std.StringHashMapUnmanaged(void) = .{};
+        defer exported_fn_names.deinit(self.alloc);
+        for (submod.body.stmts) |*stmt| {
+            if (stmt.* != .assign) continue;
+            for (stmt.assign.values) |v| {
+                if (v.* == .name) {
+                    exported_fn_names.put(self.alloc, v.name.ident, {}) catch {};
+                }
+            }
+        }
+
+        const saved_exports_funcs = self.embedded_module_exports_funcs;
+        self.embedded_module_exports_funcs = true;
+        defer self.embedded_module_exports_funcs = saved_exports_funcs;
 
         // Forward-declare submodule functions
         for (sub_funcs.items) |fd| {
             if (fd.path.len == 1 and !fd.method) {
+                // Embedded-module functions are always emitted: they are the module's API,
+            // reachable through its export table. Filtering them by native-scalar
+            // eligibility dropped every helper with `any` in its signature while the
+            // table still referenced it, so `req "std.jit"`/`"std.mem"` could not
+            // compile at all (BUG C).
                 self.note_func_body(fd.path[0], &fd.func) catch |e| {
                     term.err("emit_embedded_module: func body registration failed for {s}: {}", .{ fd.path[0], e });
+                    return false;
+                };
+                self.note_func_decl(fd.path[0], fd) catch |e| {
+                    term.err("emit_embedded_module: func decl registration failed for {s}: {}", .{ fd.path[0], e });
                     return false;
                 };
                 self.emit_func_decl_forward(fd) catch |e| {
@@ -18036,6 +20166,7 @@ pub const CodeGen = struct {
         }
         // Emit submodule function definitions at file scope
         for (sub_funcs.items) |fd| {
+            if (self.current_module_cname.len > 0 and !self.embedded_module_exports_funcs and !self.funcUsesNativeLowering(fd.path[0])) continue;
             self.emit_func_def(fd) catch |e| {
                 term.err("emit_embedded_module: func def failed for {s}: {}", .{ fd.path[0], e });
                 return false;
@@ -18062,6 +20193,8 @@ pub const CodeGen = struct {
             self.p("}}\n", .{});
         }
         if (table_consts.items.len > 0) self.p("\n", .{});
+
+        if (self.embed_parent_full_native or self.moduleUsesFullNativeLowering()) return true;
 
         self.p("static lua_Value duo_mod_{s}(lua_Value _unused) {{\n", .{cname});
         self.p("    (void)_unused;\n", .{});
@@ -18093,9 +20226,19 @@ pub const CodeGen = struct {
                         return false;
                     };
                 },
-                else => self.emit_stmt(stmt) catch |e| {
-                    term.err("emit_embedded_module: stmt emit failed: {}", .{e});
-                    return false;
+                else => blk: {
+                    if (stmt.* == .assign) {
+                        const as = &stmt.assign;
+                        if (as.targets.len == 1 and as.targets[0].* == .name and
+                            embedded_module_scalar_const_assign(&submod, as.targets[0].name.ident) != null)
+                        {
+                            break :blk;
+                        }
+                    }
+                    self.emit_stmt(stmt) catch |e| {
+                        term.err("emit_embedded_module: stmt emit failed: {}", .{e});
+                        return false;
+                    };
                 },
             }
         }
@@ -21092,7 +23235,13 @@ const duo_runtime =
     \\        }
     \\    }
     \\    if (mod.type == VAL_NIL) {
-    \\        lua_error(lua_val_lit("module not found"));
+    \\        /* Name the module: a bare "module not found" gives the caller no
+    \\         * way to tell which require in the chain failed. */
+    \\        const char* _rn = (name_val.type == VAL_STRING && name_val.as.sval)
+    \\            ? name_val.as.sval : "?";
+    \\        char _rb[256];
+    \\        snprintf(_rb, sizeof _rb, "module not found: %s", _rn);
+    \\        lua_error(lua_val_from_str(_rb));
     \\    }
     \\    lua_table_set_raw(loaded_tbl, name_val, mod);
     \\    return mod;

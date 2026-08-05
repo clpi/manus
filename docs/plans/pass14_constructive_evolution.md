@@ -740,16 +740,14 @@ since this was designed? Should the architecture update immediately?
 ## Validation
 
 ```bash
+zig build pass14-gate                             # preservation + catalog + architecture matrix
+bash scripts/pass14_gate.sh
 duo catalog | jq '.pass14'                          # full machine-readable catalog
 duo catalog | jq '.pass14.audits'                   # 14 audits with status
 duo catalog | jq '.pass14.preservation'             # live Git preservation report
 duo catalog | jq '.pass14.salvage'                  # seeded salvage registry
+duo catalog | jq '.pass14.architecture_matrix'      # feature×target×backend matrix
 duo dev preserve                                     # standalone preservation report (JSON)
-zig test src/pass14_catalog.zig
-zig test src/git_preservation.zig
-zig test src/salvage_registry.zig
-zig test src/pass14_constructive_audit.zig
-zig build unit-test --summary all
 ```
 
 *Pass 14 succeeds when the repository can only become better, smaller, faster,

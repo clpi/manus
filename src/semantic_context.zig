@@ -3,6 +3,7 @@
 //! Reproducible from stable IDs; not a second semantic graph.
 const std = @import("std");
 const token_semantic = @import("token_semantic.zig");
+const wasm_decode_semantic = @import("wasm_decode_semantic.zig");
 
 pub const SCHEMA_VERSION = "semantic-context-v0";
 
@@ -30,6 +31,8 @@ pub const m1_keyword_classifier: ContextPackage = .{
         "src/token_semantic.zig",
         "src/lexer.zig",
         "src/realization.zig",
+        "src/token_classify_gen.zig",
+        "lib/std/token/classify.duo",
     },
     .governing_contracts = &.{
         "token_semantic.intent",
@@ -44,6 +47,7 @@ pub const m1_keyword_classifier: ContextPackage = .{
         "token_semantic: all legal classifiers agree",
         "token_semantic: compareKeywordClassifiers",
         "lex: standard keywords",
+        "examples/pass12_m1_diff.duo",
     },
     .public_claims = &.{
         "claim.m1_keyword_semantic",
@@ -55,10 +59,58 @@ pub const m1_keyword_classifier: ContextPackage = .{
         "proof.obligations",
         "proof.bundle",
         "semantic.projections",
+        "duo token-tables emit",
+    },
+};
+
+/// Bounded context for M2 Ward decode work (P12-M2).
+pub const m2_wasm_decode: ContextPackage = .{
+    .package_id = "ctx.m2.wasm_decode",
+    .task = "Inspect or modify duo:wasm:decode_instruction without full Ward tree",
+    .target_entities = &.{
+        "duo:wasm:decode_instruction",
+        "wasm_semantic.instructions",
+        "std_wasm_decode__decode_instruction",
+    },
+    .canonical_owners = &.{
+        "lib/std/wasm/decode.duo",
+        "src/wasm_semantic_gen.zig",
+        "src/wasm_semantic.zig",
+        "src/native_barrier_checks.zig",
+        "examples/pass9/decode_semantic_smoke.duo",
+    },
+    .governing_contracts = &.{
+        "wasm_decode_semantic.intent",
+        "wasm_decode_semantic.proof_obligations",
+    },
+    .active_assumptions = &.{
+        "barrier_profile=ward_decode_hot",
+        "expect_native=false",
+    },
+    .affected_tests = &.{
+        "pass11_ward_barrier_tests",
+        "wasm_decode_differential",
+        "examples/pass9/decode_semantic_smoke.duo",
+        "duo dev barrier check ward_decode",
+    },
+    .public_claims = &.{
+        "claim.m2_wasm_decode",
+    },
+    .accepted_operations = &.{
+        "semantic.intent",
+        "proof.obligations",
+        "proof.bundle",
+        "semantic.projections",
+        "duo dev barrier check",
     },
 };
 
 pub fn packageForEntity(entity_id: []const u8) ?ContextPackage {
+    if (wasm_decode_semantic.entityMatches(entity_id) or
+        std.mem.startsWith(u8, entity_id, "wasm_semantic."))
+    {
+        return m2_wasm_decode;
+    }
     if (std.mem.eql(u8, entity_id, token_semantic.intent.subject_entity) or
         std.mem.startsWith(u8, entity_id, "token_semantic."))
     {

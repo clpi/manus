@@ -1,0 +1,33 @@
+# Pass 15 vertical proof — semantic shell first workload
+#
+# Canonical Duo only. No shell-only syntax.
+# Run: duo run examples/pass15_vertical_proof.duo
+
+req("std.io")
+
+# 1. Project-aware file discovery (explicit glob — no wildcard token expansion)
+sources(pattern: str): i64
+    count = 0
+    # Placeholder: real path:glob lands in P15-WS6
+    if pattern:len() > 0
+        count = 1
+    end
+    count
+end
+
+analyze(path: str): { path: str, diagnostics: i64 }
+    { path = path, diagnostics = 0 }
+end
+
+# 2–6. Structured filter/sort/table pipeline (native fusion target: P15-M5)
+issues()
+    n = sources("**/*.duo")
+    rec = analyze("examples/pass15_vertical_proof.duo")
+    if rec.diagnostics > 0
+        print(rec.path, rec.diagnostics)
+    end
+    n
+end
+
+result = issues()
+print("pass15 vertical proof ok", result)

@@ -1,10 +1,10 @@
 type Point = { x: i64, y: i64 }
 
-fun inline_y(p: { x: i64, y: i64 }): i64
+inline_y(p: { x: i64, y: i64 }): i64
   return p.y
 end
 
-fun alias_sum(p: Point): i64
+alias_sum(p: Point): i64
   return p.x + p.y
 end
 

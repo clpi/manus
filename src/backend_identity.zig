@@ -6,12 +6,17 @@ const std = @import("std");
 pub const SCHEMA_VERSION = "backend-identity-v0";
 
 pub const Backend = enum {
+    /// Native-first: direct machine lowering when eligible, else C emit (bootstrap only).
+    auto,
+    /// Explicit C emission — bootstrap / debugging, not the canonical release path.
     c,
+    /// ARM64 Mach-O machine code via `native_backend.zig` (canonical when eligible).
     direct,
     wasm,
 
     pub fn name(self: Backend) []const u8 {
         return switch (self) {
+            .auto => "auto",
             .c => "c",
             .direct => "direct",
             .wasm => "wasm",
@@ -19,10 +24,15 @@ pub const Backend = enum {
     }
 
     pub fn parse(s: []const u8) ?Backend {
+        if (std.mem.eql(u8, s, "auto")) return .auto;
         if (std.mem.eql(u8, s, "c")) return .c;
-        if (std.mem.eql(u8, s, "direct")) return .direct;
+        if (std.mem.eql(u8, s, "direct") or std.mem.eql(u8, s, "native")) return .direct;
         if (std.mem.eql(u8, s, "wasm")) return .wasm;
         return null;
+    }
+
+    pub fn prefersMachineCode(self: Backend) bool {
+        return self == .auto or self == .direct;
     }
 };
 
@@ -99,14 +109,14 @@ pub fn inferFromCompile(
         .specialized;
 
     const runtime: RuntimeProfile = switch (backend) {
+        .auto, .direct => .freestanding,
         .c => if (native_scalar) .minimal else if (duo_mode) .dynamic else .full,
-        .direct => .freestanding,
         .wasm => .minimal,
     };
 
     const intermediate: []const u8 = switch (backend) {
+        .auto, .direct => "mach-o-arm64",
         .c => "generated-c",
-        .direct => "mach-o-arm64",
         .wasm => if (std.mem.eql(u8, target, "wasm32-wasi")) "wasm32-wasi" else "wasm",
     };
 
@@ -119,8 +129,8 @@ pub fn inferFromCompile(
         .target = target,
         .intermediate = intermediate,
         .external_compiler = switch (backend) {
+            .auto, .direct => null,
             .c => "clang",
-            .direct => null,
             .wasm => "zig cc",
         },
         .boxing_mode = boxing,
@@ -154,8 +164,11 @@ fn jsonEscape(w: *std.Io.Writer, s: []const u8) !void {
 }
 
 test "backend_identity: parse backend and bench profiles" {
+    try std.testing.expectEqual(Backend.auto, Backend.parse("auto").?);
     try std.testing.expectEqual(Backend.c, Backend.parse("c").?);
     try std.testing.expectEqual(Backend.direct, Backend.parse("direct").?);
+    try std.testing.expectEqual(Backend.direct, Backend.parse("native").?);
+    try std.testing.expect(Backend.parse("c-specialized") == null);
     try std.testing.expect(BenchBackend.parse("c-specialized") == .c_specialized);
 }
 

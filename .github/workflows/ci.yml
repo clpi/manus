@@ -7,22 +7,60 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # Pass 11 WP-13: pin matches build.zig.zon minimum_zig_version (see scripts/ci_zig_version.sh).
+  ZIG_VERSION: 0.17.0-dev.389+f5a1968f6
+
 jobs:
-  build:
+  hygiene:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig
+      - name: Verify CI Zig pin matches build.zig.zon
+        run: |
+          pin="$(bash scripts/ci_zig_version.sh)"
+          test "$pin" = "${{ env.ZIG_VERSION }}"
+
+      - name: Repository hygiene (Pass 11 WP-12)
+        run: bash scripts/repo_hygiene.sh
+
+      - name: Public safety scan (Pass 10 A19)
+        run: bash scripts/public_safety_scan.sh
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [hygiene]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig (pinned)
         uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Record toolchain
+        run: |
+          echo "ZIG_VERSION=$(zig version)" >> "$GITHUB_ENV"
+          zig version | tee toolchain.txt
 
       - name: Build
         run: zig build
 
       - name: Unit tests
         run: zig build unit-test
+
+      - name: Pass 11–14 native gates (cross-platform)
+        run: zig build pass-gates
+
+      - name: Pass 16 self-hosting gates (cross-platform)
+        run: |
+          zig build pass16-cross-platform
+          zig build pass16-m1-smoke
+          ./zig-out/bin/duo selfhost summary
+
+      - name: Pass 11 module smoke (native, cross-platform)
+        run: zig build pass11-module-smoke
 
       - name: Compile-fail tests
         run: bash scripts/run_compile_fail_tests.sh
@@ -45,22 +83,104 @@ jobs:
       - name: WASI execution tests
         run: bash scripts/test_wasm_execution.sh
 
-  bench:
+      - name: Upload toolchain record
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-ubuntu
+          path: toolchain.txt
+
+  reproducibility:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    needs: [build]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig
+      - name: Install Zig (pinned)
         uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Reproducibility smoke (Pass 11 WP-13)
+        run: bash scripts/reproducibility_smoke.sh
+
+  pass11-direct:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig (pinned)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
 
       - name: Build
         run: zig build
 
-      - name: Benchmark
-        run: zig build bench
+      - name: Direct backend smoke (Pass 11)
+        run: bash scripts/pass11_direct_smoke.sh
+
+      - name: Byte blob object smoke (Pass 11 WP-05)
+        run: bash scripts/pass11_blob_object_smoke.sh
+
+      - name: Pass 16 cross-platform gates (aarch64-macos host)
+        run: |
+          zig build pass16-cross-platform
+          zig build pass16-m1-smoke
+          ./zig-out/bin/duo selfhost targets | head -c 400
+
+  pass16-cross:
+    runs-on: ${{ matrix.os }}
+    needs: [hygiene]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig (pinned)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Build
+        run: zig build
+
+      - name: Pass 16 §17 cross-platform matrix gate
+        run: zig build pass16-cross-platform
+
+      - name: Pass 16 M1 keyword differential smoke
+        run: zig build pass16-m1-smoke
+
+      - name: Record host selfhost summary
+        run: ./zig-out/bin/duo selfhost summary | tee selfhost-summary.json
+
+      - name: Upload Pass 16 host evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pass16-selfhost-${{ matrix.os }}
+          path: selfhost-summary.json
+
+  bench:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig (pinned)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Build
+        run: zig build
+
+      - name: Benchmark (explicit c-specialized profile)
+        run: BENCH_BACKEND=c-specialized zig build bench
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -80,10 +200,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig
+      - name: Install Zig (pinned)
         uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: ${{ env.ZIG_VERSION }}
 
       - name: Build release binary
         run: zig build -Doptimize=ReleaseFast

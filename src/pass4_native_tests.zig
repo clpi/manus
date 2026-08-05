@@ -49,6 +49,7 @@ fn compileMilestoneC(alloc: std.mem.Allocator) ![]const u8 {
 }
 
 test "Pass 4 M1: distance2 emits native struct fields without lua_invoke" {
+    const native_barrier_checks = @import("native_barrier_checks.zig");
     const output = try compileMilestoneC(testing.allocator);
     defer testing.allocator.free(output);
 
@@ -64,6 +65,10 @@ test "Pass 4 M1: distance2 emits native struct fields without lua_invoke" {
     try testing.expect(std.mem.indexOf(u8, body, "p.y") != null);
     try testing.expect(std.mem.indexOf(u8, output, "double x") != null);
     try testing.expect(std.mem.indexOf(u8, output, "double y") != null);
+
+    var report = try native_barrier_checks.checkGeneratedC(testing.allocator, body, &.{ .no_boxing, .no_dynamic_dispatch });
+    defer native_barrier_checks.freeReport(testing.allocator, report);
+    try testing.expect(report.passed());
 }
 
 test "Pass 4 M1: Point table literal uses designated native initializer" {

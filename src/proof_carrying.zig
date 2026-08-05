@@ -27,7 +27,8 @@ pub const seed_capabilities: []const Capability = &.{
     .{ .id = "cap.repr.native_scalar", .description = "Full native_scalar module without lua runtime", .status = .partial, .owner = "src/codegen.zig" },
     .{ .id = "cap.bench.c_specialized", .description = "Benchmark profile c-specialized (default)", .status = .partial, .owner = "src/backend_identity.zig" },
     .{ .id = "cap.bench.correctness", .description = "Benchmark RESULT correctness gate", .status = .supported, .owner = "scripts/run_benchmark.sh" },
-    .{ .id = "cap.token_semantic.m1", .description = "Descriptor-driven keyword classifier in production lexer", .status = .partial, .owner = "src/token_semantic.zig" },
+    .{ .id = "cap.token_semantic.m1", .description = "Descriptor-driven keyword classifier in production lexer", .status = .supported, .owner = "src/token_semantic.zig" },
+    .{ .id = "cap.wasm_decode.m2", .description = "Ward Wasm instruction decode semantic intent + barrier audit (M2 partial)", .status = .partial, .owner = "src/wasm_decode_semantic.zig" },
     .{ .id = "cap.cli.semantic", .description = "CLI semantic projections (intent, proof, candidates, transaction preview)", .status = .partial, .owner = "src/semantic_cli.zig" },
     .{ .id = "cap.cli.semantic.transaction", .description = "Bounded semantic transaction preview/validate (MCP parity)", .status = .partial, .owner = "src/semantic_transaction.zig" },
 };
@@ -286,9 +287,16 @@ pub const seed_claims: []const ReleaseClaim = &.{
     .{
         .id = "claim.m1_keyword_semantic",
         .statement = "Keyword classifier derives from canonical token_semantic source with proof obligations discharged",
-        .status = .partial,
-        .dependency_ids = &.{ "cap.token_semantic.m1", "cap.cli.semantic" },
+        .status = .supported,
+        .dependency_ids = &.{ "cap.token_semantic.m1" },
         .proof_bundle_id = "bundle.m1.keyword_classifier",
+    },
+    .{
+        .id = "claim.m2_wasm_decode",
+        .statement = "Wasm instruction decode has canonical semantic intent; native hot path proof pending",
+        .status = .partial,
+        .dependency_ids = &.{ "cap.wasm_decode.m2" },
+        .proof_bundle_id = "bundle.m2.wasm_decode",
     },
 };
 

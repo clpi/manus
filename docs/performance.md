@@ -11696,3 +11696,215 @@ scripts/duo-safe dump-c /tmp/unary_neg.lua | rg 'int64_t i'         # native loc
 | Unit tests | 700/703 (3 fail) | **703/703** |
 | Bench gate | PASS | PASS |
 | benchmark.lua `lua_Value` | 0 | 0 |
+
+### Pass 11 WP-03 — direct ARM64 register spills (2026-08-04)
+
+| Area | Change |
+| --- | --- |
+| **Spill/reload** | `ensureRegLive`, 16-byte aligned spill slots, `allocRegExcluding` to avoid clobbering the local being copied |
+| **Local rvalues** | `compileExpr(.name)` uses `bindNewLocalReg` so accumulator temps do not alias spilled locals |
+| **Proof** | `examples/pass11_spill_proof.duo`, `scripts/pass11_spill_smoke.sh`, `zig build pass11-spill-smoke` |
+
+Commands: `zig test src/native_backend.zig --test-filter "Pass 11"`, `zig build pass11-spill-smoke`.
+
+Long add chains with >20 live locals still need follow-up (left-assoc binop + many spills can mis-sum); binary `v0+v21` proof is green (exit 2).
+
+---
+
+## 2026-08-05 (opencode) — string.len native lowering correctness + strcmp dedup
+
+Commands:
+```sh
+scripts/duo_lock.sh -- zig test src/codegen.zig   # 782/782 PASS (was 781/782)
+scripts/duo_lock.sh -- zig build unit-test         # 974/979, remaining = pre-existing baseline only
+scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo  # agent-smoke PASS (was failing at HEAD)
+./zig-out/bin/duo run examples/pass12_m1_diff.duo   # exit 0 (differential proof)
+```
+
+| Area | Change | Result |
+| --- | --- | --- |
+| **string.len correctness** | `try_emit_native_string_call("len")` used `duo_str_len(x)` (lua_String header read) on ALL `.str` operands, but concat results / params / locals / native calls are plain `char*` → garbage. New `expr_is_boxed_string_ptr`: `duo_str_len` only for boxed-backed strings (generic lua_Value exprs + recognized stdlib str calls like `string.char`); everything else emits `strlen`. | `string.len("P".."arse")` was 256/garbage at HEAD → 5; fixed `std.vector.tokens` (vector_embed_smoke) and the pre-existing `codegen: typed string numeric` unit test (expected `strlen(s)` for a `str` local). |
+| **strcmp emission dedup** | `emitStrCompareOperands(lhs, rhs, lhs_c, rhs_c)` helper replaces 4 duplicated strcmp blocks (eq/neq, mixed typed/native eq/neq, lt/gt/leq/geq, rewrite path); self-closes paren; emitted C byte-identical to prior output. | One canonical mechanism (Pass 2 convergence); `classify_branch_chain(const char* w)` emits `(strcmp(w, "and") == 0)` chains. |
+| **native-cstr calls in comparisons** | `expr_is_native_cstr` now recognizes typed calls returning `str` under full native lowering, so `strcmp(branch_str(true), "yes")` emits natively instead of `lua_to_str(lua_val_from_str(...))` (runtime absent in pure-native modules). | Fixed `branch_scope_smoke.duo` (pre-existing at HEAD). |
+| **@comp.agent.multiplier wiring** | codegen `maybe_emit_meta_string_call` had no `__metaagentmultiplier` dispatch (registered in meta_module + sema only) → undeclared `__metaagentmultiplier` in emitted C. Added dispatch: `agentMultiplierText()` (0 args) / `agentMultiplierFor(goal)` (1 string arg). | Fixed `meta_exponential_cascade.duo` compile (pre-existing at HEAD). |
+
+Measured impact (vs HEAD): agent-smoke full PASS; codegen unit tests 782/782 (was 781/782 with pre-existing typed-string-numeric failure now fixed); `pass12_m1_diff.duo` exit 0. `classify_length_bucket` now emits `((int64_t)strlen(w))` (was header-read `duo_str_len(w)` on a boxed-unwrapped param — correct either way there, but `strlen` is robust for all native sources). Non-production candidate (branch_chain is production), no benchmark gate affected.
+
+Rejected: keeping `duo_str_len` on all `.str` operands (unsound — the Pass 11 header-read micro-opt only holds for lua_String-backed pointers). Boxed strings keep the header-read fast path.
+
+
+
+---
+
+## 2026-08-05 (claude) — ward head-to-head harness + first real WASM-runtime numbers
+
+**New suite:** `benchmarks/wasm_rt/` (`bench.c`, `run.sh`). Unlike `zig build wasm-bench`
+— which measures duo-compiled-to-WASM running *under* other runtimes — this measures
+**the runtimes themselves** executing the same module. 6 workloads probing distinct
+interpreter cost centers (i32 dispatch, f64, memory, calls, recursion, br_table).
+
+Honesty constraints baked in:
+- Every workload prints a checksum via raw `write(2)` + hand-rolled decimal (NOT printf,
+  whose integer path is broken in ward). Any runtime whose stdout differs is reported
+  `WRONG`, not timed.
+- Workloads are seeded from a `volatile` load. Without this clang constant-folded
+  4 of 6 workloads entirely and every runtime "finished" at startup cost — the first
+  timings I took were measuring nothing.
+
+Run: `WARD_BIN=<ward> RUNS=3 benchmarks/wasm_rt/run.sh`
+
+### Results (macOS arm64, SCALE=40, min of 3, all outputs verified identical)
+
+| bench | ward before | ward after | wasmtime | wasmer | wasm3 | iwasm | wazero |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| loop_i32 | 0.074s | 0.068s | 0.045s | 0.065s | 0.052s | 0.073s | 0.038s |
+| loop_f64 | 0.082s | 0.085s | 0.032s | 0.058s | 0.065s | 0.055s | 0.044s |
+| memory | 0.570s | 0.472s | 0.050s | 0.057s | 0.104s | 0.177s | 0.070s |
+| calls | 0.268s | 0.265s | 0.053s | 0.066s | 0.100s | 0.143s | 0.057s |
+| fib | 0.085s | 0.063s | 0.053s | 0.052s | 0.040s | 0.039s | 0.050s |
+| **brtable** | **20.394s** | **1.225s** | 0.169s | 0.181s | 0.288s | 0.362s | 0.150s |
+
+### Optimizations landed in ward (`src/wasm/runtime.duo`)
+
+1. **Branch-target memoization — 18.2x on brtable (20.7s → 1.14s).** `block`/`loop`/`if`
+   called `ward_find_end_pc`, which linearly rescans the remainder of the function body,
+   **on every execution**. Any loop containing a block was therefore O(body x iters).
+   `sample` showed `ward_instr_len` at **83% of runtime** (3223/3876 stacks). end_pc/else_pc
+   are a static property of the immutable body, so they are now memoized on
+   `(body_ptr, pc)` in a direct-mapped cache — a collision just recomputes, so it is
+   always correct. General fix, not benchmark-specific: helps any module with a loop.
+2. **Call-frame pool.** Every wasm call did `calloc(WardFrame)` + `calloc(locals)` + 2
+   frees, and `WardFrame` embeds `WardLabel labels[64]` (~2KB zeroed per call). Now
+   bump-allocated from a pool; only declared locals are zeroed. fib 1.5x, calls 1.15x.
+   Falls back to malloc past pool depth so deep recursion still works.
+
+After (1), the profile is 100% `execute_raw` — no pathological helper remains, so
+further gains need structural change (direct threading, pre-decode, or a JIT).
+
+### The structural conclusion
+
+**An interpreter cannot be "by far the fastest".** wasmtime/wasmer compile to native;
+ward interprets. The remaining 3–10x is interpretation-vs-compilation, not tuning.
+Reaching the goal requires ward to gain a compiler backend — see `wart`'s
+`jit_arm64.zig` / `jit_compile.zig` / `aot.zig`, and duo's own `src/native_backend.zig`
+(3019 lines, already emits ARM64).
+
+**Note:** wart `main` (freshly pulled) exits 132/SIGILL on every module on ARM64 macOS,
+including trivial ones ward now runs. Needed 2 fixes just to build on Zig master
+(`builtin.mode == .debug` → `.Debug`). Spec conformance did not catch this.
+
+### Tier-1 JIT (2026-08-05) — infrastructure landed, opcode scan NOT yet sound
+
+`lib/std/jit.duo` (new, duo stdlib) provides the three primitives no pure-Duo code
+could express: `alloc` (mmap RW), `w32`/`r32`, `seal` (mprotect RX + icache flush),
+`call0/1/2`. W^X is respected by never holding write+execute simultaneously, which
+also avoids needing the macOS allow-jit entitlement. Verified end-to-end: Duo emits
+`movz x0,#42; ret`, seals, calls, gets 42.
+
+`ward/src/wasm/jit_arm64.duo` (new, **pure Duo — no C**, per project rule) is a
+WASM→ARM64 template JIT. Instruction selection is two data tables (`BIN`, `CMP`)
+rather than a switch, since every binop differs only in its base word — adding an
+opcode is one row. Emitted encodings were verified by disassembling the output.
+
+**Status: gated OFF behind `WARD_JIT=1`.** It compiles, emits, and executes, but
+`can_compile` is too permissive — it accepted a 220-byte body and one starting with
+`0x23 global.get`, i.e. functions using opcodes outside the supported set, so the
+JIT emitted code for bodies it does not understand and returned wrong results
+(2831333121 vs 373547905). Root cause is in the scan's immediate-skip logic, not the
+encoders. Until that is sound the JIT must stay opt-in; ward is correct with it off
+(6/6 benchmarks + a JIT-shaped `hot.wasm` all byte-identical to wasmtime).
+
+Next: make the scan a strict whitelist that also tracks operand widths (br_table's
+vector, call's funcidx, memarg's align+offset), then re-enable and measure.
+
+Note for future work: `benchmarks/wasm_rt/hot.c` builds a module whose hot kernel
+uses *only* the supported opcode set (`local.*`, i32 arith/compare, `loop`, `br_if`),
+so it is the right fixture for validating the JIT in isolation.
+
+### Tier-1 JIT WORKING (2026-08-05) — on by default, 8.4x over ward's interpreter
+
+The JIT is now correct and enabled (`WARD_JIT=0` forces the interpreter). 8/8 modules
+byte-identical to wasmtime, including real clang `wasm32-wasip1` output.
+
+**What unblocked it:** a Duo codegen bug, not a JIT bug. `emit_dynamic_unbox` emitted a
+*bare* C integer literal when the wanted and actual types matched. A bare literal is
+`int` (32-bit), so `-1 << 35` became `(int32)-1 << (35 & 31)` = **-8** and `1 << 35`
+went negative. That corrupted every multi-byte signed LEB128 decode — the JIT read
+`i32.const -195656704` as `-8`. Fixed by emitting `INT64_C(...)`. This bug silently
+broke any 64-bit shift with a literal operand anywhere in Duo.
+
+**Top-of-stack register cache** (2.4x on top of the base JIT, 1.15s -> 0.48s): a
+1-entry cache holds the logical stack top in a register, so a push followed by a pop
+is a register move rather than a store + load. Flushed at every control-flow edge and
+at the epilogue, so the cache never spans a branch. Ordering matters: producers flush
+*before* materializing into the scratch register — flushing after corrupts state
+(caught as 3512340480 vs 373547905).
+
+#### hot_big (900M-iteration i32 kernel, min of 3, all outputs verified)
+
+| runtime | time | vs ward JIT |
+| --- | ---: | ---: |
+| wasmtime | 0.16s | 3.0x faster |
+| wasmer | 0.16s | 3.0x faster |
+| wazero | 0.23s | 2.1x faster |
+| **ward JIT** | **0.48s** | — |
+| wasm3 | 1.12s | **2.3x slower** |
+| iwasm | 1.17s | **2.4x slower** |
+| ward interpreter | 4.05s | 8.4x slower |
+
+ward now beats wasm3 and iwasm outright. The remaining 3x to wasmtime/wasmer is
+register allocation: this is a template JIT with one cached stack slot; they do full
+regalloc over a real IR. Next steps in order: (1) widen the opcode set — `call`,
+memory load/store, `br_table`, `global.*` — so the JIT covers whole real functions
+rather than leaf kernels; (2) multi-entry TOS cache / keep wasm locals in registers.
+
+Fixture: `benchmarks/wasm_rt/hot.c` (kernel uses only the supported opcode set).
+
+### JIT opcode coverage expanded (2026-08-05) — `call` is the sole remaining blocker
+
+Added as table rows (the selector stays data, not a switch): i32/i64 `div_s/div_u`
+and `rotr` (BIN), `rem_s/rem_u` via div+msub (REM), width conversions
+`wrap_i64`/`extend_i32_s|u`/`extend8|16|32_s` (CONV), `select`, `global.get/set`,
+and the memory load/store family (MEM: i32/i64 load+store, 8/16-bit variants).
+Adding an opcode is one row plus, where the shape differs, one small emitter.
+
+**Instrumented the support scan** (`WARD_JIT_TRACE=1`) to report the rejecting
+opcode rather than guessing. Result: after the above, **`0x10 call` is the only
+opcode still rejecting** on the `memory` benchmark. Every real clang function calls
+something, so the JIT currently only covers leaf kernels.
+
+#### Measured (min of 3, all outputs byte-identical to wasmtime)
+
+`hot_big` — a 900M-iteration leaf kernel the JIT fully covers:
+
+| runtime | time |
+| --- | ---: |
+| wasmtime | 0.09s |
+| wasmer | 0.11s |
+| wazero | 0.13s |
+| **ward JIT** | **0.37s** |
+| wasm3 | 0.71s |
+| iwasm | 0.70s |
+| ward interpreter | 4.05s |
+
+ward beats wasm3 and iwasm by ~1.9x and is ~11x faster than its own interpreter.
+
+Benchmarks whose hot functions contain `call` (so they still interpret):
+
+| bench | ward | wasmtime | wasm3 | iwasm | wazero |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| memory | 0.42s | 0.01s | 0.07s | 0.12s | 0.02s |
+| calls | 0.19s | 0.01s | 0.06s | 0.09s | 0.02s |
+| brtable | 0.83s | 0.09s | 0.20s | 0.29s | 0.10s |
+
+**Next step is unambiguous: implement `call`.** The JIT needs to invoke the callee
+without leaving compiled code. Options, cheapest first:
+1. Direct `bl` to an already-JIT-ed callee, with the JIT emitting the frame setup
+   (args from the operand stack into the callee's locals).
+2. A C-ABI trampoline back into `execute_raw` for non-JIT-ed callees. Needs a way to
+   take the address of a fully-typed Duo function — `std.jit` would grow one
+   primitive (`fnaddr`), keeping ward itself free of C.
+3. Inlining small leaf callees.
+
+Until `call` lands, JIT coverage is leaf-kernel only and the suite-wide numbers stay
+interpreter-bound.

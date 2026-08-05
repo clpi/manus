@@ -1,0 +1,25 @@
+-- Pass 16 MP-03 — ByteCursor line/col semantics (inline; mirrors std.compiler.source).
+
+main(): i64
+    bytes = "a\nb\nc"
+    pos = 1
+    line = 1
+    col = 1
+    if pos > string.len(bytes) return 1 end
+    if string.byte(bytes, pos) ~= 97 return 2 end
+    pos = pos + 1
+    if string.byte(bytes, pos) ~= 10 return 3 end
+    pos = pos + 1
+    line = line + 1
+    col = 1
+    if line ~= 2 return 4 end
+    if col ~= 1 return 5 end
+    pos = pos + 1
+    pos = pos + 1
+    pos = pos + 1
+    line = line + 1
+    col = 1
+    if line ~= 3 return 6 end
+    if col ~= 1 return 7 end
+    0
+end
