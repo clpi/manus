@@ -1,191 +1,147 @@
 # Pass 9 — Ward Readiness, Vertical Proof, and Runtime Supremacy
 
-**Status:** Phase 0 bootstrap **started** (2026-08-04)  
-**Mission:** Make Duo capable of producing **Ward** — a Duo-native WebAssembly runtime faster than Wart, substantially smaller and clearer, generated through Duo's canonical semantic, staging, specialization, representation, and realization systems.  
-**Catalog:** `duo catalog` → `pass9` via `src/pass9_catalog.zig`
+**Status:** active (2026-08-04)  
+**Mission:** Make Duo capable of producing **Ward** — a Duo-native WebAssembly runtime that beats Wart through semantic leverage, not reduced semantics.
 
-> Repository implementation always overrides architecture documents.
+Ward is a **consumer** of Duo’s canonical architecture (Passes 1–8), not a fork.
 
----
+## Machine-readable tracking
 
-## Scope boundary
+```bash
+duo catalog | jq '.pass9'
+duo catalog | jq '.pass9.duo_capabilities[] | select(.status=="partial")'
+duo catalog | jq '.pass9.audit_snapshot'
+duo catalog | jq '.pass9.readiness_summary'
+```
 
-**In:** Ward readiness matrix, capability ladder, first vertical kernel (descriptor-generated Wasm decode/validate), Duo systems-programming gaps exposed by Ward, semantic-density and differential proof harnesses, LSP/MCP Ward facts.
+| Module | Role |
+| --- | --- |
+| `src/ward_readiness.zig` | Duo capability ↔ Ward subsystem matrix |
+| `src/pass9_catalog.zig` | Ladder, milestones, workstreams, first kernel |
+| `~/x/ward` | Vertical proof runtime (Duo sources) |
+| `~/x/wart` | Reference baseline (Zig) |
 
-**Out:** Broad Wart port before Duo readiness; Ward-only language features; separate Wasm semantic graph; optimizing JIT before decoder/validator foundations; benchmark claims without comparable semantics.
+## Governing principles (summary)
 
-**Repositories:**
+1. **Ward reuses Duo** — no Ward-only descriptors, staging, IR, or realization planner.
+2. **Duo readiness precedes Ward dependence** — capabilities must reach `WARD_READY` before milestones depend on them.
+3. **Beat Wart with equivalent semantics** — disclosed target, warmup, correctness evidence required.
+4. **No hidden delegation** — foreign boundaries must be queryable; no generic Lua boxing on hot paths.
 
-| Repo | Path | Role |
+## Capability ladder
+
+| Level | Title | Status |
 | --- | --- | --- |
-| Duo compiler/stdlib | `~/x/duo` | Canonical semantics, codegen, realization, tooling |
-| Ward runtime | `~/x/ward` | Vertical proof consumer (must not fork Duo architecture) |
-| Wart reference | `~/x/wart` | Performance/conformance reference (do not copy line-for-line) |
-| duo-mcp | `~/x/duo-mcp` | Development MCP — coordination + proof tracking (not second semantic authority) |
-| duo-lsp | `~/x/duo-lsp` | Editor integration — same facts as compiler |
+| L0 | Repository and benchmark truth | partial |
+| L1 | Duo-native systems substrate | open |
+| L2 | Wasm semantic model | open |
+| L3 | Decoder and validator proof | open |
+| L4 | Baseline interpreter | spike (Ward exists; not proven via Pass 9 gate) |
+| L5 | Specialization-aware interpreter | open |
+| L6 | Baseline native compiler/JIT | spike |
+| L7 | Optimizing compiler | open |
+| L8 | Persistent and adaptive Ward | open |
 
----
+## Milestones
 
-## Governing principles
-
-1. **Ward is a consumer, not an architectural fork** — no Ward-specific descriptors, staging, IR, planner, or semantic graph.
-2. **Duo readiness precedes Ward dependence** — capabilities below `WARD_READY` require an explicit work item to reach readiness.
-3. **Beat Wart through leverage** — equivalent semantics, validation, safety; win via compile-time generation, representation negotiation, specialized dispatch, semantic density.
-4. **No hidden delegation** — no embedding Wart, generic Lua boxing on hot paths, or generated-C as canonical implementation without disclosure.
-
----
-
-## Primary goals
-
-| Goal | Description | Status |
+| ID | Title | Status |
 | --- | --- | --- |
-| **A** | Machine-readable Ward readiness contract | **partial** — `pass9_catalog.zig` |
-| **B** | End-to-end Ward kernel (descriptor-generated decode + validate) | **open** — P9-M1 |
-| **C** | Close Duo systems-programming gaps (bytes, cursors, LEB128, arenas, …) | **partial** |
-| **D** | Semantic density metrics | **open** |
-| **E** | Superior realization selection for dispatch | **partial** — Pass 8 `realization.zig` |
-| **F** | LSP/MCP share Ward semantics | **open** |
+| P9-M0 | Readiness matrix + repository truth | partial |
+| P9-M1 | Descriptor-generated LEB128 + instruction decoder | open |
 
----
+## First implementation milestone (P9-M1)
 
-## Capability ladder (Ward levels)
-
-| Level | Title | Exit gate (summary) | Status |
-| --- | --- | --- | --- |
-| **L0** | Repository and benchmark truth | Wart/Ward/Duo maps; no stale perf claims | **partial** |
-| **L1** | Duo-native systems substrate | Binary parser in accepted Duo → direct native hot loop | **open** |
-| **L2** | Wasm semantic model | One descriptor source → decoder + validator + tooling | **open** |
-| **L3** | Decoder and validator proof | Differential + fuzz; no generic table ops in hot loop | **open** |
-| **L4** | Baseline interpreter | Conformance + explainable dispatch | **open** |
-| **L5** | Specialization-aware interpreter | Guarded specialization with fallback | **open** |
-| **L6** | Baseline native compiler/JIT | Duo-owned lowering, no foreign compiler intermediary | **open** |
-| **L7** | Optimizing compiler | Repeatable gains over Wart in comparable modes | **open** |
-| **L8** | Persistent adaptive Ward | Pass 8 evidence reuse on Ward artifacts | **open** |
-
----
-
-## First implementation milestone — P9-M1
-
-**Descriptor-generated, Duo-native LEB128 and instruction decoder for a bounded WebAssembly subset, with integrated validation metadata.**
+**Descriptor-generated LEB128 + instruction decoder** for a bounded Wasm subset.
 
 Must demonstrate:
 
-- One semantic instruction descriptor source (no duplicated opcode facts)
-- Generated decoder tables + validator metadata via `@comp.*` staging
+- One semantic instruction descriptor source (no duplicated opcode tables)
+- Generated decoder + validation metadata
 - Native hot path: direct byte loads, no universal boxing, no generic Lua call stack
-- Positive + malformed fixtures; differential reference comparison
-- `duo explain` / `duo catalog` / MCP readiness projection
+- Positive + malformed fixtures; differential vs reference where available
+- `duo explain` / catalog / MCP visibility of provenance
 
-**Bounded subset (initial):** MVP opcodes already listed in `~/x/ward/src/wasm/op.duo` (i32/i64/f32/f64 arith, memory, control, calls) — freeze before generator work.
+**Current blockers** (from readiness matrix):
 
----
-
-## Repo-truth audit (2026-08-04)
-
-### Ward current state (`~/x/ward`)
-
-| File | Lines | Notes |
-| --- | ---: | --- |
-| `src/wasm/module.duo` | 328 | Section decoder; **hot reader uses `@c.emit` + `lua_Value`** |
-| `src/wasm/runtime.duo` | 2410 | Interpreter; exceeds README "~263 lines" claim |
-| `src/wasm/op.duo` | 156 | Handwritten opcode constants (duplicated facts) |
-| `src/wasm/jit.duo` | 119 | JIT stub — C codegen path, not descriptor-generated |
-| `src/wasm/aot.duo` | 10 | Stub |
-
-**Blockers for Pass 9:** Ward binary reader violates "no universal boxing" (see `mr_mod_read_byte` in `module.duo`). Opcode table in `op.duo` duplicates facts that must become one descriptor source.
-
-### Duo substrate (relevant to Ward)
-
-| Capability | Owner | Readiness | Ward consumer |
-| --- | --- | --- | --- |
-| LEB128 encode/decode | `lib/std/bit.duo` | PARTIAL — dynamic `any` tables | P9-WS3, P9-M1 |
-| Byte buffer | `lib/std/bytes.duo` | PARTIAL — growable buffer, not native slice type | P9-WS3 |
-| `mem.load` / `mem.store` intrinsics | `src/sema.zig`, `src/codegen.zig` | PARTIAL — typed paths exist | P9-WS6 |
-| Native aggregates | `codegen.zig` + `@{}` | STABLE_INTERNAL | Ward structs |
-| Realization planner | `realization.zig` | PARTIAL | dispatch candidate selection (P9-WS5+) |
-| Semantic graph + fingerprints | `semantic_graph.zig` | PARTIAL | instruction descriptor IDs |
-| `@comp.*` codegen | `meta_codegen.zig` | STABLE_INTERNAL | descriptor → tables |
-| Native backend (asm/object) | `src/native_backend/` | SPIKE | L6+ |
-
-### Wart reference (`~/x/wart`)
-
-- Exists at `~/x/wart`; README in Ward cites ~1.3M LOC — **not yet audited file-by-file in Pass 9** (Workstream 1).
-- Treat Ward README performance claims as **unverified** until harness exists.
-
----
+- `duo.lang.slices_buffers` — dynamic table cursor in `lib/std/wasm.duo`
+- Opcode facts duplicated: `ward/src/wasm/op.duo` vs `lib/std/wasm.duo`
+- No Wasm instruction descriptor owner yet
 
 ## Workstreams
 
-| ID | Title | Status | Owner area |
-| --- | --- | --- | --- |
-| P9-WS1 | Wart and Ward truth audit | **partial** | cross-repo |
-| P9-WS2 | Ward readiness registry | **partial** | `pass9_catalog.zig` |
-| P9-WS3 | Native bytes and cursor substrate | open | `lib/std/bytes.duo`, `lib/std/bit.duo` |
-| P9-WS4 | Wasm semantic descriptor | open | `lib/std/wasm/` or `ward` descriptor module |
-| P9-WS5 | Compile-time generator (decoder/validator) | open | `@comp.*` + `meta_codegen.zig` |
-| P9-WS6 | Native decoder lowering | open | `codegen.zig` |
-| P9-WS7 | Differential and fuzz harness | open | `examples/pass9/`, `ward/test/` |
-| P9-WS8 | Performance and complexity harness | open | `docs/performance.md` |
-| P9-WS9 | Semantic tooling (LSP + end-user MCP) | open | duo-lsp, duo-mcp |
-| P9-WS10 | Development MCP integration | open | duo-mcp coordination tools |
-| P9-WS11 | Baseline interpreter design gate | open | blocked on P9-M1 |
-
----
+| ID | Title | Status |
+| --- | --- | --- |
+| P9-01 | Wart and Ward truth audit | partial |
+| P9-02 | Ward readiness registry | partial |
+| P9-03 | Native bytes and cursor substrate | open |
+| P9-04 | Wasm semantic descriptor | open |
+| P9-05 | Compile-time generator | open |
+| P9-06 | Native decoder lowering | open |
+| P9-07 | Differential and fuzz harness | open |
+| P9-08 | Performance and complexity harness | open |
+| P9-09 | LSP + end-user MCP integration | open |
+| P9-10 | Development MCP coordination | open |
+| P9-11 | Baseline interpreter design gate | open |
 
 ## Agent execution order
 
-1. repository truth audit (P9-WS1)
-2. readiness registry (P9-WS2) ← **this session**
-3. choose supported Wasm subset
-4. native byte and cursor substrate (P9-WS3)
-5. semantic instruction descriptor (P9-WS4)
-6. compile-time generation (P9-WS5)
-7. native decoder lowering (P9-WS6)
-8. validator integration
-9. differential/fuzz testing (P9-WS7)
-10. LSP/MCP exposure (P9-WS9/10)
-11. performance + semantic-density comparison (P9-WS8)
+1. Repository truth audit (P9-01)
+2. Readiness registry (P9-02) ← **this pass**
+3. Choose bounded Wasm subset
+4. Native byte/cursor substrate (P9-03)
+5. Semantic instruction descriptor (P9-04)
+6. Compile-time generation (P9-05)
+7. Native decoder lowering (P9-06)
+8. Validator + differential/fuzz (P9-07)
+9. Tooling exposure (P9-09)
+10. Performance + semantic-density comparison (P9-08)
+11. Pass 6-style reconciliation
+12. Baseline interpreter gate (P9-11) — **not before P9-M1 complete**
 
-**Parallelism:** only when file and semantic ownership do not conflict.
+## Readiness status enum
 
----
+`absent` → `spike` → `partial` → `stable_internal` → `public_experimental` → `ward_ready` → `proven_in_ward`
 
-## Rejection criteria
+A capability is `WARD_READY` only when it has one owner, tests, explicit fallback, native lowering, and survives an end-to-end native example.
 
-- Port Wart before Duo readiness
+## Rejection criteria (defer if…)
+
+- Broad Wart port before Duo readiness
 - Ward-only language features
-- Duplicated instruction facts (handwritten `op.duo` + generated tables)
-- Generated C as canonical Ward implementation path
-- Hidden foreign runtime on hot paths
-- Incomparable benchmarks
-- Optimizing JIT before decoder/validator correct
-- Separate Wasm semantic graph for Ward
+- Duplicated instruction facts
+- Generated C as canonical Ward path
+- Optimizing JIT before decoder/validator foundations
+- Separate Wasm semantic graph for interpreter vs compiler
 
----
-
-## Validation
+## Validation commands
 
 ```bash
 zig build
+zig test src/ward_readiness.zig
 zig test src/pass9_catalog.zig
-./zig-out/bin/duo catalog | jq '.pass9'
-./zig-out/bin/duo catalog | jq '.pass9.milestones'
-./zig-out/bin/duo catalog | jq '.pass9.ward_subsystems[] | select(.readiness != "WARD_READY")'
+duo catalog | jq '.pass9.milestones'
+duo catalog | jq '.pass9.readiness_summary'
 ```
+
+## Related plans
+
+- Pass 8: `pass8_persistent_semantic_computing.md` (realization + persistence — Ward L8 builds on this)
+- Pass 6: architectural reconciliation (single owner per concept)
+- Semantic universe: `docs/semantic_universe.md`
 
 ---
 
-## Success criteria (Pass 9 complete)
+## Key Finding: Native Byte Buffer Workaround (2026-08-04)
 
-1. Machine-readable Ward readiness matrix ✅ (bootstrap)
-2. Ward depends only on canonical Duo capabilities
-3. One complete Wasm subsystem in accepted Duo syntax
-4. One semantic descriptor source
-5. Generated artifacts retain provenance
-6. Hot paths without universal boxing
-7. Differential + fuzz correctness
-8. LSP/MCP expose same semantic facts
-9. Development MCP exposes coordination without semantic duplication
-10. Reproducible performance + semantic-density comparisons
-11. At least one general Duo fix driven by Ward
-12. Next Ward subsystem reuses same foundations
+**Problem:** Duo strings are null-terminated C strings. `string.char(0, ...)` produces
+empty string. Wasm binaries start with `\0asm` — first byte is NUL.
+
+**Workaround proven:** `@c.emit` + `@ffi` creates native `uint8_t*` byte buffers:
+```duo
+@c.emit("static int64_t bb_test(void){uint8_t b[4]={0,97,115,109}; return b[0]|(b[1]<<8)|(b[2]<<16)|((uint32_t)b[3]<<24);}")
+@ffi("bb_test") fun wasm_magic(): i64
+-- Returns 1836278016 = 0x6D736100 = correct Wasm magic with NUL byte
+```
+
+**Conclusion:** Ward CAN proceed with binary parsing today via `@c.emit` primitives.
+The long-term fix (native `[N]u8` type) remains an open architectural item.
