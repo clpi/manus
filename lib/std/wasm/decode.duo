@@ -1,0 +1,153 @@
+-- std.wasm.decode — cursor-integrated Wasm opcode + immediate decoding (Pass 9 P9-06).
+--
+-- Uses std.bytes (any-buffer) until std.cursor ByteCursor native lowering lands (P9-WS3).
+-- Semantic opcode facts: src/wasm_semantic.zig via std.wasm.opcode_lookup (generated).
+--
+-- Regenerate lookup: duo wasm-tables emit
+
+-- Cursor: local { data, pos, len } table (mutates in-module; std.cursor when native).
+
+Inst = req "std.wasm.instruction"
+Lookup = req "std.wasm.opcode_lookup"
+
+DECODER_OWNER = "lib/std/wasm/decode.duo"
+SEMANTIC_TABLE = Inst.decoder_table_owner()
+LOOKUP_TABLE = "lib/std/wasm/opcode_lookup.duo"
+CURSOR_SUBSTRATE = "decode-local-table"
+
+fun decoder_owner(): str
+    DECODER_OWNER
+end
+
+fun semantic_table_owner(): str
+    SEMANTIC_TABLE
+end
+
+fun lookup_table_owner(): str
+    LOOKUP_TABLE
+end
+
+fun cursor_substrate(): str
+    CURSOR_SUBSTRATE
+end
+
+fun new_cursor(data): any
+    return { data = data, pos = 1, len = string.len(data) }
+end
+
+fun read_byte(c): i64
+    if c.pos > c.len then return -1 end
+    b = string.byte(c.data, c.pos)
+    c.pos = c.pos + 1
+    b
+end
+
+fun read_i32_imm(c): i64
+    result = 0
+    shift = 0
+    while true
+        b = read_byte(c)
+        if b < 0 then return -1 end
+        result = result | ((b & 0x7F) << shift)
+        shift = shift + 7
+        if (b & 0x80) == 0 then
+            if shift < 64 and (b & 0x40) ~= 0 then
+                result = result | (~0 << shift)
+            end
+            return result
+        end
+        if shift >= 70 then return -1 end
+    end
+    return -1
+end
+
+fun read_u32_imm(c): i64
+    result = 0
+    shift = 0
+    while true
+        b = read_byte(c)
+        if b < 0 then return -1 end
+        result = result | ((b & 0x7F) << shift)
+        if (b & 0x80) == 0 then return result end
+        shift = shift + 7
+        if shift >= 35 then return -1 end
+    end
+    return -1
+end
+
+fun read_i64_imm(c): i64
+    read_i32_imm(c)
+end
+
+fun read_mem_arg(c): any
+    mem_align = read_u32_imm(c)
+    offset = read_u32_imm(c)
+    if mem_align < 0 or offset < 0 then return nil end
+    return { align = mem_align, offset = offset }
+end
+
+fun read_immediate(c, form): any
+    if form == "none" then return nil end
+    if form == "i32_imm" then return read_i32_imm(c) end
+    if form == "i64_imm" then return read_i64_imm(c) end
+    if form == "u32_imm" or form == "label_idx" or form == "local_idx" or form == "global_idx" or form == "func_idx" then
+        return read_u32_imm(c)
+    end
+    if form == "mem_arg" then return read_mem_arg(c) end
+    nil
+end
+
+fun decode_opcode(c): any
+    op = read_byte(c)
+    if op < 0 then return { status = "eof" } end
+    return { status = "ok", opcode = op }
+end
+
+-- Reads opcode once on c (mutates cursor). Avoid nested decode_opcode call — embedded
+-- modules may not propagate table mutation through nested req calls.
+fun decode_instruction(c): any
+    op = read_byte(c)
+    if op < 0 then return { status = "eof" } end
+    idx = Lookup.instruction_index_for_opcode(op)
+    if idx < 0 then return { status = "unknown_opcode", opcode = op } end
+    sid = Lookup.semantic_id_for_index(idx)
+    form = Lookup.immediate_form_for_index(idx)
+    imm = read_immediate(c, form)
+    return {
+        status = "ok",
+        opcode = op,
+        index = idx,
+        id = sid,
+        immediate_form = form,
+        immediate = imm,
+        stack_pop = Lookup.stack_pop_for_index(idx),
+        stack_push = Lookup.stack_push_for_index(idx),
+    }
+end
+
+fun decode_i32_const(c): any
+    d = decode_instruction(c)
+    if d.status ~= "ok" then return d end
+    if d.id ~= "wasm.i32.const" then return { status = "bad_opcode", opcode = d.opcode, id = d.id } end
+    if d.immediate == nil then return { status = "truncated" } end
+    return { status = "ok", opcode = d.opcode, id = d.id, imm = d.immediate }
+end
+
+M = {}
+M.DECODER_OWNER = DECODER_OWNER
+M.SEMANTIC_TABLE = SEMANTIC_TABLE
+M.LOOKUP_TABLE = LOOKUP_TABLE
+M.CURSOR_SUBSTRATE = CURSOR_SUBSTRATE
+M.decoder_owner = decoder_owner
+M.semantic_table_owner = semantic_table_owner
+M.lookup_table_owner = lookup_table_owner
+M.cursor_substrate = cursor_substrate
+M.new_cursor = new_cursor
+M.decode_opcode = decode_opcode
+M.decode_instruction = decode_instruction
+M.read_i32_imm = read_i32_imm
+M.read_i64_imm = read_i64_imm
+M.read_u32_imm = read_u32_imm
+M.read_mem_arg = read_mem_arg
+M.read_immediate = read_immediate
+M.decode_i32_const = decode_i32_const

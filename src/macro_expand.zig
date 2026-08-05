@@ -691,6 +691,7 @@ pub const Expander = struct {
                 .indexed => |x| .{ .indexed = .{ .key = try self.cloneExpr(x.key, ctx), .val = try self.cloneExpr(x.val, ctx) } },
                 .named => |x| .{ .named = .{ .key = x.key, .val = try self.cloneExpr(x.val, ctx) } },
                 .positional => |x| .{ .positional = try self.cloneExpr(x, ctx) },
+                .spread => |x| .{ .spread = try self.cloneExpr(x, ctx) },
             });
         }
         return out.toOwnedSlice(self.alloc);

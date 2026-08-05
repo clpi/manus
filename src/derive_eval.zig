@@ -61,6 +61,7 @@ pub fn evalDeriveMacroValue(
     var macro_options = options;
     macro_options.alloc = arena_alloc;
     macro_options.comptime_cache_alloc = alloc;
+    macro_options.meta_hook = null; // derive macro bodies are plain string gen; avoid nested hook re-entry
     const fn_value = comptime_eval.funcValue(func_body, bindings, macro_options) catch return EvalError.EvalFailed;
     const result = comptime_eval.callFunctionValue(fn_value, &.{meta_value}, bindings, macro_options) catch return EvalError.EvalFailed;
     if (result != .string) return EvalError.NotString;

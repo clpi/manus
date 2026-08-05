@@ -16,10 +16,34 @@ const debug_trace = @import("debug_trace.zig");
 const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
+const backend_identity = @import("backend_identity.zig");
+const semantic_graph = @import("semantic_graph.zig");
+const sim = @import("sim.zig");
+const sim_pipeline = @import("sim_pipeline.zig");
+const knowledge_snapshot = @import("knowledge_snapshot.zig");
+const assumption_guard = @import("assumption_guard.zig");
+const repair_candidate = @import("repair_candidate.zig");
+const realization = @import("realization.zig");
+const persistent_semantic_state = @import("persistent_semantic_state.zig");
+const compile_semantic_cache = @import("compile_semantic_cache.zig");
+const semantic_invalidation = @import("semantic_invalidation.zig");
+const evidence_record = @import("evidence_record.zig");
+const optimization_outcome = @import("optimization_outcome.zig");
+const explain_pipeline = @import("explain_pipeline.zig");
+const c_sim_import = @import("c_sim_import.zig");
+const abi_specialize = @import("abi_specialize.zig");
+const semantic_algebra = @import("semantic_algebra.zig");
+const transform_engine = @import("transform_engine.zig");
+const pass3_catalog = @import("pass3_catalog.zig");
+const wasm_semantic_gen = @import("wasm_semantic_gen.zig");
 
 var macos_sdkroot_configured = false;
 var compiler_lib_root: ?[]const u8 = null;
 var forwarded_program_args: []const []const u8 = &.{};
+var graph_diag_enabled: bool = false;
+var graph_write_enabled: bool = false;
+var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
+var semantic_cache_enabled: bool = true;
 
 fn env_value_truthy(value: []const u8) bool {
     if (value.len == 0) return false;
@@ -37,6 +61,27 @@ fn apply_env_flags(init: std.process.Init) void {
         if (map.get("DUO_NATIVE_DIAG")) |v| {
             if (env_value_truthy(v)) cg.native_diag = true;
         }
+    }
+    {
+        const te = @import("transform_engine.zig");
+        if (map.get("DUO_PROVENANCE")) |v| {
+            if (env_value_truthy(v)) te.setProvenanceEnabled(true);
+        }
+        if (map.get("DUO_TRANSFORM_GATE")) |v| {
+            if (env_value_truthy(v)) te.setMetaDispatchStrict(true);
+        }
+    }
+    if (map.get("DUO_GRAPH")) |v| {
+        if (env_value_truthy(v)) graph_diag_enabled = true;
+    }
+    if (map.get("DUO_GRAPH_WRITE")) |v| {
+        if (env_value_truthy(v)) graph_write_enabled = true;
+    }
+    if (map.get("DUO_BENCH_BACKEND")) |v| {
+        if (backend_identity.BenchBackend.parse(v)) |bb| global_bench_backend = bb;
+    }
+    if (map.get("DUO_SEMANTIC_CACHE")) |v| {
+        if (!env_value_truthy(v)) semantic_cache_enabled = false;
     }
     if (map.get("DUO_TRACE")) |v| {
         if (env_value_truthy(v)) term.trace = true;
@@ -132,10 +177,18 @@ const usage =
     \\  compile    [file]   compile .duo/.lua to a native binary
     \\  run        [file]   compile and run immediately, or run @build target
     \\  check      <file>   type-check only, no output
-    \\  fmt        <file>   format a .duo/.lua file
+    \\  fmt        <file>   format a .duo/.lua file (--canonical strips then/do in .duo)
     \\  test       [file]   run inline @test functions (or @build.test target)
     \\  bench      [file]   run @bench-marked functions (or @build.bench target)
     \\  symbols    <file>   glanceable module/test/build symbol map
+    \\  graph      <file>   export semantic graph JSON (table_shapes, enum_shapes)
+    \\  sim        <file>   export SIM v0 semantic snapshot JSON (Pass 5)
+    \\             --import-c <header>  import C declarations into SIM (Pass 5 Layer B)
+    \\  explain    <file>   export knowledge snapshots + optimization outcomes (Pass 7)
+    \\  realize    <file>   export realization plan + persistent evidence (Pass 8)
+    \\  algebra             export Pass 2 convergence catalog JSON
+    \\  catalog             export Pass 3 keyword/directive/grammar catalog JSON
+    \\  wasm-tables emit    regenerate lib/std/wasm/opcode_lookup.duo + ward_mvp_opcodes.duo
     \\  completion <shell>  generate shell completions (bash, zsh, fish, nu)
     \\
     \\options:
@@ -143,6 +196,8 @@ const usage =
     \\  -O<n>             optimisation level (default: -O3)
     \\  --cc <path>       C compiler (default: clang)
     \\  --target <triple> target triple for cross-compilation (e.g. wasm32-wasi, native-object, native-exe, native-dylib)
+    \\  --backend <c|direct>  explicit backend: c (default, generated C) or direct (ARM64 Mach-O, experimental)
+    \\  --bench-backend <c-dynamic|c-specialized|direct>  benchmark representation profile (default c-specialized)
     \\  --load-chunk      compile as shared library for runtime load() (not for run)
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
@@ -159,6 +214,7 @@ const usage =
     \\  --build-report S  build output style: pretty|compact|verbose|plain (default pretty)
     \\  --stage <name>    with `build all`, build only one named/numeric stage
     \\  --no-color        disable ANSI styling
+    \\  --canonical       fmt: omit deprecated then/do keywords in .duo output
     \\  --filter <pat>    run only tests whose name contains <pat>
     \\
 ;
@@ -192,6 +248,13 @@ pub fn main(init: std.process.Init) !void {
             std.mem.eql(u8, args[1], "test") or
             std.mem.eql(u8, args[1], "bench") or
             std.mem.eql(u8, args[1], "symbols") or
+            std.mem.eql(u8, args[1], "graph") or
+            std.mem.eql(u8, args[1], "sim") or
+            std.mem.eql(u8, args[1], "realize") or
+            std.mem.eql(u8, args[1], "explain") or
+            std.mem.eql(u8, args[1], "algebra") or
+            std.mem.eql(u8, args[1], "catalog") or
+            std.mem.eql(u8, args[1], "wasm-tables") or
             std.mem.eql(u8, args[1], "completion") or
             std.mem.eql(u8, args[1], "help") or
             std.mem.eql(u8, args[1], "--help") or
@@ -203,6 +266,7 @@ pub fn main(init: std.process.Init) !void {
     var cc: []const u8 = "clang";
     var opt_level: []const u8 = "-O3";
     var target: []const u8 = "native";
+    var compile_backend: []const u8 = "c";
     var verbose = false;
     var trace_flag = false;
     var info_flag = false;
@@ -226,6 +290,7 @@ pub fn main(init: std.process.Init) !void {
     var extra_arg: ?[]const u8 = null;
     var forwarded_args: std.ArrayList([]const u8) = .empty;
     var link_flags: std.ArrayList([]const u8) = .empty;
+    var fmt_canonical = false;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -246,6 +311,23 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--target") and i + 1 < args.len) {
             i += 1;
             target = args[i];
+        } else if (std.mem.eql(u8, arg, "--backend") and i + 1 < args.len) {
+            i += 1;
+            compile_backend = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--backend=")) {
+            compile_backend = arg["--backend=".len..];
+        } else if (std.mem.eql(u8, arg, "--bench-backend") and i + 1 < args.len) {
+            i += 1;
+            if (backend_identity.BenchBackend.parse(args[i])) |bb| global_bench_backend = bb else {
+                term.err("unknown --bench-backend '{s}' (expected c-dynamic, c-specialized, or direct)", .{args[i]});
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "--bench-backend=")) {
+            const val = arg["--bench-backend=".len..];
+            if (backend_identity.BenchBackend.parse(val)) |bb| global_bench_backend = bb else {
+                term.err("unknown --bench-backend '{s}'", .{val});
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "--load-chunk")) {
             load_chunk = true;
         } else if (std.mem.eql(u8, arg, "--lib")) {
@@ -301,6 +383,8 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--stage") and i + 1 < args.len) {
             i += 1;
             stage_filter = args[i];
+        } else if (std.mem.eql(u8, arg, "--canonical")) {
+            fmt_canonical = true;
         } else if (arg.len > 0 and arg[0] != '-') {
             if (input_file == null) {
                 input_file = arg;
@@ -313,6 +397,7 @@ pub fn main(init: std.process.Init) !void {
 
     apply_cli_flags(trace_flag, info_flag, hints_flag, plain_diag, debug_flag, debug_list, debug_depth, test_report_style, build_report_style, no_color, verbose_count);
     if (trace_rich and term.build_report == .pretty) term.setBuildReport(.verbose);
+    target = resolveCompileBackend(compile_backend, target);
 
     if (std.mem.eql(u8, cmd, "help") or std.mem.eql(u8, cmd, "--help") or std.mem.eql(u8, cmd, "-h")) {
         term.printRaw("{s}", .{usage});
@@ -383,6 +468,111 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
+    if (std.mem.eql(u8, cmd, "graph")) {
+        var graph_file: ?[]const u8 = null;
+        var graph_write = false;
+        var ai: usize = 2;
+        while (ai < args.len) : (ai += 1) {
+            if (std.mem.eql(u8, args[ai], "--write")) {
+                graph_write = true;
+            } else if (args[ai][0] != '-') {
+                graph_file = args[ai];
+            } else {
+                term.err("unknown graph option: {s}", .{args[ai]});
+                std.process.exit(1);
+            }
+        }
+        const file = graph_file orelse {
+            term.err("no input file (duo graph <file.duo> [--write])", .{});
+            std.process.exit(1);
+        };
+        try do_graph(alloc, io, file, graph_write);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "sim")) {
+        var import_c: ?[]const u8 = null;
+        var duo_file: ?[]const u8 = null;
+        var ai: usize = 2;
+        while (ai < args.len) : (ai += 1) {
+            if (std.mem.eql(u8, args[ai], "--import-c")) {
+                ai += 1;
+                if (ai >= args.len) {
+                    term.err("--import-c requires a header path", .{});
+                    std.process.exit(1);
+                }
+                import_c = args[ai];
+            } else if (args[ai][0] != '-') {
+                duo_file = args[ai];
+            } else {
+                term.err("unknown sim option: {s}", .{args[ai]});
+                std.process.exit(1);
+            }
+        }
+        if (import_c) |header| {
+            try do_sim_c_import(alloc, io, header);
+            return;
+        }
+        const file = duo_file orelse {
+            term.err("no input file (duo sim <file.duo> or duo sim --import-c <header>)", .{});
+            std.process.exit(1);
+        };
+        try do_sim(alloc, io, file);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "realize")) {
+        if (input_file == null) {
+            term.err("no input file (duo realize <file.duo>)", .{});
+            std.process.exit(1);
+        }
+        try do_realize(alloc, io, input_file.?);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "explain")) {
+        const file = input_file orelse {
+            term.err("no input file (duo explain <file.duo>)", .{});
+            std.process.exit(1);
+        };
+        try do_explain(alloc, io, file);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "catalog")) {
+        if (input_file != null) {
+            term.err("duo catalog takes no file argument", .{});
+            std.process.exit(1);
+        }
+        try do_catalog(alloc, io);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "wasm-tables")) {
+        const sub = input_file orelse {
+            term.err("usage: duo wasm-tables emit", .{});
+            std.process.exit(1);
+        };
+        if (!std.mem.eql(u8, sub, "emit")) {
+            term.err("unknown wasm-tables subcommand '{s}' (expected: emit)", .{sub});
+            std.process.exit(1);
+        }
+        try wasm_semantic_gen.emitDuoOpcodeLookupFile(alloc, io, "lib/std/wasm/opcode_lookup.duo");
+        try wasm_semantic_gen.emitWardMvpOpcodesFile(alloc, io, "lib/std/wasm/ward_mvp_opcodes.duo");
+        term.print("wrote lib/std/wasm/opcode_lookup.duo\n", .{});
+        term.print("wrote lib/std/wasm/ward_mvp_opcodes.duo\n", .{});
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "algebra")) {
+        if (input_file != null) {
+            term.err("duo algebra takes no file argument", .{});
+            std.process.exit(1);
+        }
+        try do_algebra(io);
+        return;
+    }
+
     if (std.mem.eql(u8, cmd, "test") or std.mem.eql(u8, cmd, "bench")) {
         const bench_only = std.mem.eql(u8, cmd, "bench");
         if (input_file) |file| {
@@ -432,7 +622,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, cmd, "check")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, false, true, false, false, false, false, false, false, false, null, &.{});
     } else if (std.mem.eql(u8, cmd, "fmt")) {
-        try do_fmt(alloc, io, file);
+        try do_fmt(alloc, io, file, fmt_canonical);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
         try do_dump_c(alloc, io, file, target);
     } else {
@@ -800,7 +990,7 @@ fn fmtTree(alloc: std.mem.Allocator, io: Io, dir_path: []const u8) !void {
         if (std.mem.endsWith(u8, entry.name, ".duo") or std.mem.endsWith(u8, entry.name, ".lua")) {
             const path = try std.fs.path.join(alloc, &.{ dir_path, entry.name });
             defer alloc.free(path);
-            try do_fmt(alloc, io, path);
+            try do_fmt(alloc, io, path, false);
         }
     }
 }
@@ -811,7 +1001,7 @@ fn do_project_fmt(alloc: std.mem.Allocator, io: Io, t: build_framework.Target) !
         if (std.mem.eql(u8, src, ".") or std.mem.endsWith(u8, src, "/")) {
             try fmtTree(alloc, io, if (std.mem.eql(u8, src, ".")) "." else src);
         } else {
-            try do_fmt(alloc, io, src);
+            try do_fmt(alloc, io, src, false);
         }
     } else {
         try fmtTree(alloc, io, ".");
@@ -1004,6 +1194,196 @@ fn do_symbols(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     term.kv("functions", std.fmt.bufPrint(&func_buf, "{d}", .{funcs}) catch "?");
     term.divider();
     term.dim("inline tests live in source — duo test {s}", .{src_path});
+}
+
+fn hashSourceFile(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !u64 {
+    const data = try Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, src_path, alloc, .unlimited);
+    defer alloc.free(data);
+    return std.hash.Wyhash.hash(0, data);
+}
+
+fn do_graph(alloc: std.mem.Allocator, io: Io, src_path: []const u8, write_sidecar: bool) !void {
+    const ps = try parse_and_check(alloc, io, src_path);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&ps.mod, src_path);
+    const source_hash = hashSourceFile(alloc, io, src_path) catch null;
+    var json: std.ArrayListUnmanaged(u8) = .empty;
+    defer json.deinit(alloc);
+    try graph.writeJson(alloc, src_path, &json, source_hash);
+    const stdout = std.Io.File.stdout();
+    var buf: [4096]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try fw.interface.writeAll(json.items);
+    try fw.interface.flush();
+    if (write_sidecar or graph_write_enabled) {
+        if (source_hash) |h| {
+            try graph.writeSidecar(alloc, io, src_path, h);
+            if (term.info) {
+                var path_buf: [512]u8 = undefined;
+                const rel = semantic_graph.SemanticGraph.sidecarRelPath(src_path, &path_buf);
+                term.infoMsg("graph sidecar: {s}", .{rel});
+            }
+        }
+    }
+}
+
+fn do_sim(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+    const ps = try parse_and_check(alloc, io, src_path);
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&ps.mod, src_path);
+    var snap = try sim_pipeline.exportInterchangeWithGraph(alloc, &ps.mod, src_path, &graph);
+    defer snap.deinit(alloc);
+    const stdout = std.Io.File.stdout();
+    var buf: [8192]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try sim.writeSnapshotJson(&snap, &fw.interface);
+    try fw.interface.flush();
+}
+
+fn do_sim_c_import(alloc: std.mem.Allocator, io: Io, header_path: []const u8) !void {
+    var snap = try c_sim_import.importHeaderFile(alloc, io, header_path);
+    defer snap.deinit(alloc);
+    try abi_specialize.specializeSnapshot(alloc, &snap);
+    const stdout = std.Io.File.stdout();
+    var buf: [8192]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try sim.writeSnapshotJson(&snap, &fw.interface);
+    try fw.interface.flush();
+}
+
+
+fn do_realize(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+    var ps = try parse_and_check(alloc, io, src_path);
+    defer ps.sem.deinit();
+
+    var refresh = try compile_semantic_cache.refreshFromCheckedModule(alloc, io, &ps.mod, src_path, "native");
+    defer refresh.deinit(alloc);
+
+    const stdout = std.Io.File.stdout();
+    var buf: [16384]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try fw.interface.print("{{\"schema\":\"duo-realize-v0\",\"file\":\"", .{});
+    for (src_path) |c| {
+        switch (c) {
+            '"', '\\' => try fw.interface.print("\\{c}", .{c}),
+            else => try fw.interface.writeAll(&.{c}),
+        }
+    }
+    try fw.interface.print("\",\"realization_plan\":", .{});
+    try realization.writeJson(&refresh.realizations, &fw.interface);
+    try fw.interface.print(",\"evidence_catalog\":", .{});
+    try evidence_record.writeCatalogJson(&fw.interface);
+    try fw.interface.print(",\"persistent_state\":", .{});
+    try persistent_semantic_state.writeJson(&refresh.state, &fw.interface);
+    try fw.interface.print(",\"cache_path\":\"", .{});
+    for (persistent_semantic_state.DEFAULT_CACHE_PATH) |c| {
+        switch (c) {
+            '"', '\\' => try fw.interface.print("\\{c}", .{c}),
+            else => try fw.interface.writeAll(&.{c}),
+        }
+    }
+    try fw.interface.print("\",\"reuse_audit\":", .{});
+    try persistent_semantic_state.writeReuseAuditJson(refresh.audits, &fw.interface);
+    try fw.interface.print(",\"invalidation\":", .{});
+    try semantic_invalidation.writeJson(&refresh.invalidation, &fw.interface);
+    try fw.interface.print("}}\n", .{});
+    try fw.interface.flush();
+}
+
+fn do_explain(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+    var ps = try parse_and_check(alloc, io, src_path);
+    defer ps.sem.deinit();
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = try graph.liftModuleWithCalls(&ps.mod, src_path);
+
+    var snap = try knowledge_snapshot.buildFromModule(alloc, &ps.mod, &ps.sem, &graph, src_path);
+    defer snap.deinit(alloc);
+
+    var assumptions = try assumption_guard.buildFromModule(alloc, &ps.mod, &ps.sem, &graph);
+    defer assumptions.deinit(alloc);
+
+    var realizations = try realization.buildFromGraph(alloc, &graph, src_path);
+    defer realizations.deinit(alloc);
+
+    transform_engine.deinitProvenance(alloc);
+    explain_pipeline.runForProvenance(alloc, io, &ps.mod, &ps.sem, src_path, compiler_lib_root) catch |e| switch (e) {
+        error.NoAllocViolation => {
+            term.err("@noalloc contract violated during explain/codegen (see optimization_outcomes)", .{});
+        },
+        error.MonomorphizationFailed => {
+            term.err("explain: monomorphization failed", .{});
+            std.process.exit(1);
+        },
+        error.ArcFailed, error.AsyncLowerFailed => {
+            term.err("explain: lowering pass failed", .{});
+            std.process.exit(1);
+        },
+        error.CodegenFailed => {
+            term.err("explain: codegen failed", .{});
+            std.process.exit(1);
+        },
+        else => |err| return err,
+    };
+    defer transform_engine.deinitProvenance(alloc);
+    defer optimization_outcome.deinitSession(alloc);
+
+    var outcomes = try optimization_outcome.fromProvenance(alloc);
+    defer outcomes.deinit(alloc);
+    // Include structured contract rejections logged during codegen.
+    try optimization_outcome.mergeSessionInto(alloc, &outcomes);
+
+    var repair_set: ?repair_candidate.RepairSet = null;
+    defer if (repair_set) |*rs| rs.deinit(alloc);
+    for (outcomes.items) |o| {
+        if (std.mem.eql(u8, o.transformation, "contract.noalloc") and o.status == .rejected) {
+            repair_set = try repair_candidate.repairsForBlocker("noalloc_heap_alloc", alloc);
+            break;
+        }
+    }
+
+    const stdout = std.Io.File.stdout();
+    var buf: [16384]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try fw.interface.print("{{\"schema\":\"duo-explain-v0\",\"file\":\"", .{});
+    for (src_path) |c| {
+        switch (c) {
+            '"', '\\' => try fw.interface.print("\\{c}", .{c}),
+            else => try fw.interface.writeAll(&.{c}),
+        }
+    }
+    try fw.interface.print("\",\"knowledge_snapshot\":", .{});
+    try knowledge_snapshot.writeJson(&snap, &fw.interface);
+    try fw.interface.print(",\"optimization_outcomes\":", .{});
+    try optimization_outcome.writeJson(&outcomes, &fw.interface);
+    try fw.interface.print(",\"assumptions\":", .{});
+    try assumption_guard.writeModuleJson(&assumptions, &fw.interface);
+    try fw.interface.print(",\"realizations\":", .{});
+    try realization.writeJson(&realizations, &fw.interface);
+    if (repair_set) |rs| {
+        try fw.interface.print(",\"repair_candidates\":", .{});
+        try repair_candidate.writeRepairSetJson(&rs, &fw.interface);
+    }
+    try fw.interface.print("}}\n", .{});
+    try fw.interface.flush();
+}
+
+fn do_algebra(io: Io) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [8192]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try semantic_algebra.writeCatalogJson(&fw.interface);
+    try fw.interface.flush();
+}
+
+fn do_catalog(alloc: std.mem.Allocator, io: Io) !void {
+    const stdout = std.Io.File.stdout();
+    var buf: [65536]u8 = undefined;
+    var fw: std.Io.File.Writer = .init(stdout, io, &buf);
+    try pass3_catalog.writeCatalogJson(&fw.interface, alloc);
+    try fw.interface.flush();
 }
 
 fn ensureDirForPath(io: Io, path: []const u8) !void {
@@ -1628,6 +2008,7 @@ fn table_fields_have_macro_syntax(fields: []const ast.TableField) bool {
             },
             .named => |named| if (expr_has_macro_syntax(named.val)) return true,
             .positional => |expr| if (expr_has_macro_syntax(expr)) return true,
+            .spread => |expr| if (expr_has_macro_syntax(expr)) return true,
         }
     }
     return false;
@@ -1718,6 +2099,7 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     var sem = Sema.init(alloc);
     sem.lua55_mode = is_lua_source_path(src_path);
     sem.duo_mode = is_duo_source_path(src_path);
+    sem.source_path = try alloc.dupe(u8, src_path);
     sem.hints_enabled = term.hints;
     sem.info_enabled = term.info;
     if (module_has_macro_syntax(&mod)) {
@@ -1735,6 +2117,15 @@ fn parse_and_check(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !Pars
     if (sem.errors > 0) {
         term.err("{d} error(s)", .{sem.errors});
         std.process.exit(1);
+    }
+    if (graph_diag_enabled) {
+        var graph = semantic_graph.SemanticGraph.init(alloc);
+        defer graph.deinit();
+        if (graph.liftModuleWithCalls(&mod, src_path)) |_| {
+            graph.dumpSummary(io, std.Io.File.stderr(), src_path);
+        } else |e| {
+            term.dim("[duo graph] lift skipped: {s}", .{@errorName(e)});
+        }
     }
     return .{ .mod = mod, .sem = sem };
 }
@@ -1832,6 +2223,30 @@ fn run_pretty_test_runner(alloc: std.mem.Allocator, io: Io, out_path: []const u8
     };
 }
 
+fn resolveCompileBackend(backend: []const u8, target_in: []const u8) []const u8 {
+    if (std.mem.eql(u8, backend, "direct")) {
+        if (native_backend.isNativeMachineTarget(target_in)) return target_in;
+        return "native-exe";
+    }
+    if (!std.mem.eql(u8, backend, "c")) {
+        term.err("unknown --backend '{s}' (expected c or direct)", .{backend});
+        std.process.exit(1);
+    }
+    if (native_backend.isNativeMachineTarget(target_in)) {
+        term.err("direct machine target '{s}' requires --backend=direct", .{target_in});
+        std.process.exit(1);
+    }
+    return target_in;
+}
+
+fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8) void {
+    var buf: [512]u8 = undefined;
+    const msg = native_backend.describeError(err, target, &buf);
+    term.err("direct backend: {s}", .{msg});
+    term.hint("{s}", .{native_backend.unsupportedReason(target)});
+    _ = io;
+}
+
 fn do_compile(
     alloc: std.mem.Allocator,
     io: Io,
@@ -1886,6 +2301,34 @@ fn do_compile(
         return;
     }
 
+    if (semantic_cache_enabled and ps.sem.duo_mode) {
+        if (compile_semantic_cache.refreshFromCheckedModule(alloc, io, &ps.mod, src_path, target)) |refresh| {
+            var cache_refresh = refresh;
+            defer cache_refresh.deinit(alloc);
+            if (term.info) {
+                var reused: u32 = 0;
+                var fresh: u32 = 0;
+                var invalidated: u32 = 0;
+                for (cache_refresh.audits) |row| {
+                    switch (row.action) {
+                        .reused => reused += 1,
+                        .fresh => fresh += 1,
+                        .invalidated => invalidated += 1,
+                        .updated => {},
+                    }
+                }
+                term.infoMsg("semantic cache: {d} reused, {d} fresh, {d} invalidated, {d} removal edge(s)", .{
+                    reused,
+                    fresh,
+                    invalidated,
+                    cache_refresh.invalidation.edges.len,
+                });
+            }
+        } else |e| {
+            if (term.info) term.infoMsg("semantic cache refresh skipped: {}", .{e});
+        }
+    }
+
     var native_scalar_precheck = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, undefined, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
     native_scalar_precheck.src_path = src_path;
     native_scalar_precheck.stdlib_root = compiler_lib_root;
@@ -1895,9 +2338,10 @@ fn do_compile(
     native_scalar_precheck.duo_mode = ps.sem.duo_mode;
     native_scalar_precheck.test_mode = test_mode;
     native_scalar_precheck.bench_mode = bench_mode;
+    native_scalar_precheck.bench_backend = global_bench_backend;
+    native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_record_aliases(&ps.mod) catch {};
     native_scalar_precheck.populate_enum_defs(&ps.mod) catch {};
-    native_scalar_precheck.populate_alias_defs(&ps.mod) catch {};
     native_scalar_precheck.populate_func_bodies(&ps.mod) catch {};
     const native_scalar_candidate = native_scalar_precheck.can_emit_native_scalar_module(&ps.mod);
 
@@ -1915,14 +2359,14 @@ fn do_compile(
             std.process.exit(1);
         }
         if (!native_scalar_candidate) {
-            term.err("native machine-code backend requires a fully typed native-scalar module", .{});
-            term.hint("{s}", .{native_backend.unsupportedReason(target)});
+            const diag = native_backend.directDiagnostic(error.UnsupportedProgram, target);
+            term.err("{s}: {s}", .{ diag.code, diag.message });
+            term.hint("use --backend=c for generated C (default portable backend)", .{});
             std.process.exit(1);
         }
         if (native_backend.isNativeExecutableTarget(target)) {
             const obj = native_backend.emitObject(alloc, &ps.mod, "native-object") catch |e| {
-                term.err("native machine-code backend error: {}", .{e});
-                term.hint("{s}", .{native_backend.unsupportedReason(target)});
+                reportDirectBackendError(io, e, target);
                 std.process.exit(1);
             };
             const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
@@ -1960,8 +2404,7 @@ fn do_compile(
         }
         if (native_backend.isNativeSharedTarget(target)) {
             const obj = native_backend.emitSharedObjectInput(alloc, &ps.mod) catch |e| {
-                term.err("native machine-code backend error: {}", .{e});
-                term.hint("{s}", .{native_backend.unsupportedReason(target)});
+                reportDirectBackendError(io, e, target);
                 std.process.exit(1);
             };
             const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
@@ -1981,8 +2424,7 @@ fn do_compile(
         else
             native_backend.emitObject(alloc, &ps.mod, target);
         const obj = native_output catch |e| {
-            term.err("native machine-code backend error: {}", .{e});
-            term.hint("{s}", .{native_backend.unsupportedReason(target)});
+            reportDirectBackendError(io, e, target);
             std.process.exit(1);
         };
         const cwd = Io.Dir.cwd();
@@ -2089,7 +2531,7 @@ fn do_compile(
 
     phase_timer = start_trace_timer(io);
     if (term.trace) term.traceStep("codegen", .{});
-    var native_scalar_mode = false;
+    var full_native_lowering = false;
     const ml_kernels_sidecar = ml_sidecar: {
         const cwd = Io.Dir.cwd();
         const cf = try Io.Dir.createFile(cwd, io, c_path, .{});
@@ -2110,15 +2552,23 @@ fn do_compile(
         cg.duo_mode = ps.sem.duo_mode;
         cg.test_mode = test_mode;
         cg.bench_mode = bench_mode;
+        cg.bench_backend = global_bench_backend;
         cg.test_structured_output = test_mode and term.testUsesStructuredOutput();
         cg.test_filter = test_filter;
         cg.test_entries = ps.sem.test_entries.items;
+        cg.foreign_records = &ps.sem.foreign_records;
+        cg.foreign_functions = &ps.sem.foreign_functions;
         cg.emit_module(&ps.mod) catch |e| {
+            if (e == error.NoAllocViolation) {
+                if (cg.noallocViolationMessage()) |msg| term.err("{s}", .{msg});
+                std.process.exit(1);
+            }
             term.err("codegen error: {}", .{e});
             std.process.exit(1);
         };
-        native_scalar_mode = cg.native_scalar_mode;
+        full_native_lowering = cg.usesFullNativeLowering();
         try fw.interface.flush();
+        transform_engine.dumpProvenanceSummary(io, std.Io.File.stderr());
         break :ml_sidecar cg.ml_kernels_emitted;
     };
     if (phase_timer) |*t| trace_phase(io, t, "codegen", c_path);
@@ -2184,7 +2634,7 @@ fn do_compile(
                 "-fno-trapping-math",
                 "-fno-math-errno",
             });
-            if (!native_scalar_mode) {
+            if (!full_native_lowering) {
                 try args.appendSlice(alloc, &.{
                     "-mtune=native",
                     "-fstrict-aliasing",
@@ -2193,7 +2643,7 @@ fn do_compile(
                     "-fdata-sections",
                 });
             } else {
-                // For native scalar mode, still enable key optimizations
+                // For full native lowering, still enable key optimizations
                 // that match the C reference compilation flags.
                 try args.appendSlice(alloc, &.{
                     "-funroll-loops",
@@ -2204,10 +2654,10 @@ fn do_compile(
                 "-std=gnu99",
                 "-lm",
             });
-            if (!native_scalar_mode) {
+            if (!full_native_lowering) {
                 try args.append(alloc, "-flto");
             } else {
-                // Enable LTO for native scalar mode to match C reference flags.
+                // Enable LTO for native modules to match C reference flags.
                 try args.append(alloc, "-flto");
             }
             for (link_flags) |lib| {
@@ -2459,6 +2909,8 @@ const fish_completion =
     \\complete -c duo -n '__fish_use_subcommand' -a 'test' -d 'Run @test functions in a .duo file'
     \\complete -c duo -n '__fish_use_subcommand' -a 'bench' -d 'Run @bench functions only'
     \\complete -c duo -n '__fish_use_subcommand' -a 'dump-c' -d 'Print generated C'
+    \\complete -c duo -n '__fish_use_subcommand' -a 'symbols' -d 'Glanceable module symbol map'
+    \\complete -c duo -n '__fish_use_subcommand' -a 'graph' -d 'Export semantic graph JSON'
     \\complete -c duo -n '__fish_use_subcommand' -a 'completion' -d 'Generate shell completions'
     \\complete -c duo -n '__fish_use_subcommand' -a 'help' -d 'Show help'
     \\complete -c duo -s o -r -d 'Output binary name'
@@ -2576,14 +3028,21 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.stdlib_root = compiler_lib_root;
     cg.target = target;
     cg.duo_mode = ps.sem.duo_mode;
-    cg.emit_module(&ps.mod) catch |e| {
-        term.err("codegen error: {}", .{e});
-        std.process.exit(1);
-    };
+    cg.foreign_records = &ps.sem.foreign_records;
+    cg.foreign_functions = &ps.sem.foreign_functions;
+        cg.emit_module(&ps.mod) catch |e| {
+            if (e == error.NoAllocViolation) {
+                if (cg.noallocViolationMessage()) |msg| term.err("{s}", .{msg});
+                std.process.exit(1);
+            }
+            term.err("codegen error: {}", .{e});
+            std.process.exit(1);
+        };
     try fw.interface.flush();
+    transform_engine.dumpProvenanceSummary(io, std.Io.File.stderr());
 }
 
-fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
+fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8, canonical: bool) !void {
     const src = read_source(alloc, io, src_path) catch |err| {
         term.err("failed to read source file '{s}': {s}", .{ src_path, @errorName(err) });
         std.process.exit(1);
@@ -2603,6 +3062,7 @@ fn do_fmt(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
 
     var buf: std.ArrayList(u8) = .empty;
     var pp = PrettyPrinter.init(alloc, &buf, .duo);
+    pp.canonical = canonical and parser.duo_mode;
     pp.printModule(&mod) catch {
         term.err("failed to format '{s}'", .{src_path});
         std.process.exit(1);

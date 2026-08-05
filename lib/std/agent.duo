@@ -122,7 +122,7 @@ fun multiplier_for(goal: str): str
 end
 
 fun build_gates(): str
-    "tier0: scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo\n" ..
+    "tier0: ./scripts/public_safety_scan.sh && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo\n" ..
     "tier1: scripts/duo_lock.sh -- zig build unit-test --summary all\n" ..
     "tier2: scripts/duo_lock.sh -- zig build test\n" ..
     "tier3: scripts/duo_lock.sh -- zig build bench  (claim benchmarks/perf; never parallel tier3)"
@@ -179,6 +179,8 @@ fun smoke_targets(): any
         "examples/missing_args_nil_smoke.duo",
         "examples/nested_tail_call_statement_smoke.duo",
         "examples/implicit_concat_tail_smoke.duo",
+        "examples/branch_scope_smoke.duo",
+        "examples/nil_init_smoke.duo",
         "examples/meta_template_showcase.duo",
         "examples/meta_template_callback_showcase.duo",
         "examples/meta_scheme_showcase.duo",
@@ -193,8 +195,23 @@ fun smoke_targets(): any
         "examples/meta_interpolate_showcase.duo",
         "examples/meta_zip_showcase.duo",
         "examples/meta_composition_showcase.duo",
+        "examples/meta_nested_algebra_showcase.duo",
+        "examples/meta_exponential_cascade.duo",
+        "examples/meta_ultra_cascade.duo",
+        "examples/meta_match_fixpoint_showcase.duo",
+        "examples/meta_derive_power_cascade.duo",
+        "examples/meta_fixpoint_showcase.duo",
+        "examples/empty_table_smoke.duo",
         "examples/embedded_bare_bundles_smoke.duo",
         "examples/vector_embed_smoke.duo",
+        "examples/pass9/instruction_descriptor_smoke.duo",
+        "examples/pass9/leb128_cursor_smoke.duo",
+        "examples/pass9/decoder_table_smoke.duo",
+        "examples/pass9/validator_stack_smoke.duo",
+        "examples/pass9/decode_cursor_smoke.duo",
+        "examples/pass9/decode_semantic_smoke.duo",
+        "examples/pass9/decode_differential_smoke.duo",
+        "examples/pass9/ward_mvp_opcodes_smoke.duo",
     }
 end
 

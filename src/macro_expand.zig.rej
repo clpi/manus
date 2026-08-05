@@ -1,0 +1,19 @@
+@@ -76,9 +76,14 @@
+                             const code = try script_buf.toOwnedSlice(self.alloc);
+                             defer self.alloc.free(code);
+                             
+-                            const tmp_file = "/tmp/duo_macro.duo";
+-                            const fd = std.posix.open(tmp_file, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch return error.FailedToOpenMacroTmp;
+-                            _ = std.posix.write(fd, code) catch return error.FailedToWriteMacroTmp;
+-                            std.posix.close(fd);
++                            const tmp_file = "/tmp/duo_macro.duo";
++                            var threaded = std.Io.Threaded.init(self.alloc, .{});
++                            const io = threaded.io();
++                            const cwd = std.Io.Dir.cwd();
++                            const file = std.Io.Dir.createFile(cwd, io, tmp_file, .{}) catch return error.FailedToOpenMacroTmp;
++                            var file_writer = std.Io.File.Writer.init(file, io, &[_]u8{});
++                            file_writer.interface.writeAll(code) catch return error.FailedToWriteMacroTmp;
++                            std.Io.File.close(file, io);
++                            threaded.deinit();
+ 
+                             const exe = try std.fs.selfExePathAlloc(self.alloc);

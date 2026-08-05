@@ -1,0 +1,10 @@
+@noalloc
+fun leak(): i64
+    raw: *u8 = mem.alloc(64)
+    mem.free(raw)
+    0
+end
+
+main(): i64
+    leak()
+end

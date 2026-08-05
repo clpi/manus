@@ -20,6 +20,27 @@ pub const NodeId = struct {
     }
 };
 
+/// Content-addressed durable identity (A1): hash(module_path, kind, stable_path, generation).
+pub const StableId = struct {
+    hash: u64,
+
+    pub fn compute(module_path: []const u8, kind: NodeKind, stable_path: []const u8, generation: u32) StableId {
+        var hasher = std.hash.Wyhash.init(0);
+        hasher.update(module_path);
+        hasher.update("|");
+        hasher.update(&[_]u8{@intFromEnum(kind)});
+        hasher.update("|");
+        hasher.update(stable_path);
+        hasher.update("|");
+        hasher.update(std.mem.asBytes(&generation));
+        return .{ .hash = hasher.final() };
+    }
+
+    pub fn formatHex(self: StableId, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "{x:0>16}", .{self.hash}) catch "0000000000000000";
+    }
+};
+
 pub const NodeKind = enum {
     module,
     source_file,
@@ -86,6 +107,10 @@ pub const Node = struct {
     hardware_lowerings: semantic_algebra.HardwareSet = .{},
     /// Opaque link to AST for Phase 1 — graph mirrors, does not replace, AST yet.
     ast_ref: ?*anyopaque = null,
+    /// Content-addressed durable ID (survives benign reparses when path+span match).
+    stable_id: ?StableId = null,
+    /// When true, `name` was allocated on the graph allocator and must be freed in deinit.
+    owns_name: bool = false,
 };
 
 pub const Edge = struct {
@@ -98,6 +123,10 @@ pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
     nodes: std.ArrayListUnmanaged(Node) = .empty,
     edges: std.ArrayListUnmanaged(Edge) = .empty,
+    /// Module path used for stable_id computation.
+    module_path: []const u8 = "",
+    /// Generation counter for transactional edits (default 0).
+    generation: u32 = 0,
     /// Module-scope func decls indexed by name (Pass 2.2 effect inference on call lift).
     func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
 
@@ -109,15 +138,37 @@ pub const SemanticGraph = struct {
         for (self.nodes.items) |node| {
             if (node.why) |w| self.alloc.free(w);
             if (node.descriptor_label) |d| self.alloc.free(d);
+            if (node.owns_name) {
+                if (node.name) |n| self.alloc.free(n);
+            }
         }
         self.nodes.deinit(self.alloc);
         self.edges.deinit(self.alloc);
         self.func_decls.deinit(self.alloc);
     }
 
+    fn stablePathForNode(node: *const Node, buf: []u8) []const u8 {
+        if (node.name) |name| return name;
+        return std.fmt.bufPrint(buf, "{s}:{d}:{d}", .{
+            nodeKindLabel(node.kind),
+            node.span.start,
+            node.span.end,
+        }) catch "anon";
+    }
+
+    fn computeStableId(self: *const SemanticGraph, node: *const Node) StableId {
+        var buf: [256]u8 = undefined;
+        const path = stablePathForNode(node, &buf);
+        return StableId.compute(self.module_path, node.kind, path, self.generation);
+    }
+
     pub fn addNode(self: *SemanticGraph, node: Node) !NodeId {
         const id = NodeId{ .index = @intCast(self.nodes.items.len) };
-        try self.nodes.append(self.alloc, node);
+        var n = node;
+        if (n.stable_id == null and self.module_path.len > 0) {
+            n.stable_id = self.computeStableId(&n);
+        }
+        try self.nodes.append(self.alloc, n);
         return id;
     }
 
@@ -259,6 +310,7 @@ pub const SemanticGraph = struct {
 
     /// Lift module-level function names from AST (Phase 1 minimal — no sema yet).
     pub fn liftModule(self: *SemanticGraph, mod: *const ast.Module, file: []const u8) !NodeId {
+        self.module_path = file;
         const mod_id = try self.addNode(.{
             .kind = .module,
             .span = .{ .file = file, .start = 0, .end = 0 },
@@ -422,10 +474,12 @@ pub const SemanticGraph = struct {
             .named => |alias| {
                 var scope_buf: [128]u8 = undefined;
                 const local_name = scopedBindingName(func_name, binding_name, &scope_buf);
+                const owned_local = try self.alloc.dupe(u8, local_name);
                 const local_id = try self.addNode(.{
                     .kind = .local,
                     .span = .{ .file = file, .start = loc.line, .end = loc.col },
-                    .name = local_name,
+                    .name = owned_local,
+                    .owns_name = true,
                     .ast_ref = @ptrCast(@constCast(lname)),
                 });
                 try self.addEdge(.{ .from = func_id, .to = local_id, .kind = .contains });
@@ -446,10 +500,13 @@ pub const SemanticGraph = struct {
         const binding_scope = scopedBindingName(func_name, binding_name, &scope_buf);
         var shape_buf: [144]u8 = undefined;
         const shape_name = std.fmt.bufPrint(&shape_buf, "{s}@shape", .{binding_scope}) catch binding_scope;
+        const owned_shape = try self.alloc.dupe(u8, shape_name);
+        const owned_binding = try self.alloc.dupe(u8, binding_scope);
         const shape_node_id = try self.addNode(.{
             .kind = .table_shape,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .name = shape_name,
+            .name = owned_shape,
+            .owns_name = true,
             .storage_class = sc,
             .field_count = @intCast(rt.table_type.fields.len),
             .shape_id = sid,
@@ -467,7 +524,8 @@ pub const SemanticGraph = struct {
         const local_id = try self.addNode(.{
             .kind = .local,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .name = binding_scope,
+            .name = owned_binding,
+            .owns_name = true,
             .ast_ref = @ptrCast(@constCast(lname)),
         });
         try self.addEdge(.{ .from = func_id, .to = local_id, .kind = .contains });
@@ -884,6 +942,9 @@ pub const SemanticGraph = struct {
                 }
             }
             const ad: *const ast.AliasDef = @ptrCast(@alignCast(raw));
+            if (node.name) |n| {
+                if (std.mem.indexOf(u8, n, "::") != null or std.mem.endsWith(u8, n, "@shape")) return null;
+            }
             var rt: types.ResolvedType = .any;
             if (ad.target) |tgt| {
                 rt = try types.resolve(tgt, null, graph_alloc);
@@ -928,10 +989,22 @@ pub const SemanticGraph = struct {
     }
 
     /// Write agent-facing JSON snapshot (table_shapes + enum_shapes + full node list).
-    pub fn writeJson(self: *const SemanticGraph, alloc: std.mem.Allocator, file: []const u8, out: *std.ArrayListUnmanaged(u8)) !void {
+    pub fn writeJson(
+        self: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+        file: []const u8,
+        out: *std.ArrayListUnmanaged(u8),
+        source_hash: ?u64,
+    ) !void {
         try out.appendSlice(alloc, "{\"schema\":\"sim-v0\",\"version\":1,\"file\":\"");
         try jsonEscapeAppend(out, alloc, file);
-        try out.appendSlice(alloc, "\",\"nodes\":[");
+        try out.appendSlice(alloc, "\",\"generation\":");
+        try appendJsonInt(out, alloc, self.generation);
+        if (source_hash) |h| {
+            try out.appendSlice(alloc, ",\"source_hash\":");
+            try appendJsonInt(out, alloc, h);
+        }
+        try out.appendSlice(alloc, ",\"nodes\":[");
         for (self.nodes.items, 0..) |node, i| {
             if (i > 0) try out.append(alloc, ',');
             try out.appendSlice(alloc, "{\"id\":");
@@ -1045,6 +1118,12 @@ pub const SemanticGraph = struct {
                     try appendJsonInt(out, alloc, node.hardware_lowerings.bits);
                 }
             }
+            if (node.stable_id) |sid| {
+                var hex: [16]u8 = undefined;
+                try out.appendSlice(alloc, ",\"stable_id\":\"");
+                try out.appendSlice(alloc, sid.formatHex(&hex));
+                try out.append(alloc, '"');
+            }
             try out.appendSlice(alloc, ",\"line\":");
             try appendJsonInt(out, alloc, node.span.start);
             try out.appendSlice(alloc, ",\"col\":");
@@ -1157,6 +1236,37 @@ pub const SemanticGraph = struct {
             try out.append(alloc, '}');
         }
         try out.appendSlice(alloc, "]}");
+    }
+
+    /// Relative sidecar path: `.duo/graph/<stem>.json`.
+    pub fn sidecarRelPath(src_path: []const u8, buf: []u8) []const u8 {
+        const base = std.fs.path.basename(src_path);
+        const ext = std.fs.path.extension(base);
+        const stem = if (ext.len > 0 and ext.len <= base.len) base[0 .. base.len - ext.len] else base;
+        return std.fmt.bufPrint(buf, ".duo/graph/{s}.json", .{stem}) catch ".duo/graph/module.json";
+    }
+
+    /// Persist graph JSON sidecar invalidated by source hash (Phase 1 A1).
+    pub fn writeSidecar(
+        self: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+        io: std.Io,
+        src_path: []const u8,
+        source_hash: u64,
+    ) !void {
+        var json: std.ArrayListUnmanaged(u8) = .empty;
+        defer json.deinit(alloc);
+        try self.writeJson(alloc, src_path, &json, source_hash);
+        var path_buf: [512]u8 = undefined;
+        const rel = sidecarRelPath(src_path, &path_buf);
+        if (std.fs.path.dirname(rel)) |dir| {
+            if (!std.mem.eql(u8, dir, ".")) {
+                const cwd = std.Io.Dir.cwd();
+                try cwd.createDirPath(io, dir);
+            }
+        }
+        const cwd = std.Io.Dir.cwd();
+        try std.Io.Dir.writeFile(cwd, io, .{ .sub_path = rel, .data = json.items });
     }
 
     /// Print a one-line graph summary to stderr when `DUO_GRAPH=1`.
@@ -1303,7 +1413,7 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     _ = try g.liftModuleFull(&module, "test.duo");
     var json: std.ArrayListUnmanaged(u8) = .empty;
     defer json.deinit(alloc);
-    try g.writeJson(alloc, "test.duo", &json);
+    try g.writeJson(alloc, "test.duo", &json, null);
     const s = json.items;
     try std.testing.expect(std.mem.indexOf(u8, s, "\"table_shapes\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"enum_shapes\"") != null);
@@ -1316,6 +1426,15 @@ test "semantic_graph: writeJson includes table_shapes and enum_shapes" {
     try std.testing.expect(std.mem.indexOf(u8, s, "\"fields\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "\"x\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "native C scalars") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"stable_id\"") != null);
+}
+
+test "semantic_graph: StableId is deterministic for same module path" {
+    const a = StableId.compute("examples/foo.duo", .func, "main", 0);
+    const b = StableId.compute("examples/foo.duo", .func, "main", 0);
+    try std.testing.expectEqual(a.hash, b.hash);
+    const c = StableId.compute("examples/foo.duo", .func, "main", 1);
+    try std.testing.expect(a.hash != c.hash);
 }
 
 test "semantic_graph: liftFunctionBindings creates inline table_shape" {

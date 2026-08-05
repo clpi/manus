@@ -63,6 +63,9 @@ tools:
             - timeout 5 *
             - /Users/clp/.local/share/mise/installs/zig/master/zig build
             - ./scripts/duo_lock.sh
+            - stat *
+            - timeout 60 zig build *
+            - git log *
 paths:
     allow:
         - path: /Users/clp/x/duo-mcp/**

@@ -97,11 +97,18 @@ pub fn build(b: *std.Build) void {
     const compile_size_bench_step = b.step("compile-size-bench", "Track compile time and binary size vs C");
     compile_size_bench_step.dependOn(&compile_size_bench_cmd.step);
 
-    // Agent-smoke gate (tier-0): validates agent coordination, stdlib, metaprogramming
+    // Public safety pre-scan (Pass 10 A19)
+    const public_safety_cmd = b.addSystemCommand(&.{ "bash", "./scripts/public_safety_scan.sh" });
+    public_safety_cmd.setCwd(b.path("."));
+    const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths (Pass 10 A19)");
+    public_safety_step.dependOn(&public_safety_cmd.step);
+
+    // Agent-smoke gate (tier-0): public safety + coordination/stdlib/meta smokes
     const agent_smoke_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", "scripts/agent_smoke.duo" });
     agent_smoke_cmd.setCwd(b.path("."));
     agent_smoke_cmd.step.dependOn(b.getInstallStep());
-    const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (coordination, stdlib, meta)");
+    const agent_smoke_step = b.step("agent-smoke", "Run tier-0 agent-smoke gate (public safety, coordination, stdlib, meta)");
+    agent_smoke_step.dependOn(&public_safety_cmd.step);
     agent_smoke_step.dependOn(&agent_smoke_cmd.step);
     test_step.dependOn(agent_smoke_step);
 }

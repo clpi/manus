@@ -210,6 +210,31 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.type.info", .internal = "__typeinfo" },
     .{ .public = "comp.type.info", .internal = "__typeinfo" },
     .{ .public = "compiler.type.info", .internal = "__typeinfo" },
+    .{ .public = "meta.type.shape", .internal = "__type_shape" },
+    .{ .public = "comp.type.shape", .internal = "__type_shape" },
+    .{ .public = "compiler.type.shape", .internal = "__type_shape" },
+    // Ergonomic alias — same intrinsic as @comp.type.shape (specialization ladder label).
+    .{ .public = "meta.shape", .internal = "__type_shape" },
+    .{ .public = "comp.shape", .internal = "__type_shape" },
+    .{ .public = "compiler.shape", .internal = "__type_shape" },
+    .{ .public = "meta.why.shape", .internal = "__why_shape" },
+    .{ .public = "comp.why.shape", .internal = "__why_shape" },
+    .{ .public = "compiler.why.shape", .internal = "__why_shape" },
+    .{ .public = "meta.why.boxed", .internal = "__why_boxed" },
+    .{ .public = "comp.why.boxed", .internal = "__why_boxed" },
+    .{ .public = "compiler.why.boxed", .internal = "__why_boxed" },
+    .{ .public = "meta.why.not.native", .internal = "__why_not_native" },
+    .{ .public = "comp.why.not.native", .internal = "__why_not_native" },
+    .{ .public = "compiler.why.not.native", .internal = "__why_not_native" },
+    .{ .public = "meta.representation", .internal = "__representation" },
+    .{ .public = "comp.representation", .internal = "__representation" },
+    .{ .public = "compiler.representation", .internal = "__representation" },
+    .{ .public = "meta.why", .internal = "__why" },
+    .{ .public = "comp.why", .internal = "__why" },
+    .{ .public = "compiler.why", .internal = "__why" },
+    .{ .public = "meta.origin", .internal = "__origin" },
+    .{ .public = "comp.origin", .internal = "__origin" },
+    .{ .public = "compiler.origin", .internal = "__origin" },
     .{ .public = "meta.typeinfo", .internal = "__typeinfo" },
     .{ .public = "meta.type.is", .internal = "__is_type" },
     .{ .public = "comp.type.is", .internal = "__is_type" },
@@ -556,6 +581,9 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.agent.grammar", .internal = "__metaagentgrammar" },
     .{ .public = "comp.agent.grammar", .internal = "__metaagentgrammar" },
     .{ .public = "compiler.agent.grammar", .internal = "__metaagentgrammar" },
+    .{ .public = "comp.agent.multiplier", .internal = "__metaagentmultiplier" },
+    .{ .public = "compiler.agent.multiplier", .internal = "__metaagentmultiplier" },
+    .{ .public = "meta.agent.multiplier", .internal = "__metaagentmultiplier" },
     .{ .public = "meta.str.contains", .internal = "__strcontains" },
     .{ .public = "comp.str.contains", .internal = "__strcontains" },
     .{ .public = "compiler.str.contains", .internal = "__strcontains" },
@@ -754,6 +782,34 @@ pub fn resolveBuiltin(qualified: []const u8) ?[]const u8 {
     return null;
 }
 
+/// Standalone C header `#include` directives (`@comp.c.import`, legacy `@c.import`, …).
+pub fn isCHeaderImportDirective(name: []const u8) bool {
+    if (std.mem.eql(u8, name, "cinclude")) return true;
+    if (resolveBuiltin(name)) |internal| {
+        return std.mem.eql(u8, internal, "__c_include") or std.mem.eql(u8, internal, "__c_import");
+    }
+    return false;
+}
+
+/// Standalone raw C injection directives (`@comp.c.emit`, legacy `@c.emit`, …).
+pub fn isCEmitDirective(name: []const u8) bool {
+    if (resolveBuiltin(name)) |internal| {
+        return std.mem.eql(u8, internal, "__emit");
+    }
+    return std.mem.eql(u8, name, "emit");
+}
+
+/// C-interface attributes that attach to the following declaration (export, type, …).
+pub fn isAttachingCInterfaceAttribute(name: []const u8) bool {
+    if (resolveBuiltin(name)) |internal| {
+        return std.mem.eql(u8, internal, "__c_export") or
+            std.mem.eql(u8, internal, "__c_type") or
+            std.mem.eql(u8, internal, "__c_link") or
+            std.mem.eql(u8, internal, "__ffi_gen");
+    }
+    return std.mem.eql(u8, name, "c.ffi") or std.mem.eql(u8, name, "ffi");
+}
+
 /// Normalize module-level directive names (`meta.pipeline` -> `pipeline`).
 pub fn normalizeDirective(name: []const u8) []const u8 {
     for (directives) |entry| {
@@ -815,8 +871,7 @@ pub fn isMetaModuleDirective(name: []const u8) bool {
 pub fn isMetaAttribute(name: []const u8) bool {
     // Expression combinators are NOT declaration attributes — they are
     // expression-position calls that should be parsed as expr_stmt, not
-    // attributed declarations. G-059: without this exclusion, @comp.match(...)
-    // inside a callback body is misclassified as a declaration attribute.
+    // attributed declarations.
     const expression_combinators = [_][]const u8{
         "comp.match", "meta.match", "compiler.match",
         "comp.tabulate", "meta.tabulate", "compiler.tabulate",
@@ -838,11 +893,57 @@ pub fn isMetaAttribute(name: []const u8) bool {
         "comp.permute", "meta.permute", "compiler.permute",
         "comp.choose", "meta.choose", "compiler.choose",
         "comp.fixpoint", "meta.fixpoint", "compiler.fixpoint",
+        "comp.fanout", "meta.fanout", "compiler.fanout",
+        // @comp.derive.* expression combinators (G-060: must parse as expr in blocks)
+        "comp.derive.power", "meta.derive.power", "compiler.derive.power",
+        "comp.derive.powerset", "meta.derive.powerset", "compiler.derive.powerset",
+        "comp.derive.choose", "meta.derive.choose", "compiler.derive.choose",
+        "comp.derive.permute", "meta.derive.permute", "compiler.derive.permute",
+        "comp.derive.product", "meta.derive.product", "compiler.derive.product",
+        "comp.derive.tensor", "meta.derive.tensor", "compiler.derive.tensor",
+        "comp.derive.nfold", "meta.derive.nfold", "compiler.derive.nfold",
+        "comp.derive", "meta.derive", "compiler.derive",
+        "comp.expand", "meta.expand", "compiler.expand",
+        "comp.ceiling", "meta.ceiling", "compiler.ceiling",
+        "comp.omni", "meta.omni", "compiler.omni",
+        "comp.stack", "meta.stack", "compiler.stack",
+        "comp.burst", "meta.burst", "compiler.burst",
+        "comp.transcend", "meta.transcend", "compiler.transcend",
+        "comp.infinity", "meta.infinity", "compiler.infinity",
+        "comp.hyper", "meta.hyper", "compiler.hyper",
+        "comp.tower", "meta.tower", "compiler.tower",
     };
     for (expression_combinators) |expr_name| {
         if (std.mem.eql(u8, name, expr_name)) return false;
     }
+    // Declaration-attaching attributes must also return false here so they
+    // associate with the following declaration instead of being parsed
+    // as standalone module-level directives.
+    if (isAttachingMetaAttribute(name)) return false;
+    if (isCHeaderImportDirective(name) or isCEmitDirective(name)) return false;
+
     return isModuleDirective(name);
+}
+
+/// True for metaprogramming attributes that attach to declarations (functions, types, etc.)
+/// rather than being standalone module-level directives.
+pub fn isAttachingMetaAttribute(name: []const u8) bool {
+    const norm = normalizeCompileAttribute(name);
+    return std.mem.eql(u8, norm, "compile.only") or
+        std.mem.eql(u8, norm, "device") or
+        std.mem.eql(u8, norm, "autodiff") or
+        std.mem.eql(u8, norm, "differentiable") or
+        std.mem.eql(u8, norm, "profile") or
+        std.mem.eql(u8, norm, "unroll") or
+        std.mem.eql(u8, norm, "inline") or
+        std.mem.eql(u8, norm, "noinline") or
+        std.mem.eql(u8, norm, "hot") or
+        std.mem.eql(u8, norm, "cold") or
+        std.mem.eql(u8, norm, "pure") or
+        std.mem.eql(u8, norm, "noalloc") or
+        std.mem.eql(u8, norm, "nopanic") or
+        std.mem.eql(u8, norm, "raw") or
+        std.mem.eql(u8, norm, "packed");
 }
 
 /// Normalize type-level derive attributes to canonical names.
@@ -1420,6 +1521,67 @@ pub fn formatAgentLadder(alloc: std.mem.Allocator) ![]const u8 {
     return try buf.toOwnedSlice(alloc);
 }
 
+/// Exponential scaling reference for agents (O(1) -> O(n^k) multiplier).
+pub fn agentMultiplierText() []const u8 {
+    return
+        \\O(1)   -> authorship (manual code)
+        \\O(n)   -> map/sweep/each/derive
+        \\O(n^2) -> product/burst
+        \\O(n^3) -> tensor/transcend
+        \\O(n^k) -> nfold/tower/grammar
+        \\O(2^n) -> power/powerset
+        \\O(n!)  -> permute
+        \\
+        \\Leverage @comp.* to move authoring work from O(n) to O(1) input.
+    ;
+}
+
+fn goalContains(goal: []const u8, needle: []const u8) bool {
+    var buf: [512]u8 = undefined;
+    if (goal.len > buf.len) return std.mem.indexOf(u8, goal, needle) != null;
+    const lower = std.ascii.lowerString(&buf, goal);
+    return std.mem.indexOf(u8, lower, needle) != null;
+}
+
+/// Goal-specific multiplier hint (mirrors lib/std/agent.duo multiplier_for).
+pub fn agentMultiplierFor(goal: []const u8) []const u8 {
+    if (goalContains(goal, "trait") or goalContains(goal, "derive") or goalContains(goal, "impl"))
+        return "@comp.derive / @comp.derive.all / @comp.derive.bundle — O(types×fields)";
+    if (goalContains(goal, "pair") or goalContains(goal, "cartesian") or goalContains(goal, "product"))
+        return "@comp.product / @comp.derive.product — O(types²)";
+    if (goalContains(goal, "triple") or goalContains(goal, "tensor"))
+        return "@comp.tensor / @comp.derive.tensor — O(types³)";
+    if (goalContains(goal, "subset") or goalContains(goal, "powerset") or goalContains(goal, "power"))
+        return "@comp.power / @comp.derive.power — O(2^n)";
+    if (goalContains(goal, "combination") or goalContains(goal, "choose") or goalContains(goal, "fixed subset"))
+        return "@comp.choose / @comp.derive.choose — O(n choose k), controlled exponential subset generation";
+    if (goalContains(goal, "permute") or goalContains(goal, "order"))
+        return "@comp.permute / @comp.derive.permute — O(n!)";
+    if (goalContains(goal, "compose") or goalContains(goal, "chain") or goalContains(goal, "nest") or
+        goalContains(goal, "combine") or goalContains(goal, "glue") or goalContains(goal, "cascade") or
+        goalContains(goal, "exponential"))
+        return "@comp.each(src, fn) / @comp.chain(src, fn) — composition glue: split any combinator output into fragments, re-expand each; chains any two combinators (closes the algebra)";
+    if (goalContains(goal, "module") or goalContains(goal, "file") or goalContains(goal, "emit"))
+        return "@comp.burst → @comp.transcend → @comp.infinity → @comp.hyper";
+    if (goalContains(goal, "pipeline") or goalContains(goal, "fuse"))
+        return "@comp.pipeline({ variants = ... }) — typed kernel family";
+    if (goalContains(goal, "rewrite") or goalContains(goal, "rule"))
+        return "@comp.rewrite / @comp.rewrite.bundle — pattern → infinite instances";
+    if (goalContains(goal, "template") or goalContains(goal, "parametric"))
+        return "@comp.template / @comp.generate — O(n) or O(ops×types) native C fragments; chain with @comp.each";
+    if (goalContains(goal, "scheme") or goalContains(goal, "declarative"))
+        return "@comp.scheme(declarations, template) — pipe-separated type/fn units → O(units) C";
+    if (goalContains(goal, "grammar") or goalContains(goal, "ebnf") or goalContains(goal, "language"))
+        return "@comp.grammar(spec, fn) — O(b^d) EBNF expansion";
+    if (goalContains(goal, "weave") or goalContains(goal, "cross-module") or goalContains(goal, "cross module"))
+        return "@comp.weave(module, concept, fn) — O(N×M) cross-module concept sweep";
+    if (goalContains(goal, "dedupe") or goalContains(goal, "duplicate") or goalContains(goal, "coord"))
+        return "@comp.agent.dedupe() + read .agents/AGENT_COORDINATION.md; claim before edit";
+    if (goalContains(goal, "gap") or goalContains(goal, "script") or goalContains(goal, "ergonomic"))
+        return "@comp.agent.gaps() + .agents/AGENT_COORDINATION.md#cross-agent-gap-buffer; record finding before adding one-off tooling";
+    return "@comp.map / @comp.sweep — O(types); stack @comp.ceiling / @comp.omni for quadratic+";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1441,12 +1603,21 @@ test "meta_module: direct module directives remain canonical" {
     try std.testing.expectEqualStrings("pipeline", normalizeDirective("pipeline"));
 }
 
+test "meta_module: agentMultiplierFor goal hints" {
+    const hint = agentMultiplierFor("compose exponential cascade");
+    try std.testing.expect(std.mem.indexOf(u8, hint, "@comp.each") != null);
+    try std.testing.expect(std.mem.indexOf(u8, agentMultiplierFor("derive traits"), "@comp.derive") != null);
+}
+
 test "meta_module: directive normalization" {
     try std.testing.expectEqualStrings("pipeline", normalizeDirective("meta.pipeline"));
     try std.testing.expectEqualStrings("define.derive", normalizeDirective("meta.define.derive"));
     try std.testing.expectEqualStrings("derive.all", normalizeDirective("meta.derive.all"));
     try std.testing.expect(directiveMatches("meta.derive.all", "derive.all"));
     try std.testing.expect(isMetaAttribute("meta.define.derive"));
+    // G-060: derive combinators are expression-position, not block directives
+    try std.testing.expect(!isMetaAttribute("comp.derive.power"));
+    try std.testing.expect(!isMetaAttribute("meta.derive.power"));
     try std.testing.expectEqualStrings("__metaexpand", resolveBuiltin("meta.expand").?);
     try std.testing.expectEqualStrings("__metaexpand", resolveBuiltin("meta.pow").?);
     try std.testing.expectEqualStrings("__metaceiling", resolveBuiltin("meta.ceiling").?);
@@ -1465,6 +1636,12 @@ test "meta_module: directive normalization" {
     try std.testing.expectEqualStrings("__metaagentgaps", resolveBuiltin("comp.agent.gaps").?);
     try std.testing.expect(catalogPathParseable("comp.map"));
     try std.testing.expect(catalogPathParseable("comp.agent.dedupe"));
+    try std.testing.expect(isCHeaderImportDirective("comp.c.import"));
+    try std.testing.expect(isCHeaderImportDirective("c.import"));
+    try std.testing.expect(isCHeaderImportDirective("meta.c.include"));
+    try std.testing.expect(!isCHeaderImportDirective("comp.c.export"));
+    try std.testing.expect(isCEmitDirective("comp.c.emit"));
+    try std.testing.expect(!isMetaAttribute("comp.c.import"));
 }
 
 test "meta_module: catalog lists canonical comp paths (deduped)" {

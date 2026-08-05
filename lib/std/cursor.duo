@@ -1,0 +1,108 @@
+-- std.cursor — typed byte cursor for binary parsing (Pass 9 / Ward substrate).
+-- Blockers: (1) embedded-module record ctor codegen, (2) C str cannot hold NUL — need slice+len.
+-- Proof: examples/pass9/leb128_cursor_smoke.duo (numeric LEB128 + u32 le).
+
+ByteCursor: @{ data: str, pos: i64, len: i64 }
+
+fun new(data: str): ByteCursor
+    ByteCursor { data = data, pos = 1, len = string.len(data) }
+end
+
+fun remaining(c: ByteCursor): i64
+    if c.pos > c.len then return 0 end
+    c.len - c.pos + 1
+end
+
+fun eof(c: ByteCursor): bool
+    c.pos > c.len
+end
+
+fun position(c: ByteCursor): i64
+    c.pos
+end
+
+fun skip(c: ByteCursor, n: i64)
+    c.pos = c.pos + n
+end
+
+-- Read one byte; returns -1 on EOF.
+fun read_u8(c: ByteCursor): i64
+    if c.pos > c.len then return -1 end
+    b = string.byte(c.data, c.pos)
+    c.pos = c.pos + 1
+    b
+end
+
+fun read_u16_le(c: ByteCursor): i64
+    b0 = read_u8(c)
+    if b0 < 0 then return -1 end
+    b1 = read_u8(c)
+    if b1 < 0 then return -1 end
+    b0 | (b1 << 8)
+end
+
+fun read_u32_le(c: ByteCursor): i64
+    b0 = read_u8(c)
+    if b0 < 0 then return -1 end
+    b1 = read_u8(c)
+    if b1 < 0 then return -1 end
+    b2 = read_u8(c)
+    if b2 < 0 then return -1 end
+    b3 = read_u8(c)
+    if b3 < 0 then return -1 end
+    b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+end
+
+-- Wasm LEB128 unsigned (P9-M1 kernel primitive).
+fun read_leb128_u(c: ByteCursor): i64
+    result = 0
+    shift = 0
+    while true
+        b = read_u8(c)
+        if b < 0 then return -1 end
+        result = result | ((b & 0x7F) << shift)
+        if (b & 0x80) == 0 then return result end
+        shift = shift + 7
+        if shift >= 35 then return -1 end
+    end
+    return -1
+end
+
+-- Wasm LEB128 signed.
+fun read_leb128_s(c: ByteCursor): i64
+    result = 0
+    shift = 0
+    b = 0
+    while true
+        b = read_u8(c)
+        if b < 0 then return -1 end
+        result = result | ((b & 0x7F) << shift)
+        shift = shift + 7
+        if (b & 0x80) == 0 then
+            if shift < 64 and (b & 0x40) ~= 0 then
+                result = result | (~0 << shift)
+            end
+            return result
+        end
+        if shift >= 70 then return -1 end
+    end
+    return -1
+end
+
+fun read_bytes(c: ByteCursor, n: i64): str
+    if n < 0 or c.pos + n - 1 > c.len then return "" end
+    s = string.sub(c.data, c.pos, c.pos + n - 1)
+    c.pos = c.pos + n
+    s
+end
+
+-- Wasm module header: magic (0x6D736100) + version (1).
+fun read_wasm_header(c: ByteCursor): i64
+    magic = read_u32_le(c)
+    if magic < 0 then return -1 end
+    version = read_u32_le(c)
+    if version < 0 then return -1 end
+    if magic ~= 0x6D736100 then return -2 end
+    if version ~= 1 then return -3 end
+    version
+end

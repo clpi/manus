@@ -10,14 +10,18 @@ Ward is a **consumer** of Duo’s canonical architecture (Passes 1–8), not a f
 ```bash
 duo catalog | jq '.pass9'
 duo catalog | jq '.pass9.duo_capabilities[] | select(.status=="partial")'
-duo catalog | jq '.pass9.audit_snapshot'
+duo catalog | jq '.pass9.wasm_semantic_gen.validator_table'
+duo catalog | jq '.pass9.wasm_semantic.decoder_table'
 duo catalog | jq '.pass9.readiness_summary'
 ```
 
 | Module | Role |
 | --- | --- |
 | `src/ward_readiness.zig` | Duo capability ↔ Ward subsystem matrix |
-| `src/pass9_catalog.zig` | Ladder, milestones, workstreams, first kernel |
+| `src/wasm_semantic.zig` | Canonical Wasm instruction descriptors (63 MVP ops) |
+| `src/wasm_semantic_gen.zig` | Comptime decoder index + validator stack metadata |
+| `lib/std/wasm/decode.duo` | Opcode + immediate decode via `std.bytes` (P9-06 partial; `std.cursor` when native) |
+| `lib/std/wasm/instruction.duo` | Stdlib facade — points to wasm_semantic + gen |
 | `~/x/ward` | Vertical proof runtime (Duo sources) |
 | `~/x/wart` | Reference baseline (Zig) |
 
@@ -34,7 +38,7 @@ duo catalog | jq '.pass9.readiness_summary'
 | --- | --- | --- |
 | L0 | Repository and benchmark truth | partial |
 | L1 | Duo-native systems substrate | open |
-| L2 | Wasm semantic model | open |
+| L2 | Wasm semantic model | partial |
 | L3 | Decoder and validator proof | open |
 | L4 | Baseline interpreter | spike (Ward exists; not proven via Pass 9 gate) |
 | L5 | Specialization-aware interpreter | open |
@@ -47,7 +51,7 @@ duo catalog | jq '.pass9.readiness_summary'
 | ID | Title | Status |
 | --- | --- | --- |
 | P9-M0 | Readiness matrix + repository truth | partial |
-| P9-M1 | Descriptor-generated LEB128 + instruction decoder | open |
+| P9-M1 | Descriptor-generated LEB128 + instruction decoder | partial |
 
 ## First implementation milestone (P9-M1)
 
@@ -63,9 +67,11 @@ Must demonstrate:
 
 **Current blockers** (from readiness matrix):
 
-- `duo.lang.slices_buffers` — dynamic table cursor in `lib/std/wasm.duo`
-- Opcode facts duplicated: `ward/src/wasm/op.duo` vs `lib/std/wasm.duo`
-- No Wasm instruction descriptor owner yet
+- `duo.lang.slices_buffers` — byte cursor in progress (other agents)
+- Opcode facts duplicated: `ward/src/wasm/op.duo` vs legacy paths — **canonical owner now `src/wasm_semantic.zig` (63 MVP instructions)**
+- P9-05 generator — **`duo wasm-tables emit`** → `lib/std/wasm/opcode_lookup.duo` (63 MVP ops)
+- P9-06 decode — **`lib/std/wasm/decode.duo`** + `decode_semantic_smoke.duo` (semantic id + immediate dispatch)
+- Next: validator hot path, dedupe `ward/src/wasm/op.duo`, differential harness (P9-07)
 
 ## Workstreams
 
@@ -73,10 +79,10 @@ Must demonstrate:
 | --- | --- | --- |
 | P9-01 | Wart and Ward truth audit | partial |
 | P9-02 | Ward readiness registry | partial |
-| P9-03 | Native bytes and cursor substrate | open |
-| P9-04 | Wasm semantic descriptor | open |
-| P9-05 | Compile-time generator | open |
-| P9-06 | Native decoder lowering | open |
+| P9-03 | Native bytes and cursor substrate | partial |
+| P9-04 | Wasm semantic descriptor | partial |
+| P9-05 | Compile-time generator | partial |
+| P9-06 | Native decoder lowering | partial |
 | P9-07 | Differential and fuzz harness | open |
 | P9-08 | Performance and complexity harness | open |
 | P9-09 | LSP + end-user MCP integration | open |

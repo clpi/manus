@@ -1,43 +1,61 @@
-# Duo Language Reference
+# Duo language reference
 
-**Status:** Supported (user-facing). **Audience:** developers evaluating or writing Duo.
-
-Duo is a Lua-compatible language with optional static types, `@comp.*` compile-time transforms, and native lowering to C (or WASM). Untyped `.lua` remains valid; `.duo` adds types and metaprogramming without a runtime VM.
+**Status:** current entry point. Detailed chapters live under `docs/src/`.
 
 ## Quick start
 
-```bash
-zig build
-./zig-out/bin/duo run examples/hello.duo
-./zig-out/bin/duo check my_module.duo
+Duo extends Lua 5.5 with optional static types, descriptors, pipelines, and `@comp.*` metaprogramming.
+
+```duo
+add(a: i64, b: i64): i64 = a + b
+
+Point: @{ x: f64, y: f64 }
+
+main(): i64
+    p = Point { x = 3.0, y = 4.0 }
+    add(1, 2)
+end
 ```
 
-## Canonical topics
+Build and run:
+
+```bash
+zig build
+duo run hello.duo
+duo check myfile.duo    # type-check only
+```
+
+## Core topics
 
 | Topic | Document |
 | --- | --- |
-| Overview and idioms | [docs/src/overview.md](src/overview.md), [docs/src/idiomatic_duo.md](src/idiomatic_duo.md) |
+| Introduction | [docs/src/introduction.md](src/introduction.md) |
 | Types | [docs/src/types.md](src/types.md) |
-| Functions (typed, generic, async) | [docs/src/functions.md](src/functions.md) |
-| Pattern matching, enums, concepts | [docs/src/pattern_matching.md](src/pattern_matching.md), [docs/src/enums.md](src/enums.md), [docs/src/concepts.md](src/concepts.md) |
-| Standard library | [lib/std.duo](../lib/std.duo), [docs/src/stdlib.md](src/stdlib.md) |
-| Grammar rules (GR-*) | [docs/GRAMMAR_SPEC.md](GRAMMAR_SPEC.md) |
-| Roadmap vs implemented | [docs/src/roadmap.md](src/roadmap.md) — **Experimental** sections are labeled there |
+| Functions | [docs/src/functions.md](src/functions.md) |
+| Typed functions | [docs/src/functions_typed.md](src/functions_typed.md) |
+| Descriptors / concepts | [docs/src/concepts.md](src/concepts.md) |
+| Pattern matching | [docs/src/pattern_matching.md](src/pattern_matching.md) |
+| Error handling | [docs/src/error_handling.md](src/error_handling.md) |
+| Idiomatic Duo | [docs/src/idiomatic_duo.md](src/idiomatic_duo.md) |
+| Stdlib | [docs/src/stdlib.md](src/stdlib.md) |
+| WASM | [docs/src/wasm.md](src/wasm.md) |
 
-Full book-style index: [docs/src/SUMMARY.md](src/SUMMARY.md).
+## Metaprogramming
 
-## What works today
+Use `@comp.*` for compile-time transforms. See [metaprogramming](metaprogramming.md) and `duo catalog`.
 
-- AOT compile `.duo` / `.lua` → native binary via generated C + `clang`
-- Typed native paths (no `lua_Value` on annotated/comptime paths)
-- `@comp.*` metaprogramming registry; `duo catalog` for machine-readable facts
-- WASM (`wasm32-wasi`), `duo fmt`, `duo explain`, `duo realize` (Pass 8 partial)
-- 40-benchmark performance gate vs hand-written C (`zig build bench`)
+Bare compile-time eval: `@(expr)`.
 
-## Experimental / in progress
+## Grammar
 
-- Native exe backend (arm64 subset), semantic graph persistence, Ward Wasm runtime proof — see [docs/plans/SUMMARY.md](plans/SUMMARY.md). **Planned** items are not release-contract behavior.
+Authoritative rules: [GRAMMAR_SPEC.md](GRAMMAR_SPEC.md). `@const` and `@comptime` are **not** valid user directives.
 
-## Internal / agent-facing (not public architecture)
+## Experimental vs supported
 
-Contributor agent rules live in [AGENTS.md](../AGENTS.md) and [.agents/](../.agents/) — not required to use Duo.
+- **Supported:** Lua-compatible syntax, typed native lowering, `@comp.*` registry entries with tests, benchmark suite
+- **Experimental:** semantic graph tooling, Ward Wasm runtime integration, some `@comp.*` combinators
+- **Planned:** see [roadmap](src/roadmap.md) and pass plans under `docs/plans/` (historical milestones)
+
+## Compiler
+
+See [compiler.md](compiler.md).

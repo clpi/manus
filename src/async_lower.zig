@@ -196,6 +196,7 @@ pub const AsyncLower = struct {
                 },
                 .named => |nv| try self.discoverExpr(nv.val, enclosing_name),
                 .positional => |p| try self.discoverExpr(p, enclosing_name),
+                .spread => |sp| try self.discoverExpr(sp, enclosing_name),
             },
             .list_comp => |lc| {
                 try self.discoverExpr(lc.iter, enclosing_name);
@@ -396,6 +397,7 @@ pub const AsyncLower = struct {
                 },
                 .named => |nv| try self.scanExpr(nv.val, ctx),
                 .positional => |p| try self.scanExpr(p, ctx),
+                .spread => |sp| try self.scanExpr(sp, ctx),
             },
             .list_comp => |lc| {
                 try self.scanExpr(lc.iter, ctx);

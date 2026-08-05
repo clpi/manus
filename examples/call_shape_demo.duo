@@ -1,0 +1,37 @@
+-- Call-shape specialization demonstration.
+-- Compile with DUO_GRAPH=1 to see call-shape analysis in the semantic graph.
+--
+-- This file shows how the same function called with different shapes
+-- can be specialized independently:
+--   - typed args → native lowering (no boxing)
+--   - different arg counts → separate specializations
+--   - return consumed vs discarded → elision opportunity
+
+-- Direct calls with typed arguments (specializable: typed_args_mask != 0)
+function add(a: i64, b: i64): i64
+    return a + b
+end
+
+function mul(a: i64, b: i64): i64
+    return a * b
+end
+
+-- Same function, different call shapes at each site:
+function main(): i64
+    -- Shape 1: add(i64, i64) → i64, single return consumed
+    local x: i64 = add(10, 20)
+
+    -- Shape 2: add(i64, i64), result discarded (could elide entire call if pure)
+    add(1, 2)
+
+    -- Shape 3: mul with same shape as add — same arg_count, same typed mask
+    local y: i64 = mul(x, 3)
+
+    -- Shape 4: different arg count calls
+    print(x)
+    print(y)
+
+    return y
+end
+
+main()

@@ -208,6 +208,10 @@ std.graphics.audio = req "std.graphics.audio"
 
 -- WebAssembly support
 std.wasm = req "std.wasm"
+std.wasm.instruction = req "std.wasm.instruction"
+std.wasm.opcode_lookup = req "std.wasm.opcode_lookup"
+std.wasm.ward_mvp_opcodes = req "std.wasm.ward_mvp_opcodes"
+std.wasm.decode = req "std.wasm.decode"
 std.wasm.wasi = req "std.wasm.wasi"
 
 -- Runtime support (GC, isolates, snapshots)
@@ -249,6 +253,7 @@ std.io.buffer = req "std.io.buffer"
 std.io.util = req "std.io.util"
 std.bufio = req "std.bufio"
 std.bytes = req "std.bytes"
+std.cursor = req "std.cursor"
 std.slices = req "std.slices"
 std.sort = req "std.sort"
 std.maps = req "std.maps"
@@ -295,5 +300,7 @@ std.testing = {
 std.index = {
     suffixarray = req "std.index.suffixarray"
 }
+
+std.script = req "std.script"
 
 std

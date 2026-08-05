@@ -1,8 +1,11 @@
--- @comp.fixpoint — test with iteration field
+-- @comp.fixpoint — iteration field + RESULT gate
 result = @comp.fixpoint("start", fun(state)
   i = state.iteration
-  return "iter" .. i .. "\n"
+  "iter" .. tostring(i) .. "\n"
 end, 3)
 
-print("result = " .. result)
-print("fixpoint_iter_ok = true")
+LINES = @comp.str.countlines(result)
+ok = (LINES == 3 and @comp.str.contains(result, "iter0"))
+print("=== @comp.fixpoint (3 iterations) ===")
+print("line_count = " .. tostring(LINES))
+print("RESULT fixpoint_iter_ok = " .. tostring(ok))

@@ -1,12 +1,13 @@
 -- std.script — Duo-first scripting ergonomics (prefer over bash/python for repo tooling)
--- Uses built-in os/io (always available) — no nested req from stdlib modules.
+_os = req "std.os"
+_io = req "std.io"
 
 fun echo(msg: str): void
     print(msg)
 end
 
 fun run(cmd: str): i64
-    rc = os.execute(cmd)
+    rc = _os.execute(cmd)
     if rc == nil return -1 end
     if rc == true return 0 end
     if tostring(rc) == "0" return 0 end
@@ -20,7 +21,7 @@ end
 fun must(cmd: str): void
     if not ok(cmd)
         echo("FAIL: " .. cmd)
-        os.exit(1)
+        _os.exit(1)
     end
 end
 
@@ -80,7 +81,7 @@ end
 fun build_lock_release(): void
     ld = build_lock_dir()
     of = build_lock_owner()
-    os.remove(of)
+    _os.remove(of)
     @c.emit("rmdir(ld)")
 end
 
@@ -110,7 +111,7 @@ fun build_lock_acquire(timeout: i64): bool
 end
 
 fun capture(cmd: str): str
-    f = io.popen(cmd, "r")
+    f = _io.popen(cmd, "r")
     if f == nil return "" end
     out = ""
     line = f:read()
@@ -140,7 +141,7 @@ end
 fun zig_build(): void
     -- When invoked via the build target the duo binary is already fresh; a second
     -- `zig build` here would just race other agents on .zig-cache. Skip it then.
-    if os.getenv("DUO_ALREADY_BUILT") == "1"
+    if _os.getenv("DUO_ALREADY_BUILT") == "1"
         echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
         return
     end
@@ -154,13 +155,13 @@ end
 -- === Environment ===
 
 fun getenv(name: str, fallback: str): str
-    v = os.getenv(name)
+    v = _os.getenv(name)
     if v == nil return fallback end
     v
 end
 
 fun getenv_or(name: str): str
-    v = os.getenv(name)
+    v = _os.getenv(name)
     if v == nil return "" end
     v
 end
@@ -230,37 +231,55 @@ end
 -- === File system ===
 
 fun fs_exists(p: str): bool
-    f = io.open(p, "r")
-    if f == nil return false end
-    f:close()
-    true
+    return @c.emit([[({ struct stat _st; stat(p, &_st) == 0; })]])
+end
+
+fun fs_is_file(p: str): bool
+    return @c.emit([[({ struct stat _st; stat(p, &_st) == 0 && S_ISREG(_st.st_mode); })]])
+end
+
+fun fs_is_dir(p: str): bool
+    return @c.emit([[({ struct stat _st; stat(p, &_st) == 0 && S_ISDIR(_st.st_mode); })]])
 end
 
 fun fs_read(p: str): str
-    f = io.open(p, "r")
-    if f == nil return "" end
-    content = f:read("*a")
-    f:close()
-    content
+    return _os.read_file(p)
 end
 
 fun fs_write(p: str, content: str): void
-    f = io.open(p, "w")
-    if f == nil
+    if not _os.write_file(p, content)
         echo("FAIL: cannot write " .. p)
-        os.exit(1)
+        _os.exit(1)
     end
-    f:write(content)
-    f:close()
 end
 
 fun fs_mkdir(p: str): void
-    must("mkdir -p " .. p)
+    _os.mkdir_all(p)
 end
 
-fun fs_glob(pattern: str): str
-    -- Returns newline-separated list of matching files
-    capture("ls -1 " .. pattern .. " 2>/dev/null")
+fun fs_glob(pattern: str): any
+    out = {}
+    f = _io.popen("ls -1 " .. pattern .. " 2>/dev/null", "r")
+    if f == nil return out end
+    line = f:read()
+    while line ~= nil
+        table.insert(out, line)
+        line = f:read()
+    end
+    f:close()
+    return out
+end
+
+fun fs_cp(src: str, dst: str): void
+    must("cp -R '" .. src .. "' '" .. dst .. "'")
+end
+
+fun fs_mv(src: str, dst: str): void
+    must("mv '" .. src .. "' '" .. dst .. "'")
+end
+
+fun fs_rm(path: str): void
+    must("rm -rf '" .. path .. "'")
 end
 
 fun fs_tmp(): str
@@ -284,19 +303,13 @@ end
 -- === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
 
 fun args(): any
-    raw = capture("echo $@")
-    -- Simple split on space — for complex parsing use std.cli when available
-    parts = {}
-    for word in string.gmatch(raw, "%S+")
-        parts[#parts + 1] = word
-    end
-    parts
+    return _os.args()
 end
 
 fun arg(n: i64, fallback: str): str
     a = args()
-    if n < 1 or n > #a return fallback end
-    a[n]
+    if a == nil or n < 1 or n > #a return fallback end
+    return a[n]
 end
 
 -- === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
@@ -307,9 +320,18 @@ fun json_read_file(p: str): any
     s.decode(content)
 end
 
+fun exec(cmd: str): any
+    f = _io.popen(cmd .. " 2>&1", "r")
+    if f == nil return { output = "", code = -1 } end
+    out = f:read("*a")
+    close_ok, mode, code = f:close()
+    return { output = out, code = code or 0 }
+end
+
 M = {
     echo = echo,
     run = run,
+    exec = exec,
     ok = ok,
     must = must,
     lock_cmd = lock_cmd,
@@ -337,12 +359,31 @@ M = {
     path_ext = path_ext,
     path_stem = path_stem,
     fs_exists = fs_exists,
+    fs_is_file = fs_is_file,
+    fs_is_dir = fs_is_dir,
     fs_read = fs_read,
     fs_write = fs_write,
     fs_mkdir = fs_mkdir,
     fs_glob = fs_glob,
+    fs_cp = fs_cp,
+    fs_mv = fs_mv,
+    fs_rm = fs_rm,
     fs_tmp = fs_tmp,
     fs_tmpdir = fs_tmpdir,
+    -- Ergonomic aliases
+    exists = fs_exists,
+    is_file = fs_is_file,
+    is_dir = fs_is_dir,
+    read = fs_read,
+    write = fs_write,
+    cat = fs_read,
+    mkdir = fs_mkdir,
+    glob = fs_glob,
+    cp = fs_cp,
+    mv = fs_mv,
+    rm = fs_rm,
+    tmp = fs_tmp,
+    tmpdir = fs_tmpdir,
     pipe = pipe,
     pipe_ok = pipe_ok,
     args = args,

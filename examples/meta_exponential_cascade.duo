@@ -1,0 +1,52 @@
+-- Exponential cascade: folded concat zip + power→each→template (O(2^n) native C).
+-- Run: duo run examples/meta_exponential_cascade.duo
+--
+-- Closes the combinator algebra at module level:
+--   TYPES = "i32|" .. "i64|" .. "f64"  →  @comp.zip(TYPES, OPS, ...)
+--   @comp.power → @comp.each → @comp.template (nested hooks via G-059 meta_hook)
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Vec2 = { x: f64, y: f64 }
+type Vec3 = { x: f64, y: f64, z: f64 }
+type Pt = { x: f64, y: f64 }
+
+-- Folded concat builds zip specs (fold_meta_string_expr binop ..).
+TYPES = "i32|" .. "i64|" .. "f64"
+OPS = "add|" .. "sub"
+
+PAIRS = @comp.zip(TYPES, OPS, fun(p)
+    p.a .. "_" .. p.b .. " "
+end)
+
+-- power(3 types) → 7 subset fragments; each re-expands; template emits C stub per type.
+SUBSETS = @comp.power("HasXY", fun(s)
+    s.name .. ";"
+end)
+
+CASCADE = @comp.each(SUBSETS, fun(frag)
+    @comp.template(frag.name .. ":int64_t", "int64_t tag_$0() { return 0 }\n")
+end)
+
+HINT = @comp.agent.multiplier("compose exponential cascade")
+
+print("=== folded zip (3×2 = 6 pairs) ===")
+print(PAIRS)
+print("=== power→each→template cascade (7 stubs) ===")
+print(CASCADE)
+print("=== agent multiplier hint ===")
+print(HINT)
+
+TYPE_AXES = @comp.str.splitcount(TYPES, "|")
+OP_AXES = @comp.str.splitcount(OPS, "|")
+PAIR_COUNT = TYPE_AXES * OP_AXES
+CASCADE_LINES = @comp.str.countlines(CASCADE)
+
+ok = (PAIR_COUNT == 6 and CASCADE_LINES == 7 and TYPE_AXES == 3 and OP_AXES == 2)
+print("=== RESULT ===")
+print("cascade_ok = " .. tostring(ok))
+print("RESULT cascade_pairs " .. tostring(PAIR_COUNT))
+print("RESULT cascade_lines " .. tostring(CASCADE_LINES))

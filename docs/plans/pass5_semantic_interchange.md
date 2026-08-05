@@ -1,157 +1,164 @@
-# Pass 5 — Semantic Interchange, Cross-Language Metaprogramming, and Ecosystem
+# Pass 5 — Semantic Interchange, Cross-Language Metaprogramming
 
-> **Date:** 2026-08-04  
-> **Follows:** Pass 4 (native boundaries, Duo-owned pipeline, self-hosting)  
-> **Mission:** Duo-owned semantic interchange (SIM) for import, transform, validate, and selective re-emission across language boundaries — without reversing Pass 4 architecture.
+**Status:** Phase 0 audit complete · Phase 1 (SIM v0) partial · Phase 2 (C import) partial · **P5-M1 direct call done · abi.specialize partial**
+**Schema:** `sim-v0` (`src/sim.zig`)  
+**C frontend:** `c-header-v0` (`src/c_frontend.zig`)  
+**Catalog:** `duo catalog` → `pass5` section via `src/pass5_catalog.zig`
 
-**Constraint:** Pass 5 must not outrun Pass 4. Cross-language work reuses stable Duo foundations only.
+## Mission
 
----
+Build a Duo-owned semantic interchange and transformation system through which Duo can
+import, understand, transform, specialize, validate, and selectively re-emit programs and
+interfaces from other languages **without** abandoning descriptors, shapes, calls, stages,
+effects, provenance, representation model, or native compilation architecture.
 
-## A. Phase 0 repository audit (2026-08-04)
+Dependency direction (never reverse):
 
-| Area | File(s) | Symbol / behavior | Pass 5 role | Stability |
-| --- | --- | --- | --- | --- |
-| Descriptors / types | `src/types.zig` | `ResolvedType`, `StorageClass`, `explainStorageClass` | SIM field source | ✅ stable |
-| Semantic analysis | `src/sema.zig` | `Sema`, `type_map` | Type facts for export | ✅ stable |
-| Semantic graph (internal) | `src/semantic_graph.zig` | `liftModuleWithCalls`, `writeJson` | Pre-SIM agent JSON; not SIM | 🔄 partial |
-| Transform registry | `src/transform_engine.zig` | `descriptor()`, contracts | Shared transformations | ✅ stable |
-| Dynamic boundaries | `src/dynamic_boundary.zig` | `explainBoxed`, `ExprFacts` | Native-path explanations | 🔄 partial |
-| C include/import surface | `src/parser.zig`, `meta_module.zig` | `@c.import`, `__c_import` | Layer B frontend hook | 🔄 header-only today |
-| Foreign transpile (legacy) | `src/foreign_transpile.zig` | text transpile | **Not** SIM — defer | ⚠️ text-based |
-| Native backend | `src/native_backend.zig` | arm64 Mach-O, f64 records | Layer E native bridge | 🔄 partial |
-| MCP / LSP | sibling repos | — | Layer A transport (planned) | ⬜ |
-| **SIM v0** | `src/sim.zig` | `exportNativeModule`, `writeSnapshotJson` | **Layer A foundation** | 🆕 experimental |
+```
+Duo semantic foundations
+  → versioned semantic interchange (SIM)
+  → foreign semantic import
+  → shared transformations
+  → Duo specialization / representation selection
+  → native execution or language-specific emission
+```
+
+## Phase 0 — Repository truth audit
+
+### Source-to-machine pipeline
+
+| Stage | File(s) | Role |
+| --- | --- | --- |
+| Lex/parse | `src/lexer.zig`, `src/parser.zig` | `.duo` / `.lua`; `@c.import` → `cinclude` stmt only |
+| AST | `src/ast.zig` | `alias_def`, `enum_def`, `func_decl`, attributes |
+| Types | `src/types.zig` | `ResolvedType`, storage classes, shape identity hashes |
+| Sema | `src/sema.zig` | Type check, call shapes, native eligibility |
+| Semantic graph | `src/semantic_graph.zig` | Lift module/calls/shapes; `writeJson` agent snapshot |
+| Algebra | `src/semantic_algebra.zig` | Knowledge lattice, descriptors, call/site algebra |
+| Transforms | `src/transform_engine.zig` | Registered transforms + provenance |
+| Dynamic boundaries | `src/dynamic_boundary.zig` | `@comp.why.boxed` explanations |
+| Codegen | `src/codegen.zig` | C emission; `@c.import` → `#include` |
+| Native backend | `src/native_backend.zig` | Direct object for sealed f64 kernels (Pass 4 M1) |
+
+### Semantic entity map → SIM v0 fields
+
+| SIM field | Current source | Status |
+| --- | --- | --- |
+| `id` | `duo:{kind}:{name}` from AST export | **implemented** (`sim.exportNativeModule`) |
+| `origin.language` | `"duo"` for native export | **implemented** |
+| `origin.artifact` | module file path | **implemented** |
+| `kind` record/enum/function | `alias_def`, `enum_def`, `func_decl` | **implemented** |
+| `fields[]` | `types.resolve` + `table_type.fields` | **implemented** |
+| `variants[]` | `enum_def.variants` | **implemented** |
+| `params[]`, `return_type` | `func_decl` | **implemented** |
+| `storage_class`, `why`, `shape_id` | `types.inferStorageClass`, `explainStorageClass`, shape hash | **implemented** |
+| `contract.*_completeness` | heuristics from storage class + native fields | **partial** |
+| `size_bytes`, `align_bytes` | native field count × 8 heuristic | **partial** — not target-verified |
+| `abi` | placeholder `duo-native` | **partial** |
+| `effects`, `capabilities` | `semantic_algebra` exists; not exported to SIM | **unavailable** |
+| `stage` | graph nodes only | **unavailable in SIM** |
+| `provenance` / span | graph `SpanRef`; not in SIM v0 | **unavailable** |
+| `dependencies` | not tracked | **unavailable** |
+| `diagnostics` | sema errors separate | **unavailable** |
+| foreign `origin` | `c_sim_import.zig` | **partial** — `origin.language = "c"` |
+
+### Internal vs interchange boundaries
+
+| Representation | Mutable internal? | Serializable? | Notes |
+| --- | --- | --- | --- |
+| `SemanticGraph` | yes | `writeJson` (graph-specific) | Not versioned; not foreign-import ready |
+| `sim.Snapshot` | no (immutable export) | `writeSnapshotJson` | **SIM v0** — stable schema string |
+| `types.ResolvedType` | sema-owned | indirect via export | Compiler-internal |
+| `@c.import` / `@comp.c.import` | parse → `cinclude` stmt; sema SIM import; codegen `#include` + `extern` + direct call | **P5-M1 done** for `point.h` |
+
+### LSP / MCP exposure (current)
+
+| Surface | Location | Facts exposed |
+| --- | --- | --- |
+| `duo graph <file>` | `main.zig` | Graph JSON (shapes, calls, transforms) |
+| `duo sim --import-c <header>` | `main.zig` | C header → SIM v0 via frontend + importer |
+| `duo sim --import-c <header>` | `main.zig` | C declarations → SIM v0 JSON |
+| `duo catalog` | `pass3_catalog.zig` | Pass 3/4/5 workstream tracking |
+| duo-mcp | external repo | **partial** — `duo_semantic_snapshot`, `duo_foreign_import_preview`, `duo_pass5_catalog`, `duo_foreign_entity_lookup` |
+| duo-lsp | external repo | **partial** — foreign SIM hover on `@c.import` symbols (origin, layout, ABI) |
 
 ### Pass 4 blockers relevant to Pass 5
 
-| Blocker | Impact on Pass 5 |
-| --- | --- |
-| PB-011 (~1870 `lua_Value` refs) | Foreign calls must not route through boxed center |
-| C import is include-only today | Layer B requires C→SIM importer, not `#include` |
-| No C layout verifier in-tree | Phase 2 needs target layout fixtures |
-| MCP/LSP lack SIM tools | Phase 6 tooling after compiler API stabilizes |
+| ID | Blocker | Pass 5 impact |
+| --- | --- | --- |
+| PB-011 | Boxed-value inventory incomplete | Foreign calls must not route through `lua_Value` |
+| P4-05 | Native call ABI foundation partial | Direct C call depends on this |
+| P4-M1 | Sealed f64 record + distance2 | Native export proof; C import must reuse same ABI path |
+| Graph vs SIM | Two JSON formats | SIM must remain projection, not duplicate graph lift |
 
-### Dependency direction (mandatory)
+### C import current state
 
-```
-Duo semantic foundations → SIM → foreign import → transforms → native/emission
-```
+- `@c.import("h.h")` — parser + codegen emit `#include` only (`parser.zig`, `codegen.zig`)
+- No Clang frontend, no SIM entities with `origin.language = "c"`
+- `foreign_transpile.zig` — text transpile for `@foreign`, unrelated to SIM
 
-Never: foreign AST → compiler internals without SIM.
-
----
-
-## B. SIM (Semantic Interchange Model)
-
-**Not** the internal semantic graph. A versioned, serializable projection.
-
-| Property | SIM v0 |
-| --- | --- |
-| Schema | `sim-v0` |
-| CLI | `duo sim <file.duo>` |
-| Module | `src/sim.zig` |
-| Entities | record, enum, function (+ contract, origin, completeness) |
-| Uncertainty | `completeness`: complete \| partial \| opaque \| unsupported \| unknown |
-| IDs | `duo:{kind}:{name}` sorted deterministically |
-
-### SIM v0 fields (implemented)
-
-- semantic identity (`id`, `kind`, `name`, `namespace`)
-- origin (`language`, `artifact`, `importer`, `importer_version`)
-- record: `fields`, `storage_class`, `shape_id`, `why`, `size_bytes`, `align_bytes`
-- enum: `variants`, `shape_id`
-- function: `params`, `return_type`, `abi` stub
-- contract: completeness dimensions
-
-### Explicitly deferred to SIM v1+
-
-- foreign C entities
-- effects / capabilities detail
-- provenance spans
-- layout verification status
-- transformation permissions
-- opaque import nodes from C
-
----
-
-## C. Five layers (incremental)
+## Layer status
 
 | Layer | Description | Status |
 | --- | --- | --- |
-| **A** | SIM foundation | 🔄 v0 native export |
-| **B** | Foreign interface import (C headers) | ⬜ Phase 2 |
-| **C** | Cross-language transformation | ⬜ Phase 5 (`abi.specialize`) |
-| **D** | Foreign implementation import | ⬜ deferred |
-| **E** | Semantic re-emission | ⬜ deferred |
+| **A** | Semantic interchange (SIM) | **partial** — v0 schema + native export + CLI |
+| **C** | Foreign interface import | **partial** — `c_frontend.zig` + `c_sim_import.zig` + `duo sim --import-c` |
+| **C** | Foreign descriptor adaptation | **partial** — `foreign_adapter.zig` + sema/codegen wiring |
+| **C** | Cross-language transformation | **partial** — `abi.specialize` in `abi_specialize.zig` + transform_engine registry |
+| **D** | Foreign implementation import | **deferred** |
+| **E** | Semantic re-emission | **deferred** |
 
----
+## First milestone (P5-M1)
 
-## D. First foreign target: C interface import
+C fixture (`examples/pass5/fixtures/point.h`):
 
-**Not** whole-C source. Bounded header subset (Phase 2):
+```c
+typedef struct { double x; double y; } CPoint;
+double distance2(CPoint point);
+```
 
-- scalars, enums, records, pointers, const arrays, function declarations
-- defer: macros, variadics, C++, bitfields, inline bodies
+Target Duo usage (syntax **proposed**, not canonical):
 
-**First milestone demo (target):** `CPoint` + `distance2` from `point.h` → SIM → foreign descriptor → direct native call.
+```duo
+math = @c.import "point.h"
+p: math.CPoint = { x = 3.0, y = 4.0 }
+result = math.distance2(p)
+```
 
-Syntax **not approved** — may be `@c.import "point.h"` when Layer B lands.
+Exit criteria checklist: SIM entity · foreign descriptor · layout verified · **direct native call (done)** · no wrapper C · MCP/LSP exposure.
 
----
+## Workstreams
 
-## E. First shared transformation
+See `src/pass5_catalog.zig` — IDs `P5-00` … `P5-10`.
 
-**`abi.specialize`** — descriptor-driven ABI specialization on native Duo + imported C callables.
+## Agent claims (Pass 5)
 
-Requires: SIM callable entities, representation selection, provenance (Phase 5).
-
----
-
-## F. Execution phases
-
-| Phase | Deliverable | Gate |
+| Tag | Owner | Scope |
 | --- | --- | --- |
-| 0 | Repository audit (this doc) | SIM fields mapped to sources |
-| 1 | SIM v0 + native export | Deterministic snapshots ✅ |
-| 2 | C declaration import | Layout + unsupported explicit |
-| 3 | Foreign descriptor adaptation | Duo refs without generated bindings |
-| 4 | Direct native call (imported fn) | No C wrapper, disassembly proof |
-| 5 | Shared `abi.specialize` transform | Same code path native + imported |
-| 6 | Semantic patch prototype | MCP transactional requests |
-| 7 | Second importer (Wasm / Rust / SQL) | Reuses SIM without fork |
+| `pass5-audit` | cursor/agent | Phase 0 doc + catalog — **done** |
+| `pass5-sim` | cursor/agent | `src/sim.zig`, `duo sim`, snapshot tests |
+| `pass5-c-frontend` | cursor/agent | `src/c_frontend.zig`, bounded C parser |
+| `pass5-importer` | cursor/agent | `src/c_sim_import.zig`, C → SIM |
+| `pass5-mcp` | unclaimed | duo-mcp semantic tools |
+| `pass5-lsp` | unclaimed | duo-lsp foreign hover |
 
----
-
-## G. Agent workstreams
-
-| ID | Workstream | Status |
-| --- | --- | --- |
-| P5-WS01 | Repository cartographer (Phase 0 audit) | ✅ |
-| P5-WS02 | SIM schema v0 | 🔄 |
-| P5-WS03 | Native snapshot export | 🔄 |
-| P5-WS04 | C frontend spike | ⬜ |
-| P5-WS05 | C-to-SIM mapping | ⬜ |
-| P5-WS06 | Foreign descriptor adaptation | ⬜ |
-| P5-WS07 | Native ABI call (imported) | ⬜ |
-| P5-WS08 | `abi.specialize` transformation | ⬜ |
-| P5-WS09 | MCP SIM tools | ⬜ |
-| P5-WS10 | LSP foreign hover | ⬜ |
-
-Machine-readable: `duo catalog` → `pass5` section.
-
----
-
-## H. Validation
+## Validation commands
 
 ```bash
 zig test src/sim.zig
-duo sim examples/pass4_native_milestone.duo
-duo catalog   # includes pass5 workstreams
+zig test src/c_frontend.zig
+zig test src/c_sim_import.zig
+zig test src/c_layout_verify.zig
+scripts/duo_lock.sh -- zig build unit-test --summary all
+./zig-out/bin/duo sim examples/pass4_native_milestone.duo
+./zig-out/bin/duo sim --import-c examples/pass5/fixtures/point.h
+./zig-out/bin/duo dump-c examples/pass5/c_point_smoke.duo
+zig test src/pass5_golden_tests.zig --test-filter "pass5 golden"
+duo run ../duo-mcp/pass5_smoke.duo   # from DUO_ROOT (MCP shared helpers)
+./zig-out/bin/duo sim --import-c examples/pass5/fixtures/point.h | jq '.entities[].name'
 ```
 
----
+## Explicit non-goals (initial pass)
 
-## I. Non-goals (initial pass)
-
-Universal parsing, whole-language equivalence, C++ templates, Python runtime, bidirectional round-trip, text-only transpile as SIM substitute.
+Universal AST, LLVM IR as interchange, whole-C source import, Python/Rust simultaneous
+import, bidirectional source rewriting, MCP-only semantic records.

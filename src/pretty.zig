@@ -21,6 +21,8 @@ pub const PrettyPrinter = struct {
     alloc: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     mode: Mode,
+    /// When true in .duo mode, omit deprecated keywords (`then`, `do`, bare `fun`).
+    canonical: bool = false,
     indent_level: usize,
     indent_str: []const u8,
 
@@ -29,6 +31,7 @@ pub const PrettyPrinter = struct {
             .alloc = alloc,
             .buf = buf,
             .mode = mode,
+            .canonical = false,
             .indent_level = 0,
             .indent_str = "  ",
         };
@@ -295,6 +298,10 @@ pub const PrettyPrinter = struct {
                                 try self.printExpr(nmd.val, 0);
                             },
                             .positional => |pos| try self.printExpr(pos, 0),
+                            .spread => |sp| {
+                                try self.write("..");
+                                try self.printExpr(sp, 0);
+                            },
                         }
                     }
                     self.dedent();
@@ -533,6 +540,17 @@ pub const PrettyPrinter = struct {
             .call_stmt => |cs| try self.printExpr(cs.expr, 0),
             .expr_stmt => |es| try self.printExpr(es.expr, 0),
             .do_block => |db| {
+                if (self.mode == .duo and self.canonical) {
+                    for (db.body.stmts) |*s| {
+                        try self.printStmt(s);
+                        try self.nl();
+                    }
+                    if (db.body.tail_expr) |te| {
+                        try self.printExpr(te, 0);
+                        try self.nl();
+                    }
+                    return;
+                }
                 try self.write("do");
                 try self.printBlock(&db.body);
                 try self.nl();
@@ -554,8 +572,14 @@ pub const PrettyPrinter = struct {
             },
             .if_stmt => |is| {
                 try self.write("if ");
+                if (is.binding) |b| {
+                    try self.write(b.name);
+                    try self.write(" = ");
+                    try self.printExpr(b.expr, 0);
+                    try self.write(" ");
+                }
                 try self.printExpr(is.cond, 0);
-                if (self.mode == .lua) {
+                if (self.mode == .lua or (self.mode == .duo and !self.canonical)) {
                     try self.write(" then");
                 }
                 try self.printBlock(&is.then);
@@ -563,7 +587,7 @@ pub const PrettyPrinter = struct {
                     try self.nl();
                     try self.write("elseif ");
                     try self.printExpr(ei.cond, 0);
-                    if (self.mode == .lua) {
+                    if (self.mode == .lua or (self.mode == .duo and !self.canonical)) {
                         try self.write(" then");
                     }
                     try self.printBlock(&ei.body);
@@ -745,11 +769,15 @@ pub const PrettyPrinter = struct {
         }
         if (self.mode == .lua) {
             try self.write("function");
-        } else {
+        } else if (!self.canonical) {
             try self.write("fun");
         }
         if (fd.path.len > 0) {
-            for (fd.path) |p| try self.print(" {s}", .{p});
+            const needs_kw_space = self.mode == .lua or !self.canonical;
+            for (fd.path, 0..) |p, i| {
+                if (needs_kw_space or i > 0) try self.write(" ");
+                try self.write(p);
+            }
         }
         try self.printFuncSig(&fd.func);
         try self.printBlock(&fd.func.body);
@@ -881,7 +909,7 @@ pub const PrettyPrinter = struct {
     }
 
     fn printFuncSigParams(self: *PrettyPrinter, sig: *const ast.FuncSignature) !void {
-        try self.write("fun ");
+        if (!(self.mode == .duo and self.canonical)) try self.write("fun ");
         try self.write(sig.name);
         try self.write("(");
         for (sig.params, 0..) |param, i| {
@@ -916,8 +944,13 @@ pub const PrettyPrinter = struct {
 // ── Convenience wrappers ────────────────────────────────────────────────────
 
 pub fn prettyPrint(alloc: std.mem.Allocator, mod: *const Module, mode: Mode) ![]u8 {
+    return prettyPrintCanonical(alloc, mod, mode, false);
+}
+
+pub fn prettyPrintCanonical(alloc: std.mem.Allocator, mod: *const Module, mode: Mode, canonical: bool) ![]u8 {
     var buf = std.ArrayList(u8).empty;
     var pp = PrettyPrinter.init(alloc, &buf, mode);
+    pp.canonical = canonical and mode == .duo;
     try pp.printModule(mod);
     return try buf.toOwnedSlice(alloc);
 }
@@ -1093,4 +1126,38 @@ test "pretty: concept definition" {
         \\end
         \\
     );
+}
+
+test "pretty: canonical mode strips fun, then, and do/end wrapper" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const mod = try parseSource(alloc,
+        \\fun add(x: i64, y: i64): i64
+        \\  if x < y then
+        \\    return x
+        \\  else
+        \\    return y
+        \\  end
+        \\end
+        \\
+        \\do
+        \\  print("hi")
+        \\end
+        \\
+    );
+    const out = try prettyPrintCanonical(alloc, &mod, .duo, true);
+    defer alloc.free(out);
+    try testing.expectEqualStrings(
+        \\add(x: i64, y: i64) -> i64
+        \\  if x < y
+        \\    return x
+        \\  else
+        \\    return y
+        \\  end
+        \\end
+        \\print("hi")
+        \\
+        \\
+    , out);
 }

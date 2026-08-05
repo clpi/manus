@@ -353,17 +353,22 @@ pub fn parseUnrollCount(args: ?[]const u8) ?u32 {
 /// Apply ML-related function attributes from `@device`, `@autodiff`, etc.
 pub fn applyMlFuncAttrs(attrs: []const ast.Attribute, fb: *ast.FuncBody) void {
     for (attrs) |attr| {
-        if (std.mem.eql(u8, attr.name, "device")) {
+        const norm = meta_module.normalizeCompileAttribute(attr.name);
+        if (std.mem.eql(u8, norm, "device")) {
             fb.device_target = parseDeviceTarget(attr.args);
-        } else if (std.mem.eql(u8, attr.name, "autodiff")) {
+        } else if (std.mem.eql(u8, norm, "autodiff")) {
             fb.autodiff = true;
-        } else if (std.mem.eql(u8, attr.name, "differentiable")) {
+        } else if (std.mem.eql(u8, norm, "differentiable")) {
             fb.differentiable = true;
             fb.autodiff = true;
-        } else if (std.mem.eql(u8, attr.name, "profile")) {
+        } else if (std.mem.eql(u8, norm, "profile")) {
             fb.profile_attr = true;
-        } else if (std.mem.eql(u8, attr.name, "unroll")) {
+        } else if (std.mem.eql(u8, norm, "unroll")) {
             fb.unroll_count = parseUnrollCount(attr.args);
+        } else if (std.mem.eql(u8, norm, "compile.only")) {
+            fb.is_compile_only = true;
+        } else if (std.mem.eql(u8, norm, "inline")) {
+            fb.use_force_always_inline = true;
         }
     }
 }
@@ -386,34 +391,37 @@ pub fn validateFuncAttrs(attrs: []const ast.Attribute) ?[]const u8 {
         if (isTestDirective(attr.name) or isTimeDirective(attr.name) or isBenchDirective(attr.name) or isDebugDirective(attr.name)) {
             continue;
         }
-        if (std.mem.eql(u8, attr.name, "inline") or
-            std.mem.eql(u8, attr.name, "cold") or
-            std.mem.eql(u8, attr.name, "hot") or
-            std.mem.eql(u8, attr.name, "noinline") or
-            std.mem.eql(u8, attr.name, "export") or
-            std.mem.eql(u8, attr.name, "c.export") or
-            std.mem.eql(u8, attr.name, "ffi") or
-            std.mem.eql(u8, attr.name, "derive") or
-            std.mem.eql(u8, attr.name, "arc") or
-            std.mem.eql(u8, attr.name, "nopanic") or
-            std.mem.eql(u8, attr.name, "packed") or
-            std.mem.eql(u8, attr.name, "raw") or
-            std.mem.eql(u8, attr.name, "align") or
-            std.mem.eql(u8, attr.name, "deprecated") or
-            std.mem.eql(u8, attr.name, "device") or
-            std.mem.eql(u8, attr.name, "autodiff") or
-            std.mem.eql(u8, attr.name, "differentiable") or
-            std.mem.eql(u8, attr.name, "profile") or
-            std.mem.eql(u8, attr.name, "unroll") or
-            std.mem.eql(u8, attr.name, "pure") or
-            std.mem.eql(u8, attr.name, "flatten") or
-            std.mem.eql(u8, attr.name, "noreturn") or
-            std.mem.eql(u8, attr.name, "restrict") or
-            std.mem.eql(u8, attr.name, "target") or
-            std.mem.eql(u8, attr.name, "section") or
-            std.mem.eql(u8, attr.name, "consteval") or
-            std.mem.startsWith(u8, attr.name, "concurrent") or
-            std.mem.startsWith(u8, attr.name, "implements"))
+        const norm = meta_module.normalizeCompileAttribute(attr.name);
+        if (std.mem.eql(u8, norm, "inline") or
+            std.mem.eql(u8, norm, "cold") or
+            std.mem.eql(u8, norm, "hot") or
+            std.mem.eql(u8, norm, "noinline") or
+            std.mem.eql(u8, norm, "export") or
+            std.mem.eql(u8, norm, "c.export") or
+            std.mem.eql(u8, norm, "ffi") or
+            std.mem.eql(u8, norm, "derive") or
+            std.mem.eql(u8, norm, "arc") or
+            std.mem.eql(u8, norm, "nopanic") or
+            std.mem.eql(u8, norm, "packed") or
+            std.mem.eql(u8, norm, "raw") or
+            std.mem.eql(u8, norm, "align") or
+            std.mem.eql(u8, norm, "deprecated") or
+            std.mem.eql(u8, norm, "device") or
+            std.mem.eql(u8, norm, "autodiff") or
+            std.mem.eql(u8, norm, "differentiable") or
+            std.mem.eql(u8, norm, "profile") or
+            std.mem.eql(u8, norm, "unroll") or
+            std.mem.eql(u8, norm, "compile.only") or
+            std.mem.eql(u8, norm, "pure") or
+            std.mem.eql(u8, norm, "noalloc") or
+            std.mem.eql(u8, norm, "flatten") or
+            std.mem.eql(u8, norm, "noreturn") or
+            std.mem.eql(u8, norm, "restrict") or
+            std.mem.eql(u8, norm, "target") or
+            std.mem.eql(u8, norm, "section") or
+            std.mem.eql(u8, norm, "consteval") or
+            std.mem.startsWith(u8, norm, "concurrent") or
+            std.mem.startsWith(u8, norm, "implements"))
         {
             continue;
         }

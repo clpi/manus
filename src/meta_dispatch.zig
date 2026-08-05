@@ -105,7 +105,38 @@ pub fn validArgCount(internal_name: []const u8, arg_count: usize) bool {
     return arg_count >= entry.min_args and arg_count <= entry.max_args;
 }
 
+/// Unified combinator evaluation — single entry for fold, comptime hook, and emit paths.
+pub fn dispatch(
+    host: meta_codegen.Host,
+    internal_name: []const u8,
+    args: []const comptime_eval.Value,
+    alloc: std.mem.Allocator,
+) Result {
+    if (!isCombinator(internal_name)) return .not_applicable;
+    if (!validArgCount(internal_name, args.len)) return .not_applicable;
+    if (!meta_codegen.canApplyMetaCombinatorHook(internal_name)) return .not_applicable;
+    const value = meta_codegen.applyMetaCombinatorHook(host, internal_name, args, alloc) orelse return .eval_failed;
+    return switch (value) {
+        .string => .{ .string = value.string },
+        .int => .{ .int = value.int },
+        .bool => .{ .boolean = value.bool },
+        else => .eval_failed,
+    };
+}
+
+/// True when `dispatch()` can handle this internal hook name.
+pub fn canDispatch(internal_name: []const u8) bool {
+    return isCombinator(internal_name) and meta_codegen.canApplyMetaCombinatorHook(internal_name);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+test "meta_dispatch: canDispatch tier-1 wired hooks" {
+    try std.testing.expect(canDispatch("__comptimemap"));
+    try std.testing.expect(canDispatch("__comptimefixpoint"));
+    try std.testing.expect(!canDispatch("__metacatalog"));
+    try std.testing.expect(!canDispatch("__nonexistent"));
+}
 
 test "meta_dispatch: all combinators are registered" {
     const testing = std.testing;

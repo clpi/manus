@@ -71,7 +71,58 @@ Full plan: [`docs/semantic_universe.md`](../docs/semantic_universe.md)
 
 ## Active goals (priority order)
 
-0. **Semantic universe (Phase 0–1)** — canonical plan: `docs/semantic_universe.md`.
+0. **Pass 10 — Public repository readiness** — plan: `docs/plans/pass10_public_repository_readiness.md`.
+   Repository must be suitable for immediate public inspection without private agent context.
+   **Out of scope:** cosmetic-only renames without architectural benefit; deleting git history.
+   **P10-M0 partial:** `pass10_repo_audit.zig` + `pass10_catalog.zig` — invariants 3.14–3.21, audits A15–A19, pollution findings, acceptance criteria via `duo catalog` → `pass10`.
+   **Canonical owners:** `src/pass10_repo_audit.zig` (matrix/findings), `src/pass10_catalog.zig` (milestones/workstreams/presentation standard).
+   Next: A16 file necessity enumeration; A17 Markdown compression; root README bootstrap section (P10-M5).
+   Claim tags: `pass10-audit`, `pass10-inventory`, `pass10-docs`, `pass10-density`, `pass10-licensing`, `pass10-hierarchy`, `pass10-examples`, `pass10-hygiene`.
+0. **Pass 9 — Ward readiness + vertical proof** — plan: `docs/plans/pass9_ward_readiness.md`.
+   Ward is the primary vertical proof: Duo-native Wasm runtime faster/smaller/clearer than Wart.
+   **Out of scope:** Ward-only language features, separate Wasm IR, premature optimizing JIT.
+   **P9-M0 partial:** `ward_readiness.zig` + `pass9_catalog.zig` — machine-readable matrix via `duo catalog` → `pass9`.
+   **First kernel (P9-M1 open):** descriptor-generated LEB128 + instruction decoder for bounded Wasm subset.
+   **Canonical owners:** `src/ward_readiness.zig` (matrix), `src/pass9_catalog.zig` (milestones/ladder), `~/x/ward` (runtime proof).
+   **P9-WS5 partial:** compile-time generator in `wasm_semantic_gen.zig`; validator + decoder tables in catalog.
+   **P9-WS6 partial:** `lib/std/wasm/decode.duo` — cursor-integrated opcode + immediate decode; `examples/pass9/decode_cursor_smoke.duo`.
+   Next: full semantic-id dispatch from generated tables; dedupe `ward/src/wasm/op.duo`; byte cursor (P9-WS3 — other agents).
+   Claim tags: `pass9-audit`, `pass9-readiness`, `pass9-substrate`, `pass9-wasm-desc`, `pass9-gen`, `pass9-native`, `pass9-fuzz`, `pass9-bench`, `pass9-lsp`, `pass9-mcp`, `pass9-interpreter-gate`.
+0. **Pass 8 — Persistent semantic computing** — plan: `docs/plans/pass8_persistent_semantic_computing.md`.
+   Living semantic program: realization freedom, deterministic planning, persistent evidence, invalidation.
+   **Out of scope:** OS, cluster manager, Git, deployment service, online AI compiler.
+   **P8-M1 partial:** `realization.zig` (candidates + `selectDeterministic` + graph lift), `evidence_record.zig`, `duo realize`, `duo explain` realizations.
+   **P8-M2 partial:** `persistent_semantic_state.zig` — disk cache `.duo/cache/semantic/state.json`, `mergeRealizationEntry`, `reuse_audit` on `duo realize`.
+   **Canonical owner:** `src/realization.zig` only — do not reintroduce `realization_variable.zig`.
+   Next: wire repr selection into codegen, cross-build disk reuse (P8-M2), invalidation graph (P8-08).
+   Claim tags: `pass8-audit`, `pass8-realization`, `pass8-evidence`, `pass8-persistence`, `pass8-invalidation`,
+   `pass8-dependencies`, `pass8-replay`, `pass8-ward`, `pass8-mcp`.
+0. **Pass 7 — AI-native compilation** — plan: `docs/plans/pass7_ai_native_compilation.md`.
+   Compiler knowledge for agents, optimization intelligence, contracts, inference via descriptors/SIM.
+   **Out of scope:** OS, Git, IDE, cloud control plane, online AI in compile path.
+   **P7-M1 partial:** `duo explain`, `knowledge_snapshot.zig`, `optimization_outcome.zig`, `contract_model.zig`.
+   Catalog: `duo catalog` → `pass7` via `src/pass7_catalog.zig` (15 workstreams, 5 milestones).
+   Foundations landed: P7-02 contracts catalog, P7-03 snapshots, P7-05 outcome records.
+   Next: MCP knowledge queries (P7-11), assumption wiring into specialization guards, semantic transactions (P7-10).
+   Claim tags: `pass7-audit` (partial), `pass7-contracts`, `pass7-snapshots`, `pass7-outcomes`, `pass7-explain`,
+   `pass7-mcp`, `pass7-tensor`, `pass7-tx`.
+0. **Pass 6 — Architectural reconciliation** — plan: `docs/plans/pass6_architectural_reconciliation.md`.
+   Integration pass: duplication matrix, dependency DAG, source-of-truth, glossary, risk register.
+   **P6-07 partial:** `dispatchMetaCombinator` + `requireMetaDispatchBeforeHook` wired in codegen; `DUO_TRANSFORM_GATE=1` for strict mode.
+   **P6-11 partial:** `sim_pipeline.exportInterchangeWithGraph` lifts graph → enriches SIM (`shape_id`, `why`, `storage_class`); `duo sim` uses it.
+   **R-03 partial:** `CodeGen.usesFullNativeLowering()` + `main.zig` link flags use knowledge lattice, not raw `native_scalar_mode`.
+   **No new language features.** Catalog: `duo catalog` → `pass6` via `src/pass6_catalog.zig`.
+   Claim tags: `pass6-audit` (done), `pass6-dispatch`, `pass6-knowledge` (partial), `pass6-sim-projection` (partial), `pass6-tooling`.
+0a. **Pass 5 — Semantic interchange (SIM)** — plan: `docs/plans/pass5_semantic_interchange.md`.
+   **P5-M1 done:** C header → SIM → foreign descriptor → direct native call (`@comp.c.import`).
+   Layer A partial: `src/sim.zig` v0, `duo sim`, native export tests.
+   Layer B partial: `src/c_frontend.zig`, `src/c_sim_import.zig`, `duo sim --import-c`, layout probe.
+   P5-08/09 MCP/LSP tooling partial. Claim tags: `pass5-audit`, `pass5-sim`, `pass5-c-frontend`, `pass5-importer`, `pass5-mcp`, `pass5-lsp`.
+0b. **Pass 4 — Native end-to-end compilation** — plan: `docs/plans/pass4_native_end_to_end.md`.
+   Eliminate universal boxing as compiler center; extend `native_backend.zig`; barrier catalog
+   PB-011+; first milestone `examples/pass4_native_milestone.duo` (C path ✅, direct object ⬜).
+   Claim tags: `pass4-audit`, `pass4-barriers`, `pass4-native-backend`, `pass4-runtime`, `pass4-selfhost`.
+0b. **Semantic universe (Phase 0–1)** — canonical plan: `docs/semantic_universe.md`.
    `src/transform_engine.zig` registry stub ✅; `src/semantic_graph.zig` spine in progress.
    **Moratorium:** no new public `@comp.*` without registry + 3-site parity tests.
    Claim tags: `graph-spine`, `transform-registry`, `staging-budget`, `capabilities`, `semantic-tx`.
@@ -169,6 +220,7 @@ the wait is bounded and prevents corruption.
 | metaprogramming / `@meta.*` | opencode | 2026-07-31 | dedup fixes, MCP tools, Duo scripting conversion |
 | codegen / native lowering | **this session** | 2026-07-31 18:30:00 | Complete G-001 backfill; implement G-008/G-020/G-021 |
 | stdlib | Antigravity | 2026-07-31 00:52:32 | std.mcp implemented, closed script gap |
+| **Pass 4 foundation** (`pass4-audit`) | cursor/agent | 2026-08-04 | Plan + catalogs + P4-M1 C tests + `duo catalog` pass4 JSON — **released 2026-08-04** |
 | benchmarks / perf | — | — | unclaimed |
 | **semantic graph JSON** (`graph-spine`) | cursor/agent | 2026-08-04 | shape_id + why in graph export — **released 2026-08-04** |
 | native backend / `src/native_backend.zig` | — (released by oh-my-pi 2026-08-01) | — | DONE: native-exe string output via `__cstring` + adrp/add PAGE21/PAGEOFF12 + `@ffi` |

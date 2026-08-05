@@ -1,0 +1,7 @@
+-- Pass 8 realization smoke: native Point selects repr.native_aggregate.
+
+Point: @{ x: f64, y: f64 }
+
+main(): i64
+    0
+end

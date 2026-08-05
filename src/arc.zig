@@ -330,6 +330,10 @@ pub const ArcPass = struct {
                         try self.processExpr(p);
                         if (self.exprCanHoldRef(p)) holds_ref = true;
                     },
+                    .spread => |sp| {
+                        try self.processExpr(sp);
+                        if (self.exprCanHoldRef(sp)) holds_ref = true;
+                    },
                 };
                 // A table whose fields can themselves hold references may form a
                 // cycle and must be registered with the cycle collector.
