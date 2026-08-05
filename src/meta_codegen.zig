@@ -805,9 +805,7 @@ fn comptimeProductWorker(task: *ComptimeProductTask) void {
 
     var opts = task.base_options;
     opts.alloc = a;
-    opts.comptime_cache = null;
-    opts.persistent_cache_load_hook = null;
-    opts.persistent_cache_store_hook = null;
+    opts.comptime_cache_alloc = null;
     const piece = comptime_eval.callFunctionValue(task.callback, &.{ meta_a, meta_b }, task.bindings, opts) catch return;
     if (piece == .string) {
         task.result.* = task.shared_alloc.dupe(u8, piece.string) catch null;
@@ -2723,6 +2721,121 @@ pub fn emitUserDefinedDerives(
         emitLine(ctx, c_code);
         emitLine(ctx, "\n");
     }
+}
+
+/// True when `applyMetaCombinatorHook` owns dispatch for an internal hook name (P6-07).
+pub fn canApplyMetaCombinatorHook(internal: []const u8) bool {
+    return std.mem.eql(u8, internal, "__comptimematch") or
+        std.mem.eql(u8, internal, "__comptimeinterpolate") or
+        std.mem.eql(u8, internal, "__comptimetabulate") or
+        std.mem.eql(u8, internal, "__comptimezip") or
+        std.mem.eql(u8, internal, "__comptimeproduct") or
+        std.mem.eql(u8, internal, "__comptimemap") or
+        std.mem.eql(u8, internal, "__comptimeeach") or
+        std.mem.eql(u8, internal, "__comptimepower") or
+        std.mem.eql(u8, internal, "__derivepower") or
+        std.mem.eql(u8, internal, "__deriveproduct") or
+        std.mem.eql(u8, internal, "__comptimefixpoint");
+}
+
+/// Provenance input string for a meta combinator call (hashed by transform_engine).
+pub fn metaCombinatorProvenanceInput(
+    internal: []const u8,
+    args: []const comptime_eval.Value,
+    buf: []u8,
+) ?[]const u8 {
+    if (std.mem.eql(u8, internal, "__comptimetabulate") and args.len >= 1 and args[0] == .int) {
+        return std.fmt.bufPrint(buf, "{d}", .{args[0].int}) catch null;
+    }
+    if ((std.mem.eql(u8, internal, "__comptimeproduct") or
+        std.mem.eql(u8, internal, "__deriveproduct")) and
+        args.len >= 2 and args[0] == .string and args[1] == .string)
+    {
+        return std.fmt.bufPrint(buf, "{s}|{s}", .{ args[0].string, args[1].string }) catch args[0].string;
+    }
+    if (args.len >= 1 and args[0] == .string) return args[0].string;
+    return null;
+}
+
+/// P6-07 unified hook execution — single dispatch table for all codegen/comptime sites.
+pub fn applyMetaCombinatorHook(
+    host: Host,
+    internal: []const u8,
+    args: []const comptime_eval.Value,
+    alloc: std.mem.Allocator,
+) ?comptime_eval.Value {
+    if (std.mem.eql(u8, internal, "__comptimematch") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        return comptimeMatchHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimeinterpolate") and args.len == 2) {
+        if (args[0] != .string) return null;
+        return comptimeInterpolateHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimetabulate") and args.len == 2) {
+        if (args[0] != .int or args[1] != .func) return null;
+        return comptimeTabulateHook(host, args[0].int, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimezip") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string or args[2] != .func) return null;
+        return comptimeZipHook(host, args[0].string, args[1].string, args[2], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimeproduct") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string or args[2] != .func) return null;
+        return comptimeProductHook(host, args[0].string, args[1].string, args[2], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimemap") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        return comptimeMapHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimeeach") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        return comptimeEachHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimepower") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        return comptimePowerHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivepower") and args.len == 2) {
+        if (args[0] != .string) return null;
+        const derive_name = switch (args[1]) {
+            .string => args[1].string,
+            else => return null,
+        };
+        return derivePowerHook(host, args[0].string, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__deriveproduct") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string) return null;
+        const derive_name = switch (args[2]) {
+            .string => args[2].string,
+            else => return null,
+        };
+        return deriveProductHook(host, args[0].string, args[1].string, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimefixpoint") and args.len == 3) {
+        if (args[0] != .string) return null;
+        const max_iter: usize = blk: {
+            if (args[1] == .int) break :blk @intCast(args[1].int);
+            if (args[2] == .int) break :blk @intCast(args[2].int);
+            return null;
+        };
+        const callback = if (args[1] == .func) args[1] else if (args[2] == .func) args[2] else return null;
+        return comptimeFixpointHook(host, args[0].string, callback, max_iter, alloc);
+    }
+    return null;
+}
+
+test "meta_codegen: canApplyMetaCombinatorHook tier-1 set" {
+    try std.testing.expect(canApplyMetaCombinatorHook("__comptimemap"));
+    try std.testing.expect(canApplyMetaCombinatorHook("__comptimefixpoint"));
+    try std.testing.expect(!canApplyMetaCombinatorHook("__metacatalog"));
+}
+
+test "meta_codegen: metaCombinatorProvenanceInput product pair" {
+    var buf: [64]u8 = undefined;
+    const args = [_]comptime_eval.Value{ .{ .string = "A" }, .{ .string = "B" } };
+    const input = metaCombinatorProvenanceInput("__comptimeproduct", &args, &buf) orelse return error.TestExpectedEqual;
+    try std.testing.expectEqualStrings("A|B", input);
 }
 
 test "meta_codegen: concept intersection parsing" {

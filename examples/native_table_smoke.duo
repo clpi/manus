@@ -1,0 +1,22 @@
+-- Smoke test for native table initialization
+-- Typed table literals should emit native C struct access
+
+alias Point = { x: f64, y: f64 }
+
+fun make_point(x: f64, y: f64): Point
+    { x = x, y = y }
+end
+
+fun add_points(a: Point, b: Point): Point
+    { a.x + b.x, a.y + b.y }
+end
+
+fun main()
+    p1: Point = make_point(3.0, 4.0)
+    p2: Point = make_point(1.0, 2.0)
+    p3 = add_points(p1, p2)
+    print("p1 = {x=", p1.x, " y=", p1.y, "}\n")
+    print("p2 = {x=", p2.x, " y=", p2.y, "}\n")
+    print("p3 = {x=", p3.x, " y=", p3.y, "}\n")
+    RESULT p3.x == 4.0 and p3.y == 6.0
+end

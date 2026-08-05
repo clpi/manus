@@ -9,6 +9,6 @@ main(): i64
     if d.status ~= "ok" return 1 end
     if d.imm ~= 42 return 2 end
     if Decode.semantic_table_owner() ~= "src/wasm_semantic.zig:mvp_opcode_index" return 3 end
-    if Decode.cursor_substrate() ~= "std.bytes" return 4 end
+    if Decode.cursor_substrate() ~= "decode-local-table" return 4 end
     0
 end

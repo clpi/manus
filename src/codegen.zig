@@ -2837,7 +2837,7 @@ pub const CodeGen = struct {
     fn expr_is_native_scalar(self: *CodeGen, expr: *const ast.Expr) bool {
         return switch (expr.*) {
             .true_lit, .false_lit, .int_lit, .float_lit, .string_lit => true,
-            .nil => true,
+            .nil => false,
             .name => |name| !is_runtime_global(name.ident),
             .binop => |bin| self.expr_is_native_scalar(bin.lhs) and self.expr_is_native_scalar(bin.rhs),
             .unop => |un| un.op != .compile and self.expr_is_native_scalar(un.operand),
@@ -2898,6 +2898,7 @@ pub const CodeGen = struct {
     }
 
     fn init_is_native_scalar(self: *CodeGen, expr: *const ast.Expr, hint: RT) bool {
+        if (expr.* == .nil and hint == .any) return false;
         if (expr.* == .table and hint == .table_type) {
             const t = expr.table;
             var found: std.StringHashMapUnmanaged(*const ast.Expr) = .empty;

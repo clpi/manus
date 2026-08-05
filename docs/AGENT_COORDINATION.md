@@ -1,6 +1,8 @@
 # Duo Agent Coordination Buffer (redirect)
 
-**Canonical location:** [`.agents/AGENT_COORDINATION.md`](.agents/AGENT_COORDINATION.md) — single coordination buffer for all agents.
+**Canonical location:** [`.agents/AGENT_COORDINATION.md`](.agents/AGENT_COORDINATION.md)
+
+**Alignment compass (read first):** [`docs/AGENT_ALIGNMENT.md`](AGENT_ALIGNMENT.md)
 
 This file redirects to the canonical location in `.agents/`.
 

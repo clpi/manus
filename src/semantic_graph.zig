@@ -109,6 +109,8 @@ pub const Node = struct {
     ast_ref: ?*anyopaque = null,
     /// Content-addressed durable ID (survives benign reparses when path+span match).
     stable_id: ?StableId = null,
+    /// When true, `name` was allocated on the graph allocator and must be freed in deinit.
+    owns_name: bool = false,
 };
 
 pub const Edge = struct {
@@ -136,6 +138,9 @@ pub const SemanticGraph = struct {
         for (self.nodes.items) |node| {
             if (node.why) |w| self.alloc.free(w);
             if (node.descriptor_label) |d| self.alloc.free(d);
+            if (node.owns_name) {
+                if (node.name) |n| self.alloc.free(n);
+            }
         }
         self.nodes.deinit(self.alloc);
         self.edges.deinit(self.alloc);
@@ -469,10 +474,12 @@ pub const SemanticGraph = struct {
             .named => |alias| {
                 var scope_buf: [128]u8 = undefined;
                 const local_name = scopedBindingName(func_name, binding_name, &scope_buf);
+                const owned_local = try self.alloc.dupe(u8, local_name);
                 const local_id = try self.addNode(.{
                     .kind = .local,
                     .span = .{ .file = file, .start = loc.line, .end = loc.col },
-                    .name = local_name,
+                    .name = owned_local,
+                    .owns_name = true,
                     .ast_ref = @ptrCast(@constCast(lname)),
                 });
                 try self.addEdge(.{ .from = func_id, .to = local_id, .kind = .contains });
@@ -493,10 +500,13 @@ pub const SemanticGraph = struct {
         const binding_scope = scopedBindingName(func_name, binding_name, &scope_buf);
         var shape_buf: [144]u8 = undefined;
         const shape_name = std.fmt.bufPrint(&shape_buf, "{s}@shape", .{binding_scope}) catch binding_scope;
+        const owned_shape = try self.alloc.dupe(u8, shape_name);
+        const owned_binding = try self.alloc.dupe(u8, binding_scope);
         const shape_node_id = try self.addNode(.{
             .kind = .table_shape,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .name = shape_name,
+            .name = owned_shape,
+            .owns_name = true,
             .storage_class = sc,
             .field_count = @intCast(rt.table_type.fields.len),
             .shape_id = sid,
@@ -514,7 +524,8 @@ pub const SemanticGraph = struct {
         const local_id = try self.addNode(.{
             .kind = .local,
             .span = .{ .file = file, .start = loc.line, .end = loc.col },
-            .name = binding_scope,
+            .name = owned_binding,
+            .owns_name = true,
             .ast_ref = @ptrCast(@constCast(lname)),
         });
         try self.addEdge(.{ .from = func_id, .to = local_id, .kind = .contains });
@@ -931,6 +942,9 @@ pub const SemanticGraph = struct {
                 }
             }
             const ad: *const ast.AliasDef = @ptrCast(@alignCast(raw));
+            if (node.name) |n| {
+                if (std.mem.indexOf(u8, n, "::") != null or std.mem.endsWith(u8, n, "@shape")) return null;
+            }
             var rt: types.ResolvedType = .any;
             if (ad.target) |tgt| {
                 rt = try types.resolve(tgt, null, graph_alloc);

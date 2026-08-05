@@ -258,7 +258,7 @@ end
 
 -- Get memory usage stats
 fun memory_stats(): any
-    {
+    return {
         total = collectgarbage("count"),
         step = collectgarbage("step"),
     }

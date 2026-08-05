@@ -1,0 +1,18 @@
+-- Pass 4: dynamic-boundary explanation demo (@comp.why.* / @comp.representation)
+Point: @{ x: f64, y: f64 }
+
+explain_point(p: Point): str
+    @comp.representation(p)
+end
+
+why_not_native(p: Point): str
+    @comp.why.not.native(p)
+end
+
+why_boxed(p: Point): str
+    @comp.why.boxed(p)
+end
+
+main(): i64
+    0
+end

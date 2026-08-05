@@ -4,6 +4,21 @@
 
 Duo is a Lua-like language that compiles to native C (AOT). This repository includes a 40-benchmark suite comparing Duo against hand-written reference C.
 
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [docs/language.md](docs/language.md) | Language reference entry |
+| [docs/compiler.md](docs/compiler.md) | Compiler architecture and modules |
+| [docs/bootstrap.md](docs/bootstrap.md) | Build chain and validation tiers |
+| [docs/tooling.md](docs/tooling.md) | CLI, editors, MCP, validation scripts |
+| [docs/contributing.md](docs/contributing.md) | Contributor workflow |
+| [docs/release.md](docs/release.md) | Release checklist |
+| [docs/src/SUMMARY.md](docs/src/SUMMARY.md) | Detailed topic index |
+| [docs/performance.md](docs/performance.md) | Benchmark ledger |
+
+Machine-readable program status: `./zig-out/bin/duo catalog`.
+
 ## Syntax at a Glance
 
 ```lua

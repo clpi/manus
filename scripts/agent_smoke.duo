@@ -5,6 +5,12 @@
 
 agent = req "std.agent"
 script = req "std.script"
+os = req "std.os"
+
+if not script.ok("./scripts/public_safety_scan.sh")
+    print("agent-smoke: public_safety_scan FAIL")
+    os.exit(1)
+end
 
 bin = script.duo_bin()
 script.duo_run_all(agent.smoke_targets(), bin)

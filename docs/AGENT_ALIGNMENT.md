@@ -33,6 +33,40 @@ Export: `duo catalog` includes `pass4` JSON.
 transformation, and ecosystem tooling — must not outrun Pass 4. Read
 [`plans/pass5_semantic_interchange.md`](plans/pass5_semantic_interchange.md).
 Export: `duo sim <file>` (SIM v0 JSON), `duo catalog` includes `pass5` JSON.
+**P5-M1 done:** C header → SIM → foreign descriptor → direct native call.
+
+**Pass 6 (2026-08-04):** Architectural reconciliation — no new language features.
+Audit Passes 1–5 vs repo truth; duplication matrix, dependency DAG, glossary, risk register.
+**P6 audit done; P6-07 partial:** unified `applyMetaCombinatorHook` dispatch.
+Read [`plans/pass6_architectural_reconciliation.md`](plans/pass6_architectural_reconciliation.md).
+Export: `duo catalog` → `pass6` JSON.
+
+**Pass 8 (2026-08-04):** Persistent semantic computing — realization freedom, evidence, invalidation, living program.
+Read [`plans/pass8_persistent_semantic_computing.md`](plans/pass8_persistent_semantic_computing.md).
+Export: `duo catalog` → `pass8` JSON.
+**Landings:** `evidence_record`, `realization.zig`, `persistent_semantic_state` schema.
+
+**Pass 9 (2026-08-04):** Ward readiness — vertical proof that Duo can produce a faster, denser Wasm runtime than Wart.
+Read [`plans/pass9_ward_readiness.md`](plans/pass9_ward_readiness.md).
+Export: `duo catalog` → `pass9` JSON (matrix owner: `src/ward_readiness.zig`).
+**First kernel:** P9-M1 descriptor-generated LEB128 + instruction decoder.
+**Blocker:** Ward `module.duo` hot path still uses `@c.emit` + `lua_Value`.
+
+**Pass 10 (2026-08-04):** Public repository readiness — information density, structural coherence, release gate.
+Read [`plans/pass10_public_repository_readiness.md`](plans/pass10_public_repository_readiness.md).
+Export: `duo catalog` → `pass10` JSON (matrix owner: `src/pass10_repo_audit.zig`).
+**Invariants:** 3.14–3.21 (public inspection, no pollution, permanent file roles, dense docs/comments/code).
+**Audits:** A15–A19 (quality, file necessity, markdown compression, source density, safety/licensing).
+
+**Pass 7 (2026-08-04):** AI-native compilation — compiler knowledge, optimization intelligence,
+agent APIs, inference workloads. **Not** an OS, Git replacement, or IDE.
+Read [`plans/pass7_ai_native_compilation.md`](plans/pass7_ai_native_compilation.md).
+Export: `duo catalog` → `pass7` JSON, `duo explain <file>` (knowledge snapshots + optimization outcomes).
+
+**Landings (2026-08-04):** `contract_model`, `knowledge_snapshot`, `optimization_outcome`, `explain_pipeline`,
+`assumption_guard`, `repair_candidate`, `semantic_fingerprint`; `@noalloc` enforced at codegen (P7-M2 partial).
+
+**First foundation:** P7-03 knowledge snapshots (immutable phase projections, not second graph).
 
 Full plan: [`plans/semantic_graph_architecture.md`](plans/semantic_graph_architecture.md)
 Convergence audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_foundational_convergence.md)
@@ -91,7 +125,30 @@ Details: [`semantic_universe.md` §2–§9](semantic_universe.md)
 
 ---
 
-## Current phase (Pass 6 — Architectural reconciliation)
+## Current phase (Pass 8 — Persistent semantic computing)
+
+**Pass 8** treats programs as versioned semantic systems whose realizations may evolve under explicit constraints.
+**Prerequisite:** Pass 7 snapshots, evidence, assumptions; Pass 6 convergence.
+
+| Track | Doc / command | Status |
+| --- | --- | --- |
+| Pass 8 plan | `docs/plans/pass8_persistent_semantic_computing.md` | 🔄 tracking |
+| Realization selection | `realization.zig` | 🔄 partial (P8-M1) |
+| Evidence model | `evidence_record.zig` | 🔄 partial |
+| Persistent cache schema | `persistent_semantic_state.zig` | 🔄 schema only |
+| Readiness map | `duo catalog` → `pass8` | ✅ |
+| Milestones | P8-M1…P8-M6 | 🔄 M1 partial |
+| Agent JSON | `duo catalog` → `pass8` | ✅ |
+
+**Top priority when claiming Pass 8:** wire repr selection into codegen → cross-build reuse (P8-M2) → invalidation graph (P8-08).
+
+**Governing question:** What is fixed, what remains free, what was selected, why, and what would invalidate it?
+
+---
+
+## Previous phase (Pass 7 — AI-native compilation)
+
+## Previous phase (Pass 6 — Architectural reconciliation)
 
 **Pass 6** integrates Passes 1–5 against repository truth. **No new language features.**
 

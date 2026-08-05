@@ -42,16 +42,31 @@ Sprite = Named + Positioned           -- replaces `extends`
 
 This is the highest-leverage grammar change: one mechanism replaces five keywords.
 
-### 4. Field projections and method references are free wins
+### 4. Field projections and method references are free wins (prefer call syntax)
 
-`.name` and `:method` as callback shorthand require minimal parser work and unlock
-pipeline ergonomics that make Duo visually distinctive:
+`.name` and `:method` as callback shorthand require minimal parser work:
 
 ```duo
-users:filter(.active):map(.name):each(print)
+map(users, .name)
+each(filter(users, .active), print)
 ```
 
-No runtime cost — they lower to `(v) v.name` and `(v) v:method()`.
+**Canonical:** nested calls and `map(data, .field)` — not `|>` pipeline chains.
+Projections lower to `(v) v.name` and `(v) v:method()` with no runtime cost.
+
+### 4b. Deprioritize confusing symbolic operators
+
+Surface operators that overload familiar tokens or mimic other languages are **implemented
+for compatibility** but **not canonical** in `.duo`:
+
+| Operator | Example | Prefer instead |
+| --- | --- | --- |
+| `\|>` | `x \|> f` | `f(x)` |
+| `@` (infix) | `a @ b` | `duo_tensor_matmul(a, b)` or typed ML APIs |
+| Chained `\|>` | `a \|> .x \|> .y` | `a.x.y` or explicit field access |
+
+Parser emits warnings in `.duo` mode. See `docs/catalogs/grammar_compactness.md` §Deprioritized.
+Pass 2 pipeline **graph IR** remains internal; do not expand `\|>` surface syntax.
 
 ### 5. Table spread (`..expr`) is the missing structural primitive
 
@@ -86,11 +101,12 @@ Including `comp.product`, `comp.derive.permute`, `comp.foreign`, `comp.schema`,
 `comp.sql`, `comp.run`, and several `comp.str.*` and `comp.field.*` intrinsics.
 These are registered promises without implementation — confusing for agents and users.
 
-### 9. Pipeline transforms are registered; fused backend is not
+### 9. Pipeline graph IR (internal) — surface `|>` deprioritized
 
-`transform_engine.zig` registers all nine `pipeline.*` ops (`map`, `fuse`, `filter`, …).
-Graph lift creates `PipelineNode` entries. **Fused C emission** via `pipeline_gen.zig` for
-multi-step `|>` chains remains open (Pass 2.5 slice 2 / P3 follow-on).
+`transform_engine.zig` registers `pipeline.*` ops for the semantic graph and `@comp.pipeline`
+module descriptors. **Do not promote** the `|>` infix operator as idiomatic `.duo` syntax;
+prefer `f(x)` and `map(items, .field)`. Native lowering for legacy `|>` exists; fused
+`pipeline_gen` backend is low priority vs knowledge lattice and descriptor grammar.
 
 ### 10. Formatter does not yet enforce deprecated keyword removal
 
@@ -209,3 +225,14 @@ consistent, and actionable — so that every future addition collapses mechanism
 | Machine-readable export | ✅ `duo catalog` → `src/pass3_catalog.zig` |
 | Workstream tracker (15 items) | ✅ JSON `workstreams` array |
 | Transform registry summary | ✅ pipeline/call/shape counts in `duo catalog` |
+
+## Pass 3.1 progress (2026-08-04)
+
+| Workstream | Status |
+| --- | --- |
+| P3-03 `@{}` descriptor (enum, record, spread, payloads) | ✅ |
+| Pass 2.5 pipeline chain fuse (`\|> .x \|> .y` → native field chain) | ✅ compat only; **deprioritized** |
+| Symbolic operator policy (`\|>`, infix `@`) | ✅ catalog + parser warnings |
+| P3-07 per-call knowledge lattice | 🔄 partial |
+| P3-08 flat alias deprecation warnings | ✅ (legacy_directives + duo-mode warnings) |
+| P3-13 unwired directives | 🔄 partial |

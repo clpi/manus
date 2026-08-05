@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# duo-safe — auto-lock wrapper for bare `duo` invocations (G-057 / F-lock-bypass-stall).
+#
+# Agents often call `duo run|compile|check|build` directly, bypassing duo_lock.sh
+# and exhausting RAM / fork limits across parallel sessions. Use this shim (or
+# std.script.locked / std.script.locked_must) for every heavy duo invocation.
+#
+# Usage:
+#   scripts/duo-safe run scripts/agent_smoke.duo
+#   scripts/duo-safe compile examples/foo.duo -o /tmp/foo
+#   scripts/duo-safe check lib/std/json.duo
+#
+# Environment:
+#   DUO_BIN          — real duo binary (default: zig-out/bin/duo)
+#   DUO_SAFE_NO_LOCK — set to 1 to pass through without locking (debug only)
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REAL_DUO="${DUO_BIN:-$ROOT/zig-out/bin/duo}"
+GATE="$ROOT/scripts/duo_gate.sh"
+LOCK="$ROOT/scripts/duo_lock.sh"
+
+if [[ ! -x "$REAL_DUO" ]]; then
+    echo "duo-safe: duo binary not found at $REAL_DUO (run: scripts/duo_lock.sh -- zig build)" >&2
+    exit 127
+fi
+
+needs_lock() {
+    local sub="${1:-}"
+    case "$sub" in
+        run|compile|check|build|dump-c|fmt) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if [[ "${DUO_SAFE_NO_LOCK:-0}" == "1" ]] || [[ "${DUO_LOCK_HELD:-0}" == "1" ]]; then
+    exec "$REAL_DUO" "$@"
+fi
+
+if [[ $# -eq 0 ]] || ! needs_lock "${1:-}"; then
+    exec "$REAL_DUO" "$@"
+fi
+
+exec "$GATE" -- "$LOCK" -- "$REAL_DUO" "$@"

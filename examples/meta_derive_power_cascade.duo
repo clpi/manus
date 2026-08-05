@@ -1,0 +1,27 @@
+-- Nested match → derive.power: comptime-only cascade on the O(2^n) derive axis.
+-- Run: duo run examples/meta_derive_power_cascade.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Vec2 = { x: f64, y: f64 }
+type Vec3 = { x: f64, y: f64, z: f64 }
+type Pt = { x: f64, y: f64 }
+
+@comp.define.derive("SubsetStub", fun generate(meta) -> str
+    "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " */\n"
+end)
+
+FRAGS = @comp.match("HasXY|Ordered", fun(c)
+    @comp.derive.power(c.pattern, SubsetStub)
+end)
+
+LINES = @comp.str.countlines(FRAGS)
+HAS_SUBSET = @comp.str.contains(FRAGS, "subset Vec2")
+
+ok = (LINES >= 7 and HAS_SUBSET)
+print("=== match → derive.power cascade ===")
+print("fragment_lines = " .. tostring(LINES) .. "  (expect >= 7 from HasXY power-set)")
+print("RESULT derive_power_cascade_ok = " .. tostring(ok))

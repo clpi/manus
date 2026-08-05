@@ -129,7 +129,7 @@ fun diff_types(old_type: any, new_type: any): any
         end
     end
 
-    {
+    return {
         added = added,
         removed = removed,
         changed = changed,

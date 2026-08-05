@@ -13,14 +13,18 @@ description: Coordinate multi-agent work on the Duo compiler repo. Use at sessio
 
 ## Canonical index
 
-Read **`docs/AGENT_CANONICAL.md`** — single router. Do not create duplicate coordination files.
+Read **`.agents/AGENT_CANONICAL.md`** — single router. Do not create duplicate coordination files.
 
-## Session start checklist
+## Session start (directional alignment)
 
-1. MCP: **`duo_agent_session_start(agent_id="cursor")`** (duo-bench server)
-2. Read open **P0** rows in gaps buffer; claim matching work
-3. **`duo_coordination_update(action="claim", agent_id=..., detail=..., files=...)`**
-4. Verify: `scripts/duo_lock.sh -- zig build && zig build agent-smoke`
+1. **`docs/AGENT_ALIGNMENT.md`** — 2-min compass (preserve perf/Lua/ergonomics + phase + moratorium)
+2. **`docs/semantic_universe.md`** — full architecture (Tier A/B, phased roadmap)
+3. **`AGENTS.md`** — non-negotiables
+4. MCP **`duo_agent_session_start(agent_id="cursor")`** or read **`.agents/AGENT_COORDINATION.md`**
+5. **`duo_coordination_update(action="claim", ...)`** before shared files
+6. **`scripts/duo_lock.sh -- zig build && zig build agent-smoke`**
+
+**Moratorium:** no new `@comp.*` without `src/transform_engine.zig` registration + 3-site parity tests (G-061).
 
 ## MCP servers (stdio)
 
@@ -31,12 +35,14 @@ Read **`docs/AGENT_CANONICAL.md`** — single router. Do not create duplicate co
 
 ## Language priorities (after buffer read)
 
-1. **No `lua_Value`** on typed/comptime paths — native C scalars/structs
-2. **Exponential `@comp.*`** — prefer `@comp.derive.all` / `@comp.burst` over linear copies
-3. **Zero benchmark regressions** — `zig build bench` only when holding perf claim
+1. **Semantic universe Phase 0–1** — graph spine + transform registry; reduce mechanism sprawl
+2. **No `lua_Value`** on typed/comptime paths — native C scalars/structs
+3. **Exponential `@comp.*`** — registered transforms; prefer `@comp.derive.all` / `@comp.burst` over linear copies
+4. **Zero benchmark regressions** — `zig build bench` only when holding perf claim
 
 ## Do not
 
 - Duplicate `AGENT_COORDINATION.md` or `AGENT_GAPS.md` content in chat-only memory
 - Run tier-3 bench in parallel with other agents
 - Use public `@foo_bar` — use `@comp.foo.bar` dotted hierarchy only
+- **`git stash`** — banned; commit or visible `.patch` instead

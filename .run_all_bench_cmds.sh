@@ -1,7 +1,8 @@
 #!/bin/bash
 set -o pipefail
-cd /Users/clp/x/duo
-OUT="/Users/clp/x/duo/.all_bench_output.log"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+OUT="$ROOT/.all_bench_output.log"
 : > "$OUT"
 
 run_cmd() {

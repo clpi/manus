@@ -7,10 +7,12 @@
 
 | Purpose | Path | MCP read | MCP write |
 | --- | --- | --- | --- |
+| **Alignment compass** (read first, 2 min) | `docs/AGENT_ALIGNMENT.md` | — | update at phase boundaries |
 | **Coordination** (claims, build tiers, session log) | `.agents/AGENT_COORDINATION.md` | `duo_coordination_read` / `duo_coordination_buffer` | `duo_coordination_update` |
 | **Gaps / findings** (P0–P2, delegation) | `.agents/AGENT_COORDINATION.md#cross-agent-gap-buffer` | `duo_agent_gaps_read` / `duo_agent_gaps_buffer` | `duo_agent_gaps_update` |
 | **Performance ledger** | `docs/performance.md` | `duo_perf_ledger` | append manually after bench work |
 | **Agent rules** | `AGENTS.md` | — | update only for protocol changes |
+| **Architecture plan** (semantic universe) | `docs/semantic_universe.md` | — | update at phase boundaries |
 | **Grammar spec** (surface syntax evolution) | `docs/GRAMMAR_SPEC.md` | `duo_grammar_spec_read` | `duo_grammar_spec_update` |
 | **Directive hierarchy** (`@comp.*` dotted paths) | `docs/DIRECTIVE_HIERARCHY.md` | `duo_directive_hierarchy_read` | — |
 | **MCP / multi-agent setup** | `.agents/AGENT_INTEGRATION.md` | — | update when MCP config changes |
@@ -26,12 +28,15 @@ or export a visible `.patch` file. `git stash list` must stay EMPTY.
 
 ## Session start (every agent, every session)
 
-1. Call **`duo_agent_session_start(agent_id="your-id")`** (duo-bench MCP) — loads all buffers + open P0 count.
-2. Claim work: **`duo_coordination_update(action="claim", ...)`** before editing shared files.
-3. Builds: **`duo_agent_smoke()`** or **`scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo`** (tier-0 default).
-4. Native audit: **`duo_audit_metaprogramming_smokes()`** after generative/meta work; single-file **`duo_audit_native_boxing(path)`** for targeted checks.
-5. New gap: **`duo_agent_gaps_update(action="open", ...)`** or append the Cross-Agent Gap Buffer in `.agents/AGENT_COORDINATION.md`.
-6. Delegate P0/P1: **`duo_agent_delegate(gap_id, agent_id, status)`**.
+1. Read **`docs/AGENT_ALIGNMENT.md`** — 2-min compass (direction + moratorium + phase status).
+2. Skim **`docs/semantic_universe.md`** — architecture depth when touching meta/graph/transforms.
+3. Read **`AGENTS.md`** — non-negotiables (perf, native, Lua, `@comp.*`).
+4. Call **`duo_agent_session_start(agent_id="your-id")`** (duo-bench MCP) — loads buffers + open P0 count.
+5. **Claim** work: **`duo_coordination_update(action="claim", ...)`** before editing shared files.
+6. Builds: **`duo_agent_smoke()`** or **`scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo`** (tier-0 default).
+7. Native audit: **`duo_audit_metaprogramming_smokes()`** after generative/meta work; **`duo_audit_native_boxing(path)`** for targeted checks.
+8. New gap: **`duo_agent_gaps_update(action="open", ...)`** or append Cross-Agent Gap Buffer.
+9. Delegate P0/P1: **`duo_agent_delegate(gap_id, agent_id, status)`**.
 
 ## Comptime hooks (in Duo source)
 

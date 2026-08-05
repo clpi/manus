@@ -1,0 +1,42 @@
+-- Ultra-deep combinator cascade: 4-level nesting inside callbacks.
+-- match → power → each → template (O(2^n) × fragments × stubs) — all comptime, no lua_Value.
+-- Run: duo run examples/meta_ultra_cascade.duo
+
+concept HasXY
+    x: f64
+    y: f64
+end
+
+type Vec2 = { x: f64, y: f64 }
+type Vec3 = { x: f64, y: f64, z: f64 }
+type Pt = { x: f64, y: f64 }
+
+OPS = "add|" .. "mul"
+
+-- Level X: match callback calls power → each → template (deepest practical stack)
+ULTRA = @comp.match("i32|i64", fun(m)
+    @comp.each(
+        @comp.power("HasXY", fun(s)
+            s.name .. ";"
+        end),
+        fun(frag)
+            @comp.template(frag.name .. ":" .. m.pattern, "int64_t id_$0_$1() { return $0 + $1 }\n")
+        end
+    )
+end)
+
+-- Level Y: match → zip with folded concat inside callback
+ZIP_DEEP = @comp.match("i32|f64", fun(m)
+    @comp.zip(m.pattern .. "|i64", OPS, fun(p)
+        p.a .. "_" .. p.b .. " "
+    end)
+end)
+
+ULTRA_LINES = @comp.str.countlines(ULTRA)
+ZIP_HAS = @comp.str.contains(ZIP_DEEP, "i32_add") and @comp.str.contains(ZIP_DEEP, "f64_mul")
+
+ok = (ULTRA_LINES == 14 and ZIP_HAS)
+print("=== ultra cascade (match→power→each→template) ===")
+print("ultra_lines = " .. tostring(ULTRA_LINES) .. "  (expect 14 = 2 types × 7 power stubs)")
+print("zip_deep_ok = " .. tostring(ZIP_HAS))
+print("RESULT ultra_cascade_ok = " .. tostring(ok))

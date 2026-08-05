@@ -237,7 +237,8 @@ fn printBar(width: usize) void {
 
 fn printSourceLine(line_no: u32, line: []const u8, width: usize) void {
     const digits = decimalDigits(line_no);
-    repeatByte(' ', width - digits);
+    const pad = if (width > digits) width - digits else 0;
+    repeatByte(' ', pad);
     if (color) {
         wprint("\x1b[36m{}\x1b[0m \x1b[2m│\x1b[0m ", .{line_no});
         printHighlightedLine(line);
@@ -272,7 +273,10 @@ fn printCaret(col: u32, line: []const u8, width: usize, severity_color: []const 
 
 fn printSourceContext(loc: anytype, severity_color: []const u8) void {
     const src = sourceFor(loc.file) orelse return;
-    const width = @max(decimalDigits(loc.line), @as(usize, 1));
+    var width: usize = 1;
+    if (loc.line > 0) width = @max(width, decimalDigits(loc.line));
+    if (loc.line > 1) width = @max(width, decimalDigits(loc.line - 1));
+    width = @max(width, decimalDigits(loc.line + 1));
 
     // Location header with subtle dim styling
     wprint("  \x1b[2m→\x1b[0m \x1b[2m{s}:{}:{}\x1b[0m\n", .{ loc.file, loc.line, loc.col });
@@ -1396,6 +1400,22 @@ test "feedTestLine DUO_EVT pass in pretty mode" {
     test_stats = .{};
     feedTestLine("DUO_EVT\ttest\tpass\tname=foo");
     try std.testing.expectEqual(@as(u32, 1), test_stats.pass);
+}
+
+test "term: printSourceContext at high line numbers does not panic" {
+    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
+    init(threaded.io());
+    var lines: [8192]u8 = undefined;
+    var pos: usize = 0;
+    var i: u32 = 1;
+    while (i <= 1000) : (i += 1) {
+        const s = std.fmt.bufPrint(lines[pos..], "line {d}\n", .{i}) catch break;
+        pos += s.len;
+        if (pos + 32 > lines.len) break;
+    }
+    setSource("big.duo", lines[0..pos]);
+    defer clearSource();
+    printSourceContext(.{ .file = "big.duo", .line = 999, .col = 1 }, "");
 }
 
 test "feedTestLine DUO_EVT json mode" {

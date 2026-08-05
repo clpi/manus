@@ -1,0 +1,81 @@
+-- std.wasm.instruction — Wasm instruction semantic descriptors (Pass 9 P9-04).
+--
+-- CANONICAL OWNER: src/wasm_semantic.zig (compiler catalog + tests).
+-- Do NOT add parallel opcode constant tables here. Ward should req this module
+-- and use semantic ids (wasm.i32.add) instead of duplicating OP_* constants.
+--
+-- P9-05: decoder/validator tables generated in src/wasm_semantic.zig + wasm_semantic_gen.zig
+--   duo catalog | jq '.pass9.wasm_semantic.decoder_table'
+--   duo catalog | jq '.pass9.wasm_semantic_gen'
+
+SEMANTIC_OWNER = "src/wasm_semantic.zig"
+GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
+SCHEMA = "wasm-instruction-v0"
+MVP_FEATURE = "wasm1.0-mvp"
+OPCODE_TABLE_SIZE = 256
+DECODER_TABLE_OWNER = "src/wasm_semantic.zig:mvp_opcode_index"
+LOOKUP_TABLE_OWNER = "lib/std/wasm/opcode_lookup.duo"
+
+-- Bounded MVP count (must match wasm_semantic.zig mvp_instructions.len).
+MVP_INSTRUCTION_COUNT = 63
+
+fun semantic_owner(): str
+    SEMANTIC_OWNER
+end
+
+fun generator_owner(): str
+    GENERATOR_OWNER
+end
+
+fun schema_version(): str
+    SCHEMA
+end
+
+fun mvp_feature(): str
+    MVP_FEATURE
+end
+
+fun mvp_instruction_count(): i64
+    MVP_INSTRUCTION_COUNT
+end
+
+fun opcode_table_size(): i64
+    OPCODE_TABLE_SIZE
+end
+
+fun decoder_table_owner(): str
+    DECODER_TABLE_OWNER
+end
+
+fun lookup_table_owner(): str
+    LOOKUP_TABLE_OWNER
+end
+
+-- Representative semantic ids for tooling smoke (not a duplicate opcode table).
+EXAMPLE_IDS = {
+    "wasm.unreachable",
+    "wasm.i32.const",
+    "wasm.i32.add",
+    "wasm.i32.load",
+    "wasm.call",
+    "wasm.return",
+}
+
+M = {}
+M.SEMANTIC_OWNER = SEMANTIC_OWNER
+M.GENERATOR_OWNER = GENERATOR_OWNER
+M.SCHEMA = SCHEMA
+M.MVP_FEATURE = MVP_FEATURE
+M.MVP_INSTRUCTION_COUNT = MVP_INSTRUCTION_COUNT
+M.OPCODE_TABLE_SIZE = OPCODE_TABLE_SIZE
+M.DECODER_TABLE_OWNER = DECODER_TABLE_OWNER
+M.LOOKUP_TABLE_OWNER = LOOKUP_TABLE_OWNER
+M.opcode_table_size = opcode_table_size
+M.decoder_table_owner = decoder_table_owner
+M.lookup_table_owner = lookup_table_owner
+M.generator_owner = generator_owner
+M.semantic_owner = semantic_owner
+M.schema_version = schema_version
+M.mvp_feature = mvp_feature
+M.mvp_instruction_count = mvp_instruction_count
+M.EXAMPLE_IDS = EXAMPLE_IDS

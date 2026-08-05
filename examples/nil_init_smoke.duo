@@ -1,0 +1,21 @@
+-- F-13813-3: nil-init must not pin binding to void*; later str assignment must work
+
+nil_then_str(): i64
+    x = nil
+    x = "hi"
+    return #x
+end
+
+schema_swap(): str
+    schema = nil
+    schema = "path/to/schema"
+    schema
+end
+
+fun main(): i64
+    if nil_then_str() ~= 2 then return 1 end
+    s = schema_swap()
+    if #s ~= 14 then return 2 end
+    print("PASS nil_init_smoke")
+    return 0
+end

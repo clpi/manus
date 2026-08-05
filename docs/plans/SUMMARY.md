@@ -14,6 +14,10 @@ Every feature strengthens this specialization ladder. Nothing bypasses it.
 
 Duo is Lua with progressively stronger compiler knowledge.
 
+- Plan: `docs/plans/pass1_identity.md`
+- Catalog: `duo catalog` → `pass1`
+- Owners: `src/pass1_catalog.zig`, `src/semantic_graph.zig`, `src/transform_engine.zig`
+
 ## Pass 2 — Convergence (8 Algebras)
 
 Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
@@ -59,6 +63,32 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 - Knowledge lattice + transform engine + semantic algebra are the strongest parts
 - True dependency order: codegen split → meta unification → SIM projection → expansion
 
+## Pass 7 — AI-Native Compilation
+
+- `duo explain`, knowledge snapshots, optimization outcomes, assumption guards
+- Export: `duo catalog` → `pass7` JSON
+
+## Pass 8 — Persistent Semantic Computing
+
+- Realization variables, persistent evidence cache, invalidation, `duo realize`
+- Export: `duo catalog` → `pass8` JSON
+
+## Pass 9 — Ward Readiness (vertical proof)
+
+- **Mission:** Duo-native Wasm runtime (Ward) faster/smaller than Wart via semantic density
+- Matrix owner: `src/ward_readiness.zig`; catalog: `duo catalog` → `pass9`
+- **P9-M1 (open):** descriptor-generated LEB128 + instruction decoder
+- **Blocker:** Ward hot path still `@c.emit` + `lua_Value` in `module.duo`
+
+## Pass 10 — Public Repository Readiness
+
+- **Mission:** Repository suitable for immediate public inspection without private agent history
+- Matrix owner: `src/pass10_repo_audit.zig`; catalog: `duo catalog` → `pass10`
+- **Release invariants:** 3.14–3.21 (public readiness, no pollution, permanent roles, density)
+- **Audits A15–A19:** quality, file necessity, markdown compression, source/comments, safety
+- **P10-M0 partial:** initial pollution audit (15+ findings, 6 canonical docs missing)
+- **High blockers:** duplicate pass plans, untracked pass9 smokes, flat `src/` hierarchy
+
 ## Current Proven Capabilities
 
 ```
@@ -68,7 +98,9 @@ duo compile file.duo --target native-exe  # Linked executable (no C)
 duo graph file.duo                        # Semantic graph JSON
 duo sim file.duo                          # SIM v0 export
 duo fmt --canonical file.duo              # Strip deprecated keywords
-duo algebra                               # Convergence catalog JSON
+duo catalog                               # Pass 3–9 tracking JSON
+duo explain file.duo                      # Knowledge + outcomes + realizations
+duo realize file.duo                      # Realization plan + persistent cache
 ```
 
 ## File Map

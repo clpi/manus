@@ -111,6 +111,82 @@ const NativeFunction = struct {
     symbol_name: []const u8,
 };
 
+/// Sealed record descriptor lowered as consecutive f64 ABI slots (Pass 4 M1).
+const F64RecordDesc = struct {
+    field_names: []const []const u8,
+};
+
+const F64RecordMap = std.StringHashMapUnmanaged(F64RecordDesc);
+
+fn collectF64Records(alloc: std.mem.Allocator, mod: *const ast.Module) Error!F64RecordMap {
+    var map: F64RecordMap = .empty;
+    errdefer freeF64Records(alloc, &map);
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .alias_def) continue;
+        const ad = &stmt.alias_def;
+        if (ad.type_params != null) continue;
+        const target = ad.target orelse continue;
+        const rec = switch (target) {
+            .record => |r| r,
+            else => continue,
+        };
+        if (rec.fields.len == 0) continue;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer names.deinit(alloc);
+        var all_f64 = true;
+        for (rec.fields) |field| {
+            if (!field.typ.is_float()) {
+                all_f64 = false;
+                break;
+            }
+            try names.append(alloc, field.name);
+        }
+        if (!all_f64) continue;
+        try map.put(alloc, ad.name, .{
+            .field_names = try names.toOwnedSlice(alloc),
+        });
+    }
+    return map;
+}
+
+fn freeF64Records(alloc: std.mem.Allocator, map: *F64RecordMap) void {
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        alloc.free(entry.value_ptr.field_names);
+    }
+    map.deinit(alloc);
+}
+
+fn f64RecordDesc(records: *const F64RecordMap, typ: ast.TypeExpr) ?F64RecordDesc {
+    if (typ != .named) return null;
+    return records.get(typ.named);
+}
+
+fn paramFpSlotCount(records: *const F64RecordMap, typ: ast.TypeExpr) Error!usize {
+    if (isFloatAnnotation(typ)) return 1;
+    if (f64RecordDesc(records, typ)) |rec| return rec.field_names.len;
+    return error.InvalidMainSignature;
+}
+
+fn totalParamFpSlots(records: *const F64RecordMap, fd: *const ast.FuncDecl) Error!usize {
+    var total: usize = 0;
+    for (fd.func.params) |param| {
+        total += try paramFpSlotCount(records, param.typ);
+    }
+    return total;
+}
+
+fn isPureF64KernelFunction(records: *const F64RecordMap, fd: *const ast.FuncDecl) bool {
+    if (!returnsFloat(fd.func.ret_type)) return false;
+    var slots: usize = 0;
+    for (fd.func.params) |param| {
+        const n = paramFpSlotCount(records, param.typ) catch return false;
+        if (n == 0) return false;
+        slots += n;
+    }
+    return slots <= 8;
+}
+
 const Condition = enum(u4) {
     eq = 0x0,
     ne = 0x1,
@@ -152,6 +228,9 @@ const NativeModule = struct {
 };
 
 fn collectFunctions(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_main: bool) Error!NativeModule {
+    var records = try collectF64Records(alloc, mod);
+    defer freeF64Records(alloc, &records);
+
     var funcs: std.ArrayList(NativeFunction) = .empty;
     errdefer funcs.deinit(alloc);
     var externs: std.ArrayList(ExternalSymbol) = .empty;
@@ -174,8 +253,9 @@ fn collectFunctions(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_m
             try appendUniqueExternal(alloc, &externs, fd.path[0], ffi_name);
             continue;
         }
-        try validateFunction(fd, std.mem.eql(u8, fd.path[0], "main"));
-        if (std.mem.eql(u8, fd.path[0], "main")) {
+        const is_main = std.mem.eql(u8, fd.path[0], "main");
+        try validateFunction(fd, is_main, &records);
+        if (is_main) {
             seen_main = true;
         }
         const symbol_name = funcExportName(fd) orelse fd.path[0];
@@ -189,17 +269,17 @@ fn collectFunctions(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_m
     };
 }
 
-fn validateFunction(fd: *const ast.FuncDecl, is_main: bool) Error!void {
+fn validateFunction(fd: *const ast.FuncDecl, is_main: bool, records: *const F64RecordMap) Error!void {
     if (fd.func.vararg or fd.func.vararg_name != null) {
         return error.InvalidMainSignature;
     }
     if (is_main and fd.func.params.len != 0) return error.InvalidMainSignature;
-    if (fd.func.params.len > 8) return error.UnsupportedProgram;
     for (fd.func.params) |param| {
         if (param.default_val != null) return error.UnsupportedProgram;
     }
-    // main is the integer (exit-code) entry point — floats not allowed there.
+    // main is the process entry: integer exit code, or f64 kernel + int wrapper (Pass 4 M1).
     if (is_main) {
+        if (returnsFloat(fd.func.ret_type)) return;
         for (fd.func.params) |param| {
             if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
         }
@@ -208,18 +288,20 @@ fn validateFunction(fd: *const ast.FuncDecl, is_main: bool) Error!void {
         }
         return;
     }
-    // non-main: accept a PURE-integer OR a PURE-f64 function (no mixing yet).
+    // non-main: accept a PURE-integer OR a PURE-f64 kernel (scalars + sealed f64 records).
     const ret_float = returnsFloat(fd.func.ret_type);
     const ret_int = returnsInteger(fd.func.ret_type);
     if (!ret_int and !ret_float and !returnsVoid(fd.func.ret_type)) {
         return error.InvalidMainSignature;
     }
+    if (ret_float) {
+        const slots = try totalParamFpSlots(records, fd);
+        if (slots == 0 or slots > 8) return error.InvalidMainSignature;
+        return;
+    }
+    if (fd.func.params.len > 8) return error.UnsupportedProgram;
     for (fd.func.params) |param| {
-        if (ret_float) {
-            if (!isFloatAnnotation(param.typ)) return error.InvalidMainSignature;
-        } else {
-            if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
-        }
+        if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
     }
 }
 
@@ -231,12 +313,8 @@ fn returnsFloat(t: ast.TypeExpr) bool {
     return isFloatAnnotation(t);
 }
 
-fn isPureFloatFunction(fd: *const ast.FuncDecl) bool {
-    if (!returnsFloat(fd.func.ret_type)) return false;
-    for (fd.func.params) |param| {
-        if (!isFloatAnnotation(param.typ)) return false;
-    }
-    return true;
+fn isPureFloatFunction(records: *const F64RecordMap, fd: *const ast.FuncDecl) bool {
+    return isPureF64KernelFunction(records, fd);
 }
 
 fn appendUniqueExternal(alloc: std.mem.Allocator, externs: *std.ArrayList(ExternalSymbol), local_name: []const u8, symbol_name: []const u8) Error!void {
@@ -276,6 +354,7 @@ fn funcExportName(fd: *const ast.FuncDecl) ?[]const u8 {
 
 const Arm64Compiler = struct {
     alloc: std.mem.Allocator,
+    f64_records: *const F64RecordMap,
     code: std.ArrayList(u8) = .empty,
     asm_text: std.ArrayList(u8) = .empty,
     locals: std.StringHashMapUnmanaged(u5) = .empty,
@@ -294,6 +373,7 @@ const Arm64Compiler = struct {
     // pure-f64 function (all params + return f64) through compileExprFp.
     // FP params arrive in d0-d7 (caller-saved) and the result returns in d0.
     cur_func_float: bool = false,
+    cur_func_is_main: bool = false,
     fp_locals: std.StringHashMapUnmanaged(u5) = .empty,
     used_fp_regs: [32]bool = @splat(false),
 
@@ -459,6 +539,7 @@ const Arm64Compiler = struct {
         self.fp_locals.clearRetainingCapacity();
         self.used_fp_regs = @splat(false);
         self.cur_func_float = false;
+        self.cur_func_is_main = false;
 
         const name = func.symbol_name;
         const offset: u32 = @intCast(self.code.items.len);
@@ -475,14 +556,26 @@ const Arm64Compiler = struct {
         try self.asm_text.appendSlice(self.alloc, name);
         try self.asm_text.appendSlice(self.alloc, ":\n");
 
-        self.cur_func_float = isPureFloatFunction(fd);
+        self.cur_func_is_main = std.mem.eql(u8, name, "main");
+        self.cur_func_float = isPureFloatFunction(self.f64_records, fd) or
+            (self.cur_func_is_main and returnsFloat(fd.func.ret_type));
         if (self.cur_func_float) {
-            // f64 params arrive in d0-d7 (AAPCS); bind names directly to those
-            // d-regs and mark them used so FP scratch allocates above them.
-            for (fd.func.params, 0..) |param, i| {
-                const dreg: u5 = @intCast(i);
-                self.used_fp_regs[dreg] = true;
-                try self.fp_locals.put(self.alloc, param.name, dreg);
+            var dreg: u5 = 0;
+            for (fd.func.params) |param| {
+                if (isFloatAnnotation(param.typ)) {
+                    self.used_fp_regs[dreg] = true;
+                    try self.fp_locals.put(self.alloc, param.name, dreg);
+                    dreg += 1;
+                } else if (f64RecordDesc(self.f64_records, param.typ)) |rec| {
+                    for (rec.field_names) |fname| {
+                        self.used_fp_regs[dreg] = true;
+                        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ param.name, fname });
+                        try self.fp_locals.put(self.alloc, key, dreg);
+                        dreg += 1;
+                    }
+                } else {
+                    return error.UnsupportedProgram;
+                }
             }
         } else {
             for (fd.func.params, 0..) |param, i| {
@@ -793,7 +886,12 @@ const Arm64Compiler = struct {
     fn emitReturnExpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!void {
         if (self.cur_func_float) {
             const d = try self.compileExprFp(expr);
-            if (d != 0) try self.emitFmovReg(0, d);
+            if (self.cur_func_is_main) {
+                if (d != 0) try self.emitFmovReg(0, d);
+                try self.emitFcvtzsX0FromD0();
+            } else if (d != 0) {
+                try self.emitFmovReg(0, d);
+            }
             try self.emitRet();
             self.returned = true;
             return;
@@ -819,6 +917,11 @@ const Arm64Compiler = struct {
                 break :blk dst;
             },
             .name => |name| self.fp_locals.get(name.ident) orelse error.UndefinedName,
+            .field => |f| blk: {
+                if (f.obj.* != .name) return error.UnsupportedProgram;
+                const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ f.obj.name.ident, f.field });
+                break :blk self.fp_locals.get(key) orelse error.UndefinedName;
+            },
             .binop => |bin| blk: {
                 const lhs = try self.compileExprFp(bin.lhs);
                 const rhs = try self.compileExprFp(bin.rhs);
@@ -833,18 +936,10 @@ const Arm64Compiler = struct {
                 break :blk dst;
             },
             .call => |call| blk: {
-                // f64 function call: args in d0-d7, f64 result in d0 (AAPCS).
-                // NOTE: no d-reg spill yet — correct when the call's result is
-                // consumed immediately (e.g. as the whole return expr) so no
-                // f64 value is live across the call. Composable calls (live
-                // params/temps across a call) need d-reg save/restore — tracked
-                // follow-up. lr is still saved via emitSaveCallerRegs.
                 if (call.func.* != .name) return error.UnsupportedProgram;
-                if (call.args.len > 8) return error.UnsupportedProgram;
-                for (call.args, 0..) |arg, i| {
-                    const d = try self.compileExprFp(arg);
-                    const idx: u5 = @intCast(i);
-                    if (d != idx) try self.emitFmovReg(idx, d);
+                var d_slot: u5 = 0;
+                for (call.args) |arg| {
+                    try self.emitFpCallArg(arg, &d_slot);
                 }
                 const save_set = try self.emitSaveCallerRegs();
                 try self.emitBl(call.func.name.ident);
@@ -855,6 +950,27 @@ const Arm64Compiler = struct {
             },
             else => error.UnsupportedProgram,
         };
+    }
+
+    fn emitFpCallArg(self: *Arm64Compiler, arg: *const ast.Expr, d_slot: *u5) Error!void {
+        switch (arg.*) {
+            .table => |t| {
+                for (t.fields) |fld| {
+                    const val = switch (fld) {
+                        .named => |nf| nf.val,
+                        else => return error.UnsupportedProgram,
+                    };
+                    const d = try self.compileExprFp(val);
+                    if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
+                    d_slot.* += 1;
+                }
+            },
+            else => {
+                const d = try self.compileExprFp(arg);
+                if (d != d_slot.*) try self.emitFmovReg(d_slot.*, d);
+                d_slot.* += 1;
+            },
+        }
     }
 
     fn compileExpr(self: *Arm64Compiler, expr: *const ast.Expr) Error!u5 {
@@ -1158,6 +1274,10 @@ const Arm64Compiler = struct {
         try self.emitFmt(0x1e601800 | (@as(u32, rhs) << 16) | (@as(u32, lhs) << 5) | @as(u32, dst), "fdiv d{d}, d{d}, d{d}", .{ dst, lhs, rhs });
     }
 
+    fn emitFcvtzsX0FromD0(self: *Arm64Compiler) Error!void {
+        try self.emit(0x9e780000, "fcvtzs x0, d0");
+    }
+
     fn emitFmovReg(self: *Arm64Compiler, dst: u5, src: u5) Error!void {
         // FMOV <Dd>,<Dn> — ground-truth base 0x1E604000 (fmov d0,d2 => 0x1E604040).
         try self.emitFmt(0x1e604000 | (@as(u32, src) << 5) | @as(u32, dst), "fmov d{d}, d{d}", .{ dst, src });
@@ -1291,9 +1411,11 @@ fn conditionName(cond: Condition) []const u8 {
 }
 
 fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_main: bool) Error!Arm64Output {
+    var records = try collectF64Records(alloc, mod);
+    defer freeF64Records(alloc, &records);
     var native_mod = try collectFunctions(alloc, mod, allow_no_main);
     defer native_mod.deinit(alloc);
-    var compiler = Arm64Compiler{ .alloc = alloc };
+    var compiler = Arm64Compiler{ .alloc = alloc, .f64_records = &records };
     defer compiler.deinit();
 
     try compiler.compileModule(native_mod.functions, native_mod.externs);
@@ -1478,6 +1600,74 @@ fn appendU64(out: *std.ArrayList(u8), alloc: std.mem.Allocator, value: u64) !voi
 
 fn alignForward(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
+}
+
+test "native backend lowers Pass 4 milestone with f64 main exit wrapper" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\Point: @{ x: f64, y: f64 }
+        \\distance2(p: Point): f64
+        \\    p.x * p.x + p.y * p.y
+        \\end
+        \\main(): f64
+        \\    distance2({ x = 3.0, y = 4.0 })
+        \\end
+    , "pass4_native_milestone.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "_main") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
+
+    const obj = try emitObject(alloc, &mod, "native-object");
+    try std.testing.expect(obj.len > 0);
+}
+
+test "native backend lowers sealed f64 record distance2 kernel" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\Point: @{ x: f64, y: f64 }
+        \\distance2(p: Point): f64
+        \\    p.x * p.x + p.y * p.y
+        \\end
+        \\main(): i64
+        \\    0
+        \\end
+    , "pass4_native_milestone.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const obj = try emitObject(alloc, &mod, "native-object");
+    try std.testing.expect(obj.len > 0);
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "fmul") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "fadd") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "lua_") == null);
 }
 
 test "native backend emits arm64 Mach-O object for constant main" {

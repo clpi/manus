@@ -1,21 +1,22 @@
-# MCP servers — canonical implementation in `~/x/duo-mcp/`
+# MCP servers — canonical implementation in sibling `duo-mcp` repo
 
-All Duo MCP servers are implemented in **pure Duo** and live canonically in
-`/Users/clp/x/duo-mcp/`:
+All Duo MCP servers are implemented in **pure Duo** and live in the **duo-mcp**
+companion repository (sibling to this repo under the same parent directory).
 
 | Server | Entry point |
 | --- | --- |
-| duo-bench | `/Users/clp/x/duo-mcp/duo_bench.duo` |
-| duo-lsp | `/Users/clp/x/duo-mcp/duo_lsp.duo` |
-| zls | `/Users/clp/x/duo-mcp/zls.duo` |
-| shared tool impl | `/Users/clp/x/duo-mcp/duo_shared.duo` |
+| duo-bench | `duo-mcp/duo_bench.duo` |
+| duo-lsp | `duo-mcp/duo_lsp.duo` |
+| zls | `duo-mcp/zls.duo` |
+| shared tool impl | `duo-mcp/duo_shared.duo` |
 
-Run them from the Duo repo root (`cd /Users/clp/x/duo`):
+Run them from the Duo repo root (set `DUO_ROOT` to this checkout):
 
 ```sh
-duo run /Users/clp/x/duo-mcp/duo_bench.duo
-duo run /Users/clp/x/duo-mcp/duo_lsp.duo
-duo run /Users/clp/x/duo-mcp/zls.duo
+export DUO_ROOT="$(pwd)"
+duo run "$DUO_ROOT/../duo-mcp/duo_bench.duo"
+duo run "$DUO_ROOT/../duo-mcp/duo_lsp.duo"
+duo run "$DUO_ROOT/../duo-mcp/zls.duo"
 ```
 
-See `/Users/clp/x/duo-mcp/README.md` and `.agents/AGENT_INTEGRATION.md`.
+See `duo-mcp/README.md` (in the companion repo) and `.agents/AGENT_INTEGRATION.md`.

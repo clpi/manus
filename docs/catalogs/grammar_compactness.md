@@ -45,14 +45,14 @@
 | GP-002 | Method references | `items:each(:close)` | ~~Parser `:name` in call context~~ | ✅ DONE |
 | GP-003 | Named destructuring | `{ name, age } = user` | Sema field-match | ✅ DONE |
 | GP-004 | Table spread | `{ ..source, x = 1 }` | ~~Parser `..expr` in tables~~ | ✅ DONE |
-| GP-005 | Descriptor spread | `User: @{ ..Named, id: i64 }` | Descriptor algebra | 🔄 PARTIAL |
+| GP-005 | Descriptor spread | `User: @{ ..Named, id: i64 }` | Descriptor algebra | ✅ DONE |
 | GP-006 | Binding conditions | `if file = open(path) ... end` | Parser assign-in-cond | ✅ DONE |
 | GP-007 | Short-circuit control | `ready or return` | Already works (Lua semantics) | Free |
 | GP-008 | Direct iteration | `for v in values ... end` | Iterator protocol | ✅ DONE |
 | GP-009 | Keywordless enum | `Color: @{ Red, Green, Blue }` | ~~`@{}` descriptor parser~~ | ✅ DONE |
 | GP-010 | Keywordless record | `Point: @{ x: f64, y: f64 }` | ~~`@{}` descriptor parser~~ | ✅ DONE |
 | GP-011 | Payload variants | `Result: @{ Ok(v), Err(e) }` | Variant grammar in `@{}` | 🔄 PARTIAL |
-| GP-012 | Descriptor composition | `User: @{ ..Named, id: i64 }` | Descriptor algebra ops | 🔄 PARTIAL |
+| GP-012 | Descriptor composition | `User: @{ ..Named, id: i64 }` | Descriptor algebra ops | ✅ DONE |
 | GP-013 | Compact separators | Newline instead of comma in `@{}` | ~~Parser newline-as-sep~~ | ✅ DONE |
 | GP-014 | Failure propagation | `file = open(path) or return` | Already works | Free |
 | GP-015 | `@export` visibility | `@export run(args) ...` | Parser attribute-on-decl | ✅ DONE |

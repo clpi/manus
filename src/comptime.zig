@@ -3,6 +3,7 @@ const ast = @import("ast.zig");
 const term = @import("term.zig");
 
 pub const EvalError = error{
+    OutOfMemory,
     UnsupportedExpression,
     UnsupportedOperator,
     DivisionByZero,
@@ -402,12 +403,12 @@ pub const Evaluator = struct {
                 }
                 return error.UnsupportedExpression;
             }
-            // G-059: Route __comptime* metaprogramming combinators to the
+            // G-059: Route __comptime* / __meta* metaprogramming combinators to the
             // codegen-provided meta_hook. This enables nested combinator calls
             // inside callback bodies (e.g. @comp.match callback calling @comp.interpolate).
             // Args are pre-evaluated so the hook can use them directly (with
             // callback-local variables like m.pattern already resolved).
-            if (std.mem.startsWith(u8, name, "__comptime")) {
+            if (std.mem.startsWith(u8, name, "__comptime") or std.mem.startsWith(u8, name, "__meta") or std.mem.startsWith(u8, name, "__derive")) {
                 if (self.options.meta_hook) |hook| {
                     // Evaluate all args to Values first (resolving callback locals)
                     const alloc = self.options.alloc orelse return error.UnsupportedExpression;
@@ -415,7 +416,35 @@ pub const Evaluator = struct {
                     defer alloc.free(evaluated);
                     var ok = true;
                     for (args, 0..) |arg, i| {
-                        evaluated[i] = self.eval(arg) catch { ok = false; break; };
+                        // G-060: derive macro names are identifiers naming @comp.define.derive
+                        // macros — never comptime bindings. Coerce before eval so nested
+                        // @comp.match callbacks can call @comp.derive.power(..., MyDerive).
+                        const is_derive_macro_arg = std.mem.startsWith(u8, name, "__derive") and arg.* == .name and blk: {
+                            if (std.mem.eql(u8, name, "__derivepower") and args.len == 2 and i == 1) break :blk true;
+                            if (std.mem.eql(u8, name, "__derivechoose") and args.len == 3 and i == 2) break :blk true;
+                            break :blk false;
+                        };
+                        if (is_derive_macro_arg) {
+                            const s = alloc.dupe(u8, arg.name.ident) catch {
+                                ok = false;
+                                break;
+                            };
+                            evaluated[i] = .{ .string = s };
+                            continue;
+                        }
+                        const ev = self.eval(arg) catch {
+                            if (std.mem.startsWith(u8, name, "__derive") and arg.* == .name) {
+                                const s = alloc.dupe(u8, arg.name.ident) catch {
+                                    ok = false;
+                                    break;
+                                };
+                                evaluated[i] = .{ .string = s };
+                                continue;
+                            }
+                            ok = false;
+                            break;
+                        };
+                        evaluated[i] = ev;
                     }
                     if (ok) {
                         if (hook(self.options.meta_ctx, name, evaluated)) |result| {
@@ -868,21 +897,31 @@ pub const Evaluator = struct {
 
     fn evalTable(self: *Evaluator, fields: []const ast.TableField) EvalError!Value {
         const alloc = self.options.alloc orelse return error.UnsupportedExpression;
-        const entries = alloc.alloc(Value.TableEntry, fields.len) catch return error.UnsupportedExpression;
+        var entries: std.ArrayList(Value.TableEntry) = .empty;
         var pos: i64 = 1;
-        for (fields, 0..) |field, i| {
-            entries[i] = switch (field) {
-                .positional => |expr| blk: {
+        for (fields) |field| {
+            switch (field) {
+                .positional => |expr| {
                     const value = try self.eval(expr);
-                    const entry = Value.TableEntry{ .key = .{ .int = pos }, .val = value };
+                    entries.append(alloc, .{ .key = .{ .int = pos }, .val = value }) catch return error.UnsupportedExpression;
                     pos += 1;
-                    break :blk entry;
                 },
-                .named => |named| .{ .name = named.key, .val = try self.eval(named.val) },
-                .indexed => |indexed| .{ .key = try self.eval(indexed.key), .val = try self.eval(indexed.val) },
-            };
+                .named => |named| {
+                    entries.append(alloc, .{ .name = named.key, .val = try self.eval(named.val) }) catch return error.UnsupportedExpression;
+                },
+                .indexed => |indexed| {
+                    entries.append(alloc, .{ .key = try self.eval(indexed.key), .val = try self.eval(indexed.val) }) catch return error.UnsupportedExpression;
+                },
+                .spread => |expr| {
+                    const spread_val = try self.eval(expr);
+                    if (spread_val != .table) return error.UnsupportedExpression;
+                    for (spread_val.table) |entry| {
+                        entries.append(alloc, entry) catch return error.UnsupportedExpression;
+                    }
+                },
+            }
         }
-        return .{ .table = entries };
+        return .{ .table = entries.toOwnedSlice(alloc) catch return error.UnsupportedExpression };
     }
 
     fn evalUnop(self: *Evaluator, op: ast.UnOp, operand: *const ast.Expr) EvalError!Value {
@@ -1580,4 +1619,16 @@ test "comptime eval: step limit" {
     const loc = ast.Loc{ .file = "test", .line = 1, .col = 1 };
     var one = ast.Expr{ .int_lit = .{ .loc = loc, .val = 1 } };
     try std.testing.expectError(error.StepLimitExceeded, evalWithBindings(&one, .{}, .{ .step_limit = 0 }));
+}
+
+/// True for @comp.* hook callee names that take inline `fun()` callbacks folded at comptime.
+pub fn isMetaCombinatorHook(name: []const u8) bool {
+    return std.mem.startsWith(u8, name, "__comptime") or std.mem.startsWith(u8, name, "__meta") or
+        std.mem.startsWith(u8, name, "__derive");
+}
+
+test "isMetaCombinatorHook" {
+    try std.testing.expect(isMetaCombinatorHook("__comptimezip"));
+    try std.testing.expect(isMetaCombinatorHook("__metatemplate"));
+    try std.testing.expect(!isMetaCombinatorHook("print"));
 }

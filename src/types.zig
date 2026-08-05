@@ -7,11 +7,166 @@ pub const EnumVariantType = struct {
     payload: ?[]const ResolvedType,
 };
 
+/// Table storage strategy for specialization ladder.
+/// Controls codegen emission: lua table ops vs direct field access.
+pub const StorageClass = enum {
+    /// Dynamic table: hash-based field lookup, fully boxed
+    dynamic,
+    /// Guarded table: shape-guarded inline cache, may deoptimize
+    guarded,
+    /// Sealed table: known shape, direct offset access, boxed container
+    sealed,
+    /// Native table: C struct layout, unboxed, direct memory access
+    native,
+};
+
 /// A field within a typed table/class.
 pub const FieldType = struct {
     name: []const u8,
     typ: ResolvedType,
 };
+
+/// Human-readable storage class label for `@comp.type.shape` and diagnostics.
+pub fn storageClassName(sc: StorageClass) []const u8 {
+    return switch (sc) {
+        .dynamic => "dynamic",
+        .guarded => "guarded",
+        .sealed => "sealed",
+        .native => "native",
+    };
+}
+
+/// True when every field type lowers to native C without Lua boxing.
+pub fn fieldsAreNative(fields: []const FieldType) bool {
+    if (fields.len == 0) return false;
+    for (fields) |f| {
+        if (!f.typ.is_native()) return false;
+    }
+    return true;
+}
+
+/// Infer table storage class from field types, seal status, and explicit overrides.
+///
+/// Specialization ladder: dynamic → guarded → sealed → native.
+/// Typed records with all-native fields default to `.native` (direct struct access).
+pub fn inferStorageClass(
+    fields: []const FieldType,
+    is_sealed: bool,
+    explicit: StorageClass,
+) StorageClass {
+    if (explicit != .dynamic) return explicit;
+    if (fieldsAreNative(fields)) return .native;
+    if (is_sealed) return .sealed;
+    return .dynamic;
+}
+
+/// Apply layout/shape attributes (`@packed`, `@align`, `@ffi`, `@sealed`, `@native`).
+pub fn applyTableShapeAttrs(t: *ResolvedType, attributes: []const ast.Attribute) void {
+    if (t.* != .table_type) return;
+    var explicit: StorageClass = t.table_type.storage_class;
+    for (attributes) |attr| {
+        if (std.mem.eql(u8, attr.name, "packed")) {
+            t.table_type.is_packed = true;
+        } else if (std.mem.eql(u8, attr.name, "align")) {
+            if (attr.args) |args_str| {
+                t.table_type.align_n = std.fmt.parseInt(usize, args_str, 10) catch null;
+            }
+        } else if (std.mem.eql(u8, attr.name, "ffi")) {
+            if (attr.args) |args_str| {
+                if (args_str.len >= 2 and args_str[0] == '"' and args_str[args_str.len - 1] == '"') {
+                    t.table_type.ffi_name = args_str[1 .. args_str.len - 1];
+                } else {
+                    t.table_type.ffi_name = args_str;
+                }
+            }
+        } else if (std.mem.eql(u8, attr.name, "sealed")) {
+            t.table_type.is_sealed = true;
+            explicit = .sealed;
+        } else if (std.mem.eql(u8, attr.name, "native")) {
+            explicit = .native;
+        } else if (std.mem.eql(u8, attr.name, "guarded")) {
+            explicit = .guarded;
+        }
+    }
+    t.table_type.storage_class = inferStorageClass(
+        t.table_type.fields,
+        t.table_type.is_sealed,
+        explicit,
+    );
+}
+
+/// Resolved storage class for introspection (table types and named aliases).
+pub fn tableStorageClass(resolved_type: ResolvedType) ?StorageClass {
+    return switch (resolved_type) {
+        .table_type => |t| t.storage_class,
+        else => null,
+    };
+}
+
+/// Factual compiler explanation for table storage-class selection (for `@comp.why.shape`).
+/// Only states reasons the type system actually recorded — no invented optimizations.
+pub fn explainStorageClass(resolved_type: ResolvedType) []const u8 {
+    const sc = tableStorageClass(resolved_type) orelse {
+        return "not a typed table or record alias; dynamic Lua representation";
+    };
+    const t = resolved_type.table_type;
+    return switch (sc) {
+        .native => if (fieldsAreNative(t.fields))
+            "all record fields lower to native C scalars; unboxed struct with direct field access"
+        else
+            "@native directive; unboxed C struct layout",
+        .sealed => if (t.is_sealed)
+            if (fieldsAreNative(t.fields))
+                "@sealed directive; fixed native field layout in sealed container"
+            else
+                "@sealed directive; fixed shape; non-native fields retain Lua-compatible storage"
+        else
+            "sealed typed record; known field layout with boxed table container",
+        .guarded => "runtime shape may change; guarded inline cache on field access",
+        .dynamic => if (t.fields.len == 0)
+            "open or empty table shape; hash-based field lookup"
+        else if (fieldsAreNative(t.fields))
+            "typed record without seal or native override; defaults to dynamic until specialized"
+        else
+            "record includes non-native field type(s); generic Lua table lookup",
+    };
+}
+
+/// Stable content hash for table/record shapes (matches codegen `duo_rec_{x}` dedup).
+pub fn tableShapeIdentityHash(resolved_type: ResolvedType) ?u64 {
+    if (resolved_type != .table_type) return null;
+    const t = resolved_type.table_type;
+    var h = std.hash.Wyhash.init(0xDADBEEF);
+    h.update(std.mem.asBytes(&t.is_packed));
+    if (t.align_n) |n| h.update(std.mem.asBytes(&n));
+    for (t.fields) |f| {
+        h.update(f.name);
+        var name_buf: [64]u8 = undefined;
+        h.update(f.typ.c_type(&name_buf));
+    }
+    return h.final();
+}
+
+/// Stable content hash for enum descriptor shapes (variant names + enum name).
+pub fn enumShapeIdentityHash(resolved_type: ResolvedType) ?u64 {
+    if (resolved_type != .enum_type) return null;
+    const e = resolved_type.enum_type;
+    var h = std.hash.Wyhash.init(0xE0BEEF00);
+    h.update(e.name);
+    for (e.variants) |v| {
+        h.update(v.name);
+    }
+    return h.final();
+}
+
+/// Resolve enum shape from AST for graph lift (no sema required).
+pub fn enumShapeFromAst(ed: *const ast.EnumDef, alloc: std.mem.Allocator) !ResolvedType {
+    var variants = try alloc.alloc(EnumVariantType, ed.variants.len);
+    for (ed.variants, 0..) |v, i| {
+        variants[i] = .{ .name = v.name, .payload = null };
+    }
+    return .{ .enum_type = .{ .name = ed.name, .variants = variants } };
+}
 
 /// Resolved type after semantic analysis.
 /// During sema, each expression gets a `ResolvedType` attached.
@@ -50,6 +205,7 @@ pub const ResolvedType = union(enum) {
         ret: *ResolvedType,
         is_native: bool, // fully typed → true; has dynamic params → false
         has_vararg: bool = false,
+        is_compile_only: bool = false,
     },
     @"struct": struct { name: []const u8 },
 
@@ -68,6 +224,13 @@ pub const ResolvedType = union(enum) {
     generic_param: struct { name: []const u8, constraint: ?[]const u8 },
     table_type: struct {
         fields: []FieldType,
+        /// Storage class determines lowering strategy:
+        /// - .dynamic: boxed lua table with hash lookup
+        /// - .guarded: inline-cached lookup with shape guard
+        /// - .sealed: direct field offset access
+        /// - .native: C struct layout with direct field access
+        storage_class: StorageClass = .dynamic,
+        is_sealed: bool = false, // true when no further fields will be added
         is_packed: bool = false,
         align_n: ?usize = null,
         ffi_name: ?[]const u8 = null,
@@ -112,12 +275,23 @@ pub const ResolvedType = union(enum) {
         return self.is_integer() or self.is_float();
     }
 
+    /// Returns true if this type can be represented as native C without Lua boxing.
+    /// Used by codegen to decide whether to emit lua_Value intermediaries.
     pub fn is_native(self: ResolvedType) bool {
         return switch (self) {
             .any, .nil, .never => false,
-            .result, .option, .enum_type, .channel, .generic_param, .table_type, .instantiated, .tensor => false,
+            .result, .option, .enum_type, .channel, .generic_param, .instantiated, .tensor => false,
+            .table_type => |t| t.storage_class == .native,
             .func => |f| f.is_native,
             else => true,
+        };
+    }
+
+    /// For table types, returns the storage class. For other types, returns false.
+    pub fn storage_class(self: ResolvedType) ?StorageClass {
+        return switch (self) {
+            .table_type => |t| t.storage_class,
+            else => null,
         };
     }
 
@@ -386,6 +560,8 @@ pub const ResolvedType = union(enum) {
             .table_type => |ta| switch (b) {
                 .table_type => |tb| blk: {
                     if (ta.is_packed != tb.is_packed) break :blk false;
+                    if (ta.is_sealed != tb.is_sealed) break :blk false;
+                    if (ta.storage_class != tb.storage_class) break :blk false;
                     if (ta.align_n != tb.align_n) break :blk false;
                     if (!eqlOptStr(ta.ffi_name, tb.ffi_name)) break :blk false;
                     if (ta.fields.len != tb.fields.len) break :blk false;
@@ -970,6 +1146,7 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
             if (sema) |s| {
                 const sema_mod = @import("sema.zig");
                 const sema_ptr: *const sema_mod.Sema = @ptrCast(@alignCast(s));
+                if (sema_ptr.foreign_records.get(n)) |foreign_rt| return foreign_rt;
                 if (sema_ptr.enum_types.get(n)) |enum_t| return enum_t;
             }
             return ResolvedType{ .@"struct" = .{ .name = n } };
@@ -1086,7 +1263,9 @@ pub fn resolve(te: ast.TypeExpr, sema: ?*anyopaque, alloc: std.mem.Allocator) !R
                     .typ = try resolve(f.typ, sema, alloc),
                 };
             }
-            return ResolvedType{ .table_type = .{ .fields = fields } };
+            var out_rt = ResolvedType{ .table_type = .{ .fields = fields } };
+            out_rt.table_type.storage_class = inferStorageClass(fields, false, .dynamic);
+            return out_rt;
         },
         .constrained => |cp| {
             var concepts: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -1264,4 +1443,413 @@ test "tensor_broadcast: incompatible 2 x 3 + 3 x 4" {
     const b = try mk("3", "4", f32p, alloc);
     try testing.expect(ResolvedType.tensor_broadcast_shape_incompatible(a, b));
     try testing.expect((try ResolvedType.tensor_broadcast(a, b, alloc)) == null);
+}
+
+test "inferStorageClass: all-native fields default to native" {
+    const fields = [_]FieldType{
+        .{ .name = "x", .typ = .f64 },
+        .{ .name = "y", .typ = .f64 },
+    };
+    try testing.expectEqual(StorageClass.native, inferStorageClass(&fields, false, .dynamic));
+}
+
+test "inferStorageClass: mixed fields stay dynamic" {
+    const fields = [_]FieldType{
+        .{ .name = "x", .typ = .f64 },
+        .{ .name = "y", .typ = .any },
+    };
+    try testing.expectEqual(StorageClass.dynamic, inferStorageClass(&fields, false, .dynamic));
+}
+
+test "inferStorageClass: sealed non-native becomes sealed" {
+    const fields = [_]FieldType{
+        .{ .name = "k", .typ = .any },
+    };
+    try testing.expectEqual(StorageClass.sealed, inferStorageClass(&fields, true, .dynamic));
+}
+
+test "applyTableShapeAttrs: @sealed sets sealed class" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const fields = try alloc.alloc(FieldType, 1);
+    fields[0] = .{ .name = "x", .typ = .f64 };
+    var resolved: ResolvedType = .{ .table_type = .{ .fields = fields } };
+    const attrs = [_]ast.Attribute{.{ .name = "sealed", .args = null }};
+    applyTableShapeAttrs(&resolved, &attrs);
+    try testing.expect(resolved.table_type.is_sealed);
+    try testing.expectEqual(StorageClass.sealed, resolved.table_type.storage_class);
+}
+
+test "resolve: inline record type infers native storage" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const rec_fields = try alloc.alloc(ast.RecordField, 2);
+    rec_fields[0] = .{ .name = "x", .typ = .{ .named = "f64" }, .loc = .{ .file = "test", .line = 1, .col = 1 } };
+    rec_fields[1] = .{ .name = "y", .typ = .{ .named = "f64" }, .loc = .{ .file = "test", .line = 1, .col = 1 } };
+    const rec = try alloc.create(ast.TypeExpr.RecordType);
+    rec.* = .{ .fields = rec_fields };
+    const te: ast.TypeExpr = .{ .record = rec };
+    const resolved = try resolve(te, null, alloc);
+    try testing.expect(resolved == .table_type);
+    try testing.expectEqual(StorageClass.native, resolved.table_type.storage_class);
+}
+
+test "applyTableShapeAttrs: @guarded sets guarded class" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const fields = try alloc.alloc(FieldType, 1);
+    fields[0] = .{ .name = "x", .typ = .any };
+    var resolved: ResolvedType = .{ .table_type = .{ .fields = fields } };
+    const attrs = [_]ast.Attribute{.{ .name = "guarded", .args = null }};
+    applyTableShapeAttrs(&resolved, &attrs);
+    try testing.expectEqual(StorageClass.guarded, resolved.table_type.storage_class);
+}
+
+test "enumShapeIdentityHash: stable for same variants" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const variants = try alloc.alloc(EnumVariantType, 2);
+    variants[0] = .{ .name = "Red", .payload = null };
+    variants[1] = .{ .name = "Green", .payload = null };
+    const a: ResolvedType = .{ .enum_type = .{ .name = "Color", .variants = variants } };
+    const variants_b = try alloc.alloc(EnumVariantType, 2);
+    variants_b[0] = .{ .name = "Red", .payload = null };
+    variants_b[1] = .{ .name = "Green", .payload = null };
+    const b: ResolvedType = .{ .enum_type = .{ .name = "Color", .variants = variants_b } };
+    try testing.expectEqual(enumShapeIdentityHash(a), enumShapeIdentityHash(b));
+}
+
+test "explainStorageClass: native all-scalar record" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const fields = try alloc.alloc(FieldType, 2);
+    fields[0] = .{ .name = "x", .typ = .f64 };
+    fields[1] = .{ .name = "y", .typ = .f64 };
+    const resolved: ResolvedType = .{ .table_type = .{
+        .fields = fields,
+        .storage_class = .native,
+    } };
+    try testing.expect(std.mem.indexOf(u8, explainStorageClass(resolved), "native C scalars") != null);
+}
+
+test "explainStorageClass: non-table expression" {
+    try testing.expectEqualStrings(
+        "not a typed table or record alias; dynamic Lua representation",
+        explainStorageClass(.i64),
+    );
+}
+
+test "tableShapeIdentityHash: identical layouts match" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const fields = try alloc.alloc(FieldType, 1);
+    fields[0] = .{ .name = "x", .typ = .f64 };
+    const a: ResolvedType = .{ .table_type = .{ .fields = fields } };
+    const b: ResolvedType = .{ .table_type = .{ .fields = fields } };
+    try testing.expectEqual(tableShapeIdentityHash(a), tableShapeIdentityHash(b));
+    try testing.expect(tableShapeIdentityHash(.i64) == null);
+}
+
+// ── Call-Shape Specialization ─────────────────────────────────────────────────
+//
+// A CallShape captures the compile-time-knowable properties of a call site.
+// Used by the semantic graph to represent specialization opportunities and
+// enable future devirtualization, return-pack specialization, closure
+// specialization, and pipeline fusion.
+//
+// See §11 of docs/plans/semantic_graph_architecture.md.
+
+/// Classification of how many return values a call site consumes.
+pub const ReturnConsumption = enum {
+    /// No return value used (statement position)
+    discard,
+    /// Single value consumed
+    single,
+    /// Multiple values consumed (e.g. `a, b = f()`)
+    multi,
+    /// Unknown at compile time
+    unknown,
+};
+
+/// Classification of the callee identity known at the call site.
+pub const CalleeKind = enum {
+    /// Direct named function call: `foo(x)`
+    direct,
+    /// Method call on an object: `obj:method(x)`
+    method,
+    /// Indirect call through a variable or expression: `f(x)` where f is dynamic
+    indirect,
+    /// Known compile-time function (e.g. @comp.* or inlined constant)
+    comptime_known,
+};
+
+/// Represents the compile-time-observable shape of a call site.
+/// This is the key for specialization decisions — two call sites with the
+/// same CallShape can share the same specialization.
+pub const CallShape = struct {
+    /// How the callee is referenced
+    callee_kind: CalleeKind,
+    /// Callee name if statically known (null for indirect calls)
+    callee_name: ?[]const u8 = null,
+    /// Method name if method call
+    method_name: ?[]const u8 = null,
+    /// Number of explicit arguments (not counting self for methods)
+    arg_count: u8,
+    /// Which argument positions have compile-time-known values
+    known_args_mask: u32 = 0,
+    /// Which argument positions have statically known types
+    typed_args_mask: u32 = 0,
+    /// Whether the call uses varargs (trailing `...`)
+    has_varargs: bool = false,
+    /// How many return values the call site consumes
+    return_consumption: ReturnConsumption = .unknown,
+    /// Whether the receiver's table shape is known (for method calls)
+    receiver_shape_known: bool = false,
+
+    /// Stable identity hash for call-shape deduplication and caching.
+    /// Two CallShapes with the same hash are considered equivalent for
+    /// specialization purposes.
+    pub fn identityHash(self: CallShape) u64 {
+        var h = std.hash.Wyhash.init(0xCA115A9E);
+        h.update(std.mem.asBytes(&self.callee_kind));
+        h.update(std.mem.asBytes(&self.arg_count));
+        h.update(std.mem.asBytes(&self.known_args_mask));
+        h.update(std.mem.asBytes(&self.typed_args_mask));
+        h.update(std.mem.asBytes(&self.has_varargs));
+        h.update(std.mem.asBytes(&self.return_consumption));
+        h.update(std.mem.asBytes(&self.receiver_shape_known));
+        if (self.callee_name) |n| h.update(n);
+        if (self.method_name) |m| h.update(m);
+        return h.final();
+    }
+
+    /// True when this call shape could benefit from specialization.
+    /// A call with all-unknown properties cannot be specialized.
+    pub fn isSpecializable(self: CallShape) bool {
+        if (self.callee_kind == .comptime_known) return true;
+        if (self.known_args_mask != 0) return true;
+        if (self.typed_args_mask != 0) return true;
+        if (self.receiver_shape_known) return true;
+        if (self.return_consumption != .unknown) return true;
+        return false;
+    }
+
+    /// Human-readable summary for `@comp.why` and diagnostic output.
+    pub fn explain(self: CallShape, buf: []u8) []const u8 {
+        const kind_str: []const u8 = switch (self.callee_kind) {
+            .direct => "direct",
+            .method => "method",
+            .indirect => "indirect",
+            .comptime_known => "comptime",
+        };
+        const callee_str = self.callee_name orelse "";
+        const method_str = self.method_name orelse "";
+        const known_count = @popCount(self.known_args_mask);
+        const typed_count = @popCount(self.typed_args_mask);
+
+        // Build explanation string incrementally
+        var pos: usize = 0;
+        const base = std.fmt.bufPrint(buf[pos..], "{s} call", .{kind_str}) catch return buf[0..0];
+        pos += base.len;
+
+        if (self.callee_name != null) {
+            const s = std.fmt.bufPrint(buf[pos..], " to '{s}'", .{callee_str}) catch return buf[0..pos];
+            pos += s.len;
+        }
+        if (self.method_name != null) {
+            const s = std.fmt.bufPrint(buf[pos..], ":{s}", .{method_str}) catch return buf[0..pos];
+            pos += s.len;
+        }
+        {
+            const s = std.fmt.bufPrint(buf[pos..], ", {d} args", .{self.arg_count}) catch return buf[0..pos];
+            pos += s.len;
+        }
+        if (self.known_args_mask != 0) {
+            const s = std.fmt.bufPrint(buf[pos..], ", {d} known", .{known_count}) catch return buf[0..pos];
+            pos += s.len;
+        }
+        if (self.typed_args_mask != 0) {
+            const s = std.fmt.bufPrint(buf[pos..], ", {d} typed", .{typed_count}) catch return buf[0..pos];
+            pos += s.len;
+        }
+        if (self.receiver_shape_known) {
+            const s = std.fmt.bufPrint(buf[pos..], ", receiver sealed", .{}) catch return buf[0..pos];
+            pos += s.len;
+        }
+        switch (self.return_consumption) {
+            .discard => {
+                const s = std.fmt.bufPrint(buf[pos..], ", result discarded", .{}) catch return buf[0..pos];
+                pos += s.len;
+            },
+            .single => {
+                const s = std.fmt.bufPrint(buf[pos..], ", single return", .{}) catch return buf[0..pos];
+                pos += s.len;
+            },
+            .multi => {
+                const s = std.fmt.bufPrint(buf[pos..], ", multi return", .{}) catch return buf[0..pos];
+                pos += s.len;
+            },
+            .unknown => {},
+        }
+        return buf[0..pos];
+    }
+
+    /// Check if two CallShapes are equivalent for specialization.
+    pub fn eql(a: CallShape, b: CallShape) bool {
+        return a.identityHash() == b.identityHash();
+    }
+};
+
+/// Infer a CallShape from an AST call expression.
+/// This is a conservative first pass — sema can refine later with type info.
+pub fn inferCallShape(expr: *const ast.Expr) ?CallShape {
+    switch (expr.*) {
+        .call => |c| {
+            const callee_name: ?[]const u8 = switch (c.func.*) {
+                .name => |n| n.ident,
+                .field => |f| f.field,
+                else => null,
+            };
+            const kind: CalleeKind = if (callee_name != null) .direct else .indirect;
+            return .{
+                .callee_kind = kind,
+                .callee_name = callee_name,
+                .arg_count = @intCast(@min(c.args.len, 255)),
+            };
+        },
+        .method_call => |mc| {
+            return .{
+                .callee_kind = .method,
+                .callee_name = null,
+                .method_name = mc.method,
+                .arg_count = @intCast(@min(mc.args.len, 255)),
+            };
+        },
+        else => return null,
+    }
+}
+
+/// Stable identity hash for a call shape (convenience wrapper).
+pub fn callShapeIdentityHash(shape: CallShape) u64 {
+    return shape.identityHash();
+}
+
+// ── CallShape Tests ──────────────────────────────────────────────────────────
+
+test "CallShape: direct call identity hash is stable" {
+    const a = CallShape{
+        .callee_kind = .direct,
+        .callee_name = "add",
+        .arg_count = 2,
+        .typed_args_mask = 0b11,
+    };
+    const b = CallShape{
+        .callee_kind = .direct,
+        .callee_name = "add",
+        .arg_count = 2,
+        .typed_args_mask = 0b11,
+    };
+    try testing.expectEqual(a.identityHash(), b.identityHash());
+}
+
+test "CallShape: different arg counts produce different hashes" {
+    const a = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 1 };
+    const b = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 2 };
+    try testing.expect(a.identityHash() != b.identityHash());
+}
+
+test "CallShape: method call shape" {
+    const shape = CallShape{
+        .callee_kind = .method,
+        .method_name = "length",
+        .arg_count = 0,
+        .receiver_shape_known = true,
+        .return_consumption = .single,
+    };
+    try testing.expect(shape.isSpecializable());
+    try testing.expectEqual(@as(u64, shape.identityHash()), callShapeIdentityHash(shape));
+}
+
+test "CallShape: indirect with no info is not specializable" {
+    const shape = CallShape{ .callee_kind = .indirect, .arg_count = 1 };
+    try testing.expect(!shape.isSpecializable());
+}
+
+test "CallShape: comptime_known is always specializable" {
+    const shape = CallShape{ .callee_kind = .comptime_known, .callee_name = "Vector", .arg_count = 2 };
+    try testing.expect(shape.isSpecializable());
+}
+
+test "CallShape: explain produces readable output" {
+    const shape = CallShape{
+        .callee_kind = .direct,
+        .callee_name = "scale",
+        .arg_count = 1,
+        .known_args_mask = 0b1,
+        .return_consumption = .single,
+    };
+    var buf: [256]u8 = undefined;
+    const explanation = shape.explain(&buf);
+    try testing.expect(std.mem.indexOf(u8, explanation, "direct call") != null);
+    try testing.expect(std.mem.indexOf(u8, explanation, "scale") != null);
+    try testing.expect(std.mem.indexOf(u8, explanation, "1 known") != null);
+    try testing.expect(std.mem.indexOf(u8, explanation, "single return") != null);
+}
+
+test "inferCallShape: call expression" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\function main()
+        \\  add(1, 2)
+        \\  return 0
+        \\end
+    , "test.lua");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+    const func_stmt = module.body.stmts[0];
+    const body = func_stmt.func_decl.func.body;
+    if (body.stmts.len == 0) return error.TestExpectedEqual;
+    const stmt = body.stmts[0];
+    // Standalone calls parse as call_stmt
+    const expr = if (stmt == .call_stmt) stmt.call_stmt.expr else stmt.expr_stmt.expr;
+    const shape = inferCallShape(expr) orelse return error.TestExpectedEqual;
+    try testing.expectEqual(CalleeKind.direct, shape.callee_kind);
+    try testing.expectEqualStrings("add", shape.callee_name.?);
+    try testing.expectEqual(@as(u8, 2), shape.arg_count);
+}
+
+test "inferCallShape: method call expression" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\function main()
+        \\  obj:method(x, y, z)
+        \\  return 0
+        \\end
+    , "test.lua");
+    var parser = Parser.init(&lex, alloc);
+    const module = try parser.parse_module();
+    const func_stmt = module.body.stmts[0];
+    const body = func_stmt.func_decl.func.body;
+    if (body.stmts.len == 0) return error.TestExpectedEqual;
+    const stmt = body.stmts[0];
+    // Standalone method calls parse as call_stmt
+    const expr = if (stmt == .call_stmt) stmt.call_stmt.expr else stmt.expr_stmt.expr;
+    const shape = inferCallShape(expr) orelse return error.TestExpectedEqual;
+    try testing.expectEqual(CalleeKind.method, shape.callee_kind);
+    try testing.expectEqualStrings("method", shape.method_name.?);
+    try testing.expectEqual(@as(u8, 3), shape.arg_count);
 }

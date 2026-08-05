@@ -1,8 +1,10 @@
-# Duo Compiler Architecture
+# Duo compiler architecture
 
-**Status:** Supported overview. **Audience:** compiler engineers and contributors.
+**Status:** current (internal). Canonical plan: [semantic graph architecture](plans/semantic_graph_architecture.md).
 
-Duo is an ahead-of-time compiler written in **Zig**. It does not interpret or JIT: source lowers to **C** (default), then `clang` or `zig cc` produces the binary. There is no runtime VM.
+## What Duo is
+
+Duo is an ahead-of-time compiler (Zig) that lowers `.duo` / `.lua` source to C (default), then invokes `clang` or `zig cc` for native binaries. There is no runtime VM.
 
 ## Pipeline
 
@@ -10,51 +12,49 @@ Duo is an ahead-of-time compiler written in **Zig**. It does not interpret or JI
 Source → lexer → parser → AST → sema → (mono / arc / async_lower) → codegen → C → clang
 ```
 
-| Stage | Module | Responsibility |
-| --- | --- | --- |
-| Lex / parse | `src/lexer.zig`, `src/parser.zig`, `src/ast.zig` | Lua + Duo syntax → AST |
-| Types / sema | `src/types.zig`, `src/sema.zig` | Inference, checking, `@comp.*` hooks |
-| Monomorphization | `src/mono.zig` | Generic specialization |
-| Memory / async | `src/arc.zig`, `src/async_lower.zig` | Retain/release; async state machines |
-| Codegen | `src/codegen.zig` | Typed AST → C (largest module) |
-| Metaprogramming | `src/comptime.zig`, `src/meta_module.zig`, `src/meta_codegen.zig` | `@comp.*` transforms |
-| Semantic graph | `src/semantic_graph.zig`, `src/transform_engine.zig` | Unified transform + graph lift (in progress) |
-| Realization | `src/realization.zig`, `src/persistent_semantic_state.zig` | Representation selection + cache (Pass 8) |
-| Native backend | `src/native_backend.zig` | Direct machine code (subset) |
-| CLI | `src/main.zig` | `compile`, `run`, `check`, `catalog`, `explain`, `realize` |
+| Module | Responsibility |
+| --- | --- |
+| `src/lexer.zig` | Tokenization (Lua + Duo) |
+| `src/parser.zig` | Recursive-descent parse → `src/ast.zig` |
+| `src/types.zig` | Type definitions |
+| `src/sema.zig` | Type inference and checking |
+| `src/mono.zig` | Generic monomorphization |
+| `src/arc.zig` | Retain/release for heap types |
+| `src/async_lower.zig` | Async/await state machines |
+| `src/codegen.zig` | C emission (largest module) |
+| `src/comptime.zig` | Compile-time evaluation |
+| `src/meta_module.zig` | `@comp.*` directive registry |
+| `src/transform_engine.zig` | Unified transform registry (Phase 0–1) |
+| `src/semantic_graph.zig` | Semantic graph spine |
 
-## Build and test
+## Metaprogramming
 
-```bash
-zig build                          # compiler → zig-out/bin/duo
-zig build test                     # unit + compile-fail + bench gate
-zig build unit-test                # Zig test blocks only
-zig test src/tests.zig --test-filter "<name>"
-```
-
-Performance gate: `zig build bench` — Duo must beat or tie C on all 40 benchmarks. Ledger: [docs/performance.md](performance.md).
-
-## Tooling exports
-
-```bash
-duo catalog    # JSON: passes, transforms, Ward/readiness matrices
-duo explain    # Knowledge snapshots + optimization outcomes
-duo graph      # Semantic graph lift (partial)
-duo realize    # Realization + persistent evidence (partial)
-```
-
-## Dialects
-
-- **`.lua`** — Lua 5.5 compatible, untyped; hints via `--- @directive` comments.
-- **`.duo`** — Types, `@comp.*`, bare functions, if-expressions, `req` imports.
+All compile-time operations use `@comp.*` (aliases: `@compiler.*`, `@meta.*`). Registry: `duo catalog`.
 
 ## Self-hosting / bootstrap
 
-The compiler is **Zig**, not self-hosted yet. The standard library (`lib/std/*.duo`) is Duo source compiled by `duo`. See [docs/bootstrap.md](bootstrap.md).
+1. Build compiler: `zig build` → `zig-out/bin/duo`
+2. Stdlib is Duo source under `lib/std/*.duo`, embedded at compile time
+3. Compiler is Zig; Duo does not yet compile itself — bootstrap is Zig → duo binary → user programs
+
+## Validation
+
+```bash
+zig build test          # full gate
+zig build unit-test     # Zig tests only
+zig build bench         # 40-benchmark perf gate vs hand-written C
+duo catalog             # machine-readable pass/milestone JSON
+```
+
+## Experimental
+
+- Semantic graph / realization (`duo graph`, `duo realize`, `duo explain`)
+- Pass 9 Wasm descriptor pipeline (`src/wasm_semantic.zig`, `duo wasm-tables emit`)
+- Native backend / direct object emission (`src/native_backend.zig`) — partial
 
 ## Further reading
 
-- CLI details: [docs/src/compiler_usage.md](src/compiler_usage.md)
-- Contributor entry: [CLAUDE.md](../CLAUDE.md)
-- Long-range architecture: [docs/plans/semantic_graph_architecture.md](plans/semantic_graph_architecture.md) (**Planned / internal** — not all items implemented)
-- Historical pass plans: [docs/plans/archive/](plans/archive/) — **Historical** only
+- [Compiler usage (CLI)](src/compiler_usage.md)
+- [Performance ledger](performance.md)
+- [Semantic universe](semantic_universe.md)
+- [Agent alignment compass](AGENT_ALIGNMENT.md) — contributor/internal

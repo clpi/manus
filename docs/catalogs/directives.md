@@ -156,7 +156,7 @@ Useful but more specialized. Accessible as `@name` with canonical path under `@c
 | `comp.interpolate` | O(n) | ✅ | String template interpolation |
 | `comp.each` / `comp.chain` | O(n) | ✅ | Fragment iteration |
 | `comp.zip` | O(n×m) | ✅ | Cartesian zip |
-| `comp.product` | O(n²) | ❌ | Not wired |
+| `comp.product` | O(n²) | ✅ | Cartesian product of two concepts |
 | `comp.tensor` | O(n³) | ✅ | Tensor sweep |
 | `comp.nfold` | O(n^k) | ✅* | Wired 2026-08-04 |
 | `comp.power` / `comp.powerset` | O(2^n) | ✅ | Powerset |
@@ -198,11 +198,11 @@ Useful but more specialized. Accessible as `@name` with canonical path under `@c
 | `comp.str.contains` | `__strcontains` | ✅ |
 | `comp.str.countlines` | `__strcountlines` | ✅ |
 | `comp.str.splitcount` | `__strsplitcount` | ✅ |
-| `comp.str.starts.with` | `__strstartswith` | ❌ |
-| `comp.str.ends.with` | `__strendswith` | ❌ |
-| `comp.str.len` | `__strcomptelen` | ❌ |
-| `comp.str.eq` | `__streq` | ❌ |
-| `comp.str.join` | `__strjoin` | ❌ |
+| `comp.str.starts.with` | `__strstartswith` | ✅ |
+| `comp.str.ends.with` | `__strendswith` | ✅ |
+| `comp.str.len` | `__strcomptelen` | ✅ |
+| `comp.str.eq` | `__streq` | ✅ |
+| `comp.str.join` | `__strjoin` | ✅ |
 
 ### Type Construction
 
