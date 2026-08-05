@@ -12,6 +12,7 @@ const debug_trace = @import("debug_trace.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const c_sim_import = @import("c_sim_import.zig");
 const foreign_adapter = @import("foreign_adapter.zig");
+const abi_specialize = @import("abi_specialize.zig");
 
 pub const SemaError = error{
     TypeMismatch,
@@ -1344,6 +1345,7 @@ pub const Sema = struct {
         defer self.alloc.free(src);
         var snap = try c_sim_import.importHeaderSource(self.alloc, resolved, src);
         defer snap.deinit(self.alloc);
+        try abi_specialize.specializeSnapshot(self.alloc, &snap);
         var module = try foreign_adapter.adaptSnapshot(self.alloc, &snap);
         errdefer module.deinit(self.alloc);
 
@@ -2168,6 +2170,9 @@ pub const Sema = struct {
                     if (std.mem.eql(u8, bn, "__why_shape")) return .str;
                     if (std.mem.eql(u8, bn, "__why")) return .str;
                     if (std.mem.eql(u8, bn, "__origin")) return .str;
+                    if (std.mem.eql(u8, bn, "__why_boxed")) return .str;
+                    if (std.mem.eql(u8, bn, "__why_not_native")) return .str;
+                    if (std.mem.eql(u8, bn, "__representation")) return .str;
                     if (std.mem.eql(u8, bn, "__typeof")) return .str;
                     if (std.mem.eql(u8, bn, "__metaladder") or
                         std.mem.eql(u8, bn, "__metacatalog") or
