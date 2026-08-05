@@ -80,11 +80,51 @@ pub const Descriptor = struct {
     hardness: Hardness = .preference,
 };
 
+/// Pass 8: classification of evidence supporting a compiler decision.
+/// Every optimization decision, assumption, and realization selection should
+/// record what KIND of evidence supports it.
+pub const Evidence = enum(u8) {
+    /// Proven from semantic facts alone (always valid).
+    semantic_proof = 0,
+    /// Guarded by a runtime check (valid until guard fails).
+    guarded = 1,
+    /// Static cost estimate from compiler model.
+    static_estimate = 2,
+    /// Target-specific cost model estimate.
+    target_estimate = 3,
+    /// Profile observation from execution.
+    profile = 4,
+    /// Benchmark measurement (explicit, reproducible).
+    benchmark = 5,
+    /// User assertion (programmer claims; compiler may verify).
+    user_assertion = 6,
+    /// Imported from foreign metadata.
+    imported = 7,
+    /// Default heuristic (no specific evidence).
+    heuristic = 8,
+
+    pub fn name(self: Evidence) []const u8 {
+        return @tagName(self);
+    }
+
+    /// Evidence reliability ordering (lower = more reliable).
+    pub fn reliability(self: Evidence) u8 {
+        return @intFromEnum(self);
+    }
+
+    /// True if this evidence is deterministic and reproducible.
+    pub fn isDeterministic(self: Evidence) bool {
+        return self == .semantic_proof or self == .static_estimate or self == .target_estimate;
+    }
+};
+
 pub const ProvenanceEntry = struct {
     public_name: []const u8,
     site: SiteKind,
     inputs_hash: u64,
     output_hash: u64,
+    /// Pass 8: what evidence supports this transformation outcome.
+    evidence: Evidence = .heuristic,
 };
 
 var provenance_log: std.ArrayListUnmanaged(ProvenanceEntry) = .empty;
@@ -768,4 +808,13 @@ test "transform_engine: introspection descriptors have query hardness" {
 test "transform_engine: default hardness is preference" {
     const d = descriptor("comp.map") orelse return error.TestExpectedEqual;
     try std.testing.expectEqual(Hardness.preference, d.hardness);
+}
+
+test "transform_engine: evidence reliability ordering" {
+    try std.testing.expect(Evidence.semantic_proof.reliability() < Evidence.heuristic.reliability());
+    try std.testing.expect(Evidence.guarded.reliability() < Evidence.profile.reliability());
+    try std.testing.expect(Evidence.semantic_proof.isDeterministic());
+    try std.testing.expect(Evidence.static_estimate.isDeterministic());
+    try std.testing.expect(!Evidence.profile.isDeterministic());
+    try std.testing.expect(!Evidence.heuristic.isDeterministic());
 }

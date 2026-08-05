@@ -145,6 +145,7 @@ Duo MUST achieve compile, runtime, and startup speeds that are better than ANY p
 - Pass 5: [`docs/plans/pass5_semantic_interchange.md`](docs/plans/pass5_semantic_interchange.md) — cross-language
 - Pass 6: [`docs/plans/pass6_reconciliation.md`](docs/plans/pass6_reconciliation.md) — architectural reconciliation
 - Pass 7: [`docs/plans/pass7_ai_native.md`](docs/plans/pass7_ai_native.md) — AI-native compilation
+- Pass 8: [`docs/plans/pass8_persistent_semantic.md`](docs/plans/pass8_persistent_semantic.md) — persistent semantic computing
 
 **Catalogs:** [`docs/catalogs/keywords.md`](docs/catalogs/keywords.md) | [`docs/catalogs/directives.md`](docs/catalogs/directives.md) | [`docs/catalogs/grammar_compactness.md`](docs/catalogs/grammar_compactness.md) | [`docs/catalogs/native_barriers.md`](docs/catalogs/native_barriers.md)
 
