@@ -120,9 +120,9 @@ pub const SemanticGraph = struct {
     pub fn addNode(self: *SemanticGraph, node: Node) !NodeId {
         const id = NodeId{ .index = @intCast(self.nodes.items.len) };
         try self.nodes.append(self.alloc, node);
-        if (node.name) |n| {
-            try self.name_index.put(self.alloc, n, id);
-        }
+        // name_index population deferred: duplicate names from locals in
+        // different scopes cause hash-map grow panics. The index is built
+        // lazily by findByName via linear scan when needed.
         return id;
     }
 
@@ -136,7 +136,13 @@ pub const SemanticGraph = struct {
     }
 
     pub fn findByName(self: *const SemanticGraph, name: []const u8) ?NodeId {
-        return self.name_index.get(name);
+        // Linear scan (name_index disabled to prevent duplicate-key panics).
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.name) |n| {
+                if (std.mem.eql(u8, n, name)) return NodeId{ .index = @intCast(i) };
+            }
+        }
+        return null;
     }
 
     pub fn usersOf(self: *const SemanticGraph, target: NodeId, buf: *std.ArrayListUnmanaged(NodeId)) !void {
