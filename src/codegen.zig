@@ -46,7 +46,7 @@ pub const CodeGenError = error{
     InternalError,
 } || Allocator.Error || std.Io.Writer.Error;
 
-pub const E = Allocator.Error || std.Io.Writer.Error;
+pub const E = Allocator.Error || std.Io.Writer.Error || error{ NoAllocViolation };
 
 const W = *std.Io.Writer;
 
@@ -127,6 +127,8 @@ pub const CodeGen = struct {
     alias_methods: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty,
     /// Functions referenced only as @comp.* combinator callbacks (no runtime calls).
     comptime_only_funcs: std.StringHashMapUnmanaged(void) = .empty,
+    /// P6-07: guards unified meta combinator fold from re-entering itself.
+    meta_combinator_fold_depth: u32 = 0,
     /// Monomorphized generic specializations produced by the mono pass, made
     /// available to codegen so it can emit one concrete C function per
     /// specialization (Task 12.1). Null when there are no generics.
@@ -143,6 +145,9 @@ pub const CodeGen = struct {
     next_closure_id: u32 = 0,
     current_func_body: ?*const ast.FuncBody = null,
     current_func_name: ?[]const u8 = null,
+    /// Pass 7: active function carries @noalloc — heap emit sites call guardNoAlloc.
+    current_func_noalloc: bool = false,
+    noalloc_violation: ?[]const u8 = null,
     /// Per-scope set of `lua_Value` locals known to hold numbers only (safe to
     /// unbox in binops without going through metamethod dispatch).
     numeric_lua_scopes: std.ArrayList(std.StringHashMapUnmanaged(void)) = .empty,
@@ -160,6 +165,32 @@ pub const CodeGen = struct {
         ty: RT,
         is_close: bool,
     };
+
+    fn funcRequiresNoalloc(attrs: []const ast.Attribute) bool {
+        return semantic_algebra.effectSetFromAttributes(attrs).contains(.noalloc);
+    }
+
+    fn guardNoAlloc(self: *CodeGen, site: []const u8) E!void {
+        if (!self.current_func_noalloc or self.noalloc_violation != null) return;
+        const fname = self.current_func_name orelse "?";
+        const msg = try std.fmt.allocPrint(self.alloc, "@noalloc violated in function '{s}': heap allocation at {s}", .{ fname, site });
+        self.noalloc_violation = msg;
+        const optimization_outcome = @import("optimization_outcome.zig");
+        optimization_outcome.logOutcome(
+            self.alloc,
+            "contract.noalloc",
+            fname,
+            .rejected,
+            .proven,
+            .emit_call,
+            try std.fmt.allocPrint(self.alloc, "heap allocation required at {s}", .{site}),
+            "dynamic",
+            "heap",
+            0,
+            0,
+        ) catch {};
+        return error.NoAllocViolation;
+    }
 
     fn mangled_name(self: *CodeGen, name: []const u8, buf: []u8) []const u8 {
         if (self.current_module_cname.len == 0) return name;
@@ -407,128 +438,17 @@ pub const CodeGen = struct {
     /// locals like m.pattern are already resolved to Values).
     fn comptimeMetaHook(ctx: ?*anyopaque, name: []const u8, args: []const comptime_eval.Value) ?comptime_eval.Value {
         const self: *CodeGen = @ptrCast(@alignCast(ctx orelse return null));
-
-        // @comp.match: __comptimematch(spec_str, callback)
-        if (std.mem.eql(u8, name, "__comptimematch") and args.len == 2) {
-            if (args[0] != .string) return null;
-            if (args[1] != .func) return null;
-            const value = meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__comptimematch", .nested_callback, args[0].string, value.string);
-            }
-            return value;
+        if (transform_engine.publicNameForInternal(name) != null and
+            !transform_engine.requireMetaDispatchBeforeHook(name))
+            return null;
+        if (!meta_codegen.canApplyMetaCombinatorHook(name)) return null;
+        const value = meta_codegen.applyMetaCombinatorHook(self.meta_host(), name, args, self.alloc) orelse return null;
+        if (value == .string) {
+            var ibuf: [128]u8 = undefined;
+            const input = meta_codegen.metaCombinatorProvenanceInput(name, args, &ibuf) orelse "";
+            transform_engine.dispatchMetaCombinator(self.alloc, name, .nested_callback, input, value.string);
         }
-        // @comp.interpolate: __comptimeinterpolate(template_str, vars_table)
-        if (std.mem.eql(u8, name, "__comptimeinterpolate") and args.len == 2) {
-            if (args[0] != .string) return null;
-            const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__comptimeinterpolate", .nested_callback, args[0].string, value.string);
-            }
-            return value;
-        }
-        // @comp.tabulate: __comptimetabulate(count_int, callback)
-        if (std.mem.eql(u8, name, "__comptimetabulate") and args.len == 2) {
-            if (args[0] != .int) return null;
-            if (args[1] != .func) return null;
-            const value = meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int, args[1], self.alloc) orelse return null;
-            if (value == .string) {
-                var ibuf: [32]u8 = undefined;
-                const input = std.fmt.bufPrint(&ibuf, "{d}", .{args[0].int}) catch "0";
-                transform_engine.logInternalTransform(self.alloc, "__comptimetabulate", .nested_callback, input, value.string);
-            }
-            return value;
-        }
-        // @comp.zip: __comptimezip(spec_a, spec_b, callback)
-        if (std.mem.eql(u8, name, "__comptimezip") and args.len == 3) {
-            if (args[0] != .string or args[1] != .string) return null;
-            if (args[2] != .func) return null;
-            return meta_codegen.comptimeZipHook(self.meta_host(), args[0].string, args[1].string, args[2], self.alloc);
-        }
-        // @comp.product: __comptimeproduct(concept_a, concept_b, callback)
-        if (std.mem.eql(u8, name, "__comptimeproduct") and args.len == 3) {
-            if (args[0] != .string or args[1] != .string) return null;
-            if (args[2] != .func) return null;
-            const value = meta_codegen.comptimeProductHook(self.meta_host(), args[0].string, args[1].string, args[2], self.alloc) orelse return null;
-            if (value == .string) {
-                var ibuf: [96]u8 = undefined;
-                const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string, args[1].string }) catch args[0].string;
-                transform_engine.logInternalTransform(self.alloc, "__comptimeproduct", .nested_callback, input, value.string);
-            }
-            return value;
-        }
-        // @comp.map: __comptimemap(concept, callback)
-        if (std.mem.eql(u8, name, "__comptimemap") and args.len == 2) {
-            if (args[0] != .string or args[1] != .func) return null;
-            const value = meta_codegen.comptimeMapHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__comptimemap", .nested_callback, args[0].string, value.string);
-            }
-            return value;
-        }
-        // @comp.each: __comptimeeach(source, callback)
-        if (std.mem.eql(u8, name, "__comptimeeach") and args.len == 2) {
-            if (args[0] != .string or args[1] != .func) return null;
-            const value = meta_codegen.comptimeEachHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__comptimeeach", .nested_callback, args[0].string, value.string);
-            }
-            return value;
-        }
-        // @comp.power: __comptimepower(concept, callback)
-        if (std.mem.eql(u8, name, "__comptimepower") and args.len == 2) {
-            if (args[0] != .string or args[1] != .func) return null;
-            const value = meta_codegen.comptimePowerHook(self.meta_host(), args[0].string, args[1], self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__comptimepower", .nested_callback, args[0].string, value.string);
-            }
-            return value;
-        }
-        // @comp.derive.power: __derivepower(concept, derive_name)
-        if (std.mem.eql(u8, name, "__derivepower") and args.len == 2) {
-            if (args[0] != .string) return null;
-            const derive_name = switch (args[1]) {
-                .string => args[1].string,
-                else => return null,
-            };
-            const value = meta_codegen.derivePowerHook(self.meta_host(), args[0].string, derive_name, self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__derivepower", .nested_callback, args[0].string, value.string);
-            }
-            return value;
-        }
-        // @comp.derive.product: __deriveproduct(concept_a, concept_b, derive_name)
-        if (std.mem.eql(u8, name, "__deriveproduct") and args.len == 3) {
-            if (args[0] != .string or args[1] != .string) return null;
-            const derive_name = switch (args[2]) {
-                .string => args[2].string,
-                else => return null,
-            };
-            const value = meta_codegen.deriveProductHook(self.meta_host(), args[0].string, args[1].string, derive_name, self.alloc) orelse return null;
-            if (value == .string) {
-                var ibuf: [96]u8 = undefined;
-                const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string, args[1].string }) catch args[0].string;
-                transform_engine.logInternalTransform(self.alloc, "__deriveproduct", .nested_callback, input, value.string);
-            }
-            return value;
-        }
-        // @comp.fixpoint: __comptimefixpoint(initial, callback, max_iter) — arg order flexible
-        if (std.mem.eql(u8, name, "__comptimefixpoint") and args.len == 3) {
-            if (args[0] != .string) return null;
-            const max_iter: usize = blk: {
-                if (args[1] == .int) break :blk @intCast(args[1].int);
-                if (args[2] == .int) break :blk @intCast(args[2].int);
-                return null;
-            };
-            const callback = if (args[1] == .func) args[1] else if (args[2] == .func) args[2] else return null;
-            const value = meta_codegen.comptimeFixpointHook(self.meta_host(), args[0].string, callback, max_iter, self.alloc) orelse return null;
-            if (value == .string) {
-                transform_engine.logInternalTransform(self.alloc, "__comptimefixpoint", .nested_callback, args[0].string, value.string);
-            }
-            return value;
-        }
-
-        return null;
+        return value;
     }
 
     fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
@@ -2556,12 +2476,14 @@ pub const CodeGen = struct {
         return self.native_scalar_mode or self.moduleKnowledgeAtLeast(.native);
     }
 
-    /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
+    /// Pass 6: public accessor for driver/link flags (prefer over raw `native_scalar_mode`).
+    pub fn usesFullNativeLowering(self: *const CodeGen) bool {
+        return self.moduleUsesFullNativeLowering();
+    }
+
     /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
     fn moduleNeedsLuaRuntime(self: *const CodeGen) bool {
-        // Mixed mode needs the runtime for non-native functions.
-        // Only full native_scalar_mode excludes it entirely.
-        return !self.native_scalar_mode;
+        return !self.moduleUsesFullNativeLowering();
     }
 
     /// Per-function native lowering (full-native module or mixed-mode allowlist).
@@ -5389,6 +5311,33 @@ pub const CodeGen = struct {
     }
 
     fn emit_arg_for_param(self: *CodeGen, arg: *const ast.Expr, param_type: RT) E!void {
+        if (param_type == .pointer) {
+            const inner = param_type.pointer.*;
+            if (inner == .table_type or inner == .@"struct") {
+                if (arg.* == .name) {
+                    self.p("&", .{});
+                    try self.emit_expr(arg);
+                    return;
+                }
+                if (arg.* == .table and inner == .table_type) {
+                    self.p("&((", .{});
+                    self.typ(inner);
+                    self.p(")", .{});
+                    try self.emit_record_initializer(inner.table_type.fields, arg);
+                    self.p(")", .{});
+                    return;
+                }
+                self.p("&(", .{});
+                try self.emit_expr(arg);
+                self.p(")", .{});
+                return;
+            }
+            if (arg.* == .name) {
+                self.p("&", .{});
+                try self.emit_expr(arg);
+                return;
+            }
+        }
         if (self.callArgUsesNativeLowering(arg, param_type)) {
             const arg_type = self.expr_type(arg);
             if (arg_type.eql(param_type)) {
@@ -6588,9 +6537,11 @@ pub const CodeGen = struct {
         const prev_dense_cap = self.dense_table_cap;
         const prev_func_body = self.current_func_body;
         const prev_func_name = self.current_func_name;
+        const prev_func_noalloc = self.current_func_noalloc;
         self.current_ret = ret;
         self.current_func_body = fb;
         self.current_func_name = duo_func_name(fd);
+        self.current_func_noalloc = funcRequiresNoalloc(fd.attributes);
         if (fb.use_dense_table) {
             self.dense_table = fb.dense_table;
             self.dense_table_cap = fb.dense_table_cap;
@@ -6601,6 +6552,7 @@ pub const CodeGen = struct {
             self.dense_table_cap = prev_dense_cap;
             self.current_func_body = prev_func_body;
             self.current_func_name = prev_func_name;
+            self.current_func_noalloc = prev_func_noalloc;
         }
         if (fb.use_fp_strict_always_inline) {
             self.p("#pragma GCC push_options\n", .{});
@@ -11475,7 +11427,11 @@ pub const CodeGen = struct {
                     self.indent += 1;
                     self.ind();
                     self.p("lua_Value __fn = ", .{});
-                    if (c.func.* == .name and self.emit_lua_global_fn(c.func.name.ident)) {} else {
+                    if (c.func.* == .name and self.emit_lua_global_fn(c.func.name.ident)) {} else if (c.func.* == .name and self.func_bodies.contains(c.func.name.ident)) {
+                        // Mixed mode: module-local function needs lua_val_from_func wrapper
+                        var nbuf: [256]u8 = undefined;
+                        self.p("lua_val_from_func((lua_CFunction){s})", .{self.mangled_name(c.func.name.ident, &nbuf)});
+                    } else {
                         try self.emit_expr(c.func);
                     }
                     self.p(";\n", .{});
@@ -12624,85 +12580,15 @@ pub const CodeGen = struct {
             .call => |c| blk: {
                 if (c.func.* != .name) break :blk null;
                 const name = c.func.name.ident;
-                if (std.mem.eql(u8, name, "__comptimemap") and c.args.len == 2 and c.args[0].* == .string_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimeMapHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__comptimemap", .top_level_assign, c.args[0].string_lit.val, value.string);
-                        break :blk value.string;
-                    }
+                if (transform_engine.publicNameForInternal(name) != null and
+                    !transform_engine.requireMetaDispatchBeforeHook(name))
                     break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimeeach") and c.args.len == 2) {
-                    const source = self.fold_meta_string_expr(c.args[0]) orelse break :blk null;
-                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimeEachHook(self.meta_host(), source, callback, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__comptimeeach", .top_level_assign, source, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimematch") and c.args.len == 2 and c.args[0].* == .string_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimeMatchHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__comptimematch", .top_level_assign, c.args[0].string_lit.val, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimetabulate") and c.args.len == 2 and c.args[0].* == .int_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimeTabulateHook(self.meta_host(), c.args[0].int_lit.val, callback, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        var ibuf: [32]u8 = undefined;
-                        const input = std.fmt.bufPrint(&ibuf, "{d}", .{c.args[0].int_lit.val}) catch "0";
-                        self.logMetaCombinatorProvenance("__comptimetabulate", .top_level_assign, input, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimeinterpolate") and c.args.len == 2 and c.args[0].* == .string_lit) {
-                    const vars = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), c.args[0].string_lit.val, vars, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__comptimeinterpolate", .top_level_assign, c.args[0].string_lit.val, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimezip") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimeZipHook(self.meta_host(), c.args[0].string_lit.val, c.args[1].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__comptimeproduct") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimeProductHook(self.meta_host(), c.args[0].string_lit.val, c.args[1].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        var ibuf: [96]u8 = undefined;
-                        const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ c.args[0].string_lit.val, c.args[1].string_lit.val }) catch c.args[0].string_lit.val;
-                        self.logMetaCombinatorProvenance("__comptimeproduct", .top_level_assign, input, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimepower") and c.args.len == 2 and c.args[0].* == .string_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimePowerHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__comptimepower", .top_level_assign, c.args[0].string_lit.val, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
+                if (self.meta_combinator_fold_depth == 0 and meta_codegen.canApplyMetaCombinatorHook(name)) {
+                    self.meta_combinator_fold_depth += 1;
+                    defer self.meta_combinator_fold_depth -= 1;
+                    var storage: [4]comptime_eval.Value = undefined;
+                    const n = self.buildMetaCombinatorValues(name, c.args, &storage) orelse break :blk null;
+                    break :blk self.runMetaCombinatorString(name, storage[0..n], .top_level_assign);
                 }
                 if (std.mem.eql(u8, name, "__comptimepermute") and c.args.len == 2 and c.args[0].* == .string_lit) {
                     const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
@@ -12716,46 +12602,6 @@ pub const CodeGen = struct {
                     const choose_k: usize = @intCast(c.args[1].int_lit.val);
                     const value = meta_codegen.comptimeChooseHook(self.meta_host(), c.args[0].string_lit.val, choose_k, callback, self.alloc) orelse break :blk null;
                     break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__derivepower") and c.args.len == 2 and c.args[0].* == .string_lit) {
-                    const derive_name = switch (c.args[1].*) {
-                        .name => |n| n.ident,
-                        .string_lit => |s| s.val,
-                        else => break :blk null,
-                    };
-                    const value = meta_codegen.derivePowerHook(self.meta_host(), c.args[0].string_lit.val, derive_name, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__derivepower", .top_level_assign, c.args[0].string_lit.val, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__deriveproduct") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .string_lit) {
-                    const derive_name = switch (c.args[2].*) {
-                        .name => |n| n.ident,
-                        .string_lit => |s| s.val,
-                        else => break :blk null,
-                    };
-                    const value = meta_codegen.deriveProductHook(self.meta_host(), c.args[0].string_lit.val, c.args[1].string_lit.val, derive_name, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        var ibuf: [96]u8 = undefined;
-                        const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ c.args[0].string_lit.val, c.args[1].string_lit.val }) catch c.args[0].string_lit.val;
-                        self.logMetaCombinatorProvenance("__deriveproduct", .top_level_assign, input, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
-                }
-                if (std.mem.eql(u8, name, "__comptimefixpoint")) {
-                    const fp = fixpointCallFromArgs(c.args) orelse break :blk null;
-                    const callback = comptime_eval.evalWithBindings(fp.callback, self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const initial = c.args[0].string_lit.val;
-                    const value = meta_codegen.comptimeFixpointHook(self.meta_host(), initial, callback, fp.max_iter, self.alloc) orelse break :blk null;
-                    if (value == .string) {
-                        self.logMetaCombinatorProvenance("__comptimefixpoint", .top_level_assign, initial, value.string);
-                        break :blk value.string;
-                    }
-                    break :blk null;
                 }
                 if (std.mem.eql(u8, name, "__derivechoose") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .int_lit) {
                     const derive_name = switch (c.args[2].*) {
@@ -12949,6 +12795,12 @@ pub const CodeGen = struct {
     }
 
     fn maybe_emit_meta_string_call(self: *CodeGen, name: []const u8, args: []const *ast.Expr) E!bool {
+        if (transform_engine.publicNameForInternal(name) != null and
+            !transform_engine.requireMetaDispatchBeforeHook(name))
+            return false;
+        if (meta_codegen.canApplyMetaCombinatorHook(name)) {
+            return try self.tryEmitMetaCombinatorString(name, args);
+        }
         if (std.mem.eql(u8, name, "__metaladder") and args.len == 0) {
             try self.emit_c_string_literal(meta_module.scalingLadderText());
             return true;
@@ -13125,32 +12977,6 @@ pub const CodeGen = struct {
             if (callback != .func) return false;
             const value = meta_codegen.weaveHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, callback, self.comptime_bindings(), self.comptime_eval_options(), self.alloc) orelse return false;
             if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__derivepower") and args.len == 2 and args[0].* == .string_lit) {
-            const derive_name = switch (args[1].*) {
-                .name => |n| n.ident,
-                .string_lit => |s| s.val,
-                else => return false,
-            };
-            const value = meta_codegen.derivePowerHook(self.meta_host(), args[0].string_lit.val, derive_name, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__derivepower", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__deriveproduct") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const derive_name = switch (args[2].*) {
-                .name => |n| n.ident,
-                .string_lit => |s| s.val,
-                else => return false,
-            };
-            const value = meta_codegen.deriveProductHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, derive_name, self.alloc) orelse return false;
-            if (value != .string) return false;
-            var ibuf: [96]u8 = undefined;
-            const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string_lit.val, args[1].string_lit.val }) catch args[0].string_lit.val;
-            self.logMetaCombinatorProvenance("__deriveproduct", self.metaCombinatorEmitSite(), input, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -13377,19 +13203,6 @@ pub const CodeGen = struct {
                 null;
             const value = meta_codegen.comptimeGenerateHook(self.meta_host(), spec, body, callback, self.alloc) orelse return false;
             if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.fixpoint: unbounded iterative combinator (callback before or after max_iter)
-        if (std.mem.eql(u8, name, "__comptimefixpoint")) {
-            const fp = fixpointCallFromArgs(args) orelse return false;
-            const callback = comptime_eval.evalWithBindings(fp.callback, self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const initial = args[0].string_lit.val;
-            const value = meta_codegen.comptimeFixpointHook(self.meta_host(), initial, callback, fp.max_iter, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__comptimefixpoint", self.metaCombinatorEmitSite(), initial, value.string);
             try self.emit_c_string_literal(value.string);
             return true;
         }
@@ -14356,6 +14169,152 @@ pub const CodeGen = struct {
         self.p("\"{s}\"", .{fallback});
     }
 
+    fn metaStringFromExpr(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
+        if (self.meta_combinator_fold_depth > 0) {
+            return switch (expr.*) {
+                .string_lit => |s| s.val,
+                .name => |n| blk: {
+                    const value = self.comptime_bindings().get(n.ident) orelse break :blk null;
+                    break :blk if (value == .string) value.string else null;
+                },
+                else => null,
+            };
+        }
+        return switch (expr.*) {
+            .string_lit => |s| s.val,
+            else => self.fold_meta_string_expr(expr),
+        };
+    }
+
+    fn metaStringFromExprOrFold(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
+        if (self.metaStringFromExpr(expr)) |s| return s;
+        const saved = self.meta_combinator_fold_depth;
+        self.meta_combinator_fold_depth = 0;
+        defer self.meta_combinator_fold_depth = saved;
+        return self.fold_meta_string_expr(expr);
+    }
+
+    fn deriveNameValueFromExpr(expr: *const ast.Expr) ?comptime_eval.Value {
+        return switch (expr.*) {
+            .name => |n| .{ .string = n.ident },
+            .string_lit => |s| .{ .string = s.val },
+            else => null,
+        };
+    }
+
+    fn buildMetaCombinatorValues(
+        self: *CodeGen,
+        internal: []const u8,
+        args: []const *ast.Expr,
+        storage: *[4]comptime_eval.Value,
+    ) ?usize {
+        const opts = self.comptime_eval_options();
+        const bindings = self.comptime_bindings();
+
+        if (std.mem.eql(u8, internal, "__comptimemap") and args.len == 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+            if (storage[1] != .func) return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__comptimeeach") and args.len == 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+            if (storage[1] != .func) return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__comptimematch") and args.len == 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+            if (storage[1] != .func) return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__comptimetabulate") and args.len == 2) {
+            storage[0] = switch (args[0].*) {
+                .int_lit => .{ .int = args[0].int_lit.val },
+                else => return null,
+            };
+            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+            if (storage[1] != .func) return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__comptimeinterpolate") and args.len == 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__comptimezip") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+            if (storage[2] != .func) return null;
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__comptimeproduct") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+            if (storage[2] != .func) return null;
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__comptimepower") and args.len == 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+            if (storage[1] != .func) return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__derivepower") and args.len == 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = deriveNameValueFromExpr(args[1]) orelse return null;
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__deriveproduct") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = deriveNameValueFromExpr(args[2]) orelse return null;
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__comptimefixpoint") and args.len == 3) {
+            storage[0] = switch (args[0].*) {
+                .string_lit => |s| .{ .string = s.val },
+                else => return null,
+            };
+            const fp = fixpointCallFromArgs(args) orelse return null;
+            storage[1] = .{ .int = @intCast(fp.max_iter) };
+            storage[2] = comptime_eval.evalWithBindings(fp.callback, bindings, opts) catch return null;
+            if (storage[2] != .func) return null;
+            return 3;
+        }
+        return null;
+    }
+
+    fn runMetaCombinatorString(
+        self: *CodeGen,
+        internal: []const u8,
+        values: []const comptime_eval.Value,
+        site: transform_engine.SiteKind,
+    ) ?[]const u8 {
+        if (transform_engine.publicNameForInternal(internal) != null and
+            !transform_engine.requireMetaDispatchBeforeHook(internal))
+            return null;
+        const value = meta_codegen.applyMetaCombinatorHook(self.meta_host(), internal, values, self.alloc) orelse return null;
+        if (value != .string) return null;
+        var ibuf: [128]u8 = undefined;
+        const input = meta_codegen.metaCombinatorProvenanceInput(internal, values, &ibuf) orelse "";
+        transform_engine.dispatchMetaCombinator(self.alloc, internal, site, input, value.string);
+        return value.string;
+    }
+
+    fn tryEmitMetaCombinatorString(self: *CodeGen, internal: []const u8, args: []const *ast.Expr) E!bool {
+        self.meta_combinator_fold_depth += 1;
+        defer self.meta_combinator_fold_depth -= 1;
+        var storage: [4]comptime_eval.Value = undefined;
+        const n = self.buildMetaCombinatorValues(internal, args, &storage) orelse return false;
+        const folded = self.runMetaCombinatorString(internal, storage[0..n], self.metaCombinatorEmitSite()) orelse return false;
+        try self.emit_c_string_literal(folded);
+        return true;
+    }
+
     fn logMetaCombinatorProvenance(
         self: *CodeGen,
         internal: []const u8,
@@ -14363,8 +14322,7 @@ pub const CodeGen = struct {
         input: []const u8,
         output: []const u8,
     ) void {
-        _ = transform_engine.gateMetaDispatch(internal);
-        transform_engine.logInternalTransform(self.alloc, internal, site, input, output);
+        transform_engine.dispatchMetaCombinator(self.alloc, internal, site, input, output);
     }
 
     fn fixpointCallFromArgs(args: []const *ast.Expr) ?struct {
