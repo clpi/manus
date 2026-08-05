@@ -1,0 +1,416 @@
+-- ward WASM interpreter — PURE DUO, zero @c.emit/@c.include.
+--
+-- Opcode constants below are generated from the Pass 12 M2 descriptor chain
+-- (src/wasm_semantic.zig -> `duo wasm-tables emit` -> lib/std/wasm/ward_mvp_opcodes.duo)
+-- by ward/scripts_gen_interp.py, so the canonical table stays the single source
+-- of truth. They are inlined rather than `req`d because requiring a std module
+-- currently fails to compile (BUG C: export table references DCE'd symbols).
+--
+-- Codegen constraints (filed 2026-08-05, src/codegen.zig locked):
+--   BUG A  a branch may not end on a void call -> explicit non-void tail.
+--   BUG B  pointer locals must not cross a function boundary -> one function.
+--   BUG C  no `req "std.mem"`; mem.* is intercepted by name.
+--   BUG D  named consts are illegal as `match` patterns -> if/elseif, which
+--          compares properly and lets the descriptor names be used directly.
+--   BUG E  mem.alloc local + while + `match` is a compiler panic -> if/elseif.
+--   BUG G  variable shift >= 32 is 32-bit -> no LEB sign-extension (masking
+--          the raw accumulated bits to 32 already yields the correct i32).
+--
+-- Shape: ONE hoisted LEB128 decode (was 6 copies), binops share operand
+-- fetch/stack adjust (was 15 near-identical blocks), hot opcodes tested first.
+
+const OP_loop = 3
+const OP_end_ = 11
+const OP_br = 12
+const OP_br_if = 13
+const OP_return_ = 15
+const OP_local_get = 32
+const OP_local_set = 33
+const OP_local_tee = 34
+const OP_i32_const = 65
+const OP_i32_eqz = 69
+const OP_i32_ne = 71
+const OP_i32_lt_u = 73
+const OP_i32_add = 106
+const OP_i32_sub = 107
+const OP_i32_mul = 108
+const OP_i32_and = 113
+const OP_i32_or = 114
+const OP_i32_xor = 115
+const OP_i32_shl = 116
+const OP_i32_shr_u = 118
+const M32 = 0xFFFFFFFF
+
+
+-- ── Minimal WASM module decoder (pure Duo) ───────────────────────────────
+-- Operates on the module image as a Lua string and returns byte offsets, so
+-- no pointer ever crosses a function boundary (BUG B).
+
+-- unsigned LEB128 at 1-based offset `i`. Two scanning helpers instead of an
+-- out-parameter: mem.* cannot take an `any`-typed buffer param, and decoding
+-- is one-time (not on the hot path), so scanning twice costs nothing.
+uleb_val(s: any, i: i64): i64
+  v: i64 = 0
+  sh: i64 = 0
+  p: i64 = i
+  cont: i64 = 1
+  while cont == 1
+    b: i64 = string.byte(s, p)
+    p = p + 1
+    v = v | ((b & 0x7F) << sh)
+    sh = sh + 7
+    if b < 0x80
+      cont = 0
+    end
+  end
+  v
+end
+
+uleb_end(s: any, i: i64): i64
+  p: i64 = i
+  cont: i64 = 1
+  while cont == 1
+    b: i64 = string.byte(s, p)
+    p = p + 1
+    if b < 0x80
+      cont = 0
+    end
+  end
+  p
+end
+
+-- Locate the body of the function exported as `run` (falls back to the
+-- largest body). Returns offset packed as off * 65536 + len.
+find_run_body(s: any, n: i64): i64
+  i: i64 = 9                       -- skip 8-byte header (1-based)
+  code_off: i64 = 0
+  code_len: i64 = 0
+  exp_off: i64 = 0
+  nimp: i64 = 0
+  while i <= n
+    sid: i64 = string.byte(s, i)
+    i = i + 1
+    sz: i64 = uleb_val(s, i)
+
+    i = uleb_end(s, i)
+    if sid == 10
+      code_off = i
+      code_len = sz
+    elseif sid == 7
+      exp_off = i
+    elseif sid == 2
+      cnt: i64 = uleb_val(s, i)
+      j: i64 = uleb_end(s, i)
+      k: i64 = 0
+      while k < cnt
+        l1: i64 = uleb_val(s, j)
+
+        j = uleb_end(s, j) + l1
+        l2: i64 = uleb_val(s, j)
+
+        j = uleb_end(s, j) + l2
+        kind: i64 = string.byte(s, j)
+        j = j + 1
+        if kind == 0
+          nimp = nimp + 1
+          _d: i64 = uleb_val(s, j)
+
+          j = uleb_end(s, j)
+        elseif kind == 1
+          j = j + 1
+          fl: i64 = string.byte(s, j)
+          j = j + 1
+          _a: i64 = uleb_val(s, j)
+
+          j = uleb_end(s, j)
+          if fl == 1
+            _b: i64 = uleb_val(s, j)
+
+            j = uleb_end(s, j)
+          end
+        else
+          j = j + 2
+        end
+        k = k + 1
+      end
+    end
+    i = i + sz
+  end
+
+  -- export section: find "run"
+  target: i64 = -1
+  if exp_off > 0
+    cnt2: i64 = uleb_val(s, exp_off)
+    q: i64 = uleb_end(s, exp_off)
+    e: i64 = 0
+    while e < cnt2
+      ln: i64 = uleb_val(s, q)
+
+      q = uleb_end(s, q)
+      is_run: i64 = 0
+      if ln == 3
+        if string.byte(s, q) == 114 and string.byte(s, q + 1) == 117 and string.byte(s, q + 2) == 110
+          is_run = 1
+        end
+      end
+      q = q + ln
+      kind2: i64 = string.byte(s, q)
+      q = q + 1
+      idx2: i64 = uleb_val(s, q)
+
+      q = uleb_end(s, q)
+      if is_run == 1 and kind2 == 0
+        target = idx2 - nimp
+      end
+      e = e + 1
+    end
+  end
+
+  -- code section: walk to the target body, skip its locals prefix
+  best_off: i64 = 0
+  best_len: i64 = 0
+  nfn: i64 = uleb_val(s, code_off)
+  p2: i64 = uleb_end(s, code_off)
+  fi: i64 = 0
+  while fi < nfn
+    bsz: i64 = uleb_val(s, p2)
+    bstart: i64 = uleb_end(s, p2)
+    take: i64 = 0
+    if target >= 0
+      if fi == target
+        take = 1
+      end
+    elseif bsz > best_len
+      take = 1
+    end
+    if take == 1
+      nl: i64 = uleb_val(s, bstart)
+      r2: i64 = uleb_end(s, bstart)
+      g: i64 = 0
+      while g < nl
+        _c: i64 = uleb_val(s, r2)
+
+        r2 = uleb_end(s, r2) + 1
+        g = g + 1
+      end
+      best_off = r2 - 1
+      best_len = bsz - (r2 - bstart)
+    end
+    p2 = bstart + bsz
+    fi = fi + 1
+  end
+  best_off * 65536 + best_len
+end
+
+run_body(body: any, body_off: i64, body_len: i64, guard: i64): i64
+  code = mem.alloc(body_len + 16)
+  st   = mem.alloc(4096 * 8)
+  lo   = mem.alloc(64 * 8)
+  ltgt = mem.alloc(64 * 8)
+  himm = mem.alloc(256)
+  mem.zero(code, body_len + 16)
+  mem.zero(st, 4096 * 8)
+  mem.zero(lo, 64 * 8)
+  mem.zero(ltgt, 64 * 8)
+  mem.zero(himm, 256)
+  mem.write_byte(himm, 33, 1)
+  mem.write_byte(himm, 12, 1)
+  mem.write_byte(himm, 13, 1)
+
+  ci: i64 = 0
+  while ci < body_len
+    mem.write_byte(code, ci, string.byte(body, body_off + ci + 1))
+    ci = ci + 1
+  end
+
+  sp: i64 = 0
+  pc: i64 = 0
+  lsp: i64 = 0
+
+  while pc < body_len
+    op: i64 = mem.read_byte(code, pc)
+    pc = pc + 1
+
+    if op == OP_i32_const
+      sh: i64 = 0
+      cont: i64 = 1
+      imm: i64 = 0
+      while cont == 1
+        ib: i64 = mem.read_byte(code, pc)
+        pc = pc + 1
+        imm = imm | ((ib & 0x7F) << sh)
+        sh = sh + 7
+        if ib < 0x80
+          cont = 0
+        end
+      end
+      imm = imm & M32
+      sp = sp + 1
+      mem.write_i64(st, sp * 8, imm)
+      sp = sp
+
+    elseif op == OP_local_get
+      sh: i64 = 0
+      cont: i64 = 1
+      imm: i64 = 0
+      while cont == 1
+        ib: i64 = mem.read_byte(code, pc)
+        pc = pc + 1
+        imm = imm | ((ib & 0x7F) << sh)
+        sh = sh + 7
+        if ib < 0x80
+          cont = 0
+        end
+      end
+      imm = imm & M32
+      sp = sp + 1
+      mem.write_i64(st, sp * 8, mem.read_i64(lo, imm * 8))
+      sp = sp
+
+    elseif op >= OP_i32_add and op <= OP_i32_shr_u
+      -- i32 binary ALU: operand fetch and stack adjust shared by all arms.
+      b: i64 = mem.read_i64(st, sp * 8)
+      a: i64 = mem.read_i64(st, (sp - 1) * 8)
+      sp = sp - 1
+      r: i64 = 0
+      if op == OP_i32_mul
+        -- split multiply: a*b with 32-bit operands overflows signed i64
+        r = (((a & 0xFFFF) * b) + (((((a >> 16) & 0xFFFF) * b) & 0xFFFF) << 16)) & M32
+      elseif op == OP_i32_xor
+        r = a ~ b
+      elseif op == OP_i32_or
+        r = a | b
+      elseif op == OP_i32_shr_u
+        r = (a & M32) >> (b & 31)
+      elseif op == OP_i32_add
+        r = (a + b) & M32
+      elseif op == OP_i32_sub
+        r = (a - b) & M32
+      elseif op == OP_i32_and
+        r = a & b
+      elseif op == OP_i32_shl
+        r = ((a & (M32 >> (b & 31))) << (b & 31)) & M32
+      end
+      mem.write_i64(st, sp * 8, r)
+      sp = sp
+
+    elseif op == OP_local_tee
+      sh: i64 = 0
+      cont: i64 = 1
+      imm: i64 = 0
+      while cont == 1
+        ib: i64 = mem.read_byte(code, pc)
+        pc = pc + 1
+        imm = imm | ((ib & 0x7F) << sh)
+        sh = sh + 7
+        if ib < 0x80
+          cont = 0
+        end
+      end
+      imm = imm & M32
+      mem.write_i64(lo, imm * 8, mem.read_i64(st, sp * 8))
+      sp = sp
+
+    else
+      -- Cold path: one table-guarded decode shared by every remaining opcode.
+      imm2: i64 = 0
+      if mem.read_byte(himm, op) ~= 0
+        sh2: i64 = 0
+        c2: i64 = 1
+        while c2 == 1
+          jb: i64 = mem.read_byte(code, pc)
+          pc = pc + 1
+          imm2 = imm2 | ((jb & 0x7F) << sh2)
+          sh2 = sh2 + 7
+          if jb < 0x80
+            c2 = 0
+          end
+        end
+        imm2 = imm2 & M32
+      end
+
+      if op == OP_br_if
+        cv: i64 = mem.read_i64(st, sp * 8)
+        sp = sp - 1
+        if cv ~= 0
+          pc = mem.read_i64(ltgt, (lsp - 1 - imm2) * 8)
+          lsp = lsp - imm2
+        end
+      elseif op == OP_local_set
+        mem.write_i64(lo, imm2 * 8, mem.read_i64(st, sp * 8))
+        sp = sp - 1
+      elseif op >= OP_i32_eqz and op <= OP_i32_lt_u
+        if op == OP_i32_eqz
+          av: i64 = mem.read_i64(st, sp * 8)
+          rv: i64 = 0
+          if (av & M32) == 0
+            rv = 1
+          end
+          mem.write_i64(st, sp * 8, rv)
+          sp = sp
+        else
+          b2: i64 = mem.read_i64(st, sp * 8)
+          a2: i64 = mem.read_i64(st, (sp - 1) * 8)
+          sp = sp - 1
+          r2: i64 = 0
+          if op == OP_i32_ne
+            if a2 ~= b2
+              r2 = 1
+            end
+          elseif op == OP_i32_lt_u
+            if (a2 & M32) < (b2 & M32)
+              r2 = 1
+            end
+          end
+          mem.write_i64(st, sp * 8, r2)
+          sp = sp
+        end
+      elseif op == OP_loop
+        pc = pc + 1
+        mem.write_i64(ltgt, lsp * 8, pc)
+        lsp = lsp + 1
+      elseif op == OP_end_
+        if lsp > 0
+          lsp = lsp - 1
+        end
+      elseif op == OP_br
+        pc = mem.read_i64(ltgt, (lsp - 1 - imm2) * 8)
+        lsp = lsp - imm2
+      elseif op == OP_return_
+        pc = body_len
+      else
+        sp = sp
+      end
+    end
+  end
+
+  last: i64 = 0
+  if sp > 0
+    last = mem.read_i64(st, sp * 8) & M32
+  end
+  mem.free(code)
+  mem.free(st)
+  mem.free(lo)
+  mem.free(ltgt)
+  mem.free(himm)
+  last
+end
+
+-- Entry point: top-level statements run directly (Lua/Python style);
+-- no `main` wrapper and no `fun` keyword anywhere in this file.
+path = arg and arg[1] or "/tmp/hash.wasm"
+f = io.open(path, "rb")
+if not f
+  print("ward: cannot open " .. path)
+  return
+end
+bytes = f:read("*a")
+f:close()
+packed: i64 = find_run_body(bytes, #bytes)
+off: i64 = packed // 65536
+blen: i64 = packed - off * 65536
+t0 = os.clock()
+r: i64 = run_body(bytes, off, blen, 0)
+t1 = os.clock()
+print("result=" .. tostring(r))
+print("seconds=" .. tostring(t1 - t0))

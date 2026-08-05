@@ -1,0 +1,76 @@
+== duo build ==
+target default (run)
+  src src/main.duo
+  target default
+  source src/main.duo
+  output zig-out/bin/main
+  report pretty
+  > compile  src/main.duo
+/Users/clp/x/duo/lib/std/fmt.duo:160:27: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+LAST ASSIGN: i=0, values.len=1, tt=.{ .i64 = void }, vt=.{ .i64 = void }, as.values[i].*=.{ .binop = .{ .loc = .{ .file = { ... }, .line = 37, .col = 9 }, .op = .sub, .lhs = .{ .name = .{ ... } }, .rhs = .{ .int_lit = .{ ... } } } }
+LAST ASSIGN: i=0, values.len=1, tt=.{ .i64 = void }, vt=.{ .i64 = void }, as.values[i].*=.{ .binop = .{ .loc = .{ .file = { ... }, .line = 57, .col = 9 }, .op = .sub, .lhs = .{ .name = .{ ... } }, .rhs = .{ .int_lit = .{ ... } } } }
+LAST ASSIGN: i=0, values.len=1, tt=.{ .i64 = void }, vt=.{ .any = void }, as.values[i].*=.{ .name = .{ .loc = .{ .file = { ... }, .line = 172, .col = 16 }, .ident = { 112, 111, 115 } } }
+/Users/clp/x/duo/lib/std/table.duo:11:17: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/Users/clp/x/duo/lib/std/table.duo:20:17: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/Users/clp/x/duo/lib/std/table.duo:29:17: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/Users/clp/x/duo/lib/std/table.duo:38:21: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/Users/clp/x/duo/lib/std/table.duo:118:17: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/Users/clp/x/duo/lib/std/table.duo:271:17: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/Users/clp/x/duo/lib/std/table.duo:302:17: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+./src/wasm/runtime.duo:330:17: warning: 'ipairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+./src/wasm/runtime.duo:346:17: warning: 'ipairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+./src/wasm/wasi.duo:187:18: warning: 'pairs' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'
+  = detail: Duo accepted the code, but this construct may be fragile or deprecated
+  = help: consider updating this location before relying on it long-term
+/tmp/duo_main.c:16838:89: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16838 |             int64_t s0 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt >> 7)) | ((wt << 25))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt >> 18)) | ((wt << 14))))), (int64_t)(4294967296)))))) ^ ((wt >> 3))));
+       |                                                                                      ~~ ^  ~
+/tmp/duo_main.c:16838:103: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16838 |             int64_t s0 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt >> 7)) | ((wt << 25))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt >> 18)) | ((wt << 14))))), (int64_t)(4294967296)))))) ^ ((wt >> 3))));
+       |                                                                                                    ~~ ^  ~~
+/tmp/duo_main.c:16838:181: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16838 |             int64_t s0 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt >> 7)) | ((wt << 25))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt >> 18)) | ((wt << 14))))), (int64_t)(4294967296)))))) ^ ((wt >> 3))));
+       |                                                                                                                                                                                  ~~ ^  ~~
+/tmp/duo_main.c:16838:196: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16838 |             int64_t s0 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt >> 7)) | ((wt << 25))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt >> 18)) | ((wt << 14))))), (int64_t)(4294967296)))))) ^ ((wt >> 3))));
+       |                                                                                                                                                                                                 ~~ ^  ~~
+/tmp/duo_main.c:16838:242: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16838 |             int64_t s0 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt >> 7)) | ((wt << 25))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt >> 18)) | ((wt << 14))))), (int64_t)(4294967296)))))) ^ ((wt >> 3))));
+       |                                                                                                                                                                                                                                               ~~ ^  ~
+/tmp/duo_main.c:16840:90: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16840 |             int64_t s1 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 17)) | ((wt2 << 15))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 19)) | ((wt2 << 13))))), (int64_t)(4294967296)))))) ^ ((wt2 >> 10))));
+       |                                                                                      ~~~ ^  ~~
+/tmp/duo_main.c:16840:106: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16840 |             int64_t s1 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 17)) | ((wt2 << 15))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 19)) | ((wt2 << 13))))), (int64_t)(4294967296)))))) ^ ((wt2 >> 10))));
+       |                                                                                                      ~~~ ^  ~~
+/tmp/duo_main.c:16840:185: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16840 |             int64_t s1 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 17)) | ((wt2 << 15))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 19)) | ((wt2 << 13))))), (int64_t)(4294967296)))))) ^ ((wt2 >> 10))));
+       |                                                                                                                                                                                     ~~~ ^  ~~
+/tmp/duo_main.c:16840:201: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16840 |             int64_t s1 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 17)) | ((wt2 << 15))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 19)) | ((wt2 << 13))))), (int64_t)(4294967296)))))) ^ ((wt2 >> 10))));
+       |                                                                                                                                                                                                     ~~~ ^  ~~
+/tmp/duo_main.c:16840:248: error: invalid operands to binary expression ('lua_Value' and 'int')
+ 16840 |             int64_t s1 = ((int64_t)((((int64_t)((lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 17)) | ((wt2 << 15))))), (int64_t)(4294967296))) ^ (lua_imod_i64((int64_t)(((int64_t)(((wt2 >> 19)) | ((wt2 << 13))))), (int64_t)(4294967296)))))) ^ ((wt2 >> 10))));
+       |                                                                                                                                                                                                                                                    ~~~ ^  ~~
+10 errors generated.
+error: C compiler failed (exit 1)

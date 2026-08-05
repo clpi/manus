@@ -1,0 +1,10 @@
+-- ward AOT compiler (stubbed for init)
+
+M = {}
+
+fun compile(mod: any, path: str): str
+  ""
+end
+
+M.compile = compile
+M

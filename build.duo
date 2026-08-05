@@ -1,0 +1,23 @@
+-- ward: AI-forward WebAssembly runtime in Duo
+-- Reimplements ~/x/wart (~1.3M lines Zig) in <10K lines of Duo
+
+name = "ward"
+version = "0.1.0"
+description = "AI-native WASM runtime — inference at the edge, hardware in your hands"
+
+entry = "src/main.duo"
+target = "native"
+
+-- Build targets
+targets = {
+  default = { entry = "src/main.duo", optimize = "O3" },
+  wasm    = { entry = "src/main.duo", target = "wasm32-wasi" },
+  lib     = { entry = "src/lib.duo",  mode = "shared" },
+  test    = { entry = "test/main.duo" },
+  bench   = { entry = "test/bench.duo" },
+}
+
+-- C dependencies (linked via @c.include / @ffi)
+deps = {
+  -- None needed — Duo's codegen + stdlib covers what Zig stdlib provided
+}

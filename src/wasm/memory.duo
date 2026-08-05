@@ -1,0 +1,82 @@
+-- ward/src/wasm/memory.duo — Linear memory (mmap-backed)
+const PAGE_SIZE = 65536
+
+fun mem_new(pages: i64)
+    size: i64 = pages * PAGE_SIZE
+    ptr = __emit("mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0)")
+    return { ptr = ptr, pages = pages, size = size }
+end
+
+fun mem_grow(mem, pages: i64): i64
+    old: i64 = mem.pages
+    mem.size = (old + pages) * PAGE_SIZE
+    __emit("mem.ptr = mremap(mem.ptr, old * 65536, mem.size, MREMAP_MAYMOVE)")
+    mem.pages = old + pages
+    return old
+end
+
+--- @inline
+fun mem_load_i32(mem, addr: i64): i64
+    return __emit("(int64_t)(*(int32_t*)((uint8_t*)mem.as.tval + addr))")
+end
+--- @inline
+fun mem_store_i32(mem, addr: i64, val: i64)
+    __emit("*(int32_t*)((uint8_t*)mem.as.tval + addr) = (int32_t)val")
+end
+--- @inline
+fun mem_load_i64(mem, addr: i64): i64
+    return __emit("*(int64_t*)((uint8_t*)mem.as.tval + addr)")
+end
+--- @inline
+fun mem_store_i64(mem, addr: i64, val: i64)
+    __emit("*(int64_t*)((uint8_t*)mem.as.tval + addr) = val")
+end
+--- @inline
+fun mem_load_f32(mem, addr: i64): f64
+    return __emit("(double)(*(float*)((uint8_t*)mem.as.tval + addr))")
+end
+--- @inline
+fun mem_load_f64(mem, addr: i64): f64
+    return __emit("*(double*)((uint8_t*)mem.as.tval + addr)")
+end
+--- @inline
+fun mem_store_f32(mem, addr: i64, val: f64)
+    __emit("*(float*)((uint8_t*)mem.as.tval + addr) = (float)val")
+end
+--- @inline
+fun mem_store_f64(mem, addr: i64, val: f64)
+    __emit("*(double*)((uint8_t*)mem.as.tval + addr) = val")
+end
+--- @inline
+fun mem_load8_u(mem, addr: i64): i64
+    return __emit("(int64_t)(*(uint8_t*)((uint8_t*)mem.as.tval + addr))")
+end
+--- @inline
+fun mem_load8_s(mem, addr: i64): i64
+    return __emit("(int64_t)(*(int8_t*)((uint8_t*)mem.as.tval + addr))")
+end
+--- @inline
+fun mem_load16_u(mem, addr: i64): i64
+    return __emit("(int64_t)(*(uint16_t*)((uint8_t*)mem.as.tval + addr))")
+end
+--- @inline
+fun mem_load16_s(mem, addr: i64): i64
+    return __emit("(int64_t)(*(int16_t*)((uint8_t*)mem.as.tval + addr))")
+end
+
+M = {}
+M.mem_new = mem_new
+M.mem_grow = mem_grow
+M.mem_load_i32 = mem_load_i32
+M.mem_store_i32 = mem_store_i32
+M.mem_load_i64 = mem_load_i64
+M.mem_store_i64 = mem_store_i64
+M.mem_load_f32 = mem_load_f32
+M.mem_load_f64 = mem_load_f64
+M.mem_store_f32 = mem_store_f32
+M.mem_store_f64 = mem_store_f64
+M.mem_load8_u = mem_load8_u
+M.mem_load8_s = mem_load8_s
+M.mem_load16_u = mem_load16_u
+M.mem_load16_s = mem_load16_s
+M

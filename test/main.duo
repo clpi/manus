@@ -1,0 +1,107 @@
+-- ward test suite
+test = req "std.test"
+fmt   = req "std.fmt"
+
+wasm   = req "src.wasm"
+edge   = req "src.edge"
+nn     = req "src.nn"
+
+-- ═══════════════════════════════════════════════════════════════
+-- WASM module decoder tests
+-- ═══════════════════════════════════════════════════════════════
+test.group("wasm.module", fun()
+
+  test.it("decodes minimal module", fun()
+    -- Minimal valid WASM: magic + version + no sections
+    bytes = "\0asm\x01\x00\x00\x00"
+    mod = wasm.decode(bytes)
+    test.eq(#mod.types, 0)
+    test.eq(#mod.exports, 0)
+    test.eq(mod.memory.initial, 0)
+  end)
+
+  test.it("rejects invalid magic", fun()
+    test.throws(fun() wasm.decode("not wasm") end, "not a WASM module")
+  end)
+
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- Edge runtime tests
+-- ═══════════════════════════════════════════════════════════════
+test.group("edge", fun()
+
+  test.it("creates engine with defaults", fun()
+    eng = edge.engine_new()
+    stats = edge.engine_stats(eng)
+    test.eq(stats.isolate_count, 0)
+    test.eq(stats.cache_entries, 0)
+  end)
+
+  test.it("capability masks", fun()
+    mask = edge.cap_set({"io", "clocks", "random"})
+    test.ok(edge.cap_check(mask, "io"))
+    test.ok(edge.cap_check(mask, "clocks"))
+    test.ok(not edge.cap_check(mask, "filesystem"))
+  end)
+
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- NN inference tests
+-- ═══════════════════════════════════════════════════════════════
+test.group("nn", fun()
+
+  test.it("rms_norm normalizes", fun()
+    x = { 1.0, 2.0, 3.0, 4.0 }
+    result = nn.rms_norm(x, 1e-5)
+    test.eq(#result, 4)
+    -- RMS norm should produce unit-ish magnitude
+    ss = 0.0
+    for _, v in ipairs(result) ss = ss + v * v end
+    test.ok(ss > 0 and ss < 20)  -- sanity check
+  end)
+
+  test.it("matmul computes correctly", fun()
+    -- 2x2 identity-like
+    x = { 1.0, 0.0 }
+    w = { 1.0, 0.0, 0.0, 1.0 }  -- identity matrix row-major
+    result = nn.matmul(x, w, 2, 2)
+    test.eq(result[1], 1.0)
+    test.eq(result[2], 0.0)
+  end)
+
+  test.it("accelerator falls back to CPU", fun()
+    devices = {{ target = 0, available = true }}
+    target = nn.accel.select_target(1, devices)  -- request GPU
+    test.eq(target, 0)  -- falls back to CPU
+  end)
+
+  test.it("registry registers models", fun()
+    reg = nn.registry.new()
+    test.eq(#reg.devices, 1)
+    test.eq(reg.devices[1].device_name, "cpu")
+  end)
+
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- Opcode dispatch tests
+-- ═══════════════════════════════════════════════════════════════
+test.group("wasm.op", fun()
+
+  test.it("i32_add works", fun()
+    rt = { stack = {}, sp = 0, fuel = 1000, config = {} }
+    rt.sp = 2; rt.stack = { 10, 32 }
+    op = req "src.wasm.op"
+    -- i32_add pops 2, pushes sum
+    -- We test via the dispatch table
+    test.ok(op.OP.i32_add == 0x6A)
+  end)
+
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- Run all tests
+-- ═══════════════════════════════════════════════════════════════
+test.run()

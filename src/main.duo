@@ -1,0 +1,134 @@
+-- ward: AI-native WASM runtime CLI
+-- Replaces wart's src/main.zig + src/cmd.zig + src/cmd/*.zig
+
+@c.include("sys/mman.h")
+@c.include("stdlib.h")
+@c.include("string.h")
+@c.include("sys/time.h")
+@c.include("time.h")
+
+global ward_os = req "std.os"
+
+-- NOTE: the duo compiler's transitive `req` discovery (emit_required_modules,
+-- src/codegen.zig) silently drops modules that sit 3+ hops deep in the
+-- require graph (e.g. main -> src.cli -> src.wasm -> src.wasm.runtime ->
+-- src.wasm.module -> std.bytes is 5 hops) — they never get statically
+-- embedded, and the CWD-relative dynamic-load fallback can't find them
+-- either, so the program aborts with "error: module not found" at runtime.
+-- Filed: .agents/AGENT_COORDINATION.md 2026-08-04T23:50 (codegen.zig locked
+-- by antigravity, not self-fixed). Flattening every module ward transitively
+-- needs into a direct top-level require here keeps each one within the
+-- depth the discovery pass handles correctly. Remove once the compiler bug
+-- is fixed upstream.
+req "std.bytes"
+req "std.mem"
+req "std.string"
+req "std.table"
+req "std.time"
+req "std.fmt"
+req "std.argparse"
+req "std.crypto"
+req "std.crypto.rand"
+req "src.wasm"
+req "src.wasm.module"
+req "src.wasm.op"
+req "src.wasm.runtime"
+req "src.wasm.wasi"
+req "src.wasm.aot"
+req "src.wasm.jit"
+req "src.cli"
+req "src.edge"
+req "src.edge.init"
+
+-- ═══════════════════════════════════════════════════════════════
+-- CLI: ward run | bench | compile | deploy | shell | inspect
+-- ═══════════════════════════════════════════════════════════════
+
+global commands = {}
+
+fun ward_run(opts)
+  cli_mod = req "src.cli"
+  cli_mod.run(opts)
+end
+
+fun ward_bench(opts)
+  cli_mod = req "src.cli"
+  cli_mod.bench(opts)
+end
+
+fun ward_compile(opts)
+  cli_mod = req "src.cli"
+  cli_mod.compile(opts)
+end
+
+fun ward_deploy(opts)
+  cli_mod = req "src.cli"
+  cli_mod.deploy(opts)
+end
+
+fun ward_shell(opts)
+  cli_mod = req "src.cli"
+  cli_mod.shell(opts)
+end
+
+fun ward_inspect(opts)
+  cli_mod = req "src.cli"
+  cli_mod.inspect(opts)
+end
+
+fun ward_init(opts)
+  cli_mod = req "src.cli"
+  cli_mod.init(opts)
+end
+
+fun ward_version(opts)
+  fmt_mod = req "std.fmt"
+  fmt_mod.println("ward 0.1.0")
+end
+
+commands["run"] = ward_run
+commands["bench"] = ward_bench
+commands["compile"] = ward_compile
+commands["deploy"] = ward_deploy
+commands["shell"] = ward_shell
+commands["inspect"] = ward_inspect
+commands["init"] = ward_init
+commands["version"] = ward_version
+
+fun ward_entry(args)
+  argparse_mod = req "std.argparse"
+  fmt_mod = req "std.fmt"
+
+  parser = argparse_mod.new("ward", "AI-native WASM runtime")
+  argparse_mod.add_positional(parser, "command", "Command to run", {})
+  argparse_mod.add_positional(parser, "file", "WASM/WAT file", { required = false })
+  argparse_mod.add_flag(parser, "-j", "--jit", "Enable JIT compilation")
+  argparse_mod.add_flag(parser, "-a", "--aot", "AOT compile")
+  argparse_mod.add_flag(parser, "-d", "--debug", "Debug output")
+  argparse_mod.add_option(parser, "-f", "--function", "Function to call")
+  argparse_mod.add_option(parser, "-o", "--output", "Output path")
+  argparse_mod.add_option(parser, nil, "--target", "Compilation target")
+
+  opts = argparse_mod.parse_with(parser, args)
+
+  cmd = opts.command or "help"
+  if cmd and string.sub(cmd, -5) == ".wasm" then
+    opts.file = cmd
+    cmd = "run"
+  end
+  if cmd and string.sub(cmd, -4) == ".wat" then
+    opts.file = cmd
+    cmd = "run"
+  end
+
+  handler = commands[cmd]
+  if handler then
+    handler(opts)
+  else
+    fmt_mod.println("ward: unknown command {}", cmd)
+    fmt_mod.println("Commands: run, bench, compile, deploy, shell, inspect, init, version")
+    ward_os.exit(1)
+  end
+end
+
+ward_entry(ward_os.args())

@@ -1,0 +1,1171 @@
+-- ward WASM runtime interpreter
+-- Raw C for memory, stack, and dispatch to avoid Lua boxing.
+
+global mem_mod = req "std.mem"
+
+global module = req "src.wasm.module"
+global wasi   = req "src.wasm.wasi"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Runtime state
+-- ═══════════════════════════════════════════════════════════════
+const PAGE_SIZE = 65536  -- 64KB WASM pages
+const STACK_SLOTS = 65536
+
+fun runtime_new(config: any): any
+  rt = {
+    memory = nil,
+    pages = 0,
+    max_pages = 256,
+    globals = {},
+    stack = @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(src_wasm_runtime__STACK_SLOTS, sizeof(lua_Value)); _v; })]]),
+    sp = 0,
+    call_stack = {},
+    mod = nil,
+    imports = {},
+    exports_map = {},
+    config = config or {},
+    fuel = config and config.fuel or 0xFFFFFFFF,
+    snapshot = nil,
+  }
+  rt
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Memory operations
+-- ═══════════════════════════════════════════════════════════════
+fun mem_init(rt, initial_pages: i64)
+  rt.pages = initial_pages
+  rt.memory = mem_mod.alloc(initial_pages * PAGE_SIZE)
+  mem_mod.zero(rt.memory, initial_pages * PAGE_SIZE)
+end
+
+fun mem_grow(rt, delta: i64): i64
+  old_pages = rt.pages
+  new_pages = old_pages + delta
+  if new_pages > rt.max_pages return -1 end
+
+  new_mem = mem_mod.alloc(new_pages * PAGE_SIZE)
+  mem_mod.copy(new_mem, rt.memory, old_pages * PAGE_SIZE)
+  mem_mod.zero(mem_mod.offset(new_mem, old_pages * PAGE_SIZE), delta * PAGE_SIZE)
+  mem_mod.free(rt.memory)
+  rt.memory = new_mem
+  rt.pages = new_pages
+  old_pages
+end
+
+fun mem_load_i32(rt, addr: i64): i64
+  return @c.emit([[({ lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); int32_t _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(int32_t)); (int64_t)_v; })]])
+end
+
+fun mem_store_i32(rt, addr: i64, val: i64)
+  @c.emit([[({ int32_t _v = (int32_t)val; lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(int32_t)); })]])
+end
+
+fun mem_load_i64(rt, addr: i64): i64
+  return @c.emit([[({ lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); int64_t _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(int64_t)); _v; })]])
+end
+
+fun mem_store_i64(rt, addr: i64, val: i64)
+  @c.emit([[({ int64_t _v = val; lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(int64_t)); })]])
+end
+
+fun mem_load_f32(rt, addr: i64): float
+  return @c.emit([[({ lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); float _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(float)); (double)_v; })]])
+end
+
+fun mem_store_f32(rt, addr: i64, val: float)
+  @c.emit([[({ float _v = (float)val; lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(float)); })]])
+end
+
+fun mem_load_f64(rt, addr: i64): float
+  return @c.emit([[({ lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); double _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(double)); _v; })]])
+end
+
+fun mem_store_f64(rt, addr: i64, val: float)
+  @c.emit([[({ double _v = val; lua_Value _mem = lua_table_get_str_lit(rt, "memory", 2229924270u, 6); memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(double)); })]])
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Stack operations
+-- ═══════════════════════════════════════════════════════════════
+fun push(rt, val)
+  @c.emit([[({ lua_Value _stack = lua_table_get_str_lit(rt, "stack", 1649501183u, 5); int64_t _sp = (int64_t)lua_to_num(lua_table_get_str_lit(rt, "sp", 1196563446u, 2)); _sp++; ((lua_Value*)_stack.as.tval)[_sp] = val; lua_table_set_str_lit(rt, "sp", 1196563446u, 2, lua_val_from_int(_sp)); lua_val_nil(); })]])
+end
+
+fun pop(rt): any
+  @c.emit([[({ lua_Value _stack = lua_table_get_str_lit(rt, "stack", 1649501183u, 5); int64_t _sp = (int64_t)lua_to_num(lua_table_get_str_lit(rt, "sp", 1196563446u, 2)); lua_Value _v = ((lua_Value*)_stack.as.tval)[_sp]; lua_table_set_str_lit(rt, "sp", 1196563446u, 2, lua_val_from_int(_sp - 1)); _v; })]])
+end
+
+fun peek(rt): any
+  @c.emit([[({ lua_Value _stack = lua_table_get_str_lit(rt, "stack", 1649501183u, 5); int64_t _sp = (int64_t)lua_to_num(lua_table_get_str_lit(rt, "sp", 1196563446u, 2)); ((lua_Value*)_stack.as.tval)[_sp]; })]])
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Instantiation
+-- ═══════════════════════════════════════════════════════════════
+fun instantiate(rt, mod)
+  rt.mod = mod
+
+  -- Init memory
+  init_pages: i64 = mod.memory and mod.memory.initial or 0
+  mem_init(rt, init_pages)
+  rt.max_pages = mod.memory and mod.memory.maximum or 256
+
+  -- Init globals
+  for i = 1, #mod.globals
+    g = mod.globals[i]
+    rt.globals[i] = g.init
+  end
+
+  -- Load data segments
+  for _, seg in ipairs(mod.data)
+    if seg.flags == 0
+      seg_data_len: i64 = #seg.data
+      @c.emit([[memcpy(((uint8_t*)lua_table_get_str_lit(rt, "memory", 2229924270u, 6).as.tval) + (int64_t)lua_to_num(lua_table_get_str_lit(seg, "offset", 348705738u, 6)), lua_to_str(lua_table_get_str_lit(seg, "data", 3631407781u, 4)), (size_t)seg_data_len)]])
+    end
+  end
+
+  -- Build export map
+  for _, exp in ipairs(mod.exports)
+    rt.exports_map[exp.name] = exp
+  end
+
+  -- Register WASI imports
+  wasi.register(rt)
+
+  -- Take memory snapshot (for reset/re-execution)
+  rt.snapshot = mem_mod.dup(rt.memory, rt.pages * PAGE_SIZE)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Execution engine (threaded interpreter)
+-- ═══════════════════════════════════════════════════════════════
+@hot
+fun execute(rt, func_idx: i64, args: any)
+
+  -- Resolve function (accounting for imports)
+  n_imports: i64 = #rt.mod.imports
+  if func_idx < n_imports
+    -- Call host function
+    imp = rt.mod.imports[func_idx + 1]
+    host_fn = rt.imports[imp.module .. "." .. imp.name]
+    if host_fn
+      result = host_fn(rt, args)
+      if result ~= nil push(rt, result) end
+      return
+    end
+    error("unresolved import: " .. imp.module .. "." .. imp.name)
+  end
+
+  -- Internal function
+  code_idx = func_idx - n_imports
+  code = rt.mod.code[code_idx + 1]
+  type_idx = rt.mod.functions[code_idx + 1]
+  sig = rt.mod.types[type_idx + 1]
+
+  -- Setup locals (params + declared locals) in a VAL_BUFFER
+  args_len: i64 = #(args or {})
+  local_count: i64 = args_len + #code.locals
+  locals: any = @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc((size_t)local_count, sizeof(lua_Value)); _v; })]])
+  for i = 1, args_len
+    @c.emit([[((lua_Value*)locals.as.tval)[i - 1] = lua_table_get(args, lua_val_from_int(i))]])
+  end
+  @c.emit([[memset(((lua_Value*)locals.as.tval) + args_len, 0, ((size_t)local_count - (size_t)args_len) * sizeof(lua_Value))]])
+
+  -- Push call frame
+  frame = {
+    func_idx = func_idx,
+    locals = locals,
+    sp_base = rt.sp,
+    labels = {},
+  }
+  rt.call_stack[#rt.call_stack + 1] = frame
+
+  -- Interpret bytecode
+  body: any = code.body
+  pc: i64 = 1
+  body_len: i64 = #body
+  fuel: i64 = rt.fuel
+
+  while pc <= body_len
+    opcode: i64 = @c.emit([[((int64_t)((unsigned char*)lua_to_str(body))[pc - 1])]])
+    pc = pc + 1
+    pc = @c.emit([[src_wasm_runtime__dispatch(rt, frame, body, pc, opcode)]])
+
+    fuel = fuel - 1
+    if fuel <= 0
+      error("fuel exhausted")
+    end
+  end
+
+  rt.fuel = fuel
+  -- Pop call frame
+  rt.call_stack[#rt.call_stack] = nil
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Public API
+-- ═══════════════════════════════════════════════════════════════
+fun call(rt, name: str, args: any)
+  exp = rt.exports_map[name]
+  if not exp error("export not found: " .. name) end
+  assert(exp.kind == module.EXPORT_KIND.func, "not a function export")
+  execute(rt, exp.index, args or {})
+
+  -- Return results from stack
+  if rt.sp > 0
+    pop(rt)
+  end
+end
+
+fun reset(rt)
+  -- Restore memory snapshot for re-execution (serverless pattern)
+  if rt.snapshot
+    mem_mod.copy(rt.memory, rt.snapshot, rt.pages * PAGE_SIZE)
+  end
+  @c.emit([[memset(((lua_Value*)lua_table_get_str_lit(rt, "stack", 1649501183u, 5).as.tval), 0, src_wasm_runtime__STACK_SLOTS * sizeof(lua_Value))]])
+  rt.sp = 0
+  rt.call_stack = {}
+  rt.fuel = rt.config.fuel or 0xFFFFFFFF
+end
+
+fun exports(rt)
+  rt.exports_map
+end
+
+fun register_import(rt, module_name: str, fn_name: str, fn)
+  rt.imports[module_name .. "." .. fn_name] = fn
+end
+
+-- ═══════════════════════════════════════════════════════════════
+
+fun op_push(rt, v)
+  @c.emit([[({ lua_Value _stack = lua_table_get_str_lit(rt, "stack", 1649501183u, 5); int64_t _sp = (int64_t)lua_to_num(lua_table_get_str_lit(rt, "sp", 1196563446u, 2)); _sp++; ((lua_Value*)_stack.as.tval)[_sp] = v; lua_table_set_str_lit(rt, "sp", 1196563446u, 2, lua_val_from_int(_sp)); lua_val_nil(); })]])
+end
+
+@inline
+fun op_pop(rt): any
+  @c.emit([[({ lua_Value _stack = lua_table_get_str_lit(rt, "stack", 1649501183u, 5); int64_t _sp = (int64_t)lua_to_num(lua_table_get_str_lit(rt, "sp", 1196563446u, 2)); lua_Value _v = ((lua_Value*)_stack.as.tval)[_sp]; lua_table_set_str_lit(rt, "sp", 1196563446u, 2, lua_val_from_int(_sp - 1)); _v; })]])
+end
+
+@inline
+fun op_peek(rt): any
+  @c.emit([[({ lua_Value _stack = lua_table_get_str_lit(rt, "stack", 1649501183u, 5); int64_t _sp = (int64_t)lua_to_num(lua_table_get_str_lit(rt, "sp", 1196563446u, 2)); ((lua_Value*)_stack.as.tval)[_sp]; })]])
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- LEB128/byte readers
+-- ═══════════════════════════════════════════════════════════════
+@inline
+fun op_read_u32(body: any, pc: i64)
+  result: i64 = @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); int64_t _pc = pc; int64_t _result = 0; int64_t _shift = 0; uint8_t _b; do { _b = _p[_pc - 1]; _pc++; _result |= ((int64_t)(_b & 0x7F)) << _shift; _shift += 7; } while ((_b & 0x80) != 0); pc = _pc; _result; })]])
+  return result, pc
+end
+
+@inline
+fun op_read_i32(body: any, pc: i64)
+  result: i64 = @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); int64_t _pc = pc; int64_t _result = 0; int64_t _shift = 0; uint8_t _b; do { _b = _p[_pc - 1]; _pc++; _result |= ((int64_t)(_b & 0x7F)) << _shift; _shift += 7; } while ((_b & 0x80) != 0); if (_shift < 32 && (_b & 0x40)) _result |= (((int64_t)-1) << _shift); pc = _pc; _result; })]])
+  return result, pc
+end
+
+@inline
+fun op_read_i64(body: any, pc: i64)
+  result: i64 = @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); int64_t _pc = pc; int64_t _result = 0; int64_t _shift = 0; uint8_t _b; do { _b = _p[_pc - 1]; _pc++; _result |= ((int64_t)(_b & 0x7F)) << _shift; _shift += 7; } while ((_b & 0x80) != 0); if (_shift < 64 && (_b & 0x40)) _result |= (((int64_t)-1) << _shift); pc = _pc; _result; })]])
+  return result, pc
+end
+
+@inline
+fun op_read_f32(body: any, pc: i64)
+  result: float = @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); float _v; memcpy(&_v, _p + pc - 1, sizeof(float)); pc = pc + 4; (double)_v; })]])
+  return result, pc
+end
+
+@inline
+fun op_read_f64(body: any, pc: i64)
+  result: float = @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); double _v; memcpy(&_v, _p + pc - 1, sizeof(double)); pc = pc + 8; _v; })]])
+  return result, pc
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Control-flow helpers
+-- ═══════════════════════════════════════════════════════════════
+@inline
+fun find_end_pc(body: any, pc: i64, body_len: i64): i64
+return   @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); int64_t _scan = pc; int _depth = 1; while (_scan <= body_len && _depth > 0) { uint8_t _b = _p[_scan - 1]; if (_b == 0x02 || _b == 0x03 || _b == 0x04) _depth++; else if (_b == 0x0b) _depth--; _scan++; } _scan; })]])
+end
+
+@inline
+fun find_else_pc(body: any, pc: i64, body_len: i64): i64
+return   @c.emit([[({ const uint8_t* _p = (const uint8_t*)lua_to_str(body); int64_t _scan = pc; int _depth = 1; int64_t _else = 0; while (_scan <= body_len && _depth > 0) { uint8_t _b = _p[_scan - 1]; if (_b == 0x02 || _b == 0x03 || _b == 0x04) _depth++; else if (_b == 0x0b) _depth--; else if (_b == 0x05 && _depth == 1) { _else = _scan + 1; break; } _scan++; } _else; })]])
+end
+
+@inline
+fun op_branch_pc(frame: any, depth: i64): i64
+return   @c.emit([[({ lua_Value _labels = lua_table_get_str_lit(frame, "labels", 3185185930u, 6); int64_t _labels_len = (int64_t)lua_to_num(lua_len(_labels)); lua_Value _label = lua_table_get_i64(_labels, _labels_len - depth); int64_t _is_loop = (int64_t)lua_to_bool(lua_table_get_str_lit(_label, "is_loop", 3448360484u, 7)); int64_t _pc; if (_is_loop) _pc = (int64_t)lua_to_num(lua_table_get_str_lit(_label, "pc", 1313756516u, 2)); else _pc = (int64_t)lua_to_num(lua_table_get_str_lit(_label, "end_pc", 2781637162u, 6)); _pc; })]])
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Main dispatch
+-- ═══════════════════════════════════════════════════════════════
+@inline
+fun dispatch(rt, frame, body: any, pc: i64, opcode: i64): i64
+  body_len: i64 = #body
+  frame_locals: any = @c.emit([[lua_table_get_str_lit(frame, "locals", 2031871649u, 6)]])
+  rt_globals: any = @c.emit([[lua_table_get_str_lit(rt, "globals", 360173031u, 7)]])
+  rt_memory: any = @c.emit([[lua_table_get_str_lit(rt, "memory", 2229924270u, 6)]])
+
+  match opcode
+  -- ─── Control ─────────────────────────────────────────────────
+  case 0x01 then pc;
+  case 0x00 then error("unreachable executed")
+  case 0x02 then do
+    blocktype, pc = op_read_i32(body, pc)
+    end_pc = find_end_pc(body, pc, body_len)
+    frame.labels[#frame.labels + 1] = { pc = pc, end_pc = end_pc, is_loop = false }
+    pc
+  end
+  case 0x03 then do
+    blocktype, pc = op_read_i32(body, pc)
+    end_pc = find_end_pc(body, pc, body_len)
+    frame.labels[#frame.labels + 1] = { pc = pc, end_pc = end_pc, is_loop = true }
+    pc
+  end
+  case 0x04 then do
+    blocktype, pc = op_read_i32(body, pc)
+    else_pc = find_else_pc(body, pc, body_len)
+    end_pc = find_end_pc(body, pc, body_len)
+    if else_pc == 0 then else_pc = end_pc end
+    frame.labels[#frame.labels + 1] = { pc = pc, else_pc = else_pc, end_pc = end_pc, is_loop = false }
+    cond = op_pop(rt)
+    if cond return pc else return else_pc end
+  end
+  case 0x05 then do
+    label = frame.labels[#frame.labels]
+    frame.labels[#frame.labels] = nil
+    return label.end_pc
+  end
+  case 0x0B then do
+    if #frame.labels > 0
+      label = frame.labels[#frame.labels]
+      frame.labels[#frame.labels] = nil
+      return pc
+    end
+    return body_len + 1
+  end
+  case 0x0C then do
+    depth, pc = op_read_u32(body, pc)
+    return op_branch_pc(frame, depth)
+  end
+  case 0x0D then do
+    depth, pc = op_read_u32(body, pc)
+    cond = op_pop(rt)
+    target = op_branch_pc(frame, depth)
+    if cond ~= 0 return target else pc end
+  end
+  case 0x0E then error("br_table not implemented")
+  case 0x0F then return body_len + 1
+  case 0x10 then do
+    func_idx, pc = op_read_u32(body, pc)
+    type_idx: i64 = rt.mod.functions[func_idx + 1]
+    sig = rt.mod.types[type_idx + 1]
+    args = {}
+    for i = #sig.params, 1, -1
+      args[i] = op_pop(rt)
+    end
+    @c.emit([[src_wasm_runtime__execute(rt, (int64_t)lua_to_num(func_idx), args)]])
+    pc
+  end
+  case 0x11 then error("call_indirect not implemented")
+
+  -- ─── Stack/params ────────────────────────────────────────────
+  case 0x1A then do
+    op_pop(rt)
+    pc
+  end
+  case 0x1B then do
+    c = op_pop(rt)
+    a = op_pop(rt)
+    b = op_pop(rt)
+    op_push(rt, @c.emit([[lua_to_num(c) != 0.0 ? a : b]]))
+    pc
+  end
+
+  -- ─── Locals/globals ──────────────────────────────────────────
+  case 0x20 then do
+    idx, pc = op_read_u32(body, pc)
+    op_push(rt, @c.emit([=[((lua_Value*)frame_locals.as.tval)[(int64_t)lua_to_num(idx)]]=]))
+    pc
+  end
+  case 0x21 then do
+    idx, pc = op_read_u32(body, pc)
+    v = op_pop(rt)
+    @c.emit([[((lua_Value*)frame_locals.as.tval)[(int64_t)lua_to_num(idx)] = v]])
+    pc
+  end
+  case 0x22 then do
+    idx, pc = op_read_u32(body, pc)
+    v = op_peek(rt)
+    @c.emit([[((lua_Value*)frame_locals.as.tval)[(int64_t)lua_to_num(idx)] = v]])
+    pc
+  end
+  case 0x23 then do
+    idx, pc = op_read_u32(body, pc)
+    op_push(rt, @c.emit([[lua_table_get_i64(rt_globals, (int64_t)lua_to_num(idx) + 1)]]))
+    pc
+  end
+  case 0x24 then do
+    idx, pc = op_read_u32(body, pc)
+    v = op_pop(rt)
+    @c.emit([[lua_table_set_i64(rt_globals, (int64_t)lua_to_num(idx) + 1, v)]])
+    pc
+  end
+
+  -- ─── Memory ──────────────────────────────────────────────────
+  case 0x28 then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    val: i64 = @c.emit([[({ lua_Value _mem = rt_memory; int32_t _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(int32_t)); (int64_t)_v; })]])
+    op_push(rt, val)
+    pc
+  end
+  case 0x29 then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    val: i64 = @c.emit([[({ lua_Value _mem = rt_memory; int64_t _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(int64_t)); _v; })]])
+    op_push(rt, val)
+    pc
+  end
+  case 0x2A then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    val: float = @c.emit([[({ lua_Value _mem = rt_memory; float _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(float)); (double)_v; })]])
+    op_push(rt, val)
+    pc
+  end
+  case 0x2B then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    val: float = @c.emit([[({ lua_Value _mem = rt_memory; double _v; memcpy(&_v, ((uint8_t*)_mem.as.tval) + addr, sizeof(double)); _v; })]])
+    op_push(rt, val)
+    pc
+  end
+  case 0x36 then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    val: i64 = op_pop(rt)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    @c.emit([[({ int32_t _v = (int32_t)val; lua_Value _mem = rt_memory; memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(int32_t)); })]])
+    pc
+  end
+  case 0x37 then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    val: i64 = op_pop(rt)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    @c.emit([[({ int64_t _v = val; lua_Value _mem = rt_memory; memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(int64_t)); })]])
+    pc
+  end
+  case 0x38 then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    val: float = op_pop(rt)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    @c.emit([[({ float _v = (float)val; lua_Value _mem = rt_memory; memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(float)); })]])
+    pc
+  end
+  case 0x39 then do
+    align, pc = op_read_u32(body, pc)
+    offset, pc = op_read_u32(body, pc)
+    val: float = op_pop(rt)
+    v_addr = op_pop(rt)
+    addr: i64 = @c.emit([[((int64_t)lua_to_num(v_addr)) + (int64_t)lua_to_num(offset)]])
+    @c.emit([[({ double _v = val; lua_Value _mem = rt_memory; memcpy(((uint8_t*)_mem.as.tval) + addr, &_v, sizeof(double)); })]])
+    pc
+  end
+  case 0x3F then do
+    pc = pc + 1
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(lua_table_get_str_lit(rt, "pages", 2884670943u, 5)))]]))
+    pc
+  end
+  case 0x40 then do
+    pc = pc + 1
+    delta: i64 = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(src_wasm_runtime__mem_grow(rt, delta))]]))
+    pc
+  end
+
+  -- ─── Constants ───────────────────────────────────────────────
+  case 0x41 then do
+    val, pc = op_read_i32(body, pc)
+    op_push(rt, val)
+    pc
+  end
+  case 0x42 then do
+    val, pc = op_read_i64(body, pc)
+    op_push(rt, val)
+    pc
+  end
+  case 0x43 then do
+    val, pc = op_read_f32(body, pc)
+    op_push(rt, val)
+    pc
+  end
+  case 0x44 then do
+    val, pc = op_read_f64(body, pc)
+    op_push(rt, val)
+    pc
+  end
+
+  -- ─── i32 Comparison ──────────────────────────────────────────
+  case 0x45 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) == 0.0 ? 1 : 0)]]))
+    pc
+  end
+  case 0x46 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) == lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x47 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) != lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x48 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((int32_t)lua_to_num(a)) < ((int32_t)lua_to_num(b)) ? 1 : 0)]]))
+    pc
+  end
+  case 0x49 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((uint32_t)((int64_t)lua_to_num(a))) < ((uint32_t)((int64_t)lua_to_num(b))) ? 1 : 0)]]))
+    pc
+  end
+  case 0x4A then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((int32_t)lua_to_num(a)) > ((int32_t)lua_to_num(b)) ? 1 : 0)]]))
+    pc
+  end
+  case 0x4B then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((uint32_t)((int64_t)lua_to_num(a))) > ((uint32_t)((int64_t)lua_to_num(b))) ? 1 : 0)]]))
+    pc
+  end
+  case 0x4C then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((int32_t)lua_to_num(a)) <= ((int32_t)lua_to_num(b)) ? 1 : 0)]]))
+    pc
+  end
+  case 0x4D then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((uint32_t)((int64_t)lua_to_num(a))) <= ((uint32_t)((int64_t)lua_to_num(b))) ? 1 : 0)]]))
+    pc
+  end
+  case 0x4E then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((int32_t)lua_to_num(a)) >= ((int32_t)lua_to_num(b)) ? 1 : 0)]]))
+    pc
+  end
+  case 0x4F then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(((uint32_t)((int64_t)lua_to_num(a))) >= ((uint32_t)((int64_t)lua_to_num(b))) ? 1 : 0)]]))
+    pc
+  end
+
+  -- ─── i32 Arithmetic ─────────────────────────────────────────
+  case 0x6A then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) + (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x6B then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) - (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x6C then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) * (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x6D then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) / (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x6E then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((uint32_t)((int64_t)lua_to_num(a)) / (uint32_t)((int64_t)lua_to_num(b))))]]))
+    pc
+  end
+  case 0x6F then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) % (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x70 then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((uint32_t)((int64_t)lua_to_num(a)) % (uint32_t)((int64_t)lua_to_num(b))))]]))
+    pc
+  end
+  case 0x71 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) & (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x72 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) | (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x73 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) ^ (int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x74 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int64_t)lua_to_num(a) << ((int64_t)lua_to_num(b) & 31)))]]))
+    pc
+  end
+  case 0x75 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)lua_to_num(a) >> ((int64_t)lua_to_num(b) & 31))]]))
+    pc
+  end
+  case 0x76 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((uint32_t)((int64_t)lua_to_num(a)) >> ((int64_t)lua_to_num(b) & 31)))]]))
+    pc
+  end
+  case 0x77 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)__builtin_rotateleft32((int32_t)lua_to_num(a), ((int64_t)lua_to_num(b) & 31)))]]))
+    pc
+  end
+  case 0x78 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)__builtin_rotateright32((int32_t)lua_to_num(a), ((int64_t)lua_to_num(b) & 31)))]]))
+    pc
+  end
+  case 0x67 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)lua_to_num(a) == 0 ? 32 : __builtin_clz((uint32_t)(int32_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0x68 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)lua_to_num(a) == 0 ? 32 : __builtin_ctz((uint32_t)(int32_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0x69 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(__builtin_popcount((uint32_t)(int32_t)lua_to_num(a)))]]))
+    pc
+  end
+
+  -- ─── i64 Arithmetic ─────────────────────────────────────────
+  case 0x7C then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) + (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x7D then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) - (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x7E then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) * (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x7F then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) / (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x80 then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)((uint64_t)(int64_t)lua_to_num(a) / (uint64_t)(int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x81 then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) % (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x82 then do
+    b = op_pop(rt); a = op_pop(rt)
+    if @c.emit([[lua_val_from_int(lua_to_num(b) == 0.0)]]) then error("integer divide by zero") end
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)((uint64_t)(int64_t)lua_to_num(a) % (uint64_t)(int64_t)lua_to_num(b)))]]))
+    pc
+  end
+  case 0x83 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) & (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x84 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) | (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x85 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) ^ (int64_t)lua_to_num(b))]]))
+    pc
+  end
+  case 0x86 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) << ((int64_t)lua_to_num(b) & 63))]]))
+    pc
+  end
+  case 0x87 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) >> ((int64_t)lua_to_num(b) & 63))]]))
+    pc
+  end
+  case 0x88 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)((uint64_t)(int64_t)lua_to_num(a) >> ((int64_t)lua_to_num(b) & 63)))]]))
+    pc
+  end
+  case 0x89 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)__builtin_rotateleft64((int64_t)lua_to_num(a), ((int64_t)lua_to_num(b) & 63)))]]))
+    pc
+  end
+  case 0x8A then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)__builtin_rotateright64((int64_t)lua_to_num(a), ((int64_t)lua_to_num(b) & 63)))]]))
+    pc
+  end
+  case 0x79 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) == 0 ? 64 : __builtin_clzll((uint64_t)(int64_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0x7A then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a) == 0 ? 64 : __builtin_ctzll((uint64_t)(int64_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0x7B then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(__builtin_popcountll((uint64_t)(int64_t)lua_to_num(a)))]]))
+    pc
+  end
+
+  -- ─── f32 Arithmetic ─────────────────────────────────────────
+  case 0x92 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = _a + _b; lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x93 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = _a - _b; lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x94 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = _a * _b; lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x95 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = _a / _b; lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x96 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = fminf(_a, _b); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x97 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = fmaxf(_a, _b); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x98 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _b = (float)lua_to_num(b); float _r = copysignf(_a, _b); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x8B then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = _a < 0.0f ? -_a : _a; lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x8C then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = -_a; lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x8D then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = ceilf(_a); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x8E then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = floorf(_a); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x8F then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = truncf(_a); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x90 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = roundf(_a); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+  case 0x91 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _a = (float)lua_to_num(a); float _r = sqrtf(_a); lua_val_from_num((double)_r); })]]))
+    pc
+  end
+
+  -- ─── f32 Comparison ─────────────────────────────────────────
+  case 0x5B then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) == lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x5C then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) != lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x5D then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) < lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x5E then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) > lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x5F then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) <= lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x60 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) >= lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+
+  -- ─── f64 Arithmetic ─────────────────────────────────────────
+  case 0xA0 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(lua_to_num(a) + lua_to_num(b))]]))
+    pc
+  end
+  case 0xA1 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(lua_to_num(a) - lua_to_num(b))]]))
+    pc
+  end
+  case 0xA2 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(lua_to_num(a) * lua_to_num(b))]]))
+    pc
+  end
+  case 0xA3 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(lua_to_num(a) / lua_to_num(b))]]))
+    pc
+  end
+  case 0xA4 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(fmin(lua_to_num(a), lua_to_num(b)))]]))
+    pc
+  end
+  case 0xA5 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(fmax(lua_to_num(a), lua_to_num(b)))]]))
+    pc
+  end
+  case 0xA6 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(copysign(lua_to_num(a), lua_to_num(b)))]]))
+    pc
+  end
+  case 0x99 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(lua_to_num(a) < 0.0 ? -lua_to_num(a) : lua_to_num(a))]]))
+    pc
+  end
+  case 0x9A then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(-lua_to_num(a))]]))
+    pc
+  end
+  case 0x9B then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(ceil(lua_to_num(a)))]]))
+    pc
+  end
+  case 0x9C then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(floor(lua_to_num(a)))]]))
+    pc
+  end
+  case 0x9D then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(trunc(lua_to_num(a)))]]))
+    pc
+  end
+  case 0x9E then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(round(lua_to_num(a)))]]))
+    pc
+  end
+  case 0x9F then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num(sqrt(lua_to_num(a)))]]))
+    pc
+  end
+
+  -- ─── f64 Comparison ─────────────────────────────────────────
+  case 0x61 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) == lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x62 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) != lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x63 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) < lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x64 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) > lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x65 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) <= lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+  case 0x66 then do
+    b = op_pop(rt); a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int(lua_to_num(a) >= lua_to_num(b) ? 1 : 0)]]))
+    pc
+  end
+
+  -- ─── Conversions ────────────────────────────────────────────
+  case 0xA7 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)(int64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xA8 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)(float)lua_to_num(a))]]))
+    pc
+  end
+  case 0xA9 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(uint32_t)(float)lua_to_num(a))]]))
+    pc
+  end
+  case 0xAA then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xAB then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(uint32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xAC then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(int32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xAD then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(uint32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xAE then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(float)lua_to_num(a))]]))
+    pc
+  end
+  case 0xAF then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(uint64_t)(float)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB0 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB1 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)(uint64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB2 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(float)(int32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB3 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(float)(uint32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB4 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(float)(int64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB5 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(float)(uint64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB6 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(float)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB7 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(int32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB8 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(uint32_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xB9 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(int64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xBA then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(uint64_t)lua_to_num(a))]]))
+    pc
+  end
+  case 0xBB then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_num((double)(float)lua_to_num(a))]]))
+    pc
+  end
+  case 0xBC then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ float _v = (float)lua_to_num(a); int32_t _i; memcpy(&_i, &_v, sizeof(int32_t)); lua_val_from_int((int64_t)_i); })]]))
+    pc
+  end
+  case 0xBD then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ double _v = lua_to_num(a); int64_t _i; memcpy(&_i, &_v, sizeof(int64_t)); lua_val_from_int(_i); })]]))
+    pc
+  end
+  case 0xBE then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ int32_t _i = (int32_t)lua_to_num(a); float _v; memcpy(&_v, &_i, sizeof(float)); lua_val_from_num((double)_v); })]]))
+    pc
+  end
+  case 0xBF then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[({ int64_t _i = (int64_t)lua_to_num(a); double _v; memcpy(&_v, &_i, sizeof(double)); lua_val_from_num(_v); })]]))
+    pc
+  end
+  case 0xC0 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int8_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0xC1 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int32_t)((int16_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0xC2 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)((int8_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0xC3 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)((int16_t)lua_to_num(a)))]]))
+    pc
+  end
+  case 0xC4 then do
+    a = op_pop(rt)
+    op_push(rt, @c.emit([[lua_val_from_int((int64_t)((int32_t)lua_to_num(a)))]]))
+    pc
+  end
+
+  case _ then do
+    error("unsupported opcode: " .. tostring(opcode))
+  end
+  end
+
+  pc
+end
+
+M = {}
+M.new = runtime_new
+M.instantiate = instantiate
+M.call = call
+M.execute = execute
+M.reset = reset
+M.exports = exports
+M.register_import = register_import
+M.push = push
+M.pop = pop
+M.mem_load_i32 = mem_load_i32
+M.mem_store_i32 = mem_store_i32
+M.mem_load_i64 = mem_load_i64
+M.mem_store_i64 = mem_store_i64
+M.mem_load_f32 = mem_load_f32
+M.mem_store_f32 = mem_store_f32
+M.mem_load_f64 = mem_load_f64
+M.mem_store_f64 = mem_store_f64
+M.mem_grow = mem_grow
+M.PAGE_SIZE = PAGE_SIZE
+M.dispatch = dispatch
+M.op_push = op_push
+M.op_pop = op_pop
+M

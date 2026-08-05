@@ -1,0 +1,90 @@
+-- ward embeddable API (replaces wart's include/wart.h + src/embed/api.zig)
+-- Use: local ward = req "ward"
+
+wasm = req "src.wasm"
+edge = req "src.edge"
+nn   = req "src.nn"
+
+-- ═══════════════════════════════════════════════════════════════
+-- High-level embedding API — 10 functions replace 27K of Zig
+-- ═══════════════════════════════════════════════════════════════
+
+-- Create an engine with config
+fun engine(config: any): any
+  edge.engine_new(config)
+end
+
+-- Compile WASM bytes into a cached module
+fun lib_compile(eng, bytes: str): any
+  edge.engine_compile(eng, bytes)
+end
+
+-- Create an isolated execution context
+fun isolate(eng, mod, caps: any): any
+  edge.engine_create_isolate(eng, mod, caps)
+end
+
+-- Call an exported function in an isolate
+fun call(iso, name: str, args: any): any
+  edge.isolate_call(iso, name, args or {})
+end
+
+-- Step-based execution (cooperative multitasking)
+fun step(iso, fuel: i64): str
+  edge.isolate_step(iso, fuel)
+end
+
+-- Register a host function
+fun host_fn(eng, module_name: str, fn_name: str, fn)
+  -- Available to all isolates created from this engine
+  eng.host_fns = eng.host_fns or {}
+  eng.host_fns[module_name .. "." .. fn_name] = fn
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- AI/ML inference API (replaces wart_nn_* functions)
+-- ═══════════════════════════════════════════════════════════════
+
+-- Load a model (auto-detects GGUF/ONNX)
+fun load_model(name: str, data: str, target: any): any
+  reg = nn.registry.new()
+  encoding = nn.ENCODING.autodetect
+  tgt = target or nn.TARGET.cpu
+  nn.registry.register_model(reg, name, data, encoding, tgt)
+  reg
+end
+
+-- Run inference
+fun infer(reg, name: str, inputs: any): any
+  nn.registry.infer(reg, name, inputs)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Convenience: one-shot run (load file + execute)
+-- ═══════════════════════════════════════════════════════════════
+fun run_file(path: str, args: any): any
+  bytes = os.read_file(path)
+  mod = wasm.decode(bytes)
+  rt = wasm.runtime.new({})
+  wasm.runtime.instantiate(rt, mod)
+  wasm.runtime.call(rt, "_start", args or {})
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+M = {}
+M.engine = engine
+M.compile = lib_compile
+M.isolate = isolate
+M.call = call
+M.step = step
+M.host_fn = host_fn
+M.load_model = load_model
+M.infer = infer
+M.run_file = run_file
+-- Re-exports
+M.wasm = wasm
+M.edge = edge
+M.nn = nn
+M

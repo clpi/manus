@@ -1,0 +1,40 @@
+-- ward/src/wasm/table.duo — Function reference tables
+-- Used for call_indirect dispatch. Fixed array of function indices.
+
+fun table_new(size: i64)
+    ptr = __emit("calloc(size, sizeof(int64_t))")
+    return { ptr = ptr, size = size }
+end
+
+--- @inline
+fun table_get(t, idx: i64): i64
+    return __emit("((int64_t*)t.as.tval)[idx]")
+end
+
+--- @inline
+fun table_set(t, idx: i64, func_idx: i64)
+    __emit("((int64_t*)t.as.tval)[idx] = func_idx")
+end
+
+fun table_grow(t, n: i64): i64
+    old_size: i64 = t.size
+    new_size: i64 = old_size + n
+    __emit("t.as.tval = realloc(t.as.tval, new_size * sizeof(int64_t))")
+    -- Zero new entries
+    __emit("memset((int64_t*)t.as.tval + old_size, 0, n * sizeof(int64_t))")
+    t.size = new_size
+    return old_size
+end
+
+--- @inline
+fun table_size(t): i64
+    return t.size
+end
+
+M = {}
+M.table_new = table_new
+M.table_get = table_get
+M.table_set = table_set
+M.table_grow = table_grow
+M.table_size = table_size
+M

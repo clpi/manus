@@ -1,0 +1,172 @@
+-- ward CLI commands
+-- Replaces wart's entire src/cmd/ directory (19 files, ~3000 lines)
+
+global ward_os = req "std.os"
+global time   = req "std.time"
+global string_mod = req "std.string"
+
+global tbl = req "std.table"
+
+global wasm = req "src.wasm"
+global edge = req "src.edge"
+
+-- ═══════════════════════════════════════════════════════════════
+-- ward run <file.wasm> [args...]
+-- ═══════════════════════════════════════════════════════════════
+fun run(opts)
+  bytes = ward_os.read_file(opts.file)
+  mod = wasm.decode(bytes)
+
+  wasm_args = { opts.file }
+
+  rt = wasm.runtime.new({
+    jit = opts.jit or false,
+    aot = opts.aot or false,
+    debug = opts.debug or false,
+    args = wasm_args,
+  })
+
+  wasm.runtime.instantiate(rt, mod)
+  func = opts["function"] or "_start"
+  wasm.runtime.call(rt, func, opts.rest_args or {})
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ward bench [file.wasm] [--profile <name>]
+-- ═══════════════════════════════════════════════════════════════
+fun bench(opts)
+  bytes = ward_os.read_file(opts.file)
+  mod = wasm.decode(bytes)
+  rt = wasm.runtime.new({ jit = true })
+  wasm.runtime.instantiate(rt, mod)
+
+  runs = opts.runs or 10
+  times = {}
+  for i = 1, runs
+    t0 = time.now_ns()
+    wasm.runtime.call(rt, opts["function"] or "_start")
+    times[i] = time.now_ns() - t0
+    wasm.runtime.reset(rt)  -- snapshot restore for re-execution
+  end
+
+  tbl.sort(times)
+  print("min: " .. tostring(times[1] / 1e6) .. "ms  median: " .. tostring(times[runs // 2] / 1e6) .. "ms  p99: " .. tostring(times[runs] / 1e6) .. "ms")
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ward compile <file.wasm> -o <output> [--target <triple>]
+-- ═══════════════════════════════════════════════════════════════
+fun cli_compile(opts)
+  bytes = ward_os.read_file(opts.file)
+  mod = wasm.decode(bytes)
+  target = opts.target or "native"
+  output = opts.output or opts.file:gsub("%.wasm$", "")
+
+  code = wasm.aot.compile(mod, { target = target })
+  ward_os.write_file(output, code)
+  print("compiled " .. opts.file .. " -> " .. output .. " (" .. target .. ")")
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ward deploy [--serverless] [--edge]
+-- ═══════════════════════════════════════════════════════════════
+fun deploy(opts)
+  bytes = ward_os.read_file(opts.file)
+  mod = wasm.decode(bytes)
+
+  if opts.serverless or opts.edge
+    srv = edge.serverless.new({
+      max_isolates = 1024,
+      fuel_per_step = 100000,
+    })
+    srv.register(bytes)
+    print("deployed " .. opts.file .. " as serverless function")
+  else
+    cli_compile(opts)
+  end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ward shell [file.wasm]
+-- ═══════════════════════════════════════════════════════════════
+fun shell(opts)
+  rt = wasm.runtime.new({ debug = true })
+  if opts.file
+    bytes = ward_os.read_file(opts.file)
+    mod = wasm.decode(bytes)
+    wasm.runtime.instantiate(rt, mod)
+  end
+
+  print("ward shell v0.1 (type :help for commands)")
+  while true
+    io.write("ward> ")
+    line = io.read("*l")
+    if not line or line == ":quit" or line == ":q" break end
+    if line == ":help"
+      print(":call <fn> [args]  — call exported function")
+      print(":load <file>       — load WASM module")
+      print(":inspect           — show module exports")
+      print(":quit              — exit")
+    elseif string_mod.starts_with(line, ":call ")
+      parts = string_mod.split(line, " ")
+      wasm.runtime.call(rt, parts[2], tbl.slice(parts, 3))
+    elseif string_mod.starts_with(line, ":load ")
+      bytes = ward_os.read_file(string_mod.sub(line, 7))
+      mod = wasm.decode(bytes)
+      wasm.runtime.instantiate(rt, mod)
+      print("loaded.")
+    elseif line == ":inspect"
+      for name, exp in wasm.runtime.exports(rt)
+        print("  " .. name .. " : " .. tostring(exp.type))
+      end
+    end
+  end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ward inspect <file.wasm>
+-- ═══════════════════════════════════════════════════════════════
+fun inspect(opts)
+  if not opts.file
+    -- Show runtime capabilities
+    print("ward runtime capabilities:")
+    print("  wasi: preview1, preview2, preview3")
+    print("  proposals: multi-memory, simd, threads, gc, exceptions")
+    print("  nn: gguf, onnx, transformer")
+    print("  devices: cpu")
+    return
+  end
+
+  bytes = ward_os.read_file(opts.file)
+  mod = wasm.decode(bytes)
+  print("Module: " .. opts.file)
+  print("  Types:     " .. tostring(#mod.types))
+  print("  Imports:   " .. tostring(#mod.imports))
+  print("  Functions: " .. tostring(#mod.functions))
+  print("  Exports:   " .. tostring(#mod.exports))
+  print("  Memory:    " .. tostring(mod.memory and mod.memory.initial or 0) .. " pages")
+end
+
+fun init(opts)
+  name = opts.file or "my-ward-app"
+  print("init: name=" .. name)
+  ward_os.mkdir_all(name)
+  print("init: mkdir done")
+  ward_os.write_file(name .. "/main.wat", '(module\n  (func (export "hello") (result i32)\n    i32.const 42))\n')
+  print("created " .. name .. " — run with: ward run " .. name .. "/main.wat")
+end
+
+fun version(opts)
+  print("ward 0.1.0 — AI-native WASM runtime (Duo)")
+end
+
+M = {}
+M.run = run
+M.bench = bench
+M.compile = cli_compile
+M.deploy = deploy
+M.shell = shell
+M.inspect = inspect
+M.init = init
+M.version = version
+M

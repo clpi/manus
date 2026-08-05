@@ -1,0 +1,254 @@
+-- ward edge runtime — isolate management, sandboxing, serverless
+-- Replaces wart's src/edge/ (runtime.zig + sandbox.zig + memory.zig + serverless.zig + ...)
+-- ~140K Zig → ~200 lines Duo
+-- Key insight: Duo closures + tables = natural isolate lifecycle
+
+global time = req "std.time"
+global mem_mod = req "std.mem"
+global rand = req "std.crypto.rand"
+global crypto = req "std.crypto"
+
+global wasm = req "src.wasm"
+
+-- ═══════════════════════════════════════════════════════════════
+-- Capability-based security (what an isolate can access)
+-- ═══════════════════════════════════════════════════════════════
+const CAP = {
+  filesystem = 1,
+  sockets    = 2,
+  random     = 4,
+  clocks     = 8,
+  http       = 16,
+  nn         = 32,
+  cli        = 64,
+  io         = 128,
+}
+
+fun cap_set(caps: any): i64
+  mask: i64 = 0
+  for _, c in caps
+    mask = mask | (CAP[c] or 0)
+  end
+  mask
+end
+
+fun cap_check(mask: i64, cap: str): bool
+  (mask & (CAP[cap] or 0)) ~= 0
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Isolate — sandboxed execution context
+-- ═══════════════════════════════════════════════════════════════
+fun isolate_new(engine, mod, caps): any
+  id = engine.next_id
+  engine.next_id = engine.next_id + 1
+
+  rt = wasm.runtime.new({
+    fuel = engine.config.fuel_per_step,
+    debug = false,
+  })
+  wasm.runtime.instantiate(rt, mod)
+
+  iso = {
+    id = id,
+    tenant_id = rand.bytes(16),
+    rt = rt,
+    capabilities = caps or cap_set({"io", "clocks", "random"}),
+    state = "ready",  -- ready | running | yielded | trapped | completed
+    fuel_remaining = engine.config.fuel_per_step,
+    total_fuel = 0,
+    start_ns = nil,
+    exit_code = nil,
+  }
+  engine.isolates[id] = iso
+  iso
+end
+
+fun isolate_runner(iso, name, args)
+  wasm.runtime.call(iso.rt, name, args)
+end
+
+fun isolate_call(iso, name: str, args: any): any
+  iso.state = "running"
+  iso.start_ns = time.now_ns()
+
+  local ok, err = pcall(isolate_runner, iso, name, args)
+
+  elapsed = time.now_ns() - iso.start_ns
+  iso.total_fuel = iso.total_fuel + (iso.fuel_remaining - iso.rt.fuel)
+
+  if ok
+    iso.state = "completed"
+    iso.exit_code = 0
+    -- return result from stack
+    if iso.rt.sp > 0
+      return wasm.runtime.pop(iso.rt)
+    end
+  else
+    if err:find("fuel exhausted")
+      iso.state = "yielded"
+    else
+      iso.state = "trapped"
+      iso.exit_code = 1
+    end
+  end
+  nil
+end
+
+fun isolate_step(iso, fuel: i64): str
+  iso.rt.fuel = fuel
+  iso.state = "running"
+
+  local ok, err = pcall(isolate_runner, iso, "_start", {})
+
+  if ok
+    iso.state = "completed"
+    return "completed"
+  elseif err:find("fuel exhausted")
+    iso.state = "yielded"
+    return "yielded_fuel"
+  else
+    iso.state = "trapped"
+    return "trapped"
+  end
+end
+
+fun isolate_destroy(engine, id: any)
+  iso = engine.isolates[id]
+  if iso
+    mem_mod.free(iso.rt.memory)
+    engine.isolates[id] = nil
+  end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Edge Engine — manages pool of isolates
+-- ═══════════════════════════════════════════════════════════════
+fun engine_new(config: any): any
+  config = config or {}
+  eng = {
+    config = {
+      max_isolates = config.max_isolates or 1024,
+      fuel_per_step = config.fuel_per_step or 100000,
+      max_memory = config.max_memory or 256 * 1024 * 1024,  -- 256MB
+    },
+    isolates = {},
+    next_id = 1,
+    module_cache = {},
+    stats = { total_created = 0, total_calls = 0 },
+  }
+  eng
+end
+
+fun engine_compile(engine, bytes: str): any
+  -- Content-addressed caching
+  hash = crypto.sha256(bytes)
+  cached = engine.module_cache[hash]
+  if cached return cached end
+
+  mod = wasm.decode(bytes)
+  engine.module_cache[hash] = mod
+  mod
+end
+
+fun engine_create_isolate(engine, mod, caps): any
+  if #engine.isolates >= engine.config.max_isolates
+    error("max isolates exceeded")
+  end
+  engine.stats.total_created = engine.stats.total_created + 1
+  isolate_new(engine, mod, caps)
+end
+
+fun engine_stats(engine): any
+  {
+    isolate_count = #engine.isolates,
+    total_created = engine.stats.total_created,
+    total_calls = engine.stats.total_calls,
+    cache_entries = #engine.module_cache,
+  }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Serverless adapter — HTTP → isolate invocation
+-- ═══════════════════════════════════════════════════════════════
+fun serverless_new(config: any): any
+  engine = engine_new(config)
+  {
+    engine = engine,
+    modules = {},       -- hash → module
+    pool = {},          -- hash → [isolate]
+    max_reuse = config.max_reuse or 100,
+  }
+end
+
+fun serverless_register(srv, bytes: str): str
+  mod = engine_compile(srv.engine, bytes)
+  hash = crypto.sha256(bytes)
+  srv.modules[hash] = mod
+  hash
+end
+
+fun serverless_handle(srv, request: any): any
+  hash = request.module_hash
+  mod = srv.modules[hash]
+  if not mod
+    return { status = 404, headers = {}, body = "module not found" }
+  end
+
+  -- Get or create isolate from pool
+  local iso
+  pool = srv.pool[hash] or {}
+  if #pool > 0
+    iso = table.remove(pool)
+    wasm.runtime.reset(iso.rt)
+  else
+    iso = engine_create_isolate(srv.engine, mod, nil)
+  end
+
+  -- Execute
+  local ok, result = pcall(isolate_call, iso, "_start", {})
+
+  -- Return to pool or destroy
+  if ok and iso.state == "completed"
+    iso.invocations = (iso.invocations or 0) + 1
+    if iso.invocations < srv.max_reuse
+      pool[#pool + 1] = iso
+      srv.pool[hash] = pool
+    else
+      isolate_destroy(srv.engine, iso.id)
+    end
+    return { status = 200, headers = {}, body = result or "" }
+  else
+    isolate_destroy(srv.engine, iso.id)
+    return { status = 500, headers = {}, body = "internal error" }
+  end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Helpers
+-- ═══════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+M = {}
+-- Capabilities
+M.CAP = CAP
+M.cap_set = cap_set
+M.cap_check = cap_check
+-- Isolate
+M.isolate_new = isolate_new
+M.isolate_call = isolate_call
+M.isolate_step = isolate_step
+M.isolate_destroy = isolate_destroy
+-- Engine
+M.engine_new = engine_new
+M.engine_compile = engine_compile
+M.engine_create_isolate = engine_create_isolate
+M.engine_stats = engine_stats
+-- Serverless
+M.serverless = {
+  new = serverless_new,
+  register = serverless_register,
+  handle = serverless_handle,
+}
+M

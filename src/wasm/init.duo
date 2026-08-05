@@ -1,0 +1,24 @@
+-- ward WASM core package
+-- Re-exports: module decoder, runtime, opcodes, WASI, JIT, AOT
+
+global module = req "src.wasm.module"
+global op     = req "src.wasm.op"
+runtime = req "src.wasm.runtime"
+wasi    = req "src.wasm.wasi"
+aot     = req "src.wasm.aot"
+jit     = req "src.wasm.jit"
+
+-- Convenience: decode a .wasm file bytes into a Module
+fun decode(data: any): any
+  module.decode(data)
+end
+
+M = {}
+M.decode = decode
+M.module = module
+M.runtime = runtime
+M.op = op
+M.wasi = wasi
+M.aot = aot
+M.jit = jit
+M

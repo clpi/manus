@@ -1,0 +1,280 @@
+-- ward WASM binary module decoder
+-- Replaces wart's src/wasm/module.zig (432KB of Zig) with ~200 lines of Duo
+-- Key insight: Duo's table-driven approach + pattern matching = compact decoder
+-- Native types throughout (i64/str/bool), no lua-boxed values on the hot path.
+
+req "std.bytes"
+
+-- ═══════════════════════════════════════════════════════════════
+-- WASM binary format constants
+-- ═══════════════════════════════════════════════════════════════
+const MAGIC: i64    = 0x6D736100  -- "\0asm" read little-endian
+const VERSION: i64  = 0x01
+
+const SECTION = {
+  custom = 0,  ["type"] = 1,    import = 2,  ["function"] = 3,
+  table = 4,   memory = 5,  ["global"] = 6,  export = 7,
+  start = 8,   element = 9, code = 10,   data = 11,
+  data_count = 12,
+}
+
+const VALTYPE = {
+  ["i32"] = 0x7F, ["i64"] = 0x7E, ["f32"] = 0x7D, ["f64"] = 0x7C,
+  v128 = 0x7B, funcref = 0x70, externref = 0x6F,
+}
+
+const EXPORT_KIND = { func = 0, table = 1, memory = 2, ["global"] = 3 }
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module structure
+-- ═══════════════════════════════════════════════════════════════
+fun new_module(): any
+  {
+    types = {},       -- function signatures: { params, results }
+    imports = {},     -- { module, name, kind, type_idx }
+    functions = {},   -- type indices for internal funcs
+    tables = {},
+    memory = { initial = 0, maximum = nil },
+    globals = {},
+    exports = {},     -- { name, kind, index }
+    start = nil,
+    elements = {},
+    code = {},        -- { locals, body }
+    data = {},
+    custom = {},
+  }
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- LEB128 reader (the workhorse of WASM decoding)
+-- ═══════════════════════════════════════════════════════════════
+fun reader_new(data: any): any
+  { data = data, pos = 1 }
+end
+
+-- Reader helpers are namespaced with `mr_` prefix to avoid colliding
+-- with std.mem's mod_read_byte/mod_read_u32/etc. when both are embedded in
+-- the same compilation unit.
+fun mr_mod_read_byte(r: any): i64
+  return @c.emit([[({ lua_Value _data = lua_table_get_str_lit(r, "data", 3631407781u, 4); int64_t _pos = (int64_t)lua_to_num(lua_table_get_str_lit(r, "pos", 1412654217u, 3)); lua_table_set_str_lit(r, "pos", 1412654217u, 3, lua_val_from_int(_pos + 1)); (int64_t)((unsigned char*)lua_to_str(_data))[_pos - 1]; })]])
+end
+
+fun mr_mod_read_u32(r: any): i64
+  result: i64 = 0
+  shift: i64 = 0
+  while true
+    b: i64 = mr_mod_read_byte(r)
+    result = result | ((b & 0x7F) << shift)
+    if (b & 0x80) == 0 break end
+    shift = shift + 7
+  end
+  result
+end
+
+fun mr_mod_read_i32(r: any): i64
+  result: i64 = 0
+  shift: i64 = 0
+  b: i64 = 0
+  while true
+    b = mr_mod_read_byte(r)
+    result = result | ((b & 0x7F) << shift)
+    shift = shift + 7
+    if (b & 0x80) == 0 break end
+  end
+  if shift < 32 and (b & 0x40) ~= 0
+    result = result | ((-1) << shift)
+  end
+  result
+end
+
+fun mr_mod_read_bytes(r: any, n: i64): any
+  return @c.emit([[({ lua_Value _data = lua_table_get_str_lit(r, "data", 3631407781u, 4); int64_t _pos = (int64_t)lua_to_num(lua_table_get_str_lit(r, "pos", 1412654217u, 3)); lua_Value _s = lua_str_sub(_data, lua_val_from_int(_pos), lua_val_from_int(_pos + n - 1)); lua_table_set_str_lit(r, "pos", 1412654217u, 3, lua_val_from_int(_pos + n)); _s; })]])
+end
+
+fun mr_read_name(r: any): any
+  len: i64 = mr_mod_read_u32(r)
+  mr_mod_read_bytes(r, len)
+end
+
+fun mr_read_valtype(r: any): i64
+  mr_mod_read_byte(r)
+end
+
+-- § ═════════════════════════════════════════════════════════════
+-- Section decoders — inline loops (avoids closure-capture path so
+-- codegen emits native i64 reads, not lua_Value boxed calls).
+-- ═══════════════════════════════════════════════════════════════
+fun decode_type_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    tag: i64 = mr_mod_read_byte(r)
+    if tag ~= 0x60
+      error("expected functype")
+    end
+    np: i64 = mr_mod_read_u32(r)
+    params: any = {}
+    for p = 1, np
+      params[#params + 1] = mr_read_valtype(r)
+    end
+    nr: i64 = mr_mod_read_u32(r)
+    results: any = {}
+    for q = 1, nr
+      results[#results + 1] = mr_read_valtype(r)
+    end
+    mod.types[#mod.types + 1] = { params = params, results = results }
+  end
+end
+
+fun decode_import_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    mod_name: str = mr_read_name(r)
+    imp_name: str = mr_read_name(r)
+    kind: i64 = mr_mod_read_byte(r)
+    idx: i64 = mr_mod_read_u32(r)
+    mod.imports[#mod.imports + 1] = {
+      module = mod_name, name = imp_name, kind = kind, type_idx = idx,
+    }
+  end
+end
+
+fun decode_function_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    mod.functions[#mod.functions + 1] = mr_mod_read_u32(r)
+  end
+end
+
+fun decode_memory_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  if n > 0
+    flags: i64 = mr_mod_read_byte(r)
+    initial: i64 = mr_mod_read_u32(r)
+    maximum: i64 = 256
+    if (flags & 1) ~= 0
+      maximum = mr_mod_read_u32(r)
+    end
+    mod.memory = { initial = initial, maximum = maximum }
+  end
+end
+
+fun decode_export_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    name: str = mr_read_name(r)
+    kind: i64 = mr_mod_read_byte(r)
+    index: i64 = mr_mod_read_u32(r)
+    mod.exports[#mod.exports + 1] = { name = name, kind = kind, index = index }
+  end
+end
+
+fun decode_code_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    body_size: i64 = mr_mod_read_u32(r)
+    body_start: i64 = r.pos
+    -- Decode locals
+    num_locals: i64 = mr_mod_read_u32(r)
+    locals: any = {}
+    for li = 1, num_locals
+      count: i64 = mr_mod_read_u32(r)
+      vtype: i64 = mr_read_valtype(r)
+      for j = 1, count
+        locals[#locals + 1] = vtype
+      end
+    end
+    -- Body is remaining bytes in this code entry. Extract r.pos into
+    -- a native i64 first so the arithmetic stays i64 (not lua ops).
+    cur_pos: i64 = r.pos
+    body_len: i64 = body_size - (cur_pos - body_start)
+    body: any = mr_mod_read_bytes(r, body_len)
+    mod.code[#mod.code + 1] = { locals = locals, body = body }
+  end
+end
+
+fun decode_global_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    vtype: i64 = mr_read_valtype(r)
+    mutable: bool = mr_mod_read_byte(r) == 1
+    -- Read init expr (simplified: const + end)
+    init: i64 = mr_mod_read_i32(r)
+    _ = mr_mod_read_byte(r) -- 0x0B end
+    mod.globals[#mod.globals + 1] = {
+      type = vtype, mutable = mutable, init = init,
+    }
+  end
+end
+
+fun decode_data_section(r: any, mod: any)
+  n: i64 = mr_mod_read_u32(r)
+  for i = 1, n
+    flags: i64 = mr_mod_read_u32(r)
+    offset: i64 = 0
+    if flags == 0
+      -- Active, memory 0, offset expr
+      _ = mr_mod_read_byte(r) -- i32.const opcode
+      offset = mr_mod_read_i32(r)
+      _ = mr_mod_read_byte(r) -- end
+    end
+    data: any = mr_mod_read_bytes(r, mr_mod_read_u32(r))
+    mod.data[#mod.data + 1] = { flags = flags, offset = offset, data = data }
+  end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Top-level decoder
+-- ═══════════════════════════════════════════════════════════════
+global section_decoders = {
+  [SECTION["type"]]     = decode_type_section,
+  [SECTION["import"]]   = decode_import_section,
+  [SECTION["function"]] = decode_function_section,
+  [SECTION.memory]      = decode_memory_section,
+  [SECTION["export"]]   = decode_export_section,
+  [SECTION.code]        = decode_code_section,
+  [SECTION["global"]]   = decode_global_section,
+  [SECTION.data]        = decode_data_section,
+}
+
+fun decode_module(data: any): any
+  r: any = reader_new(data)
+
+  -- Validate magic + version
+  magic: i64 = mr_mod_read_byte(r) | (mr_mod_read_byte(r) << 8) | (mr_mod_read_byte(r) << 16) | (mr_mod_read_byte(r) << 24)
+  if magic ~= MAGIC
+    error("not a WASM module")
+  end
+  ver: i64 = mr_mod_read_byte(r) | (mr_mod_read_byte(r) << 8) | (mr_mod_read_byte(r) << 16) | (mr_mod_read_byte(r) << 24)
+  if ver ~= VERSION
+    error("unsupported WASM version")
+  end
+
+  mod: any = new_module()
+
+  -- Decode sections
+  while r.pos <= #r.data
+    section_id: i64 = mr_mod_read_byte(r)
+    section_size: i64 = mr_mod_read_u32(r)
+    section_end: i64 = r.pos + section_size
+
+    decoder: any = section_decoders[section_id]
+    if decoder
+      decoder(r, mod)
+    end
+
+    r.pos = section_end  -- skip unknown/custom sections
+  end
+
+  mod
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- Module exports
+-- ═══════════════════════════════════════════════════════════════
+M = {}
+M.decode = decode_module
+M.new_module = new_module
+M.SECTION = SECTION
+M.VALTYPE = VALTYPE
+M.EXPORT_KIND = EXPORT_KIND
+M
