@@ -417,5 +417,56 @@ mcp.register_tool("duo_cross_lang_meta", {
     jm.encode({ guide = hdr .. body, host_lang = lang, goal = goal })
 end)
 
+mcp.register_tool("duo_semantic_snapshot", {
+    description = "Export SIM v0 semantic snapshot JSON for a .duo file (Pass 5)",
+    type = "object",
+    properties = {
+        file_path = { type = "string" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    cmd = "/Users/clp/x/duo/zig-out/bin/duo sim " .. (args.file_path or "") .. " 2>/dev/null"
+    f = io.popen(cmd, "r")
+    if f == nil then return "{\"error\":\"popen failed\"}" end
+    output = f:read("*a")
+    f:close()
+    if output == nil or string.len(output) == 0 then return "{\"error\":\"empty output\"}" end
+    i = string.find(output, "{")
+    if i then string.sub(output, i) else "{\"error\":\"no JSON in output\"}" end
+end)
+
+mcp.register_tool("duo_foreign_import_preview", {
+    description = "Preview C header import as SIM v0 entities (Pass 5)",
+    type = "object",
+    properties = {
+        header_path = { type = "string" },
+        source_dir = { type = "string" },
+    },
+    required = { "header_path" },
+}, fun(args)
+    src_dir = args.source_dir or ""
+    if src_dir == "" then
+        dir = string.match(args.header_path, "^(.*)/[^/]+$")
+        if dir then src_dir = dir end
+    end
+    json_mod.encode(shared.foreign_import_preview(args.header_path, src_dir))
+end)
+
+mcp.register_tool("duo_pass5_catalog", {
+    description = "Pass 5 workstream and milestone status from duo catalog",
+    type = "object",
+    properties = {},
+}, fun(_args)
+    json_mod.encode(shared.pass5_catalog())
+end)
+
+mcp.register_tool("duo_pass6_catalog", {
+    description = "Pass 6 architectural reconciliation catalog",
+    type = "object",
+    properties = {},
+}, fun(_args)
+    json_mod.encode(shared.pass6_catalog())
+end)
+
 mcp.serve()
 
