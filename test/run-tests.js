@@ -7,6 +7,7 @@ const assert = require('assert');
 const { parseLine, wordEnd, SEV_ERROR, SEV_WARNING } = require('../lib/diagnostic');
 const { scanSymbols, symbolAt, SYM_FUNCTION, SYM_ENUM, SYM_VARIABLE } = require('../lib/symbols');
 const { applyChanges, offsetAt } = require('../lib/server');
+const { parseTraceLine } = require('../lib/trace');
 
 let passed = 0;
 let failed = 0;
@@ -69,6 +70,23 @@ test('parseLine: debug-dump ignores .col inside file byte array', () => {
   assert.strictEqual(r.message, 'boom');
 });
 
+test('parseLine: clean format hint', () => {
+  const line = `examples/x.duo:2:1: hint: add type annotations for faster codegen`;
+  const r = parseLine(line);
+  assert.strictEqual(r.line, 1);
+  assert.strictEqual(r.col, 0);
+  assert.strictEqual(r.severity, 4);
+  assert.strictEqual(r.message, 'add type annotations for faster codegen');
+});
+
+test('parseLine: clean format info', () => {
+  const line = `lib/a.duo:10:3: info: recorded generic instantiation`;
+  const r = parseLine(line);
+  assert.strictEqual(r.line, 9);
+  assert.strictEqual(r.col, 2);
+  assert.strictEqual(r.severity, 3);
+});
+
 // ── wordEnd ─────────────────────────────────────────────────────────────────
 test('wordEnd: extends over identifier', () => {
   assert.strictEqual(wordEnd('abc def', 0, 0), 3);
@@ -92,7 +110,7 @@ const SAMPLE = [
   '    Rect',
   'end',
   '',
-  'fun area(s: Shape): f64',
+  'area(s: Shape): f64',
   '    a: f64 = 0.0',
   '    match s',
   '        case Shape.Circle(r) then a = 3.14 * r * r',
@@ -104,7 +122,7 @@ const SAMPLE = [
   'print(area(circ))',
 ].join('\n');
 
-test('scanSymbols: finds top-level fun/enum/alias/var', () => {
+test('scanSymbols: finds top-level bare function/enum/alias/var', () => {
   const syms = scanSymbols(SAMPLE);
   const names = syms.map((s) => s.name);
   assert.ok(names.includes('Point2D'), `got ${names}`);
@@ -116,7 +134,7 @@ test('scanSymbols: finds top-level fun/enum/alias/var', () => {
 test('scanSymbols: does NOT collect nested decls inside fun/enum/match', () => {
   const syms = scanSymbols(SAMPLE);
   const names = syms.map((s) => s.name);
-  // `a` is declared inside `fun area`; `Circle` is inside `enum Shape`.
+  // `a` is declared inside `area`; `Circle` is inside `enum Shape`.
   assert.ok(!names.includes('Circle'), `nested enum member leaked: ${names}`);
   assert.ok(!names.includes('a'), `nested local leaked: ${names}`);
 });
@@ -148,9 +166,14 @@ test('scanSymbols: comment does not start a block', () => {
   assert.ok(!syms.some((s) => s.name === 'fake'));
 });
 
+test('scanSymbols: top-level calls are not bare declarations', () => {
+  const syms = scanSymbols('print(area(circ))\n');
+  assert.ok(!syms.some((s) => s.name === 'print'), `top-level call leaked`);
+});
+
 test('symbolAt: matches declaration line', () => {
   const syms = scanSymbols(SAMPLE);
-  const s = symbolAt(syms, 7, 0); // line of `fun area`
+  const s = symbolAt(syms, 7, 0); // line of bare `area`
   assert.ok(s);
   assert.strictEqual(s.name, 'area');
 });
@@ -175,6 +198,23 @@ test('applyChanges: incremental insert (empty range)', () => {
 });
 test('offsetAt: multi-line', () => {
   assert.strictEqual(offsetAt('ab\ncd', { line: 1, character: 1 }), 4);
+});
+
+// ── trace parsing ───────────────────────────────────────────────────────────
+test('parseTraceLine: step', () => {
+  const r = parseTraceLine('… parse + sema');
+  assert.strictEqual(r.kind, 'step');
+  assert.strictEqual(r.label, 'parse + sema');
+});
+test('parseTraceLine: done with detail', () => {
+  const r = parseTraceLine('✓ monomorphize (12 ms — 3 specialization(s))');
+  assert.strictEqual(r.kind, 'done');
+  assert.strictEqual(r.ms, 12);
+  assert.strictEqual(r.detail, '3 specialization(s)');
+});
+test('parseTraceLine: summary', () => {
+  const r = parseTraceLine('total: 42 ms');
+  assert.strictEqual(r.kind, 'summary');
 });
 
 // ── summary ─────────────────────────────────────────────────────────────────

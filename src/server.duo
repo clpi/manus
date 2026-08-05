@@ -526,6 +526,46 @@ fun match_plain_assign(code) -> any
   nil
 end
 
+fun match_bare_function(code) -> any
+  n = string.len(code)
+  if n == 0 then
+    return nil
+  end
+  i = 1
+  b = string.byte(code, i)
+  if not is_ident_start(b) then
+    return nil
+  end
+  while i <= n and is_ident_char(string.byte(code, i))
+    i = i + 1
+  end
+  name = string.sub(code, 1, i - 1)
+  while i <= n and is_space_byte(string.byte(code, i))
+    i = i + 1
+  end
+  if i > n or string.byte(code, i) ~= 40 then
+    return nil
+  end
+  depth = 1
+  has_typed_param = false
+  i = i + 1
+  while i <= n and depth > 0
+    ch = string.byte(code, i)
+    if ch == 40 then
+      depth = depth + 1
+    elseif ch == 41 then
+      depth = depth - 1
+    elseif ch == 58 then
+      has_typed_param = true
+    end
+    i = i + 1
+  end
+  if depth ~= 0 or not has_typed_param then
+    return nil
+  end
+  name
+end
+
 -- ── symbol construction ──────────────────────────────────────────────────────
 fun mk_sym(name, kind, line, col, container, raw_line) -> any
   s = {}
@@ -628,13 +668,23 @@ fun scan_symbols_lo(text, lo) -> any
         end
       end
     else
-      tb = match_typed(code)
-      if tb ~= nil then
-        syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, container, raw)
+      bf = match_bare_function(code)
+      if bf ~= nil then
+        syms[rawlen(syms) + 1] = mk_sym(bf, 12, i - 1, indent, container, raw)
+        if container == "" then
+          container = bf
+          container_kind = 12
+        end
+        depth = depth + 1
       else
-        pa = match_plain_assign(code)
-        if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
-          syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, container, raw)
+        tb = match_typed(code)
+        if tb ~= nil then
+          syms[rawlen(syms) + 1] = mk_sym(tb, 13, i - 1, indent, container, raw)
+        else
+          pa = match_plain_assign(code)
+          if pa ~= nil and not starts_with(rest, ".") and not contains_char(raw, ".") then
+            syms[rawlen(syms) + 1] = mk_sym(pa, 13, i - 1, indent, container, raw)
+          end
         end
       end
     end
@@ -1305,7 +1355,7 @@ fun run_check(uri) -> void
     f:write(d.text)
     f:close()
   end
-  cmd = shell_quote(io.lsp.duo_bin) .. " check --plain-diagnostics " .. io.lsp.check_flags .. shell_quote(d.tmp) .. " 2>&1"
+  cmd = shell_quote(io.lsp.duo_bin) .. " check --plain-diagnostics " .. io.lsp.check_flags .. " " .. shell_quote(d.tmp) .. " 2>&1"
   p = io.popen(cmd, "r")
   if p == nil then
     return
@@ -1314,6 +1364,17 @@ fun run_check(uri) -> void
   p:close()
   ensure_lo(d)
   diags = parse_diagnostics(out, d.lo, d.text)
+  if rawlen(diags) == 0 then
+    ep = find_from(out, "error:", 1)
+    if ep ~= 0 then
+      diag = {}
+      diag.range = mk_range(0, 0, word_end_lo(d.text, d.lo, 0, 0))
+      diag.severity = 1
+      diag.source = "duo"
+      diag.message = trim(string.sub(out, ep + 6))
+      diags[rawlen(diags) + 1] = diag
+    end
+  end
   send_diagnostics(uri, diags)
 end
 fun schedule_check(uri) -> void
@@ -1597,8 +1658,6 @@ fun add_static_completions(out, seen, prefix) -> void
   add_keyword_completion(out, seen, "end", prefix)
   add_keyword_completion(out, seen, "false", prefix)
   add_keyword_completion(out, seen, "for", prefix)
-  add_keyword_completion(out, seen, "fun", prefix)
-  add_keyword_completion(out, seen, "function", prefix)
   add_keyword_completion(out, seen, "global", prefix)
   add_keyword_completion(out, seen, "goto", prefix)
   add_keyword_completion(out, seen, "if", prefix)
@@ -1610,7 +1669,6 @@ fun add_static_completions(out, seen, prefix) -> void
   add_keyword_completion(out, seen, "or", prefix)
   add_keyword_completion(out, seen, "repeat", prefix)
   add_keyword_completion(out, seen, "return", prefix)
-  add_keyword_completion(out, seen, "then", prefix)
   add_keyword_completion(out, seen, "true", prefix)
   add_keyword_completion(out, seen, "try", prefix)
   add_keyword_completion(out, seen, "type", prefix)
@@ -1633,8 +1691,6 @@ fun add_static_completions(out, seen, prefix) -> void
   add_builtin_completion(out, seen, "assert", prefix)
   add_builtin_completion(out, seen, "collectgarbage", prefix)
   add_builtin_completion(out, seen, "error", prefix)
-  add_builtin_completion(out, seen, "ipairs", prefix)
-  add_builtin_completion(out, seen, "pairs", prefix)
   add_builtin_completion(out, seen, "pcall", prefix)
   add_builtin_completion(out, seen, "print", prefix)
   add_builtin_completion(out, seen, "rawlen", prefix)
@@ -1685,9 +1741,9 @@ fun add_static_completions(out, seen, prefix) -> void
   add_std_completion(out, seen, "yaml", prefix)
   add_std_completion(out, seen, "zip", prefix)
   add_std_completion(out, seen, "color", prefix)
-  add_snippet_completion(out, seen, "fun", "function declaration", "fun ${1:name}(${2:arg}: ${3:any}): ${4:any}\n    ${0}\nend", prefix, "s_fun")
-  add_snippet_completion(out, seen, "if", "if statement", "if ${1:cond} then\n    ${0}\nend", prefix, "s_if")
-  add_snippet_completion(out, seen, "match", "match expression", "match ${1:value}\n    case ${2:pattern} then\n        ${0}\nend", prefix, "s_match")
+  add_snippet_completion(out, seen, "fn", "bare function declaration", "${1:name}(${2:arg}: ${3:any}): ${4:any}\n    ${0}\nend", prefix, "s_fn")
+  add_snippet_completion(out, seen, "if", "if expression/statement", "if ${1:cond}\n    ${0}\nend", prefix, "s_if")
+  add_snippet_completion(out, seen, "match", "match expression", "match ${1:value}\n    case ${2:pattern}\n        ${0}\nend", prefix, "s_match")
   add_snippet_completion(out, seen, "enum", "enum declaration", "enum ${1:Name}\n    ${2:Variant}\nend", prefix, "s_enum")
   add_snippet_completion(out, seen, "concept", "concept declaration", "concept ${1:Name}\n    ${2:method}(${3:arg}: ${4:any}): ${5:any}\nend", prefix, "s_concept")
   add_snippet_completion(out, seen, "@inline", "inline function", "@inline", prefix, "d_inline")
@@ -1870,6 +1926,141 @@ fun handle_document_symbol(params) -> any
   out
 end
 
+-- ── Pass 5 foreign descriptor hover (SIM via @c.import) ─────────────────────
+fun uri_to_path(uri) -> str
+  if starts_with(uri, "file://") then
+    return string.sub(uri, 8)
+  end
+  uri
+end
+
+fun dirname(path) -> str
+  d = string.match(path, "^(.*)/[^/]+$")
+  if d ~= nil then
+    return d
+  end
+  "."
+end
+
+fun run_duo_capture(args) -> str
+  bin = io.lsp.duo_bin
+  if bin == nil then
+    return ""
+  end
+  cmd = shell_quote(bin) .. " " .. args .. " 2>/dev/null"
+  p = io.popen(cmd, "r")
+  if p == nil then
+    return ""
+  end
+  out = p:read("*a")
+  p:close()
+  out
+end
+
+fun find_c_import_headers(text) -> any
+  headers = {}
+  for header in string.gmatch(text, '@c%.import%("([^"]+)"%)')
+    headers[rawlen(headers) + 1] = header
+  end
+  for header in string.gmatch(text, "@c%.import%('([^']+)'%)")
+    headers[rawlen(headers) + 1] = header
+  end
+  headers
+end
+
+fun foreign_entity_in_doc(text, uri, symbol) -> any
+  path = uri_to_path(uri)
+  base = dirname(path)
+  headers = find_c_import_headers(text)
+  i = 1
+  while i <= rawlen(headers)
+    header = headers[i]
+    resolved = header
+    if string.sub(header, 1, 1) ~= "/" then
+      resolved = base .. "/" .. header
+    end
+    out = run_duo_capture("sim --import-c " .. resolved)
+    if out ~= "" then
+      snap = io.lsp.json.decode(out)
+      if snap ~= nil and snap.entities ~= nil then
+        j = 1
+        while j <= rawlen(snap.entities)
+          ent = snap.entities[j]
+          if ent ~= nil and ent.name == symbol then
+            ent._resolved_header = resolved
+            return ent
+          end
+          j = j + 1
+        end
+      end
+    end
+    i = i + 1
+  end
+  nil
+end
+
+fun format_foreign_hover(ent) -> str
+  lines = {}
+  lines[rawlen(lines) + 1] = "**foreign " .. (ent.kind or "entity") .. "** `" .. ent.name .. "`"
+  if ent.origin ~= nil then
+    lines[rawlen(lines) + 1] = ""
+    lines[rawlen(lines) + 1] = "- **origin:** " .. (ent.origin.language or "?") .. " · `" .. (ent.origin.artifact or "?") .. "`"
+  end
+  if ent._resolved_header ~= nil then
+    lines[rawlen(lines) + 1] = "- **header:** `" .. ent._resolved_header .. "`"
+  end
+  if ent.storage_class ~= nil then
+    lines[rawlen(lines) + 1] = "- **storage:** " .. ent.storage_class
+  end
+  if ent.size_bytes ~= nil then
+    sz = tostring(ent.size_bytes)
+    al = ent.align_bytes
+    if al ~= nil then
+      lines[rawlen(lines) + 1] = "- **layout:** " .. sz .. " bytes, align " .. tostring(al)
+    else
+      lines[rawlen(lines) + 1] = "- **layout:** " .. sz .. " bytes"
+    end
+  end
+  if ent.fields ~= nil and rawlen(ent.fields) > 0 then
+    lines[rawlen(lines) + 1] = ""
+    lines[rawlen(lines) + 1] = "**fields**"
+    fi = 1
+    while fi <= rawlen(ent.fields)
+      f = ent.fields[fi]
+      off = ""
+      if f.offset ~= nil then
+        off = " @+" .. tostring(f.offset)
+      end
+      lines[rawlen(lines) + 1] = "- `" .. f.name .. "`: " .. f.type .. off
+      fi = fi + 1
+    end
+  end
+  if ent.params ~= nil and rawlen(ent.params) > 0 then
+    lines[rawlen(lines) + 1] = ""
+    lines[rawlen(lines) + 1] = "**params**"
+    pi = 1
+    while pi <= rawlen(ent.params)
+      p = ent.params[pi]
+      lines[rawlen(lines) + 1] = "- `" .. p.name .. "`: " .. p.type
+      pi = pi + 1
+    end
+  end
+  if ent.return_type ~= nil then
+    lines[rawlen(lines) + 1] = "- **returns:** " .. ent.return_type
+  end
+  if ent.abi ~= nil then
+    lines[rawlen(lines) + 1] = ""
+    lines[rawlen(lines) + 1] = "**ABI:** " .. (ent.abi.calling_convention or "?") .. ", pass-by " .. (ent.abi.pass_by or "?")
+  end
+  if ent.contract ~= nil then
+    lines[rawlen(lines) + 1] = ""
+    lines[rawlen(lines) + 1] = "_semantic: " .. (ent.contract.semantic_completeness or "?")
+      .. " · abi: " .. (ent.contract.abi_completeness or "?")
+      .. " · layout: " .. (ent.contract.layout_completeness or "?") .. "_"
+  end
+  table.concat(lines, "\n")
+end
+
 fun handle_hover(params) -> any
   uri = params.textDocument.uri
   d = io.lsp.docs[uri]
@@ -1887,11 +2078,16 @@ fun handle_hover(params) -> any
   if ln ~= nil then
     sig = trim(ln)
   end
+  foreign = foreign_entity_in_doc(d.text, uri, s.name)
   c = {}
   c.kind = "markdown"
-  c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
-  if s.container ~= nil and s.container ~= "" then
-    c.value = c.value .. "  (in " .. s.container .. ")"
+  if foreign ~= nil then
+    c.value = format_foreign_hover(foreign)
+  else
+    c.value = "```duo\n" .. sig .. "\n```\n_" .. kind_label(s.kind) .. "_ **" .. s.name .. "**"
+    if s.container ~= nil and s.container ~= "" then
+      c.value = c.value .. "  (in " .. s.container .. ")"
+    end
   end
   r = {}
   r.contents = c

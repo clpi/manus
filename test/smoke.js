@@ -17,7 +17,7 @@ const assert = require('assert');
 
 const SERVER = path.join(__dirname, '..', 'duo-lsp');
 const DUO = process.env.DUO_LSP_DUO_BIN ||
-  path.resolve(__dirname, '..', '..', '..', 'zig-out', 'bin', 'duo');
+  path.resolve(__dirname, '..', '..', 'duo', 'zig-out', 'bin', 'duo');
 
 if (!fs.existsSync(SERVER)) {
   console.error(`smoke: server binary not found at ${SERVER} (run bash build.sh)`);
@@ -93,33 +93,40 @@ async function run() {
 
   notify('initialized', {});
 
-  // A .lua doc with an undeclared global → expect a diagnostic.
-  const luaUri = 'file:///tmp/duo_smoke.lua';
-  const luaText = 'local x = 1\nfunction f(): i64\n    return x + y\nend\nprint(f())\n';
+  // A malformed .duo doc -> expect a deterministic parser diagnostic.
+  const badUri = 'file:///tmp/duo_smoke_bad.duo';
+  const badText = 'x =\n';
   diagResult = null;
   notify('textDocument/didOpen', {
-    textDocument: { uri: luaUri, languageId: 'lua', version: 1, text: luaText },
+    textDocument: { uri: badUri, languageId: 'duo', version: 1, text: badText },
   });
   await new Promise((r) => setTimeout(r, 800));
-  check('lua doc publishes a diagnostic', !!diagResult && diagResult.diagnostics.length > 0,
+  check('malformed duo doc publishes a diagnostic', !!diagResult && diagResult.diagnostics.length > 0,
     JSON.stringify(diagResult && diagResult.diagnostics.map((d) => d.message)));
-  check('diagnostic mentions undeclared global',
-    !!diagResult && diagResult.diagnostics.some((d) => /y|global/i.test(d.message)),
+  check('diagnostic mentions expected expression',
+    !!diagResult && diagResult.diagnostics.some((d) => /expected expression/i.test(d.message)),
     JSON.stringify(diagResult && diagResult.diagnostics.map((d) => d.message)));
 
-  const syms = await request('textDocument/documentSymbol', { textDocument: { uri: luaUri } });
+  const symUri = 'file:///tmp/duo_smoke_symbols.duo';
+  const symText = 'x: i64 = 1\nf(a: i64): i64\n    a + x\nend\nprint(f(x))\n';
+  notify('textDocument/didOpen', {
+    textDocument: { uri: symUri, languageId: 'duo', version: 1, text: symText },
+  });
+  await new Promise((r) => setTimeout(r, 200));
+
+  const syms = await request('textDocument/documentSymbol', { textDocument: { uri: symUri } });
   const names = (syms || []).map((s) => s.name);
   check('documentSymbol finds f and x', names.includes('f') && names.includes('x'),
     JSON.stringify(names));
 
   const hover = await request('textDocument/hover', {
-    textDocument: { uri: luaUri }, position: { line: 1, character: 10 },
+    textDocument: { uri: symUri }, position: { line: 1, character: 0 },
   });
   check('hover returns a value for f', !!hover && /f/.test(JSON.stringify(hover)),
     JSON.stringify(hover));
 
   // A clean .duo doc → no diagnostics, symbols found.
-  const duo = fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'examples', 'pattern_match_demo.duo'), 'utf8');
+  const duo = fs.readFileSync(path.resolve(__dirname, '..', '..', 'duo', 'examples', 'pattern_match_demo.duo'), 'utf8');
   const duoUri = 'file:///tmp/duo_smoke_pm.duo';
   diagResult = null;
   notify('textDocument/didOpen', {

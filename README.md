@@ -11,10 +11,10 @@ stdio JSON-RPC. The server itself is written in Duo and compiled to a self-conta
   a temp file and runs `duo check`, then publishes parsed diagnostics. Both
   `.duo` and `.lua` documents are supported (the compiler selects the language
   mode by extension).
-- **Document symbols** — a light line-scanner finds top-level `fun`/`function`,
-  `enum`, `concept`, `alias`, `struct`, and variable declarations for the
-  outline. Nested declarations (inside `fun`/`enum`/`match`/`{...}`) are
-  excluded.
+- **Document symbols** — a light line-scanner finds top-level preferred bare
+  typed functions, legacy `fun`/`function`, `enum`, `concept`, `alias`,
+  `struct`, and variable declarations for the outline. Nested declarations
+  (inside `fun`/`enum`/`match`/`{...}`) are excluded.
 - **Hover** — returns the declaration line and kind of the top-level symbol at
   the cursor.
 - **Go-to-definition** — jumps to the declaration of a top-level symbol.
@@ -86,16 +86,31 @@ launcher with `cmd = { "duo-lsp" }` and `filetypes = { "duo", "lua" }`.
 
 ## Diagnostic format note
 
-The Duo compiler (Zig 0.17-dev) currently emits locations as a debug struct
-dump rather than the intended `path:line:col` form, e.g.:
+For editor and CI integration, run the compiler with `--plain-diagnostics` (or
+`DUO_PLAIN_DIAG=1`). That emits one line per issue:
+
+```
+path:line:col: error: message
+path:line:col: hint: add type annotations for faster codegen
+```
+
+The LSP server always passes `--plain-diagnostics` to `duo check`. Optional
+compiler notes for the editor:
+
+- `DUO_LSP_HINTS=1` — append `--hints` to the check command
+- `DUO_LSP_CHECK_FLAGS="--hints --info"` — arbitrary extra flags before the file path
+
+Human-facing TTY output (default) uses styled diagnostics with source context.
+Enable pipeline tracing with `duo compile --trace` or `DUO_TRACE=1`; optional
+`--info` / `--hints` (or `DUO_INFO` / `DUO_HINTS`) add opt-in compiler notes.
+
+The parser also accepts the legacy debug-dump form if present:
 
 ```
 .{ .file = { 47, 116, … }, .line = 2, .col = 1 }: error: attempt to assign to const variable 'x'
 ```
 
-The LSP server parses both this debug-dump form **and** the clean
-`path:line:col: error: msg` form, so diagnostics work correctly. The temp file
-path is never reported to the client.
+The temp file path is never reported to the client.
 
 ## Limitations
 
