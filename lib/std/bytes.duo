@@ -1,661 +1,101 @@
--- std.bytes — byte-sequence buffer and helpers (mirrors Go's bytes package)
--- Provides a growable byte buffer with read/write/seek/search operations.
+-- std.bytes — Native byte slices and cursors for binary parsing.
+-- Ward blocker: Duo needs byte buffers for Wasm binary decoding.
+-- This is a general-purpose capability, not Ward-specific.
 
--- ═══════════════════════════════════════════════════════════════
--- Buffer — growable byte buffer (mirrors bytes.Buffer)
--- ═══════════════════════════════════════════════════════════════
-
-fun buf_new(): any
-    {buf = {}, off = 0, last_read = "n"}
+-- Create a byte buffer from a string (zero-copy view of string bytes)
+fun from_string(s: str): any
+    return { data = s, pos = 1, len = string.len(s) }
 end
 
-fun buf_new_with(data: str): any
-    b = buf_new()
-    for i = 1, string.len(data)
-        b.buf[#b.buf + 1] = string.byte(data, i)
+-- Read one byte at current position, advance cursor
+fun read_byte(buf: any): i64
+    if buf.pos > buf.len then return -1 end
+    b = string.byte(buf.data, buf.pos)
+    buf.pos = buf.pos + 1
+    return b
+end
+
+-- Read a u32 (little-endian) from cursor
+fun read_u32_le(buf: any): i64
+    if buf.pos + 3 > buf.len then return -1 end
+    b0 = string.byte(buf.data, buf.pos)
+    b1 = string.byte(buf.data, buf.pos + 1)
+    b2 = string.byte(buf.data, buf.pos + 2)
+    b3 = string.byte(buf.data, buf.pos + 3)
+    buf.pos = buf.pos + 4
+    return b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+end
+
+-- Read a u16 (little-endian) from cursor
+fun read_u16_le(buf: any): i64
+    if buf.pos + 1 > buf.len then return -1 end
+    b0 = string.byte(buf.data, buf.pos)
+    b1 = string.byte(buf.data, buf.pos + 1)
+    buf.pos = buf.pos + 2
+    return b0 + b1 * 256
+end
+
+-- Read LEB128-encoded unsigned integer (used extensively in Wasm binary format)
+fun read_leb128_u(buf: any): i64
+    result = 0
+    shift = 0
+    while true do
+        if buf.pos > buf.len then return -1 end
+        b = string.byte(buf.data, buf.pos)
+        buf.pos = buf.pos + 1
+        result = result + ((b % 128) * (2 ^ shift))
+        if b < 128 then return result end
+        shift = shift + 7
+        if shift >= 35 then return -1 end
     end
-    b
+    return result
 end
 
-fun buf_new_with_bytes(data: any): any
-    b = buf_new()
-    if data == nil then return b end
-    i = 1
-    while i <= #data
-        b.buf[#b.buf + 1] = data[i]
-        i += 1
-    end
-    b
-end
-
-fun buf_len(b: any): i64
-    rawlen(b.buf) - b.off
-end
-
-fun buf_reset(b: any): void
-    b.buf = {}
-    b.off = 0
-    b.last_read = "n"
-end
-
-fun buf_truncate(b: any, n: i64): void
-    if n < 0 then n = 0 end
-    if n < buf_len(b) then
-        new_len = b.off + n
-        i = new_len + 1
-        while i <= rawlen(b.buf)
-            b.buf[i] = nil
-            i += 1
-        end
-    end
-end
-
-fun buf_grow(b: any, n: i64): i64
-    if b.off > 0 then
-        old_len = rawlen(b.buf)
-        if old_len - b.off < n then
-            -- Compact: move unread data to front
-            unread = old_len - b.off
-            i = 0
-            while i < unread
-                b.buf[i + 1] = b.buf[b.off + i + 1]
-                i += 1
+-- Read LEB128-encoded signed integer
+fun read_leb128_s(buf: any): i64
+    result = 0
+    shift = 0
+    while true do
+        if buf.pos > buf.len then return -1 end
+        b = string.byte(buf.data, buf.pos)
+        buf.pos = buf.pos + 1
+        result = result + ((b % 128) * (2 ^ shift))
+        shift = shift + 7
+        if b < 128 then
+            if shift < 64 and (b % 256) >= 64 then
+                result = result - (2 ^ shift)
             end
-            i = unread + 1
-            while i <= old_len
-                b.buf[i] = nil
-                i += 1
-            end
+            return result
         end
-        b.off = 0
+        if shift >= 70 then return -1 end
     end
-    b.off
+    return result
 end
 
-fun buf_write(b: any, data: str): i64
-    if data == nil or string.len(data) == 0 then return 0 end
-    m = buf_len(b)
-    buf_grow(b, string.len(data))
-    i = 1
-    while i <= string.len(data)
-        b.buf[#b.buf + 1] = string.byte(data, i)
-        i += 1
-    end
-    string.len(data)
+-- Read N bytes as a substring
+fun read_bytes(buf: any, n: i64): str
+    if buf.pos + n - 1 > buf.len then return "" end
+    result = string.sub(buf.data, buf.pos, buf.pos + n - 1)
+    buf.pos = buf.pos + n
+    return result
 end
 
-fun buf_write_bytes(b: any, data: any): i64
-    if data == nil or #data == 0 then return 0 end
-    n: i64 = #data
-    buf_grow(b, n)
-    i = 1
-    while i <= n
-        b.buf[#b.buf + 1] = data[i]
-        i += 1
-    end
-    n
+-- Remaining bytes in buffer
+fun remaining(buf: any): i64
+    return buf.len - buf.pos + 1
 end
 
-fun buf_write_byte(b: any, c: i64): void
-    buf_grow(b, 1)
-    b.buf[#b.buf + 1] = c
+-- Check if at end
+fun is_eof(buf: any): bool
+    return buf.pos > buf.len
 end
 
-fun buf_write_string(b: any, s: str): i64
-    buf_write(b, s)
+-- Skip N bytes
+fun skip(buf: any, n: i64)
+    buf.pos = buf.pos + n
 end
 
-fun buf_read(b: any, n: i64): any
-    m = buf_len(b)
-    if m == 0 then return nil, nil end
-    if n > m then n = m end
-    data = {}
-    i = 0
-    while i < n
-        data[#data + 1] = b.buf[b.off + i + 1]
-        i += 1
-    end
-    b.off += n
-    b.last_read = "r"
-    data, nil
+-- Current position (1-indexed)
+fun position(buf: any): i64
+    return buf.pos
 end
-
-fun buf_read_byte(b: any): any
-    if buf_len(b) == 0 then return nil, nil end
-    c = b.buf[b.off + 1]
-    b.off += 1
-    b.last_read = "b"
-    c, nil
-end
-
-fun buf_index_byte(b: any, c: i64): i64
-    i = b.off
-    while i < rawlen(b.buf)
-        if b.buf[i + 1] == c then return i - b.off end
-        i += 1
-    end
-    (-1)
-end
-
-fun buf_read_bytes(b: any, delim: i64): any
-    s = buf_index_byte(b, delim)
-    if s < 0 then
-        -- Read everything available
-        n = buf_len(b)
-        if n == 0 then return nil, nil end
-        data, _ = buf_read(b, n)
-        return data, nil
-    end
-    data = {}
-    i = 0
-    while i <= s
-        data[#data + 1] = b.buf[b.off + i + 1]
-        i += 1
-    end
-    b.off += s + 1
-    b.last_read = "r"
-    data, nil
-end
-
-fun buf_read_string(b: any, n: i64): any
-    data, err = buf_read(b, n)
-    if data == nil then return "", err end
-    parts = {}
-    i = 1
-    while i <= #data
-        parts[#parts + 1] = string.char(data[i])
-        i += 1
-    end
-    table.concat(parts), nil
-end
-
-fun buf_read_from(b: any, reader: any, n: i64): i64
-    total = 0
-    while total < n
-        data = reader(4096)
-        if data == nil or #data == 0 then break end
-        buf_write_bytes(b, data)
-        total += #data
-    end
-    total
-end
-
-fun buf_write_to(b: any, writer: any): i64
-    total = 0
-    while buf_len(b) > 0
-        chunk = {}
-        i = 0
-        while i < 4096 and buf_len(b) > 0
-            c, _ = buf_read_byte(b)
-            if c ~= nil then
-                chunk[#chunk + 1] = c
-            end
-            i += 1
-        end
-        if #chunk > 0 then
-            writer(chunk)
-            total += #chunk
-        end
-    end
-    total
-end
-
-fun buf_unread_byte(b: any): any
-    if b.off == 0 then return nil end
-    if b.last_read ~= "b" then return nil end
-    b.off -= 1
-    b.buf[b.off + 1], nil
-end
-
-fun buf_bytes(b: any): any
-    data = {}
-    i = b.off
-    while i < rawlen(b.buf)
-        data[#data + 1] = b.buf[i + 1]
-        i += 1
-    end
-    data
-end
-
-fun buf_string(b: any): str
-    parts = {}
-    i = b.off
-    while i < rawlen(b.buf)
-        parts[#parts + 1] = string.char(b.buf[i + 1])
-        i += 1
-    end
-    table.concat(parts)
-end
-
-fun buf_next(b: any): any
-    if buf_len(b) == 0 then return nil end
-    c = b.buf[b.off + 1]
-    b.off += 1
-    b.last_read = "r"
-    c
-end
-
-fun buf_reset_read(b: any): void
-    b.off = 0
-end
-
--- ═══════════════════════════════════════════════════════════════
--- Byte sequence operations (mirrors Go's bytes functions)
--- ═══════════════════════════════════════════════════════════════
-
-fun bytes_equal(a: any, b: any): bool
-    if a == nil and b == nil then return true end
-    if a == nil or b == nil then return false end
-    if #a ~= #b then return false end
-    i = 1
-    while i <= #a
-        if a[i] ~= b[i] then return false end
-        i += 1
-    end
-    true
-end
-
-fun bytes_compare(a: any, b: any): i64
-    if a == nil and b == nil then return 0 end
-    if a == nil then return -1 end
-    if b == nil then return 1 end
-    min_len = #a
-    if #b < min_len then min_len = #b end
-    i = 1
-    while i <= min_len
-        if a[i] < b[i] then return -1 end
-        if a[i] > b[i] then return 1 end
-        i += 1
-    end
-    if #a < #b then return -1 end
-    if #a > #b then return 1 end
-    0
-end
-
-fun bytes_clone(a: any): any
-    if a == nil then return {} end
-    out = {}
-    i = 1
-    while i <= #a
-        out[i] = a[i]
-        i += 1
-    end
-    out
-end
-
-fun bytes_contains(s: any, substr: any): bool
-    if s == nil or substr == nil then return false end
-    if #substr == 0 then return true end
-    if #substr > #s then return false end
-    i = 1
-    while i <= #s - #substr + 1
-        matched = true
-        j = 1
-        while j <= #substr
-            if s[i + j - 1] ~= substr[j] then matched = false; break end
-            j += 1
-        end
-        if matched then return true end
-        i += 1
-    end
-    false
-end
-
-fun bytes_count(s: any, sep: any): i64
-    if s == nil or sep == nil then return 0 end
-    if #sep == 0 then return 0 end
-    count = 0
-    i = 1
-    while i <= #s - #sep + 1
-        matched = true
-        j = 1
-        while j <= #sep
-            if s[i + j - 1] ~= sep[j] then matched = false; break end
-            j += 1
-        end
-        if matched then
-            count += 1
-            i += #sep
-        else
-            i += 1
-        end
-    end
-    count
-end
-
-fun bytes_has_prefix(s: any, prefix: any): bool
-    if s == nil or prefix == nil then return false end
-    if #prefix > #s then return false end
-    i = 1
-    while i <= #prefix
-        if s[i] ~= prefix[i] then return false end
-        i += 1
-    end
-    true
-end
-
-fun bytes_has_suffix(s: any, suffix: any): bool
-    if s == nil or suffix == nil then return false end
-    if #suffix > #s then return false end
-    offset = #s - #suffix
-    i = 1
-    while i <= #suffix
-        if s[offset + i] ~= suffix[i] then return false end
-        i += 1
-    end
-    true
-end
-
-fun bytes_index(s: any, sep: any): i64
-    if s == nil or sep == nil then return -1 end
-    if #sep == 0 then return 0 end
-    if #sep > #s then return -1 end
-    i = 1
-    while i <= #s - #sep + 1
-        matched = true
-        j = 1
-        while j <= #sep
-            if s[i + j - 1] ~= sep[j] then matched = false; break end
-            j += 1
-        end
-        if matched then return i - 1 end
-        i += 1
-    end
-    (-1)
-end
-
-fun bytes_last_index(s: any, sep: any): i64
-    if s == nil or sep == nil then return -1 end
-    if #sep == 0 then return #s end
-    if #sep > #s then return -1 end
-    i = #s - #sep + 1
-    while i >= 1
-        matched = true
-        j = 1
-        while j <= #sep
-            if s[i + j - 1] ~= sep[j] then matched = false; break end
-            j += 1
-        end
-        if matched then return i - 1 end
-        i -= 1
-    end
-    (-1)
-end
-
-fun bytes_join(elems: any, sep: any): any
-    if elems == nil then return {} end
-    if #elems == 0 then return {} end
-    if sep == nil then sep = {} end
-    result = {}
-    i = 1
-    while i <= #elems
-        if i > 1 then
-            j = 1
-            while j <= #sep
-                result[#result + 1] = sep[j]
-                j += 1
-            end
-        end
-        j = 1
-        while j <= #elems[i]
-            result[#result + 1] = elems[i][j]
-            j += 1
-        end
-        i += 1
-    end
-    result
-end
-
-fun bytes_repeat(s: any, count: i64): any
-    if s == nil or count <= 0 then return {} end
-    result = {}
-    i = 0
-    while i < count
-        j = 1
-        while j <= #s
-            result[#result + 1] = s[j]
-            j += 1
-        end
-        i += 1
-    end
-    result
-end
-
-fun bytes_replace(s: any, old: any, new: any, n: i64): any
-    if s == nil or old == nil then return bytes_clone(s) end
-    if #old == 0 then return bytes_clone(s) end
-    if new == nil then new = {} end
-    result = {}
-    count = 0
-    i = 1
-    while i <= #s
-        if n > 0 and count >= n then
-            result[#result + 1] = s[i]
-            i += 1
-        else
-            matched = true
-            j = 1
-            while j <= #old
-                if i + j - 1 > #s or s[i + j - 1] ~= old[j] then matched = false; break end
-                j += 1
-            end
-            if matched then
-                j = 1
-                while j <= #new
-                    result[#result + 1] = new[j]
-                    j += 1
-                end
-                i += #old
-                count += 1
-            else
-                result[#result + 1] = s[i]
-                i += 1
-            end
-        end
-    end
-    result
-end
-
-fun bytes_index_from(s: any, sep: any, start: i64): i64
-    if start < 1 then start = 1 end
-    if #sep == 0 then return 0 end
-    if #sep > #s - start + 1 then return -1 end
-    i = start
-    while i <= #s - #sep + 1
-        matched = true
-        j = 1
-        while j <= #sep
-            if s[i + j - 1] ~= sep[j] then matched = false; break end
-            j += 1
-        end
-        if matched then return i - start end
-        i += 1
-    end
-    (-1)
-end
-
-fun bytes_split(s: any, sep: any): any
-    if s == nil then return {} end
-    if sep == nil then return {bytes_clone(s)} end
-    if #sep == 0 then
-        result = {}
-        i = 1
-        while i <= #s
-            result[#result + 1] = {s[i]}
-            i += 1
-        end
-        return result
-    end
-    result = {}
-    start = 1
-    while start <= #s
-        idx = bytes_index_from(s, sep, start)
-        if idx < 0 then
-            part = {}
-            i = start
-            while i <= #s
-                part[#part + 1] = s[i]
-                i += 1
-            end
-            result[#result + 1] = part
-            break
-        end
-        part = {}
-        i = start
-        while i < start + idx
-            part[#part + 1] = s[i]
-            i += 1
-        end
-        result[#result + 1] = part
-        start = start + idx + #sep
-    end
-    result
-end
-
-fun bytes_trim(s: any, cutset: any): any
-    if s == nil or cutset == nil then return bytes_clone(s) end
-    start = 1
-    while start <= #s
-        found = false
-        i = 1
-        while i <= #cutset
-            if s[start] == cutset[i] then found = true; break end
-            i += 1
-        end
-        if not found then break end
-        start += 1
-    end
-    if start > #s then return {} end
-    finish = #s
-    while finish >= start
-        found = false
-        i = 1
-        while i <= #cutset
-            if s[finish] == cutset[i] then found = true; break end
-            i += 1
-        end
-        if not found then break end
-        finish -= 1
-    end
-    result = {}
-    i = start
-    while i <= finish
-        result[#result + 1] = s[i]
-        i += 1
-    end
-    result
-end
-
-fun bytes_to_string(s: any): str
-    if s == nil then return "" end
-    parts = {}
-    i = 1
-    while i <= #s
-        parts[#parts + 1] = string.char(s[i])
-        i += 1
-    end
-    table.concat(parts)
-end
-
-fun bytes_from_string(s: str): any
-    if s == nil then return {} end
-    result = {}
-    i = 1
-    while i <= string.len(s)
-        result[#result + 1] = string.byte(s, i)
-        i += 1
-    end
-    result
-end
-
-fun bytes_map(f: any, s: any): any
-    if s == nil then return {} end
-    result = {}
-    i = 1
-    while i <= #s
-        result[#result + 1] = f(s[i])
-        i += 1
-    end
-    result
-end
-
-fun bytes_reverse(s: any): any
-    if s == nil then return {} end
-    result = {}
-    i = #s
-    while i >= 1
-        result[#result + 1] = s[i]
-        i -= 1
-    end
-    result
-end
-
-fun bytes_rotate_left(s: any, k: i64): any
-    n = #s
-    if n == 0 then return {} end
-    k = k % n
-    if k < 0 then k = k + n end
-    result = {}
-    i = k + 1
-    while i <= n
-        result[#result + 1] = s[i]
-        i += 1
-    end
-    i = 1
-    while i <= k
-        result[#result + 1] = s[i]
-        i += 1
-    end
-    result
-end
-
--- ═══════════════════════════════════════════════════════════════
--- Module exports
--- ═══════════════════════════════════════════════════════════════
-
-M = {}
--- Buffer
-M.new = buf_new
-M.new_with = buf_new_with
-M.new_with_bytes = buf_new_with_bytes
-M.len = buf_len
-M.reset = buf_reset
-M.truncate = buf_truncate
-M.grow = buf_grow
-M.write = buf_write
-M.write_bytes = buf_write_bytes
-M.write_byte = buf_write_byte
-M.write_string = buf_write_string
-M.read = buf_read
-M.read_byte = buf_read_byte
-M.read_bytes = buf_read_bytes
-M.read_string = buf_read_string
-M.read_from = buf_read_from
-M.write_to = buf_write_to
-M.unread_byte = buf_unread_byte
-M.index_byte = buf_index_byte
-M.bytes = buf_bytes
-M.string = buf_string
-M.next = buf_next
-M.reset_read = buf_reset_read
--- Byte sequence operations
-M.equal = bytes_equal
-M.compare = bytes_compare
-M.clone = bytes_clone
-M.contains = bytes_contains
-M.count = bytes_count
-M.has_prefix = bytes_has_prefix
-M.has_suffix = bytes_has_suffix
-M.index = bytes_index
-M.last_index = bytes_last_index
-M.join = bytes_join
-M["repeat"] = bytes_repeat
-M.replace = bytes_replace
-M.split = bytes_split
-M.trim = bytes_trim
-M.to_string = bytes_to_string
-M.from_string = bytes_from_string
-M.map = bytes_map
-M.reverse = bytes_reverse
-M.rotate_left = bytes_rotate_left
-M
