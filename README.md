@@ -4,6 +4,36 @@
 
 Duo is a Lua-like language that compiles to native C (AOT). This repository includes a 40-benchmark suite comparing Duo against hand-written reference C.
 
+## Syntax at a Glance
+
+```lua
+-- Compact functions (no keywords needed)
+add(a: i64, b: i64): i64 a + b end
+distance(p: Point): f64 p.x * p.x + p.y * p.y end
+
+-- Descriptors replace struct/enum/concept keywords
+Point: @{ x: f64, y: f64 }
+Color: @{ Red, Green, Blue }
+Sprite: @{ ..Named, ..Positioned, color: str }  -- composition
+
+-- Pipelines with field projections
+users:filter(.active):map(.name):each(print)
+
+-- Table spread and newline separators
+config = {
+    ..defaults
+    workers = 8
+    debug = true
+}
+
+-- Compile-time evaluation
+size = @(64 * 1024)
+Vec4f = @(Vector(f32, 4))
+
+-- Native compilation (arm64, zero boxing)
+-- duo compile file.duo --target native-exe
+```
+
 ## Editor support
 
 Official editor plugins for Duo live under `ext/`:
