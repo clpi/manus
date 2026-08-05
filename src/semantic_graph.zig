@@ -98,7 +98,6 @@ pub const SemanticGraph = struct {
     alloc: std.mem.Allocator,
     nodes: std.ArrayListUnmanaged(Node) = .empty,
     edges: std.ArrayListUnmanaged(Edge) = .empty,
-    name_index: std.StringHashMapUnmanaged(NodeId) = .empty,
     /// Module-scope func decls indexed by name (Pass 2.2 effect inference on call lift).
     func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
 
@@ -113,16 +112,12 @@ pub const SemanticGraph = struct {
         }
         self.nodes.deinit(self.alloc);
         self.edges.deinit(self.alloc);
-        self.name_index.deinit(self.alloc);
         self.func_decls.deinit(self.alloc);
     }
 
     pub fn addNode(self: *SemanticGraph, node: Node) !NodeId {
         const id = NodeId{ .index = @intCast(self.nodes.items.len) };
         try self.nodes.append(self.alloc, node);
-        // name_index population deferred: duplicate names from locals in
-        // different scopes cause hash-map grow panics. The index is built
-        // lazily by findByName via linear scan when needed.
         return id;
     }
 
@@ -135,8 +130,11 @@ pub const SemanticGraph = struct {
         return &self.nodes.items[id.index];
     }
 
+    /// Find the first node with a given name. O(n) scan.
+    /// NOTE: duplicate names exist (locals in different scopes). This returns
+    /// the first match. For production scale, replace with a scope-qualified
+    /// index (e.g. HashMap([]const u8, ArrayList(NodeId))).
     pub fn findByName(self: *const SemanticGraph, name: []const u8) ?NodeId {
-        // Linear scan (name_index disabled to prevent duplicate-key panics).
         for (self.nodes.items, 0..) |node, i| {
             if (node.name) |n| {
                 if (std.mem.eql(u8, n, name)) return NodeId{ .index = @intCast(i) };
