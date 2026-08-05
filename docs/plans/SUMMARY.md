@@ -111,6 +111,23 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 - **P12-M1 partial:** `src/token_semantic.zig` → `lexer.zig` keyword lookup integrated
 - **P12-M2 partial:** Ward dispatch via `wasm_semantic_gen.zig`
 
+## Pass 13 — Development Control Plane
+
+- **Mission:** One deterministic, inspectable development control plane so humans and concurrent agents operate on canonical truth
+- Plan: `docs/plans/pass13_development_control_plane.md`; catalog: `duo catalog` → `pass13`
+- `duo dev snapshot|audit|context|summary|claim|session|validate|coordination`
+- Canonical owners: `src/dev_control_plane.zig`, `src/pass13_dev_audit.zig`, `src/presentation_record.zig`
+- **Open:** claim-lease MCP wire, `.duo/dev/` persistence, coordination migration (P13-WS18)
+
+## Pass 14 — Constructive Evolution, Sovereignty, Universal Performance, Living Compiler
+
+- **Mission:** The permanent development philosophy — reconcile before replacing, preserve before deleting, own essential capabilities, perform across all architectures, stay current, shrink over time
+- Plan: `docs/plans/pass14_constructive_evolution.md`; catalog: `duo catalog` → `pass14`
+- `duo dev preserve` inventories stash / dirty work / valuable untracked / unique branches / prunable worktrees (Milestone 1)
+- Canonical owners: `src/git_preservation.zig` (Audit 1), `src/salvage_registry.zig` (Audit 2, seeded with real findings), `src/pass14_constructive_audit.zig` (14 audits), `src/pass14_catalog.zig`
+- **Delivered:** M1 (preservation report) + M2 (salvage registry with real drift findings: stale pass-name stubs still referenced by AGENTS.md, prunable worktrees, unmerged branch, untracked agent state)
+- **Process pass** over Pass 13's control plane — governs how work is preserved, reconciled, and removed, not coordination state itself
+
 ## Current Proven Capabilities
 
 ```
