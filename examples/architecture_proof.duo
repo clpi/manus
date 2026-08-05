@@ -19,6 +19,11 @@ config = {
 Direction: @{ North, South, East, West }
 Point: @{ x: f64, y: f64 }
 
+-- Multi-parent descriptor composition (GP-012)
+Named: @{ name: str }
+Colored: @{ color: str }
+Sprite: @{ ..Named, ..Colored, x: f64 }
+
 -- Table spread (GP-004)
 defaults = { color = "blue", size = 10 }
 custom = { ..defaults, color = "red" }
@@ -64,7 +69,9 @@ point = {
 -- Future: @c.import("header.h") will parse and import automatically.
 
 -- ═══ Results ═══
+sprite: Sprite = { name = "hero", color = "blue", x = 5.0 }
 print("RESULT config " .. config.name .. " v" .. config.version)
+print("RESULT composition " .. sprite.name .. " " .. sprite.color .. " " .. tostring(sprite.x))
 print("RESULT spread " .. custom.color .. " " .. tostring(custom.size))
 print("RESULT projections " .. names[1] .. "," .. names[2] .. "," .. names[3])
 print("RESULT iteration " .. tostring(total))
