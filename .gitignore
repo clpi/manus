@@ -10,6 +10,30 @@ test4
 *.o
 docs/book/
 
+# Build artifacts
+*.profraw
+*.dylib
+/bench_*
+/benchmark_c*
+
 # macOS finder noise
 .DS_Store
 **/.DS_Store
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Scratch and debug (Pass 10: no repository pollution)
+*.log
+*.patch
+*.diff
+/scratch*
+/debug*
+/hello.duo
+/root
+/patch*
+/diff*
+/compile_err*
+/smoke.c
+/derive_test.c
