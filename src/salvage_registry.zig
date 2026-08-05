@@ -39,6 +39,7 @@ pub const Eligibility = enum {
     not_eligible,
     eligible_after_salvage,
     eligible_now,
+    resolved,
 
     pub fn name(self: Eligibility) []const u8 {
         return @tagName(self);
@@ -68,23 +69,23 @@ pub const seed_salvage_records: []const SalvageRecord = &.{
         .retained_value = "Git history of each file preserves the original short drafts; the current content is a clean redirect to the canonical name.",
         .invalid_assumptions = "That short pass-numbered names are permanent (Pass 14 §16.3 forbids pass-shaped / chronology-based permanent names).",
         .replacement = "Canonical plans: pass2_foundational_convergence.md, pass4_native_end_to_end.md, pass6_architectural_reconciliation.md, pass7_ai_native_compilation.md, pass8_persistent_semantic_computing.md.",
-        .transferred = "Redirection text in each stub points at the canonical file; no unique content remains in the stub bodies.",
-        .evidence = "AGENTS.md 'Architecture passes' list still references the old short names — a real cross-doc drift that blocks clean retirement.",
+        .transferred = "AGENTS.md + docs/AGENT_ALIGNMENT.md inbound references refitted to canonical names (Pass 14 audit 2026-08-05). Remaining inbound refs are pass10_repo_audit findings (correct-as-documentation) and the coordination buffer (redirect-functional).",
+        .evidence = "Stubs now have zero canonical inbound links; `grep` for the short names finds only redirect files, pass10 findings, and historical session-log entries.",
         .strategy = .retire_through_replacement,
-        .eligibility = .eligible_after_salvage,
+        .eligibility = .eligible_now,
         .owner = "docs/plans",
     },
     .{
         .id = "drift-agents-md-stale-pass-paths",
-        .purpose = "AGENTS.md 'Architecture passes (read in order)' lists redirect/stub plan paths instead of canonical names.",
-        .retained_value = "The reading order and one-line descriptions are still useful navigation.",
+        .purpose = "AGENTS.md and docs/AGENT_ALIGNMENT.md 'Architecture passes' lists referenced redirect/stub plan paths instead of canonical names.",
+        .retained_value = "The reading order and one-line descriptions remain useful navigation.",
         .invalid_assumptions = "That the short-named stub files are the substantive plans.",
-        .replacement = "Update the five AGENTS.md links to the canonical *_foundational_convergence / *_end_to_end / *_architectural_reconciliation / *_ai_native_compilation / *_persistent_semantic_computing names.",
-        .transferred = "Reading-order preserved; only the href targets change.",
-        .evidence = "wc -c on the five referenced files shows 200–230 bytes each (redirect only), vs 4–18KB canonical files.",
+        .replacement = "The five AGENTS.md links + four AGENT_ALIGNMENT.md links now point at the canonical *_foundational_convergence / *_end_to_end / *_architectural_reconciliation / *_ai_native_compilation / *_persistent_semantic_computing names.",
+        .transferred = "Reading-order preserved; only the href targets changed (9 links across 2 files).",
+        .evidence = "Pass 14 audit 2026-08-05: `grep` confirms AGENTS.md + AGENT_ALIGNMENT.md now reference only canonical plan paths.",
         .strategy = .refit,
-        .eligibility = .eligible_now,
-        .owner = "AGENTS.md",
+        .eligibility = .resolved,
+        .owner = "AGENTS.md + docs/AGENT_ALIGNMENT.md",
     },
     .{
         .id = "worktree-prunable-recovery-jul-30",
@@ -137,15 +138,17 @@ pub const seed_salvage_records: []const SalvageRecord = &.{
 };
 
 /// Count records by disposition for the audit summary.
-pub fn summary() struct { total: usize, eligible_now: usize, eligible_after_salvage: usize, not_evaluated: usize } {
+pub fn summary() struct { total: usize, eligible_now: usize, eligible_after_salvage: usize, not_evaluated: usize, resolved: usize } {
     var eligible_now: usize = 0;
     var eligible_after: usize = 0;
     var not_evaluated: usize = 0;
+    var resolved: usize = 0;
     for (seed_salvage_records) |r| {
         switch (r.eligibility) {
             .eligible_now => eligible_now += 1,
             .eligible_after_salvage => eligible_after += 1,
             .not_evaluated => not_evaluated += 1,
+            .resolved => resolved += 1,
             .not_eligible => {},
         }
     }
@@ -154,6 +157,7 @@ pub fn summary() struct { total: usize, eligible_now: usize, eligible_after_salv
         .eligible_now = eligible_now,
         .eligible_after_salvage = eligible_after,
         .not_evaluated = not_evaluated,
+        .resolved = resolved,
     };
 }
 
@@ -167,7 +171,7 @@ pub fn writeSalvageRegistryJson(w: *std.Io.Writer) !void {
         );
     }
     const s = summary();
-    try w.print("],\"summary\":{{\"total\":{d},\"eligible_now\":{d},\"eligible_after_salvage\":{d},\"not_evaluated\":{d}}}}}", .{ s.total, s.eligible_now, s.eligible_after_salvage, s.not_evaluated });
+    try w.print("],\"summary\":{{\"total\":{d},\"eligible_now\":{d},\"eligible_after_salvage\":{d},\"not_evaluated\":{d},\"resolved\":{d}}}}}", .{ s.total, s.eligible_now, s.eligible_after_salvage, s.not_evaluated, s.resolved });
 }
 
 test "salvage_registry: seed records are non-empty and well-formed" {
@@ -183,7 +187,7 @@ test "salvage_registry: seed records are non-empty and well-formed" {
 test "salvage_registry: summary counts match" {
     const s = summary();
     try std.testing.expectEqual(seed_salvage_records.len, s.total);
-    try std.testing.expect(s.eligible_now + s.eligible_after_salvage + s.not_evaluated <= s.total);
+    try std.testing.expect(s.eligible_now + s.eligible_after_salvage + s.not_evaluated + s.resolved <= s.total);
 }
 
 test "salvage_registry: JSON parses" {

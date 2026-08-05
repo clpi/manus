@@ -139,13 +139,13 @@ Duo MUST achieve compile, runtime, and startup speeds that are better than ANY p
 **Full plan:** [`docs/plans/semantic_graph_architecture.md`](docs/plans/semantic_graph_architecture.md).
 
 **Architecture passes (read in order):**
-- Pass 2: [`docs/plans/pass2_convergence.md`](docs/plans/pass2_convergence.md) — 8 algebras
+- Pass 2: [`docs/plans/pass2_foundational_convergence.md`](docs/plans/pass2_foundational_convergence.md) — 8 algebras
 - Pass 3: [`docs/plans/pass3_directive_grammar_convergence.md`](docs/plans/pass3_directive_grammar_convergence.md) — grammar/directives
-- Pass 4: [`docs/plans/pass4_native_compilation.md`](docs/plans/pass4_native_compilation.md) — native backend
+- Pass 4: [`docs/plans/pass4_native_end_to_end.md`](docs/plans/pass4_native_end_to_end.md) — native backend
 - Pass 5: [`docs/plans/pass5_semantic_interchange.md`](docs/plans/pass5_semantic_interchange.md) — cross-language
-- Pass 6: [`docs/plans/pass6_reconciliation.md`](docs/plans/pass6_reconciliation.md) — architectural reconciliation
-- Pass 7: [`docs/plans/pass7_ai_native.md`](docs/plans/pass7_ai_native.md) — AI-native compilation
-- Pass 8: [`docs/plans/pass8_persistent_semantic.md`](docs/plans/pass8_persistent_semantic.md) — persistent semantic computing
+- Pass 6: [`docs/plans/pass6_architectural_reconciliation.md`](docs/plans/pass6_architectural_reconciliation.md) — architectural reconciliation
+- Pass 7: [`docs/plans/pass7_ai_native_compilation.md`](docs/plans/pass7_ai_native_compilation.md) — AI-native compilation
+- Pass 8: [`docs/plans/pass8_persistent_semantic_computing.md`](docs/plans/pass8_persistent_semantic_computing.md) — persistent semantic computing
 - Pass 9: [`docs/plans/pass9_ward_readiness.md`](docs/plans/pass9_ward_readiness.md) — Ward readiness & runtime supremacy
 
 **Catalogs:** [`docs/catalogs/keywords.md`](docs/catalogs/keywords.md) | [`docs/catalogs/directives.md`](docs/catalogs/directives.md) | [`docs/catalogs/grammar_compactness.md`](docs/catalogs/grammar_compactness.md) | [`docs/catalogs/native_barriers.md`](docs/catalogs/native_barriers.md)

@@ -225,7 +225,7 @@ Pass 2 audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_foundation
 | **Pipeline Graph IR** | pipelines as optimization graphs | ⬜ `PipelineNode` planned |
 | **Effect Algebra** | effects as composable descriptor values | ⬜ `EffectSet` planned |
 
-Full audit: [`plans/pass2_convergence.md`](plans/pass2_convergence.md)
+Full audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_foundational_convergence.md)
 
 | Infrastructure | Status | Owner tag |
 | --- | --- | --- |
@@ -280,11 +280,11 @@ Before merging **any** new or changed `@comp.*` combinator / fold / meta hook:
 | --- | --- |
 | **This compass** | `docs/AGENT_ALIGNMENT.md` |
 | **Pass 5 cross-language** | `docs/plans/pass5_semantic_interchange.md` |
-| **Pass 4 native** | `docs/plans/pass4_native_compilation.md` |
+| **Pass 4 native** | `docs/plans/pass4_native_end_to_end.md` |
 | **Pass 3 directive/grammar** | `docs/plans/pass3_directive_grammar_convergence.md` |
 | **Pass 3 catalogs** | `docs/catalogs/README.md` + `duo catalog` |
-| **Pass 2 convergence** | `docs/plans/pass2_convergence.md` |
-| **Pass 6 reconciliation** | `docs/plans/pass6_reconciliation.md` |
+| **Pass 2 convergence** | `docs/plans/pass2_foundational_convergence.md` |
+| **Pass 6 reconciliation** | `docs/plans/pass6_architectural_reconciliation.md` |
 | Architecture plan | `docs/semantic_universe.md` |
 | Agent rules | `AGENTS.md` |
 | Claims, gaps, log | `.agents/AGENT_COORDINATION.md` |
