@@ -2177,6 +2177,14 @@ pub const CodeGen = struct {
                 try merged.appendSlice(self.alloc, parent_fields);
             }
         }
+        // GP-012: additional parent descriptors (multi-parent composition)
+        for (ad.extra_parents) |extra_name| {
+            if (self.alias_defs.get(extra_name)) |extra_ad| {
+                const extra_fields = try self.merged_alias_record_fields(extra_ad);
+                defer self.alloc.free(extra_fields);
+                try merged.appendSlice(self.alloc, extra_fields);
+            }
+        }
 
         const append_or_override = struct {
             fn append(list: *std.ArrayList(types.FieldType), alloc: std.mem.Allocator, name: []const u8, field_typ: RT) !void {
@@ -2479,6 +2487,10 @@ pub const CodeGen = struct {
     /// Pass 6: public accessor for driver/link flags (prefer over raw `native_scalar_mode`).
     pub fn usesFullNativeLowering(self: *const CodeGen) bool {
         return self.moduleUsesFullNativeLowering();
+    }
+
+    pub fn noallocViolationMessage(self: *const CodeGen) ?[]const u8 {
+        return self.noalloc_violation;
     }
 
     /// Module includes Lua runtime (dynamic paths or mixed native/dynamic).
@@ -8402,6 +8414,7 @@ pub const CodeGen = struct {
                         const cap_val = if (t_idx) |idx| self.current_func_body.?.dense_table_caps[idx] else "1000";
                         const elem_type: []const u8 = if (is_float) "double" else "int64_t";
                         self.ind();
+                        try self.guardNoAlloc("dense_table.calloc");
                         self.pl("{s}* __dt_{s} = ({s}*)calloc(({s}) + 1, sizeof({s}));", .{ elem_type, lname.ident, elem_type, cap_val, elem_type });
                         for (ld.inits[i].table.fields, 0..) |f, f_idx| {
                             const val = switch (f) {
@@ -8717,6 +8730,7 @@ pub const CodeGen = struct {
                                 const cap_val = if (t_idx) |idx| self.current_func_body.?.dense_table_caps[idx] else "1000";
                                 const elem_type: []const u8 = if (is_float) "double" else "int64_t";
                                 try self.note_local_type(name, .any);
+                                try self.guardNoAlloc("dense_table.calloc");
                                 self.p("{s}* __dt_{s} = ({s}*)calloc(({s}) + 1, sizeof({s}));\n", .{ elem_type, name, elem_type, cap_val, elem_type });
                                 if (i < as.values.len and as.values[i].* == .table) {
                                     for (as.values[i].table.fields, 0..) |f, f_idx| {
@@ -15282,12 +15296,14 @@ pub const CodeGen = struct {
         const fname = self.mem_intrinsic_name(func) orelse return false;
 
         if (std.mem.eql(u8, fname, "alloc")) {
+            try self.guardNoAlloc("mem.alloc");
             self.p("((uint8_t*)malloc(", .{});
             try self.emit_mem_size_arg(args, 0, "0");
             self.p("))", .{});
             return true;
         }
         if (std.mem.eql(u8, fname, "calloc")) {
+            try self.guardNoAlloc("mem.calloc");
             self.p("((uint8_t*)calloc(", .{});
             try self.emit_mem_size_arg(args, 0, "0");
             self.p(", ", .{});
@@ -15296,6 +15312,7 @@ pub const CodeGen = struct {
             return true;
         }
         if (std.mem.eql(u8, fname, "realloc")) {
+            try self.guardNoAlloc("mem.realloc");
             self.p("((", .{});
             self.typ(result_rt);
             self.p(")realloc(", .{});
@@ -15617,6 +15634,7 @@ pub const CodeGen = struct {
             return true;
         }
         if (std.mem.eql(u8, fname, "dup")) {
+            try self.guardNoAlloc("mem.dup");
             self.p("({{ uint8_t* _d = (uint8_t*)malloc(", .{});
             if (args.len > 1) try self.emit_mem_size_arg(args, 1, "0") else self.p("0", .{});
             self.p("); if (_d && (", .{});
@@ -16899,6 +16917,7 @@ pub const CodeGen = struct {
                 }
             }
             self.p(") {{\n", .{});
+            if (self.current_func_noalloc) try self.guardNoAlloc("closure.malloc");
             self.p("    duo_closure_{d}* cl = (duo_closure_{d}*)malloc(sizeof(duo_closure_{d}));\n", .{ id, id, id });
             self.p("    cl->header.refcount = 1;\n", .{});
             self.p("    cl->header.type_tag = VAL_CLOSURE;\n", .{});

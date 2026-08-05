@@ -180,6 +180,8 @@ pub const TableField = union(enum) {
     indexed: struct { key: *Expr, val: *Expr }, // [expr] = expr
     named: struct { key: []const u8, val: *Expr }, // name = expr
     positional: *Expr, // expr
+    /// Pass 3: `{ ..source, x = 1 }` — merge table at construction.
+    spread: *Expr,
 };
 
 pub const ListComprehension = struct {
@@ -323,6 +325,8 @@ pub const FuncBody = struct {
     use_force_always_inline: bool = false,
     /// always_inline + no-fast-math region (fp-sensitive natives like mandel_iter)
     use_fp_strict_always_inline: bool = false,
+    /// `@comp.compile.only` — function is only available during compilation
+    is_compile_only: bool = false,
     // ── New native patterns for benchmarks 24-40 ─────────────────────
     use_gcd_inline: bool = false,
     use_collatz_inline: bool = false,
@@ -583,6 +587,8 @@ pub const Stmt = union(enum) {
     repeat_loop: struct { loc: Loc, body: Block, cond: *Expr },
     if_stmt: struct {
         loc: Loc,
+        /// Pass 3: `if name = expr` binding condition (evaluated before truth test).
+        binding: ?struct { name: []const u8, expr: *Expr } = null,
         cond: *Expr,
         then: Block,
         elseifs: []ElseIf,
@@ -635,6 +641,8 @@ pub const AliasDef = struct {
     target: ?TypeExpr = null,
     /// Optional parent alias for single inheritance (extends Parent).
     parent: ?[]const u8 = null,
+    /// Additional parent aliases for multi-parent composition (GP-012).
+    extra_parents: []const []const u8 = &.{},
     /// Fields: name, type, and whether private.
     fields: []AliasField,
     /// Methods defined on this alias.

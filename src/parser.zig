@@ -97,8 +97,8 @@ pub const Parser = struct {
             for (hint_attrs) |attr| {
                 if (is_module_level_hint(attr)) {
                     const loc = (try self.pk()).loc;
-                    // @c.include / @c.import become cinclude statements
-                    if (std.mem.eql(u8, attr.name, "c.include") or std.mem.eql(u8, attr.name, "c.import")) {
+                    // @comp.c.include / @comp.c.import (and legacy @c.*) become cinclude statements
+                    if (@import("meta_module.zig").isCHeaderImportDirective(attr.name)) {
                         const header = @import("directives.zig").extractCRawCode(attr.args orelse "");
                         try stmts.append(self.alloc, .{ .cinclude = .{ .loc = loc, .header = header } });
                     } else {
@@ -120,9 +120,8 @@ pub const Parser = struct {
         if (directives.isBuildDirective(attr.name)) return true;
         if (directives.isDebugDirective(attr.name)) return true;
         // C interface directives are module-level (order matters for #include)
-        if (std.mem.eql(u8, attr.name, "c.include") or
-            std.mem.eql(u8, attr.name, "c.import") or
-            std.mem.eql(u8, attr.name, "c.emit"))
+        if (@import("meta_module.zig").isCHeaderImportDirective(attr.name) or
+            @import("meta_module.zig").isCEmitDirective(attr.name))
             return true;
         // @specialize is a module-level directive
         if (std.mem.eql(u8, attr.name, "specialize")) return true;
@@ -735,16 +734,13 @@ pub const Parser = struct {
         while ((try self.pk()).kind == .at) {
             const attr = try self.parse_one_attribute();
 
-            // Standalone @cinclude / @c.import / @build.* / @debug.* module directives are
+            // Standalone @cinclude / @comp.c.import / @build.* / @debug.* module directives are
             // each their own statement; do not accumulate them as attributes.
-            if (std.mem.eql(u8, attr.name, "cinclude") or
-                std.mem.eql(u8, attr.name, "c.include") or
-                std.mem.eql(u8, attr.name, "c.import"))
-            {
+            if (@import("meta_module.zig").isCHeaderImportDirective(attr.name)) {
                 const header = strip_quotes(attr.args orelse "");
                 return ast.Stmt{ .cinclude = .{ .loc = (try self.pk()).loc, .header = header } };
             }
-            if (std.mem.eql(u8, attr.name, "c.emit")) {
+            if (@import("meta_module.zig").isCEmitDirective(attr.name)) {
                 const loc_tok = try self.pk();
                 return ast.Stmt{ .directive = .{ .loc = loc_tok.loc, .attr = attr } };
             }
@@ -756,15 +752,12 @@ pub const Parser = struct {
             // @c.type, @c.ffi, @c.call, @c.link) accumulate as normal function
             // attributes. They must NOT be emitted as standalone .directive
             // statements just because they are also listed in the metaprogramming
-            // catalog (isMetaAttribute returns true for them). @c.include /
-            // @c.import / @c.emit above are the standalone C-interface forms;
+            // catalog (isMetaAttribute returns true for them). @comp.c.include /
+            // @comp.c.import / @comp.c.emit above are the standalone C-interface forms;
             // these attach to the following `fun`/decl so codegen can emit
             // export_name / FFI linkage.
-            if (std.mem.eql(u8, attr.name, "c.export") or
-                std.mem.eql(u8, attr.name, "c.type") or
-                std.mem.eql(u8, attr.name, "c.ffi") or
-                std.mem.eql(u8, attr.name, "c.call") or
-                std.mem.eql(u8, attr.name, "c.link"))
+            if (@import("meta_module.zig").isAttachingCInterfaceAttribute(attr.name) or
+                std.mem.eql(u8, attr.name, "c.call"))
             {
                 try attrs.append(self.alloc, attr);
                 continue;
@@ -835,11 +828,11 @@ pub const Parser = struct {
         if (std.mem.eql(u8, attr.name, "specialize")) {
             return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
         }
-        if (std.mem.eql(u8, attr.name, "c.include") or std.mem.eql(u8, attr.name, "c.import")) {
+        if (@import("meta_module.zig").isCHeaderImportDirective(attr.name)) {
             const header = strip_quotes(attr.args orelse "");
             return ast.Stmt{ .cinclude = .{ .loc = loc, .header = header } };
         }
-        if (std.mem.eql(u8, attr.name, "c.emit")) {
+        if (@import("meta_module.zig").isCEmitDirective(attr.name)) {
             return ast.Stmt{ .directive = .{ .loc = loc, .attr = attr } };
         }
         self.lex.restoreState(saved);
@@ -2547,6 +2540,7 @@ pub const Parser = struct {
         // Record descriptor: optional leading ..Parent entries, then name: Type fields.
         // Multiple spreads are accepted for descriptor composition (GP-012).
         var parent: ?[]const u8 = null;
+        var extra_parents: std.ArrayList([]const u8) = .empty;
         var fields: std.ArrayList(ast.RecordField) = .empty;
         var idx: usize = 0;
         while (idx < parsed.entries.len) : (idx += 1) {
@@ -2562,10 +2556,9 @@ pub const Parser = struct {
                     }
                     if (parent == null) {
                         parent = expr.name.ident;
+                    } else {
+                        try extra_parents.append(self.alloc, expr.name.ident);
                     }
-                    // Additional parents: stored as zero-typed fields with __parent_ prefix
-                    // for sema/codegen to resolve later (Pass 3.1 multi-parent).
-                    // This allows `Sprite: @{ ..Named, ..Positioned, z: f64 }` to parse.
                 },
                 .field => |fld| try fields.append(self.alloc, fld),
                 .variant, .variant_payload => unreachable,
@@ -2581,6 +2574,7 @@ pub const Parser = struct {
             .type_params = null,
             .target = .{ .record = rec },
             .parent = parent,
+            .extra_parents = try extra_parents.toOwnedSlice(self.alloc),
             .fields = &.{},
             .methods = &.{},
             .attributes = &.{},
@@ -5143,6 +5137,19 @@ test "parse: @c.import is an imported C header directive" {
     , &arena);
     try testing.expect(mod.body.stmts[0] == .cinclude);
     try testing.expectEqualStrings("math.h", mod.body.stmts[0].cinclude.header);
+}
+
+test "parse: @comp.c.import is an imported C header directive" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\@comp.c.import("fixtures/point.h")
+        \\main(): f64
+        \\    distance2({ x = 0.0, y = 0.0 })
+        \\end
+    , &arena);
+    try testing.expect(mod.body.stmts[0] == .cinclude);
+    try testing.expectEqualStrings("fixtures/point.h", mod.body.stmts[0].cinclude.header);
 }
 
 test "parse: generic type parameter with concept constraint" {
