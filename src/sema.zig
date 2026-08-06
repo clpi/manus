@@ -3378,7 +3378,7 @@ pub const Sema = struct {
             for (fb.params, param_types) |*p, pt|
                 try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
             try self.define_vararg_rest(fb);
-            try self.check_block(&fb.body);
+            try self.check_block_with_implicit_return(&fb.body, true);
             self.scope.pop();
         }
     }
