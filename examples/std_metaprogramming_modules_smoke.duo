@@ -7,8 +7,8 @@ end
 
 shape_contract = std.contracts.concept_contract(
     "user",
-    @meta.concepts.fields("ContractShape"),
-    @meta.concepts.methods("ContractShape")
+    @comp.concepts.fields("ContractShape"),
+    @comp.concepts.methods("ContractShape")
 )
 CONCEPT_N = @comp.concepts.count("ContractShape")
 if CONCEPT_N ~= 2
@@ -24,12 +24,12 @@ if not string.find(shape_contract.report, "hash")
     error("concept contract did not include method descriptor")
 end
 
-member_contract = std.contracts.concept_member_contract("user", @meta.concepts.members("ContractShape"))
+member_contract = std.contracts.concept_member_contract("user", @comp.concepts.members("ContractShape"))
 if member_contract.count ~= shape_contract.count
     error("member contract should match split concept descriptors")
 end
 
-shape_docs = std.contracts.concept_markdown("ContractShape", @meta.concepts.members("ContractShape"))
+shape_docs = std.contracts.concept_markdown("ContractShape", @comp.concepts.members("ContractShape"))
 if not string.find(shape_docs, "field id: i64")
     error("concept markdown should include field type")
 end
@@ -37,7 +37,7 @@ if not string.find(shape_docs, "method hash")
     error("concept markdown should include method signature")
 end
 
-wrapper_plan = std.contracts.concept_wrapper_plan("UserAdapter", "user", @meta.concepts.methods("ContractShape"))
+wrapper_plan = std.contracts.concept_wrapper_plan("UserAdapter", "user", @comp.concepts.methods("ContractShape"))
 if #wrapper_plan ~= 1 or wrapper_plan[1].wrapper ~= "UserAdapter_hash"
     error("concept wrapper plan should derive stable wrapper names")
 end
@@ -49,12 +49,12 @@ target_report = std.contracts.concept_target_report(
     "ContractShape",
     "UserAdapter",
     "user",
-    @meta.concepts.members("ContractShape")
+    @comp.concepts.members("ContractShape")
 )
 if target_report.contract.count ~= 2 or #target_report.wrappers ~= 1
     error("concept target report should include contract and wrapper plan")
 end
-accessor_plan = std.contracts.concept_accessor_plan("UserAdapter", "user", @meta.concepts.members("ContractShape"))
+accessor_plan = std.contracts.concept_accessor_plan("UserAdapter", "user", @comp.concepts.members("ContractShape"))
 if #accessor_plan ~= 1 or accessor_plan[1].wrapper ~= "UserAdapter_get_id"
     error("concept accessor plan should derive stable accessor names")
 end
@@ -62,7 +62,7 @@ end
 signature_key = std.contracts.concept_specialization_key(
     "ContractShape",
     "UserAdapter",
-    @meta.concepts.members("ContractShape")
+    @comp.concepts.members("ContractShape")
 )
 if not string.find(signature_key, "UserAdapter::ContractShape")
     error("concept specialization key should include target and concept")
@@ -79,7 +79,7 @@ c_report = std.contracts.concept_target_c_report(
     "UserAdapter",
     "user",
     "UserAdapter",
-    @meta.concepts.members("ContractShape")
+    @comp.concepts.members("ContractShape")
 )
 if not string.find(c_report.c_wrappers, "static inline int64_t UserAdapter_hash")
     error("concept C report should generate typed static wrappers")
@@ -104,16 +104,16 @@ if not string.find(c_report.c_source, "UserAdapter_get_id") or not string.find(c
 end
 
 coverage_ok = std.contracts.concept_coverage(
-    @meta.concepts.members("ContractShape"),
-    @meta.concepts.members("ContractShape")
+    @comp.concepts.members("ContractShape"),
+    @comp.concepts.members("ContractShape")
 )
 if not coverage_ok.ok or coverage_ok.missing_count ~= 0
     error("concept coverage should accept matching descriptor rows")
 end
 
 coverage_bad = std.contracts.concept_coverage(
-    @meta.concepts.members("ContractShape"),
-    @meta.concepts.fields("ContractShape")
+    @comp.concepts.members("ContractShape"),
+    @comp.concepts.fields("ContractShape")
 )
 if coverage_bad.ok or coverage_bad.missing_count ~= 1
     error("concept coverage should report missing method rows")

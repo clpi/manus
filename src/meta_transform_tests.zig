@@ -32,7 +32,11 @@ const parity_cases = [_]ParityCase{
     },
     .{
         .public_name = "comp.each",
-        .body = "@comp.each(\"a|b\", fun(f) f.name .. \"\\n\" end)",
+        .body =
+            \\@comp.each("a|b", fun(f)
+            \\    f.name .. "\n"
+            \\end)
+        ,
     },
     .{
         .public_name = "comp.tabulate",
@@ -74,6 +78,22 @@ const parity_cases = [_]ParityCase{
         .public_name = "comp.fixpoint",
         .body = "@comp.fixpoint(\"s\", fun(state) \"i\" .. tostring(state.iteration) .. \"\\n\" end, 2)",
         .compile_parity = true,
+    },
+    .{
+        .public_name = "comp.zip",
+        .body = "@comp.zip(\"a|b\", \"1|2\", fun(p) p.a .. p.b .. \"\\n\" end)",
+    },
+    .{
+        .public_name = "comp.permute",
+        .preamble =
+            \\concept Has1
+            \\    x: i64
+            \\end
+            \\type T1 = { x: i64 }
+            \\type T2 = { x: i64, y: i64 }
+            \\
+        ,
+        .body = "@comp.permute(\"Has1\", fun(ordered) ordered.name .. \"\\n\" end)",
     },
 };
 

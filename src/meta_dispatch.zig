@@ -11,13 +11,16 @@
 ///
 /// Migration plan:
 ///   Step 1: Create this file with the dispatch table (DONE)
-///   Step 2: Have fold_meta_string_expr delegate to dispatch()
-///   Step 3: Have comptimeMetaHook delegate to dispatch()
-///   Step 4: Have maybe_emit_meta_string_call delegate to dispatch()
-///   Step 5: Remove the three inline match tables
+///   Step 2: Have fold_meta_string_expr delegate to dispatch() (DONE)
+///   Step 3: Have comptimeMetaHook delegate to dispatch() (DONE)
+///   Step 4: Have maybe_emit_meta_string_call delegate to dispatch() (DONE)
+///   Step 5: Remove duplicate inline match tables from codegen (DONE — agent/catalog hooks remain)
+///   Step 6: Centralize provenance in dispatchAtSite() → transform_engine (DONE)
+///   Step 7: Full evaluation ownership in transform_engine Phase 2 (OPEN — execution stays in meta_codegen hooks)
 const std = @import("std");
 const meta_codegen = @import("meta_codegen.zig");
 const comptime_eval = @import("comptime.zig");
+const transform_engine = @import("transform_engine.zig");
 
 /// Result of a combinator dispatch.
 pub const Result = union(enum) {
@@ -73,7 +76,8 @@ pub const combinators: []const DispatchEntry = &.{
     .{ .internal_name = "__metaweave", .min_args = 2, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__metatemplate", .min_args = 2, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__metagenerate", .min_args = 2, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
-    .{ .internal_name = "__metascheme", .min_args = 2, .max_args = 3, .first_arg_string = true, .last_arg_callback = true },
+    .{ .internal_name = "__metascheme", .min_args = 1, .max_args = 3, .first_arg_string = true, .last_arg_callback = false },
+    .{ .internal_name = "__metaschemeclauses", .min_args = 1, .max_args = 2, .first_arg_string = true, .last_arg_callback = false },
     .{ .internal_name = "__derivemap", .min_args = 2, .max_args = 2, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__derivepower", .min_args = 2, .max_args = 2, .first_arg_string = true, .last_arg_callback = true },
     .{ .internal_name = "__derivetensor", .min_args = 2, .max_args = 4, .first_arg_string = true, .last_arg_callback = true },
@@ -112,16 +116,35 @@ pub fn dispatch(
     args: []const comptime_eval.Value,
     alloc: std.mem.Allocator,
 ) Result {
+    return dispatchAtSite(host, internal_name, args, alloc, null);
+}
+
+/// Like `dispatch`, but logs transform provenance when `site` is set (G-061 / P6-07).
+pub fn dispatchAtSite(
+    host: meta_codegen.Host,
+    internal_name: []const u8,
+    args: []const comptime_eval.Value,
+    alloc: std.mem.Allocator,
+    site: ?transform_engine.SiteKind,
+) Result {
     if (!isCombinator(internal_name)) return .not_applicable;
     if (!validArgCount(internal_name, args.len)) return .not_applicable;
     if (!meta_codegen.canApplyMetaCombinatorHook(internal_name)) return .not_applicable;
     const value = meta_codegen.applyMetaCombinatorHook(host, internal_name, args, alloc) orelse return .eval_failed;
-    return switch (value) {
+    const result: Result = switch (value) {
         .string => .{ .string = value.string },
         .int => .{ .int = value.int },
         .bool => .{ .boolean = value.bool },
         else => .eval_failed,
     };
+    if (site) |s| {
+        if (result == .string) {
+            var ibuf: [128]u8 = undefined;
+            const input = meta_codegen.metaCombinatorProvenanceInput(internal_name, args, &ibuf) orelse "";
+            transform_engine.dispatchMetaCombinator(alloc, internal_name, s, input, result.string);
+        }
+    }
+    return result;
 }
 
 /// True when `dispatch()` can handle this internal hook name.
@@ -164,4 +187,13 @@ test "meta_dispatch: lookup returns correct entry" {
     try testing.expect(entry.first_arg_string);
     try testing.expect(entry.last_arg_callback);
     try testing.expectEqual(@as(u8, 2), entry.min_args);
+}
+
+test "meta_dispatch: wired combinators registered in transform_engine" {
+    const testing = std.testing;
+    for (combinators) |entry| {
+        const public_name = transform_engine.publicNameForInternal(entry.internal_name) orelse
+            return error.MissingTransformRegistryEntry;
+        try testing.expect(transform_engine.isRegisteredTransform(public_name));
+    }
 }

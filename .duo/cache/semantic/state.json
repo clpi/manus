@@ -1,1 +1,0 @@
-{"schema":"persistent-semantic-state-v0","entry_count":1,"entries":[{"entity_id":"duo:record:Point","fingerprint":"56058514e9c0b2eb","kind":"stale","artifact":"native_aggregate","compiler_version":"duo-dev","target":"native","stale":true,"transform_version":"transform-registry-v0"}]}

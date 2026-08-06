@@ -8,6 +8,11 @@ const native_req_support = @import("native_req_support.zig");
 const dnir = @import("duo_native_ir.zig");
 const dnir_lower = @import("dnir_lower.zig");
 const dnir_hardware = @import("dnir_hardware.zig");
+const semantic_graph = @import("semantic_graph.zig");
+const region_graph = @import("region_graph.zig");
+const region_transform = @import("region_transform.zig");
+const region_schedule = @import("region_schedule.zig");
+const realization = @import("realization.zig");
 
 pub const Error = error{
     UnsupportedTarget,
@@ -22,6 +27,12 @@ pub const Error = error{
     BranchOutOfRange,
 } || std.mem.Allocator.Error;
 
+/// Mach-O / ELF labels cannot contain `.`; DNIR keeps logical `Type.method` names.
+fn linkerSymbolName(alloc: std.mem.Allocator, name: []const u8) Error![]const u8 {
+    if (std.mem.indexOfScalar(u8, name, '.') == null) return try alloc.dupe(u8, name);
+    return std.mem.replaceOwned(u8, alloc, name, ".", "_");
+}
+
 /// Pass 11 WP-02: structured direct-backend diagnostic.
 pub const DirectDiag = struct {
     code: []const u8,
@@ -33,7 +44,7 @@ pub fn directDiagnostic(err: Error, target: []const u8) DirectDiag {
     return switch (err) {
         error.UnsupportedTarget => .{ .code = "DNB004", .message = "target object format or host is unsupported by the direct backend" },
         error.UnsupportedProgram => .{ .code = "DNB001", .message = "program construct is outside the direct backend subset" },
-        error.MissingMain => .{ .code = "DNB006", .message = "direct executable requires main() or an exported entry" },
+        error.MissingMain => .{ .code = "DNB006", .message = "direct native module has no eligible functions" },
         error.InvalidMainSignature => .{ .code = "DNB002", .message = "function signature incompatible with direct ARM64 ABI" },
         error.RegisterExhausted => .{ .code = "DNB003", .message = "register pressure exceeds direct backend spill capacity" },
         error.UndefinedName, error.UnknownSymbol => .{ .code = "DNB007", .message = "undefined symbol in direct backend lowering" },
@@ -94,19 +105,28 @@ pub fn isNativeSharedTarget(target: []const u8) bool {
 
 pub fn emitObject(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
     if (!isNativeObjectTarget(target)) return error.UnsupportedTarget;
-    return emitObjectMode(alloc, mod, false);
+    return emitObjectMode(alloc, mod, null);
+}
+
+/// Like `emitObject`, but when `process_entry` is set the named zero-arg function
+/// gets `fcvtzs x0, d0` on f64 returns so native executables receive an i64 exit code.
+pub fn emitObjectForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
+    return emitObjectMode(alloc, mod, process_entry);
 }
 
 pub fn emitSharedObjectInput(alloc: std.mem.Allocator, mod: *const ast.Module) Error![]u8 {
-    return emitObjectMode(alloc, mod, true);
+    return emitObjectMode(alloc, mod, null);
 }
 
-fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_main: bool) Error![]u8 {
+fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: ?[]const u8) Error![]u8 {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
         return error.UnsupportedTarget;
     }
 
-    var output = try emitArm64Module(alloc, mod, allow_no_main);
+    var output = try emitArm64Module(alloc, mod, process_entry);
     defer output.deinit(alloc);
     return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations);
 }
@@ -116,7 +136,22 @@ pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
         return error.UnsupportedTarget;
     }
-    const output = try emitArm64Module(alloc, mod, false);
+    const output = try emitArm64Module(alloc, mod, null);
+    defer {
+        alloc.free(output.text);
+        if (output.cstring.len > 0) alloc.free(output.cstring);
+        for (output.symbols) |sym| alloc.free(sym.name);
+        alloc.free(output.symbols);
+        alloc.free(output.relocations);
+    }
+    return output.asm_text;
+}
+
+pub fn emitAssemblyForExecutable(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: []const u8) Error![]u8 {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) {
+        return error.UnsupportedTarget;
+    }
+    const output = try emitArm64Module(alloc, mod, process_entry);
     defer {
         alloc.free(output.text);
         if (output.cstring.len > 0) alloc.free(output.cstring);
@@ -178,6 +213,7 @@ const ScalRecordDesc = struct {
 const ScalRecordMap = std.StringHashMapUnmanaged(ScalRecordDesc);
 
 const FuncRecordReturns = std.StringHashMapUnmanaged(ScalRecordDesc);
+const FuncF64RecordReturns = std.StringHashMapUnmanaged(F64RecordDesc);
 
 const ByteBlob = struct {
     name: []const u8,
@@ -328,6 +364,10 @@ fn freeFuncRecordReturns(alloc: std.mem.Allocator, map: *FuncRecordReturns) void
     map.deinit(alloc);
 }
 
+fn freeFuncF64RecordReturns(alloc: std.mem.Allocator, map: *FuncF64RecordReturns) void {
+    map.deinit(alloc);
+}
+
 fn f64RecordDesc(records: *const F64RecordMap, typ: ast.TypeExpr) ?F64RecordDesc {
     if (typ != .named) return null;
     return records.get(typ.named);
@@ -401,7 +441,6 @@ const NativeModule = struct {
 fn collectFunctions(
     alloc: std.mem.Allocator,
     mod: *const ast.Module,
-    allow_no_main: bool,
     scal_records: *const ScalRecordMap,
     func_record_returns: *FuncRecordReturns,
 ) Error!NativeModule {
@@ -418,31 +457,22 @@ fn collectFunctions(
         }
         externs.deinit(alloc);
     }
-    var seen_main = false;
-    var seen_export = false;
-
     for (mod.body.stmts) |*stmt| {
         if (stmt.* != .func_decl) continue;
         const fd = &stmt.func_decl;
         if (fd.path.len != 1 or fd.method or fd.is_local) continue;
         if (funcFfiName(fd.attributes)) |ffi_name| {
-            if (std.mem.eql(u8, fd.path[0], "main")) return error.InvalidMainSignature;
             try appendUniqueExternal(alloc, &externs, fd.path[0], ffi_name);
             continue;
         }
-        const is_main = std.mem.eql(u8, fd.path[0], "main");
-        try validateFunction(fd, is_main, &records, scal_records);
+        try validateFunction(fd, &records, scal_records);
         if (scalRecordDesc(scal_records, fd.func.ret_type)) |rec| {
             try func_record_returns.put(alloc, fd.path[0], rec);
         }
-        if (is_main) {
-            seen_main = true;
-        }
         const symbol_name = funcExportName(fd) orelse fd.path[0];
-        if (funcExportName(fd) != null) seen_export = true;
         try funcs.append(alloc, .{ .decl = fd, .symbol_name = symbol_name });
     }
-    if (!seen_main and !(allow_no_main and seen_export)) return error.MissingMain;
+    if (funcs.items.len == 0) return error.MissingMain;
     return .{
         .functions = try funcs.toOwnedSlice(alloc),
         .externs = try externs.toOwnedSlice(alloc),
@@ -451,29 +481,15 @@ fn collectFunctions(
 
 fn validateFunction(
     fd: *const ast.FuncDecl,
-    is_main: bool,
     records: *const F64RecordMap,
     scal_records: *const ScalRecordMap,
 ) Error!void {
     if (fd.func.vararg or fd.func.vararg_name != null) {
         return error.InvalidMainSignature;
     }
-    if (is_main and fd.func.params.len != 0) return error.InvalidMainSignature;
     for (fd.func.params) |param| {
         if (param.default_val != null) return error.UnsupportedProgram;
     }
-    // main is the process entry: integer exit code, or f64 kernel + int wrapper (Pass 4 M1).
-    if (is_main) {
-        if (returnsFloat(fd.func.ret_type)) return;
-        for (fd.func.params) |param| {
-            if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
-        }
-        if (!returnsInteger(fd.func.ret_type) and !returnsVoid(fd.func.ret_type)) {
-            return error.InvalidMainSignature;
-        }
-        return;
-    }
-    // non-main: accept a PURE-integer OR a PURE-f64 kernel (scalars + sealed f64 records).
     const ret_float = returnsFloat(fd.func.ret_type);
     const ret_int = returnsInteger(fd.func.ret_type);
     const ret_scal = scalRecordDesc(scal_records, fd.func.ret_type) != null;
@@ -491,7 +507,7 @@ fn validateFunction(
     }
     if (ret_float) {
         const slots = try totalParamFpSlots(records, fd);
-        if (slots == 0 or slots > 8) return error.InvalidMainSignature;
+        if (slots > 8) return error.InvalidMainSignature;
         return;
     }
     if (fd.func.params.len > 8) return error.UnsupportedProgram;
@@ -547,11 +563,63 @@ fn funcExportName(fd: *const ast.FuncDecl) ?[]const u8 {
     return null;
 }
 
+/// Zero-arg i64/void/f64 module function suitable as a native executable entry.
+/// f64 entries coerce to i64 exit codes at link time via `fcvtzs x0, d0`.
+fn isZeroArgEntryFunction(fd: *const ast.FuncDecl) bool {
+    if (fd.path.len != 1 or fd.method or fd.is_local) return false;
+    if (fd.func.params.len != 0) return false;
+    if (funcFfiName(fd.attributes) != null) return false;
+    return returnsInteger(fd.func.ret_type) or returnsVoid(fd.func.ret_type) or returnsFloat(fd.func.ret_type);
+}
+
+fn findModuleFunction(mod: *const ast.Module, name: []const u8) ?*const ast.FuncDecl {
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (fd.path.len == 1 and std.mem.eql(u8, fd.path[0], name)) return fd;
+    }
+    return null;
+}
+
+/// Linker entry for native executables. Duo has no mandatory `main()` — file-scope
+/// functions export uniformly. Prefer an explicit `@export` zero-arg i64/void/f64 entry,
+/// else a sole eligible zero-arg function, else a function literally named `main`.
+/// When `override` is set (`--entry`), it must name an eligible zero-arg function.
+pub fn pickNativeEntrySymbol(mod: *const ast.Module) ?[]const u8 {
+    var sole: ?[]const u8 = null;
+    var sole_count: usize = 0;
+    var named_main: ?[]const u8 = null;
+
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .func_decl) continue;
+        const fd = &stmt.func_decl;
+        if (!isZeroArgEntryFunction(fd)) continue;
+
+        if (std.mem.eql(u8, fd.path[0], "main")) named_main = fd.path[0];
+        if (funcExportName(fd) != null) return fd.path[0];
+        sole = fd.path[0];
+        sole_count += 1;
+    }
+    if (named_main) |m| return m;
+    if (sole_count == 1) return sole;
+    return null;
+}
+
+pub fn resolveNativeEntrySymbol(mod: *const ast.Module, override: ?[]const u8) ?[]const u8 {
+    if (override) |name| {
+        const fd = findModuleFunction(mod, name) orelse return null;
+        if (!isZeroArgEntryFunction(fd)) return null;
+        return name;
+    }
+    return pickNativeEntrySymbol(mod);
+}
+
 const Arm64Compiler = struct {
     alloc: std.mem.Allocator,
     f64_records: *const F64RecordMap,
     scal_records: *const ScalRecordMap,
     func_record_returns: *const FuncRecordReturns,
+    func_f64_record_returns: *const FuncF64RecordReturns,
     req_ctx: *const native_req_support.Context,
     code: std.ArrayList(u8) = .empty,
     asm_text: std.ArrayList(u8) = .empty,
@@ -571,8 +639,13 @@ const Arm64Compiler = struct {
     // pure-f64 function (all params + return f64) through compileExprFp.
     // FP params arrive in d0-d7 (caller-saved) and the result returns in d0.
     cur_func_float: bool = false,
-    cur_func_is_main: bool = false,
+    /// Function returns f64 but is not a pure-f64 kernel (zero-param shell, etc.).
+    cur_func_ret_float: bool = false,
+    cur_func_name: ?[]const u8 = null,
+    /// When set, this function's f64 return is coerced to i64 for process exit.
+    process_entry: ?[]const u8 = null,
     cur_func_ret_record: ?ScalRecordDesc = null,
+    cur_func_ret_f64_record: ?F64RecordDesc = null,
     fp_locals: std.StringHashMapUnmanaged(u5) = .empty,
     used_fp_regs: [32]bool = @splat(false),
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
@@ -812,14 +885,22 @@ const Arm64Compiler = struct {
         }
     }
 
-    fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module, allow_no_main: bool) Error!void {
+    fn needsProcessExitF64Coerce(self: *const Arm64Compiler) bool {
+        const entry = self.process_entry orelse return false;
+        const cur = self.cur_func_name orelse return false;
+        if (!std.mem.eql(u8, entry, cur)) return false;
+        return self.cur_func_float or self.cur_func_ret_float;
+    }
+
+    fn compileDnirModule(self: *Arm64Compiler, m: dnir.Module) Error!void {
         try self.emitAsmHeader();
-        var seen_main = false;
         for (m.functions) |f| {
-            if (std.mem.eql(u8, f.name, "main")) seen_main = true;
+            if (f.is_float_kernel) try self.f64_kernel_names.put(self.alloc, f.name, {});
+        }
+        if (m.functions.len == 0) return error.MissingMain;
+        for (m.functions) |f| {
             try self.compileDnirFunction(f);
         }
-        if (!seen_main and !allow_no_main) return error.MissingMain;
         for (m.externs) |ext| {
             try self.ensureExternalSymbol(ext.symbol);
         }
@@ -834,22 +915,26 @@ const Arm64Compiler = struct {
     }
 
     fn compileDnirFunction(self: *Arm64Compiler, f: dnir.Function) Error!void {
+        self.cur_func_name = f.name;
         self.locals.clearRetainingCapacity();
+        self.fp_locals.clearRetainingCapacity();
         self.used_regs = @splat(false);
+        self.used_fp_regs = @splat(false);
         self.returned = false;
         self.fp_stack_slots.clearRetainingCapacity();
         self.stack_frame_bytes = 0;
-        self.cur_func_is_main = std.mem.eql(u8, f.name, "main");
         self.cur_func_ret_record = if (f.ret_record) |rn| scalRecordDesc(self.scal_records, .{ .named = rn }) else null;
+        self.cur_func_ret_f64_record = if (f.ret_record) |rn| f64RecordDesc(self.f64_records, .{ .named = rn }) else null;
+        self.cur_func_float = f.is_float_kernel;
+        self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
 
-        const offset: u32 = @intCast(self.code.items.len);
-        const owned_name = try self.alloc.dupe(u8, f.name);
-        errdefer self.alloc.free(owned_name);
-        try self.symbols.append(self.alloc, .{ .name = owned_name, .offset = offset, .defined = true });
+    const offset: u32 = @intCast(self.code.items.len);
+        const link_name = try linkerSymbolName(self.alloc, f.name);
+        try self.symbols.append(self.alloc, .{ .name = link_name, .offset = offset, .defined = true });
         try self.asm_text.appendSlice(self.alloc, "\n.globl _");
-        try self.asm_text.appendSlice(self.alloc, f.name);
+        try self.asm_text.appendSlice(self.alloc, link_name);
         try self.asm_text.appendSlice(self.alloc, "\n.p2align 2\n_");
-        try self.asm_text.appendSlice(self.alloc, f.name);
+        try self.asm_text.appendSlice(self.alloc, link_name);
         try self.asm_text.appendSlice(self.alloc, ":\n");
 
         var temps: std.AutoHashMapUnmanaged(u32, u5) = .empty;
@@ -857,11 +942,32 @@ const Arm64Compiler = struct {
         var pinned: std.AutoHashMapUnmanaged(u32, u5) = .empty;
         defer pinned.deinit(self.alloc);
 
-        for (f.params, 0..) |_, i| {
-            const slot: u32 = @intCast(i);
-            const reg: u5 = @intCast(i);
-            try temps.put(self.alloc, slot, reg);
-            try pinned.put(self.alloc, slot, reg);
+        if (f.is_float_kernel) {
+            var dreg: u5 = 0;
+            for (f.params, 0..) |p, i| {
+                const slot: u32 = @intCast(i);
+                if (p.ty == .f64) {
+                    self.used_fp_regs[dreg] = true;
+                    try self.fp_locals.put(self.alloc, p.name, dreg);
+                    try temps.put(self.alloc, slot, dreg);
+                    dreg += 1;
+                } else if (p.record) |rec_name| {
+                    const rec = f64RecordDesc(self.f64_records, .{ .named = rec_name }) orelse return error.UnsupportedProgram;
+                    for (rec.field_names) |fname| {
+                        self.used_fp_regs[dreg] = true;
+                        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ p.name, fname });
+                        try self.fp_locals.put(self.alloc, key, dreg);
+                        dreg += 1;
+                    }
+                } else return error.UnsupportedProgram;
+            }
+        } else {
+            for (f.params, 0..) |_, i| {
+                const slot: u32 = @intCast(i);
+                const reg: u5 = @intCast(i);
+                try temps.put(self.alloc, slot, reg);
+                try pinned.put(self.alloc, slot, reg);
+            }
         }
 
         var code_offsets: std.ArrayList(u32) = .empty;
@@ -906,6 +1012,15 @@ const Arm64Compiler = struct {
                 try self.emitMovImm(reg, val);
                 if (ins.result) |t| try temps.put(self.alloc, t, reg);
             },
+            .const_f64 => {
+                const d = try self.allocFpReg();
+                const val: f64 = switch (ins.lhs) {
+                    .f64 => |v| v,
+                    else => return error.UnsupportedProgram,
+                };
+                try self.emitFmovImmFp(d, val);
+                if (ins.result) |t| try temps.put(self.alloc, t, d);
+            },
             .const_str => {
                 const reg = try self.allocReg();
                 const s = ins.lhs.str;
@@ -913,91 +1028,195 @@ const Arm64Compiler = struct {
                 try self.emitAdrpAdd(reg, sym);
                 if (ins.result) |t| try temps.put(self.alloc, t, reg);
             },
-            .load_local => {
+            .fp_mov_arg => {
+                const d_slot: u5 = @intCast(ins.result orelse return error.UnsupportedProgram);
+                self.used_fp_regs[d_slot] = true;
+                switch (ins.lhs) {
+                    .f64 => |n| try self.emitFmovImmFp(d_slot, n),
+                    else => {
+                        const src = try self.evalDnirFpArg(temps, ins.lhs);
+                        if (src != d_slot) try self.emitFmovReg(d_slot, src);
+                        if (src != d_slot) self.releaseFpReg(src);
+                    },
+                }
+            },
+            .mov_arg => {
+                const slot: u5 = @intCast(ins.result orelse return error.UnsupportedProgram);
                 const reg = try self.evalDnirValue(temps, ins.lhs);
-                if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                if (reg != slot) try self.emitMovReg(slot, reg);
+                if (!Arm64Compiler.regIsPinned(pinned, reg) and reg != slot) self.releaseReg(reg);
+            },
+            .load_local => {
+                if (ins.ty == .f64) {
+                    const slot: u32 = switch (ins.lhs) {
+                        .local => |s| s,
+                        else => return error.UnsupportedProgram,
+                    };
+                    const d = pinned.get(slot) orelse temps.get(slot) orelse return error.UndefinedName;
+                    if (ins.result) |t| try temps.put(self.alloc, t, d);
+                } else {
+                    const reg = try self.evalDnirValue(temps, ins.lhs);
+                    if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                }
             },
             .store_local => {
-                const val_reg = try self.evalDnirValue(temps, ins.lhs);
-                if (ins.result) |slot| {
-                    const local_reg = try self.allocReg();
-                    try self.emitMovReg(local_reg, val_reg);
-                    if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
-                    try pinned.put(self.alloc, slot, local_reg);
-                    try temps.put(self.alloc, slot, local_reg);
-                } else if (!Arm64Compiler.regIsPinned(pinned, val_reg)) {
-                    self.releaseReg(val_reg);
+                if (ins.ty == .f64) {
+                    const d = try self.evalDnirValueFp(temps, ins.lhs);
+                    if (ins.result) |slot| {
+                        try pinned.put(self.alloc, slot, d);
+                        try temps.put(self.alloc, slot, d);
+                    } else {
+                        self.releaseFpReg(d);
+                    }
+                } else {
+                    const val_reg = try self.evalDnirValue(temps, ins.lhs);
+                    if (ins.result) |slot| {
+                        const local_reg = try self.allocReg();
+                        try self.emitMovReg(local_reg, val_reg);
+                        if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
+                        try pinned.put(self.alloc, slot, local_reg);
+                        try temps.put(self.alloc, slot, local_reg);
+                    } else if (!Arm64Compiler.regIsPinned(pinned, val_reg)) {
+                        self.releaseReg(val_reg);
+                    }
                 }
             },
             .binop => {
-                const lhs = try self.evalDnirValue(temps, ins.lhs);
-                const rhs = try self.evalDnirValue(temps, ins.rhs);
-                const dst = try self.allocReg();
-                const op: ast.BinOp = switch (ins.binop) {
-                    .add => .add,
-                    .sub => .sub,
-                    .mul => .mul,
-                    .div => .div,
-                    .mod => .mod,
-                    .eq => .eq,
-                    .neq => .neq,
-                    .lt => .lt,
-                    .gt => .gt,
-                    .leq => .leq,
-                    .geq => .geq,
-                };
-                try self.emitCompareOrBinop(dst, lhs, rhs, op);
-                if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
-                if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
-                if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                if (ins.ty == .f64) {
+                    const ast_op = dnirBinOpToAst(ins.binop);
+                    if (!isComparison(ast_op)) return error.UnsupportedProgram;
+                    const lhs = try self.evalDnirValueFp(temps, ins.lhs);
+                    const rhs = try self.evalDnirValueFp(temps, ins.rhs);
+                    const dst = try self.allocReg();
+                    try self.emitFcmpReg(lhs, rhs);
+                    try self.emitCsetFp(dst, conditionForComparison(ast_op));
+                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                } else if (self.cur_func_float) {
+                    const lhs = try self.evalDnirValueFp(temps, ins.lhs);
+                    const rhs = try self.evalDnirValueFp(temps, ins.rhs);
+                    const dst = try self.allocFpReg();
+                    switch (ins.binop) {
+                        .add => try self.emitFaddReg(dst, lhs, rhs),
+                        .sub => try self.emitFsubReg(dst, lhs, rhs),
+                        .mul => try self.emitFmulReg(dst, lhs, rhs),
+                        .div => try self.emitFdivReg(dst, lhs, rhs),
+                        else => return error.UnsupportedProgram,
+                    }
+                    if (lhs != dst) self.releaseFpReg(lhs);
+                    if (rhs != dst) self.releaseFpReg(rhs);
+                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                } else {
+                    const lhs = try self.evalDnirValue(temps, ins.lhs);
+                    const rhs = try self.evalDnirValue(temps, ins.rhs);
+                    const dst = try self.allocReg();
+                    const op: ast.BinOp = switch (ins.binop) {
+                        .add => .add,
+                        .sub => .sub,
+                        .mul => .mul,
+                        .div => .div,
+                        .mod => .mod,
+                        .eq => .eq,
+                        .neq => .neq,
+                        .lt => .lt,
+                        .gt => .gt,
+                        .leq => .leq,
+                        .geq => .geq,
+                    };
+                    try self.emitCompareOrBinop(dst, lhs, rhs, op);
+                    if (!Arm64Compiler.regIsPinned(pinned, lhs)) self.releaseReg(lhs);
+                    if (!Arm64Compiler.regIsPinned(pinned, rhs)) self.releaseReg(rhs);
+                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                }
             },
             .call_extern, .call_direct => {
-                if (ins.lhs != .void) {
-                    const arg_reg = try self.evalDnirValue(temps, ins.lhs);
-                    if (arg_reg != 0) try self.emitMovReg(0, arg_reg);
-                    self.releaseReg(arg_reg);
+                if (ins.ty == .f64) {
+                    if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
+                    const save = try self.emitSaveCallerRegs();
+                    try self.emitBl(ins.callee);
+                    try self.emitRestoreCallerRegs(save);
+                    self.used_fp_regs[0] = true;
+                    if (ins.result) |t| try temps.put(self.alloc, t, 0);
+                } else if (self.cur_func_float) {
+                    if (ins.lhs != .void) {
+                        const arg_d = try self.evalDnirValueFp(temps, ins.lhs);
+                        if (arg_d != 0) try self.emitFmovReg(0, arg_d);
+                        self.releaseFpReg(arg_d);
+                    }
+                    if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
+                    const save = try self.emitSaveCallerRegs();
+                    try self.emitBl(ins.callee);
+                    try self.emitRestoreCallerRegs(save);
+                    self.used_fp_regs[0] = true;
+                    if (ins.result) |t| try temps.put(self.alloc, t, 0);
+                } else {
+                    if (ins.lhs != .void) {
+                        const arg_reg = try self.evalDnirValue(temps, ins.lhs);
+                        if (arg_reg != 0) try self.emitMovReg(0, arg_reg);
+                        self.releaseReg(arg_reg);
+                    }
+                    if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
+                    const save = try self.emitSaveCallerRegs();
+                    try self.emitBl(ins.callee);
+                    try self.emitRestoreCallerRegs(save);
+                    if (ins.record.len > 0) {
+                        if (f64RecordDesc(self.f64_records, .{ .named = ins.record })) |frec| {
+                            const base = if (ins.field.len > 0) ins.field else "rec";
+                            try self.assignF64RecordFromFpAbiRegs(base, frec);
+                        } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
+                            const base = if (ins.field.len > 0) ins.field else "rec";
+                            try self.assignRecordFromAbiRegs(base, rec);
+                        } else return error.UnsupportedProgram;
+                    }
+                    const dst = try self.allocReg();
+                    try self.emitMovReg(dst, 0);
+                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
                 }
-                if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
-                const save = try self.emitSaveCallerRegs();
-                try self.emitBl(ins.callee);
-                try self.emitRestoreCallerRegs(save);
-                if (ins.record.len > 0) {
-                    const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse return error.UnsupportedProgram;
-                    const base = if (ins.field.len > 0) ins.field else "rec";
-                    try self.assignRecordFromAbiRegs(base, rec);
-                }
-                const dst = try self.allocReg();
-                try self.emitMovReg(dst, 0);
-                if (ins.result) |t| try temps.put(self.alloc, t, dst);
             },
             .init_record => {
                 if (ins.record.len > 0) {
-                    const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse return error.UnsupportedProgram;
-                    const base = if (ins.field.len > 0) ins.field else "rec";
-                    try self.assignRecordFromAbiRegs(base, rec);
+                    if (f64RecordDesc(self.f64_records, .{ .named = ins.record })) |frec| {
+                        const base = if (ins.field.len > 0) ins.field else "rec";
+                        try self.assignF64RecordFromFpAbiRegs(base, frec);
+                    } else if (scalRecordDesc(self.scal_records, .{ .named = ins.record })) |rec| {
+                        const base = if (ins.field.len > 0) ins.field else "rec";
+                        try self.assignRecordFromAbiRegs(base, rec);
+                    } else return error.UnsupportedProgram;
                 }
             },
             .ret => {
-                const reg = try self.evalDnirValue(temps, ins.lhs);
-                if (reg != 0) try self.emitMovReg(0, reg);
-                self.releaseReg(reg);
+                if (self.cur_func_float or ins.ty == .f64) {
+                    const d = try self.evalDnirValueFp(temps, ins.lhs);
+                    if (d != 0) try self.emitFmovReg(0, d);
+                    if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
+                    self.releaseFpReg(d);
+                } else {
+                    const reg = try self.evalDnirValue(temps, ins.lhs);
+                    if (reg != 0) try self.emitMovReg(0, reg);
+                    self.releaseReg(reg);
+                }
                 try self.restoreStackFrame();
                 try self.emitRet();
                 self.returned = true;
             },
             .ret_record => {
-                const r0 = try self.evalDnirValue(temps, ins.lhs);
-                if (r0 != 0) try self.emitMovReg(0, r0);
-                self.releaseReg(r0);
-                if (ins.rhs != .void) {
-                    const r1 = try self.evalDnirValue(temps, ins.rhs);
-                    if (r1 != 1) try self.emitMovReg(1, r1);
-                    self.releaseReg(r1);
-                }
-                if (ins.third != .void) {
-                    const r2 = try self.evalDnirValue(temps, ins.third);
-                    if (r2 != 2) try self.emitMovReg(2, r2);
-                    self.releaseReg(r2);
+                if (self.cur_func_ret_f64_record != null or
+                    (ins.record.len > 0 and f64RecordDesc(self.f64_records, .{ .named = ins.record }) != null))
+                {
+                    try self.emitRetF64RecordFromDnir(temps, ins);
+                } else {
+                    const r0 = try self.evalDnirValue(temps, ins.lhs);
+                    if (r0 != 0) try self.emitMovReg(0, r0);
+                    self.releaseReg(r0);
+                    if (ins.rhs != .void) {
+                        const r1 = try self.evalDnirValue(temps, ins.rhs);
+                        if (r1 != 1) try self.emitMovReg(1, r1);
+                        self.releaseReg(r1);
+                    }
+                    if (ins.third != .void) {
+                        const r2 = try self.evalDnirValue(temps, ins.third);
+                        if (r2 != 2) try self.emitMovReg(2, r2);
+                        self.releaseReg(r2);
+                    }
                 }
                 try self.restoreStackFrame();
                 try self.emitRet();
@@ -1017,8 +1236,13 @@ const Arm64Compiler = struct {
                 const base = if (ins.req_alias.len > 0) ins.req_alias else "rec";
                 const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, ins.field });
                 defer self.alloc.free(key);
-                const reg = try self.loadStackField(key);
-                if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                if (self.cur_func_float) {
+                    const d = self.fp_locals.get(key) orelse return error.UndefinedName;
+                    if (ins.result) |t| try temps.put(self.alloc, t, d);
+                } else {
+                    const reg = try self.loadStackField(key);
+                    if (ins.result) |t| try temps.put(self.alloc, t, reg);
+                }
             },
             .hw_fence => {
                 if (dnir_hardware.arm64FixedWord(.fence)) |word| {
@@ -1117,6 +1341,37 @@ const Arm64Compiler = struct {
         };
     }
 
+    fn evalDnirValueFp(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        return switch (v) {
+            .void => try self.allocFpReg(),
+            .f64 => |n| blk: {
+                const d = try self.allocFpReg();
+                try self.emitFmovImmFp(d, n);
+                break :blk d;
+            },
+            .local => |slot| temps.get(slot) orelse error.UndefinedName,
+            .temp => |t| temps.get(t) orelse error.UndefinedName,
+            else => error.UnsupportedProgram,
+        };
+    }
+
+    fn evalDnirFpArg(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), v: dnir.Value) Error!u5 {
+        return switch (v) {
+            .f64 => |n| blk: {
+                const d = try self.allocFpReg();
+                try self.emitFmovImmFp(d, n);
+                break :blk d;
+            },
+            .temp => |t| temps.get(t) orelse error.UndefinedName,
+            else => error.UnsupportedProgram,
+        };
+    }
+
+    fn releaseFpReg(self: *Arm64Compiler, reg: u5) void {
+        _ = self;
+        _ = reg;
+    }
+
     fn emitCompareOrBinop(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, op: ast.BinOp) Error!void {
         if (isComparison(op)) {
             try self.emitCompareResult(dst, lhs, rhs, conditionForComparison(op));
@@ -1179,9 +1434,10 @@ const Arm64Compiler = struct {
         self.spill_reg_count = 0;
         self.spilled_regs.clearRetainingCapacity();
         self.cur_func_float = false;
-        self.cur_func_is_main = false;
+        self.cur_func_ret_float = false;
 
         const name = func.symbol_name;
+        self.cur_func_name = name;
         if (std.mem.eql(u8, name, "__native_load_u8")) {
             try self.compileIntrinsicLoadU8(func);
             return;
@@ -1200,10 +1456,9 @@ const Arm64Compiler = struct {
         try self.asm_text.appendSlice(self.alloc, name);
         try self.asm_text.appendSlice(self.alloc, ":\n");
 
-        self.cur_func_is_main = std.mem.eql(u8, name, "main");
         self.cur_func_ret_record = scalRecordDesc(self.scal_records, fd.func.ret_type);
-        self.cur_func_float = isPureFloatFunction(self.f64_records, fd) or
-            (self.cur_func_is_main and returnsFloat(fd.func.ret_type));
+        self.cur_func_float = isPureFloatFunction(self.f64_records, fd);
+        self.cur_func_ret_float = returnsFloat(fd.func.ret_type) and !self.cur_func_float;
         if (self.cur_func_float) {
             var dreg: u5 = 0;
             for (fd.func.params) |param| {
@@ -1439,9 +1694,8 @@ const Arm64Compiler = struct {
         const save_set = try self.emitSaveCallerRegs();
         try self.emitBl(name);
         try self.emitRestoreCallerRegs(save_set);
-        const dst = try self.allocFpReg();
-        if (dst != 0) try self.emitFmovReg(dst, 0);
-        return dst;
+        self.used_fp_regs[0] = true;
+        return 0;
     }
 
     fn emitFpCallArgInt(self: *Arm64Compiler, arg: *const ast.Expr, d_slot: *u5) Error!void {
@@ -1902,6 +2156,38 @@ const Arm64Compiler = struct {
         }
     }
 
+    fn assignF64RecordFromFpAbiRegs(self: *Arm64Compiler, base: []const u8, desc: F64RecordDesc) Error!void {
+        const n = desc.field_names.len;
+        if (n == 0 or n > 8) return error.UnsupportedProgram;
+        const raw_frame: u16 = @intCast(n * 8);
+        const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
+        try self.emitSubSp(frame);
+        self.stack_frame_bytes += frame;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const off: u16 = @intCast(i * 8);
+            const abi_d: u5 = @intCast(i);
+            self.used_fp_regs[abi_d] = true;
+            try self.emitStrSpFp(abi_d, off);
+            const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
+            try self.fp_locals.put(self.alloc, key, abi_d);
+            try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = true });
+        }
+    }
+
+    fn emitRetF64RecordFromDnir(self: *Arm64Compiler, temps: *std.AutoHashMapUnmanaged(u32, u5), ins: dnir.Instr) Error!void {
+        const vals = [_]dnir.Value{ ins.lhs, ins.rhs, ins.third };
+        const count = ins.result orelse 1;
+        var i: u32 = 0;
+        while (i < count) : (i += 1) {
+            const d = try self.evalDnirValueFp(temps, vals[@intCast(i)]);
+            const abi_d: u5 = @intCast(i);
+            if (d != abi_d) try self.emitFmovReg(abi_d, d);
+            if (d != abi_d) self.releaseFpReg(d);
+            self.used_fp_regs[abi_d] = true;
+        }
+    }
+
     fn ensureExternalSymbol(self: *Arm64Compiler, symbol_name: []const u8) Error!void {
         if (self.definedSymbolOffset(symbol_name) != null) return;
         if (self.extern_symbols.contains(symbol_name)) return;
@@ -1955,12 +2241,17 @@ const Arm64Compiler = struct {
         }
         if (self.cur_func_float) {
             const d = try self.compileExprFp(expr);
-            if (self.cur_func_is_main) {
-                if (d != 0) try self.emitFmovReg(0, d);
-                try self.emitFcvtzsX0FromD0();
-            } else if (d != 0) {
-                try self.emitFmovReg(0, d);
-            }
+            if (d != 0) try self.emitFmovReg(0, d);
+            if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
+            try self.restoreStackFrame();
+            try self.emitRet();
+            self.returned = true;
+            return;
+        }
+        if (self.cur_func_ret_float) {
+            const d = try self.tryCompileF64Subexpr(expr) orelse return error.UnsupportedProgram;
+            if (d != 0) try self.emitFmovReg(0, d);
+            if (self.needsProcessExitF64Coerce()) try self.emitFcvtzsX0FromD0();
             try self.restoreStackFrame();
             try self.emitRet();
             self.returned = true;
@@ -2008,6 +2299,9 @@ const Arm64Compiler = struct {
             },
             .call => |call| blk: {
                 if (call.func.* != .name) return error.UnsupportedProgram;
+                if (self.f64_kernel_names.get(call.func.name.ident)) |_| {
+                    break :blk try self.emitF64KernelCall(expr);
+                }
                 var d_slot: u5 = 0;
                 for (call.args) |arg| {
                     try self.emitFpCallArg(arg, &d_slot);
@@ -2015,9 +2309,8 @@ const Arm64Compiler = struct {
                 const save_set = try self.emitSaveCallerRegs();
                 try self.emitBl(call.func.name.ident);
                 try self.emitRestoreCallerRegs(save_set);
-                const dst = try self.allocFpReg();
-                try self.emitFmovReg(dst, 0);
-                break :blk dst;
+                self.used_fp_regs[0] = true;
+                break :blk @as(u5, 0);
             },
             else => error.UnsupportedProgram,
         };
@@ -2317,8 +2610,10 @@ const Arm64Compiler = struct {
 
     fn emitBl(self: *Arm64Compiler, target: []const u8) Error!void {
         const offset: u32 = @intCast(self.code.items.len);
-        try self.call_patches.append(self.alloc, .{ .offset = offset, .target = target });
-        try self.emitFmt(0x94000000, "bl _{s}", .{target});
+        const link_name = try linkerSymbolName(self.alloc, target);
+        const owned_target = try self.alloc.dupe(u8, link_name);
+        try self.call_patches.append(self.alloc, .{ .offset = offset, .target = owned_target });
+        try self.emitFmt(0x94000000, "bl _{s}", .{link_name});
     }
 
     fn emitB(self: *Arm64Compiler, label: u32) Error!u32 {
@@ -2604,6 +2899,22 @@ fn isComparison(op: ast.BinOp) bool {
     };
 }
 
+fn dnirBinOpToAst(tag: dnir.BinOpTag) ast.BinOp {
+    return switch (tag) {
+        .add => .add,
+        .sub => .sub,
+        .mul => .mul,
+        .div => .div,
+        .mod => .mod,
+        .eq => .eq,
+        .neq => .neq,
+        .lt => .lt,
+        .gt => .gt,
+        .leq => .leq,
+        .geq => .geq,
+    };
+}
+
 fn conditionForComparison(op: ast.BinOp) Condition {
     return switch (op) {
         .eq => .eq,
@@ -2664,6 +2975,10 @@ fn freeDnirModule(alloc: std.mem.Allocator, m: dnir.Module) void {
     alloc.free(m.records);
     for (m.functions) |f| {
         alloc.free(f.name);
+        for (f.params) |p| {
+            alloc.free(p.name);
+            if (p.record) |rn| alloc.free(rn);
+        }
         alloc.free(f.params);
         if (f.ret_record) |rn| alloc.free(rn);
         for (f.blocks) |b| {
@@ -2685,7 +3000,7 @@ fn freeDnirModule(alloc: std.mem.Allocator, m: dnir.Module) void {
     alloc.free(m.externs);
 }
 
-fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, allow_no_main: bool) Error!Arm64Output {
+fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, process_entry: ?[]const u8) Error!Arm64Output {
     var records = try collectF64RecordsFromDnir(alloc, m);
     defer freeF64Records(alloc, &records);
     var scal_records = try collectScalRecordsFromDnir(alloc, m);
@@ -2693,11 +3008,17 @@ fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, allow_no_main: bo
     var req_ctx = native_req_support.Context{};
     var func_record_returns: FuncRecordReturns = .empty;
     defer freeFuncRecordReturns(alloc, &func_record_returns);
+    var func_f64_record_returns: FuncF64RecordReturns = .empty;
+    defer freeFuncF64RecordReturns(alloc, &func_f64_record_returns);
     for (m.functions) |f| {
         if (f.ret_record) |rn| {
-            const rec = scalRecordDesc(&scal_records, .{ .named = rn }) orelse continue;
-            const owned_fn = try alloc.dupe(u8, f.name);
-            try func_record_returns.put(alloc, owned_fn, rec);
+            if (f64RecordDesc(&records, .{ .named = rn })) |rec| {
+                const owned_fn = try alloc.dupe(u8, f.name);
+                try func_f64_record_returns.put(alloc, owned_fn, rec);
+            } else if (scalRecordDesc(&scal_records, .{ .named = rn })) |rec| {
+                const owned_fn = try alloc.dupe(u8, f.name);
+                try func_record_returns.put(alloc, owned_fn, rec);
+            }
         }
     }
     var compiler = Arm64Compiler{
@@ -2705,16 +3026,26 @@ fn emitArm64FromDnir(alloc: std.mem.Allocator, m: dnir.Module, allow_no_main: bo
         .f64_records = &records,
         .scal_records = &scal_records,
         .func_record_returns = &func_record_returns,
+        .func_f64_record_returns = &func_f64_record_returns,
         .req_ctx = &req_ctx,
+        .process_entry = process_entry,
     };
     defer compiler.deinit();
-    try compiler.compileDnirModule(m, allow_no_main);
+    try compiler.compileDnirModule(m);
     return compiler.finish();
 }
 
 fn collectScalRecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!ScalRecordMap {
     var map: ScalRecordMap = .empty;
     for (m.records) |r| {
+        var has_f64 = false;
+        for (r.kinds) |k| {
+            if (k == .f64) {
+                has_f64 = true;
+                break;
+            }
+        }
+        if (has_f64) continue;
         var kinds: std.ArrayListUnmanaged(ScalFieldKind) = .empty;
         errdefer kinds.deinit(alloc);
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -2732,16 +3063,57 @@ fn collectScalRecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!Sc
 }
 
 fn collectF64RecordsFromDnir(alloc: std.mem.Allocator, m: dnir.Module) Error!F64RecordMap {
-    _ = alloc;
-    _ = m;
-    return .empty;
+    var map: F64RecordMap = .empty;
+    errdefer freeF64Records(alloc, &map);
+    for (m.records) |r| {
+        if (r.kinds.len == 0) continue;
+        var all_f64 = true;
+        for (r.kinds) |k| {
+            if (k != .f64) {
+                all_f64 = false;
+                break;
+            }
+        }
+        if (!all_f64) continue;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer names.deinit(alloc);
+        for (r.fields) |fname| try names.append(alloc, try alloc.dupe(u8, fname));
+        try map.put(alloc, try alloc.dupe(u8, r.name), .{
+            .field_names = try names.toOwnedSlice(alloc),
+        });
+    }
+    return map;
 }
 
-fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_main: bool) Error!Arm64Output {
-    if (dnir_lower.lowerModule(alloc, mod)) |dnir_mod| {
+fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_entry: ?[]const u8) Error!Arm64Output {
+    var graph = semantic_graph.SemanticGraph.init(alloc);
+    defer graph.deinit();
+    _ = graph.liftModuleWithCalls(mod, "<native>") catch {};
+
+    if (dnir_lower.lowerModuleWithGraph(alloc, mod, &graph)) |dnir_mod| {
         defer freeDnirModule(alloc, dnir_mod);
         if (dnir.moduleIsNativeDirectReady(dnir_mod)) {
-            return emitArm64FromDnir(alloc, dnir_mod, allow_no_main);
+            const regions = region_graph.buildModuleRegions(alloc, dnir_mod, &graph) catch null;
+            if (regions) |rs| {
+                defer region_graph.freeModuleRegions(alloc, rs);
+                region_graph.validateModuleRegions(rs, &graph, dnir_mod, alloc) catch {
+                    if (region_schedule.regionGateStrictEnabled()) {
+                        return error.UnsupportedProgram;
+                    }
+                };
+                if (realization.buildDeferredFromGraph(alloc, &graph, "<native>")) |plan_val| {
+                    var plan = plan_val;
+                    defer plan.deinit(alloc);
+                    realization.commitModuleForTarget(alloc, &plan, "native") catch {};
+                    region_graph.attachRealizationPlan(alloc, rs, &plan) catch {};
+                } else |_| {}
+                var dnir_mut = dnir_mod;
+                _ = region_transform.applyModuleRegionTransforms(alloc, &dnir_mut, rs) catch .{};
+                if (region_schedule.buildModuleSchedules(alloc, rs)) |schedules| {
+                    defer region_schedule.freeModuleSchedules(alloc, schedules);
+                } else |_| {}
+            }
+            return emitArm64FromDnir(alloc, dnir_mod, process_entry);
         }
     } else |_| {}
 
@@ -2751,18 +3123,22 @@ fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, allow_no_ma
     defer freeScalRecords(alloc, &scal_records);
     var func_record_returns: FuncRecordReturns = .empty;
     defer freeFuncRecordReturns(alloc, &func_record_returns);
+    var func_f64_record_returns: FuncF64RecordReturns = .empty;
+    defer freeFuncF64RecordReturns(alloc, &func_f64_record_returns);
     var req_ctx = try native_req_support.collectFromModule(alloc, mod);
     defer req_ctx.deinit(alloc);
     const blobs = try collectByteBlobs(alloc, mod);
     defer freeByteBlobs(alloc, blobs);
-    var native_mod = try collectFunctions(alloc, mod, allow_no_main, &scal_records, &func_record_returns);
+    var native_mod = try collectFunctions(alloc, mod, &scal_records, &func_record_returns);
     defer native_mod.deinit(alloc);
     var compiler = Arm64Compiler{
         .alloc = alloc,
         .f64_records = &records,
         .scal_records = &scal_records,
         .func_record_returns = &func_record_returns,
+        .func_f64_record_returns = &func_f64_record_returns,
         .req_ctx = &req_ctx,
+        .process_entry = process_entry,
     };
     defer compiler.deinit();
 
@@ -2950,7 +3326,7 @@ fn alignForward(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-test "native backend lowers Pass 4 milestone with f64 main exit wrapper" {
+test "native backend lowers Pass 4 milestone with f64 return in d0 (no main exit hack)" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -2977,11 +3353,134 @@ test "native backend lowers Pass 4 milestone with f64 main exit wrapper" {
     const listing = try emitAssembly(alloc, &mod, "native-asm");
     defer alloc.free(listing);
     try std.testing.expect(std.mem.indexOf(u8, listing, "_main") != null);
-    try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") == null);
     try std.testing.expect(std.mem.indexOf(u8, listing, "_distance2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "fmov d2, d0") == null);
+    const main_pos = std.mem.indexOf(u8, listing, "_main:") orelse return error.TestExpectedEqual;
+    const bl_off = std.mem.indexOf(u8, listing[main_pos..], "bl _distance2") orelse return error.TestExpectedEqual;
+    const after_bl = listing[main_pos + bl_off ..];
+    try std.testing.expect(std.mem.indexOf(u8, after_bl, "fmov d") == null);
 
     const obj = try emitObject(alloc, &mod, "native-object");
     try std.testing.expect(obj.len > 0);
+}
+
+test "native backend: no mandatory main — run() entry compiles" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\run(): i64
+        \\    42
+        \\end
+    , "run.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "_run") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "_main") == null);
+}
+
+test "native backend: pickNativeEntrySymbol prefers export then sole zero-arg" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\@export
+        \\fun entry(): i64
+        \\    1
+        \\end
+        \\other(): i64
+        \\    2
+        \\end
+    , "entry.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const mod = try parser.parse_module();
+    try std.testing.expectEqualStrings("entry", pickNativeEntrySymbol(&mod).?);
+
+    var lex2 = Lexer.init(
+        \\run(): i64
+        \\    42
+        \\end
+    , "sole.duo");
+    var parser2 = Parser.init(&lex2, alloc);
+    parser2.duo_mode = true;
+    const mod2 = try parser2.parse_module();
+    try std.testing.expectEqualStrings("run", pickNativeEntrySymbol(&mod2).?);
+
+    var lex3 = Lexer.init(
+        \\a(): i64
+        \\    1
+        \\end
+        \\b(): i64
+        \\    2
+        \\end
+    , "ambiguous.duo");
+    var parser3 = Parser.init(&lex3, alloc);
+    parser3.duo_mode = true;
+    const mod3 = try parser3.parse_module();
+    try std.testing.expect(pickNativeEntrySymbol(&mod3) == null);
+
+    var lex4 = Lexer.init(
+        \\a(): i64
+        \\    1
+        \\end
+        \\b(): i64
+        \\    2
+        \\end
+    , "override.duo");
+    var parser4 = Parser.init(&lex4, alloc);
+    parser4.duo_mode = true;
+    const mod4 = try parser4.parse_module();
+    try std.testing.expectEqualStrings("b", resolveNativeEntrySymbol(&mod4, "b").?);
+    try std.testing.expect(resolveNativeEntrySymbol(&mod4, "missing") == null);
+
+    var lex5 = Lexer.init(
+        \\run(): f64
+        \\    42.0
+        \\end
+    , "f64_entry.duo");
+    var parser5 = Parser.init(&lex5, alloc);
+    parser5.duo_mode = true;
+    const mod5 = try parser5.parse_module();
+    try std.testing.expectEqualStrings("run", pickNativeEntrySymbol(&mod5).?);
+}
+
+test "native backend: f64 process entry coerces d0 to x0 exit code" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\run(): f64
+        \\    42.0
+        \\end
+    , "f64_run.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const listing = try emitAssemblyForExecutable(alloc, &mod, "run");
+    defer alloc.free(listing);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "fcvtzs x0, d0") != null);
+
+    const plain = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(plain);
+    try std.testing.expect(std.mem.indexOf(u8, plain, "fcvtzs x0, d0") == null);
 }
 
 test "native backend lowers sealed f64 record distance2 kernel" {
@@ -3149,6 +3648,45 @@ test "native backend lowers direct calls and emits multiple symbols" {
     try std.testing.expect(std.mem.indexOf(u8, obj, "_main") != null);
 }
 
+test "native backend lowers qualified multi-arg call with mov_arg ABI slots" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\math.add = (a: i64, b: i64): i64
+        \\    a + b
+        \\end
+        \\main(): i64
+        \\    math.add(10, 20)
+        \\end
+    , "math_add_multi.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    sem.duo_mode = true;
+    try sem.check_module(&mod);
+
+    const listing = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(listing);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "_math_add") != null);
+    try std.testing.expect(std.mem.indexOf(u8, listing, "bl _math_add") != null);
+
+    const main_pos = std.mem.indexOf(u8, listing, "_main:") orelse return error.TestExpectedEqual;
+    const bl_off = std.mem.indexOf(u8, listing[main_pos..], "bl _math_add") orelse return error.TestExpectedEqual;
+    const before_bl = listing[main_pos .. main_pos + bl_off];
+    try std.testing.expect(std.mem.indexOf(u8, before_bl, "mov x0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, before_bl, "mov x1") != null);
+
+    const obj = try emitObject(alloc, &mod, "native-object");
+    try std.testing.expect(std.mem.indexOf(u8, obj, "_math_add") != null);
+    try std.testing.expect(obj.len > 0);
+}
+
 test "native backend lowers if elseif else branches" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -3182,9 +3720,17 @@ test "native backend lowers if elseif else branches" {
     try sem.check_module(&mod);
 
     const asm_text = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(asm_text);
     try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tcmp x") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb.ge .Lduo_") != null);
-    try std.testing.expect(std.mem.indexOf(u8, asm_text, "\tb.ne .Lduo_") != null);
+    var cmp_count: usize = 0;
+    var branch_count: usize = 0;
+    var lines = std.mem.splitScalar(u8, asm_text, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "\tcmp x")) cmp_count += 1;
+        if (std.mem.startsWith(u8, line, "\tb.") and std.mem.indexOf(u8, line, ".Lduo_") != null) branch_count += 1;
+    }
+    try std.testing.expect(cmp_count >= 3);
+    try std.testing.expect(branch_count >= 3);
 
     const obj = try emitObject(alloc, &mod, "native-object");
     try std.testing.expect(std.mem.indexOf(u8, obj, "_pick") != null);
@@ -3301,7 +3847,7 @@ test "native backend emits external call relocation" {
     const obj = try emitObject(alloc, &mod, "native-object");
     try std.testing.expect(std.mem.indexOf(u8, obj, "_llabs") != null);
 
-    const output = try emitArm64Module(alloc, &mod, false);
+    const output = try emitArm64Module(alloc, &mod, null);
     defer {
         alloc.free(output.text);
         alloc.free(output.asm_text);
@@ -3341,7 +3887,7 @@ test "native backend lowers string literals to cstring with adrp/add relocations
     try std.testing.expect(std.mem.indexOf(u8, obj, "__cstring") != null);
     try std.testing.expect(std.mem.indexOf(u8, obj, "_puts") != null);
 
-    const output = try emitArm64Module(alloc, &mod, false);
+    const output = try emitArm64Module(alloc, &mod, null);
     defer {
         alloc.free(output.text);
         alloc.free(output.asm_text);

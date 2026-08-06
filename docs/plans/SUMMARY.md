@@ -128,6 +128,49 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 - **Delivered:** M1 (preservation report) + M2 (salvage registry with real drift findings: stale pass-name stubs still referenced by AGENTS.md, prunable worktrees, unmerged branch, untracked agent state)
 - **Process pass** over Pass 13's control plane — governs how work is preserved, reconciled, and removed, not coordination state itself
 
+## Pass 24 — Unified Calls, Lua Superset, Execution-Graph Concurrency
+
+- **Mission:** One design constitution reconciling call semantics (value vs invoke), permanent Lua 5.5 superset contract, shell boundaries, structured concurrency, automatic parallelism, streams, scheduling, hardware realization, and tooling
+- **Authority:** `docs/plans/pass24_execution_concurrency_lua_supremacy.md`; index: `docs/plans/lua_superset_concurrency_supremacy.md`
+- **Catalog:** `duo catalog` → `pass24`; owners: `src/pass24_catalog.zig`, `src/lua_superset_catalog.zig`, `src/pass24_gate.zig`
+- **Non-negotiable:** `a` is a value; `a()` / `a x` invoke; `[[` is Lua long-string; bare auto-call rejected
+- **P0 partial:** long-bracket gates, keyword compatibility (`then`/`do`/`local`), syntax classification
+- **P2 partial:** call-model parse proofs (`src/pass24_call_model.zig`); `InvocationForm` on AST + `CallShape`; semantic graph lift proofs
+- **P3 partial:** execution graph schema stub (`src/pass24_execution_model.zig`)
+- **P2–P9 open:** execution graph, `@spawn`/`@all`/`@race`/`@parallel`, channel elimination, determinism, Ward/Go benchmarks
+- **Validate:** `zig build pass24-gate` (alias `lua-superset-gate`)
+
+## Pass 25 — Native Semantic Unification, Lifetimes, Bidirectional Meta, Descriptor Reconciliation
+
+- **Mission:** One coherent model for descriptor construction (ordinary calls, no type parameters), inferred lifetimes/provenance, views/ownership/pointers, consumption-driven return realization, and bidirectional metaprogramming via semantic transactions — without fragmenting the language
+- **Authority:** `docs/plans/pass25_native_semantic_unification.md`; index: `docs/plans/pass25_semantic_unification_index.md`
+- **Catalog:** `duo catalog` → `pass25`; owners: `src/pass25_catalog.zig`, `src/pass25_gate.zig`, schema stubs in `pass25_semantic_category.zig`, `pass25_lifetime_model.zig`, `pass25_projection_model.zig`
+- **Builds on:** Pass 23 (metaprotocols, return consumption), Pass 24 (views + `@all` disjointness), Pass 22 (semantic graph), Pass 20 (provenance harness)
+- **Non-negotiable:** descriptors are ordinary values; no canonical bracket/angle generics; lifetimes are provenance not syntax; views not borrow syntax; reverse meta returns transactions
+- **M0 partial:** constitution, rejected-syntax registry, five semantic categories schema, bidirectional levels 0–3, Pass 23 `@return` alignment, **tail-demand model** (`pass25_tail_result_model.zig`; **P23-D01 superseded**)
+- **M1–M3 open:** tail-demand in sema/graph (loop/branch phi, ambiguity diagnostics), specialization by call knowledge, lifetime diagnostics, projection relationships, LSP/MCP transaction preview
+- **Validate:** `zig build pass25-gate` (alias `semantic-unification-gate`)
+
+## Pass 26 — Foundational Closure (52 Seams + Two Unifiers)
+
+- **Mission:** Close foundational seams before adding capabilities — one canonical semantic rule per boundary
+- **Authority:** `docs/plans/pass26_foundational_semantic_closure.md`; index: `docs/plans/pass26_closure_index.md`
+- **Unifiers:** (1) semantic boundaries as first-class values; (2) semantic domains (nine kinds)
+- **Original five foundations (F1–F5):** operation IDs, protocol attachment, descriptor identity, boundaries, decision registry
+- **Extended Part II:** 30 additional seams (init, recursion, mutability, dynamic/GC, hashing, evidence, ABI, resources, …)
+- **Top-ten closure priorities:** descriptor identity+recursion → dynamic → init/mutability → GC → ops/protocols → domains/boundaries → stage/meta → evidence → ABI → resource/unwind
+- **M0 partial:** constitution + 13 schema modules + 52 workstreams + 28 gates
+- **M1 open:** wire top-ten into sema/graph; flagship C→Duo→Rust vertical proof (P26-G20)
+- **Validate:** `zig build pass26-gate` (alias `foundational-closure-gate`)
+
+## Pass 27 — Proof Bundle & Honest Performance Evidence
+
+- **Mission:** Charter-grade proof bundles for every performance/metaprogramming claim
+- **Authority:** `docs/plans/pass27_proof_bundle.md`; index: `docs/plans/pass27_proof_index.md`
+- **P0 partial:** emission counters, backend×representation×runtime manifest, `.proof.json` on compile/bench, 10×3 matrix schema
+- **North star:** P27-PROOF-01 descriptor-generated Ward decoder (performance + metaprogramming)
+- **Validate:** `zig build pass27-gate` (alias `proof-bundle-gate`); P0 matrix: `zig build bench-proof-gate`
+
 ## Current Proven Capabilities
 
 ```

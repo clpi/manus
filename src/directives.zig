@@ -58,6 +58,16 @@ pub fn isCInterfaceDirective(name: []const u8) bool {
         std.mem.eql(u8, name, "c.call");
 }
 
+/// True when `@c.emit(...)` argument text is a raw C string/bracket literal,
+/// not a Duo expression such as `@comp.expand(...)`.
+pub fn isRawCEmitLiteral(raw: []const u8) bool {
+    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+    if (trimmed.len >= 4 and std.mem.startsWith(u8, trimmed, "[[")) return true;
+    if (trimmed.len >= 2 and trimmed[0] == '"' and trimmed[trimmed.len - 1] == '"') return true;
+    if (trimmed.len >= 2 and trimmed[0] == '\'' and trimmed[trimmed.len - 1] == '\'') return true;
+    return false;
+}
+
 /// Strip delimiters from `@c.emit(...)` / `@c.include(...)` / `@c.import(...)` argument text.
 pub fn extractCRawCode(raw: []const u8) []const u8 {
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
@@ -490,4 +500,11 @@ test "directives: test options bench defaults" {
     }
     try std.testing.expect(opts.bench);
     try std.testing.expectEqual(@as(u32, 5), opts.iterations);
+}
+
+test "directives: isRawCEmitLiteral distinguishes raw C from expressions" {
+    try std.testing.expect(isRawCEmitLiteral("\"int x = 1;\""));
+    try std.testing.expect(isRawCEmitLiteral("[[ static inline void f() {} ]]"));
+    try std.testing.expect(!isRawCEmitLiteral("@comp.expand(\"HasXY\", TouchApi)"));
+    try std.testing.expect(!isRawCEmitLiteral("__metaexpand(\"HasXY\", TouchApi)"));
 }

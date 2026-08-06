@@ -16,33 +16,33 @@
 --   @comp.catalog()             discover all parseable @comp.* paths
 --
 -- Exponential scaling (one declaration → multiplicative output):
---   @meta.map                   O(types)
---   @meta.derive                O(types × fields)
---   @meta.product               O(types²)
---   @meta.derive.product        O(types² × fields)
---   @meta.ceiling               derive sweep + cartesian derive product
---   @meta.tensor                O(types³) callback sweep
---   @meta.derive.tensor         O(types³ × fields)
---   @meta.nfold                  O(types^k) callback sweep (generalizes product/tensor)
---   @meta.derive.nfold           O(types^k × fields)
---   @meta.burst                 module: derive.all + O(types² × fields) emit
---   @meta.transcend             module: burst + O(types³ × fields) emit
---   @meta.infinity              module: transcend + O(types⁴ × fields) emit
+--   @comp.map                   O(types)
+--   @comp.derive                O(types × fields)
+--   @comp.product               O(types²)
+--   @comp.derive.product        O(types² × fields)
+--   @comp.ceiling               derive sweep + cartesian derive product
+--   @comp.tensor                O(types³) callback sweep
+--   @comp.derive.tensor         O(types³ × fields)
+--   @comp.nfold                  O(types^k) callback sweep (generalizes product/tensor)
+--   @comp.derive.nfold           O(types^k × fields)
+--   @comp.burst                 module: derive.all + O(types² × fields) emit
+--   @comp.transcend             module: burst + O(types³ × fields) emit
+--   @comp.infinity              module: transcend + O(types⁴ × fields) emit
 --
 -- Module directives (file-level transforms):
---   @meta.define.derive       register user derive macro
---   @meta.define.bundle       register derive trait bundle
---   @meta.derive.all          apply derive to all concept matches
---   @meta.emit.derive         emit derive C at module level (no @c.emit wrapper)
---   @meta.emit.omni           emit omni/stack C at module level
---   @meta.burst               derive.all + quadratic derive.product emit
---   @meta.transcend           burst + cubic derive.tensor emit
---   @meta.pipeline            staged comptime pipeline
+--   @comp.define.derive       register user derive macro
+--   @comp.define.bundle       register derive trait bundle
+--   @comp.derive.all          apply derive to all concept matches
+--   @comp.emit.derive         emit derive C at module level (no @c.emit wrapper)
+--   @comp.emit.omni           emit omni/stack C at module level
+--   @comp.burst               derive.all + quadratic derive.product emit
+--   @comp.transcend           burst + cubic derive.tensor emit
+--   @comp.pipeline            staged comptime pipeline
 --
 -- Type attributes:
---   @meta.derive.bundle       expand named trait bundle on a type
+--   @comp.derive.bundle       expand named trait bundle on a type
 --
--- @meta.* remains a compatibility alias; new features use dotted @comp.* paths.
+-- @comp.* remains a compatibility alias; new features use dotted @comp.* paths.
 -- Run: duo run examples/meta_hierarchy_showcase.duo
 
 concept HasTag

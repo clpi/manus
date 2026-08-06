@@ -23,7 +23,7 @@
 | GS-002 | Assign-form function | `add = (x: i32, y: i32): i32 x + y end` | GR-001 | Named binding to anon fn |
 | GS-003 | If-expression | `x = if a < b val else val2 end` | GR-002 | Chainable with else if |
 | GS-004 | Implicit local | `x = 42` (no `local`) | GR-003 | .duo files only |
-| GS-005 | Omit `then` | `if ready run() end` | AGENTS.md | Deprecated in .duo |
+| GS-005 | Omit `then` | `if ready run() end` | AGENTS.md | Duo-preferred; `if ready then run() end` remains `LUA_AND_DUO_CANONICAL` |
 | GS-006 | Omit `do` | `while active tick() end` | AGENTS.md | Where parser allows |
 | GS-007 | `req` over `require` | `json = req "std.json"` | — | Short import |
 | GS-008 | String-literal calls | `print 'hi'` | — | Single string arg |
@@ -34,6 +34,8 @@
 | GS-013 | `_` private prefix | `_helper()` not exported | — | Convention, not keyword |
 | GS-014 | One-line if-expr | `mode = if debug "debug" else "release"` | GR-002 | No `end` when single-expr |
 | GS-015 | Newline field sep | `{ a = 1\n b = 2 }` | GP-013 | Commas optional between fields |
+| GS-016 | Lua long strings | `[[text]]`, `[=[text]=]`, … | Lua | `LUA_AND_DUO_CANONICAL`; never shell conditionals |
+| GS-017 | Lua long comments | `--[[text]]`, `--[=[text]=]`, … | Lua | Same delimiter rules as strings |
 
 ---
 

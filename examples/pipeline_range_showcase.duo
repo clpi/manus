@@ -1,7 +1,7 @@
--- @meta.pipeline range source — fused loop over [start, stop) without a data array
+-- @comp.pipeline range source — fused loop over [start, stop) without a data array
 -- Run: duo run examples/pipeline_range_showcase.duo
 
-@meta.pipeline({
+@comp.pipeline({
     fn = "sum_range",
     source = "range",
     start = 1,
@@ -15,6 +15,6 @@ fun total(): i64
     @c.call("sum_range")
 end
 
-print("=== @meta.pipeline range showcase ===")
+print("=== @comp.pipeline range showcase ===")
 print("sum 1..100 = " .. tostring(total()))
 print("ok")

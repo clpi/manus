@@ -1,0 +1,343 @@
+//! Pass 25 §5.1 — tail-demand propagation (AST resolution, no backward local search).
+const std = @import("std");
+const ast = @import("ast.zig");
+const pass25_tail_result_model = @import("pass25_tail_result_model.zig");
+
+pub const TailResultRule = pass25_tail_result_model.TailResultRule;
+pub const ResultDemand = pass25_tail_result_model.ResultDemand;
+
+pub const Resolution = struct {
+    rule: TailResultRule,
+    region: pass25_tail_result_model.TailRegionKind = .tail_statement,
+    /// Expression used for type-check / lowering (name ref for loop/branch-carried value).
+    expr: *ast.Expr,
+    transparent_trailer_count: u8 = 0,
+};
+
+/// Build result demand from an explicit function return descriptor.
+pub fn demandFromRetType(ret: ast.TypeExpr) ResultDemand {
+    return switch (ret) {
+        .inferred => .{ .position_count = 1, .latent_inferred = true },
+        .named => |n| blk: {
+            if (std.mem.eql(u8, n, "void")) {
+                break :blk .{ .position_count = 0, .explicit_descriptor = true };
+            }
+            break :blk .{ .position_count = 1, .explicit_descriptor = true };
+        },
+        .tuple => |ts| .{
+            .position_count = @intCast(@min(ts.len, 255)),
+            .explicit_descriptor = true,
+        },
+        else => .{ .position_count = 1, .explicit_descriptor = true },
+    };
+}
+
+/// Tail result expression only (legacy sema / Pass 23 hook).
+pub fn blockTailResultExpr(blk: *const ast.Block) ?*ast.Expr {
+    return if (blockTailResult(blk)) |r| r.expr else null;
+}
+
+/// Resolve tail-demand satisfaction for a block body.
+pub fn blockTailResult(blk: *const ast.Block) ?Resolution {
+    return blockTailResultWithDemand(blk, .{ .position_count = 1, .latent_inferred = true });
+}
+
+pub fn blockTailResultWithDemand(blk: *const ast.Block, demand: ResultDemand) ?Resolution {
+    if (demand.position_count == 0) return null;
+
+    var trailer_count: u8 = 0;
+    var end = blk.stmts.len;
+    while (end > 0 and isTransparentTrailer(&blk.stmts[end - 1])) {
+        end -= 1;
+        trailer_count +|= 1;
+    }
+
+    const tail_expr = if (trailer_count == 0) blk.tail_expr else null;
+    if (tail_expr) |e| {
+        if (isDiscardCall(e) and end > 0) {
+            if (tailStatementResult(blk.stmts[0..end], end - 1)) |anchor| {
+                var anchored = anchor;
+                anchored.transparent_trailer_count = 1;
+                anchored.region = .transparent_trailer_chain;
+                return anchored;
+            }
+        }
+        const rule: TailResultRule = switch (e.*) {
+            .call, .method_call => .tail_call,
+            else => .tail_assignment,
+        };
+        return .{ .rule = rule, .expr = e };
+    }
+    if (end == 0) return null;
+
+    const effective = blk.stmts[0..end];
+    var resolution = tailStatementResult(effective, end - 1) orelse {
+        if (trailer_count > 0 and end > 0) {
+            return tailStatementResult(effective, end - 1);
+        }
+        return null;
+    };
+    if (trailer_count > 0) {
+        resolution.transparent_trailer_count = trailer_count;
+        resolution.region = .transparent_trailer_chain;
+    }
+    return resolution;
+}
+
+fn isTransparentTrailer(stmt: *const ast.Stmt) bool {
+    return switch (stmt.*) {
+        .call_stmt => true,
+        .expr_stmt => |es| isDiscardCall(es.expr),
+        else => false,
+    };
+}
+
+fn isDiscardCall(expr: *const ast.Expr) bool {
+    return expr.* == .call or expr.* == .method_call;
+}
+
+fn tailStatementResult(stmts: []const ast.Stmt, last_index: usize) ?Resolution {
+    const last = &stmts[last_index];
+    return switch (last.*) {
+        .assign => |as| resolveTailAssign(as.targets, as.values),
+        .expr_stmt => |es| .{
+            .rule = switch (es.expr.*) {
+                .call, .method_call => .tail_call,
+                else => .tail_assignment,
+            },
+            .expr = es.expr,
+        },
+        .call_stmt => |cs| .{ .rule = .tail_call, .expr = cs.expr },
+        .num_for, .gen_for => resolveTailLoop(stmts, last_index, last),
+        .if_stmt => |is| resolveTailIf(stmts, last_index, &is.then, is.else_body),
+        else => null,
+    };
+}
+
+fn resolveTailAssign(targets: []*ast.Expr, values: []*ast.Expr) ?Resolution {
+    if (values.len != 1) return null;
+    const val = values[0];
+    if (targets.len == 1) {
+        if (assignTargetName(targets[0])) |n| {
+            if (binopUpdatesName(val, n)) {
+                return .{ .rule = .tail_compound_assignment, .expr = val };
+            }
+        }
+    }
+    if (val.* == .call or val.* == .method_call) {
+        return .{ .rule = .tail_call, .expr = val };
+    }
+    return .{ .rule = .tail_assignment, .expr = val };
+}
+
+fn resolveTailLoop(stmts: []const ast.Stmt, loop_index: usize, loop_stmt: *const ast.Stmt) ?Resolution {
+    const body: *const ast.Block = switch (loop_stmt.*) {
+        .num_for => |nf| &nf.body,
+        .gen_for => |gf| &gf.body,
+        else => return null,
+    };
+
+    const carried = findUniqueLoopCarriedName(body) orelse return null;
+    if (findSeedBeforeLoop(stmts[0..loop_index], carried) == null) return null;
+
+    const expr = nameExprRef(body, carried) orelse blk: {
+        if (findSeedBeforeLoop(stmts[0..loop_index], carried)) |seed| {
+            break :blk seed;
+        }
+        return null;
+    };
+
+    return .{
+        .rule = .tail_loop_carried,
+        .region = .tail_loop,
+        .expr = expr,
+    };
+}
+
+fn resolveTailIf(
+    stmts: []const ast.Stmt,
+    if_index: usize,
+    then_block: *const ast.Block,
+    else_body: ?ast.Block,
+) ?Resolution {
+    if (blockTailResult(then_block)) |then_r| {
+        if (else_body) |eb| {
+            if (blockTailResult(&eb)) |else_r| {
+                if (then_r.rule == else_r.rule and exprsSameShape(then_r.expr, else_r.expr)) {
+                    return .{
+                        .rule = .tail_branch,
+                        .region = .tail_branch,
+                        .expr = then_r.expr,
+                    };
+                }
+            }
+        }
+    }
+    var seed_name: ?[]const u8 = null;
+    for (stmts[0..if_index]) |*stmt| {
+        if (stmt.* != .assign) continue;
+        const as = stmt.assign;
+        if (as.targets.len != 1) continue;
+        if (assignTargetName(as.targets[0])) |n| seed_name = n;
+    }
+    const name = seed_name orelse return null;
+    if (findSeedBeforeLoop(stmts[0..if_index], name) == null) return null;
+    if (!branchAssignsName(then_block, name)) return null;
+    if (else_body) |eb| {
+        if (!branchAssignsName(&eb, name)) return null;
+    } else return null;
+    return .{
+        .rule = .tail_branch_carried,
+        .region = .tail_branch,
+        .expr = nameExprRef(then_block, name) orelse return null,
+    };
+}
+
+fn exprsSameShape(a: *const ast.Expr, b: *const ast.Expr) bool {
+    if (@intFromEnum(a.*) != @intFromEnum(b.*)) return false;
+    return switch (a.*) {
+        .name => std.mem.eql(u8, a.name.ident, b.name.ident),
+        else => a == b,
+    };
+}
+
+fn branchAssignsName(block: *const ast.Block, name: []const u8) bool {
+    if (block.stmts.len == 0) return false;
+    const last = &block.stmts[block.stmts.len - 1];
+    if (last.* != .assign) return false;
+    const as = last.assign;
+    if (as.targets.len != 1) return false;
+    const n = assignTargetName(as.targets[0]) orelse return false;
+    return std.mem.eql(u8, n, name);
+}
+
+fn nameExprRef(block: *const ast.Block, name: []const u8) ?*ast.Expr {
+    if (findLastUpdateTargetInBlock(block, name)) |target| return target;
+    return null;
+}
+
+fn assignTargetName(expr: *const ast.Expr) ?[]const u8 {
+    return switch (expr.*) {
+        .name => |n| n.ident,
+        else => null,
+    };
+}
+
+fn binopUpdatesName(val: *const ast.Expr, name: []const u8) bool {
+    if (val.* != .binop) return false;
+    return switch (val.binop.lhs.*) {
+        .name => |n| std.mem.eql(u8, n.ident, name),
+        else => false,
+    };
+}
+
+fn findUniqueLoopCarriedName(body: *const ast.Block) ?[]const u8 {
+    var name: ?[]const u8 = null;
+    for (body.stmts) |*stmt| {
+        if (stmt.* != .assign) continue;
+        const as = stmt.assign;
+        if (as.targets.len != 1) return null;
+        const n = assignTargetName(as.targets[0]) orelse return null;
+        if (name) |prev| {
+            if (!std.mem.eql(u8, prev, n)) return null;
+        } else {
+            name = n;
+        }
+    }
+    return name;
+}
+
+fn findSeedBeforeLoop(stmts: []const ast.Stmt, name: []const u8) ?*ast.Expr {
+    for (stmts) |*stmt| {
+        if (stmt.* != .assign) continue;
+        const as = stmt.assign;
+        if (as.targets.len != 1 or as.values.len != 1) continue;
+        if (assignTargetName(as.targets[0])) |n| {
+            if (std.mem.eql(u8, n, name)) return as.values[0];
+        }
+    }
+    return null;
+}
+
+fn findLastUpdateTargetInBlock(body: *const ast.Block, name: []const u8) ?*ast.Expr {
+    var found: ?*ast.Expr = null;
+    for (body.stmts) |*stmt| {
+        if (stmt.* != .assign) continue;
+        const as = stmt.assign;
+        if (as.targets.len != 1) continue;
+        if (assignTargetName(as.targets[0])) |n| {
+            if (std.mem.eql(u8, n, name)) found = as.targets[0];
+        }
+    }
+    return found;
+}
+
+test "tail_result_demand: tail assignment rule A" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuo(
+        \\double = (x): i64
+        \\    value = x * 2
+        \\end
+    , &arena);
+    const body = mod.body.stmts[0].func_decl.func.body;
+    const r = blockTailResult(&body) orelse return error.TestExpectedEqual;
+    try std.testing.expect(r.rule == .tail_assignment);
+    try std.testing.expect(r.expr.* == .binop);
+}
+
+test "tail_result_demand: loop-carried factorial rule F" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuo(
+        \\factorial = (n: i64): i64
+        \\    value = 1
+        \\    for i = 2, n
+        \\        value *= i
+        \\    end
+        \\end
+    , &arena);
+    const body = mod.body.stmts[0].func_decl.func.body;
+    const r = blockTailResult(&body) orelse return error.TestExpectedEqual;
+    try std.testing.expect(r.rule == .tail_loop_carried);
+    try std.testing.expect(r.expr.* == .name);
+    try std.testing.expectEqualStrings("value", r.expr.name.ident);
+}
+
+test "tail_result_demand: transparent trailer preserves anchor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuo(
+        \\calculate = (x): i64
+        \\    value = x * 2
+        \\    print value
+        \\end
+    , &arena);
+    const body = mod.body.stmts[0].func_decl.func.body;
+    const r = blockTailResult(&body) orelse return error.TestExpectedEqual;
+    try std.testing.expect(r.rule == .tail_assignment);
+    try std.testing.expect(r.transparent_trailer_count >= 1);
+}
+
+test "tail_result_demand: ambiguous pre-loop locals + effect loop returns null" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const mod = try parseDuo(
+        \\bad = (x): i64
+        \\    a = compute_a(x)
+        \\    b = compute_b(x)
+        \\    for item in items
+        \\        update(item)
+        \\    end
+        \\end
+    , &arena);
+    const body = mod.body.stmts[0].func_decl.func.body;
+    try std.testing.expect(blockTailResult(&body) == null);
+}
+
+fn parseDuo(src: []const u8, arena: *std.heap.ArenaAllocator) !ast.Module {
+    var lex = @import("lexer.zig").Lexer.init(src, "test.duo");
+    var parser = @import("parser.zig").Parser.init(&lex, arena.allocator());
+    parser.duo_mode = true;
+    return parser.parse_module();
+}

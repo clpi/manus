@@ -85,6 +85,19 @@ pub const BenchBackend = enum {
     }
 };
 
+/// Map bench harness profile to backend × representation × runtime axes.
+pub fn profileForBenchBackend(bb: BenchBackend) struct {
+    backend: Backend,
+    representation: RepresentationProfile,
+    runtime: RuntimeProfile,
+} {
+    return switch (bb) {
+        .c_dynamic => .{ .backend = .c, .representation = .generic, .runtime = .full },
+        .c_specialized => .{ .backend = .c, .representation = .specialized, .runtime = .dynamic },
+        .direct => .{ .backend = .direct, .representation = .native, .runtime = .freestanding },
+    };
+}
+
 pub const Manifest = struct {
     backend: Backend,
     representation: RepresentationProfile,
@@ -170,6 +183,8 @@ test "backend_identity: parse backend and bench profiles" {
     try std.testing.expectEqual(Backend.direct, Backend.parse("native").?);
     try std.testing.expect(Backend.parse("c-specialized") == null);
     try std.testing.expect(BenchBackend.parse("c-specialized") == .c_specialized);
+    const prof = profileForBenchBackend(.c_specialized);
+    try std.testing.expect(prof.representation == .specialized);
 }
 
 test "backend_identity: manifest for native scalar C path" {

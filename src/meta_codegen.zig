@@ -2668,7 +2668,8 @@ pub fn emitUserDefinedDerives(
     defer pending.deinit(host.alloc);
 
     for (attrs) |attr| {
-        if (std.mem.eql(u8, attr.name, "derive")) {
+        const type_attr = meta_module.normalizeTypeAttribute(attr.name);
+        if (std.mem.eql(u8, type_attr, "derive")) {
             const raw = attr.args orelse continue;
             var it = std.mem.splitScalar(u8, raw, ',');
             while (it.next()) |part| {
@@ -2676,7 +2677,7 @@ pub fn emitUserDefinedDerives(
                 if (name.len == 0) continue;
                 pending.append(host.alloc, name) catch continue;
             }
-        } else if (std.mem.eql(u8, attr.name, "derive.bundle") or std.mem.eql(u8, attr.name, "meta.derive.bundle")) {
+        } else if (std.mem.eql(u8, type_attr, "derive.bundle")) {
             const raw = attr.args orelse continue;
             const traits = derive_bundles.expandTraitsFromRawArgs(host.alloc, raw) catch continue;
             defer {
@@ -2723,19 +2724,80 @@ pub fn emitUserDefinedDerives(
     }
 }
 
+/// Registered internal hooks owned by unified meta dispatch (P6-07 / G-061).
+const combinator_hook_names = [_][]const u8{
+    "__comptimemap",
+    "__comptimeeach",
+    "__comptimematch",
+    "__comptimetabulate",
+    "__comptimeinterpolate",
+    "__comptimezip",
+    "__comptimeproduct",
+    "__comptimetensor",
+    "__comptimepower",
+    "__comptimechoose",
+    "__comptimepermute",
+    "__comptimenfold",
+    "__comptimefixpoint",
+    "__comptimefanout",
+    "__metaexpand",
+    "__metaceiling",
+    "__metaomni",
+    "__metaburst",
+    "__metatranscend",
+    "__metainfinity",
+    "__metahyper",
+    "__metagrammar",
+    "__metaweave",
+    "__metatemplate",
+    "__metagenerate",
+    "__metascheme",
+    "__metaschemeclauses",
+    "__derivemap",
+    "__derivepower",
+    "__deriveproduct",
+    "__derivetensor",
+    "__derivenfold",
+    "__derivechoose",
+    "__derivepermute",
+    "__derivetower",
+};
+
+fn deriveNameFromValue(v: comptime_eval.Value) ?[]const u8 {
+    return switch (v) {
+        .string => v.string,
+        else => null,
+    };
+}
+
+fn optionalFuncValue(v: comptime_eval.Value) ?comptime_eval.Value {
+    if (v == .func) return v;
+    return null;
+}
+
+fn conceptsSliceFromSpec(
+    _: std.mem.Allocator,
+    spec: []const u8,
+    scratch: *[16][]const u8,
+) ![]const []const u8 {
+    if (std.mem.indexOfScalar(u8, spec, '+') == null) {
+        scratch[0] = std.mem.trim(u8, spec, " \t\r\n");
+        return scratch[0..1];
+    }
+    var count: usize = 0;
+    var it = std.mem.splitScalar(u8, spec, '+');
+    while (it.next()) |part| : (count += 1) {
+        scratch[count] = std.mem.trim(u8, part, " \t\r\n");
+    }
+    return scratch[0..count];
+}
+
 /// True when `applyMetaCombinatorHook` owns dispatch for an internal hook name (P6-07).
 pub fn canApplyMetaCombinatorHook(internal: []const u8) bool {
-    return std.mem.eql(u8, internal, "__comptimematch") or
-        std.mem.eql(u8, internal, "__comptimeinterpolate") or
-        std.mem.eql(u8, internal, "__comptimetabulate") or
-        std.mem.eql(u8, internal, "__comptimezip") or
-        std.mem.eql(u8, internal, "__comptimeproduct") or
-        std.mem.eql(u8, internal, "__comptimemap") or
-        std.mem.eql(u8, internal, "__comptimeeach") or
-        std.mem.eql(u8, internal, "__comptimepower") or
-        std.mem.eql(u8, internal, "__derivepower") or
-        std.mem.eql(u8, internal, "__deriveproduct") or
-        std.mem.eql(u8, internal, "__comptimefixpoint");
+    for (combinator_hook_names) |name| {
+        if (std.mem.eql(u8, name, internal)) return true;
+    }
+    return false;
 }
 
 /// Provenance input string for a meta combinator call (hashed by transform_engine).
@@ -2796,21 +2858,140 @@ pub fn applyMetaCombinatorHook(
         if (args[0] != .string or args[1] != .func) return null;
         return comptimePowerHook(host, args[0].string, args[1], alloc);
     }
+    if (std.mem.eql(u8, internal, "__comptimechoose") and args.len == 3) {
+        if (args[0] != .string or args[1] != .int or args[2] != .func) return null;
+        return comptimeChooseHook(host, args[0].string, @intCast(args[1].int), args[2], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimepermute") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        return comptimePermuteHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimetensor") and args.len == 4) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string or args[3] != .func) return null;
+        return comptimeTensorHook(host, args[0].string, args[1].string, args[2].string, args[3], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimenfold") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        var scratch: [16][]const u8 = undefined;
+        const concepts = conceptsSliceFromSpec(alloc, args[0].string, &scratch) catch return null;
+        return comptimeNfoldHook(host, concepts, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__comptimefanout") and args.len == 3) {
+        if (args[0] != .string or args[1] != .func or args[2] != .int) return null;
+        return comptimeFanoutHook(host, args[0].string, args[1], @intCast(args[2].int), alloc);
+    }
     if (std.mem.eql(u8, internal, "__derivepower") and args.len == 2) {
         if (args[0] != .string) return null;
-        const derive_name = switch (args[1]) {
-            .string => args[1].string,
-            else => return null,
-        };
+        const derive_name = deriveNameFromValue(args[1]) orelse return null;
         return derivePowerHook(host, args[0].string, derive_name, alloc);
     }
     if (std.mem.eql(u8, internal, "__deriveproduct") and args.len == 3) {
         if (args[0] != .string or args[1] != .string) return null;
-        const derive_name = switch (args[2]) {
-            .string => args[2].string,
-            else => return null,
-        };
+        const derive_name = deriveNameFromValue(args[2]) orelse return null;
         return deriveProductHook(host, args[0].string, args[1].string, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivetensor") and args.len == 4) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string) return null;
+        const derive_name = deriveNameFromValue(args[3]) orelse return null;
+        return deriveTensorHook(host, args[0].string, args[1].string, args[2].string, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivenfold") and args.len == 2) {
+        if (args[0] != .string) return null;
+        const derive_name = deriveNameFromValue(args[1]) orelse return null;
+        var scratch: [16][]const u8 = undefined;
+        const concepts = conceptsSliceFromSpec(alloc, args[0].string, &scratch) catch return null;
+        return deriveNfoldHook(host, concepts, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivechoose") and args.len == 3) {
+        if (args[0] != .string or args[1] != .int) return null;
+        const derive_name = deriveNameFromValue(args[2]) orelse return null;
+        return deriveChooseHook(host, args[0].string, @intCast(args[1].int), derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivepermute") and args.len == 2) {
+        if (args[0] != .string) return null;
+        const derive_name = deriveNameFromValue(args[1]) orelse return null;
+        return derivePermuteHook(host, args[0].string, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivetower") and args.len == 2) {
+        if (args[0] != .string) return null;
+        const derive_name = deriveNameFromValue(args[1]) orelse return null;
+        var scratch: [16][]const u8 = undefined;
+        const concepts = conceptsSliceFromSpec(alloc, args[0].string, &scratch) catch return null;
+        return deriveTowerHook(host, concepts, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__derivemap") and args.len == 2) {
+        if (args[0] != .string) return null;
+        const derive_name = deriveNameFromValue(args[1]) orelse return null;
+        return deriveMapHook(host, args[0].string, derive_name, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaexpand") and args.len >= 2) {
+        if (args[0] != .string or args[1] != .string) return null;
+        const callback = if (args.len >= 3) optionalFuncValue(args[2]) else null;
+        return expandHook(host, args[0].string, args[1].string, callback, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaceiling") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string) return null;
+        return ceilingHook(host, args[0].string, args[1].string, args[2].string, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaomni") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string) return null;
+        return omniHook(host, args[0].string, args[1].string, args[2].string, null, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaomni") and args.len == 4) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string) return null;
+        const callback = optionalFuncValue(args[3]);
+        return omniHook(host, args[0].string, args[1].string, args[2].string, callback, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaburst") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string) return null;
+        return burstEmitHook(host, args[0].string, args[1].string, args[2].string, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metatranscend") and args.len == 4) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string or args[3] != .string) return null;
+        return transcendHook(host, args[0].string, args[1].string, args[2].string, args[3].string, null, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metatranscend") and args.len == 5) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string or args[3] != .string) return null;
+        const callback = optionalFuncValue(args[4]);
+        return transcendHook(host, args[0].string, args[1].string, args[2].string, args[3].string, callback, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metainfinity") and args.len == 5) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string or args[3] != .string or args[4] != .string) return null;
+        return infinityHook(host, args[0].string, args[1].string, args[2].string, args[3].string, args[4].string, null, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metahyper") and args.len == 6) {
+        if (args[0] != .string or args[1] != .string or args[2] != .string or args[3] != .string or args[4] != .string or args[5] != .string) return null;
+        return hyperHook(host, args[0].string, args[1].string, args[2].string, args[3].string, args[4].string, args[5].string, null, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metagrammar") and args.len == 2) {
+        if (args[0] != .string or args[1] != .func) return null;
+        return comptimeGrammarHook(host, args[0].string, args[1], alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaweave") and args.len == 3) {
+        if (args[0] != .string or args[1] != .string or args[2] != .func) return null;
+        return weaveHook(host, args[0].string, args[1].string, args[2], host.bindings, host.options, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metatemplate") and args.len >= 2) {
+        if (args[0] != .string or args[1] != .string) return null;
+        const callback = if (args.len >= 3) optionalFuncValue(args[2]) else null;
+        return comptimeTemplateHook(host, args[0].string, args[1].string, callback, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metagenerate") and args.len >= 1) {
+        if (args[0] != .string) return null;
+        const body = if (args.len >= 2 and args[1] == .string) args[1].string else "";
+        const callback = if (args.len >= 3) optionalFuncValue(args[2]) else null;
+        return comptimeGenerateHook(host, args[0].string, body, callback, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metascheme") and args.len >= 1) {
+        if (args[0] != .string) return null;
+        const template = if (args.len >= 2 and args[1] == .string) args[1].string else "";
+        const callback = if (args.len >= 3) optionalFuncValue(args[2]) else null;
+        return comptimeSchemeHook(host, args[0].string, template, callback, alloc);
+    }
+    if (std.mem.eql(u8, internal, "__metaschemeclauses") and args.len >= 1) {
+        if (args[0] != .string) return null;
+        const callback = if (args.len >= 2) optionalFuncValue(args[1]) else null;
+        return comptimeSchemeClausesHook(host, args[0].string, callback, alloc);
     }
     if (std.mem.eql(u8, internal, "__comptimefixpoint") and args.len == 3) {
         if (args[0] != .string) return null;

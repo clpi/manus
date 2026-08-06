@@ -86,18 +86,35 @@ ok = value != 0 and not disabled
 - `!=` is accepted as an alias for the existing inequality operator and lowers to the same AST node as Lua-compatible `~=`.
 - `~=` remains accepted for Lua compatibility, but new Duo code should prefer `!=`.
 
-### GR-006 (new numbering) — Table keys without brackets (proposed)
+### GR-006 — Table literal key forms (accepted)
 
-**Status:** proposed (2026-08-01)
+**Status:** accepted (2026-08-05, P26-D11)
 
-Table keys that are valid identifiers should not require `[]`:
+Three key forms; use the shortest unambiguous form:
+
+| Form | Syntax | Meaning |
+| --- | --- | --- |
+| Identifier | `name = value` | Literal field/key name `name` |
+| Quoted string | `"literal-key" = value` | Literal string key (non-identifier) |
+| Computed | `[expr] = value` | Evaluate `expr`; use result as key |
 
 ```duo
-t = { foo = 1, bar = 2 }  -- already works
-t.baz = 3                  -- already works
+table = {
+    name = value
+    Red = handle_red
+    ["literal-key"] = value
+    [Color.Red] = handle_red
+    [expr] = value
+}
 ```
 
-For computed keys, `[]` remains required. Track as parser enhancement.
+Rules:
+
+- `name = value` is **not** computed — it binds the literal identifier `name`.
+- `[expr] = value` is computed — evaluate `expr` and use its value as the key.
+- Do **not** invent another computed-key operator; Lua's `[ ]` form is canonical.
+- Canonical Duo examples avoid `[]` for simple identifier-like keys.
+- Formatter preserves `[]` when semantically necessary or intentionally explicit.
 
 ### GR-007 — No @const/@comptime surface syntax (implemented)
 
@@ -149,10 +166,45 @@ attributes, not standalone module directives, even though they are cataloged
 in the `@comp.*` table (`isMetaAttribute` returns true for them, so they had
 to be special-cased in `parse_attributed_decl` before that check).
 
+### GR-call-001 — Value reference vs explicit invocation (Pass 24)
+
+**Status:** preferred (2026-08-05)
+
+| Form | Meaning |
+| --- | --- |
+| `a` | Retrieve callable **value** — never auto-invoke |
+| `a()` | Zero-argument invocation |
+| `a x`, `a x, y` | Parenless invocation with arguments |
+| `obj:method()`, `obj:method x` | Receiver calls |
+
+First-class functions must remain passable without invocation:
+
+```duo
+items:each print
+callback = print
+handlers.Save = save
+```
+
+Bare-auto-call is **rejected** (P24-R01). Command tails (`pwd`, `git status`) use explicit command invocation context only — not global identifier semantics.
+
+### GR-call-002 — Parenless call argument precedence
+
+**Status:** implemented (2026-08-05)
+
+Parenless call arguments bind tighter than binary `+` / `-`:
+
+```duo
+f x + y     -- parses as (f x) + y
+f (x + y)   -- passes one combined argument
+```
+
+Implementation: `parse_parenless_call_arg` uses `parse_prec(18)`; trailing infix completes via `finish_prec` (`src/parser.zig`). Gate: P24-A02.
+
 ## Changelog
 
 | Date | Rule | Change |
 | --- | --- | --- |
+| 2026-08-05 | GR-call-001, GR-call-002 | Pass 24 call model: value vs invoke; parenless precedence; P24-A02 gate |
 | 2026-08-01 | GR-009 | Method-call colon in arg lists no longer mis-read as param type; `@c.export`/`@c.type`/`@c.ffi`/`@c.call`/`@c.link` attach to decls. `Parser.colon_is_method_call` ahead-look in `scan_func_header_signal`; C-interface decl-attaching attrs accumulate before isMetaAttribute check |
 | 2026-08-01 | GR-006, GR-007, GR-008 | Table keys proposed; @const/@comptime rejected; fun/function deprecated in new .duo |
 | 2026-08-01 | GR-007 | **Implemented** parser rejection of `@const`/`@comptime`/`@comptime_expr`/`@compile_time` with directed `@(expr)`/`@comp.*` hint (statement + expression position); 2 parser tests added (`Parser.bannedAtDirectiveSuggestion`) |

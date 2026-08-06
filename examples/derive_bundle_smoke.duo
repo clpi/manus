@@ -1,8 +1,8 @@
-@meta.define.derive("TagOnly", fun generate(meta) -> str
+@comp.define.derive("TagOnly", fun generate(meta) -> str
     "/* tagged " .. meta.name .. " */\n"
 end)
 
-@meta.derive.bundle("Debug")
+@comp.derive.bundle("Debug")
 type Tiny = { n: i64 }
 
 @derive(TagOnly)

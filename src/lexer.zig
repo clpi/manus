@@ -883,6 +883,48 @@ test "lex: long string level 1" {
     try testing.expectEqualStrings("content", tok.text);
 }
 
+test "lex: long string level 1 with embedded level-0 close" {
+    var l = Lexer.init("[=[contains ]] without ending]=]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("contains ]] without ending", tok.text);
+}
+
+test "lex: long string level 2 with embedded level-1 close" {
+    var l = Lexer.init("[==[contains ]=] and more ]==]", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expectEqualStrings("contains ]=] and more ", tok.text);
+}
+
+test "lex: long string preserves bash conditional text at shell boundary" {
+    const src =
+        "shell [=[\nif [[ -f \"$file\" ]]; then\n    echo \"$file\"\nfi\n]=]\n";
+    var l = Lexer.init(src, "test");
+    const name = try l.next();
+    try testing.expectEqual(TokenKind.name, name.kind);
+    try testing.expectEqualStrings("shell", name.text);
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.string_lit, tok.kind);
+    try testing.expect(std.mem.indexOf(u8, tok.text, "if [[ -f") != null);
+    try testing.expect(std.mem.indexOf(u8, tok.text, "echo \"$file\"") != null);
+    try testing.expect(std.mem.indexOf(u8, tok.text, "fi") != null);
+}
+
+test "lex: long comment level 0 skipped" {
+    var l = Lexer.init("--[[ block ]]\na = 1", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.name, tok.kind);
+    try testing.expectEqualStrings("a", tok.text);
+}
+
+test "lex: long comment level 1 with ]] inside" {
+    var l = Lexer.init("--[=[ has ]] inside ]=]\nb = 2", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.name, tok.kind);
+    try testing.expectEqualStrings("b", tok.text);
+}
+
 test "lex: long string level 2" {
     var l = Lexer.init("[==[text]==]", "test");
     const tok = try l.next();
@@ -952,6 +994,13 @@ test "lex: block comment with level skipped" {
     const tok = try l.next();
     try testing.expectEqual(TokenKind.int_lit, tok.kind);
     try testing.expectEqual(@as(i64, 77), tok.int_val);
+}
+
+test "lex: block comment level 1 with embedded level-0 close" {
+    var l = Lexer.init("--[=[comment containing ]]]=]55", "test");
+    const tok = try l.next();
+    try testing.expectEqual(TokenKind.int_lit, tok.kind);
+    try testing.expectEqual(@as(i64, 55), tok.int_val);
 }
 
 test "lex: single-char operators" {

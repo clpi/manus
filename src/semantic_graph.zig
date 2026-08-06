@@ -9,6 +9,10 @@ const ast = @import("ast.zig");
 const types = @import("types.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
 const transform_engine = @import("transform_engine.zig");
+const tail_result_demand = @import("tail_result_demand.zig");
+const pass26_descriptor_intern = @import("pass26_descriptor_intern.zig");
+const pass26_descriptor_identity = @import("pass26_descriptor_identity.zig");
+const pass26_recursive_descriptor = @import("pass26_recursive_descriptor.zig");
 
 pub const NodeId = struct {
     index: u32,
@@ -99,6 +103,18 @@ pub const Node = struct {
     stage: ?semantic_algebra.Stage = null,
     /// Pass 2.1: descriptor algebra hash for alias/type nodes (internal).
     descriptor_hash: ?u64 = null,
+    /// Pass 26: canonical semantic fingerprint (interning/specialization; distinct from shape_id).
+    semantic_fingerprint: ?u64 = null,
+    /// Pass 26 M1: declaration/provenance identity (never merged across bindings).
+    declaration_identity: ?u64 = null,
+    /// Pass 26 M1: intern slot when pure descriptors collapse.
+    intern_slot: ?u32 = null,
+    /// Pass 26 M1: descriptor lifecycle state at lift.
+    descriptor_state: ?pass26_descriptor_identity.DescriptorState = null,
+    /// Pass 26 M1: recursive layout classification.
+    recursion: ?pass26_recursive_descriptor.RecursionKind = null,
+    /// Pass 26 M1: fixed-point resolution status.
+    completion: ?pass26_recursive_descriptor.DescriptorCompletion = null,
     /// Human-readable descriptor composition label (`Point+Named`).
     descriptor_label: ?[]const u8 = null,
     /// Pass 2.3: pipeline algebra op when `kind == .pipeline` (`|>` lowers to `.map`).
@@ -129,9 +145,16 @@ pub const SemanticGraph = struct {
     generation: u32 = 0,
     /// Module-scope func decls indexed by name (Pass 2.2 effect inference on call lift).
     func_decls: std.StringHashMapUnmanaged(*const ast.FuncDecl) = .empty,
+    /// Pass 25 §5.1 — tail-demand resolution per function (principal semantic result lineage).
+    func_tail_results: std.StringHashMapUnmanaged(tail_result_demand.Resolution) = .empty,
+    /// Pass 26 M1 — descriptor fingerprint interning at alias lift.
+    descriptor_registry: pass26_descriptor_intern.Registry = undefined,
 
     pub fn init(alloc: std.mem.Allocator) SemanticGraph {
-        return .{ .alloc = alloc };
+        return .{
+            .alloc = alloc,
+            .descriptor_registry = pass26_descriptor_intern.Registry.init(alloc),
+        };
     }
 
     pub fn deinit(self: *SemanticGraph) void {
@@ -145,6 +168,8 @@ pub const SemanticGraph = struct {
         self.nodes.deinit(self.alloc);
         self.edges.deinit(self.alloc);
         self.func_decls.deinit(self.alloc);
+        self.func_tail_results.deinit(self.alloc);
+        self.descriptor_registry.deinit();
     }
 
     fn stablePathForNode(node: *const Node, buf: []u8) []const u8 {
@@ -332,6 +357,9 @@ pub const SemanticGraph = struct {
             });
             try self.addEdge(.{ .from = mod_id, .to = func_id, .kind = .contains });
             try self.func_decls.put(self.alloc, fd.path[0], fd);
+            if (tail_result_demand.blockTailResultWithDemand(&fd.func.body, tail_result_demand.demandFromRetType(fd.func.ret_type))) |tr| {
+                try self.func_tail_results.put(self.alloc, fd.path[0], tr);
+            }
             for (fd.func.params) |param| {
                 const param_id = try self.addNode(.{
                     .kind = .param,
@@ -399,6 +427,14 @@ pub const SemanticGraph = struct {
                 self.alloc,
             );
             const d_hash = semantic_algebra.descriptorStructuralHash(desc_expr);
+            const identity_index = try self.descriptor_registry.registerAlias(
+                self.module_path,
+                ad.name,
+                .{ .line = ad.loc.line, .col = ad.loc.col },
+                rt,
+                sc,
+            );
+            const identity = self.descriptor_registry.get(identity_index).?;
             var label_buf: [128]u8 = undefined;
             const label = try self.alloc.dupe(
                 u8,
@@ -415,6 +451,12 @@ pub const SemanticGraph = struct {
                 .knowledge = knowledge,
                 .stage = .sema,
                 .descriptor_hash = d_hash,
+                .semantic_fingerprint = identity.semantic_fingerprint,
+                .declaration_identity = identity.declaration_identity,
+                .intern_slot = identity.intern_slot,
+                .descriptor_state = identity.state,
+                .recursion = identity.recursion,
+                .completion = identity.completion,
                 .descriptor_label = label,
                 .ast_ref = @ptrCast(ad),
             });
@@ -616,23 +658,35 @@ pub const SemanticGraph = struct {
                     try self.liftCallsFromBlock(&fd.func.body, file, func_id);
                 },
                 .expr_stmt => |es| {
-                    try self.liftExprsFromExpr(es.expr, file, parent);
+                    const rc: types.ReturnConsumption = if (es.expr.* == .call or es.expr.* == .method_call)
+                        .discard
+                    else
+                        .discard;
+                    try self.liftExprsFromExpr(es.expr, file, parent, rc);
                 },
                 .call_stmt => |cs| {
-                    try self.liftExprsFromExpr(cs.expr, file, parent);
+                    try self.liftExprsFromExpr(cs.expr, file, parent, .discard);
                 },
                 .local_decl => |ld| {
                     for (ld.inits) |v| {
-                        try self.liftExprsFromExpr(v, file, parent);
+                        try self.liftExprsFromExpr(v, file, parent, .single);
                     }
                 },
                 .assign => |asgn| {
+                    const rc = types.returnConsumptionForTargets(asgn.targets.len);
                     for (asgn.values) |v| {
-                        try self.liftExprsFromExpr(v, file, parent);
+                        try self.liftExprsFromExpr(v, file, parent, rc);
                     }
                 },
                 else => {},
             }
+        }
+        if (mod.body.tail_expr) |tail| {
+            const rc: types.ReturnConsumption = switch (tail.*) {
+                .call, .method_call => .discard,
+                else => .single,
+            };
+            try self.liftExprsFromExpr(tail, file, parent, rc);
         }
     }
 
@@ -640,20 +694,29 @@ pub const SemanticGraph = struct {
         for (block.stmts) |*stmt| {
             switch (stmt.*) {
                 .expr_stmt => |es| {
-                    try self.liftExprsFromExpr(es.expr, file, parent);
+                    const rc: types.ReturnConsumption = if (es.expr.* == .call or es.expr.* == .method_call)
+                        .discard
+                    else
+                        .discard;
+                    try self.liftExprsFromExpr(es.expr, file, parent, rc);
                 },
                 .call_stmt => |cs| {
-                    try self.liftExprsFromExpr(cs.expr, file, parent);
+                    try self.liftExprsFromExpr(cs.expr, file, parent, .discard);
                 },
                 .local_decl => |ld| {
                     for (ld.inits) |v| {
-                        try self.liftExprsFromExpr(v, file, parent);
+                        try self.liftExprsFromExpr(v, file, parent, .single);
                     }
                 },
                 .assign => |asgn| {
+                    const rc = types.returnConsumptionForTargets(asgn.targets.len);
                     for (asgn.values) |v| {
-                        try self.liftExprsFromExpr(v, file, parent);
+                        try self.liftExprsFromExpr(v, file, parent, rc);
                     }
+                },
+                .ret => |r| {
+                    const rc: types.ReturnConsumption = if (r.vals.len <= 1) .single else .multi;
+                    for (r.vals) |v| try self.liftExprsFromExpr(v, file, parent, rc);
                 },
                 .if_stmt => |is| {
                     try self.liftCallsFromBlock(&is.then, file, parent);
@@ -684,7 +747,7 @@ pub const SemanticGraph = struct {
         }
         // Also check tail expression (implicit return in Duo)
         if (block.tail_expr) |tail| {
-            try self.liftExprsFromExpr(tail, file, parent);
+            try self.liftExprsFromExpr(tail, file, parent, .single);
         }
     }
 
@@ -699,7 +762,13 @@ pub const SemanticGraph = struct {
         return semantic_algebra.callSiteFromShape(shape);
     }
 
-    fn liftExprsFromExpr(self: *SemanticGraph, expr: *const ast.Expr, file: []const u8, parent: NodeId) !void {
+    fn liftExprsFromExpr(
+        self: *SemanticGraph,
+        expr: *const ast.Expr,
+        file: []const u8,
+        parent: NodeId,
+        consumption: types.ReturnConsumption,
+    ) !void {
         switch (expr.*) {
             .binop => |b| {
                 if (b.op == .pipeline) {
@@ -738,25 +807,32 @@ pub const SemanticGraph = struct {
                         try self.addEdge(.{ .from = transform_id, .to = pipe_id, .kind = .transform_output });
                     }
                 }
-                try self.liftExprsFromExpr(b.lhs, file, parent);
-                try self.liftExprsFromExpr(b.rhs, file, parent);
+                try self.liftExprsFromExpr(b.lhs, file, parent, .single);
+                try self.liftExprsFromExpr(b.rhs, file, parent, .single);
             },
             .call => |c| {
-                try self.liftCallFromExpr(expr, file, parent);
-                try self.liftExprsFromExpr(c.func, file, parent);
-                for (c.args) |arg| try self.liftExprsFromExpr(arg, file, parent);
+                try self.liftCallFromExpr(expr, file, parent, consumption);
+                try self.liftExprsFromExpr(c.func, file, parent, .single);
+                for (c.args) |arg| try self.liftExprsFromExpr(arg, file, parent, .single);
             },
             .method_call => |mc| {
-                try self.liftCallFromExpr(expr, file, parent);
-                try self.liftExprsFromExpr(mc.obj, file, parent);
-                for (mc.args) |arg| try self.liftExprsFromExpr(arg, file, parent);
+                try self.liftCallFromExpr(expr, file, parent, consumption);
+                try self.liftExprsFromExpr(mc.obj, file, parent, .single);
+                for (mc.args) |arg| try self.liftExprsFromExpr(arg, file, parent, .single);
             },
             else => {},
         }
     }
 
-    fn liftCallFromExpr(self: *SemanticGraph, expr: *const ast.Expr, file: []const u8, parent: NodeId) !void {
-        const shape = types.inferCallShape(expr) orelse return;
+    fn liftCallFromExpr(
+        self: *SemanticGraph,
+        expr: *const ast.Expr,
+        file: []const u8,
+        parent: NodeId,
+        consumption: types.ReturnConsumption,
+    ) !void {
+        const base = types.inferCallShape(expr) orelse return;
+        const shape = types.callShapeWithConsumption(base, consumption);
         const call_loc = expr.loc();
         const call_name = shape.callee_name orelse shape.method_name;
         const site = self.callSiteForShape(shape);
@@ -807,6 +883,104 @@ pub const SemanticGraph = struct {
                 }
             }
         }
+    }
+
+    /// Walk `contains` edges upward until a `.func` node is found.
+    pub fn containingFuncId(self: *const SemanticGraph, start: NodeId) ?NodeId {
+        var cur = start;
+        var depth: u32 = 0;
+        while (depth < 64) : (depth += 1) {
+            const node = self.get(cur) orelse return null;
+            if (node.kind == .func) return cur;
+            var parent: ?NodeId = null;
+            for (self.edges.items) |e| {
+                if (e.kind != .contains or e.to.index != cur.index) continue;
+                parent = e.from;
+                break;
+            }
+            cur = parent orelse return null;
+        }
+        return null;
+    }
+
+    /// Emit order for module functions: callees before callers (graph call edges).
+    /// Names not in `func_names` are ignored; unknown names keep AST order at the end.
+    pub fn moduleFunctionEmitOrder(
+        self: *const SemanticGraph,
+        alloc: std.mem.Allocator,
+        func_names: []const []const u8,
+    ) ![]const []const u8 {
+        if (func_names.len == 0) return try alloc.dupe([]const u8, func_names);
+
+        var in_module: std.StringHashMapUnmanaged(void) = .empty;
+        defer in_module.deinit(alloc);
+        for (func_names) |name| try in_module.put(alloc, name, {});
+
+        var in_degree: std.StringHashMapUnmanaged(usize) = .empty;
+        defer in_degree.deinit(alloc);
+        var unlocks: std.StringHashMapUnmanaged(std.ArrayListUnmanaged([]const u8)) = .empty;
+        defer {
+            var it = unlocks.iterator();
+            while (it.next()) |e| e.value_ptr.deinit(alloc);
+            unlocks.deinit(alloc);
+        }
+
+        for (func_names) |name| {
+            try in_degree.put(alloc, name, 0);
+            try unlocks.put(alloc, name, .empty);
+        }
+
+        for (self.nodes.items, 0..) |node, i| {
+            if (node.kind != .call) continue;
+            const cs = node.call_shape orelse continue;
+            const callee = cs.callee_name orelse continue;
+            if (in_module.get(callee) == null) continue;
+            const caller_id = self.containingFuncId(.{ .index = @intCast(i) }) orelse continue;
+            const caller_node = self.get(caller_id) orelse continue;
+            const caller = caller_node.name orelse continue;
+            if (in_module.get(caller) == null) continue;
+
+            const list = unlocks.getPtr(callee).?;
+            var dup = false;
+            for (list.items) |c| {
+                if (std.mem.eql(u8, c, caller)) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (dup) continue;
+            try list.append(alloc, caller);
+            const gop = try in_degree.getOrPut(alloc, caller);
+            gop.value_ptr.* += 1;
+        }
+
+        var ready: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer ready.deinit(alloc);
+        for (func_names) |name| {
+            if (in_degree.get(name).? == 0) try ready.append(alloc, name);
+        }
+
+        var ordered: std.ArrayListUnmanaged([]const u8) = .empty;
+        errdefer ordered.deinit(alloc);
+
+        while (ready.items.len > 0) {
+            const name = ready.items[ready.items.len - 1];
+            _ = ready.pop();
+            try ordered.append(alloc, name);
+            const callers = unlocks.get(name) orelse continue;
+            for (callers.items) |caller| {
+                const deg = in_degree.getPtr(caller) orelse continue;
+                deg.* -= 1;
+                if (deg.* == 0) try ready.append(alloc, caller);
+            }
+        }
+
+        if (ordered.items.len != func_names.len) {
+            // Cycles or unresolved deps — preserve AST order.
+            return try alloc.dupe([]const u8, func_names);
+        }
+
+        return try ordered.toOwnedSlice(alloc);
     }
 
     /// Find all call nodes with a specific method name.
@@ -1037,6 +1211,33 @@ pub const SemanticGraph = struct {
                 if (node.descriptor_hash) |dh| {
                     try out.appendSlice(alloc, ",\"descriptor_hash\":");
                     try appendJsonInt(out, alloc, dh);
+                }
+                if (node.semantic_fingerprint) |sf| {
+                    try out.appendSlice(alloc, ",\"semantic_fingerprint\":");
+                    try appendJsonInt(out, alloc, sf);
+                }
+                if (node.declaration_identity) |di| {
+                    try out.appendSlice(alloc, ",\"declaration_identity\":");
+                    try appendJsonInt(out, alloc, di);
+                }
+                if (node.intern_slot) |slot| {
+                    try out.appendSlice(alloc, ",\"intern_slot\":");
+                    try appendJsonInt(out, alloc, slot);
+                }
+                if (node.descriptor_state) |ds| {
+                    try out.appendSlice(alloc, ",\"descriptor_state\":\"");
+                    try out.appendSlice(alloc, pass26_descriptor_identity.DescriptorState.name(ds));
+                    try out.append(alloc, '"');
+                }
+                if (node.recursion) |rc| {
+                    try out.appendSlice(alloc, ",\"recursion\":\"");
+                    try out.appendSlice(alloc, pass26_recursive_descriptor.RecursionKind.name(rc));
+                    try out.append(alloc, '"');
+                }
+                if (node.completion) |cp| {
+                    try out.appendSlice(alloc, ",\"completion\":\"");
+                    try out.appendSlice(alloc, pass26_recursive_descriptor.DescriptorCompletion.name(cp));
+                    try out.append(alloc, '"');
                 }
                 if (node.descriptor_label) |dl| {
                     try out.appendSlice(alloc, ",\"descriptor\":\"");
@@ -1324,6 +1525,37 @@ test "semantic_graph: liftModule creates func and param nodes" {
     try std.testing.expectEqual(.func, g.get(add_id).?.kind);
 }
 
+test "semantic_graph: moduleFunctionEmitOrder callees before callers" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\helper(): i64
+        \\    1
+        \\end
+        \\main(): i64
+        \\    helper()
+        \\end
+    ;
+    var lex = Lexer.init(src, "order.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    _ = try g.liftModuleWithCalls(&module, "order.duo");
+
+    const names = [_][]const u8{ "helper", "main" };
+    const order = try g.moduleFunctionEmitOrder(alloc, &names);
+    defer alloc.free(order);
+    try std.testing.expectEqual(@as(usize, 2), order.len);
+    try std.testing.expectEqualStrings("helper", order[0]);
+    try std.testing.expectEqualStrings("main", order[1]);
+}
+
 test "semantic_graph: liftAliasShapes records native storage class" {
     const Lexer = @import("lexer.zig").Lexer;
     const Parser = @import("parser.zig").Parser;
@@ -1528,6 +1760,36 @@ test "semantic_graph: table shape_id stable across identical field sets" {
     const rt_a: types.ResolvedType = .{ .table_type = .{ .fields = fields_a, .storage_class = .native } };
     const rt_b: types.ResolvedType = .{ .table_type = .{ .fields = fields_b, .storage_class = .native } };
     try std.testing.expectEqual(types.tableShapeIdentityHash(rt_a), types.tableShapeIdentityHash(rt_b));
+}
+
+test "semantic_graph: pass26 pure alias interning shares fingerprint and slot" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\PairA = { first: i32, second: str }
+        \\PairB = { first: i32, second: str }
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    const module = try parser.parse_module();
+    var g = SemanticGraph.init(alloc);
+    defer g.deinit();
+    g.module_path = "test.duo";
+    _ = try g.liftModuleFull(&module, "test.duo");
+    const pair_a = g.findTableShape("PairA") orelse return error.TestExpectedEqual;
+    const pair_b = g.findTableShape("PairB") orelse return error.TestExpectedEqual;
+    try std.testing.expect(pair_a.semantic_fingerprint != null);
+    try std.testing.expectEqual(pair_a.semantic_fingerprint, pair_b.semantic_fingerprint);
+    try std.testing.expect(pair_a.declaration_identity != null);
+    try std.testing.expect(pair_b.declaration_identity != null);
+    try std.testing.expect(pair_a.declaration_identity != pair_b.declaration_identity);
+    try std.testing.expect(pair_a.intern_slot != null);
+    try std.testing.expectEqual(pair_a.intern_slot, pair_b.intern_slot);
+    try std.testing.expect(pair_a.recursion == .none);
+    try std.testing.expect(pair_a.completion == .complete);
 }
 
 test "semantic_graph: alias with derive builds transform descriptor label" {

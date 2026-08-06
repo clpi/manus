@@ -1,6 +1,6 @@
 type Point = { x: f64, y: f64 }
 r: Point = { x = 1.0, y = 2.0 }
 
-@c.emit(@meta.fields.map(r, "/* %n */\n"))
+@c.emit(@comp.fields.map(r, "/* %n */\n"))
 
 print("ok")

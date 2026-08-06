@@ -1,4 +1,4 @@
--- Stdlib req at comptime: @meta.map with std.meta.codegen callbacks
+-- Stdlib req at comptime: @comp.map with std.meta.codegen callbacks
 -- Run: duo run examples/stdlib_comptime_showcase.duo
 
 meta = req "std.meta.codegen"
@@ -11,8 +11,8 @@ end
 type Point = { x: f64, y: f64 }
 type Pair = { x: f64, y: f64 }
 
-TYPED = @meta.map("HasXY", meta.type_registry_line)
-COMMENTS = @meta.map("HasXY", meta.c_type_comment)
+TYPED = @comp.map("HasXY", meta.type_registry_line)
+COMMENTS = @comp.map("HasXY", meta.c_type_comment)
 
 print("=== stdlib comptime showcase ===")
 print("typed = " .. TYPED)

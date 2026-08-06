@@ -11908,3 +11908,599 @@ without leaving compiled code. Options, cheapest first:
 
 Until `call` lands, JIT coverage is leaf-kernel only and the suite-wide numbers stay
 interpreter-bound.
+
+---
+
+## 2026-08-05 (claude) — ward spec conformance: first real measurement
+
+**New harness:** `benchmarks/wasm_rt/conform/run_spec.py`. Converts each official
+`.wast` (257 of them, in `wart/third_party/testsuite`) to JSON + `.wasm` via
+`wast2json`, then replays every `assert_return` / `assert_trap` against ward and
+compares to **the value the spec states** — not to another runtime.
+
+ward is driven by `WARD_INVOKE` / `WARD_ARGS` env vars rather than CLI flags, so the
+harness does not depend on option parsing.
+
+```sh
+WARD=/path/to/ward benchmarks/wasm_rt/conform/run_spec.py --only i32
+WARD=/path/to/ward benchmarks/wasm_rt/conform/run_spec.py            # whole suite
+```
+
+### Results
+
+| suite | pass | fail | conformance |
+| --- | ---: | ---: | ---: |
+| **i32** | **374** | **0** | **100%** |
+| local_set | 19 | 0 | 100% |
+| forward | 4 | 0 | 100% |
+| nop | 82 | 1 | 98.8% |
+| local_get | 18 | 1 | 94.7% |
+| f32 | 1665 | 835 | 66.6% |
+| f64 | 565 | 1935 | 22.6% |
+
+### Bugs the harness found and fixed
+
+1. **div/rem did not trap.** WASM requires a trap on a zero divisor and on
+   `INT_MIN / -1`; ward returned a value (the latter also being C undefined
+   behaviour). Added trap codes -4/-5 to the fast path, surfaced as
+   `integer divide by zero` / `integer overflow`. Fixed 20 i32 failures.
+2. **JIT div/rem had no trap path**, so JIT-ed functions still returned values where
+   a trap was required. Removed div/rem from the JIT tables — correctness over speed
+   — until the JIT can raise. Functions using them fall back to the interpreter.
+3. **JIT mapped rotl to RORV.** ARM64 has rotate-*right* only; `0x77`/`0x89` are
+   rot**l**, not rotr. Corrected to `0x78`/`0x8A` and left rotl to the interpreter.
+4. **`runtime.call` discarded its result**, making every export unobservable. Now
+   returns the popped value.
+
+### Hard ceiling on i64/f64 conformance
+
+`lua_Value`'s number union has **only `double nval`** — no integer slot. A wasm i64
+(or an f64 bit pattern) above 2^53 cannot round-trip through a boxed value:
+`9223372036854775807` comes back as `9.2233720368547758e+18`. This is why f64 sits at
+22.6% while i32 is at 100% — the raw interpreter is computing correctly, but the
+*result boxing* loses precision.
+
+I tried fixing this at the formatting layer (`lua_to_str` honouring `number_kind`) and
+**reverted it**: the double has already lost the bits, so it printed a confidently
+wrong integer (`5574971409587175503`) instead of visibly-imprecise scientific
+notation. The real fix is adding `int64_t ival` to the `lua_Value` union and threading
+it through arithmetic/comparison — a large, cross-cutting change.
+
+**This caps ward's achievable conformance regardless of runtime work**, and is the
+single highest-value item for reaching 100%.
+
+### i64/f64 exactness ceiling — REMOVED (2026-08-05)
+
+`lua_Value`'s number union held only `double nval`, so a wasm i64 or f64 bit pattern
+above 2^53 could not round-trip: `9223372036854775807` came back as
+`9.2233720368547758e+18`. That capped i64/f64 conformance regardless of any runtime
+work (f64 sat at 22.6% while i32 was at 100%).
+
+Fixed by adding an exact integer slot:
+- `int64_t ival` in the union, used when `number_kind == 1`.
+- `lua_val_from_int` stores the exact bits instead of `(double)n`.
+- Two accessors, `lua_num(v)` / `lua_intval(v)`, so no reader touches the union
+  directly. **All 66 `.as.nval` read sites were mechanically routed through them**;
+  the sole write site (the matmul kernel) and the designated initialisers were left
+  alone.
+- `lua_to_str` prints `%lld` from `ival` for integers.
+
+Verified: `tostring(9223372036854775807)` is now exact. `zig build unit-test` count
+unchanged (18, a pre-existing baseline from another session — same before and after).
+
+An earlier attempt fixed only the *formatting* (`lua_to_str` honouring `number_kind`
+while still reading `nval`) and was **reverted**: the double had already lost the bits,
+so it printed a confidently wrong integer (`5574971409587175503`) rather than
+visibly-imprecise scientific notation. Silently wrong is worse than obviously wrong —
+the storage had to change, not the formatting.
+
+### Conformance — measured state (2026-08-05, ward built with the 00:48 compiler)
+
+| suite | pass | fail | conformance |
+| --- | ---: | ---: | ---: |
+| **i32** | **374** | **0** | **100%** |
+| local_set | 19 | 0 | 100% |
+| forward | 4 | 0 | 100% |
+| nop | 82 | 1 | 98.8% |
+| local_get | 18 | 1 | 94.7% |
+| f32 | 1665 | 835 | 66.6% |
+| i64 | 255 | 129 | 66.4% |
+| **total** | **2417** | **966** | **71.4%** |
+
+ward also runs 8/8 real clang wasm32-wasip1 modules byte-identical to wasmtime.
+
+The i64/f32 shortfall is the `lua_Value` precision ceiling. **That is fixed in the
+compiler** (exact `int64_t ival` slot, verified: `tostring(9223372036854775807)` is
+now exact) **but the fix cannot reach ward yet** — see below.
+
+### Why ward still builds only with the older compiler
+
+Down from 5 blocking errors to 1 this session. Fixed along the way:
+- ward's runtime<->wasi require cycle (runtime now hands wasi its module table).
+- `init.duo` / `main.duo` bound `req` results as *implicit globals* (no `global`),
+  which the native-direct path does not declare. Hoisted to module scope.
+- `emitDirectNamedFuncCall` leaked the callee's module context into the caller's
+  argument expressions (`std_mem__PAGE_SIZE` for runtime.duo's own constant).
+- `expr_emits_lua_value` claimed a req-module call yields a lua_Value when it lowers
+  to a native C call, so callers wrapped it in `lua_to_num(int64_t)`.
+
+**Remaining:** `src.wasm`, `src.wasm.op` and `src.edge` are added to
+`duo_register_modules()` without their `duo_mod_*` thunk ever being emitted. They are
+`req`d at runtime, so neither skipping the registration (runtime then reports
+"module not found") nor forcing the thunk in `emit_duo_module_return_table` works —
+`emit_embedded_module` is never reached for them. There is a registration route I did
+not locate. Both dead-end attempts were reverted; the tree is at 0 codegen errors and
+the pre-existing 18 unit-test failures (unchanged by any of my hunks).
+
+### The template JIT's structural ceiling (2026-08-05)
+
+Measured on `hot_big`, a kernel the tier-1 JIT compiles **end to end** — no `call`, no
+interpreter fallback, nothing mixed in:
+
+| runtime | time |
+| --- | ---: |
+| wasmtime | 0.10s |
+| wasmer | 0.11s |
+| wazero | 0.12s |
+| **ward JIT** | **0.40s** |
+
+**~4x behind, on the JIT's best case.** This matters for planning: the remaining
+opcode gaps (`call` is 4 of 5 rejections on the benchmark suite) are *coverage*, not
+*speed*. Implementing them would extend this same 4x to the call-heavy benchmarks —
+it would not close it.
+
+The 4x is structural to a template JIT: one ARM64 sequence per wasm opcode, operating
+on the interpreter's in-memory operand stack, with a single-entry top-of-stack register
+cache. wasmtime/wasmer/wazero lower to an IR and run real register allocation, so a
+loop body keeps its hot values in registers across the whole iteration instead of
+round-tripping through the stack slot on every op.
+
+Closing it requires a different design, not more opcodes:
+1. Pre-decode the body into a flat IR (kills per-op LEB decoding and dispatch).
+2. Linear-scan register allocation over that IR, so wasm locals live in registers for
+   the extent of a loop.
+3. Only then does opcode coverage (`call`, `br_table`, `global.*`) pay off.
+
+That is a substantial project. Anyone picking up "make ward the fastest runtime" should
+start at (1) — extending the current template JIT cannot get there.
+
+Current honest position: ward JIT is **11x faster than ward's own interpreter** and
+beats **wasm3 (1.12s)** and **iwasm (1.17s)** on this workload, while trailing the
+three optimizing JITs by ~4x.
+
+### Register-pinned locals — attempted, reverted (2026-08-05)
+
+Tried the fix the ceiling analysis calls for: pin wasm locals 0..5 to the unused
+callee-saved registers x23..x28 for the whole function body, so `local.get`/`local.set`
+become register moves instead of frame loads/stores. That memory traffic is where the
+template JIT loses to the optimizing runtimes.
+
+**Result: every module trapped** at `addr=0xfffffffd00000004` — a garbage pointer, so
+the prologue itself was corrupt. Reverted; ward is back to 12/12 byte-identical to
+wasmtime.
+
+The shape of the change is right and worth retrying with a debugger rather than by
+inspection. Points to check first:
+- the three extra `stp x23,x24 / x25,x26 / x27,x28` pushes against the two existing
+  ones (stack depth / alignment across both exit paths),
+- that the epilogue's write-back of pinned locals happens while `x21` is still the
+  frame pointer (it is restored after, but both exit paths must agree),
+- `return` (0x0F) emits a full epilogue, so a body with both an explicit return and a
+  fall-through emits the restore sequence twice — each path must pop exactly what it
+  pushed.
+
+Until that lands, the ~4x gap to wasmtime/wasmer/wazero stands, and it is the gap that
+matters: opcode coverage (`call`) would extend the current 4x to more benchmarks, not
+close it.
+
+### Register-pinned locals — LANDED (2026-08-05)
+
+Second attempt succeeded. Wasm locals 0..5 now live in the otherwise-unused
+callee-saved registers x23..x28 for the whole function body, so `local.get`/`local.set`
+become register moves instead of frame loads/stores.
+
+**The bug in the first attempt** (every module trapped at `0xfffffffd00000004`): the
+prologue pushed x23..x28 whenever `nloc <= PINNED_MAX`, which is true for `nloc == 0`,
+but the epilogue popped only when `pinned > 0`. A function with zero locals therefore
+leaked 48 bytes of stack per call and returned to a corrupt frame. Both sides are now
+gated on the identical `pinned > 0` condition.
+
+#### hot_big (JIT compiles end-to-end, min of 3, all outputs verified)
+
+| runtime | time |
+| --- | ---: |
+| wasmer | 0.11s |
+| wasmtime | 0.12s |
+| wazero | 0.13s |
+| **ward JIT (pinned locals)** | **0.36s** |
+| ward JIT (before) | 0.43s |
+| wasm3 | 0.79s |
+| iwasm | 0.73s |
+
+13/13 modules byte-identical to wasmtime, including the real clang WASI set.
+
+**~1.2x from pinning; ~3x still separates ward from the optimizing JITs.** This
+confirms the ceiling analysis rather than refuting it: locals-in-memory was one term,
+but the dominant cost is still the operand stack. Every binop round-trips through
+`stack[sp]` because the JIT has a single-entry top-of-stack cache and no notion of
+value liveness.
+
+Next, in order:
+1. Multi-entry operand-stack cache (keep the top 2-3 values in registers) — the
+   remaining memory traffic in a loop body is almost entirely push/pop pairs.
+2. Pre-decode to a flat IR + linear-scan regalloc — the real fix, and the only path to
+   parity with wasmtime/wasmer/wazero.
+
+ward now beats wasm3 by 2.2x and iwasm by 2.0x on this workload.
+
+### Follow-up: caching the pinned register directly — neutral, reverted
+
+With locals pinned, `local.get` was changed to cache the pinned register itself instead
+of copying it into scratch first (saving one `mov` per access, plus making a following
+binop's pop free when the register already matched). **Correct (13/13) but no measurable
+change: 0.34s before and after.** Reverted to keep the JIT minimal.
+
+Useful negative result: the `mov`s are not on the critical path. What remains is the
+operand-stack round-trip — every binop still spills its result to `stack[sp]` because
+the cache holds exactly one value and the JIT has no liveness information. A
+multi-entry cache is therefore the next thing to try, not further peephole work.
+
+### Cumulative JIT results (hot_big, min of 3, all outputs verified)
+
+| step | time |
+| --- | ---: |
+| interpreter (session start) | 4.05s |
+| template JIT | 0.43s |
+| + branch-target memoization, frame pool, TOS cache | 0.39s |
+| **+ register-pinned locals (current)** | **0.34s** |
+| wasmtime | 0.10s |
+| wasmer | 0.11s |
+| wazero | 0.13s |
+| wasm3 | 0.79s |
+| iwasm | 0.73s |
+
+ward is **~12x faster than its own interpreter**, beats **wasm3 (2.3x)** and
+**iwasm (2.1x)**, and trails the three optimizing JITs by ~3x.
+
+### Why the remaining 3x is a register allocator, not peephole work — with evidence
+
+Disassembling the JIT-compiled `hot` kernel shows the exact pattern that costs the 3x:
+
+```asm
+mov  x8, x23          ; local.get (already in a pinned register)
+add  x20, x20, #1     ; push
+str  x8, [x19, x20]   ; ...SPILL to the operand stack
+mov  x8, #0x8400      ; next value — also into x8
+movk x8, #0xf456, lsl #16
+sxtw x8, w8
+mov  x9, x8           ; pop
+ldr  x8, [x19, x20]   ; ...RELOAD what was spilled 5 instructions ago
+sub  x20, x20, #0x1
+add  w8, w8, w9       ; the actual work: 1 of 10 instructions
+```
+
+Every value funnels through `x8`, so each producer must flush the cache — the spill and
+its reload are pure overhead. wasmtime emits roughly the single `add`.
+
+Two attempts to fix this **both failed correctness and were reverted**:
+1. **Two-entry operand cache** — correct (13/13) but performance-neutral (0.37 -> 0.35s,
+   inside noise), because producers still funnelled through `x8` and flushed anyway.
+2. **Free-scratch producers** (pick any register no cache slot holds) — this is the
+   right idea and removes the spill/reload pair, but it needs *every* emitter to respect
+   the cache. `pop_reg` clobbered the second slot when popping into that same register
+   (fixed), and the memory ops still write `x9`/`x10` directly (not fixed) — 11/13 with
+   one wrong checksum.
+
+**Conclusion: incremental patching cannot get there.** Once producers may choose
+registers, every emit site needs to consult liveness — that is a register allocator, and
+building one piecemeal under a correctness harness produces exactly the two failure
+modes above. The right sequence is: pre-decode the body to a flat IR, compute liveness
+over it, then allocate. Anything less keeps the spill/reload pair.
+
+**Shipped state:** pinned locals + single-entry cache, 13/13 byte-identical to wasmtime,
+`hot_big` 0.34-0.37s vs wasmtime 0.10s, beating wasm3 (0.79s) and iwasm (0.73s).
+
+### Virtual-stack register allocator — LANDED (2026-08-05)
+
+The fix the evidence called for. Wasm's operand-stack depth is statically known at every
+instruction, so the stack is now modelled at compile time: `vs[1..vsn]` holds the
+registers backing the top slots, anything deeper is in memory.
+
+**The design property that made it work:** `vs_pop` *returns* the register holding the
+value instead of moving it into a caller-chosen destination. No emitter picks its own
+destination, so no emitter can clobber a live slot. Both earlier attempts (two-entry
+cache, free-scratch producers) failed precisely because emitters chose destinations.
+
+Two aliasing bugs found and fixed on the way, both caught by the correctness harness:
+1. A popped register is untracked, so `vs_alloc` could hand it back out and clobber a
+   still-live value inside a multi-instruction sequence (materialising a memory offset
+   into the address register). Fixed with `vs_alloc_not(b, a1, a2)`.
+2. Caching a pinned local register *directly* meant `local.get 0; local.get 0` put one
+   register in two slots; mutating either (a `uxtw` on a store address) corrupted the
+   other. `local.get` now copies into a fresh register.
+
+#### hot_big (JIT compiles end-to-end, min of 3, outputs verified)
+
+| runtime | before | after |
+| --- | ---: | ---: |
+| **ward JIT** | 0.38s | **0.21s** |
+| wasmtime | 0.10s | 0.10s |
+| wasmer | 0.11s | 0.11s |
+| wazero | 0.12s | 0.12s |
+| wasm3 | 0.72s | 0.72s |
+| iwasm | 0.71s | 0.71s |
+
+**1.8x faster than the previous JIT; the gap to wasmtime narrowed from ~3.5x to ~2.1x.**
+13/13 modules byte-identical to wasmtime, including the real clang WASI set.
+
+Cumulative: ward's interpreter was 4.05s on this workload at session start. It is now
+0.21s — **~19x** — and ward beats wasm3 and iwasm by ~3.4x.
+
+Remaining gap is register *pressure*, not the model: the pool is x8..x15 with locals
+pinned to x23..x28, and `flush_tos` still spills the whole virtual stack at every
+control-flow edge. Next: keep the stack mapping across straight-line block boundaries
+instead of flushing unconditionally.
+
+### Open interpreter bugs (localized 2026-08-05, NOT JIT bugs)
+
+Both reproduce identically with `WARD_JIT=0`, so the JIT is faithfully reproducing the
+interpreter's wrong answer. They are interpreter/WASI defects and part of the remaining
+28.6% conformance gap — not regressions from the register allocator (`wardSHIP` at the
+previous JIT fails both the same way).
+
+- **`d2.wasm`** — real clang WASI binary printing `before` / `42` / `after`. ward emits
+  `before` / `after`, silently dropping the `42`. `puts` works; the value printed through
+  `printf`'s integer-conversion path is lost. Suspect the `fd_write` iovec path when the
+  guest writes a formatted number, or an i64 op inside musl's `fmt_u`.
+- **`f6.wasm`** — expects `7`, ward emits nothing. Previously trapped with a wild address
+  (`addr=0xfffffff55720000b`), which points at a sign-extension bug forming an address —
+  the trap is now silent, which is worse, not better.
+
+These are the highest-value correctness targets: `d2` is a stock clang binary, so whatever
+breaks it likely breaks a broad class of real WASI programs.
+
+---
+
+## Two core correctness bugs found and fixed (2026-08-05)
+
+### Retraction of the previous two entries
+
+The "open interpreter bugs" recorded above were partly wrong and are superseded:
+
+- **`f6.wasm` was never a ward bug.** It is `error: not a WASM module` — a corrupt
+  leftover from my own debugging. Withdrawn.
+- **`d2.wasm` was real** and is now fixed, but my diagnosis was wrong. I claimed
+  "the JIT is faithfully reproducing the interpreter's wrong answer." That held for `d2`,
+  but there was *also* an independent JIT bug (below). Both are fixed.
+
+### Bug 1 — `select` operands inverted (interpreter, both dispatch paths)
+
+WASM `select` has stack `[val1, val2, c]` and yields **val1 when c != 0**. Because `val2`
+is nearer the top it pops *first*, and both of ward's paths bound the pops the wrong way
+round, returning val2 when the condition was true.
+
+```
+7 9 1 select   ->  spec: 7    ward: 9
+7 9 0 select   ->  spec: 9    ward: 7
+```
+
+clang emits `select` for every ternary, and musl's `vfprintf` is dense with them, so this
+single inversion silently broke **all formatted output**: `printf("hello\n")` worked while
+`printf("%d\n", 42)` produced nothing at all — the guest never even issued an `fd_write`.
+
+Fixed in the C fast path and the Duo dispatch path, with the pop order documented at both
+sites.
+
+### Bug 2 — `w->sp` not published before a nested call (interpreter)
+
+The interpreter keeps the stack pointer in a local `sp` and syncs `w->sp = sp` on every
+exit from the dispatch loop — except when recursing into `execute_raw` for `call`. The
+callee therefore built its frame at a **stale** `w->sp`, overwriting any operands the
+caller still had pending beneath the arguments.
+
+```
+i32.const 100  call $five  i32.add     spec: 105   ward: (no output)
+three pending operands + call          spec: 605   ward: trap, "linear memory = 0 bytes"
+```
+
+The bogus "out of bounds memory access ... linear memory = 0 bytes" in a module with no
+memory was the tell: a corrupted stack index being used as an address.
+
+### Bug 3 — `global.set` register aliasing (JIT, mine)
+
+`vs_pop` returns an untracked register, so `vs_alloc` could hand the *same* register back
+as the globals-base pointer; the `ldr` of the base then overwrote the value, storing a host
+pointer into the global. Symptom: `global.set 42; global.get` returned `4363815568`
+(`0x104298BD0`). Fixed with `vs_alloc_not`.
+
+An audit of every other `vs_pop`-then-`vs_alloc` site found no further instances: BIN, CMP
+and eqz are safe because ARM64 reads all sources before writing the destination within one
+instruction, and the MEM/select sites already excluded correctly.
+
+### Results
+
+| check | before | after |
+| --- | --- | --- |
+| real clang C programs (printf/varargs/div/indirect) | 3 of 13 | **13 of 13** |
+| bench modules vs wasmtime | 19 of 21 | **21 of 21** |
+| core (non-SIMD) spec conformance | 67.9% | 68.1% |
+| full spec conformance | 38.0% | 38.1% |
+| hot_big | 0.18s | 0.18s (no regression) |
+
+The conformance needle barely moved while real-program correctness went from mostly-broken
+to fully working. That is not a contradiction: the spec suite invokes small exported
+functions directly, so it rarely exercises operands-live-across-a-call or the ternary-heavy
+code that dominates real compiler output. **Spec conformance and real-world correctness are
+measuring different things, and ward was failing the second far worse than the first.**
+
+## Conformance baseline — first valid full-suite measurement
+
+Earlier notes cited "71.4%". That number was never a full-suite result: the harness aborted
+partway (`ValueError: embedded null byte`, then two `list`-typed spec values), so it only
+ever scored the suites it reached. Three harness bugs are fixed; the figures above are the
+first complete run. **38.1% overall / 68.1% core is the real baseline.**
+
+### Where the remaining 34,060 failures are
+
+| share | cause |
+| ---: | --- |
+| ~57% | **SIMD entirely unimplemented** — zero `0xFD` handling in the interpreter |
+| 6.5% | out-of-bounds accesses not trapping (guard region too permissive) |
+| 5.4% | i64 results printed in scientific notation (`7.5230942882076682e+18`) |
+| 5.2% | no output — crash or unsupported construct |
+| 1.8% | NaN payload mismatches |
+| rest | f32/f64 edge cases, block params, `br` with values, bulk memory |
+
+Ranked by assertions-per-unit-effort:
+
+1. **SIMD (`0xFD`)** — ~20k assertions, the single largest block by far, and greenfield.
+2. **i64 result printing** — 1,829 assertions; a formatting fix in the invoke path, not a
+   computation bug (the values are already correct).
+3. **OOB trapping** — 2,201 assertions; the guard-page reserve accepts addresses past the
+   declared memory size.
+4. **Block params / `br` with values / bulk memory** — smaller but core semantics.
+
+---
+
+## SIMD implemented (2026-08-05)
+
+`0xFD` was entirely unhandled — the largest single conformance gap. Now implemented in the
+interpreter fast path: a v128 occupies two operand-stack slots (lo pushed first, hi on
+top), and every lane op is generated from eight macros (`WV_POP/PUSH/SPLAT/EXTRACT/
+REPLACE/UN/BIN/CMP/BIT`) so ~100 opcodes cost roughly one line each.
+
+Covered: `v128.load/store/const`, all six splats, extract/replace lane for every shape,
+integer compares (i8x16/i16x8/i32x4, signed and unsigned), float compares (f32x4/f64x2),
+the full bitwise set including `bitselect` and `andnot`, integer add/sub/mul/neg/abs for
+all shapes, and f32x4/f64x2 `abs/neg/sqrt/add/sub/mul/div/min/max/pmin/pmax`.
+
+`ward_instr_len` also had to learn `0xFD` immediate shapes — without it, any module
+containing SIMD desyncs block scanning even if no SIMD op ever executes.
+
+wasm `min`/`max` are not C's: NaN propagates and ±0 ties resolve by sign, so those use
+explicit helpers rather than `fmin`/`fmax`.
+
+### Verified correct (via extract_lane, which returns a scalar the harness can read)
+
+`i32x4.sub/mul/eq/lt_s`, `i16x8.add`, `i8x16.extract_lane_u`, `v128.and/or/xor/not/
+bitselect`, `f64x2.div/abs/sqrt/min/pmax` — all match wasmtime. The f64x2 cases match as
+IEEE bit patterns (e.g. `f64x2.div` -> 1.5 -> `0x3FF8000000000000` ->
+4609434218613702656), which is ward's documented return convention.
+
+### Measured conformance gain: +0.2pp only -- and that number is meaningless
+
+The harness cannot score SIMD at all: it refuses v128 arguments (`got=None` on every
+assertion) because ward's invoke ABI cannot marshal a v128 in or out. `simd_bitwise`,
+`simd_i32x4_arith` and `simd_f32x4_arith` report 13/2123 -- those 2110 "failures" are
+harness limitations counted against ward, not defects. **SIMD is implemented and spot-
+verified, but currently unmeasurable.**
+
+## The dominant conformance blocker: i64 results marshalled through a double
+
+ward returns invoke results through a Lua-boxed number backed by a `double`, so exactness
+ends at 2^53:
+
+| value | ward |
+| --- | --- |
+| 9007199254740991 (2^53-1) | exact |
+| 9007199254740993 (2^53+1) | **9007199254740992** |
+| 4609434218613702656 | **4.6094342186137027e+18** |
+
+This is larger than the SIMD gap. Floats are returned as IEEE bit patterns, and those are
+almost always above 2^53 -- so **every** f32/f64 assertion (`f64` 543, `f64_cmp` 700,
+`f32` 531) and every float SIMD assertion (~15k) is unwinnable regardless of whether the
+arithmetic is right. The arithmetic demonstrably *is* right; only the reporting is lossy.
+
+Root cause: ward is pinned to `zig-out/bin/duo_old` (the 00:48 snapshot). The current duo
+has the `int64_t ival` union member that fixes exactly this, but it cannot build ward --
+`module.duo:73` and `lib/std/bytes.duo:46` fail with `expected 'name', got '('`, and
+`lib/std/fmt.duo:40` with a return-type mismatch, all from another session's in-flight
+keyword-retirement work.
+
+**ward's conformance ceiling is currently set by the compiler it is pinned to, not by ward.**
+Unblocking that build is worth more conformance than any further work inside ward.
+
+### Revised priority order
+
+1. **Unblock ward-on-current-duo** (or bypass the double in the invoke path) -- unlocks
+   ~17k assertions across f32/f64/float-SIMD that are currently unwinnable.
+2. **v128 marshalling in the invoke ABI + harness** -- makes the ~20k SIMD assertions
+   scoreable at all.
+3. OOB trapping (2,201) -- the guard region accepts addresses past the declared size.
+4. Block params / `br` with values / bulk memory -- smaller, core semantics.
+
+---
+
+## Attempt to unblock ward-on-current-duo (2026-08-05) — PARTIAL, blocked externally
+
+Priority 1 from the list above was unblocking the current duo so ward stops being pinned to
+`duo_old` (which is what caps every i64/float result at 2^53). Two real duo bugs were found
+and one was fixed; the build is still blocked, but by another session's in-flight work
+rather than by anything in ward.
+
+### duo bug A — grouping parens in an assignment RHS fail to parse (FIXED, unverified)
+
+```
+x = a + (1)      -- ok
+x = a + ((1))    -- error: expected 'name', got '('
+local y = ((1))  -- error
+```
+
+`scan_func_header_signal` misreads `((...))` as a parameter list. Its `has_literal_arg`
+guard only inspects `paren_depth == 1`, so in `((1))` the literal sits at depth 2, the guard
+never fires, and `token_can_start_func_body` then accepts the group as a function header.
+
+Fix in `src/parser.zig`: a parameter list can never *open* with `(`, so bail immediately
+when the first token after the opening paren is another `(`. This is the invariant the
+existing depth-1 literal guard was approximating.
+
+This is what breaks `lib/std/bytes.duo:46`
+(`result = result + ((b % 128) * (2 ^ shift))`) and therefore the whole ward build.
+
+**The fix is committed to the working tree but has NOT been verified** — see below; the
+tree does not currently compile, so it could not be exercised. Treat it as unproven.
+
+Note `x = (a)` failing is *not* a bug: `Slice = (Element) ... end` is Duo's bare-function
+syntax, so `x = (a)` genuinely is a function header. That was left alone deliberately.
+
+### duo bug B — float exponentiation returns integer bits (FOUND, not fixed)
+
+```
+print(2 ^ 3)        -- 8                       (correct)
+print(2.0 ^ 3.0)    -- 3.9525251667299724e-323 (wrong; should be 8.0)
+```
+
+`3.95e-323` is the denormal you get by reinterpreting the *integer* 8 as a double: the
+float path computes an integer result and then bit-casts instead of converting. Same
+double/int64 confusion class as the ward reporting bug. Not fixed — the tree does not build.
+
+### Blocked: the duo tree does not currently compile
+
+One blocker was a plain typo and is fixed: `src/pass26_wiring.zig:31` had
+`Wyhash.init(0xP26F1A90)` — `P` is not a hex digit.
+
+The rest are mid-edit states in files another session has open right now:
+
+```
+src/pass26_descriptor_intern.zig:122  local variable is never mutated
+src/pass26_descriptor_intern.zig:226  hash_map has no member 'identity_context'
+src/debug_trace.zig:73                switch must handle all possibilities
+src/sema.zig:2368                     enum 'debug_trace.Scope' has no member 'call'
+```
+
+Earlier attempts also hit `error: file contents changed during update`, confirming active
+concurrent writes. These were **deliberately not touched** — repairing another agent's
+half-written refactor would collide with their work. `scripts/duo_lock.sh` serialises
+builds but cannot serialise edits.
+
+**Consequence:** ward remains pinned to `duo_old`, so the 2^53 reporting ceiling stands and
+the ~17k float/f32/f64/float-SIMD assertions remain unwinnable. This is now a coordination
+dependency, not a technical one.
+
+### Regression check after all of today's changes (ward built with duo_old)
+
+| check | result |
+| --- | --- |
+| bench modules vs wasmtime | 21 / 21 |
+| real clang C programs | 10 / 10 |
+| SIMD spot checks | 4 / 4 |

@@ -7,6 +7,21 @@ const pass13_dev_audit = @import("pass13_dev_audit.zig");
 const pass14_catalog = @import("pass14_catalog.zig");
 const pass15_catalog = @import("pass15_catalog.zig");
 const pass16_catalog = @import("pass16_catalog.zig");
+const pass20_catalog = @import("pass20_catalog.zig");
+const pass20_gate = @import("pass20_gate.zig");
+const pass21_catalog = @import("pass21_catalog.zig");
+const pass21_gate = @import("pass21_gate.zig");
+const pass22_catalog = @import("pass22_catalog.zig");
+const pass22_gate = @import("pass22_gate.zig");
+const pass23_catalog = @import("pass23_catalog.zig");
+const pass23_gate = @import("pass23_gate.zig");
+const pass24_gate = @import("pass24_gate.zig");
+const pass25_gate = @import("pass25_gate.zig");
+const pass26_gate = @import("pass26_gate.zig");
+const pass27_gate = @import("pass27_gate.zig");
+const lua_superset_gate = @import("lua_superset_gate.zig");
+const pass19_catalog = @import("pass19_catalog.zig");
+const pass19_gate = @import("pass19_gate.zig");
 const bootstrap_dag = @import("bootstrap_dag.zig");
 const selfhosting_matrix = @import("selfhosting_matrix.zig");
 const pass16_selfhost_audit = @import("pass16_selfhost_audit.zig");
@@ -153,6 +168,65 @@ pub fn validatePass16Gate() PassGateError!void {
     _ = @import("source_cursor.zig");
 }
 
+/// Pass 20 universal cross-language metaprogramming harness gates.
+pub fn validatePass20Gate() PassGateError!void {
+    try pass20_gate.validatePass20Gate();
+}
+
+/// Pass 21 canonical grammar closure catalog + grammar gates.
+pub fn validatePass21Gate() PassGateError!void {
+    try pass21_gate.validatePass21Gate();
+    try validateLuaSupersetGate();
+}
+
+/// Pass 19 unified semantic experience catalog + umbrella foundation checks.
+pub fn validatePass19Gate() PassGateError!void {
+    try pass19_gate.validatePass19Gate();
+}
+
+/// Pass 22 graph-native compiler architecture catalog + gates J/K proofs.
+pub fn validatePass22Gate() PassGateError!void {
+    try pass22_gate.validatePass22Gate();
+}
+
+/// Pass 23 unified metaprotocols catalog + foundation gates.
+pub fn validatePass23Gate() PassGateError!void {
+    try pass23_gate.validatePass23Gate();
+}
+
+/// Pass 24 unified calls, Lua superset, execution-graph concurrency constitution gates.
+pub fn validatePass24Gate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try pass24_gate.validatePass24Gate(arena.allocator());
+}
+
+/// Pass 26 foundational semantic closure — operation identity, protocols, boundaries, decisions.
+pub fn validatePass26Gate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try pass26_gate.validatePass26Gate(arena.allocator());
+}
+
+/// Pass 27 proof bundle + performance/metaprogramming evidence gates.
+pub fn validatePass27Gate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try pass27_gate.validatePass27Gate(arena.allocator());
+}
+
+/// Pass 25 native semantic unification, provenance lifetimes, bidirectional metaprogramming gates.
+pub fn validatePass25Gate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try pass25_gate.validatePass25Gate(arena.allocator());
+}
+
+/// Pass 24 P0 — Lua superset long-bracket preservation (alias for pass24/lua-superset gates).
+pub fn validateLuaSupersetGate() PassGateError!void {
+    try lua_superset_gate.validateLuaSupersetGate();
+}
+
 /// Shared Pass 11–16 catalog smoke (also used by passes-audit gate).
 pub fn validatePasses1114Catalog() PassGateError!void {
     try validatePass11Gate();
@@ -171,6 +245,15 @@ pub const GateScope = enum {
     pass14,
     pass15,
     pass16,
+    pass20,
+    pass21,
+    pass22,
+    pass23,
+    pass24,
+    pass25,
+    pass26,
+    pass27,
+    pass19,
 
     pub fn parse(s: []const u8) ?GateScope {
         if (std.mem.eql(u8, s, "all")) return .all;
@@ -180,6 +263,15 @@ pub const GateScope = enum {
         if (std.mem.eql(u8, s, "pass14")) return .pass14;
         if (std.mem.eql(u8, s, "pass15")) return .pass15;
         if (std.mem.eql(u8, s, "pass16")) return .pass16;
+        if (std.mem.eql(u8, s, "pass20")) return .pass20;
+        if (std.mem.eql(u8, s, "pass21")) return .pass21;
+        if (std.mem.eql(u8, s, "pass22")) return .pass22;
+        if (std.mem.eql(u8, s, "pass23")) return .pass23;
+        if (std.mem.eql(u8, s, "pass24") or std.mem.eql(u8, s, "lua-superset") or std.mem.eql(u8, s, "lua_superset")) return .pass24;
+        if (std.mem.eql(u8, s, "pass25") or std.mem.eql(u8, s, "semantic-unification")) return .pass25;
+        if (std.mem.eql(u8, s, "pass26") or std.mem.eql(u8, s, "semantic-closure") or std.mem.eql(u8, s, "foundational-closure")) return .pass26;
+        if (std.mem.eql(u8, s, "pass27") or std.mem.eql(u8, s, "proof-bundle") or std.mem.eql(u8, s, "performance-evidence")) return .pass27;
+        if (std.mem.eql(u8, s, "pass19")) return .pass19;
         return null;
     }
 
@@ -192,6 +284,15 @@ pub const GateScope = enum {
             .pass14 => "pass14",
             .pass15 => "pass15",
             .pass16 => "pass16",
+            .pass20 => "pass20",
+            .pass21 => "pass21",
+            .pass22 => "pass22",
+            .pass23 => "pass23",
+            .pass24 => "pass24",
+            .pass25 => "pass25",
+            .pass26 => "pass26",
+            .pass27 => "pass27",
+            .pass19 => "pass19",
         };
     }
 };
@@ -228,6 +329,15 @@ pub fn runScopedGate(
         .pass14 => try validatePass14Gate(),
         .pass15 => try validatePass15Gate(),
         .pass16 => try validatePass16Gate(),
+        .pass20 => try validatePass20Gate(),
+        .pass21 => try validatePass21Gate(),
+        .pass22 => try validatePass22Gate(),
+        .pass23 => try validatePass23Gate(),
+        .pass24 => try validatePass24Gate(),
+        .pass25 => try validatePass25Gate(),
+        .pass26 => try validatePass26Gate(),
+        .pass27 => try validatePass27Gate(),
+        .pass19 => try validatePass19Gate(),
     }
 }
 
@@ -253,6 +363,50 @@ test "pass_gates: pass15 catalog smoke" {
 
 test "pass_gates: pass16 catalog smoke" {
     try validatePass16Gate();
+}
+
+test "pass_gates: pass20 harness catalog + gates" {
+    try validatePass20Gate();
+}
+
+test "pass_gates: lua superset long-bracket + compatibility gate" {
+    try validateLuaSupersetGate();
+}
+
+test "pass_gates: pass21 grammar catalog + gates" {
+    try validatePass21Gate();
+}
+
+test "pass_gates: pass19 unified platform catalog" {
+    try validatePass19Gate();
+}
+
+test "pass_gates: pass22 catalog + graph gates" {
+    try validatePass22Gate();
+}
+
+test "pass_gates: pass23 metaprotocol catalog + foundation gates" {
+    try validatePass23Gate();
+}
+
+test "pass_gates: pass24 constitution catalog + lua superset P0" {
+    try validatePass24Gate();
+}
+
+test "pass_gates: pass25 semantic unification catalog + schema gates" {
+    try validatePass25Gate();
+}
+
+test "pass_gates: pass26 foundational closure catalog + schema gates" {
+    try validatePass26Gate();
+}
+
+test "pass_gates: pass27 proof bundle catalog + evidence schema gates" {
+    try validatePass27Gate();
+}
+
+test "pass_gates: pass24 lua superset long-bracket gate (alias)" {
+    try validateLuaSupersetGate();
 }
 
 test "pass_gates: passes 11-16 catalog bundle" {

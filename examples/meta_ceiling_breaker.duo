@@ -1,4 +1,4 @@
--- Break the linear codegen ceiling: one @meta.* line → O(types² × fields) output
+-- Break the linear codegen ceiling: one @comp.* line → O(types² × fields) output
 -- Run: duo run examples/meta_ceiling_breaker.duo
 
 concept HasXY
@@ -14,7 +14,7 @@ type Point = { x: f64, y: f64, tag: str }
 type Pair = { x: f64, y: f64, tag: str }
 type Label = { tag: str }
 
-@meta.define.derive("PairApi", fun generate(meta) -> str
+@comp.define.derive("PairApi", fun generate(meta) -> str
     acc = "/* pair " .. meta.name .. " */\n"
     if meta.left ~= nil then
         acc = acc .. "/* left=" .. meta.left.name .. " right=" .. meta.right.name .. " */\n"
@@ -27,15 +27,15 @@ type Label = { tag: str }
     acc
 end)
 
--- One @meta.ceiling line → O(types × fields) + O(types² × fields) C
-@c.emit(@meta.ceiling("HasXY", PairApi, "HasTag"))
+-- One @comp.ceiling line → O(types × fields) + O(types² × fields) C
+@c.emit(@comp.ceiling("HasXY", PairApi, "HasTag"))
 
 fun pair_sig(a, b) -> str
     a.name .. "x" .. b.name .. ";"
 end
 
-PAIRS = @meta.product("HasXY", "HasTag", pair_sig)
-NAMES = @meta.type.names()
+PAIRS = @comp.product("HasXY", "HasTag", pair_sig)
+NAMES = @comp.type.names()
 
 print("=== meta ceiling breaker ===")
 print("pairs = " .. PAIRS)

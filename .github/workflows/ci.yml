@@ -50,6 +50,12 @@ jobs:
       - name: Unit tests
         run: zig build unit-test
 
+      - name: G-061 metaprogramming smokes
+        run: zig build meta-smoke
+
+      - name: G-061 strict transform gate
+        run: zig build meta-gate
+
       - name: Pass 11–14 native gates (cross-platform)
         run: zig build pass-gates
 

@@ -58,6 +58,26 @@ Export: `duo catalog` → `pass10` JSON (matrix owner: `src/pass10_repo_audit.zi
 **Invariants:** 3.14–3.21 (public inspection, no pollution, permanent file roles, dense docs/comments/code).
 **Audits:** A15–A19 (quality, file necessity, markdown compression, source density, safety/licensing).
 
+**Pass 24 (2026-08-05):** Execution graph, call supremacy, Lua superset maximization, concurrency architecture.
+Read **[`plans/pass24_execution_concurrency_lua_supremacy.md`](plans/pass24_execution_concurrency_lua_supremacy.md)** (authoritative constitution).
+Index: [`plans/lua_superset_concurrency_supremacy.md`](plans/lua_superset_concurrency_supremacy.md).
+Gate: `zig build lua-superset-gate`. **Key reconciliations:** bare `a` = value reference (not invoke); `a()` / `a x` = invoke; `[[ … ]]` = Lua long strings forever; concurrency = one execution graph.
+
+**Pass 25 (2026-08-05):** Native semantic unification — descriptors as ordinary calls, inferred lifetimes/provenance, views/ownership/pointers, consumption-driven returns, bidirectional metaprogramming via semantic transactions.
+Read **[`plans/pass25_native_semantic_unification.md`](plans/pass25_native_semantic_unification.md)** (authoritative constitution).
+Index: [`plans/pass25_semantic_unification_index.md`](plans/pass25_semantic_unification_index.md).
+Gate: `zig build pass25-gate` (alias `semantic-unification-gate`). **Key reconciliations:** no canonical bracket/angle generics; lifetimes are provenance not syntax; views replace borrow syntax; reverse meta returns transactions; **tail-demand propagation** (result lineage, not backward local search) supersedes P23-D01; builds on Pass 23 return consumption + Pass 24 view/concurrency proofs.
+
+**Pass 26 (2026-08-05):** Foundational closure — five seams (semantic operation IDs, protocol attachment, descriptor identity, semantic boundaries, contradiction registry) **plus 30 extended seams** and **semantic domains** unifier — before new capabilities.
+Read **[`plans/pass26_foundational_semantic_closure.md`](plans/pass26_foundational_semantic_closure.md)**.
+Index: [`plans/pass26_closure_index.md`](plans/pass26_closure_index.md).
+Gate: `zig build pass26-gate` (alias `foundational-closure-gate`). **Agent rule:** query `ten_closure_priorities` and contradiction registry before proposing syntax.
+
+**Pass 27 (2026-08-05):** Proof bundle + honest performance evidence — no headline perf claims without emission counters, manifest axes, and correctness hash.
+Read **[`plans/pass27_proof_bundle.md`](plans/pass27_proof_bundle.md)**.
+Index: [`plans/pass27_proof_index.md`](plans/pass27_proof_index.md).
+Gate: `zig build pass27-gate` (alias `proof-bundle-gate`); P0 matrix: `zig build bench-proof-gate`. **Agent rule:** treat `provisional-boxed-path` evidence class as disqualifying for zero-boxing claims.
+
 **Pass 7 (2026-08-04):** AI-native compilation — compiler knowledge, optimization intelligence,
 agent APIs, inference workloads. **Not** an OS, Git replacement, or IDE.
 Read [`plans/pass7_ai_native_compilation.md`](plans/pass7_ai_native_compilation.md).
@@ -79,7 +99,7 @@ Convergence audit: [`plans/pass2_foundational_convergence.md`](plans/pass2_found
 | --- | --- |
 | **Performance** | `zig build bench` — Duo ≥ C on all 40 benchmarks; zero regressions |
 | **Native typed paths** | No `lua_Value` on typed/comptime paths — native C scalars/structs |
-| **Lua superset** | `.lua` untyped compatible; `.duo` adds types + `@comp.*` without breaking dynamic code |
+| **Lua superset** | `.lua` untyped compatible; `.duo` adds types + `@comp.*` without breaking dynamic code; long brackets + accepted Lua syntax permanent (`zig build lua-superset-gate`) |
 | **Ergonomics** | Minimum syntax; `@comp.*` / `@()` unchanged for authors; better errors, not more ceremony |
 | **Exponential metaprogramming** | O(1) author input → O(n^k) native output — via **registered** transforms |
 

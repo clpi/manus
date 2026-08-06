@@ -32,10 +32,10 @@ end
 print("add(1, 2) = " .. add(1, 2))
 print("add(3.0, 4.0) = " .. add(3.0, 4.0))
 
--- 3. @meta.define.derive — user-defined derive macros
--- One @meta.define.derive generates a macro; each @derive on a type
+-- 3. @comp.define.derive — user-defined derive macros
+-- One @comp.define.derive generates a macro; each @derive on a type
 -- calls it to produce per-field code. (check-time only for now)
-@meta.define.derive("Getter", fun(meta)
+@comp.define.derive("Getter", fun(meta)
   local code = "// Getters for " .. meta.name .. "\n"
   for i = 1, #meta.fields
     local f = meta.fields[i]

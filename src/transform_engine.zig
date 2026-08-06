@@ -3,8 +3,9 @@
 /// Canonical plan: `docs/semantic_universe.md`
 ///
 /// All `@comp.*` combinators should eventually register here with contracts,
-/// budgets, and provenance. Phase 0: catalog + parity metadata + provenance log
-/// stub — dispatch still lives in `codegen.zig` / `meta_codegen.zig` until Phase 2.
+/// budgets, and provenance. Phase 0–1: catalog + parity metadata + provenance log.
+/// Phase 2 (partial): combinator evaluation entry is `meta_dispatch.dispatchAtSite`
+/// (gates via `requireMetaDispatchBeforeHook`, provenance via `dispatchMetaCombinator`).
 const std = @import("std");
 const meta_module = @import("meta_module.zig");
 const semantic_algebra = @import("semantic_algebra.zig");
@@ -185,23 +186,7 @@ pub fn dumpProvenanceSummary(io: std.Io, stderr: std.Io.File) void {
 
 /// Map internal codegen/comptime hook names to canonical `comp.*` registry ids.
 pub fn publicNameForInternal(internal: []const u8) ?[]const u8 {
-    const table = [_]struct { []const u8, []const u8 }{
-        .{ "__comptimematch", "comp.match" },
-        .{ "__comptimemap", "comp.map" },
-        .{ "__comptimeeach", "comp.each" },
-        .{ "__comptimetabulate", "comp.tabulate" },
-        .{ "__comptimeinterpolate", "comp.interpolate" },
-        .{ "__comptimepower", "comp.power" },
-        .{ "__derivepower", "comp.derive.power" },
-        .{ "__comptimefixpoint", "comp.fixpoint" },
-        .{ "__comptimeproduct", "comp.product" },
-        .{ "__deriveproduct", "comp.derive.product" },
-        .{ "__comptimezip", "comp.zip" },
-    };
-    for (table) |entry| {
-        if (std.mem.eql(u8, internal, entry[0])) return entry[1];
-    }
-    return null;
+    return meta_module.publicNameForInternal(internal);
 }
 
 var meta_dispatch_strict: ?bool = null;
@@ -447,6 +432,8 @@ pub const parity_tier1: []const []const u8 = &.{
     "comp.tabulate",
     "comp.interpolate",
     "comp.each",
+    "comp.zip",
+    "comp.permute",
 };
 
 pub fn requiresParityTest(public_name: []const u8) bool {
@@ -620,7 +607,10 @@ pub fn descriptor(public_name: []const u8) ?Descriptor {
         std.mem.endsWith(u8, public_name, ".fixpoint") or
         std.mem.endsWith(u8, public_name, ".power") or
         std.mem.endsWith(u8, public_name, ".each") or
-        std.mem.endsWith(u8, public_name, ".interpolate");
+        std.mem.endsWith(u8, public_name, ".interpolate") or
+        std.mem.endsWith(u8, public_name, ".zip") or
+        std.mem.endsWith(u8, public_name, ".permute") or
+        std.mem.endsWith(u8, public_name, ".choose");
     const parity = if (requiresParityTest(public_name))
         &[_]SiteKind{ .top_level_assign, .nested_callback, .block_body }
     else

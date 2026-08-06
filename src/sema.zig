@@ -13,6 +13,8 @@ const semantic_algebra = @import("semantic_algebra.zig");
 const c_sim_import = @import("c_sim_import.zig");
 const foreign_adapter = @import("foreign_adapter.zig");
 const abi_specialize = @import("abi_specialize.zig");
+const tail_result_demand = @import("tail_result_demand.zig");
+const pass26_wiring = @import("pass26_wiring.zig");
 
 pub const SemaError = error{
     TypeMismatch,
@@ -178,6 +180,7 @@ pub const ConceptInfo = struct {
     pub const MethodRequirement = struct {
         name: []const u8,
         param_count: usize, // number of params (including self)
+        param_types: []const RT,
         ret_type: RT,
     };
 
@@ -1348,6 +1351,15 @@ pub const Sema = struct {
         try abi_specialize.specializeSnapshot(self.alloc, &snap);
         var module = try foreign_adapter.adaptSnapshot(self.alloc, &snap);
         errdefer module.deinit(self.alloc);
+        if (module.functions.count() > 0) {
+            var fit_meta = module.functions.iterator();
+            if (fit_meta.next()) |entry| {
+                debug_trace.event(.sema, .foreign, "pass26 foreign lift boundary={s} conv={s}", .{
+                    entry.value_ptr.boundary_id,
+                    entry.value_ptr.calling_conv.name(),
+                });
+            }
+        }
 
         var rit = module.records.iterator();
         while (rit.next()) |entry| {
@@ -1539,13 +1551,24 @@ pub const Sema = struct {
     }
 
     fn check_block(self: *Sema, blk: *ast.Block) SemaError!void {
+        try self.check_block_with_implicit_return(blk, false);
+    }
+
+    fn check_block_with_implicit_return(self: *Sema, blk: *ast.Block, validate_implicit_return: bool) SemaError!void {
         try self.scope.push();
         for (blk.stmts) |*stmt| try self.check_stmt(stmt);
-        if (blk.tail_expr) |e| {
-            const actual = try self.check_expr(e);
-            self.check_return_value(e.loc(), actual);
+        if (validate_implicit_return) {
+            if (block_implicit_return_expr(blk)) |e| {
+                const actual = try self.check_expr(e);
+                self.check_return_value(e.loc(), actual);
+            }
         }
         self.scope.pop();
+    }
+
+    /// Pass 25 §5.1 — tail-demand propagation (not backward local search).
+    fn block_implicit_return_expr(blk: *const ast.Block) ?*ast.Expr {
+        return tail_result_demand.blockTailResultExpr(blk);
     }
 
     const SpecializeArgsInfo = struct {
@@ -1975,7 +1998,7 @@ pub const Sema = struct {
         for (fb.params, 0..) |*p, i|
             try self.scope.define(p.name, .{ .typ = param_types[i], .is_const = false });
         try self.define_vararg_rest(fb);
-        try self.check_block(&fb.body);
+        try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
         self.current_ret = prev_ret;
         self.current_nopanic = prev_nopanic;
@@ -2108,6 +2131,9 @@ pub const Sema = struct {
                     return ot;
                 }
                 if (ot == .@"struct") {
+                    if (try self.field_type_of_alias(ot.@"struct".name, f.field)) |ft| {
+                        return ft;
+                    }
                     if (self.enum_types.get(ot.@"struct".name)) |et| {
                         if (self.find_enum_variant(et.enum_type, f.field) != null) {
                             return et;
@@ -2344,9 +2370,15 @@ pub const Sema = struct {
                         if (c.args.len >= 1) return try self.check_expr(c.args[0]);
                         return .any;
                     }
+                    if (pass26_wiring.semanticOperationId(bn)) |sid| {
+                        debug_trace.event(.sema, .function, "pass26 semantic op {s}", .{sid.dottedPath()});
+                    }
                 }
                 if (self.duo_mode and c.func.* == .name) {
                     const callee = c.func.name.ident;
+                    if (self.foreign_functions.get(callee)) |ff| {
+                        debug_trace.event(.sema, .foreign, "pass26 call boundary={s}", .{ff.boundary_id});
+                    }
                     if (std.mem.eql(u8, callee, "pairs") or std.mem.eql(u8, callee, "ipairs")) {
                         self.warn_msg(c.func.name.loc, "'{s}' is deprecated; iterate tables directly with 'for value in table' or 'for key, value in table'", .{callee});
                     }
@@ -3070,6 +3102,7 @@ pub const Sema = struct {
 
     fn check_func_decl(self: *Sema, fd: *ast.FuncDecl) SemaError!void {
         const fb = &fd.func;
+        self.seed_method_self_param_type(fd);
         const has_vararg = fb.vararg or fb.vararg_name != null;
         var all_typed = true;
         for (fb.params) |*p| {
@@ -3208,7 +3241,7 @@ pub const Sema = struct {
         for (fb.params, param_types) |*p, pt|
             try self.scope.define(p.name, .{ .typ = pt, .is_const = false });
         try self.define_vararg_rest(fb);
-        try self.check_block(&fb.body);
+        try self.check_block_with_implicit_return(&fb.body, true);
         self.scope.pop();
 
         // Pass 2: infer native signatures for scalar functions that are plain
@@ -3216,8 +3249,9 @@ pub const Sema = struct {
         // functions and .duo functions with typed params but inferred returns.
         if (!fb.is_typed and !func_body_has_func_expr(fb)) {
             const self_name: ?[]const u8 = if (fd.path.len == 1 and !fd.method) fd.path[0] else null;
+            const method_receiver: ?[]const u8 = if (fd.method and fd.path.len >= 2) fd.path[0] else null;
             try detect_dense_table(fb, self.alloc);
-            self.try_specialize_native_func(fb, self_name) catch {};
+            self.try_specialize_native_func(fb, self_name, method_receiver) catch {};
         } else if (fb.is_typed) {
             // For typed .duo functions, still run dense table detection
             // to enable native int64_t array lowering for table-as-array patterns.
@@ -3660,9 +3694,14 @@ pub const Sema = struct {
         var methods = try self.alloc.alloc(ConceptInfo.MethodRequirement, cd.required_methods.len);
         for (cd.required_methods, 0..) |*m, i| {
             const ret_t = try self.resolve_type(m.ret_type);
+            var param_types = try self.alloc.alloc(RT, m.params.len);
+            for (m.params, 0..) |p, j| {
+                param_types[j] = try self.resolve_type(p.typ);
+            }
             methods[i] = .{
                 .name = m.name,
                 .param_count = m.params.len,
+                .param_types = param_types,
                 .ret_type = ret_t,
             };
         }
@@ -3762,6 +3801,32 @@ pub const Sema = struct {
         return fields.toOwnedSlice(self.alloc);
     }
 
+    fn meta_concept_type_from_string(self: *Sema, name: []const u8) SemaError!RT {
+        if (std.mem.eql(u8, name, "any")) return .any;
+        if (try self.mem_type_from_name(name)) |t| return t;
+        return .any;
+    }
+
+    fn collect_meta_concept_method_params(self: *Sema, member_expr: *const ast.Expr) SemaError![]RT {
+        const params_expr = find_named_table_field(member_expr, &.{"params"}) orelse return &[_]RT{};
+        if (params_expr.* != .table) return &[_]RT{};
+        var param_types: std.ArrayList(RT) = .empty;
+        for (params_expr.table.fields) |field| {
+            const elem: *const ast.Expr = switch (field) {
+                .positional => |p| p,
+                .named => |n| n.val,
+                .indexed => |idx| idx.val,
+                .spread => continue,
+            };
+            const pt: RT = if (elem.* == .string_lit)
+                try self.meta_concept_type_from_string(elem.string_lit.val)
+            else
+                .any;
+            try param_types.append(self.alloc, pt);
+        }
+        return param_types.toOwnedSlice(self.alloc);
+    }
+
     fn collect_meta_concept_methods(self: *Sema, maybe_expr: ?*const ast.Expr) SemaError![]ConceptInfo.MethodRequirement {
         const expr = maybe_expr orelse return &[_]ConceptInfo.MethodRequirement{};
         if (expr.* != .table) return &[_]ConceptInfo.MethodRequirement{};
@@ -3774,7 +3839,19 @@ pub const Sema = struct {
                 .spread => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
-                try methods.append(self.alloc, .{ .name = name, .param_count = 0, .ret_type = .any });
+                const param_types = try self.collect_meta_concept_method_params(member_expr);
+                var ret_type: RT = .any;
+                if (find_named_table_field(member_expr, &.{ "ret", "return" })) |ret_expr| {
+                    if (ret_expr.* == .string_lit) {
+                        ret_type = try self.meta_concept_type_from_string(ret_expr.string_lit.val);
+                    }
+                }
+                try methods.append(self.alloc, .{
+                    .name = name,
+                    .param_count = param_types.len,
+                    .param_types = param_types,
+                    .ret_type = ret_type,
+                });
             }
         }
         return methods.toOwnedSlice(self.alloc);
@@ -4018,6 +4095,42 @@ pub const Sema = struct {
     }
 
     /// Returns true when a resolved type provides all fields/methods required by a concept.
+    fn alias_def_has_field(ad: *const ast.AliasDef, field_name: []const u8) bool {
+        for (ad.fields) |f| {
+            if (std.mem.eql(u8, f.name, field_name)) return true;
+        }
+        if (ad.target) |target| {
+            switch (target) {
+                .record => |rec| {
+                    for (rec.fields) |f| {
+                        if (std.mem.eql(u8, f.name, field_name)) return true;
+                    }
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    /// Field type from a descriptor alias (`Vec: @{ x: i32 }`) for static member access.
+    fn field_type_of_alias(self: *Sema, alias_name: []const u8, field_name: []const u8) SemaError!?RT {
+        const ad = self.alias_defs.get(alias_name) orelse return null;
+        for (ad.fields) |f| {
+            if (std.mem.eql(u8, f.name, field_name)) return try self.resolve_type(f.typ);
+        }
+        if (ad.target) |target| {
+            switch (target) {
+                .record => |rec| {
+                    for (rec.fields) |f| {
+                        if (std.mem.eql(u8, f.name, field_name)) return try self.resolve_type(f.typ);
+                    }
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
     fn type_satisfies_concept(self: *Sema, rt: RT, concept_name: []const u8) bool {
         const concept = self.concepts.get(concept_name) orelse return false;
 
@@ -4031,12 +4144,7 @@ pub const Sema = struct {
         for (concept.required_fields) |req_field| {
             var found = false;
             if (alias_def) |ad| {
-                for (ad.fields) |rec_field| {
-                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
-                        found = true;
-                        break;
-                    }
-                }
+                if (alias_def_has_field(ad, req_field.name)) found = true;
             }
             if (!found and rt == .table_type) {
                 for (rt.table_type.fields) |rec_field| {
@@ -4063,12 +4171,7 @@ pub const Sema = struct {
             }
             if (!found) {
                 if (alias_def) |ad| {
-                    for (ad.fields) |rec_field| {
-                        if (std.mem.eql(u8, rec_field.name, req_method.name)) {
-                            found = true;
-                            break;
-                        }
-                    }
+                    if (alias_def_has_field(ad, req_method.name)) found = true;
                     if (!found) {
                         for (ad.methods) |m| {
                             const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
@@ -7051,11 +7154,126 @@ pub const Sema = struct {
         return null;
     }
 
-    fn try_specialize_native_func(self: *Sema, fb: *ast.FuncBody, self_name: ?[]const u8) SemaError!void {
+    fn unify_scalar(a: RT, b: RT) ?RT {
+        if (a == .str or b == .str) {
+            if (a == .any) return .str;
+            if (b == .any) return .str;
+            if (a == .str and b == .str) return .str;
+            return null;
+        }
+        return unify_numeric(a, b);
+    }
+
+    fn expr_references_name(expr: *const ast.Expr, name: []const u8) bool {
+        return switch (expr.*) {
+            .name => |n| std.mem.eql(u8, n.ident, name),
+            .field => |f| expr_references_name(f.obj, name),
+            .index => |idx| expr_references_name(idx.obj, name) or expr_references_name(idx.key, name),
+            .call => |c| expr_references_name(c.func, name) or for (c.args) |a| {
+                if (expr_references_name(a, name)) return true;
+            } else false,
+            .method_call => |mc| expr_references_name(mc.obj, name) or for (mc.args) |a| {
+                if (expr_references_name(a, name)) return true;
+            } else false,
+            .binop => |b| expr_references_name(b.lhs, name) or expr_references_name(b.rhs, name),
+            .unop => |u| expr_references_name(u.operand, name),
+            .if_expr => |ie| expr_references_name(ie.cond, name) or
+                expr_references_name(ie.then_expr, name) or
+                expr_references_name(ie.else_expr, name),
+            .table => |t| for (t.fields) |f| {
+                switch (f) {
+                    .indexed => |idx| {
+                        if (expr_references_name(idx.key, name) or expr_references_name(idx.val, name)) return true;
+                    },
+                    .named => |nf| {
+                        if (expr_references_name(nf.val, name)) return true;
+                    },
+                    .positional => |p| {
+                        if (expr_references_name(p, name)) return true;
+                    },
+                    .spread => |s| {
+                        if (expr_references_name(s, name)) return true;
+                    },
+                }
+            } else false,
+            .func_expr => |fe| blk: {
+                for (fe.params) |p| {
+                    if (std.mem.eql(u8, p.name, name)) return true;
+                }
+                break :blk block_references_name(&fe.body, name);
+            },
+            else => false,
+        };
+    }
+
+    fn block_references_name(blk: *const ast.Block, name: []const u8) bool {
+        if (blk.tail_expr) |e| {
+            if (expr_references_name(e, name)) return true;
+        }
+        for (blk.stmts) |*stmt| {
+            if (stmt_references_name(stmt, name)) return true;
+        }
+        return false;
+    }
+
+    fn stmt_references_name(stmt: *const ast.Stmt, name: []const u8) bool {
+        return switch (stmt.*) {
+            .local_decl => |ld| for (ld.inits) |init_expr| {
+                if (expr_references_name(init_expr, name)) return true;
+            } else false,
+            .const_decl => |cd| expr_references_name(cd.val, name),
+            .assign => |as| {
+                for (as.targets) |tgt| {
+                    if (expr_references_name(tgt, name)) return true;
+                }
+                for (as.values) |val| {
+                    if (expr_references_name(val, name)) return true;
+                }
+                return false;
+            },
+            .ret => |r| for (r.vals) |v| {
+                if (expr_references_name(v, name)) return true;
+            } else false,
+            .if_stmt => |is| {
+                if (expr_references_name(is.cond, name)) return true;
+                if (block_references_name(&is.then, name)) return true;
+                for (is.elseifs) |ei| {
+                    if (expr_references_name(ei.cond, name)) return true;
+                    if (block_references_name(&ei.body, name)) return true;
+                }
+                if (is.else_body) |eb| return block_references_name(&eb, name);
+                return false;
+            },
+            .while_loop => |wl| expr_references_name(wl.cond, name) or block_references_name(&wl.body, name),
+            .repeat_loop => |rl| block_references_name(&rl.body, name) or expr_references_name(rl.cond, name),
+            .num_for => |nf| expr_references_name(nf.start, name) or expr_references_name(nf.stop, name) or
+                (if (nf.step) |s| expr_references_name(s, name) else false) or
+                block_references_name(&nf.body, name),
+            .call_stmt => |cs| expr_references_name(cs.expr, name),
+            .expr_stmt => |es| expr_references_name(es.expr, name),
+            .do_block => |db| block_references_name(&db.body, name),
+            else => false,
+        };
+    }
+
+    /// Pass 23 §3 — colon methods get implicit `self: Receiver` when the descriptor exists.
+    fn seed_method_self_param_type(self: *Sema, fd: *ast.FuncDecl) void {
+        const fb = &fd.func;
+        if (!fd.method or fd.path.len < 2 or fb.params.len == 0) return;
+        const receiver = fd.path[0];
+        if (!std.mem.eql(u8, fb.params[0].name, "self")) return;
+        if (fb.params[0].typ != .inferred) return;
+        if (self.alias_defs.contains(receiver)) {
+            fb.params[0].typ = .{ .named = receiver };
+        }
+    }
+
+    fn try_specialize_native_func(self: *Sema, fb: *ast.FuncBody, self_name: ?[]const u8, method_receiver: ?[]const u8) SemaError!void {
         var infer = NativeInfer{
             .sema = self,
             .fb = fb,
             .self_name = self_name,
+            .method_receiver = method_receiver,
             .param_tys = try self.alloc.alloc(RT, fb.params.len),
             .local_tys = std.StringHashMap(RT).init(self.alloc),
             .ret_tys = .empty,
@@ -7073,7 +7291,8 @@ pub const Sema = struct {
         // `infer_block` computes the tail type but discards it, so a function
         // like `sub = (a: i32, b: i32) a - b end` with no explicit return type
         // would otherwise stay `.any` and box its result through lua_Value.
-        if (fb.body.tail_expr) |e| {
+        // Pass 23 §4: trailing assignment expression counts too.
+        if (block_implicit_return_expr(&fb.body)) |e| {
             const t = infer.infer_expr(e, .any);
             infer.ret_tys.append(infer.sema.alloc, t) catch return;
         }
@@ -7082,15 +7301,23 @@ pub const Sema = struct {
 
         var ret_t: RT = .any;
         for (infer.ret_tys.items) |rt| {
-            ret_t = unify_numeric(ret_t, rt) orelse return;
+            ret_t = unify_scalar(ret_t, rt) orelse return;
         }
         if (!ret_t.is_native()) return;
 
-        for (infer.param_tys) |pt| {
+        for (infer.param_tys, 0..) |*pt, i| {
+            if (pt.* != .any) continue;
+            if (infer.param_is_referenced(i)) continue;
+            if (ret_t.is_native()) pt.* = ret_t;
+        }
+
+        for (infer.param_tys, fb.params) |pt, p| {
+            if (p.typ != .inferred and pt == .any) continue;
             if (!pt.is_native()) return;
         }
 
         for (fb.params, infer.param_tys) |*p, pt| {
+            if (p.typ != .inferred) continue;
             if (types.rt_to_type_name(pt)) |name| {
                 p.typ = .{ .named = name };
             } else return;
@@ -7105,6 +7332,7 @@ pub const Sema = struct {
         sema: *Sema,
         fb: *ast.FuncBody,
         self_name: ?[]const u8,
+        method_receiver: ?[]const u8,
         param_tys: []RT,
         local_tys: std.StringHashMap(RT),
         ret_tys: std.ArrayList(RT),
@@ -7123,7 +7351,8 @@ pub const Sema = struct {
                     self.ok = false;
                     return;
                 };
-                if (!pt.is_numeric() and pt != .bool) {
+                if (pt == .@"struct") continue;
+                if (!pt.is_numeric() and pt != .bool and pt != .str) {
                     self.ok = false;
                     return;
                 }
@@ -7140,11 +7369,23 @@ pub const Sema = struct {
 
         fn unify_param(self: *NativeInfer, idx: usize, hint: RT) void {
             if (!self.ok) return;
-            const merged = unify_numeric(self.param_tys[idx], hint) orelse {
+            if (hint == .str) {
+                if (self.param_tys[idx] != .any and self.param_tys[idx] != .str) {
+                    self.ok = false;
+                    return;
+                }
+                self.param_tys[idx] = .str;
+                return;
+            }
+            const merged = unify_scalar(self.param_tys[idx], hint) orelse {
                 self.ok = false;
                 return;
             };
             self.param_tys[idx] = merged;
+        }
+
+        fn param_is_referenced(self: *NativeInfer, idx: usize) bool {
+            return block_references_name(&self.fb.body, self.fb.params[idx].name);
         }
 
         fn unify_local(self: *NativeInfer, name: []const u8, hint: RT) void {
@@ -7232,6 +7473,14 @@ pub const Sema = struct {
                         if (!t.is_native()) continue;
                         self.local_tys.put(cd.ident, t) catch return false;
                     },
+                    .assign => |*as| {
+                        for (as.targets, as.values) |tgt, val| {
+                            if (tgt.* != .name) continue;
+                            const t = self.expr_type(val);
+                            if (!t.is_native() and t != .any) continue;
+                            self.local_tys.put(tgt.name.ident, t) catch return false;
+                        }
+                    },
                     .num_for => |*nf| {
                         var t: RT = .i64;
                         if (nf.var_typ != .inferred) {
@@ -7239,6 +7488,10 @@ pub const Sema = struct {
                         }
                         if (!t.is_native()) return false;
                         self.local_tys.put(nf.var_name, t) catch return false;
+                        if (!self.collect_local_types(&nf.body)) return false;
+                    },
+                    .gen_for => |*gf| {
+                        if (!self.collect_local_types(&gf.body)) return false;
                     },
                     .if_stmt => |*is| {
                         if (!self.collect_local_types(&is.then)) return false;
@@ -7266,7 +7519,7 @@ pub const Sema = struct {
 
         fn infer_block(self: *NativeInfer, blk: *const ast.Block) SemaError!void {
             for (blk.stmts) |*stmt| try self.infer_stmt(stmt);
-            if (blk.tail_expr) |e| _ = self.infer_expr(e, .any);
+            if (block_implicit_return_expr(blk)) |e| _ = self.infer_expr(e, .any);
         }
 
         fn infer_stmt(self: *NativeInfer, stmt: *const ast.Stmt) SemaError!void {
@@ -7287,7 +7540,14 @@ pub const Sema = struct {
                 .assign => |*as| {
                     for (as.targets, 0..) |tgt, i| {
                         const hint = self.target_type(tgt);
-                        if (i < as.values.len) _ = self.infer_expr(as.values[i], hint);
+                        if (i < as.values.len) {
+                            const vt = self.infer_expr(as.values[i], hint);
+                            if (tgt.* == .name) {
+                                const prev = self.local_tys.get(tgt.name.ident) orelse .any;
+                                const merged = unify_numeric(prev, vt) orelse vt;
+                                self.local_tys.put(tgt.name.ident, merged) catch return;
+                            }
+                        }
                     }
                 },
                 .ret => |*r| {
@@ -7337,7 +7597,18 @@ pub const Sema = struct {
                     if (self.param_index(n.ident)) |pi| break :blk self.param_tys[pi];
                     break :blk self.local_tys.get(n.ident) orelse .any;
                 },
-                .field => |f| self.target_type(f.obj),
+                .field => |f| blk: {
+                    if (f.obj.* == .name) {
+                        if (self.method_receiver) |recv| {
+                            if (std.mem.eql(u8, f.obj.name.ident, "self")) {
+                                if (self.sema.field_type_of_alias(recv, f.field) catch null) |ft| {
+                                    break :blk ft;
+                                }
+                            }
+                        }
+                    }
+                    break :blk self.target_type(f.obj);
+                },
                 .index => |idx| self.target_index_type(idx.obj, idx.key),
                 else => .any,
             };
@@ -7386,7 +7657,7 @@ pub const Sema = struct {
                 .name => |n| blk: {
                     if (self.param_index(n.ident)) |pi| {
                         self.unify_param(pi, hint);
-                        break :blk unify_numeric(self.param_tys[pi], hint) orelse .any;
+                        break :blk unify_scalar(self.param_tys[pi], hint) orelse self.param_tys[pi];
                     }
                     if (self.local_tys.get(n.ident)) |lt| {
                         self.unify_local(n.ident, hint);
@@ -7397,6 +7668,15 @@ pub const Sema = struct {
                 .field => |f| {
                     if (f.obj.* == .name and std.mem.eql(u8, f.obj.name.ident, "math")) {
                         return .f64;
+                    }
+                    if (f.obj.* == .name) {
+                        if (self.method_receiver) |recv| {
+                            if (std.mem.eql(u8, f.obj.name.ident, "self")) {
+                                if (self.sema.field_type_of_alias(recv, f.field) catch null) |ft| {
+                                    return ft;
+                                }
+                            }
+                        }
                     }
                     self.ok = false;
                     return .any;
@@ -7524,9 +7804,10 @@ pub const Sema = struct {
 
         fn infer_binop(self: *NativeInfer, op: ast.BinOp, lhs: *ast.Expr, rhs: *ast.Expr, hint: RT) RT {
             return switch (op) {
-                .concat => {
-                    self.ok = false;
-                    return .str;
+                .concat => blk: {
+                    _ = self.infer_expr(lhs, .str);
+                    _ = self.infer_expr(rhs, .str);
+                    break :blk .str;
                 },
                 .div, .pow => {
                     _ = self.infer_expr(lhs, .f64);
@@ -7594,6 +7875,30 @@ fn runSema(src: []const u8, arena: *std.heap.ArenaAllocator) !Sema {
     var s = Sema.init(alloc);
     try s.check_module(&mod);
     return s;
+}
+
+test "sema: Pass25 loop-carried tail demand types factorial body" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\factorial = (n: i64): i64
+        \\    value = 1
+        \\    for i = 2, n
+        \\        value *= i
+        \\    end
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(fd.func.is_typed);
 }
 
 test "sema: empty module produces no errors" {
@@ -7670,6 +7975,61 @@ test "sema: untyped function with dynamic body stays untyped" {
     try testing.expectEqual(@as(u32, 0), s.errors);
     const fd = mod.body.stmts[0].func_decl;
     try testing.expect(!fd.func.is_typed);
+}
+
+test "sema: Pass23 colon method assign infers native str signature" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "Person:greet = (other) \"Hey \" .. other";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(fd.func.is_typed);
+    try testing.expectEqualStrings("str", fd.func.params[0].typ.named);
+    try testing.expectEqualStrings("str", fd.func.params[1].typ.named);
+    try testing.expectEqualStrings("str", fd.func.ret_type.named);
+}
+
+test "sema: Pass23 string interpolation infers str return" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "Person:greet = (other) \"Hey {other}\"";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[0].func_decl;
+    try testing.expect(fd.func.is_typed);
+    try testing.expectEqualStrings("str", fd.func.ret_type.named);
+}
+
+test "sema: Pass23 colon method compound field assign with descriptor" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src = "Vec: @{ x: i32 }\nVec:xplus = (amt): i32\n    self.x += amt\nend";
+    var lex = Lexer.init(src, "test");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    const fd = mod.body.stmts[1].func_decl;
+    try testing.expect(fd.func.is_typed);
+    try testing.expectEqualStrings("Vec", fd.func.params[0].typ.named);
+    try testing.expectEqualStrings("i32", fd.func.params[1].typ.named);
+    try testing.expectEqualStrings("i32", fd.func.ret_type.named);
 }
 
 test "sema: untyped function can be specialized to native" {

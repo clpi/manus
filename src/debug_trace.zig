@@ -30,6 +30,7 @@ pub const Scope = enum(u8) {
     generic,
     trait,
     impl_block,
+    foreign,
 };
 
 pub const Filter = struct {
@@ -79,6 +80,7 @@ pub fn scopeName(sc: Scope) []const u8 {
         .generic => "generic",
         .trait => "trait",
         .impl_block => "impl",
+        .foreign => "foreign",
     };
 }
 

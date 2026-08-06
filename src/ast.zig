@@ -2,6 +2,21 @@ const std = @import("std");
 pub const Loc = @import("lexer.zig").Loc;
 const RT = @import("types.zig").ResolvedType;
 
+/// Pass 24 §4.1 — surface invocation form on call AST nodes.
+pub const InvocationForm = enum {
+    value_reference,
+    parenthesized,
+    parenless,
+    receiver_parenthesized,
+    receiver_parenless,
+    command,
+    indirect,
+
+    pub fn name(self: InvocationForm) []const u8 {
+        return @tagName(self);
+    }
+};
+
 // ── Type expressions ─────────────────────────────────────────────────────────
 
 pub const TypeExpr = union(enum) {
@@ -372,8 +387,8 @@ pub const Expr = union(enum) {
     name: struct { loc: Loc, ident: []const u8 },
     index: struct { loc: Loc, obj: *Expr, key: *Expr },
     field: struct { loc: Loc, obj: *Expr, field: []const u8 },
-    call: struct { loc: Loc, func: *Expr, args: []*Expr },
-    method_call: struct { loc: Loc, obj: *Expr, method: []const u8, args: []*Expr },
+    call: struct { loc: Loc, func: *Expr, args: []*Expr, form: InvocationForm = .parenthesized },
+    method_call: struct { loc: Loc, obj: *Expr, method: []const u8, args: []*Expr, form: InvocationForm = .receiver_parenthesized },
     binop: struct { loc: Loc, op: BinOp, lhs: *Expr, rhs: *Expr },
     unop: struct { loc: Loc, op: UnOp, operand: *Expr },
     func_expr: *FuncBody,

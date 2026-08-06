@@ -1,10 +1,10 @@
 -- Demonstrate that __eval_derive works on built-in derives too.
 -- The macro evaluates Display, Eq, and Hash and reports how much code each produces.
 
-@meta.define.derive("ReportBuiltins", fun generate(meta) -> str
-    display_src = @meta.derive.eval("Display", meta)
-    eq_src = @meta.derive.eval("Eq", meta)
-    hash_src = @meta.derive.eval("Hash", meta)
+@comp.define.derive("ReportBuiltins", fun generate(meta) -> str
+    display_src = @comp.derive.eval("Display", meta)
+    eq_src = @comp.derive.eval("Eq", meta)
+    hash_src = @comp.derive.eval("Hash", meta)
     local acc = "/* Built-in derive report for " .. meta.name .. " */\n"
     acc = acc .. "/* Display length: " .. tostring(#display_src) .. " */\n"
     acc = acc .. "/* Eq length: " .. tostring(#eq_src) .. " */\n"

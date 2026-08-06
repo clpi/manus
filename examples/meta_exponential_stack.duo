@@ -1,4 +1,4 @@
--- @meta.* exponential stack: one module directive set → O(types × fields × derives) output
+-- @comp.* exponential stack: one module directive set → O(types × fields × derives) output
 -- Run: duo run examples/meta_exponential_stack.duo
 
 concept HasXY
@@ -14,7 +14,7 @@ type Point = { x: f64, y: f64, tag: str }
 type Pair = { x: f64, y: f64, tag: str }
 type Label = { tag: str }
 
-@meta.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", fun generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -23,7 +23,7 @@ type Label = { tag: str }
     acc
 end)
 
-@meta.derive.all("HasXY", TouchApi)
+@comp.derive.all("HasXY", TouchApi)
 
 fun pair_sig(a, b) -> str
     a.name .. "x" .. b.name .. ";"
@@ -33,10 +33,10 @@ fun mark(meta) -> str
     meta.name .. ";"
 end
 
-PAIRS = @meta.product("HasXY", "HasTag", pair_sig)
-SWEEP = @meta.map("HasXY", mark)
-TAGGED = @meta.types.with("HasTag")
-ALL = @meta.type.names()
+PAIRS = @comp.product("HasXY", "HasTag", pair_sig)
+SWEEP = @comp.map("HasXY", mark)
+TAGGED = @comp.types.with("HasTag")
+ALL = @comp.type.names()
 
 print("=== meta exponential stack ===")
 print("pairs = " .. PAIRS)

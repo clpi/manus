@@ -319,6 +319,182 @@ pub fn build(b: *std.Build) void {
     pass16_gate_step.dependOn(&pass16_gate_cmd.step);
     pass16_gate_step.dependOn(&run_pass16_gate_tests.step);
 
+    const pass22_gate_cmd = b.addRunArtifact(exe);
+    pass22_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass22" });
+    pass22_gate_cmd.step.dependOn(b.getInstallStep());
+    pass22_gate_cmd.setCwd(b.path("."));
+    const pass22_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass22"},
+    });
+    linkProductionKeywordClassify(b, pass22_gate_tests.root_module);
+    const run_pass22_gate_tests = b.addRunArtifact(pass22_gate_tests);
+    const pass22_gate_step = b.step("pass22-gate", "Pass 22 graph-native IR gate (native, cross-platform)");
+    pass22_gate_step.dependOn(&pass22_gate_cmd.step);
+    pass22_gate_step.dependOn(&run_pass22_gate_tests.step);
+
+    const pass19_gate_cmd = b.addRunArtifact(exe);
+    pass19_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass19" });
+    pass19_gate_cmd.step.dependOn(b.getInstallStep());
+    pass19_gate_cmd.setCwd(b.path("."));
+    const pass19_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass19"},
+    });
+    linkProductionKeywordClassify(b, pass19_gate_tests.root_module);
+    const run_pass19_gate_tests = b.addRunArtifact(pass19_gate_tests);
+    const pass19_gate_step = b.step("pass19-gate", "Pass 19 unified semantic experience gate (native, cross-platform)");
+    pass19_gate_step.dependOn(&pass19_gate_cmd.step);
+    pass19_gate_step.dependOn(&run_pass19_gate_tests.step);
+
+    const pass23_gate_cmd = b.addRunArtifact(exe);
+    pass23_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass23" });
+    pass23_gate_cmd.step.dependOn(b.getInstallStep());
+    pass23_gate_cmd.setCwd(b.path("."));
+    const pass23_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass23"},
+    });
+    linkProductionKeywordClassify(b, pass23_gate_tests.root_module);
+    const run_pass23_gate_tests = b.addRunArtifact(pass23_gate_tests);
+    const pass23_gate_step = b.step("pass23-gate", "Pass 23 unified metaprotocols gate (native, cross-platform)");
+    pass23_gate_step.dependOn(&pass23_gate_cmd.step);
+    pass23_gate_step.dependOn(&run_pass23_gate_tests.step);
+
+    const lua_superset_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass24"},
+    });
+    linkProductionKeywordClassify(b, lua_superset_gate_tests.root_module);
+    const run_lua_superset_gate_tests = b.addRunArtifact(lua_superset_gate_tests);
+    const pass24_gate_cmd = b.addRunArtifact(exe);
+    pass24_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass24" });
+    pass24_gate_cmd.step.dependOn(b.getInstallStep());
+    pass24_gate_cmd.setCwd(b.path("."));
+    const pass24_gate_step = b.step("pass24-gate", "Pass 24 unified calls + Lua superset + concurrency constitution gate");
+    pass24_gate_step.dependOn(&pass24_gate_cmd.step);
+    pass24_gate_step.dependOn(&run_lua_superset_gate_tests.step);
+    const lua_superset_gate_step = b.step("lua-superset-gate", "Alias for pass24-gate (Lua superset P0)");
+    lua_superset_gate_step.dependOn(pass24_gate_step);
+
+    const pass25_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass25"},
+    });
+    linkProductionKeywordClassify(b, pass25_gate_tests.root_module);
+    const run_pass25_gate_tests = b.addRunArtifact(pass25_gate_tests);
+    const pass25_gate_cmd = b.addRunArtifact(exe);
+    pass25_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass25" });
+    pass25_gate_cmd.step.dependOn(b.getInstallStep());
+    pass25_gate_cmd.setCwd(b.path("."));
+    const pass25_gate_step = b.step("pass25-gate", "Pass 25 semantic unification + lifetimes + bidirectional meta constitution gate");
+    pass25_gate_step.dependOn(&pass25_gate_cmd.step);
+    pass25_gate_step.dependOn(&run_pass25_gate_tests.step);
+    const semantic_unification_gate_step = b.step("semantic-unification-gate", "Alias for pass25-gate");
+    semantic_unification_gate_step.dependOn(pass25_gate_step);
+
+    const pass26_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass26"},
+    });
+    linkProductionKeywordClassify(b, pass26_gate_tests.root_module);
+    const run_pass26_gate_tests = b.addRunArtifact(pass26_gate_tests);
+    const pass26_gate_cmd = b.addRunArtifact(exe);
+    pass26_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass26" });
+    pass26_gate_cmd.step.dependOn(b.getInstallStep());
+    pass26_gate_cmd.setCwd(b.path("."));
+    const pass26_gate_step = b.step("pass26-gate", "Pass 26 foundational closure — five seams + contradiction registry");
+    pass26_gate_step.dependOn(&pass26_gate_cmd.step);
+    pass26_gate_step.dependOn(&run_pass26_gate_tests.step);
+    const foundational_closure_gate_step = b.step("foundational-closure-gate", "Alias for pass26-gate");
+    foundational_closure_gate_step.dependOn(pass26_gate_step);
+
+    const pass27_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass27"},
+    });
+    linkProductionKeywordClassify(b, pass27_gate_tests.root_module);
+    const run_pass27_gate_tests = b.addRunArtifact(pass27_gate_tests);
+    const pass27_gate_cmd = b.addRunArtifact(exe);
+    pass27_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass27" });
+    pass27_gate_cmd.step.dependOn(b.getInstallStep());
+    pass27_gate_cmd.setCwd(b.path("."));
+    const pass27_gate_step = b.step("pass27-gate", "Pass 27 proof bundle + performance/metaprogramming evidence gate");
+    pass27_gate_step.dependOn(&pass27_gate_cmd.step);
+    pass27_gate_step.dependOn(&run_pass27_gate_tests.step);
+    const proof_bundle_gate_step = b.step("proof-bundle-gate", "Alias for pass27-gate");
+    proof_bundle_gate_step.dependOn(pass27_gate_step);
+
+    const bench_proof_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark_proof.sh" });
+    bench_proof_cmd.setCwd(b.path("."));
+    bench_proof_cmd.step.dependOn(b.getInstallStep());
+    const bench_proof_step = b.step("bench-proof-gate", "P0 benchmark 3-profile correctness + proof artifacts");
+    bench_proof_step.dependOn(&bench_proof_cmd.step);
+
+    const pass21_gate_cmd = b.addRunArtifact(exe);
+    pass21_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass21" });
+    pass21_gate_cmd.step.dependOn(b.getInstallStep());
+    pass21_gate_cmd.setCwd(b.path("."));
+    const pass21_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass21"},
+    });
+    linkProductionKeywordClassify(b, pass21_gate_tests.root_module);
+    const run_pass21_gate_tests = b.addRunArtifact(pass21_gate_tests);
+    const pass21_gate_step = b.step("pass21-gate", "Pass 21 canonical grammar closure gate (native, cross-platform)");
+    pass21_gate_step.dependOn(&pass21_gate_cmd.step);
+    pass21_gate_step.dependOn(&run_pass21_gate_tests.step);
+
+    const pass20_gate_cmd = b.addRunArtifact(exe);
+    pass20_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass20" });
+    pass20_gate_cmd.step.dependOn(b.getInstallStep());
+    pass20_gate_cmd.setCwd(b.path("."));
+    const pass20_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass20"},
+    });
+    linkProductionKeywordClassify(b, pass20_gate_tests.root_module);
+    const run_pass20_gate_tests = b.addRunArtifact(pass20_gate_tests);
+    const pass20_gate_step = b.step("pass20-gate", "Pass 20 universal metaprogramming harness gate (native, cross-platform)");
+    pass20_gate_step.dependOn(&pass20_gate_cmd.step);
+    pass20_gate_step.dependOn(&run_pass20_gate_tests.step);
+
     const pass16_cross_platform_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/selfhost_target_matrix.zig"),
@@ -401,6 +577,15 @@ pub fn build(b: *std.Build) void {
     pass_gates_step.dependOn(pass14_gate_step);
     pass_gates_step.dependOn(pass15_gate_step);
     pass_gates_step.dependOn(pass16_gate_step);
+    pass_gates_step.dependOn(pass20_gate_step);
+    pass_gates_step.dependOn(pass21_gate_step);
+    pass_gates_step.dependOn(pass22_gate_step);
+    pass_gates_step.dependOn(pass23_gate_step);
+    pass_gates_step.dependOn(pass24_gate_step);
+    pass_gates_step.dependOn(lua_superset_gate_step);
+    pass_gates_step.dependOn(pass25_gate_step);
+    pass_gates_step.dependOn(pass26_gate_step);
+    pass_gates_step.dependOn(pass19_gate_step);
     pass_gates_step.dependOn(passes_audit_step);
 
     // Agent-smoke gate (tier-0): public safety + coordination/stdlib/meta smokes
@@ -411,4 +596,33 @@ pub fn build(b: *std.Build) void {
     agent_smoke_step.dependOn(&public_safety_cmd.step);
     agent_smoke_step.dependOn(&agent_smoke_cmd.step);
     test_step.dependOn(agent_smoke_step);
+
+    // G-061 tier-0 metaprogramming smokes (combinator dispatch + derive bundles)
+    const meta_smoke_paths = [_][]const u8{
+        "examples/metaprogramming_test.duo",
+        "examples/derive_bundle_smoke.duo",
+        "examples/meta_derive_power_cascade.duo",
+        "examples/comptime_map_satisfies_smoke.duo",
+        "examples/meta_expand_showcase.duo",
+        "examples/meta_match_showcase.duo",
+        "examples/meta_power_permute_showcase.duo",
+        "examples/std_metaprogramming_modules_smoke.duo",
+    };
+    const meta_smoke_step = b.step("meta-smoke", "Run G-061 tier-0 @comp.* metaprogramming smokes");
+    meta_smoke_step.dependOn(b.getInstallStep());
+    inline for (meta_smoke_paths) |path| {
+        const cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_lock.sh", "--", "./zig-out/bin/duo", "run", path });
+        cmd.setCwd(b.path("."));
+        meta_smoke_step.dependOn(&cmd.step);
+    }
+
+    // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
+    const meta_gate_cmd = b.addSystemCommand(&.{
+        "bash", "-c",
+        "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 scripts/duo_lock.sh -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
+    });
+    meta_gate_cmd.setCwd(b.path("."));
+    meta_gate_cmd.step.dependOn(b.getInstallStep());
+    const meta_gate_step = b.step("meta-gate", "Run tier-0 metaprogramming smoke with DUO_TRANSFORM_GATE=1");
+    meta_gate_step.dependOn(&meta_gate_cmd.step);
 }

@@ -2,6 +2,8 @@
 const std = @import("std");
 const sim = @import("sim.zig");
 const types = @import("types.zig");
+const pass26_wiring = @import("pass26_wiring.zig");
+const pass26_abi_resource = @import("pass26_abi_resource.zig");
 
 pub const ForeignFunc = struct {
     name: []const u8,
@@ -12,6 +14,10 @@ pub const ForeignFunc = struct {
     sim_id: []const u8,
     /// From SIM `abi.pass_by` after `abi.specialize` (`value`, `pointer`, …).
     pass_by: []const u8 = "unknown",
+    /// Pass 26 — semantic boundary on C foreign lift (default P26-B02).
+    boundary_id: []const u8 = "P26-B02",
+    /// Pass 26 — calling convention descriptor kind.
+    calling_conv: pass26_abi_resource.CallingConventionKind = .c_abi,
 
     pub fn deinit(self: *ForeignFunc, alloc: std.mem.Allocator) void {
         alloc.free(self.name);
@@ -163,6 +169,7 @@ fn funcFromEntity(
         "unknown"
     else
         try alloc.dupe(u8, pass_by);
+    const lift_meta = pass26_wiring.foreignLiftMetadata(pass_by);
     return .{
         .name = try alloc.dupe(u8, ent.name),
         .c_symbol = try alloc.dupe(u8, ent.name),
@@ -171,6 +178,8 @@ fn funcFromEntity(
         .origin_artifact = try alloc.dupe(u8, ent.origin.artifact),
         .sim_id = try alloc.dupe(u8, ent.id),
         .pass_by = pass_by_owned,
+        .boundary_id = lift_meta.boundary_id,
+        .calling_conv = lift_meta.calling_conv,
     };
 }
 
@@ -224,4 +233,6 @@ test "foreign_adapter: point.h snapshot adapts CPoint + distance2" {
     try std.testing.expectEqual(@as(usize, 1), distance2.params.len);
     try std.testing.expect(distance2.ret == .f64);
     try std.testing.expectEqualStrings("value", distance2.pass_by);
+    try std.testing.expectEqualStrings("P26-B02", distance2.boundary_id);
+    try std.testing.expect(distance2.calling_conv == .c_abi);
 }

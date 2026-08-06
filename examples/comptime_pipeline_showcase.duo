@@ -1,7 +1,7 @@
--- Comptime @meta.pipeline + module @meta.pipeline fusion
+-- Comptime @comp.pipeline + module @comp.pipeline fusion
 -- Run: duo run examples/comptime_pipeline_showcase.duo
 
-@meta.pipeline({
+@comp.pipeline({
     fn = "sum_n",
     source = "range",
     start = 1,
@@ -18,6 +18,6 @@ fun total(): i64
     @c.call("sum_n")
 end
 
-print("=== comptime @meta.pipeline showcase ===")
+print("=== comptime @comp.pipeline showcase ===")
 print("sum 1..10 = " .. tostring(total()))
 print("comptime pipeline codegen size = " .. tostring(FUSED_CHARS) .. " chars")

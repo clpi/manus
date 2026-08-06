@@ -18,6 +18,7 @@ const build_framework = @import("build_framework.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
 const backend_identity = @import("backend_identity.zig");
+const pass27_benchmark_evidence = @import("pass27_benchmark_evidence.zig");
 const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const sim = @import("sim.zig");
@@ -184,6 +185,42 @@ fn trace_phase(io: Io, start_ns: *const Io.Timestamp, label: []const u8, detail:
     term.traceDone(label, elapsed_ms, detail);
 }
 
+fn shouldEmitCompileProof(bench_mode: bool) bool {
+    if (bench_mode) return true;
+    if (std.c.getenv("DUO_EMIT_PROOF")) |p| {
+        return p[0] != 0 and p[0] != '0';
+    }
+    return false;
+}
+
+fn emitCompileProofArtifact(
+    alloc: std.mem.Allocator,
+    io: Io,
+    src_path: []const u8,
+    generated_c_path: []const u8,
+    target: []const u8,
+    bench_mode: bool,
+    full_native_lowering: bool,
+    duo_mode: bool,
+) !void {
+    if (!shouldEmitCompileProof(bench_mode)) return;
+
+    const source = try Io.Dir.readFileAlloc(Io.Dir.cwd(), io, generated_c_path, alloc, .unlimited);
+    defer alloc.free(source);
+    const counters = pass27_benchmark_evidence.EvidenceCounters.fromGeneratedC(source, source.len);
+    const manifest = backend_identity.inferFromCompile(.c, target, full_native_lowering, duo_mode);
+    const proof_path = try std.fmt.allocPrint(alloc, "{s}.proof.json", .{generated_c_path});
+    defer alloc.free(proof_path);
+
+    try pass27_benchmark_evidence.writeCompileProofFile(io, proof_path, .{
+        .source_path = src_path,
+        .generated_path = generated_c_path,
+        .bench_backend = if (bench_mode) global_bench_backend else null,
+        .manifest = manifest,
+        .counters = counters,
+    }, alloc);
+}
+
 const usage =
     \\usage: duo [command] [options] [file]
     \\
@@ -210,7 +247,7 @@ const usage =
     \\  catalog             export Pass 3 keyword/directive/grammar catalog JSON
     \\  catalog audit       full Pass 1–14 audit JSON (open_items + findings)
     \\  catalog audit check native gate (fast, cross-platform, exit 0/1)
-    \\  catalog audit gate [all|pass11|pass12|pass13|pass14|pass15|pass16] [--barrier] per-pass native gate
+    \\  catalog audit gate [all|pass11|...|pass27|lua-superset|semantic-unification|foundational-closure|proof-bundle] [--barrier] per-pass native gate
     \\  catalog audit summary audit without open_items (medium)
     \\  dev        <sub>    Pass 13 development control plane (snapshot|audit|context|summary|claim|persist|session|validate|integration|coordination)
     \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
@@ -230,6 +267,7 @@ const usage =
     \\  --pgo             use profile-guided optimisation (two-pass clang compile)
     \\  --shared-memory   enable WASM shared memory (-matomics -mbulk-memory; wasm32-wasi only)
     \\  --link <lib>      link against a C library (e.g. --link raylib; repeatable)
+    \\  --entry <name>    native-exe linker entry symbol (default: @export, sole zero-arg fn, or main)
     \\  -v, --verbose     show C compiler warnings (run only; off by default)
     \\  --trace           show compiler pipeline steps and timings
     \\  --trace-rich      pipeline tree with timing bars (implies --trace; use with -v)
@@ -323,6 +361,7 @@ pub fn main(init: std.process.Init) !void {
     var extra_arg: ?[]const u8 = null;
     var forwarded_args: std.ArrayList([]const u8) = .empty;
     var link_flags: std.ArrayList([]const u8) = .empty;
+    var entry_override: ?[]const u8 = null;
     var fmt_canonical = false;
     var i: usize = start;
     while (i < args.len) : (i += 1) {
@@ -386,6 +425,11 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--link") and i + 1 < args.len) {
             i += 1;
             try link_flags.append(alloc, args[i]);
+        } else if (std.mem.eql(u8, arg, "--entry") and i + 1 < args.len) {
+            i += 1;
+            entry_override = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--entry=")) {
+            entry_override = arg["--entry=".len..];
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
             verbose_count +%= 1;
@@ -724,11 +768,11 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, false, null, link_flags.items);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, false, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "run")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "check")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{});
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, true, false, false, false, false, false, false, false, null, &.{}, entry_override);
     } else if (std.mem.eql(u8, cmd, "fmt")) {
         try do_fmt(alloc, io, file, fmt_canonical);
     } else if (std.mem.eql(u8, cmd, "dump-c")) {
@@ -1122,7 +1166,7 @@ fn do_project_check(alloc: std.mem.Allocator, io: Io, t: build_framework.Target)
     if (t.src) |src| {
         const dummy = try std.fmt.allocPrint(alloc, "/tmp/duo_check_{s}.out", .{std.fs.path.stem(src)});
         defer alloc.free(dummy);
-        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link);
+        try do_compile(alloc, io, src, dummy, t.cc orelse "clang", t.opt orelse "-O3", t.target orelse "native", "auto", false, true, false, false, false, false, false, false, false, null, t.link, null);
         term.ok("'{s}' ok", .{src});
         return;
     }
@@ -1248,7 +1292,7 @@ fn run_test_sources(
         else
             try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_{d}.test.out", .{ std.fs.path.stem(file), idx });
         defer if (!(output_file != null and sources.len == 1)) alloc.free(out);
-        try do_compile(alloc, io, file, out, cc, opt_level, target, "auto", false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, "auto", false, false, verbose, false, false, false, false, true, bench_only, test_filter, link_flags, null);
         const code = try run_pretty_test_runner(alloc, io, out, bench_only);
         if (code != 0) failures += 1;
     }
@@ -1551,7 +1595,7 @@ fn do_catalog_audit_gate(alloc: std.mem.Allocator, io: Io, args: []const []const
             scope = parsed;
             continue;
         }
-        term.err("unknown catalog audit gate arg '{s}' (expected: all, pass11, pass12, pass13, pass14, pass15, pass16, --barrier)", .{arg});
+        term.err("unknown catalog audit gate arg '{s}' (expected: all, pass11, pass12, pass13, pass14, pass15, pass16, pass19, pass20, pass21, pass22, pass23, pass24, pass25, pass26, pass27, lua-superset, semantic-unification, foundational-closure, proof-bundle, --barrier)", .{arg});
         std.process.exit(1);
     }
     if (scope == .pass13 or scope == .all) barrier_m1 = true;
@@ -2197,7 +2241,7 @@ fn run_shell_line(alloc: std.mem.Allocator, io: Io, raw_line: []const u8, sessio
     defer term.build_report = prev_report;
 
     const compile_started = Io.Timestamp.now(io, .awake);
-    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", "auto", false, false, verbose, false, false, false, false, false, false, null, &.{});
+    try do_compile(alloc, io, src_path, out_path, "clang", "-O3", "native", "auto", false, false, verbose, false, false, false, false, false, false, null, &.{}, null);
     const compile_elapsed: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
 
     try run_shell_binary(io, out_path);
@@ -2406,6 +2450,7 @@ fn do_project_build_one(
         t.bench_mode(),
         null,
         merged_link,
+        null,
     );
     if (t.test_mode() and !run_after) {
         _ = try run_pretty_test_runner(alloc, io, out, false);
@@ -2658,7 +2703,18 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
     }
 }
 
-fn link_native_object(alloc: std.mem.Allocator, io: Io, obj_path: []const u8, out_path: []const u8, cc: []const u8, link_flags: []const []const u8, quiet: bool, shared: bool, extra_sources: []const []const u8) !void {
+fn link_native_object(
+    alloc: std.mem.Allocator,
+    io: Io,
+    obj_path: []const u8,
+    out_path: []const u8,
+    cc: []const u8,
+    link_flags: []const []const u8,
+    quiet: bool,
+    shared: bool,
+    extra_sources: []const []const u8,
+    entry_symbol: ?[]const u8,
+) !void {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(alloc);
     if (@import("builtin").os.tag == .macos and !macos_sdkroot_configured) {
@@ -2668,7 +2724,14 @@ fn link_native_object(alloc: std.mem.Allocator, io: Io, obj_path: []const u8, ou
     }
     try argv.append(alloc, obj_path);
     for (extra_sources) |src| try argv.append(alloc, src);
-    if (shared) try argv.append(alloc, "-dynamiclib");
+    if (shared) {
+        try argv.append(alloc, "-dynamiclib");
+    } else if (entry_symbol) |sym| {
+        if (!std.mem.eql(u8, sym, "main")) {
+            const flag = try std.fmt.allocPrint(alloc, "-Wl,-e,_{s}", .{sym});
+            try argv.append(alloc, flag);
+        }
+    }
     try argv.appendSlice(alloc, &.{ "-o", out_path, "-lm" });
     for (link_flags) |lib| {
         try argv.append(alloc, try std.fmt.allocPrint(alloc, "-l{s}", .{lib}));
@@ -2804,6 +2867,7 @@ fn do_compile(
     bench_mode: bool,
     test_filter: ?[]const u8,
     link_flags: []const []const u8,
+    entry_override: ?[]const u8,
 ) !void {
     const compile_started = Io.Timestamp.now(io, .awake);
 
@@ -2908,47 +2972,70 @@ fn do_compile(
             }
         } else {
             if (native_backend.isNativeExecutableTarget(mt)) {
-                const obj_result = native_backend.emitObject(alloc, &ps.mod, "native-object");
-                if (obj_result) |obj| {
-                    const direct_extra = [_][]const u8{"src/duo_keyword_classify.c"};
-                    const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
-                    const cwd = Io.Dir.cwd();
-                    try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
-                    try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, run_after and !verbose, false, &direct_extra);
-                    if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
-                    if (term.build_report != .plain and !test_mode) {
-                        const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
-                        term.buildPhaseDone("compile", total_ms, out_path);
-                    }
-                    if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
-                    if (run_after) {
-                        var run_args: std.ArrayList([]const u8) = .empty;
-                        try run_args.append(alloc, out_path);
-                        try run_args.appendSlice(alloc, forwarded_program_args);
-                        defer run_args.deinit(alloc);
-                        var run_child = try std.process.spawn(io, .{
-                            .argv = run_args.items,
-                            .stdin = .inherit,
-                            .stdout = .inherit,
-                            .stderr = .inherit,
-                        });
-                        const run_term = try run_child.wait(io);
-                        switch (run_term) {
-                            .exited => |code| std.process.exit(code),
-                            .signal => std.process.exit(128),
-                            else => {
-                                term.print("program terminated abnormally", .{});
-                                std.process.exit(1);
-                            },
+                if (native_backend.resolveNativeEntrySymbol(&ps.mod, entry_override)) |entry| {
+                    const obj_result = native_backend.emitObjectForExecutable(alloc, &ps.mod, entry);
+                    if (obj_result) |obj| {
+                        const direct_extra = [_][]const u8{"src/duo_keyword_classify.c"};
+                        const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
+                        const cwd = Io.Dir.cwd();
+                        try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+                        try link_native_object(
+                            alloc,
+                            io,
+                            obj_path,
+                            out_path,
+                            cc,
+                            link_flags,
+                            run_after and !verbose,
+                            false,
+                            &direct_extra,
+                            entry,
+                        );
+                        if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
+                        if (term.build_report != .plain and !test_mode) {
+                            const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
+                            term.buildPhaseDone("compile", total_ms, out_path);
+                        }
+                        if (!run_after and !(test_mode and term.test_report == .json)) term.ok("✓ {s}", .{out_path});
+                        if (run_after) {
+                            var run_args: std.ArrayList([]const u8) = .empty;
+                            try run_args.append(alloc, out_path);
+                            try run_args.appendSlice(alloc, forwarded_program_args);
+                            defer run_args.deinit(alloc);
+                            var run_child = try std.process.spawn(io, .{
+                                .argv = run_args.items,
+                                .stdin = .inherit,
+                                .stdout = .inherit,
+                                .stderr = .inherit,
+                            });
+                            const run_term = try run_child.wait(io);
+                            switch (run_term) {
+                                .exited => |code| std.process.exit(code),
+                                .signal => std.process.exit(128),
+                                else => {
+                                    term.print("program terminated abnormally", .{});
+                                    std.process.exit(1);
+                                },
+                            }
+                        }
+                        return;
+                    } else |e| {
+                        if (std.mem.eql(u8, backend_mode, "auto")) {
+                            if (term.info) term.infoMsg("auto backend: direct machine lowering unavailable ({s}) — using C emit bootstrap", .{@errorName(e)});
+                        } else {
+                            reportDirectBackendError(io, e, mt);
+                            std.process.exit(1);
                         }
                     }
-                    return;
-                } else |e| {
-                    if (std.mem.eql(u8, backend_mode, "auto")) {
-                        if (term.info) term.infoMsg("auto backend: direct machine lowering unavailable ({s}) — using C emit bootstrap", .{@errorName(e)});
-                    } else {
-                        reportDirectBackendError(io, e, mt);
+                } else {
+                    if (entry_override) |name| {
+                        term.err("--entry '{s}': no zero-arg i64/void/f64 function with that name", .{name});
                         std.process.exit(1);
+                    } else if (!std.mem.eql(u8, backend_mode, "auto")) {
+                        term.err("no linker entry: add @export on one zero-arg function, or a sole zero-arg i64/void/f64 function, or --entry <name>", .{});
+                        std.process.exit(1);
+                    } else if (term.info) {
+                        term.infoMsg("auto backend: no native entry symbol — using C emit bootstrap", .{});
                     }
                 }
             } else if (native_backend.isNativeSharedTarget(mt)) {
@@ -2964,7 +3051,7 @@ fn do_compile(
                 const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native_dylib.o", .{std.fs.path.stem(src_path)});
                 const cwd = Io.Dir.cwd();
                 try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
-                try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, &.{});
+                try link_native_object(alloc, io, obj_path, out_path, cc, link_flags, false, true, &.{}, null);
                 if (phase_timer) |*t| trace_phase(io, t, "native dylib", out_path);
                 if (term.build_report != .plain and !test_mode) {
                     const total_ms: u64 = @intCast(@divTrunc(compile_started.durationTo(Io.Timestamp.now(io, .awake)).nanoseconds, std.time.ns_per_ms));
@@ -3138,6 +3225,10 @@ fn do_compile(
         break :ml_sidecar cg.ml_kernels_emitted;
     };
     if (phase_timer) |*t| trace_phase(io, t, "codegen", c_path);
+
+    if (emitCompileProofArtifact(alloc, io, src_path, c_path, target, bench_mode, full_native_lowering, ps.sem.duo_mode)) {
+        if (term.trace) term.traceStep("proof-artifact", .{});
+    } else |_| {}
 
     const ml_c_path = if (ml_kernels_sidecar) blk: {
         const path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_ml.c", .{

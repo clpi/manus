@@ -782,6 +782,34 @@ pub fn resolveBuiltin(qualified: []const u8) ?[]const u8 {
     return null;
 }
 
+/// Map internal hook (`__comptimemap`, etc.) to canonical `comp.*` public name.
+pub fn publicNameForInternal(internal: []const u8) ?[]const u8 {
+    var best: ?[]const u8 = null;
+    var best_pri: u8 = 255;
+    for (builtins) |entry| {
+        if (!std.mem.eql(u8, entry.internal, internal)) continue;
+        const pri = catalogDisplayPriority(entry.public);
+        if (pri < best_pri) {
+            best = entry.public;
+            best_pri = pri;
+        }
+    }
+    return best;
+}
+
+test "meta_module: isStandaloneModuleStatement for define.derive" {
+    try std.testing.expect(isStandaloneModuleStatement("comp.define.derive"));
+    try std.testing.expect(isStandaloneModuleStatement("meta.define.derive"));
+    try std.testing.expect(!isStandaloneModuleStatement("comp.hint.fence"));
+    try std.testing.expect(!isStandaloneModuleStatement("comp.map"));
+}
+
+test "meta_module: publicNameForInternal prefers comp.* alias" {
+    try std.testing.expectEqualStrings("comp.match", publicNameForInternal("__comptimematch").?);
+    try std.testing.expectEqualStrings("comp.zip", publicNameForInternal("__comptimezip").?);
+    try std.testing.expect(publicNameForInternal("__nonexistent") == null);
+}
+
 /// Standalone C header `#include` directives (`@comp.c.import`, legacy `@c.import`, …).
 pub fn isCHeaderImportDirective(name: []const u8) bool {
     if (std.mem.eql(u8, name, "cinclude")) return true;
@@ -862,6 +890,16 @@ pub fn isModuleDirective(name: []const u8) bool {
     return false;
 }
 
+/// True when `@comp.*` / `@meta.*` must parse as a standalone module statement
+/// (e.g. `@comp.define.derive(...)`, `@comp.pipeline(...)`) rather than an
+/// expression call like `@comp.hint.fence()` at statement scope.
+pub fn isStandaloneModuleStatement(name: []const u8) bool {
+    for (directives) |entry| {
+        if (std.mem.eql(u8, name, entry.public)) return true;
+    }
+    return false;
+}
+
 /// True for `@meta.*` module directives.
 pub fn isMetaModuleDirective(name: []const u8) bool {
     return isModuleDirective(name);
@@ -923,7 +961,7 @@ pub fn isMetaAttribute(name: []const u8) bool {
     // Declaration-attaching attributes must also return false here so they
     // associate with the following declaration instead of being parsed
     // as standalone module-level directives.
-    if (isAttachingMetaAttribute(name)) return false;
+    if (isAttachingMetaAttribute(name) or isTypeLevelDeriveAttribute(name)) return false;
     if (isCHeaderImportDirective(name) or isCEmitDirective(name)) return false;
 
     return isModuleDirective(name);
@@ -966,6 +1004,13 @@ pub fn normalizeTypeAttribute(name: []const u8) []const u8 {
     if (std.mem.eql(u8, stripped, "define.bundle")) return "define.derive.bundle";
     if (std.mem.eql(u8, stripped, "rewrite.bundle")) return "rewrite.bundle";
     return stripped;
+}
+
+/// True for `@derive` / `@comp.derive` / `@comp.derive.bundle` attributes that attach
+/// to the following type declaration — not expression-position `@comp.derive.*` combinators.
+pub fn isTypeLevelDeriveAttribute(name: []const u8) bool {
+    const norm = normalizeTypeAttribute(name);
+    return std.mem.eql(u8, norm, "derive") or std.mem.eql(u8, norm, "derive.bundle");
 }
 
 /// Normalize function/type compiler hint attributes under @comp.compile.* / @meta.compile.*
@@ -1633,6 +1678,13 @@ test "meta_module: directive normalization" {
     try std.testing.expectEqualStrings("wasm", normalizeDirective("meta.wasm"));
     try std.testing.expectEqualStrings("__comptimemap", resolveBuiltin("meta.sweep").?);
     try std.testing.expectEqualStrings("derive.bundle", normalizeTypeAttribute("meta.derive.bundle"));
+    try std.testing.expectEqualStrings("derive.bundle", normalizeTypeAttribute("comp.derive.bundle"));
+    try std.testing.expect(isTypeLevelDeriveAttribute("derive"));
+    try std.testing.expect(isTypeLevelDeriveAttribute("comp.derive"));
+    try std.testing.expect(isTypeLevelDeriveAttribute("meta.derive.bundle"));
+    try std.testing.expect(isTypeLevelDeriveAttribute("comp.derive.bundle"));
+    try std.testing.expect(!isTypeLevelDeriveAttribute("comp.derive.power"));
+    try std.testing.expect(!isMetaAttribute("comp.derive.bundle"));
     try std.testing.expectEqualStrings("__metaagentcatalog", resolveBuiltin("meta.agent.catalog").?);
     try std.testing.expectEqualStrings("__metaagentcatalog", resolveBuiltin("comp.agent.catalog").?);
     try std.testing.expectEqualStrings("__metaagenthooks", resolveBuiltin("meta.agent.hooks").?);

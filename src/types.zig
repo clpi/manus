@@ -1595,6 +1595,8 @@ pub const CalleeKind = enum {
 pub const CallShape = struct {
     /// How the callee is referenced
     callee_kind: CalleeKind,
+    /// Pass 24 §4.1 — parenthesized vs parenless vs command surface form.
+    invocation_form: ast.InvocationForm = .parenthesized,
     /// Callee name if statically known (null for indirect calls)
     callee_name: ?[]const u8 = null,
     /// Method name if method call
@@ -1618,6 +1620,7 @@ pub const CallShape = struct {
     pub fn identityHash(self: CallShape) u64 {
         var h = std.hash.Wyhash.init(0xCA115A9E);
         h.update(std.mem.asBytes(&self.callee_kind));
+        h.update(std.mem.asBytes(&self.invocation_form));
         h.update(std.mem.asBytes(&self.arg_count));
         h.update(std.mem.asBytes(&self.known_args_mask));
         h.update(std.mem.asBytes(&self.typed_args_mask));
@@ -1648,6 +1651,7 @@ pub const CallShape = struct {
             .indirect => "indirect",
             .comptime_known => "comptime",
         };
+        const form_str = self.invocation_form.name();
         const callee_str = self.callee_name orelse "";
         const method_str = self.method_name orelse "";
         const known_count = @popCount(self.known_args_mask);
@@ -1655,7 +1659,7 @@ pub const CallShape = struct {
 
         // Build explanation string incrementally
         var pos: usize = 0;
-        const base = std.fmt.bufPrint(buf[pos..], "{s} call", .{kind_str}) catch return buf[0..0];
+        const base = std.fmt.bufPrint(buf[pos..], "{s} {s} call", .{ kind_str, form_str }) catch return buf[0..0];
         pos += base.len;
 
         if (self.callee_name != null) {
@@ -1706,6 +1710,22 @@ pub const CallShape = struct {
     }
 };
 
+/// Classify return consumption from assignment target count (Pass 23 §6).
+pub fn returnConsumptionForTargets(target_count: usize) ReturnConsumption {
+    return switch (target_count) {
+        0 => .unknown,
+        1 => .single,
+        else => .multi,
+    };
+}
+
+/// Attach return consumption to an inferred call shape.
+pub fn callShapeWithConsumption(shape: CallShape, consumption: ReturnConsumption) CallShape {
+    var s = shape;
+    s.return_consumption = consumption;
+    return s;
+}
+
 /// Infer a CallShape from an AST call expression.
 /// This is a conservative first pass — sema can refine later with type info.
 pub fn inferCallShape(expr: *const ast.Expr) ?CallShape {
@@ -1721,6 +1741,7 @@ pub fn inferCallShape(expr: *const ast.Expr) ?CallShape {
                 .callee_kind = kind,
                 .callee_name = callee_name,
                 .arg_count = @intCast(@min(c.args.len, 255)),
+                .invocation_form = c.form,
             };
         },
         .method_call => |mc| {
@@ -1729,6 +1750,7 @@ pub fn inferCallShape(expr: *const ast.Expr) ?CallShape {
                 .callee_name = null,
                 .method_name = mc.method,
                 .arg_count = @intCast(@min(mc.args.len, 255)),
+                .invocation_form = mc.form,
             };
         },
         else => return null,
@@ -1741,6 +1763,12 @@ pub fn callShapeIdentityHash(shape: CallShape) u64 {
 }
 
 // ── CallShape Tests ──────────────────────────────────────────────────────────
+
+test "CallShape: parenless vs parenthesized differ in identity hash" {
+    const paren = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 1, .invocation_form = .parenthesized };
+    const plain = CallShape{ .callee_kind = .direct, .callee_name = "f", .arg_count = 1, .invocation_form = .parenless };
+    try testing.expect(paren.identityHash() != plain.identityHash());
+}
 
 test "CallShape: direct call identity hash is stable" {
     const a = CallShape{
@@ -1800,6 +1828,12 @@ test "CallShape: explain produces readable output" {
     try testing.expect(std.mem.indexOf(u8, explanation, "scale") != null);
     try testing.expect(std.mem.indexOf(u8, explanation, "1 known") != null);
     try testing.expect(std.mem.indexOf(u8, explanation, "single return") != null);
+}
+
+test "returnConsumptionForTargets: assign arity" {
+    try testing.expect(returnConsumptionForTargets(1) == .single);
+    try testing.expect(returnConsumptionForTargets(2) == .multi);
+    try testing.expect(returnConsumptionForTargets(0) == .unknown);
 }
 
 test "inferCallShape: call expression" {

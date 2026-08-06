@@ -1,4 +1,4 @@
--- @meta.derive: one concept + one derive macro → C for EVERY matching type
+-- @comp.derive: one concept + one derive macro → C for EVERY matching type
 -- Run: duo run examples/derive_map_showcase.duo
 
 concept HasXY
@@ -9,7 +9,7 @@ end
 type Point = { x: f64, y: f64 }
 type Pair = { x: f64, y: f64 }
 
-@meta.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", fun generate(meta) -> str
     acc = "/* " .. meta.name .. " touch API */\n"
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -18,9 +18,9 @@ type Pair = { x: f64, y: f64 }
     acc
 end)
 
-@c.emit(@meta.derive("HasXY", TouchApi))
+@c.emit(@comp.derive("HasXY", TouchApi))
 
-API_LEN = @meta.derive("HasXY", TouchApi)
+API_LEN = @comp.derive("HasXY", TouchApi)
 
 print("=== derive_map showcase ===")
 print("generated_bytes = " .. tostring(#API_LEN))

@@ -1,7 +1,7 @@
 -- Higher-order derive macros: introspect the derive registry at compile time.
 -- Demonstrates __list_derives, __lookup_derive, and __eval_derive.
 
-@meta.define.derive("TraceFields", fun generate(meta) -> str
+@comp.define.derive("TraceFields", fun generate(meta) -> str
   acc = "/* TraceFields for " .. meta.name .. " */\n"
   for i = 1, #meta.fields
     f = meta.fields[i]
@@ -10,7 +10,7 @@
   acc
 end)
 
-@meta.define.derive("Offsets", fun generate(meta) -> str
+@comp.define.derive("Offsets", fun generate(meta) -> str
   acc = "/* Offsets for " .. meta.name .. " */\n"
   for i = 1, #meta.fields
     f = meta.fields[i]
@@ -19,18 +19,18 @@ end)
   acc
 end)
 
--- Compose all other user-defined derives via @meta.derive.list / @meta.derive.eval.
-@meta.define.derive("ComposeAll", fun generate(meta) -> str
-  derives = @meta.derive.list()
+-- Compose all other user-defined derives via @comp.derive.list / @comp.derive.eval.
+@comp.define.derive("ComposeAll", fun generate(meta) -> str
+  derives = @comp.derive.list()
   acc = "/* ComposeAll output for " .. meta.name .. " */\n"
   for i = 1, #derives
     dname = derives[i]
     if dname ~= "ComposeAll" then
       acc = acc .. "/* === from " .. dname .. " === */\n"
-      acc = acc .. @meta.derive.eval(dname, meta)
+      acc = acc .. @comp.derive.eval(dname, meta)
     end
   end
-  self_src = @meta.derive.lookup("ComposeAll")
+  self_src = @comp.derive.lookup("ComposeAll")
   acc = acc .. "// ComposeAll source length: " .. tostring(#self_src) .. "\n"
   acc
 end)

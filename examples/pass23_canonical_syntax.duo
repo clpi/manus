@@ -1,0 +1,23 @@
+-- Pass 23 — canonical syntax examples (§25 fixture / migration target).
+
+add = (a, b) a + b
+
+add_named = (a: i64, b: i64): i64
+    sum = a + b
+end
+
+-- Method assign + implicit self (Pass 23 §3):
+Person:greet = (other) "Hey " .. other
+
+-- Explicit accumulator (§5 — keep until general mechanism):
+factorial = (n: i64): i64
+    value = 1
+    for i = 2, n
+        value *= i
+    end
+    value
+end
+
+main(): i64
+    factorial(5)
+end

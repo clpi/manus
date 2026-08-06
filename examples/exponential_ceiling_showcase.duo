@@ -1,4 +1,4 @@
--- Exponential ceiling: stacked @meta.* metaprogramming (concept sweep + migration + derive)
+-- Exponential ceiling: stacked @comp.* metaprogramming (concept sweep + migration + derive)
 -- Run: duo run examples/exponential_ceiling_showcase.duo
 
 concept HasXY
@@ -10,7 +10,7 @@ type Point = { x: f64, y: f64 }
 type BadXY = { x: i64, y: f64 }
 type Pair = { x: f64, y: f64 }
 
-@meta.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", fun generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -19,27 +19,27 @@ type Pair = { x: f64, y: f64 }
     acc
 end)
 
-@meta.assert(@meta.satisfies(Point, "HasXY"))
-@meta.assert(not @meta.satisfies(BadXY, "HasXY"))
+@comp.assert(@comp.satisfies(Point, "HasXY"))
+@comp.assert(not @comp.satisfies(BadXY, "HasXY"))
 
 fun registry_line(meta) -> str
     meta.name .. ";"
 end
 
--- One @meta.expand line → O(types × fields) C for every concept match
-@c.emit(@meta.expand("HasXY", TouchApi))
+-- One @comp.expand line → O(types × fields) C for every concept match
+@c.emit(@comp.expand("HasXY", TouchApi))
 
-TYPED_SWEEP = @meta.map("HasXY", registry_line)
+TYPED_SWEEP = @comp.map("HasXY", registry_line)
 
 type UserV1 = { id: i64, nick: str }
 type UserV2 = { id: i64, email: str }
 
-MIGRATION = @meta.diff(UserV1, UserV2)
+MIGRATION = @comp.diff(UserV1, UserV2)
 @c.emit(MIGRATION)
 
 print("=== exponential ceiling showcase ===")
 print("typed_sweep = " .. TYPED_SWEEP)
 print("migration_lines = " .. tostring(#MIGRATION))
-print("Point satisfies HasXY = " .. tostring(@meta.satisfies(Point, "HasXY")))
-print("BadXY satisfies HasXY = " .. tostring(@meta.satisfies(BadXY, "HasXY")))
+print("Point satisfies HasXY = " .. tostring(@comp.satisfies(Point, "HasXY")))
+print("BadXY satisfies HasXY = " .. tostring(@comp.satisfies(BadXY, "HasXY")))
 print("ok")

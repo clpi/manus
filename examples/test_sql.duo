@@ -1,4 +1,4 @@
-@meta.sql("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);")
+@comp.sql("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);")
 
 fun test_sql() -> void
     print("ok")

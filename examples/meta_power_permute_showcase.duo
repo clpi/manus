@@ -8,7 +8,7 @@
 -- All output is native C const char* string literals -- no lua_Value
 -- intermediaries at runtime (verified: each result lowers to a bare C literal).
 --
--- Canonical form is @comp.* (@meta.* is a backward-compat alias that maps to the
+-- Canonical form is @comp.* (@comp.* is a backward-compat alias that maps to the
 -- same internal hooks). This showcase exercises the canonical @comp.* spellings.
 
 concept HasXY

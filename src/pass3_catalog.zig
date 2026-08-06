@@ -18,6 +18,15 @@ const pass13_catalog = @import("pass13_catalog.zig");
 const pass14_catalog = @import("pass14_catalog.zig");
 const pass15_catalog = @import("pass15_catalog.zig");
 const pass16_catalog = @import("pass16_catalog.zig");
+const pass20_catalog = @import("pass20_catalog.zig");
+const pass21_catalog = @import("pass21_catalog.zig");
+const pass22_catalog = @import("pass22_catalog.zig");
+const pass23_catalog = @import("pass23_catalog.zig");
+const pass24_catalog = @import("pass24_catalog.zig");
+const pass25_catalog = @import("pass25_catalog.zig");
+const pass26_catalog = @import("pass26_catalog.zig");
+const pass27_catalog = @import("pass27_catalog.zig");
+const pass19_catalog = @import("pass19_catalog.zig");
 const passes_audit = @import("passes_audit.zig");
 
 pub const CatalogPaths = struct {
@@ -183,6 +192,24 @@ pub fn writePass3Json(w: *std.Io.Writer, alloc: std.mem.Allocator) !void {
     try w.print(",", .{});
     try pass16_catalog.writePass16Json(w, alloc);
     try w.print(",", .{});
+    try pass20_catalog.writePass20Json(w, alloc);
+    try w.print(",", .{});
+    try pass21_catalog.writePass21Json(w, alloc);
+    try w.print(",", .{});
+    try pass22_catalog.writePass22Json(w, alloc);
+    try w.print(",", .{});
+    try pass19_catalog.writePass19Json(w, alloc);
+    try w.print(",", .{});
+    try pass23_catalog.writePass23Json(w, alloc);
+    try w.print(",", .{});
+    try pass24_catalog.writePass24Json(w, alloc);
+    try w.print(",", .{});
+    try pass25_catalog.writePass25Json(w, alloc);
+    try w.print(",", .{});
+    try pass26_catalog.writePass26Json(w, alloc);
+    try w.print(",", .{});
+    try pass27_catalog.writePass27Json(w, alloc);
+    try w.print(",", .{});
     try passes_audit.writePassesAuditEmbedJson(w, alloc);
     try w.print("}}\n", .{});
 }
@@ -214,6 +241,15 @@ test "pass3_catalog: writePass3Json emits valid structure" {
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass14\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass15\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass16\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass20\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass21\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass22\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass23\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass24\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass25\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass26\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass27\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass19\"") != null);
     var parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, out, .{});
     defer parsed.deinit();
     try std.testing.expect(parsed.value == .object);

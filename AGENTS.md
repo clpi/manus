@@ -185,12 +185,21 @@ These rules are authoritative. Compiler, stdlib, docs, and all agents must stay 
 
 ### If-Expressions
 - Duo supports if as an expression: `x = if a < b value else value * 2 end`
-- The `end` closes the if-expression. No `then` keyword.
+- The `end` closes the if-expression. Omitting `then` is Duo-canonical; `if ready then run() end` remains valid Lua (`LUA_AND_DUO_CANONICAL`).
 - Chained: `x = if a expr1 else if b expr2 else expr3 end`
 
 ### Table Keys
 - Identifier keys NEVER need `[]`: write `{ x = 1, y = 2 }` not `{ [x] = 1 }`.
 - Computed/dynamic keys use `[]`: `{ [key_expr] = value }`.
+
+### Lua superset maximization (Pass 24)
+
+- Duo is a **Lua superset**, not a Lua-inspired subset. Valid Lua 5.5 should remain valid with equivalent semantics unless a documented superset exception applies.
+- **`[[ ... ]]` is Lua long-string syntax** — never deprecate, repurpose as shell conditionals, or replace with alternate block syntax. Full long-bracket family and long comments must match Lua delimiter rules.
+- **Canonical ≠ exclusive.** Prefer denser Duo forms in new code; permanently accept Lua-canonical equivalents (`then`, `do`, `local function`, parenthesized calls).
+- **Call model:** bare `a` = value reference; `a()` / `a x` = invoke; shell zero-arg commands only in explicit command regions (Pass 15) — never global bare-name invocation.
+- **Deprecation threshold:** genuine conflict + no reliable disambiguation + blocks higher-value capability + exact migration + documented exception. Token reduction alone is insufficient.
+- Full constitution: `docs/plans/pass24_execution_concurrency_lua_supremacy.md`. Matrix: `docs/catalogs/lua_superset_compatibility.md`. Gate: `zig build lua-superset-gate`.
 
 ## Duo Language Conventions
 
@@ -205,7 +214,7 @@ When writing `.duo` files, follow these conventions:
 - **`req` over `require`** — use `req` for all module imports. `req("std.string")` for stdlib, `req("module.path")` for user modules.
 - **If-expressions as values** — `x = if cond expr else expr2 end`.
 - **Omit `do`** where the parser allows it — `while cond ... end`, `for ... end`.
-- **Omit `then`** — `then` is deprecated in .duo files.
+- **Prefer omitting `then`** — `if ready run() end` is Duo-canonical; `if ready then run() end` remains permanently accepted Lua syntax.
 - **Omit `local`** — in .duo files, all bindings default to local scope.
 - **`end` closes all blocks** — `fun`, `if`, `while`, `for`, `match`, `enum`, etc.
 

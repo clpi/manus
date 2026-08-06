@@ -1,4 +1,4 @@
-@meta.define.derive("Printable", fun generate(type_info)
+@comp.define.derive("Printable", fun generate(type_info)
     local out = "static void duo_" .. type_info.name .. "_print(duo_" .. type_info.name .. " val) {\n"
     out = out .. "    printf(\"" .. type_info.name .. " { \");\n"
     local i = 1

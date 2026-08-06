@@ -31,12 +31,16 @@ pub fn preferredTier(native_eligible: bool, dnir_ready: bool) LoweringTier {
     return .dynamic;
 }
 
-pub const FieldKind = enum { i64, str };
+pub const FieldKind = enum { i64, str, f64 };
 
 pub const RecordDesc = struct {
     name: []const u8,
     fields: []const []const u8,
     kinds: []const FieldKind,
+    /// Semantic graph shape identity when lowered via `lowerModuleWithGraph`.
+    shape_id: ?u64 = null,
+    /// Semantic graph `StableId` hash for the table_shape node.
+    graph_stable_id: ?u64 = null,
 };
 
 pub const BinOpTag = enum {
@@ -70,6 +74,10 @@ pub const Op = enum {
     cmp,
     call_direct,
     call_extern,
+    /// Move an i64 value into x{result} before `call_direct`.
+    mov_arg,
+    /// Move an f64 value into d{result} before `call_direct` (.ty = .f64).
+    fp_mov_arg,
     br,
     br_if,
     br_if_not,
@@ -136,11 +144,22 @@ pub const Extern = struct {
     symbol: []const u8,
 };
 
+pub const Param = struct {
+    name: []const u8,
+    ty: RT,
+    /// Named record type when `ty` is a sealed record parameter.
+    record: ?[]const u8 = null,
+};
+
 pub const Function = struct {
     name: []const u8,
     ret: RT,
-    params: []const RT,
+    params: []const Param = &.{},
     ret_record: ?[]const u8 = null,
+    /// Pure f64 kernel — params/return use FP registers (Pass 4 M1).
+    is_float_kernel: bool = false,
+    /// Semantic graph `StableId` hash when lowered via `lowerModuleWithGraph`.
+    graph_stable_id: ?u64 = null,
     blocks: []const Block,
 };
 
@@ -193,6 +212,7 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
                     .binop, .cmp, .ret, .ret_record,
                     .const_i64, .const_f64, .const_str, .const_req,
                     .load_local, .store_local, .load_global,
+                    .mov_arg, .fp_mov_arg,
                     .br, .br_if, .br_if_not,
                     .hw_fence, .hw_spin, .hw_unary,
                     => {},
@@ -215,7 +235,6 @@ test "duo_native_ir: single ret function ready" {
     const f = Function{
         .name = "embed_tokenize",
         .ret = .i64,
-        .params = &.{},
         .blocks = &blocks,
     };
     const m = Module{ .functions = &.{f} };

@@ -1,10 +1,10 @@
--- @meta.pipeline table descriptor → fused reduce loop
+-- @comp.pipeline table descriptor → fused reduce loop
 -- Run: duo run examples/pipeline_table_showcase.duo
 --
--- @meta.pipeline emits forward declarations for map/filter/reduce helpers,
+-- @comp.pipeline emits forward declarations for map/filter/reduce helpers,
 -- so helper definitions may follow the fused loop.
 
-@meta.pipeline({
+@comp.pipeline({
     fn = "sum_mapped",
     elem = "int64_t",
     kind = "reduce",
@@ -25,5 +25,5 @@ fun total(): i64
     @c.call("sum_mapped", @(pipeline_data), @(5))
 end
 
-print("=== @meta.pipeline table showcase ===")
+print("=== @comp.pipeline table showcase ===")
 print("sum_mapped(1..5, map*2, >0) = " .. tostring(total()))

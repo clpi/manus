@@ -3,7 +3,7 @@
 -- Each generation emits a C function with a unique name and return value.
 -- The recursion terminates once three generations have been generated.
 
-@meta.define.derive("Evolving", fun generate(meta) -> str
+@comp.define.derive("Evolving", fun generate(meta) -> str
     local derives = __list_derives()
     local gen = 0
     for i = 1, #derives do

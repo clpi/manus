@@ -93,6 +93,78 @@ pub const catalog: []const CatalogEntry = &.{
     .{ .intrinsic = .ctz, .tier = .scalar, .arm64 = "rbit+clz", .duo_surface = "@ctz / @comp.bit.ctz" },
 };
 
+/// Module-level hardware descriptor — one row per intrinsic exercised (Pass 22 WS23).
+pub const Descriptor = struct {
+    intrinsic: HwIntrinsic,
+    tier: Tier,
+    arm64_hint: []const u8,
+    use_count: u32,
+};
+
+pub fn catalogEntry(h: HwIntrinsic) ?CatalogEntry {
+    for (catalog) |e| {
+        if (e.intrinsic == h) return e;
+    }
+    return null;
+}
+
+pub fn intrinsicOfOp(op: @import("duo_native_ir.zig").Op, hw: HwIntrinsic) ?HwIntrinsic {
+    const dnir = @import("duo_native_ir.zig");
+    return switch (op) {
+        dnir.Op.hw_fence => .fence,
+        dnir.Op.hw_spin => .spin_wait,
+        dnir.Op.hw_unary => if (hw != .none) hw else null,
+        else => null,
+    };
+}
+
+pub fn functionHardwareTier(f: @import("duo_native_ir.zig").Function) Tier {
+    var tier: Tier = .scalar;
+    for (f.blocks) |b| {
+        for (b.instrs) |ins| {
+            const h = intrinsicOfOp(ins.op, ins.hw) orelse continue;
+            const t = h.tier();
+            if (@intFromEnum(t) > @intFromEnum(tier)) tier = t;
+        }
+    }
+    return tier;
+}
+
+/// Collect deduplicated hardware descriptors used in a DNIR module.
+pub fn collectModuleDescriptors(alloc: std.mem.Allocator, m: @import("duo_native_ir.zig").Module) ![]Descriptor {
+    var counts: std.AutoHashMapUnmanaged(HwIntrinsic, u32) = .{};
+    defer counts.deinit(alloc);
+
+    for (m.functions) |f| {
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                const h = intrinsicOfOp(ins.op, ins.hw) orelse continue;
+                const gop = try counts.getOrPut(alloc, h);
+                if (!gop.found_existing) gop.value_ptr.* = 0;
+                gop.value_ptr.* += 1;
+            }
+        }
+    }
+
+    var out: std.ArrayListUnmanaged(Descriptor) = .empty;
+    errdefer out.deinit(alloc);
+    var it = counts.iterator();
+    while (it.next()) |e| {
+        const entry = catalogEntry(e.key_ptr.*) orelse continue;
+        try out.append(alloc, .{
+            .intrinsic = e.key_ptr.*,
+            .tier = entry.tier,
+            .arm64_hint = entry.arm64,
+            .use_count = e.value_ptr.*,
+        });
+    }
+    return try out.toOwnedSlice(alloc);
+}
+
+pub fn freeModuleDescriptors(alloc: std.mem.Allocator, descs: []Descriptor) void {
+    alloc.free(descs);
+}
+
 test "dnir_hardware: parse bare intrinsics" {
     try std.testing.expect(parseIntrinsic("__popcount") == .popcount);
     try std.testing.expect(parseIntrinsic("fence") == .fence);
@@ -101,4 +173,41 @@ test "dnir_hardware: parse bare intrinsics" {
 
 test "dnir_hardware: arm64 fence word" {
     try std.testing.expect(arm64FixedWord(.fence) == 0xd5033bbf);
+}
+
+test "dnir_hardware: collectModuleDescriptors" {
+    const dnir = @import("duo_native_ir.zig");
+    const m = dnir.Module{
+        .functions = &.{
+            .{
+                .name = "main",
+                .ret = .i64,
+                .blocks = &.{
+                    .{
+                        .instrs = &.{
+                            .{ .op = .hw_fence },
+                            .{ .op = .hw_unary, .hw = .popcount, .result = 0, .lhs = .{ .i64 = 47 } },
+                            .{ .op = .hw_fence },
+                        },
+                    },
+                },
+            },
+        },
+    };
+    const descs = try collectModuleDescriptors(std.testing.allocator, m);
+    defer freeModuleDescriptors(std.testing.allocator, descs);
+    try std.testing.expect(descs.len >= 2);
+    var saw_fence = false;
+    var saw_pop = false;
+    for (descs) |d| {
+        if (d.intrinsic == .fence) {
+            saw_fence = true;
+            try std.testing.expectEqual(@as(u32, 2), d.use_count);
+        }
+        if (d.intrinsic == .popcount) {
+            saw_pop = true;
+            try std.testing.expectEqual(@as(u32, 1), d.use_count);
+        }
+    }
+    try std.testing.expect(saw_fence and saw_pop);
 }

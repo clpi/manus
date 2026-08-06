@@ -1,4 +1,4 @@
--- Exponential product: cartesian codegen + @meta.derive.all + module introspection
+-- Exponential product: cartesian codegen + @comp.derive.all + module introspection
 -- Run: duo run examples/exponential_product_showcase.duo
 
 concept HasXY
@@ -16,7 +16,7 @@ type Pair = { x: f64, y: f64 }
 type Entity = { id: i64, name: str }
 type Node = { id: i64, next: i64 }
 
-@meta.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", fun generate(meta) -> str
     acc = "/* " .. meta.name .. " */\n"
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -25,7 +25,7 @@ type Node = { id: i64, next: i64 }
     acc
 end)
 
-@meta.derive.all("HasXY", TouchApi)
+@comp.derive.all("HasXY", TouchApi)
 
 fun pair_line(a, b) -> str
     a.name .. "x" .. b.name .. ";"
@@ -35,9 +35,9 @@ fun type_line(meta) -> str
     meta.name .. ":"
 end
 
-PAIRS = @meta.product("HasXY", "HasId", pair_line)
-FILTERED = @meta.map("HasXY+HasId", type_line)
-TYPE_NAMES = @meta.type.names()
+PAIRS = @comp.product("HasXY", "HasId", pair_line)
+FILTERED = @comp.map("HasXY+HasId", type_line)
+TYPE_NAMES = @comp.type.names()
 
 _meta = { tag = "exponential_product" }
 

@@ -5,7 +5,7 @@
 --- @c.include("math.h")
 --- @c.include("string.h")
 
-@meta.ffi("string.h")
+@comp.ffi("string.h")
 
 @schema("examples/schemas/point.json")
 

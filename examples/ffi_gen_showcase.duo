@@ -2,11 +2,11 @@
 -- Run: duo run examples/ffi_gen_showcase.duo
 
 @c.include("string.h")
-@meta.ffi("string.h")
+@comp.ffi("string.h")
 
 fun demo_len(s: str): i64
   return @c.call("strlen", s)
 end
 
-print("=== @meta.ffi showcase ===")
+print("=== @comp.ffi showcase ===")
 print("strlen('duo') = " .. tostring(demo_len("duo")))

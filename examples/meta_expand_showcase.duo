@@ -1,4 +1,4 @@
--- @meta.expand: one call → O(types × fields) derive C (+ optional sweep comment)
+-- @comp.expand: one call → O(types × fields) derive C (+ optional sweep comment)
 -- Run: duo run examples/meta_expand_showcase.duo
 
 concept HasXY
@@ -9,9 +9,9 @@ end
 type Point = { x: f64, y: f64 }
 type Pair = { x: f64, y: f64 }
 
-@meta.assert(@meta.satisfies(Point, "HasXY"))
+@comp.assert(@comp.satisfies(Point, "HasXY"))
 
-@meta.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", fun generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -25,10 +25,10 @@ fun registry_line(meta) -> str
 end
 
 -- Derive sweep only (2-arg form)
-@c.emit(@meta.expand("HasXY", TouchApi))
+@c.emit(@comp.expand("HasXY", TouchApi))
 
 -- Registry sweep separately (comptime string, not C)
-SWEEP = @meta.sweep("HasXY", registry_line)
+SWEEP = @comp.sweep("HasXY", registry_line)
 
 print("=== meta.expand showcase ===")
 print("Point ok = true")

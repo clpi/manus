@@ -33,6 +33,7 @@ const transform_engine = @import("transform_engine.zig");
 const meta_dispatch = @import("meta_dispatch.zig");
 const backend_identity = @import("backend_identity.zig");
 const dynamic_boundary = @import("dynamic_boundary.zig");
+const pass23_protocol_registry = @import("pass23_protocol_registry.zig");
 
 pub var native_diag: bool = false;
 var native_diag_tag: ?[]const u8 = null;
@@ -41,9 +42,26 @@ var native_diag_tag: ?[]const u8 = null;
 /// the module's `return M` are still emitted, so its declaration must survive.
 fn module_top_level_assigns(mod: *const ast.Module, name: []const u8) bool {
     for (mod.body.stmts) |*stmt| {
-        if (stmt.* != .assign) continue;
-        for (stmt.assign.targets) |t| {
-            if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) return true;
+        switch (stmt.*) {
+            .assign => |*a| for (a.targets) |t| {
+                if (t.* == .name and std.mem.eql(u8, t.name.ident, name)) return true;
+            },
+            // `global x = req "..."` is a declaration, not an assignment, but it
+            // is just as live: the module body reads x, so its C declaration
+            // must be emitted even in a native-direct module.
+            .global_decl => |*gd| {
+                if (gd.inits.len == 0) continue;
+                for (gd.names) |n| {
+                    if (std.mem.eql(u8, n.ident, name)) return true;
+                }
+            },
+            .local_decl => |*ld| {
+                if (ld.inits.len == 0) continue;
+                for (ld.names) |n| {
+                    if (std.mem.eql(u8, n.ident, name)) return true;
+                }
+            },
+            else => {},
         }
     }
     return false;
@@ -109,11 +127,22 @@ pub const CodeGen = struct {
     /// Req bindings that omit `lua_require` / `duo_g_*` storage (native-direct embedded modules).
     req_native_direct: std.StringHashMapUnmanaged(void) = .empty,
     /// File paths of embedded modules (dedupe + dependency-first ordering).
-    embedded_module_paths: std.StringArrayHashMapUnmanaged(void) = .empty,
+    /// Embedded module file path -> the C name its `duo_mod_*` function was
+    /// emitted under. Two require names can resolve to the same file (e.g.
+    /// `src.wasm` and `src.wasm.init` when the former resolves via the
+    /// directory's init.duo); the second must register the cname that actually
+    /// exists, not a fresh one derived from its own name.
+    embedded_module_paths: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+    trace_embed: bool = true,
+    /// Names reassigned inside conditionally-executed code. Their declaration
+    /// initializer must never be folded against, so binding them is refused.
+    comptime_poisoned: std.StringHashMapUnmanaged(void) = .empty,
     src_path: []const u8 = "",
     stdlib_root: ?[]const u8 = null,
     closure_ctx: ?*const ast.FuncBody = null,
     emitted_closures: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
+    /// Closure struct/make/free already emitted (req-module embed + main pass share IDs).
+    emitted_closure_structs: std.AutoArrayHashMapUnmanaged(u32, void) = .empty,
     all_closures: std.ArrayList(*ast.FuncBody) = .empty,
     ack_impl_emitted: bool = false,
     ml_kernels_emitted: bool = false,
@@ -493,22 +522,51 @@ pub const CodeGen = struct {
         if (transform_engine.publicNameForInternal(name) != null and
             !transform_engine.requireMetaDispatchBeforeHook(name))
             return null;
-        const result = meta_dispatch.dispatch(self.meta_host(), name, args, self.alloc);
+        const result = meta_dispatch.dispatchAtSite(self.meta_host(), name, args, self.alloc, .nested_callback);
         return switch (result) {
-            .string => |s| blk: {
-                var ibuf: [128]u8 = undefined;
-                const input = meta_codegen.metaCombinatorProvenanceInput(name, args, &ibuf) orelse "";
-                transform_engine.dispatchMetaCombinator(self.alloc, name, .nested_callback, input, s);
-                break :blk comptime_eval.Value{ .string = s };
-            },
+            .string => |s| comptime_eval.Value{ .string = s },
             .int => |i| comptime_eval.Value{ .int = i },
             .boolean => |b| comptime_eval.Value{ .bool = b },
             .not_applicable, .eval_failed => null,
         };
     }
 
+    /// A binding recorded from a declaration's initializer is only valid while
+    /// the variable is never reassigned. Conditionally-executed code (loop and
+    /// `if` bodies) may reassign it, and folding a later condition against the
+    /// stale initializer miscompiles the branch away entirely. Before emitting
+    /// such a body, mark every name it assigns as unavailable for folding.
+    fn poison_assigned_in_block(self: *CodeGen, block: *const ast.Block) E!void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .assign => |*a| for (a.targets) |t| {
+                    if (t.* == .name) {
+                        try self.comptime_poisoned.put(self.alloc, t.name.ident, {});
+                        try self.note_comptime_unavailable(t.name.ident);
+                    }
+                },
+                .local_decl => |*ld| for (ld.names) |n| {
+                    try self.comptime_poisoned.put(self.alloc, n.ident, {});
+                    try self.note_comptime_unavailable(n.ident);
+                },
+                .do_block => |*db| try self.poison_assigned_in_block(&db.body),
+                .while_loop => |*wl| try self.poison_assigned_in_block(&wl.body),
+                .repeat_loop => |*rl| try self.poison_assigned_in_block(&rl.body),
+                .num_for => |*nf| try self.poison_assigned_in_block(&nf.body),
+                .gen_for => |*gf| try self.poison_assigned_in_block(&gf.body),
+                .if_stmt => |*is| {
+                    try self.poison_assigned_in_block(&is.then);
+                    for (is.elseifs) |*ei| try self.poison_assigned_in_block(&ei.body);
+                    if (is.else_body) |*eb| try self.poison_assigned_in_block(eb);
+                },
+                else => {},
+            }
+        }
+    }
+
     fn note_comptime_binding(self: *CodeGen, name: []const u8, expr: *const ast.Expr) !void {
         if (self.comptime_scopes.items.len == 0) return;
+        if (self.comptime_poisoned.contains(name)) return self.note_comptime_unavailable(name);
         const value = comptime_eval.evalWithBindings(expr, self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
         try self.comptime_scopes.items[self.comptime_scopes.items.len - 1].put(self.alloc, name, value);
     }
@@ -856,14 +914,6 @@ pub const CodeGen = struct {
         var name_buf: [256]u8 = undefined;
         if (self.function_c_names.get(name)) |cname| {
             self.p("{s}", .{cname});
-        } else if (self.is_local_name(name)) {
-            if (self.is_dense_table_name(name)) {
-                self.p("__dt_{s}", .{name});
-            } else {
-                self.p("{s}", .{name});
-            }
-        } else if (mode == .read and self.comptime_binding_is_scalar_const(name)) {
-            self.emit_comptime_const_var_name(name);
         } else if (self.current_module_cname.len > 0 and !is_runtime_global(name) and self.global_type(name) != null) {
             self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
         } else if (!is_runtime_global(name) and self.global_type(name) != null) {
@@ -872,6 +922,14 @@ pub const CodeGen = struct {
             } else {
                 self.p("duo_g_{s}", .{name});
             }
+        } else if (self.is_local_name(name)) {
+            if (self.is_dense_table_name(name)) {
+                self.p("__dt_{s}", .{name});
+            } else {
+                self.p("{s}", .{name});
+            }
+        } else if (mode == .read and self.comptime_binding_is_scalar_const(name)) {
+            self.emit_comptime_const_var_name(name);
         } else if (self.comptime_bindings().get(name) != null) {
             if (self.current_module_cname.len > 0) {
                 self.p("{s}__{s}", .{ self.current_module_cname, name });
@@ -3403,9 +3461,11 @@ pub const CodeGen = struct {
                     {
                         break :blk self.expr_is_native_scalar(call.args[0]);
                     }
-                    if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
-                        if (self.lookup_req_module_func_type(mod_cname, f.field)) |ft| {
-                            if (self.funcTypeLowersNative(ft)) break :blk true;
+                    if (f.obj.* == .name) {
+                        if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
+                            if (self.lookup_req_module_func_type(mod_cname, f.field)) |ft| {
+                                if (self.funcTypeLowersNative(ft)) break :blk true;
+                            }
                         }
                     }
                 }
@@ -4435,13 +4495,18 @@ pub const CodeGen = struct {
         // declarations (e.g., struct/typedef definitions) are visible to
         // file-scope functions in the generated C.
         for (mod.body.stmts) |*stmt| {
-            if (stmt.* == .directive and std.mem.eql(u8, stmt.directive.attr.name, "c.emit")) {
-                const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, stmt.directive.attr.args orelse "") catch "";
-                const trimmed = std.mem.trim(u8, code, " \t\r\n");
-                if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
-                    self.p("{s};\n", .{code})
-                else
-                    self.p("{s}\n", .{code});
+            switch (stmt.*) {
+                .directive => |d| {
+                    if (!CodeGen.isCEmitDirectiveName(d.attr.name)) continue;
+                    const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, d.attr.args orelse "") catch "";
+                    self.emit_file_scope_c_payload(code);
+                },
+                .expr_stmt => |es| {
+                    if (self.fold_c_emit_payload(es.expr)) |code| {
+                        self.emit_file_scope_c_payload(code);
+                    }
+                },
+                else => {},
             }
         }
         self.nl();
@@ -4468,7 +4533,11 @@ pub const CodeGen = struct {
             while (it.next()) |key| {
                 if (is_runtime_global(key.*)) continue;
                 if (self.is_native_dense_module_table(key.*)) continue;
-                if (self.req_module_bindings.contains(key.*)) continue;
+                // NOTE: req-module bindings are NOT skipped here. They usually
+                // resolve to direct C symbols, but not every use site does — a
+                // field read that sema types as `.any` still emits the variable,
+                // and skipping the declaration made that "use of undeclared
+                // identifier". An unused static is harmless; a missing one is not.
                 if (self.comptime_binding_is_scalar_const(key.*)) continue;
                 const gt = globals.get(key.*) orelse .any;
                 if (self.current_module_cname.len > 0) {
@@ -4540,6 +4609,7 @@ pub const CodeGen = struct {
 
         self.all_closures.clearRetainingCapacity();
         self.emitted_closures.clearRetainingCapacity();
+        self.emitted_closure_structs.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
         if (self.duo_mode) {
             try self.emit_required_modules(mod);
@@ -4748,8 +4818,8 @@ pub const CodeGen = struct {
                         i += 1;
                         continue;
                     },
-                    .directive => |dir| {
-                        if (std.mem.eql(u8, dir.attr.name, "c.emit")) {
+                    .directive, .expr_stmt => {
+                        if (self.stmt_is_file_scope_c_emit(&mod.body.stmts[i])) {
                             i += 1;
                             continue;
                         }
@@ -5401,6 +5471,27 @@ pub const CodeGen = struct {
     //   FromInt  — TypeName.from_int(n) constructor
     //   Len      — __len metamethod (field count)
 
+    /// Install one @derive-generated metamethod wrapper on an alias metatable.
+    fn emit_alias_derive_metamethod_binding(
+        self: *CodeGen,
+        type_name: []const u8,
+        binding: pass23_protocol_registry.DeriveMetamethodBinding,
+    ) void {
+        const mm = binding.lua_metamethod;
+        const hash = calc_lua_hash(mm);
+        self.ind();
+        self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"{s}\", {d}, {d}, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_{s}__lua));", .{
+            type_name, mm, hash, mm.len, type_name, binding.c_wrapper_suffix,
+        });
+        if (binding.method_alias) |alias| {
+            const alias_hash = calc_lua_hash(alias);
+            self.ind();
+            self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"{s}\", {d}, {d}, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_{s}__lua));", .{
+                type_name, alias, alias_hash, alias.len, type_name, binding.c_wrapper_suffix,
+            });
+        }
+    }
+
     /// Emit metatable initialization code for alias types with methods or derives.
     /// Called during module init (inside main()).
     fn emit_alias_metatable_init(self: *CodeGen, mod: *ast.Module) E!void {
@@ -5430,81 +5521,18 @@ pub const CodeGen = struct {
                 }
             }
 
-            // Populate with @derive-generated metamethods
-            if (alias_has_derive(ad.attributes, "Display")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__tostring\", {d}, 10, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_tostring__lua));", .{ ad.name, calc_lua_hash("__tostring"), ad.name });
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"to_string\", {d}, 9, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_tostring__lua));", .{ ad.name, calc_lua_hash("to_string"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Eq")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__eq\", {d}, 4, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_eq__lua));", .{ ad.name, calc_lua_hash("__eq"), ad.name });
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"eq\", {d}, 2, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_eq__lua));", .{ ad.name, calc_lua_hash("eq"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Ord")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__lt\", {d}, 4, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_lt__lua));", .{ ad.name, calc_lua_hash("__lt"), ad.name });
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__le\", {d}, 4, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_le__lua));", .{ ad.name, calc_lua_hash("__le"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Add")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__add\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_add__lua));", .{ ad.name, calc_lua_hash("__add"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Sub")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__sub\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_sub__lua));", .{ ad.name, calc_lua_hash("__sub"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Mul")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__mul\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_mul__lua));", .{ ad.name, calc_lua_hash("__mul"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Neg")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__unm\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_neg__lua));", .{ ad.name, calc_lua_hash("__unm"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Len")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__len\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_len__lua));", .{ ad.name, calc_lua_hash("__len"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Div")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__div\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_div__lua));", .{ ad.name, calc_lua_hash("__div"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Rem")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__mod\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_rem__lua));", .{ ad.name, calc_lua_hash("__mod"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "BitAnd")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__band\", {d}, 6, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_and__lua));", .{ ad.name, calc_lua_hash("__band"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "BitOr")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__bor\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_or__lua));", .{ ad.name, calc_lua_hash("__bor"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "BitXor")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__bxor\", {d}, 6, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_xor__lua));", .{ ad.name, calc_lua_hash("__bxor"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "BitNot")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__bnot\", {d}, 6, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_bit_not__lua));", .{ ad.name, calc_lua_hash("__bnot"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Shl")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__shl\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_shl__lua));", .{ ad.name, calc_lua_hash("__shl"), ad.name });
-            }
-            if (alias_has_derive(ad.attributes, "Shr")) {
-                self.ind();
-                self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__shr\", {d}, 5, lua_val_from_func((lua_Value (*)(lua_Value))duo_{s}_shr__lua));", .{ ad.name, calc_lua_hash("__shr"), ad.name });
+            // Populate with @derive-generated metamethods (Pass 23 protocol registry)
+            for (pass23_protocol_registry.derive_metamethod_bindings) |binding| {
+                if (!alias_has_derive(ad.attributes, binding.derive_trait)) continue;
+                self.emit_alias_derive_metamethod_binding(ad.name, binding);
             }
 
             // Set __index = metatable itself (method lookup)
+            const index_mm = pass23_protocol_registry.luaMetamethodForKernel(.index) orelse "__index";
             self.ind();
-            self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"__index\", {d}, 7, duo_mt_{s});", .{ ad.name, calc_lua_hash("__index"), ad.name });
+            self.pl("lua_table_set_raw_lit(duo_mt_{s}, \"{s}\", {d}, {d}, duo_mt_{s});", .{
+                ad.name, index_mm, calc_lua_hash(index_mm), index_mm.len, ad.name,
+            });
         }
     }
 
@@ -8819,18 +8847,49 @@ pub const CodeGen = struct {
         return types.ResolvedType.eql(self.current_ret, tail_rt);
     }
 
+    /// Poison only names assigned inside *nested* constructs of this block.
+    /// Straight-line assignments in the block itself are sequenced correctly by
+    /// note_comptime_binding; it is the conditionally-executed ones that make a
+    /// declaration's initializer an unsound thing to fold against later.
+    fn poison_conditionally_assigned(self: *CodeGen, blk: *const ast.Block) E!void {
+        for (blk.stmts) |*stmt| {
+            switch (stmt.*) {
+                .do_block => |*db| try self.poison_assigned_in_block(&db.body),
+                .while_loop => |*wl| try self.poison_assigned_in_block(&wl.body),
+                .repeat_loop => |*rl| try self.poison_assigned_in_block(&rl.body),
+                .num_for => |*nf| try self.poison_assigned_in_block(&nf.body),
+                .gen_for => |*gf| try self.poison_assigned_in_block(&gf.body),
+                .if_stmt => |*is| {
+                    try self.poison_assigned_in_block(&is.then);
+                    for (is.elseifs) |*ei| try self.poison_assigned_in_block(&ei.body);
+                    if (is.else_body) |*eb| try self.poison_assigned_in_block(eb);
+                },
+                else => {},
+            }
+        }
+    }
+
     fn emit_block_stmts(self: *CodeGen, blk: *const ast.Block, tail_mode: BlockTailMode) E!void {
+        try self.poison_conditionally_assigned(blk);
         var i: usize = 0;
         while (i < blk.stmts.len) {
             if (try self.try_emit_fused_mandel_benchmark(blk.stmts[i..], &i)) continue;
             if (tail_mode == .implicit_return and blk.tail_expr == null and i + 1 == blk.stmts.len and
                 self.stmt_fallthrough_returns(&blk.stmts[i]))
             {
+                try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
+                try self.emit_stmt(&blk.stmts[i]);
+                // Pass 23 §4 — assignment expression value is the implicit return.
+                // Re-use the assigned lvalue to avoid double-evaluating the RHS.
+                if (blk.stmts[i] == .assign and blk.stmts[i].assign.targets.len == 1 and
+                    blk.stmts[i].assign.values.len == 1)
+                {
+                    try self.emit_implicit_return(blk.stmts[i].assign.targets[0]);
+                    return;
+                }
                 const prev = self.emit_stmt_blocks_as_returns;
                 self.emit_stmt_blocks_as_returns = true;
                 defer self.emit_stmt_blocks_as_returns = prev;
-                try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
-                try self.emit_stmt(&blk.stmts[i]);
                 return;
             }
             try self.hoist_control_implicit_locals(&blk.stmts[i], blk.stmts[i + 1 ..], blk.tail_expr);
@@ -9485,7 +9544,10 @@ pub const CodeGen = struct {
                             if (self.duo_mode and self.req_module_skips_lua_binding(path)) {
                                 try self.mark_req_native_direct(lname.ident);
                                 try self.note_comptime_unavailable(lname.ident);
-                                continue;
+                                const promoted_module_local = (self.current_module_cname.len > 0 or self.at_module_top_level) and
+                                    !is_runtime_global(lname.ident) and
+                                    self.global_type(lname.ident) != null;
+                                if (!promoted_module_local) continue;
                             }
                         }
                     }
@@ -9744,7 +9806,7 @@ pub const CodeGen = struct {
                                 if (self.req_module_skips_lua_binding(path)) {
                                     try self.mark_req_native_direct(name);
                                     try self.note_comptime_unavailable(name);
-                                    continue;
+                                    if (!(self.at_module_top_level or self.emitting_main_driver)) continue;
                                 }
                             }
                         }
@@ -11053,7 +11115,9 @@ pub const CodeGen = struct {
                 try self.emit_expr(arg);
                 self.p(") ? \"true\" : \"false\"", .{});
             } else if (t == .any) {
-                self.p("lua_to_str(", .{});
+                // Display context: honour __tostring so `print(v)` matches
+                // `print(tostring(v))` without the caller writing it out.
+                self.p("lua_to_display_str(", .{});
                 try self.emit_expr(arg);
                 self.p(")", .{});
             } else if (t == .str or arg.* == .string_lit) {
@@ -11153,6 +11217,21 @@ pub const CodeGen = struct {
             }
         }
         if (try self.try_emit_table_projection_unbox(e, want)) return;
+        // A call into a req-module lowers to a direct C call returning a native
+        // value. If sema typed the call `.any` we would wrap it in lua_to_num(),
+        // which does not accept an int64_t — so consult the callee's real return
+        // type here rather than trusting expr_type alone.
+        if (want.is_numeric() and !et.is_numeric()) {
+            if (self.infer_req_module_call_return_type(e)) |crt| {
+                if (crt.is_numeric()) {
+                    var cbuf: [64]u8 = undefined;
+                    self.p("(({s})(", .{want.c_type(&cbuf)});
+                    try self.emit_expr(e);
+                    self.p("))", .{});
+                    return;
+                }
+            }
+        }
         if (want.is_numeric() and et.is_numeric()) {
             if (want.eql(et)) {
                 // A bare C integer literal has type `int` (32-bit) even where a
@@ -12261,6 +12340,10 @@ pub const CodeGen = struct {
                 // Ultimate metaprogramming escape hatch — more powerful than any
                 // macro system because you can emit arbitrary C.
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__emit") and c.args.len >= 1) {
+                    if (self.fold_meta_string_expr(c.args[0])) |folded| {
+                        self.p("{s}", .{folded});
+                        return;
+                    }
                     if (c.args[0].* == .string_lit) {
                         self.p("{s}", .{c.args[0].string_lit.val});
                     } else {
@@ -14139,75 +14222,50 @@ pub const CodeGen = struct {
                 if (self.meta_combinator_fold_depth == 0 and meta_dispatch.canDispatch(name)) {
                     self.meta_combinator_fold_depth += 1;
                     defer self.meta_combinator_fold_depth -= 1;
-                    var storage: [4]comptime_eval.Value = undefined;
+                    var storage: [8]comptime_eval.Value = undefined;
                     const n = self.buildMetaCombinatorValues(name, c.args, &storage) orelse break :blk null;
                     break :blk self.runMetaCombinatorString(name, storage[0..n], .top_level_assign);
-                }
-                if (std.mem.eql(u8, name, "__comptimepermute") and c.args.len == 2 and c.args[0].* == .string_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const value = meta_codegen.comptimePermuteHook(self.meta_host(), c.args[0].string_lit.val, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__comptimechoose") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .int_lit) {
-                    const callback = comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null;
-                    if (callback != .func) break :blk null;
-                    const choose_k: usize = @intCast(c.args[1].int_lit.val);
-                    const value = meta_codegen.comptimeChooseHook(self.meta_host(), c.args[0].string_lit.val, choose_k, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__derivechoose") and c.args.len == 3 and c.args[0].* == .string_lit and c.args[1].* == .int_lit) {
-                    const derive_name = switch (c.args[2].*) {
-                        .name => |n| n.ident,
-                        .string_lit => |s| s.val,
-                        else => break :blk null,
-                    };
-                    const choose_k: usize = @intCast(c.args[1].int_lit.val);
-                    const value = meta_codegen.deriveChooseHook(self.meta_host(), c.args[0].string_lit.val, choose_k, derive_name, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__metatemplate") and (c.args.len == 2 or c.args.len == 3)) {
-                    const instances = self.fold_meta_string_expr(c.args[0]) orelse break :blk null;
-                    const body = self.fold_meta_string_expr(c.args[1]) orelse break :blk null;
-                    const callback = if (c.args.len == 3)
-                        comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null
-                    else
-                        null;
-                    const value = meta_codegen.comptimeTemplateHook(self.meta_host(), instances, body, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__metagenerate") and (c.args.len == 1 or c.args.len == 2 or c.args.len == 3)) {
-                    const spec = self.fold_meta_string_expr(c.args[0]) orelse break :blk null;
-                    const body = if (c.args.len >= 2) self.fold_meta_string_expr(c.args[1]) orelse break :blk null else "";
-                    const callback = if (c.args.len == 3)
-                        comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null
-                    else
-                        null;
-                    const value = meta_codegen.comptimeGenerateHook(self.meta_host(), spec, body, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__metascheme") and (c.args.len == 1 or c.args.len == 2 or c.args.len == 3)) {
-                    const declarations = self.fold_meta_string_expr(c.args[0]) orelse break :blk null;
-                    const template = if (c.args.len >= 2) self.fold_meta_string_expr(c.args[1]) orelse break :blk null else "";
-                    const callback = if (c.args.len == 3)
-                        comptime_eval.evalWithBindings(c.args[2], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null
-                    else
-                        null;
-                    const value = meta_codegen.comptimeSchemeHook(self.meta_host(), declarations, template, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
-                }
-                if (std.mem.eql(u8, name, "__metaschemeclauses") and (c.args.len == 1 or c.args.len == 2)) {
-                    const spec = self.fold_meta_string_expr(c.args[0]) orelse break :blk null;
-                    const callback = if (c.args.len == 2)
-                        comptime_eval.evalWithBindings(c.args[1], self.comptime_bindings(), self.comptime_eval_options()) catch break :blk null
-                    else
-                        null;
-                    const value = meta_codegen.comptimeSchemeClausesHook(self.meta_host(), spec, callback, self.alloc) orelse break :blk null;
-                    break :blk if (value == .string) value.string else null;
                 }
                 break :blk null;
             },
             else => null,
+        };
+    }
+
+    fn isCEmitDirectiveName(name: []const u8) bool {
+        return @import("meta_module.zig").isCEmitDirective(name);
+    }
+
+    /// Fold `@c.emit(@comp.*(...))` / `__emit(combinator(...))` payload to a C string.
+    fn fold_c_emit_payload(self: *CodeGen, expr: *const ast.Expr) ?[]const u8 {
+        if (expr.* != .call) return null;
+        const c = expr.call;
+        if (c.func.* != .name or c.args.len == 0) return null;
+        if (!std.mem.eql(u8, c.func.name.ident, "__emit")) return null;
+        if (c.args[0].* == .string_lit) return c.args[0].string_lit.val;
+        return self.fold_meta_string_expr(c.args[0]);
+    }
+
+    fn emit_file_scope_c_payload(self: *CodeGen, code: []const u8) void {
+        const trimmed = std.mem.trim(u8, code, " \t\r\n");
+        if (trimmed.len == 0) return;
+        if (trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
+            self.p("{s};\n", .{code})
+        else
+            self.p("{s}\n", .{code});
+    }
+
+    fn stmt_is_file_scope_c_emit(self: *CodeGen, stmt: *const ast.Stmt) bool {
+        return switch (stmt.*) {
+            .directive => |d| blk: {
+                if (!CodeGen.isCEmitDirectiveName(d.attr.name)) break :blk false;
+                if (d.attr.args) |raw| {
+                    break :blk @import("directives.zig").isRawCEmitLiteral(raw);
+                }
+                break :blk true;
+            },
+            .expr_stmt => |es| self.fold_c_emit_payload(es.expr) != null,
+            else => false,
         };
     }
 
@@ -14436,353 +14494,6 @@ pub const CodeGen = struct {
             try self.emit_c_string_literal(value.string);
             return true;
         }
-        if (std.mem.eql(u8, name, "__comptimemap") and args.len == 2 and args[0].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeMapHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__comptimemap", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimeeach") and args.len == 2) {
-            const source = self.fold_meta_string_expr(args[0]) orelse return false;
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeEachHook(self.meta_host(), source, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__comptimeeach", self.metaCombinatorEmitSite(), source, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimematch") and args.len == 2 and args[0].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeMatchHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__comptimematch", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimetabulate") and args.len == 2 and args[0].* == .int_lit) {
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeTabulateHook(self.meta_host(), args[0].int_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            var ibuf: [32]u8 = undefined;
-            const input = std.fmt.bufPrint(&ibuf, "{d}", .{args[0].int_lit.val}) catch "0";
-            self.logMetaCombinatorProvenance("__comptimetabulate", self.metaCombinatorEmitSite(), input, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimeinterpolate") and args.len == 2 and args[0].* == .string_lit) {
-            const vars = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            const value = meta_codegen.comptimeInterpolateHook(self.meta_host(), args[0].string_lit.val, vars, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__comptimeinterpolate", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimezip") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeZipHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimeproduct") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeProductHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            var ibuf: [96]u8 = undefined;
-            const input = std.fmt.bufPrint(&ibuf, "{s}|{s}", .{ args[0].string_lit.val, args[1].string_lit.val }) catch args[0].string_lit.val;
-            self.logMetaCombinatorProvenance("__comptimeproduct", self.metaCombinatorEmitSite(), input, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimepower") and args.len == 2 and args[0].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimePowerHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            self.logMetaCombinatorProvenance("__comptimepower", self.metaCombinatorEmitSite(), args[0].string_lit.val, value.string);
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimepermute") and args.len == 2 and args[0].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimePermuteHook(self.meta_host(), args[0].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__comptimechoose") and args.len == 3 and args[0].* == .string_lit and args[1].* == .int_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const choose_k: usize = @intCast(args[1].int_lit.val);
-            const value = meta_codegen.comptimeChooseHook(self.meta_host(), args[0].string_lit.val, choose_k, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__metagrammar") and args.len == 2) {
-            const spec = self.fold_meta_string_expr(args[0]) orelse return false;
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeGrammarHook(self.meta_host(), spec, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__metaweave") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.weaveHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, callback, self.comptime_bindings(), self.comptime_eval_options(), self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-        if (std.mem.eql(u8, name, "__derivechoose") and args.len == 3 and args[0].* == .string_lit and args[1].* == .int_lit) {
-            const derive_name = switch (args[2].*) {
-                .name => |n| n.ident,
-                .string_lit => |s| s.val,
-                else => return false,
-            };
-            const choose_k: usize = @intCast(args[1].int_lit.val);
-            const value = meta_codegen.deriveChooseHook(self.meta_host(), args[0].string_lit.val, choose_k, derive_name, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // ── Missing exponential combinators (O(n^f), O(n^2^f), O(n^3^f), O(2^n), O(n!)) ──
-
-        // @comp.expand / @comp.pow: derive sweep + optional concept map
-        // Syntax: expand("Concept", "derive_name"[, callback])
-        if (std.mem.eql(u8, name, "__metaexpand") and args.len == 2 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            // For 2-arg expand, use the concept as both concept and derive
-            const value = meta_codegen.expandHook(self.meta_host(), args[0].string_lit.val, args[0].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.expand with map callback: derive sweep + optional concept map
-        if (std.mem.eql(u8, name, "__metaexpand") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.expandHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.ceiling: derive sweep + cartesian product
-        if (std.mem.eql(u8, name, "__metaceiling") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit) {
-            const value = meta_codegen.ceilingHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.omni / @comp.stack: ceiling + optional sweep
-        if (std.mem.eql(u8, name, "__metaomni") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.omniHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.omni / @comp.stack with nil callback
-        if (std.mem.eql(u8, name, "__metaomni") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const value = meta_codegen.omniHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, "", null, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.burst: derive.all + product
-        if (std.mem.eql(u8, name, "__metaburst") and args.len == 3 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit) {
-            const value = meta_codegen.burstEmitHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.tensor: 3-concept type sweep
-        if (std.mem.eql(u8, name, "__comptimetensor") and args.len == 4 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[3], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.comptimeTensorHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.derive.tensor
-        if (std.mem.eql(u8, name, "__derivetensor") and args.len == 5 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit and args[3].* == .string_lit) {
-            const derive_name = switch (args[4].*) {
-                .name => |n| n.ident,
-                .string_lit => |s| s.val,
-                else => return false,
-            };
-            const value = meta_codegen.deriveTensorHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, derive_name, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.nfold: N-concept type sweep
-        if (std.mem.eql(u8, name, "__derivenfold") and args.len == 3 and args[0].* == .string_lit and args[1].* == .int_lit) {
-            // Parse concept names from '+' separated string
-            var concepts_it = std.mem.splitScalar(u8, args[0].string_lit.val, '+');
-            var concepts_list: [16][]const u8 = undefined;
-            var count: usize = 0;
-            while (concepts_it.next()) |c| : (count += 1) {
-                concepts_list[count] = std.mem.trim(u8, c, " \t\r\n");
-            }
-            _ = args[1].int_lit.val; // k parameter (for validation if needed)
-            const derive_name = switch (args[2].*) {
-                .name => |n| n.ident,
-                .string_lit => |s| s.val,
-                else => return false,
-            };
-            const value = meta_codegen.deriveNfoldHook(self.meta_host(), concepts_list[0..count], derive_name, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.transcend: 3-concept derive + map
-        if (std.mem.eql(u8, name, "__metatranscend") and args.len == 5 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit and args[3].* == .string_lit) {
-            const callback = comptime_eval.evalWithBindings(args[4], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const value = meta_codegen.transcendHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, args[3].string_lit.val, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.infinity: transcend + nfold(4)
-        // Syntax: infinity("ConceptA", "derive", "ConceptB", "ConceptC", "ConceptD")
-        if (std.mem.eql(u8, name, "__metainfinity") and args.len == 5 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit and args[3].* == .string_lit and args[4].* == .string_lit) {
-            const value = meta_codegen.infinityHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, args[3].string_lit.val, args[4].string_lit.val, null, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.hyper: transcend + nfold(5)
-        // Syntax: hyper("ConceptA", "derive", "ConceptB", "ConceptC", "ConceptD", "ConceptE")
-        if (std.mem.eql(u8, name, "__metahyper") and args.len == 6 and args[0].* == .string_lit and args[1].* == .string_lit and args[2].* == .string_lit and args[3].* == .string_lit and args[4].* == .string_lit and args[5].* == .string_lit) {
-            const value = meta_codegen.hyperHook(self.meta_host(), args[0].string_lit.val, args[1].string_lit.val, args[2].string_lit.val, args[3].string_lit.val, args[4].string_lit.val, args[5].string_lit.val, null, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.tower: nfold with dynamic k
-        // Syntax: tower("ConceptA+ConceptB", "derive_name")
-        // Concepts are separated by '+' (same as derive syntax)
-        if (std.mem.eql(u8, name, "__derivetower") and args.len == 2 and args[0].* == .string_lit and args[1].* == .string_lit) {
-            const derive_name = switch (args[1].*) {
-                .name => |n| n.ident,
-                .string_lit => |s| s.val,
-                else => return false,
-            };
-            // Parse concepts from '+' separated string
-            const concepts_str = args[0].string_lit.val;
-            const concepts = if (std.mem.indexOfScalar(u8, concepts_str, '+') == null)
-                &.{concepts_str}
-            else blk: {
-                var list: [16][]const u8 = undefined;
-                var it = std.mem.splitScalar(u8, concepts_str, '+');
-                var count: usize = 0;
-                while (it.next()) |c| : (count += 1) {
-                    list[count] = std.mem.trim(u8, c, " \t\r\n");
-                }
-                break :blk list[0..count];
-            };
-            if (concepts.len == 0) return false;
-            const value = meta_codegen.deriveTowerHook(self.meta_host(), concepts, derive_name, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.scheme: declarative program scheme -> full implementation
-        if (std.mem.eql(u8, name, "__metascheme") and (args.len == 1 or args.len == 2 or args.len == 3)) {
-            const declarations = self.fold_meta_string_expr(args[0]) orelse return false;
-            const template = if (args.len >= 2) self.fold_meta_string_expr(args[1]) orelse return false else "";
-            const callback = if (args.len == 3)
-                comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable
-            else
-                null;
-            const value = meta_codegen.comptimeSchemeHook(self.meta_host(), declarations, template, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.scheme.clauses
-        if (std.mem.eql(u8, name, "__metaschemeclauses") and (args.len == 1 or args.len == 2)) {
-            const spec = self.fold_meta_string_expr(args[0]) orelse return false;
-            const callback = if (args.len == 2)
-                comptime_eval.evalWithBindings(args[1], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable
-            else
-                null;
-            const value = meta_codegen.comptimeSchemeClausesHook(self.meta_host(), spec, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.template: parametric code templates
-        if (std.mem.eql(u8, name, "__metatemplate") and (args.len == 2 or args.len == 3)) {
-            const instances = self.fold_meta_string_expr(args[0]) orelse return false;
-            const body = self.fold_meta_string_expr(args[1]) orelse return false;
-            const callback = if (args.len == 3)
-                comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable
-            else
-                null;
-            const value = meta_codegen.comptimeTemplateHook(self.meta_host(), instances, body, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.generate: constraint-based code synthesis
-        if (std.mem.eql(u8, name, "__metagenerate") and (args.len == 1 or args.len == 2 or args.len == 3)) {
-            const spec = self.fold_meta_string_expr(args[0]) orelse return false;
-            const body = if (args.len >= 2) self.fold_meta_string_expr(args[1]) orelse return false else "";
-            const callback = if (args.len == 3)
-                comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable
-            else
-                null;
-            const value = meta_codegen.comptimeGenerateHook(self.meta_host(), spec, body, callback, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
-        // @comp.fanout: tree-shaped generative expansion
-        if (std.mem.eql(u8, name, "__comptimefanout") and args.len == 3 and args[0].* == .string_lit and args[1].* == .int_lit) {
-            const callback = comptime_eval.evalWithBindings(args[2], self.comptime_bindings(), self.comptime_eval_options()) catch comptime_eval.Value.unavailable;
-            if (callback != .func) return false;
-            const depth: usize = @intCast(args[1].int_lit.val);
-            const value = meta_codegen.comptimeFanoutHook(self.meta_host(), args[0].string_lit.val, callback, depth, self.alloc) orelse return false;
-            if (value != .string) return false;
-            try self.emit_c_string_literal(value.string);
-            return true;
-        }
-
         return false;
     }
 
@@ -15223,6 +14934,13 @@ pub const CodeGen = struct {
                 try self.emit_type_expr_string(param.typ);
                 self.p("));\n", .{});
             }
+        } else if (method.param_types.len > 0) {
+            for (method.param_types, 0..) |pt, i| {
+                self.ind();
+                self.p("lua_table_set_raw_i64(__params, {d}, lua_val_from_str(", .{i + 1});
+                try self.emit_resolved_type_name_string(pt);
+                self.p("));\n", .{});
+            }
         } else {
             var i: usize = 0;
             while (i < method.param_count) : (i += 1) {
@@ -15453,7 +15171,8 @@ pub const CodeGen = struct {
         // At compile time we can check if the type is known to have a metatable
         // For now, this is a runtime check emitted as C
         if (args[1].* == .string_lit) {
-            const mm_name = args[1].string_lit.val;
+            const raw = args[1].string_lit.val;
+            const mm_name = pass23_protocol_registry.resolveToLuaMetamethod(raw);
             const mm_hash = calc_lua_hash(mm_name);
             self.p("(lua_get_metafield_lit(", .{});
             try self.emit_as_lua_value(args[0]);
@@ -15478,8 +15197,47 @@ pub const CodeGen = struct {
         const concepts = self.concepts orelse return null;
         const concept = concepts.get(concept_name) orelse return null;
 
+        const aliasHasField = struct {
+            fn check(ad: *const ast.AliasDef, field_name: []const u8) bool {
+                for (ad.fields) |f| {
+                    if (std.mem.eql(u8, f.name, field_name)) return true;
+                }
+                if (ad.target) |target| {
+                    switch (target) {
+                        .record => |rec| {
+                            for (rec.fields) |f| {
+                                if (std.mem.eql(u8, f.name, field_name)) return true;
+                            }
+                        },
+                        else => {},
+                    }
+                }
+                return false;
+            }
+        }.check;
+
         if (args[0].* == .name) {
-            const table_name = args[0].name.ident;
+            const type_name = args[0].name.ident;
+            if (self.alias_defs.get(type_name)) |ad| {
+                for (concept.required_fields) |req_field| {
+                    if (!aliasHasField(ad, req_field.name)) return false;
+                }
+                for (concept.required_methods) |req_method| {
+                    var found = aliasHasField(ad, req_method.name);
+                    if (!found) {
+                        for (ad.methods) |m| {
+                            const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
+                            if (std.mem.eql(u8, mname, req_method.name)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) return false;
+                }
+                return true;
+            }
+            const table_name = type_name;
             const methods = if (self.table_methods) |tm| tm.get(table_name) else null;
             if (methods != null) {
                 for (concept.required_fields) |req_field| {
@@ -15508,31 +15266,7 @@ pub const CodeGen = struct {
                 }
                 return true;
             }
-            for (concept.required_fields) |req_field| {
-                var found = false;
-                if (methods) |ms| {
-                    for (ms.items) |m| {
-                        if (std.mem.eql(u8, m, req_field.name)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if (!found) return false;
-            }
-            for (concept.required_methods) |req_method| {
-                var found = false;
-                if (methods) |ms| {
-                    for (ms.items) |m| {
-                        if (std.mem.eql(u8, m, req_method.name)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if (!found) return false;
-            }
-            return true;
+            return null;
         }
 
         const rt = self.expr_type(args[0]);
@@ -15546,12 +15280,7 @@ pub const CodeGen = struct {
         for (concept.required_fields) |req_field| {
             var found = false;
             if (alias_def) |ad| {
-                for (ad.fields) |rec_field| {
-                    if (std.mem.eql(u8, rec_field.name, req_field.name)) {
-                        found = true;
-                        break;
-                    }
-                }
+                if (aliasHasField(ad, req_field.name)) found = true;
             }
             if (!found and rt == .table_type) {
                 for (rt.table_type.fields) |rec_field| {
@@ -15566,12 +15295,7 @@ pub const CodeGen = struct {
         for (concept.required_methods) |req_method| {
             var found = false;
             if (alias_def) |ad| {
-                for (ad.fields) |rec_field| {
-                    if (std.mem.eql(u8, rec_field.name, req_method.name)) {
-                        found = true;
-                        break;
-                    }
-                }
+                if (aliasHasField(ad, req_method.name)) found = true;
                 if (!found) {
                     for (ad.methods) |m| {
                         const mname = if (m.path.len > 0) m.path[m.path.len - 1] else "";
@@ -15771,28 +15495,78 @@ pub const CodeGen = struct {
         self: *CodeGen,
         internal: []const u8,
         args: []const *ast.Expr,
-        storage: *[4]comptime_eval.Value,
+        storage: *[8]comptime_eval.Value,
     ) ?usize {
         const opts = self.comptime_eval_options();
         const bindings = self.comptime_bindings();
 
-        if (std.mem.eql(u8, internal, "__comptimemap") and args.len == 2) {
-            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
-            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
-            if (storage[1] != .func) return null;
-            return 2;
+        const simple_two_arg = struct {
+            name: []const u8,
+            wants_callback: bool,
+        };
+        const two_arg_specs = [_]simple_two_arg{
+            .{ .name = "__comptimemap", .wants_callback = true },
+            .{ .name = "__comptimeeach", .wants_callback = true },
+            .{ .name = "__comptimematch", .wants_callback = true },
+            .{ .name = "__comptimepower", .wants_callback = true },
+            .{ .name = "__comptimepermute", .wants_callback = true },
+            .{ .name = "__comptimenfold", .wants_callback = true },
+            .{ .name = "__metagrammar", .wants_callback = true },
+            .{ .name = "__derivemap", .wants_callback = false },
+            .{ .name = "__derivepower", .wants_callback = false },
+            .{ .name = "__derivenfold", .wants_callback = false },
+            .{ .name = "__derivepermute", .wants_callback = false },
+            .{ .name = "__derivetower", .wants_callback = false },
+        };
+        if (args.len == 2) {
+            for (two_arg_specs) |spec| {
+                if (!std.mem.eql(u8, internal, spec.name)) continue;
+                storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+                if (spec.wants_callback) {
+                    storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+                    if (storage[1] != .func) return null;
+                } else {
+                    storage[1] = deriveNameValueFromExpr(args[1]) orelse return null;
+                }
+                return 2;
+            }
         }
-        if (std.mem.eql(u8, internal, "__comptimeeach") and args.len == 2) {
+        if (std.mem.eql(u8, internal, "__metaweave") and args.len == 3) {
             storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
-            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
-            if (storage[1] != .func) return null;
-            return 2;
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+            if (storage[2] != .func) return null;
+            return 3;
         }
-        if (std.mem.eql(u8, internal, "__comptimematch") and args.len == 2) {
+
+        if (std.mem.eql(u8, internal, "__comptimechoose") and args.len == 3) {
             storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
-            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
-            if (storage[1] != .func) return null;
-            return 2;
+            storage[1] = switch (args[1].*) {
+                .int_lit => .{ .int = args[1].int_lit.val },
+                else => return null,
+            };
+            storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+            if (storage[2] != .func) return null;
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__derivechoose") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = switch (args[1].*) {
+                .int_lit => .{ .int = args[1].int_lit.val },
+                else => return null,
+            };
+            storage[2] = deriveNameValueFromExpr(args[2]) orelse return null;
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__comptimefanout") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = switch (args[1].*) {
+                .int_lit => .{ .int = args[1].int_lit.val },
+                else => return null,
+            };
+            storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+            if (storage[2] != .func) return null;
+            return 3;
         }
         if (std.mem.eql(u8, internal, "__comptimetabulate") and args.len == 2) {
             storage[0] = switch (args[0].*) {
@@ -15822,16 +15596,20 @@ pub const CodeGen = struct {
             if (storage[2] != .func) return null;
             return 3;
         }
-        if (std.mem.eql(u8, internal, "__comptimepower") and args.len == 2) {
+        if (std.mem.eql(u8, internal, "__comptimetensor") and args.len == 4) {
             storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
-            storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
-            if (storage[1] != .func) return null;
-            return 2;
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            storage[3] = comptime_eval.evalWithBindings(args[3], bindings, opts) catch return null;
+            if (storage[3] != .func) return null;
+            return 4;
         }
-        if (std.mem.eql(u8, internal, "__derivepower") and args.len == 2) {
+        if (std.mem.eql(u8, internal, "__derivetensor") and args.len == 4) {
             storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
-            storage[1] = deriveNameValueFromExpr(args[1]) orelse return null;
-            return 2;
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            storage[3] = deriveNameValueFromExpr(args[3]) orelse return null;
+            return 4;
         }
         if (std.mem.eql(u8, internal, "__deriveproduct") and args.len == 3) {
             storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
@@ -15839,10 +15617,119 @@ pub const CodeGen = struct {
             storage[2] = deriveNameValueFromExpr(args[2]) orelse return null;
             return 3;
         }
+        if (std.mem.eql(u8, internal, "__metaexpand") and args.len >= 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            if (args.len >= 3) {
+                storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+                if (storage[2] != .func) return null;
+                return 3;
+            }
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__metaceiling") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__metaomni") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__metaomni") and args.len == 4) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            storage[3] = comptime_eval.evalWithBindings(args[3], bindings, opts) catch return null;
+            if (storage[3] != .func) return null;
+            return 4;
+        }
+        if (std.mem.eql(u8, internal, "__metaburst") and args.len == 3) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            return 3;
+        }
+        if (std.mem.eql(u8, internal, "__metatranscend") and args.len == 4) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            storage[3] = .{ .string = self.metaStringFromExprOrFold(args[3]) orelse return null };
+            return 4;
+        }
+        if (std.mem.eql(u8, internal, "__metatranscend") and args.len == 5) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            storage[2] = .{ .string = self.metaStringFromExprOrFold(args[2]) orelse return null };
+            storage[3] = .{ .string = self.metaStringFromExprOrFold(args[3]) orelse return null };
+            storage[4] = comptime_eval.evalWithBindings(args[4], bindings, opts) catch return null;
+            if (storage[4] != .func) return null;
+            return 5;
+        }
+        if (std.mem.eql(u8, internal, "__metainfinity") and args.len == 5) {
+            for (0..5) |i| {
+                storage[i] = .{ .string = self.metaStringFromExprOrFold(args[i]) orelse return null };
+            }
+            return 5;
+        }
+        if (std.mem.eql(u8, internal, "__metahyper") and args.len == 6) {
+            for (0..6) |i| {
+                storage[i] = .{ .string = self.metaStringFromExprOrFold(args[i]) orelse return null };
+            }
+            return 6;
+        }
+        if (std.mem.eql(u8, internal, "__metatemplate") and args.len >= 2) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+            if (args.len >= 3) {
+                storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+                if (storage[2] != .func) return null;
+                return 3;
+            }
+            return 2;
+        }
+        if (std.mem.eql(u8, internal, "__metagenerate") and args.len >= 1) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            if (args.len >= 2) {
+                storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+                if (args.len >= 3) {
+                    storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+                    if (storage[2] != .func) return null;
+                    return 3;
+                }
+                return 2;
+            }
+            return 1;
+        }
+        if (std.mem.eql(u8, internal, "__metascheme") and args.len >= 1) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            if (args.len >= 2) {
+                storage[1] = .{ .string = self.metaStringFromExprOrFold(args[1]) orelse return null };
+                if (args.len >= 3) {
+                    storage[2] = comptime_eval.evalWithBindings(args[2], bindings, opts) catch return null;
+                    if (storage[2] != .func) return null;
+                    return 3;
+                }
+                return 2;
+            }
+            return 1;
+        }
+        if (std.mem.eql(u8, internal, "__metaschemeclauses") and args.len >= 1) {
+            storage[0] = .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null };
+            if (args.len >= 2) {
+                storage[1] = comptime_eval.evalWithBindings(args[1], bindings, opts) catch return null;
+                if (storage[1] != .func) return null;
+                return 2;
+            }
+            return 1;
+        }
         if (std.mem.eql(u8, internal, "__comptimefixpoint") and args.len == 3) {
             storage[0] = switch (args[0].*) {
                 .string_lit => |s| .{ .string = s.val },
-                else => return null,
+                else => .{ .string = self.metaStringFromExprOrFold(args[0]) orelse return null },
             };
             const fp = fixpointCallFromArgs(args) orelse return null;
             storage[1] = .{ .int = @intCast(fp.max_iter) };
@@ -15862,32 +15749,21 @@ pub const CodeGen = struct {
         if (transform_engine.publicNameForInternal(internal) != null and
             !transform_engine.requireMetaDispatchBeforeHook(internal))
             return null;
-        const value = meta_codegen.applyMetaCombinatorHook(self.meta_host(), internal, values, self.alloc) orelse return null;
-        if (value != .string) return null;
-        var ibuf: [128]u8 = undefined;
-        const input = meta_codegen.metaCombinatorProvenanceInput(internal, values, &ibuf) orelse "";
-        transform_engine.dispatchMetaCombinator(self.alloc, internal, site, input, value.string);
-        return value.string;
+        const result = meta_dispatch.dispatchAtSite(self.meta_host(), internal, values, self.alloc, site);
+        return switch (result) {
+            .string => |s| s,
+            else => null,
+        };
     }
 
     fn tryEmitMetaCombinatorString(self: *CodeGen, internal: []const u8, args: []const *ast.Expr) E!bool {
         self.meta_combinator_fold_depth += 1;
         defer self.meta_combinator_fold_depth -= 1;
-        var storage: [4]comptime_eval.Value = undefined;
+        var storage: [8]comptime_eval.Value = undefined;
         const n = self.buildMetaCombinatorValues(internal, args, &storage) orelse return false;
         const folded = self.runMetaCombinatorString(internal, storage[0..n], self.metaCombinatorEmitSite()) orelse return false;
         try self.emit_c_string_literal(folded);
         return true;
-    }
-
-    fn logMetaCombinatorProvenance(
-        self: *CodeGen,
-        internal: []const u8,
-        site: transform_engine.SiteKind,
-        input: []const u8,
-        output: []const u8,
-    ) void {
-        transform_engine.dispatchMetaCombinator(self.alloc, internal, site, input, output);
     }
 
     fn fixpointCallFromArgs(args: []const *ast.Expr) ?struct {
@@ -16794,7 +16670,21 @@ pub const CodeGen = struct {
         if (e.* == .call and e.call.func.* == .field and
             self.expr_type(e.call.func.field.obj) == .any and
             !(e.call.func.field.obj.* == .name and
-                self.expr_is_recognized_stdlib_module(e.call.func.field.obj.name.ident))) return true;
+                self.expr_is_recognized_stdlib_module(e.call.func.field.obj.name.ident)))
+        {
+            // A call through a req-module binding lowers to a direct C call
+            // returning a native value, not a lua_Value — same exception as the
+            // recognized stdlib modules above. Claiming otherwise makes callers
+            // wrap it in lua_to_num(), which does not accept an int64_t.
+            if (e.call.func.field.obj.* == .name and
+                self.req_module_bindings.contains(e.call.func.field.obj.name.ident))
+            {
+                if (self.infer_req_module_call_return_type(e)) |crt| {
+                    if (crt != .any and self.type_lowers_native(crt)) return false;
+                }
+            }
+            return true;
+        }
         if (self.expr_type(e) == .any) {
             // Binops on dynamic table field reads produce native C values
             // (e.g. lua_table_get_str_num returns double), not lua_Value.
@@ -17551,11 +17441,11 @@ pub const CodeGen = struct {
         if (b.lhs.* != .call or b.lhs.call.func.* != .name) return false;
         if (!std.mem.eql(u8, b.lhs.call.func.name.ident, "tonumber")) return false;
         if (b.lhs.call.args.len != 1 or self.expr_type(b.lhs.call.args[0]) != .str) return false;
-        self.p("({ const char* _duo_s = ", .{});
+        self.p("({{ const char* _duo_s = ", .{});
         try self.emit_expr(b.lhs.call.args[0]);
         self.p("; char* _duo_ep; double _duo_v = strtod(_duo_s, &_duo_ep); (_duo_ep == _duo_s) ? (", .{});
         try self.emit_expr(b.rhs);
-        self.p(") : _duo_v; })", .{});
+        self.p(") : _duo_v; }})", .{});
         return true;
     }
 
@@ -18510,6 +18400,8 @@ pub const CodeGen = struct {
     fn emit_closure_structs(self: *CodeGen, list: []const *ast.FuncBody) E!void {
         for (list) |fb| {
             const id = fb.closure_id orelse continue;
+            if (self.emitted_closure_structs.contains(id)) continue;
+            try self.emitted_closure_structs.put(self.alloc, id, {});
             self.p("typedef struct {{\n", .{});
             self.p("    duo_ObjHeader header;\n", .{});
             self.p("    int id;\n", .{});
@@ -18677,6 +18569,8 @@ pub const CodeGen = struct {
     fn stmt_fallthrough_returns(self: *CodeGen, stmt: *const ast.Stmt) bool {
         return switch (stmt.*) {
             .ret => true,
+            // Pass 23 §4 — final assignment returns its value (including compound assign).
+            .assign => |as| as.targets.len == 1 and as.values.len == 1,
             .if_stmt => |*is| blk: {
                 if (is.else_body == null) break :blk false;
                 if (!self.block_fallthrough_returns(&is.then)) break :blk false;
@@ -18917,8 +18811,11 @@ pub const CodeGen = struct {
 
             if (mod_path == null) continue;
             defer self.alloc.free(mod_path.?);
-            const already_embedded = self.embedded_module_paths.contains(mod_path.?);
-            const cname = try self.module_c_name(name);
+            const prior_cname = self.embedded_module_paths.get(mod_path.?);
+            const already_embedded = prior_cname != null;
+            // Reuse the cname the file was emitted under, otherwise we register
+            // a `duo_mod_*` symbol that was never defined.
+            const cname = if (prior_cname) |pc| try self.alloc.dupe(u8, pc) else try self.module_c_name(name);
             if (!already_embedded) {
                 if (!self.emit_embedded_module(cname, mod_path.?)) {
                     term.warn("failed to embed module '{s}' from {s}", .{ name, mod_path.? });
@@ -19165,6 +19062,12 @@ pub const CodeGen = struct {
         defer self.alloc.free(src);
         var lex = @import("lexer.zig").Lexer.init(src, path);
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
+        // Embedded .duo files must be parsed with the Duo grammar. Without this
+        // they are parsed in Lua-compat mode, where forms like one-line function
+        // bodies and typed bindings are rejected — the file then fails to embed
+        // and its duo_mod_* thunk is never emitted, while the caller registers
+        // it anyway ("use of undeclared identifier duo_mod_*").
+        parser.duo_mode = std.mem.endsWith(u8, path, ".duo");
         const submod = parser.parse_module() catch return false;
         return !module_ast_blocks_full_native_ast(&submod);
     }
@@ -19478,6 +19381,12 @@ pub const CodeGen = struct {
             }
         }
         self.p("{s}(", .{mname});
+        // The callee's module context was only needed to mangle `mname`. The
+        // arguments are the *caller's* expressions, so restore before emitting
+        // them — otherwise a constant belonging to the calling module gets the
+        // callee's prefix (e.g. runtime.duo's PAGE_SIZE emitted as
+        // `std_mem__PAGE_SIZE` inside a `mem_mod.dup(...)` call).
+        self.current_module_cname = saved_cname;
         for (args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
             const pt: RT = if (i < ft.func.params.len) ft.func.params[i] else .any;
@@ -19489,7 +19398,6 @@ pub const CodeGen = struct {
             }
         }
         self.p(")", .{});
-        self.current_module_cname = saved_cname;
         self.current_func_body = saved_body;
         if (needs_lua_box) {
             switch (ft.func.ret.*) {
@@ -19867,19 +19775,36 @@ pub const CodeGen = struct {
     }
 
     fn emit_embedded_module(self: *CodeGen, cname: []const u8, path: []const u8) bool {
-        if (self.embedded_module_paths.contains(path)) return true;
+        if (self.embedded_module_paths.contains(path)) {
+            if (self.trace_embed)
+                term.warn("EMBED skip(already) cname={s} path={s}", .{ cname, path });
+            return true;
+        }
         // A module that transitively requires the entry module must not
         // re-embed it: the entry module's file-scope @c.emit blocks and
         // typedefs are already in the output, so embedding it again emits
         // them twice and the C compiler rejects the redefinitions. Circular
         // requires (a requires b, b requires a) make this reachable.
-        if (self.src_path.len > 0 and same_source_file(self.alloc, self.io, path, self.src_path)) return true;
+        if (self.src_path.len > 0 and same_source_file(self.alloc, self.io, path, self.src_path)) {
+            if (self.trace_embed)
+                term.warn("EMBED skip(selfpath) cname={s} path={s}", .{ cname, path });
+            return true;
+        }
         const owned_path = self.alloc.dupe(u8, path) catch {
             term.err("emit_embedded_module: oom tracking {s}", .{path});
             return false;
         };
-        self.embedded_module_paths.put(self.alloc, owned_path, {}) catch {
+        // The caller owns `cname` and frees it once the `embedded` list is torn
+        // down, so the map must hold its own copy — otherwise later lookups
+        // return freed memory and the module name is emitted as poison bytes.
+        const owned_cname = self.alloc.dupe(u8, cname) catch {
             self.alloc.free(owned_path);
+            term.err("emit_embedded_module: oom tracking {s}", .{path});
+            return false;
+        };
+        self.embedded_module_paths.put(self.alloc, owned_path, owned_cname) catch {
+            self.alloc.free(owned_path);
+            self.alloc.free(owned_cname);
             term.err("emit_embedded_module: oom tracking {s}", .{path});
             return false;
         };
@@ -19895,6 +19820,12 @@ pub const CodeGen = struct {
 
         var lex = @import("lexer.zig").Lexer.init(src, path);
         var parser = @import("parser.zig").Parser.init(&lex, self.alloc);
+        // Embedded .duo files must be parsed with the Duo grammar. Without this
+        // they are parsed in Lua-compat mode, where forms like one-line function
+        // bodies and typed bindings are rejected — the file then fails to embed
+        // and its duo_mod_* thunk is never emitted, while the caller registers
+        // it anyway ("use of undeclared identifier duo_mod_*").
+        parser.duo_mode = std.mem.endsWith(u8, path, ".duo");
         var submod = parser.parse_module() catch |e| {
             term.err("emit_embedded_module: parse failed for {s}: {}", .{ path, e });
             return false;
@@ -19997,7 +19928,12 @@ pub const CodeGen = struct {
             while (globals_it.next()) |entry| {
                 if (self.is_native_dense_module_table(entry.key_ptr.*)) continue;
                 if (embedded_module_scalar_const_assign(&submod, entry.key_ptr.*) != null) continue;
-                if (self.req_native_direct.contains(entry.key_ptr.*)) continue;
+                // A native-direct req binding normally needs no variable (uses
+                // resolve to C symbols), but a `global x = req "..."` that the
+                // body reads through an `.any`-typed field access still emits
+                // duo_g_<mod>_<x>. Keep the declaration in that case.
+                if (self.req_native_direct.contains(entry.key_ptr.*) and
+                    !module_top_level_assigns(&submod, entry.key_ptr.*)) continue;
                 const rt = entry.value_ptr.*;
                 // Native-direct modules turn most `.any` globals into plain C
                 // symbols, so their declarations are dropped. A global the
@@ -20070,13 +20006,18 @@ pub const CodeGen = struct {
         // declarations (e.g., struct/typedef definitions) are visible to
         // file-scope functions in the submodule.
         for (submod.body.stmts) |*stmt| {
-            if (stmt.* == .directive and std.mem.eql(u8, stmt.directive.attr.name, "c.emit")) {
-                const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, stmt.directive.attr.args orelse "") catch "";
-                const trimmed = std.mem.trim(u8, code, " \t\r\n");
-                if (trimmed.len > 0 and trimmed[trimmed.len - 1] != ';' and trimmed[trimmed.len - 1] != '}')
-                    self.p("{s};\n", .{code})
-                else
-                    self.p("{s}\n", .{code});
+            switch (stmt.*) {
+                .directive => |d| {
+                    if (!CodeGen.isCEmitDirectiveName(d.attr.name)) continue;
+                    const code = @import("directives.zig").extractAndUnescapeCRawCode(self.alloc, d.attr.args orelse "") catch "";
+                    self.emit_file_scope_c_payload(code);
+                },
+                .expr_stmt => |es| {
+                    if (self.fold_c_emit_payload(es.expr)) |code| {
+                        self.emit_file_scope_c_payload(code);
+                    }
+                },
+                else => {},
             }
         }
         self.nl();
@@ -20194,7 +20135,10 @@ pub const CodeGen = struct {
         }
         if (table_consts.items.len > 0) self.p("\n", .{});
 
-        if (self.embed_parent_full_native or self.moduleUsesFullNativeLowering()) return true;
+        // Always emit the module thunk. The caller registers every embedded
+        // module in duo_register_modules() unconditionally, and ward requires
+        // several of them at runtime — skipping the thunk here left those
+        // registrations naming an undefined symbol.
 
         self.p("static lua_Value duo_mod_{s}(lua_Value _unused) {{\n", .{cname});
         self.p("    (void)_unused;\n", .{});
@@ -20558,6 +20502,43 @@ pub const CodeGen = struct {
     }
 };
 
+/// Pass 23 — emit `lua_binop_metamethod` dispatch line from protocol registry.
+fn runtimeBinopMetamethodLine(comptime op: pass23_protocol_registry.KernelOp) []const u8 {
+    const mm = pass23_protocol_registry.luaMetamethodForKernel(op) orelse
+        @compileError("pass23 registry: missing lua metamethod for runtime binop");
+    return std.fmt.comptimePrint(
+        \\    lua_Value mm = lua_binop_metamethod("{s}", a, b);
+    , .{mm});
+}
+
+/// Pass 23 — emit `lua_get_metafield_lit(obj, mm, hash, len)` from registry metamethod name.
+fn runtimeMetafieldLitLine(
+    comptime lua_mm: []const u8,
+    comptime obj_expr: []const u8,
+    comptime var_name: []const u8,
+) []const u8 {
+    if (pass23_protocol_registry.findLuaAlias(lua_mm) == null)
+        @compileError("pass23 registry: unregistered runtime metamethod");
+    const hash = pass23_protocol_registry.luaHash(lua_mm);
+    return std.fmt.comptimePrint(
+        \\    lua_Value {s} = lua_get_metafield_lit({s}, "{s}", {d}u, {d});
+    , .{ var_name, obj_expr, lua_mm, hash, lua_mm.len });
+}
+
+/// Reassign form: `mm = lua_get_metafield_lit(b, "__eq", …)`.
+fn runtimeMetafieldLitReassignLine(
+    comptime lua_mm: []const u8,
+    comptime obj_expr: []const u8,
+    comptime var_name: []const u8,
+) []const u8 {
+    if (pass23_protocol_registry.findLuaAlias(lua_mm) == null)
+        @compileError("pass23 registry: unregistered runtime metamethod");
+    const hash = pass23_protocol_registry.luaHash(lua_mm);
+    return std.fmt.comptimePrint(
+        \\    {s} = lua_get_metafield_lit({s}, "{s}", {d}u, {d});
+    , .{ var_name, obj_expr, lua_mm, hash, lua_mm.len });
+}
+
 const duo_runtime =
     \\/* --- Duo Runtime Support --- */
     \\#include <stdbool.h>
@@ -20592,6 +20573,7 @@ const duo_runtime =
     \\    union {
     \\        bool bval;
     \\        double nval;
+    \\        int64_t ival;   /* exact integer when number_kind == 1 */
     \\        const char* sval;
     \\        void* tval;
     \\        void* fval; // Cast to function pointer when needed
@@ -20656,7 +20638,18 @@ const duo_runtime =
     \\static inline lua_Value lua_val_nil(void);
     \\static inline lua_Value lua_val_from_str(const char* s);
     \\static inline const char* lua_to_str(lua_Value v);
+    \\static inline const char* lua_to_display_str(lua_Value v);
     \\static inline double lua_to_num(lua_Value v);
+    \\/* Numbers are stored as an exact int64 when number_kind == 1 and as a
+    \\ * double otherwise, so every read must go through these rather than
+    \\ * touching the union directly. A wasm i64 above 2^53 has no exact double
+    \\ * representation, which is why the integer slot exists at all. */
+    \\static inline double lua_num(lua_Value v) {
+    \\    return v.number_kind == 1 ? (double)v.as.ival : lua_num(v);
+    \\}
+    \\static inline int64_t lua_intval(lua_Value v) {
+    \\    return v.number_kind == 1 ? v.as.ival : (int64_t)lua_num(v);
+    \\}
     \\static inline bool lua_to_bool(lua_Value v);
     \\static inline lua_Value lua_table_get_raw(lua_Value table, lua_Value key);
     \\
@@ -20852,7 +20845,7 @@ const duo_runtime =
     \\    switch (v.type) {
     \\        case VAL_NUMBER: {
     \\            union { double d; uint64_t u; } u;
-    \\            u.d = v.as.nval;
+    \\            u.d = lua_num(v);
     \\            uint64_t x = u.u;
     \\            x ^= x >> 33;
     \\            x *= 0xff51afd7ed558ccdULL;
@@ -20936,7 +20929,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value lua_val_from_int(int64_t n) {
-    \\    lua_Value v = { .type = VAL_NUMBER, .number_kind = 1, .as = { .nval = (double)n } };
+    \\    lua_Value v = { .type = VAL_NUMBER, .number_kind = 1, .as = { .ival = n } };
     \\    return v;
     \\}
     \\
@@ -21101,7 +21094,8 @@ const duo_runtime =
     \\        static int bidx = 0;
     \\        char* b = bufs[bidx];
     \\        bidx = (bidx + 1) & 15;
-    \\        sprintf(b, "%.17g", v.as.nval);
+    \\        if (v.number_kind == 1) sprintf(b, "%lld", (long long)v.as.ival);
+    \\        else sprintf(b, "%.17g", v.as.nval);
     \\        return b;
     \\    }
     \\    if (v.type == VAL_BOOL) return v.as.bval ? "true" : "false";
@@ -21123,7 +21117,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline double lua_to_num(lua_Value v) {
-    \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) return v.as.nval;
+    \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) return lua_num(v);
     \\    if (v.type == VAL_BOOL) return v.as.bval ? 1.0 : 0.0;
     \\    if (v.type == VAL_STRING) return atof(v.as.sval);
     \\    return 0.0;
@@ -21185,7 +21179,7 @@ const duo_runtime =
     \\static inline bool lua_key_fasteq(lua_Value a, lua_Value b) {
     \\    if (a.type != b.type) return false;
     \\    if (a.type == VAL_STRING) return a.as.sval == b.as.sval;
-    \\    if (a.type == VAL_NUMBER) return a.as.nval == b.as.nval;
+    \\    if (a.type == VAL_NUMBER) return lua_num(a) == lua_num(b);
     \\    if (a.type == VAL_BOOL) return a.as.bval == b.as.bval;
     \\    if (a.type == VAL_NIL) return true;
     \\    return a.as.tval == b.as.tval;
@@ -21196,7 +21190,7 @@ const duo_runtime =
     \\    switch (a.type) {
     \\        case VAL_NIL: return true;
     \\        case VAL_BOOL: return a.as.bval == b.as.bval;
-    \\        case VAL_NUMBER: return a.as.nval == b.as.nval;
+    \\        case VAL_NUMBER: return lua_num(a) == lua_num(b);
     \\        case VAL_STRING: return a.as.sval == b.as.sval;
     \\        case VAL_FUNC: return a.as.fval == b.as.fval;
     \\        default: return a.as.tval == b.as.tval;
@@ -21240,7 +21234,7 @@ const duo_runtime =
     \\        return t->hash_vals[t->last_idx];
     \\    }
     \\    if (key.type == VAL_NUMBER) {
-    \\        int idx = (int)key.as.nval;
+    \\        int idx = (int)lua_num(key);
     \\        if (LUA_LIKELY(idx >= 1 && idx <= t->array_size)) return t->array[idx-1];
     \\    }
     \\    if (t->capacity == 0) return lua_val_nil();
@@ -21271,7 +21265,7 @@ const duo_runtime =
     \\    if (LUA_UNLIKELY(!t)) return lua_val_nil();
     \\    if (idx >= 1 && idx <= t->array_size) return t->array[idx-1];
     \\    double n = (double)idx;
-    \\    if (t->capacity > 0 && t->last_key.type == VAL_NUMBER && t->last_key.as.nval == n) {
+    \\    if (t->capacity > 0 && t->last_key.type == VAL_NUMBER && lua_num(t->last_key) == n) {
     \\        return t->hash_vals[t->last_idx];
     \\    }
     \\    if (t->capacity == 0) return lua_val_nil();
@@ -21281,7 +21275,7 @@ const duo_runtime =
     \\    uint32_t dist = 0;
     \\    while (t->hash_keys[slot].type != VAL_NIL) {
     \\        lua_Value k = t->hash_keys[slot];
-    \\        if (k.type == VAL_NUMBER && k.as.nval == n) {
+    \\        if (k.type == VAL_NUMBER && lua_num(k) == n) {
     \\            t->last_key = k;
     \\            t->last_idx = (int)slot;
     \\            return t->hash_vals[slot];
@@ -21326,7 +21320,7 @@ const duo_runtime =
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
     \\    }
-    \\    lua_Value idx = lua_get_metafield_lit(table, "__index", 445260505u, 7);
+    ++ runtimeMetafieldLitLine("__index", "table", "idx") ++
     \\    if (idx.type == VAL_TABLE) return lua_table_get(idx, key);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { table, key };
@@ -21354,7 +21348,7 @@ const duo_runtime =
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
     \\    }
-    \\    lua_Value idx = lua_get_metafield_lit(table, "__index", 445260505u, 7);
+    ++ runtimeMetafieldLitLine("__index", "table", "idx") ++
     \\    if (idx.type == VAL_TABLE) return lua_table_get_str_lit(idx, s, hash, len);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
     \\        lua_Value key = lua_val_from_literal(s, hash, len);
@@ -21382,7 +21376,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
-    \\        lua_Value mt = lua_get_metafield_lit(table, "__index", 445260505u, 7);
+    ++ runtimeMetafieldLitLine("__index", "table", "mt") ++
     \\        if (mt.type == VAL_TABLE) return lua_table_get_i64(mt, idx);
     \\        if (mt.type == VAL_FUNC || mt.type == VAL_CLOSURE) {
     \\            lua_Value key = lua_val_from_int(idx);
@@ -21413,7 +21407,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
-    \\        lua_Value mt = lua_get_metafield_lit(table, "__index", 445260505u, 7);
+    ++ runtimeMetafieldLitLine("__index", "table", "mt") ++
     \\        if (mt.type == VAL_TABLE) return lua_table_get_num(mt, n);
     \\        if (mt.type == VAL_FUNC || mt.type == VAL_CLOSURE) {
     \\            lua_Value key = lua_val_from_num(n);
@@ -21430,7 +21424,7 @@ const duo_runtime =
     \\    if (LUA_UNLIKELY(!t)) return lua_val_nil();
     \\    int idx = (int)n;
     \\    if (idx >= 1 && idx <= t->array_size && (double)idx == n) return t->array[idx-1];
-    \\    if (t->capacity > 0 && t->last_key.type == VAL_NUMBER && t->last_key.as.nval == n) {
+    \\    if (t->capacity > 0 && t->last_key.type == VAL_NUMBER && lua_num(t->last_key) == n) {
     \\        return t->hash_vals[t->last_idx];
     \\    }
     \\    if (t->capacity == 0) return lua_val_nil();
@@ -21439,7 +21433,7 @@ const duo_runtime =
     \\    uint32_t dist = 0;
     \\    while (t->hash_keys[slot].type != VAL_NIL) {
     \\        lua_Value k = t->hash_keys[slot];
-    \\        if (k.type == VAL_NUMBER && k.as.nval == n) {
+    \\        if (k.type == VAL_NUMBER && lua_num(k) == n) {
     \\            t->last_key = k;
     \\            t->last_idx = (int)slot;
     \\            return t->hash_vals[slot];
@@ -21530,7 +21524,7 @@ const duo_runtime =
     \\        return;
     \\    }
     \\    if (key.type == VAL_NUMBER) {
-    \\        int idx = (int)key.as.nval;
+    \\        int idx = (int)lua_num(key);
     \\        if (idx >= 1 && idx <= t->array_size) {
     \\            t->array[idx-1] = val;
     \\            return;
@@ -21637,7 +21631,7 @@ const duo_runtime =
     \\            t->count++;
     \\            return;
     \\        }
-    \\        if ((cur_key.type == VAL_NUMBER && t->hash_keys[slot].type == VAL_NUMBER && t->hash_keys[slot].as.nval == cur_key.as.nval) ||
+    \\        if ((cur_key.type == VAL_NUMBER && t->hash_keys[slot].type == VAL_NUMBER && lua_num(t->hash_keys[slot]) == lua_num(cur_key)) ||
     \\            (cur_key.type != VAL_NUMBER && lua_raweq_value(t->hash_keys[slot], cur_key))) {
     \\            t->hash_vals[slot] = cur_val;
     \\            t->last_key = cur_key;
@@ -21705,7 +21699,7 @@ const duo_runtime =
     \\            t->count++;
     \\            return;
     \\        }
-    \\        if ((cur_key.type == VAL_NUMBER && t->hash_keys[slot].type == VAL_NUMBER && t->hash_keys[slot].as.nval == cur_key.as.nval) ||
+    \\        if ((cur_key.type == VAL_NUMBER && t->hash_keys[slot].type == VAL_NUMBER && lua_num(t->hash_keys[slot]) == lua_num(cur_key)) ||
     \\            (cur_key.type != VAL_NUMBER && lua_raweq_value(t->hash_keys[slot], cur_key))) {
     \\            t->hash_vals[slot] = cur_val;
     \\            t->last_key = cur_key;
@@ -21794,7 +21788,7 @@ const duo_runtime =
     \\                lua_table_set_raw_str_lit(table, s, hash, len, val);
     \\                return;
     \\            }
-    \\            lua_Value ni = lua_get_metafield_lit(table, "__newindex", 3002519145u, 10);
+    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_TABLE) {
     \\                lua_table_set_str_lit(ni, s, hash, len, val);
     \\                return;
@@ -21825,7 +21819,7 @@ const duo_runtime =
     \\                lua_table_set_raw(table, key, val);
     \\                return;
     \\            }
-    \\            lua_Value ni = lua_get_metafield_lit(table, "__newindex", 3002519145u, 10);
+    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_TABLE) {
     \\                lua_table_set(ni, key, val);
     \\                return;
@@ -21865,7 +21859,7 @@ const duo_runtime =
     \\                lua_table_set_raw_i64(table, idx, val);
     \\                return;
     \\            }
-    \\            lua_Value ni = lua_get_metafield_lit(table, "__newindex", 3002519145u, 10);
+    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_NIL) {
     \\                lua_table_set_raw_i64(table, idx, val);
     \\                return;
@@ -21907,7 +21901,7 @@ const duo_runtime =
     \\                lua_table_set_raw_num(table, n, val);
     \\                return;
     \\            }
-    \\            lua_Value ni = lua_get_metafield_lit(table, "__newindex", 3002519145u, 10);
+    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_NIL) {
     \\                lua_table_set_raw_num(table, n, val);
     \\                return;
@@ -21954,22 +21948,25 @@ const duo_runtime =
     \\}
     \\
     \\static inline const char* lua_concat(lua_Value a, lua_Value b) {
-    \\    lua_Value mm = lua_get_metafield_lit(a, "__concat", 557084155u, 8);
+    ++ runtimeMetafieldLitLine("__concat", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
     \\        return lua_to_str(res);
     \\    }
-    \\    mm = lua_get_metafield_lit(b, "__concat", 557084155u, 8);
+    ++ runtimeMetafieldLitReassignLine("__concat", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
     \\        return lua_to_str(res);
     \\    }
-    \\    const char* sa = lua_to_str(a);
-    \\    const char* sb = lua_to_str(b);
-    \\    size_t la = lua_str_byte_len(a);
-    \\    size_t lb = lua_str_byte_len(b);
+    \\    const char* sa = lua_to_display_str(a);
+    \\    const char* sb = lua_to_display_str(b);
+    \\    /* Measure the converted text, not the value: __tostring output has no
+    \\     * relation to the operand's own byte length. Plain strings keep the
+    \\     * O(1) header read. */
+    \\    size_t la = (a.type == VAL_STRING) ? lua_str_byte_len(a) : strlen(sa);
+    \\    size_t lb = (b.type == VAL_STRING) ? lua_str_byte_len(b) : strlen(sb);
     \\    char* res = malloc(la + lb + 1);
     \\    memcpy(res, sa, la);
     \\    memcpy(res + la, sb, lb);
@@ -21979,10 +21976,10 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_unm(lua_Value v) {
     \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) {
-    \\        if (v.number_kind == 1) return lua_val_from_int(-(int64_t)v.as.nval);
-    \\        return lua_val_from_num(-v.as.nval);
+    \\        if (v.number_kind == 1) return lua_val_from_int(-(int64_t)lua_num(v));
+    \\        return lua_val_from_num(-lua_num(v));
     \\    }
-    \\    lua_Value mm = lua_get_metafield_lit(v, "__unm", 2173486251u, 5);
+    ++ runtimeMetafieldLitLine("__unm", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -21992,9 +21989,9 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_bnot(lua_Value v) {
     \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) {
-    \\        return lua_val_from_int(~((int64_t)v.as.nval));
+    \\        return lua_val_from_int(~((int64_t)lua_num(v)));
     \\    }
-    \\    lua_Value mm = lua_get_metafield_lit(v, "__bnot", 3212264484u, 6);
+    ++ runtimeMetafieldLitLine("__bnot", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -22004,36 +22001,36 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_add(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_num_combine(a.as.nval + b.as.nval, a.number_kind, b.number_kind, 0);
+    \\        return lua_num_combine(lua_num(a) + lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__add", a, b);
+    ++ runtimeBinopMetamethodLine(.add) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) + lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_sub(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_num_combine(a.as.nval - b.as.nval, a.number_kind, b.number_kind, 0);
+    \\        return lua_num_combine(lua_num(a) - lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__sub", a, b);
+    ++ runtimeBinopMetamethodLine(.subtract) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) - lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_mul(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_num_combine(a.as.nval * b.as.nval, a.number_kind, b.number_kind, 0);
+    \\        return lua_num_combine(lua_num(a) * lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__mul", a, b);
+    ++ runtimeBinopMetamethodLine(.multiply) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) * lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_div(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num(a.as.nval / b.as.nval);
+    \\        return lua_val_from_num(lua_num(a) / lua_num(b));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__div", a, b);
+    ++ runtimeBinopMetamethodLine(.divide) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) / lua_to_num(b));
     \\}
@@ -22041,24 +22038,24 @@ const duo_runtime =
     \\static inline lua_Value lua_idiv(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        if (a.number_kind == 1 && b.number_kind == 1) {
-    \\            return lua_val_from_int((int64_t)floor(a.as.nval / b.as.nval));
+    \\            return lua_val_from_int((int64_t)floor(lua_num(a) / lua_num(b)));
     \\        }
-    \\        return lua_val_from_num(floor(a.as.nval / b.as.nval));
+    \\        return lua_val_from_num(floor(lua_num(a) / lua_num(b)));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__idiv", a, b);
+    ++ runtimeBinopMetamethodLine(.integer_divide) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(floor(lua_to_num(a) / lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_mod(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        double na = a.as.nval;
-    \\        double nb = b.as.nval;
+    \\        double na = lua_num(a);
+    \\        double nb = lua_num(b);
     \\        double r = na - nb * floor(na / nb);
     \\        if (a.number_kind == 1 && b.number_kind == 1) return lua_val_from_int((int64_t)r);
     \\        return lua_val_from_num(r);
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__mod", a, b);
+    ++ runtimeBinopMetamethodLine(.remainder) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    double na = lua_to_num(a);
     \\    double nb = lua_to_num(b);
@@ -22067,66 +22064,66 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_pow(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_num(pow(a.as.nval, b.as.nval));
+    \\        return lua_val_from_num(pow(lua_num(a), lua_num(b)));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__pow", a, b);
+    ++ runtimeBinopMetamethodLine(.power) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(pow(lua_to_num(a), lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_band(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_int((int64_t)a.as.nval & (int64_t)b.as.nval);
+    \\        return lua_val_from_int((int64_t)lua_num(a) & (int64_t)lua_num(b));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__band", a, b);
+    ++ runtimeBinopMetamethodLine(.bit_and) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) & (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_bor(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_int((int64_t)a.as.nval | (int64_t)b.as.nval);
+    \\        return lua_val_from_int((int64_t)lua_num(a) | (int64_t)lua_num(b));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__bor", a, b);
+    ++ runtimeBinopMetamethodLine(.bit_or) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) | (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_bxor(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_int((int64_t)a.as.nval ^ (int64_t)b.as.nval);
+    \\        return lua_val_from_int((int64_t)lua_num(a) ^ (int64_t)lua_num(b));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__bxor", a, b);
+    ++ runtimeBinopMetamethodLine(.bit_xor) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) ^ (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_lshift(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_int((int64_t)a.as.nval << (int64_t)b.as.nval);
+    \\        return lua_val_from_int((int64_t)lua_num(a) << (int64_t)lua_num(b));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__shl", a, b);
+    ++ runtimeBinopMetamethodLine(.shift_left) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) << (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline lua_Value lua_rshift(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return lua_val_from_int((int64_t)a.as.nval >> (int64_t)b.as.nval);
+    \\        return lua_val_from_int((int64_t)lua_num(a) >> (int64_t)lua_num(b));
     \\    }
-    \\    lua_Value mm = lua_binop_metamethod("__shr", a, b);
+    ++ runtimeBinopMetamethodLine(.shift_right) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) >> (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline bool lua_eq(lua_Value a, lua_Value b) {
     \\    if (lua_raweq_value(a, b)) return true;
-    \\    lua_Value mm = lua_get_metafield_lit(a, "__eq", 444955513u, 4);
+    ++ runtimeMetafieldLitLine("__eq", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-    \\    mm = lua_get_metafield_lit(b, "__eq", 444955513u, 4);
+    ++ runtimeMetafieldLitReassignLine("__eq", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22139,7 +22136,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline bool duo_contains(lua_Value container, lua_Value item) {
-    \\    lua_Value mm = lua_get_metafield_lit(container, "__contains", 3311687818u, 10);
+    ++ runtimeMetafieldLitLine("__contains", "container", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { container, item };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22168,11 +22165,11 @@ const duo_runtime =
     \\        if (a_rows_val.type == VAL_NUMBER && a_cols_val.type == VAL_NUMBER &&
     \\            b_rows_val.type == VAL_NUMBER && b_cols_val.type == VAL_NUMBER) {
     \\            
-    \\            int M = (int)a_rows_val.as.nval;
-    \\            int K = (int)a_cols_val.as.nval;
-    \\            int N = (int)b_cols_val.as.nval;
+    \\            int M = (int)lua_num(a_rows_val);
+    \\            int K = (int)lua_num(a_cols_val);
+    \\            int N = (int)lua_num(b_cols_val);
     \\            
-    \\            if (K == (int)b_rows_val.as.nval) {
+    \\            if (K == (int)lua_num(b_rows_val)) {
     \\                lua_Value a_data_val = lua_table_get_raw_str_lit(a, "data", 3631407781u, 4);
     \\                lua_Value b_data_val = lua_table_get_raw_str_lit(b, "data", 3631407781u, 4);
     \\                
@@ -22198,16 +22195,16 @@ const duo_runtime =
     \\                        for (int k = 0; k < K; k++) {
     \\                            int a_idx = i * K + k;
     \\                            if (a_idx >= a_data->array_size) continue;
-    \\                            double aik = a_data->array[a_idx].type == VAL_NUMBER ? a_data->array[a_idx].as.nval : 0.0;
+    \\                            double aik = a_data->array[a_idx].type == VAL_NUMBER ? lua_num(a_data->array[a_idx]) : 0.0;
     \\                            if (aik == 0.0) continue;
     \\                            
     \\                            for (int j = 0; j < N; j++) {
     \\                                int b_idx = k * N + j;
     \\                                int r_idx = i * N + j;
     \\                                if (b_idx >= b_data->array_size) continue;
-    \\                                double bkj = b_data->array[b_idx].type == VAL_NUMBER ? b_data->array[b_idx].as.nval : 0.0;
+    \\                                double bkj = b_data->array[b_idx].type == VAL_NUMBER ? lua_num(b_data->array[b_idx]) : 0.0;
     \\                                
-    \\                                double cur = r_data->array[r_idx].as.nval;
+    \\                                double cur = lua_num(r_data->array[r_idx]);
     \\                                r_data->array[r_idx].as.nval = cur + aik * bkj;
     \\                            }
     \\                        }
@@ -22238,7 +22235,7 @@ const duo_runtime =
     \\        lua_Value b_cols_val = lua_table_get_raw_str_lit(b, "cols", 3482592004u, 4);
     \\        if (a_rows_val.type == VAL_NUMBER && a_cols_val.type == VAL_NUMBER &&
     \\            b_rows_val.type == VAL_NUMBER && b_cols_val.type == VAL_NUMBER &&
-    \\            a_rows_val.as.nval == b_rows_val.as.nval && a_cols_val.as.nval == b_cols_val.as.nval) {
+    \\            lua_num(a_rows_val) == lua_num(b_rows_val) && lua_num(a_cols_val) == lua_num(b_cols_val)) {
     \\            
     \\            lua_Value a_data_val = lua_table_get_raw_str_lit(a, "data", 3631407781u, 4);
     \\            lua_Value b_data_val = lua_table_get_raw_str_lit(b, "data", 3631407781u, 4);
@@ -22246,8 +22243,8 @@ const duo_runtime =
     \\                lua_Table* a_data = (lua_Table*)a_data_val.as.tval;
     \\                lua_Table* b_data = (lua_Table*)b_data_val.as.tval;
     \\                
-    \\                int M = (int)a_rows_val.as.nval;
-    \\                int N = (int)a_cols_val.as.nval;
+    \\                int M = (int)lua_num(a_rows_val);
+    \\                int N = (int)lua_num(a_cols_val);
     \\                int size = M * N;
     \\                
     \\                lua_Value r = lua_table_new_with_capacity(0, 4);
@@ -22259,8 +22256,8 @@ const duo_runtime =
     \\                lua_Table* r_data = (lua_Table*)r_data_val.as.tval;
     \\                r_data->array_size = size;
     \\                for (int i = 0; i < size; i++) {
-    \\                    double v_a = (i < a_data->array_size && a_data->array[i].type == VAL_NUMBER) ? a_data->array[i].as.nval : 0.0;
-    \\                    double v_b = (i < b_data->array_size && b_data->array[i].type == VAL_NUMBER) ? b_data->array[i].as.nval : 0.0;
+    \\                    double v_a = (i < a_data->array_size && a_data->array[i].type == VAL_NUMBER) ? lua_num(a_data->array[i]) : 0.0;
+    \\                    double v_b = (i < b_data->array_size && b_data->array[i].type == VAL_NUMBER) ? lua_num(b_data->array[i]) : 0.0;
     \\                    r_data->array[i] = lua_val_from_num(v_a + v_b);
     \\                }
     \\                
@@ -22282,14 +22279,14 @@ const duo_runtime =
     \\
     \\static inline bool lua_lt(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return a.as.nval < b.as.nval;
+    \\        return lua_num(a) < lua_num(b);
     \\    }
-    \\    lua_Value mm = lua_get_metafield_lit(a, "__lt", 731602059u, 4);
+    ++ runtimeMetafieldLitLine("__lt", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-    \\    mm = lua_get_metafield_lit(b, "__lt", 731602059u, 4);
+    ++ runtimeMetafieldLitReassignLine("__lt", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22299,21 +22296,21 @@ const duo_runtime =
     \\
     \\static inline bool lua_gt(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return a.as.nval > b.as.nval;
+    \\        return lua_num(a) > lua_num(b);
     \\    }
     \\    return lua_lt(b, a);
     \\}
     \\
     \\static inline bool lua_leq(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return a.as.nval <= b.as.nval;
+    \\        return lua_num(a) <= lua_num(b);
     \\    }
-    \\    lua_Value mm = lua_get_metafield_lit(a, "__le", 983266344u, 4);
+    ++ runtimeMetafieldLitLine("__le", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-    \\    mm = lua_get_metafield_lit(b, "__le", 983266344u, 4);
+    ++ runtimeMetafieldLitReassignLine("__le", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22323,19 +22320,34 @@ const duo_runtime =
     \\
     \\static inline bool lua_geq(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
-    \\        return a.as.nval >= b.as.nval;
+    \\        return lua_num(a) >= lua_num(b);
     \\    }
     \\    return lua_leq(b, a);
     \\}
     \\
     \\static inline lua_Value tostring(lua_Value v) {
-    \\    lua_Value mm = lua_get_metafield_lit(v, "__tostring", 944699551u, 10);
+    ++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
     \\    }
     \\    if (v.type == VAL_STRING) return v;
     \\    return lua_val_from_str(lua_to_str(v));
+    \\}
+    \\
+    \\/* Display conversion: honours __tostring, then falls back to the raw
+    \\ * lua_to_str. This is what implicit contexts (concat, print) use, so a
+    \\ * value with a __tostring metamethod renders the same whether or not the
+    \\ * caller wrote tostring() explicitly. lua_to_str itself is left alone —
+    \\ * it is also used where a raw string is required. */
+    \\static inline const char* lua_to_display_str(lua_Value v) {
+    \\    if (LUA_LIKELY(v.type == VAL_STRING)) return v.as.sval;
+    ++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
+    \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
+    \\        lua_Value args[1] = { v };
+    \\        return lua_to_str(lua_invoke(mm, 1, args));
+    \\    }
+    \\    return lua_to_str(v);
     \\}
     \\
     \\static inline lua_Value tonumber(lua_Value v) {
@@ -22641,8 +22653,8 @@ const duo_runtime =
     \\        return 0;
     \\    }
     \\    if (v1.type == VAL_NUMBER && v2.type == VAL_NUMBER) {
-    \\        if (v1.as.nval < v2.as.nval) return -1;
-    \\        if (v1.as.nval > v2.as.nval) return 1;
+    \\        if (lua_num(v1) < lua_num(v2)) return -1;
+    \\        if (lua_num(v1) > lua_num(v2)) return 1;
     \\        return 0;
     \\    }
     \\    if (v1.type == VAL_STRING && v2.type == VAL_STRING) {
@@ -22905,7 +22917,7 @@ const duo_runtime =
     \\    if (v.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)v.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_from_num((double)lua_table_len(v));
-    \\        lua_Value mm = lua_get_metafield_lit(v, "__len", 2293762610u, 5);
+    ++ runtimeMetafieldLitLine("__len", "v", "mm") ++
     \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { v };
     \\            return lua_invoke(mm, 1, args);
@@ -22922,7 +22934,7 @@ const duo_runtime =
     \\    if (v.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)v.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return (double)lua_table_len(v);
-    \\        lua_Value mm = lua_get_metafield_lit(v, "__len", 2293762610u, 5);
+    ++ runtimeMetafieldLitLine("__len", "v", "mm") ++
     \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { v };
     \\            return lua_to_num(lua_invoke(mm, 1, args));
@@ -24026,7 +24038,7 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_math_tointeger(lua_Value v) {
     \\    if (v.type == VAL_NUMBER) {
-    \\        double d = v.as.nval;
+    \\        double d = lua_num(v);
     \\        if (d == (double)(int64_t)d) {
     \\            return v;
     \\        }
@@ -24728,7 +24740,7 @@ const duo_runtime =
     \\    }
     \\
     \\    if (key.type == VAL_NUMBER) {
-    \\        int k = (int)key.as.nval;
+    \\        int k = (int)lua_num(key);
     \\        if (k >= 1 && k <= t->array_size) {
     \\            for (int i = k; i < t->array_size; i++) {
     \\                if (t->array[i].type != VAL_NIL) {
@@ -25495,7 +25507,7 @@ const duo_runtime =
     \\static lua_Value duo_net_tcp_connect(lua_Value host_v, lua_Value port_v) {
     \\    const char* h = (host_v.type == VAL_STRING) ? host_v.as.sval : "127.0.0.1";
     \\    char port_s[8];
-    \\    snprintf(port_s, sizeof(port_s), "%d", (port_v.type == VAL_NUMBER) ? (int)(int64_t)port_v.as.nval : 80);
+    \\    snprintf(port_s, sizeof(port_s), "%d", (port_v.type == VAL_NUMBER) ? (int)(int64_t)lua_num(port_v) : 80);
     \\    struct addrinfo hints, *res; memset(&hints, 0, sizeof(hints));
     \\    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
     \\    if (getaddrinfo(h, port_s, &hints, &res) != 0) return lua_val_nil();
@@ -25509,7 +25521,7 @@ const duo_runtime =
     \\    return (fd >= 0) ? lua_val_from_int((int64_t)fd) : lua_val_nil();
     \\}
     \\static lua_Value duo_net_tcp_listen(lua_Value host_v, lua_Value port_v) {
-    \\    int port = (port_v.type == VAL_NUMBER) ? (int)(int64_t)port_v.as.nval : 8080;
+    \\    int port = (port_v.type == VAL_NUMBER) ? (int)(int64_t)lua_num(port_v) : 8080;
     \\    int fd = socket(AF_INET, SOCK_STREAM, 0);
     \\    if (fd < 0) return lua_val_nil();
     \\    int yes = 1; setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
@@ -25522,14 +25534,14 @@ const duo_runtime =
     \\}
     \\static lua_Value duo_net_tcp_accept(lua_Value srv_v) {
     \\    if (srv_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int srv = (int)(int64_t)srv_v.as.nval;
+    \\    int srv = (int)(int64_t)lua_num(srv_v);
     \\    struct sockaddr_in addr; socklen_t len = sizeof(addr);
     \\    int fd = accept(srv, (struct sockaddr*)&addr, &len);
     \\    return (fd >= 0) ? lua_val_from_int((int64_t)fd) : lua_val_nil();
     \\}
     \\static lua_Value duo_net_tcp_send(lua_Value fd_v, lua_Value data_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    int fd = (int)(int64_t)lua_num(fd_v);
     \\    const char* data = (data_v.type == VAL_STRING) ? data_v.as.sval : "";
     \\    size_t len = (data_v.type == VAL_STRING) ? lua_str_byte_len(data_v) : 0;
     \\    ssize_t sent = send(fd, data, len, 0);
@@ -25537,8 +25549,8 @@ const duo_runtime =
     \\}
     \\static lua_Value duo_net_tcp_recv(lua_Value fd_v, lua_Value maxlen_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int fd = (int)(int64_t)fd_v.as.nval;
-    \\    int maxlen = (maxlen_v.type == VAL_NUMBER) ? (int)(int64_t)maxlen_v.as.nval : 4096;
+    \\    int fd = (int)(int64_t)lua_num(fd_v);
+    \\    int maxlen = (maxlen_v.type == VAL_NUMBER) ? (int)(int64_t)lua_num(maxlen_v) : 4096;
     \\    char* buf = (char*)malloc((size_t)maxlen + 1);
     \\    if (!buf) return lua_val_nil();
     \\    ssize_t n = recv(fd, buf, (size_t)maxlen, 0);
@@ -25548,7 +25560,7 @@ const duo_runtime =
     \\}
     \\static lua_Value duo_net_tcp_close(lua_Value fd_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    close((int)(int64_t)fd_v.as.nval);
+    \\    close((int)(int64_t)lua_num(fd_v));
     \\    return lua_val_nil();
     \\}
     \\static lua_Value duo_net_udp_socket_open(lua_Value host_v, lua_Value port_v) {
@@ -25558,7 +25570,7 @@ const duo_runtime =
     \\    if (port_v.type == VAL_NUMBER) {
     \\        struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     \\        addr.sin_family = AF_INET;
-    \\        addr.sin_port = htons((uint16_t)(int)(int64_t)port_v.as.nval);
+    \\        addr.sin_port = htons((uint16_t)(int)(int64_t)lua_num(port_v));
     \\        addr.sin_addr.s_addr = INADDR_ANY;
     \\        bind(fd, (struct sockaddr*)&addr, sizeof(addr));
     \\    }
@@ -25566,11 +25578,11 @@ const duo_runtime =
     \\}
     \\static lua_Value duo_net_udp_sendto(lua_Value fd_v, lua_Value data_v, lua_Value host_v, lua_Value port_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    int fd = (int)(int64_t)lua_num(fd_v);
     \\    const char* data = (data_v.type == VAL_STRING) ? data_v.as.sval : "";
     \\    size_t data_len = (data_v.type == VAL_STRING) ? lua_str_byte_len(data_v) : 0;
     \\    const char* host = (host_v.type == VAL_STRING) ? host_v.as.sval : "127.0.0.1";
-    \\    int port = (port_v.type == VAL_NUMBER) ? (int)(int64_t)port_v.as.nval : 53;
+    \\    int port = (port_v.type == VAL_NUMBER) ? (int)(int64_t)lua_num(port_v) : 53;
     \\    struct sockaddr_in addr; memset(&addr, 0, sizeof(addr));
     \\    addr.sin_family = AF_INET;
     \\    addr.sin_port = htons((uint16_t)port);
@@ -25588,8 +25600,8 @@ const duo_runtime =
     \\}
     \\static lua_Value duo_net_udp_recvfrom(lua_Value fd_v, lua_Value maxlen_v) {
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int fd = (int)(int64_t)fd_v.as.nval;
-    \\    int maxlen = (maxlen_v.type == VAL_NUMBER) ? (int)(int64_t)maxlen_v.as.nval : 4096;
+    \\    int fd = (int)(int64_t)lua_num(fd_v);
+    \\    int maxlen = (maxlen_v.type == VAL_NUMBER) ? (int)(int64_t)lua_num(maxlen_v) : 4096;
     \\    char* buf = (char*)malloc((size_t)maxlen + 1);
     \\    if (!buf) return lua_val_nil();
     \\    struct sockaddr_in from; socklen_t flen = sizeof(from);
@@ -25633,7 +25645,7 @@ const duo_runtime =
     \\    const char* path = slash ? slash : "/";
     \\    lua_Value fd_v = duo_net_tcp_connect(lua_val_from_str(host), lua_val_from_int((int64_t)port));
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    int fd = (int)(int64_t)lua_num(fd_v);
     \\    char req[2048];
     \\    int req_len = snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
     \\    if (req_len < 0) { close(fd); return lua_val_nil(); }
@@ -25674,7 +25686,7 @@ const duo_runtime =
     \\    const char* path = slash ? slash : "/";
     \\    lua_Value fd_v = duo_net_tcp_connect(lua_val_from_str(host), lua_val_from_int((int64_t)port));
     \\    if (fd_v.type != VAL_NUMBER) return lua_val_nil();
-    \\    int fd = (int)(int64_t)fd_v.as.nval;
+    \\    int fd = (int)(int64_t)lua_num(fd_v);
     \\    char req[4096];
     \\    int req_len = snprintf(req, sizeof(req),
     \\        "POST %s HTTP/1.0\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
@@ -25877,8 +25889,21 @@ test "runtime: robin hood table insertion invalidates last-key cache on displace
 
 test "runtime: table getters skip index lookup without metatable" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "if (t && t->metatable.type == VAL_NIL) return lua_val_nil();") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value idx = lua_get_metafield_lit(table, \"__index\", 445260505u, 7);") != null);
-    try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_Value mt = lua_get_metafield_lit(table, \"__index\", 445260505u, 7);") != null);
+    const index_mm = pass23_protocol_registry.luaMetamethodForKernel(.index).?;
+    const idx_needle = try std.fmt.allocPrint(
+        testing.allocator,
+        "lua_Value idx = lua_get_metafield_lit(table, \"{s}\", {d}u, {d})",
+        .{ index_mm, pass23_protocol_registry.luaHash(index_mm), index_mm.len },
+    );
+    defer testing.allocator.free(idx_needle);
+    const mt_needle = try std.fmt.allocPrint(
+        testing.allocator,
+        "lua_Value mt = lua_get_metafield_lit(table, \"{s}\", {d}u, {d})",
+        .{ index_mm, pass23_protocol_registry.luaHash(index_mm), index_mm.len },
+    );
+    defer testing.allocator.free(mt_needle);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, idx_needle) != null);
+    try testing.expect(std.mem.indexOf(u8, duo_runtime, mt_needle) != null);
 }
 
 test "runtime: binop metamethod lookup avoids string interning" {
@@ -25887,6 +25912,29 @@ test "runtime: binop metamethod lookup avoids string interning" {
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_get_metafield_lit(b, name, hash, len)") != null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_get_metafield(a, name)") == null);
     try testing.expect(std.mem.indexOf(u8, duo_runtime, "lua_get_metafield(b, name)") == null);
+}
+
+test "runtime: binop metamethod strings wired through pass23 protocol registry" {
+    for (pass23_protocol_registry.runtime_binop_bindings) |b| {
+        const mm = pass23_protocol_registry.luaMetamethodForKernel(b.op) orelse
+            return error.TestExpectedEqual;
+        const needle = try std.fmt.allocPrint(testing.allocator, "lua_binop_metamethod(\"{s}\", a, b)", .{mm});
+        defer testing.allocator.free(needle);
+        try testing.expect(std.mem.indexOf(u8, duo_runtime, needle) != null);
+    }
+}
+
+test "runtime: metafield lit strings wired through pass23 protocol registry" {
+    for (pass23_protocol_registry.runtime_metafield_bindings) |b| {
+        const hash = pass23_protocol_registry.luaHash(b.lua_metamethod);
+        const mm_needle = try std.fmt.allocPrint(
+            testing.allocator,
+            "\"{s}\", {d}u, {d}",
+            .{ b.lua_metamethod, hash, b.lua_metamethod.len },
+        );
+        defer testing.allocator.free(mm_needle);
+        try testing.expect(std.mem.indexOf(u8, duo_runtime, mm_needle) != null);
+    }
 }
 
 test "runtime: concat copies precomputed lengths" {
