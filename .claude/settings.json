@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(duo run*)",
+      "Bash(duo build*)",
+      "Bash(zig build*)",
+      "Bash(zig version)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ],
+    "deny": []
+  }
+}

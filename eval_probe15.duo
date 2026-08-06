@@ -1,0 +1,16 @@
+inner = "a: i32, b: i32"
+print("len inner=[" .. string.len(inner) .. "]")
+count = 0
+for p in string.gmatch(inner, "%s*([^,]+)") do
+    count = count + 1
+    print("p=[" .. tostring(p) .. "]")
+end
+print("count=[" .. count .. "]")
+-- test simpler pattern
+for p2 in string.gmatch(inner, "[^,]+") do
+    print("p2=[" .. tostring(p2) .. "]")
+end
+-- test with no capture (whole match)
+for p3 in string.gmatch(inner, "%s*[^,]+") do
+    print("p3=[" .. tostring(p3) .. "]")
+end

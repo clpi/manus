@@ -1,0 +1,14 @@
+eval = req "duo_eval"
+json = req "std.json"
+
+src = [[
+fun add_i32(a: i32, b: i32): i32 a + b end
+fun add_i64(a: i64, b: i64): i64 a + b end
+fun add_f32(a: f32, b: f32): f32 a + b end
+fun add_f64(a: f64, b: f64): f64 a + b end
+fun mul_i32(a: i32, b: i32): i32 a * b end
+fun mul_i64(a: i64, b: i64): i64 a * b end
+]]
+
+result = eval.evaluate(src)
+print(json.encode(result, {indent = "  "}))

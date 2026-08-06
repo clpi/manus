@@ -1,0 +1,12 @@
+pset = { ["i32"] = 1, ["i64"] = 1 }
+ptypes_csv = ""
+first = 1
+for pt, _ in pset do
+    print("got pt=[" .. tostring(pt) .. "]")
+    if first == 1 then ptypes_csv = pt; first = 0 else ptypes_csv = ptypes_csv .. "," .. pt end
+end
+print("csv=[" .. tostring(ptypes_csv) .. "]")
+-- also test for x in t do
+for x in pset do
+    print("single=[" .. tostring(x) .. "]")
+end

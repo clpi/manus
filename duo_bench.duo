@@ -183,27 +183,95 @@ mcp.register_tool("duo_agent_gaps_update", {
 end)
 
 mcp.register_tool("duo_agent_session_start", {
-    description = "Session bootstrap: coordination + gaps + canonical index",
+    description = "Session bootstrap: machine-readable dev control plane + coordination excerpt + gaps",
     type = "object",
     properties = {
         agent_id = { type = "string" },
+        work_item = { type = "string", description = "Optional P13-WSn work item for context bundle" },
     },
 }, fun(args)
+    agent = args.agent_id or "agent"
+    wi = args.work_item or ""
+    dev_json = shared.dev_session_start(agent, wi, agent)
     coord = shared.coordination_read()
     p0 = shared.open_p0_gaps()
     canon = shared.canonical_index()
     json_mod.encode({
-        agent_id = args.agent_id or "agent",
+        agent_id = agent,
+        dev_control_plane = dev_json,
         coordination_path = shared.COORD_PATH,
         canonical_index_path = shared.CANON_PATH,
         open_p0_count = #p0,
         next_steps = {
-            "duo_coordination_update(action='claim', ...) before shared edits",
-            "scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo",
+            "duo dev claim acquire --owner <id> --file <path> before shared edits",
+            "duo dev validate run --file <path> --execute after edits",
+            "duo dev integration submit when ready to merge",
         },
-        coordination_excerpt = string.sub(coord, 1, 4000),
+        coordination_excerpt = string.sub(coord, 1, 2000),
         canonical_excerpt = string.sub(canon, 1, 2000),
     })
+end)
+
+mcp.register_tool("duo_dev_claim_acquire", {
+    description = "Acquire machine-readable claim lease (Pass 13)",
+    type = "object",
+    properties = {
+        owner = { type = "string" },
+        file = { type = "string" },
+        client = { type = "string" },
+        work_item = { type = "string" },
+    },
+    required = { "owner", "file" },
+}, fun(args)
+    shared.dev_claim_acquire(args.owner, args.file, args.client or args.owner, args.work_item or "")
+end)
+
+mcp.register_tool("duo_dev_coordination_export", {
+    description = "Export machine-readable active claims (Pass 13 P13-WS18)",
+    type = "object",
+    properties = {},
+}, fun(_args)
+    shared.dev_coordination_export()
+end)
+
+mcp.register_tool("duo_semantic_transaction_preview", {
+    description = "Bounded semantic transaction preview (Pass 12 P12-WS8)",
+    type = "object",
+    properties = {
+        classifier = { type = "string", description = "e.g. classifier.sorted_lookup" },
+    },
+}, fun(args)
+    shared.semantic_transaction_preview(args.classifier or "classifier.sorted_lookup")
+end)
+
+mcp.register_tool("duo_semantic_transaction_validate", {
+    description = "Validate bounded semantic transaction (Pass 12 P12-WS8)",
+    type = "object",
+    properties = {
+        classifier = { type = "string" },
+    },
+}, fun(args)
+    shared.semantic_transaction_validate(args.classifier or "classifier.sorted_lookup")
+end)
+
+mcp.register_tool("duo_semantic_claims", {
+    description = "Release capability registry + effective claims (Pass 12 P12-WS10)",
+    type = "object",
+    properties = {},
+}, fun(_args)
+    shared.semantic_claims()
+end)
+
+mcp.register_tool("duo_dev_validate_run", {
+    description = "Run impact-based validation plan (Pass 13 P13-WS7)",
+    type = "object",
+    properties = {
+        file = { type = "string" },
+        work_item = { type = "string" },
+        execute = { type = "boolean", description = "Actually run gates (default dry-run)" },
+    },
+}, fun(args)
+    shared.dev_validate_run(args.file or "", args.work_item or "", args.execute == true)
 end)
 
 mcp.register_tool("duo_bench_regressions", {

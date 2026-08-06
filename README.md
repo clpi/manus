@@ -121,4 +121,10 @@ See `.agents/AGENT_CANONICAL.md` in the Duo repo for the full router.
 ## Development
 
 All MCP servers are pure Duo. Add tools by registering them via `std.mcp.register_tool()`.
-Shared coordination logic is in `scripts/mcp/duo_shared.duo`.
+Shared coordination logic is in `duo_shared.duo` (also mirrored to `scripts/mcp/duo_shared.duo` in the Duo repo).
+
+For a comprehensive quick-reference of all tools organized by category, see **[TOOLS.md](./TOOLS.md)**.
+
+## Test artifacts
+
+The `eval_probe*.duo` files (probe1 through probe35+) are **test artifacts** from the `duo_exponential_eval` evaluator development. They exercise the Duo compiler's codegen paths and are not part of the MCP server implementation. Their compiled outputs (`*.out`) are gitignored.

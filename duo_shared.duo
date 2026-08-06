@@ -129,6 +129,71 @@ fun repo_tooling(script_name: str, args: str): any
     return { exit_code = rc, passed = rc == 0, script = script_name }
 end
 
+-- === Pass 13 dev control plane (machine-readable claims) ===
+
+fun dev_session_start(owner: str, work_item: str, client: str): str
+    cmd = DUO_BIN .. " dev session start --owner " .. owner
+    if client ~= "" then cmd = cmd .. " --client " .. client end
+    if work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
+    script.capture(cmd .. " 2>&1")
+end
+
+fun dev_claim_acquire(owner: str, file: str, client: str, work_item: str): str
+    cmd = DUO_BIN .. " dev claim acquire --owner " .. owner .. " --file " .. file
+    if client ~= "" then cmd = cmd .. " --client " .. client end
+    if work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
+    script.capture(cmd .. " 2>&1")
+end
+
+fun dev_claim_list(): str
+    script.capture(DUO_BIN .. " dev claim list 2>&1")
+end
+
+fun dev_coordination_export(): str
+    script.capture(DUO_BIN .. " dev coordination export 2>&1")
+end
+
+fun dev_validate_plan(file: str, work_item: str): str
+    cmd = DUO_BIN .. " dev validate plan"
+    if file ~= "" then cmd = cmd .. " --file " .. file
+    elseif work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
+    script.capture(cmd .. " 2>&1")
+end
+
+fun semantic_claims(): str
+    script.capture(DUO_BIN .. " semantic claims 2>&1")
+end
+
+fun semantic_transaction_preview(classifier: str): str
+    c = classifier
+    if c == nil or c == "" then c = "classifier.sorted_lookup" end
+    script.capture(DUO_BIN .. " semantic preview " .. c .. " 2>&1")
+end
+
+fun semantic_transaction_validate(classifier: str): str
+    c = classifier
+    if c == nil or c == "" then c = "classifier.sorted_lookup" end
+    script.capture(DUO_BIN .. " semantic validate " .. c .. " 2>&1")
+end
+
+fun dev_integration_list(): str
+    script.capture(DUO_BIN .. " dev integration list 2>&1")
+end
+
+fun dev_integration_submit(owner: str, work_item: str, claim_id: str): str
+    cmd = DUO_BIN .. " dev integration submit --owner " .. owner .. " --work-item " .. work_item
+    if claim_id ~= nil and claim_id ~= "" then cmd = cmd .. " --claim-id " .. claim_id end
+    script.capture(cmd .. " 2>&1")
+end
+
+fun dev_validate_run(file: str, work_item: str, execute: bool): str
+    cmd = DUO_BIN .. " dev validate run"
+    if file ~= nil and file ~= "" then cmd = cmd .. " --file " .. file
+    elseif work_item ~= nil and work_item ~= "" then cmd = cmd .. " --work-item " .. work_item end
+    if execute then cmd = cmd .. " --execute" end
+    script.capture(cmd .. " 2>&1")
+end
+
 -- === Native boxing audit ===
 
 fun dump_c(file_path: str): str
@@ -532,7 +597,8 @@ fun exponential_evaluate(code: str, file_path: str): any
             end
         end
         if #nm > 0
-            for _, suf in TYPE_SUFFIXES
+            for si = 1, #TYPE_SUFFIXES
+                suf = TYPE_SUFFIXES[si]
                 slen = #suf + 1
                 if #nm > slen and string.sub(nm, -slen) == "_" .. suf
                     base = string.sub(nm, 1, #nm - slen)
@@ -913,6 +979,17 @@ M.perf_ledger = perf_ledger
 M.exponential_evaluate = exponential_evaluate
 M.file_finding = file_finding
 M.agent_gaps_update = agent_gaps_update
+M.dev_session_start = dev_session_start
+M.dev_claim_acquire = dev_claim_acquire
+M.dev_claim_list = dev_claim_list
+M.dev_coordination_export = dev_coordination_export
+M.dev_validate_plan = dev_validate_plan
+M.semantic_claims = semantic_claims
+M.semantic_transaction_preview = semantic_transaction_preview
+M.semantic_transaction_validate = semantic_transaction_validate
+M.dev_integration_list = dev_integration_list
+M.dev_integration_submit = dev_integration_submit
+M.dev_validate_run = dev_validate_run
 M.bench_regressions = bench_regressions
 M.perf_gaps = perf_gaps
 M.audit_codegen_pitfalls = audit_codegen_pitfalls

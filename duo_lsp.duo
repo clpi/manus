@@ -115,6 +115,33 @@ mcp.register_tool("duo_compile_check", "Run duo check and return parsed diagnost
     json_mod.encode({ diagnostics = diags, raw_output = string.sub(output, 1, 5000) })
 end)
 
+-- Tool: duo_table_shapes — semantic graph table/enum shape export for agents
+mcp.register_tool("duo_table_shapes", "Export table_shapes and enum_shapes from duo graph JSON", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .duo file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    output = script.capture(shared.DUO_BIN .. " graph " .. args.file_path .. " 2>&1")
+    if string.find(output, ": error:") or string.find(output, "sema error") or string.find(output, "parse failed")
+        json_mod.encode({ ok = false, error = string.sub(output, 1, 4000), table_shapes = {}, enum_shapes = {} })
+    else
+        parsed = json_mod.decode(output)
+        if parsed == nil
+            json_mod.encode({ ok = false, error = "failed to parse duo graph JSON", raw_output = string.sub(output, 1, 2000) })
+        else
+            json_mod.encode({
+                ok = true,
+                file = parsed.file,
+                table_shapes = parsed.table_shapes or {},
+                enum_shapes = parsed.enum_shapes or {},
+                node_count = parsed.nodes and rawlen(parsed.nodes) or 0,
+            })
+        end
+    end
+end)
+
 -- Tool: duo_meta_catalog — list all @comp.* constructs
 mcp.register_tool("duo_meta_catalog", "List all @comp.* / @meta.* constructs", {
     type = "object",
@@ -667,6 +694,62 @@ mcp.register_tool("duo_combinator_info", "Get detailed documentation and example
 }, fun(args)
     result = shared.combinator_info(args.path)
     json_mod.encode(result)
+end)
+
+-- Tool: duo_semantic_snapshot — SIM v0 export for a native Duo module (Pass 5 P5-08)
+mcp.register_tool("duo_semantic_snapshot", "Export SIM v0 semantic snapshot JSON for a .duo file (Pass 5 Layer A)", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .duo file" },
+    },
+    required = { "file_path" },
+}, fun(args)
+    json_mod.encode(shared.semantic_snapshot(args.file_path))
+end)
+
+-- Tool: duo_foreign_import_preview — C header → SIM preview (Pass 5 P5-08)
+mcp.register_tool("duo_foreign_import_preview", "Preview C header import as SIM v0 entities with abi.specialize applied", {
+    type = "object",
+    properties = {
+        header_path = { type = "string", description = "Path to C header (.h)" },
+        source_dir = { type = "string", description = "Optional directory for resolving relative includes (defaults to header dirname)" },
+    },
+    required = { "header_path" },
+}, fun(args)
+    src_dir = args.source_dir or ""
+    if src_dir == "" then
+        dir = string.match(args.header_path, "^(.*)/[^/]+$")
+        if dir then src_dir = dir end
+    end
+    json_mod.encode(shared.foreign_import_preview(args.header_path, src_dir))
+end)
+
+-- Tool: duo_pass6_catalog — Pass 6 reconciliation catalog (duplications, risks, DAG)
+mcp.register_tool("duo_pass6_catalog", "Read Pass 6 architectural reconciliation catalog (duplication matrix, risks, scorecard, dependency DAG)", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    json_mod.encode(shared.pass6_catalog())
+end)
+
+-- Tool: duo_pass5_catalog — Pass 5 workstream/milestone status from duo catalog
+mcp.register_tool("duo_pass5_catalog", "Read Pass 5 semantic interchange catalog (workstreams + P5-M1 milestone)", {
+    type = "object",
+    properties = {},
+}, fun(_args)
+    json_mod.encode(shared.pass5_catalog())
+end)
+
+-- Tool: duo_foreign_entity_lookup — resolve a symbol via @c.import headers in a .duo file
+mcp.register_tool("duo_foreign_entity_lookup", "Look up a foreign type/function from @c.import headers in a Duo source file", {
+    type = "object",
+    properties = {
+        file_path = { type = "string", description = "Path to .duo file containing @c.import" },
+        symbol = { type = "string", description = "Foreign symbol name (e.g. CPoint, distance2)" },
+    },
+    required = { "file_path", "symbol" },
+}, fun(args)
+    json_mod.encode(shared.foreign_entity_lookup(args.file_path, args.symbol))
 end)
 
 -- Start serving

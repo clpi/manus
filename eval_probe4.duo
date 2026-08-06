@@ -1,0 +1,7 @@
+ev = req "duo_eval"
+print("1")
+a = ev.audit_boxing("fun add_i32(a: i32, b: i32): i32 a + b end\n")
+print("2 audit total_chars=" .. a.total_chars)
+n = ev.count_newlines("a\nb\nc")
+print("3 newlines=" .. n)
+print("4 done")

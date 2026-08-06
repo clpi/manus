@@ -34,8 +34,15 @@ fun parse_fun_header_str(line: str): any
     if name == nil or blob == nil then return nil end
     inner = string.sub(blob, 2, #blob - 1)
     -- collect distinct param types into a csv (string-keyed set, G-054-safe: literals only)
+    -- NOTE: avoid string.gmatch here — it uses a global state and breaks
+    -- any outer gmatch iterator that called us (e.g. extract_records).
     pset = {}
-    for p in string.gmatch(inner, "%s*([^,]+)") do
+    pos = 1
+    while pos <= #inner do
+        p_start, p_end = string.find(inner, "[^,]+", pos)
+        if p_start == nil then break end
+        p = string.sub(inner, p_start, p_end)
+        pos = p_end + 1
         pt = string.match(p, "^%s*[%w_]+%s*:%s*([%w_]+)%s*$")
         if pt ~= nil then pset[pt] = 1 end
     end
@@ -181,14 +188,15 @@ end
 fun audit_boxing(source: str): any
     tmp = "/tmp/duo_eval_audit.duo"
     fs.write_file(tmp, source)
-    -- full path default: "duo" is not on PATH (was the root cause of the 68-char error output)
-    bin = os.getenv("DUO_BIN", "/Users/clp/x/duo/zig-out/bin/duo")
+    -- full path default: "duo" is not on PATH (was the root cause of the 68-char error output).
+    -- NOTE: os.getenv(name, default) ignores its 2nd arg (Lua 5.1 runtime) — use sx.getenv.
+    bin = sx.getenv("DUO_BIN", "/Users/clp/x/duo/zig-out/bin/duo")
     c = sx.capture(bin .. " dump-c " .. tmp .. " 2>&1") or ""
     needles = { ["lua_invoke("] = 1, ["lua_table_get_str_lit("] = 1, ["lua_Value "] = 1, ["lua_table_new("] = 1, ["lua_val_from_"] = 1, ["lua_to_str("] = 1, ["lua_to_int("] = 1 }
     hits_csv = ""
     hit_marks = ""
     first = 1
-    for needle in needles do
+    for needle, _ in needles do
         if string.find(c, needle, 1, true) ~= nil then
             hit_marks = hit_marks .. "."
             if first == 1 then hits_csv = needle; first = 0 else hits_csv = hits_csv .. "," .. needle end

@@ -1,0 +1,22 @@
+-- Test: explicit iterator call
+it = string.gmatch("abcabc", "abc")
+print("it type: " .. tostring(type(it)))
+
+-- Test: call it directly
+r1 = it()
+print("r1=[" .. tostring(r1) .. "]")
+r2 = it()
+print("r2=[" .. tostring(r2) .. "]")
+r3 = it()
+print("r3=[" .. tostring(r3) .. "]")
+r4 = it()
+print("r4=[" .. tostring(r4) .. "]")
+
+-- Test: gmatch with non-literal pattern
+it2 = string.gmatch("a,b,c", "[^,]+")
+r5 = it2()
+print("r5=[" .. tostring(r5) .. "]")
+r6 = it2()
+print("r6=[" .. tostring(r6) .. "]")
+r7 = it2()
+print("r7=[" .. tostring(r7) .. "]")
