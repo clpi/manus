@@ -8,6 +8,8 @@
 @c.include("time.h")
 
 global ward_os = req "std.os"
+global cli_mod = req "src.cli"
+global argparse_mod = req "std.argparse"
 
 -- NOTE: the duo compiler's transitive `req` discovery (emit_required_modules,
 -- src/codegen.zig) silently drops modules that sit 3+ hops deep in the
@@ -47,43 +49,35 @@ req "src.edge.init"
 global commands = {}
 
 fun ward_run(opts)
-  cli_mod = req "src.cli"
   cli_mod.run(opts)
 end
 
 fun ward_bench(opts)
-  cli_mod = req "src.cli"
   cli_mod.bench(opts)
 end
 
 fun ward_compile(opts)
-  cli_mod = req "src.cli"
   cli_mod.compile(opts)
 end
 
 fun ward_deploy(opts)
-  cli_mod = req "src.cli"
   cli_mod.deploy(opts)
 end
 
 fun ward_shell(opts)
-  cli_mod = req "src.cli"
   cli_mod.shell(opts)
 end
 
 fun ward_inspect(opts)
-  cli_mod = req "src.cli"
   cli_mod.inspect(opts)
 end
 
 fun ward_init(opts)
-  cli_mod = req "src.cli"
   cli_mod.init(opts)
 end
 
 fun ward_version(opts)
-  fmt_mod = req "std.fmt"
-  fmt_mod.println("ward 0.1.0")
+  print("ward 0.1.0")
 end
 
 commands["run"] = ward_run
@@ -96,8 +90,6 @@ commands["init"] = ward_init
 commands["version"] = ward_version
 
 fun ward_entry(args)
-  argparse_mod = req "std.argparse"
-  fmt_mod = req "std.fmt"
 
   parser = argparse_mod.new("ward", "AI-native WASM runtime")
   argparse_mod.add_positional(parser, "command", "Command to run", {})
@@ -125,8 +117,8 @@ fun ward_entry(args)
   if handler then
     handler(opts)
   else
-    fmt_mod.println("ward: unknown command {}", cmd)
-    fmt_mod.println("Commands: run, bench, compile, deploy, shell, inspect, init, version")
+    print("ward: unknown command " .. tostring(cmd))
+    print("Commands: run, bench, compile, deploy, shell, inspect, init, version")
     ward_os.exit(1)
   end
 end

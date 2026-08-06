@@ -31,6 +31,10 @@ const X19 = 19
 const X20 = 20
 const X21 = 21
 const X22 = 22
+const X23 = 23
+-- Locals 0..PINNED_MAX-1 live in x23..x28 when a function has few enough of
+-- them; beyond that they stay in the frame.
+const PINNED_MAX = 6
 
 -- ── Encoders ────────────────────────────────────────────────────────────
 -- One shape for every three-register data-processing instruction.
@@ -107,17 +111,16 @@ const BIN = {
   [0x7C] = {base=0x8B000000, w=false}, [0x7D] = {base=0xCB000000, w=false}, [0x7E] = {base=0x9B007C00, w=false},
   [0x83] = {base=0x8A000000, w=false}, [0x84] = {base=0xAA000000, w=false}, [0x85] = {base=0xCA000000, w=false},
   [0x86] = {base=0x9AC02000, w=false}, [0x87] = {base=0x9AC02800, w=false}, [0x88] = {base=0x9AC02400, w=false},
-  [0x6D] = {base=0x1AC00C00, w=true},  [0x6E] = {base=0x1AC00800, w=true},   -- i32.div_s / div_u
-  [0x7F] = {base=0x9AC00C00, w=false}, [0x80] = {base=0x9AC00800, w=false},  -- i64.div_s / div_u
-  [0x77] = {base=0x1AC02C00, w=true},  [0x89] = {base=0x9AC02C00, w=false},  -- i32/i64.rotr
+  -- ARM64 has RORV (rotate right) only. 0x78/0x8A are rotr and map directly;
+  -- rotl (0x77/0x89) would need a rotate-by-(width-n) rewrite, so it is left
+  -- to the interpreter rather than mapped to the wrong instruction.
+  [0x78] = {base=0x1AC02C00, w=true},  [0x8A] = {base=0x9AC02C00, w=false},  -- i32/i64.rotr
 }
-
--- Remainder: ARM64 has no rem, so it is div followed by msub (n - q*m).
---   div = the divide encoding, w = 32-bit form
-const REM = {
-  [0x6F] = {div=0x1AC00C00, w=true},  [0x70] = {div=0x1AC00800, w=true},   -- i32.rem_s / rem_u
-  [0x81] = {div=0x9AC00C00, w=false}, [0x82] = {div=0x9AC00800, w=false},  -- i64.rem_s / rem_u
-}
+-- Remainder and division are intentionally NOT JIT-compiled: both must trap
+-- on a zero divisor (and signed division on INT_MIN/-1), and the JIT has no
+-- trap path yet. Omitting them makes any function using them fall back to
+-- the interpreter, which traps correctly. 20 i32-suite failures otherwise.
+const REM = {}
 
 -- Width conversions: single instruction, operand in X8.
 const CONV = {
@@ -164,7 +167,7 @@ const LEB1 = { [0x20]=true, [0x21]=true, [0x22]=true, [0x41]=true, [0x42]=true,
 
 -- ── Code buffer ─────────────────────────────────────────────────────────
 fun buf_new(cap: i64)
-  return { mem = jit.alloc(cap * 4), n = 0, cap = cap, ok = true, tos = -1 }
+  return { mem = jit.alloc(cap * 4), n = 0, cap = cap, ok = true, vs = {}, vsn = 0, pinned = 0 }
 end
 fun put(b, insn: i64)
   if b.n >= b.cap
@@ -187,36 +190,101 @@ end
 -- top of the operand stack, or -1 when the top lives in memory. A push
 -- followed by a pop then costs one register move instead of a store and a
 -- load, which is most of the traffic in straight-line code.
-fun flush_tos(b)
-  if b.tos >= 0
-    put(b, add_imm(X20, X20, 1))
-    put(b, str_reg(b.tos, X19, X20))
-    b.tos = -1
+-- ── Virtual operand stack ───────────────────────────────────────────────
+-- Wasm's operand-stack depth is statically known at every instruction, so the
+-- stack can be modelled at compile time and its top entries kept in registers.
+-- `vs[1..vsn]` holds the registers backing the top `vsn` slots (vs[vsn] is the
+-- top); anything deeper lives in memory.
+--
+-- The crucial property versus the old one-entry cache: `vpop` *returns* the
+-- register holding the value rather than moving it into a caller-chosen one.
+-- That removes every aliasing case — no emitter can clobber a live slot,
+-- because no emitter picks its own destination.
+const VS_MAX = 6
+const POOL = { 8, 9, 10, 11, 12, 13, 14, 15 }
+
+fun vs_holds(b, r: i64): bool
+  i: i64 = 1
+  while i <= b.vsn
+    if b.vs[i] == r return true end
+    i = i + 1
   end
+  return false
 end
-fun push_reg(b, s: i64)
-  b.tos = s
-end
-fun pop_reg(b, d: i64)
-  if b.tos >= 0
-    if b.tos ~= d
-      put(b, mov_reg(d, b.tos))
-    end
-    b.tos = -1
-    return
+
+-- Like vs_alloc but also avoids two registers the caller still holds live.
+-- A popped register is no longer tracked by the virtual stack, so without this
+-- a multi-instruction sequence can allocate the very register it is about to
+-- read (e.g. materialising a memory offset into the address register).
+fun vs_alloc_not(b, a1: i64, a2: i64): i64
+  i: i64 = 1
+  while i <= 8
+    r: i64 = POOL[i]
+    if not vs_holds(b, r) and r ~= a1 and r ~= a2 return r end
+    i = i + 1
   end
+  return POOL[1]
+end
+
+-- A pool register no live slot is using.
+fun vs_alloc(b): i64
+  i: i64 = 1
+  while i <= 8
+    r: i64 = POOL[i]
+    if not vs_holds(b, r) return r end
+    i = i + 1
+  end
+  return POOL[1]
+end
+
+-- Spill the deepest cached slot to memory, keeping stack order.
+fun vs_spill_deepest(b)
+  if b.vsn <= 0 return end
+  put(b, add_imm(X20, X20, 1))
+  put(b, str_reg(b.vs[1], X19, X20))
+  i: i64 = 1
+  while i < b.vsn
+    b.vs[i] = b.vs[i + 1]
+    i = i + 1
+  end
+  b.vsn = b.vsn - 1
+end
+
+fun vs_push(b, r: i64)
+  if b.vsn >= VS_MAX
+    vs_spill_deepest(b)
+  end
+  b.vsn = b.vsn + 1
+  b.vs[b.vsn] = r
+end
+
+-- Returns the register holding the top of stack.
+fun vs_pop(b): i64
+  if b.vsn > 0
+    r: i64 = b.vs[b.vsn]
+    b.vsn = b.vsn - 1
+    return r
+  end
+  d: i64 = vs_alloc(b)
   put(b, ldr_reg(d, X19, X20))
   put(b, sub_imm(X20, X20, 1))
+  return d
 end
--- Read the top without consuming it (local.tee).
-fun peek_tos(b, d: i64)
-  if b.tos >= 0
-    if b.tos ~= d
-      put(b, mov_reg(d, b.tos))
-    end
-    return
-  end
+
+-- Top without consuming (local.tee).
+fun vs_peek(b): i64
+  if b.vsn > 0 return b.vs[b.vsn] end
+  d: i64 = vs_alloc(b)
   put(b, ldr_reg(d, X19, X20))
+  return d
+end
+
+-- All cached slots to memory, deepest first. Required at every control-flow
+-- edge, since the register mapping cannot span a branch.
+fun flush_tos(b)
+  while b.vsn > 0
+    vs_spill_deepest(b)
+  end
 end
 fun mov_imm(b, d: i64, v: i64)
   put(b, movz(d, v & 0xFFFF, 0))
@@ -258,8 +326,18 @@ end
 -- Store sp back, return it in x0, restore the spilled callee-saved registers.
 fun emit_epilogue(b)
   flush_tos(b)
+  ei: i64 = 0
+  while ei < b.pinned
+    put(b, str_imm(X23 + ei, X21, ei * 8))
+    ei = ei + 1
+  end
   put(b, str_imm(X20, X0, RT_SP))
   put(b, 0xAA1403E0)                           -- mov x0, x20
+  if b.pinned > 0
+    put(b, ldp_post(X23 + 4, X23 + 5))
+    put(b, ldp_post(X23 + 2, X23 + 3))
+    put(b, ldp_post(X23, X23 + 1))
+  end
   put(b, ldp_post(X21, X22))
   put(b, ldp_post(X19, X20))
   put(b, RET)
@@ -311,6 +389,32 @@ end
 -- ── Compile ─────────────────────────────────────────────────────────────
 -- Returns a sealed buffer callable as fn(WardRT*, WardFrame*) -> new sp,
 -- or nil when the body uses anything outside the supported set.
+-- Highest local index touched + 1. Decides whether every local fits in the
+-- pinned register file.
+fun locals_touched(body: any, body_len: i64): i64
+  pc: i64 = 1
+  hi: i64 = 0
+  while pc <= body_len
+    op: i64 = string.byte(body, pc)
+    pc = pc + 1
+    if op == 0x20 or op == 0x21 or op == 0x22
+      idx, np = leb_u(body, pc)
+      pc = np
+      if idx + 1 > hi then hi = idx + 1 end
+    elseif BIN[op] ~= nil or CMP[op] ~= nil or REM[op] ~= nil or CONV[op] ~= nil or op == 0x1B
+    elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
+    elseif op == 0x02 or op == 0x03
+      pc = pc + 1
+    elseif MEM[op] ~= nil
+      _, pc = leb_u(body, pc)
+      _, pc = leb_u(body, pc)
+    elseif LEB1[op] ~= nil
+      _, pc = leb_s(body, pc)
+    end
+  end
+  return hi
+end
+
 fun compile(body: any, body_len: i64)
   if not can_compile(body, body_len) return nil end
 
@@ -321,10 +425,26 @@ fun compile(body: any, body_len: i64)
   -- so they must be spilled before use or we corrupt our caller.
   put(b, stp_pre(X19, X20))
   put(b, stp_pre(X21, X22))
+  -- Gate the spill on pinned > 0, matching the epilogue exactly. A function
+  -- with zero locals must NOT push x23..x28, or the epilogue (which pops only
+  -- when pinned > 0) leaves the stack unbalanced and the return goes wild.
+  nloc: i64 = locals_touched(body, body_len)
+  b.pinned = 0
+  if nloc > 0 and nloc <= PINNED_MAX then b.pinned = nloc end
+  if b.pinned > 0
+    put(b, stp_pre(X23, X23 + 1))
+    put(b, stp_pre(X23 + 2, X23 + 3))
+    put(b, stp_pre(X23 + 4, X23 + 5))
+  end
   put(b, ldr_imm(X19, X0, RT_STACK))
   put(b, ldr_imm(X20, X0, RT_SP))
   put(b, ldr_imm(X21, X1, FR_LOCALS))
   put(b, ldr_imm(X22, X0, RT_MEMORY))
+  li: i64 = 0
+  while li < b.pinned
+    put(b, ldr_imm(X23 + li, X21, li * 8))
+    li = li + 1
+  end
 
   labels = {}          -- control stack: { kind, target_insn, patches }
   depth: i64 = 0
@@ -336,85 +456,109 @@ fun compile(body: any, body_len: i64)
 
     if BIN[op] ~= nil
       spec = BIN[op]
-      pop_reg(b, X9)
-      pop_reg(b, X8)
-      put(b, dp3(spec.base, X8, X8, X9))
-      if spec.w then put(b, sxtw(X8, X8)) end
-      push_reg(b, X8)
+      rb: i64 = vs_pop(b)
+      ra: i64 = vs_pop(b)
+      rd: i64 = vs_alloc(b)
+      put(b, dp3(spec.base, rd, ra, rb))
+      if spec.w then put(b, sxtw(rd, rd)) end
+      vs_push(b, rd)
 
     elseif CMP[op] ~= nil
       spec = CMP[op]
-      pop_reg(b, X9)
-      pop_reg(b, X8)
+      cb: i64 = vs_pop(b)
+      ca: i64 = vs_pop(b)
+      cd: i64 = vs_alloc(b)
       if spec.w
-        put(b, 0x6B00001F | (X9 << 16) | (X8 << 5))   -- cmp Wn, Wm
+        put(b, 0x6B00001F | (cb << 16) | (ca << 5))   -- cmp Wn, Wm
       else
-        put(b, 0xEB00001F | (X9 << 16) | (X8 << 5))   -- cmp Xn, Xm
+        put(b, 0xEB00001F | (cb << 16) | (ca << 5))   -- cmp Xn, Xm
       end
-      put(b, cset(X8, spec.cond))
-      push_reg(b, X8)
+      put(b, cset(cd, spec.cond))
+      vs_push(b, cd)
 
     elseif op == 0x45 or op == 0x50            -- i32.eqz / i64.eqz
-      pop_reg(b, X8)
-      put(b, 0xEB00001F | (31 << 16) | (X8 << 5))     -- cmp Xn, xzr
-      put(b, cset(X8, 0x0))
-      push_reg(b, X8)
+      za: i64 = vs_pop(b)
+      zd: i64 = vs_alloc(b)
+      put(b, 0xEB00001F | (31 << 16) | (za << 5))     -- cmp Xn, xzr
+      put(b, cset(zd, 0x0))
+      vs_push(b, zd)
 
     elseif op == 0x20                          -- local.get
       idx, pc = leb_u(body, pc)
-      flush_tos(b)
-      put(b, ldr_imm(X8, X21, idx * 8))
-      push_reg(b, X8)
+      if idx < b.pinned
+        -- Copy into a fresh register rather than caching the pinned one: the
+        -- same local read twice would otherwise occupy two slots with one
+        -- register, and mutating either (a store address, a uxtw) corrupts the
+        -- other.
+        lp: i64 = vs_alloc(b)
+        put(b, mov_reg(lp, X23 + idx))
+        vs_push(b, lp)
+      else
+        lg: i64 = vs_alloc(b)
+        put(b, ldr_imm(lg, X21, idx * 8))
+        vs_push(b, lg)
+      end
 
     elseif op == 0x21                          -- local.set
       idx, pc = leb_u(body, pc)
-      pop_reg(b, X8)
-      put(b, str_imm(X8, X21, idx * 8))
+      ls: i64 = vs_pop(b)
+      if idx < b.pinned
+        put(b, mov_reg(X23 + idx, ls))
+      else
+        put(b, str_imm(ls, X21, idx * 8))
+      end
 
     elseif op == 0x22                          -- local.tee
       idx, pc = leb_u(body, pc)
-      peek_tos(b, X8)
-      put(b, str_imm(X8, X21, idx * 8))
+      lt: i64 = vs_peek(b)
+      if idx < b.pinned
+        put(b, mov_reg(X23 + idx, lt))
+      else
+        put(b, str_imm(lt, X21, idx * 8))
+      end
 
     elseif op == 0x41                          -- i32.const
       v, pc = leb_s(body, pc)
-      flush_tos(b)
-      mov_imm(b, X8, v & 0xFFFFFFFF)
-      put(b, sxtw(X8, X8))
-      push_reg(b, X8)
+      k32: i64 = vs_alloc(b)
+      mov_imm(b, k32, v & 0xFFFFFFFF)
+      put(b, sxtw(k32, k32))
+      vs_push(b, k32)
 
     elseif op == 0x42                          -- i64.const
       v, pc = leb_s(body, pc)
-      flush_tos(b)
-      mov_imm(b, X8, v)
-      push_reg(b, X8)
+      k64: i64 = vs_alloc(b)
+      mov_imm(b, k64, v)
+      vs_push(b, k64)
 
     elseif REM[op] ~= nil
       spec = REM[op]
-      pop_reg(b, X9)                            -- divisor
-      pop_reg(b, X8)                            -- dividend
-      put(b, dp3(spec.div, X10, X8, X9))        -- q = a / b
-      put(b, msub(X8, X10, X9, X8, spec.w))     -- a - q*b
-      if spec.w then put(b, sxtw(X8, X8)) end
-      push_reg(b, X8)
+      mb: i64 = vs_pop(b)                       -- divisor
+      ma: i64 = vs_pop(b)                       -- dividend
+      mq: i64 = vs_alloc_not(b, ma, mb)
+      put(b, dp3(spec.div, mq, ma, mb))         -- q = a / b
+      md: i64 = vs_alloc_not(b, ma, mb)
+      put(b, msub(md, mq, mb, ma, spec.w))      -- a - q*b
+      if spec.w then put(b, sxtw(md, md)) end
+      vs_push(b, md)
 
     elseif CONV[op] ~= nil
-      pop_reg(b, X8)
+      cv: i64 = vs_pop(b)
       insn: i64 = CONV[op]
       if op == 0xAD
-        put(b, uxtw(X8, X8))
+        put(b, uxtw(cv, cv))
       else
-        put(b, insn | (X8 << 5) | X8)
+        put(b, insn | (cv << 5) | cv)
       end
-      push_reg(b, X8)
+      vs_push(b, cv)
 
     elseif op == 0x1B                          -- select
-      pop_reg(b, X8)                            -- condition
-      pop_reg(b, X9)                            -- value when false
-      pop_reg(b, X10)                           -- value when true
-      put(b, 0xEB00001F | (31 << 16) | (X8 << 5))   -- cmp x8, xzr
-      put(b, csel(X8, X10, X9, 0x1))            -- ne -> true value
-      push_reg(b, X8)
+      sc: i64 = vs_pop(b)                       -- condition
+      sf: i64 = vs_pop(b)                       -- value when false
+      st: i64 = vs_pop(b)                       -- value when true
+      sd: i64 = vs_alloc_not(b, st, sf)
+      put(b, 0xEB00001F | (31 << 16) | (sc << 5))   -- cmp cond, xzr
+      put(b, csel(sd, st, sf, 0x1))             -- ne -> true value
+      vs_push(b, sd)
 
     elseif MEM[op] ~= nil
       spec = MEM[op]
@@ -422,42 +566,48 @@ fun compile(body: any, body_len: i64)
       off, pc2 = leb_u(body, pc)
       pc = pc2
       if spec.ld
-        pop_reg(b, X8)                         -- address
-        put(b, uxtw(X8, X8))                   -- wasm i32 address is unsigned
+        ad: i64 = vs_pop(b)                    -- address
+        put(b, uxtw(ad, ad))                   -- wasm i32 address is unsigned
         if off ~= 0
-          mov_imm(b, X9, off)
-          put(b, dp3(0x8B000000, X8, X8, X9))  -- add x8, x8, x9
+          ot: i64 = vs_alloc_not(b, ad, ad)
+          mov_imm(b, ot, off)
+          put(b, dp3(0x8B000000, ad, ad, ot))
         end
-        put(b, mem_rr(spec.base, X8, X22, X8))
-        if spec.ext == "s32" then put(b, sxtw(X8, X8)) end
-        push_reg(b, X8)
+        put(b, mem_rr(spec.base, ad, X22, ad))
+        if spec.ext == "s32" then put(b, sxtw(ad, ad)) end
+        vs_push(b, ad)
       else
-        pop_reg(b, X9)                         -- value
-        pop_reg(b, X8)                         -- address
-        put(b, uxtw(X8, X8))
+        sv: i64 = vs_pop(b)                    -- value
+        sa: i64 = vs_pop(b)                    -- address
+        put(b, uxtw(sa, sa))
         if off ~= 0
-          mov_imm(b, X10, off)
-          put(b, dp3(0x8B000000, X8, X8, X10))
+          ot2: i64 = vs_alloc_not(b, sa, sv)
+          mov_imm(b, ot2, off)
+          put(b, dp3(0x8B000000, sa, sa, ot2))
         end
-        put(b, mem_rr(spec.base, X9, X22, X8))
+        put(b, mem_rr(spec.base, sv, X22, sa))
       end
 
     elseif op == 0x23                          -- global.get
       idx, pc = leb_u(body, pc)
-      flush_tos(b)
-      put(b, ldr_imm(X9, X0, RT_GLOBALS))
-      put(b, ldr_imm(X8, X9, idx * 8))
-      push_reg(b, X8)
+      gp: i64 = vs_alloc(b)
+      put(b, ldr_imm(gp, X0, RT_GLOBALS))
+      gv: i64 = vs_alloc_not(b, gp, gp)
+      put(b, ldr_imm(gv, gp, idx * 8))
+      vs_push(b, gv)
 
     elseif op == 0x24                          -- global.set
       idx, pc = leb_u(body, pc)
-      pop_reg(b, X8)
-      put(b, ldr_imm(X9, X0, RT_GLOBALS))
-      put(b, str_imm(X8, X9, idx * 8))
+      gs: i64 = vs_pop(b)
+      -- gs is untracked once popped, so the base register must exclude it:
+      -- allocating gs here would overwrite the value with the globals pointer.
+      gb: i64 = vs_alloc_not(b, gs, gs)
+      put(b, ldr_imm(gb, X0, RT_GLOBALS))
+      put(b, str_imm(gs, gb, idx * 8))
 
     elseif op == 0x1A                          -- drop
-      if b.tos >= 0
-        b.tos = -1
+      if b.vsn > 0
+        b.vsn = b.vsn - 1
       else
         put(b, sub_imm(X20, X20, 1))
       end
@@ -497,12 +647,12 @@ fun compile(body: any, body_len: i64)
       d, pc = leb_u(body, pc)
       lb = labels[depth - d]
       if lb == nil return nil end
-      pop_reg(b, X8)
+      bc: i64 = vs_pop(b)
       flush_tos(b)
       if lb.kind == 0x03
-        put(b, cbnz(X8, lb.target - b.n))
+        put(b, cbnz(bc, lb.target - b.n))
       else
-        put(b, cbz(X8, 2))                     -- skip the branch when false
+        put(b, cbz(bc, 2))                     -- skip the branch when false
         lb.patches[#lb.patches + 1] = b.n
         put(b, 0)
       end

@@ -3,10 +3,10 @@
 
 global module = req "src.wasm.module"
 global op     = req "src.wasm.op"
-runtime = req "src.wasm.runtime"
-wasi    = req "src.wasm.wasi"
-aot     = req "src.wasm.aot"
-jit     = req "src.wasm.jit"
+global runtime = req "src.wasm.runtime"
+global wasi    = req "src.wasm.wasi"
+global aot     = req "src.wasm.aot"
+global jit     = req "src.wasm.jit"
 
 -- Convenience: decode a .wasm file bytes into a Module
 fun decode(data: any): any

@@ -27,8 +27,35 @@ fun run(opts)
   })
 
   wasm.runtime.instantiate(rt, mod)
-  func = opts["function"] or "_start"
-  wasm.runtime.call(rt, func, opts.rest_args or {})
+  -- WARD_INVOKE names the export to call and WARD_ARGS supplies its arguments
+  -- (space separated). Env vars rather than flags because the conformance
+  -- harness drives thousands of invocations and must not depend on option
+  -- parsing. Falls back to the --function flag, then to _start.
+  func = ward_os.getenv("WARD_INVOKE")
+  if func == nil or func == ""
+    func = opts["function"] or "_start"
+  end
+  call_args = {}
+  raw = ward_os.getenv("WARD_ARGS")
+  if raw ~= nil and raw ~= ""
+    for piece in string.gmatch(raw, "[^ ]+")
+      call_args[#call_args + 1] = tonumber(piece) or piece
+    end
+  end
+  -- Only echo the return value when an explicit export was requested. getenv
+  -- yields "" rather than nil when unset, so check both or every plain `run`
+  -- gains a spurious trailing line.
+  inv = ward_os.getenv("WARD_INVOKE")
+  -- `pop` already boxes the result as an exact integer; it is tostring() that
+  -- routes through a double and rounds anything above 2^53 (which is every
+  -- float bit pattern, since floats are returned as their IEEE bits). Binding
+  -- to an i64 keeps the integer path all the way to the print.
+  if inv ~= nil and inv ~= ""
+    res: i64 = wasm.runtime.call(rt, func, call_args)
+    print(res)
+  else
+    wasm.runtime.call(rt, func, call_args)
+  end
 end
 
 -- ═══════════════════════════════════════════════════════════════

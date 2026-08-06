@@ -16,6 +16,11 @@ const ERRNO = {
 
 -- ═══════════════════════════════════════════════════════════════
 -- WASI Preview 1 — fd_write, fd_read, proc_exit, args, environ, clocks
+--
+-- `rt_mod` holds the runtime module, handed over by runtime.register at
+-- registration time. runtime requires wasi, so wasi must not require runtime
+-- back — that cycle is what forced the old per-function lazy `req`.
+global rt_mod: any = nil
 -- ═══════════════════════════════════════════════════════════════
 
 fun wasi_fd_write(rt, args)
@@ -24,7 +29,7 @@ fun wasi_fd_write(rt, args)
   iovs_len = args[3]
   nwritten_ptr = args[4]
 
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   total = 0
   for i = 0, iovs_len - 1
     base_addr = iovs_ptr + i * 8
@@ -35,6 +40,12 @@ fun wasi_fd_write(rt, args)
     data = ""
     for j = 0, buf_len - 1
       data = data .. string.char(mem_mod.read_byte(rt.memory, buf_ptr + j))
+    end
+
+    if os.getenv("WARD_TRACE_FD")
+      io.stderr:write("[fd_write fd=" .. tostring(fd) .. " iov=" .. tostring(i)
+        .. "/" .. tostring(iovs_len) .. " ptr=" .. tostring(buf_ptr)
+        .. " len=" .. tostring(buf_len) .. " got=" .. tostring(#data) .. "]\n")
     end
 
     if fd == 1
@@ -55,7 +66,7 @@ fun wasi_fd_read(rt, args)
   iovs_len = args[3]
   nread_ptr = args[4]
 
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   total = 0
   -- Simplified: stdin read
   if fd == 0
@@ -80,7 +91,7 @@ end
 fun wasi_fd_fdstat_get(rt, args)
   fd = args[1]
   ptr = args[2]
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   filetype = 2 -- character device for stdio fds
   flags = 0
   if fd ~= 0 and fd ~= 1 and fd ~= 2
@@ -125,7 +136,7 @@ fun wasi_proc_exit(rt, args)
 end
 
 fun wasi_args_sizes_get(rt, args)
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   argc_ptr = args[1]
   argv_buf_size_ptr = args[2]
   argv = rt.args or {"wasm"}
@@ -139,7 +150,7 @@ fun wasi_args_sizes_get(rt, args)
 end
 
 fun wasi_args_get(rt, args)
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   argv_ptr = args[1]
   argv_buf_ptr = args[2]
   argv = rt.args or {"wasm"}
@@ -157,7 +168,7 @@ fun wasi_args_get(rt, args)
 end
 
 fun wasi_environ_sizes_get(rt, args)
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   runtime.mem_store_i32(rt, args[1], 0)
   runtime.mem_store_i32(rt, args[2], 0)
   ERRNO.success
@@ -168,7 +179,7 @@ fun wasi_environ_get(rt, args)
 end
 
 fun wasi_clock_time_get(rt, args)
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   clock_id = args[1]
   precision = args[2]
   time_ptr = args[3]
@@ -178,7 +189,7 @@ fun wasi_clock_time_get(rt, args)
 end
 
 fun wasi_clock_res_get(rt, args)
-  runtime = req "src.wasm.runtime"
+  runtime = rt_mod
   runtime.mem_store_i64(rt, args[2], 1)  -- nanosecond resolution
   ERRNO.success
 end
@@ -229,8 +240,8 @@ global host_functions = {
   ["wasi:random/random@0.2.0.get-random-bytes"]= wasi_p2_random,
 }
 
-fun wasi_register(rt)
-  runtime = req "src.wasm.runtime"
+fun wasi_register(rt, runtime)
+  rt_mod = runtime
   -- Register Preview 1 host functions explicitly (table iteration is currently
   -- fragile in the Duo generic-for codegen).
   runtime.register_import(rt, "wasi_snapshot_preview1", "fd_write",           host_functions["wasi_snapshot_preview1.fd_write"])

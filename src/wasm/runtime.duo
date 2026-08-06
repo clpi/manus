@@ -195,6 +195,67 @@ static inline uint64_t ward_trunc_sat_i64_u(double d) {
     return (uint64_t)d;
 }
 
+/* ─── SIMD (v128) support ────────────────────────────────────────────
+ * A v128 lives in two operand-stack slots: lo pushed first, hi on top.
+ * The WV_* macros generate every lane op, so each opcode costs one line. */
+typedef union {
+    int64_t  i64[2];  uint64_t u64[2];
+    int32_t  i32[4];  uint32_t u32[4];
+    int16_t  i16[8];  uint16_t u16[8];
+    int8_t   i8[16];  uint8_t  u8[16];
+    float    f32[4];  double   f64[2];
+} WardV128;
+
+#define WV_POP(v)   do { (v).i64[1] = stack[sp--]; (v).i64[0] = stack[sp--]; } while (0)
+#define WV_PUSH(v)  do { stack[++sp] = (v).i64[0]; stack[++sp] = (v).i64[1]; } while (0)
+#define WV_ONES(x)  ((__typeof__(x))~(__typeof__(x))0)
+
+#define WV_SPLAT(F, N, EXPR) { WardV128 r_; __typeof__(r_.F[0]) s_ = (EXPR); \
+    for (int L = 0; L < N; L++) r_.F[L] = s_; WV_PUSH(r_); break; }
+#define WV_EXTRACT(F, CAST) { uint32_t l_ = (uint32_t)ward_leb_u32(body, &pc); \
+    WardV128 a_; WV_POP(a_); stack[++sp] = (int64_t)(CAST a_.F[l_]); break; }
+#define WV_REPLACE(F, T) { uint32_t l_ = (uint32_t)ward_leb_u32(body, &pc); \
+    int64_t b_ = stack[sp--]; WardV128 a_; WV_POP(a_); a_.F[l_] = (T)b_; WV_PUSH(a_); break; }
+#define WV_UN(F, N, EXPR) { WardV128 a_, r_; WV_POP(a_); \
+    for (int L = 0; L < N; L++) r_.F[L] = (EXPR); WV_PUSH(r_); break; }
+#define WV_BIN(F, N, EXPR) { WardV128 b_, a_, r_; WV_POP(b_); WV_POP(a_); \
+    for (int L = 0; L < N; L++) r_.F[L] = (EXPR); WV_PUSH(r_); break; }
+#define WV_CMP(F, UF, N, OP) { WardV128 b_, a_, r_; WV_POP(b_); WV_POP(a_); \
+    for (int L = 0; L < N; L++) r_.UF[L] = (a_.F[L] OP b_.F[L]) ? WV_ONES(r_.UF[0]) : 0; \
+    WV_PUSH(r_); break; }
+#define WV_CMPU(F, UF, N, OP) WV_CMP(F, UF, N, OP)
+#define WV_FNE(F, UF, N)      WV_CMP(F, UF, N, !=)
+#define WV_BIT(OP) { WardV128 b_, a_, r_; WV_POP(b_); WV_POP(a_); \
+    r_.u64[0] = a_.u64[0] OP b_.u64[0]; r_.u64[1] = a_.u64[1] OP b_.u64[1]; \
+    WV_PUSH(r_); break; }
+
+static inline int ward_mem_ok(WardRT* w, int64_t ea, int64_t n) {
+    return ea >= 0 && w->memory != NULL && (ea + n) <= w->memory_size;
+}
+/* wasm min/max are not C's: NaN propagates, and +-0 ties pick by sign. */
+static inline float  ward_f32_abs(float a)  { return a < 0.0f ? -a : (a == 0.0f ? 0.0f : a); }
+static inline double ward_f64_abs(double a) { return a < 0.0  ? -a : (a == 0.0  ? 0.0  : a); }
+static inline float ward_f32_min(float a, float b) {
+    if (a != a || b != b) return (float)NAN;
+    if (a == 0.0f && b == 0.0f) return (signbit(a) || signbit(b)) ? -0.0f : 0.0f;
+    return a < b ? a : b;
+}
+static inline float ward_f32_max(float a, float b) {
+    if (a != a || b != b) return (float)NAN;
+    if (a == 0.0f && b == 0.0f) return (signbit(a) && signbit(b)) ? -0.0f : 0.0f;
+    return a > b ? a : b;
+}
+static inline double ward_f64_min(double a, double b) {
+    if (a != a || b != b) return (double)NAN;
+    if (a == 0.0 && b == 0.0) return (signbit(a) || signbit(b)) ? -0.0 : 0.0;
+    return a < b ? a : b;
+}
+static inline double ward_f64_max(double a, double b) {
+    if (a != a || b != b) return (double)NAN;
+    if (a == 0.0 && b == 0.0) return (signbit(a) && signbit(b)) ? -0.0 : 0.0;
+    return a > b ? a : b;
+}
+
 static inline int64_t ward_pop_i64(WardRT* w) { return w->stack[w->sp--]; }
 static inline void   ward_push_i64(WardRT* w, int64_t v) { w->stack[++w->sp] = v; }
 static inline int64_t ward_peek_i64(WardRT* w) { return w->stack[w->sp]; }
@@ -394,6 +455,27 @@ static inline int64_t ward_instr_len(const uint8_t* p, int64_t pc, int64_t body_
             else if (sub == 0x0f || sub == 0x10 || sub == 0x11) { np = ward_skip_leb(p, np, body_len); } // table.grow/size/fill tableidx
             break;
         }
+        case 0xfd: { // SIMD prefix: 0xFD <sub:leb> <immediates...>
+            if (np > body_len) break;
+            uint32_t sub = 0;
+            np = ward_read_leb_u32(p, np, body_len, &sub);
+            if (sub <= 11) {                      // v128 load/store family: memarg
+                np = ward_skip_leb(p, np, body_len);
+                np = ward_skip_leb(p, np, body_len);
+            } else if (sub == 12 || sub == 13) {  // v128.const / i8x16.shuffle: 16 bytes
+                np += 16;
+            } else if (sub >= 21 && sub <= 34) {  // extract_lane / replace_lane: laneidx
+                np += 1;
+            } else if (sub >= 84 && sub <= 91) {  // load/store lane: memarg + laneidx
+                np = ward_skip_leb(p, np, body_len);
+                np = ward_skip_leb(p, np, body_len);
+                np += 1;
+            } else if (sub == 92 || sub == 93) {  // load32_zero / load64_zero: memarg
+                np = ward_skip_leb(p, np, body_len);
+                np = ward_skip_leb(p, np, body_len);
+            }
+            break;
+        }
         default: break;
     }
     if (np > body_len + 1) np = body_len + 1;
@@ -471,7 +553,7 @@ global module = req "src.wasm.module"
 global wasi   = req "src.wasm.wasi"
 global jit_mod = req "src.wasm.jit_arm64"
 
-const PAGE_SIZE = 65536  -- 64KB WASM pages
+const WASM_PAGE_SIZE = 65536  -- 64KB WASM pages
 const STACK_SLOTS = 65536
 
 -- ═══════════════════════════════════════════════════════════════
@@ -605,7 +687,10 @@ fun pop(rt): any
   return @c.emit([[ ({ WardRT* _w = (WardRT*)lua_table_get_raw(rt, lua_val_from_str("c")).as.tval;
                        int64_t _v = _w->stack[_w->sp--];
                        lua_table_set_raw(rt, lua_val_from_str("sp"), lua_val_from_int(_w->sp));
-                       lua_val_from_num((double)_v); }) ]])
+                       /* Box as an integer, not a double: a wasm i64 above 2^53
+                        * loses precision through double and comes back as
+                        * -9.2233720368547758e+18 instead of its exact value. */
+                       lua_val_from_int(_v); }) ]])
 end
 
 fun peek(rt): any
@@ -719,10 +804,10 @@ fun instantiate(rt, mod)
   end
 
   -- Register WASI imports
-  wasi.register(rt)
+  wasi.register(rt, M)
 
   -- Take memory snapshot (for reset/re-execution)
-  rt.snapshot = mem_mod.dup(rt.memory, rt.pages * PAGE_SIZE)
+  rt.snapshot = mem_mod.dup(rt.memory, rt.pages * WASM_PAGE_SIZE)
   -- Mirror snapshot raw pointer into WardRT.
   @c.emit([[ ({ WardRT* _w = (WardRT*)lua_table_get_raw(rt, lua_val_from_str("c")).as.tval;
                 _w->snapshot = (uint8_t*)lua_table_get_raw(rt, lua_val_from_str("snapshot")).as.tval;
@@ -941,7 +1026,9 @@ static int64_t ward_fast_run(lua_Value rt, WardRT* w, WardFrame* frame, const ui
         }
         /* ─── drop/select ─── */
         case 0x1A: sp--; break;
-        case 0x1B: { int64_t c = stack[sp--]; int64_t a = stack[sp--]; int64_t b = stack[sp--]; stack[++sp] = (c != 0) ? a : b; break; }
+        /* select: stack is [val1, val2, c]; result is val1 when c != 0.
+           val2 pops first because it is nearer the top -- do not swap these. */
+        case 0x1B: { int64_t c = stack[sp--]; int64_t val2 = stack[sp--]; int64_t val1 = stack[sp--]; stack[++sp] = (c != 0) ? val1 : val2; break; }
         /* ─── Locals/globals ─── */
         case 0x20: { int64_t idx = ward_leb_u32(body, &pc); stack[++sp] = locals[idx]; break; }
         case 0x21: { int64_t idx = ward_leb_u32(body, &pc); locals[idx] = stack[sp--]; break; }
@@ -969,10 +1056,10 @@ static int64_t ward_fast_run(lua_Value rt, WardRT* w, WardFrame* frame, const ui
         case 0x6A: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)(a + b); break; }
         case 0x6B: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)(a - b); break; }
         case 0x6C: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)(a * b); break; }
-        case 0x6D: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)((int32_t)a / (int32_t)b); break; }
-        case 0x6E: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)((uint32_t)a / (uint32_t)b); break; }
-        case 0x6F: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)((int32_t)a % (int32_t)b); break; }
-        case 0x70: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)((uint32_t)a % (uint32_t)b); break; }
+        case 0x6D: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if ((int32_t)b == 0) { w->sp = sp; *fuel_out = -4; return pc; } if ((int32_t)a == INT32_MIN && (int32_t)b == -1) { w->sp = sp; *fuel_out = -5; return pc; } stack[++sp] = (int64_t)(int32_t)((int32_t)a / (int32_t)b); break; }
+        case 0x6E: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if ((uint32_t)b == 0) { w->sp = sp; *fuel_out = -4; return pc; } stack[++sp] = (int64_t)(int32_t)((uint32_t)a / (uint32_t)b); break; }
+        case 0x6F: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if ((int32_t)b == 0) { w->sp = sp; *fuel_out = -4; return pc; } if ((int32_t)a == INT32_MIN && (int32_t)b == -1) { stack[++sp] = 0; break; } stack[++sp] = (int64_t)(int32_t)((int32_t)a % (int32_t)b); break; }
+        case 0x70: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if ((uint32_t)b == 0) { w->sp = sp; *fuel_out = -4; return pc; } stack[++sp] = (int64_t)(int32_t)((uint32_t)a % (uint32_t)b); break; }
         case 0x71: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)(a & b); break; }
         case 0x72: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)(a | b); break; }
         case 0x73: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)(int32_t)(a ^ b); break; }
@@ -988,10 +1075,10 @@ static int64_t ward_fast_run(lua_Value rt, WardRT* w, WardFrame* frame, const ui
         case 0x7C: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a + b; break; }
         case 0x7D: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a - b; break; }
         case 0x7E: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a * b; break; }
-        case 0x7F: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a / b; break; }
-        case 0x80: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)((uint64_t)a / (uint64_t)b); break; }
-        case 0x81: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a % b; break; }
-        case 0x82: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = (int64_t)((uint64_t)a % (uint64_t)b); break; }
+        case 0x7F: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if (b == 0) { w->sp = sp; *fuel_out = -4; return pc; } if (a == INT64_MIN && b == -1) { w->sp = sp; *fuel_out = -5; return pc; } stack[++sp] = a / b; break; }
+        case 0x80: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if ((uint64_t)b == 0) { w->sp = sp; *fuel_out = -4; return pc; } stack[++sp] = (int64_t)((uint64_t)a / (uint64_t)b); break; }
+        case 0x81: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if (b == 0) { w->sp = sp; *fuel_out = -4; return pc; } if (a == INT64_MIN && b == -1) { stack[++sp] = 0; break; } stack[++sp] = a % b; break; }
+        case 0x82: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; if ((uint64_t)b == 0) { w->sp = sp; *fuel_out = -4; return pc; } stack[++sp] = (int64_t)((uint64_t)a % (uint64_t)b); break; }
         case 0x83: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a & b; break; }
         case 0x84: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a | b; break; }
         case 0x85: { int64_t b = stack[sp--]; int64_t a = stack[sp--]; stack[++sp] = a ^ b; break; }
@@ -1109,6 +1196,11 @@ static int64_t ward_fast_run(lua_Value rt, WardRT* w, WardFrame* frame, const ui
             lua_Value args_handle;
             args_handle.type = VAL_BUFFER;
             args_handle.as.tval = (void*)ab;
+            /* Publish the local sp before recursing: execute_raw pushes the
+               callee frame starting at w->sp, so a stale w->sp makes the callee
+               overwrite operands this frame still has pending underneath the
+               args (e.g. `i32.const 100; call $f; i32.add`). */
+            w->sp = sp;
             /* Recursively call execute_raw */
             src_wasm_runtime__execute_raw(rt, call_idx, args_handle, np);
             free(ab);
@@ -1152,6 +1244,146 @@ static int64_t ward_fast_run(lua_Value rt, WardRT* w, WardFrame* frame, const ui
                     int64_t n = stack[sp--]; int64_t val = stack[sp--]; int64_t dst = stack[sp--];
                     ward_do_memory_fill(w, dst, val, n); break;
                 }
+                default:
+                    w->sp = sp; *fuel_out = -3; return -(pc - 1);
+            }
+            break;
+        }
+        /* ─── 0xFD prefix: SIMD (v128) ───
+         * A v128 occupies two operand-stack slots: lo pushed first, hi on top.
+         * Every lane op is generated from the WV_* macros below, so ~100
+         * opcodes cost a line each rather than a block each. */
+        case 0xFD: {
+            uint32_t sub = (uint32_t)ward_leb_u32(body, &pc);
+            switch (sub) {
+                case 0:   { /* v128.load */
+                    ward_leb_u32(body, &pc); int64_t off = ward_leb_u32(body, &pc);
+                    int64_t ea = stack[sp--] + off; WardV128 v_;
+                    if (!ward_mem_ok(w, ea, 16)) { w->sp = sp; *fuel_out = -6; return pc; }
+                    memcpy(v_.u8, w->memory + ea, 16); WV_PUSH(v_); break; }
+                case 11:  { /* v128.store */
+                    ward_leb_u32(body, &pc); int64_t off = ward_leb_u32(body, &pc);
+                    WardV128 v_; WV_POP(v_); int64_t ea = stack[sp--] + off;
+                    if (!ward_mem_ok(w, ea, 16)) { w->sp = sp; *fuel_out = -6; return pc; }
+                    memcpy(w->memory + ea, v_.u8, 16); break; }
+                case 12:  { /* v128.const */
+                    WardV128 v_; memcpy(v_.u8, body + pc - 1, 16); pc += 16;
+                    WV_PUSH(v_); break; }
+
+                /* splat */
+                case 15: WV_SPLAT(i8,  16, (int8_t)stack[sp--])
+                case 16: WV_SPLAT(i16,  8, (int16_t)stack[sp--])
+                case 17: WV_SPLAT(i32,  4, (int32_t)stack[sp--])
+                case 18: WV_SPLAT(i64,  2, stack[sp--])
+                case 19: { WardV128 r_; int32_t b_=(int32_t)stack[sp--]; float f_;
+                           memcpy(&f_,&b_,4); for(int L=0;L<4;L++) r_.f32[L]=f_;
+                           WV_PUSH(r_); break; }
+                case 20: { WardV128 r_; int64_t b_=stack[sp--]; double d_;
+                           memcpy(&d_,&b_,8); for(int L=0;L<2;L++) r_.f64[L]=d_;
+                           WV_PUSH(r_); break; }
+
+                /* extract_lane / replace_lane */
+                case 21: WV_EXTRACT(i8,  (int64_t))
+                case 22: WV_EXTRACT(u8,  (int64_t))
+                case 23: WV_REPLACE(i8,  int8_t)
+                case 24: WV_EXTRACT(i16, (int64_t))
+                case 25: WV_EXTRACT(u16, (int64_t))
+                case 26: WV_REPLACE(i16, int16_t)
+                case 27: WV_EXTRACT(i32, (int64_t))
+                case 28: WV_REPLACE(i32, int32_t)
+                case 29: WV_EXTRACT(i64, (int64_t))
+                case 30: WV_REPLACE(i64, int64_t)
+                case 31: { uint32_t l_=(uint32_t)ward_leb_u32(body,&pc); WardV128 a_; WV_POP(a_);
+                           int32_t bi_; memcpy(&bi_,&a_.f32[l_],4);
+                           stack[++sp]=(int64_t)(uint32_t)bi_; break; }
+                case 32: { uint32_t l_=(uint32_t)ward_leb_u32(body,&pc); int32_t b_=(int32_t)stack[sp--];
+                           WardV128 a_; WV_POP(a_); memcpy(&a_.f32[l_],&b_,4); WV_PUSH(a_); break; }
+                case 33: { uint32_t l_=(uint32_t)ward_leb_u32(body,&pc); WardV128 a_; WV_POP(a_);
+                           int64_t bb_; memcpy(&bb_,&a_.f64[l_],8); stack[++sp]=bb_; break; }
+                case 34: { uint32_t l_=(uint32_t)ward_leb_u32(body,&pc); int64_t b_=stack[sp--];
+                           WardV128 a_; WV_POP(a_); memcpy(&a_.f64[l_],&b_,8); WV_PUSH(a_); break; }
+
+                /* integer compares -> all-ones / all-zero lanes */
+                case 35: WV_CMP(i8, u8, 16, ==) case 36: WV_CMP(i8, u8, 16, !=)
+                case 37: WV_CMP(i8, u8, 16, <)  case 38: WV_CMPU(u8, u8, 16, <)
+                case 39: WV_CMP(i8, u8, 16, >)  case 40: WV_CMPU(u8, u8, 16, >)
+                case 41: WV_CMP(i8, u8, 16, <=) case 42: WV_CMPU(u8, u8, 16, <=)
+                case 43: WV_CMP(i8, u8, 16, >=) case 44: WV_CMPU(u8, u8, 16, >=)
+                case 45: WV_CMP(i16, u16, 8, ==) case 46: WV_CMP(i16, u16, 8, !=)
+                case 47: WV_CMP(i16, u16, 8, <)  case 48: WV_CMPU(u16, u16, 8, <)
+                case 49: WV_CMP(i16, u16, 8, >)  case 50: WV_CMPU(u16, u16, 8, >)
+                case 51: WV_CMP(i16, u16, 8, <=) case 52: WV_CMPU(u16, u16, 8, <=)
+                case 53: WV_CMP(i16, u16, 8, >=) case 54: WV_CMPU(u16, u16, 8, >=)
+                case 55: WV_CMP(i32, u32, 4, ==) case 56: WV_CMP(i32, u32, 4, !=)
+                case 57: WV_CMP(i32, u32, 4, <)  case 58: WV_CMPU(u32, u32, 4, <)
+                case 59: WV_CMP(i32, u32, 4, >)  case 60: WV_CMPU(u32, u32, 4, >)
+                case 61: WV_CMP(i32, u32, 4, <=) case 62: WV_CMPU(u32, u32, 4, <=)
+                case 63: WV_CMP(i32, u32, 4, >=) case 64: WV_CMPU(u32, u32, 4, >=)
+
+                /* float compares */
+                case 65: WV_CMP(f32, u32, 4, ==) case 66: WV_FNE(f32, u32, 4)
+                case 67: WV_CMP(f32, u32, 4, <)  case 68: WV_CMP(f32, u32, 4, >)
+                case 69: WV_CMP(f32, u32, 4, <=) case 70: WV_CMP(f32, u32, 4, >=)
+                case 71: WV_CMP(f64, u64, 2, ==) case 72: WV_FNE(f64, u64, 2)
+                case 73: WV_CMP(f64, u64, 2, <)  case 74: WV_CMP(f64, u64, 2, >)
+                case 75: WV_CMP(f64, u64, 2, <=) case 76: WV_CMP(f64, u64, 2, >=)
+
+                /* bitwise */
+                case 77: { WardV128 a_,r_; WV_POP(a_); r_.u64[0]=~a_.u64[0]; r_.u64[1]=~a_.u64[1];
+                           WV_PUSH(r_); break; }
+                case 78: WV_BIT(&)  case 80: WV_BIT(|)  case 81: WV_BIT(^)
+                case 79: { WardV128 b_,a_,r_; WV_POP(b_); WV_POP(a_);
+                           r_.u64[0]=a_.u64[0]&~b_.u64[0]; r_.u64[1]=a_.u64[1]&~b_.u64[1];
+                           WV_PUSH(r_); break; }
+                case 82: { WardV128 m_,b_,a_,r_; WV_POP(m_); WV_POP(b_); WV_POP(a_);
+                           r_.u64[0]=(a_.u64[0]&m_.u64[0])|(b_.u64[0]&~m_.u64[0]);
+                           r_.u64[1]=(a_.u64[1]&m_.u64[1])|(b_.u64[1]&~m_.u64[1]);
+                           WV_PUSH(r_); break; }
+
+                /* integer arithmetic */
+                case 96:  WV_UN(i8, 16, a_.i8[L] < 0 ? -a_.i8[L] : a_.i8[L])
+                case 97:  WV_UN(i8, 16, -a_.i8[L])
+                case 110: WV_BIN(i8, 16, a_.i8[L] + b_.i8[L])
+                case 113: WV_BIN(i8, 16, a_.i8[L] - b_.i8[L])
+                case 128: WV_UN(i16, 8, a_.i16[L] < 0 ? -a_.i16[L] : a_.i16[L])
+                case 129: WV_UN(i16, 8, -a_.i16[L])
+                case 142: WV_BIN(i16, 8, a_.i16[L] + b_.i16[L])
+                case 145: WV_BIN(i16, 8, a_.i16[L] - b_.i16[L])
+                case 149: WV_BIN(i16, 8, a_.i16[L] * b_.i16[L])
+                case 160: WV_UN(i32, 4, a_.i32[L] < 0 ? -a_.i32[L] : a_.i32[L])
+                case 161: WV_UN(i32, 4, -a_.i32[L])
+                case 174: WV_BIN(i32, 4, (int32_t)((uint32_t)a_.i32[L] + (uint32_t)b_.i32[L]))
+                case 177: WV_BIN(i32, 4, (int32_t)((uint32_t)a_.i32[L] - (uint32_t)b_.i32[L]))
+                case 181: WV_BIN(i32, 4, (int32_t)((uint32_t)a_.i32[L] * (uint32_t)b_.i32[L]))
+                case 193: WV_UN(i64, 2, (int64_t)(0 - (uint64_t)a_.i64[L]))
+                case 206: WV_BIN(i64, 2, (int64_t)((uint64_t)a_.i64[L] + (uint64_t)b_.i64[L]))
+                case 209: WV_BIN(i64, 2, (int64_t)((uint64_t)a_.i64[L] - (uint64_t)b_.i64[L]))
+                case 213: WV_BIN(i64, 2, (int64_t)((uint64_t)a_.i64[L] * (uint64_t)b_.i64[L]))
+
+                /* f32x4 / f64x2 arithmetic */
+                case 224: WV_UN(f32, 4, ward_f32_abs(a_.f32[L]))
+                case 225: WV_UN(f32, 4, -a_.f32[L])
+                case 227: WV_UN(f32, 4, (float)sqrt((double)a_.f32[L]))
+                case 228: WV_BIN(f32, 4, a_.f32[L] + b_.f32[L])
+                case 229: WV_BIN(f32, 4, a_.f32[L] - b_.f32[L])
+                case 230: WV_BIN(f32, 4, a_.f32[L] * b_.f32[L])
+                case 231: WV_BIN(f32, 4, a_.f32[L] / b_.f32[L])
+                case 232: WV_BIN(f32, 4, ward_f32_min(a_.f32[L], b_.f32[L]))
+                case 233: WV_BIN(f32, 4, ward_f32_max(a_.f32[L], b_.f32[L]))
+                case 234: WV_BIN(f32, 4, b_.f32[L] < a_.f32[L] ? b_.f32[L] : a_.f32[L])
+                case 235: WV_BIN(f32, 4, a_.f32[L] < b_.f32[L] ? b_.f32[L] : a_.f32[L])
+                case 236: WV_UN(f64, 2, ward_f64_abs(a_.f64[L]))
+                case 237: WV_UN(f64, 2, -a_.f64[L])
+                case 239: WV_UN(f64, 2, sqrt(a_.f64[L]))
+                case 240: WV_BIN(f64, 2, a_.f64[L] + b_.f64[L])
+                case 241: WV_BIN(f64, 2, a_.f64[L] - b_.f64[L])
+                case 242: WV_BIN(f64, 2, a_.f64[L] * b_.f64[L])
+                case 243: WV_BIN(f64, 2, a_.f64[L] / b_.f64[L])
+                case 244: WV_BIN(f64, 2, ward_f64_min(a_.f64[L], b_.f64[L]))
+                case 245: WV_BIN(f64, 2, ward_f64_max(a_.f64[L], b_.f64[L]))
+                case 246: WV_BIN(f64, 2, b_.f64[L] < a_.f64[L] ? b_.f64[L] : a_.f64[L])
+                case 247: WV_BIN(f64, 2, a_.f64[L] < b_.f64[L] ? b_.f64[L] : a_.f64[L])
+
                 default:
                     w->sp = sp; *fuel_out = -3; return -(pc - 1);
             }
@@ -1295,6 +1527,10 @@ fun execute_raw(rt, func_idx: i64, args_buf: any, args_len: i64)
     end
   elseif fast_fuel == -2
     error("unreachable executed")
+  elseif fast_fuel == -4
+    error("integer divide by zero")
+  elseif fast_fuel == -5
+    error("integer overflow")
   else
     fuel = fuel - body_len
   end
@@ -1319,16 +1555,18 @@ fun call(rt, name: str, args: any)
   assert(exp.kind == module.EXPORT_KIND.func, "not a function export")
   execute(rt, exp.index, args or {})
 
-  -- Return results from stack
+  -- Return the function's result (nil for a void function). The value was
+  -- previously popped and discarded, which made every export unobservable.
   if sp(rt) > 0
-    pop(rt)
+    return pop(rt)
   end
+  return nil
 end
 
 fun reset(rt)
   -- Restore memory snapshot (for re-execution / serverless)
   if rt.snapshot
-    mem_mod.copy(rt.memory, rt.snapshot, rt.pages * PAGE_SIZE)
+    mem_mod.copy(rt.memory, rt.snapshot, rt.pages * WASM_PAGE_SIZE)
   end
   -- Determine new fuel: config.fuel if set, else 0xFFFFFFFF.
   new_fuel: i64 = rt.config.fuel or 0xFFFFFFFF
@@ -1583,10 +1821,12 @@ fun dispatch(rt, frame: i64, body: any, pc: i64, opcode: i64, w: i64): i64
     pc
   end
   case 0x1B then do
+    -- select: stack is [val1, val2, c]; result is val1 when c ~= 0.
+    -- val2 pops first because it is nearer the top -- do not swap these.
     c: i64 = op_pop_i64(w)
-    a: i64 = op_pop_i64(w)
-    b: i64 = op_pop_i64(w)
-    op_push_i64(w, @c.emit([[ (c != 0 ? a : b) ]]))
+    val2: i64 = op_pop_i64(w)
+    val1: i64 = op_pop_i64(w)
+    op_push_i64(w, @c.emit([[ (c != 0 ? val1 : val2) ]]))
     pc
   end
 
@@ -2706,7 +2946,7 @@ M.mem_store_f64 = mem_store_f64
 M.mem_read_byte = mem_read_byte
 M.mem_write_byte = mem_write_byte
 M.mem_grow = mem_grow
-M.PAGE_SIZE = PAGE_SIZE
+M.PAGE_SIZE = WASM_PAGE_SIZE
 M.dispatch = dispatch
 M.op_push_i64 = op_push_i64
 M.op_pop_i64 = op_pop_i64
