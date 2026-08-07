@@ -220,6 +220,15 @@ end
 
 -- append_bool: format a boolean as "true" or "false".
 format_bool(b: bool): str
-    if b "true" else "false" end
+    -- A guard, not `if b "true" else "false" end`. In the endless one-liner
+    -- form the clause must be SELF-DELIMITED (Pass 48 2.4), and `b "true"`
+    -- reads as PARENLESS APPLICATION -- the emitted C was
+    -- `b(lua_val_from_literal("true", ...))`, i.e. calling a bool
+    -- ("called object type 'bool' is not a function"), which took the module
+    -- down.
+    if b
+        return "true"
+    end
+    "false"
 end
 

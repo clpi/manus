@@ -20,7 +20,15 @@ end
 
 boolean(v: any): str
     if v == nil return "false" end
-    if v "true" else "false" end
+    -- A guard, not `if v "true" else "false" end`. The endless one-liner clause
+    -- must be SELF-DELIMITED (Pass 48 2.4), and `v "true"` reads as PARENLESS
+    -- APPLICATION -- it called `v("true")` and returned that. Because `v` is
+    -- `any` the bogus call TYPE-CHECKS, so unlike strconv's `b: bool` version
+    -- this compiled and shipped: boolean(true) returned "false".
+    if v
+        return "true"
+    end
+    "false"
 end
 
 hex(v: any): str
