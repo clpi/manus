@@ -3772,6 +3772,55 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       n += 1
       sp += 1
 
+    elseif op == 103 or op == 104 or op == 105 or op == 121 or op == 122 or op == 123
+      -- clz / ctz / popcnt, both widths. ARM64 has CLZ but no count-trailing,
+      -- so ctz is RBIT+CLZ. popcnt has no integer form at all: it goes through
+      -- the vector unit as CNT over bytes then ADDV to sum the lanes, reusing
+      -- the same GP<->FP shuttle the float ops use.
+      if sp < 1
+        return -1
+      end
+      bq: i64 = sp - 1
+      b64: i64 = 0
+      if op >= 121
+        b64 = 1
+      end
+      bk2: i64 = op - 103
+      if b64 == 1
+        bk2 = op - 121
+      end
+      if bk2 == 2
+        if b64 == 1
+          jitm.w32(code, n, 0x9E670000 | (bq << 5))
+        else
+          jitm.w32(code, n, 0x1E270000 | (bq << 5))
+        end
+        n += 1
+        jitm.w32(code, n, 0x0E205800)
+        n += 1
+        jitm.w32(code, n, 0x0E31B800)
+        n += 1
+        jitm.w32(code, n, 0x1E260000 | bq)
+        n += 1
+      else
+        if bk2 == 1
+          if b64 == 1
+            jitm.w32(code, n, 0xDAC00000 | (bq << 5) | bq)
+          else
+            jitm.w32(code, n, 0x5AC00000 | (bq << 5) | bq)
+          end
+          n += 1
+        end
+        if b64 == 1
+          jitm.w32(code, n, 0xDAC01000 | (bq << 5) | bq)
+        else
+          jitm.w32(code, n, 0x5AC01000 | (bq << 5) | bq)
+        end
+        n += 1
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 1
       -- nop: emits nothing
 
