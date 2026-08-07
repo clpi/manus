@@ -2701,6 +2701,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   inl_off: i64 = 0
   inl_blen: i64 = 0
   inl_lbase: i64 = 0
+  inl_ldep: i64 = 0
   -- ── function table, for inlining `call` ──────────────────────────────
   -- `s` is the whole module but `off`/`blen` delimit only THIS body, so a
   -- callee must be located here. Built in-function because BUG B forbids a
@@ -2846,6 +2847,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       off = inl_off
       blen = inl_blen
       lbase = inl_lbase
+      -- Restore the caller's label depth. A callee body ends with its OWN
+      -- function-level `end`, so it emits one more `end` than it pushed labels
+      -- and that surplus pops a label belonging to the CALLER. Left unrestored,
+      -- the caller's later br_if resolved to the wrong target (a nested
+      -- factorial sum returned 1 instead of 9).
+      ldep = inl_ldep
       inl_pc = -1
     end
     op: i64 = string.byte(s, off + pc)
@@ -3113,7 +3120,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         else
           jitm.w32(code, n, 0x35000000 | sp)
         end
-        mem.write_i64(lpat, (lt * 8 + pk2) * 8, n)
+        mem.write_i64(lpat, (lt * 8 + pk2) * 8, n * 2)
         mem.write_i64(lpn, lt * 8, pk2 + 1)
         n += 1
       end
@@ -3128,12 +3135,53 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
           pq: i64 = 0
           pk3: i64 = mem.read_i64(lpn, ldep * 8)
           while pq < pk3
-            pw: i64 = mem.read_i64(lpat, (ldep * 8 + pq) * 8)
+            pe: i64 = mem.read_i64(lpat, (ldep * 8 + pq) * 8)
+            pw: i64 = pe // 2
             dl3: i64 = n - pw
-            jitm.w32(code, pw, (jitm.r32(code, pw) & 0xFF00001F) | ((dl3 & 0x7FFFF) << 5))
+            if pe - pw * 2 == 1
+              -- unconditional B: imm26 in bits 0..25
+              jitm.w32(code, pw, 0x14000000 | (dl3 & 0x03FFFFFF))
+            else
+              -- B.cond / CBNZ: imm19 in bits 5..23
+              jitm.w32(code, pw, (jitm.r32(code, pw) & 0xFF00001F) | ((dl3 & 0x7FFFF) << 5))
+            end
             pq += 1
           end
         end
+      end
+
+    elseif op == 12
+      -- br: unconditional. Backward to a loop head resolves now; forward to a
+      -- block end is a placeholder patched at `end`, exactly like br_if, but the
+      -- offset lives in imm26 rather than imm19 so the patch records the form.
+      d4: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      lt2: i64 = ldep - 1 - d4
+      if lt2 < 0
+        return -1
+      end
+      if mem.read_i64(lkind, lt2 * 8) == 1
+        dlb: i64 = mem.read_i64(lhead, lt2 * 8) - n
+        jitm.w32(code, n, 0x14000000 | (dlb & 0x03FFFFFF))
+        n += 1
+      else
+        pk4: i64 = mem.read_i64(lpn, lt2 * 8)
+        if pk4 >= 8
+          return -1
+        end
+        jitm.w32(code, n, 0x14000000)
+        mem.write_i64(lpat, (lt2 * 8 + pk4) * 8, n * 2 + 1)
+        mem.write_i64(lpn, lt2 * 8, pk4 + 1)
+        n += 1
+      end
+      -- Code after an unconditional branch is UNREACHABLE, and wasm makes the
+      -- operand stack polymorphic there. This JIT tracks `sp` concretely, so
+      -- compiling that region emits wrong code: wart_simple_bench returned 1
+      -- instead of 4037913 until this guard was added. Accept `br` only where
+      -- the unreachable region is empty -- immediately before `end` or `else`.
+      nxb: i64 = string.byte(s, off + pc)
+      if nxb != 11 and nxb != 5
+        return -1
       end
 
     elseif op == 15
@@ -3171,6 +3219,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       inl_off = off
       inl_blen = blen
       inl_lbase = lbase
+      inl_ldep = ldep
       off = mem.read_i64(jft, (cfx * 5) * 8)
       blen = mem.read_i64(jft, (cfx * 5 + 1) * 8)
       lbase = selfloc
