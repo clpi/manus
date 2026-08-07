@@ -312,6 +312,14 @@ end
 -- pos-only check calls it a stall. That fired on every `break` in the corpus
 -- and cost 33 files when I put the same check in proj_if.
 stalled = (lx: Lexer, before: i64, peeked: bool): bool
+    -- Never at EOF. There the peek cannot advance `pos` and there is no token
+    -- left to clear `has_peeked`, so a FINAL one-token statement looks stalled
+    -- and gets dropped: a file whose last line is a bare name and which lacks a
+    -- trailing newline lost that statement. Every enclosing loop already
+    -- terminates on EOF, so refusing to fire here cannot reintroduce a spin.
+    if lexer.peek(lx).kind == token.KIND_EOF
+        return false
+    end
     lx.pos == before and lx.has_peeked == peeked
 end
 

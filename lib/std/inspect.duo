@@ -29,11 +29,15 @@ std_inspect_hash(value: any): str
     end
     std_inspect_sort_strings(ks)
     i = 1
+    -- `key`/`val`, not `k`/`v`: those two names are the LOOP VARIABLES of the
+    -- `for k, v in value` above, and reusing them here emits an assignment with
+    -- no declaration ("use of undeclared identifier 'k'"). A for-loop variable
+    -- is not re-introducible in the enclosing scope after the loop ends.
     while i <= rawlen(ks)
-        k = ks[i]
-        v = value[tonumber(k)]
-        if v == nil v = value[k] end
-        parts[rawlen(parts) + 1] .. k .. "=" .. std_inspect_hash(v)
+        key = ks[i]
+        val = value[tonumber(key)]
+        if val == nil val = value[key] end
+        parts[rawlen(parts) + 1] .. key .. "=" .. std_inspect_hash(val)
         i += 1
     end
     "{" .. table.concat(parts, ",") .. "}"
@@ -314,7 +318,6 @@ stack_trace(level: any, max_depth: any, pretty: any): str
             color_ok = true
         end
     end
-    C_RESET, C_DIM, C_CYAN, C_MAGENTA, C_YELLOW, C_UNDER, C_ITALIC
     if color_ok
         C_RESET  = "\x1b[0m"
         C_DIM    = "\x1b[2m"

@@ -7,10 +7,13 @@
 -- number has to reach 100% before SH-04 is anything but `porting`, and it is the
 -- only honest way to say how far along the self-hosted parser actually is.
 --
--- Baseline 2026-08-07: 44/245.
+-- 2026-08-07: 44/245 when this number first existed, then 245/245 the same day.
 --
--- Exit 0 always — this measures, it does not gate. Add a floor once the number
--- stops moving.
+-- It GATES now. `PARSER_COVERAGE_FLOOR` (default 245) is a ratchet: the number
+-- only goes up. Every regression this session was invisible to the 55-case
+-- projection proof and visible only here — a guard that silently dropped 33
+-- files, a speculation that truncated expression statements, a lambda arm that
+-- ate the wrong `end`. A floor is what stops the next one.
 --
 -- Two things this file is deliberately careful about:
 --
@@ -70,5 +73,15 @@ main(): i64
     -- GAP-11: numeric holes do not interpolate, so the tallies stay a chain.
     print("parser_coverage: " .. to(str)(ok) .. "/" .. to(str)(total)
         .. " lib/std files parse clean")
+    floor: i64 = to(i64)(std.script.getenv("PARSER_COVERAGE_FLOOR", "245"))
+    if total == 0
+        print("parser_coverage: FAIL (empty corpus)")
+        return 1
+    end
+    if ok < floor
+        print("parser_coverage: FAIL — floor is " .. to(str)(floor))
+        return 1
+    end
+    print("parser_coverage: PASS")
     0
 end
