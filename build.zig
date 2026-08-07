@@ -668,6 +668,20 @@ pub fn build(b: *std.Build) void {
     pass16_lexer_corpus_proof.step.dependOn(b.getInstallStep());
     pass16_lexer_corpus_proof.setCwd(b.path("."));
 
+    // The token-for-token equality proof against src/lexer.zig — the evidence
+    // SH-03's "duo_canonical" claim rests on. It was NOT gated, and silently
+    // stopped running when lib/std/str.duo became a native-direct module: the
+    // Duo lexer still compiled, but `req "std.str"` failed at runtime, so the
+    // proof was unrunnable while the matrix still reported equality.
+    const pass16_lexer_fingerprint = b.addRunArtifact(exe);
+    // --backend=c deliberately: the NATIVE backend still fails to link this
+    // one ("native linker failed" at lexer.duo's @c.export sites). Gating the
+    // proof on the backend where it runs is worth more than not gating it at
+    // all; the native-path failure is tracked separately.
+    pass16_lexer_fingerprint.addArgs(&.{ "run", "--backend=c", "examples/pass16_lexer_fingerprint_differential.duo" });
+    pass16_lexer_fingerprint.step.dependOn(b.getInstallStep());
+    pass16_lexer_fingerprint.setCwd(b.path("."));
+
     const pass16_lexer_embed = b.addRunArtifact(exe);
     pass16_lexer_embed.addArgs(&.{ "run", "examples/pass16_lexer_embed_proof.duo" });
     pass16_lexer_embed.step.dependOn(b.getInstallStep());
@@ -684,6 +698,7 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_source_cursor_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_source_module_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_corpus_proof.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_fingerprint.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_verify.step);
