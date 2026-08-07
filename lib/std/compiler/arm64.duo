@@ -82,3 +82,136 @@ word_to_hex = (w: i64): str
     end
     out
 end
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Expression codegen: a whole function, not one instruction.
+--
+-- Single-instruction encoding is only half a backend. This lowers a closed
+-- integer expression to a complete ARM64 function body using a register stack
+-- (x9..x15, all caller-saved), so the proof can ASSEMBLE, LINK AND RUN it and
+-- compare the result to SH-08's folder — the same differential as SH-10, on the
+-- other backend.
+--
+-- Emitting assembly text rather than object bytes is deliberate at this stage:
+-- the system assembler is a better oracle than a hand-rolled Mach-O writer is a
+-- deliverable, and SH-12 (object writers) is where the byte layout belongs. The
+-- encodings above are what a direct emitter would use; this proves the SHAPE of
+-- the lowering is right before the container work starts.
+
+global _asm: str = ""
+global _reg: i64 = 9
+global _src2: str = ""
+global _p2: i64 = 1
+global _bad2: bool = false
+
+_emit = (line: str): void
+    _asm = _asm .. "    " .. line .. "\n"
+end
+
+_at2 = (): i64
+    if _p2 > #_src2
+        return 0
+    end
+    string.byte(_src2, _p2)
+end
+
+_ws2 = (): void
+    while _p2 <= #_src2 and (_at2() == 32 or _at2() == 9)
+        _p2 += 1
+    end
+end
+
+_eat2 = (a: i64): bool
+    _ws2()
+    if _at2() != a
+        return false
+    end
+    _p2 += 1
+    true
+end
+
+-- Each level leaves its result in a freshly allocated register and returns it.
+_g_prim = (): i64
+    _ws2()
+    if _eat2(40)
+        r: i64 = _g_expr()
+        if not _eat2(41)
+            _bad2 = true
+        end
+        return r
+    end
+    if _eat2(45)
+        r2: i64 = _g_prim()
+        _emit("neg x" .. to(str)(r2) .. ", x" .. to(str)(r2))
+        return r2
+    end
+    v: i64 = 0
+    if not (_at2() >= 48 and _at2() <= 57)
+        _bad2 = true
+        return _reg
+    end
+    while _p2 <= #_src2 and _at2() >= 48 and _at2() <= 57
+        v = v * 10 + (_at2() - 48)
+        _p2 += 1
+    end
+    d: i64 = _reg
+    _reg += 1
+    if _reg > 15
+        _bad2 = true
+    end
+    _emit("mov x" .. to(str)(d) .. ", #" .. to(str)(v))
+    d
+end
+
+_g_term = (): i64
+    left: i64 = _g_prim()
+    while true
+        _ws2()
+        if _eat2(42)
+            r: i64 = _g_prim()
+            _emit("mul x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r))
+            _reg -= 1
+        elseif _eat2(47)
+            r2: i64 = _g_prim()
+            _emit("sdiv x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r2))
+            _reg -= 1
+        else
+            return left
+        end
+    end
+end
+
+_g_expr = (): i64
+    left: i64 = _g_term()
+    while true
+        _ws2()
+        if _eat2(43)
+            r: i64 = _g_term()
+            _emit("add x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r))
+            _reg -= 1
+        elseif _eat2(45)
+            r2: i64 = _g_term()
+            _emit("sub x" .. to(str)(left) .. ", x" .. to(str)(left) .. ", x" .. to(str)(r2))
+            _reg -= 1
+        else
+            return left
+        end
+    end
+end
+
+-- A complete assembly unit exporting `_duo_eval`, returning the expression's
+-- value in x0 per the ARM64 C ABI.
+asm_for = (expr: str): str
+    _asm = ""
+    _reg = 9
+    _src2 = expr
+    _p2 = 1
+    _bad2 = false
+    r: i64 = _g_expr()
+    _ws2()
+    if _bad2 or _p2 <= #_src2
+        return ""
+    end
+    body = _asm .. "    mov x0, x" .. to(str)(r) .. "\n    ret\n"
+    ".text\n.global _duo_eval\n.align 2\n_duo_eval:\n" .. body
+end
