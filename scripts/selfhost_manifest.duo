@@ -1,0 +1,109 @@
+-- SH-15 / SH-16 — the shared compiler facts, as a manifest.
+--
+-- Both service rows are blocked on the same thing, stated two ways: SH-15 "must
+-- consume shared compiler facts, not re-parse", SH-16 "development MCP lacks
+-- bootstrap stage state". Neither blocker is about the services — it is that
+-- there was nothing for them to consume. The facts existed only as exit codes
+-- scattered across a dozen proofs.
+--
+-- This emits them as one machine-readable record: per row, the Duo module, its
+-- proof, its ORACLE, and whether that oracle currently passes. A service reads
+-- this instead of re-deriving it, which is the whole content of both blockers.
+--
+-- The `oracle` field is the load-bearing one. A manifest that reported only
+-- pass/fail would let a row with no real check sit next to a row differentialed
+-- against the system linker and look identical — which is exactly the confusion
+-- this session spent its time avoiding. SH-13 says "fixtures only" here for
+-- that reason.
+--
+-- Run: duo run scripts/selfhost_manifest.duo
+
+global script = req "std.script"
+global _emitted: i64 = 0
+
+_row = (id: str, module_path: str, proof: str, oracle: str): bool
+    duo = script.duo_bin()
+    ok = script.status(duo .. " run --backend=c " .. proof .. " > /dev/null 2>&1") == 0
+    state = "fail"
+    if ok
+        state = "pass"
+    end
+    -- Separator BEFORE each row but the first. A manifest a consumer cannot
+    -- parse is the same failure as no manifest at all, and the first version of
+    -- this file emitted rows with no commas — valid-looking output that
+    -- `json.load` rejected on line 3.
+    sep = ""
+    if _emitted > 0
+        sep = ","
+    end
+    _emitted += 1
+    print("  " .. sep .. "{ \"row\": \"" .. id .. "\", \"duo_impl\": \"" .. module_path
+        .. "\", \"proof\": \"" .. proof .. "\", \"oracle\": \"" .. oracle
+        .. "\", \"state\": \"" .. state .. "\" }")
+    ok
+end
+
+main(): i64
+    print("{ \"schema\": \"selfhost-duo-manifest-v1\", \"rows\": [")
+
+    all_ok = true
+    if not _row("SH-04", "lib/std/compiler/parser.duo", "examples/pass16_parser_corpus_proof.duo",
+        "252-file corpus, ratcheted")
+        all_ok = false
+    end
+    if not _row("SH-05", "lib/std/compiler/fmt.duo", "examples/pass16_formatter_proof.duo",
+        "meaning preserved + fixed point over the corpus")
+        all_ok = false
+    end
+    if not _row("SH-06", "lib/std/compiler/bind.duo", "examples/pass16_binder_proof.duo",
+        "corpus resolution, ratcheted at 248")
+        all_ok = false
+    end
+    if not _row("SH-07", "lib/std/compiler/graph.duo", "examples/pass16_graph_proof.duo",
+        "in-degree over the corpus, ratcheted at 0")
+        all_ok = false
+    end
+    if not _row("SH-08", "lib/std/compiler/comptime.duo", "examples/pass16_comptime_proof.duo",
+        "the host compiler's own arithmetic")
+        all_ok = false
+    end
+    if not _row("SH-09", "lib/std/compiler/rewrite.duo", "examples/pass16_rewrite_proof.duo",
+        "parser + idempotence over the corpus")
+        all_ok = false
+    end
+    if not _row("SH-10", "lib/std/compiler/emit_c.duo", "examples/pass16_emit_c_proof.duo",
+        "cc compiles and RUNS the emitted C")
+        all_ok = false
+    end
+    if not _row("SH-11", "lib/std/compiler/arm64.duo", "examples/pass16_arm64_proof.duo",
+        "the system assembler, byte for byte")
+        all_ok = false
+    end
+    if not _row("SH-11", "lib/std/compiler/arm64.duo", "examples/pass16_arm64_exec_proof.duo",
+        "lowering assembled, linked and RUN against the folder")
+        all_ok = false
+    end
+    if not _row("SH-12", "lib/std/compiler/macho.duo", "examples/pass16_macho_proof.duo",
+        "the system linker accepts the object and it RUNS")
+        all_ok = false
+    end
+    if not _row("SH-13", "lib/std/compiler/profile.duo", "examples/pass16_profile_proof.duo",
+        "FIXTURES ONLY — backend differential owed")
+        all_ok = false
+    end
+
+    print("],")
+    -- The distinction the matrix actually tracks, stated in the manifest so a
+    -- consumer cannot mistake one for the other: these rows have Duo
+    -- implementations with passing oracles. They are NOT duo_canonical, which
+    -- additionally requires the host to dispatch through them.
+    print("  \"duo_impl_rows\": 11,")
+    print("  \"oracle_backed_rows\": 10,")
+    print("  \"duo_canonical_rows\": 1,")
+    print("  \"canonical_blocker\": \"production dispatch: host still calls src/*.zig\"")
+    print("}")
+    if all_ok
+        return 0
+    end
+    1
+end
