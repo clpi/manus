@@ -282,39 +282,36 @@ sort_by(list: any, fn_ref: any): void
     end
 end
 
--- pipe: compose functions left-to-right (pipe(f, g)(x) = g(f(x))).
+-- GAP: pipe/pipe3/negate/curry2 cannot be expressed in Duo today.
+-- Each needs a returned lambda to CAPTURE the enclosing function's parameters
+-- (f1/f2/fn_ref) and then CALL them. Two independent compiler gaps block that:
+--   1. a lambda does not capture an enclosing PARAMETER -- the generated C says
+--      "use of undeclared identifier 'f2'";
+--   2. a function arriving as a parameter is not callable at all.
+-- They were also written as NESTED BARE DECLARATIONS, which do not parse (GR-001
+-- is file-scope), and pipe/pipe3 both named their inner function `composed`,
+-- which collides at module scope ("redefinition of std_fn__composed__lua").
+--
+-- Why they are stubbed rather than left as they were: while they failed to
+-- PARSE, `emit_embedded_module` failed for the whole file, so std.fn was
+-- unusable -- and std.iter and std.go, which require it, were down purely as
+-- collateral. Three modules were unreachable to protect four functions that
+-- could not run under any spelling. They return nil until the capture gap
+-- closes, so the rest of the module is reachable.
 pipe(f1: any, f2: any): any
-    composed(x: any): any
-        f2(f1(x))
-    end
-    composed
+    nil
 end
 
--- pipe3: compose three functions.
 pipe3(f1: any, f2: any, f3: any): any
-    composed(x: any): any
-        f3(f2(f1(x)))
-    end
-    composed
+    nil
 end
 
--- negate: return a function that negates the predicate.
 negate(fn_ref: any): any
-    negated(x: any): any
-        not fn_ref(x)
-    end
-    negated
+    nil
 end
 
--- curry2: convert a 2-arg function to a chain of 1-arg calls.
 curry2(fn_ref: any): any
-    curried(a: any): any
-        partial(b: any): any
-            fn_ref(a, b)
-        end
-        partial
-    end
-    curried
+    nil
 end
 
 -- clamp: clamp value between min and max.
