@@ -6,7 +6,14 @@
 #include <stdint.h>
 #include <string.h>
 
-int64_t duo_keyword_classify(const char *w) {
+/* weak: this generated table is the PROJECTION of
+ * lib/std/token/classify.duo. A program that embeds the canonical Duo
+ * source emits its own definition of the same symbol, and A3 ONE EDGE
+ * says there is one fact behind both — so the Duo-emitted one must be
+ * allowed to win rather than colliding. Without this, anything pulling
+ * in SH-02's artifact AND SH-03's lexer fails to link with
+ * `duplicate symbol '_duo_keyword_classify'`. */
+__attribute__((weak)) int64_t duo_keyword_classify(const char *w) {
     if (strcmp(w, "and") == 0) return 4;
     if (strcmp(w, "break") == 0) return 5;
     if (strcmp(w, "continue") == 0) return 6;
