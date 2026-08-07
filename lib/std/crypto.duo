@@ -165,7 +165,10 @@ secure_random_hex(n: i64): str
 end
 
 secure_random_int(): i64
-    crypto_rand.int()
+    -- `int` takes a required bound and returns `r % max`; calling it with no
+    -- argument did not compile, which took std.crypto and its four dependents
+    -- down. Unbounded here means the full i64 range.
+    crypto_rand.int(9223372036854775807)
 end
 
 -- ── Constant-time comparison (timing-attack safe) ───────────────────────
