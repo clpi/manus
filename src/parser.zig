@@ -4261,6 +4261,28 @@ pub const Parser = struct {
             switch (tok.kind) {
                 .dot => {
                     _ = try self.adv();
+                    // Pass 38 G6 / Pass 40: `value.@name` is SEMANTIC access —
+                    // the effective metatable entry for `name`, as opposed to
+                    // `value.name` which is the ordinary member. The two live on
+                    // one accessor with `@` selecting the semantic world, which
+                    // is why this belongs here rather than in a separate
+                    // production. Previously this path called expect_name_like
+                    // unconditionally and `p.@eq` died with
+                    // "expected 'name', got '@'" — recorded as the Phase 2
+                    // blocker in docs/plans/pass38_projection_calculus.md.
+                    //
+                    // Carried as an ordinary `.field` whose name keeps the `@`
+                    // sigil, so every existing field path still sees a plain
+                    // field and only the codegen arm that looks for the sigil
+                    // treats it semantically. Retrieval only: `p.@eq` is the
+                    // VALUE of the relation, never a receiver-bound call.
+                    if ((try self.pk()).kind == .at) {
+                        _ = try self.adv();
+                        const sem = try self.expect_name_like();
+                        const marked = try std.fmt.allocPrint(self.alloc, "@{s}", .{sem});
+                        e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = marked } });
+                        continue;
+                    }
                     const fld = try self.expect_name_like();
                     e = try self.new_expr(.{ .field = .{ .loc = tok.loc, .obj = e, .field = fld } });
                 },
