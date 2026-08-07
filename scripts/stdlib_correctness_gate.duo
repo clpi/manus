@@ -26,6 +26,12 @@ baseline(): i64
     0
 end
 
+fnv_hello(): i64
+    s = std.hash.fnv.new32a()
+    std.hash.fnv.update(s, "hello")
+    std.hash.fnv.final(s)
+end
+
 fails = 0
 checked = 0
 report = ""
@@ -74,6 +80,22 @@ main(): i64
     check("base32.encode('h')", std.base32.encode("h"), "NA======")
     check("base32.encode('hi')", std.base32.encode("hi"), "NBUQ====")
     check("base32.encode('hello')", std.base32.encode("hello"), "NBSWY3DP")
+
+    -- std.bit and std.hash.fnv — both CORRECT. Added as coverage, and as a
+    -- correction: an earlier sweep of mine reported `std.bit.band/bor` and
+    -- `std.hash.fnv.hash32` returning nil and I recorded them as defects in two
+    -- commit messages. Those names never existed. std.bit exposes
+    -- popcount/clz/ctz/bit_length/rotl/rotr/reverse; std.hash.fnv is a
+    -- STREAMING api (new32a/update/final). The probe was wrong, not the code.
+    --
+    -- The FNV vector is the real one: FNV-1a 32 of "hello" is 1335831723.
+    -- NOT 2166136261 — that is the offset basis, i.e. what this module returns
+    -- when driven wrong, and it looks exactly like a plausible hash.
+    check("bit.popcount(255)", to(str)(std.bit.popcount(255)), "8")
+    check("bit.clz(1)", to(str)(std.bit.clz(1)), "63")
+    check("bit.bit_length(8)", to(str)(std.bit.bit_length(8)), "4")
+    check("bit.rotl(1,1)", to(str)(std.bit.rotl(1, 1)), "2")
+    check("fnv1a32('hello')", to(str)(fnv_hello()), "1335831723")
 
     -- std.inspect — hashed every input to "{}" because a line was a concat
     -- expression with no assignment.
