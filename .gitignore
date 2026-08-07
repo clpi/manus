@@ -1,0 +1,4 @@
+*.out
+.DS_Store
+*.bak
+zig-out/
