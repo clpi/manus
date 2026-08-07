@@ -1510,6 +1510,51 @@ tail_pack = (lx: Lexer, first: str): str
     "(error)"
 end
 
+-- concept NAME <signature>* end — a protocol's required surface. Each entry is
+-- a declaration HEADER with no body, so it cannot go through proj_fun_decl: the
+-- bodiless rule there keys on column 1, and these are indented.
+proj_concept = (lx: Lexer): str
+    _c = lexer.next(lx)
+    n = lexer.next(lx)
+    if not is_member_name(n)
+        mark_error(lx)
+        return "(concept (error))"
+    end
+    s = "(concept " .. n.text
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_END
+            _e = lexer.next(lx)
+            return s .. ")"
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return s .. ")"
+        end
+        nm = lexer.next(lx)
+        if not is_member_name(nm)
+            mark_error(lx)
+            return s .. ")"
+        end
+        if lexer.peek(lx).kind != token.KIND_LPAREN
+            mark_error(lx)
+            return s .. ")"
+        end
+        _lp = lexer.next(lx)
+        params = proj_params(lx)
+        sig = "(sig " .. nm.text .. " (params"
+        if params != ""
+            sig = sig .. " " .. params
+        end
+        sig = sig .. ")"
+        if lexer.peek(lx).kind == token.KIND_COLON
+            _co = lexer.next(lx)
+            sig = sig .. " (ret " .. proj_type(lx) .. ")"
+        end
+        s = s .. " " .. sig .. ")"
+    end
+end
+
 proj_stmt = (lx: Lexer): str
     t = lexer.peek(lx)
     if t.kind == token.KIND_EOF
@@ -1542,6 +1587,9 @@ proj_stmt = (lx: Lexer): str
     end
     if t.kind == token.KIND_REPEAT
         return proj_repeat(lx)
+    end
+    if t.kind == token.KIND_CONCEPT
+        return proj_concept(lx)
     end
     if t.kind == token.KIND_DO
         _d = lexer.next(lx)

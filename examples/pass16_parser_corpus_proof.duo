@@ -201,6 +201,10 @@ positives = {
     -- them it swallowed `fun(a) a end` as a call to `fun`, which is why the
     -- `fun` case below is load-bearing here too.
     { "if type(nv) == \"table\" x = 1 end", "(program (if (= (call type nv) \"table\") (assign x 1)))" },
+    -- `concept` — a protocol's required surface. Each entry is a declaration
+    -- HEADER with no body, so it cannot reuse proj_fun_decl: the bodiless rule
+    -- there keys on column 1 and these are indented.
+    { "concept Allocator\n    alloc(self, bytes: i64): any\n    free(self, ptr: any): void\nend\n", "(program (concept Allocator (sig alloc (params (param self) (param bytes i64)) (ret any)) (sig free (params (param self) (param ptr any)) (ret void))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
