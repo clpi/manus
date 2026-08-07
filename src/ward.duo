@@ -2616,6 +2616,26 @@ ALU_OPS = {
   {115, 0x4A000000},   -- i32.xor   EOR
   {116, 0x1AC02000},   -- i32.shl   LSLV
   {118, 0x1AC02400},   -- i32.shr_u LSRV
+  -- i64 forms are the same instructions with sf=1 (bit 31). Opcodes follow the
+  -- family projection: i64 ALU base 121 + the shared INT_ALU index, so
+  -- add=124, sub=125, mul=126, and=131, or=132, xor=133, shl=134, shr_u=136.
+  {124, 0x8B000000},   -- i64.add   ADD  Xd, Xn, Xm
+  {125, 0xCB000000},   -- i64.sub   SUB
+  {126, 0x9B007C00},   -- i64.mul   MADD Xd, Xn, Xm, XZR
+  {131, 0x8A000000},   -- i64.and   AND
+  {132, 0xAA000000},   -- i64.or    ORR
+  {133, 0xCA000000},   -- i64.xor   EOR
+  {134, 0x9AC02000},   -- i64.shl   LSLV
+  {136, 0x9AC02400},   -- i64.shr_u LSRV
+  -- single-instruction shifts and divides, both widths
+  {117, 0x1AC02800},   -- i32.shr_s ASRV
+  {135, 0x9AC02800},   -- i64.shr_s ASRV
+  {109, 0x1AC00C00},   -- i32.div_s SDIV
+  {110, 0x1AC00800},   -- i32.div_u UDIV
+  {127, 0x9AC00C00},   -- i64.div_s SDIV
+  {128, 0x9AC00800},   -- i64.div_u UDIV
+  {120, 0x1AC02C00},   -- i32.rotr  RORV
+  {138, 0x9AC02C00},   -- i64.rotr  RORV
 }
 
 -- Comparisons: opcode -> ARM64 condition code used by CSET.
@@ -2626,6 +2646,14 @@ CMP_OPS = {
   {75, 8},   -- i32.gt_u HI
   {77, 9},   -- i32.le_u LS
   {79, 2},   -- i32.ge_u CS
+  -- i64 compares: same conditions, 64-bit CMP. The CSET stays 32-bit because a
+  -- wasm comparison yields i32 whatever its operands were.
+  {81, 0},   -- i64.eq
+  {82, 1},   -- i64.ne
+  {84, 3},   -- i64.lt_u
+  {86, 8},   -- i64.gt_u
+  {88, 9},   -- i64.le_u
+  {90, 2},   -- i64.ge_u
 }
 
 alu_word(op: i64): i64
@@ -2666,10 +2694,17 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   lhead = mem.alloc(32 * 8)
   lpn   = mem.alloc(32 * 8)
   lpat  = mem.alloc(32 * 8 * 8)
+  -- word index of an `if`'s conditional branch, awaiting its `else`/`end`
+  lelsw = mem.alloc(32 * 8)
+  -- operand-stack depth at an `if`, so the else-arm starts where the then-arm
+  -- did rather than on top of its result
+  lsps  = mem.alloc(32 * 8)
   mem.zero(lkind, 32 * 8)
   mem.zero(lhead, 32 * 8)
   mem.zero(lpn, 32 * 8)
   mem.zero(lpat, 32 * 8 * 8)
+  mem.zero(lelsw, 32 * 8)
+  mem.zero(lsps, 32 * 8)
   ldep: i64 = 0
   -- Pending local alias: `local.get` records slot -> local register instead of
   -- emitting a MOV, so the consuming ALU op reads the local directly.
@@ -2877,12 +2912,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     -- `i32.const` is safe even when it folds into slot `sp - 1`: every fold
     -- branch reads `ali_reg` as Rn when that slot is aliased.
     if ali_slot >= 0 and not (op == 65 or op == 32 or (aw != 0 and sp >= 2))
-      jitm.w32(code, n, 0x2A0003E0 | (ali_reg << 16) | ali_slot)
+      jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
       n += 1
       ali_slot = -1
     end
     if ali2_slot >= 0 and not (op == 65 or op == 32 or (aw != 0 and sp >= 2))
-      jitm.w32(code, n, 0x2A0003E0 | (ali2_reg << 16) | ali2_slot)
+      jitm.w32(code, n, 0xAA0003E0 | (ali2_reg << 16) | ali2_slot)
       n += 1
       ali2_slot = -1
     end
@@ -2894,10 +2929,30 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- no MOVZ at all. In the FNV kernel this removes 8 instructions per
       -- iteration (4x `const 19; shr_u`, 4x `const {1,2,3,4}; add`).
       --
-      -- `v` comes from the UNSIGNED decoder, so a negative i32 arrives as a
-      -- large value and simply fails every range test below — no wrong fold.
-      v: i64 = uleb_val(s, off + pc, off + blen)
-      pc = uleb_end(s, off + pc, off + blen) - off
+      -- i32.const is a SIGNED LEB. Decoding it with `uleb_val` was wrong for
+      -- small negatives: -7 is the single byte 0x79, which reads back as 121
+      -- and was emitted as the constant 121. (Large negatives do span five
+      -- bytes and did fail the fold range tests, which is why this survived.)
+      -- Decode signed, then fold to the unsigned 32-bit pattern so MOVZ/MOVK
+      -- emit the right bits and every range test below still rejects it.
+      v: i64 = 0
+      vsh: i64 = 0
+      vb: i64 = 0
+      vmore: i64 = 1
+      while vmore == 1
+        vb = string.byte(s, off + pc)
+        pc += 1
+        v = v | ((vb & 0x7F) << vsh)
+        vsh += 7
+        if vb < 0x80
+          vmore = 0
+        end
+      end
+      if vsh < 64 and (vb & 0x40) != 0
+        vone: i64 = 1
+        v = v - (vone << vsh)
+      end
+      v = v & 0xFFFFFFFF
       nx: i64 = string.byte(s, off + pc)
       if sp >= 1 and nx == 118 and v >= 1 and v <= 31
         -- LSR Wt, Wt, #v   (UBFM Wt, Wt, #v, #31).
@@ -2954,6 +3009,69 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         sp += 1
       end
 
+    elseif op == 111 or op == 112 or op == 129 or op == 130
+      -- rem_s / rem_u, both widths. ARM64 has no remainder instruction, so
+      -- divide into a scratch register and multiply back:
+      --   t = a / b ;  a = a - t * b   (MSUB)
+      -- Slot `sp` is free here (it is where a push would land), which is why
+      -- this needs sp <= 7 rather than the usual 8.
+      if sp < 2 or sp > 7
+        return -1
+      end
+      a4: i64 = sp - 2
+      b4: i64 = sp - 1
+      t4: i64 = sp
+      dvw: i64 = 0x1AC00800
+      msw: i64 = 0x1B008000
+      if op == 129 or op == 130
+        dvw = 0x9AC00800
+        msw = 0x9B008000
+      end
+      if op == 111 or op == 129
+        dvw = dvw | 0x00000400          -- SDIV rather than UDIV
+      end
+      jitm.w32(code, n, dvw | (b4 << 16) | (a4 << 5) | t4)
+      n += 1
+      jitm.w32(code, n, msw | (b4 << 16) | (a4 << 10) | (t4 << 5) | a4)
+      n += 1
+      sp -= 1
+      last_alu = -1
+
+    elseif op == 66
+      -- i64.const -> up to four MOVZ/MOVK into the next stack register, in the
+      -- 64-bit forms (0xD2.. / 0xF2..). The value is a SIGNED LEB of up to ten
+      -- bytes, so it is decoded here rather than through `uleb_val`.
+      q: i64 = 0
+      qsh: i64 = 0
+      qb: i64 = 0
+      qmore: i64 = 1
+      while qmore == 1
+        qb = string.byte(s, off + pc)
+        pc += 1
+        q = q | ((qb & 0x7F) << qsh)
+        qsh += 7
+        if qb < 0x80
+          qmore = 0
+        end
+      end
+      if qsh < 64 and (qb & 0x40) != 0
+        qone: i64 = 1
+        q = q - (qone << qsh)
+      end
+      dq: i64 = sp
+      jitm.w32(code, n, 0xD2800000 | ((q & 0xFFFF) << 5) | dq)
+      n += 1
+      qk: i64 = 1
+      while qk < 4
+        qc: i64 = (q >> (qk * 16)) & 0xFFFF
+        if qc != 0
+          jitm.w32(code, n, 0xF2800000 | (qk << 21) | (qc << 5) | dq)
+          n += 1
+        end
+        qk += 1
+      end
+      sp += 1
+
     elseif op == 32
       -- local.get: do NOT copy the local into a stack register. Record that the
       -- pushed slot IS the local's register and let the consuming ALU op read it
@@ -2975,7 +3093,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         ali2_slot = sp
         ali2_reg = 9 + idx
       else
-        jitm.w32(code, n, 0x2A0003E0 | ((9 + idx) << 16) | sp)
+        jitm.w32(code, n, 0xAA0003E0 | ((9 + idx) << 16) | sp)
         n += 1
       end
       sp += 1
@@ -3001,7 +3119,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
           ali_reg = 9 + idx2
         end
       else
-        jitm.w32(code, n, 0x2A0003E0 | ((sp - 1) << 16) | (9 + idx2))
+        jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | (9 + idx2))
         n += 1
       end
       if op == 33
@@ -3042,7 +3160,11 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       a2: i64 = sp - 2
       b2: i64 = sp - 1
-      jitm.w32(code, n, 0x6B00001F | (b2 << 16) | (a2 << 5))
+      cmpw: i64 = 0x6B00001F
+      if op >= 80 and op <= 90
+        cmpw = 0xEB00001F
+      end
+      jitm.w32(code, n, cmpw | (b2 << 16) | (a2 << 5))
       n += 1
       jitm.w32(code, n, 0x1A9F07E0 | ((cc ~ 1) << 12) | a2)
       n += 1
@@ -3060,6 +3182,61 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = n - 1
       last_cc = 0
 
+    elseif op == 26
+      -- drop: the value simply stops being referenced
+      if sp < 1
+        return -1
+      end
+      sp -= 1
+
+    elseif op == 4
+      -- if: pop the condition and branch PAST the then-arm when it is zero.
+      -- The target is the matching `else` or `end`, neither emitted yet, so the
+      -- branch word is remembered in `lelsw` and patched there. The label is a
+      -- block, so `br` out of an `if` uses the same forward machinery.
+      pc += 1
+      if ldep >= 32 or sp < 1
+        return -1
+      end
+      sp -= 1
+      mem.write_i64(lkind, ldep * 8, 0)
+      mem.write_i64(lpn, ldep * 8, 0)
+      mem.write_i64(lelsw, ldep * 8, n)
+      mem.write_i64(lsps, ldep * 8, sp)
+      jitm.w32(code, n, 0x34000000 | sp)
+      n += 1
+      ldep += 1
+      last_alu = -1
+      last_cset = -1
+
+    elseif op == 5
+      -- else: end of the then-arm. Jump over the else-arm (patched at `end`),
+      -- then point the `if`'s conditional branch here.
+      if ldep < 1
+        return -1
+      end
+      lte: i64 = ldep - 1
+      pke: i64 = mem.read_i64(lpn, lte * 8)
+      if pke >= 8
+        return -1
+      end
+      jitm.w32(code, n, 0x14000000)
+      mem.write_i64(lpat, (lte * 8 + pke) * 8, n * 2 + 1)
+      mem.write_i64(lpn, lte * 8, pke + 1)
+      n += 1
+      -- both arms must start at the same operand-stack depth; without this the
+      -- else-arm pushed on top of the then-arm's result and the epilogue read
+      -- the wrong register (a plain if/else returned 5 instead of 100)
+      sp = mem.read_i64(lsps, lte * 8)
+      ew: i64 = mem.read_i64(lelsw, lte * 8)
+      if ew > 0
+        dle: i64 = n - ew
+        jitm.w32(code, ew, (jitm.r32(code, ew) & 0xFF00001F) | ((dle & 0x7FFFF) << 5))
+        mem.write_i64(lelsw, lte * 8, 0)
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 2
       -- block: a FORWARD label. Its target is the matching `end`, so branches
       -- to it are recorded and patched there.
@@ -3069,6 +3246,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       mem.write_i64(lkind, ldep * 8, 0)
       mem.write_i64(lpn, ldep * 8, 0)
+      mem.write_i64(lelsw, ldep * 8, 0)
       ldep += 1
 
     elseif op == 3
@@ -3080,6 +3258,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       mem.write_i64(lkind, ldep * 8, 1)
       mem.write_i64(lhead, ldep * 8, n)
       mem.write_i64(lpn, ldep * 8, 0)
+      mem.write_i64(lelsw, ldep * 8, 0)
       ldep += 1
 
     elseif op == 13
@@ -3131,6 +3310,13 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- bits 5..23 of both B.cond and CBNZ, so one mask serves both.
       if ldep > 0
         ldep -= 1
+        -- an `if` with no `else`: its conditional branch lands here
+        ewd: i64 = mem.read_i64(lelsw, ldep * 8)
+        if ewd > 0
+          dlw: i64 = n - ewd
+          jitm.w32(code, ewd, (jitm.r32(code, ewd) & 0xFF00001F) | ((dlw & 0x7FFFF) << 5))
+          mem.write_i64(lelsw, ldep * 8, 0)
+        end
         if mem.read_i64(lkind, ldep * 8) == 0
           pq: i64 = 0
           pk3: i64 = mem.read_i64(lpn, ldep * 8)
@@ -3185,6 +3371,15 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
 
     elseif op == 15
+      -- return. Implemented as "stop compiling this body", which is only
+      -- correct when the return is the LAST thing in it. Inside a label the
+      -- rest of the function still has to be emitted, and silently dropping it
+      -- made wart_compute_bench hang once `if` stopped bailing. Emitting a
+      -- jump to the epilogue would need the epilogue's address, which is not
+      -- known yet, so refuse instead.
+      if ldep > 0
+        return -1
+      end
       pc = blen + 1
 
     elseif op == 16
@@ -3210,7 +3405,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- are its locals 0..cnp-1 and therefore registers 9+selfloc..
       ck4: i64 = 0
       while ck4 < cnp
-        jitm.w32(code, n, 0x2A0003E0 | ((sp - cnp + ck4) << 16) | (9 + selfloc + ck4))
+        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | (9 + selfloc + ck4))
         n += 1
         ck4 += 1
       end
