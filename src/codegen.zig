@@ -24375,6 +24375,11 @@ const duo_runtime =
     \\    if (cached.type != VAL_NIL) return cached;
     \\    lua_Value mod = lua_val_nil();
     \\    lua_Value preload = lua_table_get_raw_lit(package, "preload");
+    \\    /* A NATIVE-DIRECT module registers a nil-returning stub: its exports are
+    \\     * C symbols reached by folded field calls, so there is no table to bind.
+    \\     * Track that the registry HAD an entry, so registered-but-nil is treated
+    \\     * as success rather than "module not found". */
+    \\    int _duo_mod_registered = 0;
     \\    lua_Value pre = lua_table_get_raw(preload, name_val);
     \\    if (pre.type == VAL_FUNC || pre.type == VAL_CLOSURE) {
     \\        mod = lua_invoke(pre, 0, NULL);
@@ -24392,6 +24397,7 @@ const duo_runtime =
     \\    else {
     \\        mod = lua_table_get(duo_modules, name_val);
     \\        if (mod.type == VAL_FUNC || mod.type == VAL_CLOSURE) {
+    \\            _duo_mod_registered = 1;
     \\            mod = lua_invoke(mod, 0, NULL);
     \\        }
     \\    }
@@ -24468,6 +24474,12 @@ const duo_runtime =
     \\                if (err.type != VAL_NIL) lua_error(err);
     \\            }
     \\        }
+    \\    }
+    \\    if (mod.type == VAL_NIL && _duo_mod_registered) {
+    \\        /* Registered, and its module function legitimately produced no
+    \\         * table. Cache and return nil rather than raising. */
+    \\        lua_table_set_raw(loaded_tbl, name_val, mod);
+    \\        return mod;
     \\    }
     \\    if (mod.type == VAL_NIL) {
     \\        /* Name the module: a bare "module not found" gives the caller no
