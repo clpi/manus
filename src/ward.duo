@@ -298,6 +298,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   cd_len: i64 = 0
   gb_off: i64 = 0
   da_off: i64 = 0
+  tb_off: i64 = 0
+  el_off: i64 = 0
+  tbsize: i64 = 0
   nimp: i64 = 0
   si: i64 = 9
   while si <= n
@@ -313,6 +316,10 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       gb_off = si
     elseif sid2 == 11
       da_off = si
+    elseif sid2 == 4
+      tb_off = si
+    elseif sid2 == 9
+      el_off = si
     elseif sid2 == 10
       cd_off = si
       cd_len = ssz
@@ -385,6 +392,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   lin  = mem.alloc(65536)
   himm = mem.alloc(256)
   fb   = mem.alloc(16)
+  dseg = mem.alloc(64 * 2 * 8)
+  tbl  = mem.alloc(4096 * 8)
+  eseg = mem.alloc(64 * 2 * 8)
   mem.zero(code, cd_len + 16)
   mem.zero(st, 4096 * 8)
   mem.zero(lo, 64 * 64 * 8)
@@ -397,6 +407,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(lin, 65536)
   mem.zero(himm, 256)
   mem.zero(fb, 16)
+  mem.zero(dseg, 64 * 2 * 8)
+  mem.zero(tbl, 4096 * 8)
+  mem.zero(eseg, 64 * 2 * 8)
   -- Initialise globals from the module's OWN global section. ward used to
   -- hardcode gl[0] = 65536 unconditionally, so every module that declares its
   -- own globals started 65536 too high: `wart_simple_opcode_bench` reported
@@ -517,13 +530,76 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       end
       dlen: i64 = uleb_val(img, dq, n)
       dq = uleb_end(img, dq, n)
-      dk: i64 = 0
-      while dk < dlen and doff + dk < 65536
-        mem.write_byte(lin, doff + dk, string.byte(img, dq + dk))
-        dk += 1
+      -- Record where the segment's bytes live so `memory.init` can copy them
+      -- later; a PASSIVE segment (mode 1) has no offset and must NOT be
+      -- copied now — doing so wrote it over address 0.
+      if dv < 64
+        mem.write_i64(dseg, (dv * 2) * 8, dq)
+        mem.write_i64(dseg, (dv * 2 + 1) * 8, dlen)
+      end
+      if dmode != 1
+        dk: i64 = 0
+        while dk < dlen and doff + dk < 65536
+          mem.write_byte(lin, doff + dk, string.byte(img, dq + dk))
+          dk += 1
+        end
       end
       dq = dq + dlen
       dv += 1
+    end
+  end
+
+  -- ── table + element segments ─────────────────────────────────────────
+  -- ward's table holds function indices. Only what `call_indirect` and the
+  -- 0xFC table ops need: a flat i64 array plus a size.
+  if tb_off > 0
+    ntb: i64 = uleb_val(img, tb_off, n)
+    tq2: i64 = uleb_end(img, tb_off, n)
+    if ntb > 0
+      tq2 += 1                          -- reftype byte
+      tfl: i64 = string.byte(img, tq2)
+      tq2 += 1
+      tbsize = uleb_val(img, tq2, n)
+      tq2 = uleb_end(img, tq2, n)
+      if tfl == 1
+        tq2 = uleb_end(img, tq2, n)     -- max
+      end
+    end
+  end
+  if tbsize > 4096
+    tbsize = 4096
+  end
+  if el_off > 0
+    nel: i64 = uleb_val(img, el_off, n)
+    eq2: i64 = uleb_end(img, el_off, n)
+    ev: i64 = 0
+    while ev < nel and eq2 <= n
+      emode: i64 = uleb_val(img, eq2, n)
+      eq2 = uleb_end(img, eq2, n)
+      eoff: i64 = 0
+      if emode == 0
+        eq2 += 1                        -- i32.const
+        eoff = uleb_val(img, eq2, n)
+        eq2 = uleb_end(img, eq2, n) + 1 -- + 0x0B
+      elseif emode == 1 or emode == 3
+        eq2 += 1                        -- elemkind byte
+      end
+      ecnt: i64 = uleb_val(img, eq2, n)
+      eq2 = uleb_end(img, eq2, n)
+      if ev < 64
+        mem.write_i64(eseg, (ev * 2) * 8, eq2)
+        mem.write_i64(eseg, (ev * 2 + 1) * 8, ecnt)
+      end
+      ek: i64 = 0
+      while ek < ecnt and eq2 <= n
+        efn: i64 = uleb_val(img, eq2, n)
+        eq2 = uleb_end(img, eq2, n)
+        if emode == 0 and eoff + ek < 4096
+          mem.write_i64(tbl, (eoff + ek) * 8, efn)
+        end
+        ek += 1
+      end
+      ev += 1
     end
   end
 
@@ -1907,6 +1983,217 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- `M32` const straight as an argument makes codegen box it.
           gf: i64 = M32
           mem.write_i64(st, sp * 8, gf)
+        end
+
+      elseif op == 37 or op == 38
+        -- table.get (37) / table.set (38); tableidx immediate is in imm2's
+        -- position but these are not in himm, so consume it here.
+        while pc < cur_end and mem.read_byte(code, pc) >= 0x80
+          pc += 1
+        end
+        pc += 1
+        if op == 37
+          if sp < 1
+            return -1
+          end
+          ti2: i64 = mem.read_i64(st, sp * 8) & M32
+          if ti2 >= 4096
+            return -1
+          end
+          mem.write_i64(st, sp * 8, mem.read_i64(tbl, ti2 * 8))
+        else
+          if sp < 2
+            return -1
+          end
+          tv2: i64 = mem.read_i64(st, sp * 8)
+          ti3: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+          if ti3 < 4096
+            mem.write_i64(tbl, ti3 * 8, tv2)
+          end
+          sp -= 2
+        end
+
+      elseif op == 252
+        -- 0xFC prefix: bulk memory and table ops. Sub-opcode is a LEB.
+        -- Immediates here are single-byte LEBs in practice: sub-opcodes are
+        -- 8..17, memidx is 0, and segment indices are small. A multi-byte
+        -- index would need the full decode.
+        sub: i64 = mem.read_byte(code, pc)
+        pc += 1
+        if sub == 10
+          -- memory.copy: two memidx bytes; stack dst, src, len
+          pc += 2
+          if sp < 3
+            return -1
+          end
+          cln: i64 = mem.read_i64(st, sp * 8) & M32
+          csr: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+          cds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+          if cds + cln > 65536 or csr + cln > 65536
+            return -1
+          end
+          -- copy direction matters when the ranges overlap
+          if cds <= csr
+            ck: i64 = 0
+            while ck < cln
+              mem.write_byte(lin, cds + ck, mem.read_byte(lin, csr + ck))
+              ck += 1
+            end
+          else
+            ck2: i64 = cln - 1
+            while ck2 >= 0
+              mem.write_byte(lin, cds + ck2, mem.read_byte(lin, csr + ck2))
+              ck2 -= 1
+            end
+          end
+          sp -= 3
+        elseif sub == 11
+          -- memory.fill: one memidx byte; stack dst, val, len
+          pc += 1
+          if sp < 3
+            return -1
+          end
+          fln: i64 = mem.read_i64(st, sp * 8) & M32
+          fvl: i64 = mem.read_i64(st, (sp - 1) * 8) & 255
+          fds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+          if fds + fln > 65536
+            return -1
+          end
+          fk: i64 = 0
+          while fk < fln
+            mem.write_byte(lin, fds + fk, fvl)
+            fk += 1
+          end
+          sp -= 3
+        elseif sub == 8
+          -- memory.init: dataidx LEB then a memidx byte; stack dst, off, len
+          dix: i64 = mem.read_byte(code, pc)
+          pc += 2
+          if sp < 3 or dix >= 64
+            return -1
+          end
+          iln: i64 = mem.read_i64(st, sp * 8) & M32
+          iso: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+          ids: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+          sbase: i64 = mem.read_i64(dseg, (dix * 2) * 8)
+          ik: i64 = 0
+          while ik < iln and ids + ik < 65536
+            mem.write_byte(lin, ids + ik, string.byte(img, sbase + iso + ik))
+            ik += 1
+          end
+          sp -= 3
+        elseif sub == 9 or sub == 13
+          -- data.drop / elem.drop: ward keeps segments for the whole run, so
+          -- dropping is a no-op. Consume the segment index.
+          pc += 1
+          sp = sp
+        elseif sub == 12
+          -- table.init: elemidx then tableidx; stack dst, off, len
+          eix: i64 = mem.read_byte(code, pc)
+          pc += 2
+          if sp < 3 or eix >= 64
+            return -1
+          end
+          tln: i64 = mem.read_i64(st, sp * 8) & M32
+          tso: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+          tds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+          ebase: i64 = mem.read_i64(eseg, (eix * 2) * 8)
+          eb2: i64 = ebase
+          esk: i64 = 0
+          while esk < tso and eb2 <= n
+            eb2 = uleb_end(img, eb2, n)
+            esk += 1
+          end
+          tk: i64 = 0
+          while tk < tln and tds + tk < 4096
+            mem.write_i64(tbl, (tds + tk) * 8, uleb_val(img, eb2, n))
+            eb2 = uleb_end(img, eb2, n)
+            tk += 1
+          end
+          sp -= 3
+        elseif sub == 14
+          -- table.copy: two tableidx bytes; stack dst, src, len
+          pc += 2
+          if sp < 3
+            return -1
+          end
+          yln: i64 = mem.read_i64(st, sp * 8) & M32
+          ysr: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+          yds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+          if yds <= ysr
+            yk: i64 = 0
+            while yk < yln and yds + yk < 4096 and ysr + yk < 4096
+              mem.write_i64(tbl, (yds + yk) * 8, mem.read_i64(tbl, (ysr + yk) * 8))
+              yk += 1
+            end
+          else
+            yk2: i64 = yln - 1
+            while yk2 >= 0
+              if yds + yk2 < 4096 and ysr + yk2 < 4096
+                mem.write_i64(tbl, (yds + yk2) * 8, mem.read_i64(tbl, (ysr + yk2) * 8))
+              end
+              yk2 -= 1
+            end
+          end
+          sp -= 3
+        elseif sub == 15
+          -- table.grow: tableidx; stack init, delta -> old size
+          pc += 1
+          if sp < 2
+            return -1
+          end
+          gdl: i64 = mem.read_i64(st, sp * 8) & M32
+          sp -= 2
+          sp += 1
+          mem.write_i64(st, sp * 8, tbsize)
+          if tbsize + gdl <= 4096
+            tbsize = tbsize + gdl
+          end
+        elseif sub == 16
+          -- table.size: tableidx
+          pc += 1
+          sp += 1
+          mem.write_i64(st, sp * 8, tbsize)
+        elseif sub == 17
+          -- table.fill: tableidx; stack dst, val, len
+          pc += 1
+          if sp < 3
+            return -1
+          end
+          hln: i64 = mem.read_i64(st, sp * 8) & M32
+          hvl: i64 = mem.read_i64(st, (sp - 1) * 8)
+          hds: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+          hk: i64 = 0
+          while hk < hln and hds + hk < 4096
+            mem.write_i64(tbl, (hds + hk) * 8, hvl)
+            hk += 1
+          end
+          sp -= 3
+        else
+          return -1
+        end
+
+      elseif op >= 208 and op <= 210
+        -- reference types. A null ref is -1: the table stores FUNCTION INDICES
+        -- and 0 is a valid one, so 0 cannot double as null.
+        if op == 208
+          pc += 1                       -- reftype byte
+          sp += 1
+          mem.write_i64(st, sp * 8, 0 - 1)
+        elseif op == 209
+          if sp < 1
+            return -1
+          end
+          rn: i64 = 0
+          if mem.read_i64(st, sp * 8) == 0 - 1
+            rn = 1
+          end
+          mem.write_i64(st, sp * 8, rn)
+        else
+          rf: i64 = mem.read_byte(code, pc)
+          pc += 1
+          sp += 1
+          mem.write_i64(st, sp * 8, rf)
         end
 
       elseif op == 1
