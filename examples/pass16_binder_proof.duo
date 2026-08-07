@@ -7,10 +7,12 @@
 -- 44/245 to 246/246 — the fixtures never found a defect, the corpus number
 -- found all of them.
 --
--- Baseline 2026-08-07: 214/247, then 231/247 once comma-list assignment
--- (`ok, err = pcall(f)`) was recognised as a binding site.
+-- Baseline 2026-08-07: 214/247. Then 231 once comma-list assignment
+-- (`ok, err = pcall(f)`) was recognised, then 247 once typed locals
+-- (`n: i64 = 5`) and named varargs (`...args`) were, then 248 with `concept`.
+-- Every one of those was found by the corpus number, never by a fixture.
 --
--- BIND_FLOOR (default 231) is a ratchet.
+-- BIND_FLOOR (default 248) is a ratchet.
 --
 -- Exit: 0 pass, 1..N the failing fixture, 100 the corpus floor.
 
@@ -88,7 +90,7 @@ main(): i64
 
     print("binder_proof: fixtures 6/6; corpus " .. to(str)(clean) .. "/" .. to(str)(files)
         .. " fully resolved, " .. to(str)(total) .. " unresolved names")
-    floor: i64 = to(i64)(std.script.getenv("BIND_FLOOR", "231"))
+    floor: i64 = to(i64)(std.script.getenv("BIND_FLOOR", "248"))
     if clean < floor
         print("binder_proof: FAIL — floor is " .. to(str)(floor))
         return 100

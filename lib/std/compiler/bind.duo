@@ -126,7 +126,31 @@ unresolved = (src: str, file: str, report: bool): i64
             if nxt.kind == token.KIND_COLON and t.loc.col == 1
                 binds = true
             end
+            -- `n: i64 = 5` — a typed local binding, at any indentation. The
+            -- column-1 rule above only covers descriptor declarations, so every
+            -- typed local read as unresolved. Distinguished from a method call
+            -- (`obj:m()`) by looking past the type for the `=`, which is the
+            -- same discriminator proj_stmt uses.
+            if nxt.kind == token.KIND_COLON and t.loc.col != 1
+                cst = lexer.save_state(lx)
+                _c = lexer.next(lx)
+                ty = lexer.next(lx)
+                if ty.kind == token.KIND_NAME or (ty.kind >= token.KIND_I8 and ty.kind <= token.KIND_STR)
+                    if lexer.peek(lx).kind == token.KIND_ASSIGN
+                        binds = true
+                    end
+                end
+                lexer.restore_state(lx, cst)
+            end
+            -- `spawn(fn: any, ...args)` — a NAMED vararg parameter binds too.
+            if prev_kind == token.KIND_DOTS
+                binds = true
+            end
             if prev_kind == token.KIND_FUN or prev_kind == token.KIND_FUNCTION or prev_kind == token.KIND_FOR
+                binds = true
+            end
+            -- `concept Allocator ... end` declares the protocol's name.
+            if prev_kind == token.KIND_CONCEPT
                 binds = true
             end
             if prev_kind == token.KIND_LPAREN or prev_kind == token.KIND_COMMA
