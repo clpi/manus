@@ -1,8 +1,6 @@
 -- std.testing.fstest — filesystem test helpers (mirrors Go's testing/fstest)
 -- Provides a MapFS in-memory filesystem for testing file operations.
 
-string = req "std.string"
-
 MapFS = {}
 MapFS.__index = MapFS
 
@@ -26,15 +24,15 @@ end
 
 mapfs_read(f: any, n: i64): any
     if f.data == nil return nil end
-    if f.pos > string.len(f.data) return nil end
-    chunk = string.sub(f.data, f.pos, f.pos + n - 1)
-    f.pos = f.pos + string.len(chunk)
+    if f.pos > std.string.len(f.data) return nil end
+    chunk = std.string.sub(f.data, f.pos, f.pos + n - 1)
+    f.pos = f.pos + std.string.len(chunk)
     chunk
 end
 
 mapfs_read_all(f: any): str
     if f.data == nil return "" end
-    f.pos = string.len(f.data) + 1
+    f.pos = std.string.len(f.data) + 1
     f.data
 end
 
@@ -45,7 +43,7 @@ mapfs_seek(f: any, offset: i64, whence: i64): i64
     elseif whence == 1
         f.pos = f.pos + offset
     elseif whence == 2
-        f.pos = string.len(f.data) + offset + 1
+        f.pos = std.string.len(f.data) + offset + 1
     end
     if f.pos < 1 f.pos = 1 end
     f.pos - 1
@@ -54,7 +52,7 @@ end
 mapfs_glob(fs: any, pattern: str): any
     results = {}
     for path, _ in fs.files
-        if string.find(path, pattern)
+        if std.string.find(path, pattern)
             results[rawlen(results) + 1] = path
         end
     end

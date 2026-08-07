@@ -29,7 +29,7 @@
 --   param   := NAME (':' type)?
 --   type    := (NAME | i8..u64 | f32|f64|bool|void|str) ('.' ...)*
 --   expr    := or | or 'or' or ...
---            | and 'and' and | cmp (('=='|'~='|'<='|'>='|'<'|'>') cmp)?
+--            | and 'and' and | cmp (('=='|'!='|'<='|'>='|'<'|'>') cmp)?
 --            | add (('+'|'-'|'..') add)* | term (('*'|'/'|'//'|'%') term)*
 --            | unary ('-'|'not') unary | postfix
 --            | primary ( '(' args ')' | '.' NAME | '@' NAME | STRING )*
@@ -43,7 +43,7 @@
 --   literal := <source text>                 42, 3.5, "hi", true, false, nil
 --   binop   := (+ l r) (- l r) (* l r) (/ l r) (// l r) (% l r) (.. l r)
 --              (= l r) (!= l r) (< l r) (<= l r) (> l r) (>= l r)
---              (and l r) (or l r) (not x)    (== and ~= both project as '=')
+--              (and l r) (or l r) (not x)    (== and != both project as '=')
 --   call    := (call <callee> <arg>...)      string-literal sugar included
 --   dot     := (dot <base> <name>)
 --   assign  := (assign <name> <expr>)        (+= etc.) → (assign-op <op> ...)

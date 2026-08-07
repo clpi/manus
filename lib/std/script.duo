@@ -1,14 +1,10 @@
 -- std.script — Duo-first scripting ergonomics (prefer over bash/python for repo tooling)
-_os = req "std.os"
-_io = req "std.io"
-_json = req "std.json"
-
 echo(msg: str): void
     print(msg)
 end
 
 run(cmd: str): i64
-    rc = _os.execute(cmd)
+    rc = std.os.execute(cmd)
     if rc == nil return -1 end
     if rc == true return 0 end
     if to(str)(rc) == "0" return 0 end
@@ -22,7 +18,7 @@ end
 must(cmd: str): void
     if not ok(cmd)
         echo("FAIL: " .. cmd)
-        _os.exit(1)
+        std.os.exit(1)
     end
 end
 
@@ -82,7 +78,7 @@ end
 build_lock_release(): void
     ld = build_lock_dir()
     of = build_lock_owner()
-    _os.remove(of)
+    std.os.remove(of)
     @c.emit("rmdir(ld)")
 end
 
@@ -112,7 +108,7 @@ build_lock_acquire(timeout: i64): bool
 end
 
 capture(cmd: str): str
-    f = _io.popen(cmd, "r")
+    f = std.io.popen(cmd, "r")
     if f == nil return "" end
     out = ""
     line = f:read()
@@ -142,7 +138,7 @@ end
 zig_build(): void
     -- When invoked via the build target the duo binary is already fresh; a second
     -- `zig build` here would just race other agents on .zig-cache. Skip it then.
-    if _os.getenv("DUO_ALREADY_BUILT") == "1"
+    if std.os.getenv("DUO_ALREADY_BUILT") == "1"
         echo("agent-smoke: zig build skipped (DUO_ALREADY_BUILT)")
         return
     end
@@ -156,13 +152,13 @@ end
 -- === Environment ===
 
 getenv(name: str, fallback: str): str
-    v = _os.getenv(name)
+    v = std.os.getenv(name)
     if v == nil return fallback end
     v
 end
 
 getenv_or(name: str): str
-    v = _os.getenv(name)
+    v = std.os.getenv(name)
     if v == nil return "" end
     v
 end
@@ -244,23 +240,23 @@ fs_is_dir(p: str): bool
 end
 
 fs_read(p: str): str
-    return _os.read_file(p)
+    return std.os.read_file(p)
 end
 
 fs_write(p: str, content: str): void
-    if not _os.write_file(p, content)
+    if not std.os.write_file(p, content)
         echo("FAIL: cannot write " .. p)
-        _os.exit(1)
+        std.os.exit(1)
     end
 end
 
 fs_mkdir(p: str): void
-    _os.mkdir_all(p)
+    std.os.mkdir_all(p)
 end
 
 fs_glob(pattern: str): any
     out = {}
-    f = _io.popen("ls -1 " .. pattern .. " 2>/dev/null", "r")
+    f = std.io.popen("ls -1 " .. pattern .. " 2>/dev/null", "r")
     if f == nil return out end
     line = f:read()
     while line != nil
@@ -304,7 +300,7 @@ end
 -- === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
 
 args(): any
-    return _os.args()
+    return std.os.args()
 end
 
 arg(n: i64, fallback: str): str
@@ -316,11 +312,11 @@ end
 -- === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
 
 json_read_file(p: str): any
-    _json.decode(fs_read(p))
+    std.json.decode(fs_read(p))
 end
 
 exec(cmd: str): any
-    f = _io.popen(cmd .. " 2>&1", "r")
+    f = std.io.popen(cmd .. " 2>&1", "r")
     if f == nil return { output = "", code = -1 } end
     out = f:read("*a")
     close_ok, mode, code = f:close()

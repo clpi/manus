@@ -1,7 +1,5 @@
 -- std.ml.nn — Neural network layers and training
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Layer definitions
 -- ═══════════════════════════════════════════════════════════════
@@ -9,7 +7,7 @@ Tensor = req "std.ml.tensor"
 linear(in_features: i64, out_features: i64): any
     -- Xavier initialization
     scale = 1.0 / math.sqrt(in_features)
-    weight = Tensor.rand(in_features, out_features)
+    weight = std.ml.tensor.rand(in_features, out_features)
     -- Apply Xavier scaling
     r = 0
     while r < in_features
@@ -23,7 +21,7 @@ linear(in_features: i64, out_features: i64): any
     return {
         type = "linear",
         weight = weight,
-        bias = Tensor.zeros(1, out_features),
+        bias = std.ml.tensor.zeros(1, out_features),
         in_features = in_features,
         out_features = out_features,
         -- Gradient storage (allocated on first backward)
@@ -97,13 +95,13 @@ forward_linear(layer, x): any
     -- Cache input for backward pass
     layer.input_cache = x
     -- y = x @ W + b
-    y = Tensor.matmul(x, layer.weight)
-    return Tensor.add(y, layer.bias)
+    y = std.ml.tensor.matmul(x, layer.weight)
+    return std.ml.tensor.add(y, layer.bias)
 end
 
 @hot
 forward_relu(layer, x): any
-    return Tensor.relu(x)
+    return std.ml.tensor.relu(x)
 end
 
 @hot
@@ -114,7 +112,7 @@ end
 
 @hot
 forward_softmax(layer, x): any
-    out = Tensor.softmax(x)
+    out = std.ml.tensor.softmax(x)
     layer.output_cache = out
     return out
 end
@@ -130,7 +128,7 @@ forward_dropout(layer, x): any
     crypto_rand = req "std.crypto.rand"
     mask_bytes = crypto_rand.bytes(math.ceil(x.rows * x.cols / 8))
     
-    result = Tensor.zeros(x.rows, x.cols)
+    result = std.ml.tensor.zeros(x.rows, x.cols)
     i = 0
     while i < x.rows * x.cols
         -- Extract bit from mask bytes
@@ -171,8 +169,8 @@ cross_entropy(pred, target): f64
     -- Simplified: assumes pred is softmax output, target is class index per row
     loss = 0.0
     for i = 1, pred.rows
-        idx = Tensor.get(target, i, 1)
-        p = Tensor.get(pred, i, idx)
+        idx = std.ml.tensor.get(target, i, 1)
+        p = std.ml.tensor.get(pred, i, idx)
         if p < 1e-7 p = 1e-7 end
         loss -= math.log(p)
     end
@@ -180,7 +178,7 @@ cross_entropy(pred, target): f64
 end
 
 mse_loss(pred, target): f64
-    diff = Tensor.add(pred, Tensor.mul_scalar(target, -1))
+    diff = std.ml.tensor.add(pred, std.ml.tensor.mul_scalar(target, -1))
     sum = 0.0
     for i = 1, diff.size
         v = diff.data[i]

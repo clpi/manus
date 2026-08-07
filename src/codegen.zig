@@ -12835,6 +12835,28 @@ pub const CodeGen = struct {
                 if (f.obj.* == .field) {
                     if (try self.try_emit_ambient_module_const_field(f.obj, f.field, self.expr_type(expr))) return;
                 }
+                // §2.7: when the path itself NAMES A MODULE (`std.json`) there is
+                // no `std` variable to walk from — emitting one produced
+                // "use of undeclared identifier 'std'". Resolve it exactly as a
+                // `req` binding does, so the caller's own field access
+                // (`.encode`) then reads the module table as usual. Runs after
+                // the const fold so a folded symbol still wins, and only when the
+                // path resolves to a real module file, leaving `a.b` untouched.
+                if (self.duo_mode) {
+                    var mbuf: [512]u8 = undefined;
+                    if (ambient_dotted_path(expr, &mbuf)) |mod_path| {
+                        if (std.mem.startsWith(u8, mod_path, "std.") and
+                            self.find_module_file_for_req(mod_path) != null)
+                        {
+                            self.p("lua_require(lua_val_from_literal(\"{s}\", {d}, {d}))", .{
+                                mod_path,
+                                calc_lua_hash(mod_path),
+                                mod_path.len,
+                            });
+                            return;
+                        }
+                    }
+                }
                 const obj_rt = self.expr_type(f.obj);
                 if (obj_rt == .any) {
                     const hash = calc_lua_hash(f.field);
@@ -19536,6 +19558,18 @@ pub const CodeGen = struct {
                     const mod_name = std.fmt.bufPrint(&buf, "std.{s}", .{f.field}) catch unreachable;
                     try names.append(self.alloc, try self.alloc.dupe(u8, mod_name));
                     try names.append(self.alloc, try self.alloc.dupe(u8, "std"));
+                } else if (f.obj.* == .field) {
+                    // A nested ambient path names a module at a depth the
+                    // two-level case above cannot see: `std.net.url` lives one
+                    // hop below `std.net`. Offer the whole dotted path at every
+                    // hop and let module resolution keep the one that names a
+                    // real file — an unresolvable name is skipped downstream.
+                    var dbuf: [512]u8 = undefined;
+                    if (ambient_dotted_path(expr, &dbuf)) |dotted| {
+                        if (std.mem.startsWith(u8, dotted, "std.")) {
+                            try names.append(self.alloc, try self.alloc.dupe(u8, dotted));
+                        }
+                    }
                 }
                 try self.collect_require_names(f.obj, names);
             },
@@ -19602,6 +19636,11 @@ pub const CodeGen = struct {
                 else => {},
             }
         }
+        // A block's trailing expression is NOT in `stmts`, so a program whose
+        // only statement is a bare call (`print(std.json.encode(x))`) collected
+        // nothing and the module was never registered. Every other walker in
+        // this file already descends into `tail_expr`; this one did not.
+        if (block.tail_expr) |tail| try self.collect_require_names(tail, names);
     }
 
     fn find_module_path(self: *CodeGen, base_dir: []const u8, mod_name: []const u8) ?[]const u8 {

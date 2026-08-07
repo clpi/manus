@@ -24,9 +24,6 @@ FRAME_PONG = 10
 -- Base64 utilities (must be defined before use)
 -- ═══════════════════════════════════════════════════════════════
 
-crypto = req "std.crypto"
-hash_sha1 = req "std.hash.sha1"
-
 base64_encode(data: any): str
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     result = ""
@@ -58,7 +55,7 @@ end
 
 base64_sha1(data: str): str
     -- WebSocket handshake requires base64(SHA-1(data + magic))
-    sha1_hex = hash_sha1.sha1(data)
+    sha1_hex = std.hash.sha1.sha1(data)
     -- Convert hex string to bytes
     sha1_bytes = {}
     i = 1

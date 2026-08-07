@@ -1,7 +1,5 @@
 -- std.ml.optim — Optimizers and learning rate schedulers
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Optimizers
 -- ═══════════════════════════════════════════════════════════════
@@ -141,7 +139,7 @@ step_sgd(opt: any, params: any, grads: any): void
 
         if opt.momentum != 0
             if opt.velocities[key] == nil
-                opt.velocities[key] = Tensor.zeros(p.rows, p.cols)
+                opt.velocities[key] = std.ml.tensor.zeros(p.rows, p.cols)
             end
             v = opt.velocities[key]
             for j = 1, p.size
@@ -167,8 +165,8 @@ step_adam(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.m[key] == nil
-            opt.m[key] = Tensor.zeros(p.rows, p.cols)
-            opt.v[key] = Tensor.zeros(p.rows, p.cols)
+            opt.m[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.v[key] = std.ml.tensor.zeros(p.rows, p.cols)
         end
         m = opt.m[key]
         v = opt.v[key]
@@ -194,8 +192,8 @@ step_adamw(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.m[key] == nil
-            opt.m[key] = Tensor.zeros(p.rows, p.cols)
-            opt.v[key] = Tensor.zeros(p.rows, p.cols)
+            opt.m[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.v[key] = std.ml.tensor.zeros(p.rows, p.cols)
         end
         m = opt.m[key]
         v = opt.v[key]
@@ -219,7 +217,7 @@ step_adagrad(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.accum[key] == nil
-            opt.accum[key] = Tensor.zeros(p.rows, p.cols)
+            opt.accum[key] = std.ml.tensor.zeros(p.rows, p.cols)
         end
         acc = opt.accum[key]
 
@@ -237,8 +235,8 @@ step_rmsprop(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.cache[key] == nil
-            opt.cache[key] = Tensor.zeros(p.rows, p.cols)
-            opt.velocity[key] = Tensor.zeros(p.rows, p.cols)
+            opt.cache[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.velocity[key] = std.ml.tensor.zeros(p.rows, p.cols)
         end
         cache = opt.cache[key]
         vel = opt.velocity[key]
@@ -261,8 +259,8 @@ step_lamb(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.m[key] == nil
-            opt.m[key] = Tensor.zeros(p.rows, p.cols)
-            opt.v[key] = Tensor.zeros(p.rows, p.cols)
+            opt.m[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.v[key] = std.ml.tensor.zeros(p.rows, p.cols)
         end
         m = opt.m[key]
         v = opt.v[key]

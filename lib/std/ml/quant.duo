@@ -1,7 +1,5 @@
 -- std.ml.quant — Quantization helpers (f16, int8, int4, GPTQ-style)
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Symmetric INT8 Quantization
 -- ═══════════════════════════════════════════════════════════════

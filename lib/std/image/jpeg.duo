@@ -2,16 +2,13 @@
 -- Parses JPEG headers for real dimensions, components, and quantization tables.
 -- Pixel decoding uses a simplified IDCT approximation (not full ITU-T T.81).
 
-string = req "std.string"
-image = req "std.image"
-
 read_u16(s: str, off: i64): i64
-    (string.byte(s, off) * 256 + string.byte(s, off + 1)) % 65536
+    (std.string.byte(s, off) * 256 + std.string.byte(s, off + 1)) % 65536
 end
 
 decode_header(data: str): any
     if data == nil return nil end
-    if string.byte(data, 1) != 0xFF or string.byte(data, 2) != 0xD8
+    if std.string.byte(data, 1) != 0xFF or std.string.byte(data, 2) != 0xD8
         return nil
     end
     off = 3
@@ -20,27 +17,27 @@ decode_header(data: str): any
         quant_tables = {}, huff_tables = {}, sos_data = nil,
         frame_marker = 0xC0,
     }
-    while off + 1 <= string.len(data)
-        if string.byte(data, off) != 0xFF break end
-        marker = string.byte(data, off + 1)
+    while off + 1 <= std.string.len(data)
+        if std.string.byte(data, off) != 0xFF break end
+        marker = std.string.byte(data, off + 1)
         if marker == 0xD9 break end
         if marker == 0x00 or (marker >= 0xD0 and marker <= 0xD7)
             off += 2
         else
             seg_len = read_u16(data, off + 2)
             if marker == 0xC0 or marker == 0xC1 or marker == 0xC2
-                info.precision = string.byte(data, off + 4)
+                info.precision = std.string.byte(data, off + 4)
                 info.height = read_u16(data, off + 5)
                 info.width = read_u16(data, off + 7)
-                info.components = string.byte(data, off + 9)
+                info.components = std.string.byte(data, off + 9)
                 info.frame_marker = marker
             elseif marker == 0xDB
                 -- Quantization table
-                table_id = string.byte(data, off + 4) & 0x0F
+                table_id = std.string.byte(data, off + 4) & 0x0F
                 qt = {}
                 qi = 1
                 while qi <= 64
-                    qt[qi] = string.byte(data, off + 5 + qi - 1)
+                    qt[qi] = std.string.byte(data, off + 5 + qi - 1)
                     qi += 1
                 end
                 info.quant_tables[table_id] = qt
@@ -83,33 +80,33 @@ decode(data: str): any
     info = decode_header(data)
     if info == nil return nil end
     if info.width == 0 or info.height == 0 return nil end
-    img = image.new_rgba(image.rect(0, 0, info.width, info.height))
+    img = std.image.new_rgba(std.image.rect(0, 0, info.width, info.height))
 
     -- Decode MCU blocks using simplified approach
     -- For baseline JPEG: try to extract entropy-coded data after SOS marker
-    if info.sos_data and info.sos_data < string.len(data)
+    if info.sos_data and info.sos_data < std.string.len(data)
         -- Read entropy-coded segment (simplified: extract raw bytes as pseudo-pixels)
         entropy_start = info.sos_data
-        entropy_len = string.len(data) - entropy_start - 2  -- minus EOI
+        entropy_len = std.string.len(data) - entropy_start - 2  -- minus EOI
         if entropy_len > 0
             -- Generate a procedural decode from the entropy data
             -- This is a visual approximation — not a correct JPEG decode
             for y = 0, info.height - 1
                 for x = 0, info.width - 1
                     byte_off = entropy_start + (y * info.width + x) % entropy_len
-                    r = string.byte(data, byte_off) or 128
-                    g = string.byte(data, byte_off + 1) or 128
-                    b = string.byte(data, byte_off + 2) or 128
-                    c = image.color.rgba(r * 257, g * 257, b * 257, 65535)
-                    image.img_set(img, x, y, c)
+                    r = std.string.byte(data, byte_off) or 128
+                    g = std.string.byte(data, byte_off + 1) or 128
+                    b = std.string.byte(data, byte_off + 2) or 128
+                    c = std.image.color.rgba(r * 257, g * 257, b * 257, 65535)
+                    std.image.img_set(img, x, y, c)
                 end
             end
         else
             -- No entropy data — fill with gray
             for y = 0, info.height - 1
                 for x = 0, info.width - 1
-                    c = image.color.rgba(32768, 32768, 32768, 65335)
-                    image.img_set(img, x, y, c)
+                    c = std.image.color.rgba(32768, 32768, 32768, 65335)
+                    std.image.img_set(img, x, y, c)
                 end
             end
         end
@@ -117,8 +114,8 @@ decode(data: str): any
         -- No SOS marker — fill with gray
         for y = 0, info.height - 1
             for x = 0, info.width - 1
-                c = image.color.rgba(32768, 32768, 32768, 65335)
-                image.img_set(img, x, y, c)
+                c = std.image.color.rgba(32768, 32768, 32768, 65335)
+                std.image.img_set(img, x, y, c)
             end
         end
     end

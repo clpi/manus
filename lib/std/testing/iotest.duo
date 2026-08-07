@@ -1,15 +1,13 @@
 -- std.testing.iotest — I/O test helpers (mirrors Go's testing/iotest)
 -- Provides readers/writers that simulate errors, slow reads, etc.
 
-string = req "std.string"
-
 new_one_byte_reader(data: str): any
     {data = data, pos = 1}
 end
 
 one_byte_read(r: any): any
-    if r.pos > string.len(r.data) return nil end
-    b = string.sub(r.data, r.pos, r.pos)
+    if r.pos > std.string.len(r.data) return nil end
+    b = std.string.sub(r.data, r.pos, r.pos)
     r.pos = r.pos + 1
     b
 end
@@ -19,10 +17,10 @@ new_half_reader(data: str): any
 end
 
 half_read(r: any): any
-    if r.pos > string.len(r.data) return nil end
-    remaining = string.len(r.data) - r.pos + 1
+    if r.pos > std.string.len(r.data) return nil end
+    remaining = std.string.len(r.data) - r.pos + 1
     chunk_size = math.max(1, math.floor(remaining / 2))
-    chunk = string.sub(r.data, r.pos, r.pos + chunk_size - 1)
+    chunk = std.string.sub(r.data, r.pos, r.pos + chunk_size - 1)
     r.pos = r.pos + chunk_size
     chunk
 end
@@ -37,8 +35,8 @@ data_err_read(r: any): any
         r.erred = true
         return nil
     end
-    if r.pos > string.len(r.data) return nil end
-    chunk = string.sub(r.data, r.pos, r.pos)
+    if r.pos > std.string.len(r.data) return nil end
+    chunk = std.string.sub(r.data, r.pos, r.pos)
     r.pos = r.pos + 1
     chunk
 end
@@ -50,8 +48,8 @@ end
 timeout_read(r: any): any
     r.reads = r.reads + 1
     if r.reads > r.timeout_after return nil end
-    if r.pos > string.len(r.data) return nil end
-    chunk = string.sub(r.data, r.pos, r.pos)
+    if r.pos > std.string.len(r.data) return nil end
+    chunk = std.string.sub(r.data, r.pos, r.pos)
     r.pos = r.pos + 1
     chunk
 end
@@ -62,8 +60,8 @@ end
 
 trunc_write(w: any, data: str): i64
     w.written[rawlen(w.written) + 1] = data
-    w.max = w.max + string.len(data)
-    string.len(data)
+    w.max = w.max + std.string.len(data)
+    std.string.len(data)
 end
 
 trunc_bytes(w: any): str

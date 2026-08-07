@@ -1,7 +1,5 @@
 -- std.base32 — Base32 encoding and decoding (RFC 4648)
 
-string = req "std.string"
-
 -- Note: base32 lookup tables (alphabets and decode tables) are constructed
 -- inside the functions that use them. The duo codegen does not yet expose
 -- module-level locals/globals to function bodies, so defining them at the
@@ -11,18 +9,18 @@ string = req "std.string"
 encode_with_alphabet(data: str, tab: str): str
     if data == nil return "" end
     res = {}
-    len = string.len(data)
+    len = std.string.len(data)
     i = 1
     while i <= len
-        b1 = string.byte(data, i)
+        b1 = std.string.byte(data, i)
         b2 = 0
-        if i + 1 <= len b2 = string.byte(data, i + 1) end
+        if i + 1 <= len b2 = std.string.byte(data, i + 1) end
         b3 = 0
-        if i + 2 <= len b3 = string.byte(data, i + 2) end
+        if i + 2 <= len b3 = std.string.byte(data, i + 2) end
         b4 = 0
-        if i + 3 <= len b4 = string.byte(data, i + 3) end
+        if i + 3 <= len b4 = std.string.byte(data, i + 3) end
         b5 = 0
-        if i + 4 <= len b5 = string.byte(data, i + 4) end
+        if i + 4 <= len b5 = std.string.byte(data, i + 4) end
         c1 = (b1 >> 3) + 1
         c2 = (((b1 & 0x07) << 2) | (b2 >> 6)) + 1
         c3 = ((b2 >> 1) & 0x1F) + 1
@@ -31,35 +29,35 @@ encode_with_alphabet(data: str, tab: str): str
         c6 = ((b4 >> 2) & 0x1F) + 1
         c7 = (((b4 & 0x03) << 3) | (b5 >> 5)) + 1
         c8 = (b5 & 0x1F) + 1
-        res[rawlen(res) + 1] = string.sub(tab, c1, c1)
-        res[rawlen(res) + 1] = string.sub(tab, c2, c2)
-        res[rawlen(res) + 1] = string.sub(tab, c3, c3)
+        res[rawlen(res) + 1] = std.string.sub(tab, c1, c1)
+        res[rawlen(res) + 1] = std.string.sub(tab, c2, c2)
+        res[rawlen(res) + 1] = std.string.sub(tab, c3, c3)
         if i + 1 > len
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
         elseif i + 2 > len
-            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
         elseif i + 3 > len
-            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
-            res[rawlen(res) + 1] = string.sub(tab, c5, c5)
+            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = std.string.sub(tab, c5, c5)
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
         elseif i + 4 > len
-            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
-            res[rawlen(res) + 1] = string.sub(tab, c5, c5)
-            res[rawlen(res) + 1] = string.sub(tab, c6, c6)
+            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = std.string.sub(tab, c5, c5)
+            res[rawlen(res) + 1] = std.string.sub(tab, c6, c6)
             res[rawlen(res) + 1] = "="
         else
-            res[rawlen(res) + 1] = string.sub(tab, c4, c4)
-            res[rawlen(res) + 1] = string.sub(tab, c5, c5)
-            res[rawlen(res) + 1] = string.sub(tab, c6, c6)
-            res[rawlen(res) + 1] = string.sub(tab, c7, c7)
-            res[rawlen(res) + 1] = string.sub(tab, c8, c8)
+            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
+            res[rawlen(res) + 1] = std.string.sub(tab, c5, c5)
+            res[rawlen(res) + 1] = std.string.sub(tab, c6, c6)
+            res[rawlen(res) + 1] = std.string.sub(tab, c7, c7)
+            res[rawlen(res) + 1] = std.string.sub(tab, c8, c8)
         end
         i += 5
     end
@@ -77,7 +75,7 @@ end
 decode_with_alphabet(data: str, tab: any): str
     if data == nil return "" end
     res = {}
-    len = string.len(data)
+    len = std.string.len(data)
     i = 1
     while i <= len
         vals = {}
@@ -88,7 +86,7 @@ decode_with_alphabet(data: str, tab: any): str
                 vals[j + 1] = 0
                 pad_count += 1
             else
-                c = string.byte(data, pos)
+                c = std.string.byte(data, pos)
                 if c == 61
                     vals[j + 1] = 0
                     pad_count += 1
@@ -108,18 +106,18 @@ decode_with_alphabet(data: str, tab: any): str
         b3 = ((vals[4] & 0x0F) << 4) | (vals[5] >> 1)
         b4 = ((vals[5] & 0x01) << 7) | (vals[6] << 2) | (vals[7] >> 3)
         b5 = ((vals[7] & 0x07) << 5) | vals[8]
-        res[rawlen(res) + 1] = string.char(b1)
+        res[rawlen(res) + 1] = std.string.char(b1)
         if pad_count < 6
-            res[rawlen(res) + 1] = string.char(b2)
+            res[rawlen(res) + 1] = std.string.char(b2)
         end
         if pad_count < 4
-            res[rawlen(res) + 1] = string.char(b3)
+            res[rawlen(res) + 1] = std.string.char(b3)
         end
         if pad_count < 3
-            res[rawlen(res) + 1] = string.char(b4)
+            res[rawlen(res) + 1] = std.string.char(b4)
         end
         if pad_count < 1
-            res[rawlen(res) + 1] = string.char(b5)
+            res[rawlen(res) + 1] = std.string.char(b5)
         end
         i += 8
     end
@@ -130,7 +128,7 @@ decode(data: str): str
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
     dec_table = {}
     for i = 1, 32
-        dec_table[string.byte(alphabet, i)] = i - 1
+        dec_table[std.string.byte(alphabet, i)] = i - 1
     end
     decode_with_alphabet(data, dec_table)
 end
@@ -139,7 +137,7 @@ decode_hex(data: str): str
     hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
     hex_dec_table = {}
     for i = 1, 32
-        hex_dec_table[string.byte(hex_alphabet, i)] = i - 1
+        hex_dec_table[std.string.byte(hex_alphabet, i)] = i - 1
     end
     decode_with_alphabet(data, hex_dec_table)
 end

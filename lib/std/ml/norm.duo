@@ -1,7 +1,5 @@
 -- std.ml.norm — Normalization layers (BatchNorm, RMSNorm, GroupNorm, InstanceNorm)
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Batch Normalization
 -- ═══════════════════════════════════════════════════════════════
@@ -14,10 +12,10 @@ batchnorm(num_features: i64, eps: f64, momentum: f64): any
         num_features = num_features,
         eps = eps,
         momentum = momentum,
-        weight = Tensor.ones(1, num_features),
-        bias = Tensor.zeros(1, num_features),
-        running_mean = Tensor.zeros(1, num_features),
-        running_var = Tensor.ones(1, num_features),
+        weight = std.ml.tensor.ones(1, num_features),
+        bias = std.ml.tensor.zeros(1, num_features),
+        running_mean = std.ml.tensor.zeros(1, num_features),
+        running_var = std.ml.tensor.ones(1, num_features),
         training = true,
         -- Gradient storage
         grad_weight = nil,
@@ -37,7 +35,7 @@ batchnorm_forward(layer: any, x: any): any
 
     if layer.training
         -- Compute batch mean
-        mean = Tensor.zeros(1, d)
+        mean = std.ml.tensor.zeros(1, d)
         for j = 1, d
             s = 0
             for i = 1, n
@@ -47,7 +45,7 @@ batchnorm_forward(layer: any, x: any): any
         end
 
         -- Compute batch variance
-        variance = Tensor.zeros(1, d)
+        variance = std.ml.tensor.zeros(1, d)
         for j = 1, d
             s = 0
             for i = 1, n
@@ -71,8 +69,8 @@ batchnorm_forward(layer: any, x: any): any
     end
 
     -- Normalize
-    result = Tensor.zeros(n, d)
-    layer.x_normalized = Tensor.zeros(n, d)
+    result = std.ml.tensor.zeros(n, d)
+    layer.x_normalized = std.ml.tensor.zeros(n, d)
     for j = 1, d
         inv_std = 1.0 / math.sqrt(variance.data[j] + layer.eps)
         for i = 1, n
@@ -89,11 +87,11 @@ end
 batchnorm_backward(layer: any, grad_out: any): any
     n = grad_out.rows
     d = grad_out.cols
-    dx = Tensor.zeros(n, d)
+    dx = std.ml.tensor.zeros(n, d)
 
     if layer.grad_weight == nil
-        layer.grad_weight = Tensor.zeros(1, d)
-        layer.grad_bias = Tensor.zeros(1, d)
+        layer.grad_weight = std.ml.tensor.zeros(1, d)
+        layer.grad_bias = std.ml.tensor.zeros(1, d)
     end
 
     for j = 1, d
@@ -137,7 +135,7 @@ rmsnorm(dim: i64, eps: f64): any
         type = "rmsnorm",
         dim = dim,
         eps = eps,
-        weight = Tensor.ones(1, dim),
+        weight = std.ml.tensor.ones(1, dim),
         grad_weight = nil,
         input_cache = nil,
     }
@@ -147,7 +145,7 @@ end
 rmsnorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
-    result = Tensor.zeros(n, d)
+    result = std.ml.tensor.zeros(n, d)
 
     for i = 1, n
         -- Compute RMS
@@ -179,8 +177,8 @@ groupnorm(num_channels: i64, num_groups: i64, eps: f64): any
         num_channels = num_channels,
         num_groups = num_groups,
         eps = eps,
-        weight = Tensor.ones(1, num_channels),
-        bias = Tensor.zeros(1, num_channels),
+        weight = std.ml.tensor.ones(1, num_channels),
+        bias = std.ml.tensor.zeros(1, num_channels),
         grad_weight = nil,
         grad_bias = nil,
     }
@@ -190,7 +188,7 @@ groupnorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
     channels_per_group = d / layer.num_groups
-    result = Tensor.zeros(n, d)
+    result = std.ml.tensor.zeros(n, d)
 
     for g = 1, layer.num_groups
         start_ch = (g - 1) * channels_per_group + 1
@@ -241,8 +239,8 @@ layernorm(dim: i64, eps: f64): any
         type = "layernorm",
         dim = dim,
         eps = eps,
-        weight = Tensor.ones(1, dim),
-        bias = Tensor.zeros(1, dim),
+        weight = std.ml.tensor.ones(1, dim),
+        bias = std.ml.tensor.zeros(1, dim),
         grad_weight = nil,
         grad_bias = nil,
     }
@@ -252,7 +250,7 @@ end
 layernorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
-    result = Tensor.zeros(n, d)
+    result = std.ml.tensor.zeros(n, d)
 
     for i = 1, n
         -- Mean

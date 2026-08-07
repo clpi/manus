@@ -1,14 +1,12 @@
 -- std.encoding.pem — PEM encoding (mirrors Go's encoding/pem package)
 -- Encode binary data as PEM-formatted ASCII.
 
-base64 = req "std.base64"
-
 line_width = 64
 
 encode(b: any): str
     data = b.bytes
     typ = b.type
-    b64 = base64.encode(data)
+    b64 = std.base64.encode(data)
     lines = {}
     lines[rawlen(lines) + 1] = "-----BEGIN " .. typ .. "-----"
     i = 1
@@ -42,7 +40,7 @@ decode(data: str): any
     end
     if typ == nil return nil end
     b64_data = table.concat(b64_lines)
-    bytes = base64.decode(b64_data)
+    bytes = std.base64.decode(b64_data)
     return {type = typ, headers = {}, bytes = bytes}
 end
 

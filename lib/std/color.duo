@@ -1,7 +1,5 @@
 -- std.color — ANSI terminal color codes
 
-string = req "std.string"
-
 global M = {}
 
 M.RESET = "\x1b[0m"

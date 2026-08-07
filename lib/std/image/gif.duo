@@ -1,9 +1,6 @@
 -- std.image.gif — GIF image decoder with LZW decompression
 -- Decodes GIF87a/GIF89a images including LZW-compressed image data.
 
-string = req "std.string"
-image = req "std.image"
-
 -- ═══════════════════════════════════════════════════════════════
 -- LZW Decompressor (GIF variant: LSB-first, variable-width codes)
 -- ═══════════════════════════════════════════════════════════════
@@ -32,8 +29,8 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
         code = 0
         bits_read = 0
         while bits_read < code_size
-            if byte_pos > string.len(data) return eoi_code end
-            byte_val = string.byte(data, byte_pos)
+            if byte_pos > std.string.len(data) return eoi_code end
+            byte_val = std.string.byte(data, byte_pos)
             bit = (byte_val >> bit_pos) & 1
             code = code | (bit << bits_read)
             bit_pos += 1
@@ -137,24 +134,24 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 read_u16_le(s: str, off: i64): i64
-    string.byte(s, off) + string.byte(s, off + 1) * 256
+    std.string.byte(s, off) + std.string.byte(s, off + 1) * 256
 end
 
 decode(data: str): any
     if data == nil return nil end
 
     -- Verify signature
-    sig = string.sub(data, 1, 6)
+    sig = std.string.sub(data, 1, 6)
     if sig != "GIF87a" and sig != "GIF89a" return nil end
 
     -- Logical Screen Descriptor
     width = read_u16_le(data, 7)
     height = read_u16_le(data, 9)
-    packed = string.byte(data, 11)
+    packed = std.string.byte(data, 11)
     gct_flag = (packed >> 7) & 1
     color_res = ((packed >> 4) & 7) + 1
     gct_size = 2 ^ ((packed & 7) + 1)
-    bg_color_idx = string.byte(data, 12)
+    bg_color_idx = std.string.byte(data, 12)
 
     off = 14
 
@@ -164,44 +161,44 @@ decode(data: str): any
         i = 0
         while i < gct_size
             gct[i] = {
-                r = string.byte(data, off + i * 3),
-                g = string.byte(data, off + i * 3 + 1),
-                b = string.byte(data, off + i * 3 + 2),
+                r = std.string.byte(data, off + i * 3),
+                g = std.string.byte(data, off + i * 3 + 1),
+                b = std.string.byte(data, off + i * 3 + 2),
             }
             i += 1
         end
         off += gct_size * 3
     end
 
-    img = image.new_rgba(image.rect(0, 0, width, height))
+    img = std.image.new_rgba(std.image.rect(0, 0, width, height))
     transparent_idx = -1
     lct = nil
 
-    while off < string.len(data)
-        byte = string.byte(data, off)
+    while off < std.string.len(data)
+        byte = std.string.byte(data, off)
 
         if byte == 0x21
             -- Extension block
-            ext_label = string.byte(data, off + 1)
+            ext_label = std.string.byte(data, off + 1)
             off += 2
 
             -- Read sub-blocks
-            sub_len = string.byte(data, off)
+            sub_len = std.string.byte(data, off)
             if ext_label == 0xF9
                 -- Graphics Control Extension
                 if sub_len >= 4
-                    packed = string.byte(data, off + 1)
+                    packed = std.string.byte(data, off + 1)
                     transparent_flag = packed & 1
                     if transparent_flag == 1
-                        transparent_idx = string.byte(data, off + 4)
+                        transparent_idx = std.string.byte(data, off + 4)
                     end
                 end
             end
             off += sub_len + 1
 
             -- Skip remaining sub-blocks
-            while off < string.len(data)
-                sub_len = string.byte(data, off)
+            while off < std.string.len(data)
+                sub_len = std.string.byte(data, off)
                 off += 1
                 if sub_len == 0 break end
                 off += sub_len
@@ -213,7 +210,7 @@ decode(data: str): any
             top = read_u16_le(data, off + 3)
             img_w = read_u16_le(data, off + 5)
             img_h = read_u16_le(data, off + 7)
-            local_packed = string.byte(data, off + 9)
+            local_packed = std.string.byte(data, off + 9)
             lct_flag = (local_packed >> 7) & 1
             lct_size = 2 ^ ((local_packed & 7) + 1)
             off += 10
@@ -225,9 +222,9 @@ decode(data: str): any
                 i = 0
                 while i < lct_size
                     lct[i] = {
-                        r = string.byte(data, off + i * 3),
-                        g = string.byte(data, off + i * 3 + 1),
-                        b = string.byte(data, off + i * 3 + 2),
+                        r = std.string.byte(data, off + i * 3),
+                        g = std.string.byte(data, off + i * 3 + 1),
+                        b = std.string.byte(data, off + i * 3 + 2),
                     }
                     i += 1
                 end
@@ -238,16 +235,16 @@ decode(data: str): any
             palette = lct or gct
 
             -- LZW Minimum Code Size
-            min_code_size = string.byte(data, off)
+            min_code_size = std.string.byte(data, off)
             off += 1
 
             -- Collect LZW data from sub-blocks
             lzw_data = ""
-            while off < string.len(data)
-                sub_len = string.byte(data, off)
+            while off < std.string.len(data)
+                sub_len = std.string.byte(data, off)
                 off += 1
                 if sub_len == 0 break end
-                lzw_data = lzw_data .. string.sub(data, off, off + sub_len - 1)
+                lzw_data = lzw_data .. std.string.sub(data, off, off + sub_len - 1)
                 off += sub_len
             end
 
@@ -265,7 +262,7 @@ decode(data: str): any
                         if color_idx != transparent_idx and palette != nil
                             c = palette[color_idx]
                             if c != nil
-                                image.img_set(img, x, y, image.color.rgba(
+                                std.image.img_set(img, x, y, std.image.color.rgba(
                                     c.r * 257, c.g * 257, c.b * 257, 65535
                                 ))
                             end

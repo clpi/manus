@@ -2,8 +2,6 @@
 -- Uses Lua's os.date/os.time as the underlying engine.
 -- A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
 
-math = req "std.math"
-
 -- ---- Constants ----
 
 global DT_MONTH_NAMES = {}
@@ -162,7 +160,7 @@ end
 
 add_months(d: any, n: i64): any
     total_month = d.month + n
-    new_year = d.year + math.floor(total_month / 12)
+    new_year = d.year + std.math.floor(total_month / 12)
     new_month = total_month % 12
     if new_month <= 0
         new_month += 12
@@ -264,16 +262,16 @@ human_relative(d: any): str
     end
     if secs < 60 return "just now" end
     if secs < 3600
-        mins = math.floor(secs / 60)
+        mins = std.math.floor(secs / 60)
         if future return "in " .. to(str)(mins) .. " minutes" end
         return to(str)(mins) .. " minutes ago"
     end
     if secs < 86400
-        hrs = math.floor(secs / 3600)
+        hrs = std.math.floor(secs / 3600)
         if future return "in " .. to(str)(hrs) .. " hours" end
         return to(str)(hrs) .. " hours ago"
     end
-    day_count = math.floor(secs / 86400)
+    day_count = std.math.floor(secs / 86400)
     if day_count == 1
         if future return "tomorrow" end
         return "yesterday"
@@ -282,12 +280,12 @@ human_relative(d: any): str
         if future return "in " .. to(str)(day_count) .. " days" end
         return to(str)(day_count) .. " days ago"
     end
-    months = math.floor(day_count / 30)
+    months = std.math.floor(day_count / 30)
     if months < 12
         if future return "in " .. to(str)(months) .. " months" end
         return to(str)(months) .. " months ago"
     end
-    years = math.floor(months / 12)
+    years = std.math.floor(months / 12)
     if future return "in " .. to(str)(years) .. " years" end
     to(str)(years) .. " years ago"
 end

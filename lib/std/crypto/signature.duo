@@ -2,9 +2,6 @@
 -- For authentication and integrity verification.
 -- Uses CSPRNG for key generation and signing operations.
 
-crypto_rand = req "std.crypto.rand"
-crypto = req "std.crypto"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Signature Types
 -- ═══════════════════════════════════════════════════════════════
@@ -22,7 +19,7 @@ RSA_4096 = 5
 keygen(key_type: i64): any
     if key_type == ED25519
         -- Ed25519 key generation using CSPRNG
-        key_data = crypto_rand.bytes(32)
+        key_data = std.crypto.rand.bytes(32)
         private_key = {}
         i = 1
         while i <= 32
@@ -34,7 +31,7 @@ keygen(key_type: i64): any
         private_key[32] = (private_key[32] & 0x7F) | 0x40
 
         -- Derive public key (simplified - hash-based derivation)
-        pub_hash = crypto.sha256(to(str)(private_key))
+        pub_hash = std.crypto.sha256(to(str)(private_key))
         public_key = {}
         i = 1
         while i <= 32
@@ -50,7 +47,7 @@ keygen(key_type: i64): any
 
     elseif key_type == ECDSA_P256
         -- ECDSA P-256 key generation using CSPRNG
-        key_data = crypto_rand.bytes(32)
+        key_data = std.crypto.rand.bytes(32)
         private_key = {}
         i = 1
         while i <= 32
@@ -59,7 +56,7 @@ keygen(key_type: i64): any
         end
 
         -- Derive public key (simplified - hash-based derivation)
-        pub_hash = crypto.sha256(to(str)(private_key))
+        pub_hash = std.crypto.sha256(to(str)(private_key))
         public_key = {0x04}  -- Uncompressed point prefix
         i = 1
         while i <= 32
@@ -101,7 +98,7 @@ ed25519_sign(message: any, private_key: any): any
     -- Simplified Ed25519 signing using hash-based construction
     -- Hash the message
     crypto = req "std.crypto"
-    msg_hash = crypto.sha256(to(str)(message))
+    msg_hash = std.crypto.sha256(to(str)(message))
 
     -- Create deterministic signature from private key + message hash
     signature = {}
@@ -113,7 +110,7 @@ ed25519_sign(message: any, private_key: any): any
         i += 1
     end
     -- Second half: nonce derived from private key + message
-    nonce_hash = crypto.sha256(msg_hash .. to(str)(private_key))
+    nonce_hash = std.crypto.sha256(msg_hash .. to(str)(private_key))
     i = 1
     while i <= 32
         signature[32 + i] = string.byte(nonce_hash, i)
@@ -160,7 +157,7 @@ end
 ecdsa_sign(message: any, private_key: any, curve: i64): any
     -- Deterministic ECDSA signing using hash-based construction
     crypto = req "std.crypto"
-    msg_hash = crypto.sha256(to(str)(message))
+    msg_hash = std.crypto.sha256(to(str)(message))
     
     r = {}
     s = {}
@@ -175,7 +172,7 @@ ecdsa_sign(message: any, private_key: any, curve: i64): any
     end
 
     -- Derive s from private key + message hash
-    s_hash = crypto.sha256(to(str)(private_key) .. msg_hash)
+    s_hash = std.crypto.sha256(to(str)(private_key) .. msg_hash)
     i = 1
     while i <= sig_len
         s[i] = string.byte(s_hash, ((i - 1) % 64) + 1)
@@ -247,7 +244,7 @@ end
 
 envelope_seal(data: any, sender_key: any, recipient_public: any): any
     -- Generate symmetric key using CSPRNG
-    key_data = crypto_rand.bytes(32)
+    key_data = std.crypto.rand.bytes(32)
     symmetric_key = {}
     i = 1
     while i <= 32

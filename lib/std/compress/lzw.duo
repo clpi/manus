@@ -1,8 +1,6 @@
 -- std.compress.lzw — LZW decompression (mirrors Go's compress/lzw)
 -- Used in GIF and PDF. Implements LZW with variable-width codes (3-12 bits).
 
-string = req "std.string"
-
 LSB = "lsb"
 MSB = "msb"
 
@@ -15,8 +13,8 @@ end
 
 read_bit(r: any): any
     if r.bits == 0
-        if r.pos > string.len(r.data) return nil end
-        r.buf = string.byte(r.data, r.pos)
+        if r.pos > std.string.len(r.data) return nil end
+        r.buf = std.string.byte(r.data, r.pos)
         r.pos = r.pos + 1
         r.bits = 8
     end
@@ -42,7 +40,7 @@ init_table(r: any): void
     r.table = {}
     r.next_code = r.clear_code + 2
     for i = 0, (1 << r.lit_width) - 1
-        r.table[i] = string.char(i)
+        r.table[i] = std.string.char(i)
     end
 end
 
@@ -66,7 +64,7 @@ decompress(data: str, order: str, lit_width: i64): str
             if code < r.next_code
                 entry = r.table[code]
             elseif code == r.next_code
-                entry = r.table[prev] .. string.sub(r.table[prev], 1, 1)
+                entry = r.table[prev] .. std.string.sub(r.table[prev], 1, 1)
             else
                 break
             end
@@ -74,7 +72,7 @@ decompress(data: str, order: str, lit_width: i64): str
                 out_parts[rawlen(out_parts) + 1] = entry
             end
             if prev != nil and entry != nil
-                new_entry = r.table[prev] .. string.sub(entry, 1, 1)
+                new_entry = r.table[prev] .. std.string.sub(entry, 1, 1)
                 r.table[r.next_code] = new_entry
                 r.next_code = r.next_code + 1
                 if r.next_code > (1 << r.width) and r.width < max_width

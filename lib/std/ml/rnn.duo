@@ -1,8 +1,6 @@
 -- std.ml.rnn — Recurrent neural network layers (SimpleRNN, GRU, LSTM)
 -- For sequence modeling tasks: time series, speech, NLP.
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Simple RNN
 -- ═══════════════════════════════════════════════════════════════
@@ -15,10 +13,10 @@ simple_rnn(input_size: i64, hidden_size: i64, activation: str): any
         input_size = input_size,
         hidden_size = hidden_size,
         activation = activation,
-        w_ih = Tensor.zeros(input_size, hidden_size),
-        w_hh = Tensor.zeros(hidden_size, hidden_size),
-        b_ih = Tensor.zeros(1, hidden_size),
-        b_hh = Tensor.zeros(1, hidden_size),
+        w_ih = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hh = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_ih = std.ml.tensor.zeros(1, hidden_size),
+        b_hh = std.ml.tensor.zeros(1, hidden_size),
         state = nil,
     }
 end
@@ -27,12 +25,12 @@ end
 simple_rnn_forward(layer: any, x: any, state: any): any
     -- x: [seq_len, input_size]
     seq_len = x.rows
-    h = state or Tensor.zeros(1, layer.hidden_size)
-    outputs = Tensor.zeros(seq_len, layer.hidden_size)
+    h = state or std.ml.tensor.zeros(1, layer.hidden_size)
+    outputs = std.ml.tensor.zeros(seq_len, layer.hidden_size)
 
     for t = 1, seq_len
         -- h = activation(x_t @ W_ih + b_ih + h_{t-1} @ W_hh + b_hh)
-        input_gate = Tensor.zeros(1, layer.hidden_size)
+        input_gate = std.ml.tensor.zeros(1, layer.hidden_size)
         for j = 1, layer.hidden_size
             s = layer.b_ih.data[j] + layer.b_hh.data[j]
             for k = 1, layer.input_size
@@ -69,20 +67,20 @@ gru(input_size: i64, hidden_size: i64): any
         input_size = input_size,
         hidden_size = hidden_size,
         -- Update gate: W_z, U_z, b_z
-        w_iz = Tensor.zeros(input_size, hidden_size),
-        w_hz = Tensor.zeros(hidden_size, hidden_size),
-        b_iz = Tensor.zeros(1, hidden_size),
-        b_hz = Tensor.zeros(1, hidden_size),
+        w_iz = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hz = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_iz = std.ml.tensor.zeros(1, hidden_size),
+        b_hz = std.ml.tensor.zeros(1, hidden_size),
         -- Reset gate: W_r, U_r, b_r
-        w_ir = Tensor.zeros(input_size, hidden_size),
-        w_hr = Tensor.zeros(hidden_size, hidden_size),
-        b_ir = Tensor.zeros(1, hidden_size),
-        b_hr = Tensor.zeros(1, hidden_size),
+        w_ir = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hr = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_ir = std.ml.tensor.zeros(1, hidden_size),
+        b_hr = std.ml.tensor.zeros(1, hidden_size),
         -- New gate: W_n, U_n, b_n
-        w_in = Tensor.zeros(input_size, hidden_size),
-        w_hn = Tensor.zeros(hidden_size, hidden_size),
-        b_in = Tensor.zeros(1, hidden_size),
-        b_hn = Tensor.zeros(1, hidden_size),
+        w_in = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hn = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_in = std.ml.tensor.zeros(1, hidden_size),
+        b_hn = std.ml.tensor.zeros(1, hidden_size),
         state = nil,
     }
 end
@@ -90,15 +88,15 @@ end
 @hot
 gru_forward(layer: any, x: any, state: any): any
     seq_len = x.rows
-    h = state or Tensor.zeros(1, layer.hidden_size)
-    outputs = Tensor.zeros(seq_len, layer.hidden_size)
+    h = state or std.ml.tensor.zeros(1, layer.hidden_size)
+    outputs = std.ml.tensor.zeros(seq_len, layer.hidden_size)
 
     for t = 1, seq_len
         z = sigmoid_vec(gru_gate(x, t, h, layer.w_iz, layer.w_hz, layer.b_iz, layer.b_hz, layer.input_size, layer.hidden_size))
         r = sigmoid_vec(gru_gate(x, t, h, layer.w_ir, layer.w_hr, layer.b_ir, layer.b_hr, layer.input_size, layer.hidden_size))
 
         -- New gate: tanh(W_in * x + U_in * (r * h) + b_in + b_hn)
-        h_candidate = Tensor.zeros(1, layer.hidden_size)
+        h_candidate = std.ml.tensor.zeros(1, layer.hidden_size)
         for j = 1, layer.hidden_size
             s = layer.b_in.data[j] + layer.b_hn.data[j]
             for k = 1, layer.input_size
@@ -121,7 +119,7 @@ gru_forward(layer: any, x: any, state: any): any
 end
 
 gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
-    result = Tensor.zeros(1, hidden_size)
+    result = std.ml.tensor.zeros(1, hidden_size)
     for j = 1, hidden_size
         s = b_i.data[j] + b_h.data[j]
         for k = 1, input_size
@@ -136,7 +134,7 @@ gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_s
 end
 
 sigmoid_vec(v: any): any
-    result = Tensor.zeros(v.rows, v.cols)
+    result = std.ml.tensor.zeros(v.rows, v.cols)
     for i = 1, v.size
         result.data[i] = 1.0 / (1.0 + math.exp(-v.data[i]))
     end
@@ -154,25 +152,25 @@ lstm(input_size: i64, hidden_size: i64): any
         input_size = input_size,
         hidden_size = hidden_size,
         -- Input gate
-        w_ii = Tensor.zeros(input_size, hidden_size),
-        w_hi = Tensor.zeros(hidden_size, hidden_size),
-        b_ii = Tensor.zeros(1, hidden_size),
-        b_hi = Tensor.zeros(1, hidden_size),
+        w_ii = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hi = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_ii = std.ml.tensor.zeros(1, hidden_size),
+        b_hi = std.ml.tensor.zeros(1, hidden_size),
         -- Forget gate
-        w_if = Tensor.zeros(input_size, hidden_size),
-        w_hf = Tensor.zeros(hidden_size, hidden_size),
-        b_if = Tensor.zeros(1, hidden_size),
-        b_hf = Tensor.zeros(1, hidden_size),
+        w_if = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hf = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_if = std.ml.tensor.zeros(1, hidden_size),
+        b_hf = std.ml.tensor.zeros(1, hidden_size),
         -- Cell gate
-        w_ic = Tensor.zeros(input_size, hidden_size),
-        w_hc = Tensor.zeros(hidden_size, hidden_size),
-        b_ic = Tensor.zeros(1, hidden_size),
-        b_hc = Tensor.zeros(1, hidden_size),
+        w_ic = std.ml.tensor.zeros(input_size, hidden_size),
+        w_hc = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_ic = std.ml.tensor.zeros(1, hidden_size),
+        b_hc = std.ml.tensor.zeros(1, hidden_size),
         -- Output gate
-        w_io = Tensor.zeros(input_size, hidden_size),
-        w_ho = Tensor.zeros(hidden_size, hidden_size),
-        b_io = Tensor.zeros(1, hidden_size),
-        b_ho = Tensor.zeros(1, hidden_size),
+        w_io = std.ml.tensor.zeros(input_size, hidden_size),
+        w_ho = std.ml.tensor.zeros(hidden_size, hidden_size),
+        b_io = std.ml.tensor.zeros(1, hidden_size),
+        b_ho = std.ml.tensor.zeros(1, hidden_size),
         state = nil,
         cell = nil,
     }
@@ -181,9 +179,9 @@ end
 @hot
 lstm_forward(layer: any, x: any, state: any, cell: any): any
     seq_len = x.rows
-    h = state or Tensor.zeros(1, layer.hidden_size)
-    c = cell or Tensor.zeros(1, layer.hidden_size)
-    outputs = Tensor.zeros(seq_len, layer.hidden_size)
+    h = state or std.ml.tensor.zeros(1, layer.hidden_size)
+    c = cell or std.ml.tensor.zeros(1, layer.hidden_size)
+    outputs = std.ml.tensor.zeros(seq_len, layer.hidden_size)
 
     for t = 1, seq_len
         -- Input gate
@@ -191,7 +189,7 @@ lstm_forward(layer: any, x: any, state: any, cell: any): any
         -- Forget gate
         f_gate = sigmoid_vec(lstm_gate(x, t, h, layer.w_if, layer.w_hf, layer.b_if, layer.b_hf, layer.input_size, layer.hidden_size))
         -- Cell gate (candidate)
-        c_gate = Tensor.zeros(1, layer.hidden_size)
+        c_gate = std.ml.tensor.zeros(1, layer.hidden_size)
         for j = 1, layer.hidden_size
             s = layer.b_ic.data[j] + layer.b_hc.data[j]
             for k = 1, layer.input_size
@@ -222,7 +220,7 @@ lstm_forward(layer: any, x: any, state: any, cell: any): any
 end
 
 lstm_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
-    result = Tensor.zeros(1, hidden_size)
+    result = std.ml.tensor.zeros(1, hidden_size)
     for j = 1, hidden_size
         s = b_i.data[j] + b_h.data[j]
         for k = 1, input_size
@@ -255,7 +253,7 @@ bidirectional_forward(layer: any, x: any): any
     fwd = simple_rnn_forward(layer.forward, x, nil)
     -- Backward pass (reverse input)
     seq_len = x.rows
-    rev = Tensor.zeros(seq_len, x.cols)
+    rev = std.ml.tensor.zeros(seq_len, x.cols)
     for t = 1, seq_len
         for j = 1, x.cols
             rev.data[(t-1)*x.cols + j] = x.data[(seq_len-t)*x.cols + j]
@@ -263,14 +261,14 @@ bidirectional_forward(layer: any, x: any): any
     end
     bwd = simple_rnn_forward(layer.backward, rev, nil)
     -- Reverse bwd to align with fwd
-    bwd_rev = Tensor.zeros(seq_len, bwd.cols)
+    bwd_rev = std.ml.tensor.zeros(seq_len, bwd.cols)
     for t = 1, seq_len
         for j = 1, bwd.cols
             bwd_rev.data[(t-1)*bwd.cols + j] = bwd.data[(seq_len-t)*bwd.cols + j]
         end
     end
     -- Concatenate
-    Tensor.hstack({fwd, bwd_rev})
+    std.ml.tensor.hstack({fwd, bwd_rev})
 end
 
 -- ═══════════════════════════════════════════════════════════════

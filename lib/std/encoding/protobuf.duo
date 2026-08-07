@@ -1,8 +1,6 @@
 -- std.encoding.protobuf — Protocol Buffers encoding/decoding
 -- Minimal implementation for wire format (varint, length-delimited, fixed32/64)
 
-Bit = req "std.bit"
-
 -- Wire types
 WIRE_VARINT = 0
 WIRE_64BIT = 1

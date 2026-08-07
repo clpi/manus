@@ -1,7 +1,5 @@
 -- std.ml.loss — Loss functions for training neural networks
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Classification losses
 -- ═══════════════════════════════════════════════════════════════

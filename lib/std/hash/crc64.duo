@@ -1,8 +1,6 @@
 -- std.hash.crc64 — CRC-64 checksum (mirrors Go's hash/crc64)
 -- Uses the ECMA-182 polynomial with 32-bit wide arithmetic.
 
-string = req "std.string"
-
 make_poly_hi(lo: i64): i64
     -- ECMA-182 polynomial top 32 bits
     0x42F0E1EB
@@ -43,8 +41,8 @@ new(): any
 end
 
 update(state: any, data: str): void
-    for i = 1, string.len(data)
-        idx = (state.crc_lo ~ string.byte(data, i)) % 256
+    for i = 1, std.string.len(data)
+        idx = (state.crc_lo ~ std.string.byte(data, i)) % 256
         new_hi = state.crc_hi >> 8
         new_lo = ((state.crc_hi & 0xFF) << 24) + (state.crc_lo >> 8)
         state.crc_hi = (new_hi ~ crc_table[idx + 1].hi) % 4294967296

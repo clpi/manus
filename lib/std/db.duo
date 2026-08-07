@@ -1,8 +1,6 @@
 -- std.db — Database abstraction: connection pooling, query builder
 -- Generic interface for SQLite (via std.sqlite FFI), PostgreSQL, MySQL with connection pooling.
 
-sqlite = req "std.sqlite"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Database Configuration
 -- ═══════════════════════════════════════════════════════════════
@@ -136,7 +134,7 @@ connection_new(config: any): any
         if db_path == nil or db_path == ""
             db_path = ":memory:"
         end
-        handle = sqlite.open(db_path)
+        handle = std.sqlite.open(db_path)
         if handle == nil
             return {error = "Failed to open SQLite database: " .. db_path}
         end
@@ -156,7 +154,7 @@ end
 connection_close(conn: any): void
     if conn == nil return end
     if has(.handle)(conn) and conn.connected
-        sqlite.close(conn.handle)
+        std.sqlite.close(conn.handle)
         conn.handle = nil
     end
     conn.connected = false
@@ -171,12 +169,12 @@ connection_execute(conn: any, sql: str, params: any): any
         return {error = "Connection closed"}
     end
     if conn.driver == "sqlite"
-        -- Use sqlite.exec for DDL/DML without results
-        err = sqlite.execute(conn.handle, sql)
+        -- Use std.sqlite.exec for DDL/DML without results
+        err = std.sqlite.execute(conn.handle, sql)
         if err != ""
             return {ok = false, error = err, rows_affected = 0, rows = {}, columns = {}}
         end
-        affected = sqlite.changes(conn.handle)
+        affected = std.sqlite.changes(conn.handle)
         return {ok = true, rows_affected = affected, rows = {}, columns = {}}
     end
     {error = "Unsupported driver"}
@@ -187,7 +185,7 @@ connection_query(conn: any, sql: str, params: any): any
         return {error = "Connection closed"}
     end
     if conn.driver == "sqlite"
-        rows = sqlite.query(conn.handle, sql)
+        rows = std.sqlite.query(conn.handle, sql)
         if rows == nil
             return {ok = false, error = "Query failed", rows = {}, columns = {}}
         end
@@ -217,7 +215,7 @@ connection_begin(conn: any): any
         return {error = "Transaction already active"}
     end
     if conn.driver == "sqlite"
-        err = sqlite.execute(conn.handle, "BEGIN TRANSACTION")
+        err = std.sqlite.execute(conn.handle, "BEGIN TRANSACTION")
         if err != ""
             return {ok = false, error = err}
         end
@@ -231,7 +229,7 @@ connection_commit(conn: any): any
         return {error = "No active transaction"}
     end
     if conn.driver == "sqlite"
-        err = sqlite.execute(conn.handle, "COMMIT")
+        err = std.sqlite.execute(conn.handle, "COMMIT")
         if err != ""
             return {ok = false, error = err}
         end
@@ -245,7 +243,7 @@ connection_rollback(conn: any): any
         return {error = "No active transaction"}
     end
     if conn.driver == "sqlite"
-        err = sqlite.execute(conn.handle, "ROLLBACK")
+        err = std.sqlite.execute(conn.handle, "ROLLBACK")
         if err != ""
             return {ok = false, error = err}
         end

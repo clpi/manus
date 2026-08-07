@@ -21,7 +21,7 @@ from pathlib import Path
 
 WARD = os.environ.get("WARD")
 SUITE = Path(sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-")
-             else "/Users/clp/x/wart/third_party/testsuite")
+             else "../wart/third_party/testsuite")
 ONLY = None
 JOBS = 8
 for i, a in enumerate(sys.argv):

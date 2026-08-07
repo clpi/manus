@@ -2,9 +2,6 @@
 -- For sound effects and music in ward's runtime.
 -- Supports WAV file loading (PCM format) and procedural waveform generation.
 
-io = req "std.io"
-string = req "std.string"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Audio Config
 -- ═══════════════════════════════════════════════════════════════
@@ -31,25 +28,25 @@ buffer_new(config: any): any
 end
 
 buffer_load(buffer: any, path: str): any
-    f = io.open(path, "rb")
+    f = std.io.open(path, "rb")
     if f == nil
         return {ok = false, error = "Cannot open file: " .. path}
     end
 
     -- Read RIFF header
-    riff = io.read(f, 4)
+    riff = std.io.read(f, 4)
     if riff != "RIFF"
-        io.close(f)
+        std.io.close(f)
         return {ok = false, error = "Not a WAV file (missing RIFF header)"}
     end
 
     -- File size (skip)
-    io.read(f, 4)
+    std.io.read(f, 4)
 
     -- WAVE marker
-    wave = io.read(f, 4)
+    wave = std.io.read(f, 4)
     if wave != "WAVE"
-        io.close(f)
+        std.io.close(f)
         return {ok = false, error = "Not a WAV file (missing WAVE marker)"}
     end
 
@@ -60,47 +57,47 @@ buffer_load(buffer: any, path: str): any
     data = nil
 
     while true
-        chunk_id = io.read(f, 4)
-        if chunk_id == nil or string.len(chunk_id) < 4 break end
+        chunk_id = std.io.read(f, 4)
+        if chunk_id == nil or std.string.len(chunk_id) < 4 break end
 
         -- Read chunk size (little-endian u32)
-        size_bytes = io.read(f, 4)
-        if size_bytes == nil or string.len(size_bytes) < 4 break end
+        size_bytes = std.io.read(f, 4)
+        if size_bytes == nil or std.string.len(size_bytes) < 4 break end
         chunk_size = 0
         i = 1
         while i <= 4
-            chunk_size = chunk_size + string.byte(size_bytes, i) * (256 ^ (i - 1))
+            chunk_size = chunk_size + std.string.byte(size_bytes, i) * (256 ^ (i - 1))
             i += 1
         end
 
         if chunk_id == "fmt "
             -- Format chunk
-            fmt_data = io.read(f, chunk_size)
-            if fmt_data and string.len(fmt_data) >= 16
-                audio_format = string.byte(fmt_data, 1) + string.byte(fmt_data, 2) * 256
-                channels = string.byte(fmt_data, 3) + string.byte(fmt_data, 4) * 256
-                sample_rate = string.byte(fmt_data, 5) + string.byte(fmt_data, 6) * 256 +
-                    string.byte(fmt_data, 7) * 65536 + string.byte(fmt_data, 8) * 16777216
-                bits_per_sample = string.byte(fmt_data, 15) + string.byte(fmt_data, 16) * 256
+            fmt_data = std.io.read(f, chunk_size)
+            if fmt_data and std.string.len(fmt_data) >= 16
+                audio_format = std.string.byte(fmt_data, 1) + std.string.byte(fmt_data, 2) * 256
+                channels = std.string.byte(fmt_data, 3) + std.string.byte(fmt_data, 4) * 256
+                sample_rate = std.string.byte(fmt_data, 5) + std.string.byte(fmt_data, 6) * 256 +
+                    std.string.byte(fmt_data, 7) * 65536 + std.string.byte(fmt_data, 8) * 16777216
+                bits_per_sample = std.string.byte(fmt_data, 15) + std.string.byte(fmt_data, 16) * 256
             end
         elseif chunk_id == "data"
             -- Data chunk — read raw PCM samples
-            raw = io.read(f, chunk_size)
+            raw = std.io.read(f, chunk_size)
             if raw
                 samples = {}
                 bytes_per_sample = math.floor(bits_per_sample / 8)
-                num_samples = math.floor(string.len(raw) / bytes_per_sample)
+                num_samples = math.floor(std.string.len(raw) / bytes_per_sample)
                 i = 1
                 while i <= num_samples
                     -- Read little-endian sample (16-bit signed)
                     if bits_per_sample == 16
-                        lo = string.byte(raw, i * 2 - 1) or 0
-                        hi = string.byte(raw, i * 2) or 0
+                        lo = std.string.byte(raw, i * 2 - 1) or 0
+                        hi = std.string.byte(raw, i * 2) or 0
                         val = lo + hi * 256
                         if val >= 32768 val = val - 65536 end
                         samples[i] = val / 32768.0
                     elseif bits_per_sample == 8
-                        val = string.byte(raw, i) or 128
+                        val = std.string.byte(raw, i) or 128
                         samples[i] = (val - 128) / 128.0
                     else
                         samples[i] = 0
@@ -111,11 +108,11 @@ buffer_load(buffer: any, path: str): any
             end
         else
             -- Skip unknown chunk
-            io.read(f, chunk_size)
+            std.io.read(f, chunk_size)
         end
     end
 
-    io.close(f)
+    std.io.close(f)
 
     if data == nil
         return {ok = false, error = "No audio data found in WAV file"}

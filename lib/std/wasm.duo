@@ -2,8 +2,6 @@
 -- This module provides WASM module parsing, validation, and manipulation.
 -- Used by ward (Duo's WASM runtime) and tools that generate/transform WASM.
 
-Bit = req "std.bit"
-
 -- WASM magic and version
 WASM_MAGIC = 0x0061736D
 WASM_VERSION = 0x01000000
@@ -438,20 +436,20 @@ module_encode(mod: any): any
     writer = {}
 
     -- Header
-    writer_bytes(writer, Bit.leb128_encode_u(WASM_MAGIC))
-    writer_bytes(writer, Bit.leb128_encode_u(WASM_VERSION))
+    writer_bytes(writer, std.bit.leb128_encode_u(WASM_MAGIC))
+    writer_bytes(writer, std.bit.leb128_encode_u(WASM_VERSION))
 
     -- Type section
     if #mod.types > 0
         section = {}
-        writer_bytes(section, Bit.leb128_encode_u(#mod.types))
+        writer_bytes(section, std.bit.leb128_encode_u(#mod.types))
         i = 1
         while i <= #mod.types
             t = mod.types[i]
             writer_bytes(section, {TYPE_FUNC})
-            writer_bytes(section, Bit.leb128_encode_u(#t.params))
+            writer_bytes(section, std.bit.leb128_encode_u(#t.params))
             for p in t.params writer_bytes(section, {p}) end
-            writer_bytes(section, Bit.leb128_encode_u(#t.results))
+            writer_bytes(section, std.bit.leb128_encode_u(#t.results))
             for r in t.results writer_bytes(section, {r}) end
             i += 1
         end
@@ -475,7 +473,7 @@ end
 
 write_section(writer: any, id: i64, content: any): void
     writer_bytes(writer, {id})
-    writer_bytes(writer, Bit.leb128_encode_u(#content))
+    writer_bytes(writer, std.bit.leb128_encode_u(#content))
     writer_bytes(writer, content)
 end
 

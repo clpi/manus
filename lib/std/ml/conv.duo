@@ -1,7 +1,5 @@
 -- std.ml.conv — Convolution and pooling layers for neural networks
 
-Tensor = req "std.ml.tensor"
-
 -- ═══════════════════════════════════════════════════════════════
 -- Conv1D
 -- ═══════════════════════════════════════════════════════════════
@@ -10,7 +8,7 @@ conv1d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64,
     if stride == nil stride = 1 end
     if padding == nil padding = 0 end
     scale = 1.0 / math.sqrt(in_channels * kernel_size)
-    weight = Tensor.zeros(kernel_size * in_channels, out_channels)
+    weight = std.ml.tensor.zeros(kernel_size * in_channels, out_channels)
     for i = 1, weight.size
         weight.data[i] = (math.random() * 2 - 1) * scale
     end
@@ -22,7 +20,7 @@ conv1d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64,
         stride = stride,
         padding = padding,
         weight = weight,
-        bias = Tensor.zeros(1, out_channels),
+        bias = std.ml.tensor.zeros(1, out_channels),
     }
 end
 
@@ -33,10 +31,10 @@ conv1d_forward(layer: any, input: any): any
     batch = input.rows
     in_len = input.cols
     out_len = math.floor((in_len + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
-    result = Tensor.zeros(batch, out_len * layer.out_channels)
+    result = std.ml.tensor.zeros(batch, out_len * layer.out_channels)
     for b = 1, batch
         for o = 1, out_len
-            acc = Tensor.zeros(1, layer.out_channels)
+            acc = std.ml.tensor.zeros(1, layer.out_channels)
             for k = 0, layer.kernel_size - 1
                 pos = (o - 1) * layer.stride + k - layer.padding + 1
                 if pos >= 1 and pos <= in_len
@@ -74,7 +72,7 @@ conv2d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64,
     if stride == nil stride = 1 end
     if padding == nil padding = 0 end
     scale = 1.0 / math.sqrt(in_channels * kernel_size * kernel_size)
-    weight = Tensor.zeros(kernel_size * kernel_size * in_channels, out_channels)
+    weight = std.ml.tensor.zeros(kernel_size * kernel_size * in_channels, out_channels)
     for i = 1, weight.size
         weight.data[i] = (math.random() * 2 - 1) * scale
     end
@@ -86,7 +84,7 @@ conv2d_layer(in_channels: i64, out_channels: i64, kernel_size: i64, stride: i64,
         stride = stride,
         padding = padding,
         weight = weight,
-        bias = Tensor.zeros(1, out_channels),
+        bias = std.ml.tensor.zeros(1, out_channels),
     }
 end
 
@@ -98,7 +96,7 @@ conv2d_forward(layer: any, input: any): any
     w_in = math.floor(input.cols / layer.in_channels)
     h_out = math.floor((h_in + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
     w_out = math.floor((w_in + 2 * layer.padding - layer.kernel_size) / layer.stride) + 1
-    result = Tensor.zeros(h_out * w_out, layer.out_channels)
+    result = std.ml.tensor.zeros(h_out * w_out, layer.out_channels)
     for oh = 0, h_out - 1
         for ow = 0, w_out - 1
             for oc = 1, layer.out_channels
@@ -141,7 +139,7 @@ maxpool1d_forward(layer: any, input: any): any
     in_len = input.cols
     channels = input.rows
     out_len = math.floor((in_len - layer.kernel_size) / layer.stride) + 1
-    result = Tensor.zeros(channels, out_len)
+    result = std.ml.tensor.zeros(channels, out_len)
     for c = 1, channels
         for o = 1, out_len
             max_val = -1e30
@@ -173,7 +171,7 @@ avgpool1d_forward(layer: any, input: any): any
     in_len = input.cols
     channels = input.rows
     out_len = math.floor((in_len - layer.kernel_size) / layer.stride) + 1
-    result = Tensor.zeros(channels, out_len)
+    result = std.ml.tensor.zeros(channels, out_len)
     for c = 1, channels
         for o = 1, out_len
             sum = 0
@@ -202,7 +200,7 @@ adaptive_avgpool_forward(layer: any, input: any): any
     in_len = input.cols
     channels = input.rows
     out_size = layer.output_size
-    result = Tensor.zeros(channels, out_size)
+    result = std.ml.tensor.zeros(channels, out_size)
     for c = 1, channels
         for o = 1, out_size
             start = math.floor((o - 1) * in_len / out_size)
@@ -234,7 +232,7 @@ end
 global_avgpool_forward(layer: any, input: any): any
     channels = input.rows
     len = input.cols
-    result = Tensor.zeros(channels, 1)
+    result = std.ml.tensor.zeros(channels, 1)
     for c = 1, channels
         sum = 0
         i = 1
@@ -257,7 +255,7 @@ end
 
 flatten_forward(layer: any, input: any): any
     -- Reshape to {1, total_elements}
-    result = Tensor.zeros(1, input.size)
+    result = std.ml.tensor.zeros(1, input.size)
     i = 1
     while i <= input.size
         result.data[i] = input.data[i]
