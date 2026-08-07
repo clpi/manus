@@ -29,35 +29,42 @@ encode_with_alphabet(data: str, tab: str): str
         c6 = ((b4 >> 2) & 0x1F) + 1
         c7 = (((b4 & 0x03) << 3) | (b5 >> 5)) + 1
         c8 = (b5 & 0x1F) + 1
+        -- RFC 4648 s6: a 5-byte group is always EIGHT characters, and how many
+        -- of them are data depends on how many bytes are present:
+        --   1 byte -> 2 data + 6 '='      4 bytes -> 7 data + 1 '='
+        --   2      -> 4 data + 4 '='      5       -> 8 data, no padding
+        --   3      -> 5 data + 3 '='
+        --
+        -- This emitted c1..c3 unconditionally and then branched, so EVERY
+        -- partial group came out seven characters instead of eight, with the
+        -- wrong data count for the 1- and 4-byte tails: encode("h") gave
+        -- "NAA====" where the correct answer is "NA======".
+        rem = len - i + 1
         res[rawlen(res) + 1] = std.string.sub(tab, c1, c1)
         res[rawlen(res) + 1] = std.string.sub(tab, c2, c2)
-        res[rawlen(res) + 1] = std.string.sub(tab, c3, c3)
-        if i + 1 > len
-            res[rawlen(res) + 1] = "="
-            res[rawlen(res) + 1] = "="
-            res[rawlen(res) + 1] = "="
-            res[rawlen(res) + 1] = "="
-        elseif i + 2 > len
+        if rem >= 2
+            res[rawlen(res) + 1] = std.string.sub(tab, c3, c3)
             res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
-            res[rawlen(res) + 1] = "="
-            res[rawlen(res) + 1] = "="
-            res[rawlen(res) + 1] = "="
-        elseif i + 3 > len
-            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
+        end
+        if rem >= 3
             res[rawlen(res) + 1] = std.string.sub(tab, c5, c5)
-            res[rawlen(res) + 1] = "="
-            res[rawlen(res) + 1] = "="
-        elseif i + 4 > len
-            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
-            res[rawlen(res) + 1] = std.string.sub(tab, c5, c5)
-            res[rawlen(res) + 1] = std.string.sub(tab, c6, c6)
-            res[rawlen(res) + 1] = "="
-        else
-            res[rawlen(res) + 1] = std.string.sub(tab, c4, c4)
-            res[rawlen(res) + 1] = std.string.sub(tab, c5, c5)
+        end
+        if rem >= 4
             res[rawlen(res) + 1] = std.string.sub(tab, c6, c6)
             res[rawlen(res) + 1] = std.string.sub(tab, c7, c7)
+        end
+        if rem >= 5
             res[rawlen(res) + 1] = std.string.sub(tab, c8, c8)
+        end
+        pad = 0
+        if rem == 1 pad = 6 end
+        if rem == 2 pad = 4 end
+        if rem == 3 pad = 3 end
+        if rem == 4 pad = 1 end
+        pj = 0
+        while pj < pad
+            res[rawlen(res) + 1] = "="
+            pj += 1
         end
         i += 5
     end

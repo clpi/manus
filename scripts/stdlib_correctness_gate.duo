@@ -67,6 +67,14 @@ main(): i64
     check("base64.decode('aA==')", std.base64.decode("aA=="), "h")
     check("base64.roundtrip", std.base64.decode(std.base64.encode("hello world")), "hello world")
 
+    -- std.base32 — RFC 4648 s6 vectors. ENCODE only: every partial group came
+    -- out seven characters instead of eight. decode() is still broken and is
+    -- deliberately NOT asserted here, because a gate row that fails on purpose
+    -- is a broken gate; see the commit message for what has been ruled out.
+    check("base32.encode('h')", std.base32.encode("h"), "NA======")
+    check("base32.encode('hi')", std.base32.encode("hi"), "NBUQ====")
+    check("base32.encode('hello')", std.base32.encode("hello"), "NBSWY3DP")
+
     -- std.inspect — hashed every input to "{}" because a line was a concat
     -- expression with no assignment.
     check("inspect.hash", std.inspect.std_inspect_hash({1, 2}), "{1=number:1,2=number:2}")
