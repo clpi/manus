@@ -1485,6 +1485,14 @@ pub const CodeGen = struct {
                 if (std.mem.eql(u8, c.func.call.args[0].name.ident, "str")) return .str;
             }
         }
+        // `len(x)` yields what `#x` yields — one edge, one result type.
+        if (e.* == .call and e.call.func.* == .name and
+            std.mem.eql(u8, e.call.func.name.ident, "len") and e.call.args.len == 1 and
+            !self.user_owns_name("len"))
+        {
+            var lu = ast.Expr{ .unop = .{ .loc = e.call.loc, .op = .len, .operand = e.call.args[0] } };
+            return self.expr_type(&lu);
+        }
         // Same edge, receiver-first spelling: `v:to(T)` also yields T.
         if (e.* == .method_call) {
             const mc = e.method_call;
@@ -16936,6 +16944,22 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// LAW-CALL's "data always wins the name", enforced by SCOPE LOOKUP rather
+    /// than by guessing from operand types. A relation family may only be
+    /// projected onto a bare name when the program has not bound that name
+    /// itself — `lib/std/reflect.duo` and `lib/std/utf8.duo` both define their
+    /// own `len`, and an unguarded projection silently hijacked them.
+    fn user_owns_name(self: *CodeGen, name: []const u8) bool {
+        if (self.func_decls.contains(name)) return true;
+        if (self.func_bodies.contains(name)) return true;
+        var i = self.local_scopes.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.local_scopes.items[i].contains(name)) return true;
+        }
+        return false;
+    }
+
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         // `T:from(S)(v)` — the REVERSE ORIENTATION of the conversion edge
         // (2.6 spells it `str:from(point)(raw)`): the TARGET is the receiver,
@@ -16968,6 +16992,15 @@ pub const CodeGen = struct {
         }
         if (func.* != .name) return false;
         const name = func.name.ident;
+        // `len` relation family (2.6). `#x` is its OPERATOR projection (2.1)
+        // and `s:len()` already has a specialized typed-string lowering that
+        // owns the receiver form — so only the operation-first spelling is
+        // added here, and only when the program has not bound `len` itself.
+        if (std.mem.eql(u8, name, "len") and args.len == 1 and !self.user_owns_name("len")) {
+            var u = ast.Expr{ .unop = .{ .loc = func.name.loc, .op = .len, .operand = args[0] } };
+            try self.emit_expr(&u);
+            return true;
+        }
         if (std.mem.eql(u8, name, "assert")) {
             self.p("lua_assert(", .{});
             if (args.len > 0) {
