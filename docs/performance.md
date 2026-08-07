@@ -10859,7 +10859,7 @@ git diff --check -- src/main.zig scripts/run_wasm_benchmark.sh
 ./zig-out/bin/duo compile examples/wasm/hello.lua --target wasm32-wasi -o /tmp/duo_hello_check.wasm
 file /tmp/duo_hello_check.wasm
 WASM_BENCH_RUNTIMES="wasmtime wazero" WASM_BENCH_BASELINE=/tmp/duo_wasm_baseline_check.txt bash scripts/run_wasm_benchmark.sh --reset-baseline --runs 1
-bash scripts/test_wasm_codegen.sh
+duo run scripts/test_wasm_codegen.duo
 zig build test
 zig build bench
 ```
@@ -11596,7 +11596,7 @@ Implemented `lua_free_mode` in `src/codegen.zig`:
 
 Commands:
 ```sh
-zig build && bash scripts/agent_smoke.sh   # 42 targets PASS
+zig build && duo run scripts/agent_smoke.duo   # 42 targets PASS
 zig build bench                            # PASS (40/40 RESULT, Duo ≥ C)
 zig build unit-test --summary all          # PASS
 ```

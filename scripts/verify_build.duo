@@ -1,7 +1,7 @@
 -- verify_build.duo — build verification: zig build + zig build test.
--- Replaces scripts/verify_build.sh
+-- Replaced scripts/verify_build.sh (deleted 2026-08-07)
 -- Run: duo run scripts/verify_build.duo
--- Or:  scripts/verify_build.sh
+-- Run: duo run scripts/verify_build.duo
 
 script = req "std.script"
 
