@@ -31,7 +31,7 @@ end
 
 type Pair = { x: f64, y: f64 }
 
-type_mark(meta) -> str
+type_mark(meta): str
     meta.name .. ";"
 end
 

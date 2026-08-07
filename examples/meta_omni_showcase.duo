@@ -27,7 +27,7 @@ type Label = { tag: str }
     end
 end)
 
-registry_line(meta) -> str
+registry_line(meta): str
     meta.name .. ";"
 end
 

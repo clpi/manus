@@ -20,7 +20,7 @@ type Pair = { x: f64, y: f64 }
     acc
 end)
 
-registry_line(meta) -> str
+registry_line(meta): str
     meta.name .. ";"
 end
 

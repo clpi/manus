@@ -41,11 +41,11 @@ check_module(name: str, code: str): void
 end
 
 check_module("arithmetic", [[
-add(a: i64, b: i64) -> i64
+add(a: i64, b: i64): i64
   return a + b
 end
 
-mix(a: i64, b: i64) -> i64
+mix(a: i64, b: i64): i64
   x: i64 = add(a, b)
   y: i64 = (x * 3) - (b // 2)
   return y % 97
@@ -55,7 +55,7 @@ result: i64 = mix(40, 2)
 ]])
 
 check_module("floats_and_branches", [[
-scale(x: f64, n: i64) -> f64
+scale(x: f64, n: i64): f64
   if n > 10
     return x * 2.5
   elseif n == 10
@@ -69,7 +69,7 @@ b: bool = a > 1.0
 ]])
 
 check_module("loops", [[
-sum_to(n: i64) -> i64
+sum_to(n: i64): i64
   acc: i64 = 0
   i: i64 = 1
   while i <= n do
@@ -113,11 +113,11 @@ n: i64 = sum_point()
 check_module("record_alias_params", [[
 type Point = { x: i64, y: i64 }
 
-get_y(p: { x: i64, y: i64 }) -> i64
+get_y(p: { x: i64, y: i64 }): i64
   return p.y
 end
 
-sum_point(p: Point) -> i64
+sum_point(p: Point): i64
   return p.x + p.y
 end
 
@@ -127,7 +127,7 @@ b: i64 = sum_point(p)
 ]])
 
 check_module("bitwise", [[
-bits(a: i64, b: i64, s: i64) -> i64
+bits(a: i64, b: i64, s: i64): i64
   x: i64 = (a & b) | (a ~ b)
   y: i64 = (a & 65535) << s
   z: i64 = y >> s
@@ -138,7 +138,7 @@ n: i64 = bits(123456, 7890, 3)
 ]])
 
 check_module("native_indexing", [[
-pointer_read(xs: *i32, i: i64) -> i32
+pointer_read(xs: *i32, i: i64): i32
   return xs[i]
 end
 ]])
@@ -149,7 +149,7 @@ if not s.ok("grep -Fq 'return xs[i];' " .. TMP_DIR .. "/native_indexing.c")
 end
 
 check_module("typed_function_values", [[
-increment(x: i32) -> i32
+increment(x: i32): i32
   return x + 1
 end
 

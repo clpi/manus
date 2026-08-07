@@ -27,11 +27,11 @@ end)
 
 @comp.derive.all("HasXY", TouchApi)
 
-pair_line(a, b) -> str
+pair_line(a, b): str
     a.name .. "x" .. b.name .. ";"
 end
 
-type_line(meta) -> str
+type_line(meta): str
     meta.name .. ":"
 end
 

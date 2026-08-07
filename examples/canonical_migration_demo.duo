@@ -15,13 +15,13 @@
 --
 -- ...into canonical Duo (below):
 
-add(x: i64, y: i64) -> i64
+add(x: i64, y: i64): i64
   return x + y
 end
 
 Point: @{ x: f64, y: f64 }
 
-distance(a: Point, b: Point) -> f64
+distance(a: Point, b: Point): f64
   dx = a.x - b.x
   dy = a.y - b.y
   return math.sqrt(dx * dx + dy * dy)

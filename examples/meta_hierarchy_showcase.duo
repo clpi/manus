@@ -52,7 +52,7 @@ end
 type Alpha = { tag: str, n: i64 }
 type Beta = { tag: str, x: f64 }
 
-mark(meta) -> str
+mark(meta): str
     meta.name .. ";"
 end
 

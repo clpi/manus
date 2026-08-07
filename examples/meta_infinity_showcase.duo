@@ -38,7 +38,7 @@ end)
 -- One line: derive.all + quadratic + cubic + quartic emit
 @comp.infinity("HasXY", QuadApi, "HasTag", "HasId", "HasExtra")
 
-quad_sig(a, b, c, d) -> str
+quad_sig(a, b, c, d): str
     a.name .. "x" .. b.name .. "x" .. c.name .. "x" .. d.name .. ";"
 end
 

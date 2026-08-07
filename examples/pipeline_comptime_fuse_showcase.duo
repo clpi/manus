@@ -1,7 +1,7 @@
 -- Comptime-built @pipeline spec → fused C loop (map + reduce over range)
 -- Run: duo run examples/pipeline_comptime_fuse_showcase.duo
 
-pipeline_spec(map_fn: str, reduce_fn: str) -> str
+pipeline_spec(map_fn: str, reduce_fn: str): str
     '{ fn = "fused_sum_sq", source = "range", start = 1, stop = 6, elem = "int64_t", kind = "reduce", init = "0", map = "' .. map_fn .. '", reduce = "' .. reduce_fn .. '" }'
 end
 

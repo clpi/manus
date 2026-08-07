@@ -36,7 +36,7 @@ end)
 -- One line: derive.all + quadratic product emit + cubic derive tensor emit
 @comp.transcend("HasXY", TripleApi, "HasTag", "HasId")
 
-triple_sig(a, b, c) -> str
+triple_sig(a, b, c): str
     a.name .. "x" .. b.name .. "x" .. c.name .. ";"
 end
 

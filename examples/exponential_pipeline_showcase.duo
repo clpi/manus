@@ -22,7 +22,7 @@ end)
     init = "0",
 })
 
-registry_line(meta) -> str
+registry_line(meta): str
     meta.name .. ";"
 end
 
