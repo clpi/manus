@@ -16908,7 +16908,44 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// One lowering for both orientations of the conversion edge (A3 ONE EDGE,
+    /// 3.2: "orientations to/from share one edge"). `target` names the
+    /// destination descriptor; `value` is the single runtime operand.
+    fn emit_convert_edge(self: *CodeGen, target: []const u8, loc: ast.Loc, value: *ast.Expr, result_rt: RT) E!bool {
+        var one = [_]*ast.Expr{value};
+        if (std.mem.eql(u8, target, "str")) {
+            var synth = ast.Expr{ .name = .{ .loc = loc, .ident = "tostring" } };
+            return try self.maybe_emit_stdlib_call(&synth, one[0..], result_rt);
+        }
+        if (std.mem.eql(u8, target, "f64") or std.mem.eql(u8, target, "f32")) {
+            var synth = ast.Expr{ .name = .{ .loc = loc, .ident = "tonumber" } };
+            return try self.maybe_emit_stdlib_call(&synth, one[0..], result_rt);
+        }
+        // Integer targets lower to the native C conversion, which truncates
+        // toward zero — no boxed call in between.
+        if (std.mem.eql(u8, target, "i64") or std.mem.eql(u8, target, "i32") or
+            std.mem.eql(u8, target, "i16") or std.mem.eql(u8, target, "i8"))
+        {
+            if (result_rt == .any) self.p("lua_val_from_int(", .{});
+            self.p("((int64_t)(", .{});
+            try self.emit_expr(value);
+            self.p("))", .{});
+            if (result_rt == .any) self.p(")", .{});
+            return true;
+        }
+        return false;
+    }
+
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        // `T:from(S)(v)` — the REVERSE ORIENTATION of the conversion edge
+        // (2.6 spells it `str:from(point)(raw)`): the TARGET is the receiver,
+        // the SOURCE is the descriptor group. Same edge as `to(T)(v)`.
+        if (func.* == .method_call) {
+            const recv = func.method_call;
+            if (std.mem.eql(u8, recv.method, "from") and recv.obj.* == .name and args.len == 1) {
+                if (try self.emit_convert_edge(recv.obj.name.ident, recv.loc, args[0], result_rt)) return true;
+            }
+        }
         // Canonical relation family `to` (spec 2.6): `to(T)(v)` is the curried
         // conversion — `to(str)(x)`, `to(i64)(x)`. Spec 2.10's de-magicking test
         // (G3) requires every std name to be an ordinary value or a relation
@@ -16924,34 +16961,9 @@ pub const CodeGen = struct {
             // is the descriptor group. It therefore arrives through method
             // projection below, never as a bare call, so there is nothing to
             // guess from demand here.
-            if (fam_to and
-                inner.args.len == 1 and inner.args[0].* == .name and args.len == 1)
-            {
-                const tname = inner.args[0].name.ident;
-                if (std.mem.eql(u8, tname, "str")) {
-                    var synth = ast.Expr{ .name = .{ .loc = inner.func.name.loc, .ident = "tostring" } };
-                    return try self.maybe_emit_stdlib_call(&synth, args, result_rt);
-                }
-                if (std.mem.eql(u8, tname, "f64") or std.mem.eql(u8, tname, "f32")) {
-                    var synth = ast.Expr{ .name = .{ .loc = inner.func.name.loc, .ident = "tonumber" } };
-                    return try self.maybe_emit_stdlib_call(&synth, args, result_rt);
-                }
-                // Integer targets lower to the native C conversion, which
-                // truncates toward zero — the same semantics wasm's
-                // i32/i64.trunc_* require, with no boxed call in between.
-                if (std.mem.eql(u8, tname, "i64") or std.mem.eql(u8, tname, "i32") or
-                    std.mem.eql(u8, tname, "i16") or std.mem.eql(u8, tname, "i8"))
-                {
-                    // Respect the consuming context: a boxed site needs the
-                    // result re-wrapped, or the native int reaches a
-                    // lua_Value parameter.
-                    if (result_rt == .any) self.p("lua_val_from_int(", .{});
-                    self.p("((int64_t)(", .{});
-                    try self.emit_expr(args[0]);
-                    self.p("))", .{});
-                    if (result_rt == .any) self.p(")", .{});
-                    return true;
-                }
+            if (fam_to and inner.args.len == 1 and inner.args[0].* == .name and args.len == 1) {
+                // Same edge as `T:from(S)(v)` — one lowering, two spellings.
+                if (try self.emit_convert_edge(inner.args[0].name.ident, inner.func.name.loc, args[0], result_rt)) return true;
             }
         }
         if (func.* != .name) return false;
