@@ -365,6 +365,48 @@ end
 -- Lookahead scan: does the parenthesised group at the cursor contain a `:`
 -- at depth 1 (a type annotation)? That is what separates a declaration
 -- `f(a: i64)` from a call `f(x)`.
+-- Does the group at the cursor open a value-form function (FF-1) rather than a
+-- parenthesised expression? Cursor is on `(`.
+--
+-- Two signals, the same pair the declaration discriminator uses: a parameter
+-- annotation inside the group, or a `:` immediately after the closing paren.
+-- `(a + b) * c` has neither and stays an expression.
+is_lambda_head = (lx: Lexer): bool
+    st = lexer.save_state(lx)
+    _lp = lexer.next(lx)
+    depth = 1
+    at_slot_start = true
+    found = false
+    while depth > 0
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF break end
+        if t.kind == token.KIND_LPAREN
+            depth = depth + 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_RPAREN
+            depth = depth - 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_COMMA and depth == 1
+            at_slot_start = true
+        elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
+            if lexer.peek(lx).kind == token.KIND_COLON
+                found = true
+                break
+            end
+            at_slot_start = false
+        else
+            at_slot_start = false
+        end
+    end
+    if not found and depth == 0
+        if lexer.peek(lx).kind == token.KIND_COLON
+            found = true
+        end
+    end
+    lexer.restore_state(lx, st)
+    found
+end
+
 -- Is the parenthesised group after the name a PARAMETER LIST (a declaration)
 -- rather than an argument list (a call)? GR-001 says the discriminator is a
 -- type annotation on a parameter.
@@ -470,6 +512,13 @@ end
 -- gone. It survived because the only typed cases in the corpus used the
 -- `= expr` body form, where `=` is not a type kind and stopped the run; every
 -- block-bodied typed function was mis-parsed.
+-- proj_params expects the `(` already consumed; this is the entry for callers
+-- holding the cursor on it.
+proj_params_from_lparen = (lx: Lexer): str
+    _lp = lexer.next(lx)
+    proj_params(lx)
+end
+
 proj_type = (lx: Lexer): str
     t = lexer.peek(lx)
     if is_type_kind(t.kind) == false
@@ -1113,6 +1162,14 @@ proj_primary = (lx: Lexer): str
         _n = lexer.next(lx)
         return t.text
     end
+    -- Type names are ordinary values. LAW-STRATA spells specialization as
+    -- `store(i32)("x")`, so `i32` has to parse in expression position like any
+    -- other binding; lexing it as a keyword is a tokenization detail, not a
+    -- semantic category.
+    if is_type_kind(t.kind)
+        _n = lexer.next(lx)
+        return t.text
+    end
     if t.kind == token.KIND_IF
         return proj_if(lx)
     end
@@ -1122,6 +1179,26 @@ proj_primary = (lx: Lexer): str
     end
     if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
         return proj_fun_expr(lx)
+    end
+    if t.kind == token.KIND_LPAREN and is_lambda_head(lx)
+        -- FF-1: `(x: t): r ... end` with no keyword. This is the canonical
+        -- function form, and the parser could not read it — including in
+        -- lib/std/compiler/parser.duo itself after its own FF-1 migration.
+        params = proj_params_from_lparen(lx)
+        s2 = "(lambda (params"
+        if params != ""
+            s2 = s2 .. " " .. params
+        end
+        s2 = s2 .. ")"
+        if lexer.peek(lx).kind == token.KIND_COLON
+            _c = lexer.next(lx)
+            s2 = s2 .. " (ret " .. proj_type(lx) .. ")"
+        end
+        body = proj_body(lx)
+        if body != ""
+            return s2 .. " " .. body .. ")"
+        end
+        return s2 .. ")"
     end
     if t.kind == token.KIND_LPAREN
         _lp = lexer.next(lx)
@@ -1190,6 +1267,26 @@ proj_stmt = (lx: Lexer): str
     end
     if t.kind == token.KIND_NAME
         t2 = peek2(lx)
+        if t2.kind == token.KIND_COLON
+            -- `n: i64 = 5` — a binding carrying its shape. `:` is IS, `=` is
+            -- HOLDS, and the statement level has to read both.
+            --
+            -- Speculative, because `obj:m(1, 2)` starts identically: NAME then
+            -- `:`. Only the `=` after the type tells them apart, so commit to
+            -- the binding reading only once it appears and otherwise rewind to
+            -- the expression path. Committing early turned every method-call
+            -- statement into a broken binding.
+            bst = lexer.save_state(lx)
+            _n = lexer.next(lx)
+            _c = lexer.next(lx)
+            ty = proj_type(lx)
+            if lexer.peek(lx).kind == token.KIND_ASSIGN
+                _a = lexer.next(lx)
+                return "(bind " .. t.text .. " (type " .. ty .. ") " .. proj_expr(lx) .. ")"
+            end
+            lexer.restore_state(lx, bst)
+            return proj_expr(lx)
+        end
         if t2.kind == token.KIND_LPAREN
             if params_have_colon(lx)
                 return proj_fun_decl(lx, t)

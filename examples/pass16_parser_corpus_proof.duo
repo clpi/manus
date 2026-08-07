@@ -93,6 +93,22 @@ positives = {
     { "f(d: any) 1 end", "(program (fun f (params (param d any)) 1))" },
     { "f(a, b): i64 a end", "(program (fun f (params (param a) (param b)) (ret i64) a))" },
     { "g(x, h)", "(program (call g x h))" },
+    -- FF-1 value-form functions in expression position — the canonical function
+    -- form, which the parser could not read at all (including in its own source
+    -- after that file's FF-1 migration).
+    { "g = (a: i64): i64 a end", "(program (assign g (lambda (params (param a i64)) (ret i64) a)))" },
+    { "f(x, (a: i64): i64 a end)", "(program (call f x (lambda (params (param a i64)) (ret i64) a)))" },
+    -- ...and the paired negative: a parenthesised expression must NOT become a
+    -- lambda. `(a + b)` has neither a parameter annotation nor a `:` after the
+    -- closing paren, which is exactly what is_lambda_head tests.
+    { "x = (a + b) * c", "(program (assign x (* (+ a b) c)))" },
+    -- A binding carrying its shape. `:` is IS, `=` is HOLDS. Speculative,
+    -- because `obj:m(1, 2)` above starts identically — only the `=` separates
+    -- them, so both must be in the corpus.
+    { "n: i64 = 5", "(program (bind n (type i64) 5))" },
+    -- LAW-STRATA: a type name is an ordinary value, so specialization is just a
+    -- call whose argument happens to be a type.
+    { "x = store(i32)(v)", "(program (assign x (call (call store i32) v)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
