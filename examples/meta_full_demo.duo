@@ -70,7 +70,7 @@ IS_DEBUG = @(false)
 derive_clone(val)
     if type(val) != "table" return val end
     c = {}
-    for k, v in pairs(val) do c[k] = v end
+    for k, v in val do c[k] = v end
     c
 end
 
@@ -83,7 +83,7 @@ derive_display(val): str
     if type(val) == "string" return val end
     if type(val) == "table"
         parts = {}
-        for k, v in pairs(val) do
+        for k, v in val do
             if type(k) == "string"
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
@@ -126,7 +126,7 @@ demo_reflection(val): void
 
     if type(val) == "table"
         count = 0
-        for _k, _v in pairs(val) do count += 1 end
+        for _k, _v in val do count += 1 end
         print("Field count: " .. to(str)(count))
     end
 end
