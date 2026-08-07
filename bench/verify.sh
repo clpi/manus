@@ -40,8 +40,14 @@ for m in bench/*.wasm; do
     ref=$("$WASMTIME" --invoke "$want" "$m" 2>/dev/null | tail -1)
     [[ -n $ref ]] && break
   done
-  got=$(WARD_WASM="$PWD/$m" WARD_INVOKE="$want" WARD_ENGINE=interp \
-        timeout 120 "$WARD_BIN" 2>/dev/null | sed -n 's/^result=//p')
+  raw=$(WARD_WASM="$PWD/$m" WARD_INVOKE="$want" WARD_ENGINE=interp \
+        timeout 120 "$WARD_BIN" 2>/dev/null)
+  got=$(sed -n 's/^result=//p' <<<"$raw")
+  # A module whose real answer is what it PRINTS (via fd_write) is compared on
+  # its emitted bytes, not on the numeric result of a void _start. Strip ward's
+  # own protocol lines to recover just the module's output.
+  emitted=$(sed 's/engine=.*//; s/^result=.*//; s/^seconds=.*//' <<<"$raw" | tr -d '\n')
+  if [[ -n ${emitted// } && ! $ref =~ ^-?[0-9.]+$ ]]; then got=$emitted; fi
   if [[ -z $ref ]]; then
     printf '%-32s %-22s %-22s %s\n' "$name" "<no ref>" "${got:-none}" "SKIP"; skip=$((skip+1)); continue
   fi

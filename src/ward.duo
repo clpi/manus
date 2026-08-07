@@ -284,12 +284,20 @@ end
 -- table, type table and code buffer must be built *here*, by the same
 -- function that reads them. The walk is one-time and off the hot path.
 run_body(img: str, n: i64, target: i64, guard: i64): i64
+  -- Allocated BEFORE the section walk because the walk is what fills it:
+  -- imported-function type indices, in import order.
+  imtab = mem.alloc(256 * 8)
+  imfn  = mem.alloc(256 * 8)
+  mem.zero(imtab, 256 * 8)
+  mem.zero(imfn, 256 * 8)
+
   -- ── section walk: locate the type / function / code sections ──────────
   ty_off: i64 = 0
   fn_off: i64 = 0
   cd_off: i64 = 0
   cd_len: i64 = 0
   gb_off: i64 = 0
+  da_off: i64 = 0
   nimp: i64 = 0
   si: i64 = 9
   while si <= n
@@ -303,6 +311,8 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       fn_off = si
     elseif sid2 == 6
       gb_off = si
+    elseif sid2 == 11
+      da_off = si
     elseif sid2 == 10
       cd_off = si
       cd_len = ssz
@@ -314,13 +324,30 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       while ik < ic and ij <= n
         la: i64 = uleb_val(img, ij, n)
         ij = uleb_end(img, ij, n) + la
-        lb2: i64 = uleb_val(img, ij, n)
-        ij = uleb_end(img, ij, n) + lb2
+        flen: i64 = uleb_val(img, ij, n)
+        fs: i64 = uleb_end(img, ij, n)
+        ij = fs + flen
         kd: i64 = string.byte(img, ij)
         ij += 1
         if kd == 0
+          -- Identify the import by FIELD NAME so the ones ward can actually
+          -- perform (fd_write) are real effects rather than stubs. `fs` is the
+          -- field-name start captured before the name was skipped above.
+          isfw: i64 = 0
+          if flen == 8
+            if string.byte(img, fs) == 102 and string.byte(img, fs + 1) == 100 and string.byte(img, fs + 3) == 119
+              isfw = 1
+            end
+          end
+          if nimp < 256
+            mem.write_i64(imfn, nimp * 8, isfw)
+          end
+          -- remember the type index so an imported call knows its arity
+          ity: i64 = uleb_val(img, ij, n)
+          if nimp < 256
+            mem.write_i64(imtab, nimp * 8, ity)
+          end
           nimp += 1
-          _e: i64 = uleb_val(img, ij, n)
           ij = uleb_end(img, ij, n)
         elseif kd == 1
           ij += 1
@@ -351,7 +378,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   lo   = mem.alloc(64 * 64 * 8)
   fr   = mem.alloc(64 * 8 * 8)
   ftab = mem.alloc(4096 * 4 * 8)
-  tpar = mem.alloc(4096 * 8)
+  tpar = mem.alloc(4096 * 2 * 8)
   ltgt = mem.alloc(64 * 8)
   lelse = mem.alloc(64 * 8)
   gl   = mem.alloc(64 * 8)
@@ -363,7 +390,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(lo, 64 * 64 * 8)
   mem.zero(fr, 64 * 8 * 8)
   mem.zero(ftab, 4096 * 4 * 8)
-  mem.zero(tpar, 4096 * 8)
+  mem.zero(tpar, 4096 * 2 * 8)
   mem.zero(ltgt, 64 * 8)
   mem.zero(lelse, 64 * 8)
   mem.zero(gl, 64 * 8)
@@ -423,7 +450,11 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
       tq = uleb_end(img, tq, n) + npv  -- skip the param value types
       nrv: i64 = uleb_val(img, tq, n)
       tq = uleb_end(img, tq, n) + nrv  -- skip the result value types
-      mem.write_i64(tpar, tv * 8, npv)
+      -- two slots per type: params, then results. `call` needs the param
+      -- count; an IMPORTED call needs the result count too, to know how many
+      -- values to leave behind for a function it cannot execute.
+      mem.write_i64(tpar, (tv * 2) * 8, npv)
+      mem.write_i64(tpar, (tv * 2 + 1) * 8, nrv)
       tv += 1
     end
   end
@@ -453,7 +484,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
     if gq > 0
       tix: i64 = uleb_val(img, gq, n)
       gq = uleb_end(img, gq, n)
-      npf = mem.read_i64(tpar, tix * 8)
+      npf = mem.read_i64(tpar, (tix * 2) * 8)
     end
     -- offsets are relative to the copied code section
     mem.write_i64(ftab, (fv * 4) * 8, rq - cd_off)
@@ -462,6 +493,38 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
     mem.write_i64(ftab, (fv * 4 + 3) * 8, npf)
     fq = bst + bsz2
     fv += 1
+  end
+
+  -- ── data segments -> linear memory ───────────────────────────────────
+  -- Without this every string constant reads as NUL: fd_write emitted blanks
+  -- instead of the module's actual output.
+  if da_off > 0
+    nds: i64 = uleb_val(img, da_off, n)
+    dq: i64 = uleb_end(img, da_off, n)
+    dv: i64 = 0
+    while dv < nds and dq <= n
+      dmode: i64 = uleb_val(img, dq, n)
+      dq = uleb_end(img, dq, n)
+      doff: i64 = 0
+      if dmode == 2
+        dq = uleb_end(img, dq, n)      -- explicit memidx
+      end
+      if dmode != 1
+        -- active: offset is a const init expr terminated by 0x0B
+        dq += 1                        -- the i32.const opcode
+        doff = uleb_val(img, dq, n)
+        dq = uleb_end(img, dq, n) + 1  -- + the 0x0B end byte
+      end
+      dlen: i64 = uleb_val(img, dq, n)
+      dq = uleb_end(img, dq, n)
+      dk: i64 = 0
+      while dk < dlen and doff + dk < 65536
+        mem.write_byte(lin, doff + dk, string.byte(img, dq + dk))
+        dk += 1
+      end
+      dq = dq + dlen
+      dv += 1
+    end
   end
 
   ci: i64 = 0
@@ -1022,8 +1085,59 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- registered in `himm`). Imported/WASI functions are not executable
         -- here yet, so bail rather than jumping into a body that isn't ours.
         if imm2 < nimp
-          return -1
-        end
+          -- Imported (WASI) function. ward has no host bindings yet, so it
+          -- cannot perform the effect -- but bailing loses the whole module.
+          -- Consume the declared params and leave the declared number of
+          -- results, which keeps the operand stack balanced so everything
+          -- around the import still executes and is still checkable.
+          -- fd_write(fd, iovs, iovs_len, nwritten) -> errno. The only host
+          -- effect ward performs: walk the iovec array in linear memory and
+          -- emit the bytes, so a module's real output is checkable against
+          -- wasmtime instead of being silently dropped.
+          if mem.read_i64(imfn, imm2 * 8) == 1 and sp >= 4
+            npw: i64 = mem.read_i64(st, sp * 8) & M32
+            nio: i64 = mem.read_i64(st, (sp - 1) * 8) & M32
+            iop: i64 = mem.read_i64(st, (sp - 2) * 8) & M32
+            tot: i64 = 0
+            q3: i64 = 0
+            while q3 < nio
+              vb: i64 = iop + q3 * 8
+              bp: i64 = mem.read_byte(lin, vb) | (mem.read_byte(lin, vb + 1) << 8) | (mem.read_byte(lin, vb + 2) << 16) | (mem.read_byte(lin, vb + 3) << 24)
+              bl: i64 = mem.read_byte(lin, vb + 4) | (mem.read_byte(lin, vb + 5) << 8) | (mem.read_byte(lin, vb + 6) << 16) | (mem.read_byte(lin, vb + 7) << 24)
+              k3: i64 = 0
+              while k3 < bl and bp + k3 < 65536
+                io.write(string.char(mem.read_byte(lin, bp + k3)))
+                k3 += 1
+              end
+              tot = tot + bl
+              q3 += 1
+            end
+            if npw + 4 <= 65536
+              mem.write_byte(lin, npw, tot & 255)
+              mem.write_byte(lin, npw + 1, (tot >> 8) & 255)
+              mem.write_byte(lin, npw + 2, (tot >> 16) & 255)
+              mem.write_byte(lin, npw + 3, (tot >> 24) & 255)
+            end
+            sp = sp - 4
+            sp += 1
+            mem.write_i64(st, sp * 8, 0)
+          else
+          itx: i64 = mem.read_i64(imtab, imm2 * 8)
+          ipn: i64 = mem.read_i64(tpar, (itx * 2) * 8)
+          irn: i64 = mem.read_i64(tpar, (itx * 2 + 1) * 8)
+          if ipn > sp
+            return -1
+          end
+          sp = sp - ipn
+          iz: i64 = 0
+          while iz < irn
+            sp += 1
+            mem.write_i64(st, sp * 8, 0)
+            iz += 1
+          end
+          sp = sp
+          end
+        else
         fx: i64 = imm2 - nimp
         if fx < 0 or fx >= nfn or depth >= 63
           return -1
@@ -1063,6 +1177,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         -- stack ABOVE the caller's is correct; the frame pop restores lsp.
         pc = mem.read_i64(ftab, (fx * 4) * 8)
         cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
+        end
 
       elseif op == 26
         -- drop
