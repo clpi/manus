@@ -3037,6 +3037,94 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       sp -= 1
       last_alu = -1
 
+    elseif op == 67 or op == 68
+      -- f32.const / f64.const. The immediate is RAW little-endian IEEE754, not
+      -- a LEB. ward keeps floats on the operand stack as their BIT PATTERN, so
+      -- a float constant is just an integer constant — no FP register needed.
+      fw: i64 = 4
+      if op == 68
+        fw = 8
+      end
+      fv: i64 = 0
+      fk: i64 = 0
+      while fk < fw
+        fv = fv | (string.byte(s, off + pc) << (fk * 8))
+        pc += 1
+        fk += 1
+      end
+      dfq: i64 = sp
+      if fw == 4
+        jitm.w32(code, n, 0x52800000 | ((fv & 0xFFFF) << 5) | dfq)
+        n += 1
+        if ((fv >> 16) & 0xFFFF) != 0
+          jitm.w32(code, n, 0x72A00000 | (((fv >> 16) & 0xFFFF) << 5) | dfq)
+          n += 1
+        end
+      else
+        jitm.w32(code, n, 0xD2800000 | ((fv & 0xFFFF) << 5) | dfq)
+        n += 1
+        fj: i64 = 1
+        while fj < 4
+          fc: i64 = (fv >> (fj * 16)) & 0xFFFF
+          if fc != 0
+            jitm.w32(code, n, 0xF2800000 | (fj << 21) | (fc << 5) | dfq)
+            n += 1
+          end
+          fj += 1
+        end
+      end
+      sp += 1
+
+    elseif (op >= 146 and op <= 149) or (op >= 160 and op <= 163)
+      -- f32/f64 add/sub/mul/div. Floats live in GP registers as bit patterns,
+      -- so the value is moved into an FP scratch register, operated on, and
+      -- moved back. That costs two FMOVs per op but needs NO second register
+      -- allocator -- the operand stack and locals stay entirely integer, which
+      -- is what lets floats coexist with the w0..w8 / w9..w16 split.
+      if sp < 2
+        return -1
+      end
+      af: i64 = sp - 2
+      bf2: i64 = sp - 1
+      f64op: i64 = 0
+      if op >= 160
+        f64op = 1
+      end
+      vix: i64 = op - 146
+      if f64op == 1
+        vix = op - 160
+      end
+      fop: i64 = 0x2800
+      if vix == 1
+        fop = 0x3800
+      elseif vix == 2
+        fop = 0x0800
+      elseif vix == 3
+        fop = 0x1800
+      end
+      if f64op == 1
+        jitm.w32(code, n, 0x9E670000 | (af << 5))
+        n += 1
+        jitm.w32(code, n, 0x9E670000 | (bf2 << 5) | 1)
+        n += 1
+        jitm.w32(code, n, 0x1E600000 | fop | (1 << 16))
+        n += 1
+        jitm.w32(code, n, 0x9E660000 | af)
+        n += 1
+      else
+        jitm.w32(code, n, 0x1E270000 | (af << 5))
+        n += 1
+        jitm.w32(code, n, 0x1E270000 | (bf2 << 5) | 1)
+        n += 1
+        jitm.w32(code, n, 0x1E200000 | fop | (1 << 16))
+        n += 1
+        jitm.w32(code, n, 0x1E260000 | af)
+        n += 1
+      end
+      sp -= 1
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 66
       -- i64.const -> up to four MOVZ/MOVK into the next stack register, in the
       -- 64-bit forms (0xD2.. / 0xF2..). The value is a SIGNED LEB of up to ten
@@ -3427,9 +3515,11 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     end
   end
 
-  -- result in w0, then RET
+  -- result in x0, then RET. This MOV must be 64-BIT: a 32-bit one truncates
+  -- every i64 and f64 return. It went unnoticed because the i64 regression
+  -- value happened to fit in 32 bits.
   if sp > 0
-    jitm.w32(code, n, 0x2A0003E0 | ((sp - 1) << 16) | 0)
+    jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
     n += 1
   end
   jitm.w32(code, n, 0xD65F03C0)
@@ -3522,7 +3612,15 @@ main(): void
       end
       if words > 0 and jitm.seal(code, words * 4)
         engine = "jit-arm64"
-        result = jitm.call0(code) & M32
+        -- Mask to 32 bits ONLY for an i32 result. The unconditional mask here
+        -- truncated every i64 and f64 the JIT returned (an f64 3.5+1.25 chain
+        -- came back as 0), and it was invisible while the JIT could only
+        -- compile i32 bodies.
+        rt0: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 2)
+        result = jitm.call0(code)
+        if rt0 == 0x7F
+          result = result & M32
+        end
       end
     end
   end
