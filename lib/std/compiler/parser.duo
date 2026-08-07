@@ -365,21 +365,60 @@ end
 -- Lookahead scan: does the parenthesised group at the cursor contain a `:`
 -- at depth 1 (a type annotation)? That is what separates a declaration
 -- `f(a: i64)` from a call `f(x)`.
+-- Is the parenthesised group after the name a PARAMETER LIST (a declaration)
+-- rather than an argument list (a call)? GR-001 says the discriminator is a
+-- type annotation on a parameter.
+--
+-- Two wrong versions preceded this one, and both were found by the corpus
+-- number rather than by reading:
+--
+--   * The original arrived with the cursor on the NAME and consumed it as if it
+--     were the `(`, so every parameter colon sat at depth 2 and only a RETURN
+--     colon was ever seen. `f(d: i64): i64` was recognised; `f(d: i64)` — no
+--     return type — parsed as a call and swallowed its whole body.
+--   * Fixing only the off-by-one made ANY depth-1 colon count, so a call whose
+--     argument is a typed lambda, `f(x, (y: i64): i64 ...)`, matched on the
+--     lambda's return colon. Coverage went 58 -> 46.
+--
+-- So match the shape precisely: a colon directly after a NAME that sits at the
+-- start of a parameter slot — right after `(` or after a `,` at depth 1.
 params_have_colon = (lx: Lexer): bool
     st = lexer.save_state(lx)
+    _n = lexer.next(lx)
     _lp = lexer.next(lx)
     depth = 1
+    at_slot_start = true
     found = false
     while depth > 0
         t = lexer.next(lx)
         if t.kind == token.KIND_EOF break end
         if t.kind == token.KIND_LPAREN
             depth = depth + 1
+            at_slot_start = false
         elseif t.kind == token.KIND_RPAREN
             depth = depth - 1
-        elseif t.kind == token.KIND_COLON and depth == 1
+            at_slot_start = false
+        elseif t.kind == token.KIND_COMMA and depth == 1
+            at_slot_start = true
+        elseif t.kind == token.KIND_NAME and depth == 1 and at_slot_start
+            if lexer.peek(lx).kind == token.KIND_COLON
+                found = true
+                break
+            end
+            at_slot_start = false
+        else
+            at_slot_start = false
+        end
+    end
+    -- GR-001 needs at least ONE type annotation, and a RETURN type counts:
+    -- `f(a, b): i64 ... end` is a declaration with unannotated parameters. The
+    -- original predicate matched this by accident (its off-by-one only ever saw
+    -- return colons); dropping it cost 12 files, so it is explicit now. The
+    -- colon must follow the CLOSING paren, which is why a call carrying a typed
+    -- lambda does not match — that colon is inside the group.
+    if not found and depth == 0
+        if lexer.peek(lx).kind == token.KIND_COLON
             found = true
-            break
         end
     end
     lexer.restore_state(lx, st)

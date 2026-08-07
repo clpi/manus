@@ -85,6 +85,14 @@ positives = {
     -- dropped the rest of the expression.
     { "a.x * b.x + a.y * b.y", "(program (+ (* (dot a x) (dot b x)) (* (dot a y) (dot b y))))" },
     { "t[i].f + 1", "(program (+ (dot (index t i) f) 1))" },
+    -- The declaration-vs-call discriminator (GR-001). All three are needed:
+    -- a parameter annotation with NO return type, a return type with NO
+    -- parameter annotation, and a plain call that must stay a call. Two earlier
+    -- versions of params_have_colon each satisfied one of the first two and
+    -- broke the other, and the corpus could not tell.
+    { "f(d: any) 1 end", "(program (fun f (params (param d any)) 1))" },
+    { "f(a, b): i64 a end", "(program (fun f (params (param a) (param b)) (ret i64) a))" },
+    { "g(x, h)", "(program (call g x h))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
