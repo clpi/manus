@@ -150,6 +150,11 @@ positives = {
     -- declaration it annotates parsed as one directive and swallowed the whole
     -- function. This case is the one that can tell.
     { "@comp.c.export(\"x\")\nsub(s: str): str\n    s\nend\n", "(program (at comp c export \"x\") (fun sub (params (param s str)) (ret str) s))" },
+    -- `(): void` has empty parens, so the BARE lambda test matches it too. The
+    -- annotated path has to win, or the return type is never read and the body
+    -- is taken as a single expression. Pinned beside the bare form above, which
+    -- must keep working.
+    { "closure = (): void\n    f()\nend\n", "(program (assign closure (lambda (params) (ret void) (call f))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
