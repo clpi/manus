@@ -62,6 +62,11 @@ encode_mov_reg = (d: i64, m: i64): i64
     encode_orr_reg(d, 31, m)
 end
 
+--   MOVZ Xd, #imm16 (no shift)
+encode_movz = (d: i64, imm: i64): i64
+    0xD2800000 | ((imm & 0xFFFF) << 5) | d
+end
+
 --   RET (Xn defaults to X30)
 encode_ret = (): i64
     0xD65F0000 | (30 << 5)

@@ -24,6 +24,7 @@
 --   SH-10 C backend     cc COMPILES AND RUNS the emitted C
 --   SH-11 ARM64         the SYSTEM ASSEMBLER, byte for byte; and the
 --                       lowering ASSEMBLED, LINKED and RUN against the folder
+--   SH-12 Mach-O        the SYSTEM LINKER accepts the object, and it RUNS
 --
 -- Exit 0 iff every row passes. Run: duo run scripts/selfhost_proofs.duo
 
@@ -75,7 +76,11 @@ main(): i64
     if not _row("SH-11", "ARM64 execute ", "examples/pass16_arm64_exec_proof.duo")
         return 12
     end
+    -- the container, after the encodings and the lowering it carries
+    if not _row("SH-12", "Mach-O writer ", "examples/pass16_macho_proof.duo")
+        return 13
+    end
 
-    print("selfhost proofs: 9/9 — every row verified against an oracle that is not the author")
+    print("selfhost proofs: 10/10 — every row verified against an oracle that is not the author")
     0
 end
