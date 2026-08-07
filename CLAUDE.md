@@ -62,6 +62,33 @@ docs/plans/            Active implementation plans (passN_*.md)
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
+## HOT LIST — the five current failures (auto-ranked; fix these on sight)
+1. THE M PATTERN IS DEAD. A file IS the module. Never `M = {}` / `M.f = ...`
+   / final `M`. Write top-level bindings; `_name` for private. (The
+   canonicalizer will erase your wrapper anyway — MOD-1.)
+2. No `req`/`require`. Ambient roots: `std.mem.copy`; `{ f } = wire.x`.
+3. Last expression IS the result. No `result = ...` + return; `return` is
+   early-exit/contract only.
+4. Pipelines: vs:filter(.active):map(.score) — not manual accumulate loops.
+5. Interpolation: "({p.x}, {p.y})" — never `..` chains; sinks on hot paths.
+
+> **Measured against the compiler, 2026-08-07.** Rules 1–3 are real and
+> actionable today. Rules 4 and 5 are partly aspirational, and following them
+> literally produces WORSE code than the vestige they replace:
+>
+> - **Rule 4's surface does not exist.** `t:push(v)` compiles clean and drops
+>   the element; `c:join(", ")` returns nil; `vs:map(.x)` is a compile error.
+>   `table.insert`/`table.concat` still work. See GAP-14 — this is a stop-work
+>   item, not a style note.
+> - **Rule 5 works for names and fields** (`"{x}"`, `"{p.x}"`) and NOT for
+>   expression holes (`"{i + 1}"` emits the brace text literally, no
+>   diagnostic). See GAP-11.
+> - **Rule 1 is real, and MOD-1 does not exist yet** — 19 of 246 lib/std
+>   modules still carry the wrapper, and removing it is a hand edit today.
+>
+> Run `duo run scripts/spec_conformance.duo` before trusting any row. The whole
+> point of that gate is that these failures are silent.
+
 ## Duo — agent contract (Pass 64, supersedes 59/60/61)
 
 Pass 64 is the canon. Where any prior pass disagrees, Pass 64 wins (AR-1:
