@@ -12820,6 +12820,15 @@ pub const CodeGen = struct {
                     self.p("(void*)0", .{});
                     return;
                 }
+                // 2.10 G3: a primitive type name in VALUE position is a
+                // descriptor value. Last resort — every compile-time use of a
+                // type name (`to(T)(v)`, `mem.store(T)`, a type annotation)
+                // resolves the name earlier and never reaches here, so this only
+                // fires where the program genuinely wants the type as data.
+                if (primitive_descriptor_name(n.ident)) |canon| {
+                    self.emit_primitive_descriptor(canon);
+                    return;
+                }
                 self.emit_var_name(n.ident);
             },
             .field => |f| {
@@ -17013,10 +17022,25 @@ pub const CodeGen = struct {
         if (std.mem.eql(u8, target, "i64") or std.mem.eql(u8, target, "i32") or
             std.mem.eql(u8, target, "i16") or std.mem.eql(u8, target, "i8"))
         {
+            // A native C cast is only valid when the SOURCE is already numeric.
+            // Applied to a `str` it cast the `const char*` and produced a
+            // POINTER VALUE silently (`to(i64)("42")` -> 4338831547), and
+            // applied to an `any` it did not compile at all ("operand of type
+            // 'lua_Value' where arithmetic or pointer type is required"). Both
+            // route through the boxed numeric conversion instead, which parses
+            // strings — the same conversion `tonumber` is a projection of, so
+            // the edge has one meaning regardless of what flows into it.
+            const src = self.expr_type(value);
             if (result_rt == .any) self.p("lua_val_from_int(", .{});
-            self.p("((int64_t)(", .{});
-            try self.emit_expr(value);
-            self.p("))", .{});
+            if (src == .str or src == .any) {
+                self.p("((int64_t)lua_to_num(", .{});
+                try self.emit_as_lua_value(value);
+                self.p("))", .{});
+            } else {
+                self.p("((int64_t)(", .{});
+                try self.emit_expr(value);
+                self.p("))", .{});
+            }
             if (result_rt == .any) self.p(")", .{});
             return true;
         }
@@ -17037,6 +17061,42 @@ pub const CodeGen = struct {
             if (self.local_scopes.items[i].contains(name)) return true;
         }
         return false;
+    }
+
+    /// Spec 2.10 G3 (de-magicking): a primitive type name is an ORDINARY VALUE,
+    /// not a third category. `to(str)(x)` used to work only because the call
+    /// emitter pattern-matched the AST shape and never evaluated `str` — the
+    /// moment the same name reached value position (`t = str`, `print(str)`,
+    /// `str.from(i64)(v)`) codegen emitted a bare C identifier and clang said
+    /// "use of undeclared identifier 'str'". That is exactly the "third
+    /// category" the de-magicking test forbids.
+    ///
+    /// The set here is deliberately the LEXER KEYWORD set (`typeKeywordName` in
+    /// parser.zig), not `mem_type_from_name`'s wider alias list. `str`/`i64` are
+    /// reserved words, so no program can bind them and no projection can hijack
+    /// a user name; `string`, `ptr`, `isize`, `usize` are ordinary identifiers a
+    /// program MAY bind, so they stay out.
+    fn primitive_descriptor_name(name: []const u8) ?[]const u8 {
+        for ([_][]const u8{
+            "i8",  "i16", "i32",  "i64",
+            "u8",  "u16", "u32",  "u64",
+            "f32", "f64", "bool", "void",
+            "str",
+        }) |t| {
+            if (std.mem.eql(u8, name, t)) return t;
+        }
+        return null;
+    }
+
+    /// The runtime form of a descriptor. Its identity IS its canonical name, so
+    /// two spellings of the same type are one value and `to(str) == to(str)`
+    /// holds without a registry. Compile-time uses (`to(T)(v)`, `mem.store(T)`)
+    /// intercept the name before this ever runs, so a descriptor only
+    /// materializes when the program actually treats it as data.
+    fn emit_primitive_descriptor(self: *CodeGen, canon: []const u8) void {
+        self.p("lua_val_from_literal(\"{s}\", {d}, {d})", .{
+            canon, calc_lua_hash(canon), canon.len,
+        });
     }
 
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
@@ -17075,6 +17135,25 @@ pub const CodeGen = struct {
             const recv = func.method_call;
             if (std.mem.eql(u8, recv.method, "from") and recv.obj.* == .name and args.len == 1) {
                 if (try self.emit_convert_edge(recv.obj.name.ident, recv.loc, args[0], result_rt)) return true;
+            }
+        }
+        // Same edge, DOT spelling. Gate 6 requires `to(str)` and `str.from(T)`
+        // to be one edge with one id, and canonical Duo writes `.` not `:` —
+        // without this arm `str.from(...)` fell through to a table lookup on the
+        // descriptor and died. Two groups (`str.from(i64)(42)`, the source
+        // descriptor named explicitly per gate 6) and one group
+        // (`str.from(42)`, the source inferred from the value) both lower
+        // through emit_convert_edge, so all four spellings are one lowering.
+        if (func.* == .call and func.call.func.* == .field and args.len == 1) {
+            const fld = func.call.func.field;
+            if (std.mem.eql(u8, fld.field, "from") and fld.obj.* == .name and func.call.args.len == 1) {
+                if (try self.emit_convert_edge(fld.obj.name.ident, fld.loc, args[0], result_rt)) return true;
+            }
+        }
+        if (func.* == .field and args.len == 1) {
+            const fld = func.field;
+            if (std.mem.eql(u8, fld.field, "from") and fld.obj.* == .name) {
+                if (try self.emit_convert_edge(fld.obj.name.ident, fld.loc, args[0], result_rt)) return true;
             }
         }
         // Canonical relation family `to` (spec 2.6): `to(T)(v)` is the curried
