@@ -1473,6 +1473,16 @@ proj_primary = (lx: Lexer): str
         _lb = lexer.next(lx)
         return proj_desc_body(lx)
     end
+    -- LAST refusal: an identifier-spelled keyword in CALL position is a name —
+    -- `type(nv)`, `error(msg)`. `type` has its own token kind because of
+    -- `type X = { ... }`, so every call to the builtin was a parse failure.
+    --
+    -- It must come after every keyword-specific arm above, not before: placed
+    -- earlier it swallowed `fun(a) a end` as a call to `fun` and cost 3 files.
+    if is_member_name(t) and peek2(lx).kind == token.KIND_LPAREN
+        _n = lexer.next(lx)
+        return t.text
+    end
     _n = lexer.next(lx)
     mark_error(lx)
     "(error)"

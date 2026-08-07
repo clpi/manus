@@ -195,6 +195,12 @@ positives = {
     -- a keyword. `match` has its own token kind, so every `:match(...)` in the
     -- corpus was rejected until the check became spelling rather than class.
     { "x = a:match(\"y\")", "(program (assign x (method a match \"y\")))" },
+    -- An identifier-spelled keyword in CALL position is a name. `type` has its
+    -- own token kind because of `type X = { ... }`, so every call to the builtin
+    -- failed. The arm must come after every keyword-specific arm — placed before
+    -- them it swallowed `fun(a) a end` as a call to `fun`, which is why the
+    -- `fun` case below is load-bearing here too.
+    { "if type(nv) == \"table\" x = 1 end", "(program (if (= (call type nv) \"table\") (assign x 1)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
