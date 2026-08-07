@@ -3530,6 +3530,9 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = 0
       last_alu = -1
 
+    elseif op == 1
+      -- nop: emits nothing
+
     elseif op == 26
       -- drop: the value simply stops being referenced
       if sp < 1
