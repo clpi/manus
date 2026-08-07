@@ -215,3 +215,13 @@ crash**, so the listed interim spelling is the correct one to write.
   so one bad file truncates any corpus walk and silently shrinks the
   denominator. The coverage tool skips that file visibly rather than absorbing
   the loss. A lexer error should be a rejection the caller can count.
+- **GAP-18 (MOD-1 on alias-style modules)** — the M pattern in lib/std is
+  mostly a RENAMING table: `M = {}` then `M.clamp = std_math_clamp`, i.e. the
+  top-level binding is `std_math_clamp` and the surface name is `clamp`.
+  Unwrapping it per MOD-1 therefore means hoist **and rename**, not just delete
+  the wrapper — and the rename collides. Tried on lib/std/math.duo (22 members):
+  the file still `duo check`s clean but any consumer fails with 20 C errors,
+  because names like `min`/`max`/`sum` collide once they lose their prefix.
+  Reverted. MOD-1's "members hoist to top-level bindings" needs a collision
+  policy (prefix retention, `_` privacy, or renaming consumers) before it can be
+  applied to this corpus. 37 files affected.
