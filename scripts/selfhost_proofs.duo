@@ -1,0 +1,75 @@
+-- SH-14 — build orchestration, seed: the self-hosting proof set as ONE gate.
+--
+-- Pass 60 GAP-5 rules that scripts are programs and Pass 48 §5.3 wants the
+-- bootstrap DAG executed rather than remembered. This is that, at the scale
+-- that exists: the eight Duo compiler subsystems seeded so far, each with its
+-- own oracle, run as one step with one exit code.
+--
+-- WHY THIS IS THE RIGHT SHAPE FOR SH-14. A build orchestrator's job is not to
+-- run commands — it is to know what depends on what and to report which link
+-- broke. These proofs form a real chain: the canonicalizer, the rewriter and
+-- the binder all depend on the parser's projection being trustworthy, and the
+-- C backend depends on the folder. So the order below is the dependency order,
+-- and the first failure stops the run and NAMES the row — a later proof passing
+-- on top of a broken earlier one would be worse than useless.
+--
+-- Each row's oracle is something other than the author:
+--
+--   SH-04 parser        the 252-file corpus, ratcheted
+--   SH-05 canonicalizer meaning preserved + fixed point over the corpus
+--   SH-06 binder        the corpus, ratcheted
+--   SH-07 graph         in-degree over the corpus, ratcheted at 0
+--   SH-08 comptime      the HOST compiler's own arithmetic
+--   SH-09 rewrite       the parser + idempotence over the corpus
+--   SH-10 C backend     cc COMPILES AND RUNS the emitted C
+--   SH-11 ARM64         the SYSTEM ASSEMBLER, byte for byte
+--
+-- Exit 0 iff every row passes. Run: duo run scripts/selfhost_proofs.duo
+
+global script = req "std.script"
+
+_row = (id: str, what: str, proof: str): bool
+    duo = script.duo_bin()
+    if script.status(duo .. " run --backend=c " .. proof .. " > /dev/null 2>&1") != 0
+        print("  FAIL " .. id .. "  " .. what)
+        print("       " .. proof)
+        return false
+    end
+    print("  ok   " .. id .. "  " .. what)
+    true
+end
+
+main(): i64
+    print("selfhost proofs — Duo compiler subsystems, in dependency order")
+
+    -- The parser first: three later rows use its projection as their oracle, so
+    -- a failure here invalidates them rather than merely accompanying them.
+    if not _row("SH-04", "parser        ", "examples/pass16_parser_corpus_proof.duo")
+        return 4
+    end
+    if not _row("SH-05", "canonicalizer ", "examples/pass16_formatter_proof.duo")
+        return 5
+    end
+    if not _row("SH-06", "binder        ", "examples/pass16_binder_proof.duo")
+        return 6
+    end
+    if not _row("SH-07", "semantic graph", "examples/pass16_graph_proof.duo")
+        return 7
+    end
+    -- The folder before the backend that differentials against it.
+    if not _row("SH-08", "comptime fold ", "examples/pass16_comptime_proof.duo")
+        return 8
+    end
+    if not _row("SH-09", "rewrite       ", "examples/pass16_rewrite_proof.duo")
+        return 9
+    end
+    if not _row("SH-10", "C backend     ", "examples/pass16_emit_c_proof.duo")
+        return 10
+    end
+    if not _row("SH-11", "ARM64 encoder ", "examples/pass16_arm64_proof.duo")
+        return 11
+    end
+
+    print("selfhost proofs: 8/8 — every row verified against an oracle that is not the author")
+    0
+end
