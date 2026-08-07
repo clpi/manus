@@ -3002,12 +3002,20 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     -- value in its own stack register.
     -- `i32.const` is safe even when it folds into slot `sp - 1`: every fold
     -- branch reads `ali_reg` as Rn when that slot is aliased.
-    if ali_slot >= 0 and not (op == 65 or op == 32 or (aw != 0 and sp >= 2))
+    -- Float consts write only slot `sp`, and float binops consume their
+    -- operands as Rn/Rm, so both can leave a pending local alias standing —
+    -- exactly like i32.const and the integer ALU. Materialising it emitted a
+    -- MOV that sat ON the float dependency chain.
+    fkeep: i64 = 0
+    if op == 67 or op == 68 or (op >= 146 and op <= 151) or (op >= 160 and op <= 165)
+      fkeep = 1
+    end
+    if ali_slot >= 0 and not (op == 65 or op == 32 or fkeep == 1 or (aw != 0 and sp >= 2))
       jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
       n += 1
       ali_slot = -1
     end
-    if ali2_slot >= 0 and not (op == 65 or op == 32 or (aw != 0 and sp >= 2))
+    if ali2_slot >= 0 and not (op == 65 or op == 32 or fkeep == 1 or (aw != 0 and sp >= 2))
       jitm.w32(code, n, 0xAA0003E0 | (ali2_reg << 16) | ali2_slot)
       n += 1
       ali2_slot = -1
@@ -3177,6 +3185,23 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       af: i64 = sp - 2
       bf2: i64 = sp - 1
+      -- read an un-materialised alias straight out of the local's register
+      fsa: i64 = af
+      fsb: i64 = bf2
+      if ali_slot == af
+        fsa = ali_reg
+        ali_slot = -1
+      elseif ali2_slot == af
+        fsa = ali2_reg
+        ali2_slot = -1
+      end
+      if ali_slot == bf2
+        fsb = ali_reg
+        ali_slot = -1
+      elseif ali2_slot == bf2
+        fsb = ali2_reg
+        ali2_slot = -1
+      end
       f64op: i64 = 0
       if op >= 160
         f64op = 1
@@ -3198,18 +3223,18 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         fop = 0x4800
       end
       if f64op == 1
-        jitm.w32(code, n, 0x9E670000 | (af << 5))
+        jitm.w32(code, n, 0x9E670000 | (fsa << 5))
         n += 1
-        jitm.w32(code, n, 0x9E670000 | (bf2 << 5) | 1)
+        jitm.w32(code, n, 0x9E670000 | (fsb << 5) | 1)
         n += 1
         jitm.w32(code, n, 0x1E600000 | fop | (1 << 16))
         n += 1
         jitm.w32(code, n, 0x9E660000 | af)
         n += 1
       else
-        jitm.w32(code, n, 0x1E270000 | (af << 5))
+        jitm.w32(code, n, 0x1E270000 | (fsa << 5))
         n += 1
-        jitm.w32(code, n, 0x1E270000 | (bf2 << 5) | 1)
+        jitm.w32(code, n, 0x1E270000 | (fsb << 5) | 1)
         n += 1
         jitm.w32(code, n, 0x1E200000 | fop | (1 << 16))
         n += 1
@@ -3217,7 +3242,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         n += 1
       end
       sp -= 1
-      last_alu = -1
+      -- The FMOV-out writes slot `af`, and its Rd sits in bits 0..4 like any
+      -- ALU word, so a following local.set/tee can retarget it at the local
+      -- register directly instead of emitting its own MOV — the same trick the
+      -- integer path uses, and that MOV was on the chain too.
+      last_alu = n - 1
+      last_slot = af
       last_cset = -1
 
     elseif op == 66
