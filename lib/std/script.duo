@@ -164,9 +164,20 @@ end
 
 -- === Environment ===
 
+-- The fallback fires on EMPTY as well as nil. std.os.getenv returns a string
+-- for an unset variable, never nil, so the `== nil` test alone never fired and
+-- this function returned "" for every unset name -- silently handing callers an
+-- empty path. `std.script.getenv("DUO_ROOT", ".")` yielded "", so a gate
+-- globbing "<root>/lib" searched "/lib" and reported an empty corpus rather
+-- than an error.
+--
+-- An env var deliberately set to "" is therefore indistinguishable from unset
+-- here. That is the right trade for this signature: a caller passing a fallback
+-- wants a usable value, and std.os.getenv gives us no way to tell the two apart.
 getenv(name: str, fallback: str): str
     v = std.os.getenv(name)
     if v == nil return fallback end
+    if v == "" return fallback end
     v
 end
 
