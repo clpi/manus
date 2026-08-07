@@ -865,30 +865,41 @@ compose(...): any
     end
 end
 
--- partial: partially apply a function with leading args
-partial(f: any, ...): any
-    partial_args = {...}
-    -- `function` is graveyard; `all` collides with a frozen std binding, so an
-    -- inner assignment would only shadow it (§2.2) — name it for what it is.
-    apply = (...)
-        joined = {}
-        n = 0
-        i = 1
-        while i <= #partial_args
-            n += 1
-            joined[n] = partial_args[i]
-            i += 1
-        end
-        extra = {...}
-        i = 1
-        while i <= #extra
-            n += 1
-            joined[n] = extra[i]
-            i += 1
-        end
-        return f(table.unpack(joined, 1, n))
+-- partial: partially apply a function with leading args.
+--
+-- The obvious shape — an inner `apply = (...)` closing over `f` and the bound
+-- args — does not lower: the C backend has no closure capture, so it emitted
+-- `use of undeclared identifier 'f'` / `'partial_args'` and the whole module
+-- failed to compile. The state therefore lives in a table and the callable is
+-- a `__call` metamethod, which receives that table as its first argument and so
+-- captures nothing.
+--
+-- `partial_invoke` is `_`-prefixed and unexported: it is this module's
+-- private surface (Pass 57 C2), reachable only through the value `partial`
+-- hands back.
+partial_invoke(self: any, ...): any
+    joined = {}
+    n = 0
+    i = 1
+    while i <= #self.args
+        n += 1
+        joined[n] = self.args[i]
+        i += 1
     end
-    return apply
+    extra = {...}
+    i = 1
+    while i <= #extra
+        n += 1
+        joined[n] = extra[i]
+        i += 1
+    end
+    return self.fn(table.unpack(joined, 1, n))
+end
+
+partial(f: any, ...): any
+    bound = { fn = f, args = {...} }
+    setmetatable(bound, { __call = partial_invoke })
+    return bound
 end
 
 -- tap: side-effecting pass-through

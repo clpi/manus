@@ -123,15 +123,18 @@ end
 -- apply_all: apply all enabled rules and return a summary string.
 apply_all(): str
     applied = 0
-    summary = {}
+    -- `lines`, not `summary`: a local shadowing this module's own top-level
+    -- `summary()` binding lowers to an assignment to the function name, and the
+    -- C backend then emits "use of undeclared identifier".
+    lines = {}
     for i = 1, rule_count
         if rules[i].enabled
             r = rules[i]
-            summary[#summary + 1] = "  [" .. to(str)(r.priority) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
+            lines[#lines + 1] = "  [" .. to(str)(r.priority) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
             applied = applied + 1
         end
     end
-    "/* [rewrite] " .. to(str)(applied) .. " rules registered */\n" .. str_join(summary, "\n")
+    "/* [rewrite] " .. to(str)(applied) .. " rules registered */\n" .. str_join(lines, "\n")
 end
 
 -- describe_bundle: compile-time bundle metadata (folds to native C string).
