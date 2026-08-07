@@ -1,0 +1,98 @@
+-- SH-11 — the ARM64 encoder, differentialed against the SYSTEM ASSEMBLER.
+--
+-- For each instruction: assemble the mnemonic with `xcrun clang`, read the
+-- encoding back with `otool -t`, and compare it to what the Duo encoder
+-- produces.
+--
+--     "add x0, x1, x2" -> clang -> otool -> 8b020020
+--                      \
+--                       -> encode_add_reg(0, 1, 2) -> 8b020020
+--
+-- This is the strongest oracle in the whole stack and the reason to build the
+-- encoder this way round. A hand-written table of expected encodings is a
+-- transcription of the ARM manual by the same person who transcribed it into
+-- the encoder — it agrees with the transcription error. The assembler does not
+-- and cannot.
+--
+-- Exit: 0 all agree, else the failing case number. 90 when the toolchain is
+-- unavailable — a visible SKIP, never a silent pass.
+
+global A = req "std.compiler.arm64"
+
+global ASM = "/tmp/duo_arm64_proof.s"
+global OBJ = "/tmp/duo_arm64_proof.o"
+
+-- Assemble one instruction and return its encoding as otool prints it.
+_assemble = (mnemonic: str): str
+    fh = io.open(ASM, "w")
+    if not fh
+        return ""
+    end
+    fh:write(".text\n.global _start\n_start:\n    " .. mnemonic .. "\n")
+    fh:close()
+    cc = std.script.getenv("DUO_ARM64_CC", "xcrun clang")
+    if std.script.run(cc .. " -c -o " .. OBJ .. " " .. ASM .. " 2>/dev/null") != 0
+        os.remove(ASM)
+        return ""
+    end
+    out = std.script.capture("xcrun otool -t " .. OBJ
+        .. " 2>/dev/null | tail -1 | awk '{print $2}'")
+    os.remove(ASM)
+    os.remove(OBJ)
+    -- strip trailing newline
+    n: i64 = #out
+    while n > 0 and (string.byte(out, n) == 10 or string.byte(out, n) == 32)
+        n -= 1
+    end
+    string.sub(out, 1, n)
+end
+
+_check = (n: i64, mnemonic: str, word: i64): i64
+    want = _assemble(mnemonic)
+    if want == ""
+        print("arm64_proof: FAIL " .. to(str)(n) .. ": assembler refused [" .. mnemonic .. "]")
+        return n
+    end
+    got = A.word_to_hex(word)
+    if got != want
+        print("arm64_proof: FAIL " .. to(str)(n) .. ": [" .. mnemonic .. "] assembler "
+            .. want .. ", encoder " .. got)
+        return n
+    end
+    0
+end
+
+main(): i64
+    if _assemble("ret") == ""
+        print("arm64_proof: SKIP — no working assembler")
+        return 90
+    end
+
+    r: i64 = 0
+    r = _check(1, "add x0, x1, x2", A.encode_add_reg(0, 1, 2))
+    if r != 0 return r end
+    r = _check(2, "sub x0, x1, x2", A.encode_sub_reg(0, 1, 2))
+    if r != 0 return r end
+    r = _check(3, "mul x0, x1, x2", A.encode_mul_reg(0, 1, 2))
+    if r != 0 return r end
+    r = _check(4, "and x0, x1, x2", A.encode_and_reg(0, 1, 2))
+    if r != 0 return r end
+    r = _check(5, "orr x0, x1, x2", A.encode_orr_reg(0, 1, 2))
+    if r != 0 return r end
+    r = _check(6, "eor x0, x1, x2", A.encode_eor_reg(0, 1, 2))
+    if r != 0 return r end
+    r = _check(7, "mov x0, x2", A.encode_mov_reg(0, 2))
+    if r != 0 return r end
+    r = _check(8, "ret", A.encode_ret())
+    if r != 0 return r end
+
+    -- different registers, so a proof that only ever encodes x0/x1/x2 cannot
+    -- pass by having the register fields ignored entirely
+    r = _check(9, "add x5, x9, x13", A.encode_add_reg(5, 9, 13))
+    if r != 0 return r end
+    r = _check(10, "sub x28, x0, x30", A.encode_sub_reg(28, 0, 30))
+    if r != 0 return r end
+
+    print("arm64_proof: 10 instructions — Duo encoder agrees with the system assembler")
+    0
+end
