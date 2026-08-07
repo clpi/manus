@@ -188,12 +188,32 @@ crash**, so the listed interim spelling is the correct one to write.
   absent, or a runtime-guarded dispatch (member if present, else project).
   The real fix is probably to implement the surface as actual members rather
   than a codegen projection, so data-wins holds by construction.
-- **GAP-15 (SH-03 production dispatch)** — `duo compile --emit obj` and
-  `--emit dylib` both produce a Mach-O **executable**, and every `@c.export`
-  symbol is emitted with INTERNAL linkage (`nm` shows `t`, not `T`) despite
-  the generated C declaring `visibility("default")`. So the Duo lexer cannot
-  be linked into the host at all, which is the real blocker under "SH-03
-  needs production dispatch" — one level deeper than the matrix records.
+- **GAP-15 (SH-03 production dispatch) — CORRECTED 2026-08-07.** The previous
+  entry said every `@c.export` symbol is emitted with INTERNAL linkage (`nm`
+  shows `t`) and that the Duo lexer "cannot be linked into the host at all".
+  **That is wrong.** Measured on the C emitted for lib/std/compiler/lexer.duo:
+
+      T _duo_lexer_tokenize_all      T _std_compiler_lexer__duo_lexer_tokenize_all
+      T _duo_lexer_tokenize_text     T _std_compiler_lexer__duo_lexer_tokenize_text
+      T _duo_lexer_step              T _duo_lexer_kind_fingerprint
+
+  Every entry point is EXTERNAL, under both the bare and the mangled name, and
+  a C host linking against the object compiles and links clean. (`export_name`
+  in the declaration is a wasm attribute and does not rename the native symbol,
+  which is probably what the original reading tripped on.)
+
+  The real blocker is one step further in, and it is specific: **all runtime
+  initialization happens inside `main`** — `lua_package_init()`,
+  `lua_string_init()`, `lua_table_init()` and the module `lua_require` calls are
+  emitted there and nowhere else, and there is NO standalone init entry
+  (`duo_module_init`, a constructor attribute: grep count 0). So a host that
+  links the lexer and calls `duo_lexer_tokenize_all` directly SEGFAULTS on
+  uninitialized globals — verified: compiles, links (`link=0`), runs, exit 139.
+
+  What SH-03 needs is therefore not "host wiring" but an emitted, callable
+  initialization entry separate from `main` — plus lib mode so the artifact has
+  no `main` at all. Both are C-emitter changes.
+
 - **GAP-12 (rule 1 / FF-1)** — `@comp.c.export` does not attach to a
   value-form binding; it degrades into a call to an undefined `__c_export`.
   Interim: the one exported declaration per module stays bare, commented.
