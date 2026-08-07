@@ -321,13 +321,14 @@ M.is_alphanumeric = std_string_is_alphanumeric
 -- argument materialising as the literal text. Same root as the documented
 -- variadic-module-export gap.
 --
--- The fixed-arity forwarders below cover every call shape present in lib/:
--- char is called with 1, 2 and 4 arguments; rep only ever with 2.
-char(a: any, b: any, c: any, d: any): any
-    if b == nil return string.char(a) end
-    if c == nil return string.char(a, b) end
-    if d == nil return string.char(a, b, c) end
-    string.char(a, b, c, d)
+-- Both forwarders are SINGLE-SHAPE on purpose. A 4-parameter `char` with nil
+-- guards does NOT work: every parameter is always passed, so the missing ones
+-- never compare equal to nil and `string.char(a, b, c, d)` runs regardless --
+-- `std.string.char(104)` came back four bytes long, printing as "h" because C
+-- stops at the first null. The multi-argument call sites (all in
+-- lib/std/image/png.duo) use the host `string.char` directly instead.
+char(c: any): any
+    string.char(c)
 end
 
 rep(s: any, n: any): any

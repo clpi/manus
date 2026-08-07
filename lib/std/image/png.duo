@@ -48,7 +48,7 @@ bytes_to_str(b: any): str
     parts = {}
     i = 1
     while i <= #b
-        parts[#parts + 1] = std.string.char(b[i])
+        parts[#parts + 1] = string.char(b[i])
         i += 1
     end
     table.concat(parts)
@@ -272,38 +272,38 @@ encode(img: any): str
     h = std.image.rect_dy(img.rect)
 
     -- IHDR chunk (13 bytes)
-    ihdr_data = std.string.char(
+    ihdr_data = string.char(
         (w / 16777216) % 256, (w / 65536) % 256, (w / 256) % 256, w % 256,
         (h / 16777216) % 256, (h / 65536) % 256, (h / 256) % 256, h % 256,
         8, 6, 0, 0, 0
     )
-    out = out .. std.string.char(0, 0, 0, 13) .. "IHDR" .. ihdr_data
+    out = out .. string.char(0, 0, 0, 13) .. "IHDR" .. ihdr_data
     ihdr_crc = crc32_bytes("IHDR" .. ihdr_data)
-    out = out .. std.string.char(
+    out = out .. string.char(
         (ihdr_crc / 16777216) % 256, (ihdr_crc / 65536) % 256, (ihdr_crc / 256) % 256, ihdr_crc % 256
     )
 
     -- IDAT chunk: build raw filtered data (filter type 0 = None for each row)
     raw = ""
     for y = 0, h - 1
-        raw = raw .. std.string.char(0) -- filter: none
+        raw = raw .. string.char(0) -- filter: none
         for x = 0, w - 1
             c = std.image.img_at(img, x, y)
             r = (c.r / 257) % 256
             g = (c.g / 257) % 256
             b = (c.b / 257) % 256
             a = (c.a / 257) % 256
-            raw = raw .. std.string.char(r, g, b, a)
+            raw = raw .. string.char(r, g, b, a)
         end
     end
 
     -- Zlib wrapper: store block (uncompressed deflate)
-    zlib_header = std.string.char(0x78, 0x01)
-    deflate_block = std.string.char(0x01) -- BFINAL=1, BTYPE=00 (stored)
+    zlib_header = string.char(0x78, 0x01)
+    deflate_block = string.char(0x01) -- BFINAL=1, BTYPE=00 (stored)
     len = std.string.len(raw)
     -- LEN is the 16-bit length, NLEN is its one's complement
     nlen = 0xFFFF ~ len
-    deflate_block = deflate_block .. std.string.char(len % 256, math.floor(len / 256) % 256, nlen % 256, math.floor(nlen / 256) % 256)
+    deflate_block = deflate_block .. string.char(len % 256, math.floor(len / 256) % 256, nlen % 256, math.floor(nlen / 256) % 256)
     deflate_block = deflate_block .. raw
 
     -- Adler-32 checksum
@@ -316,22 +316,22 @@ encode(img: any): str
     -- Adler-32 is stored as (A << 16) | B in big-endian
     adler32_check = adler_a * 65536 + adler_b
 
-    idat_data = zlib_header .. deflate_block .. std.string.char(
+    idat_data = zlib_header .. deflate_block .. string.char(
         (adler32_check / 16777216) % 256, (adler32_check / 65536) % 256, (adler32_check / 256) % 256, adler32_check % 256
     )
 
     idat_len = std.string.len(idat_data)
-    out = out .. std.string.char(
+    out = out .. string.char(
         (idat_len / 16777216) % 256, (idat_len / 65536) % 256, (idat_len / 256) % 256, idat_len % 256
     ) .. "IDAT" .. idat_data
     idat_crc = crc32_bytes("IDAT" .. idat_data)
-    out = out .. std.string.char(
+    out = out .. string.char(
         (idat_crc / 16777216) % 256, (idat_crc / 65536) % 256, (idat_crc / 256) % 256, idat_crc % 256
     )
 
     -- IEND chunk
     iend_crc = crc32_bytes("IEND")
-    out = out .. std.string.char(0, 0, 0, 0) .. "IEND" .. std.string.char(
+    out = out .. string.char(0, 0, 0, 0) .. "IEND" .. string.char(
         (iend_crc / 16777216) % 256, (iend_crc / 65536) % 256, (iend_crc / 256) % 256, iend_crc % 256
     )
     out

@@ -73,13 +73,21 @@ main(): i64
     check("base64.decode('aA==')", std.base64.decode("aA=="), "h")
     check("base64.roundtrip", std.base64.decode(std.base64.encode("hello world")), "hello world")
 
-    -- std.base32 — RFC 4648 s6 vectors. ENCODE only: every partial group came
-    -- out seven characters instead of eight. decode() is still broken and is
-    -- deliberately NOT asserted here, because a gate row that fails on purpose
-    -- is a broken gate; see the commit message for what has been ruled out.
+    -- std.base32 — RFC 4648 s6 vectors, both directions now. Encode emitted
+    -- seven characters per partial group instead of eight; decode was broken by
+    -- std.string.char returning a FOUR-byte string (see string.duo), so every
+    -- byte after the first vanished at table.concat.
     check("base32.encode('h')", std.base32.encode("h"), "NA======")
     check("base32.encode('hi')", std.base32.encode("hi"), "NBUQ====")
     check("base32.encode('hello')", std.base32.encode("hello"), "NBSWY3DP")
+    check("base32.decode('NA======')", std.base32.decode("NA======"), "h")
+    check("base32.decode('NBUQ====')", std.base32.decode("NBUQ===="), "hi")
+    check("base32.decode('NBSWY3DP')", std.base32.decode("NBSWY3DP"), "hello")
+    check("base32.roundtrip", std.base32.decode(std.base32.encode("hi")), "hi")
+    -- The defect underneath base32 decode, pinned directly.
+    check("string.char len", to(str)(string.len(std.string.char(104))), "1")
+    check("string.char concat", std.string.char(104) .. std.string.char(101), "he")
+    check("string.rep", std.string.rep("x", 2), "xx")
 
     -- std.bit and std.hash.fnv — both CORRECT. Added as coverage, and as a
     -- correction: an earlier sweep of mine reported `std.bit.band/bor` and
