@@ -37,7 +37,11 @@ std_inspect_hash(value: any): str
         key = ks[i]
         val = value[tonumber(key)]
         if val == nil val = value[key] end
-        parts[rawlen(parts) + 1] .. key .. "=" .. std_inspect_hash(val)
+        -- `=` not `..`: this line was a concat EXPRESSION with no assignment,
+        -- so `parts` never grew and std_inspect_hash returned "{}" for every
+        -- input. It compiled, and it produced a plausible-looking empty table
+        -- rather than an error.
+        parts[rawlen(parts) + 1] = key .. "=" .. std_inspect_hash(val)
         i += 1
     end
     "{" .. table.concat(parts, ",") .. "}"
