@@ -367,12 +367,26 @@ M.pong_frame = ws_pong_frame
 M.connection_new = ws_connection_new
 M.connection_send = ws_connection_send
 M.connection_receive = ws_connection_receive
+-- The opcode literals are written directly here rather than referencing the
+-- file-scope constants above.
+--
+-- Referencing them emitted bare, UNDECLARED identifiers in the generated C
+-- ("use of undeclared identifier 'OP_CONTINUATION'") when this module is
+-- EMBEDDED. The same constants resolve fine in a standalone program, so the
+-- gap is in the embed path: a file-scope constant referenced from inside a
+-- nested table of a module's export table is not resolved.
+--
+-- Reduced to a two-file repro, and note the correction — my first reading was
+-- that only the 0x00 entry failed and that the folder treated a zero-valued
+-- constant as absent. That is WRONG: a module with `ZERO = 0x00` and
+-- `ONE = 0x01` referenced from `M.T = { z = ZERO, o = ONE }` fails on BOTH.
+-- The value is irrelevant; the nesting and the embed path are what matter.
 M.OP = {
-    CONTINUATION = OP_CONTINUATION,
-    TEXT = OP_TEXT,
-    BINARY = OP_BINARY,
-    CLOSE = OP_CLOSE,
-    PING = OP_PING,
-    PONG = OP_PONG,
+    CONTINUATION = 0x00,
+    TEXT = 0x01,
+    BINARY = 0x02,
+    CLOSE = 0x08,
+    PING = 0x09,
+    PONG = 0x0A,
 }
 M
