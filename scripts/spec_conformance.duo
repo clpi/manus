@@ -27,9 +27,9 @@
 -- read the number, pin the number.
 --
 -- Raise this when rows go green; never lower it to make the gate quiet.
--- Verified 2026-08-07: 10/20.
+-- Verified 2026-08-07: 12/26.
 baseline(): i64
-    10
+    12
 end
 
 -- An open brace, built rather than written. Interpolation has NO ESCAPE: there
@@ -106,6 +106,34 @@ main(): i64
     record("LV-6 t:join", "main(): void\n    c = {\"x\", \"y\"}\n    print(c:join(\", \"))\nend\n", "x, y")
     record("LV-8 for v in t", "main(): void\n    t = {10, 20}\n    s = 0\n    for v in t\n        s = s + v\n    end\n    print(s)\nend\n", "30")
     record("LV-13 #s", "main(): void\n    print(#\"hello\")\nend\n", "5")
+
+    -- Pass 48 §2.1/§2.6 + Pass 67 §2 (S14): apply / retrieve / anchor are ruled
+    -- TOTAL and DISJOINT. Only APPLY exists. The collision S14 resolves —
+    -- `to(str)(Point)` reading as retrieval vs application — cannot occur
+    -- today, because the bracket retrieval form it is disambiguated against
+    -- does not parse to anything.
+    --
+    -- Note Pass 48 §2.6's own example lines (`edge = to[str][Point]`,
+    -- `render = Point@to(str)`) are among the rows that do not compile.
+    record("S14 apply to(T)(v)", "main(): void\n    print(to(str)(42))\nend\n", "42")
+    record("S14 retrieve to[T]", "main(): void\n    print(to[str] != nil)\nend\n", "true")
+    record("S14 retrieve to[T][X]", "main(): void\n    print(to[str][i64] != nil)\nend\n", "true")
+
+    -- THE CANONICAL ANCHOR is POSTFIX `X@rel` (Pass 48 §2.1). This is the form
+    -- that should exist, and does not.
+    record("P48 anchor X@to(T)", "main(): void\n    print(i64@to(str) != nil)\nend\n", "true")
+
+    -- `value.@name` is IN PASS 48'S GRAVEYARD (Part VI), alongside `point:@to`
+    -- and `Point.@to`. It is implemented anyway — I added it in 7af9a66 working
+    -- from the Pass 38 catalog, which Pass 48 supersedes. This row therefore
+    -- asserts the form is ABSENT, and it FAILS on purpose until the parser
+    -- change is reverted or the graveyard ruling is revisited. A conformance
+    -- suite that only tests what should exist cannot catch a form that should
+    -- not.
+    record("GRAVEYARD .@name absent", "e(a: any, b: any): bool\n    true\nend\nmain(): void\n    p = {}\n    setmetatable(p, { __eq = e })\n    print(p.@eq == nil)\nend\n", "ABSENT")
+
+    -- Pass 67 §4 — face rows that DO work, pinned so they cannot regress.
+    record("face brace call f{}", "srv(o: any): i64\n    o.port\nend\nmain(): void\n    print(srv{ port = 8080 })\nend\n", "8080")
 
     -- PIPE-1 — the pinned pipeline surface
     record("PIPE map", "main(): void\n    vs = {1, 2}\n    print(#vs:map(.x))\nend\n", "2")
