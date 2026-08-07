@@ -3821,6 +3821,67 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
+    elseif op == 119 or op == 137
+      -- rotl. ARM64 rotates RIGHT only, and RORV takes the shift amount modulo
+      -- the width from the low bits of its register, so negating the amount
+      -- turns a right rotate into a left one with no explicit `width - n`.
+      if sp < 2
+        return -1
+      end
+      ra: i64 = sp - 2
+      rb: i64 = sp - 1
+      if op == 137
+        jitm.w32(code, n, 0xCB0003E0 | (rb << 16) | rb)
+        n += 1
+        jitm.w32(code, n, 0x9AC02C00 | (rb << 16) | (ra << 5) | ra)
+        n += 1
+      else
+        jitm.w32(code, n, 0x4B0003E0 | (rb << 16) | rb)
+        n += 1
+        jitm.w32(code, n, 0x1AC02C00 | (rb << 16) | (ra << 5) | ra)
+        n += 1
+      end
+      sp -= 1
+      last_alu = -1
+      last_cset = -1
+
+    elseif op == 152 or op == 166
+      -- copysign. ward keeps floats as BIT PATTERNS in GP registers, so this is
+      -- pure integer masking: clear the sign bit of a, take b's, OR them. No FP
+      -- register is touched -- another dividend of the representation.
+      if sp < 2 or sp > 8
+        return -1
+      end
+      pa: i64 = sp - 2
+      pb: i64 = sp - 1
+      pt: i64 = sp
+      if op == 166
+        jitm.w32(code, n, 0xD2800000 | pt)
+        n += 1
+        jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | pt)
+        n += 1
+        jitm.w32(code, n, 0x8A200000 | (pt << 16) | (pa << 5) | pa)
+        n += 1
+        jitm.w32(code, n, 0x8A000000 | (pt << 16) | (pb << 5) | pb)
+        n += 1
+        jitm.w32(code, n, 0xAA000000 | (pb << 16) | (pa << 5) | pa)
+        n += 1
+      else
+        jitm.w32(code, n, 0x52800000 | pt)
+        n += 1
+        jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | pt)
+        n += 1
+        jitm.w32(code, n, 0x0A200000 | (pt << 16) | (pa << 5) | pa)
+        n += 1
+        jitm.w32(code, n, 0x0A000000 | (pt << 16) | (pb << 5) | pb)
+        n += 1
+        jitm.w32(code, n, 0x2A000000 | (pb << 16) | (pa << 5) | pa)
+        n += 1
+      end
+      sp -= 1
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 1
       -- nop: emits nothing
 
