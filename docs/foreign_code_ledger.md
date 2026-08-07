@@ -45,7 +45,25 @@ Every row below is therefore debt by construction.
 a full ARM64 template JIT with zero `@c.emit`. The 118-site SIMD block was written against
 that precedent and violates it; it is the newest debt in the tree, not the oldest.
 
-### Correction 2026-08-07 — ward has TWO parallel runtimes, and the C is all in the dead one
+### RESOLVED 2026-08-07 — ward is 100% C-free; the dead tree is retired
+
+All 294 `@c.emit` sites are **gone**. runtime.duo (278), module.duo (9),
+main.duo (5), interp_ward.duo and jit_ward.duo (1 each) were removed along with
+the entry/wrapper modules that required them. `src/` went from 28 tracked files
+to 14, and `bench/verify.sh` is unchanged at 42 PASS / 0 wrong on both engines
+with 34 modules JIT-compiled.
+
+This had been recorded as blocked by a parallel session holding uncommitted
+changes in `src/wasm/`. **That was too coarse.** Those three files —
+`jit_arm64.duo`, `op.duo`, `wasi.duo` — carry ZERO `@c.` directives and require
+only `std.*`; every C site was in a file nobody else was editing, and
+`runtime.duo` depended on *them*, not the reverse. All three were left untouched.
+
+The lesson: "the directory is blocked" was never true — only three files were,
+and they were not the ones holding the debt. Check the actual file set before
+concluding a cleanup is unreachable.
+
+### Historical: ward has TWO parallel runtimes, and the C is all in the dead one
 
 The `src/ward.duo` row previously read "2 sites". Both hits are inside **comments**
 that assert *"Pure Duo: no @c.emit"* — a grep false positive. `src/ward.duo` contains
