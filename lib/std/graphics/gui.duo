@@ -5,7 +5,7 @@
 -- GUI State
 -- ═══════════════════════════════════════════════════════════════
 
-gui_state_new(): any
+state_new(): any
     {
         mouse_x = 0,
         mouse_y = 0,
@@ -27,7 +27,7 @@ gui_state_new(): any
     }
 end
 
-gui_state_set_mouse(state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool): void
+state_set_mouse(state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool): void
     state.mouse_x = x
     state.mouse_y = y
     state.mouse_pressed = pressed
@@ -78,12 +78,12 @@ end
 -- GUI Widgets
 -- ═══════════════════════════════════════════════════════════════
 
-gui_label(state: any, text: str): void
+label(state: any, text: str): void
     gui_draw_text(state, text, state.layout.x, state.layout.y, {r = 1, g = 1, b = 1, a = 1})
     state.layout.y = state.layout.y + 16 + state.layout.item_spacing
 end
 
-gui_button(state: any, label: str): bool
+button(state: any, label: str): bool
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -120,7 +120,7 @@ gui_button(state: any, label: str): bool
     clicked
 end
 
-gui_checkbox(state: any, label: str, value: bool): bool
+checkbox(state: any, label: str, value: bool): bool
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -148,7 +148,7 @@ gui_checkbox(state: any, label: str, value: bool): bool
     value
 end
 
-gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
+slider(state: any, label: str, value: f64, min: f64, max: f64): f64
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -190,7 +190,7 @@ gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
     value
 end
 
-gui_text_input(state: any, label: str, text: str): str
+text_input(state: any, label: str, text: str): str
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -228,16 +228,16 @@ end
 -- GUI Layout
 -- ═══════════════════════════════════════════════════════════════
 
-gui_begin_group(state: any, x: f64, y: f64): void
+begin_group(state: any, x: f64, y: f64): void
     state.layout.x = x
     state.layout.y = y
 end
 
-gui_end_group(state: any): void
+end_group(state: any): void
     state.layout.y = state.layout.y + state.layout.group_spacing
 end
 
-gui_get_draw_commands(state: any): any
+get_draw_commands(state: any): any
     commands = state.draw_commands
     state.draw_commands = {}
     commands
@@ -246,16 +246,3 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
-
-M = {}
-M.state_new = gui_state_new
-M.state_set_mouse = gui_state_set_mouse
-M.label = gui_label
-M.button = gui_button
-M.checkbox = gui_checkbox
-M.slider = gui_slider
-M.text_input = gui_text_input
-M.begin_group = gui_begin_group
-M.end_group = gui_end_group
-M.get_draw_commands = gui_get_draw_commands
-M
