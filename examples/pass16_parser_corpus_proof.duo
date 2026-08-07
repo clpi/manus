@@ -169,6 +169,12 @@ positives = {
     -- pass against a parser that only knew the block form.
     { "co = create(()\n    fn(1)\nend)\n", "(program (assign co (call create (lambda (params) (call fn 1)))))" },
     { "each(xs, (a, b)\n    g(a)\nend)\n", "(program (call each xs (lambda (params (param a) (param b)) (call g a))))" },
+    -- `do` is optional in .duo and mandatory in .lua, and the lexer feeds both.
+    -- proj_for tolerated it from the start; proj_while did not, so one `do`
+    -- swallowed the loop's `end` and left the enclosing function unterminated to
+    -- end of file — which is why so many blockers reported at EOF with nothing
+    -- wrong at the reported line.
+    { "while a do x = 1 end", "(program (while a (assign x 1)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

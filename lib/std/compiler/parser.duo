@@ -738,6 +738,11 @@ end
 proj_while = (lx: Lexer): str
     _w = lexer.next(lx)
     cond = proj_expr(lx)
+    -- `while c do ... end` — proj_for already tolerated the optional `do`;
+    -- proj_while did not, so one `do` swallowed the loop's `end` and left the
+    -- enclosing function unterminated to the end of the file. That is why so
+    -- many blockers reported at EOF with nothing wrong at the reported line.
+    skip_do(lx)
     body = proj_body(lx)
     s = "(while " .. cond
     if body != ""
