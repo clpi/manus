@@ -12,6 +12,14 @@ if not script.ok("./zig-out/bin/duo run scripts/public_safety_scan.duo")
     os.exit(1)
 end
 
+-- Pass 57 C2 — exports are scope. No module may reach through another module's
+-- `_`-prefixed surface. The gate carries its own positive control, so a clean
+-- report is evidence rather than an absence of output.
+if not script.ok("./zig-out/bin/duo run scripts/module_surface_gate.duo")
+    print("agent-smoke: module_surface_gate FAIL")
+    os.exit(1)
+end
+
 bin = script.duo_bin()
 script.duo_run_all(agent.smoke_targets(), bin)
 print("agent-smoke: PASS")
