@@ -703,6 +703,14 @@ pub fn build(b: *std.Build) void {
     pass16_lexer_tokenize_text.step.dependOn(b.getInstallStep());
     pass16_lexer_tokenize_text.setCwd(b.path("."));
 
+    // MP4-B02 — token TEXT differential. The kind differential hashes only
+    // kinds, so text equivalence was unproven: either lexer could return wrong
+    // bytes for every string literal and stay green.
+    const pass16_lexer_text_diff = b.addRunArtifact(exe);
+    pass16_lexer_text_diff.addArgs(&.{ "run", "--backend=c", "examples/pass16_lexer_text_differential.duo" });
+    pass16_lexer_text_diff.step.dependOn(b.getInstallStep());
+    pass16_lexer_text_diff.setCwd(b.path("."));
+
     const pass16_lexer_tokenize_all = b.addRunArtifact(exe);
     pass16_lexer_tokenize_all.addArgs(&.{ "run", "examples/pass16_lexer_tokenize_all_proof.duo" });
     pass16_lexer_tokenize_all.step.dependOn(b.getInstallStep());
@@ -722,6 +730,7 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_lexer_fingerprint.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_text_diff.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_all.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_text.step);
     pass16_m1_smoke_step.dependOn(&pass16_parser_corpus.step);

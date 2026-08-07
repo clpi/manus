@@ -1,0 +1,56 @@
+-- Pass 16 MP4-B02 — Duo lexer vs production Zig lexer, token-TEXT differential.
+--
+-- `pass16_lexer_fingerprint_differential` hashes only token KINDS. That left
+-- text equivalence unproven: either lexer could return the wrong bytes for
+-- every string literal and the corpus proof would stay green. In one session
+-- that gap let me first mis-diagnose the escape contract as divergent, then
+-- "fix" it in a way that actually introduced a divergence. A differential
+-- catches both; reading the code caught neither.
+--
+-- Same corpus and same aggregation as the kind differential (per-source fold,
+-- then `H = H * 131 + fh`), so the two are directly comparable. The per-token
+-- mix hashes the LENGTH before the bytes, so concatenation cannot alias:
+-- "ab" then "c" must not hash like "a" then "bc".
+--
+-- Expected value is `lexer_differential.expected_text_fingerprint`, the u64
+-- 13636438360258349679; the same bits read as i64 are -4810305713451201937.
+--
+-- Called through a `req` binding, not the dotted `std.compiler.lexer` path:
+-- ambient calls box their str arguments and diverge on exactly the escape- and
+-- newline-carrying corpus entries this differential depends on.
+--
+-- Exit code is the failing check number; 0 means the lexers agree on text.
+
+L = req "std.compiler.lexer"
+
+corpus_text_fingerprint(): i64
+    h = 0
+    h = h * 131 + L.duo_lexer_text_fingerprint("fun add(a: i64): i64 = a + 1 end", "corpus.duo")
+    h = h * 131 + L.duo_lexer_text_fingerprint("42 + 1", "corpus.duo")
+    h = h * 131 + L.duo_lexer_text_fingerprint("x? y!", "corpus.duo")
+    h = h * 131 + L.duo_lexer_text_fingerprint("\"hi\" 'there'", "corpus.duo")
+    h = h * 131 + L.duo_lexer_text_fingerprint("-- line\nfun", "corpus.duo")
+    -- Corpus data, not Duo source: must stay byte-identical to
+    -- `lexer_differential.fingerprint_corpus`. `~=` is what the host lexes here;
+    -- canonicalizing it to `!=` has broken this corpus twice before.
+    h = h * 131 + L.duo_lexer_text_fingerprint("a == b ~= c", "corpus.duo")
+    h = h * 131 + L.duo_lexer_text_fingerprint("...", "corpus.duo")
+    h
+end
+
+-- Spot checks that fail before the aggregate, so a mismatch names the shape.
+spot_checks(): i64
+    -- "" is EOF alone: one token of length 0, so h = 0 * 31 + 0 = 0.
+    if L.duo_lexer_text_fingerprint("", "c.duo") != 0 return 1 end
+    -- "x" is the identifier `x` (len 1, byte 120) then EOF (len 0):
+    -- h = ((0*31 + 1)*31 + 120)*31 + 0 = 4681
+    if L.duo_lexer_text_fingerprint("x", "c.duo") != 4681 return 2 end
+    0
+end
+
+main(): i64
+    r = spot_checks()
+    if r != 0 return r end
+    if corpus_text_fingerprint() != -4810305713451201937 return 3 end
+    0
+end

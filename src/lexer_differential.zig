@@ -61,6 +61,41 @@ pub fn fingerprintSource(src: []const u8) lexer.LexError!u64 {
     return h;
 }
 
+/// Token-TEXT fingerprint. `fingerprintSource` hashes only kinds, so text
+/// equivalence with the Duo lexer was never differenced — either side could
+/// return the wrong bytes for every string literal and the corpus proof would
+/// stay green.
+///
+/// Mixes the LENGTH before the bytes so concatenation cannot alias ("ab" then
+/// "c" must not hash like "a" then "bc"), and includes the terminating EOF
+/// (length 0). Must stay identical to `duo_lexer_text_fingerprint` in
+/// lib/std/compiler/lexer.duo.
+pub fn textFingerprintSource(src: []const u8) lexer.LexError!u64 {
+    var h: u64 = 0;
+    var lex = lexer.Lexer.init(src, "corpus.duo");
+    while (true) {
+        const tok = try lex.next();
+        h = h *% 31 +% tok.text.len;
+        for (tok.text) |b| h = h *% 31 +% b;
+        if (tok.kind == .eof) break;
+    }
+    return h;
+}
+
+/// The value `hostTextCorpusFingerprint` produces, which
+/// `examples/pass16_lexer_text_differential.duo` must reproduce from the Duo
+/// lexer. The same bits as i64 are -4810305713451201937.
+pub const expected_text_fingerprint: u64 = 13636438360258349679;
+
+pub fn hostTextCorpusFingerprint() !u64 {
+    var h: u64 = 0;
+    for (fingerprint_corpus) |src| {
+        const fh = try textFingerprintSource(src);
+        h = h *% 131 +% fh;
+    }
+    return h;
+}
+
 pub fn hostCorpusFingerprint() !u64 {
     var h: u64 = 0;
     for (fingerprint_corpus) |src| {
@@ -183,4 +218,8 @@ test "lexer_differential: Duo-native fingerprint differential is wired" {
     // Same bits, both signednesses — this is the number the Duo proof compares to.
     try std.testing.expectEqual(expected_fingerprint, @as(u64, @bitCast(expected_fingerprint_i64)));
     try std.testing.expectEqual(expected_fingerprint, try hostCorpusFingerprint());
+}
+
+test "host text corpus fingerprint matches the pinned value" {
+    try std.testing.expectEqual(expected_text_fingerprint, try hostTextCorpusFingerprint());
 }

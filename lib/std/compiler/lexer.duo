@@ -732,6 +732,34 @@ end
 -- production lexer rather than a self-consistency check.
 --
 -- u64, not i64: a hash must wrap, and signed overflow is UB in lowered code.
+-- Token-TEXT fingerprint, the companion to `duo_lexer_kind_fingerprint`.
+--
+-- The kind fingerprint hashes only `tok.kind`, so text equivalence with
+-- `src/lexer.zig` was never differenced — a lexer could return the wrong bytes
+-- for every string literal and the corpus proof would stay green. That gap let
+-- me both mis-diagnose and then mis-"fix" the escape contract in one session.
+--
+-- Mixes the LENGTH before the bytes so that concatenation cannot alias: "ab"
+-- then "c" must not hash like "a" then "bc". Includes the terminating EOF
+-- (length 0), matching `lexer_differential.textFingerprintSource`.
+@c.export("duo_lexer_text_fingerprint")
+duo_lexer_text_fingerprint(src: str, file: str): u64
+    lex = new(src, file)
+    h: u64 = 0
+    while true
+        tok = next_tok(lex)
+        tl: i64 = string.len(tok.text)
+        h = h * 31 + tl
+        bi: i64 = 1
+        while bi <= tl
+            h = h * 31 + string.byte(tok.text, bi)
+            bi += 1
+        end
+        if tok.kind == std.compiler.token.KIND_EOF return h end
+    end
+    h
+end
+
 @c.export("duo_lexer_kind_fingerprint")
 duo_lexer_kind_fingerprint(src: str, file: str): u64
     lex = new(src, file)
