@@ -1,6 +1,6 @@
 # ward — handoff (2026-08-06, evening)
 
-Everything below is **measured**, via `./bench/run.sh`. The previous handoff's
+Everything below is **measured**, via `./bench/run.duo`. The previous handoff's
 numbers were not reproducible; two separate "it passes the whole corpus" results
 turned out to be the same measurement bug (see "The trap").
 
@@ -178,7 +178,7 @@ find than an honest bail. Audit any new range arm for this.
 **"ward produced a result" is NOT coverage.** An earlier version of this harness
 counted any non-sentinel result as a pass and reported **8/18**. A differential
 check against wasmtime showed 2 of those were plain wrong and 1 was an f64 the
-reporting path truncates. `bench/verify.duo` is now the oracle; `bench/run.sh` is
+reporting path truncates. `bench/verify.duo` is now the oracle; `bench/run.duo` is
 for timing only. Real score: **4 PASS, 3 DIFF, 9 UNSUPPORTED, 2 SKIP**.
 
 | module | wasmtime | ward | |
