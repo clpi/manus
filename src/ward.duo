@@ -932,6 +932,23 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               end
               sc += 1
             end
+          elseif sb == 253
+            -- SIMD: sub-opcode LEB, and v128.const carries 16 bytes
+            vs2: i64 = 0
+            vh2: i64 = 0
+            vq: i64 = 1
+            while vq == 1 and sc < cur_end
+              vy: i64 = mem.read_byte(code, sc)
+              sc += 1
+              vs2 = vs2 | ((vy & 0x7F) << vh2)
+              vh2 += 7
+              if vy < 0x80
+                vq = 0
+              end
+            end
+            if vs2 == 12
+              sc += 16
+            end
           elseif sb == 208
             sc += 1                      -- ref.null reftype byte
           elseif sb == 210 or sb == 37 or sb == 38
@@ -2236,6 +2253,15 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         else
           return -1
         end
+
+      elseif op == 253
+        -- 0xFD SIMD. NOT IMPLEMENTED, deliberately: ward's operand stack is
+        -- 64-bit and a v128 needs 128. A low-64-bits-only representation would
+        -- turn an honest bail into a silently wrong answer for any module that
+        -- observes the high lanes — the exact failure mode that made
+        -- div/rem-returns-0 and i32.eq-returns-0 so expensive to find.
+        -- Implementing this needs a real 128-bit slot, not a shortcut.
+        return -1
 
       elseif op >= 208 and op <= 210
         -- reference types. A null ref is -1: the table stores FUNCTION INDICES
