@@ -179,6 +179,14 @@ positives = {
     -- `end`. All three shapes are pinned because each passes against a parser
     -- that gets one of the others wrong.
     { "fh.close = (self: any) nil", "(program (assign (dot fh close) (lambda (params (param self any)) nil)))" },
+    -- A one-line lambda's trailing `end` is taken only when it is on the SAME
+    -- line. Here the `end` belongs to the enclosing `if`, and eating it closed
+    -- the wrong block.
+    { "f(): any\n    if a\n        less = (a: any, b: any) a < b\n    end\n    less\nend\n", "(program (fun f (params) (ret any) (if a (assign less (lambda (params (param a any) (param b any)) (< a b)))) less))" },
+    -- Bodiless declarations: an FFI binding has no body and no `end`. Layout is
+    -- the signal — a body is indented, so a later line at column 1 is the next
+    -- top-level construct. Four modules failed entirely without this.
+    { "@ffi(\"X\")\nf(a: any): any\n\n@ffi(\"Y\")\ng(): any\n", "(program (at ffi \"X\") (fun f (params (param a any)) (ret any)) (at ffi \"Y\") (fun g (params) (ret any)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

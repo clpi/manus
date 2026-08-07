@@ -663,6 +663,22 @@ proj_fun_decl = (lx: Lexer, first: Tok): str
         end
         return s .. " " .. e .. ")"
     end
+    -- A BODILESS declaration: `@ffi("SSL_CTX_new")` then
+    -- `ssl_ctx_new(method: any): any` and nothing else. It has no body and no
+    -- `end`, so calling proj_body sent it hunting to EOF and took the rest of
+    -- the file with it — four modules (tls, onnx, sqlite, regex) failed
+    -- entirely on this.
+    --
+    -- Layout is the signal, as everywhere else: a body is indented, so a token
+    -- on a later line at column 1 is the next top-level construct, not this
+    -- declaration's body.
+    nxt = lexer.peek(lx)
+    if nxt.kind == token.KIND_EOF
+        return s .. ")"
+    end
+    if nxt.loc.line != first.loc.line and nxt.loc.col == 1 and nxt.kind != token.KIND_END
+        return s .. ")"
+    end
     s .. " " .. proj_body(lx) .. ")"
 end
 
@@ -1410,7 +1426,11 @@ proj_primary = (lx: Lexer): str
             -- terminator and `(a: i64): i64 a end` with one. Take the `end` when
             -- it is there rather than leaving it to dangle into the enclosing
             -- block.
-            if lexer.peek(lx).kind == token.KIND_END
+            -- ...but only an `end` on the SAME line. `less = (a: any, b: any) a < b`
+            -- sits inside an `if`, and its terminator is on the next line and
+            -- belongs to the `if`. Eating that closed the wrong block and ran the
+            -- enclosing function to EOF.
+            if lexer.peek(lx).kind == token.KIND_END and lexer.peek(lx).loc.line == head_line
                 _e = lexer.next(lx)
             end
             return s2 .. " " .. e2 .. ")"
