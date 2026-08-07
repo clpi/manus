@@ -108,7 +108,7 @@ channel_try_recv(ch: any) -> any
 end
 channel_close(ch: any) -> void
   ch._closed = true
-  for _, w in ipairs(ch._recv_waiters)
+  for _, w in ch._recv_waiters
     w._slot[1] = nil
     w._slot[2] = true
     __sync_run_queue[#__sync_run_queue + 1] = w
@@ -137,7 +137,7 @@ end
 waitgroup_done(wg: any) -> void
   wg.count = wg.count - 1
   if wg.count <= 0
-    for _, w in ipairs(wg.waiters)
+    for _, w in wg.waiters
       __sync_run_queue[#__sync_run_queue + 1] = w
     end
     wg.waiters = {}

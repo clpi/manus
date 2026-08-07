@@ -157,7 +157,7 @@ repr(v: any): str
             end
             return "{" .. table.concat(parts, ", ") .. "}"
         else
-            for k, val in pairs(v)
+            for k, val in v
                 parts[rawlen(parts) + 1] = to(str)(k) .. "=" .. repr(val)
             end
             return "{" .. table.concat(parts, ", ") .. "}"

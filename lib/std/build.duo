@@ -73,7 +73,7 @@ default_target(): str
 end
 
 find(name: str): any
-    for _, t in ipairs(_targets)
+    for _, t in _targets
         if t.name == name
             t
         end

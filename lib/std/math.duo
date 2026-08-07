@@ -45,7 +45,7 @@ end
 
 std_math_sum(xs: any): any
     total = 0
-    for _, v in ipairs(xs)
+    for _, v in xs
         total += v
     end
     total
@@ -95,7 +95,7 @@ end
 std_math_median(xs: any): any
     if xs == nil or rawlen(xs) == 0 return 0 end
     sorted = {}
-    for _, v in ipairs(xs)
+    for _, v in xs
         sorted[rawlen(sorted) + 1] = v
     end
     table.sort(sorted)
@@ -110,7 +110,7 @@ std_math_variance(xs: any): any
     if xs == nil or rawlen(xs) <= 1 return 0 end
     m = std_math_mean(xs)
     sum_sq = 0
-    for _, v in ipairs(xs)
+    for _, v in xs
         diff = v - m
         sum_sq = sum_sq + diff * diff
     end

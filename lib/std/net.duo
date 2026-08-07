@@ -67,7 +67,7 @@ http_request(method: str, url: str, body: str, headers: any): any
     safe_url = string.gsub(url, "[;&|`$]", "")
     cmd = "curl -si --max-time 30 -X " .. method
     if headers
-        for k, v in pairs(headers)
+        for k, v in headers
             -- Also sanitize header values
             safe_k = string.gsub(k, "[;&|`$']", "")
             safe_v = string.gsub(to(str)(v), "[;&|`$']", "")

@@ -12,7 +12,7 @@ set_level(level: str): void
 end
 
 get_level(): str
-    for name, v in pairs(log_levels)
+    for name, v in log_levels
         if v == log_level return name end
     end
     "INFO"
@@ -56,7 +56,7 @@ with_fields(level: str, fields: any, msg: str): void
     if level_val < log_level return end
     parts = {string.format("[%s] %s", string.upper(level), msg)}
     if fields != nil
-        for k, v in pairs(fields)
+        for k, v in fields
             parts[rawlen(parts) + 1] = string.format("%s=%s", k, to(str)(v))
         end
     end

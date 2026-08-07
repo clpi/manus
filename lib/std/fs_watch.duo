@@ -7,7 +7,7 @@
 --   local fd = watch.add_watch(kq, "/tmp/foo.txt", watch.flags_from_mask("write|delete"))
 --   local events = watch.poll(kq, 5000)  -- 5s timeout
 --   if events != nil then
---     for _, ev in ipairs(events) do
+--     for _, ev in events do
 --       print("fd=" .. to(str)(ev.fd) .. " flags=" .. to(str)(ev.flags))
 --     end
 --   end

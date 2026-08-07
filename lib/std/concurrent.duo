@@ -39,7 +39,7 @@ all(tasks: any, ...args): any
         args_list = {args}
         futs[1] = go(tasks, table.unpack(args_list))
     else
-        for _, t in ipairs(tasks)
+        for _, t in tasks
             if type(t) == "function"
                 futs[#futs + 1] = go(t)
             elseif type(t) == "table" and t[1]
@@ -49,7 +49,7 @@ all(tasks: any, ...args): any
     end
     sync.run()
     results = {}
-    for _, fut in ipairs(futs)
+    for _, fut in futs
         results[#results + 1] = wait(fut)
     end
     results
@@ -58,7 +58,7 @@ end
 -- Race: return the first completed future's result.
 race(futs: any): any
     winner = sync.channel(1)
-    for i, fut in ipairs(futs)
+    for i, fut in futs
         race_closure = (): void
             val = sync.channel_recv(fut)
             sync.channel_try_recv(winner)  -- drain if already won
@@ -75,7 +75,7 @@ end
 -- Returns when one case fires; calls its fn with the value.
 select(cases: any): any
     while true
-        for _, c in ipairs(cases)
+        for _, c in cases
             val = sync.channel_try_recv(c.ch)
             if val != nil
                 if c.fn then c.fn(val) end

@@ -47,7 +47,7 @@ marshal(v: any): str
     if t == "table"
         n = rawlen(v)
         count = 0
-        for _ in pairs(v) do count += 1 end
+        for _ in v do count += 1 end
         if n > 0 and count == n
             -- array
             out = {"["}
@@ -62,7 +62,7 @@ marshal(v: any): str
         else
             -- object
             keys = {}
-            for mk in pairs(v) do
+            for mk in v do
                 if type(mk) == "string"
                     keys[rawlen(keys) + 1] = mk
                 end

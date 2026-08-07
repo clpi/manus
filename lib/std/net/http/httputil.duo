@@ -5,7 +5,7 @@ dump_request(req: any): str
     if req == nil return "" end
     out = {req.method or "GET", " ", req.path or "/", " HTTP/1.1\r\n"}
     if req.headers
-        for k, v in pairs(req.headers)
+        for k, v in req.headers
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
         end
     end
@@ -18,7 +18,7 @@ dump_response(resp: any): str
     if resp == nil return "" end
     out = {"HTTP/1.1 ", to(str)(resp.status or 200), " OK\r\n"}
     if resp.headers
-        for k, v in pairs(resp.headers)
+        for k, v in resp.headers
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
         end
     end

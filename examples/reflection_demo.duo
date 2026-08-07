@@ -51,17 +51,17 @@ print("has field 'email': " .. to(str)(person.email != nil))
 clone(t)
     if type(t) != "table" return t end
     c = {}
-    for k, v in pairs(t) do c[k] = v end
+    for k, v in t do c[k] = v end
     c
 end
 
 shallow_eq(a, b): bool
     if a == b return true end
     if type(a) != "table" or type(b) != "table" return false end
-    for k, v in pairs(a) do
+    for k, v in a do
         if b[k] != v return false end
     end
-    for k, _ in pairs(b) do
+    for k, _ in b do
         if a[k] == nil return false end
     end
     true

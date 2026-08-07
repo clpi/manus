@@ -114,7 +114,7 @@ wunlock(rw: any): void
         co = table.remove(rw._w_waiters, 1)
         sync.spawn(() coroutine.resume(co))
     elseif #rw._r_waiters > 0
-        for _, co in ipairs(rw._r_waiters)
+        for _, co in rw._r_waiters
             sync.spawn(() coroutine.resume(co))
         end
         rw._r_waiters = {}
@@ -157,7 +157,7 @@ end
 
 -- Wake all waiters on the condition.
 broadcast(c: any): void
-    for _, co in ipairs(c._waiters)
+    for _, co in c._waiters
         sync.spawn(() coroutine.resume(co))
     end
     c._waiters = {}
@@ -382,11 +382,11 @@ end
 -- Returns a table of results in order.
 for_each(items: any, fn: any): any
     handles = {}
-    for _, item in ipairs(items)
+    for _, item in items
         handles[#handles + 1] = spawn(fn, item)
     end
     results = {}
-    for _, h in ipairs(handles)
+    for _, h in handles
         results[#results + 1] = join(h)
     end
     results
@@ -399,7 +399,7 @@ for_range(n: i64, fn: any): any
         handles[#handles + 1] = spawn(fn, i)
     end
     results = {}
-    for _, h in ipairs(handles)
+    for _, h in handles
         results[#results + 1] = join(h)
     end
     results

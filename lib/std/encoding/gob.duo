@@ -56,7 +56,7 @@ encode(v: any, out: any): void
         -- check if array
         n = rawlen(v)
         count = 0
-        for _ in pairs(v) do count += 1 end
+        for _ in v do count += 1 end
         if count == n and n > 0
             out[rawlen(out) + 1] = string.char(TAG_ARRAY)
             encode_int(n, out)
@@ -68,7 +68,7 @@ encode(v: any, out: any): void
         else
             out[rawlen(out) + 1] = string.char(TAG_TABLE)
             encode_int(count, out)
-            for k, val in pairs(v)
+            for k, val in v
                 encode(to(str)(k), out)
                 encode(val, out)
             end

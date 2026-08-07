@@ -53,7 +53,7 @@ end
 parse(data: any): any
     lines = string.split(data, "\n")
     res = {}
-    for _, line in ipairs(lines)
+    for _, line in lines
         if string.len(line) > 0 and string.sub(line, string.len(line), string.len(line)) == "\r"
             line = string.sub(line, 1, string.len(line) - 1)
         end
@@ -75,7 +75,7 @@ end
 
 format_line(row: any): any
     parts = {}
-    for _, v in ipairs(row)
+    for _, v in row
         table.insert(parts, escape_field(v))
     end
     string.concat(parts, ",")
@@ -83,7 +83,7 @@ end
 
 format(rows: any): any
     lines = {}
-    for _, row in ipairs(rows)
+    for _, row in rows
         table.insert(lines, format_line(row))
     end
     string.concat(lines, "\n")

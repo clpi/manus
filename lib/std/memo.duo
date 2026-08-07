@@ -20,7 +20,7 @@ wrap(fn: any) -> any
   end
 end
 clear(m: any) -> void
-  for k, _ in pairs(m)
+  for k, _ in m
     m[k] = nil
   end
 end

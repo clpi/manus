@@ -149,7 +149,7 @@ render_blocks(tmpl: str, data: any, start: i64): str
                             k += 1
                         end
                         -- also iterate hash parts
-                        for hk, hv in pairs(collection)
+                        for hk, hv in collection
                             if type(hk) != "number"
                                 item = hv
                                 if type(hv) != "table"

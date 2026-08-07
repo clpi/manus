@@ -88,7 +88,7 @@ new_message(headers: any, body: str): str
     if headers == nil headers = {} end
     if body == nil body = "" end
     out = {}
-    for k, v in pairs(headers)
+    for k, v in headers
         out[rawlen(out) + 1] = k .. ": " .. to(str)(v) .. "\r\n"
     end
     out[rawlen(out) + 1] = "\r\n"

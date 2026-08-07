@@ -213,10 +213,10 @@ end
 
 encode_map(m: any, buf: any): void
     n = 0
-    for _ in pairs(m) do n += 1 end
+    for _ in m do n += 1 end
     buf[#buf + 1] = string.char(MT_MAP * 32 + encode_addinfo(n))
     encode_addinfo_bytes(n, buf)
-    for k, v in pairs(m)
+    for k, v in m
         encode_value(k, buf)
         encode_value(v, buf)
     end
@@ -246,7 +246,7 @@ end
 
 is_array(t: any): bool
     n = 0
-    for _ in pairs(t) do n += 1 end
+    for _ in t do n += 1 end
     return n == #t and n > 0
 end
 

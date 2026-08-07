@@ -18,7 +18,7 @@ end
 
 databases(db: any)
     out = {}
-    for k in pairs(db.drivers)
+    for k in db.drivers
         out[rawlen(out) + 1] = k
     end
     return out
