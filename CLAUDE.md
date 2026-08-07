@@ -62,49 +62,37 @@ docs/plans/            Active implementation plans (passN_*.md)
 See `AGENTS.md` for full agent design targets. Coordinate via `duo_agent_gaps_update()`.
 See `.agents/AGENT_COORDINATION.md` for active work tracking.
 
-## Duo — agent contract (Pass 59/60)
-0. MONOGLOT (Pass 60): you may NEVER create a non-Duo file. Build scripts,
-   CI, benchmarks, tooling — all Duo. If Duo can't do it, that is a GAP
-   record (Pass 60 §2), not a .c/.py/.sh file. Generated artifacts are
-   outputs, never edited. "C would be faster" = fact-loss ledger row, not code.
-1. Duo has NO function/class/import/match/try syntax. Functions are values:
-   `f = (x: t): r ...`. Firewall table FF-1..21 is total — if your habit is
-   from Rust/TS/Python/Lua/Zig, look it up before writing.
-2. Strings: `"{expr}"` interpolation always; `format(sink)` on hot paths;
-   never build with `..` chains.
-3. Before writing ANY function/table/branch: run the leverage checklist
-   (Pass 55 §4) — edge? derived? hook? projection? bundle? section? dispatch
-   table? erased by demand? Query `rewrite[idiom]`, `derive[...]`, the tries.
-   Stopping early is the violation.
-4. Calls: subject-first when the subject is in hand (`writer:write(x)`,
-   `p:to(str)`); operators over explicit relations; strata always
-   (`store(i32)("x")`, never `store(i32, "x")`).
-5. Control: binding conditions for every lookup/parse/consume; endless
-   one-liners; guards `if c return ...`; ranges own counting; demand returns —
-   the last expression is the result, no plumbing.
-6. Pattern-match ONLY from the golden corpus (Pass 59 §3) and Pass 48 VII.
-   Emit canonical layout; your diff is post-canonical; a fight with the
-   formatter means your FORM is wrong.
-7. When unsure: query, never invent. No answer = spec gap = report it.
+## Duo — agent contract (Pass 64, supersedes 59/60/61)
 
-### Measure before you follow a pass: `duo run scripts/spec_conformance.duo`
+Pass 64 is the canon. Where any prior pass disagrees, Pass 64 wins (AR-1:
+the canon is queried live; archives are history).
 
-**10 of 20** Pass 64 surface forms are implemented (measured 2026-08-07). The
-gate is a Duo program and a RATCHET: it fails when a form that used to work
-stops. It asserts a VALUE per row, never "it compiled" — the whole failure
-class here compiles and prints the wrong thing.
-
-Green: FF-5 binding conditions · FF-6 demand returns · FF-12 subject-first ·
-FF-14 strata currying · G6 `value.@name` · STR-1 name and field holes ·
-LV-8 `for v in t` · LV-13 `#s` · primitives as values.
-
-Missing: FF-1 `f = (x: t): r ... end` · FF-11 `range` · FF-13 `t{...}` ·
-FF-17 `t | nil` · STR-1 expression holes · LV-4/5/6 `push`/`pop`/`join` ·
-PIPE `map`/`filter`.
-
-Not wired into `build.zig` on purpose: that would mean editing Zig, and the
-monoglot mandate says tooling is Duo. It needs a Duo build driver to become a
-CI step.
+```
+0. MONOGLOT     Never create a non-Duo file. Build, CI, benchmarks, tooling —
+                all Duo. A gap is a GAP record, never a .c/.py/.sh file.
+                "C would be faster" = fact-loss ledger row, not code.
+1. NO FOREIGN   Duo has NO function/class/import/match/try/trait/macro syntax.
+                Lua is foreign too: no require, no local, no M = {} pattern,
+                no table.*/string.*/pairs/pcall/setmetatable.
+2. QUERY FIRST  Before writing any function/table/branch/helper, run the
+                leverage ladder (Pass 64 Part VI). Query rewrite[idiom],
+                derive[...], the tries. Stopping early is the violation.
+                Never invent — no answer = spec gap = report it.
+3. DEMAND       The last expression is the result. return = early exit or
+                contract only. Nothing physical without consumption.
+4. ONE EDGE     Declare once; project everywhere. Never implement both ends,
+                parallel renderers, hand dispatch, or foreign twins.
+5. COMPACT      One-liners where one semantic unit fits. Emit canonical
+                layout; fighting the formatter means your FORM is wrong.
+6. PIPELINES    map/filter/fold/find with sections and lenses. Loops only for
+                cursors, cross-iteration state, effect ordering, exit
+                protocols beyond find/take.
+7. SUBJECT      subject:member(args); operators over explicit relations;
+                strata always: store(i32)("x"), never store(i32, "x").
+8. STRINGS      "{expr}" interpolation always; format(sink) on hot paths;
+                .. only concatenates strings that already exist.
+9. WITNESS      Every claim measured or marked. Read your manifest delta.
+```
 
 ### Rules that the compiler cannot honour yet — measured, filed, not guessed
 
