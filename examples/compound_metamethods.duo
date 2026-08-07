@@ -1,33 +1,38 @@
 sub = setmetatable({}, {
-  __sub = (a: any, b: any) -> any
-    "sub"
-  end
+    __sub = fun(a: any, b: any): any
+        "sub"
+    end,
 })
-sub = sub - 1
+sub -= 1
+
 mul = setmetatable({}, {
-  __mul = (a: any, b: any) -> any
-    "mul"
-  end
+    __mul = fun(a: any, b: any): any
+        "mul"
+    end,
 })
-mul = mul * 1
+mul *= 1
+
 div = setmetatable({}, {
-  __div = (a: any, b: any) -> any
-    "div"
-  end
+    __div = fun(a: any, b: any): any
+        "div"
+    end,
 })
-div = div / 1
+div /= 1
+
 mod = setmetatable({}, {
-  __mod = (a: any, b: any) -> any
-    "mod"
-  end
+    __mod = fun(a: any, b: any): any
+        "mod"
+    end,
 })
-mod = mod % 1
+mod %= 1
+
 pow = setmetatable({}, {
-  __pow = (a: any, b: any) -> any
-    "pow"
-  end
+    __pow = fun(a: any, b: any): any
+        "pow"
+    end,
 })
-pow = pow ^ 1
+pow ^= 1
+
 print(sub)
 print(mul)
 print(div)

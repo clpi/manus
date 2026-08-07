@@ -109,8 +109,7 @@ ws_encode_frame(opcode: i64, payload: any, mask: bool): any
     -- Masking key (if client->server) using CSPRNG
     mask_key = nil
     if mask
-        crypto_rand = req "std.crypto.rand"
-        key_data = crypto_rand.bytes(4)
+        key_data = std.crypto.rand.bytes(4)
         mask_key = {}
         i = 1
         while i <= 4
@@ -199,9 +198,8 @@ end
 
 ws_client_handshake(host: str, port: i64, path: str): str
     -- Generate random key (16 bytes base64 encoded) using CSPRNG
-    crypto_rand = req "std.crypto.rand"
     key_bytes = {}
-    key_data = crypto_rand.bytes(16)
+    key_data = std.crypto.rand.bytes(16)
     i = 1
     while i <= 16
         key_bytes[i] = string.byte(key_data, i)

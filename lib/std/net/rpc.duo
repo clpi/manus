@@ -184,10 +184,8 @@ transport_http_new(url: str): any
 end
 
 transport_http_send(transport: any, message: any): any
-    json = req "std.encoding.json"
-    net = req "std.net"
-    payload = json.encode(message)
-    result = net.http_post(transport.url, payload, "application/json")
+    payload = std.encoding.json.encode(message)
+    result = std.net.http_post(transport.url, payload, "application/json")
     if result.error
         return {ok = false, error = result.error}
     end
@@ -204,18 +202,16 @@ transport_websocket_new(url: str): any
 end
 
 transport_websocket_send(transport: any, message: any): any
-    json = req "std.encoding.json"
-    net = req "std.net"
     if transport.connection == nil
-        result = net.ws_connect(transport.url)
+        result = std.net.ws_connect(transport.url)
         if result.error
             return {ok = false, error = result.error}
         end
         transport.connection = result.conn
         transport.connected = true
     end
-    payload = json.encode(message)
-    net.ws_send(transport.connection, payload)
+    payload = std.encoding.json.encode(message)
+    std.net.ws_send(transport.connection, payload)
     {ok = true}
 end
 
@@ -230,18 +226,16 @@ transport_tcp_new(host: str, port: i64): any
 end
 
 transport_tcp_send(transport: any, message: any): any
-    json = req "std.encoding.json"
-    net = req "std.net"
     if transport.socket == nil
-        result = net.connect(transport.host, transport.port)
+        result = std.net.connect(transport.host, transport.port)
         if result.error
             return {ok = false, error = result.error}
         end
         transport.socket = result.socket
         transport.connected = true
     end
-    payload = json.encode(message)
-    net.send(transport.socket, payload)
+    payload = std.encoding.json.encode(message)
+    std.net.send(transport.socket, payload)
     {ok = true}
 end
 

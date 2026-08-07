@@ -19,10 +19,10 @@ alias Float = f64
 point = {
     x = 3.0,
     y = 4.0,
-    distance = (self: any): f64
+    distance = fun(self: any): f64
         math.sqrt(self.x * self.x + self.y * self.y)
     end,
-    move = (self: any, dx: f64, dy: f64): void
+    move = fun(self: any, dx: f64, dy: f64): void
         self.x = self.x + dx
         self.y = self.y + dy
     end,
@@ -42,7 +42,7 @@ Point_base(x: f64, y: f64): any
     {
         x = x,
         y = y,
-        describe = (self): str
+        describe = fun(self): str
             "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
         end,
     }
@@ -53,7 +53,7 @@ Point3D_base(x: f64, y: f64, z: f64): any
     base = Point_base(x, y)
     setmetatable(
         { z = z,
-          describe = (self): str
+          describe = fun(self): str
             "Point3D(" .. to(str)(self.x) .. ", " .. to(str)(self.y)
                 .. ", " .. to(str)(self.z) .. ")"
           end,
@@ -74,9 +74,9 @@ print(p2.describe(p2))
 Counter_new(): any
     {
         _value = 0,
-        increment = (self: any) self._value = self._value + 1 end,
-        decrement = (self: any) self._value = self._value - 1 end,
-        value = (self: any) self._value end,
+        increment = fun(self: any): void self._value = self._value + 1 end,
+        decrement = fun(self: any): void self._value = self._value - 1 end,
+        value = fun(self: any): i64 self._value end,
     }
 end
 
@@ -101,10 +101,10 @@ end
 
 -- A shape that implements both concepts
 shape = {}
-shape.describe = (self): str
+shape.describe = fun(self): str
     "Circle(radius=" .. to(str)(self.radius) .. ")"
 end
-shape.measure = (self, unit: str): f64
+shape.measure = fun(self, unit: str): f64
     area = 3.14159 * self.radius * self.radius
     if unit == "mm"
         area * 100.0

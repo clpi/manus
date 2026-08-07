@@ -150,13 +150,13 @@ end
 
 -- Create types that satisfy concepts
 counter = { _val = 0 }
-counter.increment = (self: any): void
+counter.increment = fun(self): void
     self._val = self._val + 1
 end
-counter.value = (self: any): i64
+counter.value = fun(self): i64
     self._val
 end
-counter.to_string = (self: any): str
+counter.to_string = fun(self): str
     "Counter(" .. to(str)(self._val) .. ")"
 end
 
@@ -268,15 +268,15 @@ print("\n-- 12. Runtime metamethods --")
 vector_mt = {}
 vector_mt.__index = vector_mt
 
-vector_mt.new = (x: any, y: any)
+vector_mt.new = fun(x, y)
     setmetatable({ x = x, y = y }, vector_mt)
 end
 
-vector_mt.__add = (a: any, b: any)
+vector_mt.__add = fun(a, b)
     vector_mt.new(a.x + b.x, a.y + b.y)
 end
 
-vector_mt.__tostring = (self: any)
+vector_mt.__tostring = fun(self)
     "Vec(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 

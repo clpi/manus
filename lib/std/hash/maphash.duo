@@ -3,8 +3,7 @@
 -- Uses a seed-based FNV-like approach to resist hash-collision attacks.
 
 make_seed(): i64
-    crypto_rand = req "std.crypto.rand"
-    bytes = crypto_rand.bytes(8)
+    bytes = std.crypto.rand.bytes(8)
     seed = 0
     i = 0
     while i < 8

@@ -1,5 +1,5 @@
 -- G-060 probe: nested template inside match callback
-out = @comp.match("i32|i64", (m: any)
+out = @comp.match("i32|i64", fun(m)
     @comp.template(m.pattern .. ":int64_t", "int64_t add_$0(int64_t a, int64_t b) { return a + b; }\n")
 end)
 print(out)

@@ -2,15 +2,13 @@
 -- Run: duo run examples/agent_hooks_showcase.duo
 -- Gate: scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo
 
-agent = req "std.agent"
-
-HOOKS: str = agent.hook_index()
-DISCOVER: str = agent.discover()
-LADDER: str = agent.scaling_ladder()
-DEDUPE: str = agent.dedupe_policy()
-GAPS: str = agent.gaps_index()
-POLICY: str = agent.native_policy()
-GATES: str = agent.build_gates()
+HOOKS: str = std.agent.hook_index()
+DISCOVER: str = std.agent.discover()
+LADDER: str = std.agent.scaling_ladder()
+DEDUPE: str = std.agent.dedupe_policy()
+GAPS: str = std.agent.gaps_index()
+POLICY: str = std.agent.native_policy()
+GATES: str = std.agent.build_gates()
 
 has_map = string.find(DISCOVER, "comp.map") != nil or string.find(DISCOVER, "meta.map") != nil
 has_burst = string.find(DISCOVER, "comp.burst") != nil or string.find(DISCOVER, "meta.burst") != nil
@@ -22,7 +20,7 @@ has_no_lua = string.find(POLICY, "NO lua_Value") != nil
 has_tier0 = string.find(GATES, "agent_smoke.duo") != nil
 has_comp_alias = string.find(DISCOVER, "comp.agent.catalog") != nil
 
-HINT = agent.multiplier_for("derive traits for all types")
+HINT = std.agent.multiplier_for("derive traits for all types")
 has_derive_hint = string.find(HINT, "@comp.derive") != nil
 
 ok = has_map

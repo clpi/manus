@@ -14,20 +14,20 @@ type Pt = { x: f64, y: f64 }
 OPS = "add|" .. "mul"
 
 -- Level X: match callback calls power → each → template (deepest practical stack)
-ULTRA = @comp.match("i32|i64", (m: any)
+ULTRA = @comp.match("i32|i64", fun(m)
     @comp.each(
-        @comp.power("HasXY", (s: any)
+        @comp.power("HasXY", fun(s)
             s.name .. ";"
         end),
-        (frag: any)
+        fun(frag)
             @comp.template(frag.name .. ":" .. m.pattern, "int64_t id_$0_$1() { return $0 + $1 }\n")
         end
     )
 end)
 
 -- Level Y: match → zip with folded concat inside callback
-ZIP_DEEP = @comp.match("i32|f64", (m: any)
-    @comp.zip(m.pattern .. "|i64", OPS, (p: any)
+ZIP_DEEP = @comp.match("i32|f64", fun(m)
+    @comp.zip(m.pattern .. "|i64", OPS, fun(p)
         p.a .. "_" .. p.b .. " "
     end)
 end)

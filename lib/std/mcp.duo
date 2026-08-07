@@ -10,25 +10,21 @@ mcp_read_message(): any
     -- LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
     -- …) sends newline-delimited JSON, so the prior framed transport never
     -- completed a handshake. Blank lines are skipped; EOF (nil) terminates.
-    io_mod = req "std.io"
-    json_mod = req "std.json"
     while true
-        line = io_mod.read_line(io_mod.input())
+        line = std.io.read_line(std.io.input())
         if line == nil return nil end
         line = string.gsub(line, "[\r\n]", "")
         if line != "" break end
     end
-    json_mod.decode(line)
+    std.json.decode(line)
 end
 
 mcp_send_message(obj: any): void
     -- MCP stdio: one compact JSON object per line. json.encode emits no
     -- embedded newlines, so the trailing "\n" is the sole delimiter.
-    json_mod = req "std.json"
-    io_mod = req "std.io"
-    body = json_mod.encode(obj)
-    io_mod.write_bytes(io_mod.output(), body .. "\n")
-    io_mod.flush(io_mod.output())
+    body = std.json.encode(obj)
+    std.io.write_bytes(std.io.output(), body .. "\n")
+    std.io.flush(std.io.output())
 end
 
 mcp_send_response(id: any, result: any): void
@@ -51,13 +47,12 @@ mcp_send_error(id: any, code: int, message: str): void
 end
 
 mcp_handle_initialize(msg: any): void
-    json_mod = req "std.json"
     mcp_send_response(msg.id, {
         protocolVersion = "2024-11-05",
         capabilities = {
             -- MCP requires `capabilities.tools` to be an OBJECT. A bare `{}`
             -- would encode as `[]` and clients reject the handshake shape.
-            tools = json_mod.empty_object
+            tools = std.json.empty_object
         },
         serverInfo = {
             name = "duo-mcp",
@@ -67,7 +62,6 @@ mcp_handle_initialize(msg: any): void
 end
 
 mcp_handle_tools_list(msg: any): void
-    json_mod = req "std.json"
     tools_list = {}
     for name, tool in M.tools
         -- JSON Schema requires `properties` to be an object. A tool declaring
@@ -76,7 +70,7 @@ mcp_handle_tools_list(msg: any): void
         -- at every tool definition.
         schema = tool.inputSchema
         if schema != nil and schema.properties != nil and next(schema.properties) == nil
-            schema.properties = json_mod.empty_object
+            schema.properties = std.json.empty_object
         end
         tools_list[#tools_list + 1] = {
             name = name,
@@ -120,12 +114,11 @@ mcp_handle_tools_call(msg: any): void
             }
         })
     else
-        json_mod = req "std.json"
         mcp_send_response(msg.id, {
             content = {
                 {
                     type = "text",
-                    text = json_mod.encode(res)
+                    text = std.json.encode(res)
                 }
             }
         })

@@ -4,21 +4,21 @@
 -- Comptime-only — folds to native C string, never lua_Value.
 
 -- Generate a 16-entry square table at compile time
-squares = @comp.tabulate(16, (m: any)
+squares = @comp.tabulate(16, fun(m)
     to(str)(m.index * m.index)
 end)
 print("=== @comp.tabulate: squares ===")
 print(squares)
 
 -- Generate a C static array initializer from compile-time computation
-init = @comp.tabulate(8, (m: any)
+init = @comp.tabulate(8, fun(m)
     to(str)(m.index * 3 + 1)
 end)
 print("=== @comp.tabulate: arithmetic progression ===")
 print(init)
 
 -- Generate even/odd flags at compile time
-parity = @comp.tabulate(10, (m: any)
+parity = @comp.tabulate(10, fun(m)
     to(str)(m.index % 2)
 end)
 print("=== @comp.tabulate: parity ===")

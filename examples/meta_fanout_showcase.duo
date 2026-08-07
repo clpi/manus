@@ -1,7 +1,7 @@
 -- @comp.fanout — tree-shaped generative expansion
 -- O(branch^depth) output from O(1) input
 
-tree = @comp.fanout("root", (state: any)
+tree = @comp.fanout("root", fun(state)
   d = state.depth
   frag = state.fragment
   if d < 3

@@ -7,8 +7,6 @@
 -- Exit code: 0 on full pass, 1..18 positive mismatch index, 101+ compile-fail
 -- index, 200 clean-input misclassification.
 
-P = req "std.compiler.parser"
-
 positives = {
     { "x = 42", "(program (assign x 42))" },
     { "add(a, b)", "(program (call add a b))" },
@@ -35,18 +33,18 @@ fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1" }
 main(): i64
     for i = 1, #positives
         c = positives[i]
-        got = P.proj_program(c[1], "corpus.duo")
+        got = std.compiler.parser.proj_program(c[1], "corpus.duo")
         if got != c[2]
             return i
         end
     end
     for i = 1, #fails
-        st = P.parse_status(fails[i], "corpus.duo")
+        st = std.compiler.parser.parse_status(fails[i], "corpus.duo")
         if st == 0
             return 100 + i
         end
     end
-    if P.parse_status("fun ok(a: i64) a end", "corpus.duo") != 0
+    if std.compiler.parser.parse_status("fun ok(a: i64) a end", "corpus.duo") != 0
         return 200
     end
     0

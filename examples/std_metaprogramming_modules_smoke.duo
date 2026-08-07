@@ -1,276 +1,252 @@
-std = req("std")
+std = req "std"
+
 concept ContractShape
-  hash(self, salt: i64) -> i64
-  id: i64
+    id: i64
+    hash(self, salt: i64): i64
 end
-shape_contract = std.contracts.concept_contract("user", __concept_fields("ContractShape"), __concept_methods("ContractShape"))
-CONCEPT_N = __concept_count("ContractShape")
+
+shape_contract = std.contracts.concept_contract(
+    "user",
+    @comp.concepts.fields("ContractShape"),
+    @comp.concepts.methods("ContractShape")
+)
+CONCEPT_N = @comp.concepts.count("ContractShape")
 if CONCEPT_N != 2
-  error("concept member count should be 2 (1 field + 1 method)")
+    error("concept member count should be 2 (1 field + 1 method)")
 end
 if shape_contract.count != 2
-  error("concept contract should include field and method checks")
+    error("concept contract should include field and method checks")
 end
 if not string.find(shape_contract.expression, "user.id")
-  error("concept contract did not include field descriptor")
+    error("concept contract did not include field descriptor")
 end
 if not string.find(shape_contract.report, "hash")
-  error("concept contract did not include method descriptor")
+    error("concept contract did not include method descriptor")
 end
-member_contract = std.contracts.concept_member_contract("user", __concept_members("ContractShape"))
+
+member_contract = std.contracts.concept_member_contract("user", @comp.concepts.members("ContractShape"))
 if member_contract.count != shape_contract.count
-  error("member contract should match split concept descriptors")
+    error("member contract should match split concept descriptors")
 end
-shape_docs = std.contracts.concept_markdown("ContractShape", __concept_members("ContractShape"))
+
+shape_docs = std.contracts.concept_markdown("ContractShape", @comp.concepts.members("ContractShape"))
 if not string.find(shape_docs, "field id: i64")
-  error("concept markdown should include field type")
+    error("concept markdown should include field type")
 end
 if not string.find(shape_docs, "method hash")
-  error("concept markdown should include method signature")
+    error("concept markdown should include method signature")
 end
-wrapper_plan = std.contracts.concept_wrapper_plan("UserAdapter", "user", __concept_methods("ContractShape"))
+
+wrapper_plan = std.contracts.concept_wrapper_plan("UserAdapter", "user", @comp.concepts.methods("ContractShape"))
 if #wrapper_plan != 1 or wrapper_plan[1].wrapper != "UserAdapter_hash"
-  error("concept wrapper plan should derive stable wrapper names")
+    error("concept wrapper plan should derive stable wrapper names")
 end
 if #wrapper_plan[1].params != 2 or wrapper_plan[1].params[2] != "i64"
-  error("concept wrapper plan should include parameter type vector")
+    error("concept wrapper plan should include parameter type vector")
 end
-target_report = std.contracts.concept_target_report("ContractShape", "UserAdapter", "user", __concept_members("ContractShape"))
+
+target_report = std.contracts.concept_target_report(
+    "ContractShape",
+    "UserAdapter",
+    "user",
+    @comp.concepts.members("ContractShape")
+)
 if target_report.contract.count != 2 or #target_report.wrappers != 1
-  error("concept target report should include contract and wrapper plan")
+    error("concept target report should include contract and wrapper plan")
 end
-accessor_plan = std.contracts.concept_accessor_plan("UserAdapter", "user", __concept_members("ContractShape"))
+accessor_plan = std.contracts.concept_accessor_plan("UserAdapter", "user", @comp.concepts.members("ContractShape"))
 if #accessor_plan != 1 or accessor_plan[1].wrapper != "UserAdapter_get_id"
-  error("concept accessor plan should derive stable accessor names")
+    error("concept accessor plan should derive stable accessor names")
 end
-signature_key = std.contracts.concept_specialization_key("ContractShape", "UserAdapter", __concept_members("ContractShape"))
+
+signature_key = std.contracts.concept_specialization_key(
+    "ContractShape",
+    "UserAdapter",
+    @comp.concepts.members("ContractShape")
+)
 if not string.find(signature_key, "UserAdapter::ContractShape")
-  error("concept specialization key should include target and concept")
+    error("concept specialization key should include target and concept")
 end
 if not string.find(signature_key, "method:hash")
-  error("concept specialization key should include method signature")
+    error("concept specialization key should include method signature")
 end
 if not string.find(signature_key, "any, i64")
-  error("concept specialization key should include parameter types")
+    error("concept specialization key should include parameter types")
 end
-c_report = std.contracts.concept_target_c_report("ContractShape", "UserAdapter", "user", "UserAdapter", __concept_members("ContractShape"))
+
+c_report = std.contracts.concept_target_c_report(
+    "ContractShape",
+    "UserAdapter",
+    "user",
+    "UserAdapter",
+    @comp.concepts.members("ContractShape")
+)
 if not string.find(c_report.c_wrappers, "static inline int64_t UserAdapter_hash")
-  error("concept C report should generate typed static wrappers")
+    error("concept C report should generate typed static wrappers")
 end
 if not string.find(c_report.c_wrappers, "void* self", 1, true)
-  error("concept C report should lower any receiver to void*")
+    error("concept C report should lower any receiver to void*")
 end
 if not string.find(c_report.c_wrappers, "int64_t arg1")
-  error("concept C report should lower i64 parameters")
+    error("concept C report should lower i64 parameters")
 end
 if not string.find(c_report.c_wrappers, "hash(self, arg1)", 1, true)
-  error("concept C report should call the target method slot")
+    error("concept C report should call the target method slot")
 end
 if not string.find(c_report.c_accessors, "static inline int64_t UserAdapter_get_id")
-  error("concept C report should generate typed field accessors")
+    error("concept C report should generate typed field accessors")
 end
 if not string.find(c_report.c_accessors, "return ((UserAdapter*)self)->id;", 1, true)
-  error("concept C report should access target struct fields")
+    error("concept C report should access target struct fields")
 end
 if not string.find(c_report.c_source, "UserAdapter_get_id") or not string.find(c_report.c_source, "UserAdapter_hash")
-  error("concept C source should include accessors and wrappers")
+    error("concept C source should include accessors and wrappers")
 end
-coverage_ok = std.contracts.concept_coverage(__concept_members("ContractShape"), __concept_members("ContractShape"))
+
+coverage_ok = std.contracts.concept_coverage(
+    @comp.concepts.members("ContractShape"),
+    @comp.concepts.members("ContractShape")
+)
 if not coverage_ok.ok or coverage_ok.missing_count != 0
-  error("concept coverage should accept matching descriptor rows")
+    error("concept coverage should accept matching descriptor rows")
 end
-coverage_bad = std.contracts.concept_coverage(__concept_members("ContractShape"), __concept_fields("ContractShape"))
+
+coverage_bad = std.contracts.concept_coverage(
+    @comp.concepts.members("ContractShape"),
+    @comp.concepts.fields("ContractShape")
+)
 if coverage_bad.ok or coverage_bad.missing_count != 1
-  error("concept coverage should report missing method rows")
+    error("concept coverage should report missing method rows")
 end
 if not string.find(std.contracts.coverage_report(coverage_bad), "missing method:hash")
-  error("concept coverage report should name missing method")
+    error("concept coverage report should name missing method")
 end
+
 RuntimeShape = std.meta.make_concept("RuntimeShape", {
-  fields = {
-    {
-      name = "id",
-      type = "i64"
-    }
-  },
-  methods = {
-    {
-      name = "hash",
-      params = {
-        "any",
-        "i64"
-      },
-      ret = "i64"
-    }
-  }
+    fields = { { name = "id", type = "i64" } },
+    methods = { { name = "hash", params = { "any", "i64" }, ret = "i64" } },
 })
-runtime_report = std.contracts.concept_target_report(RuntimeShape.name, "RuntimeAdapter", "value", RuntimeShape.required_methods)
+runtime_report = std.contracts.concept_target_report(
+    RuntimeShape.name,
+    "RuntimeAdapter",
+    "value",
+    RuntimeShape.required_methods
+)
 if #runtime_report.wrappers[1].params != 2 or runtime_report.wrappers[1].ret != "i64"
-  error("runtime meta concept should preserve method params and ret")
+    error("runtime meta concept should preserve method params and ret")
 end
+
 iter_count = 0
-for k, v in std.meta.derive_iter({
-  id = 7,
-  score = 3
-})
-  if k == "id" and v == 7
-    iter_count = iter_count + 1
-  end
-  if k == "score" and v == 3
-    iter_count = iter_count + 1
-  end
+for k, v in std.meta.derive_iter({ id = 7, score = 3 })
+    if k == "id" and v == 7 iter_count += 1 end
+    if k == "score" and v == 3 iter_count += 1 end
 end
 if iter_count != 2
-  error("std.meta.derive_iter should support direct table iteration")
+    error("std.meta.derive_iter should support direct table iteration")
 end
-reflect_subject = {
-  id = 7,
-  profile = {
-    score = 3
-  }
-}
+
+reflect_subject = { id = 7, profile = { score = 3 } }
 reflect_fields = std.reflect.fields(reflect_subject)
 if #reflect_fields != 2
-  error("std.reflect.fields should list direct table fields")
+    error("std.reflect.fields should list direct table fields")
 end
 reflect_copy = std.reflect.deep_copy(reflect_subject)
 reflect_copy.profile.score = 9
 if reflect_subject.profile.score != 3
-  error("std.reflect.deep_copy should isolate nested tables")
+    error("std.reflect.deep_copy should isolate nested tables")
 end
-if not std.reflect.deep_equal(reflect_subject, {
-  id = 7,
-  profile = {
-    score = 3
-  }
-})
-  error("std.reflect.deep_equal should compare nested tables")
+if not std.reflect.deep_equal(reflect_subject, { id = 7, profile = { score = 3 } })
+    error("std.reflect.deep_equal should compare nested tables")
 end
 if #std.reflect.field_names(reflect_subject) != 2 or #std.reflect.map_values(reflect_subject) != 2
-  error("std.reflect direct iteration helpers should expose table keys and values")
+    error("std.reflect direct iteration helpers should expose table keys and values")
 end
-if std.reflect.kind({
-  1,
-  2,
-  3
-}) != "array"
-  error("std.reflect.kind should classify array-shaped tables")
+if std.reflect.kind({ 1, 2, 3 }) != "array"
+    error("std.reflect.kind should classify array-shaped tables")
 end
 if std.meta.derive_ord("alpha", "beta") != -1 or std.meta.derive_ord("beta", "alpha") != 1
-  error("std.meta.derive_ord should compare string contents")
+    error("std.meta.derive_ord should compare string contents")
 end
-map_subject = {
-  id = 7,
-  score = 3
-}
+
+map_subject = { id = 7, score = 3 }
 map_clone = std.maps.clone(map_subject)
 if not std.maps.equal(map_subject, map_clone)
-  error("std.maps.clone should preserve direct table entries")
+    error("std.maps.clone should preserve direct table entries")
 end
-map_copy_dst = {
-  id = 1
-}
+map_copy_dst = { id = 1 }
 if std.maps.copy(map_copy_dst, map_subject) != 2 or map_copy_dst.score != 3
-  error("std.maps.copy should copy direct table entries")
+    error("std.maps.copy should copy direct table entries")
 end
-if not std.maps.equal_func(map_subject, map_clone, (a, b)
-  a == b
-end)
-  error("std.maps.equal_func should compare direct table entries")
+if not std.maps.equal_func(map_subject, map_clone, fun(a, b) a == b end)
+    error("std.maps.equal_func should compare direct table entries")
 end
 if std.maps.size(map_subject) != 2 or #std.maps.keys(map_subject) != 2
-  error("std.maps size and keys should use direct table iteration")
+    error("std.maps size and keys should use direct table iteration")
 end
 if #std.maps.values(map_subject) != 2 or #std.maps.entries(map_subject) != 2
-  error("std.maps value views should use direct table iteration")
+    error("std.maps value views should use direct table iteration")
 end
-map_merged = std.maps.merge({
-  id = 1
-}, {
-  id = 9,
-  score = 3
-})
+map_merged = std.maps.merge({ id = 1 }, { id = 9, score = 3 })
 if map_merged.id != 1 or map_merged.score != 3
-  error("std.maps.merge should keep existing keys and add missing keys")
+    error("std.maps.merge should keep existing keys and add missing keys")
 end
-map_overwrite = std.maps.merge_overwrite({
-  id = 1
-}, {
-  id = 9,
-  score = 3
-})
+map_overwrite = std.maps.merge_overwrite({ id = 1 }, { id = 9, score = 3 })
 if map_overwrite.id != 9 or map_overwrite.score != 3
-  error("std.maps.merge_overwrite should replace direct table entries")
+    error("std.maps.merge_overwrite should replace direct table entries")
 end
-table_subject = {
-  id = 7,
-  score = 3
-}
+
+table_subject = { id = 7, score = 3 }
 table_clone = std.table.clone(table_subject)
 if table_clone.id != 7 or table_clone.score != 3
-  error("std.table.clone should preserve direct table entries")
+    error("std.table.clone should preserve direct table entries")
 end
 if #std.table.keys(table_subject) != 2 or #std.table.values(table_subject) != 2
-  error("std.table key/value views should use direct table iteration")
+    error("std.table key/value views should use direct table iteration")
 end
-table_merged = std.table.merge({
-  id = 1
-}, {
-  score = 3
-})
+table_merged = std.table.merge({ id = 1 }, { score = 3 })
 if table_merged.id != 1 or table_merged.score != 3
-  error("std.table.merge should copy direct table entries")
+    error("std.table.merge should copy direct table entries")
 end
 if #std.table.to_pairs(table_subject) != 2
-  error("std.table.to_pairs should use direct table iteration")
+    error("std.table.to_pairs should use direct table iteration")
 end
-table_omit = std.table.omit({
-  id = 7,
-  score = 3,
-  stale = 1
-}, {
-  "stale"
-})
+table_omit = std.table.omit({ id = 7, score = 3, stale = 1 }, { "stale" })
 if table_omit.stale != nil or table_omit.id != 7 or table_omit.score != 3
-  error("std.table.omit should preserve non-omitted direct table entries")
+    error("std.table.omit should preserve non-omitted direct table entries")
 end
-table_clear_subject = {
-  id = 7,
-  score = 3
-}
+table_clear_subject = { id = 7, score = 3 }
 std.table.clear(table_clear_subject)
 if not std.table.is_empty(table_clear_subject)
-  error("std.table.clear should remove direct table entries")
+    error("std.table.clear should remove direct table entries")
 end
+
 pipe_c = std.pipeline.fuse_map_reduce("items", "double", "sum_square", "square", "add", "0.0")
 if #pipe_c <= 0
-  error("pipeline generator returned empty code")
+    error("pipeline generator returned empty code")
 end
+
 zig_c = std.foreign.zig_to_c("fn add(a: i64, b: i64) i64 { return a + b; }")
 if not string.find(zig_c, "int64_t")
-  error("foreign Zig bridge did not map i64")
+    error("foreign Zig bridge did not map i64")
 end
+
 std.rewrite.clear()
 std.rewrite.register_algebraic()
 rules = std.rewrite.summary()
 if not string.find(rules, "add_zero")
-  error("rewrite bundle did not register algebraic rules")
+    error("rewrite bundle did not register algebraic rules")
 end
-old_user = {
-  id = "i64",
-  name = "str"
-}
-new_user = {
-  id = "i64",
-  name = "str",
-  email = "str"
-}
+
+old_user = { id = "i64", name = "str" }
+new_user = { id = "i64", name = "str", email = "str" }
 changes = std.type_diff.diff_types(old_user, new_user)
 if not changes.compatible or #changes.added != 1
-  error("type diff should treat additive schema change as compatible")
+    error("type diff should treat additive schema change as compatible")
 end
+
 styled = std.term.bold("ok")
 if #styled <= 0
-  error("terminal styling returned empty string")
+    error("terminal styling returned empty string")
 end
+
 print("RESULT std_meta_modules ok")

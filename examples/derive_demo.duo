@@ -9,17 +9,17 @@ end
 point = {}
 point.x = 10.0
 point.y = 20.0
-point.clone = (self: any)
+point.clone = fun(self)
     c = {}
     c.x = self.x
     c.y = self.y
     c
 end
-point.eq = (self: any, other: any): bool
+point.eq = fun(self, other): bool
     if other == nil return false end
     self.x == other.x and self.y == other.y
 end
-point.to_string = (self: any): str
+point.to_string = fun(self): str
     "Point(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 

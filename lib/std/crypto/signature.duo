@@ -76,9 +76,8 @@ keygen(key_type: i64): any
 
     elseif key_type == RSA_2048
         -- RSA key generation (simplified - uses Miller-Rabin for primes)
-        rand = req "std.crypto.rand"
-        p = rand.prime(1024)
-        q = rand.prime(1024)
+        p = std.crypto.rand.prime(1024)
+        q = std.crypto.rand.prime(1024)
         {
             type = RSA_2048,
             private = {p = p, q = q},
@@ -97,7 +96,6 @@ end
 ed25519_sign(message: any, private_key: any): any
     -- Simplified Ed25519 signing using hash-based construction
     -- Hash the message
-    crypto = req "std.crypto"
     msg_hash = std.crypto.sha256(to(str)(message))
 
     -- Create deterministic signature from private key + message hash
@@ -156,7 +154,6 @@ end
 
 ecdsa_sign(message: any, private_key: any, curve: i64): any
     -- Deterministic ECDSA signing using hash-based construction
-    crypto = req "std.crypto"
     msg_hash = std.crypto.sha256(to(str)(message))
     
     r = {}
