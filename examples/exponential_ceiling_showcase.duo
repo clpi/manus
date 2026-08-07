@@ -6,9 +6,9 @@ concept HasXY
     y: f64
 end
 
-type Point = { x: f64, y: f64 }
-type BadXY = { x: i64, y: f64 }
-type Pair = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
+BadXY: { x: i64, y: f64 }
+Pair: { x: f64, y: f64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
@@ -31,8 +31,8 @@ end
 
 TYPED_SWEEP = @comp.map("HasXY", registry_line)
 
-type UserV1 = { id: i64, nick: str }
-type UserV2 = { id: i64, email: str }
+UserV1: { id: i64, nick: str }
+UserV2: { id: i64, email: str }
 
 MIGRATION = @comp.diff(UserV1, UserV2)
 @c.emit(MIGRATION)

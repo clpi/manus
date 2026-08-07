@@ -3,9 +3,9 @@
 end)
 
 @comp.derive.bundle("Debug")
-type Tiny = { n: i64 }
+Tiny: { n: i64 }
 
 @derive(TagOnly)
-type Also = { v: f64 }
+Also: { v: f64 }
 
 print("bundle ok")

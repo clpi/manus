@@ -14,9 +14,9 @@ concept HasId
     id: i64
 end
 
-type Point = { x: f64, y: f64, tag: str, id: i64 }
-type Pair = { x: f64, y: f64, tag: str, id: i64 }
-type Label = { tag: str, id: i64 }
+Point: { x: f64, y: f64, tag: str, id: i64 }
+Pair: { x: f64, y: f64, tag: str, id: i64 }
+Label: { tag: str, id: i64 }
 
 @comp.define.derive("TripleApi", generate(meta) -> str
     if meta.right != nil

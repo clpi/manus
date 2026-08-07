@@ -22,14 +22,14 @@ end)
 @comp.define.bundle("Api", CStruct, GetterBundle, Debug)
 
 @comp.derive.bundle("Debug", Api)
-type Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 concept HasXY
     x: f64
     y: f64
 end
 
-type Pair = { x: f64, y: f64 }
+Pair: { x: f64, y: f64 }
 
 type_mark(meta): str
     meta.name .. ";"

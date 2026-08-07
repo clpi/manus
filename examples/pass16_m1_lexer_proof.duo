@@ -5,7 +5,7 @@
 Classify = req "std.token.classify"
 Token = req "std.compiler.token"
 
-type Loc = {
+Loc: {
     file: str,
     line: i64,
     col: i64

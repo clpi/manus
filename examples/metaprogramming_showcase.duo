@@ -235,10 +235,10 @@ print("\n-- 10. @derive --")
 -- Default  → TypeName.default()
 
 @derive(Display, Eq, Add, Sub, Mul, Neg, Len, Hash, Clone, Default)
-type Vec2 = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
 
 @derive(Div, Rem)
-type Rat = { num: f64, den: f64 }
+Rat: { num: f64, den: f64 }
 
 -- Derived Enum
 @derive("Display", "Eq")

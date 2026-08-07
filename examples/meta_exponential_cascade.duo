@@ -10,9 +10,9 @@ concept HasXY
     y: f64
 end
 
-type Vec2 = { x: f64, y: f64 }
-type Vec3 = { x: f64, y: f64, z: f64 }
-type Pt = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
+Vec3: { x: f64, y: f64, z: f64 }
+Pt: { x: f64, y: f64 }
 
 -- Folded concat builds zip specs (fold_meta_string_expr binop ..).
 TYPES = "i32|" .. "i64|" .. "f64"

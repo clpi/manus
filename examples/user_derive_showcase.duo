@@ -21,10 +21,10 @@ end)
 end)
 
 @derive(CStruct, GetterBundle)
-type Vec3 = { x: f64, y: f64, z: f64 }
+Vec3: { x: f64, y: f64, z: f64 }
 
 @derive(CStruct)
-type RGB = { r: f64, g: f64, b: f64 }
+RGB: { r: f64, g: f64, b: f64 }
 
 v3: Vec3 = { x = 1.0, y = 2.0, z = 3.0 }
 rgb: RGB = { r = 1.0, g = 0.5, b = 0.0 }

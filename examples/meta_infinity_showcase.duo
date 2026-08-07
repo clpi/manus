@@ -18,9 +18,9 @@ concept HasExtra
     extra: i64
 end
 
-type Point = { x: f64, y: f64, tag: str, id: i64, extra: i64 }
-type Pair = { x: f64, y: f64, tag: str, id: i64, extra: i64 }
-type Label = { tag: str, id: i64, extra: i64 }
+Point: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
+Pair: { x: f64, y: f64, tag: str, id: i64, extra: i64 }
+Label: { tag: str, id: i64, extra: i64 }
 
 @comp.define.derive("QuadApi", generate(meta) -> str
     if meta.parts != nil and #meta.parts >= 4

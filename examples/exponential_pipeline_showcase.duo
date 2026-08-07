@@ -5,8 +5,8 @@ concept HasN
     n: i64
 end
 
-type CounterA = { n: i64 }
-type CounterB = { n: i64, tag: str }
+CounterA: { n: i64 }
+CounterB: { n: i64, tag: str }
 
 @comp.define.derive("CountApi", generate(meta) -> str
     "static inline int64_t duo_" .. meta.name .. "_get_n(const duo_" .. meta.name .. "* v) { return v->n; }\n"

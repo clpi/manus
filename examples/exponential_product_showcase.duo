@@ -10,11 +10,11 @@ concept HasId
     id: i64
 end
 
-type Point = { x: f64, y: f64 }
-type Pair = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
+Pair: { x: f64, y: f64 }
 
-type Entity = { id: i64, name: str }
-type Node = { id: i64, next: i64 }
+Entity: { id: i64, name: str }
+Node: { id: i64, next: i64 }
 
 @comp.define.derive("TouchApi", generate(meta) -> str
     acc = "/* " .. meta.name .. " */\n"

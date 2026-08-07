@@ -6,10 +6,10 @@ concept HasXY
     y: i64
 end
 
-type Vec2 = { x: i64, y: i64 }
-type Vec3 = { x: i64, y: i64, z: i64 }
-type Pt = { x: i64, y: i64 }
-type Ray = { x: i64, y: i64, dx: i64, dy: i64 }
+Vec2: { x: i64, y: i64 }
+Vec3: { x: i64, y: i64, z: i64 }
+Pt: { x: i64, y: i64 }
+Ray: { x: i64, y: i64, dx: i64, dy: i64 }
 
 combo_sig(meta): str
     meta.name .. ";"

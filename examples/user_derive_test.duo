@@ -15,6 +15,6 @@
 end)
 
 @derive(Printable)
-type Vec2 = { x: f64, y: f64 }
+Vec2: { x: f64, y: f64 }
 
 print("User-defined derive test compiled")

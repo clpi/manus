@@ -8,9 +8,9 @@
 end)
 
 @derive(Factory)
-type Point = { x: f64, y: f64 }
+Point: { x: f64, y: f64 }
 
 @derive(PointKind)
-type Box = { w: f64, h: f64 }
+Box: { w: f64, h: f64 }
 
 print("Self-extending derive compiled")
