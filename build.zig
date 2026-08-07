@@ -692,6 +692,15 @@ pub fn build(b: *std.Build) void {
     pass16_lexer_tokenize.step.dependOn(b.getInstallStep());
     pass16_lexer_tokenize.setCwd(b.path("."));
 
+    // MP4-B02 — the state-faithful bulk tokenize entry. `duo_lexer_step`
+    // rebuilds a Lexer at a byte offset and so drops peek/hint state, which
+    // silently mis-lexes `fun f(): T =`; this runs the whole file on one Lexer
+    // and is differenced against the same fingerprint oracle.
+    const pass16_lexer_tokenize_all = b.addRunArtifact(exe);
+    pass16_lexer_tokenize_all.addArgs(&.{ "run", "examples/pass16_lexer_tokenize_all_proof.duo" });
+    pass16_lexer_tokenize_all.step.dependOn(b.getInstallStep());
+    pass16_lexer_tokenize_all.setCwd(b.path("."));
+
     const pass16_parser_corpus = b.addRunArtifact(exe);
     pass16_parser_corpus.addArgs(&.{ "run", "examples/pass16_parser_corpus_proof.duo" });
     pass16_parser_corpus.step.dependOn(b.getInstallStep());
@@ -706,6 +715,7 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_lexer_fingerprint.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_all.step);
     pass16_m1_smoke_step.dependOn(&pass16_parser_corpus.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_verify.step);
     pass16_m1_smoke_step.dependOn(pass16_gate_step);

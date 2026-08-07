@@ -648,6 +648,35 @@ end
 --
 -- `kind` is at most 105 and `next_pos` is a byte offset, so the product cannot
 -- overflow i64 for any source a compiler will see.
+-- Whole-file tokenize in ONE call, writing into a host-provided buffer.
+--
+-- This is the shape production dispatch needs, and `duo_lexer_step` is not it.
+-- Step rebuilds a `Lexer` at a byte offset, which discards `has_peeked` /
+-- `peeked_token` and the hint state the type carries, so a step-driven walk
+-- silently mis-lexes context-sensitive shapes (bisected to the `=` in
+-- `fun add(a: i64): i64 =`). Here a single `Lexer` runs the whole file, so the
+-- stream is state-faithful by construction, and it is O(n) with no cursor ABI.
+--
+-- `out` is a host address (see `mem.addr` / `mem.ptr_from_addr`); tokens are
+-- written as four i64 fields — kind, line, col, int_val — and the return is the
+-- token count including the terminating EOF, or -1 if `cap` is too small.
+@c.export("duo_lexer_tokenize_all")
+duo_lexer_tokenize_all(src: str, file: str, out: i64, cap: i64): i64
+    lex = new(src, file)
+    buf = mem.ptr_from_addr(i64, out)
+    n: i64 = 0
+    while n < cap
+        tok = next_tok(lex)
+        mem.write_i64(buf, (n * 4) * 8, tok.kind)
+        mem.write_i64(buf, (n * 4 + 1) * 8, tok.loc.line)
+        mem.write_i64(buf, (n * 4 + 2) * 8, tok.loc.col)
+        mem.write_i64(buf, (n * 4 + 3) * 8, tok.int_val)
+        n += 1
+        if tok.kind == std.compiler.token.KIND_EOF return n end
+    end
+    -1
+end
+
 @c.export("duo_lexer_step")
 duo_lexer_step(src: str, file: str, pos: i64): i64
     lex = new(src, file)
