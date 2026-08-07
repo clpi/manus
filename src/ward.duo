@@ -3198,20 +3198,28 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- Only one alias is tracked; a second local.get materializes the first.
       idx: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
-      if idx > 7
+      -- Locals occupy w9..w17 then w19..w28: NINETEEN of them. x18 is skipped
+      -- because it is the reserved platform register on Darwin, and x29/x30 are
+      -- the frame pointer and link register. The old cap of 8 was what blocked
+      -- wart_mixed_type_bench and wart_complete_opcode_bench.
+      if idx > 18
         return -1
+      end
+      rgi: i64 = 9 + idx
+      if idx >= 9
+        rgi = 10 + idx
       end
       -- Two alias registers, because consecutive `local.get`s are the common
       -- shape (`local.get 1; local.get 0; xor`) and with only one tracked the
       -- second spills a chain MOV.
       if ali_slot < 0
         ali_slot = sp
-        ali_reg = 9 + idx
+        ali_reg = rgi
       elseif ali2_slot < 0
         ali2_slot = sp
-        ali2_reg = 9 + idx
+        ali2_reg = rgi
       else
-        jitm.w32(code, n, 0xAA0003E0 | ((9 + idx) << 16) | sp)
+        jitm.w32(code, n, 0xAA0003E0 | (rgi << 16) | sp)
         n += 1
       end
       sp += 1
@@ -3220,24 +3228,28 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- local.set / local.tee -> MOV Wlocal, Wtop
       idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
-      if idx2 > 7 or sp < 1
+      if idx2 > 18 or sp < 1
         return -1
+      end
+      rgo: i64 = 9 + idx2
+      if idx2 >= 9
+        rgo = 10 + idx2
       end
       -- If the value was just produced by an ALU op into this very slot,
       -- retarget that instruction's Rd at the local register instead of copying.
       -- These MOVs are on the dependency chain: one round's `local.tee` feeds
       -- the next round's read.
       if last_alu == n - 1 and last_slot == sp - 1
-        jitm.w32(code, last_alu, (jitm.r32(code, last_alu) & 0xFFFFFFE0) | (9 + idx2))
+        jitm.w32(code, last_alu, (jitm.r32(code, last_alu) & 0xFFFFFFE0) | rgo)
         last_alu = -1
         -- `tee` leaves the value on the stack too — it now lives in the local
         -- register, so record that as the slot's alias rather than copying back.
         if op == 34
           ali_slot = sp - 1
-          ali_reg = 9 + idx2
+          ali_reg = rgo
         end
       else
-        jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | (9 + idx2))
+        jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | rgo)
         n += 1
       end
       if op == 33
@@ -3733,14 +3745,18 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       cnp: i64 = mem.read_i64(jft, (cfx * 5 + 3) * 8)
       -- the callee's locals start above every enclosing frame's
       nlb2: i64 = lbase + curloc
-      if nlb2 + cnp + cnl > 8 or cnp > sp
+      if nlb2 + cnp + cnl > 19 or cnp > sp
         return -1
       end
       -- arguments move from the operand stack into the callee's params, which
       -- are its locals 0..cnp-1 and therefore registers 9+selfloc..
       ck4: i64 = 0
       while ck4 < cnp
-        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | (9 + nlb2 + ck4))
+        rga: i64 = 9 + nlb2 + ck4
+        if nlb2 + ck4 >= 9
+          rga = 10 + nlb2 + ck4
+        end
+        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | rga)
         n += 1
         ck4 += 1
       end
