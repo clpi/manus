@@ -2025,6 +2025,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
   -- -1 = nothing pending.
   ali_slot: i64 = -1
   ali_reg: i64 = 0
+  -- SECOND alias channel. Consecutive `local.get`s are the common shape
+  -- (`local.get 0; local.get 1; xor`) and with only one tracked the second
+  -- spills `mov w4, w9` — a MOV that feeds the very next `eor`/`madd`, i.e.
+  -- ON the dependency chain, which is what actually costs time here.
+  ali2_slot: i64 = -1
+  ali2_reg: i64 = 0
   -- Index of the last emitted ALU word and the stack slot it wrote. A following
   -- `local.set`/`local.tee` retargets that instruction's Rd straight at the
   -- local register instead of emitting a MOV. `last_alu == n - 1` is the whole
@@ -2063,6 +2069,11 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
       jitm.w32(code, n, 0x2A0003E0 | (ali_reg << 16) | ali_slot)
       n += 1
       ali_slot = -1
+    end
+    if ali2_slot >= 0 and not (op == 65 or op == 32 or (aw != 0 and sp >= 2))
+      jitm.w32(code, n, 0x2A0003E0 | (ali2_reg << 16) | ali2_slot)
+      n += 1
+      ali2_slot = -1
     end
 
     if op == 65
@@ -2149,6 +2160,9 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
       if ali_slot < 0
         ali_slot = sp
         ali_reg = 9 + idx
+      elseif ali2_slot < 0
+        ali2_slot = sp
+        ali2_reg = 9 + idx
       else
         jitm.w32(code, n, 0x2A0003E0 | ((9 + idx) << 16) | sp)
         n += 1
@@ -2200,8 +2214,11 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
       rb: i64 = b
       if ali_slot == a ra = ali_reg end
       if ali_slot == b rb = ali_reg end
+      if ali2_slot == a ra = ali2_reg end
+      if ali2_slot == b rb = ali2_reg end
       jitm.w32(code, n, aw | (rb << 16) | (ra << 5) | a)
       if ali_slot == a or ali_slot == b ali_slot = -1 end
+      if ali2_slot == a or ali2_slot == b ali2_slot = -1 end
       n += 1
       last_alu = n - 1
       last_slot = a
