@@ -15,11 +15,18 @@ jitm = req "std.jit"
 
 -- ward WASM interpreter — PURE DUO, zero @c.emit/@c.include.
 --
--- Opcode constants below are generated from the Pass 12 M2 descriptor chain
--- (src/wasm_semantic.zig -> `duo wasm-tables emit` -> lib/std/wasm/ward_mvp_opcodes.duo)
--- by ward/scripts_gen_interp.py, so the canonical table stays the single source
--- of truth. They are inlined rather than `req`d because requiring a std module
+-- Opcode constants below come from the Pass 12 M2 descriptor chain
+-- (src/wasm_semantic_gen.zig -> `duo wasm-tables emit` ->
+-- lib/std/wasm/ward_mvp_opcodes.duo), which stays the single source of truth.
+-- They are inlined rather than required because requiring a std module
 -- currently fails to compile (BUG C: export table references DCE'd symbols).
+--
+-- The scripts/gen_interp.py that used to re-emit them was deleted 2026-08-07:
+-- it read a /tmp/run_body.bin that no longer exists, wrote a
+-- src/wasm/interp_v2.duo that was never committed and is referenced nowhere,
+-- and matched the table with `^M\.(OP_\w+)` — a shape the table no longer has,
+-- since ward_mvp_opcodes.duo is now bare top-level bindings. Regenerate with
+-- `duo wasm-tables emit` and copy the constants across.
 --
 -- Codegen constraints (filed 2026-08-05, src/codegen.zig locked):
 --   BUG A  a branch may not end on a void call -> explicit non-void tail.
