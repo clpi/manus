@@ -1,7 +1,6 @@
 -- std.http — high-level HTTP client and server (wraps net.duo)
 
-net = req "std.net"
-
+net = std.net
 get = net.http_get
 post = net.http_post
 request = net.http_request

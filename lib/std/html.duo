@@ -1,7 +1,6 @@
 -- std.html — basic HTML escaping and unescaping
 
-string = req "std.string"
-
+string = std.string
 escape(s: str): str
     s = string.gsub(s, "&", "&amp;")
     s = string.gsub(s, "<", "&lt;")
