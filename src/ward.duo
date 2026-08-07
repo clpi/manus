@@ -2658,7 +2658,19 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   n: i64 = 0                       -- emitted instruction words
   sp: i64 = 0                      -- compile-time operand-stack depth
   pc: i64 = 1                      -- 1-based cursor into the body
-  loop_word: i64 = -1              -- word index of the innermost loop head
+  -- Control-flow label stack. `loop` labels branch BACKWARD to a head whose
+  -- offset is already known; `block` labels branch FORWARD to an `end` that has
+  -- not been emitted yet, so those branches go out with a placeholder offset and
+  -- are patched when the matching `end` fixes the target.
+  lkind = mem.alloc(32 * 8)
+  lhead = mem.alloc(32 * 8)
+  lpn   = mem.alloc(32 * 8)
+  lpat  = mem.alloc(32 * 8 * 8)
+  mem.zero(lkind, 32 * 8)
+  mem.zero(lhead, 32 * 8)
+  mem.zero(lpn, 32 * 8)
+  mem.zero(lpat, 32 * 8 * 8)
+  ldep: i64 = 0
   -- Pending local alias: `local.get` records slot -> local register instead of
   -- emitting a MOV, so the consuming ALU op reads the local directly.
   -- -1 = nothing pending.
@@ -3041,37 +3053,88 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = n - 1
       last_cc = 0
 
-    elseif op == 3
-      -- loop: header is here; branch target for depth 0
+    elseif op == 2
+      -- block: a FORWARD label. Its target is the matching `end`, so branches
+      -- to it are recorded and patched there.
       pc += 1
-      loop_word = n
+      if ldep >= 32
+        return -1
+      end
+      mem.write_i64(lkind, ldep * 8, 0)
+      mem.write_i64(lpn, ldep * 8, 0)
+      ldep += 1
+
+    elseif op == 3
+      -- loop: header is here, so branches to it resolve immediately
+      pc += 1
+      if ldep >= 32
+        return -1
+      end
+      mem.write_i64(lkind, ldep * 8, 1)
+      mem.write_i64(lhead, ldep * 8, n)
+      mem.write_i64(lpn, ldep * 8, 0)
+      ldep += 1
 
     elseif op == 13
       -- br_if 0 -> CBNZ Wtop, <loop head>  (backward, offset known now)
       d3: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       sp -= 1
-      if d3 != 0 or loop_word < 0
+      lt: i64 = ldep - 1 - d3
+      if lt < 0
         return -1
       end
       -- If a CSET produced this condition immediately before, discard it and
       -- branch on the flags the CMP already set: `cmp; cset; cbnz` (3 insns,
       -- with the CSET on the loop-carried control path) becomes `cmp; b.cond`.
-      if last_cset == n - 1
-        n -= 1
-        last_cset = -1
-        dl2: i64 = loop_word - n
-        jitm.w32(code, n, 0x54000000 | ((dl2 & 0x7FFFF) << 5) | last_cc)
-        n += 1
+      if mem.read_i64(lkind, lt * 8) == 1
+        lh: i64 = mem.read_i64(lhead, lt * 8)
+        if last_cset == n - 1
+          n -= 1
+          last_cset = -1
+          dl2: i64 = lh - n
+          jitm.w32(code, n, 0x54000000 | ((dl2 & 0x7FFFF) << 5) | last_cc)
+          n += 1
+        else
+          delta: i64 = lh - n
+          jitm.w32(code, n, 0x35000000 | ((delta & 0x7FFFF) << 5) | sp)
+          n += 1
+        end
       else
-        delta: i64 = loop_word - n
-        jitm.w32(code, n, 0x35000000 | ((delta & 0x7FFFF) << 5) | sp)
+        -- forward: emit with a zero offset and record the word for patching
+        pk2: i64 = mem.read_i64(lpn, lt * 8)
+        if pk2 >= 8
+          return -1
+        end
+        if last_cset == n - 1
+          n -= 1
+          last_cset = -1
+          jitm.w32(code, n, 0x54000000 | last_cc)
+        else
+          jitm.w32(code, n, 0x35000000 | sp)
+        end
+        mem.write_i64(lpat, (lt * 8 + pk2) * 8, n)
+        mem.write_i64(lpn, lt * 8, pk2 + 1)
         n += 1
       end
 
     elseif op == 11
-      -- end: closes the loop (or the function)
-      loop_word = -1
+      -- end: closes a label. Every forward branch that targeted this block is
+      -- now resolvable, so patch the placeholders to land here. imm19 sits in
+      -- bits 5..23 of both B.cond and CBNZ, so one mask serves both.
+      if ldep > 0
+        ldep -= 1
+        if mem.read_i64(lkind, ldep * 8) == 0
+          pq: i64 = 0
+          pk3: i64 = mem.read_i64(lpn, ldep * 8)
+          while pq < pk3
+            pw: i64 = mem.read_i64(lpat, (ldep * 8 + pq) * 8)
+            dl3: i64 = n - pw
+            jitm.w32(code, pw, (jitm.r32(code, pw) & 0xFF00001F) | ((dl3 & 0x7FFFF) << 5))
+            pq += 1
+          end
+        end
+      end
 
     elseif op == 15
       pc = blen + 1
