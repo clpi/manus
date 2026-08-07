@@ -52,13 +52,22 @@ pub const TOKENIZE_EXPORT_PROOF = "examples/pass16_lexer_tokenize_export_proof.d
 
 /// Full tokenization authority for the production compile driver.
 ///
-/// Still `.host_zig`, deliberately. The Duo tokenizer is linked in
-/// (`TOKENIZE_PRODUCTION_C`) and is proven to agree with `src/lexer.zig`
-/// token-for-token over the differential corpus, but the exported entries are a
-/// *query* API: each call re-lexes from the start, so driving production
-/// tokenization through them would be quadratic. Closing MP4-B02 needs a
-/// streaming entry (an opaque cursor plus `next`) that the host lexer's inner
-/// loop can consume — the equivalence evidence is done, the engine shape is not.
+/// Still `.host_zig`, deliberately — but not for the reason this comment used
+/// to give. It claimed "each call re-lexes from the start, so driving production
+/// tokenization through them would be quadratic". That is wrong: `new()` is a
+/// record literal, and `duo_lexer_step` sets `pos` and lexes exactly one token,
+/// so feeding `next_pos` back walks a source in O(n). Measured, not assumed.
+///
+/// The real blocker is *location*. `duo_lexer_step` packs only
+/// `kind * 2^40 + next_pos`; there is no line or column in the return. Because
+/// each call builds a fresh `Lexer` (whose `line`/`col` start at 1) and then
+/// jumps `pos` without rescanning, line/col cannot survive across calls — every
+/// token would report line 1. Streaming a single lexer is fine: `new` + two
+/// `next_tok` calls over "a\nb" reports lines 1 then 2 correctly. So the engine
+/// shape is right and the equivalence evidence is real; what MP4-B02 needs is an
+/// export that threads location through, e.g. taking `line` and packing a line
+/// field alongside `kind`/`next_pos` — diagnostics cannot use a tokenizer that
+/// cannot say where a token is.
 pub fn tokenizeAuthority() TokenizeAuthority {
     return .host_zig;
 }
