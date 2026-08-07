@@ -4,6 +4,12 @@
 -- Critical for: ML computation graphs, build systems, dependency
 -- resolution, network routing, and workflow orchestration.
 
+-- DFS visit colours. File scope: dfs_topo_visit reads them but does not
+-- declare them, and a sibling function's locals are not in scope there.
+WHITE = 0
+GRAY = 1
+BLACK = 2
+
 -- new: create an empty directed graph.
 new(): any
     {adj = {}, nodes = {}, in_degree = {}}
@@ -196,7 +202,6 @@ end
 
 -- dfs_topological: DFS-based topological sort (returns nil if cycle exists).
 dfs_topological(g: any): any
-    WHITE = 0; GRAY = 1; BLACK = 2
     color = {}
     order = {}
     for n, _ in g.nodes
@@ -275,7 +280,6 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 has_cycle(g: any): bool
-    WHITE = 0; GRAY = 1; BLACK = 2
     color = {}
     for n, _ in g.nodes
         color[n] = WHITE
