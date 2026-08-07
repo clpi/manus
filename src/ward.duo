@@ -899,6 +899,47 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
               sc += 1
             end
             sc += 1
+          elseif sb == 252
+            -- 0xFC prefix: sub-opcode LEB, then its own immediates. Without
+            -- this the scan reads a memidx byte as an opcode and the block's
+            -- computed end lands MID-INSTRUCTION — a branch then jumps into
+            -- the middle of `memory.fill` and reads its 0x00 memidx as
+            -- `unreachable`.
+            fsub: i64 = 0
+            fsh: i64 = 0
+            fc2: i64 = 1
+            while fc2 == 1 and sc < cur_end
+              fb2: i64 = mem.read_byte(code, sc)
+              sc += 1
+              fsub = fsub | ((fb2 & 0x7F) << fsh)
+              fsh += 7
+              if fb2 < 0x80
+                fc2 = 0
+              end
+            end
+            if fsub == 10 or fsub == 14
+              sc += 2                    -- two memidx/tableidx bytes
+            elseif fsub == 11
+              sc += 1
+            elseif fsub == 8 or fsub == 12
+              while sc < cur_end and mem.read_byte(code, sc) >= 0x80
+                sc += 1
+              end
+              sc += 2                    -- segment idx LEB + mem/table byte
+            elseif fsub == 9 or fsub == 13 or fsub == 15 or fsub == 16 or fsub == 17
+              while sc < cur_end and mem.read_byte(code, sc) >= 0x80
+                sc += 1
+              end
+              sc += 1
+            end
+          elseif sb == 208
+            sc += 1                      -- ref.null reftype byte
+          elseif sb == 210 or sb == 37 or sb == 38
+            -- ref.func funcidx / table.get / table.set: one LEB
+            while sc < cur_end and mem.read_byte(code, sc) >= 0x80
+              sc += 1
+            end
+            sc += 1
           elseif sb == 12 or sb == 13 or sb == 16 or (sb >= 32 and sb <= 36) or sb == 65 or sb == 66
             -- br, br_if, call, local.*/global.*, i32.const, i64.const
             while sc < cur_end and mem.read_byte(code, sc) >= 0x80
