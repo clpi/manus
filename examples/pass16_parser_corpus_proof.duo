@@ -175,6 +175,10 @@ positives = {
     -- end of file — which is why so many blockers reported at EOF with nothing
     -- wrong at the reported line.
     { "while a do x = 1 end", "(program (while a (assign x 1)))" },
+    -- An ANNOTATED lambda can be a one-liner too, with or without a trailing
+    -- `end`. All three shapes are pinned because each passes against a parser
+    -- that gets one of the others wrong.
+    { "fh.close = (self: any) nil", "(program (assign (dot fh close) (lambda (params (param self any)) nil)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

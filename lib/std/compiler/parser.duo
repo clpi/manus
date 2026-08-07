@@ -1387,6 +1387,7 @@ proj_primary = (lx: Lexer): str
         -- FF-1: `(x: t): r ... end` with no keyword. This is the canonical
         -- function form, and the parser could not read it — including in
         -- lib/std/compiler/parser.duo itself after its own FF-1 migration.
+        head_line = t.loc.line
         params = proj_params_from_lparen(lx)
         s2 = "(lambda (params"
         if params != ""
@@ -1396,6 +1397,23 @@ proj_primary = (lx: Lexer): str
         if lexer.peek(lx).kind == token.KIND_COLON
             _c = lexer.next(lx)
             s2 = s2 .. " (ret " .. proj_type(lx) .. ")"
+        end
+        -- LAYOUT picks the body shape here too, not the presence of
+        -- annotations. `fh.close = (self: any) nil` is annotated AND a
+        -- one-liner; assuming annotated implied a block made proj_body hunt an
+        -- `end` that is not there, consume to EOF, and leave the enclosing
+        -- function unterminated — while still projecting a correct-looking
+        -- lambda, so only the error flag showed it.
+        if lexer.peek(lx).loc.line == head_line
+            e2 = proj_expr(lx)
+            -- The one-line form appears both ways: `(self: any) nil` with no
+            -- terminator and `(a: i64): i64 a end` with one. Take the `end` when
+            -- it is there rather than leaving it to dangle into the enclosing
+            -- block.
+            if lexer.peek(lx).kind == token.KIND_END
+                _e = lexer.next(lx)
+            end
+            return s2 .. " " .. e2 .. ")"
         end
         body = proj_body(lx)
         if body != ""
