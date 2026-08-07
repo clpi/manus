@@ -3595,6 +3595,73 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = 0
       last_alu = -1
 
+    elseif (op >= 44 and op <= 53) or (op >= 58 and op <= 62)
+      -- sub-width loads and stores. Same effective-address form as the full
+      -- width ops; only the size, signedness and offset scale differ.
+      if jdata != 0
+        return -1
+      end
+      salign: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      soff: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      -- size in bytes, and whether the load sign-extends
+      ssz: i64 = 1
+      ssg: i64 = 0
+      sx64: i64 = 0
+      if op == 44 or op == 46 or op == 48 or op == 50 or op == 52
+        ssg = 1
+      end
+      if op == 46 or op == 47 or op == 50 or op == 51 or op == 59 or op == 61
+        ssz = 2
+      end
+      if op == 52 or op == 53 or op == 62
+        ssz = 4
+      end
+      if op >= 48 and op <= 53
+        sx64 = 1
+      end
+      if soff - (soff // ssz) * ssz != 0 or soff // ssz > 4095
+        return -1
+      end
+      sbase: i64 = 0x39000000
+      if ssz == 2
+        sbase = 0x79000000
+      elseif ssz == 4
+        sbase = 0xB9000000
+      end
+      if op >= 58
+        if sp < 2
+          return -1
+        end
+        za: i64 = sp - 2
+        zv: i64 = sp - 1
+        jitm.w32(code, n, 0x8B000000 | (za << 16) | (28 << 5) | za)
+        n += 1
+        jitm.w32(code, n, sbase | ((soff // ssz) << 10) | (za << 5) | zv)
+        n += 1
+        sp -= 2
+      else
+        if sp < 1
+          return -1
+        end
+        zl: i64 = sp - 1
+        jitm.w32(code, n, 0x8B000000 | (zl << 16) | (28 << 5) | zl)
+        n += 1
+        lw: i64 = sbase | 0x00400000
+        if ssg == 1
+          if sx64 == 1
+            lw = sbase | 0x00800000
+          else
+            lw = sbase | 0x00C00000
+          end
+        end
+        jitm.w32(code, n, lw | ((soff // ssz) << 10) | (zl << 5) | zl)
+        n += 1
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 40 or op == 41 or op == 42 or op == 43 or op == 54 or op == 55 or op == 56 or op == 57
       -- i32/i64/f32/f64 load and store. Both immediates (align, then offset)
       -- are LEBs. The dynamic address is an UNSIGNED i32 already zero-extended
@@ -3672,7 +3739,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     elseif op == 35 or op == 36
       gidx: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
-      if jglz == 0 or gidx > 4095
+      if gidx > 4095
         return -1
       end
       if op == 35
@@ -3692,6 +3759,18 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       end
       last_alu = -1
       last_cset = -1
+
+    elseif op == 63
+      -- memory.size: the JIT is handed a fixed ONE-page (65536 byte) buffer,
+      -- so this is the constant 1. memory.grow (64) has no arm and still bails
+      -- — growing would need a real allocator behind the base pointer.
+      pc += 1
+      if sp > 8 or jdata != 0
+        return -1
+      end
+      jitm.w32(code, n, 0x52800000 | (1 << 5) | sp)
+      n += 1
+      sp += 1
 
     elseif op == 1
       -- nop: emits nothing
@@ -4157,6 +4236,46 @@ main(): void
         mem.zero(jlin, 65536)
         jgl = mem.alloc(4096 * 8)
         mem.zero(jgl, 4096 * 8)
+        -- Seed globals from the module's OWN section 6, mirroring `run_body`,
+        -- so the JIT no longer has to refuse non-zero initialisers. Without a
+        -- global section, assume wasi-libc and give global 0 a usable shadow
+        -- stack pointer -- the same default the interpreter uses.
+        jgb: i64 = 0
+        jsx: i64 = 9
+        while jsx <= #bytes
+          jsd: i64 = string.byte(bytes, jsx)
+          jsx += 1
+          jsz: i64 = uleb_val(bytes, jsx, #bytes)
+          jsx = uleb_end(bytes, jsx, #bytes)
+          if jsd == 6
+            jgb = jsx
+          end
+          jsx += jsz
+        end
+        if jgb > 0
+          ngj: i64 = uleb_val(bytes, jgb, #bytes)
+          gqj: i64 = uleb_end(bytes, jgb, #bytes)
+          gvj: i64 = 0
+          while gvj < ngj and gqj <= #bytes and gvj < 4096
+            gqj += 2
+            iopj: i64 = string.byte(bytes, gqj)
+            gqj += 1
+            gvalj: i64 = 0
+            if iopj == 65 or iopj == 66
+              gvalj = uleb_val(bytes, gqj, #bytes)
+              gqj = uleb_end(bytes, gqj, #bytes)
+            elseif iopj == 67
+              gqj += 4
+            elseif iopj == 68
+              gqj += 8
+            end
+            gqj += 1
+            mem.write_i64(jgl, gvj * 8, gvalj)
+            gvj += 1
+          end
+        else
+          mem.write_i64(jgl, 0, 65536)
+        end
         result = jitm.call2(code, mem.addr(jlin), mem.addr(jgl))
         if rt0 == 0x7F
           result = result & M32
