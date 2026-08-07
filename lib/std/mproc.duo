@@ -16,7 +16,7 @@ pid(): str
         end
     end
     -- Fallback: use Lua's os.execute to capture $$
-    handle = io.popen("echo $$")
+    handle = io.popen("echo $$", "r")
     if handle
         result = io.read(handle, "*l")
         io.close(handle)
@@ -26,7 +26,7 @@ pid(): str
 end
 
 spawn(cmd: str): i64
-    handle = io.popen(cmd .. " 2>&1 & echo $!")
+    handle = io.popen(cmd .. " 2>&1 & echo $!", "r")
     if handle
         pid_str = io.read(handle, "*l")
         io.close(handle)
