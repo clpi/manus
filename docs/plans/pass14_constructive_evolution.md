@@ -741,7 +741,7 @@ since this was designed? Should the architecture update immediately?
 
 ```bash
 zig build pass14-gate                             # preservation + catalog + architecture matrix
-bash scripts/pass14_gate.sh
+bash zig build pass14-gate
 duo catalog | jq '.pass14'                          # full machine-readable catalog
 duo catalog | jq '.pass14.audits'                   # 14 audits with status
 duo catalog | jq '.pass14.preservation'             # live Git preservation report
