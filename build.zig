@@ -108,7 +108,7 @@ pub fn build(b: *std.Build) void {
     compile_size_bench_step.dependOn(&compile_size_bench_cmd.step);
 
     // Public safety pre-scan (Pass 10 A19)
-    const public_safety_cmd = b.addSystemCommand(&.{ "bash", "./scripts/public_safety_scan.sh" });
+    const public_safety_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/public_safety_scan.duo" });
     public_safety_cmd.setCwd(b.path("."));
     const public_safety_step = b.step("public-safety", "Scan tracked files for secrets and personal paths (Pass 10 A19)");
     public_safety_step.dependOn(&public_safety_cmd.step);
@@ -692,6 +692,11 @@ pub fn build(b: *std.Build) void {
     pass16_lexer_tokenize.step.dependOn(b.getInstallStep());
     pass16_lexer_tokenize.setCwd(b.path("."));
 
+    const pass16_parser_corpus = b.addRunArtifact(exe);
+    pass16_parser_corpus.addArgs(&.{ "run", "examples/pass16_parser_corpus_proof.duo" });
+    pass16_parser_corpus.step.dependOn(b.getInstallStep());
+    pass16_parser_corpus.setCwd(b.path("."));
+
     const pass16_m1_smoke_step = b.step("pass16-m1-smoke", "Pass 16 M1: keyword + cursor + lexer corpus + embed + tokenize proofs");
     pass16_m1_smoke_step.dependOn(&pass16_m1_diff.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_proof.step);
@@ -701,6 +706,7 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_lexer_fingerprint.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
+    pass16_m1_smoke_step.dependOn(&pass16_parser_corpus.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_verify.step);
     pass16_m1_smoke_step.dependOn(pass16_gate_step);
 

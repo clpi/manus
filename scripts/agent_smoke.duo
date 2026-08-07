@@ -7,7 +7,7 @@ agent = req "std.agent"
 script = req "std.script"
 os = req "std.os"
 
-if not script.ok("./scripts/public_safety_scan.sh")
+if not script.ok("./zig-out/bin/duo run scripts/public_safety_scan.duo")
     print("agent-smoke: public_safety_scan FAIL")
     os.exit(1)
 end

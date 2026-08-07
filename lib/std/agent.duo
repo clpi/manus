@@ -122,7 +122,7 @@ multiplier_for(goal: str): str
 end
 
 build_gates(): str
-    "tier0: ./scripts/public_safety_scan.sh && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo\n" ..
+    "tier0: ./zig-out/bin/duo run scripts/public_safety_scan.duo && scripts/duo_lock.sh -- ./zig-out/bin/duo run scripts/agent_smoke.duo\n" ..
     "tier1: scripts/duo_lock.sh -- zig build unit-test --summary all\n" ..
     "tier2: scripts/duo_lock.sh -- zig build test\n" ..
     "tier3: scripts/duo_lock.sh -- zig build bench  (claim benchmarks/perf; never parallel tier3)"
