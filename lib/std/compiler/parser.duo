@@ -315,6 +315,22 @@ stalled = (lx: Lexer, before: i64, peeked: bool): bool
     lx.pos == before and lx.has_peeked == peeked
 end
 
+-- A member name is an ordinary identifier even when the lexer classes it as a
+-- keyword: `a:match(p)`, `t.type`, `x:next()`. Data always wins the name, so the
+-- check is spelling, not token class — `match` lexes as its own kind and every
+-- `:match(...)` call in the corpus was rejected because of it.
+is_member_name = (t: Tok): bool
+    if #t.text == 0
+        return false
+    end
+    c: i64 = string.byte(t.text, 1)
+    is_ident_start_byte(c)
+end
+
+is_ident_start_byte = (c: i64): bool
+    (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+end
+
 mark_error = (lx: Lexer)
     -- Record WHERE the parse first went wrong, not just that it did. A bare
     -- boolean makes `parse_status` a yes/no oracle, which is enough to gate a
@@ -1297,7 +1313,7 @@ proj_postfix = (lx: Lexer): str
             -- re-deriving it from a dotted path.
             _c = lexer.next(lx)
             m = lexer.next(lx)
-            if m.kind != token.KIND_NAME
+            if not is_member_name(m)
                 mark_error(lx)
                 return "(error)"
             end

@@ -191,6 +191,10 @@ positives = {
     -- `end` is what makes it a tail, which is why the bare `a, b` in the
     -- rejection list still rejects — nothing consumes it there.
     { "f(): any\n    g(x), nil\nend\n", "(program (fun f (params) (ret any) (pack (call g x) nil)))" },
+    -- A member name is an ordinary identifier even when the lexer classes it as
+    -- a keyword. `match` has its own token kind, so every `:match(...)` in the
+    -- corpus was rejected until the check became spelling rather than class.
+    { "x = a:match(\"y\")", "(program (assign x (method a match \"y\")))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
