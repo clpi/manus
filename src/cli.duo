@@ -39,7 +39,19 @@ fun run(opts)
   raw = ward_os.getenv("WARD_ARGS")
   if raw ~= nil and raw ~= ""
     for piece in string.gmatch(raw, "[^ ]+")
-      call_args[#call_args + 1] = tonumber(piece) or piece
+      -- `v128:l0,l1,l2,l3` (four u32 lanes) expands to the two i64 halves the
+      -- operand stack actually holds. Without this a v128 argument cannot be
+      -- expressed at all, which made every SIMD spec assertion unrunnable.
+      if string_mod.starts_with(piece, "v128:")
+        lanes = {}
+        for lane in string.gmatch(string_mod.sub(piece, 6), "[^,]+")
+          lanes[#lanes + 1] = tonumber(lane) or 0
+        end
+        call_args[#call_args + 1] = lanes[1] + (lanes[2] * 4294967296)
+        call_args[#call_args + 1] = lanes[3] + (lanes[4] * 4294967296)
+      else
+        call_args[#call_args + 1] = tonumber(piece) or piece
+      end
     end
   end
   -- Only echo the return value when an explicit export was requested. getenv
@@ -51,8 +63,20 @@ fun run(opts)
   -- float bit pattern, since floats are returned as their IEEE bits). Binding
   -- to an i64 keeps the integer path all the way to the print.
   if inv ~= nil and inv ~= ""
-    res: i64 = wasm.runtime.call(rt, func, call_args)
-    print(res)
+    -- WARD_RESULT=v128 means the export returns a v128, which occupies two
+    -- operand-stack slots; report it as its four u32 lanes so the value is
+    -- comparable against the spec's own representation.
+    if ward_os.getenv("WARD_RESULT") == "v128"
+      -- `call` itself pops one slot as its return value, so that IS the high
+      -- half (pushed last); only the low half is left to pop.
+      hi: i64 = wasm.runtime.call(rt, func, call_args)
+      lo: i64 = wasm.runtime.pop(rt)
+      print("v128:" .. tostring(lo % 4294967296) .. "," .. tostring(lo // 4294967296)
+        .. "," .. tostring(hi % 4294967296) .. "," .. tostring(hi // 4294967296))
+    else
+      res: i64 = wasm.runtime.call(rt, func, call_args)
+      print(res)
+    end
   else
     wasm.runtime.call(rt, func, call_args)
   end
