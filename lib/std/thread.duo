@@ -21,7 +21,7 @@ end
 
 -- Acquire the lock, blocking if already held.
 lock(m: any): void
-    if m._locked and m._holder == coroutine.running() then
+    if m._locked and m._holder == coroutine.running()
         return  -- recursive: already owned
     end
     while m._locked
@@ -35,7 +35,7 @@ end
 
 -- Try to acquire the lock without blocking.  Returns true on success.
 try_lock(m: any): bool
-    if m._locked and m._holder == coroutine.running() then
+    if m._locked and m._holder == coroutine.running()
         return true
     end
     if m._locked then return false end
@@ -46,12 +46,12 @@ end
 
 -- Release the lock, waking one waiter if any.
 unlock(m: any): void
-    if m._holder != coroutine.running() then
+    if m._holder != coroutine.running()
         error("thread: unlock called by non-owner")
     end
     m._locked = false
     m._holder = nil
-    if #m._waiters > 0 then
+    if #m._waiters > 0
         co = table.remove(m._waiters, 1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -85,7 +85,7 @@ end
 -- Release a read lock.
 runlock(rw: any): void
     rw._readers = rw._readers - 1
-    if rw._readers == 0 and #rw._w_waiters > 0 then
+    if rw._readers == 0 and #rw._w_waiters > 0
         co = table.remove(rw._w_waiters, 1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -105,15 +105,15 @@ end
 
 -- Release a write lock.
 wunlock(rw: any): void
-    if rw._w_holder != coroutine.running() then
+    if rw._w_holder != coroutine.running()
         error("thread: wunlock called by non-owner")
     end
     rw._writing = false
     rw._w_holder = nil
-    if #rw._w_waiters > 0 then
+    if #rw._w_waiters > 0
         co = table.remove(rw._w_waiters, 1)
         sync.spawn(() coroutine.resume(co))
-    elseif #rw._r_waiters > 0 then
+    elseif #rw._r_waiters > 0
         for _, co in ipairs(rw._r_waiters)
             sync.spawn(() coroutine.resume(co))
         end
@@ -137,7 +137,7 @@ end
 -- mutex and suspends; re-acquires the lock before returning.
 wait(c: any): void
     m = c._mutex
-    if m._holder != coroutine.running() then
+    if m._holder != coroutine.running()
         error("thread: cond.wait without holding mutex")
     end
     co = coroutine.running()
@@ -149,7 +149,7 @@ end
 
 -- Wake one waiter on the condition.
 signal(c: any): void
-    if #c._waiters > 0 then
+    if #c._waiters > 0
         co = table.remove(c._waiters, 1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -178,7 +178,7 @@ end
 -- Call fn exactly once; subsequent calls are no-ops.
 do_once(o: any, fn: any): void
     lock(o._mu)
-    if not o._done then
+    if not o._done
         o._done = true
         unlock(o._mu)
         fn()
@@ -217,7 +217,7 @@ end
 -- Try to acquire a permit without blocking.
 try_acquire(s: any): bool
     lock(s._mu)
-    if s._permits > 0 then
+    if s._permits > 0
         s._permits = s._permits - 1
         unlock(s._mu)
         return true
@@ -230,7 +230,7 @@ end
 release(s: any): void
     lock(s._mu)
     s._permits = s._permits + 1
-    if #s._waiters > 0 then
+    if #s._waiters > 0
         co = table.remove(s._waiters, 1)
         sync.spawn(() coroutine.resume(co))
     end
@@ -254,13 +254,13 @@ end
 
 -- Wait at the barrier until all participants arrive.
 barrier_wait(b: any): void
-    if b._cv == nil then
+    if b._cv == nil
         b._cv = cond(b._mu)
     end
     lock(b._mu)
     gen = b._gen
     b._count = b._count - 1
-    if b._count == 0 then
+    if b._count == 0
         -- Last one through: reset and wake everyone
         b._count = b._total
         b._gen = b._gen + 1
@@ -287,7 +287,7 @@ spawn(fn: any, ...args): any
     result_ch = sync.channel(1)
     co = coroutine.create(()
         ok, result = pcall(fn, table.unpack(args_list))
-        if ok then
+        if ok
             sync.channel_send(result_ch, {ok = true, val = result})
         else
             sync.channel_send(result_ch, {ok = false, err = result})
@@ -424,10 +424,10 @@ end
 -- Set the value for a thread-local key in the current thread.
 tls_set(key: i64, value: any): void
     tid = to(str)(id())
-    if _tls_stores == nil then
+    if _tls_stores == nil
         _tls_stores = {}
     end
-    if _tls_stores[tid] == nil then
+    if _tls_stores[tid] == nil
         _tls_stores[tid] = {}
     end
     store = _tls_stores[tid]
@@ -439,12 +439,12 @@ end
 tls_get(key: i64): any
     tid = to(str)(id())
     store = _tls_stores and _tls_stores[tid] or nil
-    if store != nil then
+    if store != nil
         val = store[key]
         if val != nil then return val end
     end
     default_fn = _tls_registry[key]
-    if default_fn != nil then
+    if default_fn != nil
         val = default_fn()
         tls_set(key, val)
         return val

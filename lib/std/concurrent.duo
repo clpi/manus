@@ -10,7 +10,7 @@ go(fn: any, ...args): any
     args_list = {args}
     closure = (): void
         ok, result = pcall(fn, table.unpack(args_list))
-        if ok then
+        if ok
             sync.channel_send(fut, {ok = true, val = result})
         else
             sync.channel_send(fut, {ok = false, err = result})
@@ -24,7 +24,7 @@ end
 wait(fut: any): any
     r = sync.channel_recv(fut)
     if r == nil then return nil end
-    if r.ok then
+    if r.ok
         r.val
     else
         error(r.err, 2)
@@ -35,14 +35,14 @@ end
 all(tasks: any, ...args): any
     futs = {}
     -- tasks can be a list, or varargs
-    if type(tasks) == "function" then
+    if type(tasks) == "function"
         args_list = {args}
         futs[1] = go(tasks, table.unpack(args_list))
     else
         for _, t in ipairs(tasks)
-            if type(t) == "function" then
+            if type(t) == "function"
                 futs[#futs + 1] = go(t)
-            elseif type(t) == "table" and t[1] then
+            elseif type(t) == "table" and t[1]
                 futs[#futs + 1] = go(t[1], table.unpack(t, 2))
             end
         end
@@ -77,7 +77,7 @@ select(cases: any): any
     while true
         for _, c in ipairs(cases)
             val = sync.channel_try_recv(c.ch)
-            if val != nil then
+            if val != nil
                 if c.fn then c.fn(val) end
                 return val, c.ch
             end
