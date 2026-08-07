@@ -128,6 +128,22 @@ crash**, so the listed interim spelling is the correct one to write.
   Interim: keep `table.insert`/`table.concat`/`table.sort` and manual loops
   until the surface lands. LV-8 (`for v in t`), LV-10 (`x:to(str)`) and LV-13
   (`#s`) are verified working — those rows are safe to apply now.
+
+  **Do not fix this the obvious way — it was tried and reverted 2026-08-07.**
+  Projecting `t:push(v)` onto `table.insert(t, v)` in codegen's `.method_call`
+  arm (mirroring how `p:to(str)` projects onto `to(str)(p)`) makes all three
+  work — `push` appends, `join` joins, `pop` pops, verified — but it **breaks
+  LAW-CALL**. A table carrying its own member,
+  `t = { push = mypush }; t:push(9)`, is hijacked by the projection: the
+  generated C emits `lua_tbl_insert(t, 9, nil)` on the line after
+  `lua_table_set_raw_lit(t, "push", ...)`, and the user's function is never
+  called. That trades silent data loss for silent member hijacking, which is
+  not an improvement. Guarding with `user_owns_name` is NOT sufficient — that
+  sees free functions and locals, not table MEMBERS.
+  A correct fix needs one of: receiver-shape knowledge proving the member is
+  absent, or a runtime-guarded dispatch (member if present, else project).
+  The real fix is probably to implement the surface as actual members rather
+  than a codegen projection, so data-wins holds by construction.
 - **GAP-15 (SH-03 production dispatch)** — `duo compile --emit obj` and
   `--emit dylib` both produce a Mach-O **executable**, and every `@c.export`
   symbol is emitted with INTERNAL linkage (`nm` shows `t`, not `T`) despite
@@ -140,3 +156,13 @@ crash**, so the listed interim spelling is the correct one to write.
 - **GAP-13 (FF-10 / "no req")** — ambient `std.str.sub(...)` and
   `{ sub } = std.str` on a native-direct module **crash at startup**: exit 128,
   no output, before `main` runs. Interim: `global x = req "std.mod"`.
+- **GAP-16 (SH-04 parser non-termination)** — a walk of `lib/std/**.duo`
+  through `std.compiler.parser.parse_status` did not terminate in 10 minutes.
+  A single 1387-byte file parses in milliseconds and returns a correct
+  rejection, so this is not cumulative cost: some input drives a `proj_*` loop
+  into a non-terminating spin. No SH-04 coverage number can be produced until
+  it is fixed, and the coverage tool was deliberately NOT committed — a
+  `scripts/` entry that hangs is worse than no measurement, because the next
+  agent wires it into a gate. Fix shape: every `proj_*` loop needs the
+  no-progress guard already added to `proj_repeat`, where an empty `proj_stmt`
+  is treated as the error it is. Then bisect the corpus.

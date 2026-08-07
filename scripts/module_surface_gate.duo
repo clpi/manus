@@ -35,8 +35,8 @@ end
 -- Naive substring search. `std.str` is `sub` and `len` and nothing else, so
 -- membership in the alias set is spelled out here rather than borrowed.
 contains(hay: str, needle: str): bool
-    hn: i64 = string.len(hay)
-    nn: i64 = string.len(needle)
+    hn: i64 = #hay
+    nn: i64 = #needle
     if nn == 0
         return true
     end
@@ -60,7 +60,7 @@ contains(hay: str, needle: str): bool
 end
 
 ident_end(s: str, i: i64): i64
-    n: i64 = string.len(s)
+    n: i64 = #s
     j: i64 = i
     while j <= n and is_ident_byte(string.byte(s, j))
         j += 1
@@ -69,7 +69,7 @@ ident_end(s: str, i: i64): i64
 end
 
 skip_spaces(s: str, i: i64): i64
-    n: i64 = string.len(s)
+    n: i64 = #s
     j: i64 = i
     while j <= n and (string.byte(s, j) == 32 or string.byte(s, j) == 9)
         j += 1
@@ -91,8 +91,8 @@ end
 
 -- Does `s` read `word` at `i`, as a whole token?
 word_at(s: str, i: i64, word: str): bool
-    n: i64 = string.len(s)
-    w: i64 = string.len(word)
+    n: i64 = #s
+    w: i64 = #word
     if i + w - 1 > n
         return false
     end
@@ -109,7 +109,7 @@ end
 -- through a surface it named, so the alias set is per-file and comes from the
 -- source itself rather than a registry.
 aliases(src: str): str
-    n: i64 = string.len(src)
+    n: i64 = #src
     acc = "|"
     i: i64 = 1
     while i <= n
@@ -141,7 +141,7 @@ end
 -- Count reach-throughs, printing each. `report` selects whether sites are
 -- printed, so the positive control can run silently.
 scan(src: str, path: str, alias_set: str, report: bool): i64
-    n: i64 = string.len(src)
+    n: i64 = #src
     found: i64 = 0
     i: i64 = 1
     while i <= n
@@ -250,6 +250,9 @@ end
 main(): i64
     bad: i64 = self_check()
     if bad != 0
+        -- GAP-11: `{bad}` is an i64 hole and would emit the brace text
+        -- literally, so this one stays a chain. The all-string line below is
+        -- interpolated, which is where `{}` works today.
         print("module_surface: FAIL — positive control " .. to(str)(bad) .. " did not fire")
         print("module_surface: the detector is broken; a clean corpus report would be meaningless")
         return 1
@@ -259,7 +262,7 @@ main(): i64
     listing = std.script.capture("find " .. root .. "/lib " .. root .. "/examples "
         .. root .. "/scripts -name '*.duo' 2>/dev/null")
 
-    n: i64 = string.len(listing)
+    n: i64 = #listing
     files: i64 = 0
     total: i64 = 0
     start: i64 = 1

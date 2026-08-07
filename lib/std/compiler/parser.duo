@@ -165,6 +165,11 @@ end
 -- Returning just the value keeps the whole parser reachable from natively
 -- lowered code: the caller gets an i64 through x0 and the record never crosses
 -- the module boundary.
+-- GAP (Pass 59 FF-1): this one declaration stays in the bare form because
+-- `@comp.c.export` does not attach to a value-form binding — it degrades into a
+-- runtime call to an undefined `__c_export`. Minimal repro and status in
+-- docs/plans/pass60_gap_register.duo (GAP-12). Every other declaration in this file is
+-- canonical `name = (params): ret`.
 @comp.c.export("duo_parse_eval")
 eval(src: str): i64
     r = parse_expr(src, 1)
@@ -193,7 +198,7 @@ token = req "std.compiler.token"
 
 -- factor := INT_LIT | '(' expr ')'
 -- Mutual recursion with parse_expr_tok, exactly as in the character version.
-parse_factor_tok(lx: any): i64
+parse_factor_tok = (lx: any): i64
     t = lexer.next(lx)
     if t.kind == token.KIND_INT_LIT
         return t.int_val
@@ -210,7 +215,7 @@ parse_factor_tok(lx: any): i64
 end
 
 -- term := factor (('*' | '/') factor)*
-parse_term_tok(lx: any): i64
+parse_term_tok = (lx: any): i64
     acc = parse_factor_tok(lx)
     cont = 1
     while cont == 1
@@ -232,7 +237,7 @@ parse_term_tok(lx: any): i64
 end
 
 -- expr := term (('+' | '-') term)*
-parse_expr_tok(lx: any): i64
+parse_expr_tok = (lx: any): i64
     acc = parse_term_tok(lx)
     cont = 1
     while cont == 1
@@ -251,7 +256,7 @@ parse_expr_tok(lx: any): i64
 end
 
 -- Token-driven entry point: lex, then parse the token stream.
-eval_tokens(src: str): i64
+eval_tokens = (src: str): i64
     lx = lexer.new(src, "<expr>")
     parse_expr_tok(lx)
 end
@@ -266,7 +271,7 @@ end
 -- Everything rides `lexer.next` / `lexer.peek` — no token array, no allocation
 -- beyond the strings being built.
 
-is_assign_kind(k: i64): bool
+is_assign_kind = (k: i64): bool
     if k == token.KIND_ASSIGN or k == token.KIND_PLUS_ASSIGN or k == token.KIND_MINUS_ASSIGN
         return true
     end
@@ -279,7 +284,7 @@ is_assign_kind(k: i64): bool
     false
 end
 
-is_type_kind(k: i64): bool
+is_type_kind = (k: i64): bool
     if k == token.KIND_NAME
         return true
     end
@@ -291,21 +296,21 @@ end
 
 -- Mark the parse failed. `lx` is the lexer (a table on this path), so the flag
 -- persists through the recursion and is readable by `parse_status`.
-mark_error(lx: Lexer)
+mark_error = (lx: Lexer)
     lx.has_error = true
 end
 
 -- `;` is a separator, not a statement. Skipped by the block loops rather than
 -- by proj_stmt: proj_stmt returns "" to mean "end of block", so a trailing `x =
 -- 1;` would consume the `;`, hit EOF, return "" and be reported as an error.
-skip_semis(lx: Lexer)
+skip_semis = (lx: Lexer)
     while lexer.peek(lx).kind == token.KIND_SEMI
         _s = lexer.next(lx)
     end
 end
 
 -- Two-token lookahead, via the lexer's own save/restore state.
-peek2(lx: Lexer): Tok
+peek2 = (lx: Lexer): Tok
     st = lexer.save_state(lx)
     _a = lexer.next(lx)
     t = lexer.peek(lx)
@@ -315,21 +320,21 @@ end
 
 -- Join two projection fragments with a space, omitting empty fragments so no
 -- trailing-space artifacts leak into the sexpr.
-join(a: str, b: str): str
+join = (a: str, b: str): str
     if a == "" return b end
     if b == "" return a end
     a .. " " .. b
 end
 
 -- Re-quote a string-literal token text (the lexer strips the quotes).
-quote(s: str): str
+quote = (s: str): str
     "\"" .. s .. "\""
 end
 
 -- Lookahead scan: does the parenthesised group at the cursor contain a `:`
 -- at depth 1 (a type annotation)? That is what separates a declaration
 -- `f(a: i64)` from a call `f(x)`.
-params_have_colon(lx: Lexer): bool
+params_have_colon = (lx: Lexer): bool
     st = lexer.save_state(lx)
     _lp = lexer.next(lx)
     depth = 1
@@ -351,7 +356,7 @@ params_have_colon(lx: Lexer): bool
 end
 
 -- One parameter: NAME (':' type)?.
-proj_param(lx: Lexer): str
+proj_param = (lx: Lexer): str
     n = lexer.next(lx)
     p = "(param " .. n.text
     if lexer.peek(lx).kind == token.KIND_COLON
@@ -362,7 +367,7 @@ proj_param(lx: Lexer): str
 end
 
 -- Comma-separated parameter list, consuming the closing ')'.
-proj_params(lx: Lexer): str
+proj_params = (lx: Lexer): str
     acc = ""
     while true
         t = lexer.peek(lx)
@@ -390,7 +395,7 @@ end
 -- gone. It survived because the only typed cases in the corpus used the
 -- `= expr` body form, where `=` is not a type kind and stopped the run; every
 -- block-bodied typed function was mis-parsed.
-proj_type(lx: Lexer): str
+proj_type = (lx: Lexer): str
     t = lexer.peek(lx)
     if is_type_kind(t.kind) == false
         return ""
@@ -411,7 +416,7 @@ proj_type(lx: Lexer): str
 end
 
 -- Statements until 'end' (consumed). 'else'/'elseif' do not terminate here.
-proj_body(lx: Lexer): str
+proj_body = (lx: Lexer): str
     acc = ""
     while true
         skip_semis(lx)
@@ -429,7 +434,7 @@ proj_body(lx: Lexer): str
 end
 
 -- Statements until 'end', 'else' or 'elseif' — for if/else block parsing.
-proj_body_until_else(lx: Lexer): str
+proj_body_until_else = (lx: Lexer): str
     acc = ""
     while true
         skip_semis(lx)
@@ -444,7 +449,7 @@ end
 -- fun NAME '(' params ')' (':' type)? (('=' expr) | body) ...
 -- `first` is the peeked token: either the 'fun'/'function' keyword (consumed,
 -- then the NAME is read) or the bare-declaration NAME itself.
-proj_fun_decl(lx: Lexer, first: Tok): str
+proj_fun_decl = (lx: Lexer, first: Tok): str
     if first.kind == token.KIND_FUN or first.kind == token.KIND_FUNCTION
         _k = lexer.next(lx)
         n = lexer.next(lx)
@@ -475,7 +480,7 @@ proj_fun_decl(lx: Lexer, first: Tok): str
 end
 
 -- fun '(' params ')' (':' type)? body 'end' — anonymous, expression position.
-proj_fun_expr(lx: Lexer): str
+proj_fun_expr = (lx: Lexer): str
     _f = lexer.next(lx)
     if lexer.peek(lx).kind != token.KIND_LPAREN
         mark_error(lx)
@@ -500,7 +505,7 @@ proj_fun_expr(lx: Lexer): str
 end
 
 -- if expr ... ('elseif' expr ...)* ('else' ...)? 'end'
-proj_if(lx: Lexer): str
+proj_if = (lx: Lexer): str
     _i = lexer.next(lx)
     cond = proj_expr(lx)
     s = "(if " .. cond
@@ -536,7 +541,7 @@ proj_if(lx: Lexer): str
 end
 
 -- while expr ... 'end'
-proj_while(lx: Lexer): str
+proj_while = (lx: Lexer): str
     _w = lexer.next(lx)
     cond = proj_expr(lx)
     body = proj_body(lx)
@@ -549,7 +554,7 @@ end
 
 -- `do` is optional in .duo and mandatory in .lua; the lexer feeds both, so the
 -- loop forms accept it and drop it rather than projecting it.
-skip_do(lx: Lexer)
+skip_do = (lx: Lexer)
     if lexer.peek(lx).kind == token.KIND_DO
         _d = lexer.next(lx)
     end
@@ -562,7 +567,7 @@ end
 -- '(forin (names N...) EXPR body...)'. The `range` grouping is what keeps an
 -- optional step unambiguous: without it, a three-expression header and a
 -- two-expression header followed by a body statement project identically.
-proj_for(lx: Lexer): str
+proj_for = (lx: Lexer): str
     _f = lexer.next(lx)
     n1 = lexer.next(lx)
     if n1.kind != token.KIND_NAME
@@ -617,7 +622,7 @@ proj_for(lx: Lexer): str
 end
 
 -- return expr?
-proj_return(lx: Lexer): str
+proj_return = (lx: Lexer): str
     _r = lexer.next(lx)
     t = lexer.peek(lx)
     if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_EOF
@@ -627,7 +632,7 @@ proj_return(lx: Lexer): str
 end
 
 -- NAME ('=' | op-assign) expr
-proj_assign(lx: Lexer, t: Tok): str
+proj_assign = (lx: Lexer, t: Tok): str
     _n = lexer.next(lx)
     op = lexer.next(lx)
     rhs = proj_expr(lx)
@@ -638,7 +643,7 @@ proj_assign(lx: Lexer, t: Tok): str
 end
 
 -- ('local'|'global') NAME (':' type)? ('=' expr)?
-proj_decl(lx: Lexer): str
+proj_decl = (lx: Lexer): str
     kw = lexer.next(lx)
     n = lexer.next(lx)
     if n.kind != token.KIND_NAME
@@ -662,7 +667,7 @@ end
 -- The body is read with proj_stmt rather than proj_body because `repeat` closes
 -- on `until`, not `end`. proj_stmt returns "" at `end`/`else`/`elseif`, which
 -- would spin here, so an empty projection is treated as the error it is.
-proj_repeat(lx: Lexer): str
+proj_repeat = (lx: Lexer): str
     _r = lexer.next(lx)
     acc = ""
     while true
@@ -696,7 +701,7 @@ end
 -- checked afterwards, rather than being predicted from lookahead — the target
 -- grammar is exactly the postfix grammar, so duplicating it would be the only
 -- other option and the two copies would drift.
-proj_target_or_expr(lx: Lexer): str
+proj_target_or_expr = (lx: Lexer): str
     first = proj_postfix(lx)
     if lexer.peek(lx).kind == token.KIND_COMMA
         targets = first
@@ -732,7 +737,7 @@ proj_target_or_expr(lx: Lexer): str
 end
 
 -- '@' directive: dotted names, then optional parenthesised arguments.
-proj_directive(lx: Lexer): str
+proj_directive = (lx: Lexer): str
     _a = lexer.next(lx)
     s = "(at"
     while true
@@ -754,7 +759,7 @@ proj_directive(lx: Lexer): str
 end
 
 -- '(' arg (',' arg)* ')'
-proj_arglist(lx: Lexer): str
+proj_arglist = (lx: Lexer): str
     _lp = lexer.next(lx)
     acc = ""
     while true
@@ -775,7 +780,7 @@ proj_arglist(lx: Lexer): str
 end
 
 -- '{' key (('=' | value)) (',' ...)* '}' — descriptor / table literal.
-proj_desc_body(lx: Lexer): str
+proj_desc_body = (lx: Lexer): str
     s = "(desc"
     while true
         t = lexer.peek(lx)
@@ -816,7 +821,7 @@ proj_desc_body(lx: Lexer): str
 end
 
 -- Precedence-climbing expression projection, highest level first.
-proj_expr(lx: Lexer): str
+proj_expr = (lx: Lexer): str
     left = proj_and(lx)
     while true
         t = lexer.peek(lx)
@@ -829,7 +834,7 @@ proj_expr(lx: Lexer): str
     end
 end
 
-proj_and(lx: Lexer): str
+proj_and = (lx: Lexer): str
     left = proj_cmp(lx)
     while true
         t = lexer.peek(lx)
@@ -842,7 +847,7 @@ proj_and(lx: Lexer): str
     end
 end
 
-proj_cmp(lx: Lexer): str
+proj_cmp = (lx: Lexer): str
     left = proj_add(lx)
     t = lexer.peek(lx)
     op = "?"
@@ -867,7 +872,7 @@ proj_cmp(lx: Lexer): str
     "(" .. op .. " " .. left .. " " .. proj_add(lx) .. ")"
 end
 
-proj_add(lx: Lexer): str
+proj_add = (lx: Lexer): str
     left = proj_term(lx)
     while true
         t = lexer.peek(lx)
@@ -886,7 +891,7 @@ proj_add(lx: Lexer): str
     end
 end
 
-proj_term(lx: Lexer): str
+proj_term = (lx: Lexer): str
     left = proj_unary(lx)
     while true
         t = lexer.peek(lx)
@@ -908,7 +913,7 @@ proj_term(lx: Lexer): str
     end
 end
 
-proj_unary(lx: Lexer): str
+proj_unary = (lx: Lexer): str
     t = lexer.peek(lx)
     if t.kind == token.KIND_MINUS
         _o = lexer.next(lx)
@@ -928,7 +933,7 @@ end
 -- '^' binds tighter than unary minus and is right-associative, so `-a ^ b`
 -- is `-(a ^ b)` and `a ^ b ^ c` is `a ^ (b ^ c)`. Recursing into proj_unary on
 -- the right gives both.
-proj_pow(lx: Lexer): str
+proj_pow = (lx: Lexer): str
     base = proj_postfix(lx)
     if lexer.peek(lx).kind == token.KIND_CARET
         _o = lexer.next(lx)
@@ -937,7 +942,7 @@ proj_pow(lx: Lexer): str
     base
 end
 
-proj_postfix(lx: Lexer): str
+proj_postfix = (lx: Lexer): str
     base = proj_primary(lx)
     while true
         t = lexer.peek(lx)
@@ -992,7 +997,7 @@ proj_postfix(lx: Lexer): str
     end
 end
 
-proj_primary(lx: Lexer): str
+proj_primary = (lx: Lexer): str
     t = lexer.peek(lx)
     if t.kind == token.KIND_INT_LIT or t.kind == token.KIND_FLOAT_LIT
         _n = lexer.next(lx)
@@ -1037,7 +1042,7 @@ end
 
 -- One statement. Returns "" only for block terminators (which the block
 -- parsers consume) and EOF.
-proj_stmt(lx: Lexer): str
+proj_stmt = (lx: Lexer): str
     t = lexer.peek(lx)
     if t.kind == token.KIND_EOF
         return ""
@@ -1101,7 +1106,7 @@ proj_stmt(lx: Lexer): str
 end
 
 -- Whole-program projection: '(program <stmt>...)'.
-proj_program_lx(lx: Lexer): str
+proj_program_lx = (lx: Lexer): str
     acc = ""
     while true
         skip_semis(lx)
@@ -1122,12 +1127,12 @@ proj_program_lx(lx: Lexer): str
 end
 
 -- Public entries: s-expression projection and a clean/reject differential.
-proj_program(src: str, file: str): str
+proj_program = (src: str, file: str): str
     lx: Lexer = lexer.new(src, file)
     proj_program_lx(lx)
 end
 
-parse_status(src: str, file: str): i64
+parse_status = (src: str, file: str): i64
     lx: Lexer = lexer.new(src, file)
     _p = proj_program_lx(lx)
     if lx.has_error
