@@ -3530,7 +3530,43 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = fcc
       last_alu = -1
 
-    elseif (op >= 139 and op <= 145) or (op >= 153 and op <= 159)
+    elseif op == 139 or op == 140 or op == 153 or op == 154
+      -- f32/f64 abs and neg are SIGN-BIT operations, so in the bit-pattern
+      -- representation they are integer masking with NO FP register at all:
+      -- abs clears the sign bit, neg flips it. That removes two shuttle moves
+      -- each, both of which sat on the dependency chain.
+      if sp < 1 or sp > 8
+        return -1
+      end
+      na: i64 = sp - 1
+      nt: i64 = sp
+      if op == 153 or op == 154
+        jitm.w32(code, n, 0xD2800000 | nt)
+        n += 1
+        jitm.w32(code, n, 0xF2E00000 | (0x8000 << 5) | nt)
+        n += 1
+        if op == 153
+          jitm.w32(code, n, 0x8A200000 | (nt << 16) | (na << 5) | na)
+        else
+          jitm.w32(code, n, 0xCA000000 | (nt << 16) | (na << 5) | na)
+        end
+        n += 1
+      else
+        jitm.w32(code, n, 0x52800000 | nt)
+        n += 1
+        jitm.w32(code, n, 0x72A00000 | (0x8000 << 5) | nt)
+        n += 1
+        if op == 139
+          jitm.w32(code, n, 0x0A200000 | (nt << 16) | (na << 5) | na)
+        else
+          jitm.w32(code, n, 0x4A000000 | (nt << 16) | (na << 5) | na)
+        end
+        n += 1
+      end
+      last_alu = -1
+      last_cset = -1
+
+    elseif (op >= 141 and op <= 145) or (op >= 155 and op <= 159)
       -- f32/f64 abs/neg/ceil/floor/trunc/nearest/sqrt: one FP-source op, using
       -- the same GP<->FP shuttle as the binops. Offsets are the ARM64 opcode
       -- field, identical for single and double; only the type base differs.
