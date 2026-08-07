@@ -407,6 +407,49 @@ is_lambda_head = (lx: Lexer): bool
     found
 end
 
+-- The unannotated value-form: `() f(1)` and `(a, b) a < b`.
+--
+-- Neither spelling is a legal parenthesised expression — `()` is empty and
+-- `(a, b)` has a top-level comma — so recognising them costs no ambiguity.
+-- `(a)` deliberately stays an expression: it is a real parenthesised value and
+-- guessing lambda there would break arithmetic everywhere.
+is_bare_lambda_head = (lx: Lexer): bool
+    st = lexer.save_state(lx)
+    _lp = lexer.next(lx)
+    names = 0
+    commas = 0
+    plain = true
+    empty = false
+    if lexer.peek(lx).kind == token.KIND_RPAREN
+        empty = true
+    end
+    depth = 1
+    while depth > 0
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF
+            plain = false
+            break
+        end
+        if t.kind == token.KIND_RPAREN
+            depth = depth - 1
+        elseif t.kind == token.KIND_LPAREN
+            depth = depth + 1
+            plain = false
+        elseif t.kind == token.KIND_NAME
+            names = names + 1
+        elseif t.kind == token.KIND_COMMA
+            commas = commas + 1
+        else
+            plain = false
+        end
+    end
+    lexer.restore_state(lx, st)
+    if empty
+        return true
+    end
+    plain and commas > 0 and names == commas + 1
+end
+
 -- Is the parenthesised group after the name a PARAMETER LIST (a declaration)
 -- rather than an argument list (a call)? GR-001 says the discriminator is a
 -- type annotation on a parameter.
@@ -644,6 +687,7 @@ proj_if = (lx: Lexer): str
     cond = proj_expr(lx)
     s = "(if " .. cond
     while true
+        skip_semis(lx)
         t = lexer.peek(lx)
         if t.kind == token.KIND_ELSEIF
             _e = lexer.next(lx)
@@ -669,6 +713,12 @@ proj_if = (lx: Lexer): str
             mark_error(lx)
             return s .. ")"
         else
+            -- No `stalled` guard here, deliberately. `lexer.peek` lexes ahead
+            -- and advances `pos`, so for a one-token statement the cursor has
+            -- already moved before proj_stmt runs and the check fires
+            -- spuriously — it cost 33 files (184 -> 151) when I added it. The
+            -- arms above already consume or return on every terminator, so this
+            -- loop cannot spin the way the accumulating loops could.
             s = s .. " " .. proj_stmt(lx)
         end
     end
@@ -857,8 +907,15 @@ proj_target_or_expr = (lx: Lexer): str
             targets = targets .. " " .. proj_postfix(lx)
         end
         if not is_assign_kind(lexer.peek(lx).kind)
-            lexer.restore_state(lx, st)
-            return proj_expr(lx)
+            -- A trailing `nkey, nval` is a demand-returned PACK, and projecting
+            -- it as one here was tried and reverted: this arm cannot tell a tail
+            -- position from any other statement, so it also accepted a bare
+            -- `a, b` mid-body. That is a rejection case in the corpus, and
+            -- coverage fell 184 -> 151 because real files stopped failing where
+            -- they should. Packs need tail knowledge the statement level does
+            -- not have; left as an error until proj_body can say "last".
+            mark_error(lx)
+            return "(error)"
         end
         op = lexer.next(lx)
         if op.kind != token.KIND_ASSIGN
@@ -1268,6 +1325,18 @@ proj_primary = (lx: Lexer): str
     end
     if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
         return proj_fun_expr(lx)
+    end
+    -- The compact value form has a single-expression body and NO `end`:
+    -- `f = (x) g(x)`, `spawn(() run(c))`. The annotated form is a block that
+    -- closes with `end`. Same construct, two body shapes, so they are parsed
+    -- separately rather than by guessing where the body stops.
+    if t.kind == token.KIND_LPAREN and is_bare_lambda_head(lx)
+        params = proj_params_from_lparen(lx)
+        body = proj_expr(lx)
+        if params != ""
+            return "(lambda (params " .. params .. ") " .. body .. ")"
+        end
+        return "(lambda (params) " .. body .. ")"
     end
     if t.kind == token.KIND_LPAREN and is_lambda_head(lx)
         -- FF-1: `(x: t): r ... end` with no keyword. This is the canonical

@@ -129,6 +129,14 @@ positives = {
     { "x = ~a", "(program (assign x (bnot a)))" },
     -- `@` directives appear in expression position, not just as statements.
     { "f(): i64 return @as(i64, 1) end", "(program (fun f (params) (ret i64) (return (at as i64 1))))" },
+    -- The compact value form: single-expression body, no `end`. Neither `()`
+    -- nor `(a, b)` is a legal parenthesised expression, which is what makes
+    -- recognising them unambiguous — and `(a + b)` below is the paired negative
+    -- that keeps arithmetic out of the lambda path.
+    { "cmp = ((a, b) a < b)", "(program (assign cmp (lambda (params (param a) (param b)) (< a b))))" },
+    { "spawn(() f(1))", "(program (call spawn (lambda (params) (call f 1))))" },
+    -- `;` separates statements inside a one-line if body.
+    { "if n < 0 neg = true; n = -n end", "(program (if (< n 0) (assign neg true) (assign n (- n))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
