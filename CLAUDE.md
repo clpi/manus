@@ -147,6 +147,24 @@ crash**, so the listed interim spelling is the correct one to write.
     misread as a name.
   - Malformed holes stay literal by design: `{a.}`, `{.x}`, `{a..b}`, `{1x}`.
   Interim: `..` chains ONLY for expression holes.
+- **GAP-19 (wasm output) — `--emit wasm` does not emit wasm.** Measured
+  2026-08-07 while converting ward's three `.c` WASM benchmark fixtures to Duo
+  (the monoglot census). Both routes fail:
+  - `duo compile x.duo --emit wasm -o out.wasm` produces a **Mach-O ARM64
+    executable**. Magic bytes `cf fa ed fe`, not `00 61 73 6d`; wasmtime
+    rejects it with "input bytes aren't valid utf-8". It reports
+    `ok compile` — the wrong format is silent, same class as GAP-15 where
+    `--emit obj`/`dylib` also emit executables.
+  - `duo compile x.duo --target wasm32-wasi ...` (the spelling
+    `lib/std/ml/deploy.duo:17` documents) fails with **`use of undeclared
+    identifier 'duo_test_jmp'`** — a runtime symbol missing from the wasm
+    build.
+
+  The Duo source is otherwise ready and semantically verified: it reproduces
+  the fixture's hash EXACTLY (200M-iteration FNV loop → 1899277430, matching
+  `ward/bench/hash.wasm` under wasmtime). Only the output format blocks it, so
+  ward's last three non-Duo files stay `.c` until this closes. They are test
+  INPUT compiled to `.wasm`, not ward source — ward's own code is 100% Duo.
 - **GAP-16 (STR-1) — interpolation has NO ESCAPE.** There is no way to spell a
   literal `{name}` in a Duo string. Any program whose DATA is Duo source
   containing holes — a code generator, a conformance corpus, a doc example —
