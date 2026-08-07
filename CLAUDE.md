@@ -206,48 +206,41 @@ crash**, so the listed interim spelling is the correct one to write.
   absent, or a runtime-guarded dispatch (member if present, else project).
   The real fix is probably to implement the surface as actual members rather
   than a codegen projection, so data-wins holds by construction.
-- **GAP-15 (SH-03 production dispatch) — CORRECTED 2026-08-07.** The previous
-  entry said every `@c.export` symbol is emitted with INTERNAL linkage (`nm`
-  shows `t`) and that the Duo lexer "cannot be linked into the host at all".
-  **That is wrong.** Measured on the C emitted for lib/std/compiler/lexer.duo:
+- **GAP-15 (SH-03) — ARTIFACT SIDE FIXED 2026-08-07; host dispatch still open.**
+  The entry was wrong twice before being right. It said `@c.export` symbols have
+  INTERNAL linkage and the Duo lexer "cannot be linked at all" — measured, every
+  entry point is `T` under both the bare and mangled names, and a C host links
+  it clean. I then said the blocker was "no init entry", which was closer but
+  still not the mechanism.
 
-      T _duo_lexer_tokenize_all      T _std_compiler_lexer__duo_lexer_tokenize_all
-      T _duo_lexer_tokenize_text     T _std_compiler_lexer__duo_lexer_tokenize_text
-      T _duo_lexer_step              T _duo_lexer_kind_fingerprint
+  **The mechanism, and the fix (src/codegen.zig).** `lib_mode` emitted an
+  `__attribute__((constructor))` initialiser only for `wasm32-wasi`; for native
+  targets it emitted NOTHING. So a Duo module built with `--lib` linked clean
+  and then died on the first call, because `package`, `string`, `table`, `io`,
+  `os`, `net` and the module registry were initialised only inside `main`, which
+  a library does not have. Native lib mode now emits the same constructor.
+  Measured, same module, same C host:
 
-  Every entry point is EXTERNAL, under both the bare and the mangled name, and
-  a C host linking against the object compiles and links clean. (`export_name`
-  in the declaration is a wasm attribute and does not rename the native symbol,
-  which is probably what the original reading tripped on.)
+      before   link=0, run=139 (SIGSEGV)
+      after    link=0, run=0 — "HOST -> Duo lexer, first token kind = 14"
 
-  The real blocker is one step further in, and it is specific: **all runtime
-  initialization happens inside `main`** — `lua_package_init()`,
-  `lua_string_init()`, `lua_table_init()` and the module `lua_require` calls are
-  emitted there and nowhere else, and there is NO standalone init entry
-  (`duo_module_init`, a constructor attribute: grep count 0). So a host that
-  links the lexer and calls `duo_lexer_tokenize_all` directly SEGFAULTS on
-  uninitialized globals — verified: compiles, links (`link=0`), runs, exit 139.
+  14 is KIND_FUN for "fun add". A C program calls the Duo lexer today.
 
-  Narrowed further by bisection, all measured, each a C host linking the emitted
-  object and calling in:
+  **What is verified for the next step:**
+  - `duo compile lib/std/compiler/lexer.duo --backend=c --lib --emit obj` emits
+    8975 lines with the constructor and no `main`.
+  - That object needs 105 external symbols, ALL libc — no host collisions.
+  - Adding it to build.zig beside `src/duo_keyword_classify.c` (the SH-02
+    precedent) builds and links clean, and every gate stays green.
 
-      pure export (no req, no tables, no strings)   -> WORKS, returned 42
-      + a module-level `req`                        -> WORKS, returned 42
-      + an export that USES the req'd module        -> WORKS, returned 3
-      lib/std/compiler/lexer.duo, bare entry        -> SEGV (139)
-      lib/std/compiler/lexer.duo, mangled entry     -> SEGV (139)
-
-  So a Duo function IS callable from a C host today, with no initialization at
-  all, and that holds even when its module requires another module and the
-  export uses it. The failure is specific to lexer.duo, not to exports, not to
-  `req`, and not to the calling convention (both the bare alias and the mangled
-  native-signature entry crash identically).
-
-  What SH-03 needs is therefore whatever initialization lexer.duo specifically
-  requires — its own module state and nested requires are the remaining
-  suspects — plus lib mode so the artifact has no `main`. That is a much smaller
-  and better-located problem than either "internal linkage" or "wire the host",
-  and the bisection above is the starting point rather than a fresh one.
+  **What is NOT done, and why it was backed out.** Calling the seam from ZIG
+  panics — `panic: access of union field`, SIGABRT inside the call — while the
+  identical call from a C host works. Unisolated. Rather than check in 8975
+  lines of generated C behind a seam that cannot be proved from the host side,
+  the artifact, the build.zig entry and the bridge `extern` were reverted; only
+  the codegen fix is committed. Reproduce with the four bullets above; the
+  remaining work is that panic, then `src/lexer.zig` consuming the 4-i64
+  records, then `tokenizeAuthority()`.
 
 - **GAP-12 (rule 1 / FF-1)** — `@comp.c.export` does not attach to a
   value-form binding; it degrades into a call to an undefined `__c_export`.
