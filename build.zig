@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run duo");
     run_step.dependOn(&run_cmd.step);
 
-    const test_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_compile_fail_tests.sh" });
+    const test_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_compile_fail_tests.duo" });
     test_cmd.setCwd(b.path("."));
     test_cmd.step.dependOn(b.getInstallStep());
     const test_step = b.step("test", "Run all tests (unit + compile-fail)");
@@ -55,7 +55,7 @@ pub fn build(b: *std.Build) void {
     const unit_test_step = b.step("unit-test", "Run Zig unit tests only");
     unit_test_step.dependOn(&run_unit_tests.step);
 
-    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "bash", "scripts/assert_no_ansi_reports.sh" });
+    const no_ansi_reports_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/assert_no_ansi_reports.duo" });
     no_ansi_reports_cmd.setCwd(b.path("."));
     no_ansi_reports_cmd.step.dependOn(b.getInstallStep());
     const no_ansi_reports_step = b.step("no-ansi-reports", "Assert report ANSI/no-color styling contract");
@@ -561,7 +561,7 @@ pub fn build(b: *std.Build) void {
     const pass48_gate_step = b.step("pass48-gate", "Pass 48 canonical specification consolidation proofs");
     pass48_gate_step.dependOn(&run_pass48_gate.step);
 
-    const idiom_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_idiom_gate.sh" });
+    const idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_idiom_gate.duo" });
     idiom_cmd.setCwd(b.path("."));
     const idiom_step = b.step("idiom-gate", "Every .duo file must use canonical Duo idioms");
     idiom_step.dependOn(&idiom_cmd.step);
@@ -588,13 +588,13 @@ pub fn build(b: *std.Build) void {
     const projection_gate_step = b.step("projection-gate", "Alias for pass36-gate");
     projection_gate_step.dependOn(pass36_gate_step);
 
-    const bench_proof_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark_proof_impl.sh" });
+    const bench_proof_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/run_benchmark_proof.duo" });
     bench_proof_cmd.setCwd(b.path("."));
     bench_proof_cmd.step.dependOn(b.getInstallStep());
     const bench_proof_step = b.step("bench-proof-gate", "P0 benchmark 3-profile correctness + proof artifacts");
     bench_proof_step.dependOn(&bench_proof_cmd.step);
 
-    const duo_idiom_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_idiom_gate.sh" });
+    const duo_idiom_cmd = b.addSystemCommand(&.{ "./zig-out/bin/duo", "run", "scripts/duo_idiom_gate.duo" });
     duo_idiom_cmd.setCwd(b.path("."));
     duo_idiom_cmd.step.dependOn(b.getInstallStep());
     const duo_idiom_step = b.step("duo-idiom-gate", "Enforce compact idiomatic .duo in scripts/ and examples/");
