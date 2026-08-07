@@ -33,10 +33,10 @@ color_hex(hex_str: str): any
 end
 
 color_to_hex(c: any): str
-    ri = math.floor(c.r * 255 + 0.5)
-    gi = math.floor(c.g * 255 + 0.5)
-    bi = math.floor(c.b * 255 + 0.5)
-    string.format("#%02x%02x%02x", ri, gi, bi)
+    ri = math.floor(c.r * 255.0 + 0.5)
+    gi = math.floor(c.g * 255.0 + 0.5)
+    bi = math.floor(c.b * 255.0 + 0.5)
+    return string.format("#%02x%02x%02x", ri, gi, bi)
 end
 
 color_lerp(a: any, b: any, t: f64): any

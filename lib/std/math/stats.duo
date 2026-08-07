@@ -157,7 +157,7 @@ stats_normal_pdf(x: f64, mean: f64, std: f64): f64
 end
 
 stats_normal_cdf(x: f64, mean: f64, std: f64): f64
-    if std < 1e-10 return x >= mean and 1 or 0 end
+    if std < 1e-10 return x >= mean and 1.0 or 0.0 end
     z = (x - mean) / std
     0.5 * (1 + math.erf(z / math.sqrt(2)))
 end
