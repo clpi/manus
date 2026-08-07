@@ -29,7 +29,7 @@ Every row below is therefore debt by construction.
 | --- | ---: | --- | --- | --- | --- | --- |
 | `src/wasm/runtime.duo` | **275** | B | interpreter core: memory, stack, dispatch, SIMD | Duo over a v128/value substrate | see split below | **open** |
 | `src/wasm/module.duo` | 9 | B | decoder byte access | `std.bytes` / slice substrate | slice substrate lands in `lib/std` | open |
-| `src/ward.duo` | 2 | B | entry glue | Duo entry | S1 substrate | open |
+| `src/ward.duo` | **0** | — | interpreter + ARM64 JIT, the build that ships | — | **n/a — already pure Duo** | **compliant** |
 | `src/wasm/interp_ward.duo` | 1 | B | interp shim | fold into runtime | with runtime split | open |
 | `src/wasm/jit_ward.duo` | 1 | B | JIT shim | fold into `jit_arm64.duo` | with runtime split | open |
 | `src/wasm/jit_arm64.duo` | **0** | — | ARM64 template JIT | — | **n/a — already pure Duo** | **compliant** |
@@ -44,6 +44,33 @@ Every row below is therefore debt by construction.
 **Note:** `jit_arm64.duo` is the existence proof that ward's hot path does not require C —
 a full ARM64 template JIT with zero `@c.emit`. The 118-site SIMD block was written against
 that precedent and violates it; it is the newest debt in the tree, not the oldest.
+
+### Correction 2026-08-07 — ward has TWO parallel runtimes, and the C is all in the dead one
+
+The `src/ward.duo` row previously read "2 sites". Both hits are inside **comments**
+that assert *"Pure Duo: no @c.emit"* — a grep false positive. `src/ward.duo` contains
+**zero** `@c.` directives of any kind. It is also the build that ships: 2978 lines,
+interpreter + ARM64 JIT, verified 20 PASS / 0 wrong against a wasmtime oracle.
+
+So ward carries two ~2900-line implementations of the same runtime:
+
+| tree | entry | lines | `@c.emit` | verified |
+|---|---|---:|---:|---|
+| `src/ward.duo` | standalone | 2978 | **0** | **20/20 vs wasmtime** |
+| `src/wasm/*.duo` | `src/main.duo` → `src.wasm` | 2890 | **275** | not exercised by `bench/verify.sh` |
+
+**All of ward's C debt lives in the tree that does not ship.** Retiring `src/wasm/`
+would delete every one of the 275 sites at a stroke and halve ward's line count —
+but it is an architectural call about which entry point is canonical, not a cleanup,
+so it needs an explicit decision rather than a unilateral delete.
+
+### Perf reality check (2026-08-07)
+
+`src/ward.duo`'s JIT covers **2 of 21** corpus modules (`hash`, `hash2b`); the other
+19 fall back to the interpreter because `jit_compile` bails on op 16 (`call`). Every
+ward-vs-wasmtime headline number to date was therefore measured on one of the only
+two modules the JIT handles. ward still wins **2.3-2.6x** on startup-bound modules,
+where its microsecond template-JIT compile beats Cranelift's milliseconds.
 
 ---
 
