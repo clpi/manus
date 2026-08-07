@@ -4,20 +4,20 @@
 -- at top_level_assign, nested_callback, and block_body sites.
 
 -- top_level_assign site (const fold path)
-const rows = @comp.match("a|b", fun(m) if m == "a" "alpha" else "beta" end)
+const rows = @comp.match("a|b", (m) if m == "a" "alpha" else "beta")
 
 -- block_body site (inside function)
 pick(n: i64): str
   if n > 0
-    @comp.tabulate(2, fun(i) "x" end)
+    @comp.tabulate(2, (i) "x")
   else
-    @comp.map("p q", fun(t) t end)
+    @comp.map("p q", (t) t)
   end
 end
 
 -- nested_callback site (match inside tabulate callback chain)
-const grid = @comp.tabulate(2, fun(i)
-  @comp.match("even|odd", fun(m)
+const grid = @comp.tabulate(2, (i)
+  @comp.match("even|odd", (m)
     if m == "even" "E" else "O"
   end)
 end)

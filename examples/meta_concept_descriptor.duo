@@ -1,29 +1,24 @@
--- Meta concept descriptor demo
--- Shows runtime concept creation via meta.make_concept
-
-meta = req "std.meta"
-derive = req "std.meta.derive"
-
+meta = req("std.meta")
+derive = req("std.meta.derive")
 Drawable = meta.make_concept("Drawable", {
-    fields = { "id" },
-    methods = { "draw" },
+  fields = {
+    "id"
+  },
+  methods = {
+    "draw"
+  }
 })
-
 shape = {
-    id = 7,
-    draw = fun(self): str
-        "shape"
-    end,
-    to_string = fun(self): str
-        "drawable"
-    end,
+  id = 7,
+  draw = (self) -> str
+    "shape"
+  end,
+  to_string = (self) -> str
+    "drawable"
+  end
 }
-
--- Runtime concept checking
 print("Drawable name: " .. Drawable.name)
 print("satisfies Drawable: " .. to(str)(meta.satisfies_concept(shape, Drawable)))
 print("satisfies Display: " .. to(str)(meta.satisfies_concept(shape, derive.Display)))
-
--- Use : method syntax
 print("draw: " .. shape:draw())
 print("to_string: " .. shape:to_string())

@@ -1,7 +1,5 @@
 -- std.net.http — HTTP utilities (mirrors Go's net/http subpackages)
 
-M = {}
-M.cgi = req("std.net.http.cgi")
-M.httputil = req("std.net.http.httputil")
-M.httptest = req("std.net.http.httptest")
-M
+cgi = req("std.net.http.cgi")
+httputil = req("std.net.http.httputil")
+httptest = req("std.net.http.httptest")

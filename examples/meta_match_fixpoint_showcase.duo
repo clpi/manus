@@ -1,8 +1,8 @@
 -- Nested match → fixpoint: comptime-only, no runtime closures.
 -- Run: duo run examples/meta_match_fixpoint_showcase.duo
 
-OUT = @comp.match("alpha|beta", fun(m)
-    @comp.fixpoint(m.pattern, fun(s)
+OUT = @comp.match("alpha|beta", (m: any)
+    @comp.fixpoint(m.pattern, (s: any)
         "tag=" .. m.pattern .. " iter=" .. to(str)(s.iteration) .. "\n"
     end, 2)
 end)

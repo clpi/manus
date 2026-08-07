@@ -18,16 +18,16 @@ type Pt = { x: f64, y: f64 }
 TYPES = "i32|" .. "i64|" .. "f64"
 OPS = "add|" .. "sub"
 
-PAIRS = @comp.zip(TYPES, OPS, fun(p)
+PAIRS = @comp.zip(TYPES, OPS, (p: any)
     p.a .. "_" .. p.b .. " "
 end)
 
 -- power(3 types) → 7 subset fragments; each re-expands; template emits C stub per type.
-SUBSETS = @comp.power("HasXY", fun(s)
+SUBSETS = @comp.power("HasXY", (s: any)
     s.name .. ";"
 end)
 
-CASCADE = @comp.each(SUBSETS, fun(frag)
+CASCADE = @comp.each(SUBSETS, (frag: any)
     @comp.template(frag.name .. ":int64_t", "int64_t tag_$0() { return 0 }\n")
 end)
 

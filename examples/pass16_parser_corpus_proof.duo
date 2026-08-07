@@ -1,0 +1,53 @@
+-- Pass 16 WS6 (P16-WS6 / MP-06) — token-stream statement-level parser corpus.
+-- The L3 family in lib/std/compiler/parser.duo projects a bounded Duo subset to
+-- s-expressions over the lexer token stream. This proof runs the positive
+-- projection differential (exact sexpr) and the compile-fail differential
+-- (parse_status must reject malformed input), all through the NATIVE backend.
+--
+-- Exit code: 0 on full pass, 1..18 positive mismatch index, 101+ compile-fail
+-- index, 200 clean-input misclassification.
+
+P = req "std.compiler.parser"
+
+positives = {
+    { "x = 42", "(program (assign x 42))" },
+    { "add(a, b)", "(program (call add a b))" },
+    { "2 + 3 * (4 - 1)", "(program (+ 2 (* 3 (- 4 1))))" },
+    { "fun add(a: i64, b: i64): i64 = a + b end", "(program (fun add (params (param a i64) (param b i64)) (ret i64) (+ a b)))" },
+    { "fun sub(a, b) a - b end", "(program (fun sub (params (param a) (param b)) (- a b)))" },
+    { "if ready run() end", "(program (if ready (call run)))" },
+    { "if a < b x else y end", "(program (if (< a b) x (else y)))" },
+    { "while n > 0 n = n - 1 end", "(program (while (> n 0) (assign n (- n 1))))" },
+    { "return 42", "(program (return 42))" },
+    { "@fence", "(program (at fence))" },
+    { "d = { x = 1, y = 2 }", "(program (assign d (desc x 1 y 2)))" },
+    { "bar = foo@7", "(program (assign bar (anchor foo 7)))" },
+    { "print \"hi\"", "(program (call print \"hi\"))" },
+    { "x = if a < b value else value * 2 end", "(program (assign x (if (< a b) value (else (* value 2)))))" },
+    { "a + b == c", "(program (= (+ a b) c))" },
+    { "-x", "(program (- x))" },
+    { "@comp.c.export(\"x\")", "(program (at comp c export \"x\"))" },
+    { "add(a: i64, b: i64): i64 = a + b end", "(program (fun add (params (param a i64) (param b i64)) (ret i64) (+ a b)))" },
+}
+
+fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1" }
+
+main(): i64
+    for i = 1, #positives
+        c = positives[i]
+        got = P.proj_program(c[1], "corpus.duo")
+        if got != c[2]
+            return i
+        end
+    end
+    for i = 1, #fails
+        st = P.parse_status(fails[i], "corpus.duo")
+        if st == 0
+            return 100 + i
+        end
+    end
+    if P.parse_status("fun ok(a: i64) a end", "corpus.duo") != 0
+        return 200
+    end
+    0
+end

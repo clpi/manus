@@ -3,39 +3,39 @@ global Vector = {}
 Vector.__index = Vector
 Vector.__metatable = "Vector"
 
-Vector.new = fun(x: i64, y: i64): any
+Vector.new = (x: i64, y: i64): any
     setmetatable({ x = x, y = y }, Vector)
 end
 
 setmetatable(Vector, {
-    __call = fun(cls: any, x: i64, y: i64): any
+    __call = (cls: any, x: i64, y: i64): any
         cls.new(x, y)
     end,
 })
 
-Vector.move = fun(self: any, dx: i64, dy: i64): any
+Vector.move = (self: any, dx: i64, dy: i64): any
     self.x = self.x + dx
     self.y = self.y + dy
     self
 end
 
-Vector.__add = fun(a: any, b: any): any
+Vector.__add = (a: any, b: any): any
     Vector(a.x + b.x, a.y + b.y)
 end
 
-Vector.__eq = fun(a: any, b: any): bool
+Vector.__eq = (a: any, b: any): bool
     a.x == b.x and a.y == b.y
 end
 
-Vector.__len = fun(self: any): i64
+Vector.__len = (self: any): i64
     2
 end
 
-Vector.__contains = fun(self: any, value: any): bool
+Vector.__contains = (self: any, value: any): bool
     self.x == value or self.y == value
 end
 
-Vector.__tostring = fun(self: any): str
+Vector.__tostring = (self: any): str
     "Vector(" .. to(str)(self.x) .. ", " .. to(str)(self.y) .. ")"
 end
 
@@ -47,14 +47,14 @@ sum = v + w
 global backing = {}
 proxy = setmetatable({}, {
     __index = backing,
-    __newindex = fun(self: any, key: any, value: any): void
+    __newindex = (self: any, key: any, value: any): void
         rawset(backing, key, value * 2)
     end,
 })
 proxy.answer = 21
 
 fallback = setmetatable({}, {
-    __index = fun(self: any, key: any): any
+    __index = (self: any, key: any): any
         "missing:" .. to(str)(key)
     end,
 })

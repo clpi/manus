@@ -5,14 +5,14 @@
 -- all fold to native C with no lua_Value and no dead closure thunks.
 
 -- Level A: match callback calls interpolate (original G-059 repro)
-TYPEDEFS = @comp.match("i32|i64|f64", fun(m)
+TYPEDEFS = @comp.match("i32|i64|f64", (m: any)
     @comp.interpolate("typedef {name} duo_t_{idx};\n", {name = m.pattern, idx = to(str)(m.index)})
 end)
 
 -- Level B: match callback calls zip with folded-concat specs
 OPS = "add|" .. "mul"
-PAIRS = @comp.match("i32|i64", fun(m)
-    @comp.zip(m.pattern .. "|f64", OPS, fun(p)
+PAIRS = @comp.match("i32|i64", (m: any)
+    @comp.zip(m.pattern .. "|f64", OPS, (p: any)
         p.a .. "_" .. p.b .. " "
     end)
 end)
@@ -27,11 +27,11 @@ type Vec2 = { x: f64, y: f64 }
 type Vec3 = { x: f64, y: f64, z: f64 }
 type Pt = { x: f64, y: f64 }
 
-SUBSETS = @comp.power("HasXY", fun(s)
+SUBSETS = @comp.power("HasXY", (s: any)
     s.name .. ";"
 end)
 
-CASCADE = @comp.each(SUBSETS, fun(frag)
+CASCADE = @comp.each(SUBSETS, (frag: any)
     @comp.template(frag.name .. ":int64_t", "int64_t id_$0() { return $0 }\n")
 end)
 

@@ -14,7 +14,7 @@ type Pt = { x: f64, y: f64 }
     "/* subset " .. meta.name .. " mask=" .. to(str)(meta.mask) .. " */\n"
 end)
 
-FRAGS = @comp.match("HasXY|Ordered", fun(c)
+FRAGS = @comp.match("HasXY|Ordered", (c: any)
     @comp.derive.power(c.pattern, SubsetStub)
 end)
 

@@ -177,64 +177,52 @@ pub fn emitDuoOpcodeLookup(w: *std.Io.Writer) !void {
     try w.writeAll(
         \\}
         \\
-        \\fun opcode_for_index(idx: i64): i64
+        \\opcode_for_index(idx: i64): i64
         \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return -1 end
         \\    INSTRUCTION_OPCODES[idx + 1]
         \\end
         \\
-        \\fun generator_owner(): str
+        \\generator_owner(): str
         \\    GENERATOR_OWNER
         \\end
         \\
-        \\fun instruction_count(): i64
+        \\instruction_count(): i64
         \\    INSTRUCTION_COUNT
         \\end
         \\
-        \\fun instruction_index_for_opcode(op: i64): i64
+        \\instruction_index_for_opcode(op: i64): i64
         \\    if op < 0 or op > 255 then return -1 end
         \\    idx = OPCODE_TO_INDEX[op + 1]
         \\    if idx < 0 then return -1 end
         \\    idx
         \\end
         \\
-        \\fun semantic_id_for_index(idx: i64): str
+        \\semantic_id_for_index(idx: i64): str
         \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return "" end
         \\    INSTRUCTION_IDS[idx + 1]
         \\end
         \\
-        \\fun semantic_id_for_opcode(op: i64): str
+        \\semantic_id_for_opcode(op: i64): str
         \\    idx = instruction_index_for_opcode(op)
         \\    if idx < 0 then return "" end
         \\    INSTRUCTION_IDS[idx + 1]
         \\end
         \\
-        \\fun immediate_form_for_index(idx: i64): str
+        \\immediate_form_for_index(idx: i64): str
         \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return "none" end
         \\    IMMEDIATE_FORMS[idx + 1]
         \\end
         \\
-        \\fun stack_pop_for_index(idx: i64): i64
+        \\stack_pop_for_index(idx: i64): i64
         \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
         \\    STACK_POP[idx + 1]
         \\end
         \\
-        \\fun stack_push_for_index(idx: i64): i64
+        \\stack_push_for_index(idx: i64): i64
         \\    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
         \\    STACK_PUSH[idx + 1]
         \\end
         \\
-        \\M = {}
-        \\M.GENERATOR_OWNER = GENERATOR_OWNER
-        \\M.INSTRUCTION_COUNT = INSTRUCTION_COUNT
-        \\M.generator_owner = generator_owner
-        \\M.instruction_count = instruction_count
-        \\M.opcode_for_index = opcode_for_index
-        \\M.instruction_index_for_opcode = instruction_index_for_opcode
-        \\M.semantic_id_for_index = semantic_id_for_index
-        \\M.semantic_id_for_opcode = semantic_id_for_opcode
-        \\M.immediate_form_for_index = immediate_form_for_index
-        \\M.stack_pop_for_index = stack_pop_for_index
-        \\M.stack_push_for_index = stack_push_for_index
         \\
     );
 }
@@ -258,8 +246,6 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
         \\GENERATOR_OWNER = "src/wasm_semantic_gen.zig"
         \\CANONICAL_OWNER = "src/wasm_semantic.zig"
         \\
-        \\M = {}
-        \\
     );
     for (wasm_semantic.mvp_instructions) |inst| {
         const local = wardOpcodeFieldName(inst.id);
@@ -277,9 +263,13 @@ pub fn emitWardMvpOpcodes(w: *std.Io.Writer) !void {
             }
         }
         const field = buf[0..len];
-        try w.print("M.{s} = {d}\n", .{ field, inst.opcode });
+        try w.print("{s} = {d}\n", .{ field, inst.opcode });
     }
-    try w.writeAll("\nfun canonical_owner(): str\n    CANONICAL_OWNER\nend\n\nM.canonical_owner = canonical_owner\n");
+    // File-as-module-scope (Pass 48 canonical): the file's top-level bindings
+    // ARE the module. No `M = {}` wrapper and no trailing bare `M` — both are
+    // graveyard idiom. With no tail expression duo already exports an implicit
+    // table of every module-level binding, which is exactly the right shape.
+    try w.writeAll("\ncanonical_owner(): str\n    CANONICAL_OWNER\nend\n");
 }
 
 pub fn emitWardMvpOpcodesFile(alloc: std.mem.Allocator, io: std.Io, path: []const u8) !void {

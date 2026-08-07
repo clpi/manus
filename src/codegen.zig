@@ -41,6 +41,31 @@ var native_diag_tag: ?[]const u8 = null;
 /// True when the module body assigns `name` at top level (e.g. `M = {}`).
 /// Such a global stays live even in native-direct modules: its field writes and
 /// the module's `return M` are still emitted, so its declaration must survive.
+/// True when every top-level assignment to `name` is a `req`/`require` call —
+/// i.e. the binding is only ever declared, never re-assigned. Used ONLY by the
+/// embedded-module initializer skip; `module_top_level_assigns` keeps its
+/// existing meaning for every other caller.
+fn req_decl_is_sole_assignment(mod: *const ast.Module, name: []const u8) bool {
+    var saw_decl = false;
+    for (mod.body.stmts) |*stmt| {
+        if (stmt.* != .assign) continue;
+        const a = &stmt.assign;
+        for (a.targets, 0..) |t, i| {
+            if (t.* != .name or !std.mem.eql(u8, t.name.ident, name)) continue;
+            if (i >= a.values.len) return false;
+            const v = a.values[i];
+            if (v.* != .call) return false;
+            const c = &v.call;
+            if (c.func.* != .name) return false;
+            const fname = c.func.name.ident;
+            if (!std.mem.eql(u8, fname, "req") and !std.mem.eql(u8, fname, "require")) return false;
+            if (c.args.len != 1 or c.args[0].* != .string_lit) return false;
+            saw_decl = true;
+        }
+    }
+    return saw_decl;
+}
+
 fn module_top_level_assigns(mod: *const ast.Module, name: []const u8) bool {
     for (mod.body.stmts) |*stmt| {
         switch (stmt.*) {
@@ -1083,9 +1108,16 @@ pub const CodeGen = struct {
             try self.emit_expr(obj);
             self.p("->{s}", .{field});
         } else if (obj.* == .field) {
-            const use_arrow = self.field_base_is_native_record_ptr(obj.field.obj);
             try self.emit_native_field_access(obj.field.obj, obj.field.field);
-            if (use_arrow) self.p("->{s}", .{field}) else self.p(".{s}", .{field});
+            // A nested record field is embedded BY VALUE (`duo_rec_X inr;`), not
+            // a pointer, so every hop after the root uses `.`: `o->inr.a`, never
+            // `o->inr->a`. Deciding this from whether the ROOT is a pointer
+            // param emitted `->` for all hops and produced "member reference
+            // type ... is not a pointer" — which is what made a record holding
+            // a record uncallable across a module boundary, and is why
+            // std.compiler.lexer (Lexer holds Tok and Loc) could not drive
+            // SH-04's token parser.
+            self.p(".{s}", .{field});
         } else {
             try self.emit_expr(obj);
             self.p(".{s}", .{field});
@@ -11871,6 +11903,10 @@ pub const CodeGen = struct {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, want)) return true;
                     }
                 }
+                // §2.7 ambient namespace: `std.a.b.C` is a static path and folds.
+                if (f.obj.* == .field) {
+                    if (try self.try_emit_ambient_module_const_field(f.obj, f.field, want)) return true;
+                }
                 const obj_rt = self.expr_type(f.obj);
                 if (self.type_lowers_native(obj_rt)) {
                     try self.emit_native_field_access(f.obj, f.field);
@@ -12794,6 +12830,10 @@ pub const CodeGen = struct {
                     if (self.req_module_bindings.get(f.obj.name.ident)) |mod_cname| {
                         if (try self.try_emit_req_module_const_field(mod_cname, f.field, self.expr_type(expr))) return;
                     }
+                }
+                // §2.7 ambient namespace: `std.a.b.C` is a static path and folds.
+                if (f.obj.* == .field) {
+                    if (try self.try_emit_ambient_module_const_field(f.obj, f.field, self.expr_type(expr))) return;
                 }
                 const obj_rt = self.expr_type(f.obj);
                 if (obj_rt == .any) {
@@ -16962,8 +17002,9 @@ pub const CodeGen = struct {
 
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
         // `has(.lens)(subject)` — the presence FAMILY (2.8): subject is the
-        // container, parameter is the lens. Demand is real: 110 sites in lib/
-        // currently spell this `x.field != nil`.
+        // container, parameter is the lens. A lens parses to a lambda over
+        // `__proj_v`, so presence is just "apply the lens, test for nil".
+        // Demand is real: 110 sites in lib/ spell this `x.field != nil`.
         if (func.* == .call) {
             const hf = func.call;
             if (hf.func.* == .name and std.mem.eql(u8, hf.func.name.ident, "has") and
@@ -16975,6 +17016,8 @@ pub const CodeGen = struct {
                 if (hf.args[0].* == .func_expr) {
                     if (pipeline_projection_field_name(hf.args[0].func_expr)) |fname| {
                         var fexpr = ast.Expr{ .field = .{ .loc = hf.loc, .obj = args[0], .field = fname } };
+                        // Presence is a bool; box it when the consuming site
+                        // expects a lua_Value.
                         if (result_rt == .any) self.p("lua_val_from_bool(", .{});
                         self.p("((", .{});
                         try self.emit_as_lua_value(&fexpr);
@@ -17471,7 +17514,7 @@ pub const CodeGen = struct {
     }
 
     /// True when `emit_expr(e)` produces a pointer into a boxed lua_String
-    /// (whose length header duo_str_len can read): generic lua_Value-emitting
+    /// (whose length header duo_str_len_hdr can read): generic lua_Value-emitting
     /// exprs coerced via lua_to_str, or recognized stdlib string-module calls
     /// (string.char/sub/rep/...) that lower through lua_str_* and are unwrapped
     /// with lua_to_str. Plain native strings (concat, params, native calls,
@@ -18359,15 +18402,15 @@ pub const CodeGen = struct {
             if (self.expr_type(args[0]) == .str) {
                 // Boxed strings (lua_to_str(...) of a boxed value or a recognized
                 // stdlib string call) carry a lua_String header whose len
-                // duo_str_len reads directly. Plain native strings (concat
+                // duo_str_len_hdr reads directly. Plain native strings (concat
                 // results, params, native calls, literals) are NOT lua_String-
                 // backed — reading the header reads garbage, so use strlen.
                 const is_boxed = self.expr_is_boxed_string_ptr(args[0]);
                 if (result_rt.is_numeric()) {
                     var buf: [64]u8 = undefined;
-                    self.p("(({s}){s}(", .{ result_rt.c_type(&buf), if (is_boxed) "duo_str_len" else "strlen" });
+                    self.p("(({s}){s}(", .{ result_rt.c_type(&buf), if (is_boxed) "duo_str_len_hdr" else "strlen" });
                 } else {
-                    self.p("((int64_t){s}(", .{if (is_boxed) "duo_str_len" else "strlen"});
+                    self.p("((int64_t){s}(", .{if (is_boxed) "duo_str_len_hdr" else "strlen"});
                 }
                 try self.emit_expr(args[0]);
                 self.p("))", .{});
@@ -20044,6 +20087,15 @@ pub const CodeGen = struct {
         while (it.next()) |entry| {
             const name = entry.key_ptr.*;
             if (self.req_native_direct.contains(name) and !module_top_level_assigns(mod, name)) continue;
+            // `module_top_level_assigns` counts a binding's OWN `X = req "..."`
+            // as an assignment, so the skip above is unreachable for every req
+            // binding and a spurious `lua_require` is emitted beside storage the
+            // declaration loop already skipped ("module not found: std.str").
+            // Narrow, initializer-only test: if the binding's sole top-level
+            // assignment IS its req declaration, there is nothing to initialize.
+            // Deliberately does NOT change `module_top_level_assigns` — that
+            // predicate is shared, and two attempts to alter it broke the tree.
+            if (self.req_native_direct.contains(name) and req_decl_is_sole_assignment(mod, name)) continue;
             const path = req_binding_path_for_name(mod, name) orelse continue;
             // A module that was embedded has its definitions inlined and its
             // functions called directly, so no runtime require is needed. Emitting
@@ -20298,6 +20350,55 @@ pub const CodeGen = struct {
         return self.lookup_req_module_dense_table(mod_cname, f.field);
     }
 
+    /// Flatten a `name.a.b` spine into "name.a.b". Returns null for anything
+    /// that is not a pure name/field chain, or that overflows `buf`.
+    fn ambient_dotted_path(expr: *const ast.Expr, buf: []u8) ?[]const u8 {
+        var parts: [12][]const u8 = undefined;
+        var n: usize = 0;
+        var cur = expr;
+        while (cur.* == .field) {
+            if (n >= parts.len) return null;
+            parts[n] = cur.field.field;
+            n += 1;
+            cur = cur.field.obj;
+        }
+        if (cur.* != .name or n == 0) return null;
+        var w: usize = 0;
+        const root = cur.name.ident;
+        if (root.len > buf.len) return null;
+        @memcpy(buf[0..root.len], root);
+        w = root.len;
+        var i: usize = n;
+        while (i > 0) {
+            i -= 1;
+            if (w + 1 + parts[i].len > buf.len) return null;
+            buf[w] = '.';
+            w += 1;
+            @memcpy(buf[w..][0..parts[i].len], parts[i]);
+            w += parts[i].len;
+        }
+        return buf[0..w];
+    }
+
+    /// Spec §2.7: an ambient namespace path is a STATIC path and must fold to a
+    /// direct reference, not a runtime `lua_table_get_str_lit` walk through
+    /// `duo_g_std`. `std.a.b.C` folds to the same `<cname>__C` symbol the `req`
+    /// binding path already produces — so the canonical spelling stops being
+    /// slower than the graveyard one.
+    fn try_emit_ambient_module_const_field(self: *CodeGen, f_obj: *const ast.Expr, field: []const u8, result_rt: RT) E!bool {
+        if (!self.duo_mode) return false;
+        var pbuf: [512]u8 = undefined;
+        const mod_path = ambient_dotted_path(f_obj, &pbuf) orelse return false;
+        if (!std.mem.startsWith(u8, mod_path, "std.")) return false;
+        const mod_file = self.find_module_file_for_req(mod_path) orelse return false;
+        // Only fold when the module is already embedded — the folded symbol has
+        // to exist. Collection of ambient paths is a separate concern.
+        if (!self.embedded_module_paths.contains(mod_file)) return false;
+        const cname = self.module_c_name(mod_path) catch return false;
+        defer self.alloc.free(cname);
+        return try self.try_emit_req_module_const_field(cname, field, result_rt);
+    }
+
     fn try_emit_req_module_const_field(
         self: *CodeGen,
         mod_cname: []const u8,
@@ -20466,8 +20567,12 @@ pub const CodeGen = struct {
                 break :blk by_ptr;
             };
             if (pass_by_ptr) {
-                self.p("&", .{});
-                try self.emit_expr(arg);
+                if (arg.* == .name and self.expr_is_native_record_ptr_param(arg)) {
+                    try self.emit_expr(arg);
+                } else {
+                    self.p("&", .{});
+                    try self.emit_expr(arg);
+                }
             } else {
                 try self.emit_arg_for_param(arg, pt, true);
             }
@@ -22276,7 +22381,7 @@ const duo_runtime =
     \\    return strlen(lua_to_str(v));
     \\}
     \\
-    \\static inline size_t duo_str_len(const char* s) {
+    \\static inline size_t duo_str_len_hdr(const char* s) {
     \\    if (!s) return 0;
     \\    lua_String* h = (lua_String*)((char*)s - offsetof(lua_String, data));
     \\    return h->len;
@@ -28804,7 +28909,7 @@ test "codegen: string.len uses byte length for char(0) (Wasm opcode 0x00)" {
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "strlen(lua_to_str(lua_str_char") == null);
-    try testing.expect(std.mem.indexOf(u8, output, "duo_str_len(lua_to_str(lua_str_char") != null);
+    try testing.expect(std.mem.indexOf(u8, output, "duo_str_len_hdr(lua_to_str(lua_str_char") != null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value wn = ") == null);
     try testing.expect(std.mem.indexOf(u8, output, "lua_Value ch = ") == null);
 }

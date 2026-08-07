@@ -1,5 +1,5 @@
 -- static template inside match (no dynamic spec)
-out = @comp.match("i32|i64", fun(m)
+out = @comp.match("i32|i64", (m: any)
     @comp.template("i32:int64_t|i64:int64_t", "int64_t add_$0(int64_t a, int64_t b) { return a + b; }\n")
 end)
 print(out)

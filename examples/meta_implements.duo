@@ -9,7 +9,7 @@ PointLike = meta.make_concept("PointLike", {
 p: { x: i64, y: i64, len: any } = {
     x = 3,
     y = 4,
-    len = fun(self): i64
+    len = (self): i64
         return 5
     end,
 }
@@ -17,7 +17,7 @@ p: { x: i64, y: i64, len: any } = {
 shape = {
     x = 3,
     y = 4,
-    len = fun(self): i64
+    len = (self): i64
         return 5
     end,
 }
