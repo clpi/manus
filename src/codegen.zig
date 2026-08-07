@@ -1474,6 +1474,27 @@ pub const CodeGen = struct {
         }
         if (e.* == .call) {
             const c = e.call;
+            // `to(T)(v)` yields T. Without this the type is unknown and a
+            // chained projection (`x:to(i64):to(str)`) cannot resolve its
+            // second receiver — the edge knows its own target, so say so.
+            if (c.func.* == .call and c.func.call.func.* == .name and
+                std.mem.eql(u8, c.func.call.func.name.ident, "to") and
+                c.func.call.args.len == 1 and c.func.call.args[0].* == .name)
+            {
+                if (self.mem_type_from_name(c.func.call.args[0].name.ident)) |t| return t;
+                if (std.mem.eql(u8, c.func.call.args[0].name.ident, "str")) return .str;
+            }
+        }
+        // Same edge, receiver-first spelling: `v:to(T)` also yields T.
+        if (e.* == .method_call) {
+            const mc = e.method_call;
+            if (std.mem.eql(u8, mc.method, "to") and mc.args.len == 1 and mc.args[0].* == .name) {
+                if (self.mem_type_from_name(mc.args[0].name.ident)) |t| return t;
+                if (std.mem.eql(u8, mc.args[0].name.ident, "str")) return .str;
+            }
+        }
+        if (e.* == .call) {
+            const c = e.call;
             if (self.enum_eq_call_result_type(c.func, c.args)) |t| return t;
             if (self.enum_display_call_result_type(c.func, c.args)) |t| return t;
             if (self.mem_call_result_type(c.func, c.args)) |t| return t;
@@ -10143,16 +10164,6 @@ pub const CodeGen = struct {
             },
             .global_decl => |*gd| {
                 if (gd.star) return;
-                // Storage for a req binding is skipped by the declaration loop
-                // under exactly this condition (see the `duo_g_` declaration
-                // guard). The initializer must use the SAME test or the two
-                // disagree and we emit an assignment to something never declared
-                // — "use of undeclared identifier 'duo_g_WardOps'" for any
-                // file-as-module-scope module whose fields all fold to
-                // compile-time constants.
-                if (!self.tu_needs_lua_runtime and gd.names.len == 1 and
-                    gd.inits.len == 1 and req_path_from_expr(gd.inits[0]) != null and
-                    self.req_module_bindings.contains(gd.names[0].ident)) return;
                 if (gd.inits.len == 1 and self.uses_multi_return(gd.inits[0], gd.names.len)) {
                     self.ind();
                     self.pl("lua_mret_clear();", .{});
@@ -13699,6 +13710,24 @@ pub const CodeGen = struct {
             .method_call => |mc| {
                 const ot = self.expr_type(mc.obj);
 
+                // LAW-CALL generalized (spec 4.2, S13): a `:` invocation
+                // resolves ordinary members FIRST — data always wins the name —
+                // then a relation family with a receiver-bindable role,
+                // normalizing to the SAME edge: `p:to(str)` === `to(str)(p)`.
+                // Restricted to scalar receivers, where no user member can
+                // exist, so the data-wins rule is preserved by construction.
+                // Retrieval stays anchored (`p@to` is the value; `p:to(str)`
+                // is the act).
+                if (mc.args.len == 1 and std.mem.eql(u8, mc.method, "to") and
+                    (ot.is_numeric() or ot == .str or ot == .bool))
+                {
+                    var fam = ast.Expr{ .name = .{ .loc = mc.loc, .ident = "to" } };
+                    var inner_args = [_]*ast.Expr{mc.args[0]};
+                    var inner = ast.Expr{ .call = .{ .loc = mc.loc, .func = &fam, .args = inner_args[0..] } };
+                    var outer_args = [_]*ast.Expr{mc.obj};
+                    if (try self.maybe_emit_stdlib_call(&inner, outer_args[0..], self.expr_type(expr))) return;
+                }
+
                 // ═══════════════════════════════════════════════════════════
                 // Zero-cost metatable dispatch: if we know the object's type
                 // has a method defined in its alias_defs, emit a direct call
@@ -16889,7 +16918,13 @@ pub const CodeGen = struct {
         // the vestiges remain only as aliases.
         if (func.* == .call) {
             const inner = func.call;
-            if (inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "to") and
+            const fam_to = inner.func.* == .name and std.mem.eql(u8, inner.func.name.ident, "to");
+            // `from` is NOT resolvable standalone: 2.6 spells it
+            // `str:from(point)(raw)` — the TARGET is the receiver, the source
+            // is the descriptor group. It therefore arrives through method
+            // projection below, never as a bare call, so there is nothing to
+            // guess from demand here.
+            if (fam_to and
                 inner.args.len == 1 and inner.args[0].* == .name and args.len == 1)
             {
                 const tname = inner.args[0].name.ident;
