@@ -4,7 +4,7 @@
 -- projection differential (exact sexpr) and the compile-fail differential
 -- (parse_status must reject malformed input), all through the NATIVE backend.
 --
--- Exit code: 0 on full pass, 1..25 positive mismatch index, 101+ compile-fail
+-- Exit code: 0 on full pass, 1..40 positive mismatch index, 101+ compile-fail
 -- index, 200 clean-input misclassification.
 
 positives = {
@@ -36,10 +36,31 @@ positives = {
     { "for v in t x = v end", "(program (forin (names v) t (assign x v)))" },
     { "for k, v in pairs(t) x = k end", "(program (forin (names k v) (call pairs t) (assign x k)))" },
     { "for i = 1, n for j = 1, m x = j end end", "(program (for i (range 1 n) (for j (range 1 m) (assign x j))))" },
+    -- Postfix: length, indexing, method calls. `join` on the method arglist is
+    -- what keeps a no-argument call `(method obj close)` rather than
+    -- `(method obj close )`.
+    { "x = #t", "(program (assign x (len t)))" },
+    { "x = t[i]", "(program (assign x (index t i)))" },
+    { "x = t[i].f[2]", "(program (assign x (index (dot (index t i) f) 2)))" },
+    { "obj:m(1, 2)", "(program (method obj m 1 2))" },
+    { "obj:close()", "(program (method obj close))" },
+    { "f:read(\"a\")", "(program (method f read \"a\"))" },
+    -- Assignment to a target that is not a bare name, and multiple assignment.
+    { "t[i] = 5", "(program (assign (index t i) 5))" },
+    { "a.b[i].c = 5", "(program (assign (dot (index (dot a b) i) c) 5))" },
+    { "t[i] += 5", "(program (assign-op += (index t i) 5))" },
+    { "a, b = 1, 2", "(program (assign-multi (targets a b) (values 1 2)))" },
+    { "t.x, t.y = 1, 2", "(program (assign-multi (targets (dot t x) (dot t y)) (values 1 2)))" },
+    -- Declarations, break, repeat.
+    { "local n: i64 = 5", "(program (local n (type i64) 5))" },
+    { "global x", "(program (global x))" },
+    { "while a break end", "(program (while a (break)))" },
+    { "repeat x = 1 until a", "(program (repeat (assign x 1) (until a)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
-    "for = 1, n end", "for i = 1 end", "for k, in t end" }
+    "for = 1, n end", "for i = 1 end", "for k, in t end",
+    "a, b", "repeat x = 1", "obj:m", "x = t[i", "local = 1" }
 
 main(): i64
     for i = 1, #positives

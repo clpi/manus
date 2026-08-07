@@ -588,6 +588,99 @@ proj_assign(lx: Lexer, t: Tok): str
     "(assign-op " .. op.text .. " " .. t.text .. " " .. rhs .. ")"
 end
 
+-- ('local'|'global') NAME (':' type)? ('=' expr)?
+proj_decl(lx: Lexer): str
+    kw = lexer.next(lx)
+    n = lexer.next(lx)
+    if n.kind != token.KIND_NAME
+        mark_error(lx)
+        return "(error)"
+    end
+    s = "(" .. kw.text .. " " .. n.text
+    if lexer.peek(lx).kind == token.KIND_COLON
+        _c = lexer.next(lx)
+        s = s .. " (type " .. proj_type(lx) .. ")"
+    end
+    if lexer.peek(lx).kind == token.KIND_ASSIGN
+        _a = lexer.next(lx)
+        s = s .. " " .. proj_expr(lx)
+    end
+    s .. ")"
+end
+
+-- repeat body 'until' expr
+--
+-- The body is read with proj_stmt rather than proj_body because `repeat` closes
+-- on `until`, not `end`. proj_stmt returns "" at `end`/`else`/`elseif`, which
+-- would spin here, so an empty projection is treated as the error it is.
+proj_repeat(lx: Lexer): str
+    _r = lexer.next(lx)
+    acc = ""
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_UNTIL
+            _u = lexer.next(lx)
+            s = "(repeat"
+            if acc != ""
+                s = s .. " " .. acc
+            end
+            return s .. " (until " .. proj_expr(lx) .. "))"
+        end
+        if t.kind == token.KIND_EOF
+            mark_error(lx)
+            return "(repeat (error))"
+        end
+        st = proj_stmt(lx)
+        if st == ""
+            mark_error(lx)
+            return "(repeat (error))"
+        end
+        acc = join(acc, st)
+    end
+end
+
+-- A statement starting with a NAME whose target is not a bare name:
+-- `t[i] = v`, `t.f = v`, `a, b = 1, 2`, or a plain expression statement.
+--
+-- The target is parsed as a postfix expression and the assignment operator is
+-- checked afterwards, rather than being predicted from lookahead — the target
+-- grammar is exactly the postfix grammar, so duplicating it would be the only
+-- other option and the two copies would drift.
+proj_target_or_expr(lx: Lexer): str
+    first = proj_postfix(lx)
+    if lexer.peek(lx).kind == token.KIND_COMMA
+        targets = first
+        while lexer.peek(lx).kind == token.KIND_COMMA
+            _c = lexer.next(lx)
+            targets = targets .. " " .. proj_postfix(lx)
+        end
+        if not is_assign_kind(lexer.peek(lx).kind)
+            mark_error(lx)
+            return "(error)"
+        end
+        op = lexer.next(lx)
+        if op.kind != token.KIND_ASSIGN
+            mark_error(lx)
+            return "(error)"
+        end
+        vals = proj_expr(lx)
+        while lexer.peek(lx).kind == token.KIND_COMMA
+            _c2 = lexer.next(lx)
+            vals = vals .. " " .. proj_expr(lx)
+        end
+        return "(assign-multi (targets " .. targets .. ") (values " .. vals .. "))"
+    end
+    if is_assign_kind(lexer.peek(lx).kind)
+        op = lexer.next(lx)
+        rhs = proj_expr(lx)
+        if op.kind == token.KIND_ASSIGN
+            return "(assign " .. first .. " " .. rhs .. ")"
+        end
+        return "(assign-op " .. op.text .. " " .. first .. " " .. rhs .. ")"
+    end
+    first
+end
+
 -- '@' directive: dotted names, then optional parenthesised arguments.
 proj_directive(lx: Lexer): str
     _a = lexer.next(lx)
@@ -763,6 +856,10 @@ proj_unary(lx: Lexer): str
         _o = lexer.next(lx)
         return "(not " .. proj_unary(lx) .. ")"
     end
+    if t.kind == token.KIND_HASH
+        _o = lexer.next(lx)
+        return "(len " .. proj_unary(lx) .. ")"
+    end
     proj_postfix(lx)
 end
 
@@ -779,6 +876,38 @@ proj_postfix(lx: Lexer): str
             _d = lexer.next(lx)
             n = lexer.next(lx)
             base = "(dot " .. base .. " " .. n.text .. ")"
+        elseif t.kind == token.KIND_LBRACKET
+            _lb = lexer.next(lx)
+            idx = proj_expr(lx)
+            rb = lexer.next(lx)
+            if rb.kind != token.KIND_RBRACKET
+                mark_error(lx)
+                return "(error)"
+            end
+            base = "(index " .. base .. " " .. idx .. ")"
+        elseif t.kind == token.KIND_COLON
+            -- `obj:m(args)`. The receiver is projected separately from the
+            -- name so a later pass can see the implicit self without
+            -- re-deriving it from a dotted path.
+            _c = lexer.next(lx)
+            m = lexer.next(lx)
+            if m.kind != token.KIND_NAME
+                mark_error(lx)
+                return "(error)"
+            end
+            head = "(method " .. base .. " " .. m.text
+            if lexer.peek(lx).kind == token.KIND_STRING_LIT
+                sl = lexer.next(lx)
+                base = head .. " " .. quote(sl.text) .. ")"
+            else
+                if lexer.peek(lx).kind != token.KIND_LPAREN
+                    mark_error(lx)
+                    return "(error)"
+                end
+                -- `join`, not concatenation: a no-argument call must project as
+                -- `(method obj m)`, not `(method obj m )`.
+                base = join(head, proj_arglist(lx)) .. ")"
+            end
         elseif t.kind == token.KIND_AT
             _a = lexer.next(lx)
             an = lexer.next(lx)
@@ -853,6 +982,16 @@ proj_stmt(lx: Lexer): str
     if t.kind == token.KIND_AT
         return proj_directive(lx)
     end
+    if t.kind == token.KIND_BREAK
+        _b = lexer.next(lx)
+        return "(break)"
+    end
+    if t.kind == token.KIND_REPEAT
+        return proj_repeat(lx)
+    end
+    if t.kind == token.KIND_LOCAL or t.kind == token.KIND_GLOBAL
+        return proj_decl(lx)
+    end
     if t.kind == token.KIND_NAME
         t2 = peek2(lx)
         if t2.kind == token.KIND_LPAREN
@@ -863,6 +1002,9 @@ proj_stmt(lx: Lexer): str
         end
         if is_assign_kind(t2.kind)
             return proj_assign(lx, t)
+        end
+        if t2.kind == token.KIND_DOT or t2.kind == token.KIND_LBRACKET or t2.kind == token.KIND_COMMA
+            return proj_target_or_expr(lx)
         end
         return proj_expr(lx)
     end
