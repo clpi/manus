@@ -23,9 +23,6 @@
 -- Parallel arrays rather than keyed tables: `{ i32 = 69 }` is a parse error
 -- (type names are keywords), and a string-keyed lookup returns a boxed value
 -- where an integer-indexed array stays a native scalar.
-
-M = {}
-
 -- ── carriers ─────────────────────────────────────────────────────────────
 TYPES = { "i32", "i64", "f32", "f64" }
 TYPE_COUNT = 4
@@ -216,17 +213,3 @@ reinterpret_op(ty: str): i64
   end
   REINTERPRET_BASE + k - 1
 end
-
-M.op = op
-M.cmp_lo = cmp_lo
-M.cmp_hi = cmp_hi
-M.alu_lo = alu_lo
-M.alu_hi = alu_hi
-M.convert_op = convert_op
-M.reinterpret_op = reinterpret_op
-M.type_index = type_index
-M.TYPES = TYPES
-M.INT_CMP = INT_CMP
-M.FLT_CMP = FLT_CMP
-M.INT_ALU = INT_ALU
-M.FLT_ALU = FLT_ALU

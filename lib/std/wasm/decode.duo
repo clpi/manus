@@ -132,22 +132,3 @@ decode_i32_const(c): any
     if d.immediate == nil return { status = "truncated" } end
     return { status = "ok", opcode = d.opcode, id = d.id, imm = d.immediate }
 end
-
-M = {}
-M.DECODER_OWNER = DECODER_OWNER
-M.SEMANTIC_TABLE = SEMANTIC_TABLE
-M.LOOKUP_TABLE = LOOKUP_TABLE
-M.CURSOR_SUBSTRATE = CURSOR_SUBSTRATE
-M.decoder_owner = decoder_owner
-M.semantic_table_owner = semantic_table_owner
-M.lookup_table_owner = lookup_table_owner
-M.cursor_substrate = cursor_substrate
-M.new_cursor = new_cursor
-M.decode_opcode = decode_opcode
-M.decode_instruction = decode_instruction
-M.read_i32_imm = read_i32_imm
-M.read_i64_imm = read_i64_imm
-M.read_u32_imm = read_u32_imm
-M.read_mem_arg = read_mem_arg
-M.read_immediate = read_immediate
-M.decode_i32_const = decode_i32_const

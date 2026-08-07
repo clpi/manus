@@ -60,22 +60,3 @@ EXAMPLE_IDS = {
     "wasm.call",
     "wasm.return",
 }
-
-M = {}
-M.SEMANTIC_OWNER = SEMANTIC_OWNER
-M.GENERATOR_OWNER = GENERATOR_OWNER
-M.SCHEMA = SCHEMA
-M.MVP_FEATURE = MVP_FEATURE
-M.MVP_INSTRUCTION_COUNT = MVP_INSTRUCTION_COUNT
-M.OPCODE_TABLE_SIZE = OPCODE_TABLE_SIZE
-M.DECODER_TABLE_OWNER = DECODER_TABLE_OWNER
-M.LOOKUP_TABLE_OWNER = LOOKUP_TABLE_OWNER
-M.opcode_table_size = opcode_table_size
-M.decoder_table_owner = decoder_table_owner
-M.lookup_table_owner = lookup_table_owner
-M.generator_owner = generator_owner
-M.semantic_owner = semantic_owner
-M.schema_version = schema_version
-M.mvp_feature = mvp_feature
-M.mvp_instruction_count = mvp_instruction_count
-M.EXAMPLE_IDS = EXAMPLE_IDS
