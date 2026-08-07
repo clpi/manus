@@ -498,6 +498,75 @@ proj_while(lx: Lexer): str
     s .. ")"
 end
 
+-- `do` is optional in .duo and mandatory in .lua; the lexer feeds both, so the
+-- loop forms accept it and drop it rather than projecting it.
+skip_do(lx: Lexer)
+    if lexer.peek(lx).kind == token.KIND_DO
+        _d = lexer.next(lx)
+    end
+end
+
+-- for NAME '=' expr ',' expr (',' expr)? body 'end'   -- numeric
+-- for NAME (',' NAME)* 'in' expr body 'end'           -- generic
+--
+-- Projected as '(for NAME (range A B [S]) body...)' and
+-- '(forin (names N...) EXPR body...)'. The `range` grouping is what keeps an
+-- optional step unambiguous: without it, a three-expression header and a
+-- two-expression header followed by a body statement project identically.
+proj_for(lx: Lexer): str
+    _f = lexer.next(lx)
+    n1 = lexer.next(lx)
+    if n1.kind != token.KIND_NAME
+        mark_error(lx)
+        return "(for (error))"
+    end
+    if lexer.peek(lx).kind == token.KIND_ASSIGN
+        _a = lexer.next(lx)
+        start = proj_expr(lx)
+        if lexer.peek(lx).kind != token.KIND_COMMA
+            mark_error(lx)
+            return "(for (error))"
+        end
+        _c = lexer.next(lx)
+        rng = "(range " .. start .. " " .. proj_expr(lx)
+        if lexer.peek(lx).kind == token.KIND_COMMA
+            _c2 = lexer.next(lx)
+            rng = rng .. " " .. proj_expr(lx)
+        end
+        rng = rng .. ")"
+        skip_do(lx)
+        body = proj_body(lx)
+        s = "(for " .. n1.text .. " " .. rng
+        if body != ""
+            s = s .. " " .. body
+        end
+        return s .. ")"
+    end
+    names = n1.text
+    while lexer.peek(lx).kind == token.KIND_COMMA
+        _c = lexer.next(lx)
+        nx = lexer.next(lx)
+        if nx.kind != token.KIND_NAME
+            mark_error(lx)
+            return "(forin (error))"
+        end
+        names = names .. " " .. nx.text
+    end
+    if lexer.peek(lx).kind != token.KIND_IN
+        mark_error(lx)
+        return "(forin (error))"
+    end
+    _i = lexer.next(lx)
+    seq = proj_expr(lx)
+    skip_do(lx)
+    body = proj_body(lx)
+    s = "(forin (names " .. names .. ") " .. seq
+    if body != ""
+        s = s .. " " .. body
+    end
+    s .. ")"
+end
+
 -- return expr?
 proj_return(lx: Lexer): str
     _r = lexer.next(lx)
@@ -774,6 +843,9 @@ proj_stmt(lx: Lexer): str
     end
     if t.kind == token.KIND_WHILE
         return proj_while(lx)
+    end
+    if t.kind == token.KIND_FOR
+        return proj_for(lx)
     end
     if t.kind == token.KIND_RETURN
         return proj_return(lx)

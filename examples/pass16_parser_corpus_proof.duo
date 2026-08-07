@@ -4,7 +4,7 @@
 -- projection differential (exact sexpr) and the compile-fail differential
 -- (parse_status must reject malformed input), all through the NATIVE backend.
 --
--- Exit code: 0 on full pass, 1..18 positive mismatch index, 101+ compile-fail
+-- Exit code: 0 on full pass, 1..25 positive mismatch index, 101+ compile-fail
 -- index, 200 clean-input misclassification.
 
 positives = {
@@ -26,9 +26,20 @@ positives = {
     { "-x", "(program (- x))" },
     { "@comp.c.export(\"x\")", "(program (at comp c export \"x\"))" },
     { "add(a: i64, b: i64): i64 = a + b end", "(program (fun add (params (param a i64) (param b i64)) (ret i64) (+ a b)))" },
+    -- `for`, both forms. The `range` grouping is load-bearing: without it a
+    -- three-expression header and a two-expression header followed by a body
+    -- statement project to the same s-expression.
+    { "for i = 1, n x = i end", "(program (for i (range 1 n) (assign x i)))" },
+    { "for i = 1, n, 2 x = i end", "(program (for i (range 1 n 2) (assign x i)))" },
+    { "for i = 1, n do x = i end", "(program (for i (range 1 n) (assign x i)))" },
+    { "for i = 1, n end", "(program (for i (range 1 n)))" },
+    { "for v in t x = v end", "(program (forin (names v) t (assign x v)))" },
+    { "for k, v in pairs(t) x = k end", "(program (forin (names k v) (call pairs t) (assign x k)))" },
+    { "for i = 1, n for j = 1, m x = j end end", "(program (for i (range 1 n) (for j (range 1 m) (assign x j))))" },
 }
 
-fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1" }
+fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
+    "for = 1, n end", "for i = 1 end", "for k, in t end" }
 
 main(): i64
     for i = 1, #positives
