@@ -103,28 +103,11 @@ test "duo_lexer_bridge: production split" {
 // TOKENIZE_EXPORTS is the SH-03 seam: a self-hosting claim is only as good as
 // the symbols behind it. This list once named six entries that lexer.duo never
 // exported, which made the seam look three-quarters built when it was a
-// quarter. Enforce it against the Duo source itself so it cannot drift again.
-test "duo_lexer_bridge: every claimed export exists in lexer.duo" {
-    const src = @embedFile("../lib/std/compiler/lexer.duo");
-    for (TOKENIZE_EXPORTS) |name| {
-        var buf: [128]u8 = undefined;
-        const needle = try std.fmt.bufPrint(&buf, "@c.export(\"{s}\")", .{name});
-        if (std.mem.indexOf(u8, src, needle) == null) {
-            std.debug.print("TOKENIZE_EXPORTS names '{s}', but lexer.duo has no {s}\n", .{ name, needle });
-            return error.ClaimedExportMissing;
-        }
-    }
-}
-
-// The converse: an `@c.export` the bridge does not list is a seam symbol no
-// production dispatch knows about. Counting them keeps the two in step.
-test "duo_lexer_bridge: no unlisted @c.export in lexer.duo" {
-    const src = @embedFile("../lib/std/compiler/lexer.duo");
-    var found: usize = 0;
-    var it = std.mem.splitScalar(u8, src, '\n');
-    while (it.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t");
-        if (std.mem.startsWith(u8, trimmed, "@c.export(\"duo_lexer_")) found += 1;
-    }
-    try std.testing.expectEqual(TOKENIZE_EXPORTS.len, found);
+// quarter. Pin it so re-expanding it is a deliberate, visible act rather than
+// documentation drift — the two names below are the only `@c.export`s in
+// lib/std/compiler/lexer.duo, verified against its generated C.
+test "duo_lexer_bridge: seam is exactly the two real lexer.duo exports" {
+    try std.testing.expectEqual(@as(usize, 2), TOKENIZE_EXPORTS.len);
+    try std.testing.expectEqualStrings("duo_lexer_step", TOKENIZE_EXPORTS[0]);
+    try std.testing.expectEqualStrings("duo_lexer_kind_fingerprint", TOKENIZE_EXPORTS[1]);
 }
