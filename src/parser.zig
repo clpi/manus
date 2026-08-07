@@ -1164,6 +1164,45 @@ pub const Parser = struct {
     }
 
     /// Parse `concept Name[T, ...] ... end` with required methods and fields.
+    /// Parse the tail of a required-method signature in a concept body, with the
+    /// method name already consumed: `[T](params) -> ret` / `[T](params): ret`.
+    /// Shared by the legacy `fun`-prefixed form and the canonical bare form.
+    fn parse_concept_method_sig(self: *Parser, name: []const u8) ParseError!ast.FuncSignature {
+        // Optional method type parameters: [T]
+        var method_type_params: ?[]ast.TypeExpr = null;
+        if (try self.eat(.lbracket) != null) {
+            var mtp_list: std.ArrayList(ast.TypeExpr) = .empty;
+            try mtp_list.append(self.alloc, try self.parse_type());
+            while (try self.eat(.comma) != null) {
+                try mtp_list.append(self.alloc, try self.parse_type());
+            }
+            _ = try self.expect(.rbracket);
+            method_type_params = try mtp_list.toOwnedSlice(self.alloc);
+        }
+
+        _ = try self.expect(.lparen);
+        var params: std.ArrayList(ast.FuncParam) = .empty;
+        if (!(try self.check(.rparen))) {
+            try params.append(self.alloc, try self.parse_param());
+            while (try self.eat(.comma) != null) {
+                try params.append(self.alloc, try self.parse_param());
+            }
+        }
+        _ = try self.expect(.rparen);
+
+        // Optional return type: -> type or : type
+        var ret_type: ast.TypeExpr = .inferred;
+        if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
+            ret_type = try self.parse_type();
+
+        return .{
+            .name = name,
+            .params = try params.toOwnedSlice(self.alloc),
+            .ret_type = ret_type,
+            .type_params = method_type_params,
+        };
+    }
+
     fn parse_concept_def_with_attrs(self: *Parser, attrs: []ast.Attribute) ParseError!ast.Stmt {
         const l = (try self.adv()).loc; // consume `concept`
         const nm = try self.expect(.name);
@@ -1186,53 +1225,25 @@ pub const Parser = struct {
 
         while ((try self.pk()).kind != .kw_end and (try self.pk()).kind != .eof) {
             if ((try self.pk()).kind == .kw_fun or (try self.pk()).kind == .kw_function) {
-                // Required method: fun name(params) -> ret_type
+                // Legacy required method: `fun name(params) -> ret_type`. GR-001
+                // retires `fun`; the bare form below is canonical.
                 _ = try self.adv(); // consume `fun` or `function`
                 const method_name = try self.expect(.name);
-
-                // Optional method type parameters: [T]
-                var method_type_params: ?[]ast.TypeExpr = null;
-                if (try self.eat(.lbracket) != null) {
-                    var mtp_list: std.ArrayList(ast.TypeExpr) = .empty;
-                    try mtp_list.append(self.alloc, try self.parse_type());
-                    while (try self.eat(.comma) != null) {
-                        try mtp_list.append(self.alloc, try self.parse_type());
-                    }
-                    _ = try self.expect(.rbracket);
-                    method_type_params = try mtp_list.toOwnedSlice(self.alloc);
-                }
-
-                // Parse parameter list
-                _ = try self.expect(.lparen);
-                var params: std.ArrayList(ast.FuncParam) = .empty;
-                if (!(try self.check(.rparen))) {
-                    try params.append(self.alloc, try self.parse_param());
-                    while (try self.eat(.comma) != null) {
-                        try params.append(self.alloc, try self.parse_param());
-                    }
-                }
-                _ = try self.expect(.rparen);
-
-                // Optional return type: -> type or : type
-                var ret_type: ast.TypeExpr = .inferred;
-                if (try self.eat(.arrow) != null or try self.eat(.colon) != null)
-                    ret_type = try self.parse_type();
-
-                try methods.append(self.alloc, .{
-                    .name = method_name.text,
-                    .params = try params.toOwnedSlice(self.alloc),
-                    .ret_type = ret_type,
-                    .type_params = method_type_params,
-                });
+                try methods.append(self.alloc, try self.parse_concept_method_sig(method_name.text));
             } else if ((try self.pk()).kind == .name) {
-                // Required field: name: type
-                const field_name = try self.adv();
-                _ = try self.expect(.colon);
-                const field_type = try self.parse_type();
-                try fields.append(self.alloc, .{
-                    .name = field_name.text,
-                    .typ = field_type,
-                });
+                // Canonical bare member. `name(` / `name[` is a required method
+                // signature (GR-001 bare function); `name:` is a required field.
+                const member_name = try self.adv();
+                if ((try self.check(.lparen)) or (try self.check(.lbracket))) {
+                    try methods.append(self.alloc, try self.parse_concept_method_sig(member_name.text));
+                } else {
+                    _ = try self.expect(.colon);
+                    const field_type = try self.parse_type();
+                    try fields.append(self.alloc, .{
+                        .name = member_name.text,
+                        .typ = field_type,
+                    });
+                }
             } else {
                 // Skip unexpected tokens to avoid infinite loops
                 term.locErr((try self.pk()).loc, "unexpected token in concept body: '{s}'", .{
@@ -3760,6 +3771,16 @@ pub const Parser = struct {
             .kw_match => self.parse_match_expr(),
             .dot => self.parse_field_projection(),
             .colon => self.parse_method_reference(),
+            // Canonical spec 2.10 (G3, de-magicking): "every std name is an
+            // ordinary definable value or a relation family with inspectable
+            // edges — no third category." A TYPE NAME is therefore a value in
+            // expression position, which is what makes the canonical relation
+            // spelling `to(str)` / `to(i64)` (spec 2.6) parseable at all.
+            .kw_i8, .kw_i16, .kw_i32, .kw_i64, .kw_u8, .kw_u16, .kw_u32,
+            .kw_u64, .kw_f32, .kw_f64, .kw_bool, .kw_void, .kw_str => blk: {
+                const type_tok = try self.adv();
+                break :blk self.new_expr(.{ .name = .{ .loc = type_tok.loc, .ident = type_tok.kind.spelling() } });
+            },
             else => {
                 term.locErr(tok.loc, "expected expression, got '{s}'", .{tok.kind.spelling()});
                 return ParseError.ExpectedToken;
@@ -6237,6 +6258,67 @@ test "parse: simple concept with one method" {
     try testing.expect(cd.required_methods[0].ret_type == .named);
     try testing.expectEqualStrings("str", cd.required_methods[0].ret_type.named);
     try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
+}
+
+test "parse: concept with bare (GR-001) method signatures" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // Canonical bare form as used by lib/std/mem.duo — no `fun` keyword.
+    const mod = try parseSource(
+        \\concept Allocator
+        \\    alloc(self, bytes: i64): any
+        \\    free(self, ptr: any): void
+        \\    total_allocated(self): i64
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqualStrings("Allocator", cd.name);
+    try testing.expectEqual(@as(usize, 0), cd.required_fields.len);
+    try testing.expectEqual(@as(usize, 3), cd.required_methods.len);
+    try testing.expectEqualStrings("alloc", cd.required_methods[0].name);
+    try testing.expectEqual(@as(usize, 2), cd.required_methods[0].params.len);
+    try testing.expectEqualStrings("bytes", cd.required_methods[0].params[1].name);
+    try testing.expectEqualStrings("any", cd.required_methods[0].ret_type.named);
+    try testing.expectEqualStrings("free", cd.required_methods[1].name);
+    try testing.expectEqualStrings("total_allocated", cd.required_methods[2].name);
+    try testing.expectEqual(@as(usize, 1), cd.required_methods[2].params.len);
+    try testing.expectEqualStrings("i64", cd.required_methods[2].ret_type.named);
+}
+
+test "parse: concept mixing bare methods and required fields" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    // `name(` is a method, `name:` is a field — the disambiguation must not
+    // regress the field form now that bare methods are accepted.
+    const mod = try parseSource(
+        \\concept Buffer
+        \\    capacity: i64
+        \\    push(self, byte: i64): void
+        \\    tag: str
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("push", cd.required_methods[0].name);
+    try testing.expectEqual(@as(usize, 2), cd.required_fields.len);
+    try testing.expectEqualStrings("capacity", cd.required_fields[0].name);
+    try testing.expectEqualStrings("i64", cd.required_fields[0].typ.named);
+    try testing.expectEqualStrings("tag", cd.required_fields[1].name);
+}
+
+test "parse: concept bare generic method signature" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const mod = try parseSource(
+        \\concept Mapper
+        \\    map[T](self, f: T): T
+        \\end
+    , &arena);
+    const cd = mod.body.stmts[0].concept_def;
+    try testing.expectEqual(@as(usize, 1), cd.required_methods.len);
+    try testing.expectEqualStrings("map", cd.required_methods[0].name);
+    try testing.expect(cd.required_methods[0].type_params != null);
+    try testing.expectEqualStrings("T", cd.required_methods[0].type_params.?[0].named);
 }
 
 test "parse: concept with generic type parameter" {

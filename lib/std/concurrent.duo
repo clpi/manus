@@ -5,10 +5,10 @@ sync = require "std.sync"
 
 -- Spawn a task and return a future channel (capacity 1) for its result.
 -- result shape: {ok=bool, val=any, err=any}
-fun go(fn: any, ...args): any
+go(fn: any, ...args): any
     fut = sync.channel(1)
     args_list = {args}
-    closure = fun(): void
+    closure = (): void
         ok, result = pcall(fn, table.unpack(args_list))
         if ok then
             sync.channel_send(fut, {ok = true, val = result})
@@ -21,7 +21,7 @@ fun go(fn: any, ...args): any
 end
 
 -- Await a future (blocks/yields until result available).
-fun wait(fut: any): any
+wait(fut: any): any
     r = sync.channel_recv(fut)
     if r == nil then return nil end
     if r.ok then
@@ -32,7 +32,7 @@ fun wait(fut: any): any
 end
 
 -- Run N tasks concurrently; return table of results in order.
-fun all(tasks: any, ...args): any
+all(tasks: any, ...args): any
     futs = {}
     -- tasks can be a list, or varargs
     if type(tasks) == "function" then
@@ -56,10 +56,10 @@ fun all(tasks: any, ...args): any
 end
 
 -- Race: return the first completed future's result.
-fun race(futs: any): any
+race(futs: any): any
     winner = sync.channel(1)
     for i, fut in ipairs(futs)
-        race_closure = fun(): void
+        race_closure = (): void
             val = sync.channel_recv(fut)
             sync.channel_try_recv(winner)  -- drain if already won
             sync.channel_send(winner, {idx = i, val = val})
@@ -73,11 +73,11 @@ end
 -- Select: poll channels round-robin until one has data.
 -- cases = {{ch=channel, fn=handler_fn}, ...}
 -- Returns when one case fires; calls its fn with the value.
-fun select(cases: any): any
+select(cases: any): any
     while true
         for _, c in ipairs(cases)
             val = sync.channel_try_recv(c.ch)
-            if val ~= nil then
+            if val != nil then
                 if c.fn then c.fn(val) end
                 return val, c.ch
             end
@@ -87,22 +87,22 @@ fun select(cases: any): any
 end
 
 -- Semaphore: counting semaphore built on a buffered channel.
-fun semaphore(n: i64): any
+semaphore(n: i64): any
     s = sync.channel(n)
     for _ = 1, n sync.channel_send(s, true) end
     {
-        acquire = fun(): any sync.channel_recv(s) end,
-        release = fun(): void sync.channel_send(s, true) end,
-        try_acquire = fun(): bool sync.channel_try_recv(s) ~= nil end,
+        acquire = (): any sync.channel_recv(s),
+        release = (): void sync.channel_send(s, true),
+        try_acquire = (): bool sync.channel_try_recv(s) != nil,
     }
 end
 
 -- WaitGroup: wait for N tasks to complete.
-fun waitgroup(n: i64): any
-    local ch = sync.channel(n)
+waitgroup(n: i64): any
+    ch = sync.channel(n)
     return {
-        done = fun(): void sync.channel_send(ch, true) end,
-        wait = fun(): void
+        done = (): void sync.channel_send(ch, true),
+        wait = (): void
             for _ = 1, n sync.channel_recv(ch) end
         end,
     }

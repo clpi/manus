@@ -11,7 +11,7 @@ sync = require "std.sync"
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a new mutex.  Initially unlocked.
-fun mutex(): any
+mutex(): any
     {
         _locked     = false,
         _waiters    = {},  -- suspended coroutines waiting to acquire
@@ -20,7 +20,7 @@ fun mutex(): any
 end
 
 -- Acquire the lock, blocking if already held.
-fun lock(m: any): void
+lock(m: any): void
     if m._locked and m._holder == coroutine.running() then
         return  -- recursive: already owned
     end
@@ -34,7 +34,7 @@ fun lock(m: any): void
 end
 
 -- Try to acquire the lock without blocking.  Returns true on success.
-fun try_lock(m: any): bool
+try_lock(m: any): bool
     if m._locked and m._holder == coroutine.running() then
         return true
     end
@@ -45,15 +45,15 @@ fun try_lock(m: any): bool
 end
 
 -- Release the lock, waking one waiter if any.
-fun unlock(m: any): void
-    if m._holder ~= coroutine.running() then
+unlock(m: any): void
+    if m._holder != coroutine.running() then
         error("thread: unlock called by non-owner")
     end
     m._locked = false
     m._holder = nil
     if #m._waiters > 0 then
         co = table.remove(m._waiters, 1)
-        sync.spawn(fun() return coroutine.resume(co) end)
+        sync.spawn(() coroutine.resume(co))
     end
 end
 
@@ -62,7 +62,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a readers-writer lock.
-fun rwlock(): any
+rwlock(): any
     {
         _readers    = 0,
         _writing    = false,
@@ -73,7 +73,7 @@ fun rwlock(): any
 end
 
 -- Acquire for reading.  Multiple readers allowed; blocks if writing.
-fun rlock(rw: any): void
+rlock(rw: any): void
     while rw._writing
         co = coroutine.running()
         rw._r_waiters[#rw._r_waiters + 1] = co
@@ -83,16 +83,16 @@ fun rlock(rw: any): void
 end
 
 -- Release a read lock.
-fun runlock(rw: any): void
+runlock(rw: any): void
     rw._readers = rw._readers - 1
     if rw._readers == 0 and #rw._w_waiters > 0 then
         co = table.remove(rw._w_waiters, 1)
-        sync.spawn(fun() return coroutine.resume(co) end)
+        sync.spawn(() coroutine.resume(co))
     end
 end
 
 -- Acquire for writing.  Blocks if anyone holds the lock.
-fun wlock(rw: any): void
+wlock(rw: any): void
     if rw._w_holder == coroutine.running() then return end
     while rw._writing or rw._readers > 0
         co = coroutine.running()
@@ -104,18 +104,18 @@ fun wlock(rw: any): void
 end
 
 -- Release a write lock.
-fun wunlock(rw: any): void
-    if rw._w_holder ~= coroutine.running() then
+wunlock(rw: any): void
+    if rw._w_holder != coroutine.running() then
         error("thread: wunlock called by non-owner")
     end
     rw._writing = false
     rw._w_holder = nil
     if #rw._w_waiters > 0 then
         co = table.remove(rw._w_waiters, 1)
-        sync.spawn(fun() return coroutine.resume(co) end)
+        sync.spawn(() coroutine.resume(co))
     elseif #rw._r_waiters > 0 then
         for _, co in ipairs(rw._r_waiters)
-            sync.spawn(fun() return coroutine.resume(co) end)
+            sync.spawn(() coroutine.resume(co))
         end
         rw._r_waiters = {}
     end
@@ -126,7 +126,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a condition variable associated with a mutex.
-fun cond(m: any): any
+cond(m: any): any
     {
         _mutex  = m,
         _waiters = {},
@@ -135,9 +135,9 @@ end
 
 -- Wait on the condition (mutex must be held).  Atomically unlocks the
 -- mutex and suspends; re-acquires the lock before returning.
-fun wait(c: any): void
+wait(c: any): void
     m = c._mutex
-    if m._holder ~= coroutine.running() then
+    if m._holder != coroutine.running() then
         error("thread: cond.wait without holding mutex")
     end
     co = coroutine.running()
@@ -148,17 +148,17 @@ fun wait(c: any): void
 end
 
 -- Wake one waiter on the condition.
-fun signal(c: any): void
+signal(c: any): void
     if #c._waiters > 0 then
         co = table.remove(c._waiters, 1)
-        sync.spawn(fun() return coroutine.resume(co) end)
+        sync.spawn(() coroutine.resume(co))
     end
 end
 
 -- Wake all waiters on the condition.
-fun broadcast(c: any): void
+broadcast(c: any): void
     for _, co in ipairs(c._waiters)
-        sync.spawn(fun() return coroutine.resume(co) end)
+        sync.spawn(() coroutine.resume(co))
     end
     c._waiters = {}
 end
@@ -168,7 +168,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a Once guard.
-fun once(): any
+once(): any
     {
         _done = false,
         _mu   = mutex(),
@@ -176,7 +176,7 @@ fun once(): any
 end
 
 -- Call fn exactly once; subsequent calls are no-ops.
-fun do_once(o: any, fn: any): void
+do_once(o: any, fn: any): void
     lock(o._mu)
     if not o._done then
         o._done = true
@@ -192,7 +192,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a counting semaphore with n permits.
-fun semaphore(n: i64): any
+semaphore(n: i64): any
     {
         _permits = n,
         _waiters = {},
@@ -201,7 +201,7 @@ fun semaphore(n: i64): any
 end
 
 -- Acquire a permit, blocking if none available.
-fun acquire(s: any): void
+acquire(s: any): void
     lock(s._mu)
     while s._permits <= 0
         co = coroutine.running()
@@ -215,7 +215,7 @@ fun acquire(s: any): void
 end
 
 -- Try to acquire a permit without blocking.
-fun try_acquire(s: any): bool
+try_acquire(s: any): bool
     lock(s._mu)
     if s._permits > 0 then
         s._permits = s._permits - 1
@@ -227,12 +227,12 @@ fun try_acquire(s: any): bool
 end
 
 -- Release a permit.
-fun release(s: any): void
+release(s: any): void
     lock(s._mu)
     s._permits = s._permits + 1
     if #s._waiters > 0 then
         co = table.remove(s._waiters, 1)
-        sync.spawn(fun() return coroutine.resume(co) end)
+        sync.spawn(() coroutine.resume(co))
     end
     unlock(s._mu)
 end
@@ -242,7 +242,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a barrier for n participants.
-fun barrier(n: i64): any
+barrier(n: i64): any
     {
         _count   = n,
         _total   = n,
@@ -253,7 +253,7 @@ fun barrier(n: i64): any
 end
 
 -- Wait at the barrier until all participants arrive.
-fun barrier_wait(b: any): void
+barrier_wait(b: any): void
     if b._cv == nil then
         b._cv = cond(b._mu)
     end
@@ -282,10 +282,10 @@ end
 -- Spawn a function in a new thread.  Returns a thread handle.
 -- In cooperative mode this creates a coroutine and yields to the scheduler.
 -- In threaded mode this creates a real OS thread.
-fun spawn(fn: any, ...args): any
+spawn(fn: any, ...args): any
     args_list = {args}
     result_ch = sync.channel(1)
-    co = coroutine.create(fun()
+    co = coroutine.create(()
         ok, result = pcall(fn, table.unpack(args_list))
         if ok then
             sync.channel_send(result_ch, {ok = true, val = result})
@@ -293,7 +293,7 @@ fun spawn(fn: any, ...args): any
             sync.channel_send(result_ch, {ok = false, err = result})
         end
     end)
-    sync.spawn(fun() return coroutine.resume(co) end)
+    sync.spawn(() coroutine.resume(co))
     {
         _co    = co,
         _result = result_ch,
@@ -301,7 +301,7 @@ fun spawn(fn: any, ...args): any
 end
 
 -- Wait for a thread to complete, returning its result.  Raises on error.
-fun join(h: any): any
+join(h: any): any
     r = sync.channel_recv(h._result)
     if r == nil then return nil end
     if r.ok then return r.val end
@@ -310,7 +310,7 @@ end
 
 -- Detach a thread, allowing it to run independently.  Resources are
 -- released automatically when the thread finishes.
-fun detach(h: any): void
+detach(h: any): void
     h._detached = true
 end
 
@@ -319,7 +319,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Return a unique identifier for the current thread/coroutine.
-fun id(): i64
+id(): i64
     co = coroutine.running()
     if co == nil then return 0 end
     -- Hash the coroutine pointer for a stable id
@@ -333,19 +333,19 @@ end
 
 -- Return the number of hardware threads available (for parallelism).
 -- In single-threaded mode, returns 1.
-fun cpu_count(): i64
+cpu_count(): i64
     1
 end
 
 -- Sleep the current thread for the given number of milliseconds.
 -- In cooperative mode this yields without rescheduling.
-fun sleep(ms: i64): void
+sleep(ms: i64): void
     -- In cooperative mode, yield to let other tasks run
     sync.yield()
 end
 
 -- Yield execution to the scheduler, allowing other threads to run.
-fun yield(): void
+yield(): void
     sync.yield()
 end
 
@@ -354,23 +354,23 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Create a thread-safe channel.
-fun channel(capacity: i64): any
+channel(capacity: i64): any
     sync.channel(capacity)
 end
 
-fun channel_send(ch: any, val: any): void
+channel_send(ch: any, val: any): void
     sync.channel_send(ch, val)
 end
 
-fun channel_recv(ch: any): any
+channel_recv(ch: any): any
     sync.channel_recv(ch)
 end
 
-fun channel_try_recv(ch: any): any
+channel_try_recv(ch: any): any
     sync.channel_try_recv(ch)
 end
 
-fun channel_close(ch: any): void
+channel_close(ch: any): void
     sync.channel_close(ch)
 end
 
@@ -380,7 +380,7 @@ end
 
 -- Run the function for each element in parallel (cooperative by default).
 -- Returns a table of results in order.
-fun for_each(items: any, fn: any): any
+for_each(items: any, fn: any): any
     handles = {}
     for _, item in ipairs(items)
         handles[#handles + 1] = spawn(fn, item)
@@ -393,7 +393,7 @@ fun for_each(items: any, fn: any): any
 end
 
 -- Run the function n times in parallel (cooperative by default).
-fun for_range(n: i64, fn: any): any
+for_range(n: i64, fn: any): any
     handles = {}
     for i = 0, n - 1
         handles[#handles + 1] = spawn(fn, i)
@@ -415,14 +415,14 @@ _tls_stores = {}
 _tls_next_key = 0
 
 -- Create a new thread-local key with an optional default value factory.
-fun tls_key(default_fn: any): i64
+tls_key(default_fn: any): i64
     _tls_next_key += 1
     _tls_registry[_tls_next_key] = default_fn
     _tls_next_key
 end
 
 -- Set the value for a thread-local key in the current thread.
-fun tls_set(key: i64, value: any): void
+tls_set(key: i64, value: any): void
     tid = tostring(id())
     if _tls_stores == nil then
         _tls_stores = {}
@@ -436,15 +436,15 @@ end
 
 -- Get the value for a thread-local key in the current thread.
 -- If not set and a default_fn was provided, initialises it.
-fun tls_get(key: i64): any
+tls_get(key: i64): any
     tid = tostring(id())
     store = _tls_stores and _tls_stores[tid] or nil
-    if store ~= nil then
+    if store != nil then
         val = store[key]
-        if val ~= nil then return val end
+        if val != nil then return val end
     end
     default_fn = _tls_registry[key]
-    if default_fn ~= nil then
+    if default_fn != nil then
         val = default_fn()
         tls_set(key, val)
         return val
@@ -453,7 +453,7 @@ fun tls_get(key: i64): any
 end
 
 -- Remove the value for a thread-local key.  Returns the old value.
-fun tls_del(key: i64): any
+tls_del(key: i64): any
     tid = tostring(id())
     if _tls_stores == nil then return nil end
     store = _tls_stores[tid]
