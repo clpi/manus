@@ -114,7 +114,7 @@ sqlite3_load_extension(db: any, path: str, proc: int, errmsg: int): int
 -- ===========================================================================
 -- Constants exported for user code
 -- ===========================================================================
-_const(name: str): int
+constant(name: str): int
     if name == "SQLITE_OK" return SQLITE_OK end
     if name == "SQLITE_ROW" return SQLITE_ROW end
     if name == "SQLITE_DONE" return SQLITE_DONE end
