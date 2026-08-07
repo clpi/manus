@@ -205,6 +205,14 @@ positives = {
     -- HEADER with no body, so it cannot reuse proj_fun_decl: the bodiless rule
     -- there keys on column 1 and these are indented.
     { "concept Allocator\n    alloc(self, bytes: i64): any\n    free(self, ptr: any): void\nend\n", "(program (concept Allocator (sig alloc (params (param self) (param bytes i64)) (ret any)) (sig free (params (param self) (param ptr any)) (ret void))))" },
+    -- `type X = ...` has two shapes — a descriptor body and a plain alias — and
+    -- both are pinned because requiring the brace rejected the alias and cost a
+    -- lib/std file. `span: { ... }` sits beside them: `type` is matched by
+    -- SPELLING (there is no KIND_TYPE), and a kind comparison against the
+    -- non-existent constant fired for every statement.
+    { "type Loc = {\n    file: str,\n    line: i64\n}\n", "(program (typedecl Loc (desc file str line i64)))" },
+    { "type StableId = i64", "(program (typedecl StableId (type i64)))" },
+    { "type W = {\n    wq: [float]\n}\n", "(program (typedecl W (desc wq (seq float))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

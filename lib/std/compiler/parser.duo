@@ -1481,6 +1481,17 @@ proj_primary = (lx: Lexer): str
         _lb = lexer.next(lx)
         return proj_desc_body(lx)
     end
+    -- `[float]` — a sequence type in field position, e.g. `wq: [float]`.
+    if t.kind == token.KIND_LBRACKET
+        _lb = lexer.next(lx)
+        inner = proj_expr(lx)
+        rb = lexer.next(lx)
+        if rb.kind != token.KIND_RBRACKET
+            mark_error(lx)
+            return "(error)"
+        end
+        return "(seq " .. inner .. ")"
+    end
     -- LAST refusal: an identifier-spelled keyword in CALL position is a name —
     -- `type(nv)`, `error(msg)`. `type` has its own token kind because of
     -- `type X = { ... }`, so every call to the builtin was a parse failure.
@@ -1598,6 +1609,37 @@ proj_stmt = (lx: Lexer): str
     end
     if t.kind == token.KIND_CONCEPT
         return proj_concept(lx)
+    end
+    -- `type X = { ... }` — the same descriptor body as `X: { ... }`, under the
+    -- older spelling lib/std/compiler/lexer.duo and ward still use.
+    --
+    -- Matched by SPELLING, not token kind: there is no KIND_TYPE. My first
+    -- version compared `t.kind` against the non-existent `token.KIND_TYPE`,
+    -- which is nil, and the branch then fired for every statement — including
+    -- `span: { ... }`, breaking a case that had worked for hours.
+    if t.text == "type" and peek2(lx).kind == token.KIND_NAME
+        _t = lexer.next(lx)
+        n = lexer.next(lx)
+        if not is_member_name(n)
+            mark_error(lx)
+            return "(typedecl (error))"
+        end
+        if lexer.peek(lx).kind != token.KIND_ASSIGN
+            mark_error(lx)
+            return "(typedecl (error))"
+        end
+        _a = lexer.next(lx)
+        if lexer.peek(lx).kind == token.KIND_AT
+            _at = lexer.next(lx)
+        end
+        -- Two shapes: a descriptor body, or a plain ALIAS (`type StableId = i64`).
+        -- Requiring a brace rejected the alias form and cost a lib/std file — the
+        -- coverage ratchet failed the build, which is exactly what it is for.
+        if lexer.peek(lx).kind != token.KIND_LBRACE
+            return "(typedecl " .. n.text .. " (type " .. proj_type(lx) .. "))"
+        end
+        _lb = lexer.next(lx)
+        return "(typedecl " .. n.text .. " " .. proj_desc_body(lx) .. ")"
     end
     if t.kind == token.KIND_DO
         _d = lexer.next(lx)
