@@ -1356,7 +1356,22 @@ proj_primary = (lx: Lexer): str
     -- too, and taking the bare path meant the `: void` was never read and the
     -- body was parsed as a single expression instead of a block.
     if t.kind == token.KIND_LPAREN and is_bare_lambda_head(lx) and not is_lambda_head(lx)
+        head_line = t.loc.line
         params = proj_params_from_lparen(lx)
+        -- Layout decides the body shape, which is the canon's own rule: a
+        -- one-liner is a single expression and closes at the newline; a body
+        -- that starts on the next line is a block and closes with `end`.
+        -- `create(()\n    fn(1)\nend)` is the block form.
+        if lexer.peek(lx).loc.line != head_line
+            body = proj_body(lx)
+            if params != ""
+                return "(lambda (params " .. params .. ") " .. body .. ")"
+            end
+            if body != ""
+                return "(lambda (params) " .. body .. ")"
+            end
+            return "(lambda (params))"
+        end
         body = proj_expr(lx)
         if params != ""
             return "(lambda (params " .. params .. ") " .. body .. ")"

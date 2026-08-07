@@ -162,6 +162,13 @@ positives = {
     -- because it predates the guard.
     { "break", "(program (break))" },
     { "break; x = 1", "(program (break) (assign x 1))" },
+    -- The bare value form has two body shapes and LAYOUT picks between them,
+    -- which is the canon's own rule: a one-liner is a single expression and
+    -- closes at the newline; a body starting on the next line is a block and
+    -- closes with `end`. Both spellings pinned, since the one-liner above would
+    -- pass against a parser that only knew the block form.
+    { "co = create(()\n    fn(1)\nend)\n", "(program (assign co (call create (lambda (params) (call fn 1)))))" },
+    { "each(xs, (a, b)\n    g(a)\nend)\n", "(program (call each xs (lambda (params (param a) (param b)) (call g a))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
