@@ -2654,7 +2654,7 @@ end
 
 -- Compile body bytes [off, off+len) to ARM64 in `code`; returns word count,
 -- or -1 if an unsupported opcode is hit (caller falls back to the interpreter).
-jit_compile(s: str, off: i64, blen: i64, code: any): i64
+jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   n: i64 = 0                       -- emitted instruction words
   sp: i64 = 0                      -- compile-time operand-stack depth
   pc: i64 = 1                      -- 1-based cursor into the body
@@ -2681,8 +2681,161 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
   -- the flags the CMP already set. Same `== n - 1` validity trick as last_alu.
   last_cset: i64 = -1
   last_cc: i64 = -1
+  -- Inline-call state. `lbase` shifts this body's locals up the register file
+  -- so an inlined callee's locals sit ABOVE the caller's rather than aliasing
+  -- them. Depth is capped at one: nesting would exhaust w9..w16 immediately.
+  lbase: i64 = 0
+  inl_pc: i64 = -1
+  inl_off: i64 = 0
+  inl_blen: i64 = 0
+  inl_lbase: i64 = 0
+  -- ── function table, for inlining `call` ──────────────────────────────
+  -- `s` is the whole module but `off`/`blen` delimit only THIS body, so a
+  -- callee must be located here. Built in-function because BUG B forbids a
+  -- pointer local crossing a Duo function boundary -- the same reason
+  -- `run_body` builds its tables inline.
+  jtp = mem.alloc(256 * 8)
+  jft = mem.alloc(256 * 5 * 8)
+  mem.zero(jtp, 256 * 8)
+  mem.zero(jft, 256 * 5 * 8)
+  jty: i64 = 0
+  jfo: i64 = 0
+  jco: i64 = 0
+  jimp: i64 = 0
+  jsi: i64 = 9
+  while jsi <= mlen
+    jsid: i64 = string.byte(s, jsi)
+    jsi += 1
+    jssz: i64 = uleb_val(s, jsi, mlen)
+    jsi = uleb_end(s, jsi, mlen)
+    if jsid == 1
+      jty = jsi
+    elseif jsid == 3
+      jfo = jsi
+    elseif jsid == 10
+      jco = jsi
+    elseif jsid == 2
+      jic: i64 = uleb_val(s, jsi, mlen)
+      jij: i64 = uleb_end(s, jsi, mlen)
+      jik: i64 = 0
+      while jik < jic and jij <= mlen
+        jla: i64 = uleb_val(s, jij, mlen)
+        jij = uleb_end(s, jij, mlen) + jla
+        jfl: i64 = uleb_val(s, jij, mlen)
+        jij = uleb_end(s, jij, mlen) + jfl
+        jkd: i64 = string.byte(s, jij)
+        jij += 1
+        if jkd == 0
+          jimp += 1
+          jij = uleb_end(s, jij, mlen)
+        elseif jkd == 1
+          jij = uleb_end(s, jij + 1, mlen)
+          jij = uleb_end(s, jij, mlen)
+        elseif jkd == 2
+          jfg: i64 = string.byte(s, jij)
+          jij = uleb_end(s, jij + 1, mlen)
+          if jfg == 1
+            jij = uleb_end(s, jij, mlen)
+          end
+        else
+          jij += 2
+        end
+        jik += 1
+      end
+    end
+    jsi += jssz
+  end
+  if jty > 0
+    jnt: i64 = uleb_val(s, jty, mlen)
+    jtq: i64 = uleb_end(s, jty, mlen)
+    jtv: i64 = 0
+    while jtv < jnt and jtv < 256 and jtq <= mlen
+      jtq += 1
+      jnp: i64 = uleb_val(s, jtq, mlen)
+      jtq = uleb_end(s, jtq, mlen) + jnp
+      mem.write_i64(jtp, jtv * 8, jnp)
+      jnr: i64 = uleb_val(s, jtq, mlen)
+      jtq = uleb_end(s, jtq, mlen) + jnr
+      jtv += 1
+    end
+  end
+  jnf: i64 = 0
+  if jco > 0
+    jnf = uleb_val(s, jco, mlen)
+    jcq: i64 = uleb_end(s, jco, mlen)
+    jgq: i64 = 0
+    if jfo > 0
+      jgq = uleb_end(s, jfo, mlen)
+    end
+    jfv: i64 = 0
+    while jfv < jnf and jfv < 256 and jcq <= mlen
+      jbs: i64 = uleb_val(s, jcq, mlen)
+      jbt: i64 = uleb_end(s, jcq, mlen)
+      jnd: i64 = uleb_val(s, jbt, mlen)
+      jrq: i64 = uleb_end(s, jbt, mlen)
+      jlc: i64 = 0
+      jgv: i64 = 0
+      while jgv < jnd
+        jcl: i64 = uleb_val(s, jrq, mlen)
+        jrq = uleb_end(s, jrq, mlen) + 1
+        jlc += jcl
+        jgv += 1
+      end
+      jpf: i64 = 0
+      if jgq > 0
+        jtix: i64 = uleb_val(s, jgq, mlen)
+        jgq = uleb_end(s, jgq, mlen)
+        jpf = mem.read_i64(jtp, jtix * 8)
+      end
+      -- Leafness by byte scan. An immediate that happens to equal 0x10 can read
+      -- as a call, which only ever makes a body look NON-leaf: that costs
+      -- coverage, never correctness.
+      jlf: i64 = 1
+      jzz: i64 = jrq
+      while jzz < jbt + jbs
+        jb2: i64 = string.byte(s, jzz)
+        if jb2 == 16 or jb2 == 17
+          jlf = 0
+          jzz = jbt + jbs
+        end
+        jzz += 1
+      end
+      mem.write_i64(jft, (jfv * 5) * 8, jrq - 1)
+      mem.write_i64(jft, (jfv * 5 + 1) * 8, jbt + jbs - jrq)
+      mem.write_i64(jft, (jfv * 5 + 2) * 8, jlc)
+      mem.write_i64(jft, (jfv * 5 + 3) * 8, jpf)
+      mem.write_i64(jft, (jfv * 5 + 4) * 8, jlf)
+      jcq = jbt + jbs
+      jfv += 1
+    end
+  end
 
-  while pc <= blen
+  -- Which function is THIS body? An inlined callee's locals start above the
+  -- caller's, so the caller's local count has to be known.
+  jself: i64 = -1
+  jsv: i64 = 0
+  while jsv < jnf
+    if mem.read_i64(jft, (jsv * 5) * 8) == off
+      jself = jsv
+      jsv = jnf
+    end
+    jsv += 1
+  end
+  selfloc: i64 = 0
+  if jself >= 0
+    selfloc = mem.read_i64(jft, (jself * 5 + 2) * 8) + mem.read_i64(jft, (jself * 5 + 3) * 8)
+  end
+
+  while pc <= blen or inl_pc >= 0
+    -- An inlined body is done when its cursor runs past its own length:
+    -- restore the caller's cursor and register window and carry on.
+    if pc > blen and inl_pc >= 0
+      pc = inl_pc
+      off = inl_off
+      blen = inl_blen
+      lbase = inl_lbase
+      inl_pc = -1
+    end
     op: i64 = string.byte(s, off + pc)
     pc += 1
 
@@ -2788,7 +2941,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
       -- directly. Unlike the constant/shift folds, the MOV removed here sits ON
       -- the dependency chain (`mov w4,w9` feeding the very next `eor`/`madd`).
       -- Only one alias is tracked; a second local.get materializes the first.
-      idx: i64 = uleb_val(s, off + pc, off + blen)
+      idx: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
       if idx > 7
         return -1
@@ -2810,7 +2963,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
 
     elseif op == 33 or op == 34
       -- local.set / local.tee -> MOV Wlocal, Wtop
-      idx2: i64 = uleb_val(s, off + pc, off + blen)
+      idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
       if idx2 > 7 or sp < 1
         return -1
@@ -2923,6 +3076,45 @@ jit_compile(s: str, off: i64, blen: i64, code: any): i64
     elseif op == 15
       pc = blen + 1
 
+    elseif op == 16
+      -- call: INLINE a leaf callee. A real call needs a frame and spill
+      -- machinery this template JIT does not have, but splicing a leaf body
+      -- costs nothing at run time -- and `call` is what four of the six
+      -- compute-heavy modules bail on, the ones losing 5-26x to wasmtime.
+      cidx: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      cfx: i64 = cidx - jimp
+      if inl_pc >= 0 or cfx < 0 or cfx >= jnf
+        return -1
+      end
+      if mem.read_i64(jft, (cfx * 5 + 4) * 8) == 0
+        return -1
+      end
+      cnl: i64 = mem.read_i64(jft, (cfx * 5 + 2) * 8)
+      cnp: i64 = mem.read_i64(jft, (cfx * 5 + 3) * 8)
+      if selfloc + cnp + cnl > 8 or cnp > sp
+        return -1
+      end
+      -- arguments move from the operand stack into the callee's params, which
+      -- are its locals 0..cnp-1 and therefore registers 9+selfloc..
+      ck4: i64 = 0
+      while ck4 < cnp
+        jitm.w32(code, n, 0x2A0003E0 | ((sp - cnp + ck4) << 16) | (9 + selfloc + ck4))
+        n += 1
+        ck4 += 1
+      end
+      sp = sp - cnp
+      inl_pc = pc
+      inl_off = off
+      inl_blen = blen
+      inl_lbase = lbase
+      off = mem.read_i64(jft, (cfx * 5) * 8)
+      blen = mem.read_i64(jft, (cfx * 5 + 1) * 8)
+      lbase = selfloc
+      pc = 1
+      last_alu = -1
+      last_cset = -1
+
     else
       return -1
     end
@@ -3001,7 +3193,7 @@ main(): void
     code = jitm.alloc(1 << 20)
     tJ1 = os.clock()
     if code
-      words: i64 = jit_compile(bytes, boff, blen, code)
+      words: i64 = jit_compile(bytes, boff, blen, code, #bytes)
       -- WARD_DUMP=<path>: write the emitted words as hex, one per line, for
       -- disassembly. Diagnostic only; off unless the env var is set.
       dmp = os.getenv("WARD_DUMP")
