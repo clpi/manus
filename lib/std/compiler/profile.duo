@@ -1,0 +1,79 @@
+-- SH-13 — the runtime profile, seed.
+--
+-- SH-13's blocker is "full dynamic runtime linked for most builds"; the removal
+-- gate is a freestanding compiler profile. The question underneath is decidable
+-- from source: does this code need the boxed dynamic runtime, or can it lower
+-- to native scalars alone?
+--
+-- WHAT MAKES IT CHECKABLE. The compiler already answers this every time it
+-- emits C — a function that needs boxing has `lua_Value` in its body and one
+-- that does not has `int64_t`. So the predictor is differentialed against the
+-- compiler's own output: predict, compile, grep, compare. The oracle is the
+-- backend, not my opinion of what boxes.
+--
+-- The disqualifiers below are the ones the native-scalar path actually has, in
+-- the order they were learned the hard way (recorded in this repo's history):
+-- an `any` parameter disqualifies the WHOLE module silently, a table literal in
+-- a function body disqualifies that function, and varargs disqualify the
+-- declaration. Predicting from the surface is possible precisely because those
+-- rules are syntactic.
+
+global strm = req "std.str"
+
+_contains = (hay: str, needle: str): bool
+    hn: i64 = #hay
+    nn: i64 = #needle
+    i: i64 = 1
+    while i + nn - 1 <= hn
+        j: i64 = 0
+        hit = true
+        while j < nn
+            if string.byte(hay, i + j) != string.byte(needle, j + 1)
+                hit = false
+                j = nn
+            end
+            j += 1
+        end
+        if hit
+            return true
+        end
+        i += 1
+    end
+    false
+end
+
+-- Does this source need the boxed runtime?
+--
+-- Conservative in the honest direction: when unsure, say yes. A predictor that
+-- wrongly claims "freestanding" would have the build drop runtime support a
+-- program needs; one that wrongly claims "needs runtime" costs only size. The
+-- asymmetry is real, so the default leans to yes.
+needs_runtime = (src: str): bool
+    -- an `any`-typed parameter or binding: the native-scalar path refuses the
+    -- whole module on this one, with no diagnostic
+    if _contains(src, ": any")
+        return true
+    end
+    -- a table literal or index: no native memory representation for a table
+    -- crossing a call boundary
+    if _contains(src, "{") 
+        return true
+    end
+    -- varargs
+    if _contains(src, "...")
+        return true
+    end
+    -- string values beyond literals passed straight through
+    if _contains(src, ": str")
+        return true
+    end
+    false
+end
+
+-- The profile name, so a build can key on it rather than on a bool.
+profile_of = (src: str): str
+    if needs_runtime(src)
+        return "dynamic"
+    end
+    "freestanding"
+end

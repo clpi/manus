@@ -1,0 +1,67 @@
+-- SH-13 — the runtime profile, seed: fixtures pass, the backend oracle is OWED.
+--
+-- The predictor answers: does this source need the boxed dynamic runtime, or can
+-- it lower to native scalars alone? The fixtures below pin the four
+-- disqualifiers the native-scalar path actually has, and rule 3 — an `any`
+-- parameter disqualifying the WHOLE module, silently — is the one that has cost
+-- this repo the most time historically.
+--
+-- THE DIFFERENTIAL IS NOT RUNNING, and saying so plainly is the point of this
+-- header. The right check is RELATIVE: every compiled program carries the
+-- runtime preamble, so `lua_Value` appears in all of them and a raw count proves
+-- nothing — a first version of this proof passed on 834 hits that were entirely
+-- preamble. What the predictor claims is that a dynamic module boxes MORE than
+-- a freestanding one, and that comparison is what must be measured.
+--
+-- Three separate compiler defects block it, all hit here:
+--
+--   * `duo compile x.duo` emits /tmp/duo_<stem>.c, so a source named
+--     duo_profile_case.duo produced /tmp/duo_duo_profile_case.c; the grep read a
+--     path that did not exist and silently returned 0.
+--   * a typed local `free_n: i64 = f()` inside `main` mangles to
+--     `duo_g__free_n` while its declaration mangles to `duo_g_free_n`, and the
+--     emitted C does not compile.
+--   * replacing it with an untyped binding compiles and then CRASHES at runtime
+--     (exit 128, no output).
+--
+-- A predictor that has never met the backend is an opinion. This one has not
+-- yet, which is exactly why SH-13 is a seed and this file does not claim
+-- otherwise.
+--
+-- Exit: 0 fixtures pass, else the failing fixture number.
+
+global P = req "std.compiler.profile"
+
+_check = (n: i64, src: str, want: str): i64
+    got = P.profile_of(src)
+    if got != want
+        print("profile_proof: FAIL " .. to(str)(n) .. ": predicted " .. got
+            .. ", expected " .. want)
+        return n
+    end
+    0
+end
+
+main(): i64
+    r: i64 = 0
+
+    -- pure integer arithmetic: no boxing needed
+    r = _check(1, "add(a: i64, b: i64): i64\n    a + b\nend\n", "freestanding")
+    if r != 0 return r end
+    r = _check(2, "sq(n: i64): i64\n    n * n\nend\n", "freestanding")
+    if r != 0 return r end
+
+    -- each known disqualifier, one fixture apiece
+    r = _check(3, "f(a: any): i64\n    1\nend\n", "dynamic")
+    if r != 0 return r end
+    r = _check(4, "f(): i64\n    t = { 1, 2 }\n    1\nend\n", "dynamic")
+    if r != 0 return r end
+    r = _check(5, "f(a: i64, ...): i64\n    a\nend\n", "dynamic")
+    if r != 0 return r end
+    r = _check(6, "f(s: str): i64\n    1\nend\n", "dynamic")
+    if r != 0 return r end
+
+    print("profile_proof: 6 disqualifier fixtures pass; backend differential OWED "
+        .. "(three compiler defects, itemised above)")
+    0
+end

@@ -25,6 +25,7 @@
 --   SH-11 ARM64         the SYSTEM ASSEMBLER, byte for byte; and the
 --                       lowering ASSEMBLED, LINKED and RUN against the folder
 --   SH-12 Mach-O        the SYSTEM LINKER accepts the object, and it RUNS
+--   SH-13 profile       fixtures only — the backend differential is OWED
 --
 -- Exit 0 iff every row passes. Run: duo run scripts/selfhost_proofs.duo
 
@@ -80,7 +81,14 @@ main(): i64
     if not _row("SH-12", "Mach-O writer ", "examples/pass16_macho_proof.duo")
         return 13
     end
+    -- SH-13 is the one row here whose oracle is OWED: its fixtures pin the
+    -- native-scalar disqualifiers, but the backend differential does not run
+    -- (three compiler defects, itemised in the proof). Listed anyway, and
+    -- labelled, because a seed hidden from the gate is a seed nobody maintains.
+    if not _row("SH-13", "runtime profile (fixtures only)", "examples/pass16_profile_proof.duo")
+        return 14
+    end
 
-    print("selfhost proofs: 10/10 — every row verified against an oracle that is not the author")
+    print("selfhost proofs: 11 rows — 10 against an oracle that is not the author, SH-13 fixtures only")
     0
 end
