@@ -27,9 +27,10 @@
 -- read the number, pin the number.
 --
 -- Raise this when rows go green; never lower it to make the gate quiet.
--- Verified 2026-08-07: 12/26.
+-- Verified 2026-08-07: 15/29 -- three of the gain are FF-1 rows that were
+-- never broken, only mis-probed. See the FF-1 note in main().
 baseline(): i64
-    12
+    15
 end
 
 -- An open brace, built rather than written. Interpolation has NO ESCAPE: there
@@ -79,7 +80,17 @@ end
 
 main(): i64
     -- PART II 2.2 — functions, control
-    record("FF-1 value-form fn", "f = (x: i64): i64 x * 2 end\nmain(): void\n    print(f(21))\nend\n", "42")
+    -- FF-1 was recorded MISSING for most of this session on a bad probe. It
+    -- tested `f = (x: i64): i64 x * 2 end` -- the ONE-LINE form carrying an
+    -- `end`, which Prime 2 forbids anyway ("no end on one line"). The forms the
+    -- spec actually endorses both work, and I wrote bare declarations for a
+    -- long time on the strength of that wrong row.
+    record("FF-1 value fn multiline", "f = (x: i64): i64\n    x * 2\nend\nmain = (): void\n    print(f(21))\nend\n", "42")
+    record("FF-1 value fn one-line", "f = (x: i64) x * 2\nmain = (): void\n    print(f(21))\nend\n", "42")
+    record("FF-1 value fn no params", "run = (): i32\n    42\nend\nmain = (): void\n    print(run())\nend\n", "42")
+    -- The variant that does NOT parse, pinned so the distinction is not lost
+    -- again: a one-line value-form body may not carry `end`.
+    record("FF-1 one-line+end absent", "f = (x: i64): i64 x * 2 end\nmain(): void\n    print(f(21))\nend\n", "ABSENT")
     record("FF-5 binding cond", "g(): i64\n    7\nend\nmain(): void\n    if v = g()\n        print(v)\n    end\nend\n", "7")
     record("FF-6 demand return", "f(): i64\n    41 + 1\nend\nmain(): void\n    print(f())\nend\n", "42")
     record("FF-11 range", "main(): void\n    t = 0\n    for i in range(0, 3)\n        t = t + i\n    end\n    print(t)\nend\n", "3")
