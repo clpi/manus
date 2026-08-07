@@ -32,8 +32,8 @@ else:
 " "$1" 2>/dev/null || echo "$1"; }
 
 pass=0; fail=0; skip=0; void=0
-printf '%-32s %-22s %-22s %s\n' MODULE WASMTIME WARD VERDICT
-printf '%.0s-' {1..92}; echo
+printf '%-30s %-20s %-20s %-10s %s\n' MODULE WASMTIME WARD ENGINE VERDICT
+printf '%.0s-' {1..96}; echo
 for m in bench/*.wasm; do
   name=$(basename "$m" .wasm)
   # Pick the export wasmtime can actually invoke, judged by EXIT STATUS rather
@@ -47,8 +47,14 @@ for m in bench/*.wasm; do
     fi
   done
   [[ -z $want ]] && want=_start
-  raw=$(WARD_WASM="$PWD/$m" WARD_INVOKE="$want" WARD_ENGINE=interp \
+  # WARD_ENGINE selects the engine under test. It defaults to `interp` because
+  # that is the path every module takes; run with WARD_ENGINE=jit to difference
+  # the JIT against the same oracle. The JIT silently FALLS BACK to the
+  # interpreter when it cannot compile a body, so agreement alone does not prove
+  # the JIT ran — the ENGINE column reports what actually executed.
+  raw=$(WARD_WASM="$PWD/$m" WARD_INVOKE="$want" WARD_ENGINE="${WARD_ENGINE:-interp}" \
         timeout 120 "$WARD_BIN" 2>/dev/null)
+  eng=$(sed -n 's/^engine=//p' <<<"$raw")
   got=$(sed -n 's/^result=//p' <<<"$raw")
   # A module whose real answer is what it PRINTS (via fd_write) is compared on
   # its emitted bytes, not on the numeric result of a void _start. Strip ward's
@@ -62,20 +68,20 @@ for m in bench/*.wasm; do
     # completion instead of bailing (-1). Counted separately from a real PASS,
     # because "didn't trap" is much weaker evidence than "matched the oracle".
     if [[ -n $want && -n $got && $got != -1 ]]; then
-      printf '%-32s %-22s %-22s %s\n' "$name" "<void>" "$got" "OK(void)"; void=$((void+1))
+      printf '%-30s %-20s %-20s %-10s %s\n' "$name" "<void>" "$got" "${eng:-?}" "OK(void)"; void=$((void+1))
     else
-      printf '%-32s %-22s %-22s %s\n' "$name" "<void>" "${got:-none}" "SKIP"; skip=$((skip+1))
+      printf '%-30s %-20s %-20s %-10s %s\n' "$name" "<void>" "${got:-none}" "${eng:-?}" "SKIP"; skip=$((skip+1))
     fi
     continue
   fi
   if [[ -z $got || $got == -1 ]]; then
-    printf '%-32s %-22s %-22s %s\n' "$name" "$ref" "${got:-none}" "UNSUPPORTED"; fail=$((fail+1)); continue
+    printf '%-30s %-20s %-20s %-10s %s\n' "$name" "$ref" "${got:-none}" "${eng:-?}" "UNSUPPORTED"; fail=$((fail+1)); continue
   fi
   if [[ $(norm "$ref") == $(norm "$got") ]]; then
-    printf '%-32s %-22s %-22s %s\n' "$name" "$ref" "$got" "PASS"; pass=$((pass+1))
+    printf '%-30s %-20s %-20s %-10s %s\n' "$name" "$ref" "$got" "${eng:-?}" "PASS"; pass=$((pass+1))
   else
-    printf '%-32s %-22s %-22s %s\n' "$name" "$ref" "$got" "*** DIFF ***"; fail=$((fail+1))
+    printf '%-30s %-20s %-20s %-10s %s\n' "$name" "$ref" "$got" "${eng:-?}" "*** DIFF ***"; fail=$((fail+1))
   fi
 done
-printf '%.0s-' {1..92}; echo
+printf '%.0s-' {1..96}; echo
 echo "ward agrees with wasmtime on $pass module(s); $fail unsupported-or-wrong; $void void-export completed; $skip skipped"
