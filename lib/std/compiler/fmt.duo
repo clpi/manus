@@ -1,0 +1,57 @@
+-- SH-05 — the canonicalizer, seed.
+--
+-- Pass 48 §4.1 makes layout a compiler stage: the formatter computes it, there
+-- is no configuration, and a diff is post-canonical. This is the first stage of
+-- that, in Duo.
+--
+-- WHAT MAKES IT VERIFIABLE. A canonicalizer is correct exactly when it changes
+-- layout and nothing else, and SH-04 now gives that a machine check:
+--
+--     proj_program(canonicalize(src)) == proj_program(src)     -- meaning held
+--     canonicalize(canonicalize(src)) == canonicalize(src)     -- a fixed point
+--
+-- The first property is why this file waited for the parser to reach 245/245 on
+-- lib/std: a projection oracle that rejects a third of the corpus cannot tell
+-- you whether a rewrite preserved meaning. Both are gated over the whole corpus
+-- by examples/pass16_formatter_proof.duo.
+--
+-- SCOPE, stated honestly, and smaller than I first wrote it. This seed applies
+-- exactly one rule:
+--
+--   * the file ends in exactly one newline
+--
+-- That is not cosmetic: a file without a trailing newline lost its last
+-- statement under the self-hosted parser until today, and two lib/std modules
+-- were rejected for exactly that.
+--
+-- Tab expansion and trailing-space stripping were written, proved over 246
+-- files, and then REMOVED. The corpus proof passed, but the fixpoint negative
+-- control showed why that was luck rather than safety: a whitespace rule that
+-- treats the file as flat text edits DATA — `rstrip` deletes meaningful
+-- trailing spaces inside a `[[ ... ]]` literal, and tab expansion rewrites the
+-- contents of quoted strings. lib/std simply contains no such string. The
+-- string-aware version that followed preserved meaning but was not a fixpoint
+-- on lib/std/jit.duo (one byte longer on the second pass), so it is not correct
+-- either.
+--
+-- The rule that ships is the one whose proof I trust. Block-depth re-indent,
+-- one-liner joining and multiline splitting are the layout law proper and need
+-- structure the parser has but does not yet hand back; they land behind this
+-- harness, each with its own control.
+
+global strm = req "std.str"
+
+canonicalize = (src: str): str
+    n: i64 = #src
+    if n == 0
+        return src
+    end
+    e: i64 = n
+    while e > 0 and string.byte(src, e) == 10
+        e -= 1
+    end
+    if e == 0
+        return ""
+    end
+    strm.sub(src, 1, e) .. "\n"
+end
