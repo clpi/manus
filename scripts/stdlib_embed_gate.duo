@@ -19,9 +19,13 @@
 -- says tooling is Duo. Run it with `duo run scripts/stdlib_embed_gate.duo`.
 
 -- Measured floor. Lower it when modules are repaired; never raise it to quiet
--- the gate. Verified 2026-08-07: 38 of 246.
+-- the gate. Verified 2026-08-07: 30 of 246 — was 38, and the std.wasm.* family
+-- accounted for the drop. Note 30 rather than the 32 I predicted: modules
+-- outside that family depended on std.wasm transitively, so repairing one root
+-- freed more than the direct dependents. Estimate the floor and you will be
+-- wrong in both directions; run it and pin what it says.
 ceiling(): i64
-    38
+    30
 end
 
 -- Turn `lib/std/net/ws.duo` into the ambient path `std.net.ws`.

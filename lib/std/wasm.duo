@@ -65,6 +65,31 @@ reader_u32(r: any): any
     result
 end
 
+-- Unsigned LEB128, 64-bit. Called by reader_init_expr for the F64 case and
+-- defined NOWHERE — `use of undeclared identifier 'reader_u64'` took down
+-- std.wasm and, with it, every std.wasm.* module (decode, instruction,
+-- opcode_lookup, opcodes, ward_mvp_opcodes, wasi): seven of the thirty-eight
+-- unreachable modules, one missing function.
+--
+-- Mirrors reader_u32 deliberately. NOTE the pre-existing discrepancy this does
+-- NOT change: both call sites are commented "read raw bits", but the WASM
+-- binary format stores f32/f64 constants as FIXED-WIDTH IEEE bytes, while
+-- reader_u32 (and now this) decode LEB128. Fixing that is a semantic change
+-- needing a real WASM fixture to validate, so it stays a separate concern from
+-- the missing definition.
+reader_u64(r: any): any
+    result = 0
+    shift = 0
+    while true
+        b = reader_u8(r)
+        if b == nil return nil end
+        result = result | ((b & 0x7F) << shift)
+        shift += 7
+        if (b & 0x80) == 0 break end
+    end
+    result
+end
+
 reader_i32(r: any): any
     result = 0
     shift = 0
@@ -493,27 +518,33 @@ M.type_count = module_type_count
 M.code_size = module_code_size
 M.MAGIC = WASM_MAGIC
 M.VERSION = WASM_VERSION
+-- Literals, not references to the SECTION_* constants above. A file-scope
+-- constant referenced from inside a NESTED TABLE of the export table emits a
+-- bare undeclared identifier when the module is embedded — third instance of
+-- this compiler gap today, after lib/std/net/ws.duo's opcode table and
+-- lib/std/encoding/protobuf.duo's WIRE table, where it is reduced to a
+-- two-file repro.
 M.SECTION = {
-    CUSTOM = SECTION_CUSTOM,
-    TYPE = SECTION_TYPE,
-    IMPORT = SECTION_IMPORT,
-    FUNCTION = SECTION_FUNCTION,
-    TABLE = SECTION_TABLE,
-    MEMORY = SECTION_MEMORY,
-    GLOBAL = SECTION_GLOBAL,
-    EXPORT = SECTION_EXPORT,
-    START = SECTION_START,
-    ELEMENT = SECTION_ELEMENT,
-    CODE = SECTION_CODE,
-    DATA = SECTION_DATA,
-    DATA_COUNT = SECTION_DATA_COUNT,
+    CUSTOM = 0,
+    TYPE = 1,
+    IMPORT = 2,
+    FUNCTION = 3,
+    TABLE = 4,
+    MEMORY = 5,
+    GLOBAL = 6,
+    EXPORT = 7,
+    START = 8,
+    ELEMENT = 9,
+    CODE = 10,
+    DATA = 11,
+    DATA_COUNT = 12,
 }
 M.TYPE = {
-    I32 = TYPE_I32,
-    I64 = TYPE_I64,
-    F32 = TYPE_F32,
-    F64 = TYPE_F64,
-    FUNC = TYPE_FUNC,
-    EMPTY = TYPE_EMPTY,
+    I32 = 0x7F,
+    I64 = 0x7E,
+    F32 = 0x7D,
+    F64 = 0x7C,
+    FUNC = 0x60,
+    EMPTY = 0x40,
 }
 M
