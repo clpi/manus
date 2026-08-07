@@ -13,19 +13,25 @@
 -- Exit code is the failing check number; 0 means the tokenizers agree.
 
 corpus_fingerprint(): i64
+    -- `req` binding, NOT the ambient `std.compiler.lexer.*` path. An ambient
+    -- call lowers to lua_invoke and the result is folded through lua_to_num --
+    -- a double -- so the first entry's fingerprint (17639830546599934264, above
+    -- both i64 max and 2^53) collapses to 0 and the aggregate is junk. A `req`
+    -- binding lowers to the native symbol and keeps all 64 bits.
+    L = req "std.compiler.lexer"
     h = 0
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("fun add(a: i64): i64 = a + 1 end", "corpus.duo")
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("42 + 1", "corpus.duo")
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("x? y!", "corpus.duo")
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("\"hi\" 'there'", "corpus.duo")
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("-- line\nfun", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("fun add(a: i64): i64 = a + 1 end", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("42 + 1", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("x? y!", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("\"hi\" 'there'", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("-- line\nfun", "corpus.duo")
     -- Corpus data, not Duo source: this string must stay byte-identical to
     -- `lexer_differential.fingerprint_corpus`. `~=` is graveyarded as *syntax*
     -- (Pass 41 A5) but the lexer must still tokenize it, and that is exactly what
     -- this entry checks — do not "canonicalize" it to `!=`. It HAD been, which is
     -- what made the corpus aggregate diverge from src/lexer.zig.
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("a == b ~= c", "corpus.duo")
-    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("...", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("a == b ~= c", "corpus.duo")
+    h = h * 131 + L.duo_lexer_kind_fingerprint("...", "corpus.duo")
     h
 end
 
