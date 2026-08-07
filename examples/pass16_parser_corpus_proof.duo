@@ -78,6 +78,13 @@ positives = {
     { "f = fun(a: i64): i64 a end", "(program (assign f (lambda (params (param a i64)) (ret i64) a)))" },
     { "g(l: Lexer): Tok l end", "(program (fun g (params (param l Lexer)) (ret Tok) l))" },
     { "f(x: std.str): std.str x end", "(program (fun f (params (param x std.str)) (ret std.str) x))" },
+    -- An expression STATEMENT whose head is a postfix chain. proj_target_or_expr
+    -- speculates that a NAME followed by `.`/`[`/`,` is an assignment target; when
+    -- no assignment operator follows it must rewind, not return the postfix it
+    -- already parsed. Without the rewind this projected `(dot a x)` and silently
+    -- dropped the rest of the expression.
+    { "a.x * b.x + a.y * b.y", "(program (+ (* (dot a x) (dot b x)) (* (dot a y) (dot b y))))" },
+    { "t[i].f + 1", "(program (+ (dot (index t i) f) 1))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

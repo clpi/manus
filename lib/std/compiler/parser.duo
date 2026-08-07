@@ -748,6 +748,12 @@ end
 -- grammar is exactly the postfix grammar, so duplicating it would be the only
 -- other option and the two copies would drift.
 proj_target_or_expr = (lx: Lexer): str
+    -- Save first: if no assignment operator follows, this was never a target,
+    -- it was the head of an ordinary expression statement. Returning the
+    -- postfix alone truncated it — `a.x * b.x + a.y * b.y` as a statement
+    -- projected `(dot a x)` and dropped the rest. Rewind and let proj_expr
+    -- parse the whole thing rather than trying to resume mid-expression.
+    st = lexer.save_state(lx)
     first = proj_postfix(lx)
     if lexer.peek(lx).kind == token.KIND_COMMA
         targets = first
@@ -756,8 +762,8 @@ proj_target_or_expr = (lx: Lexer): str
             targets = targets .. " " .. proj_postfix(lx)
         end
         if not is_assign_kind(lexer.peek(lx).kind)
-            mark_error(lx)
-            return "(error)"
+            lexer.restore_state(lx, st)
+            return proj_expr(lx)
         end
         op = lexer.next(lx)
         if op.kind != token.KIND_ASSIGN
@@ -779,7 +785,8 @@ proj_target_or_expr = (lx: Lexer): str
         end
         return "(assign-op " .. op.text .. " " .. first .. " " .. rhs .. ")"
     end
-    first
+    lexer.restore_state(lx, st)
+    proj_expr(lx)
 end
 
 -- '@' directive: dotted names, then optional parenthesised arguments.
