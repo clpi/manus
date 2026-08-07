@@ -1067,7 +1067,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             cn = 0
           end
         end
-        idxv: i64 = mem.read_i64(st, sp * 8)
+        idxv: i64 = mem.read_i64(st, sp * 8) & M32
         sp -= 1
         chosen: i64 = 0
         ti: i64 = 0
@@ -1093,8 +1093,18 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if lt2 < 0 or lt2 >= 64
           return -1
         end
-        pc = mem.read_i64(ltgt, lt2 * 8)
-        lsp = lsp - chosen
+        -- Pop the label stack exactly as `br` does. This used to be
+        -- `lsp = lsp - chosen`, one level too high, so any branch taken AFTER a
+        -- br_table resolved to the wrong label. No corpus module exercised that
+        -- shape; a test written for the JIT caught it, with the JIT returning
+        -- 100 and the interpreter 200.
+        tgt4: i64 = mem.read_i64(ltgt, lt2 * 8)
+        if tgt4 <= pc
+          lsp = lt2 + 1
+        else
+          lsp = lt2
+        end
+        pc = tgt4
 
       elseif op >= 103 and op <= 105
         -- i32.clz / ctz / popcnt
@@ -3611,6 +3621,23 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
+    elseif op == 27
+      -- select: [a, b, c] -> c != 0 ? a : b. CMP against zero then CSEL, so no
+      -- branch is emitted at all.
+      if sp < 3
+        return -1
+      end
+      sa: i64 = sp - 3
+      sb: i64 = sp - 2
+      sc: i64 = sp - 1
+      jitm.w32(code, n, 0x7100001F | (sc << 5))
+      n += 1
+      jitm.w32(code, n, 0x1A800000 | (sb << 16) | (1 << 12) | (sa << 5) | sa)
+      n += 1
+      sp -= 2
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 1
       -- nop: emits nothing
 
@@ -3801,6 +3828,74 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       if nxb != 11 and nxb != 5
         return -1
       end
+
+    elseif op == 14
+      -- br_table: a small dense switch. Emitted as a compare chain rather than
+      -- a jump table -- these tables are tiny (the corpus one has three
+      -- targets), and a chain reuses the existing label resolution instead of
+      -- needing an addressable constant pool.
+      bt_n: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      if sp < 1 or bt_n > 32
+        return -1
+      end
+      sp -= 1
+      bti: i64 = sp
+      btk: i64 = 0
+      while btk < bt_n
+        btd: i64 = uleb_val(s, off + pc, off + blen)
+        pc = uleb_end(s, off + pc, off + blen) - off
+        btt: i64 = ldep - 1 - btd
+        if btt < 0
+          return -1
+        end
+        jitm.w32(code, n, 0x7100001F | (btk << 10) | (bti << 5))
+        n += 1
+        if mem.read_i64(lkind, btt * 8) == 1
+          bth: i64 = mem.read_i64(lhead, btt * 8) - n
+          jitm.w32(code, n, 0x54000000 | ((bth & 0x7FFFF) << 5))
+          n += 1
+        else
+          btp: i64 = mem.read_i64(lpn, btt * 8)
+          if btp >= 8
+            return -1
+          end
+          jitm.w32(code, n, 0x54000000)
+          mem.write_i64(lpat, (btt * 8 + btp) * 8, n * 2)
+          mem.write_i64(lpn, btt * 8, btp + 1)
+          n += 1
+        end
+        btk += 1
+      end
+      -- the default label
+      btdf: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      btt2: i64 = ldep - 1 - btdf
+      if btt2 < 0
+        return -1
+      end
+      if mem.read_i64(lkind, btt2 * 8) == 1
+        btl: i64 = mem.read_i64(lhead, btt2 * 8) - n
+        jitm.w32(code, n, 0x14000000 | (btl & 0x03FFFFFF))
+        n += 1
+      else
+        btp2: i64 = mem.read_i64(lpn, btt2 * 8)
+        if btp2 >= 8
+          return -1
+        end
+        jitm.w32(code, n, 0x14000000)
+        mem.write_i64(lpat, (btt2 * 8 + btp2) * 8, n * 2 + 1)
+        mem.write_i64(lpn, btt2 * 8, btp2 + 1)
+        n += 1
+      end
+      -- like `br`, everything after this is unreachable and the concrete `sp`
+      -- model cannot compile it
+      nxt2: i64 = string.byte(s, off + pc)
+      if nxt2 != 11 and nxt2 != 5
+        return -1
+      end
+      last_alu = -1
+      last_cset = -1
 
     elseif op == 15
       -- return. Implemented as "stop compiling this body", which is only
