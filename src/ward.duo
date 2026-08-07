@@ -394,6 +394,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   fb   = mem.alloc(16)
   dseg = mem.alloc(64 * 2 * 8)
   tbl  = mem.alloc(4096 * 8)
+  vstk = mem.alloc(1024 * 16)
   eseg = mem.alloc(64 * 2 * 8)
   mem.zero(code, cd_len + 16)
   mem.zero(st, 4096 * 8)
@@ -409,6 +410,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.zero(fb, 16)
   mem.zero(dseg, 64 * 2 * 8)
   mem.zero(tbl, 4096 * 8)
+  mem.zero(vstk, 1024 * 16)
   mem.zero(eseg, 64 * 2 * 8)
   -- Initialise globals from the module's OWN global section. ward used to
   -- hardcode gl[0] = 65536 unconditionally, so every module that declares its
@@ -449,6 +451,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   mem.write_byte(himm, 12, 1)   -- br
   mem.write_byte(himm, 13, 1)   -- br_if
   mem.write_byte(himm, 16, 1)   -- call
+  mem.write_byte(himm, 17, 1)   -- call_indirect (typeidx; the arm eats tableidx)
 
   -- ── type table: param count per type index ───────────────────────────
   -- `call` must know how many operands to move from the caller's stack into
@@ -615,6 +618,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
   sp: i64 = 0
   lsp: i64 = 0
   depth: i64 = 0
+  vtop: i64 = 0
   lbase: i64 = 0
   -- Label-stack base for the CURRENT frame. `ltgt` is one shared buffer, so
   -- `end` cannot use `lsp > 0` to tell a block end from a function end once a
@@ -1336,6 +1340,57 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         cur_end = mem.read_i64(ftab, (fx * 4 + 1) * 8)
         end
 
+      elseif op == 17
+        -- call_indirect: `imm2` holds the type index (op 17 is registered in
+        -- `himm`); a table index LEB follows and must be consumed here or `pc`
+        -- desyncs. The callee comes off the operand stack and is resolved
+        -- through the element-initialised table.
+        tb2: i64 = mem.read_byte(code, pc)
+        pc += 1
+        while tb2 >= 0x80
+          tb2 = mem.read_byte(code, pc)
+          pc += 1
+        end
+        if sp < 1
+          return -1
+        end
+        tsl: i64 = mem.read_i64(st, sp * 8) & M32
+        sp -= 1
+        if tsl >= tbsize
+          return -1
+        end
+        gx: i64 = mem.read_i64(tbl, tsl * 8) - nimp
+        if gx < 0 or gx >= nfn or depth >= 63
+          return -1
+        end
+        mem.write_i64(fr, (depth * 8) * 8, pc)
+        mem.write_i64(fr, (depth * 8 + 1) * 8, cur_end)
+        mem.write_i64(fr, (depth * 8 + 2) * 8, lbase)
+        mem.write_i64(fr, (depth * 8 + 3) * 8, lsp)
+        mem.write_i64(fr, (depth * 8 + 4) * 8, lsp_base)
+        depth += 1
+        gb2: i64 = lbase + 64
+        gpc: i64 = mem.read_i64(ftab, (gx * 4 + 3) * 8)
+        glc: i64 = mem.read_i64(ftab, (gx * 4 + 2) * 8)
+        if gb2 + 64 > 64 * 64 or gpc > sp
+          return -1
+        end
+        kg: i64 = gpc - 1
+        while kg >= 0
+          mem.write_i64(lo, (gb2 + kg) * 8, mem.read_i64(st, sp * 8))
+          sp -= 1
+          kg -= 1
+        end
+        zg: i64 = gpc
+        while zg < gpc + glc
+          mem.write_i64(lo, (gb2 + zg) * 8, 0)
+          zg += 1
+        end
+        lbase = gb2
+        lsp_base = lsp
+        pc = mem.read_i64(ftab, (gx * 4) * 8)
+        cur_end = mem.read_i64(ftab, (gx * 4 + 1) * 8)
+
       elseif op == 26
         -- drop
         if sp < 1
@@ -1484,6 +1539,20 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           yw = yw - 0x100000000
         end
         mem.write_i64(st, sp * 8, yw)
+        sp = sp
+
+      elseif op >= 188 and op <= 191
+        -- i32.reinterpret_f32 / i64.reinterpret_f64 / f32.reinterpret_i32 /
+        -- f64.reinterpret_i64. Floats already sit on the operand stack as
+        -- their raw bit pattern, so reinterpreting is the identity; only the
+        -- 32-bit forms have to clear the high half.
+        if sp < 1
+          return -1
+        end
+        if op == 188 or op == 190
+          rb: i64 = mem.read_i64(st, sp * 8) & M32
+          mem.write_i64(st, sp * 8, rb)
+        end
         sp = sp
 
       elseif op == 27
@@ -2255,13 +2324,117 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         end
 
       elseif op == 253
-        -- 0xFD SIMD. NOT IMPLEMENTED, deliberately: ward's operand stack is
-        -- 64-bit and a v128 needs 128. A low-64-bits-only representation would
-        -- turn an honest bail into a silently wrong answer for any module that
-        -- observes the high lanes — the exact failure mode that made
-        -- div/rem-returns-0 and i32.eq-returns-0 so expensive to find.
-        -- Implementing this needs a real 128-bit slot, not a shortcut.
-        return -1
+        -- 0xFD SIMD with FULL 128-bit values. ward's operand stack is 64-bit,
+        -- so a v128 lives in a side store (`vstk`, 16 bytes per entry) and the
+        -- stack slot holds its INDEX. That keeps one-slot stack discipline —
+        -- `drop` still pops exactly one — while every lane is real. A
+        -- low-64-bits-only shortcut would answer wrongly instead of bailing.
+        vsub: i64 = 0
+        vsh: i64 = 0
+        vc: i64 = 1
+        while vc == 1
+          vb: i64 = mem.read_byte(code, pc)
+          pc += 1
+          vsub = vsub | ((vb & 0x7F) << vsh)
+          vsh += 7
+          if vb < 0x80
+            vc = 0
+          end
+        end
+        if vsub == 12
+          vi: i64 = vtop
+          vtop = (vtop + 1) & 1023
+          vk: i64 = 0
+          while vk < 16
+            mem.write_byte(vstk, vi * 16 + vk, mem.read_byte(code, pc + vk))
+            vk += 1
+          end
+          pc += 16
+          sp += 1
+          mem.write_i64(st, sp * 8, vi)
+        elseif vsub == 78 or vsub == 174 or vsub == 177 or vsub == 181 or vsub == 206 or vsub == 228 or vsub == 240
+          if sp < 2
+            return -1
+          end
+          vbi: i64 = mem.read_i64(st, sp * 8) & 1023
+          vai: i64 = mem.read_i64(st, (sp - 1) * 8) & 1023
+          vri: i64 = vtop
+          vtop = (vtop + 1) & 1023
+          if vsub == 78
+            bk: i64 = 0
+            while bk < 16
+              mem.write_byte(vstk, vri * 16 + bk, mem.read_byte(vstk, vai * 16 + bk) & mem.read_byte(vstk, vbi * 16 + bk))
+              bk += 1
+            end
+          elseif vsub == 174 or vsub == 177 or vsub == 181
+            lk: i64 = 0
+            while lk < 4
+              la: i64 = mem.read_byte(vstk, vai * 16 + lk * 4) | (mem.read_byte(vstk, vai * 16 + lk * 4 + 1) << 8) | (mem.read_byte(vstk, vai * 16 + lk * 4 + 2) << 16) | (mem.read_byte(vstk, vai * 16 + lk * 4 + 3) << 24)
+              lb: i64 = mem.read_byte(vstk, vbi * 16 + lk * 4) | (mem.read_byte(vstk, vbi * 16 + lk * 4 + 1) << 8) | (mem.read_byte(vstk, vbi * 16 + lk * 4 + 2) << 16) | (mem.read_byte(vstk, vbi * 16 + lk * 4 + 3) << 24)
+              lr: i64 = 0
+              if vsub == 174
+                lr = (la + lb) & M32
+              elseif vsub == 177
+                lr = (la - lb) & M32
+              else
+                lr = (la * lb) & M32
+              end
+              mem.write_byte(vstk, vri * 16 + lk * 4, lr & 255)
+              mem.write_byte(vstk, vri * 16 + lk * 4 + 1, (lr >> 8) & 255)
+              mem.write_byte(vstk, vri * 16 + lk * 4 + 2, (lr >> 16) & 255)
+              mem.write_byte(vstk, vri * 16 + lk * 4 + 3, (lr >> 24) & 255)
+              lk += 1
+            end
+          else
+            -- 64-bit lanes: i64x2.add, f32x4.add (4 lanes), f64x2.add.
+            -- Assemble through `fb` rather than shifting: a >2^53 value built
+            -- with shift/or loses its low byte.
+            wid: i64 = 8
+            if vsub == 228
+              wid = 4
+            end
+            nl: i64 = 16 // wid
+            ll: i64 = 0
+            while ll < nl
+              mem.write_i64(fb, 0, 0)
+              ck: i64 = 0
+              while ck < wid
+                mem.write_byte(fb, ck, mem.read_byte(vstk, vai * 16 + ll * wid + ck))
+                ck += 1
+              end
+              av2: i64 = mem.read_i64(fb, 0)
+              af: f64 = mem.load("f64", fb)
+              a32: f32 = mem.load("f32", fb)
+              mem.write_i64(fb, 0, 0)
+              ck2: i64 = 0
+              while ck2 < wid
+                mem.write_byte(fb, ck2, mem.read_byte(vstk, vbi * 16 + ll * wid + ck2))
+                ck2 += 1
+              end
+              bv2: i64 = mem.read_i64(fb, 0)
+              bf: f64 = mem.load("f64", fb)
+              b32: f32 = mem.load("f32", fb)
+              mem.write_i64(fb, 0, 0)
+              if vsub == 206
+                mem.write_i64(fb, 0, av2 + bv2)
+              elseif vsub == 240
+                mem.store("f64", fb, af + bf)
+              else
+                mem.store("f32", fb, a32 + b32)
+              end
+              ck3: i64 = 0
+              while ck3 < wid
+                mem.write_byte(vstk, vri * 16 + ll * wid + ck3, mem.read_byte(fb, ck3))
+                ck3 += 1
+              end
+              ll += 1
+            end
+          end
+          mem.write_i64(st, (sp - 1) * 8, vri)
+          sp -= 1
+        else
+          return -1
+        end
 
       elseif op >= 208 and op <= 210
         -- reference types. A null ref is -1: the table stores FUNCTION INDICES

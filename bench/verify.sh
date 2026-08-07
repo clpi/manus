@@ -31,15 +31,22 @@ else:
     print(repr(float(v)))
 " "$1" 2>/dev/null || echo "$1"; }
 
-pass=0; fail=0; skip=0
+pass=0; fail=0; skip=0; void=0
 printf '%-32s %-22s %-22s %s\n' MODULE WASMTIME WARD VERDICT
 printf '%.0s-' {1..92}; echo
 for m in bench/*.wasm; do
   name=$(basename "$m" .wasm)
-  for want in run _start; do
-    ref=$("$WASMTIME" --invoke "$want" "$m" 2>/dev/null | tail -1)
-    [[ -n $ref ]] && break
+  # Pick the export wasmtime can actually invoke, judged by EXIT STATUS rather
+  # than by output: a void `(func)` export runs fine and prints nothing, and
+  # keying off output alone both skipped those and misnamed the export in the
+  # error text (it reported the last candidate tried, not the real one).
+  want=""; ref=""
+  for cand in run _start benchmark; do
+    if out=$("$WASMTIME" --invoke "$cand" "$m" 2>/dev/null); then
+      want=$cand; ref=$(tail -1 <<<"$out"); break
+    fi
   done
+  [[ -z $want ]] && want=_start
   raw=$(WARD_WASM="$PWD/$m" WARD_INVOKE="$want" WARD_ENGINE=interp \
         timeout 120 "$WARD_BIN" 2>/dev/null)
   got=$(sed -n 's/^result=//p' <<<"$raw")
@@ -49,7 +56,17 @@ for m in bench/*.wasm; do
   emitted=$(sed 's/engine=.*//; s/^result=.*//; s/^seconds=.*//' <<<"$raw" | tr -d '\n')
   if [[ -n ${emitted// } && ! $ref =~ ^-?[0-9.]+$ ]]; then got=$emitted; fi
   if [[ -z $ref ]]; then
-    printf '%-32s %-22s %-22s %s\n' "$name" "<no ref>" "${got:-none}" "SKIP"; skip=$((skip+1)); continue
+    # wasmtime invoked it successfully but it yields no observable value — a
+    # void `(func)` export that neither returns nor prints. There is nothing to
+    # difference, so the only honest check is that ward also runs it to
+    # completion instead of bailing (-1). Counted separately from a real PASS,
+    # because "didn't trap" is much weaker evidence than "matched the oracle".
+    if [[ -n $want && -n $got && $got != -1 ]]; then
+      printf '%-32s %-22s %-22s %s\n' "$name" "<void>" "$got" "OK(void)"; void=$((void+1))
+    else
+      printf '%-32s %-22s %-22s %s\n' "$name" "<void>" "${got:-none}" "SKIP"; skip=$((skip+1))
+    fi
+    continue
   fi
   if [[ -z $got || $got == -1 ]]; then
     printf '%-32s %-22s %-22s %s\n' "$name" "$ref" "${got:-none}" "UNSUPPORTED"; fail=$((fail+1)); continue
@@ -61,4 +78,4 @@ for m in bench/*.wasm; do
   fi
 done
 printf '%.0s-' {1..92}; echo
-echo "ward agrees with wasmtime on $pass module(s); $fail unsupported-or-wrong; $skip skipped"
+echo "ward agrees with wasmtime on $pass module(s); $fail unsupported-or-wrong; $void void-export completed; $skip skipped"
