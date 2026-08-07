@@ -2808,7 +2808,12 @@ fn run_child_process(io: Io, argv: []const []const u8, label: []const u8, quiet:
         .argv = argv,
         .stdin = .inherit,
         .stdout = if (quiet) .ignore else .inherit,
-        .stderr = if (quiet) .ignore else .inherit,
+        // stderr is ALWAYS inherited, even when quiet. A toolchain child (cc,
+        // the native linker) is silent on success, so this costs nothing there
+        // — but discarding it left failures as a bare "native linker failed
+        // (exit 1)" with no cause, which is what made the SH-03 native-path
+        // failure undiagnosable.
+        .stderr = .inherit,
     });
     const result = try child.wait(io);
     switch (result) {
