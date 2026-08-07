@@ -938,13 +938,15 @@ proj_target_or_expr = (lx: Lexer): str
             targets = targets .. " " .. proj_postfix(lx)
         end
         if not is_assign_kind(lexer.peek(lx).kind)
-            -- A trailing `nkey, nval` is a demand-returned PACK, and projecting
-            -- it as one here was tried and reverted: this arm cannot tell a tail
-            -- position from any other statement, so it also accepted a bare
-            -- `a, b` mid-body. That is a rejection case in the corpus, and
-            -- coverage fell 184 -> 151 because real files stopped failing where
-            -- they should. Packs need tail knowledge the statement level does
-            -- not have; left as an error until proj_body can say "last".
+            -- A trailing `string.sub(buf, 1, n), nil` is a demand-returned PACK.
+            -- My first attempt projected EVERY comma list as one, which also
+            -- accepted a bare `a, b` mid-body — a corpus rejection — and coverage
+            -- fell 184 -> 151. The tail test is local after all: a pack is the
+            -- body's value, so `end` must follow it. A top-level `a, b` (EOF
+            -- follows, no consumer) stays rejected.
+            if lexer.peek(lx).kind == token.KIND_END
+                return "(pack " .. targets .. ")"
+            end
             mark_error(lx)
             return "(error)"
         end
@@ -1462,6 +1464,26 @@ end
 
 -- One statement. Returns "" only for block terminators (which the block
 -- parsers consume) and EOF.
+-- After an expression statement, a comma list that closes at `end` is a
+-- demand-returned pack: `string.sub(buf, 1, n), nil`. The `end` is what makes it
+-- a tail — a comma list anywhere else is an error, which keeps a bare `a, b`
+-- rejected.
+tail_pack = (lx: Lexer, first: str): str
+    if lexer.peek(lx).kind != token.KIND_COMMA
+        return first
+    end
+    acc = first
+    while lexer.peek(lx).kind == token.KIND_COMMA
+        _c = lexer.next(lx)
+        acc = acc .. " " .. proj_expr(lx)
+    end
+    if lexer.peek(lx).kind == token.KIND_END
+        return "(pack " .. acc .. ")"
+    end
+    mark_error(lx)
+    "(error)"
+end
+
 proj_stmt = (lx: Lexer): str
     t = lexer.peek(lx)
     if t.kind == token.KIND_EOF
@@ -1545,7 +1567,7 @@ proj_stmt = (lx: Lexer): str
             if params_have_colon(lx)
                 return proj_fun_decl(lx, t)
             end
-            return proj_expr(lx)
+            return tail_pack(lx, proj_expr(lx))
         end
         if is_assign_kind(t2.kind)
             return proj_assign(lx, t)
@@ -1553,9 +1575,9 @@ proj_stmt = (lx: Lexer): str
         if t2.kind == token.KIND_DOT or t2.kind == token.KIND_LBRACKET or t2.kind == token.KIND_COMMA
             return proj_target_or_expr(lx)
         end
-        return proj_expr(lx)
+        return tail_pack(lx, proj_expr(lx))
     end
-    proj_expr(lx)
+    tail_pack(lx, proj_expr(lx))
 end
 
 -- Whole-program projection: '(program <stmt>...)'.

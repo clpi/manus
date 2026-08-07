@@ -187,6 +187,10 @@ positives = {
     -- the signal — a body is indented, so a later line at column 1 is the next
     -- top-level construct. Four modules failed entirely without this.
     { "@ffi(\"X\")\nf(a: any): any\n\n@ffi(\"Y\")\ng(): any\n", "(program (at ffi \"X\") (fun f (params (param a any)) (ret any)) (at ffi \"Y\") (fun g (params) (ret any)))" },
+    -- A tail PACK: a comma list that closes at `end` is the body's value. The
+    -- `end` is what makes it a tail, which is why the bare `a, b` in the
+    -- rejection list still rejects — nothing consumes it there.
+    { "f(): any\n    g(x), nil\nend\n", "(program (fun f (params) (ret any) (pack (call g x) nil)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
