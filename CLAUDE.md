@@ -113,6 +113,27 @@ crash**, so the listed interim spelling is the correct one to write.
     misread as a name.
   - Malformed holes stay literal by design: `{a.}`, `{.x}`, `{a..b}`, `{1x}`.
   Interim: `..` chains ONLY for expression holes.
+- **GAP-14 (Pass 61 LV-4..7, PIPE-1) — DO NOT APPLY THE LV SEQUENCE ROWS YET.**
+  The pinned sequence surface (`map filter fold each find any all count take
+  drop sort sort_by max_by min_by join push pop sum`) is **not implemented**.
+  Measured 2026-08-07, all 15 probed resolve to nothing. Two of them fail
+  SILENTLY, which is why this is a stop-work item rather than a note:
+  - `a:push(5); a:push(6)` compiles clean and leaves `#a == 0` — **data loss,
+    no diagnostic**.
+  - `c:join(", ")` returns **nil**, not the joined string.
+  - `vs:map(.name)` is a compile error (the honest failure of the three).
+  Meanwhile the vestiges those rows tell you to delete WORK: `table.concat(c,
+  ", ")` returns `"x, y"`. So applying LV-4/LV-6 today replaces correct code
+  with silently wrong code, and PIPE-1 has no surface to stand on.
+  Interim: keep `table.insert`/`table.concat`/`table.sort` and manual loops
+  until the surface lands. LV-8 (`for v in t`), LV-10 (`x:to(str)`) and LV-13
+  (`#s`) are verified working — those rows are safe to apply now.
+- **GAP-15 (SH-03 production dispatch)** — `duo compile --emit obj` and
+  `--emit dylib` both produce a Mach-O **executable**, and every `@c.export`
+  symbol is emitted with INTERNAL linkage (`nm` shows `t`, not `T`) despite
+  the generated C declaring `visibility("default")`. So the Duo lexer cannot
+  be linked into the host at all, which is the real blocker under "SH-03
+  needs production dispatch" — one level deeper than the matrix records.
 - **GAP-12 (rule 1 / FF-1)** — `@comp.c.export` does not attach to a
   value-form binding; it degrades into a call to an undefined `__c_export`.
   Interim: the one exported declaration per module stays bare, commented.
