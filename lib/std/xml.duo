@@ -1,5 +1,9 @@
 -- std.xml — basic XML parsing and formatting
 
+xml_entity_to_char(c: any): any
+    std.string.char(c)
+end
+
 escape(s: str): str
     if s == nil return "" end
     s = std.string.gsub(s, "&", "&amp;")
@@ -17,8 +21,12 @@ unescape(s: str): str
     s = std.string.gsub(s, "&gt;", ">")
     s = std.string.gsub(s, "&quot;", "\"")
     s = std.string.gsub(s, "&apos;", "'")
-    to_char = (c) std.string.char(c)
-    s = std.string.gsub(s, "&#(%d+);", to_char)
+    -- A named function, not a lambda. `to_char = (c) std.string.char(c)`
+    -- lowered to `lua_Value to_char = c;` — the lambda BODY leaked into the
+    -- initializer and its parameter `c` was undeclared at that scope, taking
+    -- the module down. A file-scope declaration lowers correctly and is passed
+    -- by name.
+    s = std.string.gsub(s, "&#(%d+);", xml_entity_to_char)
     s
 end
 
