@@ -1,0 +1,74 @@
+-- SH-04 coverage — what fraction of real Duo source can the SELF-HOSTED parser
+-- parse?
+--
+-- examples/pass16_parser_corpus_proof.duo proves the projection is CORRECT on 55
+-- hand-written cases. It cannot say how much of the language those cases reach.
+-- This walks lib/std and reports how many files parse_status accepts. That
+-- number has to reach 100% before SH-04 is anything but `porting`, and it is the
+-- only honest way to say how far along the self-hosted parser actually is.
+--
+-- Baseline 2026-08-07: 44/245.
+--
+-- Exit 0 always — this measures, it does not gate. Add a floor once the number
+-- stops moving.
+--
+-- Two things this file is deliberately careful about:
+--
+--   * It terminates. An earlier version of this walk did not finish in ten
+--     minutes; the cause was a parser loop that could iterate without consuming
+--     a token, now fixed structurally by the `stalled` guard in parser.duo. A
+--     scripts/ entry that hangs is worse than no measurement, because the next
+--     agent wires it into a gate.
+--   * `lib/std/os/linux.duo` is skipped. A lexer error (`UnterminatedString`)
+--     aborts the whole process rather than returning a rejection, so one bad
+--     file would truncate the run and silently shrink the denominator. The skip
+--     is visible here rather than hidden in the number.
+--
+-- `req` rather than an ambient root: GAP-13 — ambient `std.str.sub` on a
+-- native-direct module crashes at startup with no output.
+
+global strm = req "std.str"
+global P = req "std.compiler.parser"
+
+corpus = (): str
+    std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
+        .. "/lib/std -name '*.duo' 2>/dev/null | grep -v '/os/linux.duo'")
+end
+
+main(): i64
+    listing = corpus()
+    n: i64 = #listing
+    total: i64 = 0
+    ok: i64 = 0
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n + 1
+        at_end = i > n
+        eol = false
+        if not at_end
+            eol = string.byte(listing, i) == 10
+        end
+        if at_end or eol
+            if i > start
+                path = strm.sub(listing, start, i - 1)
+                f = io.open(path, "r")
+                if f
+                    src = f:read("a")
+                    f:close()
+                    total += 1
+                    if P.parse_status(src, path) == 0
+                        ok += 1
+                    else
+                        print("  REJECT {path}")
+                    end
+                end
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+    -- GAP-11: numeric holes do not interpolate, so the tallies stay a chain.
+    print("parser_coverage: " .. to(str)(ok) .. "/" .. to(str)(total)
+        .. " lib/std files parse clean")
+    0
+end

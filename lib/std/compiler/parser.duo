@@ -296,6 +296,18 @@ end
 
 -- Mark the parse failed. `lx` is the lexer (a table on this path), so the flag
 -- persists through the recursion and is readable by `parse_status`.
+-- A parser must terminate on ANY input, including truncated and malformed
+-- source. Every loop below calls a sub-parser that is *supposed* to consume a
+-- token; when one does not -- at EOF, or on a token no arm handles -- the loop
+-- spins forever with no diagnostic and no output. Comparing the cursor across
+-- the call makes termination structural instead of depending on every arm being
+-- right, which is the assumption that actually failed: parsing lib/std/trace.duo
+-- did not finish in 10 minutes and no single construct reproduced it in
+-- isolation.
+stalled = (lx: Lexer, before: i64): bool
+    lx.pos == before
+end
+
 mark_error = (lx: Lexer)
     lx.has_error = true
 end
@@ -379,7 +391,12 @@ proj_params = (lx: Lexer): str
             mark_error(lx)
             return acc
         end
+        before: i64 = lx.pos
         acc = join(acc, proj_param(lx))
+        if stalled(lx, before)
+            mark_error(lx)
+            return acc
+        end
         if lexer.peek(lx).kind == token.KIND_COMMA
             _c = lexer.next(lx)
         end
@@ -429,7 +446,12 @@ proj_body = (lx: Lexer): str
             mark_error(lx)
             return acc
         end
+        before: i64 = lx.pos
         acc = join(acc, proj_stmt(lx))
+        if stalled(lx, before)
+            mark_error(lx)
+            return acc
+        end
     end
 end
 
@@ -442,7 +464,12 @@ proj_body_until_else = (lx: Lexer): str
         if t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_END or t.kind == token.KIND_EOF
             return acc
         end
+        before: i64 = lx.pos
         acc = join(acc, proj_stmt(lx))
+        if stalled(lx, before)
+            mark_error(lx)
+            return acc
+        end
     end
 end
 
@@ -772,7 +799,12 @@ proj_arglist = (lx: Lexer): str
             mark_error(lx)
             return acc
         end
+        before: i64 = lx.pos
         acc = join(acc, proj_expr(lx))
+        if stalled(lx, before)
+            mark_error(lx)
+            return acc
+        end
         if lexer.peek(lx).kind == token.KIND_COMMA
             _c = lexer.next(lx)
         end
@@ -812,7 +844,12 @@ proj_desc_body = (lx: Lexer): str
                 s = s .. " " .. v
             end
         else
+            before: i64 = lx.pos
             s = s .. " (item " .. proj_expr(lx) .. ")"
+            if stalled(lx, before)
+                mark_error(lx)
+                return s .. ")"
+            end
         end
         if lexer.peek(lx).kind == token.KIND_COMMA
             _c = lexer.next(lx)
@@ -1117,8 +1154,9 @@ proj_program_lx = (lx: Lexer): str
             end
             return "(program " .. acc .. ")"
         end
+        before: i64 = lx.pos
         s = proj_stmt(lx)
-        if s == ""
+        if s == "" or stalled(lx, before)
             mark_error(lx)
             return "(program " .. acc .. ")"
         end

@@ -185,13 +185,18 @@ crash**, so the listed interim spelling is the correct one to write.
 - **GAP-13 (FF-10 / "no req")** — ambient `std.str.sub(...)` and
   `{ sub } = std.str` on a native-direct module **crash at startup**: exit 128,
   no output, before `main` runs. Interim: `global x = req "std.mod"`.
-- **GAP-16 (SH-04 parser non-termination)** — a walk of `lib/std/**.duo`
-  through `std.compiler.parser.parse_status` did not terminate in 10 minutes.
-  A single 1387-byte file parses in milliseconds and returns a correct
-  rejection, so this is not cumulative cost: some input drives a `proj_*` loop
-  into a non-terminating spin. No SH-04 coverage number can be produced until
-  it is fixed, and the coverage tool was deliberately NOT committed — a
-  `scripts/` entry that hangs is worse than no measurement, because the next
-  agent wires it into a gate. Fix shape: every `proj_*` loop needs the
-  no-progress guard already added to `proj_repeat`, where an empty `proj_stmt`
-  is treated as the error it is. Then bisect the corpus.
+- **GAP-16 (SH-04 parser non-termination) — FIXED 2026-08-07.** The walk of
+  `lib/std/**.duo` spun forever. Cause: loops that could iterate without
+  consuming a token (a sub-parser returning at EOF, or on a token no arm
+  handles), so `join(acc, "")` made no progress. Fixed structurally with a
+  `stalled(lx, before)` cursor check on the six accumulating loops rather than
+  by hunting triggers — no single construct reproduced it in isolation, only
+  the accumulated 750-line prefix did. Corpus walk went 7 files -> 245.
+  **First SH-04 coverage number: 44/245 lib/std files parse clean (18%).**
+  `scripts/parser_corpus_coverage.duo` is the tool; it terminates, so it is
+  committed.
+- **GAP-17 (lexer error aborts the process)** — `UnterminatedString` in
+  `lib/std/os/linux.duo` kills the whole run instead of returning a rejection,
+  so one bad file truncates any corpus walk and silently shrinks the
+  denominator. The coverage tool skips that file visibly rather than absorbing
+  the loss. A lexer error should be a rejection the caller can count.
