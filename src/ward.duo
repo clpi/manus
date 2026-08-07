@@ -809,6 +809,29 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
             if (a2 & M32) < (b2 & M32)
               r2 = 1
             end
+          elseif op == 70
+            -- i32.eq. This range (69..73) SWALLOWED it: the inner chain had no
+            -- arm, so it fell through to `r2 = 0` and every `x == y` was false.
+            -- Same silent-zero shape as the div/rem range bug.
+            if (a2 & M32) == (b2 & M32)
+              r2 = 1
+            end
+          elseif op == 72
+            -- i32.lt_s. Also swallowed here, before its own arm further down.
+            as2: i64 = a2 & M32
+            bs2: i64 = b2 & M32
+            if as2 >= 2147483648
+              as2 = as2 - 4294967296
+            end
+            if bs2 >= 2147483648
+              bs2 = bs2 - 4294967296
+            end
+            if as2 < bs2
+              r2 = 1
+            end
+          else
+            -- An opcode inside the range with no arm must NOT quietly yield 0.
+            return -1
           end
           mem.write_i64(st, sp * 8, r2)
           sp = sp
