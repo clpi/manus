@@ -31,7 +31,7 @@ else:
     print(repr(float(v)))
 " "$1" 2>/dev/null || echo "$1"; }
 
-pass=0; fail=0; skip=0; void=0
+pass=0; fail=0; skip=0; void=0; jitn=0
 printf '%-30s %-20s %-20s %-10s %s\n' MODULE WASMTIME WARD ENGINE VERDICT
 printf '%.0s-' {1..96}; echo
 for m in bench/*.wasm; do
@@ -55,6 +55,7 @@ for m in bench/*.wasm; do
   raw=$(WARD_WASM="$PWD/$m" WARD_INVOKE="$want" WARD_ENGINE="${WARD_ENGINE:-interp}" \
         timeout 120 "$WARD_BIN" 2>/dev/null)
   eng=$(sed -n 's/^engine=//p' <<<"$raw")
+  [[ $eng == jit-arm64 ]] && jitn=$((jitn+1))
   got=$(sed -n 's/^result=//p' <<<"$raw")
   # A module whose real answer is what it PRINTS (via fd_write) is compared on
   # its emitted bytes, not on the numeric result of a void _start. Strip ward's
@@ -85,3 +86,19 @@ for m in bench/*.wasm; do
 done
 printf '%.0s-' {1..96}; echo
 echo "ward agrees with wasmtime on $pass module(s); $fail unsupported-or-wrong; $void void-export completed; $skip skipped"
+
+# JIT COVERAGE FLOOR. A JIT that stops compiling falls back to the interpreter
+# and still produces correct answers, so a purely correctness-based gate stays
+# fully green while the JIT is dead. That happened during this work: an
+# operand-stack accounting bug disabled JIT compilation for every float module
+# and the corpus still read 42/42. Only under WARD_ENGINE=jit is the floor
+# meaningful; the default interp run legitimately compiles nothing.
+if [[ ${WARD_ENGINE:-interp} == jit ]]; then
+  floor=${JIT_FLOOR:-34}
+  echo "jit-compiled: $jitn module(s) (floor $floor)"
+  if (( jitn < floor )); then
+    echo "*** JIT COVERAGE REGRESSION: $jitn < $floor — the JIT is silently falling back ***"
+    exit 1
+  fi
+fi
+(( fail == 0 )) || exit 1
