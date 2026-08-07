@@ -1,5 +1,5 @@
 -- ward/src/wasm/memory.duo — Linear memory (mmap-backed)
-const PAGE_SIZE = 65536
+PAGE_SIZE = 65536
 
 fun mem_new(pages: i64)
     size: i64 = pages * PAGE_SIZE

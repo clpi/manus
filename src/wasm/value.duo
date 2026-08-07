@@ -2,10 +2,10 @@
 -- All values stored as i64. Reinterpret casts for float types.
 -- No boxing, no tags at runtime — type known statically from WASM validation.
 
-const VAL_I32 = 0x7F
-const VAL_I64 = 0x7E
-const VAL_F32 = 0x7D
-const VAL_F64 = 0x7C
+VAL_I32 = 0x7F
+VAL_I64 = 0x7E
+VAL_F32 = 0x7D
+VAL_F64 = 0x7C
 
 --- @inline
 fun wrap_i32(val: i64): i64

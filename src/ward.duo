@@ -34,27 +34,27 @@ jitm = req "std.jit"
 -- Shape: ONE hoisted LEB128 decode (was 6 copies), binops share operand
 -- fetch/stack adjust (was 15 near-identical blocks), hot opcodes tested first.
 
-const OP_loop = 3
-const OP_end_ = 11
-const OP_br = 12
-const OP_br_if = 13
-const OP_return_ = 15
-const OP_local_get = 32
-const OP_local_set = 33
-const OP_local_tee = 34
-const OP_i32_const = 65
-const OP_i32_eqz = 69
-const OP_i32_ne = 71
-const OP_i32_lt_u = 73
-const OP_i32_add = 106
-const OP_i32_sub = 107
-const OP_i32_mul = 108
-const OP_i32_and = 113
-const OP_i32_or = 114
-const OP_i32_xor = 115
-const OP_i32_shl = 116
-const OP_i32_shr_u = 118
-const M32 = 0xFFFFFFFF
+OP_loop = 3
+OP_end_ = 11
+OP_br = 12
+OP_br_if = 13
+OP_return_ = 15
+OP_local_get = 32
+OP_local_set = 33
+OP_local_tee = 34
+OP_i32_const = 65
+OP_i32_eqz = 69
+OP_i32_ne = 71
+OP_i32_lt_u = 73
+OP_i32_add = 106
+OP_i32_sub = 107
+OP_i32_mul = 108
+OP_i32_and = 113
+OP_i32_or = 114
+OP_i32_xor = 115
+OP_i32_shl = 116
+OP_i32_shr_u = 118
+M32 = 0xFFFFFFFF
 
 
 -- ── Minimal WASM module decoder (pure Duo) ───────────────────────────────

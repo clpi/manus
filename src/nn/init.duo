@@ -8,14 +8,14 @@ global fmt = req "std.fmt"
 -- ═══════════════════════════════════════════════════════════════
 -- Model encodings (matches WASI-NN spec)
 -- ═══════════════════════════════════════════════════════════════
-const ENCODING = {
+ENCODING = {
   openvino = 0, onnx = 1, tensorflow = 2, pytorch = 3,
   tflite = 4, ggml = 5, autodetect = 255,
 }
 
-const TARGET = { cpu = 0, gpu = 1, tpu = 2 }
+TARGET = { cpu = 0, gpu = 1, tpu = 2 }
 
-const DTYPE = {
+DTYPE = {
   fp16 = 0, fp32 = 1, ["u8"] = 2, ["i32"] = 3, bf16 = 4, ["i64"] = 5,
 }
 
