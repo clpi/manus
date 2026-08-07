@@ -660,6 +660,47 @@ end
 -- `out` is a host address (see `mem.addr` / `mem.ptr_from_addr`); tokens are
 -- written as four i64 fields — kind, line, col, int_val — and the return is the
 -- token count including the terminating EOF, or -1 if `cap` is too small.
+-- Whole-file tokenize carrying TEXT as well, into two host-provided buffers.
+--
+-- `duo_lexer_tokenize_all` is enough to fingerprint a stream but not to DRIVE a
+-- parser: the host also needs each token's text, and text is not a slice of the
+-- source once escapes are processed, so start/end offsets cannot recover it.
+-- Here the caller supplies a second arena; each token records (offset, length)
+-- into it. The arena belongs to the HOST, which keeps the no-writable-__DATA
+-- constraint in this file's header intact — nothing is allocated on the Duo
+-- side beyond what std.str already does.
+--
+-- Six i64 per token: kind, line, col, int_val, text_off, text_len.
+-- Returns the token count including EOF, or -1 if either buffer is too small.
+@c.export("duo_lexer_tokenize_text")
+duo_lexer_tokenize_text(src: str, file: str, out: i64, cap: i64, txt: i64, txtcap: i64): i64
+    lex = new(src, file)
+    buf = mem.ptr_from_addr(i64, out)
+    tbuf = mem.ptr_from_addr(i64, txt)
+    n: i64 = 0
+    toff: i64 = 0
+    while n < cap
+        tok = next_tok(lex)
+        tlen: i64 = strm.len(tok.text)
+        if toff + tlen > txtcap return -1 end
+        k: i64 = 0
+        while k < tlen
+            mem.write_byte(tbuf, toff + k, string.byte(tok.text, k + 1))
+            k += 1
+        end
+        mem.write_i64(buf, (n * 6) * 8, tok.kind)
+        mem.write_i64(buf, (n * 6 + 1) * 8, tok.loc.line)
+        mem.write_i64(buf, (n * 6 + 2) * 8, tok.loc.col)
+        mem.write_i64(buf, (n * 6 + 3) * 8, tok.int_val)
+        mem.write_i64(buf, (n * 6 + 4) * 8, toff)
+        mem.write_i64(buf, (n * 6 + 5) * 8, tlen)
+        toff = toff + tlen
+        n += 1
+        if tok.kind == std.compiler.token.KIND_EOF return n end
+    end
+    -1
+end
+
 @c.export("duo_lexer_tokenize_all")
 duo_lexer_tokenize_all(src: str, file: str, out: i64, cap: i64): i64
     lex = new(src, file)

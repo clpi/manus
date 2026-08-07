@@ -696,6 +696,13 @@ pub fn build(b: *std.Build) void {
     // rebuilds a Lexer at a byte offset and so drops peek/hint state, which
     // silently mis-lexes `fun f(): T =`; this runs the whole file on one Lexer
     // and is differenced against the same fingerprint oracle.
+    // MP4-B02 — per-token text into a host arena, and the pinned divergence:
+    // Duo returns the raw source span for escaped strings, src/lexer.zig decodes.
+    const pass16_lexer_tokenize_text = b.addRunArtifact(exe);
+    pass16_lexer_tokenize_text.addArgs(&.{ "run", "examples/pass16_lexer_tokenize_text_proof.duo" });
+    pass16_lexer_tokenize_text.step.dependOn(b.getInstallStep());
+    pass16_lexer_tokenize_text.setCwd(b.path("."));
+
     const pass16_lexer_tokenize_all = b.addRunArtifact(exe);
     pass16_lexer_tokenize_all.addArgs(&.{ "run", "examples/pass16_lexer_tokenize_all_proof.duo" });
     pass16_lexer_tokenize_all.step.dependOn(b.getInstallStep());
@@ -716,6 +723,7 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_all.step);
+    pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize_text.step);
     pass16_m1_smoke_step.dependOn(&pass16_parser_corpus.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_verify.step);
     pass16_m1_smoke_step.dependOn(pass16_gate_step);
