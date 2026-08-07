@@ -1,11 +1,9 @@
 -- Pass 16 MP4-B02 — `duo_lexer_tokenize_text` carries per-token TEXT, and pins
--- the one place that text does NOT match src/lexer.zig.
+-- the RAW-span contract both lexers share.
 --
 -- `duo_lexer_tokenize_all` is enough to fingerprint a stream but not to drive a
--- parser: the host needs each token's text. Check 6 is the important one — it
--- shows the Duo lexer hands back the RAW source span for an escaped string
--- while src/lexer.zig decodes it, a divergence no kind-only fingerprint can
--- see.
+-- parser: the host needs each token's text. Check 6 pins the escape contract,
+-- which is subtle enough that I got it wrong once in both directions.
 --
 -- The text arena belongs to the HOST (a second address argument), so the
 -- no-writable-__DATA constraint in lexer.duo's header still holds: nothing is
@@ -19,8 +17,8 @@
 -- dotted form round-trips str arguments through `lua_to_str` and diverges on
 -- exactly the escape-carrying inputs this proof depends on.
 --
--- Exit code is the failing check number; 0 means text marshalling behaves as
--- pinned here — which for escaped strings means DIVERGING from the host.
+-- Exit code is the failing check number; 0 means text marshalling matches the
+-- raw-span contract src/lexer.zig also implements.
 
 L = req "std.compiler.lexer"
 
@@ -66,27 +64,31 @@ identifier_text(): i64
     0
 end
 
--- THE LOAD-BEARING CHECK, and it records a DIVERGENCE rather than agreement.
+-- THE LOAD-BEARING CHECK, and it asserts AGREEMENT — but only after I got the
+-- direction wrong twice, so the reasoning is recorded here.
 --
--- Source `"a\nb"` is six bytes. The Duo lexer returns the RAW four-byte span
--- a, backslash, n, b: `read_str` advances past escapes to validate them but
--- returns `strm.sub` of the source. `src/lexer.zig` instead runs
--- `decode_lua_short_string`, yielding the THREE decoded bytes a, LF, b (it has
--- tests for \n, \x41 and \u{0041}).
+-- Source `"a\nb"` is six bytes; the token text is the RAW four-byte span
+-- a, backslash, n, b. `read_str` advances past escapes to validate them, then
+-- returns `strm.sub` of the source. **`src/lexer.zig` does the same**: its
+-- string token carries `cursor.bytes[start..index]`, the raw span.
 --
--- So the two lexers agree on token KINDS — all `duo_lexer_kind_fingerprint`
--- hashes — and disagree on token TEXT wherever a string literal carries an
--- escape. No existing proof catches that, because text is never differenced.
--- This check pins the CURRENT Duo behaviour so the divergence is visible and
--- cannot regress silently; closing SH-03 requires making these agree.
-escaped_string_is_raw_span_DIVERGES_from_zig(): i64
+-- `decode_lua_short_string` exists in lexer.zig but the LEXER never calls it —
+-- `src/parser.zig` does (lines ~3753 and ~4425), when it builds the literal.
+-- Decoding is a PARSER-stage concern in the host, and the lexer boundary is
+-- raw on both sides.
+--
+-- I misread that, "fixed" a divergence that did not exist by decoding inside
+-- the Duo lexer, and thereby introduced one. Reverted. The lesson: a utility
+-- being public and well-tested does not mean the layer under test calls it —
+-- check the call sites, and prefer a differential over reading the code.
+escaped_string_is_raw_span_matching_zig(): i64
     b = mem.alloc(4096 * 8)
     t = mem.alloc(8192)
     mem.zero(b, 4096 * 8)
     mem.zero(t, 8192)
     n: i64 = L.duo_lexer_tokenize_text("\"a\\nb\"", "c.duo", mem.addr(b), 500, mem.addr(t), 8000)
     if n != 2 return 6 end
-    -- four raw bytes, NOT three decoded ones
+    -- four raw bytes: the lexer does not decode, and neither does the host's
     if mem.read_i64(b, (0 * 6 + 5) * 8) != 4 return 6 end
     if mem.read_byte(t, 0) != 97 return 6 end
     if mem.read_byte(t, 1) != 92 return 6 end
@@ -111,7 +113,7 @@ main(): i64
     if r != 0 return r end
     r2 = identifier_text()
     if r2 != 0 return r2 end
-    r3 = escaped_string_is_raw_span_DIVERGES_from_zig()
+    r3 = escaped_string_is_raw_span_matching_zig()
     if r3 != 0 return r3 end
     guards()
 end
