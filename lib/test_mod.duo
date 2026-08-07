@@ -4,7 +4,3 @@ foo(a: str, b: str): str
     end
     a .. b
 end
-
-M = {}
-M.foo = foo
-M

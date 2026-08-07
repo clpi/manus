@@ -22,7 +22,7 @@ end
 -- Animation Curve
 -- ═══════════════════════════════════════════════════════════════
 
-animation_curve_new(name: str): any
+curve_new(name: str): any
     {
         name = name,
         keyframes = {},
@@ -32,7 +32,7 @@ animation_curve_new(name: str): any
     }
 end
 
-animation_curve_add_keyframe(curve: any, time: f64, value: any): void
+curve_add_keyframe(curve: any, time: f64, value: any): void
     kf = keyframe_new(time, value)
     curve.keyframes[#curve.keyframes + 1] = kf
 
@@ -45,13 +45,13 @@ animation_curve_add_keyframe(curve: any, time: f64, value: any): void
     end
 end
 
-animation_curve_set_keyframe_easing(curve: any, index: i64, easing: str): void
+curve_set_keyframe_easing(curve: any, index: i64, easing: str): void
     if curve.keyframes[index]
         curve.keyframes[index].easing = easing
     end
 end
 
-animation_curve_evaluate(curve: any, time: f64): any
+curve_evaluate(curve: any, time: f64): any
     if #curve.keyframes == 0 return nil end
     if #curve.keyframes == 1 return curve.keyframes[1].value end
 
@@ -89,15 +89,15 @@ animation_curve_evaluate(curve: any, time: f64): any
     interpolate_values(prev.value, nxt.value, t)
 end
 
-animation_curve_get_duration(curve: any): f64
+curve_get_duration(curve: any): f64
     curve.duration
 end
 
-animation_curve_set_loop(curve: any, loop: bool): void
+curve_set_loop(curve: any, loop: bool): void
     curve.loop = loop
 end
 
-animation_curve_set_ping_pong(curve: any, ping_pong: bool): void
+curve_set_ping_pong(curve: any, ping_pong: bool): void
     curve.ping_pong = ping_pong
 end
 
@@ -105,7 +105,7 @@ end
 -- Animation Clip
 -- ═══════════════════════════════════════════════════════════════
 
-animation_clip_new(name: str): any
+clip_new(name: str): any
     {
         name = name,
         curves = {},
@@ -114,22 +114,22 @@ animation_clip_new(name: str): any
     }
 end
 
-animation_clip_add_curve(clip: any, curve: any): void
+clip_add_curve(clip: any, curve: any): void
     clip.curves[curve.name] = curve
     if curve.duration > clip.duration
         clip.duration = curve.duration
     end
 end
 
-animation_clip_evaluate(clip: any, time: f64): any
+clip_evaluate(clip: any, time: f64): any
     result = {}
     for name, curve in clip.curves
-        result[name] = animation_curve_evaluate(curve, time)
+        result[name] = curve_evaluate(curve, time)
     end
     result
 end
 
-animation_clip_set_fps(clip: any, fps: i64): void
+clip_set_fps(clip: any, fps: i64): void
     clip.fps = fps
 end
 
@@ -137,7 +137,7 @@ end
 -- Animation Player
 -- ═══════════════════════════════════════════════════════════════
 
-animation_player_new(): any
+player_new(): any
     {
         clips = {},
         current_clip = nil,
@@ -148,33 +148,33 @@ animation_player_new(): any
     }
 end
 
-animation_player_add_clip(player: any, clip: any): void
+player_add_clip(player: any, clip: any): void
     player.clips[clip.name] = clip
 end
 
-animation_player_play(player: any, clip_name: str, start_time: f64): void
+player_play(player: any, clip_name: str, start_time: f64): void
     player.current_clip = clip_name
     player.current_time = start_time or 0
     player.playing = true
 end
 
-animation_player_stop(player: any): void
+player_stop(player: any): void
     player.playing = false
 end
 
-animation_player_pause(player: any): void
+player_pause(player: any): void
     player.playing = false
 end
 
-animation_player_resume(player: any): void
+player_resume(player: any): void
     player.playing = true
 end
 
-animation_player_set_speed(player: any, speed: f64): void
+player_set_speed(player: any, speed: f64): void
     player.speed = speed
 end
 
-animation_player_update(player: any, delta_time: f64): any
+player_update(player: any, delta_time: f64): any
     if not player.playing or player.current_clip == nil return nil end
 
     clip = player.clips[player.current_clip]
@@ -199,7 +199,7 @@ animation_player_update(player: any, delta_time: f64): any
     end
 
     -- Evaluate clip
-    result = animation_clip_evaluate(clip, player.current_time)
+    result = clip_evaluate(clip, player.current_time)
 
     -- Trigger callbacks
     for callback in player.callbacks
@@ -209,15 +209,15 @@ animation_player_update(player: any, delta_time: f64): any
     result
 end
 
-animation_player_add_callback(player: any, callback: any): void
+player_add_callback(player: any, callback: any): void
     player.callbacks[#player.callbacks + 1] = callback
 end
 
-animation_player_get_time(player: any): f64
+player_get_time(player: any): f64
     player.current_time
 end
 
-animation_player_is_playing(player: any): bool
+player_is_playing(player: any): bool
     player.playing
 end
 
@@ -225,7 +225,7 @@ end
 -- Animation State Machine
 -- ═══════════════════════════════════════════════════════════════
 
-animation_state_machine_new(): any
+state_machine_new(): any
     {
         states = {},
         current_state = nil,
@@ -233,14 +233,14 @@ animation_state_machine_new(): any
     }
 end
 
-animation_state_machine_add_state(sm: any, name: str, clip_name: str): void
+state_machine_add_state(sm: any, name: str, clip_name: str): void
     sm.states[name] = {
         clip_name = clip_name,
         transitions = {},
     }
 end
 
-animation_state_machine_add_transition(sm: any, from: str, to: str, condition: any): void
+state_machine_add_transition(sm: any, from: str, to: str, condition: any): void
     if sm.transitions[from] == nil
         sm.transitions[from] = {}
     end
@@ -250,11 +250,11 @@ animation_state_machine_add_transition(sm: any, from: str, to: str, condition: a
     }
 end
 
-animation_state_machine_set_state(sm: any, state_name: str): void
+state_machine_set_state(sm: any, state_name: str): void
     sm.current_state = state_name
 end
 
-animation_state_machine_update(sm: any, params: any): any
+state_machine_update(sm: any, params: any): any
     if sm.current_state == nil return nil end
 
     -- Check transitions
@@ -377,48 +377,10 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
-
-M = {}
 -- Keyframe
-M.keyframe_new = keyframe_new
-M.keyframe_set_easing = keyframe_set_easing
 -- Curve
-M.curve_new = animation_curve_new
-M.curve_add_keyframe = animation_curve_add_keyframe
-M.curve_set_keyframe_easing = animation_curve_set_keyframe_easing
-M.curve_evaluate = animation_curve_evaluate
-M.curve_get_duration = animation_curve_get_duration
-M.curve_set_loop = animation_curve_set_loop
-M.curve_set_ping_pong = animation_curve_set_ping_pong
 -- Clip
-M.clip_new = animation_clip_new
-M.clip_add_curve = animation_clip_add_curve
-M.clip_evaluate = animation_clip_evaluate
-M.clip_set_fps = animation_clip_set_fps
 -- Player
-M.player_new = animation_player_new
-M.player_add_clip = animation_player_add_clip
-M.player_play = animation_player_play
-M.player_stop = animation_player_stop
-M.player_pause = animation_player_pause
-M.player_resume = animation_player_resume
-M.player_set_speed = animation_player_set_speed
-M.player_update = animation_player_update
-M.player_add_callback = animation_player_add_callback
-M.player_get_time = animation_player_get_time
-M.player_is_playing = animation_player_is_playing
 -- State Machine
-M.state_machine_new = animation_state_machine_new
-M.state_machine_add_state = animation_state_machine_add_state
-M.state_machine_add_transition = animation_state_machine_add_transition
-M.state_machine_set_state = animation_state_machine_set_state
-M.state_machine_update = animation_state_machine_update
 -- Procedural
-M.procedural_sine = procedural_sine
-M.procedural_noise = procedural_noise
-M.procedural_bounce = procedural_bounce
-M.procedural_wobble = procedural_wobble
 -- Utilities
-M.apply_easing = apply_easing
-M.interpolate_values = interpolate_values
-M
