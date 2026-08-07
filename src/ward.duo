@@ -1490,11 +1490,11 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return -1
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
-        db: f64 = mem.load("f64", fb)
+        db: f64 = mem.load(f64)(fb)
         da: f64 = db
         if ar == 2
           mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
-          da = mem.load("f64", fb)
+          da = mem.load(f64)(fb)
         end
         dr: f64 = 0.0
         ok: i64 = 1
@@ -1564,13 +1564,13 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if ok == 0
           return -1
         end
-        mem.store("f64", fb, dr)
+        mem.store(f64)(fb, dr)
         mem.write_i64(st, (sp - ar + 1) * 8, mem.read_i64(fb, 0))
         sp = sp - ar + 1
 
       elseif op >= 139 and op <= 152
         -- f32 unary (139-145) and binary (146-152), mirroring the f64 arm.
-        -- The slot holds the 32-bit pattern; mem.load("f32", fb) reads the low
+        -- The slot holds the 32-bit pattern; mem.load(f32)(fb) reads the low
         -- 4 bytes, so the same scratch buffer serves both widths.
         sr: i64 = 2
         if op <= 145
@@ -1580,11 +1580,11 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return -1
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
-        eb: f32 = mem.load("f32", fb)
+        eb: f32 = mem.load(f32)(fb)
         ea: f32 = eb
         if sr == 2
           mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
-          ea = mem.load("f32", fb)
+          ea = mem.load(f32)(fb)
         end
         er: f32 = 0.0
         eok: i64 = 1
@@ -1651,7 +1651,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return -1
         end
         mem.write_i64(fb, 0, 0)
-        mem.store("f32", fb, er)
+        mem.store(f32)(fb, er)
         mem.write_i64(st, (sp - sr + 1) * 8, mem.read_i64(fb, 0))
         sp = sp - sr + 1
 
@@ -1661,9 +1661,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return -1
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
-        gb: f32 = mem.load("f32", fb)
+        gb: f32 = mem.load(f32)(fb)
         mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
-        ga: f32 = mem.load("f32", fb)
+        ga: f32 = mem.load(f32)(fb)
         gr: i64 = 0
         if op == 91 and ga == gb
           gr = 1
@@ -1687,9 +1687,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           return -1
         end
         mem.write_i64(fb, 0, mem.read_i64(st, sp * 8))
-        cb: f64 = mem.load("f64", fb)
+        cb: f64 = mem.load(f64)(fb)
         mem.write_i64(fb, 0, mem.read_i64(st, (sp - 1) * 8))
-        ca: f64 = mem.load("f64", fb)
+        ca: f64 = mem.load(f64)(fb)
         cr: i64 = 0
         if op == 97 and ca == cb
           cr = 1
@@ -1718,7 +1718,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         if iv >= 2147483648
           iv = iv - 4294967296
         end
-        mem.store("f64", fb, iv * 1.0)
+        mem.store(f64)(fb, iv * 1.0)
         mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
 
       elseif op == 70 or op == 75 or op == 77 or op == 79
@@ -1754,14 +1754,14 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
         raw: i64 = mem.read_i64(st, sp * 8)
         if op == 182
           mem.write_i64(fb, 0, raw)
-          dv2: f64 = mem.load("f64", fb)
+          dv2: f64 = mem.load(f64)(fb)
           mem.write_i64(fb, 0, 0)
-          mem.store("f32", fb, dv2)
+          mem.store(f32)(fb, dv2)
           mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
         elseif op == 187
           mem.write_i64(fb, 0, raw)
-          ev2: f32 = mem.load("f32", fb)
-          mem.store("f64", fb, ev2)
+          ev2: f32 = mem.load(f32)(fb)
+          mem.store(f64)(fb, ev2)
           mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
         elseif op >= 178
           -- integer -> float
@@ -1777,9 +1777,9 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           fv2: f64 = iv2 * 1.0
           mem.write_i64(fb, 0, 0)
           if op <= 181
-            mem.store("f32", fb, fv2)
+            mem.store(f32)(fb, fv2)
           else
-            mem.store("f64", fb, fv2)
+            mem.store(f64)(fb, fv2)
           end
           mem.write_i64(st, sp * 8, mem.read_i64(fb, 0))
         else
@@ -1787,10 +1787,10 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           mem.write_i64(fb, 0, raw)
           src: f64 = 0.0
           if op == 168 or op == 169 or op == 174 or op == 175
-            sf: f32 = mem.load("f32", fb)
+            sf: f32 = mem.load(f32)(fb)
             src = sf
           else
-            src = mem.load("f64", fb)
+            src = mem.load(f64)(fb)
           end
           -- Truncation toward zero IS the C double->int64_t conversion, so a
           -- typed store performs it directly. This replaces
@@ -1799,7 +1799,7 @@ run_body(img: str, n: i64, target: i64, guard: i64): i64
           -- falls out for free. `tointeger` is also the third category that
           -- spec 2.10 G3 forbids -- the canonical surface is `to(int)`, which
           -- is not yet spellable (see the filed P0).
-          mem.store("i64", fb, src)
+          mem.store(i64)(fb, src)
           ti: i64 = mem.read_i64(fb, 0)
           if op <= 171
             ti = ti & M32
@@ -2322,7 +2322,7 @@ main(): void
   tgt: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 1)
   tRD3 = os.clock()
   if os.getenv("WARD_PHASES")
-    print("phase read=" .. tostring(tRD1 - tRD0) .. " walk0=" .. tostring(tRD2 - tRD1) .. " walk1=" .. tostring(tRD3 - tRD2))
+    print("phase read=" .. to(str)(tRD1 - tRD0) .. " walk0=" .. to(str)(tRD2 - tRD1) .. " walk1=" .. to(str)(tRD3 - tRD2))
   end
   boff: i64 = packed // 65536
   blen: i64 = packed - boff * 65536
@@ -2332,7 +2332,7 @@ main(): void
   -- desync is a clean diagnostic rather than an out-of-bounds read.
   if blen <= 0 or boff < 0 or boff + blen > #bytes
     print("ward: could not locate an exported `" .. invoke .. "` body in " .. path)
-    print("      (decoded offset=" .. tostring(boff) .. " len=" .. tostring(blen) .. " of " .. tostring(#bytes) .. " bytes)")
+    print("      (decoded offset=" .. to(str)(boff) .. " len=" .. to(str)(blen) .. " of " .. to(str)(#bytes) .. " bytes)")
     return
   end
 
@@ -2354,16 +2354,16 @@ main(): void
         if df
           dw: i64 = 0
           while dw < words
-            df:write(tostring(jitm.r32(code, dw)) .. "\n")
+            df:write(to(str)(jitm.r32(code, dw)) .. "\n")
             dw += 1
           end
           df:close()
         end
-        print("jit_words=" .. tostring(words))
+        print("jit_words=" .. to(str)(words))
       end
       tJ2 = os.clock()
       if os.getenv("WARD_PHASES")
-        print("phase alloc=" .. tostring(tJ1 - tJ0) .. " compile=" .. tostring(tJ2 - tJ1))
+        print("phase alloc=" .. to(str)(tJ1 - tJ0) .. " compile=" .. to(str)(tJ2 - tJ1))
       end
       if words > 0 and jitm.seal(code, words * 4)
         engine = "jit-arm64"
@@ -2386,26 +2386,26 @@ main(): void
   if rtype == 0x7C
     rbuf = mem.alloc(16)
     mem.write_i64(rbuf, 0, result)
-    -- Bind to a typed local FIRST. `tostring(mem.load("f64", buf))` inline in a
+    -- Bind to a typed local FIRST. `to(str)(mem.load(f64)(buf))` inline in a
     -- concat loses low mantissa bits (f64.const 1.0001 printed as
     -- 1.0000999999999749); the same load bound to an f64 local is exact.
-    rf: f64 = mem.load("f64", rbuf)
-    print("result=" .. tostring(rf))
+    rf: f64 = mem.load(f64)(rbuf)
+    print("result=" .. to(str)(rf))
     mem.free(rbuf)
   elseif rtype == 0x7D
     rbuf2 = mem.alloc(16)
     mem.write_i64(rbuf2, 0, result)
-    rf2: f32 = mem.load("f32", rbuf2)
-    print("result=" .. tostring(rf2))
+    rf2: f32 = mem.load(f32)(rbuf2)
+    print("result=" .. to(str)(rf2))
     mem.free(rbuf2)
   elseif rtype == 0x7E
-    print("result=" .. tostring(result))
+    print("result=" .. to(str)(result))
   else
     -- i32 arms already mask their own results, so the slot is already a correct
     -- unsigned 32-bit value; masking again here only forces a boxed lua_band.
-    print("result=" .. tostring(result))
+    print("result=" .. to(str)(result))
   end
-  print("seconds=" .. tostring(t1 - t0))
+  print("seconds=" .. to(str)(t1 - t0))
 end
 
 main()
