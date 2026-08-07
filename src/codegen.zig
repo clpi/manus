@@ -5197,8 +5197,20 @@ pub const CodeGen = struct {
         // (string, table, math, package, ...) are set up before any export is
         // invoked by the host.
         if (self.lib_mode) {
-            if (std.mem.eql(u8, self.target, "wasm32-wasi")) {
-                self.p("__attribute__((constructor)) static void duo_wasm_initialize(void) {{\n", .{});
+            // SH-03: a library needs its runtime globals initialised before any
+            // export is called, on EVERY target — not only wasm.  Native lib
+            // mode used to emit no initialiser at all, so a C host that linked a
+            // Duo module and called an `@c.export` entry segfaulted on
+            // uninitialised globals: the object linked clean (`nm` shows `T`),
+            // then died on the first call.  That is what blocked SH-03, one
+            // level under the "symbols aren't exported" reading it was filed as.
+            //
+            // A constructor is the whole fix: it runs when the object is loaded,
+            // so the host needs no init call and the ABI is unchanged.
+            if (self.moduleNeedsLuaRuntime()) {
+                const is_wasm = std.mem.eql(u8, self.target, "wasm32-wasi");
+                const init_name = if (is_wasm) "duo_wasm_initialize" else "duo_lib_initialize";
+                self.p("__attribute__((constructor)) static void {s}(void) {{\n", .{init_name});
                 self.indent = 1;
                 self.pl("package = lua_package_init();", .{});
                 self.pl("math = lua_math_init();", .{});
@@ -5206,8 +5218,17 @@ pub const CodeGen = struct {
                 self.pl("debug = lua_debug_init();", .{});
                 self.pl("string = lua_string_init();", .{});
                 self.pl("table = lua_table_init();", .{});
+                // These have no wasi implementation; main() gates them the same way.
+                if (!is_wasm) {
+                    self.pl("coroutine = lua_coroutine_init();", .{});
+                    self.pl("io = lua_io_init();", .{});
+                    self.pl("os = lua_os_init();", .{});
+                }
                 self.pl("jit = lua_jit_init();", .{});
                 self.pl("ffi = lua_ffi_init();", .{});
+                if (!is_wasm) {
+                    self.pl("net = duo_net_init();", .{});
+                }
                 self.pl("duo_modules = lua_table_new();", .{});
                 self.pl("duo_register_modules();", .{});
                 self.pl("_VERSION = lua_val_from_str(\"Lua 5.5\");", .{});
