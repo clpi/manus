@@ -16961,6 +16961,31 @@ pub const CodeGen = struct {
     }
 
     fn maybe_emit_stdlib_call(self: *CodeGen, func: *const ast.Expr, args: []*ast.Expr, result_rt: RT) E!bool {
+        // `has(.lens)(subject)` — the presence FAMILY (2.8): subject is the
+        // container, parameter is the lens. Demand is real: 110 sites in lib/
+        // currently spell this `x.field != nil`.
+        if (func.* == .call) {
+            const hf = func.call;
+            if (hf.func.* == .name and std.mem.eql(u8, hf.func.name.ident, "has") and
+                hf.args.len == 1 and args.len == 1 and !self.user_owns_name("has"))
+            {
+                // The lens is a lambda over `__proj_v`; take its field directly
+                // rather than materializing and invoking the closure (A4 DEMAND
+                // — nothing physical unless consumed).
+                if (hf.args[0].* == .func_expr) {
+                    if (pipeline_projection_field_name(hf.args[0].func_expr)) |fname| {
+                        var fexpr = ast.Expr{ .field = .{ .loc = hf.loc, .obj = args[0], .field = fname } };
+                        if (result_rt == .any) self.p("lua_val_from_bool(", .{});
+                        self.p("((", .{});
+                        try self.emit_as_lua_value(&fexpr);
+                        self.p(").type != VAL_NIL)", .{});
+                        if (result_rt == .any) self.p(")", .{});
+                        return true;
+                    }
+                }
+            }
+        }
+
         // `T:from(S)(v)` — the REVERSE ORIENTATION of the conversion edge
         // (2.6 spells it `str:from(point)(raw)`): the TARGET is the receiver,
         // the SOURCE is the descriptor group. Same edge as `to(T)(v)`.
