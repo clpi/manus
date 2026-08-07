@@ -3284,6 +3284,103 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = n - 1
       last_cc = 0
 
+    elseif (op >= 91 and op <= 102)
+      -- f32/f64 compares: FCMP then CSET. The conditions are the IEEE ones, so
+      -- an unordered (NaN) operand yields false for lt/gt/le/ge and true for
+      -- ne, matching wasm: eq=EQ, ne=NE, lt=MI, gt=GT, le=LS, ge=GE.
+      if sp < 2
+        return -1
+      end
+      ca: i64 = sp - 2
+      cb: i64 = sp - 1
+      c64: i64 = 0
+      if op >= 97
+        c64 = 1
+      end
+      cix: i64 = op - 91
+      if c64 == 1
+        cix = op - 97
+      end
+      fcc: i64 = 0
+      if cix == 1
+        fcc = 1
+      elseif cix == 2
+        fcc = 4
+      elseif cix == 3
+        fcc = 12
+      elseif cix == 4
+        fcc = 9
+      elseif cix == 5
+        fcc = 10
+      end
+      if c64 == 1
+        jitm.w32(code, n, 0x9E670000 | (ca << 5))
+        n += 1
+        jitm.w32(code, n, 0x9E670000 | (cb << 5) | 1)
+        n += 1
+        jitm.w32(code, n, 0x1E602000 | (1 << 16))
+        n += 1
+      else
+        jitm.w32(code, n, 0x1E270000 | (ca << 5))
+        n += 1
+        jitm.w32(code, n, 0x1E270000 | (cb << 5) | 1)
+        n += 1
+        jitm.w32(code, n, 0x1E202000 | (1 << 16))
+        n += 1
+      end
+      jitm.w32(code, n, 0x1A9F07E0 | ((fcc ~ 1) << 12) | ca)
+      n += 1
+      sp -= 1
+      last_cset = n - 1
+      last_cc = fcc
+      last_alu = -1
+
+    elseif (op >= 139 and op <= 145) or (op >= 153 and op <= 159)
+      -- f32/f64 abs/neg/ceil/floor/trunc/nearest/sqrt: one FP-source op, using
+      -- the same GP<->FP shuttle as the binops. Offsets are the ARM64 opcode
+      -- field, identical for single and double; only the type base differs.
+      if sp < 1
+        return -1
+      end
+      uf: i64 = sp - 1
+      ubase: i64 = 0x1E200000
+      uix: i64 = op - 139
+      if op >= 153
+        ubase = 0x1E600000
+        uix = op - 153
+      end
+      uw: i64 = 0xC000
+      if uix == 1
+        uw = 0x14000
+      elseif uix == 2
+        uw = 0x4C000
+      elseif uix == 3
+        uw = 0x54000
+      elseif uix == 4
+        uw = 0x5C000
+      elseif uix == 5
+        uw = 0x44000
+      elseif uix == 6
+        uw = 0x1C000
+      end
+      if ubase == 0x1E600000
+        jitm.w32(code, n, 0x9E670000 | (uf << 5))
+        n += 1
+        jitm.w32(code, n, ubase | uw)
+        n += 1
+        jitm.w32(code, n, 0x9E660000 | uf)
+        n += 1
+      else
+        jitm.w32(code, n, 0x1E270000 | (uf << 5))
+        n += 1
+        jitm.w32(code, n, ubase | uw)
+        n += 1
+        jitm.w32(code, n, 0x1E260000 | uf)
+        n += 1
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 69 or op == 80
       -- i32.eqz / i64.eqz: compare against zero, then CSET EQ. Unary, so the
       -- operand slot is reused for the result.
