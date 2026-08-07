@@ -12,10 +12,10 @@ ran = script.locked_ok("printf script_lock >/dev/null")
 ok = has_lock and has_timeout and ran
 
 print("=== script lock smoke ===")
-print("lock_cmd_ok = " .. tostring(has_lock))
-print("timeout_cmd_ok = " .. tostring(has_timeout))
-print("locked_run_ok = " .. tostring(ran))
-print("RESULT script_lock_ok = " .. tostring(ok))
+print("lock_cmd_ok = " .. to(str)(has_lock))
+print("timeout_cmd_ok = " .. to(str)(has_timeout))
+print("locked_run_ok = " .. to(str)(ran))
+print("RESULT script_lock_ok = " .. to(str)(ok))
 if not ok
     error("script lock smoke failed")
 end

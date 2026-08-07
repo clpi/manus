@@ -38,12 +38,12 @@ spawn(cmd: str): i64
 end
 
 kill(pid: str): void
-    os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
+    os.execute("kill " .. to(str)(pid) .. " 2>/dev/null")
 end
 
 mproc_wait(pid: str): void
     -- Use waitpid via os.execute for the given PID
-    os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
+    os.execute("wait " .. to(str)(pid) .. " 2>/dev/null")
 end
 
 M = {}

@@ -5,7 +5,7 @@
 -- every comptime fragment. Fragment counts use @comp.str.countlines (native i64).
 
 stamp(frag) -> str
-    "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
+    "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 end
 
 -- Stage A: O(n) template axis
@@ -34,7 +34,7 @@ SCHEME_N = @comp.str.countlines(SCHEME_EACH)
 ok = (TMPL_N == 2 and TMPL_SPEC_N == 2 and GEN_N == 4 and SCHEME_N == 2)
 
 print("=== generative stack (template / generate / scheme → each) ===")
-print("template→each fragments = " .. tostring(TMPL_N) .. "  (expect 2)")
-print("generate→each fragments = " .. tostring(GEN_N) .. "  (expect 4 = 2×2)")
-print("scheme→each fragments   = " .. tostring(SCHEME_N) .. "  (expect 2)")
-print("RESULT generative_stack_ok = " .. tostring(ok))
+print("template→each fragments = " .. to(str)(TMPL_N) .. "  (expect 2)")
+print("generate→each fragments = " .. to(str)(GEN_N) .. "  (expect 4 = 2×2)")
+print("scheme→each fragments   = " .. to(str)(SCHEME_N) .. "  (expect 2)")
+print("RESULT generative_stack_ok = " .. to(str)(ok))

@@ -37,6 +37,6 @@ ZIP_HAS = @comp.str.contains(ZIP_DEEP, "i32_add") and @comp.str.contains(ZIP_DEE
 
 ok = (ULTRA_LINES == 14 and ZIP_HAS)
 print("=== ultra cascade (match→power→each→template) ===")
-print("ultra_lines = " .. tostring(ULTRA_LINES) .. "  (expect 14 = 2 types × 7 power stubs)")
-print("zip_deep_ok = " .. tostring(ZIP_HAS))
-print("RESULT ultra_cascade_ok = " .. tostring(ok))
+print("ultra_lines = " .. to(str)(ULTRA_LINES) .. "  (expect 14 = 2 types × 7 power stubs)")
+print("zip_deep_ok = " .. to(str)(ZIP_HAS))
+print("RESULT ultra_cascade_ok = " .. to(str)(ok))

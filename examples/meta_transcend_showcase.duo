@@ -44,7 +44,7 @@ TENSOR = @comp.tensor("HasXY", "HasTag", "HasId", triple_sig)
 COMBOS = @comp.catalog("combinators")
 
 print("=== meta transcend showcase ===")
-print("has_transcend = " .. tostring(@comp.str.contains(COMBOS, "meta.transcend")))
+print("has_transcend = " .. to(str)(@comp.str.contains(COMBOS, "meta.transcend")))
 print("tensor = " .. TENSOR)
 print("Point ok = true")
 print("ok")

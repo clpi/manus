@@ -85,7 +85,7 @@ end
 -- to_string: convert v to a string.
 to_string(v: any): str
     if v == nil return "" end
-    tostring(v)
+    to(str)(v)
 end
 
 -- to_bool: convert v to a boolean.

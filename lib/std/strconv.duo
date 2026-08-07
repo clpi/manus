@@ -45,20 +45,20 @@ format_float(v: any, fmt: str, prec: any): str
         if prec < 0
             string.format("%e", v)
         else
-            string.format("%." .. tostring(prec) .. "e", v)
+            string.format("%." .. to(str)(prec) .. "e", v)
         end
     elseif fmt == "f"
         if prec < 0
             string.format("%f", v)
         else
-            string.format("%." .. tostring(prec) .. "f", v)
+            string.format("%." .. to(str)(prec) .. "f", v)
         end
     else
         -- 'g' or default
         if prec < 0
             string.format("%g", v)
         else
-            string.format("%." .. tostring(prec) .. "g", v)
+            string.format("%." .. to(str)(prec) .. "g", v)
         end
     end
 end

@@ -6,7 +6,7 @@ assert_eq(actual: any, expected: any, msg: str): void
     if actual == expected
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
-        io.write(string.format("  FAIL: %s (expected %s, got %s)\n", msg or "", tostring(expected), tostring(actual)))
+        io.write(string.format("  FAIL: %s (expected %s, got %s)\n", msg or "", to(str)(expected), to(str)(actual)))
     end
 end
 
@@ -14,7 +14,7 @@ assert_ne(actual: any, not_expected: any, msg: str): void
     if actual != not_expected
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
-        io.write(string.format("  FAIL: %s (expected not %s)\n", msg or "", tostring(not_expected)))
+        io.write(string.format("  FAIL: %s (expected not %s)\n", msg or "", to(str)(not_expected)))
     end
 end
 
@@ -38,7 +38,7 @@ assert_nil(val: any, msg: str): void
     if val == nil
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
-        io.write(string.format("  FAIL: %s (expected nil, got %s)\n", msg or "", tostring(val)))
+        io.write(string.format("  FAIL: %s (expected nil, got %s)\n", msg or "", to(str)(val)))
     end
 end
 

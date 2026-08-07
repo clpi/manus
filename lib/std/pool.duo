@@ -1,177 +1,170 @@
--- std.pool — Generic resource pool with lifecycle management
--- Implements min/max sizing, idle eviction, health checks, and
--- waiters queue. Critical for: database connections, HTTP clients,
--- worker pools, GPU contexts, and any expensive-to-create resource.
-
-time_mod = req "std.time"
-
--- new: create a resource pool.
---   factory: fun() -> resource (create a new resource)
---   destroyer: fun(res) -> void (destroy a resource)
---   opts: {min, max, idle_timeout, max_age, health_check}
-new(factory: any, destroyer: any, opts: any): any
-    if opts == nil opts = {} end
-    {
-        factory = factory,
-        destroyer = destroyer,
-        resources = {},
-        in_use = {},
-        waiters = {},
-        min = opts.min or 0,
-        max = opts.max or 16,
-        idle_timeout = opts.idle_timeout or 300,
-        max_age = opts.max_age or 3600,
-        health_check = opts.health_check,
-        created_at = {},
-        last_used = {},
-        total_created = 0,
-        total_destroyed = 0,
-    }
+time_mod = req("std.time")
+new(factory: any, destroyer: any, opts: any) -> any
+  if opts == nil
+    opts = {}
+  end
+  {
+    factory = factory,
+    destroyer = destroyer,
+    resources = {},
+    in_use = {},
+    waiters = {},
+    min = opts.min or 0,
+    max = opts.max or 16,
+    idle_timeout = opts.idle_timeout or 300,
+    max_age = opts.max_age or 3600,
+    health_check = opts.health_check,
+    created_at = {},
+    last_used = {},
+    total_created = 0,
+    total_destroyed = 0
+  }
 end
-
--- get: acquire a resource from the pool (creates one if needed).
-get(p: any): any
-    while rawlen(p.resources) > 0
-        res = table.remove(p.resources)
-        age = time_mod.now() - (p.last_used[res] or time_mod.now())
-        if p.idle_timeout > 0 and age > p.idle_timeout
-            destroy_res(p, res)
-        elseif p.health_check != nil and not p.health_check(res)
-            destroy_res(p, res)
-        else
-            p.in_use[res] = true
-            p.last_used[res] = time_mod.now()
-            return res
-        end
+get(p: any) -> any
+  while rawlen(p.resources) > 0
+    res = table.remove(p.resources)
+    age = time_mod.now() - (p.last_used[res] or time_mod.now())
+    if p.idle_timeout > 0 and age > p.idle_timeout
+      destroy_res(p, res)
+    elseif p.health_check != nil and not p.health_check(res)
+      destroy_res(p, res)
+    else
+      p.in_use[res] = true
+      p.last_used[res] = time_mod.now()
+      return res
     end
-    total = 0
-    for _ in p.in_use do total += 1 end
-    total += rawlen(p.resources)
-    if total < p.max
-        res = p.factory()
-        p.total_created += 1
-        p.created_at[res] = time_mod.now()
-        p.last_used[res] = time_mod.now()
-        p.in_use[res] = true
-        return res
-    end
-    slot = {_val = nil, _done = false}
-    p.waiters[rawlen(p.waiters) + 1] = slot
-    while not slot._done
-        coroutine.yield()
-    end
-    slot._val
-end
-
--- put: return a resource to the pool.
-put(p: any, res: any): void
-    if res == nil return end
-    p.in_use[res] = nil
-    age = time_mod.now() - (p.created_at[res] or 0)
-    if p.max_age > 0 and age > p.max_age
-        destroy_res(p, res)
-        wake_waiter(p)
-        return
-    end
-    if rawlen(p.waiters) > 0
-        slot = table.remove(p.waiters, 1)
-        slot._val = res
-        slot._done = true
-        p.in_use[res] = true
-        p.last_used[res] = time_mod.now()
-        return
-    end
-    p.resources[rawlen(p.resources) + 1] = res
-    p.last_used[res] = time_mod.now()
-end
-
--- try_get: non-blocking acquire, returns nil if pool is exhausted.
-try_get(p: any): any
-    while rawlen(p.resources) > 0
-        res = table.remove(p.resources)
-        age = time_mod.now() - (p.last_used[res] or time_mod.now())
-        if p.idle_timeout > 0 and age > p.idle_timeout
-            destroy_res(p, res)
-        elseif p.health_check != nil and not p.health_check(res)
-            destroy_res(p, res)
-        else
-            p.in_use[res] = true
-            p.last_used[res] = time_mod.now()
-            return res
-        end
-    end
-    total = 0
-    for _ in p.in_use do total += 1 end
-    total += rawlen(p.resources)
-    if total < p.max
-        res = p.factory()
-        p.total_created += 1
-        p.created_at[res] = time_mod.now()
-        p.last_used[res] = time_mod.now()
-        p.in_use[res] = true
-        return res
-    end
-    nil
-end
-
--- release: alias for put (return resource to pool).
-release(p: any, res: any): void
-    put(p, res)
-end
-
--- stats: return pool statistics.
-stats(p: any): any
-    idle = 0
-    for _ in p.resources do idle += 1 end
-    active = 0
-    for _ in p.in_use do active += 1 end
-    waiting = rawlen(p.waiters)
-    {
-        idle = idle,
-        active = active,
-        waiting = waiting,
-        total = idle + active,
-        max = p.max,
-        min = p.min,
-        total_created = p.total_created,
-        total_destroyed = p.total_destroyed,
-    }
-end
-
--- drain: destroy all idle resources and cancel waiters.
-drain(p: any): void
-    while rawlen(p.resources) > 0
-        destroy_res(p, table.remove(p.resources))
-    end
-    i = 1
-    while i <= rawlen(p.waiters)
-        p.waiters[i]._done = true
-        p.waiters[i]._val = nil
-        i += 1
-    end
-    p.waiters = {}
-end
-
--- resize: change the max pool size.
-resize(p: any, new_max: i64): void
-    p.max = new_max
-end
-
-destroy_res(p: any, res: any): void
-    p.total_destroyed += 1
-    p.created_at[res] = nil
-    p.last_used[res] = nil
-    if p.destroyer p.destroyer(res) end
-end
-
-wake_waiter(p: any): void
-    if rawlen(p.waiters) == 0 return end
-    slot = table.remove(p.waiters, 1)
+  end
+  total = 0
+  for _ in p.in_use
+    total = total + 1
+  end
+  total = total + rawlen(p.resources)
+  if total < p.max
     res = p.factory()
-    p.total_created += 1
+    p.total_created = p.total_created + 1
     p.created_at[res] = time_mod.now()
     p.last_used[res] = time_mod.now()
     p.in_use[res] = true
+    return res
+  end
+  slot = {
+    _val = nil,
+    _done = false
+  }
+  p.waiters[rawlen(p.waiters) + 1] = slot
+  while not slot._done
+    coroutine.yield()
+  end
+  slot._val
+end
+put(p: any, res: any) -> void
+  if res == nil
+    return
+  end
+  p.in_use[res] = nil
+  age = time_mod.now() - (p.created_at[res] or 0)
+  if p.max_age > 0 and age > p.max_age
+    destroy_res(p, res)
+    wake_waiter(p)
+    return
+  end
+  if rawlen(p.waiters) > 0
+    slot = table.remove(p.waiters, 1)
     slot._val = res
     slot._done = true
+    p.in_use[res] = true
+    p.last_used[res] = time_mod.now()
+    return
+  end
+  p.resources[rawlen(p.resources) + 1] = res
+  p.last_used[res] = time_mod.now()
+end
+try_get(p: any) -> any
+  while rawlen(p.resources) > 0
+    res = table.remove(p.resources)
+    age = time_mod.now() - (p.last_used[res] or time_mod.now())
+    if p.idle_timeout > 0 and age > p.idle_timeout
+      destroy_res(p, res)
+    elseif p.health_check != nil and not p.health_check(res)
+      destroy_res(p, res)
+    else
+      p.in_use[res] = true
+      p.last_used[res] = time_mod.now()
+      return res
+    end
+  end
+  total = 0
+  for _ in p.in_use
+    total = total + 1
+  end
+  total = total + rawlen(p.resources)
+  if total < p.max
+    res = p.factory()
+    p.total_created = p.total_created + 1
+    p.created_at[res] = time_mod.now()
+    p.last_used[res] = time_mod.now()
+    p.in_use[res] = true
+    return res
+  end
+  nil
+end
+release(p: any, res: any) -> void
+  put(p, res)
+end
+stats(p: any) -> any
+  idle = 0
+  for _ in p.resources
+    idle = idle + 1
+  end
+  active = 0
+  for _ in p.in_use
+    active = active + 1
+  end
+  waiting = rawlen(p.waiters)
+  {
+    idle = idle,
+    active = active,
+    waiting = waiting,
+    total = idle + active,
+    max = p.max,
+    min = p.min,
+    total_created = p.total_created,
+    total_destroyed = p.total_destroyed
+  }
+end
+drain(p: any) -> void
+  while rawlen(p.resources) > 0
+    destroy_res(p, table.remove(p.resources))
+  end
+  i = 1
+  while i <= rawlen(p.waiters)
+    p.waiters[i]._done = true
+    p.waiters[i]._val = nil
+    i = i + 1
+  end
+  p.waiters = {}
+end
+resize(p: any, new_max: i64) -> void
+  p.max = new_max
+end
+destroy_res(p: any, res: any) -> void
+  p.total_destroyed = p.total_destroyed + 1
+  p.created_at[res] = nil
+  p.last_used[res] = nil
+  if p.destroyer
+    p.destroyer(res)
+  end
+end
+wake_waiter(p: any) -> void
+  if rawlen(p.waiters) == 0
+    return
+  end
+  slot = table.remove(p.waiters, 1)
+  res = p.factory()
+  p.total_created = p.total_created + 1
+  p.created_at[res] = time_mod.now()
+  p.last_used[res] = time_mod.now()
+  p.in_use[res] = true
+  slot._val = res
+  slot._done = true
 end

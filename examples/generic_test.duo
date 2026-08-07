@@ -31,7 +31,7 @@ fun print_if_str<T>(val: T): void
         return
     end
     if type(val) == "number"
-        print("num value: " .. tostring(val))
+        print("num value: " .. to(str)(val))
         return
     end
     print("other type")
@@ -39,19 +39,19 @@ end
 
 -- Test
 result = identity(42)
-print("identity(42): " .. tostring(result))
+print("identity(42): " .. to(str)(result))
 
 result2 = identity("hello")
 print("identity('hello'): " .. result2)
 
 p = pair(1, "one")
-print("pair: " .. tostring(p.first) .. " => " .. p.second)
+print("pair: " .. to(str)(p.first) .. " => " .. p.second)
 
-print("safe_div(10, 2): " .. tostring(safe_div(10, 2)))
-print("safe_div(10, 0): " .. tostring(safe_div(10, 0)))
+print("safe_div(10, 2): " .. to(str)(safe_div(10, 2)))
+print("safe_div(10, 0): " .. to(str)(safe_div(10, 0)))
 
 x, y = swap(100, 200)
-print("swap(100, 200): " .. tostring(x) .. ", " .. tostring(y))
+print("swap(100, 200): " .. to(str)(x) .. ", " .. to(str)(y))
 
 print_if_str("hello")
 print_if_str(42)

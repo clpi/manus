@@ -23,7 +23,7 @@ onnx_graph_add_node(graph: any, op_type: str, inputs: any, outputs: any, name: s
         op_type = op_type,
         inputs = inputs,
         outputs = outputs,
-        name = name or "node_" .. tostring(#graph.nodes),
+        name = name or "node_" .. to(str)(#graph.nodes),
     }
 end
 

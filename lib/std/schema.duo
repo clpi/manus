@@ -155,7 +155,7 @@ validate_into(value: any, schema: any, path: str, errors: any): bool
         i = 1
         while i <= rawlen(value)
             if schema.items != nil
-                if not validate_into(value[i], schema.items, path .. "[" .. tostring(i) .. "]", errors)
+                if not validate_into(value[i], schema.items, path .. "[" .. to(str)(i) .. "]", errors)
                     ok = false
                 end
             end
@@ -171,7 +171,7 @@ validate_into(value: any, schema: any, path: str, errors: any): bool
         if schema.values != nil
             ok = true
             for k, v in value
-                if not validate_into(v, schema.values, path .. "." .. tostring(k), errors)
+                if not validate_into(v, schema.values, path .. "." .. to(str)(k), errors)
                     ok = false
                 end
             end
@@ -220,11 +220,11 @@ end
 check_string_constraints(v: str, s: any, path: str, errors: any): bool
     ok = true
     if s.min_length != nil and string.len(v) < s.min_length
-        errors[rawlen(errors) + 1] = {path = path, message = "min length " .. tostring(s.min_length)}
+        errors[rawlen(errors) + 1] = {path = path, message = "min length " .. to(str)(s.min_length)}
         ok = false
     end
     if s.max_length != nil and string.len(v) > s.max_length
-        errors[rawlen(errors) + 1] = {path = path, message = "max length " .. tostring(s.max_length)}
+        errors[rawlen(errors) + 1] = {path = path, message = "max length " .. to(str)(s.max_length)}
         ok = false
     end
     if s.pattern != nil
@@ -239,11 +239,11 @@ end
 check_number_constraints(v: any, s: any, path: str, errors: any): bool
     ok = true
     if s.min_val != nil and v < s.min_val
-        errors[rawlen(errors) + 1] = {path = path, message = "min value " .. tostring(s.min_val)}
+        errors[rawlen(errors) + 1] = {path = path, message = "min value " .. to(str)(s.min_val)}
         ok = false
     end
     if s.max_val != nil and v > s.max_val
-        errors[rawlen(errors) + 1] = {path = path, message = "max value " .. tostring(s.max_val)}
+        errors[rawlen(errors) + 1] = {path = path, message = "max value " .. to(str)(s.max_val)}
         ok = false
     end
     ok

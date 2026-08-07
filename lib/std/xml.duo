@@ -19,7 +19,8 @@ unescape(s: str): str
     s = string.gsub(s, "&gt;", ">")
     s = string.gsub(s, "&quot;", "\"")
     s = string.gsub(s, "&apos;", "'")
-    s = string.gsub(s, "&#(%d+);", fun(c) string.char(c) end)
+    to_char = (c) string.char(c)
+    s = string.gsub(s, "&#(%d+);", to_char)
     s
 end
 

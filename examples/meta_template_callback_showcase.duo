@@ -13,4 +13,4 @@ ok = (N == 2 and @comp.str.contains(CODE, "i64:int64_t") and @comp.str.contains(
 
 print("=== @comp.template + named callback ===")
 print(CODE)
-print("RESULT template_callback_ok = " .. tostring(ok))
+print("RESULT template_callback_ok = " .. to(str)(ok))

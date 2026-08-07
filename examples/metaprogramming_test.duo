@@ -16,14 +16,14 @@ print("type_name(f) = " .. @comp.type.name(f))
 -- @comp.type.id returns a stable integer hash of the type
 id1: i64 = @comp.type.id(x)
 id2: i64 = @comp.type.id(s)
-print("type_id(x) = " .. tostring(id1))
-print("type_id(s) = " .. tostring(id2))
-print("type_ids_differ = " .. tostring(id1 != id2))
+print("type_id(x) = " .. to(str)(id1))
+print("type_id(s) = " .. to(str)(id2))
+print("type_ids_differ = " .. to(str)(id1 != id2))
 
 -- @comp.type.is checks type at compile time
-print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
-print("is_type(s, str) = " .. tostring(@comp.type.is(s, "str")))
-print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
+print("is_type(x, i64) = " .. to(str)(@comp.type.is(x, "i64")))
+print("is_type(s, str) = " .. to(str)(@comp.type.is(s, "str")))
+print("is_type(x, str) = " .. to(str)(@comp.type.is(x, "str")))
 
 -- ═══════════════════════════════════════════════════════════════
 -- Compile-time evaluation: @(expr)
@@ -31,7 +31,7 @@ print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
 
 -- @() forces compile-time evaluation
 comptime_result = @(10 * 20 + 5)
-print("comptime_result = " .. tostring(comptime_result))
+print("comptime_result = " .. to(str)(comptime_result))
 
 -- @constexpr for compile-time function evaluation
 factorial(n: i64): i64
@@ -40,7 +40,7 @@ factorial(n: i64): i64
 end
 
 fact10 = @(factorial(10))
-print("factorial(10) = " .. tostring(fact10))
+print("factorial(10) = " .. to(str)(fact10))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.if — compile-time conditional
@@ -56,9 +56,9 @@ print("comptimeif = " .. platform_msg)
 sz_i64 = @sizeof(i64)
 sz_f64 = @sizeof(f64)
 align_i64 = @alignof(i64)
-print("sizeof(i64) = " .. tostring(sz_i64))
-print("sizeof(f64) = " .. tostring(sz_f64))
-print("alignof(i64) = " .. tostring(align_i64))
+print("sizeof(i64) = " .. to(str)(sz_i64))
+print("sizeof(f64) = " .. to(str)(sz_f64))
+print("alignof(i64) = " .. to(str)(align_i64))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.assert — compile-time assertions
@@ -74,8 +74,8 @@ print("alignof(i64) = " .. tostring(align_i64))
 
 obj = {}
 setmetatable(obj, { __index = function(t, k) return "default" end })
-print("has __index = " .. tostring(@comp.has.metamethod(obj, "__index")))
-print("has __add = " .. tostring(@comp.has.metamethod(obj, "__add")))
+print("has __index = " .. to(str)(@comp.has.metamethod(obj, "__index")))
+print("has __add = " .. to(str)(@comp.has.metamethod(obj, "__add")))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.type.info — C type string
@@ -89,10 +89,10 @@ print("typeinfo(s) = " .. @comp.type.info(s))
 -- ═══════════════════════════════════════════════════════════════
 
 bits: i64 = 0xFF00
-print("popcount(0xFF00) = " .. tostring(@popcount(bits)))
-print("ctz(0xFF00) = " .. tostring(@ctz(bits)))
-print("clz(0xFF00) = " .. tostring(@clz(bits)))
-print("bswap(0xFF00) = " .. tostring(@bswap(bits)))
+print("popcount(0xFF00) = " .. to(str)(@popcount(bits)))
+print("ctz(0xFF00) = " .. to(str)(@ctz(bits)))
+print("clz(0xFF00) = " .. to(str)(@clz(bits)))
+print("bswap(0xFF00) = " .. to(str)(@bswap(bits)))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.for — compile-time loop unrolling
@@ -110,6 +110,6 @@ print("compile-time loop done")
 ct_upper = @(string.upper("hello"))
 ct_len = @(string.len("world"))
 print("comptime upper = " .. ct_upper)
-print("comptime len = " .. tostring(ct_len))
+print("comptime len = " .. to(str)(ct_len))
 
 print("ALL METAPROGRAMMING TESTS PASSED")

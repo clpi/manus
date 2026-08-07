@@ -30,7 +30,7 @@ float_first2(): f64
 end
 
 print("=== @pipeline product showcase ===")
-print("sum_i64_all = " .. tostring(int_all()))
-print("sum_i64_first2 = " .. tostring(int_first2()))
-print("sum_f64_all = " .. tostring(float_all()))
-print("sum_f64_first2 = " .. tostring(float_first2()))
+print("sum_i64_all = " .. to(str)(int_all()))
+print("sum_i64_first2 = " .. to(str)(int_first2()))
+print("sum_f64_all = " .. to(str)(float_all()))
+print("sum_f64_first2 = " .. to(str)(float_first2()))

@@ -21,7 +21,7 @@ end
 -- Arena allocator: bump-allocate, free all at once
 arena_alloc(self: any, bytes: any): any
     if self._offset + bytes > self._capacity
-        new_buf = "alloc(" .. tostring(bytes) .. " bytes)"
+        new_buf = "alloc(" .. to(str)(bytes) .. " bytes)"
         self._bufs[#self._bufs + 1] = new_buf
         self._offset = 0
     end
@@ -130,7 +130,7 @@ end
 
 stack_new(capacity: i64): any
     {
-        _buf = "alloc(" .. tostring(capacity or 65536) .. " bytes)",
+        _buf = "alloc(" .. to(str)(capacity or 65536) .. " bytes)",
         _top = 0,
         _capacity = capacity or 65536,
         _markers = {},
@@ -165,7 +165,7 @@ end
 
 fixed_buffer_new(size: i64): any
     {
-        _buf = "alloc(" .. tostring(size) .. " bytes)",
+        _buf = "alloc(" .. to(str)(size) .. " bytes)",
         _offset = 0,
         _size = size,
         alloc = fixed_buffer_alloc,

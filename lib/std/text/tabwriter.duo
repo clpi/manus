@@ -38,7 +38,7 @@ newline(w: any): any
     -- update column widths
     i = 1
     while i <= rawlen(w.cur_row)
-        cell_len = string.len(tostring(w.cur_row[i]))
+        cell_len = string.len(to(str)(w.cur_row[i]))
         if w.col_widths[i] == nil or cell_len > w.col_widths[i]
             w.col_widths[i] = cell_len
         end
@@ -62,7 +62,7 @@ flush(w: any): str
         line = ""
         c = 1
         while c <= rawlen(row)
-            cell = tostring(row[c])
+            cell = to(str)(row[c])
             width = w.col_widths[c] + w.padding
             if width < w.minwidth width = w.minwidth end
             -- pad the cell

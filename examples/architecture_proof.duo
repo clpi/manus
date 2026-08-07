@@ -71,10 +71,10 @@ point = {
 -- ═══ Results ═══
 sprite: Sprite = { name = "hero", color = "blue", x = 5.0 }
 print("RESULT config " .. config.name .. " v" .. config.version)
-print("RESULT composition " .. sprite.name .. " " .. sprite.color .. " " .. tostring(sprite.x))
-print("RESULT spread " .. custom.color .. " " .. tostring(custom.size))
+print("RESULT composition " .. sprite.name .. " " .. sprite.color .. " " .. to(str)(sprite.x))
+print("RESULT spread " .. custom.color .. " " .. to(str)(custom.size))
 print("RESULT projections " .. names[1] .. "," .. names[2] .. "," .. names[3])
-print("RESULT iteration " .. tostring(total))
+print("RESULT iteration " .. to(str)(total))
 print("RESULT grade " .. grade)
-print("RESULT newline_fields " .. tostring(point.x + point.y))
-print("RESULT workers " .. tostring(config.workers))
+print("RESULT newline_fields " .. to(str)(point.x + point.y))
+print("RESULT workers " .. to(str)(config.workers))

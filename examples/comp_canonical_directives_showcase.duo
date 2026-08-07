@@ -18,8 +18,8 @@ io.stdout:setvbuf("no")
 x: i64 = 42
 s: str = "hello"
 print("[type] x=" .. @comp.type.name(x) .. "  s=" .. @comp.type.name(s))
-print("[is]   x is i64=" .. tostring(@comp.type.is(x, "i64")) .. "  x is str=" .. tostring(@comp.type.is(x, "str")))
-print("[id]   distinct=" .. tostring(@comp.type.id(x) != @comp.type.id(s)))
+print("[is]   x is i64=" .. to(str)(@comp.type.is(x, "i64")) .. "  x is str=" .. to(str)(@comp.type.is(x, "str")))
+print("[id]   distinct=" .. to(str)(@comp.type.id(x) != @comp.type.id(s)))
 
 -- 2. Compile-time assertion (was @static_assert). Fails the build if false.
 @comp.assert(@comp.type.is(x, "i64"), "x must be i64")
@@ -27,9 +27,9 @@ print("[id]   distinct=" .. tostring(@comp.type.id(x) != @comp.type.id(s)))
 -- 3. Compile-time unrolling inside @(expr) (was @comptime_for).
 --    @comp.for(start, end, fmt) expands to the concatenated fragment per index.
 SUM = @(@comp.for(0, 5, "%i"))
-print("[for]  sum 0..4 = " .. tostring(SUM) .. "  (expect 10)")
+print("[for]  sum 0..4 = " .. to(str)(SUM) .. "  (expect 10)")
 COUNT = @(@comp.for(0, 4, "1"))
-print("[for]  count   = " .. tostring(COUNT) .. "  (expect 4)")
+print("[for]  count   = " .. to(str)(COUNT) .. "  (expect 4)")
 
 -- 4. Compile-time log (was @compile_log) -- emits a build-time note, no runtime effect.
 @comp.compile.log("showcase built with canonical @comp.* directives")

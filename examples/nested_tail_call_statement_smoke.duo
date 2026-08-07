@@ -21,4 +21,4 @@ end
 
 ok = append_count() == 3 and direct_if_count() == 1
 
-print("RESULT nested_tail_call_statement = " .. tostring(ok))
+print("RESULT nested_tail_call_statement = " .. to(str)(ok))

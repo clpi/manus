@@ -23,7 +23,7 @@ print("RESULT projection_map " .. names[1] .. "," .. names[2] .. "," .. names[3]
 
 -- Projection extracting a different field
 ages = map(users, .age)
-print("RESULT projection_ages " .. tostring(ages[1] + ages[2] + ages[3]))
+print("RESULT projection_ages " .. to(str)(ages[1] + ages[2] + ages[3]))
 
 -- Chained projection: .profile.score
 records = {
@@ -32,4 +32,4 @@ records = {
     { profile = { score = 30 } }
 }
 scores = map(records, .profile.score)
-print("RESULT projection_chain " .. tostring(scores[1] + scores[2] + scores[3]))
+print("RESULT projection_chain " .. to(str)(scores[1] + scores[2] + scores[3]))

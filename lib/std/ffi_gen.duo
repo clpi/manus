@@ -132,7 +132,7 @@ parse_c_params(params_str: str): any
         elseif #tokens == 1
             params[#params + 1] = {
                 c_type = tokens[1],
-                name = "arg" .. tostring(#params + 1),
+                name = "arg" .. to(str)(#params + 1),
                 is_pointer = false,
                 is_const = false,
             }

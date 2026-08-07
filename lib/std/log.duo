@@ -57,7 +57,7 @@ with_fields(level: str, fields: any, msg: str): void
     parts = {string.format("[%s] %s", string.upper(level), msg)}
     if fields != nil
         for k, v in pairs(fields)
-            parts[rawlen(parts) + 1] = string.format("%s=%s", k, tostring(v))
+            parts[rawlen(parts) + 1] = string.format("%s=%s", k, to(str)(v))
         end
     end
     io.write(table.concat(parts, " ") .. "\n")

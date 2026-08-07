@@ -36,7 +36,7 @@ total(): i64
 end
 
 print("=== exponential pipeline showcase ===")
-print("sum 1..100 = " .. tostring(total()))
+print("sum 1..100 = " .. to(str)(total()))
 print("typed_sweep = " .. TYPED)
-print("derive_bytes = " .. tostring(#DERIVED))
+print("derive_bytes = " .. to(str)(#DERIVED))
 print("ok")

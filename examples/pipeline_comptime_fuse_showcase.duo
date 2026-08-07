@@ -19,6 +19,6 @@ answer(): i64
 end
 
 print("=== pipeline comptime fuse showcase ===")
-print("sum of squares 1..5 = " .. tostring(answer()))
-print("fused_codegen_chars = " .. tostring(FUSED))
+print("sum of squares 1..5 = " .. to(str)(answer()))
+print("fused_codegen_chars = " .. to(str)(FUSED))
 print("ok")

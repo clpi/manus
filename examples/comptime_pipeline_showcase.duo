@@ -19,5 +19,5 @@ total(): i64
 end
 
 print("=== comptime @comp.pipeline showcase ===")
-print("sum 1..10 = " .. tostring(total()))
-print("comptime pipeline codegen size = " .. tostring(FUSED_CHARS) .. " chars")
+print("sum 1..10 = " .. to(str)(total()))
+print("comptime pipeline codegen size = " .. to(str)(FUSED_CHARS) .. " chars")

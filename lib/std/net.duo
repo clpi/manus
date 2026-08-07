@@ -70,7 +70,7 @@ http_request(method: str, url: str, body: str, headers: any): any
         for k, v in pairs(headers)
             -- Also sanitize header values
             safe_k = string.gsub(k, "[;&|`$']", "")
-            safe_v = string.gsub(tostring(v), "[;&|`$']", "")
+            safe_v = string.gsub(to(str)(v), "[;&|`$']", "")
             cmd = cmd .. " -H '" .. safe_k .. ": " .. safe_v .. "'"
         end
     end
@@ -142,9 +142,9 @@ end
 http_serve(port: i64, handler: any): void
     srv = std_net_listen("0.0.0.0", port, 128)
     if srv == nil
-        io.write("net.http_serve: listen failed on port " .. tostring(port) .. "\n")
+        io.write("net.http_serve: listen failed on port " .. to(str)(port) .. "\n")
     end
-    io.write("net: listening on :" .. tostring(port) .. "\n")
+    io.write("net: listening on :" .. to(str)(port) .. "\n")
     while true
         cli = std_net_accept(srv)
         if cli == nil break end
@@ -158,7 +158,7 @@ http_serve(port: i64, handler: any): void
             resp_body = handler(method, req_path, raw) or ""
             response: str = "HTTP/1.0 200 OK\r\n"
                 .. "Content-Type: text/plain\r\n"
-                .. "Content-Length: " .. tostring(#resp_body) .. "\r\n"
+                .. "Content-Length: " .. to(str)(#resp_body) .. "\r\n"
                 .. "Connection: close\r\n\r\n"
                 .. resp_body
             std_net_send(cli, response)

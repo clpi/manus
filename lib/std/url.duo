@@ -1,58 +1,60 @@
--- std.url — URL encoding, decoding, and parsing
-
-fun encode(s: str): str
-    if s == nil then return "" end
-    string.gsub(s, "([^%w%.%-~_])", fun(c: str): str
-        string.format("%%%02X", string.byte(c))
-    end)
+encode(s: str) -> str
+  if s == nil
+    return ""
+  end
+  string.gsub(s, "([^%w%.%-~_])", (c: str) -> str
+    string.format("%%%02X", string.byte(c))
+  end)
 end
-
-fun decode(s: str): str
-    if s == nil then return "" end
-    s = string.gsub(s, "+", " ")
-    string.gsub(s, "%%(%x%x)", fun(h: str): str
-        string.char(tonumber(h, 16))
-    end)
+decode(s: str) -> str
+  if s == nil
+    return ""
+  end
+  s = string.gsub(s, "+", " ")
+  string.gsub(s, "%%(%x%x)", (h: str) -> str
+    string.char(tonumber(h, 16))
+  end)
 end
-
-fun parse(url: str): any
-    local scheme = "http"
-    local rest = url
-    if string.sub(rest, 1, 7) == "http://" then
-        rest = string.sub(rest, 8)
-    elseif string.sub(rest, 1, 8) == "https://" then
-        scheme = "https"
-        rest = string.sub(rest, 9)
-    end
-    
-    local default_port = 80
-    if scheme == "https" then default_port = 443 end
-    local host = rest
-    local path = "/"
-    
-    slash_pos = string.find(rest, "/")
-    if slash_pos then
-        host = string.sub(rest, 1, slash_pos - 1)
-        path = string.sub(rest, slash_pos)
-    end
-    
-    colon_pos = string.find(host, ":")
-    port = default_port
-    if colon_pos then
-        port = tonumber(string.sub(host, colon_pos + 1)) or default_port
-        host = string.sub(host, 1, colon_pos - 1)
-    end
-    
-    query = ""
-    q_pos = string.find(path, "?")
-    if q_pos then
-        query = string.sub(path, q_pos + 1)
-        path = string.sub(path, 1, q_pos - 1)
-    end
-    
-    { scheme = scheme, host = host, port = port, path = path, query = query }
+parse(url: str) -> any
+  scheme = "http"
+  rest = url
+  if string.sub(rest, 1, 7) == "http://"
+    rest = string.sub(rest, 8)
+  elseif string.sub(rest, 1, 8) == "https://"
+    scheme = "https"
+    rest = string.sub(rest, 9)
+  end
+  default_port = 80
+  if scheme == "https"
+    default_port = 443
+  end
+  host = rest
+  path = "/"
+  slash_pos = string.find(rest, "/")
+  if slash_pos
+    host = string.sub(rest, 1, slash_pos - 1)
+    path = string.sub(rest, slash_pos)
+  end
+  colon_pos = string.find(host, ":")
+  port = default_port
+  if colon_pos
+    port = tonumber(string.sub(host, colon_pos + 1)) or default_port
+    host = string.sub(host, 1, colon_pos - 1)
+  end
+  query = ""
+  q_pos = string.find(path, "?")
+  if q_pos
+    query = string.sub(path, q_pos + 1)
+    path = string.sub(path, 1, q_pos - 1)
+  end
+  {
+    scheme = scheme,
+    host = host,
+    port = port,
+    path = path,
+    query = query
+  }
 end
-
 M = {}
 M.encode = encode
 M.decode = decode

@@ -16,5 +16,5 @@ COMMENTS = @comp.map("HasXY", meta.c_type_comment)
 
 print("=== stdlib comptime showcase ===")
 print("typed = " .. TYPED)
-print("comments_len = " .. tostring(#COMMENTS))
+print("comments_len = " .. to(str)(#COMMENTS))
 print("ok")

@@ -10,7 +10,7 @@ v4(): str
     -- Format as UUID string: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
     -- Version 4 (bits 12-15 of time_hi_and_version = 0100)
     -- Variant 1 (bits 6-7 of clock_seq_hi_and_reserved = 10)
-    hex = function(b: i64): str
+    hex = (b: i64): str
         string.format("%02x", b)
     end
     

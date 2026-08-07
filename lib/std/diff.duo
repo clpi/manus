@@ -240,10 +240,10 @@ table_diff_into(old: any, new_: any, path: str, diffs: any): void
         nk = new_[k]
         p = path
         if type(k) == "number"
-            p = p .. "[" .. tostring(k) .. "]"
+            p = p .. "[" .. to(str)(k) .. "]"
         else
             if p != "" p = p .. "." end
-            p = p .. tostring(k)
+            p = p .. to(str)(k)
         end
         visited[k] = true
         table_diff_into(v, nk, p, diffs)
@@ -252,10 +252,10 @@ table_diff_into(old: any, new_: any, path: str, diffs: any): void
         if not visited[k]
             p = path
             if type(k) == "number"
-                p = p .. "[" .. tostring(k) .. "]"
+                p = p .. "[" .. to(str)(k) .. "]"
             else
                 if p != "" p = p .. "." end
-                p = p .. tostring(k)
+                p = p .. to(str)(k)
             end
             diffs[rawlen(diffs) + 1] = {op = "add", path = p, value = v}
         end

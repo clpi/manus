@@ -28,5 +28,5 @@ end)
 
 BUNDLE_LEN = @comp.derive("HasXY", FullApi)
 
-print("bundle_len = " .. tostring(#BUNDLE_LEN))
+print("bundle_len = " .. to(str)(#BUNDLE_LEN))
 print("ok")

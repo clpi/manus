@@ -71,7 +71,7 @@ temp_file(): any
         rand_hex = rand_hex .. string.format("%02x", string.byte(rand_bytes, i))
         i += 1
     end
-    path = "/tmp/duo_" .. tostring(os.time()) .. "_" .. rand_hex
+    path = "/tmp/duo_" .. to(str)(os.time()) .. "_" .. rand_hex
     f = io.open(path, "w+")
     return {fh = f, path = path}
 end
@@ -86,14 +86,14 @@ temp_dir(): str
         rand_hex = rand_hex .. string.format("%02x", string.byte(rand_bytes, i))
         i += 1
     end
-    path = "/tmp/duo_dir_" .. tostring(os.time()) .. "_" .. rand_hex
+    path = "/tmp/duo_dir_" .. to(str)(os.time()) .. "_" .. rand_hex
     os.execute("mkdir -p " .. path)
     path
 end
 
 -- discard: a writer that discards all data (returns count written).
 discard(): any
-    return {n = 0, write = fun(self: any, s: str): any
+    return {n = 0, write = (self: any, s: str): any
         self.n = self.n + string.len(s)
         self
     end}
@@ -101,7 +101,7 @@ end
 
 -- nopCloser: wrap a reader so it has a no-op close method.
 nop_closer(fh: any): any
-    fh.close = fun(self: any): any nil
+    fh.close = (self: any) nil
     fh
 end
 

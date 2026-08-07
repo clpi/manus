@@ -64,7 +64,7 @@ main()
 
     pipe = Deploy.edge_pipeline(model)
     print(string.format("Edge deploy: target=%s simd=%s",
-        Deploy.wasm_opts().target, tostring(Deploy.wasm_opts().simd)))
+        Deploy.wasm_opts().target, to(str)(Deploy.wasm_opts().simd)))
 
     -- Native kernel checksum (validates ml.* path)
     checksum = bench_all()

@@ -64,7 +64,7 @@ print("permute fragments  = " .. PERMUTE_COUNT .. "  (expect 6 = 3!)")
 
 -- 5. @comp.derive.power -- apply a derive macro to every non-empty subset.
 @comp.define.derive("SubsetStub", generate(meta) -> str
-    "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " count=" .. tostring(meta.count) .. " */\n"
+    "/* subset " .. meta.name .. " mask=" .. to(str)(meta.mask) .. " count=" .. to(str)(meta.count) .. " */\n"
 end)
 
 SUBSET_CODE = @comp.derive.power("HasXY", SubsetStub)
@@ -78,4 +78,4 @@ print(LADDER)
 
 ok = (POWER_COUNT == 7 and PSET_COUNT == 7 and PERMUTE_COUNT == 6)
 print("=== RESULT ===")
-print("power_and_permute_ok = " .. tostring(ok))
+print("power_and_permute_ok = " .. to(str)(ok))

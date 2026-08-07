@@ -82,13 +82,13 @@ process_start(proc: any, config: any): any
     -- Build command with arguments
     full_cmd = config.cmd
     for arg in config.args
-        full_cmd = full_cmd .. " " .. tostring(arg)
+        full_cmd = full_cmd .. " " .. to(str)(arg)
     end
 
     -- Set environment variables for the child process
     env_prefix = ""
     for k, v in config.env
-        env_prefix = env_prefix .. k .. "=" .. tostring(v) .. " "
+        env_prefix = env_prefix .. k .. "=" .. to(str)(v) .. " "
     end
 
     -- Capture PID and run in background
@@ -114,7 +114,7 @@ process_wait(proc: any): any
 
     -- Wait for process and capture exit code
     if proc.pid and proc.pid > 0
-        os.execute("wait " .. tostring(proc.pid) .. " 2>/dev/null")
+        os.execute("wait " .. to(str)(proc.pid) .. " 2>/dev/null")
         -- Get exit code via $?
         handle = io.popen("echo $?")
         if handle
@@ -139,7 +139,7 @@ process_kill(proc: any, signal: i64): any
 
     sig = signal or 15  -- SIGTERM default
     if proc.pid and proc.pid > 0
-        os.execute("kill -" .. tostring(sig) .. " " .. tostring(proc.pid) .. " 2>/dev/null")
+        os.execute("kill -" .. to(str)(sig) .. " " .. to(str)(proc.pid) .. " 2>/dev/null")
     end
     proc.killed = true
     proc.running = false
@@ -201,7 +201,7 @@ process_run(cmd: str, args: any): any
     full_cmd = cmd
     if args
         for arg in args
-            full_cmd = full_cmd .. " " .. tostring(arg)
+            full_cmd = full_cmd .. " " .. to(str)(arg)
         end
     end
 
@@ -235,7 +235,7 @@ process_run_with_input(cmd: str, args: any, input: str): any
     full_cmd = cmd
     if args
         for arg in args
-            full_cmd = full_cmd .. " " .. tostring(arg)
+            full_cmd = full_cmd .. " " .. to(str)(arg)
         end
     end
 

@@ -23,4 +23,4 @@ total(): i64
 end
 
 print("=== @comp.pipeline / @rewrite showcase ===")
-print("result = " .. tostring(total()))
+print("result = " .. to(str)(total()))

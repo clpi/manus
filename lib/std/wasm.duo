@@ -400,7 +400,7 @@ module_validate(mod: any): any
     while i <= #mod.functions
         idx = mod.functions[i].type_idx
         if idx >= #mod.types
-            errors[#errors + 1] = "function " .. tostring(i) .. " references invalid type index " .. tostring(idx)
+            errors[#errors + 1] = "function " .. to(str)(i) .. " references invalid type index " .. to(str)(idx)
         end
         i += 1
     end
@@ -422,7 +422,7 @@ module_validate(mod: any): any
     while i <= #mod.memories
         mem = mod.memories[i]
         if mem.limits.max != nil and mem.limits.min > mem.limits.max
-            errors[#errors + 1] = "memory " .. tostring(i) .. " min > max"
+            errors[#errors + 1] = "memory " .. to(str)(i) .. " min > max"
         end
         i += 1
     end

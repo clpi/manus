@@ -26,4 +26,4 @@ total(): i64
 end
 
 print("=== @comp.pipeline table showcase ===")
-print("sum_mapped(1..5, map*2, >0) = " .. tostring(total()))
+print("sum_mapped(1..5, map*2, >0) = " .. to(str)(total()))

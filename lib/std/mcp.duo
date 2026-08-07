@@ -51,10 +51,13 @@ mcp_send_error(id: any, code: int, message: str): void
 end
 
 mcp_handle_initialize(msg: any): void
+    json_mod = req "std.json"
     mcp_send_response(msg.id, {
         protocolVersion = "2024-11-05",
         capabilities = {
-            tools = {}
+            -- MCP requires `capabilities.tools` to be an OBJECT. A bare `{}`
+            -- would encode as `[]` and clients reject the handshake shape.
+            tools = json_mod.empty_object
         },
         serverInfo = {
             name = "duo-mcp",
@@ -64,12 +67,21 @@ mcp_handle_initialize(msg: any): void
 end
 
 mcp_handle_tools_list(msg: any): void
+    json_mod = req "std.json"
     tools_list = {}
     for name, tool in M.tools
+        -- JSON Schema requires `properties` to be an object. A tool declaring
+        -- `properties = {}` would encode as `[]` and fail client-side schema
+        -- validation, so the tool never surfaces. Normalize here rather than
+        -- at every tool definition.
+        schema = tool.inputSchema
+        if schema != nil and schema.properties != nil and next(schema.properties) == nil
+            schema.properties = json_mod.empty_object
+        end
         tools_list[#tools_list + 1] = {
             name = name,
             description = tool.description,
-            inputSchema = tool.inputSchema
+            inputSchema = schema
         }
     end
     mcp_send_response(msg.id, {
@@ -137,7 +149,7 @@ mcp_serve(): void
         elseif msg.method == "ping"
             mcp_send_response(msg.id, {})
         elseif msg.id != nil
-            mcp_send_error(msg.id, -32601, "Method not found: " .. tostring(msg.method))
+            mcp_send_error(msg.id, -32601, "Method not found: " .. to(str)(msg.method))
         end
     end
 end
@@ -147,7 +159,7 @@ mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
     --   3-arg: register_tool(name, inputSchema_with_description, handler)
     --   4-arg: register_tool(name, description, inputSchema, handler)
     -- Distinguish by type, not nil: Duo codegen leaves missing trailing args as
-    -- non-nil garbage, so `p4 ~= nil` misfires on the 3-arg form and stores garbage
+    -- non-nil garbage, so `p4 != nil` misfires on the 3-arg form and stores garbage
     -- as the handler (tools/call then crashes). `type(p4)=="function"` is unambiguous.
     if type(p4) == "function"
         M.tools[name] = { name = name, description = p2 or "", inputSchema = p3, handler = p4 }

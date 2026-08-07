@@ -23,5 +23,5 @@ end)
 API_LEN = @comp.derive("HasXY", TouchApi)
 
 print("=== derive_map showcase ===")
-print("generated_bytes = " .. tostring(#API_LEN))
+print("generated_bytes = " .. to(str)(#API_LEN))
 print("ok")

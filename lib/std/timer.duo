@@ -93,18 +93,18 @@ format(seconds: any): str
     if seconds == nil return "0s" end
     if seconds < 0.001
         ms = seconds * 1000000
-        return tostring(std_timer_round(ms)) .. "us"
+        return to(str)(std_timer_round(ms)) .. "us"
     end
     if seconds < 1
         ms = seconds * 1000
-        return tostring(std_timer_round(ms)) .. "ms"
+        return to(str)(std_timer_round(ms)) .. "ms"
     end
     if seconds < 60
-        return tostring(std_timer_round_dec(seconds, 3)) .. "s"
+        return to(str)(std_timer_round_dec(seconds, 3)) .. "s"
     end
     mins = math.floor(seconds / 60)
     secs = seconds - mins * 60
-    return tostring(mins) .. "m" .. tostring(std_timer_round_dec(secs, 1)) .. "s"
+    return to(str)(mins) .. "m" .. to(str)(std_timer_round_dec(secs, 1)) .. "s"
 end
 
 -- summary: return a summary table of all lap times.

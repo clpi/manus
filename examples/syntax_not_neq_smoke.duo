@@ -6,4 +6,4 @@ ok = different and not (4 != 4) and not false and same
 
 grade = if ok 1 else 0 end
 
-print("RESULT syntax_not_neq = " .. tostring(grade))
+print("RESULT syntax_not_neq = " .. to(str)(grade))

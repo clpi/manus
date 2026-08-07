@@ -14,5 +14,5 @@ run_chain(n: i64) -> i64
 end
 
 print("=== pipeline typed showcase ===")
-print("3 |> twice |> inc = " .. tostring(run_chain(3)))
+print("3 |> twice |> inc = " .. to(str)(run_chain(3)))
 print("ok")

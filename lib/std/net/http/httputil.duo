@@ -16,7 +16,7 @@ end
 
 dump_response(resp: any): str
     if resp == nil return "" end
-    out = {"HTTP/1.1 ", tostring(resp.status or 200), " OK\r\n"}
+    out = {"HTTP/1.1 ", to(str)(resp.status or 200), " OK\r\n"}
     if resp.headers
         for k, v in pairs(resp.headers)
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"

@@ -6,15 +6,15 @@
 --   local kq = watch.create()
 --   local fd = watch.add_watch(kq, "/tmp/foo.txt", watch.flags_from_mask("write|delete"))
 --   local events = watch.poll(kq, 5000)  -- 5s timeout
---   if events ~= nil then
+--   if events != nil then
 --     for _, ev in ipairs(events) do
---       print("fd=" .. tostring(ev.fd) .. " flags=" .. tostring(ev.flags))
+--       print("fd=" .. to(str)(ev.fd) .. " flags=" .. to(str)(ev.flags))
 --     end
 --   end
 --   watch.close(kq)
 --
 -- Polling fallback:
---   watch.poll_watch("/tmp/foo.txt", function(ev) print("changed!") end, 1000)
+--   watch.poll_watch("/tmp/foo.txt", (ev) print("changed!") end, 1000)
 
 -- ─────────────────────────────────────────────────────────────
 -- Platform detection
@@ -595,7 +595,7 @@ poll_watch(path: str, callback: any, interval_ms: int): void
     while true do
         -- Sleep for interval
         sec = interval_ms / 1000.0
-        os.execute("sleep " .. tostring(sec))
+        os.execute("sleep " .. to(str)(sec))
 
         cur_mtime = get_mtime(path)
         cur_exists = cur_mtime != ""

@@ -14,7 +14,7 @@ marshal(v: any): str
     end
     if t == "number"
         if math.floor(v) == v and math.abs(v) < 1e15
-            return tostring(math.floor(v))
+            return to(str)(math.floor(v))
         end
         return string.format("%.17g", v)
     end

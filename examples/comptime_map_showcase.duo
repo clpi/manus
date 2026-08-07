@@ -26,6 +26,6 @@ end
 TYPE_MARKS = @comp.map("HasXY", type_registry_line)
 
 print("=== comptime_map showcase ===")
-print("satisfies Point = " .. tostring(@comp.satisfies(Point, "HasXY")))
+print("satisfies Point = " .. to(str)(@comp.satisfies(Point, "HasXY")))
 print("type_marks = " .. TYPE_MARKS)
 print("ok")

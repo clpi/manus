@@ -222,7 +222,7 @@ std_table_unique(list: any): any
     i = 1
     while i <= rawlen(list)
         v = list[i]
-        key = tostring(v)
+        key = to(str)(v)
         if not seen[key]
             seen[key] = true
             out[rawlen(out) + 1] = v

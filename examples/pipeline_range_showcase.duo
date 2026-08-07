@@ -16,5 +16,5 @@ total(): i64
 end
 
 print("=== @comp.pipeline range showcase ===")
-print("sum 1..100 = " .. tostring(total()))
+print("sum 1..100 = " .. to(str)(total()))
 print("ok")

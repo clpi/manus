@@ -112,7 +112,7 @@ ints_desc(arr: any): void
 end
 
 std_sort_less_str(a: any, b: any): bool
-    return tostring(a) < tostring(b)
+    return to(str)(a) < to(str)(b)
 end
 
 strings(arr: any): void

@@ -280,7 +280,7 @@ locals = {}
 
 sp = execute(bytecode, 1, stack, 1, locals)
 result = stack[1]
-print("(3 + 4) * 2 = " .. tostring(result))
+print("(3 + 4) * 2 = " .. to(str)(result))
 
 -- Test bit ops
 bytecode2 = {
@@ -289,6 +289,6 @@ bytecode2 = {
     OP_END
 }
 sp = execute(bytecode2, 1, stack, 1, locals)
-print("popcnt(255) = " .. tostring(stack[1]))
+print("popcnt(255) = " .. to(str)(stack[1]))
 
 print("WASM INTERPRETER WORKS IN DUO")

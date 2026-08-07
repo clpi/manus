@@ -6,9 +6,9 @@
     eq_src = @comp.derive.eval("Eq", meta)
     hash_src = @comp.derive.eval("Hash", meta)
     acc = "/* Built-in derive report for " .. meta.name .. " */\n"
-    acc = acc .. "/* Display length: " .. tostring(#display_src) .. " */\n"
-    acc = acc .. "/* Eq length: " .. tostring(#eq_src) .. " */\n"
-    acc = acc .. "/* Hash length: " .. tostring(#hash_src) .. " */\n"
+    acc = acc .. "/* Display length: " .. to(str)(#display_src) .. " */\n"
+    acc = acc .. "/* Eq length: " .. to(str)(#eq_src) .. " */\n"
+    acc = acc .. "/* Hash length: " .. to(str)(#hash_src) .. " */\n"
     acc = acc .. display_src .. "\n"
     acc = acc .. eq_src .. "\n"
     acc = acc .. hash_src .. "\n"

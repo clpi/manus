@@ -11,7 +11,7 @@ end
 shape = {
     id = 7,
     draw = fun(self): str
-        "shape-" .. tostring(self.id)
+        "shape-" .. to(str)(self.id)
     end,
 }
 
@@ -23,4 +23,4 @@ DrawableConcept = meta.make_concept("Drawable", {
     fields = { "id" },
     methods = { "draw" },
 })
-print("satisfies Drawable: " .. tostring(meta.satisfies_concept(shape, DrawableConcept)))
+print("satisfies Drawable: " .. to(str)(meta.satisfies_concept(shape, DrawableConcept)))

@@ -323,7 +323,7 @@ id(): i64
     co = coroutine.running()
     if co == nil then return 0 end
     -- Hash the coroutine pointer for a stable id
-    s = tostring(co)
+    s = to(str)(co)
     h = 5381
     for i = 1, #s
         h = (h * 33 + string.byte(s, i)) % 4294967296
@@ -423,7 +423,7 @@ end
 
 -- Set the value for a thread-local key in the current thread.
 tls_set(key: i64, value: any): void
-    tid = tostring(id())
+    tid = to(str)(id())
     if _tls_stores == nil then
         _tls_stores = {}
     end
@@ -437,7 +437,7 @@ end
 -- Get the value for a thread-local key in the current thread.
 -- If not set and a default_fn was provided, initialises it.
 tls_get(key: i64): any
-    tid = tostring(id())
+    tid = to(str)(id())
     store = _tls_stores and _tls_stores[tid] or nil
     if store != nil then
         val = store[key]
@@ -454,7 +454,7 @@ end
 
 -- Remove the value for a thread-local key.  Returns the old value.
 tls_del(key: i64): any
-    tid = tostring(id())
+    tid = to(str)(id())
     if _tls_stores == nil then return nil end
     store = _tls_stores[tid]
     if store == nil then return nil end

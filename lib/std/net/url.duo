@@ -180,7 +180,7 @@ resolve(base: str, ref: str): str
         result = base_url.scheme .. "://"
         if base_url.user != "" result = result .. base_url.user .. "@" end
         result = result .. base_url.host
-        if base_url.port != nil result = result .. ":" .. tostring(base_url.port) end
+        if base_url.port != nil result = result .. ":" .. to(str)(base_url.port) end
         return result .. ref
     end
     base_url = parse(base)
@@ -200,7 +200,7 @@ resolve(base: str, ref: str): str
     result = base_url.scheme .. "://"
     if base_url.user != "" result = result .. base_url.user .. "@" end
     result = result .. base_url.host
-    if base_url.port != nil result = result .. ":" .. tostring(base_url.port) end
+    if base_url.port != nil result = result .. ":" .. to(str)(base_url.port) end
     result .. new_path
 end
 
@@ -215,7 +215,7 @@ build(u: any): str
         result = result .. u.user .. "@"
     end
     result = result .. (u.host or "")
-    if u.port != nil result = result .. ":" .. tostring(u.port) end
+    if u.port != nil result = result .. ":" .. to(str)(u.port) end
     result = result .. (u.path or "/")
     if u.raw_query != nil and u.raw_query != ""
         result = result .. "?" .. u.raw_query

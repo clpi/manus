@@ -30,7 +30,7 @@ NAMES = @comp.map("HasXY", type_sig)
 
 -- Stage 2: @comp.each splits that output and re-expands each fragment.
 expand(frag) -> str
-    "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] = " .. frag.name .. " */\n"
+    "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] = " .. frag.name .. " */\n"
 end
 
 EXPANDED = @comp.each(NAMES, expand)
@@ -41,7 +41,7 @@ print("=== @comp.each re-expansion (composition) ===")
 print(EXPANDED)
 
 LINES = @comp.str.countlines(EXPANDED)
-print("map→each fragments = " .. tostring(LINES) .. "  (expect 3 = one per type)")
+print("map→each fragments = " .. to(str)(LINES) .. "  (expect 3 = one per type)")
 
 -- Stage 3: compose @comp.power (2^n) with @comp.each — nest an exponential
 -- stage inside the composition glue. 3 types → 2^3-1 = 7 subsets.
@@ -52,13 +52,13 @@ end
 SUBSETS = @comp.power("HasXY", subset_sig)
 
 stamp(frag) -> str
-    "/* pow[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
+    "/* pow[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 end
 
 POWER_EACH = @comp.each(SUBSETS, stamp)
 POWER_LINES = @comp.str.countlines(POWER_EACH)
-print("power→each fragments = " .. tostring(POWER_LINES) .. "  (expect 7 = 2^3-1)")
+print("power→each fragments = " .. to(str)(POWER_LINES) .. "  (expect 7 = 2^3-1)")
 
 ok = (LINES == 3 and POWER_LINES == 7)
 print("=== RESULT ===")
-print("compose_each_ok = " .. tostring(ok))
+print("compose_each_ok = " .. to(str)(ok))

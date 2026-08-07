@@ -10,7 +10,7 @@ template: /* gen[$0:$1] */
 GEN = @comp.generate(CONSTRAINTS, "")
 
 stamp(frag) -> str
-    "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
+    "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 end
 
 EXPANDED = @comp.each(GEN, stamp)
@@ -27,5 +27,5 @@ LINES = count_lines(EXPANDED)
 
 print("=== @comp.generate → @comp.each ===")
 print(EXPANDED)
-print("fragments = " .. tostring(LINES) .. "  (expect 4 = 2 ops × 2 types)")
-print("RESULT generate_each_ok = " .. tostring(LINES == 4))
+print("fragments = " .. to(str)(LINES) .. "  (expect 4 = 2 ops × 2 types)")
+print("RESULT generate_each_ok = " .. to(str)(LINES == 4))

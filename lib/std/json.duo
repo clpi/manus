@@ -10,6 +10,13 @@
 
 -- ── encode ──────────────────────────────────────────────────────────────────
 
+-- Sentinel that encodes as `{}` rather than `[]`. An empty Duo table is
+-- indistinguishable from an empty sequence, so `{}` defaults to `[]` (see
+-- `json_is_array`). Where the consumer requires a JSON *object* — JSON Schema
+-- `properties`, MCP `capabilities` — pass `json.empty_object` instead.
+-- Compared by table identity, so it must never be mutated by callers.
+JSON_EMPTY_OBJECT = {}
+
 -- JSON arrays are tables whose every key is a positive integer. A table with
 -- only string keys (an object) is not an array; an empty table is treated as
 -- an empty array (matches Duo/Lua table usage where {} grows as a sequence).
@@ -65,12 +72,13 @@ encode(val: any): str
         if val != val return "null" end
         if val == math.huge return "1e999" end
         if val == -math.huge return "-1e999" end
-        return tostring(val)
+        return to(str)(val)
     end
     if type(val) == "string"
         return "\"" .. json_escape(val) .. "\""
     end
     if type(val) == "table"
+        if val == JSON_EMPTY_OBJECT return "{}" end
         if json_is_array(val)
             parts = {}
             i = 1
@@ -308,4 +316,5 @@ M.is_array = json_is_array
 M.escape = json_escape
 M.encode = encode
 M.decode = decode
+M.empty_object = JSON_EMPTY_OBJECT
 M

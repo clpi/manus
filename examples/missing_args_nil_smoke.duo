@@ -10,4 +10,4 @@ end
 
 ok = missing_any(1, 2, 3) and sum_typed(4) == 4
 
-print("RESULT missing_args_nil = " .. tostring(ok))
+print("RESULT missing_args_nil = " .. to(str)(ok))

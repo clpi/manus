@@ -11,7 +11,7 @@ run(cmd: str): i64
     rc = _os.execute(cmd)
     if rc == nil return -1 end
     if rc == true return 0 end
-    if tostring(rc) == "0" return 0 end
+    if to(str)(rc) == "0" return 0 end
     1
 end
 
@@ -31,7 +31,7 @@ lock_cmd(cmd: str): str
 end
 
 lock_cmd_timeout(cmd: str, timeout: i64): str
-    "./scripts/duo_lock.sh --timeout " .. tostring(timeout) .. " -- " .. cmd
+    "./scripts/duo_lock.sh --timeout " .. to(str)(timeout) .. " -- " .. cmd
 end
 
 locked_run(cmd: str): i64

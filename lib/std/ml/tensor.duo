@@ -149,7 +149,7 @@ tensor_shape(t: any)
 end
 
 tensor_tostring(t: any)
-    return "Tensor(" .. tostring(t.rows) .. "x" .. tostring(t.cols) .. ")"
+    return "Tensor(" .. to(str)(t.rows) .. "x" .. to(str)(t.cols) .. ")"
 end
 
 -- ═══════════════════════════════════════════════════════════════

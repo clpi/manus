@@ -65,7 +65,7 @@ parse(data: any): any
 end
 
 escape_field(field: any): any
-    s = tostring(field)
+    s = to(str)(field)
     if string.find(s, ",") or string.find(s, '"') or string.find(s, "\n")
         s = string.gsub(s, '"', '""')
         return '"' .. s .. '"'

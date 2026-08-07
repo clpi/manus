@@ -31,5 +31,5 @@ end
 -- Same semantics, fewer tokens, cleaner visual appearance.
 
 p: Point = { x = 3.0, y = 4.0 }
-print("RESULT distance " .. tostring(distance(p, { x = 0.0, y = 0.0 })))
-print("RESULT add " .. tostring(add(20, 22)))
+print("RESULT distance " .. to(str)(distance(p, { x = 0.0, y = 0.0 })))
+print("RESULT add " .. to(str)(add(20, 22)))

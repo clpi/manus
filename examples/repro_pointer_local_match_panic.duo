@@ -43,7 +43,7 @@ f(n: i64): i64
 end
 
 main()
-  print("acc=" .. tostring(f(4)))
+  print("acc=" .. to(str)(f(4)))
 end
 
 main()

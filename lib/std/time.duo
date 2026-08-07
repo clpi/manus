@@ -19,7 +19,10 @@ time_sleep(seconds: any): void
     if seconds == nil return end
     sec = math.floor(seconds)
     ns = math.floor((seconds - sec) * 1000000000)
-    @c.emit("({ struct timespec ts; ts.tv_sec = " .. tostring(sec) .. "; ts.tv_nsec = " .. tostring(ns) .. "; nanosleep(&ts, NULL); })")
+    -- `sec`/`ns` are C locals in the emitted function; reference them directly.
+    -- @c.emit takes a compile-time constant string, so runtime `..` interpolation
+    -- would be spliced in literally rather than evaluated.
+    @c.emit("({ struct timespec ts; ts.tv_sec = (time_t)sec; ts.tv_nsec = (long)ns; nanosleep(&ts, NULL); })")
 end
 
 now_ns(): i64

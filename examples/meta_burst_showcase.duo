@@ -33,7 +33,7 @@ COMBOS = @comp.catalog("combinators")
 SWEEP = @comp.map("HasXY", mark)
 
 print("=== meta burst showcase ===")
-print("combinators_has_burst = " .. tostring(@comp.str.contains(COMBOS, "meta.burst")))
+print("combinators_has_burst = " .. to(str)(@comp.str.contains(COMBOS, "meta.burst")))
 print("sweep = " .. SWEEP)
 print("Point ok = true")
 print("ok")

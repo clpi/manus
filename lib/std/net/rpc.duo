@@ -96,7 +96,7 @@ rpc_server_handle(server: any, request: any): any
     -- Call handler
     ok, result = pcall(handler, request.params, context)
     if not ok
-        return rpc_error_new(request.id, -32603, "Internal error", tostring(result))
+        return rpc_error_new(request.id, -32603, "Internal error", to(str)(result))
     end
 
     rpc_response_new(request.id, result)

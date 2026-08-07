@@ -9,4 +9,4 @@ demo_len(s: str): i64
 end
 
 print("=== @comp.ffi showcase ===")
-print("strlen('duo') = " .. tostring(demo_len("duo")))
+print("strlen('duo') = " .. to(str)(demo_len("duo")))

@@ -94,7 +94,7 @@ sample_top_k(logits: any, k: i64, temperature: f64): i64
     end
 
     -- Sort by logit descending
-    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
     -- Keep top k
     top_k = {}
@@ -126,7 +126,7 @@ sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
     -- Apply temperature and softmax
     scaled = {}
@@ -176,7 +176,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+        table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
         i = 1
         while i <= beams and i <= #indexed
@@ -196,7 +196,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+        table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
         top_n = math.min(beams, #indexed)
         i = 1
@@ -215,7 +215,7 @@ sample_beam_search(logits: any, beams: i64, sequence: any): any
     end
 
     -- Sort all candidates by score and keep top beams
-    table.sort(all_candidates, fun(a: any, b: any): any a.score > b.score)
+    table.sort(all_candidates, (a: any, b: any): any a.score > b.score)
     result = {}
     i = 1
     while i <= beams and i <= #all_candidates
@@ -286,16 +286,16 @@ check_stop_tokens(generated: any, stop_tokens: any): bool
     for stop in stop_tokens
         stop_len = #stop
         if #generated >= stop_len
-            match = true
+            matched = true
             i = 1
             while i <= stop_len
                 if generated[#generated - stop_len + i] != stop[i]
-                    match = false
+                    matched = false
                     break
                 end
                 i += 1
             end
-            if match return true end
+            if matched return true end
         end
     end
     false
@@ -351,7 +351,7 @@ top_k_logits(logits: any, k: i64): any
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
+    table.sort(indexed, (a: any, b: any): any a.logit > b.logit)
 
     result = {}
     i = 1

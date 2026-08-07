@@ -20,4 +20,4 @@ end
 @comp.assert(not @satisfies(Bad, "Hashable"), "Bad lacks hash")
 
 result = digest(Good)
-print("digest(Good): " .. tostring(result))
+print("digest(Good): " .. to(str)(result))

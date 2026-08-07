@@ -65,8 +65,8 @@ shr_obj = setmetatable({}, {
 })
 
 print(concat_obj .. "x")
-print(tostring(lt_obj < 1))
-print(tostring(le_obj <= 1))
+print(to(str)(lt_obj < 1))
+print(to(str)(le_obj <= 1))
 print(-unm_obj)
 print(idiv_obj // 1)
 print(band_obj & 1)

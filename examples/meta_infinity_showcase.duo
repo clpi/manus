@@ -46,7 +46,7 @@ NFOLD = @comp.nfold({ "HasXY", "HasTag", "HasId", "HasExtra" }, quad_sig)
 LADDER = @comp.ladder()
 
 print("=== meta infinity showcase ===")
-print("has_infinity = " .. tostring(@comp.str.contains(LADDER, "infinity:")))
+print("has_infinity = " .. to(str)(@comp.str.contains(LADDER, "infinity:")))
 print("nfold = " .. NFOLD)
 print("Point ok = true")
 print("ok")

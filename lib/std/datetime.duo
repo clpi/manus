@@ -202,13 +202,13 @@ end
 
 -- ---- Formatting ----
 dt_pad2(n: i64): str
-    if n < 10 return "0" .. tostring(n) end
-    tostring(n)
+    if n < 10 return "0" .. to(str)(n) end
+    to(str)(n)
 end
 
 dt_format(d: any, layout: str): str
     r = layout
-    year4 = tostring(d.year)
+    year4 = to(str)(d.year)
     year2 = string.sub(year4, string.len(year4) - 1)
     r = string.gsub(r, "YYYY", year4)
     r = string.gsub(r, "YY", year2)
@@ -246,9 +246,9 @@ end
 
 dt_rfc2822(d: any): str
     p = DT_DAY_ABBR[d.wday] .. ", "
-    p = p .. tostring(d.day) .. " "
+    p = p .. to(str)(d.day) .. " "
     p = p .. DT_MONTH_ABBR[d.month] .. " "
-    p = p .. tostring(d.year) .. " "
+    p = p .. to(str)(d.year) .. " "
     p = p .. dt_pad2(d.hour) .. ":"
     p = p .. dt_pad2(d.min) .. ":"
     p = p .. dt_pad2(d.sec) .. " +0000"
@@ -265,13 +265,13 @@ dt_human_relative(d: any): str
     if secs < 60 return "just now" end
     if secs < 3600
         mins = math.floor(secs / 60)
-        if future return "in " .. tostring(mins) .. " minutes" end
-        return tostring(mins) .. " minutes ago"
+        if future return "in " .. to(str)(mins) .. " minutes" end
+        return to(str)(mins) .. " minutes ago"
     end
     if secs < 86400
         hrs = math.floor(secs / 3600)
-        if future return "in " .. tostring(hrs) .. " hours" end
-        return tostring(hrs) .. " hours ago"
+        if future return "in " .. to(str)(hrs) .. " hours" end
+        return to(str)(hrs) .. " hours ago"
     end
     day_count = math.floor(secs / 86400)
     if day_count == 1
@@ -279,17 +279,17 @@ dt_human_relative(d: any): str
         return "yesterday"
     end
     if day_count < 30
-        if future return "in " .. tostring(day_count) .. " days" end
-        return tostring(day_count) .. " days ago"
+        if future return "in " .. to(str)(day_count) .. " days" end
+        return to(str)(day_count) .. " days ago"
     end
     months = math.floor(day_count / 30)
     if months < 12
-        if future return "in " .. tostring(months) .. " months" end
-        return tostring(months) .. " months ago"
+        if future return "in " .. to(str)(months) .. " months" end
+        return to(str)(months) .. " months ago"
     end
     years = math.floor(months / 12)
-    if future return "in " .. tostring(years) .. " years" end
-    tostring(years) .. " years ago"
+    if future return "in " .. to(str)(years) .. " years" end
+    to(str)(years) .. " years ago"
 end
 
 -- ---- Parsing ----

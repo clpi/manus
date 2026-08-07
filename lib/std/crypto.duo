@@ -100,7 +100,7 @@ base64_url_decode(s: str): str
     for _ = 1, pad_len
         padded = padded .. "="
     end
-    base64_decode(tostring(padded))
+    base64_decode(to(str)(padded))
 end
 
 -- ── Hex ─────────────────────────────────────────────────────────────────

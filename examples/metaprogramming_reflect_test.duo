@@ -8,17 +8,17 @@ point: { x: f64, y: f64, z: f64 } = { x = 1.0, y = 2.0, z = 3.0 }
 
 -- @comp.fields returns a table of field descriptors
 fields = @comp.fields(point)
-print("field count = " .. tostring(#fields))
+print("field count = " .. to(str)(#fields))
 for i = 1, #fields do
-    print("  field " .. tostring(i) .. ": name=" .. fields[i].name .. " type=" .. fields[i].type)
+    print("  field " .. to(str)(i) .. ": name=" .. fields[i].name .. " type=" .. fields[i].type)
 end
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.has.field on typed records
 -- ═══════════════════════════════════════════════════════════════
 
-print("has x = " .. tostring(@comp.has.field(point, "x")))
-print("has w = " .. tostring(@comp.has.field(point, "w")))
+print("has x = " .. to(str)(@comp.has.field(point, "x")))
+print("has w = " .. to(str)(@comp.has.field(point, "w")))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.field.type on typed records
@@ -36,10 +36,10 @@ off_y = @comp.field.offset(point, "y")
 off_z = @comp.field.offset(point, "z")
 sz_x = @comp.field.size(point, "x")
 
-print("offset(x) = " .. tostring(off_x))
-print("offset(y) = " .. tostring(off_y))
-print("offset(z) = " .. tostring(off_z))
-print("size(x) = " .. tostring(sz_x))
+print("offset(x) = " .. to(str)(off_x))
+print("offset(y) = " .. to(str)(off_y))
+print("offset(z) = " .. to(str)(off_z))
+print("size(x) = " .. to(str)(sz_x))
 
 -- ═══════════════════════════════════════════════════════════════
 -- Enum reflection with @comp.fields (returns variant info)
@@ -53,9 +53,9 @@ end
 
 c = Color.Red
 color_fields = @comp.fields(c)
-print("enum variant count = " .. tostring(#color_fields))
+print("enum variant count = " .. to(str)(#color_fields))
 for i = 1, #color_fields do
-    print("  variant " .. tostring(i) .. ": name=" .. color_fields[i].name)
+    print("  variant " .. to(str)(i) .. ": name=" .. color_fields[i].name)
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -63,9 +63,9 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 variants = @comp.variants(c)
-print("variants count = " .. tostring(#variants))
+print("variants count = " .. to(str)(#variants))
 for i = 1, #variants do
-    print("  " .. variants[i].name .. " tag=" .. tostring(variants[i].tag) .. " arity=" .. tostring(variants[i].arity))
+    print("  " .. variants[i].name .. " tag=" .. to(str)(variants[i].tag) .. " arity=" .. to(str)(variants[i].arity))
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -73,13 +73,13 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 bf_size = @comp.bit.field("Flags", "active", 1, "priority", 3, "mode", 4)
-print("bitfield size = " .. tostring(bf_size))
+print("bitfield size = " .. to(str)(bf_size))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.union — union type definition
 -- ═══════════════════════════════════════════════════════════════
 
 union_size = @comp.union("NumericValue", "i", "int64_t", "f", "double", "p", "void*")
-print("union size = " .. tostring(union_size))
+print("union size = " .. to(str)(union_size))
 
 print("ALL REFLECTION TESTS PASSED")

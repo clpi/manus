@@ -11,7 +11,7 @@ print(types)
 
 -- Level 2: @comp.tabulate generates indices
 indices = @comp.tabulate(4, fun(m)
-    tostring(m.index)
+    to(str)(m.index)
 end)
 print("=== Level 2: @comp.tabulate → indices ===")
 print(indices)
@@ -37,7 +37,7 @@ print("=== Level 5: @comp.match output ===")
 print(fragments)
 
 annotated = @comp.each(fragments, fun(f)
-    "/* " .. tostring(f.index) .. ": " .. f.name .. " */\n"
+    "/* " .. to(str)(f.index) .. ": " .. f.name .. " */\n"
 end)
 print("=== Level 5: @comp.match → @comp.each ===")
 print(annotated)
@@ -60,7 +60,7 @@ print(nested)
 
 -- Level 8: NESTED @comp.interpolate inside @comp.match
 typed = @comp.match("i32|i64|f64", fun(m)
-    @comp.interpolate("typedef {name} variant_{idx};\n", {name = m.pattern, idx = tostring(m.index)})
+    @comp.interpolate("typedef {name} variant_{idx};\n", {name = m.pattern, idx = to(str)(m.index)})
 end)
 print("=== Level 8: nested @comp.interpolate → 3 typedefs ===")
 print(typed)
@@ -68,7 +68,7 @@ print(typed)
 -- Level 9: NESTED @comp.tabulate inside @comp.match
 expanded = @comp.match("vec|mat", fun(m)
     @comp.tabulate(4, fun(i)
-        m.pattern .. "_comp" .. tostring(i.index) .. " "
+        m.pattern .. "_comp" .. to(str)(i.index) .. " "
     end)
 end)
 print("=== Level 9: nested @comp.tabulate → 8 component names ===")

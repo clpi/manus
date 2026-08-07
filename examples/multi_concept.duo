@@ -28,4 +28,4 @@ end
 @comp.assert(@satisfies(Both, "Hashable"), "Both is Hashable")
 @comp.assert(@satisfies(Both, "Counter"), "Both is Counter")
 
-print("use_both(Both): " .. tostring(use_both(Both)))
+print("use_both(Both): " .. to(str)(use_both(Both)))

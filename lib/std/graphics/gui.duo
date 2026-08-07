@@ -184,7 +184,7 @@ gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
     gui_draw_rect(state, handle_x, y - 2, 8, h + 4, {r = 0.8, g = 0.8, b = 0.8, a = 1})
 
     -- Draw label
-    gui_draw_text(state, label .. ": " .. tostring(math.floor(value)), x + w + 8, y + 2, {r = 1, g = 1, b = 1, a = 1})
+    gui_draw_text(state, label .. ": " .. to(str)(math.floor(value)), x + w + 8, y + 2, {r = 1, g = 1, b = 1, a = 1})
 
     state.layout.y = state.layout.y + h + state.layout.item_spacing
     value

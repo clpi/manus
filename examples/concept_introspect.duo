@@ -10,6 +10,6 @@ M:hash(): i64
 end
 
 members = @comp.concepts.methods("Hashable")
-print("@comp.concepts.methods('Hashable') entries: " .. tostring(#members))
-print("@methods(M) entries: " .. tostring(#@methods(M)))
-print("@satisfies(M, Hashable): " .. tostring(@satisfies(M, "Hashable")))
+print("@comp.concepts.methods('Hashable') entries: " .. to(str)(#members))
+print("@methods(M) entries: " .. to(str)(#@methods(M)))
+print("@satisfies(M, Hashable): " .. to(str)(@satisfies(M, "Hashable")))

@@ -58,9 +58,9 @@ end
 
 -- ═══ Results ═══
 print("RESULT names " .. names[1] .. "," .. names[2] .. "," .. names[3])
-print("RESULT total_score " .. tostring(total))
+print("RESULT total_score " .. to(str)(total))
 print("RESULT custom_color " .. custom.color)
-print("RESULT spread_size " .. tostring(custom.size))
-print("RESULT distance " .. tostring(distance(origin, target)))
+print("RESULT spread_size " .. to(str)(custom.size))
+print("RESULT distance " .. to(str)(distance(origin, target)))
 print("RESULT label " .. label)
-print("RESULT config " .. config.name .. " w=" .. tostring(config.workers))
+print("RESULT config " .. config.name .. " w=" .. to(str)(config.workers))

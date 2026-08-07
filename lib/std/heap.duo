@@ -209,7 +209,7 @@ bloom_hash(data: any, seed: i64): i64
 end
 
 bloom_add(bf: any, item: any): void
-    data = tostring(item)
+    data = to(str)(item)
     i = 0
     while i < bf.num_hashes
         pos = bloom_hash(data, i) % bf.num_bits
@@ -222,7 +222,7 @@ bloom_add(bf: any, item: any): void
 end
 
 bloom_may_contain(bf: any, item: any): bool
-    data = tostring(item)
+    data = to(str)(item)
     i = 0
     while i < bf.num_hashes
         pos = bloom_hash(data, i) % bf.num_bits

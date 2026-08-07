@@ -7,7 +7,7 @@ TMPL = "/* scheme[$kind $name] fields={$fields} params={$params} */\n"
 SCHEME = @comp.scheme(DECLS, TMPL)
 
 stamp(frag) -> str
-    "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
+    "/* each[" .. to(str)(frag.index) .. "/" .. to(str)(frag.count) .. "] " .. frag.name .. " */\n"
 end
 
 EXPANDED = @comp.each(SCHEME, stamp)
@@ -24,5 +24,5 @@ LINES = count_lines(EXPANDED)
 
 print("=== @comp.scheme → @comp.each ===")
 print(EXPANDED)
-print("fragments = " .. tostring(LINES) .. "  (expect 2 = type + fn)")
-print("RESULT scheme_each_ok = " .. tostring(LINES == 2))
+print("fragments = " .. to(str)(LINES) .. "  (expect 2 = type + fn)")
+print("RESULT scheme_each_ok = " .. to(str)(LINES == 2))

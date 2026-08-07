@@ -31,7 +31,7 @@ quantize_symmetric(t, bits): any
     q.scale = scale
     q.zero_point = 0
     q.bits = bits
-    q.dtype = "int" .. tostring(bits)
+    q.dtype = "int" .. to(str)(bits)
     q.data = {}
 
     if bits == 8
@@ -87,7 +87,7 @@ quantize_asymmetric(t, bits): any
     q.scale = scale
     q.zero_point = zero_point
     q.bits = bits
-    q.dtype = "uint" .. tostring(bits)
+    q.dtype = "uint" .. to(str)(bits)
     q.data = {}
 
     for i = 1, t.size
@@ -250,7 +250,7 @@ gptq_quantize(t, bits, block_size): any
     q.cols = t.cols
     q.size = t.size
     q.bits = bits
-    q.dtype = "gptq_int" .. tostring(bits)
+    q.dtype = "gptq_int" .. to(str)(bits)
     q.block_size = block_size
     q.scales = {}
     q.zeros = {}

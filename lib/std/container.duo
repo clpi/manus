@@ -7,7 +7,7 @@
 -- less(a, b) => true when a should be popped before b (higher priority).
 new_heap(less: any): any
     if less == nil
-        less = fun(a: any, b: any): bool a < b
+        less = (a: any, b: any) a < b
     end
     {data = {}, less = less}
 end

@@ -407,12 +407,12 @@ query_build(q: any): any
 
         -- LIMIT
         if q.limit != nil
-            parts[#parts + 1] = "LIMIT " .. tostring(q.limit)
+            parts[#parts + 1] = "LIMIT " .. to(str)(q.limit)
         end
 
         -- OFFSET
         if q.offset != nil
-            parts[#parts + 1] = "OFFSET " .. tostring(q.offset)
+            parts[#parts + 1] = "OFFSET " .. to(str)(q.offset)
         end
 
     elseif q.type == "insert"
@@ -426,7 +426,7 @@ query_build(q: any): any
         for col, val in q.data
             columns[#columns + 1] = col
             values[#values + 1] = val
-            placeholders[#placeholders + 1] = "$" .. tostring(#params + 1)
+            placeholders[#placeholders + 1] = "$" .. to(str)(#params + 1)
             params[#params + 1] = val
         end
         parts[#parts + 1] = "(" .. table.concat(columns, ", ") .. ")"
@@ -439,7 +439,7 @@ query_build(q: any): any
         -- SET
         set_parts = {}
         for col, val in q.data
-            set_parts[#set_parts + 1] = col .. " = $" .. tostring(#params + 1)
+            set_parts[#set_parts + 1] = col .. " = $" .. to(str)(#params + 1)
             params[#params + 1] = val
         end
         parts[#parts + 1] = "SET " .. table.concat(set_parts, ", ")

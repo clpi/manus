@@ -21,7 +21,7 @@ run_smoke() -> i64
 end
 
 RESULT = run_smoke()
-print("RESULT syntax_bare_fun = " .. tostring(RESULT))
+print("RESULT syntax_bare_fun = " .. to(str)(RESULT))
 if RESULT != 30
     error("syntax bare fun smoke failed")
 end

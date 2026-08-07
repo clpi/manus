@@ -37,7 +37,7 @@ animation_curve_add_keyframe(curve: any, time: f64, value: any): void
     curve.keyframes[#curve.keyframes + 1] = kf
 
     -- Sort by time
-    table.sort(curve.keyframes, fun(a: any, b: any): any a.time < b.time)
+    table.sort(curve.keyframes, (a: any, b: any) a.time < b.time)
 
     -- Update duration
     if time > curve.duration
@@ -305,7 +305,7 @@ procedural_noise(time: f64, frequency: f64, amplitude: f64): f64
     fade = frac * frac * (3 - 2 * frac)
 
     -- Hash function for pseudo-random values at integer points
-    _hash = fun(n: i64): f64
+    _hash = (n: i64): f64
         h = (n * 2654435761) & 0xFFFFFFFF
         h = ((h >> 16) ~ h) & 0xFFFFFFFF
         (h & 0xFFFF) / 65535.0
