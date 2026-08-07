@@ -44,7 +44,6 @@ parse_value(data: str, start: i64, indent: i64): any
                 if nv == nil and ns == nil
                     break
                 end
-                nkey, nval
                 if type(nv) == "table" and nv._key != nil
                     nkey = nv._key
                     nval = nv._value
