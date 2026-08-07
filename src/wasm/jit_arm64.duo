@@ -16,25 +16,25 @@
 jit = req "std.jit"
 
 -- ── WardRT / WardFrame field offsets (must track runtime.duo's structs) ──
-const RT_MEMORY = 16
-const RT_STACK  = 32
-const RT_SP     = 40
-const RT_GLOBALS = 48
-const FR_LOCALS = 8
+RT_MEMORY = 16
+RT_STACK  = 32
+RT_SP     = 40
+RT_GLOBALS = 48
+FR_LOCALS = 8
 
-const X0 = 0
-const X1 = 1
-const X8 = 8
-const X9 = 9
-const X10 = 10
-const X19 = 19
-const X20 = 20
-const X21 = 21
-const X22 = 22
-const X23 = 23
+X0 = 0
+X1 = 1
+X8 = 8
+X9 = 9
+X10 = 10
+X19 = 19
+X20 = 20
+X21 = 21
+X22 = 22
+X23 = 23
 -- Locals 0..PINNED_MAX-1 live in x23..x28 when a function has few enough of
 -- them; beyond that they stay in the frame.
-const PINNED_MAX = 6
+PINNED_MAX = 6
 
 -- ── Encoders ────────────────────────────────────────────────────────────
 -- One shape for every three-register data-processing instruction.
@@ -65,20 +65,28 @@ end
 fun movk(d: i64, imm16: i64, sh: i64): i64
   return 0xF2800000 | (sh << 21) | ((imm16 & 0xFFFF) << 5) | d
 end
-fun sxtw(d: i64, n: i64): i64  return 0x93407C00 | (n << 5) | d end
+fun sxtw(d: i64, n: i64): i64
+  return 0x93407C00 | (n << 5) | d
+end
 fun cset(d: i64, cond: i64): i64
   return 0x9A9F07E0 | (((cond ~ 1) & 0xF) << 12) | d
 end
-fun b_imm(off: i64): i64   return 0x14000000 | (off & 0x03FFFFFF) end
-fun cbz(n: i64, off: i64): i64  return 0xB4000000 | ((off & 0x7FFFF) << 5) | n end
-fun cbnz(n: i64, off: i64): i64 return 0xB5000000 | ((off & 0x7FFFF) << 5) | n end
-const RET = 0xD65F03C0
+fun b_imm(off: i64): i64
+  return 0x14000000 | (off & 0x03FFFFFF)
+end
+fun cbz(n: i64, off: i64): i64
+  return 0xB4000000 | ((off & 0x7FFFF) << 5) | n
+end
+fun cbnz(n: i64, off: i64): i64
+  return 0xB5000000 | ((off & 0x7FFFF) << 5) | n
+end
+RET = 0xD65F03C0
 
 -- Load/store with a register offset, LSL #0 (wasm addresses are byte counts).
 --   base | Rm<<16 | Rn<<5 | Rt
 fun msub(d: i64, n: i64, m: i64, a: i64, w: bool): i64
   base: i64 = 0x9B008000
-  if w then base = 0x1B008000 end
+  if w base = 0x1B008000 end
   return base | (m << 16) | (a << 10) | (n << 5) | d
 end
 fun csel(d: i64, n: i64, m: i64, cond: i64): i64
@@ -104,7 +112,7 @@ end
 -- ── Instruction-selection tables ────────────────────────────────────────
 -- wasm opcode → { base, is32 }. `is32` means: use the W-form then sign-extend
 -- back to 64 bits, which is exactly wasm i32 semantics on a 64-bit slot.
-const BIN = {
+BIN = {
   [0x6A] = {base=0x0B000000, w=true},  [0x6B] = {base=0x4B000000, w=true},  [0x6C] = {base=0x1B007C00, w=true},
   [0x71] = {base=0x0A000000, w=true},  [0x72] = {base=0x2A000000, w=true},  [0x73] = {base=0x4A000000, w=true},
   [0x74] = {base=0x1AC02000, w=true},  [0x75] = {base=0x1AC02800, w=true},  [0x76] = {base=0x1AC02400, w=true},
@@ -120,10 +128,10 @@ const BIN = {
 -- on a zero divisor (and signed division on INT_MIN/-1), and the JIT has no
 -- trap path yet. Omitting them makes any function using them fall back to
 -- the interpreter, which traps correctly. 20 i32-suite failures otherwise.
-const REM = {}
+REM = {}
 
 -- Width conversions: single instruction, operand in X8.
-const CONV = {
+CONV = {
   [0xA7] = 0x93407C00,   -- i32.wrap_i64      (sxtw)
   [0xAC] = 0x93407C00,   -- i64.extend_i32_s  (sxtw)
   [0xAD] = 0x2A0803E8,   -- i64.extend_i32_u  (mov w8,w8 = uxtw)
@@ -136,7 +144,7 @@ const CONV = {
 
 -- wasm opcode → { arm64 condition, is32 }. cmp is the same instruction for all;
 -- only the condition differs, so these are pure data.
-const CMP = {
+CMP = {
   [0x46] = {cond=0x0, w=true},  [0x47] = {cond=0x1, w=true},  [0x48] = {cond=0xB, w=true},  [0x49] = {cond=0x3, w=true},
   [0x4A] = {cond=0xC, w=true},  [0x4B] = {cond=0x8, w=true},  [0x4C] = {cond=0xD, w=true},  [0x4D] = {cond=0x9, w=true},
   [0x4E] = {cond=0xA, w=true},  [0x4F] = {cond=0x2, w=true},
@@ -148,7 +156,7 @@ const CMP = {
 -- Memory ops. All share `mem_rr`; only the base word and any sign-extension
 -- differ, so this stays a table like BIN/CMP.
 --   ld = true for loads. ext names the widening applied to the loaded value.
-const MEM = {
+MEM = {
   [0x28] = {base=0xB8606800, ld=true,  ext="s32"},  -- i32.load
   [0x29] = {base=0xF8606800, ld=true,  ext=""},     -- i64.load
   [0x2C] = {base=0x38A06800, ld=true,  ext=""},     -- i32.load8_s
@@ -162,7 +170,7 @@ const MEM = {
 }
 
 -- Opcodes with a single LEB immediate that the scanner must skip.
-const LEB1 = { [0x20]=true, [0x21]=true, [0x22]=true, [0x41]=true, [0x42]=true,
+LEB1 = { [0x20]=true, [0x21]=true, [0x22]=true, [0x41]=true, [0x42]=true,
                [0x0C]=true, [0x0D]=true, [0x23]=true, [0x24]=true }
 
 -- ── Code buffer ─────────────────────────────────────────────────────────
@@ -200,8 +208,8 @@ end
 -- register holding the value rather than moving it into a caller-chosen one.
 -- That removes every aliasing case — no emitter can clobber a live slot,
 -- because no emitter picks its own destination.
-const VS_MAX = 6
-const POOL = { 8, 9, 10, 11, 12, 13, 14, 15 }
+VS_MAX = 6
+POOL = { 8, 9, 10, 11, 12, 13, 14, 15 }
 
 fun vs_holds(b, r: i64): bool
   i: i64 = 1
@@ -288,9 +296,9 @@ fun flush_tos(b)
 end
 fun mov_imm(b, d: i64, v: i64)
   put(b, movz(d, v & 0xFFFF, 0))
-  if (v >> 16) & 0xFFFF ~= 0 then put(b, movk(d, (v >> 16) & 0xFFFF, 1)) end
-  if (v >> 32) & 0xFFFF ~= 0 then put(b, movk(d, (v >> 32) & 0xFFFF, 2)) end
-  if (v >> 48) & 0xFFFF ~= 0 then put(b, movk(d, (v >> 48) & 0xFFFF, 3)) end
+  if (v >> 16) & 0xFFFF ~= 0 put(b, movk(d, (v >> 16) & 0xFFFF, 1)) end
+  if (v >> 32) & 0xFFFF ~= 0 put(b, movk(d, (v >> 32) & 0xFFFF, 2)) end
+  if (v >> 48) & 0xFFFF ~= 0 put(b, movk(d, (v >> 48) & 0xFFFF, 3)) end
 end
 
 -- ── LEB128 over the body string ─────────────────────────────────────────
@@ -400,7 +408,7 @@ fun locals_touched(body: any, body_len: i64): i64
     if op == 0x20 or op == 0x21 or op == 0x22
       idx, np = leb_u(body, pc)
       pc = np
-      if idx + 1 > hi then hi = idx + 1 end
+      if idx + 1 > hi hi = idx + 1 end
     elseif BIN[op] ~= nil or CMP[op] ~= nil or REM[op] ~= nil or CONV[op] ~= nil or op == 0x1B
     elseif op == 0x45 or op == 0x50 or op == 0x1A or op == 0x0B or op == 0x0F or op == 0x01
     elseif op == 0x02 or op == 0x03
@@ -430,7 +438,7 @@ fun compile(body: any, body_len: i64)
   -- when pinned > 0) leaves the stack unbalanced and the return goes wild.
   nloc: i64 = locals_touched(body, body_len)
   b.pinned = 0
-  if nloc > 0 and nloc <= PINNED_MAX then b.pinned = nloc end
+  if nloc > 0 and nloc <= PINNED_MAX b.pinned = nloc end
   if b.pinned > 0
     put(b, stp_pre(X23, X23 + 1))
     put(b, stp_pre(X23 + 2, X23 + 3))
@@ -460,7 +468,7 @@ fun compile(body: any, body_len: i64)
       ra: i64 = vs_pop(b)
       rd: i64 = vs_alloc(b)
       put(b, dp3(spec.base, rd, ra, rb))
-      if spec.w then put(b, sxtw(rd, rd)) end
+      if spec.w put(b, sxtw(rd, rd)) end
       vs_push(b, rd)
 
     elseif CMP[op] ~= nil
@@ -538,7 +546,7 @@ fun compile(body: any, body_len: i64)
       put(b, dp3(spec.div, mq, ma, mb))         -- q = a / b
       md: i64 = vs_alloc_not(b, ma, mb)
       put(b, msub(md, mq, mb, ma, spec.w))      -- a - q*b
-      if spec.w then put(b, sxtw(md, md)) end
+      if spec.w put(b, sxtw(md, md)) end
       vs_push(b, md)
 
     elseif CONV[op] ~= nil
@@ -574,7 +582,7 @@ fun compile(body: any, body_len: i64)
           put(b, dp3(0x8B000000, ad, ad, ot))
         end
         put(b, mem_rr(spec.base, ad, X22, ad))
-        if spec.ext == "s32" then put(b, sxtw(ad, ad)) end
+        if spec.ext == "s32" put(b, sxtw(ad, ad)) end
         vs_push(b, ad)
       else
         sv: i64 = vs_pop(b)                    -- value
