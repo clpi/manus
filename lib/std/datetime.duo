@@ -2,7 +2,7 @@
 -- Uses Lua's os.date/os.time as the underlying engine.
 -- A datetime is a table: {year, month, day, hour, min, sec, wday, yday, isdst}
 
-local math = req "std.math"
+math = req "std.math"
 
 -- ---- Constants ----
 
@@ -72,105 +72,105 @@ global DT_SECS_PER_DAY = 86400
 global DT_SECS_PER_WEEK = 604800
 
 -- ---- Constructors ----
-fun dt_new(year: any, month: any, day: any, hour: any, min: any, sec: any): any
+dt_new(year: any, month: any, day: any, hour: any, min: any, sec: any): any
     d = {}
     d.year = year
     d.month = month
     d.day = day
-    if hour ~= nil then d.hour = hour else d.hour = 0 end
-    if min ~= nil then d.min = min else d.min = 0 end
-    if sec ~= nil then d.sec = sec else d.sec = 0 end
+    if hour != nil d.hour = hour else d.hour = 0 end
+    if min != nil d.min = min else d.min = 0 end
+    if sec != nil d.sec = sec else d.sec = 0 end
     d.wday = 0
     d.yday = 0
     d.isdst = false
     d
 end
 
-fun dt_now(): any
+dt_now(): any
     os.date("*t")
 end
 
-fun dt_utc(): any
+dt_utc(): any
     os.date("!*t")
 end
 
-fun dt_from_timestamp(ts: int): any
+dt_from_timestamp(ts: int): any
     os.date("*t", ts)
 end
 
-fun dt_to_timestamp(d: any): int
+dt_to_timestamp(d: any): int
     os.time(d)
 end
 
 -- ---- Queries ----
 
-fun dt_is_leap_year(year: i64): bool
-    if year % 400 == 0 then return true end
-    if year % 100 == 0 then return false end
-    if year % 4 == 0 then return true end
+dt_is_leap_year(year: i64): bool
+    if year % 400 == 0 return true end
+    if year % 100 == 0 return false end
+    if year % 4 == 0 return true end
     false
 end
 
-fun dt_days_in_month(year: i64, month: i64): i64
-    if month == 2 and dt_is_leap_year(year) then return 29 end
+dt_days_in_month(year: i64, month: i64): i64
+    if month == 2 and dt_is_leap_year(year) return 29 end
     DT_DAYS_PER_MONTH[month]
 end
 
-fun dt_days_in_year(year: i64): i64
-    if dt_is_leap_year(year) then return 366 end
+dt_days_in_year(year: i64): i64
+    if dt_is_leap_year(year) return 366 end
     365
 end
 
-fun dt_weekday_name(d: any): str
+dt_weekday_name(d: any): str
     DT_DAY_NAMES[d.wday]
 end
 
-fun dt_weekday_abbr(d: any): str
+dt_weekday_abbr(d: any): str
     DT_DAY_ABBR[d.wday]
 end
 
-fun dt_month_name(d: any): str
+dt_month_name(d: any): str
     DT_MONTH_NAMES[d.month]
 end
 
-fun dt_month_abbr(d: any): str
+dt_month_abbr(d: any): str
     DT_MONTH_ABBR[d.month]
 end
 
-fun dt_is_weekend(d: any): bool
+dt_is_weekend(d: any): bool
     d.wday == 1 or d.wday == 7
 end
 
 -- ---- Arithmetic ----
 
-fun dt_add(d: any, secs: int): any
+dt_add(d: any, secs: int): any
     ts = os.time(d)
     os.date("*t", ts + secs)
 end
 
-fun dt_add_days(d: any, n: i64): any
+dt_add_days(d: any, n: i64): any
     dt_add(d, n * DT_SECS_PER_DAY)
 end
 
-fun dt_add_hours(d: any, n: i64): any
+dt_add_hours(d: any, n: i64): any
     dt_add(d, n * DT_SECS_PER_HOUR)
 end
 
-fun dt_add_minutes(d: any, n: i64): any
+dt_add_minutes(d: any, n: i64): any
     dt_add(d, n * DT_SECS_PER_MINUTE)
 end
 
-fun dt_add_months(d: any, n: i64): any
+dt_add_months(d: any, n: i64): any
     total_month = d.month + n
     new_year = d.year + math.floor(total_month / 12)
     new_month = total_month % 12
-    if new_month <= 0 then
+    if new_month <= 0
         new_month += 12
         new_year -= 1
     end
     max_day = dt_days_in_month(new_year, new_month)
     new_day = d.day
-    if new_day > max_day then new_day = max_day end
+    if new_day > max_day new_day = max_day end
     r = {}
     r.year = new_year
     r.month = new_month
@@ -184,29 +184,29 @@ fun dt_add_months(d: any, n: i64): any
     r
 end
 
-fun dt_add_years(d: any, n: i64): any
+dt_add_years(d: any, n: i64): any
     dt_add_months(d, n * 12)
 end
 
-fun dt_diff(a: any, b: any): int
+dt_diff(a: any, b: any): int
     os.time(a) - os.time(b)
 end
 
-fun dt_diff_days(a: any, b: any): i64
+dt_diff_days(a: any, b: any): i64
     dt_diff(a, b) // DT_SECS_PER_DAY
 end
 
-fun dt_diff_hours(a: any, b: any): i64
+dt_diff_hours(a: any, b: any): i64
     dt_diff(a, b) // DT_SECS_PER_HOUR
 end
 
 -- ---- Formatting ----
-fun dt_pad2(n: i64): str
-    if n < 10 then return "0" .. tostring(n) end
+dt_pad2(n: i64): str
+    if n < 10 return "0" .. tostring(n) end
     tostring(n)
 end
 
-fun dt_format(d: any, layout: str): str
+dt_format(d: any, layout: str): str
     r = layout
     year4 = tostring(d.year)
     year2 = string.sub(year4, string.len(year4) - 1)
@@ -220,9 +220,9 @@ fun dt_format(d: any, layout: str): str
     r = string.gsub(r, "WWW", DT_DAY_ABBR[d.wday])
     r = string.gsub(r, "WWWW", DT_DAY_NAMES[d.wday])
     h12 = d.hour % 12
-    if h12 == 0 then h12 = 12 end
+    if h12 == 0 h12 = 12 end
     r = string.gsub(r, "hh", dt_pad2(h12))
-    if d.hour < 12 then
+    if d.hour < 12
         r = string.gsub(r, "AMPM", "AM")
         r = string.gsub(r, "ampm", "am")
     else
@@ -232,19 +232,19 @@ fun dt_format(d: any, layout: str): str
     r
 end
 
-fun dt_iso8601(d: any): str
+dt_iso8601(d: any): str
     dt_format(d, "YYYY-MM-DDTHH:mm:ss")
 end
 
-fun dt_date_only(d: any): str
+dt_date_only(d: any): str
     dt_format(d, "YYYY-MM-DD")
 end
 
-fun dt_time_only(d: any): str
+dt_time_only(d: any): str
     dt_format(d, "HH:mm:ss")
 end
 
-fun dt_rfc2822(d: any): str
+dt_rfc2822(d: any): str
     p = DT_DAY_ABBR[d.wday] .. ", "
     p = p .. tostring(d.day) .. " "
     p = p .. DT_MONTH_ABBR[d.month] .. " "
@@ -255,40 +255,40 @@ fun dt_rfc2822(d: any): str
     p
 end
 
-fun dt_human_relative(d: any): str
+dt_human_relative(d: any): str
     secs = dt_diff(dt_now(), d)
     future = false
-    if secs < 0 then
+    if secs < 0
         secs = 0 - secs
         future = true
     end
-    if secs < 60 then return "just now" end
-    if secs < 3600 then
+    if secs < 60 return "just now" end
+    if secs < 3600
         mins = math.floor(secs / 60)
-        if future then return "in " .. tostring(mins) .. " minutes" end
+        if future return "in " .. tostring(mins) .. " minutes" end
         return tostring(mins) .. " minutes ago"
     end
-    if secs < 86400 then
+    if secs < 86400
         hrs = math.floor(secs / 3600)
-        if future then return "in " .. tostring(hrs) .. " hours" end
+        if future return "in " .. tostring(hrs) .. " hours" end
         return tostring(hrs) .. " hours ago"
     end
     day_count = math.floor(secs / 86400)
-    if day_count == 1 then
-        if future then return "tomorrow" end
+    if day_count == 1
+        if future return "tomorrow" end
         return "yesterday"
     end
-    if day_count < 30 then
-        if future then return "in " .. tostring(day_count) .. " days" end
+    if day_count < 30
+        if future return "in " .. tostring(day_count) .. " days" end
         return tostring(day_count) .. " days ago"
     end
     months = math.floor(day_count / 30)
-    if months < 12 then
-        if future then return "in " .. tostring(months) .. " months" end
+    if months < 12
+        if future return "in " .. tostring(months) .. " months" end
         return tostring(months) .. " months ago"
     end
     years = math.floor(months / 12)
-    if future then return "in " .. tostring(years) .. " years" end
+    if future return "in " .. tostring(years) .. " years" end
     tostring(years) .. " years ago"
 end
 
@@ -297,12 +297,12 @@ end
 -- The codegen handles multi-return for direct call sites.
 -- We pre-declare variables so the codegen emits proper C declarations.
 
-fun dt_parse_digit2(s: str, pos: any): any
+dt_parse_digit2(s: str, pos: any): any
     val = tonumber(string.sub(s, pos, pos)) * 10 + tonumber(string.sub(s, pos + 1, pos + 1))
     return val, pos + 2
 end
 
-fun dt_parse_digit4(s: str, pos: any): any
+dt_parse_digit4(s: str, pos: any): any
     val = tonumber(string.sub(s, pos, pos)) * 1000
     val += tonumber(string.sub(s, pos + 1, pos + 1)) * 100
     val += tonumber(string.sub(s, pos + 2, pos + 2)) * 10
@@ -310,28 +310,28 @@ fun dt_parse_digit4(s: str, pos: any): any
     return val, pos + 4
 end
 
-fun dt_parse_iso8601(s: str): any
-    if string.len(s) < 10 then return nil end
+dt_parse_iso8601(s: str): any
+    if string.len(s) < 10 return nil end
     year = 0
     pos = 1
     year, pos = dt_parse_digit4(s, 1)
-    if string.sub(s, pos, pos) ~= "-" then return nil end
+    if string.sub(s, pos, pos) != "-" return nil end
     month = 0
     month, pos = dt_parse_digit2(s, pos + 1)
-    if string.sub(s, pos, pos) ~= "-" then return nil end
+    if string.sub(s, pos, pos) != "-" return nil end
     day = 0
     day, pos = dt_parse_digit2(s, pos + 1)
     hour = 0
     minute = 0
     second = 0
-    if string.len(s) >= pos + 2 then
+    if string.len(s) >= pos + 2
         sep = string.sub(s, pos, pos)
-        if sep == "T" or sep == " " then
+        if sep == "T" or sep == " "
             hour, pos = dt_parse_digit2(s, pos + 1)
-            if string.sub(s, pos, pos) == ":" then
+            if string.sub(s, pos, pos) == ":"
                 minute, pos = dt_parse_digit2(s, pos + 1)
             end
-            if string.sub(s, pos, pos) == ":" then
+            if string.sub(s, pos, pos) == ":"
                 second, pos = dt_parse_digit2(s, pos + 1)
             end
         end
@@ -339,20 +339,20 @@ fun dt_parse_iso8601(s: str): any
     dt_new(year, month, day, hour, minute, second)
 end
 
-fun dt_parse_date(s: str): any
+dt_parse_date(s: str): any
     dt_parse_iso8601(s .. "T00:00:00")
 end
 
-fun dt_parse_time(s: str): any
+dt_parse_time(s: str): any
     hour = 0
     pos = 1
     hour, pos = dt_parse_digit2(s, 1)
     minute = 0
     second = 0
-    if string.sub(s, pos, pos) == ":" then
+    if string.sub(s, pos, pos) == ":"
         minute, pos = dt_parse_digit2(s, pos + 1)
     end
-    if string.sub(s, pos, pos) == ":" then
+    if string.sub(s, pos, pos) == ":"
         second, pos = dt_parse_digit2(s, pos + 1)
     end
     dt_new(0, 1, 1, hour, minute, second)
@@ -360,59 +360,59 @@ end
 
 -- ---- Comparison ----
 
-fun dt_before(a: any, b: any): bool
+dt_before(a: any, b: any): bool
     os.time(a) < os.time(b)
 end
 
-fun dt_after(a: any, b: any): bool
+dt_after(a: any, b: any): bool
     os.time(a) > os.time(b)
 end
 
-fun dt_equal(a: any, b: any): bool
+dt_equal(a: any, b: any): bool
     os.time(a) == os.time(b)
 end
 
-fun dt_min_dt(a: any, b: any): any
-    if dt_before(a, b) then return a end
+dt_min_dt(a: any, b: any): any
+    if dt_before(a, b) return a end
     b
 end
 
-fun dt_max_dt(a: any, b: any): any
-    if dt_after(a, b) then return a end
+dt_max_dt(a: any, b: any): any
+    if dt_after(a, b) return a end
     b
 end
 
 -- ---- Range & Truncation ----
-fun dt_start_of_day(d: any): any
+dt_start_of_day(d: any): any
     dt_new(d.year, d.month, d.day, 0, 0, 0)
 end
 
-fun dt_end_of_day(d: any): any
+dt_end_of_day(d: any): any
     dt_new(d.year, d.month, d.day, 23, 59, 59)
 end
 
-fun dt_start_of_month(d: any): any
+dt_start_of_month(d: any): any
     dt_new(d.year, d.month, 1, 0, 0, 0)
 end
 
-fun dt_end_of_month(d: any): any
+dt_end_of_month(d: any): any
     last_day = dt_days_in_month(d.year, d.month)
     dt_new(d.year, d.month, last_day, 23, 59, 59)
 end
 
-fun dt_start_of_year(d: any): any
+dt_start_of_year(d: any): any
     dt_new(d.year, 1, 1, 0, 0, 0)
 end
 
-fun dt_end_of_year(d: any): any
+dt_end_of_year(d: any): any
     dt_new(d.year, 12, 31, 23, 59, 59)
 end
 
-fun dt_truncate(d: any, precision: str): any
-    if precision == "hour" then
+dt_truncate(d: any, precision: str): any
+    if precision == "hour"
         return dt_new(d.year, d.month, d.day, d.hour, 0, 0)
     end
-    if precision == "minute" then
+    if precision == "minute"
         return dt_new(d.year, d.month, d.day, d.hour, d.min, 0)
     end
     d

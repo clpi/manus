@@ -3,30 +3,30 @@
 @c.include("sys/time.h")
 @c.include("time.h")
 
-fun now(): int
+now(): int
     os.time()
 end
 
-fun time_clock(): float
+time_clock(): float
     os.clock()
 end
 
-fun time_difftime(t2: int, t1: int): float
+time_difftime(t2: int, t1: int): float
     os.difftime(t2, t1)
 end
 
-fun time_sleep(seconds: any): void
-    if seconds == nil then return end
-    local sec = math.floor(seconds)
-    local ns = math.floor((seconds - sec) * 1000000000)
-    __emit("({ struct timespec ts; ts.tv_sec = " .. tostring(sec) .. "; ts.tv_nsec = " .. tostring(ns) .. "; nanosleep(&ts, NULL); })")
+time_sleep(seconds: any): void
+    if seconds == nil return end
+    sec = math.floor(seconds)
+    ns = math.floor((seconds - sec) * 1000000000)
+    @c.emit("({ struct timespec ts; ts.tv_sec = " .. tostring(sec) .. "; ts.tv_nsec = " .. tostring(ns) .. "; nanosleep(&ts, NULL); })")
 end
 
-fun now_ns(): i64
-    __emit("({ struct timeval tv; gettimeofday(&tv, NULL); (int64_t)(tv.tv_sec * 1000000000LL + tv.tv_usec * 1000LL); })")
+now_ns(): i64
+    @c.emit("({ struct timeval tv; gettimeofday(&tv, NULL); (int64_t)(tv.tv_sec * 1000000000LL + tv.tv_usec * 1000LL); })")
 end
 
-fun monotonic(): i64
+monotonic(): i64
     now_ns()
 end
 

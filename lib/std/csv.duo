@@ -1,22 +1,21 @@
 -- std.csv — basic CSV parsing and formatting
 
-local string = req "std.string"
+string = req "std.string"
 
-fun parse_line(line: any): any
-    do
-        local res = {}
-        local len = string.len(line)
-        local i = 1
+parse_line(line: any): any
+        res = {}
+        len = string.len(line)
+        i = 1
         while i <= len
-            local c = string.sub(line, i, i)
-            if c == '"' then
+            c = string.sub(line, i, i)
+            if c == '"'
                 -- quoted field
-                local field = ""
+                field = ""
                 i += 1
                 while i <= len
-                    local c2 = string.sub(line, i, i)
-                    if c2 == '"' then
-                        if i + 1 <= len and string.sub(line, i + 1, i + 1) == '"' then
+                    c2 = string.sub(line, i, i)
+                    if c2 == '"'
+                        if i + 1 <= len and string.sub(line, i + 1, i + 1) == '"'
                             field = field .. '"'
                             i += 2
                         else
@@ -29,62 +28,61 @@ fun parse_line(line: any): any
                     end
                 end
                 table.insert(res, field)
-                if i <= len and string.sub(line, i, i) == ',' then
+                if i <= len and string.sub(line, i, i) == ','
                     i += 1
                 end
             else
                 -- unquoted field
-                local start = i
-                while i <= len and string.sub(line, i, i) ~= ','
+                start = i
+                while i <= len and string.sub(line, i, i) != ','
                     i += 1
                 end
                 table.insert(res, string.sub(line, start, i - 1))
-                if i <= len then
+                if i <= len
                     i += 1 -- skip comma
                 end
             end
         end
         -- Handle trailing comma
-        if len > 0 and string.sub(line, len, len) == ',' then
+        if len > 0 and string.sub(line, len, len) == ','
             table.insert(res, "")
         end
         res
-    end
 end
 
-fun parse(data: any): any
-    local lines = string.split(data, "\n")
-    local res = {}
+parse(data: any): any
+    lines = string.split(data, "\n")
+    res = {}
     for _, line in ipairs(lines)
-        if string.len(line) > 0 and string.sub(line, string.len(line), string.len(line)) == "\r" then
+        if string.len(line) > 0 and string.sub(line, string.len(line), string.len(line)) == "\r"
             line = string.sub(line, 1, string.len(line) - 1)
         end
-        if string.len(line) > 0 then
+        if string.len(line) > 0
             table.insert(res, parse_line(line))
         end
     end
     res
 end
 
-fun escape_field(field: any): any
-    local s = tostring(field)
-    if string.find(s, ",") or string.find(s, '"') or string.find(s, "\n") then
+escape_field(field: any): any
+    s = tostring(field)
+    if string.find(s, ",") or string.find(s, '"') or string.find(s, "\n")
         s = string.gsub(s, '"', '""')
         return '"' .. s .. '"'
     end
     s
 end
 
-fun format_line(row: any): any
-    local parts = {}
+format_line(row: any): any
+    parts = {}
     for _, v in ipairs(row)
         table.insert(parts, escape_field(v))
     end
     string.concat(parts, ",")
 end
 
-fun format(rows: any): any
-    local lines = {}
+format(rows: any): any
+    lines = {}
     for _, row in ipairs(rows)
         table.insert(lines, format_line(row))
     end

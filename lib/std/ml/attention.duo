@@ -9,9 +9,9 @@ Shape = req "std.ml.shape"
 -- Multi-Head Attention Layer
 -- ═══════════════════════════════════════════════════════════════
 
-fun mha_layer(dim: i64, heads: i64, head_dim: i64, max_seq_len: i64): any
-    if head_dim == nil then head_dim = math.floor(dim / heads) end
-    if max_seq_len == nil then max_seq_len = 2048 end
+mha_layer(dim: i64, heads: i64, head_dim: i64, max_seq_len: i64): any
+    if head_dim == nil head_dim = math.floor(dim / heads) end
+    if max_seq_len == nil max_seq_len = 2048 end
     scale = 1.0 / math.sqrt(head_dim)
     {
         type = "mha",
@@ -35,7 +35,7 @@ end
 -- KV Cache management
 -- ═══════════════════════════════════════════════════════════════
 
-fun kv_cache_new(max_seq_len: i64, heads: i64, head_dim: i64): any
+kv_cache_new(max_seq_len: i64, heads: i64, head_dim: i64): any
     {
         keys = Tensor.zeros(max_seq_len, heads * head_dim),
         values = Tensor.zeros(max_seq_len, heads * head_dim),
@@ -46,12 +46,12 @@ fun kv_cache_new(max_seq_len: i64, heads: i64, head_dim: i64): any
     }
 end
 
-fun kv_cache_append(cache: any, key: any, value: any): void
+kv_cache_append(cache: any, key: any, value: any): void
     seq_len = key.rows
     i = 0
     while i < seq_len
         pos = cache.length + i + 1
-        if pos > cache.max_len then break end
+        if pos > cache.max_len break end
         -- Copy key/value into cache
         for j = 1, key.cols
             cache.keys.data[(pos - 1) * key.cols + j] = key.data[i * key.cols + j]
@@ -62,15 +62,15 @@ fun kv_cache_append(cache: any, key: any, value: any): void
     cache.length = cache.length + seq_len
 end
 
-fun kv_cache_get_keys(cache: any): any
+kv_cache_get_keys(cache: any): any
     Tensor.slice(cache.keys, 1, cache.length, 1, cache.heads * cache.head_dim)
 end
 
-fun kv_cache_get_values(cache: any): any
+kv_cache_get_values(cache: any): any
     Tensor.slice(cache.values, 1, cache.length, 1, cache.heads * cache.head_dim)
 end
 
-fun kv_cache_reset(cache: any): void
+kv_cache_reset(cache: any): void
     cache.length = 0
 end
 
@@ -79,7 +79,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 @hot
-fun attention_forward(layer: any, x: any, use_cache: bool): any
+attention_forward(layer: any, x: any, use_cache: bool): any
     seq_len = x.rows
     dim = layer.dim
     heads = layer.heads
@@ -106,7 +106,7 @@ fun attention_forward(layer: any, x: any, use_cache: bool): any
     end
 
     -- Apply KV cache
-    if use_cache and layer.kv_cache ~= nil then
+    if use_cache and layer.kv_cache != nil
         kv_cache_append(layer.kv_cache, k, v)
         k = kv_cache_get_keys(layer.kv_cache)
         v = kv_cache_get_values(layer.kv_cache)
@@ -120,7 +120,7 @@ fun attention_forward(layer: any, x: any, use_cache: bool): any
     kv_len = k.rows
     for i = 1, seq_len
         for j = 1, kv_len
-            if j > i then
+            if j > i
                 scores.data[(i-1)*kv_len + j] = -1e30
             end
         end
@@ -135,20 +135,20 @@ fun attention_forward(layer: any, x: any, use_cache: bool): any
     -- Concatenate heads and project
     output = Tensor.matmul(attn_out, layer.wo)
 
-    if use_cache then
+    if use_cache
         return output, layer.kv_cache
     end
     output
 end
 
 -- 2D softmax (per row)
-fun softmax_2d(t: any): any
+softmax_2d(t: any): any
     result = Tensor.zeros(t.rows, t.cols)
     for i = 1, t.rows
         max_val = t.data[(i-1)*t.cols + 1]
         for j = 2, t.cols
             v = t.data[(i-1)*t.cols + j]
-            if v > max_val then max_val = v end
+            if v > max_val max_val = v end
         end
         sum = 0
         for j = 1, t.cols
@@ -167,7 +167,7 @@ end
 -- Grouped-Query Attention (GQA) — used in LLaMA 2+
 -- ═══════════════════════════════════════════════════════════════
 
-fun gqa_layer(dim: i64, heads: i64, kv_heads: i64, max_seq_len: i64): any
+gqa_layer(dim: i64, heads: i64, kv_heads: i64, max_seq_len: i64): any
     head_dim = math.floor(dim / heads)
     {
         type = "gqa",
@@ -186,7 +186,7 @@ fun gqa_layer(dim: i64, heads: i64, kv_heads: i64, max_seq_len: i64): any
 end
 
 @hot
-fun gqa_forward(layer: any, x: any, use_cache: bool): any
+gqa_forward(layer: any, x: any, use_cache: bool): any
     seq_len = x.rows
     dim = layer.dim
     heads = layer.heads
@@ -199,7 +199,7 @@ fun gqa_forward(layer: any, x: any, use_cache: bool): any
     v = Tensor.matmul(x, layer.wv)
 
     -- Apply KV cache
-    if use_cache and layer.kv_cache ~= nil then
+    if use_cache and layer.kv_cache != nil
         kv_cache_append(layer.kv_cache, k, v)
         k = kv_cache_get_keys(layer.kv_cache)
         v = kv_cache_get_values(layer.kv_cache)
@@ -218,7 +218,7 @@ fun gqa_forward(layer: any, x: any, use_cache: bool): any
     kv_len = k_expanded.rows
     for i = 1, seq_len
         for j = 1, kv_len
-            if j > i then
+            if j > i
                 scores.data[(i-1)*kv_len + j] = -1e30
             end
         end
@@ -228,14 +228,14 @@ fun gqa_forward(layer: any, x: any, use_cache: bool): any
     attn_out = Tensor.matmul(attn_weights, v_expanded)
     output = Tensor.matmul(attn_out, layer.wo)
 
-    if use_cache then
+    if use_cache
         return output, layer.kv_cache
     end
     output
 end
 
 -- Repeat KV heads: [seq, kv_heads*head_dim] -> [seq, heads*head_dim]
-fun repeat_kv(k: any, n_repeat: i64, head_dim: i64): any
+repeat_kv(k: any, n_repeat: i64, head_dim: i64): any
     seq_len = k.rows
     kv_heads = math.floor(k.cols / head_dim)
     new_cols = kv_heads * n_repeat * head_dim
@@ -258,8 +258,8 @@ end
 -- Flash-Attention style tiling (for long sequences)
 -- ═══════════════════════════════════════════════════════════════
 
-fun flash_attention_block(q: any, k: any, v: any, block_size: i64): any
-    if block_size == nil then block_size = 64 end
+flash_attention_block(q: any, k: any, v: any, block_size: i64): any
+    if block_size == nil block_size = 64 end
     seq_len = q.rows
     head_dim = q.cols
     kv_len = k.rows
@@ -288,7 +288,7 @@ fun flash_attention_block(q: any, k: any, v: any, block_size: i64): any
                     score += q.data[(i-1)*head_dim + d] * k.data[(j-1)*head_dim + d]
                 end
                 score /= math.sqrt(head_dim)
-                if score > new_max then new_max = score end
+                if score > new_max new_max = score end
             end
 
             -- Update output with rescaling
@@ -315,7 +315,7 @@ fun flash_attention_block(q: any, k: any, v: any, block_size: i64): any
 
     -- Normalize
     for i = 1, seq_len
-        if row_sum[i] > 0 then
+        if row_sum[i] > 0
             for d = 1, head_dim
                 output.data[(i-1)*head_dim + d] = output.data[(i-1)*head_dim + d] / row_sum[i]
             end

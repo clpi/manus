@@ -1,5 +1,5 @@
 @ffi("llabs")
-fun llabs(n: i64): i64
+llabs(n: i64): i64
 
 main(): i64
     base = llabs(-30)

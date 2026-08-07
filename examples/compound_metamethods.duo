@@ -1,32 +1,32 @@
-local sub = setmetatable({}, {
+sub = setmetatable({}, {
     __sub = fun(a: any, b: any): any
         "sub"
     end,
 })
 sub -= 1
 
-local mul = setmetatable({}, {
+mul = setmetatable({}, {
     __mul = fun(a: any, b: any): any
         "mul"
     end,
 })
 mul *= 1
 
-local div = setmetatable({}, {
+div = setmetatable({}, {
     __div = fun(a: any, b: any): any
         "div"
     end,
 })
 div /= 1
 
-local mod = setmetatable({}, {
+mod = setmetatable({}, {
     __mod = fun(a: any, b: any): any
         "mod"
     end,
 })
 mod %= 1
 
-local pow = setmetatable({}, {
+pow = setmetatable({}, {
     __pow = fun(a: any, b: any): any
         "pow"
     end,

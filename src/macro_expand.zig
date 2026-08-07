@@ -372,6 +372,8 @@ pub const Expander = struct {
             .quote => |x| .{ .quote = .{ .loc = x.loc, .expr = try self.cloneExpr(x.expr, ctx) } },
             .unquote => |x| try self.cloneUnquote(x.expr, ctx),
             .macro_call => unreachable,
+            .semantic => |x| .{ .semantic = .{ .loc = x.loc, .op = x.op } },
+            .semantic_scope => |l| .{ .semantic_scope = l },
             .sequence => |x| .{ .sequence = .{
                 .loc = x.loc,
                 .exprs = try self.cloneExprSlice(x.exprs, ctx),
@@ -692,6 +694,7 @@ pub const Expander = struct {
                 .named => |x| .{ .named = .{ .key = x.key, .val = try self.cloneExpr(x.val, ctx) } },
                 .positional => |x| .{ .positional = try self.cloneExpr(x, ctx) },
                 .spread => |x| .{ .spread = try self.cloneExpr(x, ctx) },
+                .semantic => |x| .{ .semantic = .{ .op = x.op, .param = x.param, .val = try self.cloneExpr(x.val, ctx) } },
             });
         }
         return out.toOwnedSlice(self.alloc);

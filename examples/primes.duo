@@ -3,19 +3,19 @@
 
 const LIMIT: i64 = 10000
 
-fun count_primes(limit: i64): i64
+count_primes(limit: i64): i64
     count: i64 = 0
     n: i64 = 2
     while n <= limit
         is_prime: bool = true
         d: i64 = 2
         while d * d <= n
-            if n % d == 0 then
+            if n % d == 0
                 is_prime = false
             end
             d += 1
         end
-        if is_prime then
+        if is_prime
             count += 1
         end
         n += 1

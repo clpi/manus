@@ -197,6 +197,11 @@ pub const TableField = union(enum) {
     positional: *Expr, // expr
     /// Pass 3: `{ ..source, x = 1 }` — merge table at construction.
     spread: *Expr,
+    /// Pass 36 (final surface, Pass 40) — semantic entry in a table literal:
+    /// `@eq = impl` or `@to(str) = impl`. `op` is the operation name; `param`
+    /// is the optional relationship parameter (e.g. `str` in `@to(str)`); `val`
+    /// is the implementation.
+    semantic: struct { op: []const u8, param: ?[]const u8, val: *Expr },
 };
 
 pub const ListComprehension = struct {
@@ -405,6 +410,13 @@ pub const Expr = union(enum) {
     macro_call: MacroCall,
     sequence: struct { loc: Loc, exprs: []*Expr }, // a, b multi-value
     range: struct { loc: Loc, start: *Expr, end: *Expr, step: ?*Expr }, // a..b, a..b by step
+    /// Pass 36 (final surface, Pass 40) — semantic identity `@name` in the
+    /// current world. `@eq(a, b)` is a `.call` whose `.func` is this node;
+    /// `@to(str)` is a `.call` whose schema decides relation-vs-invocation.
+    semantic: struct { loc: Loc, op: []const u8 },
+    /// Pass 36 (final surface) — bare `@` denotes the current effective
+    /// semantic world, as a value.
+    semantic_scope: Loc,
 
     pub fn loc(self: Expr) Loc {
         return switch (self) {
@@ -436,6 +448,8 @@ pub const Expr = union(enum) {
             .macro_call => |x| x.loc,
             .sequence => |x| x.loc,
             .range => |x| x.loc,
+            .semantic => |x| x.loc,
+            .semantic_scope => |l| l,
         };
     }
 };

@@ -1,50 +1,50 @@
 -- std.runtime — runtime information (mirrors Go's runtime package)
 
 -- NumCPU returns the number of logical CPUs.
-fun num_cpu(): i64
+num_cpu(): i64
     f = io.popen("sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1", "r")
-    if f == nil then return 1 end
+    if f == nil return 1 end
     out = f:read("*a")
     f:close()
-    if out == nil or out == "" then return 1 end
+    if out == nil or out == "" return 1 end
     return tonumber(out) or 1
 end
 
 -- Caller returns information about the caller of the calling function.
-fun caller(skip: i64): any
+caller(skip: i64): any
     debug_mod = require "std.debug"
     info = debug_mod.getinfo(skip + 1)
-    if info == nil then return nil end
+    if info == nil return nil end
     return {pc = info.short_src, fn = info.short_src, call = info.linedefined, line = info.currentline, name = info.name}
 end
 
 -- GC runs the garbage collector.
-fun gc(): void
+gc(): void
     collectgarbage("collect")
 end
 
 -- GOMAXPROCS sets and returns the max number of CPUs.
-fun gomaxprocs(n: i64): i64
+gomaxprocs(n: i64): i64
     old = num_cpu()
-    if n > 0 then
+    if n > 0
         -- This is a no-op in single-threaded Duo.
     end
     old
 end
 
 -- Version returns the Duo version string.
-fun version(): str
+version(): str
     "duo-0.1.0"
 end
 
 -- MemStats returns memory allocation statistics.
-fun mem_stats(): any
+mem_stats(): any
     m = collectgarbage("count")
     return {alloc = m * 1024, sys = m * 1024}
 end
 
 -- Stack returns the stack trace.
-fun stack(): str
+stack(): str
     debug_mod = require "std.debug"
     debug_mod.traceback()
 end

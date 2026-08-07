@@ -26,9 +26,9 @@ scores = {
 
 seen = 0
 for name, score in scores
-    if name == "ada" then
+    if name == "ada"
         score += 1
-    elseif name == "lua" then
+    elseif name == "lua"
         score += 2
     end
     seen += 1

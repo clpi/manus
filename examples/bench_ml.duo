@@ -1,28 +1,28 @@
 -- ML Benchmark Suite for Duo
--- Native kernels via ml.* — one call per workload, zero __emit boilerplate.
+-- Native kernels via ml.* — one call per workload, zero @c.emit boilerplate.
 
 @hot
-fun matmul_256(): f64
+matmul_256(): f64
     return ml.matmul_256()
 end
 
 @hot
-fun conv2d(): f64
+conv2d(): f64
     return ml.conv2d()
 end
 
 @hot
-fun softmax_1k(): f64
+softmax_1k(): f64
     return ml.softmax_1k()
 end
 
 @hot
-fun attention(): f64
+attention(): f64
     return ml.attention()
 end
 
 @hot
-fun mlp_forward(): f64
+mlp_forward(): f64
     return ml.mlp_forward()
 end
 
@@ -34,40 +34,40 @@ print("Running matmul_256...")
 t0a: f64 = os.clock()
 r1: f64 = matmul_256()
 t1a: f64 = os.clock()
-__emit("printf(\"Time: %.6f seconds\\n\", (double)(t1a - t0a))")
-__emit("printf(\"RESULT matmul_256 %.6f\\n\", (double)r1)")
+@c.emit("printf(\"Time: %.6f seconds\\n\", (double)(t1a - t0a))")
+@c.emit("printf(\"RESULT matmul_256 %.6f\\n\", (double)r1)")
 print("----------------------------------------")
 
 print("Running conv2d...")
 t0b: f64 = os.clock()
 r2: f64 = conv2d()
 t1b: f64 = os.clock()
-__emit("printf(\"Time: %.6f seconds\\n\", (double)(t1b - t0b))")
-__emit("printf(\"RESULT conv2d %.6f\\n\", (double)r2)")
+@c.emit("printf(\"Time: %.6f seconds\\n\", (double)(t1b - t0b))")
+@c.emit("printf(\"RESULT conv2d %.6f\\n\", (double)r2)")
 print("----------------------------------------")
 
 print("Running softmax_1k...")
 t0c: f64 = os.clock()
 r3: f64 = softmax_1k()
 t1c: f64 = os.clock()
-__emit("printf(\"Time: %.6f seconds\\n\", (double)(t1c - t0c))")
-__emit("printf(\"RESULT softmax_1k %.6f\\n\", (double)r3)")
+@c.emit("printf(\"Time: %.6f seconds\\n\", (double)(t1c - t0c))")
+@c.emit("printf(\"RESULT softmax_1k %.6f\\n\", (double)r3)")
 print("----------------------------------------")
 
 print("Running attention...")
 t0d: f64 = os.clock()
 r4: f64 = attention()
 t1d: f64 = os.clock()
-__emit("printf(\"Time: %.6f seconds\\n\", (double)(t1d - t0d))")
-__emit("printf(\"RESULT attention %.6f\\n\", (double)r4)")
+@c.emit("printf(\"Time: %.6f seconds\\n\", (double)(t1d - t0d))")
+@c.emit("printf(\"RESULT attention %.6f\\n\", (double)r4)")
 print("----------------------------------------")
 
 print("Running mlp_forward...")
 t0e: f64 = os.clock()
 r5: f64 = mlp_forward()
 t1e: f64 = os.clock()
-__emit("printf(\"Time: %.6f seconds\\n\", (double)(t1e - t0e))")
-__emit("printf(\"RESULT mlp_forward %.6f\\n\", (double)r5)")
+@c.emit("printf(\"Time: %.6f seconds\\n\", (double)(t1e - t0e))")
+@c.emit("printf(\"RESULT mlp_forward %.6f\\n\", (double)r5)")
 print("----------------------------------------")
 
 print("========================================")

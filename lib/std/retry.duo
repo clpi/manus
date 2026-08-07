@@ -3,8 +3,8 @@
 -- resilient operations that may fail transiently.
 
 -- Internal: sleep for the given number of seconds.
-fun std_retry_sleep(seconds: any): void
-    if seconds == nil or seconds <= 0 then return end
+std_retry_sleep(seconds: any): void
+    if seconds == nil or seconds <= 0 return end
     start = os.clock()
     while os.clock() - start < seconds
         -- busy wait
@@ -14,29 +14,29 @@ end
 -- ===== Backoff strategies =====
 
 -- constant_backoff: always wait the same interval.
-fun constant_backoff(interval: float): any
+constant_backoff(interval: float): any
     iv = interval
-    return function(attempt: any): any iv end
+    return function(attempt: any): any iv
 end
 
 -- linear_backoff: wait increases linearly with attempt number.
-fun linear_backoff(base: float, max_val: float): any
-    if base == nil then base = 1 end
-    if max_val == nil then max_val = 30 end
+linear_backoff(base: float, max_val: float): any
+    if base == nil base = 1 end
+    if max_val == nil max_val = 30 end
     base_c = base
     max_c = max_val
     return function(attempt: any): any
         wait = base_c * attempt
-        if wait > max_c then wait = max_c end
+        if wait > max_c wait = max_c end
         wait
     end
 end
 
 -- exponential_backoff: wait doubles each attempt (with optional jitter).
-fun exponential_backoff(base: float, max_val: float, jitter: bool): any
-    if base == nil then base = 0.5 end
-    if max_val == nil then max_val = 30 end
-    if jitter == nil then jitter = false end
+exponential_backoff(base: float, max_val: float, jitter: bool): any
+    if base == nil base = 0.5 end
+    if max_val == nil max_val = 30 end
+    if jitter == nil jitter = false end
     base_c = base
     max_c = max_val
     jitter_c = jitter
@@ -47,8 +47,8 @@ fun exponential_backoff(base: float, max_val: float, jitter: bool): any
             wait *= 2
             idx += 1
         end
-        if wait > max_c then wait = max_c end
-        if jitter_c then
+        if wait > max_c wait = max_c end
+        if jitter_c
             variation = wait * 0.25
             wait -= variation + (math.random() * variation * 2)
         end
@@ -59,20 +59,20 @@ end
 -- ===== Core retry =====
 
 -- do_retry: execute fn up to `max_attempts` times with a backoff strategy.
-fun do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
-    if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
-    if backoff_fn == nil then backoff_fn = constant_backoff(1) end
+do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
+    if max_attempts == nil or max_attempts < 1 max_attempts = 3 end
+    if backoff_fn == nil backoff_fn = constant_backoff(1) end
     attempt = 1
     last_error = nil
     while attempt <= max_attempts
         ok, result = pcall(fn_ref)
-        if ok and result ~= nil then
+        if ok and result != nil
             return {ok = result, attempts = attempt}
         end
-        if not ok then
+        if not ok
             last_error = tostring(result)
         end
-        if attempt < max_attempts then
+        if attempt < max_attempts
             wait = backoff_fn(attempt)
             std_retry_sleep(wait)
         end
@@ -82,20 +82,20 @@ fun do_retry(max_attempts: i64, backoff_fn: any, fn_ref: any): any
 end
 
 -- do_retry_bool: like do_retry but fn returns true for success.
-fun do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
-    if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
-    if backoff_fn == nil then backoff_fn = constant_backoff(1) end
+do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
+    if max_attempts == nil or max_attempts < 1 max_attempts = 3 end
+    if backoff_fn == nil backoff_fn = constant_backoff(1) end
     attempt = 1
     last_error = nil
     while attempt <= max_attempts
         ok, result = pcall(fn_ref)
-        if ok and result == true then
+        if ok and result == true
             return {ok = true, attempts = attempt}
         end
-        if not ok then
+        if not ok
             last_error = tostring(result)
         end
-        if attempt < max_attempts then
+        if attempt < max_attempts
             wait = backoff_fn(attempt)
             std_retry_sleep(wait)
         end
@@ -105,34 +105,34 @@ fun do_retry_bool(max_attempts: i64, backoff_fn: any, fn_ref: any): any
 end
 
 -- retry: simplified retry with defaults (3 attempts, 1s constant backoff).
-fun retry(fn_ref: any): any
+retry(fn_ref: any): any
     do_retry(3, constant_backoff(1), fn_ref)
 end
 
 -- retry_with_backoff: retry with exponential backoff, configurable attempts.
-fun retry_with_backoff(fn_ref: any, max_attempts: i64): any
-    if max_attempts == nil then max_attempts = 5 end
+retry_with_backoff(fn_ref: any, max_attempts: i64): any
+    if max_attempts == nil max_attempts = 5 end
     do_retry(max_attempts, exponential_backoff(0.5, 30, true), fn_ref)
 end
 
 -- retry_if: retry fn only if `condition` returns true for the error.
-fun retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
-    if max_attempts == nil or max_attempts < 1 then max_attempts = 3 end
-    if backoff_fn == nil then backoff_fn = constant_backoff(1) end
+retry_if(max_attempts: i64, backoff_fn: any, condition: any, fn_ref: any): any
+    if max_attempts == nil or max_attempts < 1 max_attempts = 3 end
+    if backoff_fn == nil backoff_fn = constant_backoff(1) end
     attempt = 1
     last_error = nil
     while attempt <= max_attempts
         ok, result = pcall(fn_ref)
-        if ok and result ~= nil then
+        if ok and result != nil
             return {ok = result, attempts = attempt}
         end
-        if not ok then
+        if not ok
             last_error = tostring(result)
-            if not condition(last_error) then
+            if not condition(last_error)
                 return {ok = nil, error = last_error, attempts = attempt}
             end
         end
-        if attempt < max_attempts then
+        if attempt < max_attempts
             wait = backoff_fn(attempt)
             std_retry_sleep(wait)
         end
@@ -144,9 +144,9 @@ end
 -- ===== Circuit Breaker =====
 
 -- circuit_new: create a circuit breaker.
-fun circuit_new(failure_threshold: i64, reset_timeout: i64): any
-    if failure_threshold == nil then failure_threshold = 5 end
-    if reset_timeout == nil then reset_timeout = 30 end
+circuit_new(failure_threshold: i64, reset_timeout: i64): any
+    if failure_threshold == nil failure_threshold = 5 end
+    if reset_timeout == nil reset_timeout = 30 end
     {
         state = "closed",
         failures = 0,
@@ -160,21 +160,21 @@ fun circuit_new(failure_threshold: i64, reset_timeout: i64): any
 end
 
 -- circuit_call: execute fn through the circuit breaker.
-fun circuit_call(cb: any, fn_ref: any): any
-    if cb == nil then return {ok = nil, error = "nil circuit breaker"} end
+circuit_call(cb: any, fn_ref: any): any
+    if cb == nil return {ok = nil, error = "nil circuit breaker"} end
     cb.total_calls = cb.total_calls + 1
-    if cb.state == "open" then
-        if os.clock() - cb.last_failure >= cb.timeout then
+    if cb.state == "open"
+        if os.clock() - cb.last_failure >= cb.timeout
             cb.state = "half_open"
         else
             return {ok = nil, circuit_open = true}
         end
     end
     ok, result = pcall(fn_ref)
-    if ok then
-        if cb.state == "half_open" then
+    if ok
+        if cb.state == "half_open"
             cb.success_count = cb.success_count + 1
-            if cb.success_count >= 2 then
+            if cb.success_count >= 2
                 cb.state = "closed"
                 cb.failures = 0
                 cb.success_count = 0
@@ -189,21 +189,21 @@ fun circuit_call(cb: any, fn_ref: any): any
     cb.total_failures = cb.total_failures + 1
     cb.last_failure = os.clock()
     cb.success_count = 0
-    if cb.failures >= cb.threshold then
+    if cb.failures >= cb.threshold
         cb.state = "open"
     end
     {ok = nil, error = tostring(result)}
 end
 
 -- circuit_state: return the current state of the circuit breaker.
-fun circuit_state(cb: any): str
-    if cb == nil then return "unknown" end
+circuit_state(cb: any): str
+    if cb == nil return "unknown" end
     cb.state
 end
 
 -- circuit_reset: manually reset the circuit breaker to closed.
-fun circuit_reset(cb: any): void
-    if cb == nil then return end
+circuit_reset(cb: any): void
+    if cb == nil return end
     cb.state = "closed"
     cb.failures = 0
     cb.last_failure = 0
@@ -211,8 +211,8 @@ fun circuit_reset(cb: any): void
 end
 
 -- circuit_stats: return circuit breaker statistics.
-fun circuit_stats(cb: any): any
-    if cb == nil then return {} end
+circuit_stats(cb: any): any
+    if cb == nil return {} end
     {
         state = cb.state,
         failures = cb.failures,

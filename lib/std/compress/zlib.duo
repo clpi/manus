@@ -1,21 +1,21 @@
 -- std.compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
 -- Uses the flate module for actual DEFLATE data
 
-local function zlib_decompress(data)
-    if data == nil or string.len(data) < 2 then return "" end
-    local cmf = string.byte(data, 1)
-    local flg = string.byte(data, 2)
-    if cmf % 16 ~= 8 then return "" end
-    if (cmf * 256 + flg) % 31 ~= 0 then return "" end
-    local dlen = string.byte(data, 2)
-    if dlen % 32 >= 8 then return "" end
-    local deflate_start = 3
-    if deflate_start > string.len(data) then return "" end
-    local deflate_data = string.sub(data, deflate_start)
-    local flate_mod = req("std.compress.flate")
+zlib_decompress(data: any)
+    if data == nil or string.len(data) < 2 return "" end
+    cmf = string.byte(data, 1)
+    flg = string.byte(data, 2)
+    if cmf % 16 != 8 return "" end
+    if (cmf * 256 + flg) % 31 != 0 return "" end
+    dlen = string.byte(data, 2)
+    if dlen % 32 >= 8 return "" end
+    deflate_start = 3
+    if deflate_start > string.len(data) return "" end
+    deflate_data = string.sub(data, deflate_start)
+    flate_mod = req("std.compress.flate")
     return flate_mod.decompress(deflate_data)
 end
 
-local M = {}
+M = {}
 M.decompress = zlib_decompress
 M

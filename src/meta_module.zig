@@ -232,6 +232,9 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.why", .internal = "__why" },
     .{ .public = "comp.why", .internal = "__why" },
     .{ .public = "compiler.why", .internal = "__why" },
+    .{ .public = "meta.why.module", .internal = "__why_module" },
+    .{ .public = "comp.why.module", .internal = "__why_module" },
+    .{ .public = "compiler.why.module", .internal = "__why_module" },
     .{ .public = "meta.origin", .internal = "__origin" },
     .{ .public = "comp.origin", .internal = "__origin" },
     .{ .public = "compiler.origin", .internal = "__origin" },
@@ -419,6 +422,15 @@ const builtins = [_]BuiltinEntry{
     .{ .public = "meta.sql", .internal = "__sql" },
     .{ .public = "comp.sql", .internal = "__sql" },
     .{ .public = "compiler.sql", .internal = "__sql" },
+    // The last two intrinsics still spelled with a leading `__` in .duo source.
+    // Every other internal already had a `@comp.*` public name here; these did
+    // not, which is the only reason the `__` namespace could not reach zero.
+    .{ .public = "meta.native.load.u8", .internal = "__native_load_u8" },
+    .{ .public = "comp.native.load.u8", .internal = "__native_load_u8" },
+    .{ .public = "compiler.native.load.u8", .internal = "__native_load_u8" },
+    .{ .public = "meta.duo.kind", .internal = "__duo_kind" },
+    .{ .public = "comp.duo.kind", .internal = "__duo_kind" },
+    .{ .public = "compiler.duo.kind", .internal = "__duo_kind" },
     .{ .public = "meta.lua", .internal = "__lua_exec" },
     .{ .public = "comp.lua", .internal = "__lua_exec" },
     .{ .public = "compiler.lua", .internal = "__lua_exec" },
@@ -911,49 +923,49 @@ pub fn isMetaAttribute(name: []const u8) bool {
     // expression-position calls that should be parsed as expr_stmt, not
     // attributed declarations.
     const expression_combinators = [_][]const u8{
-        "comp.match", "meta.match", "compiler.match",
-        "comp.tabulate", "meta.tabulate", "compiler.tabulate",
-        "comp.interpolate", "meta.interpolate", "compiler.interpolate",
-        "comp.zip", "meta.zip", "compiler.zip",
-        "comp.assert", "meta.assert", "compiler.assert",
-        "comp.compile.log", "meta.compile.log", "compiler.compile.log",
-        "comp.compile.warn", "meta.compile.warn", "compiler.compile.warn",
-        "comp.compile.error", "meta.compile.error", "compiler.compile.error",
-        "comp.each", "meta.each", "compiler.each",
-        "comp.chain", "meta.chain", "compiler.chain",
-        "comp.map", "meta.map", "compiler.map",
-        "comp.sweep", "meta.sweep", "compiler.sweep",
-        "comp.grammar", "meta.grammar", "compiler.grammar",
-        "comp.template", "meta.template", "compiler.template",
-        "comp.generate", "meta.generate", "compiler.generate",
-        "comp.scheme", "meta.scheme", "compiler.scheme",
-        "comp.scheme.clauses", "meta.scheme.clauses", "compiler.scheme.clauses",
-        "comp.weave", "meta.weave", "compiler.weave",
-        "comp.product", "meta.product", "compiler.product",
-        "comp.power", "meta.power", "compiler.power",
-        "comp.powerset", "meta.powerset", "compiler.powerset",
-        "comp.permute", "meta.permute", "compiler.permute",
-        "comp.choose", "meta.choose", "compiler.choose",
-        "comp.fixpoint", "meta.fixpoint", "compiler.fixpoint",
-        "comp.fanout", "meta.fanout", "compiler.fanout",
+        "comp.match",           "meta.match",           "compiler.match",
+        "comp.tabulate",        "meta.tabulate",        "compiler.tabulate",
+        "comp.interpolate",     "meta.interpolate",     "compiler.interpolate",
+        "comp.zip",             "meta.zip",             "compiler.zip",
+        "comp.assert",          "meta.assert",          "compiler.assert",
+        "comp.compile.log",     "meta.compile.log",     "compiler.compile.log",
+        "comp.compile.warn",    "meta.compile.warn",    "compiler.compile.warn",
+        "comp.compile.error",   "meta.compile.error",   "compiler.compile.error",
+        "comp.each",            "meta.each",            "compiler.each",
+        "comp.chain",           "meta.chain",           "compiler.chain",
+        "comp.map",             "meta.map",             "compiler.map",
+        "comp.sweep",           "meta.sweep",           "compiler.sweep",
+        "comp.grammar",         "meta.grammar",         "compiler.grammar",
+        "comp.template",        "meta.template",        "compiler.template",
+        "comp.generate",        "meta.generate",        "compiler.generate",
+        "comp.scheme",          "meta.scheme",          "compiler.scheme",
+        "comp.scheme.clauses",  "meta.scheme.clauses",  "compiler.scheme.clauses",
+        "comp.weave",           "meta.weave",           "compiler.weave",
+        "comp.product",         "meta.product",         "compiler.product",
+        "comp.power",           "meta.power",           "compiler.power",
+        "comp.powerset",        "meta.powerset",        "compiler.powerset",
+        "comp.permute",         "meta.permute",         "compiler.permute",
+        "comp.choose",          "meta.choose",          "compiler.choose",
+        "comp.fixpoint",        "meta.fixpoint",        "compiler.fixpoint",
+        "comp.fanout",          "meta.fanout",          "compiler.fanout",
         // @comp.derive.* expression combinators (G-060: must parse as expr in blocks)
-        "comp.derive.power", "meta.derive.power", "compiler.derive.power",
+        "comp.derive.power",    "meta.derive.power",    "compiler.derive.power",
         "comp.derive.powerset", "meta.derive.powerset", "compiler.derive.powerset",
-        "comp.derive.choose", "meta.derive.choose", "compiler.derive.choose",
-        "comp.derive.permute", "meta.derive.permute", "compiler.derive.permute",
-        "comp.derive.product", "meta.derive.product", "compiler.derive.product",
-        "comp.derive.tensor", "meta.derive.tensor", "compiler.derive.tensor",
-        "comp.derive.nfold", "meta.derive.nfold", "compiler.derive.nfold",
-        "comp.derive", "meta.derive", "compiler.derive",
-        "comp.expand", "meta.expand", "compiler.expand",
-        "comp.ceiling", "meta.ceiling", "compiler.ceiling",
-        "comp.omni", "meta.omni", "compiler.omni",
-        "comp.stack", "meta.stack", "compiler.stack",
-        "comp.burst", "meta.burst", "compiler.burst",
-        "comp.transcend", "meta.transcend", "compiler.transcend",
-        "comp.infinity", "meta.infinity", "compiler.infinity",
-        "comp.hyper", "meta.hyper", "compiler.hyper",
-        "comp.tower", "meta.tower", "compiler.tower",
+        "comp.derive.choose",   "meta.derive.choose",   "compiler.derive.choose",
+        "comp.derive.permute",  "meta.derive.permute",  "compiler.derive.permute",
+        "comp.derive.product",  "meta.derive.product",  "compiler.derive.product",
+        "comp.derive.tensor",   "meta.derive.tensor",   "compiler.derive.tensor",
+        "comp.derive.nfold",    "meta.derive.nfold",    "compiler.derive.nfold",
+        "comp.derive",          "meta.derive",          "compiler.derive",
+        "comp.expand",          "meta.expand",          "compiler.expand",
+        "comp.ceiling",         "meta.ceiling",         "compiler.ceiling",
+        "comp.omni",            "meta.omni",            "compiler.omni",
+        "comp.stack",           "meta.stack",           "compiler.stack",
+        "comp.burst",           "meta.burst",           "compiler.burst",
+        "comp.transcend",       "meta.transcend",       "compiler.transcend",
+        "comp.infinity",        "meta.infinity",        "compiler.infinity",
+        "comp.hyper",           "meta.hyper",           "compiler.hyper",
+        "comp.tower",           "meta.tower",           "compiler.tower",
     };
     for (expression_combinators) |expr_name| {
         if (std.mem.eql(u8, name, expr_name)) return false;
@@ -1104,10 +1116,8 @@ pub fn catalogCategory(path: []const u8) []const u8 {
         "comp.hyper",          "comp.tower",           "comp.power",
         "comp.powerset",       "comp.derive.power",    "comp.derive.powerset",
         "comp.choose",         "comp.derive.choose",   "comp.permute",
-        "comp.derive.permute",
-        "comp.each",           "comp.chain",           "comp.match",
-        "comp.tabulate",
-        "comp.interpolate",
+        "comp.derive.permute", "comp.each",            "comp.chain",
+        "comp.match",          "comp.tabulate",        "comp.interpolate",
         "comp.zip",
     };
     for (combinators) |c| {
@@ -1382,10 +1392,10 @@ pub fn agentGapsText() []const u8 {
 /// Helper function to compute the exponential complexity class for a combinator path.
 /// Returns a tuple (base_complexity, has_derive_field, is_module_directive).
 pub const ComplexityInfo = struct {
-    complexity: []const u8,      // e.g., "O(n)", "O(n2)", "O(n^k)", "O(2^n)", "O(n!)"
+    complexity: []const u8, // e.g., "O(n)", "O(n2)", "O(n^k)", "O(2^n)", "O(n!)"
     has_derive_multiplier: bool, // true if there's a derive^fields component (f)
-    is_module_directive: bool,      // true if it emits code (burst, transcend, etc.)
-    base_combinator: []const u8,    // e.g., "map", "product", "tensor", "nfold"
+    is_module_directive: bool, // true if it emits code (burst, transcend, etc.)
+    base_combinator: []const u8, // e.g., "map", "product", "tensor", "nfold"
 };
 
 /// Get complexity information for a @comp.* path to help agents understand scale.
@@ -1573,15 +1583,15 @@ pub fn formatAgentLadder(alloc: std.mem.Allocator) ![]const u8 {
 /// Exponential scaling reference for agents (O(1) -> O(n^k) multiplier).
 pub fn agentMultiplierText() []const u8 {
     return
-        \\O(1)   -> authorship (manual code)
-        \\O(n)   -> map/sweep/each/derive
-        \\O(n^2) -> product/burst
-        \\O(n^3) -> tensor/transcend
-        \\O(n^k) -> nfold/tower/grammar
-        \\O(2^n) -> power/powerset
-        \\O(n!)  -> permute
-        \\
-        \\Leverage @comp.* to move authoring work from O(n) to O(1) input.
+    \\O(1)   -> authorship (manual code)
+    \\O(n)   -> map/sweep/each/derive
+    \\O(n^2) -> product/burst
+    \\O(n^3) -> tensor/transcend
+    \\O(n^k) -> nfold/tower/grammar
+    \\O(2^n) -> power/powerset
+    \\O(n!)  -> permute
+    \\
+    \\Leverage @comp.* to move authoring work from O(n) to O(1) input.
     ;
 }
 
@@ -1773,7 +1783,6 @@ test "meta_module: catalogCategory and filtered catalog" {
     try std.testing.expectEqualStrings("introspection", catalogCategory("meta.str.starts.with"));
     try std.testing.expectEqualStrings("introspection", catalogCategory("meta.str.ends.with"));
 }
-
 
 test "meta_module: combinatorComplexity for linear combinators" {
     const info = combinatorComplexity("comp.map") orelse return;

@@ -17,7 +17,7 @@ if args[1] == "status"
     of = script.build_lock_owner()
     owner = script.capture("cat '" .. of .. "' 2>/dev/null")
     trimmed = string.gsub(owner, "%s+", "")
-    if trimmed ~= "" and string.find(trimmed, "%d")
+    if trimmed != "" and string.find(trimmed, "%d")
         print("LOCKED by " .. owner)
     else
         print("FREE")
@@ -31,11 +31,11 @@ else
             os.exit(64)
         end
         timeout = tonumber(args[i + 1])
-        if timeout == nil then timeout = 1800 end
+        if timeout == nil timeout = 1800 end
         i = i + 2
     end
 
-    if i > n or args[i] ~= "--"
+    if i > n or args[i] != "--"
         print("duo_lock: expected -- before command")
         os.exit(64)
     end
@@ -62,7 +62,7 @@ else
     script.env_set("DUO_BUILD_LOCK", script.build_lock_dir())
     rc = script.run(cmd)
     script.build_lock_release()
-    if rc ~= 0
+    if rc != 0
         os.exit(rc)
     end
 end

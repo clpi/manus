@@ -9,32 +9,32 @@
 -- inline where they are needed.
 
 -- background: the root context (never cancelled, no deadline).
-local function background_ctx()
+background_ctx(): void
     {deadline = nil, cancelled = false, parent = nil, key = "background", done = false}
 end
 
 -- todo: a placeholder context for when no context is decided yet.
-local function todo_ctx()
+todo_ctx(): void
     {deadline = nil, cancelled = false, parent = nil, key = "todo", done = false}
 end
 
 -- with_cancel: create a child context that can be cancelled.
-fun with_cancel(parent: any): any
-    if parent == nil then parent = background_ctx() end
+with_cancel(parent: any): any
+    if parent == nil parent = background_ctx() end
     {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
 end
 
 -- with_deadline: create a child context with a specific deadline (epoch seconds).
-fun with_deadline(parent: any, deadline: any): any
-    if parent == nil then parent = background_ctx() end
+with_deadline(parent: any, deadline: any): any
+    if parent == nil parent = background_ctx() end
     -- inherit the earlier deadline
     d = deadline
-    if parent.deadline ~= nil and parent.deadline < d then d = parent.deadline end
+    if parent.deadline != nil and parent.deadline < d d = parent.deadline end
     {deadline = d, cancelled = false, parent = parent, done = false}
 end
 
 -- with_timeout: create a child context that times out after `timeout` seconds.
-fun with_timeout(parent: any, timeout: any): any
+with_timeout(parent: any, timeout: any): any
     -- get current time
     t = require "std.time"
     now = t.now()
@@ -42,73 +42,73 @@ fun with_timeout(parent: any, timeout: any): any
 end
 
 -- with_value: create a child context carrying a key-value pair.
-fun with_value(parent: any, key: any, value: any): any
-    if parent == nil then parent = background_ctx() end
+with_value(parent: any, key: any, value: any): any
+    if parent == nil parent = background_ctx() end
     child = {deadline = parent.deadline, cancelled = false, parent = parent, done = false}
     child[key] = value
     child
 end
 
 -- cancel: cancel a context (and all its children via propagation).
-fun cancel(ctx: any): void
-    if ctx == nil then return end
+cancel(ctx: any): void
+    if ctx == nil return end
     ctx.cancelled = true
     ctx.done = true
 end
 
 -- is_cancelled: report whether ctx (or any ancestor) has been cancelled.
-fun is_cancelled(ctx: any): bool
-    if ctx == nil then return false end
+is_cancelled(ctx: any): bool
+    if ctx == nil return false end
     cur = ctx
-    while cur ~= nil
-        if cur.cancelled then return true end
+    while cur != nil
+        if cur.cancelled return true end
         cur = cur.parent
     end
     false
 end
 
 -- deadline: return the deadline (epoch seconds) or nil if none.
-fun deadline(ctx: any): any
-    if ctx == nil then return nil end
+deadline(ctx: any): any
+    if ctx == nil return nil end
     cur = ctx
-    while cur ~= nil
-        if cur.deadline ~= nil then return cur.deadline end
+    while cur != nil
+        if cur.deadline != nil return cur.deadline end
         cur = cur.parent
     end
     nil
 end
 
 -- done: report whether the context's work is done (cancelled or deadline expired).
-fun done(ctx: any): bool
-    if ctx == nil then return false end
-    if is_cancelled(ctx) then return true end
+done(ctx: any): any
+    if ctx == nil return false end
+    if is_cancelled(ctx) return true end
     d = deadline(ctx)
-    if d ~= nil then
+    if d != nil
         t = require "std.time"
-        if t.now() >= d then return true end
+        if t.now() >= d return true end
     end
     false
 end
 
 -- err: return a description of why the context was done, or nil.
-fun err(ctx: any): str
-    if ctx == nil then return nil end
-    if is_cancelled(ctx) then return "context canceled" end
+err(ctx: any): any
+    if ctx == nil return nil end
+    if is_cancelled(ctx) return "context canceled" end
     d = deadline(ctx)
-    if d ~= nil then
+    if d != nil
         t = require "std.time"
-        if t.now() >= d then return "context deadline exceeded" end
+        if t.now() >= d return "context deadline exceeded" end
     end
     nil
 end
 
 -- value: look up key in the context chain.
-fun value(ctx: any, key: any): any
-    if ctx == nil then return nil end
+value(ctx: any, key: any): any
+    if ctx == nil return nil end
     cur = ctx
-    while cur ~= nil
+    while cur != nil
         v = cur[key]
-        if v ~= nil then return v end
+        if v != nil return v end
         cur = cur.parent
     end
     nil

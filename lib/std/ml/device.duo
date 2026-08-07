@@ -3,51 +3,51 @@
 -- Use `@device(.auto)` on functions for backend selection at compile time.
 -- This module tracks runtime placement for tensors and pipelines.
 
-fun cpu(): any
+cpu(): any
     return { kind = "cpu", id = 0 }
 end
 
-fun auto(): any
+auto(): any
     return { kind = "auto", id = -1 }
 end
 
-fun metal(id): any
+metal(id): any
     if id == nil id = 0 end
     return { kind = "metal", id = id }
 end
 
-fun cuda(id): any
+cuda(id): any
     if id == nil id = 0 end
     return { kind = "cuda", id = id }
 end
 
-fun webgpu(): any
+webgpu(): any
     return { kind = "webgpu", id = 0 }
 end
 
-fun wasm_simd(): any
+wasm_simd(): any
     return { kind = "wasm", id = 0 }
 end
 
 -- Pick best device for current host (Metal on Apple, CUDA on NVIDIA, else CPU)
-fun best(): any
+best(): any
     -- Check for CUDA
-    local cuda_env = os.getenv("CUDA_VISIBLE_DEVICES")
-    if cuda_env and cuda_env ~= "" then
+    cuda_env = os.getenv("CUDA_VISIBLE_DEVICES")
+    if cuda_env and cuda_env != ""
         return cuda(0)
     end
     -- Check for Apple Silicon / Metal via uname
-    local handle = io.popen("uname -m 2>/dev/null")
-    if handle then
-        local arch = handle:read("*l") or ""
+    handle = io.popen("uname -m 2>/dev/null")
+    if handle
+        arch = handle:read("*l") or ""
         handle:close()
-        if arch == "arm64" or arch == "aarch64" then
+        if arch == "arm64" or arch == "aarch64"
             -- Likely Apple Silicon — check for Metal support
-            local metal_handle = io.popen("system_profiler SPDisplaysDataType 2>/dev/null | head -5")
-            if metal_handle then
-                local info = metal_handle:read("*a") or ""
+            metal_handle = io.popen("system_profiler SPDisplaysDataType 2>/dev/null | head -5")
+            if metal_handle
+                info = metal_handle:read("*a") or ""
                 metal_handle:close()
-                if string.find(info, "Metal") or string.find(info, "Apple") then
+                if string.find(info, "Metal") or string.find(info, "Apple")
                     return metal(0)
                 end
             end
@@ -55,11 +55,11 @@ fun best(): any
         end
     end
     -- Check for NVIDIA GPU
-    local nvidia_handle = io.popen("nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1")
-    if nvidia_handle then
-        local gpu_name = nvidia_handle:read("*l") or ""
+    nvidia_handle = io.popen("nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1")
+    if nvidia_handle
+        gpu_name = nvidia_handle:read("*l") or ""
         nvidia_handle:close()
-        if gpu_name ~= "" then
+        if gpu_name != ""
             return cuda(0)
         end
     end
@@ -67,7 +67,7 @@ fun best(): any
 end
 
 -- Place a tensor descriptor on a device (metadata only until GPU buffers land)
-fun on(tensor, dev): any
+on(tensor, dev): any
     out = {}
     for k, v in tensor
         out[k] = v
@@ -77,7 +77,7 @@ fun on(tensor, dev): any
 end
 
 -- Pipeline stage placement: { encoder = metal(), llm = cuda(0), ... }
-fun place(stages): any
+place(stages): any
     return { type = "placement", stages = stages }
 end
 

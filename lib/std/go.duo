@@ -2,7 +2,7 @@
 -- Provides Go-standard function names mapping to Duo std implementations.
 -- Import with: local go = req("std.go")
 
-local std = req("std")
+std = req("std")
 
 go = {}
 

@@ -1,6 +1,6 @@
 -- std.ml.data — Batching, shuffling, and dataset iterators (training pipelines)
 
-fun batch(samples, batch_size): any
+batch(samples, batch_size): any
     if batch_size == nil batch_size = 32 end
     batches = {}
     n = #samples
@@ -20,7 +20,7 @@ fun batch(samples, batch_size): any
     return { type = "batches", items = batches, n = bi, batch_size = batch_size }
 end
 
-fun from_pairs(xs, ys): any
+from_pairs(xs, ys): any
     assert(#xs == #ys, "from_pairs: length mismatch")
     samples = {}
     for i = 1, #xs
@@ -30,7 +30,7 @@ fun from_pairs(xs, ys): any
 end
 
 -- Fisher–Yates shuffle (in-place on array table)
-fun shuffle(samples): any
+shuffle(samples): any
     n = #samples
     i = n
     while i >= 2
@@ -43,7 +43,7 @@ fun shuffle(samples): any
     return samples
 end
 
-fun dataloader(samples, batch_size, shuffle): any
+dataloader(samples, batch_size, shuffle): any
     if shuffle == nil shuffle = true end
     return {
         type = "dataloader",
@@ -54,7 +54,7 @@ fun dataloader(samples, batch_size, shuffle): any
     }
 end
 
-fun iter_epoch(loader): any
+iter_epoch(loader): any
     loader.epoch = loader.epoch + 1
     data = loader.samples
     if loader.shuffle data = shuffle(data) end

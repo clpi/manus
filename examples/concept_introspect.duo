@@ -1,11 +1,11 @@
 -- Concept introspection: query required members at compile time
 
 concept Hashable
-    fun hash(self): i64
+    hash(self): i64
 end
 
 M = {}
-fun M:hash(): i64
+M:hash(): i64
     42
 end
 

@@ -1,11 +1,11 @@
 -- Test user-defined @comp.define.derive macro generating code at compile time.
 
-@comp.define.derive("Printable", fun generate(meta) -> str
+@comp.define.derive("Printable", generate(meta) -> str
   acc = "static char* " .. meta.name .. "_to_string(void* self) {\n"
   acc = acc .. "  return \"" .. meta.name .. "("
   for i = 1, #meta.fields
     f = meta.fields[i]
-    if i > 1 then
+    if i > 1
       acc = acc .. ", "
     end
     acc = acc .. f.name .. "="

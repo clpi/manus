@@ -7,11 +7,11 @@
 -- SHA-1 implementation
 
 -- sha1: compute SHA-1 digest of string s, return as 40-char hex string.
-fun sha1_impl(s: str): str
-    if s == nil then s = "" end
+sha1_impl(s: str): str
+    if s == nil s = "" end
     -- padding: append 0x80, then zeros, then 64-bit length
     msg = s .. string.char(0x80)
-    while string.len(msg) % 64 ~= 56
+    while string.len(msg) % 64 != 56
         msg = msg .. string.char(0)
     end
     -- append length in bits as big-endian 64-bit
@@ -52,15 +52,15 @@ fun sha1_impl(s: str): str
         a = h0; b = h1; c = h2; d = h3; e = h4
         j = 0
         while j < 80
-            local f = 0
-            local k = 0
-            if j < 20 then
+            f = 0
+            k = 0
+            if j < 20
                 f = (b & c) | ((~b) & d)
                 k = 0x5A827999
-            elseif j < 40 then
+            elseif j < 40
                 f = b ~ c ~ d
                 k = 0x6ED9EBA1
-            elseif j < 60 then
+            elseif j < 60
                 f = (b & c) | (b & d) | (c & d)
                 k = 0x8F1BBCDC
             else
@@ -88,8 +88,8 @@ end
 -- SHA-256 implementation
 
 -- sha256: compute SHA-256 digest of string s, return as 64-char hex string.
-fun sha256_impl(s: str): str
-    if s == nil then s = "" end
+sha256_impl(s: str): str
+    if s == nil s = "" end
     -- SHA-256 constants
     K = {
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -103,7 +103,7 @@ fun sha256_impl(s: str): str
     }
     -- padding
     msg = s .. string.char(0x80)
-    while string.len(msg) % 64 ~= 56
+    while string.len(msg) % 64 != 56
         msg = msg .. string.char(0)
     end
     bit_len = string.len(s) * 8
@@ -131,10 +131,10 @@ fun sha256_impl(s: str): str
         j = 16
         while j < 64
             -- s0 = ror(w[j-14+1], 7) ^ ror(w[j-14+1], 18) ^ (w[j-14+1] >> 3)
-            local wt = w[j - 14 + 1]
+            wt = w[j - 14 + 1]
             s0 = (((wt >> 7) | (wt << 25)) % (2^32)) ~ (((wt >> 18) | (wt << 14)) % (2^32)) ~ (wt >> 3)
             -- s1 = ror(w[j-15+1], 17) ^ ror(w[j-15+1], 19) ^ (w[j-15+1] >> 10)
-            local wt2 = w[j - 15 + 1]
+            wt2 = w[j - 15 + 1]
             s1 = (((wt2 >> 17) | (wt2 << 15)) % (2^32)) ~ (((wt2 >> 19) | (wt2 << 13)) % (2^32)) ~ (wt2 >> 10)
             w[j + 1] = (w[j + 1] + s0 + w[j - 7 + 1] + s1) % (2^32)
             j += 1
@@ -174,12 +174,12 @@ fun sha256_impl(s: str): str
 end
 
 -- sha1_hex: alias for sha1 (returns hex).
-fun sha1_hex(s: str): str
+sha1_hex(s: str): str
     sha1_impl(s)
 end
 
 -- sha256_hex: alias for sha256.
-fun sha256_hex(s: str): str
+sha256_hex(s: str): str
     sha256_impl(s)
 end
 

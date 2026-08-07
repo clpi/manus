@@ -4,6 +4,6 @@ enum Color
     Blue
 end
 
-fun main()
+main()
     red = Color.Red
 end

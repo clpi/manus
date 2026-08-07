@@ -2,11 +2,11 @@
 
 global crypto = req "std.crypto"
 
-fun encode(s: str): str
+encode(s: str): str
     crypto.base64_encode(s)
 end
 
-fun decode(s: str): str
+decode(s: str): str
     crypto.base64_decode(s)
 end
 

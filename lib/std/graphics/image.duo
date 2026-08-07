@@ -2,25 +2,25 @@
 -- For loading PNG/JPEG/etc. in ward's rendering pipeline.
 -- Delegates I/O to std.image.png and std.io.
 
-local io = req "std.io"
-local png_mod = req "std.image.png"
+io = req "std.io"
+png_mod = req "std.image.png"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Image I/O
 -- ═══════════════════════════════════════════════════════════════
 
-fun image_load(path: str): any
+image_load(path: str): any
     f = io.open(path, "rb")
-    if f == nil then
+    if f == nil
         return {ok = false, error = "Cannot open file: " .. path}
     end
     raw = io.read(f, "*a")
     io.close(f)
-    if raw == nil or string.len(raw) == 0 then
+    if raw == nil or string.len(raw) == 0
         return {ok = false, error = "Empty file: " .. path}
     end
     png_result = png_mod.decode(raw)
-    if png_result.error then
+    if png_result.error
         return {ok = false, error = png_result.error}
     end
     img = image_new(png_result.width, png_result.height, png_result.channels)
@@ -28,17 +28,17 @@ fun image_load(path: str): any
     {ok = true, image = img, format = "png"}
 end
 
-fun image_save(image: any, path: str, format: str): any
+image_save(image: any, path: str, format: str): any
     fmt = format or "png"
-    if fmt ~= "png" then
+    if fmt != "png"
         return {ok = false, error = "Unsupported format: " .. fmt .. " (only png supported)"}
     end
     png_data = png_mod.encode(image.data, image.width, image.height, image.channels)
-    if png_data.error then
+    if png_data.error
         return {ok = false, error = png_data.error}
     end
     f = io.open(path, "wb")
-    if f == nil then
+    if f == nil
         return {ok = false, error = "Cannot create file: " .. path}
     end
     io.write(f, png_data.data)
@@ -46,7 +46,7 @@ fun image_save(image: any, path: str, format: str): any
     {ok = true, path = path, format = "png"}
 end
 
-fun image_new(width: i64, height: i64, channels: i64): any
+image_new(width: i64, height: i64, channels: i64): any
     data = {}
     total = width * height * channels
     i = 1
@@ -62,8 +62,8 @@ fun image_new(width: i64, height: i64, channels: i64): any
     }
 end
 
-fun image_get_pixel(image: any, x: i64, y: i64): any
-    if x < 0 or x >= image.width or y < 0 or y >= image.height then
+image_get_pixel(image: any, x: i64, y: i64): any
+    if x < 0 or x >= image.width or y < 0 or y >= image.height
         return nil
     end
     idx = (y * image.width + x) * image.channels + 1
@@ -76,8 +76,8 @@ fun image_get_pixel(image: any, x: i64, y: i64): any
     pixel
 end
 
-fun image_set_pixel(image: any, x: i64, y: i64, pixel: any): void
-    if x < 0 or x >= image.width or y < 0 or y >= image.height then
+image_set_pixel(image: any, x: i64, y: i64, pixel: any): void
+    if x < 0 or x >= image.width or y < 0 or y >= image.height
         return
     end
     idx = (y * image.width + x) * image.channels + 1
@@ -92,8 +92,8 @@ end
 -- Image Conversion
 -- ═══════════════════════════════════════════════════════════════
 
-fun image_to_rgba(image: any): any
-    if image.channels == 4 then return image end
+image_to_rgba(image: any): any
+    if image.channels == 4 return image end
 
     result = image_new(image.width, image.height, 4)
     y = 0
@@ -110,7 +110,7 @@ fun image_to_rgba(image: any): any
             end
 
             -- Add alpha if RGB
-            if image.channels == 3 then
+            if image.channels == 3
                 result.data[dst_idx + 3] = 255
             end
             x += 1
@@ -120,7 +120,7 @@ fun image_to_rgba(image: any): any
     result
 end
 
-fun image_to_grayscale(image: any): any
+image_to_grayscale(image: any): any
     result = image_new(image.width, image.height, 1)
     y = 0
     while y < image.height
@@ -128,7 +128,7 @@ fun image_to_grayscale(image: any): any
         while x < image.width
             idx = (y * image.width + x) * image.channels + 1
             gray = 0
-            if image.channels >= 3 then
+            if image.channels >= 3
                 gray = 0.299 * image.data[idx] + 0.587 * image.data[idx + 1] + 0.114 * image.data[idx + 2]
             else
                 gray = image.data[idx]
@@ -145,7 +145,7 @@ end
 -- Image Resize
 -- ═══════════════════════════════════════════════════════════════
 
-fun image_resize_nearest(image: any, new_width: i64, new_height: i64): any
+image_resize_nearest(image: any, new_width: i64, new_height: i64): any
     result = image_new(new_width, new_height, image.channels)
     x_ratio = image.width / new_width
     y_ratio = image.height / new_height
@@ -157,7 +157,7 @@ fun image_resize_nearest(image: any, new_width: i64, new_height: i64): any
             src_x = math.floor(x * x_ratio)
             src_y = math.floor(y * y_ratio)
             pixel = image_get_pixel(image, src_x, src_y)
-            if pixel then
+            if pixel
                 image_set_pixel(result, x, y, pixel)
             end
             x += 1
@@ -167,7 +167,7 @@ fun image_resize_nearest(image: any, new_width: i64, new_height: i64): any
     result
 end
 
-fun image_resize_bilinear(image: any, new_width: i64, new_height: i64): any
+image_resize_bilinear(image: any, new_width: i64, new_height: i64): any
     result = image_new(new_width, new_height, image.channels)
     x_ratio = image.width / new_width
     y_ratio = image.height / new_height
@@ -191,7 +191,7 @@ fun image_resize_bilinear(image: any, new_width: i64, new_height: i64): any
             p01 = image_get_pixel(image, x0, y1)
             p11 = image_get_pixel(image, x1, y1)
 
-            if p00 and p10 and p01 and p11 then
+            if p00 and p10 and p01 and p11
                 pixel = {}
                 c = 1
                 while c <= image.channels
@@ -216,7 +216,7 @@ end
 -- Image Filters
 -- ═══════════════════════════════════════════════════════════════
 
-fun image_blur(image: any, radius: i64): any
+image_blur(image: any, radius: i64): any
     result = image_new(image.width, image.height, image.channels)
     kernel_size = 2 * radius + 1
     kernel_area = kernel_size * kernel_size
@@ -237,7 +237,7 @@ fun image_blur(image: any, radius: i64): any
                 kx = -radius
                 while kx <= radius
                     pixel = image_get_pixel(image, x + kx, y + ky)
-                    if pixel then
+                    if pixel
                         c = 1
                         while c <= image.channels
                             sum[c] = sum[c] + pixel[c]
@@ -263,7 +263,7 @@ fun image_blur(image: any, radius: i64): any
     result
 end
 
-fun image_sharpen(image: any, strength: f64): any
+image_sharpen(image: any, strength: f64): any
     -- Sharpen kernel: [0, -1, 0; -1, 5, -1; 0, -1, 0]
     result = image_new(image.width, image.height, image.channels)
     kernel = {
@@ -288,7 +288,7 @@ fun image_sharpen(image: any, strength: f64): any
                 kx = 0
                 while kx <= 2
                     pixel = image_get_pixel(image, x + kx - 1, y + ky - 1)
-                    if pixel then
+                    if pixel
                         c = 1
                         while c <= image.channels
                             sum[c] = sum[c] + pixel[c] * kernel[ky + 1][kx + 1]
@@ -314,7 +314,7 @@ fun image_sharpen(image: any, strength: f64): any
     result
 end
 
-fun image_adjust_brightness(image: any, factor: f64): any
+image_adjust_brightness(image: any, factor: f64): any
     result = image_new(image.width, image.height, image.channels)
     i = 1
     while i <= #result.data
@@ -324,7 +324,7 @@ fun image_adjust_brightness(image: any, factor: f64): any
     result
 end
 
-fun image_adjust_contrast(image: any, factor: f64): any
+image_adjust_contrast(image: any, factor: f64): any
     result = image_new(image.width, image.height, image.channels)
     i = 1
     while i <= #result.data

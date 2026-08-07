@@ -24,10 +24,10 @@ FRAME_PONG = 10
 -- Base64 utilities (must be defined before use)
 -- ═══════════════════════════════════════════════════════════════
 
-local crypto = req "std.crypto"
-local hash_sha1 = req "std.hash.sha1"
+crypto = req "std.crypto"
+hash_sha1 = req "std.hash.sha1"
 
-fun base64_encode(data: any): str
+base64_encode(data: any): str
     chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     result = ""
     i = 1
@@ -35,18 +35,18 @@ fun base64_encode(data: any): str
         b0 = data[i]
         b1 = 0
         b2 = 0
-        if i + 1 <= #data then b1 = data[i + 1] end
-        if i + 2 <= #data then b2 = data[i + 2] end
+        if i + 1 <= #data b1 = data[i + 1] end
+        if i + 2 <= #data b2 = data[i + 2] end
 
         triplet = (b0 << 16) | (b1 << 8) | b2
         result = result .. string.char(string.byte(chars, ((triplet >> 18) & 0x3F) + 1))
         result = result .. string.char(string.byte(chars, ((triplet >> 12) & 0x3F) + 1))
-        if i + 1 <= #data then
+        if i + 1 <= #data
             result = result .. string.char(string.byte(chars, ((triplet >> 6) & 0x3F) + 1))
         else
             result = result .. "="
         end
-        if i + 2 <= #data then
+        if i + 2 <= #data
             result = result .. string.char(string.byte(chars, (triplet & 0x3F) + 1))
         else
             result = result .. "="
@@ -56,7 +56,7 @@ fun base64_encode(data: any): str
     result
 end
 
-fun base64_sha1(data: str): str
+base64_sha1(data: str): str
     -- WebSocket handshake requires base64(SHA-1(data + magic))
     sha1_hex = hash_sha1.sha1(data)
     -- Convert hex string to bytes
@@ -70,7 +70,7 @@ fun base64_sha1(data: str): str
     base64_encode(sha1_bytes)
 end
 
-fun base64_encode_string(s: str): str
+base64_encode_string(s: str): str
     bytes = {}
     i = 1
     while i <= string.len(s)
@@ -84,24 +84,24 @@ end
 -- Frame encoding
 -- ═══════════════════════════════════════════════════════════════
 
-fun ws_encode_frame(opcode: i64, payload: any, mask: bool): any
+ws_encode_frame(opcode: i64, payload: any, mask: bool): any
     bytes = {}
     -- First byte: FIN bit + opcode
     bytes[1] = 0x80 | opcode
 
     -- Payload length
     len = #payload
-    if len < 126 then
+    if len < 126
         bytes[2] = len
-        if mask then bytes[2] = bytes[2] | 0x80 end
-    elseif len < 65536 then
+        if mask bytes[2] = bytes[2] | 0x80 end
+    elseif len < 65536
         bytes[2] = 126
-        if mask then bytes[2] = bytes[2] | 0x80 end
+        if mask bytes[2] = bytes[2] | 0x80 end
         bytes[3] = (len >> 8) & 0xFF
         bytes[4] = len & 0xFF
     else
         bytes[2] = 127
-        if mask then bytes[2] = bytes[2] | 0x80 end
+        if mask bytes[2] = bytes[2] | 0x80 end
         i = 0
         while i < 8
             bytes[3 + i] = (len >> (56 - i * 8)) & 0xFF
@@ -111,7 +111,7 @@ fun ws_encode_frame(opcode: i64, payload: any, mask: bool): any
 
     -- Masking key (if client->server) using CSPRNG
     mask_key = nil
-    if mask then
+    if mask
         crypto_rand = req "std.crypto.rand"
         key_data = crypto_rand.bytes(4)
         mask_key = {}
@@ -126,7 +126,7 @@ fun ws_encode_frame(opcode: i64, payload: any, mask: bool): any
     -- Payload
     i = 1
     while i <= #payload
-        if mask then
+        if mask
             bytes[#bytes + 1] = payload[i] ~ mask_key[((i - 1) % 4) + 1]
         else
             bytes[#bytes + 1] = payload[i]
@@ -141,24 +141,24 @@ end
 -- Frame decoding
 -- ═══════════════════════════════════════════════════════════════
 
-fun ws_decode_frame(data: any, pos: i64): any
-    if pos > #data then return nil end
+ws_decode_frame(data: any, pos: i64): any
+    if pos > #data return nil end
 
     byte1 = data[pos]
     byte2 = data[pos + 1]
 
-    fin = (byte1 & 0x80) ~= 0
+    fin = (byte1 & 0x80) != 0
     opcode = byte1 & 0x0F
-    masked = (byte2 & 0x80) ~= 0
+    masked = (byte2 & 0x80) != 0
     payload_len = byte2 & 0x7F
 
     offset = pos + 2
 
     -- Extended payload length
-    if payload_len == 126 then
+    if payload_len == 126
         payload_len = (data[offset] << 8) | data[offset + 1]
         offset += 2
-    elseif payload_len == 127 then
+    elseif payload_len == 127
         payload_len = 0
         i = 0
         while i < 8
@@ -170,7 +170,7 @@ fun ws_decode_frame(data: any, pos: i64): any
 
     -- Masking key
     mask_key = nil
-    if masked then
+    if masked
         mask_key = {data[offset], data[offset + 1], data[offset + 2], data[offset + 3]}
         offset += 4
     end
@@ -180,7 +180,7 @@ fun ws_decode_frame(data: any, pos: i64): any
     i = 0
     while i < payload_len
         b = data[offset + i]
-        if masked then
+        if masked
             b = b ~ mask_key[i % 4]
         end
         payload[#payload + 1] = b
@@ -200,7 +200,7 @@ end
 -- WebSocket handshake (client side)
 -- ═══════════════════════════════════════════════════════════════
 
-fun ws_client_handshake(host: str, port: i64, path: str): str
+ws_client_handshake(host: str, port: i64, path: str): str
     -- Generate random key (16 bytes base64 encoded) using CSPRNG
     crypto_rand = req "std.crypto.rand"
     key_bytes = {}
@@ -226,10 +226,10 @@ end
 -- WebSocket handshake (server side)
 -- ═══════════════════════════════════════════════════════════════
 
-fun ws_server_handshake(request: str): str
+ws_server_handshake(request: str): str
     -- Extract Sec-WebSocket-Key
     key = string["match"](request, "Sec%-WebSocket%-Key: ([%w%+/=]+)")
-    if key == nil then
+    if key == nil
         return "HTTP/1.1 400 Bad Request\r\n\r\n"
     end
 
@@ -248,7 +248,7 @@ end
 -- WebSocket message helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun ws_text_frame(text: str): any
+ws_text_frame(text: str): any
     bytes = {}
     i = 1
     while i <= string.len(text)
@@ -258,15 +258,15 @@ fun ws_text_frame(text: str): any
     ws_encode_frame(OP_TEXT, bytes, false)
 end
 
-fun ws_binary_frame(data: any): any
+ws_binary_frame(data: any): any
     ws_encode_frame(OP_BINARY, data, false)
 end
 
-fun ws_close_frame(code: i64, reason: str): any
+ws_close_frame(code: i64, reason: str): any
     payload = {}
     payload[1] = (code >> 8) & 0xFF
     payload[2] = code & 0xFF
-    if reason then
+    if reason
         i = 1
         while i <= string.len(reason)
             payload[#payload + 1] = string.byte(reason, i)
@@ -276,13 +276,13 @@ fun ws_close_frame(code: i64, reason: str): any
     ws_encode_frame(OP_CLOSE, payload, false)
 end
 
-fun ws_ping_frame(data: any): any
-    if data == nil then data = {} end
+ws_ping_frame(data: any): any
+    if data == nil data = {} end
     ws_encode_frame(OP_PING, data, false)
 end
 
-fun ws_pong_frame(data: any): any
-    if data == nil then data = {} end
+ws_pong_frame(data: any): any
+    if data == nil data = {} end
     ws_encode_frame(OP_PONG, data, false)
 end
 
@@ -290,7 +290,7 @@ end
 -- WebSocket connection state machine
 -- ═══════════════════════════════════════════════════════════════
 
-fun ws_connection_new(role: str): any
+ws_connection_new(role: str): any
     -- role: "client" or "server"
     {
         role = role,
@@ -302,21 +302,21 @@ fun ws_connection_new(role: str): any
     }
 end
 
-fun ws_connection_send(conn: any, opcode: i64, payload: any): any
+ws_connection_send(conn: any, opcode: i64, payload: any): any
     mask = conn.role == "client"
     ws_encode_frame(opcode, payload, mask)
 end
 
-fun ws_connection_receive(conn: any, data: any): any
+ws_connection_receive(conn: any, data: any): any
     -- Append to buffer
     for b in data
         conn.buffer[#conn.buffer + 1] = b
     end
 
     -- Try to decode
-    if #conn.buffer < 2 then return nil end
+    if #conn.buffer < 2 return nil end
     frame = ws_decode_frame(conn.buffer, 1)
-    if frame == nil then return nil end
+    if frame == nil return nil end
 
     -- Remove consumed bytes
     new_buf = {}
@@ -328,18 +328,18 @@ fun ws_connection_receive(conn: any, data: any): any
     conn.buffer = new_buf
 
     -- Handle control frames
-    if frame.opcode == OP_PING then
+    if frame.opcode == OP_PING
         conn.state = "connected"
         return {type = "ping", payload = frame.payload}
-    elseif frame.opcode == OP_PONG then
+    elseif frame.opcode == OP_PONG
         return {type = "pong", payload = frame.payload}
-    elseif frame.opcode == OP_CLOSE then
+    elseif frame.opcode == OP_CLOSE
         conn.state = "closed"
-        if #frame.payload >= 2 then
+        if #frame.payload >= 2
             conn.close_code = (frame.payload[1] << 8) | frame.payload[2]
         end
         return {type = "close", code = conn.close_code}
-    elseif frame.opcode == OP_TEXT then
+    elseif frame.opcode == OP_TEXT
         -- Convert payload to string
         parts = {}
         i = 1
@@ -348,7 +348,7 @@ fun ws_connection_receive(conn: any, data: any): any
             i += 1
         end
         return {type = "text", data = table.concat(parts)}
-    elseif frame.opcode == OP_BINARY then
+    elseif frame.opcode == OP_BINARY
         return {type = "binary", data = frame.payload}
     end
 

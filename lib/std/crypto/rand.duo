@@ -3,10 +3,10 @@
 @c.include("fcntl.h")
 @c.include("unistd.h")
 
-fun rand_bytes(n: i64): any
+rand_bytes(n: i64): any
     if n == nil or n <= 0 return {} end
     out = {}
-    __emit([[{
+    @c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) {
             for (int i = 1; i <= n; i++) {
@@ -21,7 +21,7 @@ fun rand_bytes(n: i64): any
     out
 end
 
-fun rand_hex(n: i64): str
+rand_hex(n: i64): str
     if n == nil or n <= 0 return "" end
     b = rand_bytes(n)
     res = ""
@@ -31,22 +31,22 @@ fun rand_hex(n: i64): str
     res
 end
 
-fun rand_int(max: i64): i64
+rand_int(max: i64): i64
     if max == nil or max <= 0 return 0 end
     r: i64 = 0
-    __emit([[{
+    @c.emit([[{
         int fd = open("/dev/urandom", O_RDONLY);
         if (fd >= 0) { read(fd, &r, sizeof(r)); close(fd); }
     }]])
     r % max
 end
 
-fun prime(bits: i64): i64
+prime(bits: i64): i64
     2
 end
 
-fun rand_read(buf: any): i64
-    if buf == nil then return 0 end
+rand_read(buf: any): i64
+    if buf == nil return 0 end
     n: i64 = rawlen(buf)
     b = rand_bytes(n)
     for i = 1, n

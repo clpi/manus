@@ -1,6 +1,6 @@
 -- std.base32 — Base32 encoding and decoding (RFC 4648)
 
-local string = req "std.string"
+string = req "std.string"
 
 -- Note: base32 lookup tables (alphabets and decode tables) are constructed
 -- inside the functions that use them. The duo codegen does not yet expose
@@ -8,48 +8,48 @@ local string = req "std.string"
 -- top of the module produces "use of undeclared identifier" errors in the
 -- emitted C. Keeping them function-local is the minimal fix.
 
-fun encode_with_alphabet(data: str, tab: str): str
-    if data == nil then return "" end
-    local res = {}
-    local len = string.len(data)
-    local i = 1
+encode_with_alphabet(data: str, tab: str): str
+    if data == nil return "" end
+    res = {}
+    len = string.len(data)
+    i = 1
     while i <= len
-        local b1 = string.byte(data, i)
-        local b2 = 0
-        if i + 1 <= len then b2 = string.byte(data, i + 1) end
-        local b3 = 0
-        if i + 2 <= len then b3 = string.byte(data, i + 2) end
-        local b4 = 0
-        if i + 3 <= len then b4 = string.byte(data, i + 3) end
-        local b5 = 0
-        if i + 4 <= len then b5 = string.byte(data, i + 4) end
-        local c1 = (b1 >> 3) + 1
-        local c2 = (((b1 & 0x07) << 2) | (b2 >> 6)) + 1
-        local c3 = ((b2 >> 1) & 0x1F) + 1
-        local c4 = (((b2 & 0x01) << 4) | (b3 >> 4)) + 1
-        local c5 = (((b3 & 0x0F) << 1) | (b4 >> 7)) + 1
-        local c6 = ((b4 >> 2) & 0x1F) + 1
-        local c7 = (((b4 & 0x03) << 3) | (b5 >> 5)) + 1
-        local c8 = (b5 & 0x1F) + 1
+        b1 = string.byte(data, i)
+        b2 = 0
+        if i + 1 <= len b2 = string.byte(data, i + 1) end
+        b3 = 0
+        if i + 2 <= len b3 = string.byte(data, i + 2) end
+        b4 = 0
+        if i + 3 <= len b4 = string.byte(data, i + 3) end
+        b5 = 0
+        if i + 4 <= len b5 = string.byte(data, i + 4) end
+        c1 = (b1 >> 3) + 1
+        c2 = (((b1 & 0x07) << 2) | (b2 >> 6)) + 1
+        c3 = ((b2 >> 1) & 0x1F) + 1
+        c4 = (((b2 & 0x01) << 4) | (b3 >> 4)) + 1
+        c5 = (((b3 & 0x0F) << 1) | (b4 >> 7)) + 1
+        c6 = ((b4 >> 2) & 0x1F) + 1
+        c7 = (((b4 & 0x03) << 3) | (b5 >> 5)) + 1
+        c8 = (b5 & 0x1F) + 1
         res[rawlen(res) + 1] = string.sub(tab, c1, c1)
         res[rawlen(res) + 1] = string.sub(tab, c2, c2)
         res[rawlen(res) + 1] = string.sub(tab, c3, c3)
-        if i + 1 > len then
+        if i + 1 > len
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
-        elseif i + 2 > len then
+        elseif i + 2 > len
             res[rawlen(res) + 1] = string.sub(tab, c4, c4)
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
-        elseif i + 3 > len then
+        elseif i + 3 > len
             res[rawlen(res) + 1] = string.sub(tab, c4, c4)
             res[rawlen(res) + 1] = string.sub(tab, c5, c5)
             res[rawlen(res) + 1] = "="
             res[rawlen(res) + 1] = "="
-        elseif i + 4 > len then
+        elseif i + 4 > len
             res[rawlen(res) + 1] = string.sub(tab, c4, c4)
             res[rawlen(res) + 1] = string.sub(tab, c5, c5)
             res[rawlen(res) + 1] = string.sub(tab, c6, c6)
@@ -66,35 +66,35 @@ fun encode_with_alphabet(data: str, tab: str): str
     table.concat(res)
 end
 
-fun encode(data: str): str
+encode(data: str): str
     encode_with_alphabet(data, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 end
 
-fun encode_hex(data: str): str
+encode_hex(data: str): str
     encode_with_alphabet(data, "0123456789ABCDEFGHIJKLMNOPQRSTUV")
 end
 
-fun decode_with_alphabet(data: str, tab: any): str
-    if data == nil then return "" end
-    local res = {}
-    local len = string.len(data)
-    local i = 1
+decode_with_alphabet(data: str, tab: any): str
+    if data == nil return "" end
+    res = {}
+    len = string.len(data)
+    i = 1
     while i <= len
-        local vals = {}
-        local pad_count = 0
+        vals = {}
+        pad_count = 0
         for j = 0, 7
-            local pos = i + j
-            if pos > len then
+            pos = i + j
+            if pos > len
                 vals[j + 1] = 0
                 pad_count += 1
             else
-                local c = string.byte(data, pos)
-                if c == 61 then
+                c = string.byte(data, pos)
+                if c == 61
                     vals[j + 1] = 0
                     pad_count += 1
                 else
-                    local v = tab[c]
-                    if v ~= nil then
+                    v = tab[c]
+                    if v != nil
                         vals[j + 1] = v
                     else
                         vals[j + 1] = 0
@@ -103,22 +103,22 @@ fun decode_with_alphabet(data: str, tab: any): str
                 end
             end
         end
-        local b1 = (vals[1] << 3) | (vals[2] >> 2)
-        local b2 = ((vals[2] & 0x03) << 6) | (vals[3] << 1) | (vals[4] >> 4)
-        local b3 = ((vals[4] & 0x0F) << 4) | (vals[5] >> 1)
-        local b4 = ((vals[5] & 0x01) << 7) | (vals[6] << 2) | (vals[7] >> 3)
-        local b5 = ((vals[7] & 0x07) << 5) | vals[8]
+        b1 = (vals[1] << 3) | (vals[2] >> 2)
+        b2 = ((vals[2] & 0x03) << 6) | (vals[3] << 1) | (vals[4] >> 4)
+        b3 = ((vals[4] & 0x0F) << 4) | (vals[5] >> 1)
+        b4 = ((vals[5] & 0x01) << 7) | (vals[6] << 2) | (vals[7] >> 3)
+        b5 = ((vals[7] & 0x07) << 5) | vals[8]
         res[rawlen(res) + 1] = string.char(b1)
-        if pad_count < 6 then
+        if pad_count < 6
             res[rawlen(res) + 1] = string.char(b2)
         end
-        if pad_count < 4 then
+        if pad_count < 4
             res[rawlen(res) + 1] = string.char(b3)
         end
-        if pad_count < 3 then
+        if pad_count < 3
             res[rawlen(res) + 1] = string.char(b4)
         end
-        if pad_count < 1 then
+        if pad_count < 1
             res[rawlen(res) + 1] = string.char(b5)
         end
         i += 8
@@ -126,18 +126,18 @@ fun decode_with_alphabet(data: str, tab: any): str
     table.concat(res)
 end
 
-fun decode(data: str): str
-    local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-    local dec_table = {}
+decode(data: str): str
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+    dec_table = {}
     for i = 1, 32
         dec_table[string.byte(alphabet, i)] = i - 1
     end
     decode_with_alphabet(data, dec_table)
 end
 
-fun decode_hex(data: str): str
-    local hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
-    local hex_dec_table = {}
+decode_hex(data: str): str
+    hex_alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
+    hex_dec_table = {}
     for i = 1, 32
         hex_dec_table[string.byte(hex_alphabet, i)] = i - 1
     end

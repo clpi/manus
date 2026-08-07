@@ -36,7 +36,7 @@ trim(s: str): str
             break
         end
     end
-    if b < a then return "" end
+    if b < a return "" end
     string.sub(s, a, b)
 end
 
@@ -47,7 +47,7 @@ end
 ends_with(s: str, p: str): bool
     n = string.len(s)
     m = string.len(p)
-    if m > n then return false end
+    if m > n return false end
     string.sub(s, n - m + 1, n) == p
 end
 
@@ -78,7 +78,7 @@ global KEYWORDS = { print = true, assert = true, req = true, require = true, err
 zig_def(t: str): any
     -- fn NAME
     p = string.find(t, "fn ", 1, true)
-    if p ~= nil
+    if p != nil
         before = p - 1
         ok = (before == 0)
         if before >= 1
@@ -87,7 +87,7 @@ zig_def(t: str): any
         end
         if ok
             r = read_ident(t, p + 3)
-            if r.name ~= "" and r.name ~= "fn"
+            if r.name != "" and r.name != "fn"
                 return { name = r.name, kind = "fn" }
             end
         end
@@ -95,7 +95,7 @@ zig_def(t: str): any
     -- const NAME
     if starts_with(t, "const ")
         r = read_ident(t, 7)
-        if r.name ~= "" and r.name ~= "const"
+        if r.name != "" and r.name != "const"
             return { name = r.name, kind = "const" }
         end
     end
@@ -107,24 +107,24 @@ end
 duo_def(t: str): any
     -- local fun NAME(  /  fun NAME(
     fp = string.find(t, "fun ", 1, true)
-    if fp ~= nil
+    if fp != nil
         r = read_ident(t, fp + 4)
         nm = r.name
-        if nm ~= "" and nm ~= "fun" and KEYWORDS[nm] == nil
+        if nm != "" and nm != "fun" and KEYWORDS[nm] == nil
             return { name = nm, kind = "fn" }
         end
     end
     -- bare typed def: first token IDENT immediately followed by '(' and header has ':'
     r0 = read_ident(t, 1)
     nm0 = r0.name
-    if nm0 ~= "" and KEYWORDS[nm0] == nil
+    if nm0 != "" and KEYWORDS[nm0] == nil
         after = r0.next
         if after <= string.len(t) and string.byte(t, after) == 40   -- '('
             -- require a ':' within the header parens (typed param => bare def, per GR-001)
             paren_end = string.find(t, ")", after, true)
-            if paren_end ~= nil
+            if paren_end != nil
                 colon = string.find(t, ":", after, true)
-                if colon ~= nil and colon < paren_end
+                if colon != nil and colon < paren_end
                     return { name = nm0, kind = "fn" }
                 end
             end
@@ -132,7 +132,7 @@ duo_def(t: str): any
         -- assign-form closure only: NAME = (  (dropped: treating every
         -- assignment as a const symbol flooded the index with locals).
         eqp = string.find(t, " = ", after, true)
-        if eqp ~= nil
+        if eqp != nil
             if eqp - after < 4
                 rest = trim(string.sub(t, eqp + 3))
                 if starts_with(rest, "(") or starts_with(rest, "fun") or starts_with(rest, "function")
@@ -183,22 +183,22 @@ process_file(path: str, is_zig: bool, symbols: any): void
         elseif starts_with(t, "---") or starts_with(t, "--") or starts_with(t, "///") or starts_with(t, "//")
             -- doc comment: strip markers, cap length
             body = t
-            if starts_with(body, "---") then body = string.sub(body, 4)
-            elseif starts_with(body, "--") then body = string.sub(body, 3)
-            elseif starts_with(body, "///") then body = string.sub(body, 4)
+            if starts_with(body, "---") body = string.sub(body, 4)
+            elseif starts_with(body, "--") body = string.sub(body, 3)
+            elseif starts_with(body, "///") body = string.sub(body, 4)
             else body = string.sub(body, 3) end
             body = trim(body)
             if string.len(pending) < 160
-                if pending == "" then pending = body else pending = pending .. " " .. body end
+                if pending == "" pending = body else pending = pending .. " " .. body end
             end
         else
             -- only detect definitions at column 0 (top-level decls); indented
             -- lines are locals/closures and would flood the index.
             firstc = string.byte(line, 1)
-            at_top = (firstc ~= 32) and (firstc ~= 9)
+            at_top = (firstc != 32) and (firstc != 9)
             if at_top
                 def = detect_def(t, is_zig)
-                if def ~= nil
+                if def != nil
                     text = def.name .. " " .. (pending or "")
                     vec = vector.embed(text, DIM)
                     symbols[#symbols + 1] = { name = def.name, kind = def.kind,
@@ -215,13 +215,13 @@ end
 main(): void
     out_path = "docs/symbol_index.json"
     args = osmod.args()
-    if args ~= nil and #args > 0 and args[1] ~= nil then out_path = args[1] end
+    if args != nil and #args > 0 and args[1] != nil out_path = args[1] end
 
     files = {}
     collect("src", files)
     collect("lib/std", files)
     -- duo-mcp lives in a sibling repo; include if present relative to repo root
-    if os.execute("test -d '../duo-mcp'") then collect("../duo-mcp", files) end
+    if os.execute("test -d '../duo-mcp'") collect("../duo-mcp", files) end
 
     symbols = {}
     for _, path in files

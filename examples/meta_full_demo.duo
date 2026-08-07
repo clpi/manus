@@ -6,26 +6,26 @@
 
 -- ── Section 1: Functions ───────────────────────────────────────────────────
 
-fun identity(value)
+identity(value)
     value
 end
 
-fun make_pair(first, second)
+make_pair(first, second)
     { first = first, second = second }
 end
 
-fun swap(a, b): any
+swap(a, b): any
     return b, a
 end
 
-fun safe_div(a, b): any
-    if b == 0 then
+safe_div(a, b): any
+    if b == 0
         return a
     end
     a // b
 end
 
-fun map_list(xs, fn): any
+map_list(xs, fn): any
     result = {}
     for i = 1, #xs do
         result[i] = fn(xs[i])
@@ -36,12 +36,12 @@ end
 -- ── Section 2: Concepts ─────────────────────────────────────────────────────
 
 concept Measurable
-    fun measure(self, unit: str): f64
-    fun label(self): str
+    measure(self, unit: str): f64
+    label(self): str
 end
 
 concept Combinable
-    fun combine(self, other): any
+    combine(self, other): any
 end
 
 distance = {}
@@ -49,7 +49,7 @@ distance.x = 3.0
 distance.y = 4.0
 distance.measure = fun(self, unit: str): f64
     mag = math.sqrt(self.x * self.x + self.y * self.y)
-    if unit == "km" then
+    if unit == "km"
         return mag / 1000.0
     end
     mag
@@ -67,24 +67,24 @@ IS_DEBUG = @(false)
 
 -- ── Section 4: Derive helpers ──────────────────────────────────────────────
 
-fun derive_clone(val)
-    if type(val) ~= "table" then return val end
+derive_clone(val)
+    if type(val) != "table" return val end
     c = {}
     for k, v in pairs(val) do c[k] = v end
     c
 end
 
-fun derive_display(val): str
-    if val == nil then return "nil" end
-    if type(val) == "boolean" then
-        if val then return "true" else return "false" end
+derive_display(val): str
+    if val == nil return "nil" end
+    if type(val) == "boolean"
+        if val return "true" else return "false" end
     end
-    if type(val) == "number" then return tostring(val) end
-    if type(val) == "string" then return val end
-    if type(val) == "table" then
+    if type(val) == "number" return tostring(val) end
+    if type(val) == "string" return val end
+    if type(val) == "table"
         parts = {}
         for k, v in pairs(val) do
-            if type(k) == "string" then
+            if type(k) == "string"
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
         end
@@ -95,18 +95,18 @@ end
 
 -- ── Section 5: Memory Allocators ───────────────────────────────────────────
 
-fun demo_arena(): void
+demo_arena(): void
     arena = { _bufs = {}, _offset = 0, _capacity = 4096, _total = 0 }
     print("Arena created, capacity: " .. tostring(arena._capacity))
 end
 
-fun demo_pool(): void
+demo_pool(): void
     print("Pool created, block_size: 128, count: 64")
 end
 
 -- ── Section 6: WASI Types ──────────────────────────────────────────────────
 
-fun demo_wasi(): void
+demo_wasi(): void
     print("WASI stdin fd:  0")
     print("WASI stdout fd: 1")
     print("WASI stderr fd: 2")
@@ -116,7 +116,7 @@ end
 
 -- ── Section 7: Reflection ───────────────────────────────────────────────────
 
-fun demo_reflection(val): void
+demo_reflection(val): void
     print("typeof: " .. type(val))
     print("is_nil: " .. tostring(val == nil))
     print("is_str: " .. tostring(type(val) == "string"))
@@ -124,7 +124,7 @@ fun demo_reflection(val): void
     print("is_table: " .. tostring(type(val) == "table"))
     print("is_func: " .. tostring(type(val) == "function"))
 
-    if type(val) == "table" then
+    if type(val) == "table"
         count = 0
         for _k, _v in pairs(val) do count += 1 end
         print("Field count: " .. tostring(count))
@@ -133,35 +133,35 @@ end
 
 -- ── Section 8: Functions with/without return types ────────────────────────
 
-fun typed_add(a: i64, b: i64): i64
+typed_add(a: i64, b: i64): i64
     a + b
 end
 
-fun untyped_add(a, b)
+untyped_add(a, b)
     a + b
 end
 
-fun classify(n: i64): str
-    if n < 0 then
+classify(n: i64): str
+    if n < 0
         return "negative"
     end
-    if n == 0 then
+    if n == 0
         return "zero"
     end
     "positive"
 end
 
-fun validate_input(val): bool
-    if val == nil then
-        if true then
+validate_input(val): bool
+    if val == nil
+        if true
             return false
         end
     end
-    if type(val) == "number" then
-        if val < 0 then
+    if type(val) == "number"
+        if val < 0
             return false
         end
-        if val > 1000 then
+        if val > 1000
             return false
         end
     end

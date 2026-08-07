@@ -1,19 +1,19 @@
 -- Example: Neural Network in Duo (self-contained)
 
 -- Tensor helpers
-fun zeros(rows, cols)
+zeros(rows, cols)
     t = { rows = rows, cols = cols, size = rows * cols, data = {} }
     for i = 1, rows * cols t.data[i] = 0.0 end
     return t
 end
 
-fun rand_tensor(rows, cols)
+rand_tensor(rows, cols)
     t = zeros(rows, cols)
     for i = 1, t.size t.data[i] = math.random() * 0.1 - 0.05 end
     return t
 end
 
-fun matmul(a, b)
+matmul(a, b)
     r = zeros(a.rows, b.cols)
     for i = 1, a.rows
         for j = 1, b.cols
@@ -25,7 +25,7 @@ fun matmul(a, b)
     return r
 end
 
-fun add_bias(t, bias)
+add_bias(t, bias)
     r = zeros(t.rows, t.cols)
     for i = 1, t.rows
         for j = 1, t.cols
@@ -35,7 +35,7 @@ fun add_bias(t, bias)
     return r
 end
 
-fun relu(t)
+relu(t)
     r = zeros(t.rows, t.cols)
     for i = 1, t.size
         if t.data[i] > 0 r.data[i] = t.data[i] end
@@ -43,7 +43,7 @@ fun relu(t)
     return r
 end
 
-fun softmax(t)
+softmax(t)
     r = zeros(t.rows, t.cols)
     for row = 1, t.rows
         mx = t.data[(row-1)*t.cols+1]
@@ -64,7 +64,7 @@ fun softmax(t)
 end
 
 -- Network forward pass (defined as local function, captures nothing)
-fun nn_forward(x, w1, b1, w2, b2)
+nn_forward(x, w1, b1, w2, b2)
     h = relu(add_bias(matmul(x, w1), b1))
     return softmax(add_bias(matmul(h, w2), b2))
 end

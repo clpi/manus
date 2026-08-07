@@ -12,8 +12,8 @@
 -- Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun str_join(parts: any, sep: str): str
-    local result = ""
+str_join(parts: any, sep: str): str
+    result = ""
     for i, part in parts
         if i > 1
             result = result .. sep
@@ -31,8 +31,8 @@ global rules = {}
 global rule_count = 0
 
 -- define: register a rewrite rule.
-fun define(name: str, pattern: str, replacement: str, priority: i64)
-    if priority == nil then priority = 0 end
+define(name: str, pattern: str, replacement: str, priority: i64)
+    if priority == nil priority = 0 end
     rule_count = rule_count + 1
     rules[rule_count] = {
         name = name,
@@ -44,18 +44,18 @@ fun define(name: str, pattern: str, replacement: str, priority: i64)
 end
 
 -- disable: temporarily disable a rule by name
-fun disable(name: str)
+disable(name: str)
     for i = 1, rule_count
-        if rules[i].name == name then
+        if rules[i].name == name
             rules[i].enabled = false
         end
     end
 end
 
 -- enable: re-enable a rule by name
-fun enable(name: str)
+enable(name: str)
     for i = 1, rule_count
-        if rules[i].name == name then
+        if rules[i].name == name
             rules[i].enabled = true
         end
     end
@@ -65,7 +65,7 @@ end
 -- Built-in algebraic simplification rules
 -- ═══════════════════════════════════════════════════════════════
 
-fun register_algebraic()
+register_algebraic(): void
     define("add_zero_l", "(0 + $1)", "$1", 10)
     define("add_zero_r", "($1 + 0)", "$1", 10)
     define("mul_one_l", "(1 * $1)", "$1", 10)
@@ -91,7 +91,7 @@ end
 -- Loop transformation rules
 -- ═══════════════════════════════════════════════════════════════
 
-fun register_loop_opts()
+register_loop_opts(): void
     define("strength_mul_pow2", "($1 * (1 << $2))", "($1 << $2)", 5)
     define("strength_div_pow2", "($1 / (1 << $2))", "($1 >> $2)", 5)
     define("loop_peel", "for ($1) = $2, $3 do $4 end", "peeled", 3)
@@ -102,7 +102,7 @@ end
 -- Constant folding rules
 -- ═══════════════════════════════════════════════════════════════
 
-fun register_const_fold()
+register_const_fold(): void
     define("fold_add", "($1 + $2)", "evaluated", 15)
     define("fold_sub", "($1 - $2)", "evaluated", 15)
     define("fold_mul", "($1 * $2)", "evaluated", 15)
@@ -121,12 +121,12 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- apply_all: apply all enabled rules and return a summary string.
-fun apply_all(): str
-    local applied = 0
-    local summary = {}
+apply_all(): str
+    applied = 0
+    summary = {}
     for i = 1, rule_count
-        if rules[i].enabled then
-            local r = rules[i]
+        if rules[i].enabled
+            r = rules[i]
             summary[#summary + 1] = "  [" .. tostring(r.priority) .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
             applied = applied + 1
         end
@@ -135,28 +135,28 @@ fun apply_all(): str
 end
 
 -- describe_bundle: compile-time bundle metadata (folds to native C string).
-fun describe_bundle(name: str): str
+describe_bundle(name: str): str
     @comp.rewrite.describe(name)
 end
 
 -- active_rule_count: compiler-registered rewrite rules after @comp.rewrite.bundle.
-fun active_rule_count(): i64
+active_rule_count(): i64
     @comp.rewrite.rulecount()
 end
 
 -- summary: return a summary of all registered rules as a string
-fun summary(): str
-    local parts = {}
+summary(): str
+    parts = {}
     for i = 1, rule_count
-        local r = rules[i]
-        local status = r.enabled and "on" or "off"
+        r = rules[i]
+        status = r.enabled and "on" or "off"
         parts[#parts + 1] = "  [" .. status .. "] " .. r.name .. ": " .. r.pattern .. " -> " .. r.replacement
     end
     "Rewrite rules (" .. tostring(rule_count) .. "):\n" .. str_join(parts, "\n")
 end
 
 -- clear: remove all rules
-fun clear()
+clear(): void
     rules = {}
     rule_count = 0
 end

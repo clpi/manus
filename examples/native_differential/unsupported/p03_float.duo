@@ -1,0 +1,6 @@
+area(r: f64): f64
+    return 3.14159 * r * r
+end
+main(): i64
+    return i64(area(2.0))
+end

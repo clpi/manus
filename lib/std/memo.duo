@@ -1,32 +1,32 @@
 -- std.memo — memoization utilities
 
-fun table_new(): any
+table_new(): any
     {}
 end
 
-fun table_get(m: any, key: any): any
+table_get(m: any, key: any): any
     m[key]
 end
 
-fun table_set(m: any, key: any, value: any): void
+table_set(m: any, key: any, value: any): void
     m[key] = value
 end
 
-fun table_has(m: any, key: any): bool
-    m[key] ~= nil
+table_has(m: any, key: any): bool
+    m[key] != nil
 end
 
-fun wrap(fn: any): any
+wrap(fn: any): any
     cache = {}
     return fun(x: any): any
-        if cache[x] == nil then
+        if cache[x] == nil
             cache[x] = fn(x)
         end
         cache[x]
     end
 end
 
-fun clear(m: any): void
+clear(m: any): void
     for k, _ in pairs(m)
         m[k] = nil
     end

@@ -628,8 +628,15 @@ pub const Parser = struct {
                 // Only treat as directive when a declaration follows (@comp.derive on a decl).
                 const nxt = try self.pk();
                 return switch (nxt.kind) {
-                    .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_concept, .kw_alias,
-                    .kw_local, .kw_global, .kw_for,
+                    .kw_function,
+                    .kw_fun,
+                    .kw_async,
+                    .kw_enum,
+                    .kw_concept,
+                    .kw_alias,
+                    .kw_local,
+                    .kw_global,
+                    .kw_for,
                     => true,
                     .name => blk: {
                         if (std.mem.eql(u8, nxt.text, "type")) break :blk true;
@@ -637,7 +644,15 @@ pub const Parser = struct {
                         _ = try self.adv();
                         const after = try self.pk();
                         self.lex.restoreState(s2);
-                        break :blk after.kind == .colon;
+                        if (after.kind == .colon) break :blk true;
+                        // Bare function declaration (GR-001): `@c.export("n")
+                        // name(x: i64): i64 ... end`. `c.export` is an *attaching*
+                        // attribute that isMetaAttribute() also reports as a
+                        // directive, so it lands here; without this the attribute is
+                        // re-parsed as an expression statement and lowers to a
+                        // runtime `__c_export(...)` call no profile declares.
+                        if (self.func_body_depth == 0 and try self.starts_bare_func_decl()) break :blk true;
+                        break :blk false;
                     },
                     else => false,
                 };
@@ -656,6 +671,12 @@ pub const Parser = struct {
                     self.lex.restoreState(s2);
                     if (after.kind == .colon) break :blk true;
                 }
+                // Bare function declaration (GR-001): `@c.export("n") name(x: i64): i64`.
+                // Bare functions are the canonical form, so an attribute must attach to
+                // one exactly as it attaches to a `fun` decl. Without this the whole
+                // attribute is re-parsed as an expression statement, and `@c.export`
+                // lowers to a runtime `__c_export(...)` call that no profile declares.
+                if (self.func_body_depth == 0 and try self.starts_bare_func_decl()) break :blk true;
                 break :blk false;
             },
             else => false,
@@ -799,6 +820,17 @@ pub const Parser = struct {
         const tok = try self.pk();
         if (tok.kind == .name and std.mem.eql(u8, tok.text, "type")) {
             return self.parse_alias_def_with_attrs(attrs_slice);
+        }
+        // Bare function declaration with attributes (GR-001): `@c.export("n")
+        // name(x: i64): i64 ... end`. Bare functions are the canonical form, so an
+        // attribute must attach to one exactly as it attaches to a `fun` decl —
+        // otherwise the attribute falls through to the Jai type-def path, degrades
+        // into a plain statement, and `@c.export` lowers to a runtime
+        // `__c_export(...)` call that no profile declares.
+        if (tok.kind == .name and !is_keyword_token(tok.text) and
+            self.func_body_depth == 0 and try self.starts_bare_func_decl())
+        {
+            return self.parse_bare_func_decl_with_attrs(false, attrs_slice);
         }
         // Jai-like type definition with attributes: @derive(Display) Vec: { x: f64, y: f64 }
         // When we see a bare name that isn't a keyword after attributes, check if it's
@@ -1460,7 +1492,10 @@ pub const Parser = struct {
                 const fb = result.func_decl.func;
                 var has_typed = false;
                 for (fb.params) |p| {
-                    if (p.typ != .inferred) { has_typed = true; break; }
+                    if (p.typ != .inferred) {
+                        has_typed = true;
+                        break;
+                    }
                 }
                 if (has_typed or fb.vararg) {
                     term.locHint(hint_loc, "'{s}' is unnecessary here; bare function syntax works: name(params) body end", .{tok.kind.spelling()});
@@ -1554,8 +1589,11 @@ pub const Parser = struct {
         var brace_depth: usize = 0;
         var typed_or_vararg = false;
         var has_comma = false;
+        var depth1_tokens: usize = 0;
+        var depth1_names: usize = 0;
         var has_literal_arg = false;
         var has_table_literal_arg = false;
+        var has_infix_operator = false;
         var prev: TK = .eof;
         while (paren_depth > 0) {
             const tok = try self.pk();
@@ -1598,13 +1636,41 @@ pub const Parser = struct {
                 },
                 else => {},
             }
+            if (paren_depth == 1 and bracket_depth == 0 and brace_depth == 0 and
+                tok.kind != .lparen and tok.kind != .rparen)
+            {
+                depth1_tokens += 1;
+                if (tok.kind == .name) depth1_names += 1;
+                if (infix_prec(tok.kind) != null) has_infix_operator = true;
+            }
             prev = tok.kind;
             _ = try self.adv();
         }
 
         const after = try self.pk();
         if (has_literal_arg and !typed_or_vararg) return false; // literals are never in param list
+        // Nor are infix operators: a parameter list holds names, annotations,
+        // defaults and `...` — never `b & m`. Without this, `(b & m)` in operand
+        // position scanned as a param list and the parser demanded `)` at the
+        // `&`, so `if (a & m) < (b & m)` failed inside a nested block. `(b + 1)`
+        // only escaped because its literal tripped the rule above. Typed groups
+        // are exempt: a default value like `(a: i64 = x + 1)` legitimately
+        // carries an operator.
+        if (has_infix_operator and !typed_or_vararg) return false;
         if (has_table_literal_arg and !typed_or_vararg) return false; // table literals are call args, not param lists
+        // `name(): Ret` — a zero-parameter declaration whose only header signal
+        // is the return type. `-> Ret` was already accepted here and `: Ret`
+        // was not, so bare `M:hash(): i64` fell through to a method *call* and
+        // only the arrow spelling could drop the `fun` keyword. A call is never
+        // followed by a type annotation, so this is unambiguous.
+        if (after.kind == .colon) {
+            const r_saved = self.lex.saveState();
+            _ = try self.adv();
+            const ty = try self.pk();
+            const is_type = ty.kind == .name or Lexer.isTypeKeyword(ty.kind);
+            self.lex.restoreState(r_saved);
+            if (is_type) return true;
+        }
         if (typed_or_vararg or after.kind == .arrow or after.kind == .assign) return true;
         if (allow_untyped_comma and has_comma) {
             if (after.kind == .eof) return false;
@@ -1636,15 +1702,60 @@ pub const Parser = struct {
             return (try self.pk()).kind != .lparen;
         }
         if (infix_prec(after.kind) != null or after.kind == .comma) return false;
+        // `f(x)` with a single *untyped* name is a call, not a header: bare
+        // function syntax requires at least one typed parameter to be
+        // distinguishable (see parse_bare_func_decl). Without this, an ordinary
+        // statement-level call like `print(p)` followed by any further statement
+        // is swallowed as `print = (p) <rest of file> end`.
+        if (depth1_tokens == 1 and depth1_names == 1 and !typed_or_vararg and !has_comma) {
+            return false;
+        }
+        // …and the same holds for *any* untyped argument list, not just a single
+        // name. GR-001 requires a bare declaration to carry at least one typed
+        // parameter or `...`, so on the bare-decl path an untyped list is always
+        // a call. The guard above only covered one argument, so a multi-argument
+        // call set `has_comma`, fell through to `token_can_start_func_body`, and
+        // was swallowed as a declaration whose body was the rest of the file:
+        //
+        //     script.duo_run_all(agent.smoke_targets(), bin)
+        //     print("agent-smoke: PASS")     -- read as the "body"
+        //
+        // which is why scripts/agent_smoke.duo failed with "expected ')', got '.'".
+        // Zero-parameter headers are unaffected: `name(): Ret` returns true at the
+        // `after.kind == .colon` check above, and `g()` is rejected below.
+        if (!allow_untyped_comma and !typed_or_vararg) return false;
+        // `g()` / `f:close()` at statement level is a CALL, not a zero-parameter
+        // declaration: with nothing between the parens the guard above cannot
+        // fire, so the group reached `token_can_start_func_body` and swallowed
+        // the following statement as a lambda body — the parser then demanded an
+        // `end` at EOF. Restricted to the bare-decl path: in expression position
+        // (`allow_untyped_comma`) `empty = () nil` is a legitimate zero-parameter
+        // lambda and must still scan as a header.
+        if (depth1_tokens == 0 and !allow_untyped_comma) return false;
         if (token_can_start_func_body(after.kind)) return true;
         return false;
     }
 
     fn token_can_start_func_body(kind: TK) bool {
         return switch (kind) {
-            .name, .string_lit, .int_lit, .float_lit, .kw_nil, .kw_true, .kw_false,
-            .lparen, .lbrace, .minus, .kw_if, .kw_match, .at, .kw_not, .hash, .pipe,
-            .kw_function, .kw_fun,
+            .name,
+            .string_lit,
+            .int_lit,
+            .float_lit,
+            .kw_nil,
+            .kw_true,
+            .kw_false,
+            .lparen,
+            .lbrace,
+            .minus,
+            .kw_if,
+            .kw_match,
+            .at,
+            .kw_not,
+            .hash,
+            .pipe,
+            .kw_function,
+            .kw_fun,
             => true,
             else => false,
         };
@@ -1726,10 +1837,7 @@ pub const Parser = struct {
     /// Pass 23 §2 — statement starters that require an explicit `end`-delimited block body.
     fn starts_func_block_body(kind: TK) bool {
         return switch (kind) {
-            .kw_for, .kw_while, .kw_repeat, .kw_if, .kw_local,
-            .kw_do, .kw_match, .kw_return, .kw_break, .kw_continue,
-            .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_defer,
-            .at, .kw_end => true,
+            .kw_for, .kw_while, .kw_repeat, .kw_if, .kw_local, .kw_do, .kw_match, .kw_return, .kw_break, .kw_continue, .kw_function, .kw_fun, .kw_async, .kw_enum, .kw_defer, .at, .kw_end => true,
             else => false,
         };
     }
@@ -1901,6 +2009,74 @@ pub const Parser = struct {
         return ast.FuncParam{ .name = nm.text, .typ = typ, .default_val = default_val, .loc = nm.loc };
     }
 
+    /// Pass 42 §1.1 — `if a, b = expr ... end` (correlated return-pack binding).
+    /// Returns null when the lookahead is not this form, leaving the caller to
+    /// restore lexer state and try the single-name and plain-condition paths.
+    fn parse_if_pack_binding(self: *Parser, l: ast.Loc) ParseError!?ast.Stmt {
+        var names: std.ArrayList(ast.LocalName) = .empty;
+        errdefer names.deinit(self.alloc);
+        while (true) {
+            if ((try self.pk()).kind != .name) return null;
+            const nm = try self.adv();
+            try names.append(self.alloc, .{
+                .ident = nm.text,
+                .typ = .inferred,
+                .attrib = null,
+                .loc = nm.loc,
+            });
+            if (try self.eat(.comma) == null) break;
+        }
+        // A single name is the existing `if name = expr` path, which has dedicated
+        // AST support; only the pack form is handled here.
+        if (names.items.len < 2) return null;
+        if ((try self.pk()).kind != .assign) return null;
+        _ = try self.adv();
+
+        var inits: std.ArrayList(*ast.Expr) = .empty;
+        errdefer inits.deinit(self.alloc);
+        try inits.append(self.alloc, try self.parse_expr());
+        try self.eat_deprecated(.kw_then);
+        const then_body = try self.parse_block();
+
+        var elseifs: std.ArrayList(ast.ElseIf) = .empty;
+        var else_body: ?ast.Block = null;
+        while (true) {
+            if (try self.eat(.kw_elseif) != null) {
+                const ec = try self.parse_expr();
+                try self.eat_deprecated(.kw_then);
+                const eb = try self.parse_block();
+                try elseifs.append(self.alloc, ast.ElseIf{ .cond = ec, .body = eb });
+            } else if (try self.eat(.kw_else) != null) {
+                else_body = try self.parse_block();
+                break;
+            } else break;
+        }
+        _ = try self.expect(.kw_end);
+
+        const first = names.items[0];
+        const cond_ref = try self.new_expr(.{ .name = .{ .loc = first.loc, .ident = first.ident } });
+        const inner = ast.Stmt{ .if_stmt = .{
+            .loc = l,
+            .binding = null,
+            .cond = cond_ref,
+            .then = then_body,
+            .elseifs = try elseifs.toOwnedSlice(self.alloc),
+            .else_body = else_body,
+        } };
+        const decl = ast.Stmt{ .local_decl = .{
+            .loc = l,
+            .names = try names.toOwnedSlice(self.alloc),
+            .inits = try inits.toOwnedSlice(self.alloc),
+        } };
+        const stmts = try self.alloc.alloc(ast.Stmt, 2);
+        stmts[0] = decl;
+        stmts[1] = inner;
+        return ast.Stmt{ .do_block = .{
+            .loc = l,
+            .body = .{ .loc = l, .stmts = stmts },
+        } };
+    }
+
     fn parse_if(self: *Parser) ParseError!ast.Stmt {
         const l = (try self.adv()).loc;
         // `if let pattern = expr then ... end` — desugars to match
@@ -1926,6 +2102,20 @@ pub const Parser = struct {
             const match_expr = try self.new_expr(.{ .match_expr = try self.alloc.create(ast.MatchExpr) });
             match_expr.match_expr.* = .{ .loc = l, .scrutinee = scrutinee, .arms = arms };
             return ast.Stmt{ .expr_stmt = .{ .loc = l, .expr = match_expr } };
+        }
+        // Pass 42 §1.1 — correlated return-pack binding condition:
+        // `if value, err = parse(text)`. Desugars to a scoped block holding the
+        // multi-assign plus an ordinary `if` on position 1, which is exactly the
+        // §1.6 scoping rule (the names are introduced in the block and die with
+        // it) and reuses the existing return-pack destructuring end to end rather
+        // than growing a second multi-value path.
+        //
+        // Position 1 is the tested position per §1.1's success predicate — the
+        // value-first return-pack idiom, chosen on merit.
+        if ((try self.pk()).kind == .name) {
+            const pack_saved = self.lex.saveState();
+            if (try self.parse_if_pack_binding(l)) |stmt| return stmt;
+            self.lex.restoreState(pack_saved);
         }
         // Pass 3: `if name = expr` binding condition
         if ((try self.pk()).kind == .name) {
@@ -3862,11 +4052,11 @@ pub const Parser = struct {
     fn warnDeprecatedAtQualified(self: *Parser, loc: ast.Loc, qualified: []const u8) void {
         if (!self.duo_mode) return;
         if (std.mem.startsWith(u8, qualified, "meta.")) {
-            term.locWarn(loc, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len ..]});
+            term.locWarn(loc, "warning: @meta.* is deprecated, use @comp.{s} instead", .{qualified["meta.".len..]});
             return;
         }
         if (std.mem.startsWith(u8, qualified, "compiler.")) {
-            term.locWarn(loc, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len ..]});
+            term.locWarn(loc, "warning: @compiler.* is deprecated, use @comp.{s} instead", .{qualified["compiler.".len..]});
             return;
         }
         if (std.mem.eql(u8, qualified, "pipeline")) {
@@ -4033,6 +4223,18 @@ pub const Parser = struct {
                     } });
                 },
                 .lbrace => {
+                    // Same rule as `(` and a string literal below (F-13813-1): a
+                    // `{` on a new line starts a fresh expression, not a Lua
+                    // `f{...}` table-call argument.
+                    //
+                    // Without this, the canonical tail-expression idiom silently
+                    // becomes a call:
+                    //     k = one(pos)
+                    //     { kind = k, start = pos }   -- parsed as one(pos)({...})
+                    // so the function returned a call result instead of a record.
+                    // Table-call sugar buys nothing `f({...})` does not, and a
+                    // scan of 575 `.duo` files found zero real uses of it.
+                    if (tok.loc.line > e.loc().line) break;
                     if (e.* == .name and std.mem.eql(u8, e.name.ident, "nn")) {
                         e = try self.parse_nn_block_desugar(tok.loc);
                     } else {

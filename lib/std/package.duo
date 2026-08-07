@@ -1,10 +1,10 @@
 -- std.package — package utilities
 
-fun loadlib(libname: str, funcname: str): any
+loadlib(libname: str, funcname: str): any
     package.loadlib(libname, funcname)
 end
 
-fun searchpath(name: str, path: str, sep: str, rep: str): any
+searchpath(name: str, path: str, sep: str, rep: str): any
     package.searchpath(name, path, sep, rep)
 end
 

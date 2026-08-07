@@ -1,12 +1,13 @@
 -- std.script — Duo-first scripting ergonomics (prefer over bash/python for repo tooling)
 _os = req "std.os"
 _io = req "std.io"
+_json = req "std.json"
 
-fun echo(msg: str): void
+echo(msg: str): void
     print(msg)
 end
 
-fun run(cmd: str): i64
+run(cmd: str): i64
     rc = _os.execute(cmd)
     if rc == nil return -1 end
     if rc == true return 0 end
@@ -14,78 +15,78 @@ fun run(cmd: str): i64
     1
 end
 
-fun ok(cmd: str): bool
+ok(cmd: str): bool
     run(cmd) == 0
 end
 
-fun must(cmd: str): void
+must(cmd: str): void
     if not ok(cmd)
         echo("FAIL: " .. cmd)
         _os.exit(1)
     end
 end
 
-fun lock_cmd(cmd: str): str
+lock_cmd(cmd: str): str
     "./scripts/duo_lock.sh -- " .. cmd
 end
 
-fun lock_cmd_timeout(cmd: str, timeout: i64): str
+lock_cmd_timeout(cmd: str, timeout: i64): str
     "./scripts/duo_lock.sh --timeout " .. tostring(timeout) .. " -- " .. cmd
 end
 
-fun locked_run(cmd: str): i64
+locked_run(cmd: str): i64
     if getenv_or("DUO_LOCK_HELD") == "1"
         return run(cmd)
     end
     run(lock_cmd(cmd))
 end
 
-fun locked_ok(cmd: str): bool
+locked_ok(cmd: str): bool
     return locked_run(cmd) == 0
 end
 
-fun locked_must(cmd: str): void
+locked_must(cmd: str): void
     must(lock_cmd(cmd))
 end
 
-fun locked_must_timeout(cmd: str, timeout: i64): void
+locked_must_timeout(cmd: str, timeout: i64): void
     must(lock_cmd_timeout(cmd, timeout))
 end
 
 -- Native build mutex (mkdir + stale-PID reclaim). Used by scripts/duo_lock.duo.
-fun build_lock_dir(): str
+build_lock_dir(): str
     getenv("DUO_BUILD_LOCK", "/tmp/duo-build.lock")
 end
 
-fun build_lock_owner(): str
+build_lock_owner(): str
     build_lock_dir() .. "/owner"
 end
 
-fun build_lock_try_acquire(): bool
+build_lock_try_acquire(): bool
     ld = build_lock_dir()
     return @c.emit("mkdir(ld, 0777) == 0")
 end
 
-fun build_lock_write_owner(): void
+build_lock_write_owner(): void
     of = build_lock_owner()
     @c.emit([[({ FILE* f = fopen(of, "w"); if (f) { fprintf(f, "%d %ld\n", (int)getpid(), (long)time(NULL)); fclose(f); } })]])
 end
 
-fun build_lock_stale(): bool
+build_lock_stale(): bool
     of = build_lock_owner()
     pid_line = capture("cut -d' ' -f1 '" .. of .. "' 2>/dev/null | head -1")
     if pid_line == "" return true end
-    return run("kill -0 " .. string.gsub(pid_line, "%s+", "") .. " 2>/dev/null") ~= 0
+    return run("kill -0 " .. string.gsub(pid_line, "%s+", "") .. " 2>/dev/null") != 0
 end
 
-fun build_lock_release(): void
+build_lock_release(): void
     ld = build_lock_dir()
     of = build_lock_owner()
     _os.remove(of)
     @c.emit("rmdir(ld)")
 end
 
-fun build_lock_acquire(timeout: i64): bool
+build_lock_acquire(timeout: i64): bool
     if getenv_or("DUO_LOCK_HELD") == "1"
         return true
     end
@@ -110,12 +111,12 @@ fun build_lock_acquire(timeout: i64): bool
     false
 end
 
-fun capture(cmd: str): str
+capture(cmd: str): str
     f = _io.popen(cmd, "r")
     if f == nil return "" end
     out = ""
     line = f:read()
-    while line ~= nil
+    while line != nil
         out = out .. line .. "\n"
         line = f:read()
     end
@@ -123,22 +124,22 @@ fun capture(cmd: str): str
     out
 end
 
-fun duo_bin(): str
+duo_bin(): str
     "./zig-out/bin/duo"
 end
 
-fun duo_run(path: str, bin: str): void
+duo_run(path: str, bin: str): void
     echo("agent-smoke: duo run " .. path)
     must(bin .. " run " .. path)
 end
 
-fun duo_run_all(paths: any, bin: str): void
+duo_run_all(paths: any, bin: str): void
     for _, path in paths
         duo_run(path, bin)
     end
 end
 
-fun zig_build(): void
+zig_build(): void
     -- When invoked via the build target the duo binary is already fresh; a second
     -- `zig build` here would just race other agents on .zig-cache. Skip it then.
     if _os.getenv("DUO_ALREADY_BUILT") == "1"
@@ -148,31 +149,31 @@ fun zig_build(): void
     must("zig build")
 end
 
-fun zig_test_file(path: str): void
+zig_test_file(path: str): void
     must("zig test " .. path)
 end
 
 -- === Environment ===
 
-fun getenv(name: str, fallback: str): str
+getenv(name: str, fallback: str): str
     v = _os.getenv(name)
     if v == nil return fallback end
     v
 end
 
-fun getenv_or(name: str): str
+getenv_or(name: str): str
     v = _os.getenv(name)
     if v == nil return "" end
     v
 end
 
-fun env_set(name: str, value: str): void
+env_set(name: str, value: str): void
     must("export " .. name .. "='" .. value .. "'")
 end
 
 -- === Path manipulation (makes Duo ergonomic vs Python os.path) ===
 
-fun path_join(a: str, b: str): str
+path_join(a: str, b: str): str
     if a == "" return b end
     if b == "" return a end
     sep = "/"
@@ -182,7 +183,7 @@ fun path_join(a: str, b: str): str
     a .. sep .. b
 end
 
-fun path_basename(p: str): str
+path_basename(p: str): str
     -- Find last /
     pos = 0
     for i = #p, 1, -1
@@ -195,7 +196,7 @@ fun path_basename(p: str): str
     string.sub(p, pos + 1)
 end
 
-fun path_dirname(p: str): str
+path_dirname(p: str): str
     pos = 0
     for i = #p, 1, -1
         if string.sub(p, i, i) == "/"
@@ -208,7 +209,7 @@ fun path_dirname(p: str): str
     string.sub(p, 1, pos - 1)
 end
 
-fun path_ext(p: str): str
+path_ext(p: str): str
     base = path_basename(p)
     pos = 0
     for i = #base, 1, -1
@@ -221,7 +222,7 @@ fun path_ext(p: str): str
     string.sub(base, pos)
 end
 
-fun path_stem(p: str): str
+path_stem(p: str): str
     base = path_basename(p)
     ext = path_ext(base)
     if ext == "" return base end
@@ -230,39 +231,39 @@ end
 
 -- === File system ===
 
-fun fs_exists(p: str): bool
+fs_exists(p: str): bool
     return @c.emit([[({ struct stat _st; stat(p, &_st) == 0; })]])
 end
 
-fun fs_is_file(p: str): bool
+fs_is_file(p: str): bool
     return @c.emit([[({ struct stat _st; stat(p, &_st) == 0 && S_ISREG(_st.st_mode); })]])
 end
 
-fun fs_is_dir(p: str): bool
+fs_is_dir(p: str): bool
     return @c.emit([[({ struct stat _st; stat(p, &_st) == 0 && S_ISDIR(_st.st_mode); })]])
 end
 
-fun fs_read(p: str): str
+fs_read(p: str): str
     return _os.read_file(p)
 end
 
-fun fs_write(p: str, content: str): void
+fs_write(p: str, content: str): void
     if not _os.write_file(p, content)
         echo("FAIL: cannot write " .. p)
         _os.exit(1)
     end
 end
 
-fun fs_mkdir(p: str): void
+fs_mkdir(p: str): void
     _os.mkdir_all(p)
 end
 
-fun fs_glob(pattern: str): any
+fs_glob(pattern: str): any
     out = {}
     f = _io.popen("ls -1 " .. pattern .. " 2>/dev/null", "r")
     if f == nil return out end
     line = f:read()
-    while line ~= nil
+    while line != nil
         table.insert(out, line)
         line = f:read()
     end
@@ -270,43 +271,43 @@ fun fs_glob(pattern: str): any
     return out
 end
 
-fun fs_cp(src: str, dst: str): void
+fs_cp(src: str, dst: str): void
     must("cp -R '" .. src .. "' '" .. dst .. "'")
 end
 
-fun fs_mv(src: str, dst: str): void
+fs_mv(src: str, dst: str): void
     must("mv '" .. src .. "' '" .. dst .. "'")
 end
 
-fun fs_rm(path: str): void
+fs_rm(path: str): void
     must("rm -rf '" .. path .. "'")
 end
 
-fun fs_tmp(): str
+fs_tmp(): str
     capture("mktemp 2>/dev/null")
 end
 
-fun fs_tmpdir(): str
+fs_tmpdir(): str
     capture("mktemp -d 2>/dev/null")
 end
 
 -- === Process piping (makes Duo ergonomic vs bash pipes) ===
 
-fun pipe(cmd1: str, cmd2: str): str
+pipe(cmd1: str, cmd2: str): str
     capture(cmd1 .. " | " .. cmd2)
 end
 
-fun pipe_ok(cmd1: str, cmd2: str): bool
+pipe_ok(cmd1: str, cmd2: str): bool
     ok(cmd1 .. " | " .. cmd2)
 end
 
 -- === CLI args (makes Duo ergonomic vs Python argparse for simple cases) ===
 
-fun args(): any
+args(): any
     return _os.args()
 end
 
-fun arg(n: i64, fallback: str): str
+arg(n: i64, fallback: str): str
     a = args()
     if a == nil or n < 1 or n > #a return fallback end
     return a[n]
@@ -314,13 +315,11 @@ end
 
 -- === Quick JSON read (makes Duo ergonomic vs python -c 'import json') ===
 
-fun json_read_file(p: str): any
-    s = req("std.json")
-    content = fs_read(p)
-    s.decode(content)
+json_read_file(p: str): any
+    _json.decode(fs_read(p))
 end
 
-fun exec(cmd: str): any
+exec(cmd: str): any
     f = _io.popen(cmd .. " 2>&1", "r")
     if f == nil return { output = "", code = -1 } end
     out = f:read("*a")

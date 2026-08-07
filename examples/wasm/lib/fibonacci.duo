@@ -1,16 +1,16 @@
 -- Typed fibonacci exports for WAST testing.
 
 @export
-fun fib(n: int): int
-    if n <= 1 then
+fib(n: int): int
+    if n <= 1
         n
     end
     fib(n - 1) + fib(n - 2)
 end
 
 @export
-fun fib_iter(n: int): int
-    if n <= 1 then
+fib_iter(n: int): int
+    if n <= 1
         n
     end
     a: int = 0
@@ -24,16 +24,16 @@ fun fib_iter(n: int): int
 end
 
 @export
-fun factorial(n: int): int
-    if n <= 1 then
+factorial(n: int): int
+    if n <= 1
         1
     end
     n * factorial(n - 1)
 end
 
 @export
-fun gcd(a: int, b: int): int
-    while b ~= 0
+gcd(a: int, b: int): int
+    while b != 0
         t: int = b
         b = a % b
         a = t
@@ -42,15 +42,15 @@ fun gcd(a: int, b: int): int
 end
 
 @export
-fun lcm(a: int, b: int): int
+lcm(a: int, b: int): int
     (a // gcd(a, b)) * b
 end
 
 @export
-fun pow_int(base: int, exp: int): int
+pow_int(base: int, exp: int): int
     result: int = 1
     while exp > 0
-        if exp % 2 == 1 then
+        if exp % 2 == 1
             result *= base
         end
         base *= base

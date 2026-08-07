@@ -31,7 +31,7 @@ M.FRAME_CONNECTION_CLOSE = 0x1C
 -- QUIC Connection
 -- ═══════════════════════════════════════════════════════════════
 
-fun quic_connection_new(config: any): any
+quic_connection_new(config: any): any
     {
         connection_id = config.connection_id or generate_connection_id(),
         remote_address = config.remote_address or "0.0.0.0:0",
@@ -47,7 +47,7 @@ fun quic_connection_new(config: any): any
     }
 end
 
-fun quic_connection_connect(conn: any, address: str): any
+quic_connection_connect(conn: any, address: str): any
     conn.remote_address = address
     conn.state = "connecting"
     conn.last_activity = os.time() * 1000
@@ -60,7 +60,7 @@ fun quic_connection_connect(conn: any, address: str): any
     }
 end
 
-fun quic_connection_accept(conn: any): any
+quic_connection_accept(conn: any): any
     conn.state = "connected"
     conn.last_activity = os.time() * 1000
     {
@@ -69,21 +69,21 @@ fun quic_connection_accept(conn: any): any
     }
 end
 
-fun quic_connection_close(conn: any, error_code: i64, reason: str): void
+quic_connection_close(conn: any, error_code: i64, reason: str): void
     conn.state = "closed"
     conn.close_error = error_code
     conn.close_reason = reason
 end
 
-fun quic_connection_is_open(conn: any): bool
-    conn.state ~= "closed"
+quic_connection_is_open(conn: any): bool
+    conn.state != "closed"
 end
 
 -- ═══════════════════════════════════════════════════════════════
 -- QUIC Stream
 -- ═══════════════════════════════════════════════════════════════
 
-fun quic_stream_new(conn: any, stream_id: i64): any
+quic_stream_new(conn: any, stream_id: i64): any
     {
         stream_id = stream_id or conn.next_stream_id,
         conn = conn,
@@ -97,8 +97,8 @@ fun quic_stream_new(conn: any, stream_id: i64): any
     }
 end
 
-fun quic_stream_write(stream: any, data: any): any
-    if stream.state ~= "open" then
+quic_stream_write(stream: any, data: any): any
+    if stream.state != "open"
         return {ok = false, error = "stream closed"}
     end
 
@@ -115,8 +115,8 @@ fun quic_stream_write(stream: any, data: any): any
     }
 end
 
-fun quic_stream_read(stream: any, max_bytes: i64): any
-    if #stream.recv_buffer == 0 then
+quic_stream_read(stream: any, max_bytes: i64): any
+    if #stream.recv_buffer == 0
         return {ok = false, error = "no data"}
     end
 
@@ -150,11 +150,11 @@ fun quic_stream_read(stream: any, max_bytes: i64): any
     }
 end
 
-fun quic_stream_close(stream: any): void
+quic_stream_close(stream: any): void
     stream.state = "closed"
 end
 
-fun quic_stream_is_open(stream: any): bool
+quic_stream_is_open(stream: any): bool
     stream.state == "open"
 end
 
@@ -162,7 +162,7 @@ end
 -- QUIC Packet Encoding
 -- ═══════════════════════════════════════════════════════════════
 
-fun quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_number: i64): any
+quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_number: i64): any
     -- Simplified header encoding
     bytes = {}
 
@@ -190,7 +190,7 @@ fun quic_packet_header_encode(packet_type: i64, connection_id: i64, packet_numbe
     bytes
 end
 
-fun quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
+quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
     bytes = {}
 
     -- Frame type
@@ -215,7 +215,7 @@ fun quic_frame_stream_encode(stream_id: i64, offset: i64, data: any): any
     bytes
 end
 
-fun quic_frame_ack_encode(largest_acknowledged: i64, ack_delay: i64): any
+quic_frame_ack_encode(largest_acknowledged: i64, ack_delay: i64): any
     bytes = {}
 
     -- Frame type
@@ -237,7 +237,7 @@ end
 -- QUIC Config
 -- ═══════════════════════════════════════════════════════════════
 
-fun quic_config_new(): any
+quic_config_new(): any
     {
         max_data = 1048576,
         max_streams = M.MAX_STREAMS,
@@ -249,15 +249,15 @@ fun quic_config_new(): any
     }
 end
 
-fun quic_config_set_max_data(config: any, max_data: i64): void
+quic_config_set_max_data(config: any, max_data: i64): void
     config.max_data = max_data
 end
 
-fun quic_config_set_max_streams(config: any, max_streams: i64): void
+quic_config_set_max_streams(config: any, max_streams: i64): void
     config.max_streams = max_streams
 end
 
-fun quic_config_set_idle_timeout(config: any, timeout: i64): void
+quic_config_set_idle_timeout(config: any, timeout: i64): void
     config.idle_timeout = timeout
 end
 
@@ -265,7 +265,7 @@ end
 -- Utility
 -- ═══════════════════════════════════════════════════════════════
 
-fun generate_connection_id(): any
+generate_connection_id(): any
     crypto_rand = req "std.crypto.rand"
     bytes = {}
     data = crypto_rand.bytes(8)
@@ -277,15 +277,15 @@ fun generate_connection_id(): any
     bytes
 end
 
-fun quic_varint_encode(value: i64): any
-    if value < 0x40 then
+quic_varint_encode(value: i64): any
+    if value < 0x40
         return {bit.band(value, 0xFF)}
-    elseif value < 0x4000 then
+    elseif value < 0x4000
         return {
             bit.bor(0x40, bit.rshift(value, 8)),
             bit.band(value, 0xFF),
         }
-    elseif value < 0x40000000 then
+    elseif value < 0x40000000
         return {
             bit.bor(0x80, bit.rshift(value, 24)),
             bit.band(bit.rshift(value, 16), 0xFF),

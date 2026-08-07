@@ -1,18 +1,18 @@
 -- std.tar — basic TAR archive wrapper
 
-local proc = req("std.proc")
+proc = req("std.proc")
 
-fun create(archive_path: str, source_dir: str): bool
-    local cmd = "tar -cf " .. archive_path .. " -C " .. source_dir .. " ."
-    local rc = proc.exec(cmd)
+create(archive_path: str, source_dir: str): bool
+    cmd = "tar -cf " .. archive_path .. " -C " .. source_dir .. " ."
+    rc = proc.exec(cmd)
     rc == 0
 end
 
-fun extract(archive_path: str, dest_dir: str): bool
+extract(archive_path: str, dest_dir: str): bool
     -- Ensure destination exists
     proc.exec("mkdir -p " .. dest_dir)
-    local cmd = "tar -xf " .. archive_path .. " -C " .. dest_dir
-    local rc = proc.exec(cmd)
+    cmd = "tar -xf " .. archive_path .. " -C " .. dest_dir
+    rc = proc.exec(cmd)
     rc == 0
 end
 

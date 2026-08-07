@@ -35,6 +35,17 @@ pub const fingerprint_corpus: []const []const u8 = &.{
 
 pub const expected_fingerprint: u64 = 14826766157002701032;
 
+/// MP4-B02 — the Duo-native tokenizer computes this same corpus fingerprint via
+/// `duo_lexer_kind_fingerprint` (`lib/std/compiler/lexer.duo`) and is proven to
+/// land on the identical value by `DUO_FINGERPRINT_PROOF`. Matching here means the
+/// two tokenizers agree token-for-token — including EOF — over every corpus entry,
+/// which is the differential the SH-03 removal gate rests on.
+///
+/// Duo arithmetic is signed, so the proof compares against these bits read as i64.
+pub const expected_fingerprint_i64: i64 = @bitCast(expected_fingerprint);
+pub const DUO_FINGERPRINT_PROOF = "examples/pass16_lexer_fingerprint_differential.duo";
+pub const DUO_FINGERPRINT_EXPORT = "duo_lexer_kind_fingerprint";
+
 pub fn mixFingerprint(h: u64, kind: lexer.TokenKind) u64 {
     return h *% 31 +% @intFromEnum(kind);
 }
@@ -138,4 +149,38 @@ test "lexer_differential: line tracking" {
     try std.testing.expectEqual(@as(u32, 1), t1.loc.line);
     const t2 = try lex.next();
     try std.testing.expectEqual(@as(u32, 2), t2.loc.line);
+}
+
+// MP4-B02 — the Duo-side differential exists and pins the same corpus constant.
+//
+// The value is asserted from both directions: the host fingerprint must equal
+// `expected_fingerprint`, and the Duo proof compares its own computation against
+// the identical bits as i64. If either the corpus or the mix ever changes, this
+// test and the Duo proof must move together or the differential is vacuous.
+test "lexer_differential: Duo-native fingerprint differential is wired" {
+    const io_mod = std.Io;
+    var threaded = io_mod.Threaded.init(std.testing.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    // The Duo proof must exist — a missing proof would silently drop the only
+    // evidence that the Duo tokenizer agrees with the production lexer.
+    io_mod.Dir.cwd().access(io, DUO_FINGERPRINT_PROOF, .{}) catch
+        return error.DuoFingerprintProofMissing;
+
+    // The Duo projection must still export the entry the proof calls.
+    const lexer_duo = try io_mod.Dir.cwd().readFileAlloc(
+        io,
+        "lib/std/compiler/lexer.duo",
+        std.testing.allocator,
+        .unlimited,
+    );
+    defer std.testing.allocator.free(lexer_duo);
+    if (std.mem.indexOf(u8, lexer_duo, DUO_FINGERPRINT_EXPORT) == null) {
+        return error.DuoFingerprintExportMissing;
+    }
+
+    // Same bits, both signednesses — this is the number the Duo proof compares to.
+    try std.testing.expectEqual(expected_fingerprint, @as(u64, @bitCast(expected_fingerprint_i64)));
+    try std.testing.expectEqual(expected_fingerprint, try hostCorpusFingerprint());
 }

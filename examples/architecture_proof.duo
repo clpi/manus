@@ -29,7 +29,7 @@ defaults = { color = "blue", size = 10 }
 custom = { ..defaults, color = "red" }
 
 -- Field projections (GP-001)
-fun map(t, f)
+map(t, f)
     result = {}
     for i = 1, #t do result[i] = f(t[i]) end
     return result
@@ -50,7 +50,7 @@ for s in scores do
 end
 
 -- If-expression (GS-003)
-grade = if total > 250 then "excellent" else "good" end
+grade = if total > 250 "excellent" else "good" end
 
 -- Newline-separated fields (GP-013) — no commas needed
 point = {

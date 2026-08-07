@@ -31,7 +31,9 @@ accepted source
 | `src/pass27_gate.zig` | M0 native gate |
 | `src/pass27_benchmark_evidence.zig` | Counters + 3-backend matrix + `.proof.json` writer |
 | `src/main.zig` | Emits `{generated.c}.proof.json` when `DUO_EMIT_PROOF=1` or bench mode |
-| `scripts/run_benchmark_proof.sh` | 3-profile matrix + C correctness hash gate |
+| `scripts/run_benchmark_proof.sh` | 3-profile matrix gate (`zig build bench-proof-gate`) |
+| `examples/pass27_proof_matrix.duo` | Ten-benchmark C-path proof source |
+| `examples/pass27_proof_matrix_direct.duo` | Direct ARM64 micro proof (zero-box) |
 | `src/native_barrier_checks.zig` | Low-level pattern scan bridge |
 
 ### Emission counters
@@ -80,7 +82,23 @@ duo catalog | jq '.pass27'
 - `claim.faster_than_c_global` stays **partial** until profile matrix + artifact inspection pass.
 - Do not publish headline perf numbers without a proof artifact path.
 
-## 5. Next steps (P0 → P1)
+## 5. Known gaps exposed by P0 gate (honest)
+
+- Full 40-benchmark `examples/benchmark.{lua,duo}` currently fails sema (14 type errors) — not used for P0 matrix.
+- `pass27_proof_matrix`: c-dynamic and c-specialized both emit `provisional-boxed-path` (1534 boxes) — specialization ladder not yet proven on this workload.
+- Direct profile uses `pass27_proof_matrix_direct.duo` (record + bounded LEB128 + `__native_load_u8`, zero boxes).
+
+## 6. P1 partial (Ward direct micro proof)
+
+`examples/pass27_proof_matrix_direct.duo` proves on `--bench-backend direct`:
+
+- sealed `Point` + `length2`
+- wasm header blob + LEB128(624485) blob (split constants — 11-byte single blob hits native layout gap)
+- `__native_load_u8` bounded reads
+- error-code return pack (single i64 channel until multi-reg record returns land)
+- `native_barrier_checks.pass27_ward_direct_profile` — no_boxing on generated hot symbols
+
+## 7. Next steps (P1 → P2)
 
 1. Wire proof artifacts into `run_benchmark.sh` summary JSON.
 2. Add disassembly snippet + `@comp.why` linkage to proof bundle.

@@ -1,0 +1,7 @@
+f(n: i64): i64
+    if n > 0 return 111 end
+    return 222
+end
+main(): i64
+    return f(7)
+end

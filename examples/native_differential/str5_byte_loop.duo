@@ -1,0 +1,13 @@
+count(src: str): i64
+    n = #src
+    i = 1
+    total = 0
+    while i <= n do
+        total = total + string.byte(src, i)
+        i = i + 1
+    end
+    return total
+end
+main(): i64
+    return count("AB")
+end

@@ -1,60 +1,60 @@
 -- std.testing.fstest — filesystem test helpers (mirrors Go's testing/fstest)
 -- Provides a MapFS in-memory filesystem for testing file operations.
 
-local string = req "std.string"
+string = req "std.string"
 
-local MapFS = {}
+MapFS = {}
 MapFS.__index = MapFS
 
-fun new_mapfs(): any
+new_mapfs(): any
     {files = {}}
 end
 
-fun mapfs_add(fs: any, path: str, data: str): void
+mapfs_add(fs: any, path: str, data: str): void
     fs.files[path] = {data = data, mode = 0644}
 end
 
-fun mapfs_add_dir(fs: any, path: str): void
+mapfs_add_dir(fs: any, path: str): void
     fs.files[path] = {data = nil, mode = 0755, is_dir = true}
 end
 
-fun mapfs_open(fs: any, path: str): any
+mapfs_open(fs: any, path: str): any
     entry = fs.files[path]
-    if entry == nil then return nil end
+    if entry == nil return nil end
     {data = entry.data, pos = 1, mode = entry.mode, is_dir = entry.is_dir}
 end
 
-fun mapfs_read(f: any, n: i64): any
-    if f.data == nil then return nil end
-    if f.pos > string.len(f.data) then return nil end
-    local chunk = string.sub(f.data, f.pos, f.pos + n - 1)
+mapfs_read(f: any, n: i64): any
+    if f.data == nil return nil end
+    if f.pos > string.len(f.data) return nil end
+    chunk = string.sub(f.data, f.pos, f.pos + n - 1)
     f.pos = f.pos + string.len(chunk)
     chunk
 end
 
-fun mapfs_read_all(f: any): str
-    if f.data == nil then return "" end
+mapfs_read_all(f: any): str
+    if f.data == nil return "" end
     f.pos = string.len(f.data) + 1
     f.data
 end
 
-fun mapfs_seek(f: any, offset: i64, whence: i64): i64
-    if f.data == nil then return 0 end
-    if whence == 0 then
+mapfs_seek(f: any, offset: i64, whence: i64): i64
+    if f.data == nil return 0 end
+    if whence == 0
         f.pos = offset + 1
-    elseif whence == 1 then
+    elseif whence == 1
         f.pos = f.pos + offset
-    elseif whence == 2 then
+    elseif whence == 2
         f.pos = string.len(f.data) + offset + 1
     end
-    if f.pos < 1 then f.pos = 1 end
+    if f.pos < 1 f.pos = 1 end
     f.pos - 1
 end
 
-fun mapfs_glob(fs: any, pattern: str): any
-    local results = {}
+mapfs_glob(fs: any, pattern: str): any
+    results = {}
     for path, _ in fs.files
-        if string.find(path, pattern) then
+        if string.find(path, pattern)
             results[rawlen(results) + 1] = path
         end
     end

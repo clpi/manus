@@ -3,15 +3,15 @@
 
 alias Point = { x: f64, y: f64 }
 
-fun make_point(x: f64, y: f64): Point
+make_point(x: f64, y: f64): Point
     { x = x, y = y }
 end
 
-fun add_points(a: Point, b: Point): Point
+add_points(a: Point, b: Point): Point
     { a.x + b.x, a.y + b.y }
 end
 
-fun main()
+main()
     p1: Point = make_point(3.0, 4.0)
     p2: Point = make_point(1.0, 2.0)
     p3 = add_points(p1, p2)

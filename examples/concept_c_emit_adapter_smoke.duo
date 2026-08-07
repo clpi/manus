@@ -2,7 +2,7 @@ contracts = req "std.contracts"
 
 concept ContractShape
     id: i64
-    fun hash(self, salt: i64): i64
+    hash(self, salt: i64): i64
 end
 
 @c.emit([[
@@ -34,10 +34,10 @@ c_report = contracts.concept_target_c_report(
 adapter_id: i64 = @c.emit("UserAdapter_get_id(&duo_user_adapter)")
 adapter_hash: i64 = @c.emit("UserAdapter_hash(&duo_user_adapter, 2)")
 
-if adapter_id ~= 40
+if adapter_id != 40
     error("concept adapter getter returned wrong id")
 end
-if adapter_hash ~= 42
+if adapter_hash != 42
     error("concept adapter method wrapper returned wrong hash")
 end
 

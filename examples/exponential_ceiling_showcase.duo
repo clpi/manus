@@ -10,7 +10,7 @@ type Point = { x: f64, y: f64 }
 type BadXY = { x: i64, y: f64 }
 type Pair = { x: f64, y: f64 }
 
-@comp.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -22,7 +22,7 @@ end)
 @comp.assert(@comp.satisfies(Point, "HasXY"))
 @comp.assert(not @comp.satisfies(BadXY, "HasXY"))
 
-fun registry_line(meta) -> str
+registry_line(meta) -> str
     meta.name .. ";"
 end
 

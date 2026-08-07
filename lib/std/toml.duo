@@ -1,54 +1,54 @@
 -- std.toml — TOML parser with section support
 
-local string = req "std.string"
-local table_mod = req "std.table"
+string = req "std.string"
+table_mod = req "std.table"
 
-fun parse_value(s: str): any
-    if s == nil then return nil end
-    if string.len(s) >= 2 and string.sub(s, 1, 1) == '"' and string.sub(s, string.len(s), string.len(s)) == '"' then
+parse_value(s: str): any
+    if s == nil return nil end
+    if string.len(s) >= 2 and string.sub(s, 1, 1) == '"' and string.sub(s, string.len(s), string.len(s)) == '"'
         return string.sub(s, 2, string.len(s) - 1)
     end
-    if s == "true" then return true end
-    if s == "false" then return false end
-    local num = tonumber(s)
-    if num ~= nil then return num end
+    if s == "true" return true end
+    if s == "false" return false end
+    num = tonumber(s)
+    if num != nil return num end
     s
 end
 
-fun parse(data: str): any
-    if data == nil then return {} end
-    local res = {}
-    local current = res
-    local current_path = {}
-    local lines = string.split(data, "\n")
+parse(data: str): any
+    if data == nil return {} end
+    res = {}
+    current = res
+    current_path = {}
+    lines = string.split(data, "\n")
     for _, line in lines
         line = string.trim(line)
-        if string.len(line) > 0 and string.sub(line, 1, 1) ~= "#" then
-            if string.sub(line, 1, 1) == "[" then
-                local section_name = string.sub(line, 2, string.len(line) - 1)
+        if string.len(line) > 0 and string.sub(line, 1, 1) != "#"
+            if string.sub(line, 1, 1) == "["
+                section_name = string.sub(line, 2, string.len(line) - 1)
                 section_name = string.trim(section_name)
                 current = res
                 current_path = {}
-                local parts = string.split(section_name, ".")
+                parts = string.split(section_name, ".")
                 for _, part in parts
                     part = string.trim(part)
-                    if current[part] == nil then
+                    if current[part] == nil
                         current[part] = {}
                     end
                     current_path[rawlen(current_path) + 1] = part
                     current = current[part]
                 end
             else
-                local eq_pos = nil
+                eq_pos = nil
                 for j = 1, string.len(line)
-                    if string.byte(line, j) == 61 then
+                    if string.byte(line, j) == 61
                         eq_pos = j
                         break
                     end
                 end
-                if eq_pos ~= nil then
-                    local key = string.trim(string.sub(line, 1, eq_pos - 1))
-                    local val_str = string.trim(string.sub(line, eq_pos + 1))
+                if eq_pos != nil
+                    key = string.trim(string.sub(line, 1, eq_pos - 1))
+                    val_str = string.trim(string.sub(line, eq_pos + 1))
                     current[key] = parse_value(val_str)
                 end
             end

@@ -1,38 +1,38 @@
 -- std.hash.sha512 — SHA-512 hash (mirrors Go's crypto/sha512)
 -- Pure-Duo implementation using 32-bit word pairs to represent 64-bit values.
 
-fun make_wide(hi: i64, lo: i64): any
+make_wide(hi: i64, lo: i64): any
     {hi = hi % (4294967296), lo = lo % (4294967296)}
 end
 
-fun wide_add(a: any, b: any): any
+wide_add(a: any, b: any): any
     lo = a.lo + b.lo
     hi = a.hi + b.hi
-    if lo >= (4294967296) then
+    if lo >= (4294967296)
         lo -= (4294967296)
         hi += 1
     end
     {hi = hi % (4294967296), lo = lo % (4294967296)}
 end
 
-fun wide_not(a: any): any
+wide_not(a: any): any
     {hi = (~a.hi) % (4294967296), lo = (~a.lo) % (4294967296)}
 end
 
-fun wide_and(a: any, b: any): any
+wide_and(a: any, b: any): any
     {hi = (a.hi & b.hi) % (4294967296), lo = (a.lo & b.lo) % (4294967296)}
 end
 
-fun wide_or(a: any, b: any): any
+wide_or(a: any, b: any): any
     {hi = (a.hi | b.hi) % (4294967296), lo = (a.lo | b.lo) % (4294967296)}
 end
 
-fun wide_xor(a: any, b: any): any
+wide_xor(a: any, b: any): any
     {hi = (a.hi ~ b.hi) % (4294967296), lo = (a.lo ~ b.lo) % (4294967296)}
 end
 
-fun wide_shr(a: any, n: i64): any
-    if n >= 32 then
+wide_shr(a: any, n: i64): any
+    if n >= 32
         return {hi = 0, lo = a.hi >> (n - 32)}
     end
     new_hi = a.hi >> n
@@ -40,8 +40,8 @@ fun wide_shr(a: any, n: i64): any
     return {hi = new_hi, lo = new_lo}
 end
 
-fun wide_shl(a: any, n: i64): any
-    if n >= 32 then
+wide_shl(a: any, n: i64): any
+    if n >= 32
         return {hi = (a.lo << (n - 32)) % (4294967296), lo = 0}
     end
     new_hi = ((a.hi << n) + (a.lo >> (32 - n))) % (4294967296)
@@ -49,15 +49,15 @@ fun wide_shl(a: any, n: i64): any
     return {hi = new_hi, lo = new_lo}
 end
 
-fun wide_ror(a: any, n: i64): any
+wide_ror(a: any, n: i64): any
     wide_or(wide_shr(a, n), wide_shl(a, 64 - n))
 end
 
-fun wide_to_hex(a: any): str
+wide_to_hex(a: any): str
     string.format("%08x%08x", a.hi, a.lo)
 end
 
-fun wide_from_bytes(data: str, off: i64): any
+wide_from_bytes(data: str, off: i64): any
     hi = 0
     for k = 0, 3
         hi = (hi * 256 + string.byte(data, off + k)) % (4294967296)
@@ -119,10 +119,10 @@ const H_init = {
     {hi = 0x1f83d9ab, lo = 0xfb41bd6b}, {hi = 0x5be0cd19, lo = 0x137e2179},
 }
 
-fun hash_string(s: str): str
-    if s == nil then s = "" end
+hash_string(s: str): str
+    if s == nil s = "" end
     msg = s .. string.char(0x80)
-    while string.len(msg) % 128 ~= 112
+    while string.len(msg) % 128 != 112
         msg = msg .. string.char(0)
     end
     bit_len = string.len(s) * 8

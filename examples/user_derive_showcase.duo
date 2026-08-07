@@ -1,7 +1,7 @@
 -- User-defined @comp.define.derive + @comp.fields.map exponential codegen showcase
 -- Run: duo run examples/user_derive_showcase.duo
 
-@comp.define.derive("CStruct", fun generate(meta) -> str
+@comp.define.derive("CStruct", generate(meta) -> str
     acc = "typedef struct " .. meta.name .. " {\n"
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -11,7 +11,7 @@
     acc
 end)
 
-@comp.define.derive("GetterBundle", fun generate(meta) -> str
+@comp.define.derive("GetterBundle", generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]

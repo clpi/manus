@@ -1,11 +1,11 @@
 -- std.build — build system helpers and environment info
 
-local term = req "std.term"
+term = req "std.term"
 
 global _project = { name = "duo-app", version = "0.1.0", default = "app" }
 global _targets = {}
 
-fun info(): any
+info(): any
     {
         compiler = "duo",
         version = "0.1.0",
@@ -14,99 +14,99 @@ fun info(): any
     }
 end
 
-fun platform(): str
+platform(): str
     os.getenv("OSTYPE") or "unknown"
 end
 
-fun arch(): str
+arch(): str
     a = os.getenv("HOSTTYPE") or os.getenv("MACHTYPE") or "unknown"
     a
 end
 
-fun target(): str
+target(): str
     string.format("%s-%s", arch(), platform())
 end
 
-fun is_debug(): bool
+is_debug(): bool
     os.getenv("DEBUG") == "1"
 end
 
-fun env(): str
+env(): str
     os.getenv("BUILD_ENV") or "development"
 end
 
-fun project(cfg: any): any
-    if cfg == nil then
+project(cfg: any): any
+    if cfg == nil
         _project
     else
-        if cfg.name ~= nil then _project.name = cfg.name end
-        if cfg.version ~= nil then _project.version = cfg.version end
-        if cfg.default ~= nil then _project.default = cfg.default end
+        if cfg.name != nil _project.name = cfg.name end
+        if cfg.version != nil _project.version = cfg.version end
+        if cfg.default != nil _project.default = cfg.default end
         _project
     end
 end
 
-fun exe(cfg: any): any
-    if cfg.name == nil then cfg.name = "app" end
-    if cfg.src == nil then cfg.src = "src/main.duo" end
-    if cfg.out == nil then cfg.out = "zig-out/bin/" .. cfg.name end
-    if cfg.opt == nil then cfg.opt = "-O3" end
-    if cfg.target == nil then cfg.target = "native" end
+exe(cfg: any): any
+    if cfg.name == nil cfg.name = "app" end
+    if cfg.src == nil cfg.src = "src/main.duo" end
+    if cfg.out == nil cfg.out = "zig-out/bin/" .. cfg.name end
+    if cfg.opt == nil cfg.opt = "-O3" end
+    if cfg.target == nil cfg.target = "native" end
     cfg.kind = "exe"
     _targets[#_targets + 1] = cfg
     cfg
 end
 
-fun lib(cfg: any): any
+lib(cfg: any): any
     t = exe(cfg)
     t.kind = "lib"
     t.lib = true
     t
 end
 
-fun targets(): any
+targets(): any
     _targets
 end
 
-fun default_target(): str
+default_target(): str
     _project.default
 end
 
-fun find(name: str): any
+find(name: str): any
     for _, t in ipairs(_targets)
-        if t.name == name then
+        if t.name == name
             t
         end
     end
     nil
 end
 
-fun command(t: any): str
+command(t: any): str
     cmd = "duo compile " .. t.src
-    if t.out ~= nil then cmd = cmd .. " -o " .. t.out end
-    if t.opt ~= nil then cmd = cmd .. " " .. t.opt end
-    if t.target ~= nil and t.target ~= "native" then cmd = cmd .. " --target " .. t.target end
-    if t.cc ~= nil then cmd = cmd .. " --cc " .. t.cc end
-    if t.pgo then cmd = cmd .. " --pgo" end
-    if t.shared_memory then cmd = cmd .. " --shared-memory" end
-    if t.load_chunk then cmd = cmd .. " --load-chunk" end
-    if t.lib then cmd = cmd .. " --lib" end
+    if t.out != nil cmd = cmd .. " -o " .. t.out end
+    if t.opt != nil cmd = cmd .. " " .. t.opt end
+    if t.target != nil and t.target != "native" cmd = cmd .. " --target " .. t.target end
+    if t.cc != nil cmd = cmd .. " --cc " .. t.cc end
+    if t.pgo cmd = cmd .. " --pgo" end
+    if t.shared_memory cmd = cmd .. " --shared-memory" end
+    if t.load_chunk cmd = cmd .. " --load-chunk" end
+    if t.lib cmd = cmd .. " --lib" end
     cmd
 end
 
-fun clean(): i64
+clean(): i64
     os.execute("rm -rf zig-out/bin")
 end
 
-fun log_target(t: any): void
+log_target(t: any): void
     print(term.banner("build target"))
     print(term.kv("name", t.name))
     print(term.kv("source", t.src))
-    if t.out ~= nil then print(term.kv("output", t.out)) end
+    if t.out != nil print(term.kv("output", t.out)) end
     print(term.kv("command", command(t)))
 end
 
-fun log_project(): void
+log_project(): void
     print(term.banner("duo project"))
     print(term.kv("name", _project.name))
     print(term.kv("version", _project.version))

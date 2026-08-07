@@ -9,7 +9,7 @@ print("3")
 lexer = std.compiler.lexer
 print("4")
 
-fun run_test()
+run_test()
     print("Starting test")
     src = "fun add(a: i64, b: i64): i64 return a + b end"
     print("calling lexer.new")

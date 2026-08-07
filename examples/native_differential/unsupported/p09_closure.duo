@@ -1,0 +1,7 @@
+make_adder(n: i64)
+    return (x: i64): i64 x + n end
+end
+main(): i64
+    f = make_adder(40)
+    return f(2)
+end

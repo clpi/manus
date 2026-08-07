@@ -2,7 +2,7 @@
 
 -- Define a concept for equality
 concept Equatable
-    fun eq(self, other): bool
+    eq(self, other): bool
 end
 
 -- Create a point that satisfies Equatable
@@ -16,7 +16,7 @@ point.clone = fun(self)
     c
 end
 point.eq = fun(self, other): bool
-    if other == nil then return false end
+    if other == nil return false end
     self.x == other.x and self.y == other.y
 end
 point.to_string = fun(self): str

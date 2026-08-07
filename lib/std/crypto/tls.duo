@@ -2,7 +2,7 @@
 -- Provides TLS/SSL connections over TCP sockets.
 -- Link with: duo compile myapp.duo --link ssl crypto
 
-local net = req "std.net"
+net = req "std.net"
 
 -- ═══════════════════════════════════════════════════════════════
 -- OpenSSL FFI declarations
@@ -10,57 +10,57 @@ local net = req "std.net"
 
 -- SSL_CTX *SSL_CTX_new(const SSL_METHOD *method)
 @ffi("SSL_CTX_new")
-fun ssl_ctx_new(method: any): any
+ssl_ctx_new(method: any): any
 
 -- const SSL_METHOD *TLS_client_method(void)
 @ffi("TLS_client_method")
-fun tls_client_method(): any
+tls_client_method(): any
 
 -- int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
 @ffi("SSL_CTX_set_default_verify_paths")
-fun ssl_ctx_set_default_verify_paths(ctx: any): int
+ssl_ctx_set_default_verify_paths(ctx: any): int
 
 -- SSL *SSL_new(SSL_CTX *ctx)
 @ffi("SSL_new")
-fun ssl_new(ctx: any): any
+ssl_new(ctx: any): any
 
 -- int SSL_set_fd(SSL *ssl, int fd)
 @ffi("SSL_set_fd")
-fun ssl_set_fd(ssl: any, fd: int): int
+ssl_set_fd(ssl: any, fd: int): int
 
 -- int SSL_connect(SSL *ssl)
 @ffi("SSL_connect")
-fun ssl_connect(ssl: any): int
+ssl_connect(ssl: any): int
 
 -- int SSL_write(SSL *ssl, const void *buf, int num)
 @ffi("SSL_write")
-fun ssl_write(ssl: any, buf: str, num: int): int
+ssl_write(ssl: any, buf: str, num: int): int
 
 -- int SSL_read(SSL *ssl, void *buf, int num)
 @ffi("SSL_read")
-fun ssl_read(ssl: any, buf: str, num: int): int
+ssl_read(ssl: any, buf: str, num: int): int
 
 -- void SSL_free(SSL *ssl)
 @ffi("SSL_free")
-fun ssl_free(ssl: any): void
+ssl_free(ssl: any): void
 
 -- void SSL_CTX_free(SSL_CTX *ctx)
 @ffi("SSL_CTX_free")
-fun ssl_ctx_free(ctx: any): void
+ssl_ctx_free(ctx: any): void
 
 -- int SSL_get_error(SSL *ssl, int ret)
 @ffi("SSL_get_error")
-fun ssl_get_error(ssl: any, ret: int): int
+ssl_get_error(ssl: any, ret: int): int
 
 -- int SSL_shutdown(SSL *ssl)
 @ffi("SSL_shutdown")
-fun ssl_shutdown(ssl: any): int
+ssl_shutdown(ssl: any): int
 
 -- ═══════════════════════════════════════════════════════════════
 -- TLS Configuration
 -- ═══════════════════════════════════════════════════════════════
 
-fun new_config(): any
+new_config(): any
     {
         insecure_skip_verify = false,
         cert_file = nil,
@@ -71,16 +71,16 @@ fun new_config(): any
     }
 end
 
-fun config_set_cert(config: any, cert_file: str, key_file: str): void
+config_set_cert(config: any, cert_file: str, key_file: str): void
     config.cert_file = cert_file
     config.key_file = key_file
 end
 
-fun config_set_ca(config: any, ca_file: str): void
+config_set_ca(config: any, ca_file: str): void
     config.ca_file = ca_file
 end
 
-fun config_set_server_name(config: any, name: str): void
+config_set_server_name(config: any, name: str): void
     config.server_name = name
 end
 
@@ -88,19 +88,19 @@ end
 -- TLS Client Connection
 -- ═══════════════════════════════════════════════════════════════
 
-fun dial(host: str, port: i64, config: any): any
-    if config == nil then config = new_config() end
+dial(host: str, port: i64, config: any): any
+    if config == nil config = new_config() end
 
     -- Establish TCP connection first
     fd = net.connect(host, port)
-    if fd == nil then
+    if fd == nil
         return nil, "TCP connection failed"
     end
 
     -- Initialize OpenSSL
     method = tls_client_method()
     ctx = ssl_ctx_new(method)
-    if ctx == nil then
+    if ctx == nil
         net.close(fd)
         return nil, "Failed to create SSL context"
     end
@@ -110,7 +110,7 @@ fun dial(host: str, port: i64, config: any): any
 
     -- Create SSL connection
     ssl = ssl_new(ctx)
-    if ssl == nil then
+    if ssl == nil
         ssl_ctx_free(ctx)
         net.close(fd)
         return nil, "Failed to create SSL connection"
@@ -120,13 +120,13 @@ fun dial(host: str, port: i64, config: any): any
     ssl_set_fd(ssl, fd)
 
     -- Set server name for SNI
-    if config.server_name then
+    if config.server_name
         -- Use the hostname for SNI
     end
 
     -- Perform TLS handshake
     ret = ssl_connect(ssl)
-    if ret ~= 1 then
+    if ret != 1
         ssl_free(ssl)
         ssl_ctx_free(ctx)
         net.close(fd)
@@ -143,33 +143,33 @@ fun dial(host: str, port: i64, config: any): any
     }
 end
 
-fun conn_write(conn: any, data: str): i64
-    if conn == nil or conn.ssl == nil then return -1 end
+conn_write(conn: any, data: str): i64
+    if conn == nil or conn.ssl == nil return -1 end
     ssl_write(conn.ssl, data, string.len(data))
 end
 
-fun conn_read(conn: any, maxlen: i64): any
-    if conn == nil or conn.ssl == nil then return nil end
-    if maxlen == nil then maxlen = 4096 end
+conn_read(conn: any, maxlen: i64): any
+    if conn == nil or conn.ssl == nil return nil end
+    if maxlen == nil maxlen = 4096 end
     -- Allocate a buffer of the right size for SSL_read
     buf = string.rep("\0", maxlen)
     n = ssl_read(conn.ssl, buf, maxlen)
-    if n <= 0 then return nil end
+    if n <= 0 return nil end
     string.sub(buf, 1, n), nil
 end
 
-fun conn_close(conn: any): void
-    if conn == nil then return end
-    if conn.ssl ~= nil then
+conn_close(conn: any): void
+    if conn == nil return end
+    if conn.ssl != nil
         ssl_shutdown(conn.ssl)
         ssl_free(conn.ssl)
         conn.ssl = nil
     end
-    if conn.ctx ~= nil then
+    if conn.ctx != nil
         ssl_ctx_free(conn.ctx)
         conn.ctx = nil
     end
-    if conn.fd ~= nil then
+    if conn.fd != nil
         net.close(conn.fd)
         conn.fd = nil
     end
@@ -179,18 +179,18 @@ end
 -- Convenience: HTTPS GET
 -- ═══════════════════════════════════════════════════════════════
 
-fun https_get(url: str): any
+https_get(url: str): any
     -- Parse URL
     parsed = net.parse_url(url)
     host = parsed.host
     port = parsed.port
     path = parsed.path
 
-    if port == nil or port == 0 then port = 443 end
+    if port == nil or port == 0 port = 443 end
 
     -- Connect with TLS
     conn, err = dial(host, port, nil)
-    if conn == nil then
+    if conn == nil
         return {body = "", status = 0, error = err}
     end
 
@@ -205,7 +205,7 @@ fun https_get(url: str): any
     body = ""
     while true
         chunk, err = conn_read(conn, 4096)
-        if chunk == nil then break end
+        if chunk == nil break end
         body = body .. chunk
     end
 
@@ -215,7 +215,7 @@ fun https_get(url: str): any
     status = tonumber(string["match"](body, "HTTP/%d+%.%d+ (%d+)")) or 0
     sep = string.find(body, "\r\n\r\n", 1, true)
     resp_body = body
-    if sep then
+    if sep
         resp_body = string.sub(body, sep + 4)
     end
 

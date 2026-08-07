@@ -6,46 +6,46 @@ Decode = req "std.wasm.decode"
 Lookup = req "std.wasm.opcode_lookup"
 
 main(): i64
-    if Lookup.instruction_count() ~= 63 then return 1 end
+    if Lookup.instruction_count() != 63 return 1 end
 
     verified = 0
 
     -- Wasm 0x00 (unreachable): string.char(0) preserves NUL via lua_str_char path.
     d0 = Decode.decode_instruction(Decode.new_cursor(string.char(0)))
-    if d0.status ~= "ok" return 10 end
-    if d0.id ~= "wasm.unreachable" return 11 end
-    if d0.index ~= 0 return 12 end
+    if d0.status != "ok" return 10 end
+    if d0.id != "wasm.unreachable" return 11 end
+    if d0.index != 0 return 12 end
     verified = verified + 1
 
     op = 1
     while op <= 255
         idx = Lookup.instruction_index_for_opcode(op)
-        if idx ~= nil and idx >= 0
+        if idx != nil and idx >= 0
             sid = Lookup.semantic_id_for_index(idx)
-            if Lookup.semantic_id_for_opcode(op) ~= sid return 200 + op end
+            if Lookup.semantic_id_for_opcode(op) != sid return 200 + op end
 
             d = Decode.decode_instruction(Decode.new_cursor(string.char(op)))
-            if d.status ~= "ok" return 400 + op end
-            if d.id ~= sid return 500 + op end
-            if d.index ~= idx return 600 + op end
-            if d.stack_pop ~= Lookup.stack_pop_for_index(idx) return 700 + op end
-            if d.stack_push ~= Lookup.stack_push_for_index(idx) return 800 + op end
-            if d.immediate_form ~= Lookup.immediate_form_for_index(idx) return 900 + op end
+            if d.status != "ok" return 400 + op end
+            if d.id != sid return 500 + op end
+            if d.index != idx return 600 + op end
+            if d.stack_pop != Lookup.stack_pop_for_index(idx) return 700 + op end
+            if d.stack_push != Lookup.stack_push_for_index(idx) return 800 + op end
+            if d.immediate_form != Lookup.immediate_form_for_index(idx) return 900 + op end
             verified = verified + 1
         end
         op = op + 1
     end
-    if verified ~= 63 return 2 end
+    if verified != 63 return 2 end
 
-    if Lookup.semantic_id_for_opcode(0x6A) ~= "wasm.i32.add" return 1002 end
-    if Lookup.opcode_for_index(44) ~= 0x4F return 1003 end
+    if Lookup.semantic_id_for_opcode(0x6A) != "wasm.i32.add" return 1002 end
+    if Lookup.opcode_for_index(44) != 0x4F return 1003 end
 
     u = Decode.decode_instruction(Decode.new_cursor(string.char(6)))
-    if u.status ~= "unknown_opcode" return 2001 end
+    if u.status != "unknown_opcode" return 2001 end
 
     t = Decode.decode_instruction(Decode.new_cursor(string.char(0x41) .. string.char(0x2A)))
-    if t.status ~= "ok" return 3001 end
-    if t.immediate ~= 42 return 3002 end
+    if t.status != "ok" return 3001 end
+    if t.immediate != 42 return 3002 end
 
     0
 end

@@ -5,7 +5,7 @@
 -- Assertion Context
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_context_new(test_name: str): any
+assert_context_new(test_name: str): any
     {
         name = test_name,
         passed = 0,
@@ -14,7 +14,7 @@ fun assert_context_new(test_name: str): any
     }
 end
 
-fun assert_context_report(ctx: any): any
+assert_context_report(ctx: any): any
     {
         name = ctx.name,
         passed = ctx.passed,
@@ -30,8 +30,8 @@ end
 -- Basic Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_true(ctx: any, value: bool, msg: str): void
-    if value then
+assert_true(ctx: any, value: bool, msg: str): void
+    if value
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -44,8 +44,8 @@ fun assert_true(ctx: any, value: bool, msg: str): void
     end
 end
 
-fun assert_false(ctx: any, value: bool, msg: str): void
-    if not value then
+assert_false(ctx: any, value: bool, msg: str): void
+    if not value
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -58,8 +58,8 @@ fun assert_false(ctx: any, value: bool, msg: str): void
     end
 end
 
-fun assert_equal(ctx: any, got: any, expected: any, msg: str): void
-    if got == expected then
+assert_equal(ctx: any, got: any, expected: any, msg: str): void
+    if got == expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -72,8 +72,8 @@ fun assert_equal(ctx: any, got: any, expected: any, msg: str): void
     end
 end
 
-fun assert_not_equal(ctx: any, got: any, expected: any, msg: str): void
-    if got ~= expected then
+assert_not_equal(ctx: any, got: any, expected: any, msg: str): void
+    if got != expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -90,9 +90,9 @@ end
 -- Numeric Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_near(ctx: any, got: f64, expected: f64, tolerance: f64, msg: str): void
-    if tolerance == nil then tolerance = 1e-6 end
-    if math.abs(got - expected) <= tolerance then
+assert_near(ctx: any, got: f64, expected: f64, tolerance: f64, msg: str): void
+    if tolerance == nil tolerance = 1e-6 end
+    if math.abs(got - expected) <= tolerance
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -106,8 +106,8 @@ fun assert_near(ctx: any, got: f64, expected: f64, tolerance: f64, msg: str): vo
     end
 end
 
-fun assert_greater(ctx: any, got: f64, expected: f64, msg: str): void
-    if got > expected then
+assert_greater(ctx: any, got: f64, expected: f64, msg: str): void
+    if got > expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -120,8 +120,8 @@ fun assert_greater(ctx: any, got: f64, expected: f64, msg: str): void
     end
 end
 
-fun assert_less(ctx: any, got: f64, expected: f64, msg: str): void
-    if got < expected then
+assert_less(ctx: any, got: f64, expected: f64, msg: str): void
+    if got < expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -134,8 +134,8 @@ fun assert_less(ctx: any, got: f64, expected: f64, msg: str): void
     end
 end
 
-fun assert_in_range(ctx: any, got: f64, min: f64, max: f64, msg: str): void
-    if got >= min and got <= max then
+assert_in_range(ctx: any, got: f64, min: f64, max: f64, msg: str): void
+    if got >= min and got <= max
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -152,9 +152,9 @@ end
 -- Type Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_type(ctx: any, got: any, expected_type: str, msg: str): void
+assert_type(ctx: any, got: any, expected_type: str, msg: str): void
     actual_type = type(got)
-    if actual_type == expected_type then
+    if actual_type == expected_type
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -167,8 +167,8 @@ fun assert_type(ctx: any, got: any, expected_type: str, msg: str): void
     end
 end
 
-fun assert_is_nil(ctx: any, got: any, msg: str): void
-    if got == nil then
+assert_is_nil(ctx: any, got: any, msg: str): void
+    if got == nil
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -181,8 +181,8 @@ fun assert_is_nil(ctx: any, got: any, msg: str): void
     end
 end
 
-fun assert_is_not_nil(ctx: any, got: any, msg: str): void
-    if got ~= nil then
+assert_is_not_nil(ctx: any, got: any, msg: str): void
+    if got != nil
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -199,9 +199,9 @@ end
 -- Collection Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
+assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
     -- Check length
-    if #got ~= #expected then
+    if #got != #expected
         ctx.failed += 1
         ctx.errors[#ctx.errors + 1] = {
             type = "assert_table_equal",
@@ -215,7 +215,7 @@ fun assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
     -- Check elements
     i = 1
     while i <= #got
-        if got[i] ~= expected[i] then
+        if got[i] != expected[i]
             ctx.failed += 1
             ctx.errors[#ctx.errors + 1] = {
                 type = "assert_table_equal",
@@ -231,9 +231,9 @@ fun assert_table_equal(ctx: any, got: any, expected: any, msg: str): void
     ctx.passed += 1
 end
 
-fun assert_table_contains(ctx: any, table: any, value: any, msg: str): void
+assert_table_contains(ctx: any, table: any, value: any, msg: str): void
     for v in table
-        if v == value then
+        if v == value
             ctx.passed += 1
             return
         end
@@ -247,8 +247,8 @@ fun assert_table_contains(ctx: any, table: any, value: any, msg: str): void
     }
 end
 
-fun assert_table_empty(ctx: any, table: any, msg: str): void
-    if #table == 0 then
+assert_table_empty(ctx: any, table: any, msg: str): void
+    if #table == 0
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -265,8 +265,8 @@ end
 -- String Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_string_contains(ctx: any, got: str, expected: str, msg: str): void
-    if string.find(got, expected, 1, true) then
+assert_string_contains(ctx: any, got: str, expected: str, msg: str): void
+    if string.find(got, expected, 1, true)
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -279,8 +279,8 @@ fun assert_string_contains(ctx: any, got: str, expected: str, msg: str): void
     end
 end
 
-fun assert_string_starts_with(ctx: any, got: str, expected: str, msg: str): void
-    if string.sub(got, 1, string.len(expected)) == expected then
+assert_string_starts_with(ctx: any, got: str, expected: str, msg: str): void
+    if string.sub(got, 1, string.len(expected)) == expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -293,8 +293,8 @@ fun assert_string_starts_with(ctx: any, got: str, expected: str, msg: str): void
     end
 end
 
-fun assert_string_ends_with(ctx: any, got: str, expected: str, msg: str): void
-    if string.sub(got, -string.len(expected)) == expected then
+assert_string_ends_with(ctx: any, got: str, expected: str, msg: str): void
+    if string.sub(got, -string.len(expected)) == expected
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -307,8 +307,8 @@ fun assert_string_ends_with(ctx: any, got: str, expected: str, msg: str): void
     end
 end
 
-fun assert_string_matches(ctx: any, got: str, pattern: str, msg: str): void
-    if string.find(got, pattern) then
+assert_string_matches(ctx: any, got: str, pattern: str, msg: str): void
+    if string.find(got, pattern)
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -325,9 +325,9 @@ end
 -- Error Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_errors(ctx: any, func: any, msg: str): void
+assert_errors(ctx: any, func: any, msg: str): void
     ok, err = pcall(func)
-    if not ok then
+    if not ok
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -339,9 +339,9 @@ fun assert_errors(ctx: any, func: any, msg: str): void
     end
 end
 
-fun assert_errors_with(ctx: any, func: any, expected_err: str, msg: str): void
+assert_errors_with(ctx: any, func: any, expected_err: str, msg: str): void
     ok, err = pcall(func)
-    if not ok and string.find(err, expected_err, 1, true) then
+    if not ok and string.find(err, expected_err, 1, true)
         ctx.passed += 1
     else
         ctx.failed += 1
@@ -358,8 +358,8 @@ end
 -- Performance Assertions
 -- ═══════════════════════════════════════════════════════════════
 
-fun assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg: str): void
-    if iterations == nil then iterations = 100 end
+assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg: str): void
+    if iterations == nil iterations = 100 end
 
     start = os.clock()
     i = 0
@@ -370,7 +370,7 @@ fun assert_faster_than(ctx: any, func: any, max_time: f64, iterations: i64, msg:
     elapsed = os.clock() - start
 
     avg_time = elapsed / iterations
-    if avg_time <= max_time then
+    if avg_time <= max_time
         ctx.passed += 1
     else
         ctx.failed += 1

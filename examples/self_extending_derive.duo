@@ -1,7 +1,7 @@
 -- Self-extending derive: @comp.register.derive inside @comp.define.derive macro body
 -- Run: duo run examples/self_extending_derive.duo
 
-@comp.define.derive("Factory", fun generate(meta) -> str
+@comp.define.derive("Factory", generate(meta) -> str
   child = "fun generate(meta) -> str return \"static int \" .. meta.name .. \"_magic() { return 42; }\" end"
   @comp.register.derive(meta.name .. "Kind", child)
   ""

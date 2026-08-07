@@ -4,9 +4,9 @@
 Inst = req "std.wasm.instruction"
 
 main(): i64
-    if Inst.mvp_instruction_count() ~= 63 then return 1 end
-    if Inst.opcode_table_size() ~= 256 then return 2 end
-    if Inst.decoder_table_owner() ~= "src/wasm_semantic.zig:mvp_opcode_index" then return 3 end
-    if Inst.semantic_owner() ~= "src/wasm_semantic.zig" then return 4 end
+    if Inst.mvp_instruction_count() != 63 return 1 end
+    if Inst.opcode_table_size() != 256 return 2 end
+    if Inst.decoder_table_owner() != "src/wasm_semantic.zig:mvp_opcode_index" return 3 end
+    if Inst.semantic_owner() != "src/wasm_semantic.zig" return 4 end
     0
 end

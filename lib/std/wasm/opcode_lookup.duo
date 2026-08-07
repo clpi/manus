@@ -594,49 +594,49 @@ OPCODE_TO_INDEX = {
     -1,
 }
 
-fun opcode_for_index(idx: i64): i64
-    if idx < 0 or idx >= INSTRUCTION_COUNT then return -1 end
+opcode_for_index(idx: i64): i64
+    if idx < 0 or idx >= INSTRUCTION_COUNT return -1 end
     INSTRUCTION_OPCODES[idx + 1]
 end
 
-fun generator_owner(): str
+generator_owner(): str
     GENERATOR_OWNER
 end
 
-fun instruction_count(): i64
+instruction_count(): i64
     INSTRUCTION_COUNT
 end
 
-fun instruction_index_for_opcode(op: i64): i64
-    if op < 0 or op > 255 then return -1 end
+instruction_index_for_opcode(op: i64): i64
+    if op < 0 or op > 255 return -1 end
     idx = OPCODE_TO_INDEX[op + 1]
-    if idx < 0 then return -1 end
+    if idx < 0 return -1 end
     idx
 end
 
-fun semantic_id_for_index(idx: i64): str
-    if idx < 0 or idx >= INSTRUCTION_COUNT then return "" end
+semantic_id_for_index(idx: i64): str
+    if idx < 0 or idx >= INSTRUCTION_COUNT return "" end
     INSTRUCTION_IDS[idx + 1]
 end
 
-fun semantic_id_for_opcode(op: i64): str
+semantic_id_for_opcode(op: i64): str
     idx = instruction_index_for_opcode(op)
-    if idx < 0 then return "" end
+    if idx < 0 return "" end
     INSTRUCTION_IDS[idx + 1]
 end
 
-fun immediate_form_for_index(idx: i64): str
-    if idx < 0 or idx >= INSTRUCTION_COUNT then return "none" end
+immediate_form_for_index(idx: i64): str
+    if idx < 0 or idx >= INSTRUCTION_COUNT return "none" end
     IMMEDIATE_FORMS[idx + 1]
 end
 
-fun stack_pop_for_index(idx: i64): i64
-    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
+stack_pop_for_index(idx: i64): i64
+    if idx < 0 or idx >= INSTRUCTION_COUNT return 0 end
     STACK_POP[idx + 1]
 end
 
-fun stack_push_for_index(idx: i64): i64
-    if idx < 0 or idx >= INSTRUCTION_COUNT then return 0 end
+stack_push_for_index(idx: i64): i64
+    if idx < 0 or idx >= INSTRUCTION_COUNT return 0 end
     STACK_PUSH[idx + 1]
 end
 

@@ -6,9 +6,9 @@ Tensor = req "std.ml.tensor"
 -- Batch Normalization
 -- ═══════════════════════════════════════════════════════════════
 
-fun batchnorm(num_features: i64, eps: f64, momentum: f64): any
-    if eps == nil then eps = 1e-5 end
-    if momentum == nil then momentum = 0.1 end
+batchnorm(num_features: i64, eps: f64, momentum: f64): any
+    if eps == nil eps = 1e-5 end
+    if momentum == nil momentum = 0.1 end
     {
         type = "batchnorm",
         num_features = num_features,
@@ -31,11 +31,11 @@ fun batchnorm(num_features: i64, eps: f64, momentum: f64): any
 end
 
 @hot
-fun batchnorm_forward(layer: any, x: any): any
+batchnorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
 
-    if layer.training then
+    if layer.training
         -- Compute batch mean
         mean = Tensor.zeros(1, d)
         for j = 1, d
@@ -86,12 +86,12 @@ fun batchnorm_forward(layer: any, x: any): any
     result
 end
 
-fun batchnorm_backward(layer: any, grad_out: any): any
+batchnorm_backward(layer: any, grad_out: any): any
     n = grad_out.rows
     d = grad_out.cols
     dx = Tensor.zeros(n, d)
 
-    if layer.grad_weight == nil then
+    if layer.grad_weight == nil
         layer.grad_weight = Tensor.zeros(1, d)
         layer.grad_bias = Tensor.zeros(1, d)
     end
@@ -131,8 +131,8 @@ end
 -- RMS Normalization (used in LLMs like LLaMA)
 -- ═══════════════════════════════════════════════════════════════
 
-fun rmsnorm(dim: i64, eps: f64): any
-    if eps == nil then eps = 1e-6 end
+rmsnorm(dim: i64, eps: f64): any
+    if eps == nil eps = 1e-6 end
     {
         type = "rmsnorm",
         dim = dim,
@@ -144,7 +144,7 @@ fun rmsnorm(dim: i64, eps: f64): any
 end
 
 @hot
-fun rmsnorm_forward(layer: any, x: any): any
+rmsnorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
     result = Tensor.zeros(n, d)
@@ -172,8 +172,8 @@ end
 -- Group Normalization
 -- ═══════════════════════════════════════════════════════════════
 
-fun groupnorm(num_channels: i64, num_groups: i64, eps: f64): any
-    if eps == nil then eps = 1e-5 end
+groupnorm(num_channels: i64, num_groups: i64, eps: f64): any
+    if eps == nil eps = 1e-5 end
     {
         type = "groupnorm",
         num_channels = num_channels,
@@ -186,7 +186,7 @@ fun groupnorm(num_channels: i64, num_groups: i64, eps: f64): any
     }
 end
 
-fun groupnorm_forward(layer: any, x: any): any
+groupnorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
     channels_per_group = d / layer.num_groups
@@ -235,8 +235,8 @@ end
 -- Layer Normalization
 -- ═══════════════════════════════════════════════════════════════
 
-fun layernorm(dim: i64, eps: f64): any
-    if eps == nil then eps = 1e-5 end
+layernorm(dim: i64, eps: f64): any
+    if eps == nil eps = 1e-5 end
     {
         type = "layernorm",
         dim = dim,
@@ -249,7 +249,7 @@ fun layernorm(dim: i64, eps: f64): any
 end
 
 @hot
-fun layernorm_forward(layer: any, x: any): any
+layernorm_forward(layer: any, x: any): any
     n = x.rows
     d = x.cols
     result = Tensor.zeros(n, d)

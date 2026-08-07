@@ -11,7 +11,7 @@ type Pair = { x: f64, y: f64 }
 
 @comp.assert(@comp.satisfies(Point, "HasXY"))
 
-@comp.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -20,7 +20,7 @@ type Pair = { x: f64, y: f64 }
     acc
 end)
 
-fun registry_line(meta) -> str
+registry_line(meta) -> str
     meta.name .. ";"
 end
 

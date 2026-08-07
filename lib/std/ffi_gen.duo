@@ -12,8 +12,8 @@
 -- Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun str_join(parts: any, sep: str): str
-    local result = ""
+str_join(parts: any, sep: str): str
+    result = ""
     for i, part in parts
         if i > 1
             result = result .. sep
@@ -32,25 +32,25 @@ end
 -- Example:
 --   local preprocessed = @run("echo '#include \"sqlite3.h\"' | cc -E -dM -x c - 2>/dev/null | head -500")
 --   local bindings = ffi.from_header_source(preprocessed, { prefix = "sqlite3_" })
-fun from_header(header: str, opts: any): str
+from_header(header: str, opts: any): str
     -- NOTE: @run with string concat doesn't work inside function bodies.
     -- Use from_header_source() with a preprocessed string instead.
     "/* from_header: use from_header_source() with @run at module scope */"
 end
 
 -- from_source: parse a preprocessed header source string directly.
-fun from_source(source: str, opts: any): str
-    if opts == nil then opts = {} end
-    local prefix = opts.prefix or ""
-    local includes = opts.include or nil
-    local excludes = opts.excludes or {}
-    local exclude_set = {}
+from_source(source: str, opts: any): str
+    if opts == nil opts = {} end
+    prefix = opts.prefix or ""
+    includes = opts.include or nil
+    excludes = opts.excludes or {}
+    exclude_set = {}
     for _, e in excludes
         exclude_set[e] = true
     end
 
-    local functions = parse_c_declarations(source, prefix, exclude_set, includes)
-    local parts = {}
+    functions = parse_c_declarations(source, prefix, exclude_set, includes)
+    parts = {}
     for _, func in functions
         parts[#parts + 1] = emit_ffi_binding(func)
     end
@@ -62,34 +62,34 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- parse_c_declarations: extract function signatures from C source.
-fun parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): any
-    local funcs = {}
-    local lines = string.split(source, "\n")
+parse_c_declarations(source: str, prefix: str, excludes: any, includes: any): any
+    funcs = {}
+    lines = string.split(source, "\n")
     for _, line in lines
         line = string.gsub(line, "^%s+", "")
         line = string.gsub(line, "%s+$", "")
-        if string.sub(line, 1, 1) ~= "#"
-           and string.sub(line, 1, 2) ~= "//"
+        if string.sub(line, 1, 1) != "#"
+           and string.sub(line, 1, 2) != "//"
            and not string.match(line, "^typedef")
            and not string.match(line, "^struct ")
            and not string.match(line, "^enum ")
            and not string.match(line, "^union ")
-           and not string.match(line, "^#") then
-            local ret_type, name, params = string.match(line, "^(%S+)%s+(%w+)%s*%((.-)%)%s*;")
-            if ret_type and name then
-                if prefix == "" or string.sub(name, 1, #prefix) == prefix then
-                    if not excludes[name] then
-                        local include_match = true
-                        if includes then
+           and not string.match(line, "^#")
+            ret_type, name, params = string.match(line, "^(%S+)%s+(%w+)%s*%((.-)%)%s*;")
+            if ret_type and name
+                if prefix == "" or string.sub(name, 1, #prefix) == prefix
+                    if not excludes[name]
+                        include_match = true
+                        if includes
                             include_match = false
                             for _, inc in includes
-                                if string.sub(name, 1, #inc) == inc then
+                                if string.sub(name, 1, #inc) == inc
                                     include_match = true
                                     break
                                 end
                             end
                         end
-                        if include_match then
+                        if include_match
                             funcs[#funcs + 1] = {
                                 name = name,
                                 ret_type = ret_type,
@@ -105,31 +105,31 @@ fun parse_c_declarations(source: str, prefix: str, excludes: any, includes: any)
 end
 
 -- parse_c_params: parse a C parameter list string into a list of {type, name} pairs
-fun parse_c_params(params_str: str): any
-    if params_str == "void" or params_str == "" then return {} end
-    local params = {}
-    local parts = string.split(params_str, ",")
+parse_c_params(params_str: str): any
+    if params_str == "void" or params_str == "" return {} end
+    params = {}
+    parts = string.split(params_str, ",")
     for _, part in parts
         part = string.gsub(part, "^%s+", "")
         part = string.gsub(part, "%s+$", "")
-        local tokens = {}
+        tokens = {}
         for token in string.gmatch(part, "%S+") do
             tokens[#tokens + 1] = token
         end
-        if #tokens >= 2 then
-            local name = tokens[#tokens]
-            local type_parts = {}
+        if #tokens >= 2
+            name = tokens[#tokens]
+            type_parts = {}
             for j = 1, #tokens - 1
                 type_parts[#type_parts + 1] = tokens[j]
             end
-            local typ = str_join(type_parts, " ")
+            typ = str_join(type_parts, " ")
             params[#params + 1] = {
                 c_type = typ,
                 name = name,
-                is_pointer = string.find(typ, "*") ~= nil,
-                is_const = string.find(typ, "const") ~= nil,
+                is_pointer = string.find(typ, "*") != nil,
+                is_const = string.find(typ, "const") != nil,
             }
-        elseif #tokens == 1 then
+        elseif #tokens == 1
             params[#params + 1] = {
                 c_type = tokens[1],
                 name = "arg" .. tostring(#params + 1),
@@ -145,19 +145,19 @@ end
 -- Type mapping: C types → Duo types
 -- ═══════════════════════════════════════════════════════════════
 
-fun c_type_to_duo(c_type: str, is_pointer: bool): str
-    local base = string.gsub(c_type, "%*", "")
+c_type_to_duo(c_type: str, is_pointer: bool): str
+    base = string.gsub(c_type, "%*", "")
     base = string.gsub(base, "const ", "")
     base = string.gsub(base, "^%s+", "")
     base = string.gsub(base, "%s+$", "")
 
-    if is_pointer then
-        if base == "char" then return "str" end
-        if base == "void" then return "any" end
+    if is_pointer
+        if base == "char" return "str" end
+        if base == "void" return "any" end
         return "any"
     end
 
-    local type_map = {
+    type_map = {
         ["int"] = "i64", ["unsigned int"] = "i64", ["long"] = "i64",
         ["long long"] = "i64", ["unsigned long"] = "i64", ["unsigned long long"] = "i64",
         ["short"] = "i64", ["unsigned short"] = "i64",
@@ -170,11 +170,11 @@ fun c_type_to_duo(c_type: str, is_pointer: bool): str
     type_map[base] or "any"
 end
 
-fun c_ret_type_to_duo(c_type: str): str
-    local cleaned = string.gsub(c_type, "^%s+", "")
+c_ret_type_to_duo(c_type: str): str
+    cleaned = string.gsub(c_type, "^%s+", "")
     cleaned = string.gsub(cleaned, "%s+$", "")
-    if cleaned == "void" then return "void" end
-    if string.find(cleaned, "*") then return "any" end
+    if cleaned == "void" return "void" end
+    if string.find(cleaned, "*") return "any" end
     c_type_to_duo(cleaned, false)
 end
 
@@ -184,24 +184,24 @@ end
 
 -- emit_ffi_binding: generate a Duo FFI binding string for a C function.
 -- Returns the binding as a string (caller passes to @c.emit or uses directly).
-fun emit_ffi_binding(func: any): str
-    local duo_params = {}
+emit_ffi_binding(func: any): str
+    duo_params = {}
     for _, p in func.params
-        local duo_type = c_type_to_duo(p.c_type, p.is_pointer)
+        duo_type = c_type_to_duo(p.c_type, p.is_pointer)
         duo_params[#duo_params + 1] = p.name .. ": " .. duo_type
     end
-    local duo_ret = c_ret_type_to_duo(func.ret_type)
-    local params_str = #duo_params > 0 and str_join(duo_params, ", ") or ""
+    duo_ret = c_ret_type_to_duo(func.ret_type)
+    params_str = #duo_params > 0 and str_join(duo_params, ", ") or ""
 
-    local call_args = build_c_call_args(func.params)
-    local sig = "@ffi(\"" .. func.name .. "\")\nfun " .. string.lower(func.name) .. "(" .. params_str .. "): " .. duo_ret
-    local body = "    @c.call(\"" .. func.name .. "\"" .. (#func.params > 0 and ", " or "") .. call_args .. ")"
+    call_args = build_c_call_args(func.params)
+    sig = "@ffi(\"" .. func.name .. "\")\nfun " .. string.lower(func.name) .. "(" .. params_str .. "): " .. duo_ret
+    body = "    @c.call(\"" .. func.name .. "\"" .. (#func.params > 0 and ", " or "") .. call_args .. ")"
     sig .. "\n" .. body .. "\nend"
 end
 
 -- build_c_call_args: generate the argument list for @c.call
-fun build_c_call_args(params: any): str
-    local args = {}
+build_c_call_args(params: any): str
+    args = {}
     for _, p in params
         args[#args + 1] = p.name
     end
@@ -212,25 +212,25 @@ end
 -- Convenience: generate bindings for common libraries
 -- ═══════════════════════════════════════════════════════════════
 
-fun bind_sqlite(): str
+bind_sqlite(): str
     from_header("sqlite3.h", {
         prefix = "sqlite3_",
         excludes = {"sqlite3_aggregate_context", "sqlite3_set_auxdata"},
     })
 end
 
-fun bind_cjson(): str
+bind_cjson(): str
     from_header("cJSON.h", {})
 end
 
-fun bind_sdl2(): str
+bind_sdl2(): str
     from_header("SDL2/SDL.h", {
         prefix = "SDL_",
         excludes = {"SDL_main", "SDL_malloc", "SDL_calloc", "SDL_realloc", "SDL_free"},
     })
 end
 
-fun bind_opengl(): str
+bind_opengl(): str
     from_header("GL/gl.h", {})
 end
 

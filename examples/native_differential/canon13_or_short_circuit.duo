@@ -1,0 +1,9 @@
+pick = (a: i64, b: i64): i64
+    if a == 1 or b == 1
+        return 7
+    end
+    3
+end
+main(): i64
+    pick(0, 1) * 6
+end

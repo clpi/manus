@@ -15,14 +15,14 @@
 --   contracts.assert_const(math.type(42) == "integer", "42 must be integer")
 --
 --   -- Conditional runtime checks (only in debug builds)
---   contracts.debug_check(function(x) return x > 0 end, "x must be positive")
+--   contracts.debug_check(fun(x: any): any x > 0, "x must be positive")
 
 -- ═══════════════════════════════════════════════════════════════
 -- Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun str_join(parts: any, sep: str): str
-    local result = ""
+str_join(parts: any, sep: str): str
+    result = ""
     for i, part in parts
         if i > 1
             result = result .. sep
@@ -32,44 +32,44 @@ fun str_join(parts: any, sep: str): str
     result
 end
 
-fun push(out: any, value: any): any
+push(out: any, value: any): any
     out[#out + 1] = value
     out
 end
 
-fun member_name(member: any): str
+member_name(member: any): str
     if member.name
         return member.name
     end
     tostring(member[1] or "")
 end
 
-fun member_kind(member: any): str
+member_kind(member: any): str
     member.kind or "field"
 end
 
-fun field_type(field: any): str
+field_type(field: any): str
     field.type or "any"
 end
 
-fun method_ret(method: any): str
+method_ret(method: any): str
     method.ret or "any"
 end
 
-fun method_param_count(method: any): str
+method_param_count(method: any): str
     tostring(method.param_count or 0)
 end
 
-fun method_params(method: any): any
+method_params(method: any): any
     method.params or {}
 end
 
-fun method_params_text(method: any): str
-    local params = method_params(method)
+method_params_text(method: any): str
+    params = method_params(method)
     if #params == 0
         return method_param_count(method) .. " params"
     else
-        local parts: any = {}
+        parts: any = {}
         for i = 1, #params
             parts[#parts + 1] = tostring(params[i])
         end
@@ -77,7 +77,7 @@ fun method_params_text(method: any): str
     end
 end
 
-fun bool_text(value: bool): str
+bool_text(value: bool): str
     if value
         return "true"
     else
@@ -93,7 +93,7 @@ global contract_stack = {}
 global contract_count = 0
 
 -- pre: declare a precondition for the next function
-fun pre(condition: str, message: str)
+pre(condition: str, message: str)
     contract_count = contract_count + 1
     contract_stack[contract_count] = {
         kind = "pre",
@@ -103,7 +103,7 @@ fun pre(condition: str, message: str)
 end
 
 -- post: declare a postcondition for the next function
-fun post(condition: str, message: str)
+post(condition: str, message: str)
     contract_count = contract_count + 1
     contract_stack[contract_count] = {
         kind = "post",
@@ -113,7 +113,7 @@ fun post(condition: str, message: str)
 end
 
 -- invariant: declare a class invariant
-fun invariant(condition: str, message: str)
+invariant(condition: str, message: str)
     contract_count = contract_count + 1
     contract_stack[contract_count] = {
         kind = "invariant",
@@ -129,7 +129,7 @@ end
 -- assert_const: assert a condition at compile time.
 -- If the condition can be evaluated at comptime and is false,
 -- emit a compile error. Otherwise, emit a runtime check.
-fun assert_const(condition: bool, message: str)
+assert_const(condition: bool, message: str)
     @c.emit("/* [contract] assert_const */")
 end
 
@@ -138,21 +138,21 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- emit_preconditions: emit C code for accumulated preconditions
-fun emit_preconditions(): void
+emit_preconditions(): void
     @c.emit("/* [contracts] emit_preconditions */")
     contract_stack = {}
     contract_count = 0
 end
 
 -- emit_postconditions: emit C code for accumulated postconditions
-fun emit_postconditions(): void
+emit_postconditions(): void
     @c.emit("/* [contracts] emit_postconditions */")
     contract_stack = {}
     contract_count = 0
 end
 
 -- emit_invariants: emit C code for accumulated invariants
-fun emit_invariants(): void
+emit_invariants(): void
     @c.emit("/* [contracts] emit_invariants */")
     contract_stack = {}
     contract_count = 0
@@ -164,12 +164,12 @@ end
 
 -- debug_check: emit a runtime check that is only active in debug builds.
 -- In release builds, the check is compiled out (zero cost).
-fun debug_check(condition_str: str, message: str): void
+debug_check(condition_str: str, message: str): void
     @c.emit("/* [contracts] debug_check */")
 end
 
 -- profile_check: emit a timed contract check that reports execution time.
-fun profile_check(condition_str: str, message: str): void
+profile_check(condition_str: str, message: str): void
     @c.emit("/* [contracts] profile_check */")
 end
 
@@ -178,8 +178,8 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- all: compose multiple conditions with AND
-fun all(conditions: any): str
-    local parts = {}
+all(conditions: any): str
+    parts = {}
     for i = 1, #conditions
         parts[i] = "(" .. conditions[i] .. ")"
     end
@@ -187,8 +187,8 @@ fun all(conditions: any): str
 end
 
 -- any: compose multiple conditions with OR
-fun any(conditions: any): str
-    local parts = {}
+any(conditions: any): str
+    parts = {}
     for i = 1, #conditions
         parts[i] = "(" .. conditions[i] .. ")"
     end
@@ -196,32 +196,32 @@ fun any(conditions: any): str
 end
 
 -- implies: logical implication (A → B = !A || B)
-fun implies(antecedent: str, consequent: str): str
+implies(antecedent: str, consequent: str): str
     "(!(" .. antecedent .. ") || (" .. consequent .. "))"
 end
 
 -- between: range check
-fun between(value: str, lo: str, hi: str): str
+between(value: str, lo: str, hi: str): str
     "(" .. value .. " >= " .. lo .. " && " .. value .. " <= " .. hi .. ")"
 end
 
 -- not_nil: nil check
-fun not_nil(value: str): str
+not_nil(value: str): str
     "(" .. value .. " != nil)"
 end
 
 -- positive: x > 0
-fun positive(value: str): str
+positive(value: str): str
     "(" .. value .. " > 0)"
 end
 
 -- non_negative: x >= 0
-fun non_negative(value: str): str
+non_negative(value: str): str
     "(" .. value .. " >= 0)"
 end
 
 -- in_range: check if value is in [lo, hi]
-fun in_range(value: str, lo: str, hi: str): str
+in_range(value: str, lo: str, hi: str): str
     between(value, lo, hi)
 end
 
@@ -229,10 +229,10 @@ end
 -- Concept descriptor contracts
 -- ═══════════════════════════════════════════════════════════════
 
-fun field_check(value_expr: str, field: any): any
-    local field_name = member_name(field)
-    local type_name = field_type(field)
-    local access = str_join({ value_expr, ".", field_name }, "")
+field_check(value_expr: str, field: any): any
+    field_name = member_name(field)
+    type_name = field_type(field)
+    access = str_join({ value_expr, ".", field_name }, "")
     return {
         kind = "field",
         name = field_name,
@@ -242,11 +242,11 @@ fun field_check(value_expr: str, field: any): any
     }
 end
 
-fun method_check(value_expr: str, method: any): any
-    local method_name = member_name(method)
-    local ret = method_ret(method)
-    local params = method_param_count(method)
-    local access = str_join({ value_expr, ".", method_name }, "")
+method_check(value_expr: str, method: any): any
+    method_name = member_name(method)
+    ret = method_ret(method)
+    params = method_param_count(method)
+    access = str_join({ value_expr, ".", method_name }, "")
     return {
         kind = "method",
         name = method_name,
@@ -257,26 +257,26 @@ fun method_check(value_expr: str, method: any): any
     }
 end
 
-fun concept_field_checks(value_expr: str, fields: any): any
-    local checks = {}
+concept_field_checks(value_expr: str, fields: any): any
+    checks = {}
     for i = 1, #fields
         checks[#checks + 1] = field_check(value_expr, fields[i])
     end
     checks
 end
 
-fun concept_method_checks(value_expr: str, methods: any): any
-    local checks = {}
+concept_method_checks(value_expr: str, methods: any): any
+    checks = {}
     for i = 1, #methods
         checks[#checks + 1] = method_check(value_expr, methods[i])
     end
     checks
 end
 
-fun concept_member_checks(value_expr: str, members: any): any
-    local checks = {}
+concept_member_checks(value_expr: str, members: any): any
+    checks = {}
     for i = 1, #members
-        local member = members[i]
+        member = members[i]
         if member_kind(member) == "method"
             checks[#checks + 1] = method_check(value_expr, member)
         else
@@ -286,11 +286,11 @@ fun concept_member_checks(value_expr: str, members: any): any
     checks
 end
 
-fun checks_expression(checks: any): str
+checks_expression(checks: any): str
     if #checks == 0
         return "true"
     else
-        local conditions = {}
+        conditions = {}
         for i = 1, #checks
             conditions[i] = checks[i].condition
         end
@@ -298,11 +298,11 @@ fun checks_expression(checks: any): str
     end
 end
 
-fun checks_report(checks: any): str
+checks_report(checks: any): str
     if #checks == 0
         return "no concept requirements"
     else
-        local messages = {}
+        messages = {}
         for i = 1, #checks
             messages[i] = checks[i].message
         end
@@ -310,7 +310,7 @@ fun checks_report(checks: any): str
     end
 end
 
-fun concept_contract_from_checks(checks: any): any
+concept_contract_from_checks(checks: any): any
     return {
         count = #checks,
         checks = checks,
@@ -319,27 +319,27 @@ fun concept_contract_from_checks(checks: any): any
     }
 end
 
-fun concept_contract(value_expr: str, fields: any, methods: any): any
-    local checks = concept_field_checks(value_expr, fields)
-    local method_checks = concept_method_checks(value_expr, methods)
+concept_contract(value_expr: str, fields: any, methods: any): any
+    checks = concept_field_checks(value_expr, fields)
+    method_checks = concept_method_checks(value_expr, methods)
     for i = 1, #method_checks
         checks[#checks + 1] = method_checks[i]
     end
     concept_contract_from_checks(checks)
 end
 
-fun concept_member_contract(value_expr: str, members: any): any
+concept_member_contract(value_expr: str, members: any): any
     concept_contract_from_checks(concept_member_checks(value_expr, members))
 end
 
-fun method_signature(method: any): str
-    local name_text = member_name(method)
-    local params = method_params_text(method)
-    local ret = method_ret(method)
+method_signature(method: any): str
+    name_text = member_name(method)
+    params = method_params_text(method)
+    ret = method_ret(method)
     name_text .. "(" .. params .. ") -> " .. ret
 end
 
-fun member_doc_line(member: any): str
+member_doc_line(member: any): str
     if member_kind(member) == "method"
         return "- method " .. method_signature(member)
     else
@@ -347,8 +347,8 @@ fun member_doc_line(member: any): str
     end
 end
 
-fun concept_markdown(concept_name: str, members: any): str
-    local lines: any = {}
+concept_markdown(concept_name: str, members: any): str
+    lines: any = {}
     lines[1] = "# " .. concept_name
     if #members == 0
         lines[2] = "- no requirements"
@@ -360,12 +360,12 @@ fun concept_markdown(concept_name: str, members: any): str
     str_join(lines, "\n")
 end
 
-fun wrapper_name(target_name: str, method: any): str
+wrapper_name(target_name: str, method: any): str
     target_name .. "_" .. member_name(method)
 end
 
-fun method_wrapper_plan(target_name: str, receiver_expr: str, method: any): any
-    local method_name = member_name(method)
+method_wrapper_plan(target_name: str, receiver_expr: str, method: any): any
+    method_name = member_name(method)
     return {
         kind = "method_wrapper",
         name = method_name,
@@ -377,12 +377,12 @@ fun method_wrapper_plan(target_name: str, receiver_expr: str, method: any): any
     }
 end
 
-fun field_accessor_name(target_name: str, field: any): str
+field_accessor_name(target_name: str, field: any): str
     target_name .. "_get_" .. member_name(field)
 end
 
-fun field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
-    local field_name = member_name(field)
+field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
+    field_name = member_name(field)
     return {
         kind = "field_accessor",
         name = field_name,
@@ -392,11 +392,11 @@ fun field_accessor_plan(target_name: str, receiver_expr: str, field: any): any
     }
 end
 
-fun c_type_eq(type_name: str, expected: str): bool
+c_type_eq(type_name: str, expected: str): bool
     return string.find(type_name, expected, 1, true) == 1 and #type_name == #expected
 end
 
-fun c_type(type_name: str): str
+c_type(type_name: str): str
     if c_type_eq(type_name, "i64") or c_type_eq(type_name, "integer")
         return "int64_t"
     end
@@ -430,13 +430,13 @@ fun c_type(type_name: str): str
     type_name
 end
 
-fun c_param_decl(param_type: str, param_name: str): str
+c_param_decl(param_type: str, param_name: str): str
     c_type(param_type) .. " " .. param_name
 end
 
-fun c_wrapper_params(wrapper: any): any
-    local params = wrapper.params or {}
-    local out: any = {}
+c_wrapper_params(wrapper: any): any
+    params = wrapper.params or {}
+    out: any = {}
     out[1] = "void* self"
     for i = 2, #params
         out[#out + 1] = c_param_decl(tostring(params[i]), "arg" .. tostring(i - 1))
@@ -444,9 +444,9 @@ fun c_wrapper_params(wrapper: any): any
     out
 end
 
-fun c_wrapper_call_args(wrapper: any): str
-    local params = wrapper.params or {}
-    local args: any = {}
+c_wrapper_call_args(wrapper: any): str
+    params = wrapper.params or {}
+    args: any = {}
     if #params == 0
         args[1] = "self"
     else
@@ -458,12 +458,12 @@ fun c_wrapper_call_args(wrapper: any): str
     str_join(args, ", ")
 end
 
-fun c_method_wrapper(receiver_c_type: str, wrapper: any): str
-    local ret = c_type(wrapper.ret or "void")
-    local params = str_join(c_wrapper_params(wrapper), ", ")
-    local target = "((" .. receiver_c_type .. "*)self)->" .. wrapper.name
-    local call = target .. "(" .. c_wrapper_call_args(wrapper) .. ");"
-    local body = ""
+c_method_wrapper(receiver_c_type: str, wrapper: any): str
+    ret = c_type(wrapper.ret or "void")
+    params = str_join(c_wrapper_params(wrapper), ", ")
+    target = "((" .. receiver_c_type .. "*)self)->" .. wrapper.name
+    call = target .. "(" .. c_wrapper_call_args(wrapper) .. ");"
+    body = ""
     if ret == "void"
         body = "    " .. call .. "\n"
     else
@@ -472,33 +472,33 @@ fun c_method_wrapper(receiver_c_type: str, wrapper: any): str
     "static inline " .. ret .. " " .. wrapper.wrapper .. "(" .. params .. ") {\n" .. body .. "}\n"
 end
 
-fun c_field_accessor(receiver_c_type: str, accessor: any): str
-    local ret = c_type(accessor.ret or "any")
-    local field_name = accessor.name
-    local wrapper = accessor.wrapper
-    local target = "((" .. receiver_c_type .. "*)self)->" .. field_name
-    local header = "static inline " .. ret .. " " .. wrapper .. "(void* self) {\n"
+c_field_accessor(receiver_c_type: str, accessor: any): str
+    ret = c_type(accessor.ret or "any")
+    field_name = accessor.name
+    wrapper = accessor.wrapper
+    target = "((" .. receiver_c_type .. "*)self)->" .. field_name
+    header = "static inline " .. ret .. " " .. wrapper .. "(void* self) {\n"
     return header .. "    return " .. target .. ";\n}\n"
 end
 
-fun concept_c_wrappers(receiver_c_type: str, wrappers: any): str
-    local parts: any = {}
+concept_c_wrappers(receiver_c_type: str, wrappers: any): str
+    parts: any = {}
     for i = 1, #wrappers
         parts[#parts + 1] = c_method_wrapper(receiver_c_type, wrappers[i])
     end
     str_join(parts, "\n")
 end
 
-fun concept_c_accessors(receiver_c_type: str, accessors: any): str
-    local parts: any = {}
+concept_c_accessors(receiver_c_type: str, accessors: any): str
+    parts: any = {}
     for i = 1, #accessors
         parts[#parts + 1] = c_field_accessor(receiver_c_type, accessors[i])
     end
     str_join(parts, "\n")
 end
 
-fun concept_wrapper_plan(target_name: str, receiver_expr: str, members: any): any
-    local wrappers: any = {}
+concept_wrapper_plan(target_name: str, receiver_expr: str, members: any): any
+    wrappers: any = {}
     for i = 1, #members
         if member_kind(members[i]) == "method"
             wrappers[#wrappers + 1] = method_wrapper_plan(target_name, receiver_expr, members[i])
@@ -507,17 +507,17 @@ fun concept_wrapper_plan(target_name: str, receiver_expr: str, members: any): an
     wrappers
 end
 
-fun concept_accessor_plan(target_name: str, receiver_expr: str, members: any): any
-    local accessors: any = {}
+concept_accessor_plan(target_name: str, receiver_expr: str, members: any): any
+    accessors: any = {}
     for i = 1, #members
-        if member_kind(members[i]) ~= "method"
+        if member_kind(members[i]) != "method"
             accessors[#accessors + 1] = field_accessor_plan(target_name, receiver_expr, members[i])
         end
     end
     accessors
 end
 
-fun concept_target_report(concept_name: str, target_name: str, receiver_expr: str, members: any): any
+concept_target_report(concept_name: str, target_name: str, receiver_expr: str, members: any): any
     return {
         concept_name = concept_name,
         target = target_name,
@@ -528,8 +528,8 @@ fun concept_target_report(concept_name: str, target_name: str, receiver_expr: st
     }
 end
 
-fun concept_target_c_report(concept_name: str, target_name: str, receiver_expr: str, receiver_c_type: str, members: any): any
-    local report = concept_target_report(concept_name, target_name, receiver_expr, members)
+concept_target_c_report(concept_name: str, target_name: str, receiver_expr: str, receiver_c_type: str, members: any): any
+    report = concept_target_report(concept_name, target_name, receiver_expr, members)
     report.receiver_c_type = receiver_c_type
     report.c_wrappers = concept_c_wrappers(receiver_c_type, report.wrappers)
     report.c_accessors = concept_c_accessors(receiver_c_type, report.accessors)
@@ -543,7 +543,7 @@ fun concept_target_c_report(concept_name: str, target_name: str, receiver_expr: 
     report
 end
 
-fun member_signature(member: any): str
+member_signature(member: any): str
     if member_kind(member) == "method"
         return "method:" .. method_signature(member)
     else
@@ -551,8 +551,8 @@ fun member_signature(member: any): str
     end
 end
 
-fun concept_signature(concept_name: str, members: any): str
-    local parts: any = {}
+concept_signature(concept_name: str, members: any): str
+    parts: any = {}
     parts[1] = concept_name
     for i = 1, #members
         parts[#parts + 1] = member_signature(members[i])
@@ -560,28 +560,28 @@ fun concept_signature(concept_name: str, members: any): str
     str_join(parts, "|")
 end
 
-fun concept_specialization_key(concept_name: str, target_name: str, members: any): str
+concept_specialization_key(concept_name: str, target_name: str, members: any): str
     target_name .. "::" .. concept_signature(concept_name, members)
 end
 
-fun member_matches(required: any, provided: any): bool
-    if member_kind(required) ~= member_kind(provided)
+member_matches(required: any, provided: any): bool
+    if member_kind(required) != member_kind(provided)
         return false
     end
-    if member_name(required) ~= member_name(provided)
+    if member_name(required) != member_name(provided)
         return false
     end
     if member_kind(required) == "method"
-        if method_param_count(required) ~= method_param_count(provided)
+        if method_param_count(required) != method_param_count(provided)
             return false
         end
-        local required_params = method_params(required)
-        local provided_params = method_params(provided)
-        if #required_params ~= #provided_params
+        required_params = method_params(required)
+        provided_params = method_params(provided)
+        if #required_params != #provided_params
             return false
         end
         for i = 1, #required_params
-            if tostring(required_params[i]) ~= tostring(provided_params[i])
+            if tostring(required_params[i]) != tostring(provided_params[i])
                 return false
             end
         end
@@ -591,7 +591,7 @@ fun member_matches(required: any, provided: any): bool
     end
 end
 
-fun find_member(members: any, required: any): any
+find_member(members: any, required: any): any
     for i = 1, #members
         if member_matches(required, members[i])
             return members[i]
@@ -600,13 +600,13 @@ fun find_member(members: any, required: any): any
     nil
 end
 
-fun concept_coverage(required_members: any, provided_members: any): any
-    local missing_parts: any = {}
-    local missing_count = 0
-    local matched_count = 0
+concept_coverage(required_members: any, provided_members: any): any
+    missing_parts: any = {}
+    missing_count = 0
+    matched_count = 0
     for i = 1, #required_members
-        local required = required_members[i]
-        local provided = find_member(provided_members, required)
+        required = required_members[i]
+        provided = find_member(provided_members, required)
         if provided
             matched_count = matched_count + 1
         else
@@ -614,7 +614,7 @@ fun concept_coverage(required_members: any, provided_members: any): any
             missing_parts[#missing_parts + 1] = member_signature(required)
         end
     end
-    local missing_text = str_join(missing_parts, ", ")
+    missing_text = str_join(missing_parts, ", ")
     return {
         ok = missing_count == 0,
         matched_count = matched_count,
@@ -623,8 +623,8 @@ fun concept_coverage(required_members: any, provided_members: any): any
     }
 end
 
-fun coverage_report(coverage: any): str
-    local lines: any = {}
+coverage_report(coverage: any): str
+    lines: any = {}
     lines[1] = "ok=" .. bool_text(coverage.ok)
     lines[2] = "matched=" .. tostring(coverage.matched_count)
     lines[3] = "missing=" .. tostring(coverage.missing_count)

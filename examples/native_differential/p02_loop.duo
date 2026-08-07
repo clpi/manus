@@ -1,0 +1,12 @@
+sum_to(n: i64): i64
+    total = 0
+    i = 1
+    while i <= n do
+        total = total + i
+        i = i + 1
+    end
+    return total
+end
+main(): i64
+    return sum_to(9)
+end

@@ -13,13 +13,13 @@ same_line(id: str, kind: str): str
     print("side") "ok: " .. id .. " (" .. kind .. ")"
 end
 
-fun main(): i64
+main(): i64
     msg = format_msg("F-1", "ergonomic_gap")
-    if #msg ~= 23 then return 1 end
+    if #msg != 23 return 1 end
     msg2 = with_side_effect("F-1", "ergonomic_gap")
-    if #msg2 ~= 23 then return 2 end
+    if #msg2 != 23 return 2 end
     msg3 = same_line("F-1", "ergonomic_gap")
-    if #msg3 ~= 23 then return 3 end
+    if #msg3 != 23 return 3 end
     print("PASS implicit_concat_tail")
     return 0
 end

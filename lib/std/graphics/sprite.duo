@@ -5,7 +5,7 @@
 -- Sprite
 -- ═══════════════════════════════════════════════════════════════
 
-fun sprite_new(texture: any, x: f64, y: f64): any
+sprite_new(texture: any, x: f64, y: f64): any
     {
         texture = texture,
         x = x,
@@ -25,25 +25,25 @@ fun sprite_new(texture: any, x: f64, y: f64): any
     }
 end
 
-fun sprite_set_position(sprite: any, x: f64, y: f64): void
+sprite_set_position(sprite: any, x: f64, y: f64): void
     sprite.x = x
     sprite.y = y
 end
 
-fun sprite_set_scale(sprite: any, sx: f64, sy: f64): void
+sprite_set_scale(sprite: any, sx: f64, sy: f64): void
     sprite.scale_x = sx
     sprite.scale_y = sy or sx
 end
 
-fun sprite_set_rotation(sprite: any, degrees: f64): void
+sprite_set_rotation(sprite: any, degrees: f64): void
     sprite.rotation = degrees
 end
 
-fun sprite_set_color(sprite: any, r: f64, g: f64, b: f64, a: f64): void
+sprite_set_color(sprite: any, r: f64, g: f64, b: f64, a: f64): void
     sprite.color = {r = r, g = g, b = b, a = a or 1}
 end
 
-fun sprite_set_flip(sprite: any, flip_x: bool, flip_y: bool): void
+sprite_set_flip(sprite: any, flip_x: bool, flip_y: bool): void
     sprite.flip_x = flip_x
     sprite.flip_y = flip_y
 end
@@ -52,7 +52,7 @@ end
 -- Sprite Sheet
 -- ═══════════════════════════════════════════════════════════════
 
-fun spritesheet_new(texture: any, frame_width: i64, frame_height: i64): any
+spritesheet_new(texture: any, frame_width: i64, frame_height: i64): any
     cols = math.floor(texture.width / frame_width)
     rows = math.floor(texture.height / frame_height)
 
@@ -62,8 +62,8 @@ fun spritesheet_new(texture: any, frame_width: i64, frame_height: i64): any
         x = 0
         while x < cols
             frames[#frames + 1] = {
-                x *= frame_width,
-                y *= frame_height,
+                x = x * frame_width,
+                y = y * frame_height,
                 width = frame_width,
                 height = frame_height,
             }
@@ -80,11 +80,11 @@ fun spritesheet_new(texture: any, frame_width: i64, frame_height: i64): any
     }
 end
 
-fun spritesheet_get_frame(sheet: any, index: i64): any
+spritesheet_get_frame(sheet: any, index: i64): any
     sheet.frames[index]
 end
 
-fun spritesheet_get_frame_count(sheet: any): i64
+spritesheet_get_frame_count(sheet: any): i64
     #sheet.frames
 end
 
@@ -92,7 +92,7 @@ end
 -- Sprite Animation
 -- ═══════════════════════════════════════════════════════════════
 
-fun sprite_animation_new(sheet: any, frame_indices: any, fps: f64): any
+sprite_animation_new(sheet: any, frame_indices: any, fps: f64): any
     {
         sheet = sheet,
         frames = frame_indices,
@@ -104,32 +104,32 @@ fun sprite_animation_new(sheet: any, frame_indices: any, fps: f64): any
     }
 end
 
-fun sprite_animation_play(anim: any): void
+sprite_animation_play(anim: any): void
     anim.playing = true
     anim.current_frame = 1
     anim.elapsed = 0
 end
 
-fun sprite_animation_stop(anim: any): void
+sprite_animation_stop(anim: any): void
     anim.playing = false
 end
 
-fun sprite_animation_pause(anim: any): void
+sprite_animation_pause(anim: any): void
     anim.playing = false
 end
 
-fun sprite_animation_update(anim: any, delta_time: f64): void
-    if not anim.playing then return end
+sprite_animation_update(anim: any, delta_time: f64): void
+    if not anim.playing return end
 
     anim.elapsed = anim.elapsed + delta_time
     frame_duration = 1 / anim.fps
 
-    if anim.elapsed >= frame_duration then
+    if anim.elapsed >= frame_duration
         anim.elapsed = anim.elapsed - frame_duration
         anim.current_frame = anim.current_frame + 1
 
-        if anim.current_frame > #anim.frames then
-            if anim.loop then
+        if anim.current_frame > #anim.frames
+            if anim.loop
                 anim.current_frame = 1
             else
                 anim.current_frame = #anim.frames
@@ -139,7 +139,7 @@ fun sprite_animation_update(anim: any, delta_time: f64): void
     end
 end
 
-fun sprite_animation_get_frame(anim: any): any
+sprite_animation_get_frame(anim: any): any
     frame_index = anim.frames[anim.current_frame]
     anim.sheet.frames[frame_index]
 end
@@ -148,22 +148,22 @@ end
 -- Sprite Renderer
 -- ═══════════════════════════════════════════════════════════════
 
-fun sprite_renderer_new(): any
+sprite_renderer_new(): any
     {
         sprites = {},
         sorted = false,
     }
 end
 
-fun sprite_renderer_add(renderer: any, sprite: any): void
+sprite_renderer_add(renderer: any, sprite: any): void
     renderer.sprites[#renderer.sprites + 1] = sprite
     renderer.sorted = false
 end
 
-fun sprite_renderer_remove(renderer: any, sprite: any): void
+sprite_renderer_remove(renderer: any, sprite: any): void
     i = 1
     while i <= #renderer.sprites
-        if renderer.sprites[i] == sprite then
+        if renderer.sprites[i] == sprite
             table.remove(renderer.sprites, i)
             return
         end
@@ -171,19 +171,19 @@ fun sprite_renderer_remove(renderer: any, sprite: any): void
     end
 end
 
-fun sprite_renderer_sort(renderer: any): void
-    table.sort(renderer.sprites, function(a, b) return a.z_order < b.z_order end)
+sprite_renderer_sort(renderer: any): void
+    table.sort(renderer.sprites, fun(a: any, b: any): any a.z_order < b.z_order)
     renderer.sorted = true
 end
 
-fun sprite_renderer_render(renderer: any): any
-    if not renderer.sorted then
+sprite_renderer_render(renderer: any): any
+    if not renderer.sorted
         sprite_renderer_sort(renderer)
     end
 
     render_calls = {}
     for sprite in renderer.sprites
-        if sprite.visible then
+        if sprite.visible
             render_calls[#render_calls + 1] = {
                 texture = sprite.texture,
                 x = sprite.x,

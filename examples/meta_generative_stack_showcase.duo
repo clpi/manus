@@ -4,7 +4,7 @@
 -- One author pattern per stage; @comp.each closes the algebra by re-expanding
 -- every comptime fragment. Fragment counts use @comp.str.countlines (native i64).
 
-fun stamp(frag) -> str
+stamp(frag) -> str
     "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
 end
 

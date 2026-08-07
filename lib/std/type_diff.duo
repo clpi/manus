@@ -20,8 +20,8 @@
 -- Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun str_join(parts: any, sep: str): str
-    local result = ""
+str_join(parts: any, sep: str): str
+    result = ""
     for i, part in parts
         if i > 1
             result = result .. sep
@@ -31,16 +31,16 @@ fun str_join(parts: any, sep: str): str
     result
 end
 
-fun count_fields(t: any): i64
-    local count = 0
+count_fields(t: any): i64
+    count = 0
     for _ in t
         count = count + 1
     end
     count
 end
 
-fun default_value(type_name: str): str
-    local defaults = {
+default_value(type_name: str): str
+    defaults = {
         ["i64"] = "0",
         ["f64"] = "0.0",
         ["str"] = "\"\"",
@@ -57,8 +57,8 @@ end
 
 -- is_widening: check if the type change is a safe widening.
 -- Widening: i32→i64, f32→f64, str→any, etc.
-fun is_widening(old_type: str, new_type: str): bool
-    local widenings = {
+is_widening(old_type: str, new_type: str): bool
+    widenings = {
         ["i8"] = { "i16", "i32", "i64", "f64" },
         ["i16"] = { "i32", "i64", "f64" },
         ["i32"] = { "i64", "f64" },
@@ -68,18 +68,18 @@ fun is_widening(old_type: str, new_type: str): bool
         ["f32"] = { "f64" },
         ["str"] = { "any" },
     }
-    local allowed = widenings[old_type]
+    allowed = widenings[old_type]
     if allowed
         for _, w in allowed
-            if w == new_type then return true end
+            if w == new_type return true end
         end
     end
     false
 end
 
 -- is_compatible: check if two types are compatible (same or widening)
-fun is_compatible(old_type: str, new_type: str): bool
-    if old_type == new_type then return true end
+is_compatible(old_type: str, new_type: str): bool
+    if old_type == new_type return true end
     is_widening(old_type, new_type)
 end
 
@@ -89,17 +89,17 @@ end
 
 -- diff_types: compare two type definitions (as tables of field→type).
 -- Returns a diff descriptor with added, removed, and changed fields.
-fun diff_types(old_type: any, new_type: any): any
-    local added = {}
-    local removed = {}
-    local changed = {}
-    local unchanged = {}
+diff_types(old_type: any, new_type: any): any
+    added = {}
+    removed = {}
+    changed = {}
+    unchanged = {}
 
     -- Find added and changed fields
     for name, new_typ in new_type
         if old_type[name] == nil
             added[#added + 1] = { name = name, type = new_typ }
-        elseif old_type[name] ~= new_typ
+        elseif old_type[name] != new_typ
             changed[#changed + 1] = {
                 name = name,
                 old_type = old_type[name],
@@ -120,7 +120,7 @@ fun diff_types(old_type: any, new_type: any): any
     -- Determine compatibility:
     -- - Compatible if only additions (no removals, no type changes)
     -- - Incompatible if anything was removed or changed
-    local compatible = #removed == 0 and #changed == 0
+    compatible = #removed == 0 and #changed == 0
 
     -- Check type widening (widening is compatible)
     for _, c in changed
@@ -146,9 +146,9 @@ end
 
 -- emit_migration: build C migration source that converts from the old type to
 -- the new type, handling added/removed/changed fields.
-fun emit_migration(type_name: str, changes: any): str
-    local lower = string.lower(type_name)
-    local parts = {}
+emit_migration(type_name: str, changes: any): str
+    lower = string.lower(type_name)
+    parts = {}
 
     -- Generate the migration function
     parts[#parts + 1] = "/* [type_diff] migrate_" .. lower .. ": old → new */"
@@ -186,8 +186,8 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- format_diff: generate a human-readable diff report
-fun format_diff(type_name: str, changes: any): str
-    local lines = {}
+format_diff(type_name: str, changes: any): str
+    lines = {}
     lines[#lines + 1] = "=== Type Diff: " .. type_name .. " ==="
     lines[#lines + 1] = "Old fields: " .. tostring(changes.old_count) .. ", New fields: " .. tostring(changes.new_count)
     lines[#lines + 1] = "Compatible: " .. tostring(changes.compatible)
@@ -212,7 +212,7 @@ fun format_diff(type_name: str, changes: any): str
         lines[#lines + 1] = ""
         lines[#lines + 1] = "~ Changed fields:"
         for _, c in changes.changed
-            local compat = is_widening(c.old_type, c.new_type) and "widening" or "narrowing"
+            compat = is_widening(c.old_type, c.new_type) and "widening" or "narrowing"
             lines[#lines + 1] = "  ~ " .. c.name .. ": " .. c.old_type .. " → " .. c.new_type .. " (" .. compat .. ")"
         end
     end

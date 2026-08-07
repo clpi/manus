@@ -1,19 +1,19 @@
-fun exec(cmd: str): i64
+exec(cmd: str): i64
     rc = os.execute(cmd)
-    if rc == nil then
+    if rc == nil
         return -1
     end
     rc
 end
 
-fun capture(cmd: str): str
+capture(cmd: str): str
     f = io.popen(cmd, "r")
-    if f == nil then
+    if f == nil
         ""
     end
     out = ""
     line = f:read()
-    while line ~= nil
+    while line != nil
         out = out .. line .. "\n"
         line = f:read()
     end

@@ -6,11 +6,11 @@
 Tensor = req "std.ml.tensor"
 NN = req "std.ml.nn"
 
-fun tape_new(): any
+tape_new(): any
     return { ops = {}, n = 0 }
 end
 
-fun tape_push(tape, op, inputs, output): any
+tape_push(tape, op, inputs, output): any
     tape.n = tape.n + 1
     tape.ops[tape.n] = {
         type = op,
@@ -20,7 +20,7 @@ fun tape_push(tape, op, inputs, output): any
     return tape
 end
 
-fun backward_relu(tape, idx, grad_out): any
+backward_relu(tape, idx, grad_out): any
     op = tape.ops[idx]
     x = op.inputs[1]
     g = Tensor.zeros(x.rows, x.cols)
@@ -34,7 +34,7 @@ fun backward_relu(tape, idx, grad_out): any
     return g
 end
 
-fun backward_linear(tape, idx, grad_out): any
+backward_linear(tape, idx, grad_out): any
     op = tape.ops[idx]
     x = op.inputs[1]
     layer = op.inputs[2]
@@ -62,7 +62,7 @@ fun backward_linear(tape, idx, grad_out): any
     return dx
 end
 
-fun backward_softmax(tape, idx, grad_out): any
+backward_softmax(tape, idx, grad_out): any
     -- Softmax backward: dL/dx_i = sum_j (dL/dy_j * (delta_ij * y_i - y_i * y_j))
     -- For a single sample (row), this simplifies to: grad_out * softmax_output - softmax_output * sum(grad_out * softmax_output)
     op = tape.ops[idx]
@@ -85,7 +85,7 @@ fun backward_softmax(tape, idx, grad_out): any
     return g
 end
 
-fun backward_layer(tape, idx, grad_out): any
+backward_layer(tape, idx, grad_out): any
     op = tape.ops[idx]
     if op.type == "linear" return backward_linear(tape, idx, grad_out) end
     if op.type == "relu" return backward_relu(tape, idx, grad_out) end
@@ -93,7 +93,7 @@ fun backward_layer(tape, idx, grad_out): any
     return grad_out
 end
 
-fun backward(tape, grad_out): any
+backward(tape, grad_out): any
     g = grad_out
     i = tape.n
     while i >= 1
@@ -104,7 +104,7 @@ fun backward(tape, grad_out): any
 end
 
 -- Finite-difference check for scalar losses (debug / tests)
-fun grad_check(f, x, eps): f64
+grad_check(f, x, eps): f64
     if eps == nil eps = 1e-4 end
     y0 = f(x)
     y1 = f(x + eps)
@@ -112,7 +112,7 @@ fun grad_check(f, x, eps): f64
 end
 
 -- `@grad(loss_fn, wrt)` companion: returns gradient descriptor for autodiff / tape
-fun grad(loss_fn, wrt): any
+grad(loss_fn, wrt): any
     return { fn = loss_fn, wrt = wrt }
 end
 

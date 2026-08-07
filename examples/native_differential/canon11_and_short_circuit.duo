@@ -1,0 +1,7 @@
+f(c: i64): i64
+    if c >= 48 and c <= 57 return 1 end
+    return 0
+end
+main(): i64
+    return f(53) + f(65)
+end

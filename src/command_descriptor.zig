@@ -43,7 +43,7 @@ pub const duo_commands: []const Descriptor = &.{
         .cli_prefix = "zig build",
         .effects = &.{ .compile, .filesystem_read, .filesystem_write },
         .output = "BuildReport",
-        .examples = &.{"duo.build()", "build()"},
+        .examples = &.{ "duo.build()", "build()" },
     },
     .{
         .id = "duo.test",
@@ -51,7 +51,7 @@ pub const duo_commands: []const Descriptor = &.{
         .cli_prefix = "zig build test",
         .effects = &.{ .compile, .process },
         .output = "TestReport",
-        .examples = &.{"duo.test()", "test()"},
+        .examples = &.{ "duo.test()", "test()" },
     },
     .{
         .id = "duo.bench",
@@ -81,7 +81,7 @@ pub const duo_commands: []const Descriptor = &.{
         .id = "duo.catalog",
         .title = "Emit machine-readable pass catalog JSON",
         .cli_prefix = "duo catalog",
-        .effects = &.{ .process },
+        .effects = &.{.process},
         .output = "CatalogJson",
         .examples = &.{"duo.catalog()"},
     },
@@ -97,10 +97,10 @@ pub const duo_commands: []const Descriptor = &.{
         .id = "exec.raw",
         .title = "Explicit raw host shell (text reparsed, capability gated)",
         .cli_prefix = "shell(",
-        .effects = &.{ .process },
+        .effects = &.{.process},
         .output = "Stream[Byte]",
         .native_alternative = null,
-        .examples = &.{"shell(\"git status\")", "!git status"},
+        .examples = &.{ "shell(\"git status\")", "!git status" },
     },
 };
 
@@ -126,7 +126,9 @@ pub fn writeCatalogJson(w: *std.Io.Writer) !void {
         if (d.native_alternative) |na| {
             try w.print(",\"native_alternative\":\"{s}\"", .{na});
         }
-        try w.writeAll("}}");
+        // `writeAll` is raw — unlike `print`, it does not collapse `}}` to `}`.
+        // One object was opened per element, so exactly one brace closes it.
+        try w.writeAll("}");
     }
     try w.writeAll("]}");
 }
@@ -150,4 +152,25 @@ test "command_descriptor: writeCatalogJson" {
     defer aw.deinit();
     try writeCatalogJson(&aw.writer);
     try std.testing.expect(std.mem.indexOf(u8, aw.written(), "duo.build") != null);
+}
+
+// A substring assertion cannot detect malformed JSON — that is how an extra
+// closing brace per element survived here. Parse it structurally instead.
+test "command_descriptor: writeCatalogJson emits parseable JSON" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try writeCatalogJson(&aw.writer);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, aw.written(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value == .object);
+
+    const commands = parsed.value.object.get("commands") orelse return error.TestExpectedEqual;
+    try std.testing.expect(commands == .array);
+    try std.testing.expectEqual(duo_commands.len, commands.array.items.len);
+    for (commands.array.items) |cmd| {
+        try std.testing.expect(cmd == .object);
+        try std.testing.expect(cmd.object.get("id") != null);
+        try std.testing.expect(cmd.object.get("effects").? == .array);
+    }
 }

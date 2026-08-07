@@ -1,6 +1,6 @@
 -- Test bash-style calls with strings only
 
-fun greet(name: str): str
+greet(name: str): str
     "Hello, " .. name
 end
 
@@ -8,7 +8,7 @@ end
 print greet "World"
 
 -- Multiple string arguments
-fun concat(a: str, b: str): str
+concat(a: str, b: str): str
     a .. b
 end
 

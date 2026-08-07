@@ -1,26 +1,26 @@
 typed_sub(s: str): str
-  local a: str = string.sub(s, 1, 3)
+  a: str = string.sub(s, 1, 3)
   return a
 end
 
 typed_tostring(n: i64): str
-  local b: str = tostring(n)
+  b: str = tostring(n)
   return b
 end
 
 combined(s: str, n: i64): str
-  local a: str = string.sub(s, 1, 3)
-  local b: str = tostring(n)
+  a: str = string.sub(s, 1, 3)
+  b: str = tostring(n)
   return a .. b
 end
 
 typed_find(s: str): i64
-  local p: i64 = string.find(s, "Duo", 1, true)
+  p: i64 = string.find(s, "Duo", 1, true)
   return p
 end
 
 method_find(s: str): i64
-  local p: i64 = s:find("o", 1, true)
+  p: i64 = s:find("o", 1, true)
   return p
 end
 

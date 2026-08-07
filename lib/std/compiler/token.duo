@@ -130,6 +130,6 @@ type Token = {
     float_val: f64
 }
 
-fun is_type_keyword(kind: i64): bool
+is_type_keyword(kind: i64): bool
     (kind >= KIND_I8 and kind <= KIND_STR)
 end

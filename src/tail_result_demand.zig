@@ -47,9 +47,29 @@ pub fn blockTailResultWithDemand(blk: *const ast.Block, demand: ResultDemand) ?R
 
     var trailer_count: u8 = 0;
     var end = blk.stmts.len;
-    while (end > 0 and isTransparentTrailer(&blk.stmts[end - 1])) {
-        end -= 1;
-        trailer_count +|= 1;
+    // Only strip trailers when the block has no explicit tail expression.
+    // `blk.tail_expr` is by definition the last thing in the block, so a
+    // *statement* preceding it cannot be a trailer that comes after it.
+    // Stripping regardless set trailer_count > 0, which discarded the tail
+    // expression below and walked back to an earlier statement instead:
+    //
+    //     h = fun(a: any): any 1 end
+    //     print(1)      -- counted as a trailer
+    //     0             -- tail_expr, silently ignored
+    //
+    // made sema check `h = fun …` as the return value — "return type mismatch:
+    // expected 'i64', got 'function'". Codegen returned 0 correctly the whole
+    // time, so this was a sema-only false positive.
+    // …but a tail expression that is itself a discard call carries no value, so
+    // stripping must still run for it — `s = new32(); update(s, data); final(s)`
+    // in std/hash/fnv.duo depends on that walk-back. Only a value-carrying tail
+    // expression suppresses stripping.
+    const tail_carries_value = if (blk.tail_expr) |e| !isDiscardCall(e) else false;
+    if (!tail_carries_value) {
+        while (end > 0 and isTransparentTrailer(&blk.stmts[end - 1])) {
+            end -= 1;
+            trailer_count +|= 1;
+        }
     }
 
     const tail_expr = if (trailer_count == 0) blk.tail_expr else null;
@@ -68,20 +88,39 @@ pub fn blockTailResultWithDemand(blk: *const ast.Block, demand: ResultDemand) ?R
         };
         return .{ .rule = rule, .expr = e };
     }
-    if (end == 0) return null;
+    // Trailing calls are "transparent" so that `x = f()` / `log(x)` still yields
+    // x. But if stripping them leaves nothing that carries a value — an empty
+    // prefix, or a `req` module binding — then the final call *is* the result.
+    // Yielding null instead left the function body with no terminator at all,
+    // which the direct backend then refused as outside its subset.
+    if (end == 0) return lastTrailerResult(blk, trailer_count);
 
     const effective = blk.stmts[0..end];
-    var resolution = tailStatementResult(effective, end - 1) orelse {
-        if (trailer_count > 0 and end > 0) {
-            return tailStatementResult(effective, end - 1);
-        }
-        return null;
-    };
+    var resolution = tailStatementResult(effective, end - 1) orelse
+        return lastTrailerResult(blk, trailer_count);
     if (trailer_count > 0) {
         resolution.transparent_trailer_count = trailer_count;
         resolution.region = .transparent_trailer_chain;
     }
     return resolution;
+}
+
+/// Result to use when every value-carrying candidate was stripped as a
+/// transparent trailer. A real tail expression outranks the trailers that were
+/// scanned before it — `print(1)` then `0` yields 0, not the print — and only
+/// when the body is calls all the way down does the final call become the
+/// result.
+fn lastTrailerResult(blk: *const ast.Block, trailer_count: u8) ?Resolution {
+    if (trailer_count == 0) return null;
+    if (blk.tail_expr) |e| return .{
+        .rule = switch (e.*) {
+            .call, .method_call => .tail_call,
+            else => .tail_assignment,
+        },
+        .expr = e,
+    };
+    if (blk.stmts.len == 0) return null;
+    return tailStatementResult(blk.stmts, blk.stmts.len - 1);
 }
 
 fn isTransparentTrailer(stmt: *const ast.Stmt) bool {
@@ -114,9 +153,23 @@ fn tailStatementResult(stmts: []const ast.Stmt, last_index: usize) ?Resolution {
     };
 }
 
+/// `req "path"` binds a module at compile time. It is spelled like a call, but
+/// it never produces a runtime value, so it can never be a block's tail result.
+fn isReqBinding(expr: *const ast.Expr) bool {
+    if (expr.* != .call) return false;
+    const c = expr.call;
+    if (c.func.* != .name or !std.mem.eql(u8, c.func.name.ident, "req")) return false;
+    return c.args.len == 1 and c.args[0].* == .string_lit;
+}
+
 fn resolveTailAssign(targets: []*ast.Expr, values: []*ast.Expr) ?Resolution {
     if (values.len != 1) return null;
     const val = values[0];
+    // Without this, a body ending in a discard-shaped call anchors its result to
+    // the preceding statement — and when that statement is `E = req "std.emit"`,
+    // the module binding itself became the return expression, lowering to a call
+    // to a function literally named `req`.
+    if (isReqBinding(val)) return null;
     if (targets.len == 1) {
         if (assignTargetName(targets[0])) |n| {
             if (binopUpdatesName(val, n)) {

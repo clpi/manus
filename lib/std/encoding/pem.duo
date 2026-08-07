@@ -1,19 +1,19 @@
 -- std.encoding.pem — PEM encoding (mirrors Go's encoding/pem package)
 -- Encode binary data as PEM-formatted ASCII.
 
-local base64 = req "std.base64"
+base64 = req "std.base64"
 
-local line_width = 64
+line_width = 64
 
-fun encode(b: any): str
-    local data = b.bytes
-    local typ = b.type
-    local b64 = base64.encode(data)
-    local lines = {}
+encode(b: any): str
+    data = b.bytes
+    typ = b.type
+    b64 = base64.encode(data)
+    lines = {}
     lines[rawlen(lines) + 1] = "-----BEGIN " .. typ .. "-----"
-    local i = 1
+    i = 1
     while i <= string.len(b64)
-        local chunk = string.sub(b64, i, i + line_width - 1)
+        chunk = string.sub(b64, i, i + line_width - 1)
         lines[rawlen(lines) + 1] = chunk
         i += line_width
     end
@@ -21,32 +21,32 @@ fun encode(b: any): str
     table.concat(lines, "\n")
 end
 
-fun decode(data: str): any
-    if data == nil then return nil end
-    local begin_marker = nil
-    local end_marker = nil
-    local typ = nil
-    local b64_lines = {}
+decode(data: str): any
+    if data == nil return nil end
+    begin_marker = nil
+    end_marker = nil
+    typ = nil
+    b64_lines = {}
     for line in string.gmatch(data, "[^\n]+")
-        local trimmed = string.trim(line)
-        if string.sub(trimmed, 1, 11) == "-----BEGIN " then
+        trimmed = string.trim(line)
+        if string.sub(trimmed, 1, 11) == "-----BEGIN "
             typ = string.sub(trimmed, 12, string.len(trimmed) - 5)
             begin_marker = trimmed
-        elseif string.sub(trimmed, 1, 9) == "-----END " then
+        elseif string.sub(trimmed, 1, 9) == "-----END "
             end_marker = trimmed
-        elseif begin_marker ~= nil and end_marker == nil then
-            if string.len(trimmed) > 0 then
+        elseif begin_marker != nil and end_marker == nil
+            if string.len(trimmed) > 0
                 b64_lines[rawlen(b64_lines) + 1] = trimmed
             end
         end
     end
-    if typ == nil then return nil end
+    if typ == nil return nil end
     b64_data = table.concat(b64_lines)
     bytes = base64.decode(b64_data)
     return {type = typ, headers = {}, bytes = bytes}
 end
 
-fun new(typ: str, data: str): any
+new(typ: str, data: str): any
     {type = typ, headers = {}, bytes = data}
 end
 

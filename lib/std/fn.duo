@@ -4,23 +4,23 @@
 -- this module focuses on functions that compose without creating new closures.
 
 -- identity: return its argument unchanged.
-fun identity(x: any): any
+identity(x: any): any
     x
 end
 
 -- constant: return the value (for use as a function body).
-fun constant_val(v: any): any
+constant_val(v: any): any
     v
 end
 
 -- noop: a function that does nothing.
-fun noop(): void
+noop(): void
 end
 
 -- foldl: left fold over a list.
-fun foldl(list: any, init: any, fn_ref: any): any
+foldl(list: any, init: any, fn_ref: any): any
     acc = init
-    if list == nil then return acc end
+    if list == nil return acc end
     i = 1
     while i <= rawlen(list)
         acc = fn_ref(acc, list[i])
@@ -30,9 +30,9 @@ fun foldl(list: any, init: any, fn_ref: any): any
 end
 
 -- foldr: right fold over a list.
-fun foldr(list: any, init: any, fn_ref: any): any
+foldr(list: any, init: any, fn_ref: any): any
     acc = init
-    if list == nil then return acc end
+    if list == nil return acc end
     i = rawlen(list)
     while i >= 1
         acc = fn_ref(list[i], acc)
@@ -42,13 +42,13 @@ fun foldr(list: any, init: any, fn_ref: any): any
 end
 
 -- map_filter: apply fn and keep only non-nil results.
-fun map_filter(list: any, fn_ref: any): any
+map_filter(list: any, fn_ref: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
         result = fn_ref(list[i])
-        if result ~= nil then
+        if result != nil
             out[rawlen(out) + 1] = result
         end
         i += 1
@@ -57,13 +57,13 @@ fun map_filter(list: any, fn_ref: any): any
 end
 
 -- group_by: partition list into groups keyed by fn's return value.
-fun group_by(list: any, fn_ref: any): any
+group_by(list: any, fn_ref: any): any
     groups = {}
-    if list == nil then return groups end
+    if list == nil return groups end
     i = 1
     while i <= rawlen(list)
         key = fn_ref(list[i])
-        if groups[key] == nil then groups[key] = {} end
+        if groups[key] == nil groups[key] = {} end
         groups[key][rawlen(groups[key]) + 1] = list[i]
         i += 1
     end
@@ -71,14 +71,14 @@ fun group_by(list: any, fn_ref: any): any
 end
 
 -- unique_by: deduplicate list by fn's return value (first occurrence wins).
-fun unique_by(list: any, fn_ref: any): any
+unique_by(list: any, fn_ref: any): any
     seen = {}
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
         key = fn_ref(list[i])
-        if seen[key] == nil then
+        if seen[key] == nil
             seen[key] = true
             out[rawlen(out) + 1] = list[i]
         end
@@ -88,12 +88,12 @@ fun unique_by(list: any, fn_ref: any): any
 end
 
 -- take_while: take elements from the front while predicate holds.
-fun take_while(list: any, fn_ref: any): any
+take_while(list: any, fn_ref: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
-        if not fn_ref(list[i]) then break end
+        if not fn_ref(list[i]) break end
         out[rawlen(out) + 1] = list[i]
         i += 1
     end
@@ -101,13 +101,13 @@ fun take_while(list: any, fn_ref: any): any
 end
 
 -- drop_while: drop elements from the front while predicate holds.
-fun drop_while(list: any, fn_ref: any): any
+drop_while(list: any, fn_ref: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     dropping = true
     i = 1
     while i <= rawlen(list)
-        if dropping and fn_ref(list[i]) then
+        if dropping and fn_ref(list[i])
             -- skip
         else
             dropping = false
@@ -119,9 +119,9 @@ fun drop_while(list: any, fn_ref: any): any
 end
 
 -- chunk: split list into sub-lists of size n.
-fun chunk(list: any, n: i64): any
+chunk(list: any, n: i64): any
     out = {}
-    if list == nil or n == nil or n < 1 then return out end
+    if list == nil or n == nil or n < 1 return out end
     i = 1
     while i <= rawlen(list)
         group = {}
@@ -137,24 +137,24 @@ fun chunk(list: any, n: i64): any
 end
 
 -- interleave: weave elements from two lists alternately.
-fun interleave(a: any, b: any): any
+interleave(a: any, b: any): any
     out = {}
-    if a == nil then a = {} end
-    if b == nil then b = {} end
+    if a == nil a = {} end
+    if b == nil b = {} end
     n = rawlen(a)
-    if rawlen(b) > n then n = rawlen(b) end
+    if rawlen(b) > n n = rawlen(b) end
     i = 1
     while i <= n
-        if i <= rawlen(a) then out[rawlen(out) + 1] = a[i] end
-        if i <= rawlen(b) then out[rawlen(out) + 1] = b[i] end
+        if i <= rawlen(a) out[rawlen(out) + 1] = a[i] end
+        if i <= rawlen(b) out[rawlen(out) + 1] = b[i] end
         i += 1
     end
     out
 end
 
 -- transpose: transpose a list of lists (rows to columns).
-fun transpose(matrix: any): any
-    if matrix == nil or rawlen(matrix) == 0 then return {} end
+transpose(matrix: any): any
+    if matrix == nil or rawlen(matrix) == 0 return {} end
     cols = rawlen(matrix[1])
     out = {}
     c = 1
@@ -162,7 +162,7 @@ fun transpose(matrix: any): any
         col = {}
         r = 1
         while r <= rawlen(matrix)
-            if matrix[r] ~= nil and rawlen(matrix[r]) >= c then
+            if matrix[r] != nil and rawlen(matrix[r]) >= c
                 col[rawlen(col) + 1] = matrix[r][c]
             end
             r += 1
@@ -174,13 +174,13 @@ fun transpose(matrix: any): any
 end
 
 -- count_by: count elements grouped by fn's return value.
-fun count_by(list: any, fn_ref: any): any
+count_by(list: any, fn_ref: any): any
     counts = {}
-    if list == nil then return counts end
+    if list == nil return counts end
     i = 1
     while i <= rawlen(list)
         key = fn_ref(list[i])
-        if counts[key] == nil then counts[key] = 0 end
+        if counts[key] == nil counts[key] = 0 end
         counts[key] = counts[key] + 1
         i += 1
     end
@@ -188,13 +188,13 @@ fun count_by(list: any, fn_ref: any): any
 end
 
 -- flatten: flatten a list of lists one level deep.
-fun flatten(list: any): any
+flatten(list: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
         item = list[i]
-        if type(item) == "table" then
+        if type(item) == "table"
             j = 1
             while j <= rawlen(item)
                 out[rawlen(out) + 1] = item[j]
@@ -209,13 +209,13 @@ fun flatten(list: any): any
 end
 
 -- partition: split list into {matching, non_matching} by predicate.
-fun partition(list: any, fn_ref: any): any
+partition(list: any, fn_ref: any): any
     yes = {}
     no = {}
-    if list == nil then return {yes, no} end
+    if list == nil return {yes, no} end
     i = 1
     while i <= rawlen(list)
-        if fn_ref(list[i]) then
+        if fn_ref(list[i])
             yes[rawlen(yes) + 1] = list[i]
         else
             no[rawlen(no) + 1] = list[i]
@@ -229,14 +229,14 @@ fun partition(list: any, fn_ref: any): any
 end
 
 -- min_by: find the element that minimizes fn's return value.
-fun min_by(list: any, fn_ref: any): any
-    if list == nil or rawlen(list) == 0 then return nil end
+min_by(list: any, fn_ref: any): any
+    if list == nil or rawlen(list) == 0 return nil end
     best = list[1]
     best_val = fn_ref(best)
     i = 2
     while i <= rawlen(list)
         val = fn_ref(list[i])
-        if val < best_val then
+        if val < best_val
             best = list[i]
             best_val = val
         end
@@ -246,14 +246,14 @@ fun min_by(list: any, fn_ref: any): any
 end
 
 -- max_by: find the element that maximizes fn's return value.
-fun max_by(list: any, fn_ref: any): any
-    if list == nil or rawlen(list) == 0 then return nil end
+max_by(list: any, fn_ref: any): any
+    if list == nil or rawlen(list) == 0 return nil end
     best = list[1]
     best_val = fn_ref(best)
     i = 2
     while i <= rawlen(list)
         val = fn_ref(list[i])
-        if val > best_val then
+        if val > best_val
             best = list[i]
             best_val = val
         end
@@ -264,8 +264,8 @@ end
 
 -- sort_by: sort list by fn's return value.
 -- Bubble sort to avoid closure capture issues in the codegen.
-fun sort_by(list: any, fn_ref: any): void
-    if list == nil then return end
+sort_by(list: any, fn_ref: any): void
+    if list == nil return end
     n = rawlen(list)
     i = 1
     while i < n
@@ -273,7 +273,7 @@ fun sort_by(list: any, fn_ref: any): void
         while j <= n - i
             a = fn_ref(list[j])
             b = fn_ref(list[j + 1])
-            if a > b then
+            if a > b
                 list[j], list[j + 1] = list[j + 1], list[j]
             end
             j += 1
@@ -283,33 +283,33 @@ fun sort_by(list: any, fn_ref: any): void
 end
 
 -- pipe: compose functions left-to-right (pipe(f, g)(x) = g(f(x))).
-fun pipe(f1: any, f2: any): any
-    fun composed(x: any): any
+pipe(f1: any, f2: any): any
+    composed(x: any): any
         f2(f1(x))
     end
     composed
 end
 
 -- pipe3: compose three functions.
-fun pipe3(f1: any, f2: any, f3: any): any
-    fun composed(x: any): any
+pipe3(f1: any, f2: any, f3: any): any
+    composed(x: any): any
         f3(f2(f1(x)))
     end
     composed
 end
 
 -- negate: return a function that negates the predicate.
-fun negate(fn_ref: any): any
-    fun negated(x: any): any
+negate(fn_ref: any): any
+    negated(x: any): any
         not fn_ref(x)
     end
     negated
 end
 
 -- curry2: convert a 2-arg function to a chain of 1-arg calls.
-fun curry2(fn_ref: any): any
-    fun curried(a: any): any
-        fun partial(b: any): any
+curry2(fn_ref: any): any
+    curried(a: any): any
+        partial(b: any): any
             fn_ref(a, b)
         end
         partial
@@ -318,9 +318,9 @@ fun curry2(fn_ref: any): any
 end
 
 -- clamp: clamp value between min and max.
-fun clamp_val(v: any, lo: any, hi: any): any
-    if v < lo then return lo end
-    if v > hi then return hi end
+clamp_val(v: any, lo: any, hi: any): any
+    if v < lo return lo end
+    if v > hi return hi end
     v
 end
 

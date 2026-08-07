@@ -6,7 +6,7 @@ PointLike = meta.make_concept("PointLike", {
 })
 
 @implements(PointLike)
-local p: { x: i64, y: i64, len: any } = {
+p: { x: i64, y: i64, len: any } = {
     x = 3,
     y = 4,
     len = fun(self): i64

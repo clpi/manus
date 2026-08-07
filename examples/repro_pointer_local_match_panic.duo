@@ -7,7 +7,7 @@
 -- while, or the match each make it compile.
 --
 -- Repro: duo compile examples/repro_pointer_local_match_panic.duo
-fun f(n: i64): i64
+f(n: i64): i64
   code = mem.alloc(64)
   mem.zero(code, 64)
   pc: i64 = 0
@@ -31,10 +31,10 @@ fun f(n: i64): i64
       end
     end
     match op
-    case 0x41 then do
+    case 0x41 do
       acc = acc + imm
     end
-    case _ then do
+    case _ do
       acc = acc
     end
     end
@@ -42,7 +42,7 @@ fun f(n: i64): i64
   acc
 end
 
-fun main()
+main()
   print("acc=" .. tostring(f(4)))
 end
 

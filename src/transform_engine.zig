@@ -421,7 +421,6 @@ pub fn logProvenance(
     recordProof(public_name, site, inputs_hash, output_hash);
 }
 
-
 /// Tier-1 combinators requiring 3-site parity (top-level, nested callback, block body).
 pub const parity_tier1: []const []const u8 = &.{
     "comp.match",
@@ -520,7 +519,7 @@ fn abiSpecializeDescriptor() Descriptor {
             .native_only = true,
             .max_matching_types = null,
             .requires_callback = false,
-            .parity_sites = &[_]SiteKind{ .emit_call },
+            .parity_sites = &[_]SiteKind{.emit_call},
         },
         .min_knowledge = .stable,
         .cost_hint = blk: {
@@ -574,13 +573,15 @@ pub fn descriptor(public_name: []const u8) ?Descriptor {
         const internal = meta_module.resolveBuiltin(public_name) orelse "__representation";
         return shapeIntrospectionDescriptor(public_name, internal);
     }
-    if (std.mem.eql(u8, public_name, "comp.why") or std.mem.eql(u8, public_name, "meta.why"))
-    {
+    if (std.mem.eql(u8, public_name, "comp.why") or std.mem.eql(u8, public_name, "meta.why")) {
         const internal = meta_module.resolveBuiltin(public_name) orelse "__why";
         return shapeIntrospectionDescriptor(public_name, internal);
     }
-    if (std.mem.eql(u8, public_name, "comp.origin") or std.mem.eql(u8, public_name, "meta.origin"))
-    {
+    if (std.mem.eql(u8, public_name, "comp.why.module") or std.mem.eql(u8, public_name, "meta.why.module")) {
+        const internal = meta_module.resolveBuiltin(public_name) orelse "__why_module";
+        return shapeIntrospectionDescriptor(public_name, internal);
+    }
+    if (std.mem.eql(u8, public_name, "comp.origin") or std.mem.eql(u8, public_name, "meta.origin")) {
         const internal = meta_module.resolveBuiltin(public_name) orelse "__origin";
         return shapeIntrospectionDescriptor(public_name, internal);
     }
@@ -744,7 +745,7 @@ fn callTransformDescriptor(public_name: []const u8, op: semantic_algebra.CallTra
             .native_only = true,
             .max_matching_types = null,
             .requires_callback = false,
-            .parity_sites = &[_]SiteKind{ .emit_call },
+            .parity_sites = &[_]SiteKind{.emit_call},
         },
         .min_knowledge = min_k,
         .cost_hint = blk: {

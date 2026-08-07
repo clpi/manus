@@ -56,19 +56,19 @@ pub const subsystems: []const Subsystem = &.{
         .title = "Lexer",
         .host_impl = "src/lexer.zig",
         .duo_impl = "lib/std/compiler/lexer.duo",
-        .production_status = .differential_oracle,
+        .production_status = .porting,
         .bootstrap_required = false,
-        .migration_blocker = "MP4-B02: tokenize authority host; Duo embed proven (MP4-B01); duo_lexer_bridge seam wired",
+        .migration_blocker = "MP4-B02: tokenize authority host. Duo lexer is proven token-for-token equal to src/lexer.zig (pass16_lexer_fingerprint_differential). string.sub is no longer the blocker: lexer.duo's 54 sites are ported onto lib/std/str.duo, which exports the allocation as a @comp.c.export primitive so the backend emits only a relocation — no writable __DATA arena and no L4 borrowed strings needed. The port compiles and pass16_lexer_fingerprint_differential still proves token-for-token equality with src/lexer.zig. Remaining to reach duo_canonical: production tokenize dispatch through the Duo lexer instead of the host",
         .removal_gate = "duo_lexer_tokenize.c production dispatch + pass16-m1-smoke",
     },
     .{
         .id = "SH-04",
         .title = "Parser",
         .host_impl = "src/parser.zig",
-        .duo_impl = null,
+        .duo_impl = "lib/std/compiler/parser.duo",
         .production_status = .seed_only,
         .bootstrap_required = true,
-        .migration_blocker = "No Duo-native parser kernel yet",
+        .migration_blocker = "Seed only: lib/std/compiler/parser.duo is a recursive-descent expression parser (precedence climbing, mutual recursion between parse_expr and parse_factor, results returned as an ABI-register record with no allocation). It parses characters, not tokens, and covers only the arithmetic subset. Runs on BOTH backends: an @comp.c.export `eval` entry point returns i64 so the record never crosses the module boundary, and the parser -- mutual recursion included -- lowers to native ARM64 (zig build direct-module-link). Cross-module *record* returns still have no C ABI export form. Statements, declarations, types, attributes and the std.compiler.lexer token-stream interface are all still absent. Measured constraints on the token-stream step -- three probes, all on the direct backend. A table lowers natively as a *function local* with dynamic indexing (t = {5,7,9}; t[i] works). But every way of sharing one between functions fails: a table parameter is DNB002 (signature incompatible with the direct ARM64 ABI), a module-scope table is DNB001, and a record with a table field is DNB001. Recursive descent needs the token array shared across mutually recursive functions, so the native subset must gain one of those three before a token-driven parser can lower. Root cause, confirmed in dnir_lower.zig: a table in the native subset has no runtime memory representation at all. It is *exploded* into one local per element (see table_lens and lowerPositionalTableAssign), the same way a record becomes one local per field. That is why indexing a local table works and every sharing form fails -- there is no contiguous array and therefore no pointer to hand across a call. So this is not an ABI rule to relax: it needs a real memory-backed table representation in DNIR plus the ARM64 load/store to match, and no stdlib-primitive detour exists (unlike string.sub, where the obstruction was allocation and could be exported from a module). RESOLVED 2026-08-06 -- the memory-backed representation now exists. `alloc_slots` (duo_native_ir.zig) reserves a frame region sized by a pre-pass, exactly like the record path, so a table built inside a loop does not walk sp; a `ptr` parameter carries the base address in x0..x7 as an integer-class argument; and load_index/store_index with ty == .i64 are scaled 8-byte accesses (`[base, idx, lsl #3]`), the byte semantics of string.byte staying on the other ty. Materialization is lazy -- elements stay in registers for local use and are copied to the frame only at the first call that takes the table -- after which the name is rebound to the base so later reads see callee writes rather than stale registers. Three register-lifetime bugs had to be fixed alongside it (single-arg call, mov_arg, and the indexed ops themselves each released a register the slot map still owned; see releaseDnirTemp). Proven by examples/native_differential/native_only/table_shared_param.duo and parser_token_stream.duo -- the latter is a mutually recursive token-driven expression parser over a shared token array plus a shared cursor, respecting precedence, lowered entirely to native ARM64. Remaining for SH-04: the parser still parses characters rather than a std.compiler.lexer token stream, and statements, declarations, types and attributes are all still absent; cross-module *record* returns still have no C ABI export form",
         .removal_gate = "P16-WS6 + syntax graph",
     },
     .{
@@ -138,7 +138,7 @@ pub const subsystems: []const Subsystem = &.{
         .duo_impl = null,
         .production_status = .seed_only,
         .bootstrap_required = false,
-        .migration_blocker = "Restricted scalar subset only",
+        .migration_blocker = "Scalar subset plus records, u64, string.byte and string.len (DNIR str_len, inline scan, no libc), and — new — calls into separately compiled Duo modules: a qualified call lowers to a bl with a relocation against the module's @comp.c.export symbol, and the compiler emits, builds and links that module itself (zig build direct-module-link). string.sub is the next gap: it needs writable data and only read-only __TEXT sections are emitted. That gap is now bypassed, not closed: lib/std/str.duo exports string.sub as a @comp.c.export primitive, so the allocation happens in the module's C and the backend only emits a relocation. Proven on both backends by zig build direct-module-link. A writable __DATA arena / L4 borrowed strings would still be needed to lower string.sub in the backend itself",
         .removal_gate = "P16-WS19 + object writers in Duo",
     },
     .{
@@ -250,7 +250,9 @@ pub fn writeMatrixJson(w: *std.Io.Writer) !void {
         } else {
             try w.writeAll("null");
         }
-        try w.writeAll("}}");
+        // `writeAll` is raw — unlike `print`, it does not collapse `}}` to `}`.
+        // One object was opened per subsystem, so exactly one brace closes it.
+        try w.writeAll("}");
     }
     try w.writeAll("],\"manifest\":");
     const m = publicManifest();
@@ -259,6 +261,23 @@ pub fn writeMatrixJson(w: *std.Io.Writer) !void {
         .{ m.self_hosting_level, m.canonical_compiler_in_duo, m.bootstrap_stage_reached, m.production_duo_frontend, m.silent_c_fallback, m.claim_self_hosted_status },
     );
     try w.writeAll("}");
+}
+
+// Structural, not substring: an extra closing brace per subsystem element made
+// this writer emit invalid JSON without any existing assertion noticing.
+test "selfhosting_matrix: writeMatrixJson emits parseable JSON" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try writeMatrixJson(&aw.writer);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, aw.written(), .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value == .object);
+
+    const subs = parsed.value.object.get("subsystems") orelse return error.TestExpectedEqual;
+    try std.testing.expect(subs == .array);
+    try std.testing.expectEqual(subsystems.len, subs.array.items.len);
+    try std.testing.expect(parsed.value.object.get("manifest").? == .object);
 }
 
 test "selfhosting_matrix: honest manifest level 1 keyword component" {

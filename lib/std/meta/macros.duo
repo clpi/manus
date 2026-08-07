@@ -3,18 +3,18 @@
 -- This module provides helpers for common meta programming patterns.
 
 -- Evaluate a compile-time expression constant
-fun eval_constant(expr: i64): i64
+eval_constant(expr: i64): i64
     expr
 end
 
 -- Generate a compile-time string from a template
-fun template_str(fmt: str): str
+template_str(fmt: str): str
     fmt
 end
 
 -- Define a meta block that generates code at compile time
 -- Usage: ##meta.for_range(0, 10, fun(i) ... end)
-fun for_range(start: i64, stop: i64, body_fn: any): void
+for_range(start: i64, stop: i64, body_fn: any): void
     for i = start, stop - 1
         body_fn(i)
     end
@@ -22,7 +22,7 @@ end
 
 -- Generate a sequence of numbered variable bindings at compile time
 -- Usage: ##meta.gen_vars("x", 5)  ->  x0, x1, x2, x3, x4
-fun gen_vars(prefix: str, count: i64): any
+gen_vars(prefix: str, count: i64): any
     vars = {}
     for i = 0, count - 1
         vars[#vars + 1] = prefix .. tostring(i)
@@ -32,22 +32,22 @@ end
 
 -- Compile-time conditional code generation
 -- Usage: ##meta.when(condition, then_block)
-fun when(cond: bool, block: any): void
-    if cond then
+when(cond: bool, block: any): void
+    if cond
         block()
     end
 end
 
 -- Compile-time loop unrolling helper
 -- Usage: ##meta.unroll(4, fun(i) print(#i) end)
-fun unroll(count: i64, body_fn: any): void
+unroll(count: i64, body_fn: any): void
     for i = 0, count - 1
         body_fn(i)
     end
 end
 
 -- Compile-time type size query
-fun sizeof(T: str): i64
+sizeof(T: str): i64
     sizes = {}
     sizes["i8"] = 1
     sizes["i16"] = 2
@@ -66,7 +66,7 @@ fun sizeof(T: str): i64
 end
 
 -- Compile-time alignment query
-fun alignof(T: str): i64
+alignof(T: str): i64
     aligns = {}
     aligns["i8"] = 1
     aligns["i16"] = 2
@@ -85,14 +85,14 @@ fun alignof(T: str): i64
 end
 
 -- Compile-time assertion
-fun static_assert(cond: bool, msg: str): void
-    if not cond then
+static_assert(cond: bool, msg: str): void
+    if not cond
         error("compile-time assertion failed: " .. msg)
     end
 end
 
 -- Generate a struct field accessor at compile time
-fun gen_field_accessor(struct_name: str, field_name: str, field_type: str): any
+gen_field_accessor(struct_name: str, field_name: str, field_type: str): any
     { name = struct_name, field = field_name, typ = field_type }
 end
 

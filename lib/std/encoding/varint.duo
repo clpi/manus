@@ -11,7 +11,7 @@ M = {}
 -- Each byte: 7 bits of data + 1 continuation bit (high bit)
 -- ═══════════════════════════════════════════════════════════════
 
-fun write_varint(buf: any, value: i64): void
+write_varint(buf: any, value: i64): void
     while value >= 0x80
         buf[#buf + 1] = string.char((value & 0x7F) | 0x80)
         value = value >> 7
@@ -19,37 +19,37 @@ fun write_varint(buf: any, value: i64): void
     buf[#buf + 1] = string.char(value)
 end
 
-fun read_varint(data: str, pos: any): i64
+read_varint(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
-        if pos[1] > #data then
+        if pos[1] > #data
             error("varint: unexpected end of data")
         end
         byte = string.byte(data, pos[1])
         pos[1] += 1
         result = result | ((byte & 0x7F) << shift)
-        if byte < 0x80 then
+        if byte < 0x80
             break
         end
         shift += 7
-        if shift >= 64 then
+        if shift >= 64
             error("varint: overflow")
         end
     end
     return result
 end
 
-fun varint_size(value: i64): i64
-    if value < 0x80 then return 1 end
-    if value < 0x4000 then return 2 end
-    if value < 0x200000 then return 3 end
-    if value < 0x10000000 then return 4 end
-    if value < 0x800000000 then return 5 end
-    if value < 0x40000000000 then return 6 end
-    if value < 0x2000000000000 then return 7 end
-    if value < 0x100000000000000 then return 8 end
-    if value < 0x8000000000000000 then return 9 end
+varint_size(value: i64): i64
+    if value < 0x80 return 1 end
+    if value < 0x4000 return 2 end
+    if value < 0x200000 return 3 end
+    if value < 0x10000000 return 4 end
+    if value < 0x800000000 return 5 end
+    if value < 0x40000000000 return 6 end
+    if value < 0x2000000000000 return 7 end
+    if value < 0x100000000000000 return 8 end
+    if value < 0x8000000000000000 return 9 end
     return 10
 end
 
@@ -59,19 +59,19 @@ end
 --   0 → 0, -1 → 1, 1 → 2, -2 → 3, ...
 -- ═══════════════════════════════════════════════════════════════
 
-fun zigzag_encode(value: i64): i64
+zigzag_encode(value: i64): i64
     return (value << 1) ~ (value >> 63)
 end
 
-fun zigzag_decode(value: i64): i64
+zigzag_decode(value: i64): i64
     return (value >> 1) ~ -(value & 1)
 end
 
-fun write_zigzag_varint(buf: any, value: i64): void
+write_zigzag_varint(buf: any, value: i64): void
     write_varint(buf, zigzag_encode(value))
 end
 
-fun read_zigzag_varint(data: str, pos: any): i64
+read_zigzag_varint(data: str, pos: any): i64
     return zigzag_decode(read_varint(data, pos))
 end
 
@@ -81,44 +81,44 @@ end
 -- Little-endian ordering (lsb first)
 -- ═══════════════════════════════════════════════════════════════
 
-fun write_leb128(buf: any, value: i64): void
+write_leb128(buf: any, value: i64): void
     repeat
         byte = value & 0x7F
         value = value >> 7
-        if value ~= 0 then
+        if value != 0
             byte = byte | 0x80
         end
         buf[#buf + 1] = string.char(byte)
     until value == 0
 end
 
-fun read_leb128(data: str, pos: any): i64
+read_leb128(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
-        if pos[1] > #data then
+        if pos[1] > #data
             error("leb128: unexpected end of data")
         end
         byte = string.byte(data, pos[1])
         pos[1] += 1
         result = result | ((byte & 0x7F) << shift)
-        if byte < 0x80 then
+        if byte < 0x80
             break
         end
         shift += 7
-        if shift >= 64 then
+        if shift >= 64
             error("leb128: overflow")
         end
     end
     return result
 end
 
-fun write_signed_leb128(buf: any, value: i64): void
+write_signed_leb128(buf: any, value: i64): void
     more = true
     while more
         byte = value & 0x7F
         value = value >> 7
-        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) ~= 0) then
+        if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0)
             more = false
         else
             byte = byte | 0x80
@@ -127,24 +127,24 @@ fun write_signed_leb128(buf: any, value: i64): void
     end
 end
 
-fun read_signed_leb128(data: str, pos: any): i64
+read_signed_leb128(data: str, pos: any): i64
     result = 0
     shift = 0
     while true
-        if pos[1] > #data then
+        if pos[1] > #data
             error("signed leb128: unexpected end of data")
         end
         byte = string.byte(data, pos[1])
         pos[1] += 1
         result = result | ((byte & 0x7F) << shift)
         shift += 7
-        if byte < 0x80 then
-            if shift < 64 and (byte & 0x40) ~= 0 then
+        if byte < 0x80
+            if shift < 64 and (byte & 0x40) != 0
                 result = result | -(1 << shift)
             end
             break
         end
-        if shift >= 64 then
+        if shift >= 64
             error("signed leb128: overflow")
         end
     end

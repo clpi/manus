@@ -1,34 +1,34 @@
 -- std.coroutine — coroutine utilities
 
-fun create(f: any): any
+create(f: any): any
     coroutine.create(f)
 end
 
-fun resume(co: any, arg: any): any
+resume(co: any, arg: any): any
     coroutine.resume(co, arg)
 end
 
-fun yield(arg: any): any
+yield(arg: any): any
     coroutine.yield(arg)
 end
 
-fun status(co: any): str
+status(co: any): str
     coroutine.status(co)
 end
 
-fun running(): any
+running(): any
     coroutine.running()
 end
 
-fun wrap(f: any): any
+wrap(f: any): any
     coroutine.wrap(f)
 end
 
-fun isyieldable(): bool
+isyieldable(): bool
     coroutine.isyieldable()
 end
 
-fun co_close(co: any): any
+co_close(co: any): any
     coroutine.close(co)
 end
 

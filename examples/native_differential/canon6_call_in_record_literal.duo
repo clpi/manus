@@ -1,0 +1,11 @@
+Tok: @{ kind: i64, start: i64, len: i64 }
+one = (x: i64): i64
+    x + 1
+end
+scan = (pos: i64): Tok
+    { kind = one(pos), start = pos, len = 1 }
+end
+main(): i64
+    t: Tok = scan(5)
+    t.kind + t.start
+end

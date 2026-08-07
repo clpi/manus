@@ -4,7 +4,7 @@ global s = req "std.script"
 s.echo("[Property 12] Testing bitwise correctness...")
 
 global ROOT: str = tostring(s.path_dirname(s.path_dirname(s.capture("pwd"))))
-if tostring(s.getenv_or("PWD")) ~= ""
+if tostring(s.getenv_or("PWD")) != ""
     ROOT = tostring(s.getenv_or("PWD"))
 end
 
@@ -32,24 +32,24 @@ int main(void) {
 
 global seed: i64 = 305419896
 
-function next_rand() -> i64
+next_rand() -> i64
     seed = (seed * 1103515245 + 12345) & 0x7fffffff
     return seed
 end
 
 for i = 0, 63 do
-    local ra: i64 = next_rand()
-    local rb: i64 = next_rand()
-    local a: i64 = ra - 1073741824
-    local b: i64 = rb - 1073741824
-    local shift: i64 = rb & 31
-    local positive: i64 = ra & 1048575
+    ra: i64 = next_rand()
+    rb: i64 = next_rand()
+    a: i64 = ra - 1073741824
+    b: i64 = rb - 1073741824
+    shift: i64 = rb & 31
+    positive: i64 = ra & 1048575
 
-    local is: str = tostring(i)
-    local as: str = tostring(a)
-    local bs: str = tostring(b)
-    local ss: str = tostring(shift)
-    local ps: str = tostring(positive)
+    is: str = tostring(i)
+    as: str = tostring(a)
+    bs: str = tostring(b)
+    ss: str = tostring(shift)
+    ps: str = tostring(positive)
 
     duo_code = duo_code .. "local a" .. is .. ": i64 = " .. as .. "\n"
     duo_code = duo_code .. "local b" .. is .. ": i64 = " .. bs .. "\n"

@@ -7,7 +7,7 @@ const pass27_meta_proof = @import("pass27_meta_proof.zig");
 const backend_identity = @import("backend_identity.zig");
 const native_barrier_checks = @import("native_barrier_checks.zig");
 
-pub const GateError = error{ GateFailed };
+pub const GateError = error{GateFailed};
 
 pub fn validatePass27Catalog() GateError!void {
     if (!std.mem.eql(u8, pass27_catalog.SCHEMA_VERSION, "pass27-catalog-v0")) return error.GateFailed;
@@ -48,7 +48,7 @@ pub fn proveBenchmarkEvidenceSchema() GateError!void {
     const boxed = pass27_benchmark_evidence.EvidenceCounters.fromGeneratedC(boxed_src, boxed_src.len);
     if (!boxed.isBoxedBaseline()) return error.GateFailed;
 
-    const direct = pass27_benchmark_evidence.EvidenceCounters.fromDirectObject(&[_]u8{0xCF, 0xFA, 0xED, 0xFE});
+    const direct = pass27_benchmark_evidence.EvidenceCounters.fromDirectObject(&[_]u8{ 0xCF, 0xFA, 0xED, 0xFE });
     if (!direct.isZeroBoxNativePath()) return error.GateFailed;
 
     const p = backend_identity.profileForBenchBackend(.c_specialized);
@@ -108,10 +108,60 @@ pub fn proveCompileProofArtifactWriter() GateError!void {
         .manifest = backend_identity.inferFromCompile(.c, "native", false, true),
         .counters = pass27_benchmark_evidence.EvidenceCounters.fromGeneratedC("lua_Value v; lua_to_num(v);", 24),
     };
-    pass27_benchmark_evidence.writeCompileProofJson(artifact, &buf.writer) catch return error.GateFailed;
+    pass27_benchmark_evidence.writeCompileProofJson(artifact, &.{}, &buf.writer) catch return error.GateFailed;
     const out = buf.written();
-    if (std.mem.indexOf(u8, out, "provisional-boxed-path") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "specialized-provisional-boxed") == null) return error.GateFailed;
     if (std.mem.indexOf(u8, out, "\"emission\"") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "\"manifest_schema\":\"pass34-l6-manifest-v0\"") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "\"transform_provenance\":[]") == null) return error.GateFailed;
+}
+
+/// L6 bounded first step (pass34 PH1) — one CI check: a test manifest reports
+/// zero dynamic ops, and the manifest carries @comp.why transform provenance.
+pub fn proveL6TestManifestZeroDynamicOps() GateError!void {
+    const scalar_src =
+        \\void f(void) { int64_t a = 1; double b = 2.0; if (a > 0) b += a; }
+    ;
+    const counters = pass27_benchmark_evidence.EvidenceCounters.fromGeneratedC(scalar_src, scalar_src.len);
+    if (!counters.isZeroBoxNativePath()) return error.GateFailed;
+
+    const provenance = [_]pass27_benchmark_evidence.ManifestProvenance{
+        .{ .transform = "comp.why", .site = "emit_call", .inputs_hash = 1, .output_hash = 2 },
+        .{ .transform = "comp.why.shape", .site = "emit_call", .inputs_hash = 3, .output_hash = 4 },
+    };
+
+    var buf: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    defer buf.deinit();
+    const artifact = pass27_benchmark_evidence.CompileProofArtifact{
+        .source_path = "examples/l6_manifest_proof.duo",
+        .generated_path = "/tmp/duo_l6_manifest.c",
+        .bench_backend = null,
+        .manifest = backend_identity.inferFromCompile(.c, "native", true, true),
+        .counters = counters,
+    };
+    pass27_benchmark_evidence.writeCompileProofJson(artifact, &provenance, &buf.writer) catch return error.GateFailed;
+    const out = buf.written();
+    if (std.mem.indexOf(u8, out, "\"boxes\":0") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "\"unboxes\":0") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "\"generic_calls\":0") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "\"generic_table_ops\":0") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "comp.why") == null) return error.GateFailed;
+    if (std.mem.indexOf(u8, out, "comp.why.shape") == null) return error.GateFailed;
+}
+
+pub fn proveDirectNativeEvidenceClass() GateError!void {
+    const obj = [_]u8{ 0xCF, 0xFA, 0xED, 0xFE, 0x01, 0x00, 0x00, 0x00 };
+    const counters = pass27_benchmark_evidence.EvidenceCounters.fromDirectObject(&obj);
+    const manifest = backend_identity.Manifest{
+        .backend = .direct,
+        .representation = .native,
+        .runtime = .freestanding,
+        .target = "native-exe",
+        .intermediate = "mach-o-arm64",
+        .boxing_mode = "none",
+    };
+    if (!std.mem.eql(u8, pass27_benchmark_evidence.classifyEvidence(counters, manifest), "direct-native-subset")) return error.GateFailed;
+    if (!counters.isZeroBoxNativePath()) return error.GateFailed;
 }
 
 pub fn validatePass27Gate(_: std.mem.Allocator) GateError!void {
@@ -123,7 +173,9 @@ pub fn validatePass27Gate(_: std.mem.Allocator) GateError!void {
     try proveMetaProofBacklog();
     try proveEightPrioritiesOrdered();
     try proveNorthStarProofLinked();
+    try proveDirectNativeEvidenceClass();
     try proveCompileProofArtifactWriter();
+    try proveL6TestManifestZeroDynamicOps();
 }
 
 test "pass27_gate: M0 proof bundle + evidence proofs" {

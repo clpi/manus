@@ -18,7 +18,7 @@ enum Color
     Blue
 end
 
-fun main()
+main()
     p: Point = { x = 3.0, y = 4.0 }
     pt2: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
     b: Box = { label = "ok", count = 1 }
@@ -42,7 +42,7 @@ fun main()
 
     -- Graph export (duo graph examples/table_shape_smoke.duo) lists table_shapes + enum_shapes.
     ok = point_shape == "native" and alias_shape == "native" and inline_shape == "native" and box_shape == "sealed" and p.x == 3.0
-    ok = ok and string.find(point_why, "native C scalars") ~= nil and string.find(box_why, "@sealed") ~= nil
-    ok = ok and string.find(point_origin, "shape_id=") ~= nil and red == 0
+    ok = ok and string.find(point_why, "native C scalars") != nil and string.find(box_why, "@sealed") != nil
+    ok = ok and string.find(point_origin, "shape_id=") != nil and red == 0
     print("ok=", ok, "\n")
 end

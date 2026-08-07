@@ -1,7 +1,7 @@
 -- Exponential codegen: @comp.* bundles, @c.emit, concept sweeps
 -- Run: duo run examples/exponential_codegen_showcase.duo
 
-@comp.define.derive("CStruct", fun generate(meta) -> str
+@comp.define.derive("CStruct", generate(meta) -> str
     acc = "typedef struct " .. meta.name .. " {\n"
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -10,7 +10,7 @@
     acc .. "} " .. meta.name .. ";\n"
 end)
 
-@comp.define.derive("GetterBundle", fun generate(meta) -> str
+@comp.define.derive("GetterBundle", generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -31,7 +31,7 @@ end
 
 type Pair = { x: f64, y: f64 }
 
-fun type_mark(meta) -> str
+type_mark(meta) -> str
     meta.name .. ";"
 end
 

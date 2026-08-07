@@ -5,14 +5,14 @@ const WIDTH: i64  = 80
 const HEIGHT: i64 = 40
 const MAX_ITER: i64 = 100
 
-fun mandel(cx: f64, cy: f64): i64
+mandel(cx: f64, cy: f64): i64
     x: f64 = 0.0
     y: f64 = 0.0
     i: i64 = 0
     while i < MAX_ITER
         x2: f64 = x * x
         y2: f64 = y * y
-        if x2 + y2 > 4.0 then return i end
+        if x2 + y2 > 4.0 return i end
         y = 2.0 * x * y + cy
         x = x2 - y2 + cx
         i += 1
@@ -20,7 +20,7 @@ fun mandel(cx: f64, cy: f64): i64
     MAX_ITER
 end
 
-fun render(): void
+render(): void
     row: i64 = 0
     while row < HEIGHT
         col: i64 = 0
@@ -28,7 +28,7 @@ fun render(): void
             cx: f64 = (col - WIDTH / 2) * 3.5 / WIDTH
             cy: f64 = (row - HEIGHT / 2) * 2.0 / HEIGHT
             m: i64 = mandel(cx, cy)
-            if m == MAX_ITER then
+            if m == MAX_ITER
                 print(" ")
             else
                 print(".")

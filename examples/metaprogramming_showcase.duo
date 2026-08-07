@@ -50,7 +50,7 @@ id1: i64 = @comp.type.id(x)
 id2: i64 = @comp.type.id(s)
 print("type_id(x) = " .. tostring(id1))
 print("type_id(s) = " .. tostring(id2))
-print("type_ids_differ = " .. tostring(id1 ~= id2))
+print("type_ids_differ = " .. tostring(id1 != id2))
 
 print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
 print("is_type(s, str) = " .. tostring(@comp.type.is(s, "str")))
@@ -114,10 +114,10 @@ print("bswap(0xFF00) = " .. tostring(@bswap(bits)))
 print("\n-- 7. Branch hints --")
 
 x_val: i64 = 42
-if @likely(x_val > 0) then
+if @likely(x_val > 0)
     print("x is positive (likely branch)")
 end
-if @unlikely(x_val < 0) then
+if @unlikely(x_val < 0)
     print("x is negative (unlikely branch)")
 end
 
@@ -140,12 +140,12 @@ print("debug_level = " .. debug_level)
 print("\n-- 9. Concepts --")
 
 concept Printable
-    fun to_string(self): str
+    to_string(self): str
 end
 
 concept Counter
-    fun increment(self): void
-    fun value(self): i64
+    increment(self): void
+    value(self): i64
 end
 
 -- Create types that satisfy concepts
@@ -169,7 +169,7 @@ print("Counter value: " .. tostring(counter:value()))
 
 -- @satisfies — compile-time concept check on table modules (fun T:method syntax)
 M = {}
-fun M:hash(): i64
+M:hash(): i64
     42
 end
 
@@ -177,9 +177,9 @@ end
 print("@satisfies(M, Printable) = " .. tostring(@satisfies(M, "Printable")))
 
 Ctable = {}
-fun Ctable:increment(): void
+Ctable:increment(): void
 end
-fun Ctable:value(): i64
+Ctable:value(): i64
     0
 end
 @comp.assert(@satisfies(Ctable, "Counter"), "Ctable satisfies Counter")
@@ -187,11 +187,11 @@ print("@satisfies(Ctable, Counter) = " .. tostring(@satisfies(Ctable, "Counter")
 
 -- Generic constraints: compile-time check + monomorphic dispatch
 concept Hashable
-    fun hash(self): i64
+    hash(self): i64
 end
 
 Bump = {}
-fun Bump:hash(): i64
+Bump:hash(): i64
     100
 end
 

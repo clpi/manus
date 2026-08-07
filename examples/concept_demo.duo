@@ -2,18 +2,18 @@
 -- Demonstrates Duo's structural typing via concepts
 
 concept Greeter
-    fun greet(self, name: str): str
-    fun lang(self): str
+    greet(self, name: str): str
+    lang(self): str
 end
 
 concept Counter
-    fun value(self): i64
-    fun increment(self): void
-    fun decrement(self): void
+    value(self): i64
+    increment(self): void
+    decrement(self): void
 end
 
 -- Simple function that matches Greeter behavior
-fun english_greet(name: str): str
+english_greet(name: str): str
     "Hello, " .. name .. "!"
 end
 

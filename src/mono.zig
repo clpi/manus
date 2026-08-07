@@ -383,6 +383,7 @@ pub const Monomorphizer = struct {
                 .named => |nv| try self.collectSitesExpr(nv.val, env),
                 .positional => |p| try self.collectSitesExpr(p, env),
                 .spread => |sp| try self.collectSitesExpr(sp, env),
+                .semantic => |sm| try self.collectSitesExpr(sm.val, env),
             },
             .list_comp => |lc| {
                 try self.collectSitesExpr(lc.iter, env);
@@ -408,6 +409,7 @@ pub const Monomorphizer = struct {
                 if (r.step) |s| try self.collectSitesExpr(s, env);
             },
             .quote, .unquote, .macro_call => unreachable,
+            .semantic, .semantic_scope => {}, // semantic identity / world: no child exprs
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
             .sequence => |seq| {
                 for (seq.exprs) |e| try self.collectSitesExpr(e, env);

@@ -6,10 +6,10 @@ h = require "std.hash"
 
 -- hmac: compute HMAC of message m using key k and hash function hash_fn.
 -- hash_fn(s) should return a hex string. block_size is the hash's block size.
-fun hmac(hash_fn: any, key: str, message: str, block_size: i64): str
-    if block_size == nil then block_size = 64 end
+hmac(hash_fn: any, key: str, message: str, block_size: i64): str
+    if block_size == nil block_size = 64 end
     -- if key is longer than block_size, hash it
-    if string.len(key) > block_size then
+    if string.len(key) > block_size
         key = hash_fn(key)
     end
     -- pad key to block_size
@@ -33,13 +33,13 @@ fun hmac(hash_fn: any, key: str, message: str, block_size: i64): str
 end
 
 -- hmac_sha256: HMAC-SHA-256 using the std.crypto sha256.
-fun hmac_sha256(key: str, message: str): str
+hmac_sha256(key: str, message: str): str
     crypto = require "std.crypto"
     hmac(crypto.sha256, key, message, 64)
 end
 
 -- hmac_sha256_bytes: HMAC-SHA-256 returning raw 32-byte binary string.
-fun hmac_sha256_bytes(key: str, message: str): str
+hmac_sha256_bytes(key: str, message: str): str
     hex = hmac_sha256(key, message)
     bytes = {}
     i = 1
@@ -52,24 +52,24 @@ fun hmac_sha256_bytes(key: str, message: str): str
 end
 
 -- hmac_sha1: HMAC-SHA-1.
-fun hmac_sha1(key: str, message: str): str
+hmac_sha1(key: str, message: str): str
     crypto = require "std.crypto"
     hmac(crypto.sha1, key, message, 64)
 end
 
 -- hmac_md5: HMAC-MD5.
-fun hmac_md5(key: str, message: str): str
+hmac_md5(key: str, message: str): str
     hmac(h.md5, key, message, 64)
 end
 
 -- hmac_fnv1a: HMAC using FNV-1a (non-standard but available).
-fun hmac_fnv1a(key: str, message: str): str
+hmac_fnv1a(key: str, message: str): str
     hmac(h.fnv1a, key, message, 64)
 end
 
 -- equal: constant-time comparison of two hex strings (length-checked).
-fun equal(a: str, b: str): bool
-    if string.len(a) ~= string.len(b) then return false end
+equal(a: str, b: str): bool
+    if string.len(a) != string.len(b) return false end
     result = 0
     i = 1
     while i <= string.len(a)

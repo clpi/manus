@@ -171,6 +171,14 @@ Collapse ~15 mechanisms into 8 orthogonal algebras over one Knowledge Lattice:
 - **North star:** P27-PROOF-01 descriptor-generated Ward decoder (performance + metaprogramming)
 - **Validate:** `zig build pass27-gate` (alias `proof-bundle-gate`); P0 matrix: `zig build bench-proof-gate`
 
+## Self-Hosting Foundation (Umbrella)
+
+- **Mission:** Language monoculture + graph-native compiler architecture (not a Zig port)
+- **Authority:** `docs/plans/self_hosting_foundation.md`
+- **Catalog:** `src/foundation_catalog.zig` — bootstrap S0→S3, IR layers IR-01..IR-09, gates F-G01..F-G10
+- **M0 partial:** schema gate + ledger anchors; completion requires all F-G01..F-G10 (most open/partial)
+- **Validate:** `zig build foundation-gate` (alias `self-hosting-foundation-gate`)
+
 ## Current Proven Capabilities
 
 ```

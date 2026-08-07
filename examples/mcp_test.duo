@@ -1,12 +1,12 @@
-local mcp = req("std.mcp")
-local json = req("std.json")
-local io = req("std.io")
+mcp = req("std.mcp")
+json = req("std.json")
+io = req("std.io")
 
 print("Hello at startup")
 type Vector3 = { x: f64, y: f64, z: f64 }
 
-fun do_test()
-    local req_str = std.json.encode({a=1})
+do_test()
+    req_str = std.json.encode({a=1})
     print(req_str)
     true
 end

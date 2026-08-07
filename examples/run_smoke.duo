@@ -6,7 +6,7 @@
 --   • in expression position it returns the stdout as a comptime string.
 
 -- Expression form: bake a shell command's stdout into a comptime string.
-local greeting = @run("printf hello-from-shell")
+greeting = @run("printf hello-from-shell")
 print("greeting = " .. greeting .. "\n")
 
 -- Directive form at module scope: run a command, inject its stdout as C.
@@ -17,5 +17,5 @@ print("greeting = " .. greeting .. "\n")
 @c.call("printf", "side = %d\n", @(side))
 
 -- Harness another compiler/tool: bake build host into a Duo string.
-local host = @run("uname -s")
+host = @run("uname -s")
 print("built on: " .. host)

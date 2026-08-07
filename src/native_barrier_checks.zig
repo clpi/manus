@@ -349,6 +349,20 @@ pub const ward_decode_dispatch_profile = BarrierProfile{
     .asserts = &.{.no_dynamic_dispatch},
 };
 
+/// Pass 27 P1 — bounded cursor + LEB128 on direct path (`pass27_proof_matrix_direct.duo`).
+pub const pass27_ward_direct_profile = BarrierProfile{
+    .id = "pass27_ward_direct",
+    .source_path = "examples/pass27_proof_matrix_direct.duo",
+    .symbols = &.{
+        "read_u8_at",
+        "decode_leb128_bounded",
+        "length2",
+    },
+    .expect_native = true,
+    .require_inline = false,
+    .asserts = &.{ .no_boxing, .no_dynamic_dispatch },
+};
+
 pub fn writeSymbolCheckJson(w: *std.Io.Writer, sc: SymbolCheck) !void {
     try w.print("{{\"symbol\":\"{s}\",\"found\":", .{sc.symbol});
     try w.print("{s},\"passed\":", .{if (sc.found) "true" else "false"});

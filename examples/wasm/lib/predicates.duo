@@ -1,42 +1,42 @@
 -- Boolean predicate exports for WAST testing.
 
 @export
-fun is_even(n: int): int
-    if n % 2 == 0 then
+is_even(n: int): int
+    if n % 2 == 0
         1
     end
     0
 end
 
 @export
-fun is_odd(n: int): int
-    if n % 2 ~= 0 then
+is_odd(n: int): int
+    if n % 2 != 0
         1
     end
     0
 end
 
 @export
-fun is_positive(n: int): int
-    if n > 0 then
+is_positive(n: int): int
+    if n > 0
         1
     end
     0
 end
 
 @export
-fun is_negative(n: int): int
-    if n < 0 then
+is_negative(n: int): int
+    if n < 0
         1
     end
     0
 end
 
 @export
-fun sign(n: int): int
-    if n > 0 then
+sign(n: int): int
+    if n > 0
         1
-    elseif n < 0 then
+    elseif n < 0
         0 - 1
     else
         0
@@ -44,10 +44,10 @@ fun sign(n: int): int
 end
 
 @export
-fun clamp(val: int, lo: int, hi: int): int
-    if val < lo then
+clamp(val: int, lo: int, hi: int): int
+    if val < lo
         lo
-    elseif val > hi then
+    elseif val > hi
         hi
     else
         val
@@ -55,8 +55,8 @@ fun clamp(val: int, lo: int, hi: int): int
 end
 
 @export
-fun in_range(val: int, lo: int, hi: int): int
-    if val >= lo and val <= hi then
+in_range(val: int, lo: int, hi: int): int
+    if val >= lo and val <= hi
         1
     end
     0

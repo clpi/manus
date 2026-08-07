@@ -7,8 +7,8 @@ Tensor = req "std.ml.tensor"
 -- Simple RNN
 -- ═══════════════════════════════════════════════════════════════
 
-fun simple_rnn(input_size: i64, hidden_size: i64, activation: str): any
-    if activation == nil then activation = "tanh" end
+simple_rnn(input_size: i64, hidden_size: i64, activation: str): any
+    if activation == nil activation = "tanh" end
     scale = 1.0 / math.sqrt(hidden_size)
     {
         type = "simple_rnn",
@@ -24,7 +24,7 @@ fun simple_rnn(input_size: i64, hidden_size: i64, activation: str): any
 end
 
 @hot
-fun simple_rnn_forward(layer: any, x: any, state: any): any
+simple_rnn_forward(layer: any, x: any, state: any): any
     -- x: [seq_len, input_size]
     seq_len = x.rows
     h = state or Tensor.zeros(1, layer.hidden_size)
@@ -41,9 +41,9 @@ fun simple_rnn_forward(layer: any, x: any, state: any): any
             for k = 1, layer.hidden_size
                 s += h.data[(k-1)] * layer.w_hh.data[(k-1)*layer.hidden_size + j]
             end
-            if layer.activation == "tanh" then
+            if layer.activation == "tanh"
                 input_gate.data[j] = math.tanh(s)
-            elseif layer.activation == "relu" then
+            elseif layer.activation == "relu"
                 input_gate.data[j] = math.max(0, s)
             else
                 input_gate.data[j] = math.tanh(s)
@@ -62,7 +62,7 @@ end
 -- GRU (Gated Recurrent Unit)
 -- ═══════════════════════════════════════════════════════════════
 
-fun gru(input_size: i64, hidden_size: i64): any
+gru(input_size: i64, hidden_size: i64): any
     scale = 1.0 / math.sqrt(hidden_size)
     {
         type = "gru",
@@ -88,7 +88,7 @@ fun gru(input_size: i64, hidden_size: i64): any
 end
 
 @hot
-fun gru_forward(layer: any, x: any, state: any): any
+gru_forward(layer: any, x: any, state: any): any
     seq_len = x.rows
     h = state or Tensor.zeros(1, layer.hidden_size)
     outputs = Tensor.zeros(seq_len, layer.hidden_size)
@@ -120,7 +120,7 @@ fun gru_forward(layer: any, x: any, state: any): any
     outputs
 end
 
-fun gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
+gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
     result = Tensor.zeros(1, hidden_size)
     for j = 1, hidden_size
         s = b_i.data[j] + b_h.data[j]
@@ -135,7 +135,7 @@ fun gru_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, inp
     result
 end
 
-fun sigmoid_vec(v: any): any
+sigmoid_vec(v: any): any
     result = Tensor.zeros(v.rows, v.cols)
     for i = 1, v.size
         result.data[i] = 1.0 / (1.0 + math.exp(-v.data[i]))
@@ -147,7 +147,7 @@ end
 -- LSTM (Long Short-Term Memory)
 -- ═══════════════════════════════════════════════════════════════
 
-fun lstm(input_size: i64, hidden_size: i64): any
+lstm(input_size: i64, hidden_size: i64): any
     scale = 1.0 / math.sqrt(hidden_size)
     {
         type = "lstm",
@@ -179,7 +179,7 @@ fun lstm(input_size: i64, hidden_size: i64): any
 end
 
 @hot
-fun lstm_forward(layer: any, x: any, state: any, cell: any): any
+lstm_forward(layer: any, x: any, state: any, cell: any): any
     seq_len = x.rows
     h = state or Tensor.zeros(1, layer.hidden_size)
     c = cell or Tensor.zeros(1, layer.hidden_size)
@@ -221,7 +221,7 @@ fun lstm_forward(layer: any, x: any, state: any, cell: any): any
     outputs
 end
 
-fun lstm_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
+lstm_gate(x: any, t: i64, h: any, w_i: any, w_h: any, b_i: any, b_h: any, input_size: i64, hidden_size: i64): any
     result = Tensor.zeros(1, hidden_size)
     for j = 1, hidden_size
         s = b_i.data[j] + b_h.data[j]
@@ -240,7 +240,7 @@ end
 -- Bidirectional RNN
 -- ═══════════════════════════════════════════════════════════════
 
-fun bidirectional(rnn_layer: any): any
+bidirectional(rnn_layer: any): any
     {
         type = "bidirectional",
         forward = rnn_layer,
@@ -250,7 +250,7 @@ fun bidirectional(rnn_layer: any): any
     }
 end
 
-fun bidirectional_forward(layer: any, x: any): any
+bidirectional_forward(layer: any, x: any): any
     -- Forward pass
     fwd = simple_rnn_forward(layer.forward, x, nil)
     -- Backward pass (reverse input)

@@ -5,6 +5,6 @@ main(): i64
     Token = req "std.compiler.token"
     lex = Lexer.new("fun", "proof.duo")
     tok = Lexer.next(lex)
-    if tok.kind ~= Token.KIND_FUN return 1 end
+    if tok.kind != Token.KIND_FUN return 1 end
     0
 end

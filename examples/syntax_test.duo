@@ -6,7 +6,7 @@
 -- OO-style objects are just table literals with method fields. Concept
 -- satisfaction is declared via `@implements(...)` on the binding.
 
-fun greet(name: str): str
+greet(name: str): str
     "Hello, " .. name
 end
 
@@ -17,11 +17,11 @@ end
 result: i64 = ##1 + 2
 global counter: i64 = 0
 
-fun calculate(): void
+calculate(): void
     x: i64 = 10
     y: i64 = 20
 
-    if x > y then
+    if x > y
         print("x is greater")
     else
         print("y is greater")

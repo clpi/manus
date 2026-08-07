@@ -2,7 +2,7 @@
 -- Demonstrates memory primitives and allocators (std.mem)
 
 -- Define a simple arena allocator
-fun arena_new(size: i64)
+arena_new(size: i64)
     {
         _bufs = {},
         _offset = 0,
@@ -11,8 +11,8 @@ fun arena_new(size: i64)
     }
 end
 
-fun arena_alloc(self, bytes: i64)
-    if self._offset + bytes > self._capacity then
+arena_alloc(self, bytes: i64)
+    if self._offset + bytes > self._capacity
         self._bufs[#self._bufs + 1] = string.rep(".", bytes)
         self._offset = 0
     end
@@ -21,11 +21,11 @@ fun arena_alloc(self, bytes: i64)
     ptr
 end
 
-fun arena_used(self): i64
+arena_used(self): i64
     self._total + self._offset
 end
 
-fun arena_free_all(self): void
+arena_free_all(self): void
     self._bufs = {}
     self._offset = 0
     self._total = 0
@@ -40,19 +40,19 @@ arena_free_all(arena)
 print("Arena after free: " .. tostring(arena_used(arena)))
 
 -- Alignment utilities
-fun align_up(n: i64, alignment: i64): i64
-    if n % alignment == 0 then return n end
+align_up(n: i64, alignment: i64): i64
+    if n % alignment == 0 return n end
     n + alignment - (n % alignment)
 end
 
-fun align_down(n: i64, alignment: i64): i64
+align_down(n: i64, alignment: i64): i64
     n - (n % alignment)
 end
 
-fun is_power_of_two(n: i64): bool
-    if n <= 0 then return false end
+is_power_of_two(n: i64): bool
+    if n <= 0 return false end
     while n > 1 do
-        if n % 2 ~= 0 then return false end
+        if n % 2 != 0 return false end
         n = n // 2
     end
     true

@@ -5,8 +5,8 @@
 type Vec2 = { x: f64, y: f64 }
 
 -- Construct instances
-local a = { x = 3.0, y = 4.0 }
-local b = { x = 1.0, y = 2.0 }
+a = { x = 3.0, y = 4.0 }
+b = { x = 1.0, y = 2.0 }
 
 -- Test basic field access
 print("a.x = " .. tostring(a.x))

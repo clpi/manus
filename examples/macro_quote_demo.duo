@@ -1,4 +1,4 @@
 macro twice(x) `(,x + ,x)
 
-local value: i64 = @twice(21)
+value: i64 = @twice(21)
 print(value)

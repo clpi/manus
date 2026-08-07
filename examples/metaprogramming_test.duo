@@ -4,9 +4,9 @@
 -- Type introspection: @comp.type.name, @comp.type.id, @comp.type.is
 -- ═══════════════════════════════════════════════════════════════
 
-local x: i64 = 42
-local s: str = "hello"
-local f: f64 = 3.14
+x: i64 = 42
+s: str = "hello"
+f: f64 = 3.14
 
 -- @comp.type.name returns the C type name as a string literal
 print("type_name(x) = " .. @comp.type.name(x))
@@ -14,11 +14,11 @@ print("type_name(s) = " .. @comp.type.name(s))
 print("type_name(f) = " .. @comp.type.name(f))
 
 -- @comp.type.id returns a stable integer hash of the type
-local id1: i64 = @comp.type.id(x)
-local id2: i64 = @comp.type.id(s)
+id1: i64 = @comp.type.id(x)
+id2: i64 = @comp.type.id(s)
 print("type_id(x) = " .. tostring(id1))
 print("type_id(s) = " .. tostring(id2))
-print("type_ids_differ = " .. tostring(id1 ~= id2))
+print("type_ids_differ = " .. tostring(id1 != id2))
 
 -- @comp.type.is checks type at compile time
 print("is_type(x, i64) = " .. tostring(@comp.type.is(x, "i64")))
@@ -30,32 +30,32 @@ print("is_type(x, str) = " .. tostring(@comp.type.is(x, "str")))
 -- ═══════════════════════════════════════════════════════════════
 
 -- @() forces compile-time evaluation
-local comptime_result = @(10 * 20 + 5)
+comptime_result = @(10 * 20 + 5)
 print("comptime_result = " .. tostring(comptime_result))
 
 -- @constexpr for compile-time function evaluation
-local function factorial(n: i64): i64
-    if n <= 1 then return 1 end
+factorial(n: i64): i64
+    if n <= 1 return 1 end
     return n * factorial(n - 1)
 end
 
-local fact10 = @(factorial(10))
+fact10 = @(factorial(10))
 print("factorial(10) = " .. tostring(fact10))
 
 -- ═══════════════════════════════════════════════════════════════
 -- @comp.if — compile-time conditional
 -- ═══════════════════════════════════════════════════════════════
 
-local platform_msg = @comp.if(true, "compiled_path_a", "compiled_path_b")
+platform_msg = @comp.if(true, "compiled_path_a", "compiled_path_b")
 print("comptimeif = " .. platform_msg)
 
 -- ═══════════════════════════════════════════════════════════════
 -- @sizeof, @alignof — memory layout
 -- ═══════════════════════════════════════════════════════════════
 
-local sz_i64 = @sizeof(i64)
-local sz_f64 = @sizeof(f64)
-local align_i64 = @alignof(i64)
+sz_i64 = @sizeof(i64)
+sz_f64 = @sizeof(f64)
+align_i64 = @alignof(i64)
 print("sizeof(i64) = " .. tostring(sz_i64))
 print("sizeof(f64) = " .. tostring(sz_f64))
 print("alignof(i64) = " .. tostring(align_i64))
@@ -72,7 +72,7 @@ print("alignof(i64) = " .. tostring(align_i64))
 -- @comp.has.metamethod — runtime metamethod check
 -- ═══════════════════════════════════════════════════════════════
 
-local obj = {}
+obj = {}
 setmetatable(obj, { __index = function(t, k) return "default" end })
 print("has __index = " .. tostring(@comp.has.metamethod(obj, "__index")))
 print("has __add = " .. tostring(@comp.has.metamethod(obj, "__add")))
@@ -88,7 +88,7 @@ print("typeinfo(s) = " .. @comp.type.info(s))
 -- Low-level intrinsics
 -- ═══════════════════════════════════════════════════════════════
 
-local bits: i64 = 0xFF00
+bits: i64 = 0xFF00
 print("popcount(0xFF00) = " .. tostring(@popcount(bits)))
 print("ctz(0xFF00) = " .. tostring(@ctz(bits)))
 print("clz(0xFF00) = " .. tostring(@clz(bits)))
@@ -99,7 +99,7 @@ print("bswap(0xFF00) = " .. tostring(@bswap(bits)))
 -- ═══════════════════════════════════════════════════════════════
 
 -- Unroll a sum at compile time
-local arr = {10, 20, 30, 40}
+arr = {10, 20, 30, 40}
 -- Uses @emit for inline C-level array access in the unrolled loop
 print("compile-time loop done")
 
@@ -107,8 +107,8 @@ print("compile-time loop done")
 -- Compile-time string operations
 -- ═══════════════════════════════════════════════════════════════
 
-local ct_upper = @(string.upper("hello"))
-local ct_len = @(string.len("world"))
+ct_upper = @(string.upper("hello"))
+ct_len = @(string.len("world"))
 print("comptime upper = " .. ct_upper)
 print("comptime len = " .. tostring(ct_len))
 

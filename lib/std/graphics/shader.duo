@@ -15,7 +15,7 @@ M.SHADER_COMPUTE = "compute"
 -- Shader
 -- ═══════════════════════════════════════════════════════════════
 
-fun shader_new(shader_type: str, source: str): any
+shader_new(shader_type: str, source: str): any
     {
         type = shader_type,
         source = source,
@@ -24,13 +24,13 @@ fun shader_new(shader_type: str, source: str): any
     }
 end
 
-fun shader_compile(shader: any): any
+shader_compile(shader: any): any
     -- In production, would compile via WebGPU/Vulkan/Metal
     shader.compiled = true
     {ok = true}
 end
 
-fun shader_get_error(shader: any): str
+shader_get_error(shader: any): str
     ""
 end
 
@@ -38,7 +38,7 @@ end
 -- Shader Program
 -- ═══════════════════════════════════════════════════════════════
 
-fun shader_program_new(): any
+shader_program_new(): any
     {
         vertex_shader = nil,
         fragment_shader = nil,
@@ -49,31 +49,31 @@ fun shader_program_new(): any
     }
 end
 
-fun shader_program_attach(program: any, shader: any): void
-    if shader.type == M.SHADER_VERTEX then
+shader_program_attach(program: any, shader: any): void
+    if shader.type == M.SHADER_VERTEX
         program.vertex_shader = shader
-    elseif shader.type == M.SHADER_FRAGMENT then
+    elseif shader.type == M.SHADER_FRAGMENT
         program.fragment_shader = shader
-    elseif shader.type == M.SHADER_COMPUTE then
+    elseif shader.type == M.SHADER_COMPUTE
         program.compute_shader = shader
     end
 end
 
-fun shader_program_link(program: any): any
+shader_program_link(program: any): any
     -- In production, would link shader program
     program.linked = true
     {ok = true}
 end
 
-fun shader_program_use(program: any): void
+shader_program_use(program: any): void
     -- In production, would bind program
 end
 
-fun shader_program_get_uniform(program: any, name: str): any
+shader_program_get_uniform(program: any, name: str): any
     program.uniforms[name]
 end
 
-fun shader_program_set_uniform(program: any, name: str, value: any): void
+shader_program_set_uniform(program: any, name: str, value: any): void
     program.uniforms[name] = value
 end
 
@@ -81,7 +81,7 @@ end
 -- Built-in Shaders
 -- ═══════════════════════════════════════════════════════════════
 
-fun shader_basic_vertex(): str
+shader_basic_vertex(): str
     [[
         @vertex
         fn vs_main(@location(0) position: vec3f) -> @builtin(position) vec4f {
@@ -90,7 +90,7 @@ fun shader_basic_vertex(): str
     ]]
 end
 
-fun shader_basic_fragment(): str
+shader_basic_fragment(): str
     [[
         @fragment
         fn fs_main() -> @location(0) vec4f {
@@ -99,7 +99,7 @@ fun shader_basic_fragment(): str
     ]]
 end
 
-fun shader_pbr_vertex(): str
+shader_pbr_vertex(): str
     [[
         struct Uniforms {
             model: mat4x4f,
@@ -134,7 +134,7 @@ fun shader_pbr_vertex(): str
     ]]
 end
 
-fun shader_pbr_fragment(): str
+shader_pbr_fragment(): str
     [[
         struct Material {
             albedo: vec4f,
@@ -177,7 +177,7 @@ end
 -- Shader Presets
 -- ═══════════════════════════════════════════════════════════════
 
-fun shader_preset_basic(): any
+shader_preset_basic(): any
     program = shader_program_new()
     shader_program_attach(program, shader_new(M.SHADER_VERTEX, shader_basic_vertex()))
     shader_program_attach(program, shader_new(M.SHADER_FRAGMENT, shader_basic_fragment()))
@@ -185,7 +185,7 @@ fun shader_preset_basic(): any
     program
 end
 
-fun shader_preset_pbr(): any
+shader_preset_pbr(): any
     program = shader_program_new()
     shader_program_attach(program, shader_new(M.SHADER_VERTEX, shader_pbr_vertex()))
     shader_program_attach(program, shader_new(M.SHADER_FRAGMENT, shader_pbr_fragment()))

@@ -1,6 +1,6 @@
 -- compile_fail: generic concept constraint violation
 concept Hashable
-    fun hash(self) -> i64
+    hash(self) -> i64
 end
 
 Bad = {}

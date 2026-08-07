@@ -1,0 +1,20 @@
+-- Pass 34 PH1 — L2 interned field IDs: fallback `.field` access on the dynamic path
+-- must emit duo_fallback_get_* markers (stable interned field IDs), and the generated
+-- C must compile + run correctly (the markers expand to standard string-keyed lookups).
+-- Manifest counts are asserted by the pass34-gate Zig proof (proveL2FallbackFieldManifest);
+-- this example verifies the end-to-end runtime behavior.
+
+os = req "std.os"
+
+read_row(r: any): i64
+    r.x + r.y * 100 + r.z * 10000
+end
+
+t: any = { x = 3, y = 4, z = 5 }
+result: i64 = read_row(t)
+if result != 50403
+    print("FAIL: read_row returned " .. result)
+    os.exit(1)
+end
+
+print("pass34_l2_fallback_field: PASS")

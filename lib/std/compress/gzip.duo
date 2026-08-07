@@ -1,34 +1,34 @@
 -- std.compress.gzip — Gzip decompression (mirrors Go's compress/gzip)
 
-local function is_gzipped(data)
-    if data == nil or string.len(data) < 2 then return false end
+is_gzipped(data: any)
+    if data == nil or string.len(data) < 2 return false end
     return string.byte(data, 1) == 31 and string.byte(data, 2) == 139
 end
 
-local function gunzip(data)
-    if not is_gzipped(data) then return data end
-    local f = io.popen("gzip -d 2>/dev/null", "w")
-    if f == nil then return data end
+gunzip(data: any)
+    if not is_gzipped(data) return data end
+    f = io.popen("gzip -d 2>/dev/null", "w")
+    if f == nil return data end
     f:write(data)
     f:close()
     f = io.popen("", "r")
-    local result = f:read("*a")
+    result = f:read("*a")
     f:close()
     return result or data
 end
 
-local function gzip_compress(data)
-    local f = io.popen("gzip -c 2>/dev/null", "w")
-    if f == nil then return data end
+gzip_compress(data: any)
+    f = io.popen("gzip -c 2>/dev/null", "w")
+    if f == nil return data end
     f:write(data)
     f:close()
     f = io.popen("", "r")
-    local result = f:read("*a")
+    result = f:read("*a")
     f:close()
     return result or data
 end
 
-local M = {}
+M = {}
 M.is_gzipped = is_gzipped
 M.gunzip = gunzip
 M.compress = gzip_compress

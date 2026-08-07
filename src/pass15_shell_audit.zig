@@ -62,7 +62,9 @@ pub fn writeAuditSummaryJson(w: *std.Io.Writer) !void {
                 e.id, e.shell, e.idea, e.classification.name(),
             });
             try jsonEscape(w, e.duo_response);
-            try w.writeAll("\"}}");
+            // `writeAll` is raw — unlike `print`, it does not collapse `}}` to `}`.
+            // One object was opened per entry, so exactly one brace closes it.
+            try w.writeAll("\"}");
         }
         try w.writeAll("]}");
     }

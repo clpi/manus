@@ -1,5 +1,5 @@
 @noalloc
-fun leak(): i64
+leak(): i64
     raw: *u8 = mem.alloc(64)
     mem.free(raw)
     0

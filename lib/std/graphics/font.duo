@@ -5,7 +5,7 @@
 -- Font Config
 -- ═══════════════════════════════════════════════════════════════
 
-fun font_config_new(): any
+font_config_new(): any
     {
         path = "",
         size = 16,
@@ -19,7 +19,7 @@ end
 -- Glyph
 -- ═══════════════════════════════════════════════════════════════
 
-fun glyph_new(char: str): any
+glyph_new(char: str): any
     {
         char = char,
         codepoint = string.byte(char),
@@ -37,7 +37,7 @@ end
 -- Font
 -- ═══════════════════════════════════════════════════════════════
 
-fun font_new(config: any): any
+font_new(config: any): any
     {
         config = config,
         glyphs = {},
@@ -48,9 +48,9 @@ fun font_new(config: any): any
     }
 end
 
-fun font_load(font: any): any
+font_load(font: any): any
     -- Load font with proper metrics
-    if font.config.size == nil then font.config.size = 16 end
+    if font.config.size == nil font.config.size = 16 end
     
     -- Standard font metrics (ascent/descent ratios)
     font.ascender = math.floor(font.config.size * 0.8)
@@ -70,9 +70,9 @@ fun font_load(font: any): any
     {ok = true}
 end
 
-fun font_get_glyph(font: any, char: str): any
+font_get_glyph(font: any, char: str): any
     codepoint = string.byte(char)
-    if font.glyphs[codepoint] then
+    if font.glyphs[codepoint]
         return font.glyphs[codepoint]
     end
 
@@ -80,19 +80,19 @@ fun font_get_glyph(font: any, char: str): any
     glyph = glyph_new(char)
     
     -- Character width varies by type
-    if codepoint >= 65 and codepoint <= 90 then
+    if codepoint >= 65 and codepoint <= 90
         -- Uppercase A-Z: wider
         glyph.width = math.floor(font.config.size * 0.7)
-    elseif codepoint >= 97 and codepoint <= 122 then
+    elseif codepoint >= 97 and codepoint <= 122
         -- Lowercase a-z: medium
         glyph.width = math.floor(font.config.size * 0.55)
-    elseif codepoint >= 48 and codepoint <= 57 then
+    elseif codepoint >= 48 and codepoint <= 57
         -- Digits 0-9: medium-wide
         glyph.width = math.floor(font.config.size * 0.6)
-    elseif codepoint == 32 then
+    elseif codepoint == 32
         -- Space: half width
         glyph.width = math.floor(font.config.size * 0.3)
-    elseif codepoint == 46 or codepoint == 44 or codepoint == 39 then
+    elseif codepoint == 46 or codepoint == 44 or codepoint == 39
         -- Punctuation: narrow
         glyph.width = math.floor(font.config.size * 0.2)
     else
@@ -112,14 +112,14 @@ fun font_get_glyph(font: any, char: str): any
         while x <= glyph.width
             alpha = 255
             -- Anti-alias edges
-            if x == 1 or x == glyph.width then
+            if x == 1 or x == glyph.width
                 alpha = 200
             end
-            if y == 1 or y == glyph.height then
+            if y == 1 or y == glyph.height
                 alpha = 180
             end
             -- Corners
-            if (x == 1 or x == glyph.width) and (y == 1 or y == glyph.height) then
+            if (x == 1 or x == glyph.width) and (y == 1 or y == glyph.height)
                 alpha = 128
             end
             glyph.bitmap[(y - 1) * glyph.width + x] = alpha
@@ -132,7 +132,7 @@ fun font_get_glyph(font: any, char: str): any
     glyph
 end
 
-fun font_measure_text(font: any, text: str): any
+font_measure_text(font: any, text: str): any
     x = 0
     max_x = 0
     y = 0
@@ -143,7 +143,7 @@ fun font_measure_text(font: any, text: str): any
         char = text:sub(i, i)
         glyph = font_get_glyph(font, char)
         x += glyph.advance_x
-        if x > max_x then max_x = x end
+        if x > max_x max_x = x end
         i += 1
     end
 
@@ -157,7 +157,7 @@ end
 -- Text Layout
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_layout_new(font: any): any
+text_layout_new(font: any): any
     {
         font = font,
         lines = {},
@@ -167,11 +167,11 @@ fun text_layout_new(font: any): any
     }
 end
 
-fun text_layout_add_text(layout: any, text: str): void
+text_layout_add_text(layout: any, text: str): void
     i = 1
     while i <= #text
         char = text:sub(i, i)
-        if char == "\n" then
+        if char == "\n"
             layout.lines[#layout.lines + 1] = layout.current_line
             layout.current_line = {}
             layout.cursor_x = 0
@@ -189,7 +189,7 @@ fun text_layout_add_text(layout: any, text: str): void
     end
 end
 
-fun text_layout_get_glyphs(layout: any): any
+text_layout_get_glyphs(layout: any): any
     glyphs = {}
     for line in layout.lines
         for item in line
@@ -202,16 +202,16 @@ fun text_layout_get_glyphs(layout: any): any
     glyphs
 end
 
-fun text_layout_get_size(layout: any): any
+text_layout_get_size(layout: any): any
     max_x = 0
     for line in layout.lines
         line_width = 0
         for item in line
             line_width += item.glyph.advance_x
         end
-        if line_width > max_x then max_x = line_width end
+        if line_width > max_x max_x = line_width end
     end
-    if layout.cursor_x > max_x then max_x = layout.cursor_x end
+    if layout.cursor_x > max_x max_x = layout.cursor_x end
 
     {
         width = max_x,
@@ -223,15 +223,15 @@ end
 -- Text Rendering
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_render_text(font: any, text: str, x: f64, y: f64, color: any): any
+text_render_text(font: any, text: str, x: f64, y: f64, color: any): any
     layout = text_layout_new(font)
     text_layout_add_text(layout, text)
 
     render_items = {}
     for glyph in text_layout_get_glyphs(layout)
         render_items[#render_items + 1] = {
-            x += glyph.x,
-            y += glyph.y,
+            x = x + glyph.x,
+            y = y + glyph.y,
             glyph = glyph.glyph,
             color = color,
         }

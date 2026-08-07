@@ -1,25 +1,37 @@
--- Pass 16 MP-03 — ByteCursor line/col semantics (inline; mirrors std.compiler.source).
+-- Pass 16 Phase 1 — ByteCursor line/col semantics (inline; mirrors source_cursor.zig differential).
 
-main(): i64
-    bytes = "a\nb\nc"
+walk_to_line(bytes: str, stop_line: i64): i64
     pos = 1
     line = 1
     col = 1
-    if pos > string.len(bytes) return 1 end
-    if string.byte(bytes, pos) ~= 97 return 2 end
-    pos = pos + 1
-    if string.byte(bytes, pos) ~= 10 return 3 end
-    pos = pos + 1
-    line = line + 1
-    col = 1
-    if line ~= 2 return 4 end
-    if col ~= 1 return 5 end
-    pos = pos + 1
-    pos = pos + 1
-    pos = pos + 1
-    line = line + 1
-    col = 1
-    if line ~= 3 return 6 end
-    if col ~= 1 return 7 end
-    0
+    while pos <= string.len(bytes)
+        if line == stop_line and col == 1
+            return 0
+        end
+        ch = string.byte(bytes, pos)
+        pos = pos + 1
+        if ch == 10
+            line = line + 1
+            col = 1
+        else
+            col = col + 1
+        end
+    end
+    1
 end
+
+os = req "std.os"
+fail = 0
+if walk_to_line("a\nb\nc", 3) != 0
+    fail = 1
+end
+if walk_to_line("fun\nend", 2) != 0
+    fail = 1
+end
+if walk_to_line("x", 1) != 0
+    fail = 1
+end
+if fail != 0
+    os.exit(1)
+end
+print("pass16_source_cursor_proof: PASS")

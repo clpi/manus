@@ -1,12 +1,12 @@
-@comp.define.derive("Printable", fun generate(type_info)
-    local out = "static void duo_" .. type_info.name .. "_print(duo_" .. type_info.name .. " val) {\n"
+@comp.define.derive("Printable", generate(type_info)
+    out = "static void duo_" .. type_info.name .. "_print(duo_" .. type_info.name .. " val) {\n"
     out = out .. "    printf(\"" .. type_info.name .. " { \");\n"
-    local i = 1
+    i = 1
     while i <= #type_info.fields do
-        local f = type_info.fields[i]
-        if f.type == "int64_t" then
+        f = type_info.fields[i]
+        if f.type == "int64_t"
             out = out .. "    printf(\"" .. f.name .. ": %lld \", val." .. f.name .. ");\n"
-        elseif f.type == "const char*" then
+        elseif f.type == "const char*"
             out = out .. "    printf(\"" .. f.name .. ": %s \", val." .. f.name .. ");\n"
         end
         i = i + 1
@@ -22,5 +22,5 @@ alias Foo = {
     y: str
 }
 
-local f: Foo = { x = 42, y = "hello metaprogramming" }
+f: Foo = { x = 42, y = "hello metaprogramming" }
 @c.call("duo_Foo_print", f)

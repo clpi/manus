@@ -2,7 +2,7 @@
 @lua("print('int test_lua_foo();')")
 @lua("print('int test_lua_foo() { return 42; }')")
 
-fun do_test() -> void
+do_test() -> void
     @c.emit("printf(\"from lua: %d\\n\", test_lua_foo());")
 end
 

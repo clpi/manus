@@ -5,7 +5,7 @@
 -- Post-process Config
 -- ═══════════════════════════════════════════════════════════════
 
-fun postprocess_config_new(): any
+postprocess_config_new(): any
     {
         enabled = true,
         bloom = {
@@ -57,7 +57,7 @@ end
 -- Bloom
 -- ═══════════════════════════════════════════════════════════════
 
-fun bloom_extract_bright(image: any, threshold: f64): any
+bloom_extract_bright(image: any, threshold: f64): any
     width = image.width
     height = image.height
     channels = image.channels
@@ -65,12 +65,12 @@ fun bloom_extract_bright(image: any, threshold: f64): any
     result = {}
     i = 1
     while i <= #image.data
-        if channels >= 3 then
+        if channels >= 3
             r = image.data[i]
             g = image.data[i + 1]
             b = image.data[i + 2]
             luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-            if luminance / 255 > threshold then
+            if luminance / 255 > threshold
                 result[i] = r
                 result[i + 1] = g
                 result[i + 2] = b
@@ -91,7 +91,7 @@ fun bloom_extract_bright(image: any, threshold: f64): any
     }
 end
 
-fun bloom_blur(image: any, radius: i64): any
+bloom_blur(image: any, radius: i64): any
     -- Separable Gaussian blur (two-pass: horizontal then vertical)
     width = image.width
     height = image.height
@@ -99,7 +99,7 @@ fun bloom_blur(image: any, radius: i64): any
 
     -- Build 1D Gaussian kernel
     sigma = radius / 3.0
-    if sigma < 0.5 then sigma = 0.5 end
+    if sigma < 0.5 sigma = 0.5 end
     kernel = {}
     kernel_sum = 0.0
     i = -radius
@@ -129,11 +129,11 @@ fun bloom_blur(image: any, radius: i64): any
             dx = -radius
             while dx <= radius
                 nx = x + dx
-                if nx < 0 then nx = 0 end
-                if nx >= width then nx = width - 1 end
+                if nx < 0 nx = 0 end
+                if nx >= width nx = width - 1 end
                 idx = (y * width + nx) * channels + 1
                 w = kernel[k_idx]
-                if channels >= 3 then
+                if channels >= 3
                     r_sum += image.data[idx] * w
                     g_sum += image.data[idx + 1] * w
                     b_sum += image.data[idx + 2] * w
@@ -163,11 +163,11 @@ fun bloom_blur(image: any, radius: i64): any
             dy = -radius
             while dy <= radius
                 ny = y + dy
-                if ny < 0 then ny = 0 end
-                if ny >= height then ny = height - 1 end
+                if ny < 0 ny = 0 end
+                if ny >= height ny = height - 1 end
                 idx = (ny * width + x) * channels + 1
                 w = kernel[k_idx]
-                if channels >= 3 then
+                if channels >= 3
                     r_sum += temp[idx] * w
                     g_sum += temp[idx + 1] * w
                     b_sum += temp[idx + 2] * w
@@ -192,7 +192,7 @@ fun bloom_blur(image: any, radius: i64): any
     }
 end
 
-fun bloom_apply(original: any, config: any): any
+bloom_apply(original: any, config: any): any
     bright = bloom_extract_bright(original, config.threshold)
     blurred = bloom_blur(bright, config.radius)
 
@@ -201,7 +201,7 @@ fun bloom_apply(original: any, config: any): any
     i = 1
     while i <= #original.data
         result[i] = math.min(255, original.data[i] + blurred.data[i] * config.intensity)
-        if original.channels >= 3 then
+        if original.channels >= 3
             result[i + 1] = math.min(255, original.data[i + 1] + blurred.data[i + 1] * config.intensity)
             result[i + 2] = math.min(255, original.data[i + 2] + blurred.data[i + 2] * config.intensity)
         end
@@ -220,7 +220,7 @@ end
 -- Tone Mapping
 -- ═══════════════════════════════════════════════════════════════
 
-fun tonemap_reinhard(color: any): any
+tonemap_reinhard(color: any): any
     {
         r = color.r / (1 + color.r),
         g = color.g / (1 + color.g),
@@ -228,7 +228,7 @@ fun tonemap_reinhard(color: any): any
     }
 end
 
-fun tonemap_aces(color: any): any
+tonemap_aces(color: any): any
     a = 2.51
     b = 0.03
     c = 2.43
@@ -246,7 +246,7 @@ fun tonemap_aces(color: any): any
     }
 end
 
-fun tonemap_linear(color: any, exposure: f64): any
+tonemap_linear(color: any, exposure: f64): any
     {
         r = 1 - math.exp(-color.r * exposure),
         g = 1 - math.exp(-color.g * exposure),
@@ -258,11 +258,11 @@ end
 -- FXAA (Fast Approximate Anti-Aliasing)
 -- ═══════════════════════════════════════════════════════════════
 
-fun fxaa_luminance(r: f64, g: f64, b: f64): f64
+fxaa_luminance(r: f64, g: f64, b: f64): f64
     0.2126 * r + 0.7152 * g + 0.0722 * b
 end
 
-fun fxaa_process(image: any, config: any): any
+fxaa_process(image: any, config: any): any
     width = image.width
     height = image.height
     channels = image.channels
@@ -281,7 +281,7 @@ fun fxaa_process(image: any, config: any): any
                 dx = -1
                 while dx <= 1
                     nidx = ((y + dy) * width + (x + dx)) * channels + 1
-                    if channels >= 3 then
+                    if channels >= 3
                         n[(dy + 1) * 3 + (dx + 1) + 1] = fxaa_luminance(image.data[nidx], image.data[nidx + 1], image.data[nidx + 2])
                     end
                     dx += 1
@@ -294,7 +294,7 @@ fun fxaa_process(image: any, config: any): any
             edge_v = math.abs(n[1] - n[3]) + 2 * math.abs(n[4] - n[6]) + math.abs(n[7] - n[9])
 
             -- Blend based on edge
-            if edge_h > config.edge_threshold or edge_v > config.edge_threshold then
+            if edge_h > config.edge_threshold or edge_v > config.edge_threshold
                 -- Apply simple blur
                 i = 0
                 while i < channels
@@ -326,7 +326,7 @@ end
 -- Vignette
 -- ═══════════════════════════════════════════════════════════════
 
-fun vignette_apply(image: any, intensity: f64, smoothness: f64): any
+vignette_apply(image: any, intensity: f64, smoothness: f64): any
     width = image.width
     height = image.height
     channels = image.channels
@@ -367,7 +367,7 @@ end
 -- Film Grain
 -- ═══════════════════════════════════════════════════════════════
 
-fun film_grain_apply(image: any, intensity: f64): any
+film_grain_apply(image: any, intensity: f64): any
     width = image.width
     height = image.height
     channels = image.channels
@@ -402,7 +402,7 @@ end
 -- Utility Functions
 -- ═══════════════════════════════════════════════════════════════
 
-fun smoothstep(edge0: f64, edge1: f64, x: f64): f64
+smoothstep(edge0: f64, edge1: f64, x: f64): f64
     t = math.max(0, math.min(1, (x - edge0) / (edge1 - edge0)))
     t * t * (3 - 2 * t)
 end

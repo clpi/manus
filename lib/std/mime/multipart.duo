@@ -1,72 +1,72 @@
 -- std.mime.multipart — MIME multipart reader/writer (mirrors Go's mime/multipart)
 
-local function parse_boundary(content_type)
-    if content_type == nil then return nil end
-    local d1, d2, b = string.find(content_type, "boundary=([^;]+)")
-    if b == nil then return nil end
+parse_boundary(content_type: any)
+    if content_type == nil return nil end
+    d1, d2, b = string.find(content_type, "boundary=([^;]+)")
+    if b == nil return nil end
     b = string.gsub(b, "^\"", "")
     b = string.gsub(b, "\"$", "")
     return b
 end
 
-local function parse_headers(header_str)
-    local h = {}
+parse_headers(header_str: any)
+    h = {}
     for line in string.gmatch(header_str, "[^\r\n]+")
-        local d1, d2, k, v = string.find(line, "^([^:]+):%s*(.+)$")
-        if k ~= nil then
+        d1, d2, k, v = string.find(line, "^([^:]+):%s*(.+)$")
+        if k != nil
             h[string.lower(k)] = v
         end
     end
     return h
 end
 
-local function new_reader(data, boundary)
+new_reader(data: any, boundary: any)
     return {data = data, boundary = boundary, pos = 1, parts = nil, part_idx = 1}
 end
 
-local function next_part(r)
-    if r.parts == nil then
+next_part(r: any)
+    if r.parts == nil
         r.parts = {}
-        local sep = "--" .. r.boundary
-        local end_sep = "--" .. r.boundary .. "--"
-        local pos = r.pos
+        sep = "--" .. r.boundary
+        end_sep = "--" .. r.boundary .. "--"
+        pos = r.pos
         while pos <= string.len(r.data)
-            local d1, e = string.find(r.data, sep, pos, true)
-            if e == nil then break end
-            if string.sub(r.data, e + 1, e + 1) == "-" then break end
-            if string.sub(r.data, e + 1, e + 1) == "\r" then e += 2 else e += 1 end
-            local d2, hdr_end = string.find(r.data, "\r\n\r\n", e, true)
-            if hdr_end == nil then d2, hdr_end = string.find(r.data, "\n\n", e, true) end
-            if hdr_end == nil then break end
-            local hdr = string.sub(r.data, e, hdr_end - 1)
-            local body_start = hdr_end + 1
-            if string.sub(r.data, hdr_end - 1, hdr_end) == "\n\n" then body_start = hdr_end else body_start = hdr_end + 2 end
-            local next_sep = string.find(r.data, "\r\n" .. sep, body_start, true)
-            if next_sep == nil then next_sep = string.find(r.data, "\n" .. sep, body_start, true) end
-            if next_sep == nil then
-                local next_sep2 = string.find(r.data, end_sep, body_start, true)
-                if next_sep2 == nil then break end
-                local part_body = string.sub(r.data, body_start, next_sep2 - 1)
+            d1, e = string.find(r.data, sep, pos, true)
+            if e == nil break end
+            if string.sub(r.data, e + 1, e + 1) == "-" break end
+            if string.sub(r.data, e + 1, e + 1) == "\r" e += 2 else e += 1 end
+            d2, hdr_end = string.find(r.data, "\r\n\r\n", e, true)
+            if hdr_end == nil d2, hdr_end = string.find(r.data, "\n\n", e, true) end
+            if hdr_end == nil break end
+            hdr = string.sub(r.data, e, hdr_end - 1)
+            body_start = hdr_end + 1
+            if string.sub(r.data, hdr_end - 1, hdr_end) == "\n\n" body_start = hdr_end else body_start = hdr_end + 2 end
+            next_sep = string.find(r.data, "\r\n" .. sep, body_start, true)
+            if next_sep == nil next_sep = string.find(r.data, "\n" .. sep, body_start, true) end
+            if next_sep == nil
+                next_sep2 = string.find(r.data, end_sep, body_start, true)
+                if next_sep2 == nil break end
+                part_body = string.sub(r.data, body_start, next_sep2 - 1)
                 r.parts[rawlen(r.parts) + 1] = {headers = parse_headers(hdr), body = part_body}
                 break
             end
-            local part_body = string.sub(r.data, body_start, next_sep - 1)
-            if string.sub(part_body, string.len(part_body) - 1) == "\r\n" then
+            part_body = string.sub(r.data, body_start, next_sep - 1)
+            if string.sub(part_body, string.len(part_body) - 1) == "\r\n"
                 part_body = string.sub(part_body, 1, string.len(part_body) - 2)
-            elseif string.sub(part_body, string.len(part_body)) == "\n" then
+            elseif string.sub(part_body, string.len(part_body)) == "\n"
                 part_body = string.sub(part_body, 1, string.len(part_body) - 1)
             end
             r.parts[rawlen(r.parts) + 1] = {headers = parse_headers(hdr), body = part_body}
             pos = next_sep + 1
         end
     end
-    if r.part_idx > rawlen(r.parts) then return nil end
-    local p = r.parts[r.part_idx]
+    if r.part_idx > rawlen(r.parts) return nil end
+    p = r.parts[r.part_idx]
     r.part_idx = r.part_idx + 1
     return p
 end
 
-local M = {}
+M = {}
 M.parse_boundary = parse_boundary
 M.new_reader = new_reader
 M.next_part = next_part

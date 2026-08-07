@@ -4,89 +4,89 @@
 -- a string description.
 
 -- new: create a new error with the given message.
-fun new(message: any): any
+new(message: any): any
     return {message = message, cause = nil, kind = "error"}
 end
 
 -- newf: create a new error with formatted message.
-fun newf(fmt: any): any
+newf(fmt: any): any
     return {message = tostring(fmt), cause = nil, kind = "error"}
 end
 
 -- wrap: create a new error wrapping an existing one (adds context).
-fun wrap(err: any, message: str): any
-    if err == nil then return new(message) end
+wrap(err: any, message: str): any
+    if err == nil return new(message) end
     {message = message, cause = err, kind = "wrapped"}
 end
 
 -- wrapf: wrap with a formatted message.
-fun wrapf(err: any, fmt: any): any
+wrapf(err: any, fmt: any): any
     msg = tostring(fmt)
-    if err == nil then return new(msg) end
+    if err == nil return new(msg) end
     return {message = msg, cause = err, kind = "wrapped"}
 end
 
 -- is: report whether err (or any error in its cause chain) matches target.
-fun is(err: any, target: any): bool
-    if err == nil then return false end
-    if target == nil then return false end
+is(err: any, target: any): bool
+    if err == nil return false end
+    if target == nil return false end
     cur = err
-    while cur ~= nil
-        if cur == target then return true end
-        if cur.message == target.message and cur.kind == target.kind then return true end
+    while cur != nil
+        if cur == target return true end
+        if cur.message == target.message and cur.kind == target.kind return true end
         cur = cur.cause
     end
     false
 end
 
 -- as: extract a specific error type from the chain (returns the error or nil).
-fun as(err: any, kind: str): any
-    if err == nil then return nil end
+as(err: any, kind: str): any
+    if err == nil return nil end
     cur = err
-    while cur ~= nil
-        if cur.kind == kind then return cur end
+    while cur != nil
+        if cur.kind == kind return cur end
         cur = cur.cause
     end
     nil
 end
 
 -- unwrap: return the cause of err, or nil if err has no cause.
-fun unwrap(err: any): any
-    if err == nil then return nil end
+unwrap(err: any): any
+    if err == nil return nil end
     err.cause
 end
 
 -- message: get the message string of an error (or nil).
-fun message(err: any): str
-    if err == nil then return nil end
-    if type(err) == "string" then return err end
+message(err: any): any
+    if err == nil return nil end
+    if type(err) == "string" return err end
     err.message
 end
 
 -- join: combine multiple errors into one.
-fun join(...errs): any
+join(...errs): any
     parts = {}
     i = 1
     while i <= rawlen(errs)
         e = errs[i]
-        if e ~= nil then
+        if e != nil
             msg = e.message
-            if msg == nil then msg = tostring(e) end
+            if msg == nil msg = tostring(e) end
             parts[rawlen(parts) + 1] = msg
         end
         i += 1
     end
-    if rawlen(parts) == 0 then return nil end
+    if rawlen(parts) == 0 return nil end
     {message = table.concat(parts, "; "), cause = nil, kind = "joined"}
 end
 
 -- to_str: convert an error to a human-readable string.
-fun to_str(err: any): str
-    if err == nil then return "" end
-    if type(err) == "string" then return err end
+to_str(err: any): str
+    if err == nil return "" end
+    if type(err) == "string" return err end
     msg = err.message
-    if msg == nil then msg = tostring(err) end
-    if err.cause ~= nil then
+    if msg == nil msg = tostring(err) end
+    if err.cause != nil
         msg = msg .. " -> " .. to_str(err.cause)
     end
     msg

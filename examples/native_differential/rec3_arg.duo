@@ -1,0 +1,8 @@
+Pair: { a: i64, b: i64 }
+sum(p: Pair): i64
+    return p.a + p.b
+end
+main(): i64
+    q: Pair = { a = 30, b = 12 }
+    return sum(q)
+end

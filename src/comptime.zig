@@ -919,6 +919,14 @@ pub const Evaluator = struct {
                         entries.append(alloc, entry) catch return error.UnsupportedExpression;
                     }
                 },
+                .semantic => |sm| {
+                    // `{ @op = impl }` — store under the `@op` key in comptime tables.
+                    const key = if (sm.param) |p|
+                        std.fmt.allocPrint(alloc, "@{s}({s})", .{ sm.op, p }) catch return error.UnsupportedExpression
+                    else
+                        std.fmt.allocPrint(alloc, "@{s}", .{sm.op}) catch return error.UnsupportedExpression;
+                    entries.append(alloc, .{ .name = key, .val = try self.eval(sm.val) }) catch return error.UnsupportedExpression;
+                },
             }
         }
         return .{ .table = entries.toOwnedSlice(alloc) catch return error.UnsupportedExpression };

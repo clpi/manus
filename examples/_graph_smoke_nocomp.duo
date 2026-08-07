@@ -9,7 +9,7 @@ enum Color
     Blue
 end
 
-fun main()
+main()
     p: Point = { x = 3.0, y = 4.0 }
     pt2: { x: f64, y: f64 } = { x = 1.0, y = 2.0 }
     b: Box = { label = "ok", count = 1 }

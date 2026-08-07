@@ -16,7 +16,7 @@ type Pair = { x: f64, y: f64 }
 type Entity = { id: i64, name: str }
 type Node = { id: i64, next: i64 }
 
-@comp.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", generate(meta) -> str
     acc = "/* " .. meta.name .. " */\n"
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -27,11 +27,11 @@ end)
 
 @comp.derive.all("HasXY", TouchApi)
 
-fun pair_line(a, b) -> str
+pair_line(a, b) -> str
     a.name .. "x" .. b.name .. ";"
 end
 
-fun type_line(meta) -> str
+type_line(meta) -> str
     meta.name .. ":"
 end
 

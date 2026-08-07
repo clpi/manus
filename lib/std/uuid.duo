@@ -3,7 +3,7 @@
 
 crypto_rand = req "std.crypto.rand"
 
-fun v4(): str
+v4(): str
     -- UUIDv4 using cryptographic random bytes
     bytes = crypto_rand.bytes(16)
     

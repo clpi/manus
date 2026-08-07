@@ -1,0 +1,18 @@
+Tok: { kind: i64, start: i64, len: i64 }
+mk(pos: i64): Tok
+    return { kind = 1, start = pos, len = 2 }
+end
+loop_over(src: str): i64
+    total = 0
+    pos = 1
+    n = #src
+    while pos <= n do
+        t: Tok = mk(pos)
+        total = total + t.kind
+        pos = pos + t.len
+    end
+    return total
+end
+main(): i64
+    return loop_over("abcd")
+end

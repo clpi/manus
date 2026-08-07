@@ -7,7 +7,7 @@ Tensor = req "std.ml.tensor"
 -- Token Embedding
 -- ═══════════════════════════════════════════════════════════════
 
-fun token_embedding(vocab_size: i64, embed_dim: i64): any
+token_embedding(vocab_size: i64, embed_dim: i64): any
     scale = 1.0 / math.sqrt(embed_dim)
     weights = Tensor.zeros(vocab_size, embed_dim)
     for i = 1, weights.size
@@ -22,11 +22,11 @@ fun token_embedding(vocab_size: i64, embed_dim: i64): any
 end
 
 @hot
-fun token_embed_forward(layer: any, token_ids: any): any
+token_embed_forward(layer: any, token_ids: any): any
     -- token_ids: {batch_size, seq_len} or 1D array
     batch = 1
     seq_len = #token_ids
-    if type(token_ids[1]) == "table" then
+    if type(token_ids[1]) == "table"
         batch = #token_ids
         seq_len = #token_ids[1]
     end
@@ -44,13 +44,13 @@ end
 -- Sinusoidal Positional Encoding (original Transformer)
 -- ═══════════════════════════════════════════════════════════════
 
-fun sinusoidal_encoding(max_len: i64, embed_dim: i64): any
+sinusoidal_encoding(max_len: i64, embed_dim: i64): any
     pe = Tensor.zeros(max_len, embed_dim)
     for pos = 0, max_len - 1
         for i = 0, math.floor(embed_dim / 2) - 1
             freq = 1.0 / math.pow(10000, (2 * i) / embed_dim)
             pe.data[pos * embed_dim + 2 * i + 1] = math.sin(pos * freq)
-            if 2 * i + 2 <= embed_dim then
+            if 2 * i + 2 <= embed_dim
                 pe.data[pos * embed_dim + 2 * i + 2] = math.cos(pos * freq)
             end
         end
@@ -63,7 +63,7 @@ fun sinusoidal_encoding(max_len: i64, embed_dim: i64): any
     }
 end
 
-fun sinusoidal_forward(layer: any, seq_len: i64): any
+sinusoidal_forward(layer: any, seq_len: i64): any
     Tensor.slice(layer.weights, 1, seq_len, 1, layer.embed_dim)
 end
 
@@ -71,7 +71,7 @@ end
 -- Learned Positional Embedding
 -- ═══════════════════════════════════════════════════════════════
 
-fun learned_positional_embedding(max_len: i64, embed_dim: i64): any
+learned_positional_embedding(max_len: i64, embed_dim: i64): any
     {
         type = "learned_positional",
         max_len = max_len,
@@ -80,7 +80,7 @@ fun learned_positional_embedding(max_len: i64, embed_dim: i64): any
     }
 end
 
-fun learned_positional_forward(layer: any, positions: any): any
+learned_positional_forward(layer: any, positions: any): any
     -- positions: list of 0-based position indices
     seq_len = #positions
     result = Tensor.zeros(seq_len, layer.embed_dim)
@@ -97,9 +97,9 @@ end
 -- Rotary Position Embedding (RoPE) — used in LLaMA, GPT-NeoX, etc.
 -- ═══════════════════════════════════════════════════════════════
 
-fun rope_embedding(dim: i64, base: f64, max_seq_len: i64): any
-    if base == nil then base = 10000.0 end
-    if max_seq_len == nil then max_seq_len = 8192 end
+rope_embedding(dim: i64, base: f64, max_seq_len: i64): any
+    if base == nil base = 10000.0 end
+    if max_seq_len == nil max_seq_len = 8192 end
 
     -- Precompute frequencies
     freqs = Tensor.zeros(max_seq_len, dim)
@@ -122,7 +122,7 @@ fun rope_embedding(dim: i64, base: f64, max_seq_len: i64): any
 end
 
 @hot
-fun rope_forward(layer: any, x: any, offset: i64): any
+rope_forward(layer: any, x: any, offset: i64): any
     -- x: [seq_len, dim]
     -- Applies rotary embedding in-place conceptually
     seq_len = x.rows
@@ -147,7 +147,7 @@ end
 -- ALiBi (Attention with Linear Biases) — used in BLOOM, MPT
 -- ═══════════════════════════════════════════════════════════════
 
-fun alibi_encoding(heads: i64, max_seq_len: i64): any
+alibi_encoding(heads: i64, max_seq_len: i64): any
     -- Precompute slope for each head
     slopes = {}
     for i = 1, heads
@@ -172,14 +172,14 @@ fun alibi_encoding(heads: i64, max_seq_len: i64): any
     }
 end
 
-fun alibi_forward(layer: any, scores: any, seq_len: i64): any
+alibi_forward(layer: any, scores: any, seq_len: i64): any
     -- scores: [heads, seq_len, seq_len]
     -- Add ALiBi bias to attention scores
     result = Tensor.copy(scores)
     for h = 1, layer.heads
         for i = 1, seq_len
             for j = 1, seq_len
-                if j <= i then
+                if j <= i
                     -- Linear bias: -slope * |i - j|
                     result.data[(h-1)*seq_len*seq_len + (i-1)*seq_len + j] =
                         result.data[(h-1)*seq_len*seq_len + (i-1)*seq_len + j] +
@@ -195,16 +195,16 @@ end
 -- Embedding + Position + LayerNorm (complete embedding layer)
 -- ═══════════════════════════════════════════════════════════════
 
-fun embedding_layer(vocab_size: i64, embed_dim: i64, max_seq_len: i64, pos_encoding: str): any
-    if pos_encoding == nil then pos_encoding = "rope" end
+embedding_layer(vocab_size: i64, embed_dim: i64, max_seq_len: i64, pos_encoding: str): any
+    if pos_encoding == nil pos_encoding = "rope" end
     token_emb = token_embedding(vocab_size, embed_dim)
     pos_emb = nil
 
-    if pos_encoding == "rope" then
+    if pos_encoding == "rope"
         pos_emb = rope_embedding(embed_dim, 10000, max_seq_len)
-    elseif pos_encoding == "sinusoidal" then
+    elseif pos_encoding == "sinusoidal"
         pos_emb = sinusoidal_encoding(max_seq_len, embed_dim)
-    elseif pos_encoding == "learned" then
+    elseif pos_encoding == "learned"
         pos_emb = learned_positional_embedding(max_seq_len, embed_dim)
     end
 
@@ -220,17 +220,17 @@ fun embedding_layer(vocab_size: i64, embed_dim: i64, max_seq_len: i64, pos_encod
 end
 
 @hot
-fun embedding_forward(layer: any, token_ids: any, offset: i64): any
+embedding_forward(layer: any, token_ids: any, offset: i64): any
     -- Token embeddings
     x = token_embed_forward(layer.token, token_ids)
     -- Position embeddings
-    if layer.pos ~= nil then
-        if layer.pos_encoding == "rope" then
+    if layer.pos != nil
+        if layer.pos_encoding == "rope"
             x = rope_forward(layer.pos, x, offset)
-        elseif layer.pos_encoding == "sinusoidal" then
+        elseif layer.pos_encoding == "sinusoidal"
             pos_enc = sinusoidal_forward(layer.pos, x.rows)
             x = Tensor.add(x, pos_enc)
-        elseif layer.pos_encoding == "learned" then
+        elseif layer.pos_encoding == "learned"
             positions = {}
             for i = 0, x.rows - 1
                 positions[#positions + 1] = i

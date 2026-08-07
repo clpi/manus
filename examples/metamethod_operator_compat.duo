@@ -1,64 +1,64 @@
-local concat_obj = setmetatable({}, {
+concat_obj = setmetatable({}, {
     __concat = fun(a: any, b: any): str
         "concat"
     end,
 })
 
-local lt_obj = setmetatable({}, {
+lt_obj = setmetatable({}, {
     __lt = fun(a: any, b: any): bool
         true
     end,
 })
 
-local le_obj = setmetatable({}, {
+le_obj = setmetatable({}, {
     __le = fun(a: any, b: any): bool
         true
     end,
 })
 
-local unm_obj = setmetatable({}, {
+unm_obj = setmetatable({}, {
     __unm = fun(a: any): any
         "unm"
     end,
 })
 
-local idiv_obj = setmetatable({}, {
+idiv_obj = setmetatable({}, {
     __idiv = fun(a: any, b: any): any
         "idiv"
     end,
 })
 
-local band_obj = setmetatable({}, {
+band_obj = setmetatable({}, {
     __band = fun(a: any, b: any): any
         "band"
     end,
 })
 
-local bor_obj = setmetatable({}, {
+bor_obj = setmetatable({}, {
     __bor = fun(a: any, b: any): any
         "bor"
     end,
 })
 
-local bxor_obj = setmetatable({}, {
+bxor_obj = setmetatable({}, {
     __bxor = fun(a: any, b: any): any
         "bxor"
     end,
 })
 
-local bnot_obj = setmetatable({}, {
+bnot_obj = setmetatable({}, {
     __bnot = fun(a: any): any
         "bnot"
     end,
 })
 
-local shl_obj = setmetatable({}, {
+shl_obj = setmetatable({}, {
     __shl = fun(a: any, b: any): any
         "shl"
     end,
 })
 
-local shr_obj = setmetatable({}, {
+shr_obj = setmetatable({}, {
     __shr = fun(a: any, b: any): any
         "shr"
     end,

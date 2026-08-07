@@ -9,7 +9,7 @@ M = {}
 -- ChaCha20 (RFC 8439)
 -- ═══════════════════════════════════════════════════════════════
 
-fun chacha20_quarter(state: any, a: i64, b: i64, c: i64, d: i64): void
+chacha20_quarter(state: any, a: i64, b: i64, c: i64, d: i64): void
     state[a] = state[a] + state[b]
     state[d] = state[d] ~ state[a]
     state[d] = (state[d] << 16) | (state[d] >> 16)
@@ -27,7 +27,7 @@ fun chacha20_quarter(state: any, a: i64, b: i64, c: i64, d: i64): void
     state[b] = (state[b] << 7) | (state[b] >> 25)
 end
 
-fun chacha20_block(key: any, counter: i64, nonce: any): any
+chacha20_block(key: any, counter: i64, nonce: any): any
     -- "expand 32-byte k" constant
     state = {
         0x65787061, 0x6E642033, 0x322D6279, 0x7465206B,
@@ -90,7 +90,7 @@ fun chacha20_block(key: any, counter: i64, nonce: any): any
 end
 
 -- ChaCha20 stream cipher: XOR keystream with plaintext
-fun chacha20_crypt(key: str, nonce: str, data: str): str
+chacha20_crypt(key: str, nonce: str, data: str): str
     out = {}
     pos = 1
     counter = 1
@@ -121,7 +121,7 @@ end
 hmac_mod = req "std.crypto.hmac"
 crypto = req "std.crypto"
 
-fun hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
+hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
     -- V = 0x00 * 32, K = 0x00 * 32
     V = string.rep(string.char(0), 32)
     K = string.rep(string.char(0), 32)
@@ -145,7 +145,7 @@ fun hmac_drbg_new(entropy: str, nonce: str, personalization: str): any
     }
 end
 
-fun hmac_drbg_generate(state: any, num_bytes: i64): str
+hmac_drbg_generate(state: any, num_bytes: i64): str
     temp = {}
     remaining = num_bytes
 
@@ -155,7 +155,7 @@ fun hmac_drbg_generate(state: any, num_bytes: i64): str
 
         -- Take min(remaining, 32) bytes from V
         take = remaining
-        if take > 32 then take = 32 end
+        if take > 32 take = 32 end
         temp[#temp + 1] = state.v:sub(1, take)
         remaining -= take
     end
@@ -164,7 +164,7 @@ fun hmac_drbg_generate(state: any, num_bytes: i64): str
     return table.concat(temp)
 end
 
-fun hmac_drbg_reseed(state: any, entropy: str): void
+hmac_drbg_reseed(state: any, entropy: str): void
     -- K = HMAC(K, V || 0x00 || entropy)
     state.k = hmac_mod.hmac_sha256_bytes(state.k, state.v .. string.char(0) .. entropy)
     -- V = HMAC(K, V)
@@ -183,20 +183,20 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- Generate cryptographically random bytes
-fun random_bytes(n: i64): str
+random_bytes(n: i64): str
     -- Use OS entropy if available, else ChaCha20 with time-based seed
-    local handle = io.popen("cat /dev/urandom 2>/dev/null | head -c " .. n)
-    if handle then
-        local data = handle:read(n) or ""
+    handle = io.popen("cat /dev/urandom 2>/dev/null | head -c " .. n)
+    if handle
+        data = handle:read(n) or ""
         handle:close()
-        if #data == n then return data end
+        if #data == n return data end
     end
     -- Fallback: ChaCha20 with time-based entropy (not all zeros!)
     time_seed = tostring(os.clock()) .. tostring(os.time()) .. tostring(math.random(1, 999999))
     key = {}
     i = 1
     while i <= 32
-        if i <= #time_seed then
+        if i <= #time_seed
             key[i] = string.byte(time_seed, i)
         else
             key[i] = (i * 7 + 13) % 256  -- deterministic but non-zero
@@ -206,7 +206,7 @@ fun random_bytes(n: i64): str
     nonce = {}
     i = 1
     while i <= 12
-        if i <= #time_seed then
+        if i <= #time_seed
             nonce[i] = string.byte(time_seed, ((i - 1) % #time_seed) + 1) ~ i
         else
             nonce[i] = (i * 11 + 3) % 256
@@ -219,7 +219,7 @@ fun random_bytes(n: i64): str
 end
 
 -- Generate a random integer in [min, max]
-fun random_int(min: i64, max: i64): i64
+random_int(min: i64, max: i64): i64
     range = max - min + 1
     bytes = random_bytes(8)
     val = 0
@@ -232,7 +232,7 @@ fun random_int(min: i64, max: i64): i64
 end
 
 -- Generate a random float in [0.0, 1.0)
-fun random_float(): f64
+random_float(): f64
     bytes = random_bytes(8)
     val = 0
     i = 0

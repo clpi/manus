@@ -7,7 +7,7 @@
 -- 1. Matrix checksum 128x128 — COLUMN/ROW SUM CONTRACTION
 -- ═══════════════════════════════════════════════════════════════
 @hot
-fun bench_matmul(n: i64, s: i64): f64
+bench_matmul(n: i64, s: i64): f64
     @c.emit([[
         double a_col[128] __attribute__((aligned(32))) = {0};
         double b_row[128] __attribute__((aligned(32))) = {0};
@@ -38,7 +38,7 @@ end
 -- 2. Int64 radix sort
 -- ═══════════════════════════════════════════════════════════════
 @hot
-fun bench_qsort(n: i64, s: i64): i64
+bench_qsort(n: i64, s: i64): i64
     @c.emit([[
         int64_t* arr = (int64_t*)malloc(n * sizeof(int64_t));
         if(!arr) return 0;
@@ -85,7 +85,7 @@ end
 --    Same chains as C. Duo adds 8-way unrolling + branchless hits.
 -- ═══════════════════════════════════════════════════════════════
 @hot
-fun bench_hashtable(n: i64, s: i64): i64
+bench_hashtable(n: i64, s: i64): i64
     @c.emit([[
         #define HT_SIZE 65536
         #define HT_MASK (HT_SIZE-1)
@@ -141,7 +141,7 @@ end
 -- 4. Binary search — branchless comparison
 -- ═══════════════════════════════════════════════════════════════
 @hot
-fun bench_bsearch(n: i64, s: i64): i64
+bench_bsearch(n: i64, s: i64): i64
     @c.emit([[
         #define BS_SIZE 100000
         #define BS_HT_SIZE 262144
@@ -203,7 +203,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 @hot
 @noinline
-fun bench_nbody_real(steps: i64, s: i64): f64
+bench_nbody_real(steps: i64, s: i64): f64
     @c.emit([[
         #define NB 16
         double px[NB],py[NB],vx[NB],vy[NB],mass[NB];
@@ -249,7 +249,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 @hot
 @noinline
-fun bench_fnv_hash(n: i64, s: i64): i64
+bench_fnv_hash(n: i64, s: i64): i64
     @c.emit([[
         #define BUF_SZ (1024*1024)
         uint8_t* buf = (uint8_t*)malloc(BUF_SZ);
@@ -374,7 +374,7 @@ fun bench_fnv_hash(n: i64, s: i64): i64
     return result
 end
 
-fun print_fnv_result(v: i64): void
+print_fnv_result(v: i64): void
     @c.emit([[printf("RESULT fnv %lld\n", (long long)v);]])
 end
 

@@ -1,0 +1,5 @@
+main(): i64
+    n = 7
+    if n < 0 return 111 end
+    return 222
+end

@@ -15,10 +15,10 @@ end
 main(): i64
     -- Wasm magic/version as separate bytes (avoids embedded NUL in C strings).
     magic = read_u32_le_bytes(0x00, 0x61, 0x73, 0x6D)
-    if magic ~= 0x6D736100 return 1001 end
+    if magic != 0x6D736100 return 1001 end
     version = read_u32_le_bytes(0x01, 0x00, 0x00, 0x00)
-    if version ~= 1 return 1002 end
+    if version != 1 return 1002 end
     leb = decode_leb128_624485()
-    if leb ~= 624485 return leb end
+    if leb != 624485 return leb end
     0
 end

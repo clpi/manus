@@ -53,12 +53,20 @@ pub fn emitClosureSourceTable(cg: anytype, list: []const *ast.FuncBody) E!void {
     cg.p("}};\n\n", .{});
 }
 
+/// Must stay in lockstep with `codegen.upvalue_uses_pointer` — this is a second
+/// copy of that decision, and when the two disagreed the closure struct was
+/// emitted by value while this pack function still dereferenced it
+/// ("indirection requires pointer operand").
+///
+/// The pointer path is disabled for the same reason as in codegen: `&local` is
+/// the address of a stack slot in the enclosing frame, which is gone once the
+/// closure escapes. Shared mutation needs a heap cell; until then, by value.
 fn upvalue_uses_pointer(uv: ast.Upvalue) bool {
     if (!uv.mutable) return false;
     if (uv.typ) |t| {
         if (t != .any) return false;
-    }
-    return true;
+    } else return false;
+    return false;
 }
 
 fn emitUpvalueAsLuaValue(cg: anytype, uv: ast.Upvalue, i: u32) void {

@@ -5,60 +5,60 @@
 -- 2D Geometry
 -- ═══════════════════════════════════════════════════════════════
 
-fun vec2_new(x: f64, y: f64): any
+vec2_new(x: f64, y: f64): any
     {x = x, y = y}
 end
 
-fun vec2_add(a: any, b: any): any
+vec2_add(a: any, b: any): any
     {x = a.x + b.x, y = a.y + b.y}
 end
 
-fun vec2_sub(a: any, b: any): any
+vec2_sub(a: any, b: any): any
     {x = a.x - b.x, y = a.y - b.y}
 end
 
-fun vec2_scale(v: any, s: f64): any
+vec2_scale(v: any, s: f64): any
     {x = v.x * s, y = v.y * s}
 end
 
-fun vec2_dot(a: any, b: any): f64
+vec2_dot(a: any, b: any): f64
     a.x * b.x + a.y * b.y
 end
 
-fun vec2_cross(a: any, b: any): f64
+vec2_cross(a: any, b: any): f64
     a.x * b.y - a.y * b.x
 end
 
-fun vec2_length(v: any): f64
+vec2_length(v: any): f64
     math.sqrt(v.x * v.x + v.y * v.y)
 end
 
-fun vec2_length_squared(v: any): f64
+vec2_length_squared(v: any): f64
     v.x * v.x + v.y * v.y
 end
 
-fun vec2_normalize(v: any): any
+vec2_normalize(v: any): any
     len = vec2_length(v)
-    if len < 1e-10 then return {x = 0, y = 0} end
+    if len < 1e-10 return {x = 0, y = 0} end
     vec2_scale(v, 1.0 / len)
 end
 
-fun vec2_distance(a: any, b: any): f64
+vec2_distance(a: any, b: any): f64
     vec2_length(vec2_sub(b, a))
 end
 
-fun vec2_distance_squared(a: any, b: any): f64
+vec2_distance_squared(a: any, b: any): f64
     vec2_length_squared(vec2_sub(b, a))
 end
 
-fun vec2_lerp(a: any, b: any, t: f64): any
+vec2_lerp(a: any, b: any, t: f64): any
     {
         x = a.x + (b.x - a.x) * t,
         y = a.y + (b.y - a.y) * t,
     }
 end
 
-fun vec2_rotate(v: any, angle: f64): any
+vec2_rotate(v: any, angle: f64): any
     c = math.cos(angle)
     s = math.sin(angle)
     {
@@ -67,11 +67,11 @@ fun vec2_rotate(v: any, angle: f64): any
     }
 end
 
-fun vec2_perpendicular(v: any): any
+vec2_perpendicular(v: any): any
     {x = -v.y, y = v.x}
 end
 
-fun vec2_angle(a: any, b: any): f64
+vec2_angle(a: any, b: any): f64
     math.atan2(b.y - a.y, b.x - a.x)
 end
 
@@ -79,82 +79,82 @@ end
 -- 2D Shapes
 -- ═══════════════════════════════════════════════════════════════
 
-fun point_new(x: f64, y: f64): any
+point_new(x: f64, y: f64): any
     {x = x, y = y}
 end
 
-fun segment_new(p1: any, p2: any): any
+segment_new(p1: any, p2: any): any
     {p1 = p1, p2 = p2}
 end
 
-fun segment_length(seg: any): f64
+segment_length(seg: any): f64
     vec2_distance(seg.p1, seg.p2)
 end
 
-fun segment_midpoint(seg: any): any
+segment_midpoint(seg: any): any
     {
         x = (seg.p1.x + seg.p2.x) / 2,
         y = (seg.p1.y + seg.p2.y) / 2,
     }
 end
 
-fun line_new(point: any, direction: any): any
+line_new(point: any, direction: any): any
     {point = point, direction = direction}
 end
 
-fun line_from_points(p1: any, p2: any): any
+line_from_points(p1: any, p2: any): any
     {
         point = p1,
         direction = vec2_normalize(vec2_sub(p2, p1)),
     }
 end
 
-fun ray_new(origin: any, direction: any): any
+ray_new(origin: any, direction: any): any
     {origin = origin, direction = direction}
 end
 
-fun circle_new(center: any, radius: f64): any
+circle_new(center: any, radius: f64): any
     {center = center, radius = radius}
 end
 
-fun circle_area(c: any): f64
+circle_area(c: any): f64
     math.pi * c.radius * c.radius
 end
 
-fun circle_perimeter(c: any): f64
+circle_perimeter(c: any): f64
     2 * math.pi * c.radius
 end
 
-fun rect_new(x: f64, y: f64, width: f64, height: f64): any
+rect_new(x: f64, y: f64, width: f64, height: f64): any
     {
         x = x, y = y,
         width = width, height = height,
     }
 end
 
-fun rect_area(r: any): f64
+rect_area(r: any): f64
     r.width * r.height
 end
 
-fun rect_perimeter(r: any): f64
+rect_perimeter(r: any): f64
     2 * (r.width + r.height)
 end
 
-fun rect_contains_point(r: any, p: any): bool
+rect_contains_point(r: any, p: any): bool
     p.x >= r.x and p.x <= r.x + r.width and
     p.y >= r.y and p.y <= r.y + r.height
 end
 
-fun rect_intersects(a: any, b: any): bool
+rect_intersects(a: any, b: any): bool
     a.x < b.x + b.width and a.x + a.width > b.x and
     a.y < b.y + b.height and a.y + a.height > b.y
 end
 
-fun polygon_new(vertices: any): any
+polygon_new(vertices: any): any
     {vertices = vertices}
 end
 
-fun polygon_area(poly: any): f64
+polygon_area(poly: any): f64
     area = 0
     n = #poly.vertices
     i = 1
@@ -167,7 +167,7 @@ fun polygon_area(poly: any): f64
     math.abs(area) / 2
 end
 
-fun polygon_perimeter(poly: any): f64
+polygon_perimeter(poly: any): f64
     perimeter = 0
     n = #poly.vertices
     i = 1
@@ -179,14 +179,14 @@ fun polygon_perimeter(poly: any): f64
     perimeter
 end
 
-fun polygon_contains_point(poly: any, p: any): bool
+polygon_contains_point(poly: any, p: any): bool
     inside = false
     n = #poly.vertices
     i = 1
     while i <= n
         j = (i % n) + 1
-        if ((poly.vertices[i].y > p.y) ~= (poly.vertices[j].y > p.y)) and
-           (p.x < (poly.vertices[j].x - poly.vertices[i].x) * (p.y - poly.vertices[i].y) / (poly.vertices[j].y - poly.vertices[i].y) + poly.vertices[i].x) then
+        if ((poly.vertices[i].y > p.y) != (poly.vertices[j].y > p.y)) and
+           (p.x < (poly.vertices[j].x - poly.vertices[i].x) * (p.y - poly.vertices[i].y) / (poly.vertices[j].y - poly.vertices[i].y) + poly.vertices[i].x)
             inside = not inside
         end
         i += 1
@@ -198,27 +198,27 @@ end
 -- 3D Geometry
 -- ═══════════════════════════════════════════════════════════════
 
-fun vec3_new(x: f64, y: f64, z: f64): any
+vec3_new(x: f64, y: f64, z: f64): any
     {x = x, y = y, z = z}
 end
 
-fun vec3_add(a: any, b: any): any
+vec3_add(a: any, b: any): any
     {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
 end
 
-fun vec3_sub(a: any, b: any): any
+vec3_sub(a: any, b: any): any
     {x = a.x - b.x, y = a.y - b.y, z = a.z - b.z}
 end
 
-fun vec3_scale(v: any, s: f64): any
+vec3_scale(v: any, s: f64): any
     {x = v.x * s, y = v.y * s, z = v.z * s}
 end
 
-fun vec3_dot(a: any, b: any): f64
+vec3_dot(a: any, b: any): f64
     a.x * b.x + a.y * b.y + a.z * b.z
 end
 
-fun vec3_cross(a: any, b: any): any
+vec3_cross(a: any, b: any): any
     {
         x = a.y * b.z - a.z * b.y,
         y = a.z * b.x - a.x * b.z,
@@ -226,21 +226,21 @@ fun vec3_cross(a: any, b: any): any
     }
 end
 
-fun vec3_length(v: any): f64
+vec3_length(v: any): f64
     math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
 end
 
-fun vec3_normalize(v: any): any
+vec3_normalize(v: any): any
     len = vec3_length(v)
-    if len < 1e-10 then return {x = 0, y = 0, z = 0} end
+    if len < 1e-10 return {x = 0, y = 0, z = 0} end
     vec3_scale(v, 1.0 / len)
 end
 
-fun vec3_distance(a: any, b: any): f64
+vec3_distance(a: any, b: any): f64
     vec3_length(vec3_sub(b, a))
 end
 
-fun vec3_lerp(a: any, b: any, t: f64): any
+vec3_lerp(a: any, b: any, t: f64): any
     {
         x = a.x + (b.x - a.x) * t,
         y = a.y + (b.y - a.y) * t,
@@ -248,25 +248,25 @@ fun vec3_lerp(a: any, b: any, t: f64): any
     }
 end
 
-fun plane_new(normal: any, distance: f64): any
+plane_new(normal: any, distance: f64): any
     {normal = normal, distance = distance}
 end
 
-fun plane_from_points(p1: any, p2: any, p3: any): any
+plane_from_points(p1: any, p2: any, p3: any): any
     normal = vec3_normalize(vec3_cross(vec3_sub(p2, p1), vec3_sub(p3, p1)))
     dist = vec3_dot(normal, p1)
     {normal = normal, distance = dist}
 end
 
-fun plane_distance_to_point(plane: any, p: any): f64
+plane_distance_to_point(plane: any, p: any): f64
     vec3_dot(plane.normal, p) - plane.distance
 end
 
-fun aabb_new(min: any, max: any): any
+aabb_new(min: any, max: any): any
     {min = min, max = max}
 end
 
-fun aabb_center(box: any): any
+aabb_center(box: any): any
     {
         x = (box.min.x + box.max.x) / 2,
         y = (box.min.y + box.max.y) / 2,
@@ -274,31 +274,31 @@ fun aabb_center(box: any): any
     }
 end
 
-fun aabb_size(box: any): any
+aabb_size(box: any): any
     vec3_sub(box.max, box.min)
 end
 
-fun aabb_contains_point(box: any, p: any): bool
+aabb_contains_point(box: any, p: any): bool
     p.x >= box.min.x and p.x <= box.max.x and
     p.y >= box.min.y and p.y <= box.max.y and
     p.z >= box.min.z and p.z <= box.max.z
 end
 
-fun aabb_intersects(a: any, b: any): bool
+aabb_intersects(a: any, b: any): bool
     a.min.x <= b.max.x and a.max.x >= b.min.x and
     a.min.y <= b.max.y and a.max.y >= b.min.y and
     a.min.z <= b.max.z and a.max.z >= b.min.z
 end
 
-fun sphere_new(center: any, radius: f64): any
+sphere_new(center: any, radius: f64): any
     {center = center, radius = radius}
 end
 
-fun sphere_contains_point(s: any, p: any): bool
+sphere_contains_point(s: any, p: any): bool
     vec3_distance(s.center, p) <= s.radius
 end
 
-fun sphere_intersects_sphere(a: any, b: any): bool
+sphere_intersects_sphere(a: any, b: any): bool
     vec3_distance(a.center, b.center) <= a.radius + b.radius
 end
 
@@ -306,17 +306,17 @@ end
 -- Intersection Tests
 -- ═══════════════════════════════════════════════════════════════
 
-fun line_segment_intersection(p1: any, p2: any, p3: any, p4: any): any
+line_segment_intersection(p1: any, p2: any, p3: any, p4: any): any
     d1 = vec2_sub(p2, p1)
     d2 = vec2_sub(p4, p3)
     cross = d1.x * d2.y - d1.y * d2.x
 
-    if math.abs(cross) < 1e-10 then return nil end
+    if math.abs(cross) < 1e-10 return nil end
 
     t = ((p3.x - p1.x) * d2.y - (p3.y - p1.y) * d2.x) / cross
     u = ((p3.x - p1.x) * d1.y - (p3.y - p1.y) * d1.x) / cross
 
-    if t >= 0 and t <= 1 and u >= 0 and u <= 1 then
+    if t >= 0 and t <= 1 and u >= 0 and u <= 1
         {
             point = {x = p1.x + t * d1.x, y = p1.y + t * d1.y},
             t = t,
@@ -325,31 +325,31 @@ fun line_segment_intersection(p1: any, p2: any, p3: any, p4: any): any
     end
 end
 
-fun ray_sphere_intersection(ray_origin: any, ray_dir: any, sphere: any): any
+ray_sphere_intersection(ray_origin: any, ray_dir: any, sphere: any): any
     oc = vec3_sub(ray_origin, sphere.center)
     a = vec3_dot(ray_dir, ray_dir)
     b = 2 * vec3_dot(oc, ray_dir)
     c = vec3_dot(oc, oc) - sphere.radius * sphere.radius
     discriminant = b * b - 4 * a * c
 
-    if discriminant < 0 then return nil end
+    if discriminant < 0 return nil end
 
     t = (-b - math.sqrt(discriminant)) / (2 * a)
-    if t < 0 then
+    if t < 0
         t = (-b + math.sqrt(discriminant)) / (2 * a)
     end
-    if t < 0 then return nil end
+    if t < 0 return nil end
 
     point = vec3_add(ray_origin, vec3_scale(ray_dir, t))
     {t = t, point = point}
 end
 
-fun ray_plane_intersection(ray_origin: any, ray_dir: any, plane: any): any
+ray_plane_intersection(ray_origin: any, ray_dir: any, plane: any): any
     denom = vec3_dot(plane.normal, ray_dir)
-    if math.abs(denom) < 1e-10 then return nil end
+    if math.abs(denom) < 1e-10 return nil end
 
     t = (plane.distance - vec3_dot(plane.normal, ray_origin)) / denom
-    if t < 0 then return nil end
+    if t < 0 return nil end
 
     point = vec3_add(ray_origin, vec3_scale(ray_dir, t))
     {t = t, point = point}
@@ -359,23 +359,23 @@ end
 -- Triangle Operations
 -- ═══════════════════════════════════════════════════════════════
 
-fun triangle_new(v0: any, v1: any, v2: any): any
+triangle_new(v0: any, v1: any, v2: any): any
     {v0 = v0, v1 = v1, v2 = v2}
 end
 
-fun triangle_area(tri: any): f64
+triangle_area(tri: any): f64
     e1 = vec3_sub(tri.v1, tri.v0)
     e2 = vec3_sub(tri.v2, tri.v0)
     0.5 * vec3_length(vec3_cross(e1, e2))
 end
 
-fun triangle_normal(tri: any): any
+triangle_normal(tri: any): any
     e1 = vec3_sub(tri.v1, tri.v0)
     e2 = vec3_sub(tri.v2, tri.v0)
     vec3_normalize(vec3_cross(e1, e2))
 end
 
-fun triangle_centroid(tri: any): any
+triangle_centroid(tri: any): any
     {
         x = (tri.v0.x + tri.v1.x + tri.v2.x) / 3,
         y = (tri.v0.y + tri.v1.y + tri.v2.y) / 3,
@@ -383,7 +383,7 @@ fun triangle_centroid(tri: any): any
     }
 end
 
-fun triangle_barycentric(tri: any, p: any): any
+triangle_barycentric(tri: any, p: any): any
     v0 = vec3_sub(tri.v1, tri.v0)
     v1 = vec3_sub(tri.v2, tri.v0)
     v2 = vec3_sub(p, tri.v0)
@@ -395,7 +395,7 @@ fun triangle_barycentric(tri: any, p: any): any
     d21 = vec3_dot(v2, v1)
 
     denom = d00 * d11 - d01 * d01
-    if math.abs(denom) < 1e-10 then return nil end
+    if math.abs(denom) < 1e-10 return nil end
 
     v = (d11 * d20 - d01 * d21) / denom
     w = (d00 * d21 - d01 * d20) / denom

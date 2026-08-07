@@ -1,19 +1,19 @@
 -- std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
 
-local function flate_compress(data)
-    if data == nil or data == "" then return "" end
-    local out = {}
-    local i = 1
-    local n = string.len(data)
+flate_compress(data: any)
+    if data == nil or data == "" return "" end
+    out = {}
+    i = 1
+    n = string.len(data)
     while i <= n
-        local ch = string.sub(data, i, i)
-        local run = 1
-        local j = i + 1
+        ch = string.sub(data, i, i)
+        run = 1
+        j = i + 1
         while j <= n and string.sub(data, j, j) == ch and run < 255
             run += 1
             j += 1
         end
-        if run >= 3 then
+        if run >= 3
             out[rawlen(out) + 1] = string.char(0xFE) .. string.char(run) .. ch
             i += run
         else
@@ -24,17 +24,17 @@ local function flate_compress(data)
     return table.concat(out)
 end
 
-local function flate_decompress(data)
-    if data == nil or data == "" then return "" end
-    local out = {}
-    local i = 1
-    local n = string.len(data)
+flate_decompress(data: any)
+    if data == nil or data == "" return "" end
+    out = {}
+    i = 1
+    n = string.len(data)
     while i <= n
-        local b = string.byte(data, i)
-        if b == 0xFE then
-            if i + 2 > n then break end
-            local run = string.byte(data, i + 1)
-            local ch = string.sub(data, i + 2, i + 2)
+        b = string.byte(data, i)
+        if b == 0xFE
+            if i + 2 > n break end
+            run = string.byte(data, i + 1)
+            ch = string.sub(data, i + 2, i + 2)
             out[rawlen(out) + 1] = string.rep(ch, run)
             i += 3
         else
@@ -45,34 +45,34 @@ local function flate_decompress(data)
     return table.concat(out)
 end
 
-local function flate_compress_level(data, level)
+flate_compress_level(data: any, level: any)
     return flate_compress(data)
 end
 
-local function flate_new_writer(fh, level)
+flate_new_writer(fh: any, level: any)
     return {fh = fh, buf = "", level = level}
 end
 
-local function flate_writer_write(w, data)
+flate_writer_write(w: any, data: any)
     w.buf = w.buf .. data
     return w
 end
 
-local function flate_writer_flush(w)
-    if string.len(w.buf) > 0 then
+flate_writer_flush(w: any)
+    if string.len(w.buf) > 0
         w.fh:write(flate_compress(w.buf))
         w.buf = ""
     end
     return w
 end
 
-local function flate_writer_close(w)
+flate_writer_close(w: any)
     flate_writer_flush(w)
     w.fh:close()
     return w
 end
 
-local M = {}
+M = {}
 M.compress = flate_compress
 M.decompress = flate_decompress
 M.compress_level = flate_compress_level

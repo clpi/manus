@@ -1,9 +1,9 @@
 -- std.xml — basic XML parsing and formatting
 
-local string = req "std.string"
+string = req "std.string"
 
-fun escape(s: str): str
-    if s == nil then return "" end
+escape(s: str): str
+    if s == nil return "" end
     s = string.gsub(s, "&", "&amp;")
     s = string.gsub(s, "<", "&lt;")
     s = string.gsub(s, ">", "&gt;")
@@ -12,8 +12,8 @@ fun escape(s: str): str
     s
 end
 
-fun unescape(s: str): str
-    if s == nil then return "" end
+unescape(s: str): str
+    if s == nil return "" end
     s = string.gsub(s, "&amp;", "&")
     s = string.gsub(s, "&lt;", "<")
     s = string.gsub(s, "&gt;", ">")
@@ -23,31 +23,31 @@ fun unescape(s: str): str
     s
 end
 
-fun parse_attributes(data: str, start: i64): any
-    local attrs = {}
-    local i = start
-    local len = string.len(data)
+parse_attributes(data: str, start: i64): any
+    attrs = {}
+    i = start
+    len = string.len(data)
     while i <= len
         while i <= len and (string.byte(data, i) == 32 or string.byte(data, i) == 9 or string.byte(data, i) == 10 or string.byte(data, i) == 13)
             i += 1
         end
-        if i > len or string.byte(data, i) == 62 or string.byte(data, i) == 47 then
+        if i > len or string.byte(data, i) == 62 or string.byte(data, i) == 47
             break
         end
-        local key_start = i
-        while i <= len and string.byte(data, i) ~= 61 and string.byte(data, i) ~= 32 and string.byte(data, i) ~= 9 and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13 and string.byte(data, i) ~= 62 and string.byte(data, i) ~= 47
+        key_start = i
+        while i <= len and string.byte(data, i) != 61 and string.byte(data, i) != 32 and string.byte(data, i) != 9 and string.byte(data, i) != 10 and string.byte(data, i) != 13 and string.byte(data, i) != 62 and string.byte(data, i) != 47
             i += 1
         end
-        local key = string.sub(data, key_start, i - 1)
-        if string.byte(data, i) == 61 then
+        key = string.sub(data, key_start, i - 1)
+        if string.byte(data, i) == 61
             i += 1
-            local delim = string.byte(data, i)
+            delim = string.byte(data, i)
             i += 1
-            local val_start = i
-            while i <= len and string.byte(data, i) ~= delim
+            val_start = i
+            while i <= len and string.byte(data, i) != delim
                 i += 1
             end
-            local val = string.sub(data, val_start, i - 1)
+            val = string.sub(data, val_start, i - 1)
             i += 1
             attrs[key] = unescape(val)
         end
@@ -55,78 +55,78 @@ fun parse_attributes(data: str, start: i64): any
     return attrs, i
 end
 
-fun parse_elem(data: str, start: i64): any
+parse_elem(data: str, start: i64): any
     i = start
     len = string.len(data)
-    while i <= len and string.byte(data, i) ~= 60
+    while i <= len and string.byte(data, i) != 60
         i += 1
     end
-    if i > len then return nil end
+    if i > len return nil end
     i += 1
-    if i <= len and string.byte(data, i) == 63 then
+    if i <= len and string.byte(data, i) == 63
         while i <= len
-            if string.byte(data, i) == 63 and i + 1 <= len and string.byte(data, i + 1) == 62 then
+            if string.byte(data, i) == 63 and i + 1 <= len and string.byte(data, i + 1) == 62
                 break
             end
             i += 1
         end
-        if i <= len then i += 2 end
+        if i <= len i += 2 end
         return parse_elem(data, i)
     end
-    if i <= len and string.byte(data, i) == 33 then
+    if i <= len and string.byte(data, i) == 33
         while i <= len
-            if string.byte(data, i) == 93 and i + 2 <= len and string.byte(data, i + 1) == 93 and string.byte(data, i + 2) == 62 then
+            if string.byte(data, i) == 93 and i + 2 <= len and string.byte(data, i + 1) == 93 and string.byte(data, i + 2) == 62
                 break
             end
             i += 1
         end
-        if i <= len then i += 3 end
+        if i <= len i += 3 end
         return parse_elem(data, i)
     end
-    if i <= len and string.byte(data, i) == 47 then
+    if i <= len and string.byte(data, i) == 47
         return nil
     end
     tag_start = i
-    while i <= len and string.byte(data, i) ~= 32 and string.byte(data, i) ~= 9 and string.byte(data, i) ~= 10 and string.byte(data, i) ~= 13 and string.byte(data, i) ~= 62 and string.byte(data, i) ~= 47
+    while i <= len and string.byte(data, i) != 32 and string.byte(data, i) != 9 and string.byte(data, i) != 10 and string.byte(data, i) != 13 and string.byte(data, i) != 62 and string.byte(data, i) != 47
         i += 1
     end
     tag = string.sub(data, tag_start, i - 1)
     attrs = {}
     self_closing = false
-    if string.byte(data, i) == 47 or string.byte(data, i) == 32 or string.byte(data, i) == 9 or string.byte(data, i) == 10 or string.byte(data, i) == 13 then
+    if string.byte(data, i) == 47 or string.byte(data, i) == 32 or string.byte(data, i) == 9 or string.byte(data, i) == 10 or string.byte(data, i) == 13
         attrs, i = parse_attributes(data, i)
     end
-    if i <= len and string.byte(data, i) == 47 then
+    if i <= len and string.byte(data, i) == 47
         self_closing = true
         i += 1
     end
-    if i <= len and string.byte(data, i) == 62 then
+    if i <= len and string.byte(data, i) == 62
         i += 1
     end
     elem = {tag = tag, attrs = attrs, children = {}}
-    if not self_closing then
+    if not self_closing
         while true
             sp = ""
-            while i <= len and string.byte(data, i) ~= 60
+            while i <= len and string.byte(data, i) != 60
                 sp = sp .. string.sub(data, i, i)
                 i += 1
             end
             trimmed = string.trim(sp)
-            if string.len(trimmed) > 0 then
+            if string.len(trimmed) > 0
                 elem.children[rawlen(elem.children) + 1] = {kind = "text", text = unescape(sp)}
             end
-            if i > len then break end
+            if i > len break end
             peek_byte = string.byte(data, i + 1)
-            if peek_byte == 47 then
+            if peek_byte == 47
                 i += 2
-                while i <= len and string.byte(data, i) ~= 62
+                while i <= len and string.byte(data, i) != 62
                     i += 1
                 end
-                if i <= len then i += 1 end
+                if i <= len i += 1 end
                 break
             end
             child = parse_elem(data, i)
-            if child == nil then break end
+            if child == nil break end
             elem.children[rawlen(elem.children) + 1] = child
             i = child._end
         end
@@ -135,33 +135,33 @@ fun parse_elem(data: str, start: i64): any
     return elem
 end
 
-fun parse(data: str): any
-    if data == nil then return nil end
+parse(data: str): any
+    if data == nil return nil end
     i = 1
-    while i <= string.len(data) and string.byte(data, i) ~= 60
+    while i <= string.len(data) and string.byte(data, i) != 60
         i += 1
     end
-    if i > string.len(data) then return nil end
+    if i > string.len(data) return nil end
     doc = parse_elem(data, i)
-    if doc ~= nil then
+    if doc != nil
         doc._end = nil
     end
     return doc
 end
 
-fun format_node(node: any, indent: i64): str
-    if node.kind == "text" then
+format_node(node: any, indent: i64): str
+    if node.kind == "text"
         return escape(node.text)
     end
     tag = node.tag
     attr_str = ""
-    if node.attrs ~= nil then
+    if node.attrs != nil
         for k, v in node.attrs
             attr_str = attr_str .. " " .. k .. "=\"" .. escape(v) .. "\""
         end
     end
     children = node.children
-    if children == nil or rawlen(children) == 0 then
+    if children == nil or rawlen(children) == 0
         return "<" .. tag .. attr_str .. " />"
     end
     inner = ""
@@ -173,8 +173,8 @@ fun format_node(node: any, indent: i64): str
     return "<" .. tag .. attr_str .. ">" .. inner .. "</" .. tag .. ">"
 end
 
-fun format(doc: any): str
-    if doc == nil then return "" end
+format(doc: any): str
+    if doc == nil return "" end
     return format_node(doc, 0)
 end
 

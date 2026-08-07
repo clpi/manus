@@ -4,7 +4,7 @@ wasm_header = { 0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00 }
 ByteCursor: @{ data: i64, pos: i64, len: i64 }
 
 read_u8_at(base: i64, off: i64): i64
-    __native_load_u8(base, off)
+    @comp.native.load.u8(base, off)
 end
 
 main(): i64
@@ -13,12 +13,12 @@ main(): i64
     b1 = read_u8_at(c.data, 1)
     b2 = read_u8_at(c.data, 2)
     b3 = read_u8_at(c.data, 3)
-    if b0 ~= 0 return 1001 end
-    if b1 ~= 0x61 return 1002 end
-    if b2 ~= 0x73 return 1003 end
-    if b3 ~= 0x6D return 1004 end
-    if read_u8_at(c.data, 4) ~= 1 return 1005 end
+    if b0 != 0 return 1001 end
+    if b1 != 0x61 return 1002 end
+    if b2 != 0x73 return 1003 end
+    if b3 != 0x6D return 1004 end
+    if read_u8_at(c.data, 4) != 1 return 1005 end
     c.pos = c.pos + 1
-    if c.pos ~= 1 return 1006 end
+    if c.pos != 1 return 1006 end
     0
 end

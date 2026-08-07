@@ -1,0 +1,8 @@
+Pair: { a: i64, b: i64 }
+mk(): Pair
+    return { a = 30, b = 12 }
+end
+main(): i64
+    q: Pair = mk()
+    return q.a + q.b
+end

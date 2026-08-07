@@ -1,6 +1,6 @@
 -- Test bash-style fun calls
 
-fun greet(name: str): str
+greet(name: str): str
     "Hello, " .. name
 end
 
@@ -8,7 +8,7 @@ end
 print greet "World"
 
 -- Bash-style call with numbers
-fun add(a: i64, b: i64): i64
+add(a: i64, b: i64): i64
     a + b
 end
 

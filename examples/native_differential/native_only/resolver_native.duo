@@ -1,0 +1,123 @@
+-- expect: 2
+-- SH-06 step: name resolution (binding/scopes) written in Duo, compiled to
+-- native ARM64.
+--
+-- SH-06 normally wants a growable symbol table, and the native subset has no
+-- dynamic collections — no arrays, no tables, records are fixed-arity. So the
+-- scope is represented as a delimited string and searched linearly, which is a
+-- real technique (early C compilers did exactly this) and fits the proven subset
+-- exactly: string bytes, nested loops, byte comparison.
+--
+-- What this does NOT do is declare new bindings at runtime: Duo strings are
+-- immutable `const char*`, so a scope cannot grow without allocation. Resolution
+-- against a *given* scope is the honest slice available today; growable scopes
+-- need native table lowering, which is the actual SH-06 milestone.
+--
+-- Reported value is the count of identifiers in the source that are NOT bound in
+-- the scope — the exact question a binder answers, and the one that produces
+-- "undefined name" diagnostics.
+
+Span: @{ start: i64, len: i64 }
+
+is_alpha = (c: i64): i64
+    if c >= 97 and c <= 122
+        return 1
+    end
+    if c >= 65 and c <= 90
+        return 1
+    end
+    if c == 95
+        return 1
+    end
+    0
+end
+
+is_ident_byte = (c: i64): i64
+    if is_alpha(c) == 1
+        return 1
+    end
+    if c >= 48 and c <= 57
+        return 1
+    end
+    0
+end
+
+is_space = (c: i64): i64
+    if c == 32
+        return 1
+    end
+    if c == 10
+        return 1
+    end
+    0
+end
+
+-- Compare src[a_start .. a_start+len) against scope[b_start .. b_start+len).
+bytes_equal = (src: str, a_start: i64, scope: str, b_start: i64, len: i64): i64
+    k = 0
+    while k < len
+        if string.byte(src, a_start + k) != string.byte(scope, b_start + k)
+            return 0
+        end
+        k = k + 1
+    end
+    1
+end
+
+-- Is the identifier src[start..start+len) present in the space-delimited scope?
+-- Each scope entry is matched whole: a candidate must be the same length, so
+-- `n` does not match `name`.
+scope_has = (scope: str, src: str, start: i64, len: i64): i64
+    m = #scope
+    i = 1
+    while i <= m
+        while i <= m and is_space(string.byte(scope, i)) == 1
+            i = i + 1
+        end
+        if i > m
+            return 0
+        end
+        j = i
+        while j <= m and is_ident_byte(string.byte(scope, j)) == 1
+            j = j + 1
+        end
+        if j - i == len and bytes_equal(src, start, scope, i, len) == 1
+            return 1
+        end
+        i = j
+        if i <= m and is_space(string.byte(scope, i)) == 0
+            i = i + 1
+        end
+    end
+    0
+end
+
+-- Count identifiers in `src` that are not bound in `scope`.
+count_unbound = (src: str, scope: str): i64
+    n = #src
+    unbound = 0
+    i = 1
+    while i <= n
+        while i <= n and is_alpha(string.byte(src, i)) == 0
+            i = i + 1
+        end
+        if i > n
+            return unbound
+        end
+        j = i
+        while j <= n and is_ident_byte(string.byte(src, j)) == 1
+            j = j + 1
+        end
+        if scope_has(scope, src, i, j - i) == 0
+            unbound = unbound + 1
+        end
+        i = j
+    end
+    unbound
+end
+
+main(): i64
+    -- Scope binds `x` and `total`. The expression references x, total, y, z —
+    -- so `y` and `z` are unbound: 2 diagnostics a real binder would emit.
+    count_unbound("x + total + y + z", "x total")
+end

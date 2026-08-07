@@ -13,56 +13,56 @@
 -- ===========================================================================
 
 @ffi("pcre2_compile_8")
-fun pcre2_compile_8(pattern: str, length: int, options: int, errcode: any, erroffset: any, context: any): any
+pcre2_compile_8(pattern: str, length: int, options: int, errcode: any, erroffset: any, context: any): any
 
 @ffi("pcre2_match_data_create_from_pattern_8")
-fun pcre2_match_data_create_from_pattern_8(code: any, context: any): any
+pcre2_match_data_create_from_pattern_8(code: any, context: any): any
 
 @ffi("pcre2_match_8")
-fun pcre2_match_8(code: any, subject: str, length: int, startoffset: int, options: int, match_data: any, context: any): int
+pcre2_match_8(code: any, subject: str, length: int, startoffset: int, options: int, match_data: any, context: any): int
 
 @ffi("pcre2_get_ovector_pointer_8")
-fun pcre2_get_ovector_pointer_8(match_data: any): any
+pcre2_get_ovector_pointer_8(match_data: any): any
 
 @ffi("pcre2_match_data_free_8")
-fun pcre2_match_data_free_8(match_data: any): void
+pcre2_match_data_free_8(match_data: any): void
 
 @ffi("pcre2_code_free_8")
-fun pcre2_code_free_8(code: any): void
+pcre2_code_free_8(code: any): void
 
 @ffi("pcre2_substring_replace_byname_8")
-fun pcre2_substring_replace_byname_8(code: any, subject: str, length: int, replacement: str, rlength: int, buffer: any, outlen: any, context: any): int
+pcre2_substring_replace_byname_8(code: any, subject: str, length: int, replacement: str, rlength: int, buffer: any, outlen: any, context: any): int
 
 @ffi("pcre2_get_error_message_8")
-fun pcre2_get_error_message_8(errcode: int, buffer: str, buf_size: int): int
+pcre2_get_error_message_8(errcode: int, buffer: str, buf_size: int): int
 
 -- C shim for reading size_t values from a raw pointer by index.
 -- See module header comment for the one-line C implementation.
 @ffi("duo_read_size_t")
-fun duo_read_size_t(ptr: any, index: int): i64
+duo_read_size_t(ptr: any, index: int): i64
 
 -- ===========================================================================
 -- PCRE2 constants (option flags)
 -- ===========================================================================
 
-local PCRE2_CASELESS  = 0x00000008
-local PCRE2_MULTILINE = 0x00000400
-local PCRE2_DOTALL    = 0x00000020
-local PCRE2_EXTENDED = 0x00000080
-local PCRE2_ANCHORED = 0x00000010
-local PCRE2_UTF      = 0x00080000
-local PCRE2_UCP      = 0x00020000
-local PCRE2_NOTEMPTY = 0x00000004
+PCRE2_CASELESS  = 0x00000008
+PCRE2_MULTILINE = 0x00000400
+PCRE2_DOTALL    = 0x00000020
+PCRE2_EXTENDED = 0x00000080
+PCRE2_ANCHORED = 0x00000010
+PCRE2_UTF      = 0x00080000
+PCRE2_UCP      = 0x00020000
+PCRE2_NOTEMPTY = 0x00000004
 
 -- ===========================================================================
 -- Helpers
 -- ===========================================================================
 
 -- error_message: convert a PCRE2 error code to a human-readable string.
-local function error_message(errcode: int): str
-    local buf = string.rep(" ", 256)
-    local rc = pcre2_get_error_message_8(errcode, buf, 256)
-    if rc < 0 then
+error_message(errcode: int): str
+    buf = string.rep(" ", 256)
+    rc = pcre2_get_error_message_8(errcode, buf, 256)
+    if rc < 0
         return "PCRE2 error " .. tostring(errcode)
     end
     string.sub(buf, 1, rc)
@@ -72,26 +72,26 @@ end
 -- at the given pair index.  pcre2_match returns the number of pairs; each
 -- pair is two PCRE2_SIZE (size_t) values: [start, end].
 -- pair_index 0 = whole match, 1+ = capture groups.
-local function read_ovector_pair(ovptr: any, pair_index: int): any
-    local s_off = pair_index * 2
-    local e_off = s_off + 1
-    local s_val = duo_read_size_t(ovptr, s_off)
-    local e_val = duo_read_size_t(ovptr, e_off)
+read_ovector_pair(ovptr: any, pair_index: int): any
+    s_off = pair_index * 2
+    e_off = s_off + 1
+    s_val = duo_read_size_t(ovptr, s_off)
+    e_val = duo_read_size_t(ovptr, e_off)
     return {start = s_val, end_ = e_val}
 end
 
 -- quote: escape special regex characters in s so it matches literally.
-local function quote(s: str): str
-    local out = ""
-    local i = 1
-    local n = string.len(s)
+quote(s: str): str
+    out = ""
+    i = 1
+    n = string.len(s)
     while i <= n
-        local ch = string.sub(s, i, i)
+        ch = string.sub(s, i, i)
         -- Escape: . + * ? ( ) [ ] { } ^ $ | \ -
         if ch == "." or ch == "+" or ch == "*" or ch == "?" or
            ch == "(" or ch == ")" or ch == "[" or ch == "]" or
            ch == "{" or ch == "}" or ch == "^" or ch == "$" or
-           ch == "|" or ch == "\\" or ch == "-" then
+           ch == "|" or ch == "\\" or ch == "-"
             out = out .. "\\" .. ch
         else
             out = out .. ch
@@ -107,14 +107,14 @@ end
 
 -- compile: compile a regex pattern with given option flags.
 -- Returns the pcre2_code* handle, or nil on error.
-local function compile(pattern: str, options: int): any
+compile(pattern: str, options: int): any
     -- errcode and erroffset are output parameters (int* in C).
     -- We pass table cells that the FFI layer treats as pointer-to-int.
-    local errcode_buf = {0}
-    local erroffset_buf = {0}
-    local plen = string.len(pattern)
-    local code = pcre2_compile_8(pattern, plen, options, errcode_buf, erroffset_buf, nil)
-    if code == nil then
+    errcode_buf = {0}
+    erroffset_buf = {0}
+    plen = string.len(pattern)
+    code = pcre2_compile_8(pattern, plen, options, errcode_buf, erroffset_buf, nil)
+    if code == nil
         return nil
     end
     code
@@ -123,24 +123,24 @@ end
 -- match: match subject against compiled code starting at startoffset.
 -- Returns a table of {start=n, end_=m} pairs (one per capture group + whole),
 -- or nil if no match.
-local function regex_match(code: any, subject: str, startoffset: int): any
-    if code == nil then return nil end
-    local md = pcre2_match_data_create_from_pattern_8(code, nil)
-    if md == nil then return nil end
-    local slen = string.len(subject)
-    local rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
-    if rc < 0 then
+regex_match(code: any, subject: str, startoffset: int): any
+    if code == nil return nil end
+    md = pcre2_match_data_create_from_pattern_8(code, nil)
+    if md == nil return nil end
+    slen = string.len(subject)
+    rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
+    if rc < 0
         pcre2_match_data_free_8(md)
         return nil
     end
     -- rc = number of pairs (0 = match only with no groups, 1+ = capture groups)
-    local npairs = rc
-    if npairs == 0 then npairs = 1 end
-    local ovptr = pcre2_get_ovector_pointer_8(md)
-    local result = {}
-    local i = 0
+    npairs = rc
+    if npairs == 0 npairs = 1 end
+    ovptr = pcre2_get_ovector_pointer_8(md)
+    result = {}
+    i = 0
     while i < npairs
-        local pair = read_ovector_pair(ovptr, i)
+        pair = read_ovector_pair(ovptr, i)
         result[rawlen(result) + 1] = pair
         i += 1
     end
@@ -149,63 +149,63 @@ local function regex_match(code: any, subject: str, startoffset: int): any
 end
 
 -- match_str: convenience — returns the first matched substring or nil.
-local function match_str(code: any, subject: str): any
-    local m = regex_match(code, subject, 0)
-    if m == nil then return nil end
-    if rawlen(m) == 0 then return nil end
-    local p = m[1]
-    if p.start == nil or p.end_ == nil then return nil end
+match_str(code: any, subject: str): any
+    m = regex_match(code, subject, 0)
+    if m == nil return nil end
+    if rawlen(m) == 0 return nil end
+    p = m[1]
+    if p.start == nil or p.end_ == nil return nil end
     -- PCRE2 offsets are 0-based byte offsets; convert to 1-based Lua string
-    local s = p.start + 1
-    local e = p.end_
-    if e <= s then return "" end
+    s = p.start + 1
+    e = p.end_
+    if e <= s return "" end
     string.sub(subject, s, e - 1)
 end
 
 -- find: find the first match in subject starting from init (1-based).
 -- Returns {start=n, end_=m} with 1-based positions, or nil.
-local function find(code: any, subject: str, init: int): any
-    if code == nil then return nil end
-    if init == nil then init = 1 end
+find(code: any, subject: str, init: int): any
+    if code == nil return nil end
+    if init == nil init = 1 end
     -- Convert 1-based Lua init to 0-based PCRE2 startoffset
-    local startoffset = init - 1
-    if startoffset < 0 then startoffset = 0 end
-    local m = regex_match(code, subject, startoffset)
-    if m == nil then return nil end
-    if rawlen(m) == 0 then return nil end
-    local p = m[1]
-    if p.start == nil then return nil end
+    startoffset = init - 1
+    if startoffset < 0 startoffset = 0 end
+    m = regex_match(code, subject, startoffset)
+    if m == nil return nil end
+    if rawlen(m) == 0 return nil end
+    p = m[1]
+    if p.start == nil return nil end
     -- Convert 0-based PCRE2 offsets to 1-based; end_ is exclusive (0-based)
     -- which equals inclusive end (1-based)
-    local s = p.start + 1
-    local e = p.end_
+    s = p.start + 1
+    e = p.end_
     return {start = s, end_ = e}
 end
 
 -- find_all: find all non-overlapping matches in subject.
 -- Returns a table of {start, end_} pairs.
-local function find_all(code: any, subject: str): any
-    if code == nil then return {} end
-    local results = {}
-    local slen = string.len(subject)
-    local startoffset = 0
+find_all(code: any, subject: str): any
+    if code == nil return {} end
+    results = {}
+    slen = string.len(subject)
+    startoffset = 0
     while startoffset <= slen
-        local md = pcre2_match_data_create_from_pattern_8(code, nil)
-        if md == nil then break end
-        local rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
-        if rc < 0 then
+        md = pcre2_match_data_create_from_pattern_8(code, nil)
+        if md == nil break end
+        rc = pcre2_match_8(code, subject, slen, startoffset, 0, md, nil)
+        if rc < 0
             pcre2_match_data_free_8(md)
             break
         end
-        local ovptr = pcre2_get_ovector_pointer_8(md)
-        local pair = read_ovector_pair(ovptr, 0)
+        ovptr = pcre2_get_ovector_pointer_8(md)
+        pair = read_ovector_pair(ovptr, 0)
         pcre2_match_data_free_8(md)
-        local s0 = pair.start
-        local e0 = pair.end_
+        s0 = pair.start
+        e0 = pair.end_
         -- Convert to 1-based; end_ is exclusive 0-based = 1-based inclusive end
         results[rawlen(results) + 1] = {start = s0 + 1, end_ = e0}
         -- Advance past this match; avoid infinite loop on empty match
-        if e0 > startoffset then
+        if e0 > startoffset
             startoffset = e0
         else
             startoffset += 1
@@ -218,20 +218,20 @@ end
 -- with replacement string.  Returns the resulting string.
 -- Uses a manual scan + string assembly rather than pcre2_substring_replace_byname
 -- (which does single replacement and needs a pre-allocated buffer).
-local function replace(code: any, subject: str, replacement: str): str
-    if code == nil then return subject end
-    local slen = string.len(subject)
-    local results = find_all(code, subject)
-    if rawlen(results) == 0 then return subject end
-    local out = ""
-    local last = 1
-    local i = 1
+replace(code: any, subject: str, replacement: str): str
+    if code == nil return subject end
+    slen = string.len(subject)
+    results = find_all(code, subject)
+    if rawlen(results) == 0 return subject end
+    out = ""
+    last = 1
+    i = 1
     while i <= rawlen(results)
-        local r = results[i]
-        local s = r.start
-        local e = r.end_
+        r = results[i]
+        s = r.start
+        e = r.end_
         -- Append text before this match (1-based, up to s-1)
-        if s > last then
+        if s > last
             out = out .. string.sub(subject, last, s - 1)
         end
         -- Append replacement
@@ -241,15 +241,15 @@ local function replace(code: any, subject: str, replacement: str): str
         i += 1
     end
     -- Append trailing text
-    if last <= slen then
+    if last <= slen
         out = out .. string.sub(subject, last)
     end
     out
 end
 
 -- free: free a compiled pattern handle.
-local function free(code: any): void
-    if code ~= nil then
+free(code: any): void
+    if code != nil
         pcre2_code_free_8(code)
     end
 end

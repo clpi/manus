@@ -5,10 +5,10 @@
 std = req "std"
 
 -- Placeholder: structured path search over direct table iteration (matches current stdlib).
-fun search_paths(pattern: str, paths: any): any
-    local hits: any = {}
+search_paths(pattern: str, paths: any): any
+    hits: any = {}
     for i = 1, #paths
-        local p = tostring(paths[i])
+        p = tostring(paths[i])
         if string.find(p, pattern, 1, true)
             hits[#hits + 1] = p
         end
@@ -18,7 +18,7 @@ end
 
 paths = { "src/main.zig", "src/parser.zig", "lib/std/json.duo" }
 hits = search_paths("parser", paths)
-if #hits ~= 1 or hits[1] ~= "src/parser.zig"
+if #hits != 1 or hits[1] != "src/parser.zig"
     error("pass19 vertical proof scaffold: expected one parser path hit")
 end
 

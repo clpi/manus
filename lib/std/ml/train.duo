@@ -4,11 +4,11 @@ NN = req "std.ml.nn"
 AD = req "std.ml.autodiff"
 Tensor = req "std.ml.tensor"
 
-fun sgd_step(model, optimizer, lr): any
+sgd_step(model, optimizer, lr): any
     if lr == nil lr = optimizer.lr end
     for i = 1, model.n_layers
         layer = model.layers[i]
-        if layer.type == "linear" and layer.grad_weight ~= nil
+        if layer.type == "linear" and layer.grad_weight != nil
             for j = 1, layer.weight.size
                 layer.weight.data[j] = layer.weight.data[j] -
                     lr * layer.grad_weight.data[j]
@@ -24,7 +24,7 @@ end
 
 -- One supervised step with cross-entropy on softmax output
 @profile
-fun train_step(model, x, target, lr): f64
+train_step(model, x, target, lr): f64
     if lr == nil lr = 0.01 end
     tape = AD.tape_new()
     pred = NN.forward(model, x)
@@ -35,7 +35,7 @@ fun train_step(model, x, target, lr): f64
 end
 
 -- Epoch over a list of { x, y } batches
-fun fit(model, batches, epochs, lr): any
+fit(model, batches, epochs, lr): any
     if epochs == nil epochs = 1 end
     for e = 1, epochs
         total = 0.0

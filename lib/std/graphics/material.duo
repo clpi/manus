@@ -5,7 +5,7 @@
 -- Texture
 -- ═══════════════════════════════════════════════════════════════
 
-fun texture_new(width: i64, height: i64, channels: i64): any
+texture_new(width: i64, height: i64, channels: i64): any
     data = {}
     size = width * height * channels
     i = 1
@@ -24,7 +24,7 @@ fun texture_new(width: i64, height: i64, channels: i64): any
     }
 end
 
-fun texture_from_data(data: any, width: i64, height: i64, channels: i64): any
+texture_from_data(data: any, width: i64, height: i64, channels: i64): any
     {
         width = width,
         height = height,
@@ -36,7 +36,7 @@ fun texture_from_data(data: any, width: i64, height: i64, channels: i64): any
     }
 end
 
-fun texture_get_pixel(tex: any, x: i64, y: i64): any
+texture_get_pixel(tex: any, x: i64, y: i64): any
     x = x % tex.width
     y = y % tex.height
     idx = (y * tex.width + x) * tex.channels
@@ -49,7 +49,7 @@ fun texture_get_pixel(tex: any, x: i64, y: i64): any
     pixel
 end
 
-fun texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
+texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
     x = x % tex.width
     y = y % tex.height
     idx = (y * tex.width + x) * tex.channels
@@ -60,13 +60,13 @@ fun texture_set_pixel(tex: any, x: i64, y: i64, pixel: any): void
     end
 end
 
-fun texture_sample(tex: any, u: f64, v: f64): any
+texture_sample(tex: any, u: f64, v: f64): any
     x = math.floor(u * tex.width) % tex.width
     y = math.floor(v * tex.height) % tex.height
     texture_get_pixel(tex, x, y)
 end
 
-fun texture_resize(tex: any, new_width: i64, new_height: i64): any
+texture_resize(tex: any, new_width: i64, new_height: i64): any
     new_tex = texture_new(new_width, new_height, tex.channels)
     x_scale = tex.width / new_width
     y_scale = tex.height / new_height
@@ -86,7 +86,7 @@ fun texture_resize(tex: any, new_width: i64, new_height: i64): any
     new_tex
 end
 
-fun texture_flip_h(tex: any): any
+texture_flip_h(tex: any): any
     new_tex = texture_new(tex.width, tex.height, tex.channels)
     y = 0
     while y < tex.height
@@ -101,7 +101,7 @@ fun texture_flip_h(tex: any): any
     new_tex
 end
 
-fun texture_flip_v(tex: any): any
+texture_flip_v(tex: any): any
     new_tex = texture_new(tex.width, tex.height, tex.channels)
     y = 0
     while y < tex.height
@@ -120,14 +120,14 @@ end
 -- Procedural Textures
 -- ═══════════════════════════════════════════════════════════════
 
-fun texture_checkerboard(size: i64, square_size: i64): any
+texture_checkerboard(size: i64, square_size: i64): any
     tex = texture_new(size, size, 3)
     y = 0
     while y < size
         x = 0
         while x < size
             is_white = ((x / square_size) + (y / square_size)) % 2 == 0
-            if is_white then
+            if is_white
                 texture_set_pixel(tex, x, y, {255, 255, 255})
             else
                 texture_set_pixel(tex, x, y, {0, 0, 0})
@@ -139,7 +139,7 @@ fun texture_checkerboard(size: i64, square_size: i64): any
     tex
 end
 
-fun texture_gradient(size: i64, color1: any, color2: any): any
+texture_gradient(size: i64, color1: any, color2: any): any
     tex = texture_new(size, size, 3)
     y = 0
     while y < size
@@ -161,7 +161,7 @@ end
 -- Material
 -- ═══════════════════════════════════════════════════════════════
 
-fun material_new(name: str): any
+material_new(name: str): any
     {
         name = name,
         albedo = {r = 0.8, g = 0.8, b = 0.8},
@@ -181,30 +181,30 @@ fun material_new(name: str): any
     }
 end
 
-fun material_set_albedo(mat: any, r: f64, g: f64, b: f64): void
+material_set_albedo(mat: any, r: f64, g: f64, b: f64): void
     mat.albedo = {r = r, g = g, b = b}
 end
 
-fun material_set_metallic(mat: any, metallic: f64, roughness: f64): void
+material_set_metallic(mat: any, metallic: f64, roughness: f64): void
     mat.metallic = metallic
     mat.roughness = roughness
 end
 
-fun material_set_emissive(mat: any, r: f64, g: f64, b: f64, strength: f64): void
+material_set_emissive(mat: any, r: f64, g: f64, b: f64, strength: f64): void
     mat.emissive = {r = r, g = g, b = b}
     mat.emissive_strength = strength
 end
 
-fun material_set_texture(mat: any, texture_type: str, texture: any): void
-    if texture_type == "albedo" then
+material_set_texture(mat: any, texture_type: str, texture: any): void
+    if texture_type == "albedo"
         mat.albedo_texture = texture
-    elseif texture_type == "metallic_roughness" then
+    elseif texture_type == "metallic_roughness"
         mat.metallic_roughness_texture = texture
-    elseif texture_type == "normal" then
+    elseif texture_type == "normal"
         mat.normal_texture = texture
-    elseif texture_type == "ao" then
+    elseif texture_type == "ao"
         mat.ao_texture = texture
-    elseif texture_type == "emissive" then
+    elseif texture_type == "emissive"
         mat.emissive_texture = texture
     end
 end
@@ -213,26 +213,26 @@ end
 -- Material Library
 -- ═══════════════════════════════════════════════════════════════
 
-fun material_library_new(): any
+material_library_new(): any
     {
         materials = {},
         default_materials = {},
     }
 end
 
-fun material_library_add(lib: any, name: str, material: any): void
+material_library_add(lib: any, name: str, material: any): void
     lib.materials[name] = material
 end
 
-fun material_library_get(lib: any, name: str): any
+material_library_get(lib: any, name: str): any
     lib.materials[name] or lib.default_materials["default"]
 end
 
-fun material_library_remove(lib: any, name: str): void
+material_library_remove(lib: any, name: str): void
     lib.materials[name] = nil
 end
 
-fun material_library_list(lib: any): any
+material_library_list(lib: any): any
     names = {}
     for name in lib.materials
         names[#names + 1] = name
@@ -241,25 +241,25 @@ fun material_library_list(lib: any): any
 end
 
 -- Default materials
-fun material_default_white(): any
+material_default_white(): any
     mat = material_new("default_white")
     mat.albedo = {r = 1, g = 1, b = 1}
     mat
 end
 
-fun material_default_gray(): any
+material_default_gray(): any
     mat = material_new("default_gray")
     mat.albedo = {r = 0.5, g = 0.5, b = 0.5}
     mat
 end
 
-fun material_default_black(): any
+material_default_black(): any
     mat = material_new("default_black")
     mat.albedo = {r = 0, g = 0, b = 0}
     mat
 end
 
-fun material_metal(color: any): any
+material_metal(color: any): any
     mat = material_new("metal")
     mat.albedo = color or {r = 0.8, g = 0.8, b = 0.8}
     mat.metallic = 1.0
@@ -267,7 +267,7 @@ fun material_metal(color: any): any
     mat
 end
 
-fun material_plastic(color: any): any
+material_plastic(color: any): any
     mat = material_new("plastic")
     mat.albedo = color or {r = 0.8, g = 0.2, b = 0.2}
     mat.metallic = 0.0
@@ -275,7 +275,7 @@ fun material_plastic(color: any): any
     mat
 end
 
-fun material_rubber(color: any): any
+material_rubber(color: any): any
     mat = material_new("rubber")
     mat.albedo = color or {r = 0.2, g = 0.2, b = 0.2}
     mat.metallic = 0.0
@@ -283,7 +283,7 @@ fun material_rubber(color: any): any
     mat
 end
 
-fun material_glass(): any
+material_glass(): any
     mat = material_new("glass")
     mat.albedo = {r = 1, g = 1, b = 1}
     mat.metallic = 0.0
@@ -292,7 +292,7 @@ fun material_glass(): any
     mat
 end
 
-fun material_emissive(color: any, strength: f64): any
+material_emissive(color: any, strength: f64): any
     mat = material_new("emissive")
     mat.albedo = {r = 0, g = 0, b = 0}
     mat.emissive = color or {r = 1, g = 1, b = 1}
@@ -304,7 +304,7 @@ end
 -- PBR Shading (simplified)
 -- ═══════════════════════════════════════════════════════════════
 
-fun pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
+pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
     -- Simplified PBR shading
     n_dot_l = math.max(0, normal.x * light_dir.x + normal.y * light_dir.y + normal.z * light_dir.z)
 
@@ -322,7 +322,7 @@ fun pbr_shade(material: any, normal: any, light_dir: any, view_dir: any): any
         z = light_dir.z + view_dir.z,
     }
     len = math.sqrt(half_dir.x * half_dir.x + half_dir.y * half_dir.y + half_dir.z * half_dir.z)
-    if len > 0 then
+    if len > 0
         half_dir.x = half_dir.x / len
         half_dir.y = half_dir.y / len
         half_dir.z = half_dir.z / len

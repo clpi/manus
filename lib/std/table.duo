@@ -1,40 +1,40 @@
 -- std.table — table and array helper utilities
 
-fun std_table_len(t: any): any
-    if t == nil then return 0 end
+std_table_len(t: any): any
+    if t == nil return 0 end
     rawlen(t)
 end
 
-fun std_table_keys(t: any): any
+std_table_keys(t: any): any
     out = {}
-    if t == nil then return out end
+    if t == nil return out end
     for k, _ in t
         out[rawlen(out) + 1] = k
     end
     out
 end
 
-fun std_table_values(t: any): any
+std_table_values(t: any): any
     out = {}
-    if t == nil then return out end
+    if t == nil return out end
     for _, v in t
         out[rawlen(out) + 1] = v
     end
     out
 end
 
-fun std_table_clone(t: any): any
+std_table_clone(t: any): any
     out = {}
-    if t == nil then return out end
+    if t == nil return out end
     for k, v in t
         out[k] = v
     end
     out
 end
 
-fun std_table_merge(a: any, b: any): any
+std_table_merge(a: any, b: any): any
     out = std_table_clone(a)
-    if b ~= nil then
+    if b != nil
         for k, v in b
             out[k] = v
         end
@@ -42,31 +42,31 @@ fun std_table_merge(a: any, b: any): any
     out
 end
 
-fun std_table_contains(list: any, value: any): bool
-    if list == nil then return false end
+std_table_contains(list: any, value: any): bool
+    if list == nil return false end
     i = 1
     while i <= rawlen(list)
         v = list[i]
-        if v == value then return true end
+        if v == value return true end
         i += 1
     end
     false
 end
 
-fun std_table_index_of(list: any, value: any): any
-    if list == nil then return 0 end
+std_table_index_of(list: any, value: any): any
+    if list == nil return 0 end
     i = 1
     while i <= rawlen(list)
         v = list[i]
-        if v == value then return i end
+        if v == value return i end
         i += 1
     end
     0
 end
 
-fun std_table_reverse(list: any): any
+std_table_reverse(list: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = rawlen(list)
     while i >= 1
         out[rawlen(out) + 1] = list[i]
@@ -75,9 +75,9 @@ fun std_table_reverse(list: any): any
     out
 end
 
-fun std_table_map(list: any, fn: any): any
+std_table_map(list: any, fn: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
         v = list[i]
@@ -87,13 +87,13 @@ fun std_table_map(list: any, fn: any): any
     out
 end
 
-fun std_table_filter(list: any, fn: any): any
+std_table_filter(list: any, fn: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
         v = list[i]
-        if fn(v, i) then
+        if fn(v, i)
             out[rawlen(out) + 1] = v
         end
         i += 1
@@ -101,9 +101,9 @@ fun std_table_filter(list: any, fn: any): any
     out
 end
 
-fun std_table_reduce(list: any, fn: any, init: any): any
+std_table_reduce(list: any, fn: any, init: any): any
     acc = init
-    if list == nil then return acc end
+    if list == nil return acc end
     i = 1
     while i <= rawlen(list)
         v = list[i]
@@ -113,8 +113,8 @@ fun std_table_reduce(list: any, fn: any, init: any): any
     acc
 end
 
-fun std_table_clear(t: any): void
-    if t == nil then return end
+std_table_clear(t: any): void
+    if t == nil return end
     ks = std_table_keys(t)
     i = 1
     while i <= #ks
@@ -123,21 +123,21 @@ fun std_table_clear(t: any): void
     end
 end
 
-fun std_table_is_empty(t: any): bool
-    if t == nil then return true end
+std_table_is_empty(t: any): bool
+    if t == nil return true end
     for _, v in t
-        if v ~= nil then return false end
+        if v != nil return false end
     end
     true
 end
 
-fun std_table_slice(t: any, start_idx: any, end_idx: any): any
+std_table_slice(t: any, start_idx: any, end_idx: any): any
     out = {}
-    if t == nil then return out end
-    if start_idx == nil then start_idx = 1 end
-    if end_idx == nil then end_idx = rawlen(t) end
-    if start_idx < 1 then start_idx = 1 end
-    if end_idx > rawlen(t) then end_idx = rawlen(t) end
+    if t == nil return out end
+    if start_idx == nil start_idx = 1 end
+    if end_idx == nil end_idx = rawlen(t) end
+    if start_idx < 1 start_idx = 1 end
+    if end_idx > rawlen(t) end_idx = rawlen(t) end
     i = start_idx
     while i <= end_idx
         out[rawlen(out) + 1] = t[i]
@@ -146,62 +146,62 @@ fun std_table_slice(t: any, start_idx: any, end_idx: any): any
     out
 end
 
-fun std_table_concat(t: any, sep: any): str
-    if t == nil then return "" end
-    if sep == nil then sep = "" end
+std_table_concat(t: any, sep: any): str
+    if t == nil return "" end
+    if sep == nil sep = "" end
     table.concat(t, sep)
 end
 
-fun std_table_sort(list: any, cmp: any): void
-    if list == nil then return end
-    if cmp == nil then
+std_table_sort(list: any, cmp: any): void
+    if list == nil return end
+    if cmp == nil
         table.sort(list)
     else
         table.sort(list, cmp)
     end
 end
 
-fun std_table_unpack(list: any, i: any, j: any): any
-    if list == nil then return nil end
-    if i == nil then i = 1 end
-    if j == nil then j = rawlen(list) end
+std_table_unpack(list: any, i: any, j: any): any
+    if list == nil return nil end
+    if i == nil i = 1 end
+    if j == nil j = rawlen(list) end
     table.unpack(list, i, j)
 end
 
-fun std_table_insert(list: any, pos: any, value: any): void
-    if list == nil then return end
-    if value == nil then
+std_table_insert(list: any, pos: any, value: any): void
+    if list == nil return end
+    if value == nil
         table.insert(list, pos)
     else
         table.insert(list, pos, value)
     end
 end
 
-fun std_table_remove(list: any, pos: any): any
-    if list == nil then return nil end
-    if pos == nil then pos = rawlen(list) end
+std_table_remove(list: any, pos: any): any
+    if list == nil return nil end
+    if pos == nil pos = rawlen(list) end
     table.remove(list, pos)
 end
 
-fun std_table_count(list: any, fn: any): i64
+std_table_count(list: any, fn: any): i64
     c = 0
-    if list == nil then return c end
-    if fn == nil then return rawlen(list) end
+    if list == nil return c end
+    if fn == nil return rawlen(list) end
     i = 1
     while i <= rawlen(list)
-        if fn(list[i]) then c += 1 end
+        if fn(list[i]) c += 1 end
         i += 1
     end
     c
 end
 
-fun std_table_flat(list: any): any
+std_table_flat(list: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     i = 1
     while i <= rawlen(list)
-        local item = list[i]
-        if type(item) == "table" then
+        item = list[i]
+        if type(item) == "table"
             j = 1
             while j <= rawlen(item)
                 out[rawlen(out) + 1] = item[j]
@@ -215,15 +215,15 @@ fun std_table_flat(list: any): any
     out
 end
 
-fun std_table_unique(list: any): any
+std_table_unique(list: any): any
     out = {}
-    if list == nil then return out end
+    if list == nil return out end
     seen = {}
     i = 1
     while i <= rawlen(list)
-        local v = list[i]
-        local key = tostring(v)
-        if not seen[key] then
+        v = list[i]
+        key = tostring(v)
+        if not seen[key]
             seen[key] = true
             out[rawlen(out) + 1] = v
         end
@@ -232,20 +232,20 @@ fun std_table_unique(list: any): any
     out
 end
 
-fun std_table_zip(lists: any): any
+std_table_zip(lists: any): any
     out = {}
-    if lists == nil or rawlen(lists) == 0 then return out end
-    local min_len = rawlen(lists[1])
+    if lists == nil or rawlen(lists) == 0 return out end
+    min_len = rawlen(lists[1])
     i = 2
     while i <= rawlen(lists)
-        if rawlen(lists[i]) < min_len then
+        if rawlen(lists[i]) < min_len
             min_len = rawlen(lists[i])
         end
         i += 1
     end
     j = 1
     while j <= min_len
-        local tuple = {}
+        tuple = {}
         i = 1
         while i <= rawlen(lists)
             tuple[rawlen(tuple) + 1] = lists[i][j]
@@ -257,13 +257,13 @@ fun std_table_zip(lists: any): any
     out
 end
 
-fun std_table_from_pairs(pairs: any): any
+std_table_from_pairs(pairs: any): any
     out = {}
-    if pairs == nil then return out end
+    if pairs == nil return out end
     i = 1
     while i <= rawlen(pairs)
-        local pair = pairs[i]
-        if pair and rawlen(pair) >= 2 then
+        pair = pairs[i]
+        if pair and rawlen(pair) >= 2
             out[pair[1]] = pair[2]
         end
         i += 1
@@ -271,22 +271,22 @@ fun std_table_from_pairs(pairs: any): any
     out
 end
 
-fun std_table_to_pairs(t: any): any
+std_table_to_pairs(t: any): any
     out = {}
-    if t == nil then return out end
+    if t == nil return out end
     for k, v in t
         out[rawlen(out) + 1] = {k, v}
     end
     out
 end
 
-fun std_table_pick(t: any, keys: any): any
+std_table_pick(t: any, keys: any): any
     out = {}
-    if t == nil or keys == nil then return out end
+    if t == nil or keys == nil return out end
     i = 1
     while i <= rawlen(keys)
-        local k = keys[i]
-        if t[k] ~= nil then
+        k = keys[i]
+        if t[k] != nil
             out[k] = t[k]
         end
         i += 1
@@ -294,11 +294,11 @@ fun std_table_pick(t: any, keys: any): any
     out
 end
 
-fun std_table_omit(t: any, keys: any): any
+std_table_omit(t: any, keys: any): any
     out = {}
-    if t == nil then return out end
-    local omit_set = {}
-    if keys ~= nil then
+    if t == nil return out end
+    omit_set = {}
+    if keys != nil
         i = 1
         while i <= rawlen(keys)
             omit_set[keys[i]] = true
@@ -306,38 +306,38 @@ fun std_table_omit(t: any, keys: any): any
         end
     end
     for k, v in t
-        if not omit_set[k] then
+        if not omit_set[k]
             out[k] = v
         end
     end
     out
 end
 
-fun std_table_find(list: any, fn: any): any
-    if list == nil then return nil end
+std_table_find(list: any, fn: any): any
+    if list == nil return nil end
     i = 1
     while i <= rawlen(list)
-        if fn(list[i]) then return list[i] end
+        if fn(list[i]) return list[i] end
         i += 1
     end
     nil
 end
 
-fun std_table_every(list: any, fn: any): bool
-    if list == nil then return true end
+std_table_every(list: any, fn: any): bool
+    if list == nil return true end
     i = 1
     while i <= rawlen(list)
-        if not fn(list[i]) then return false end
+        if not fn(list[i]) return false end
         i += 1
     end
     true
 end
 
-fun std_table_some(list: any, fn: any): bool
-    if list == nil then return false end
+std_table_some(list: any, fn: any): bool
+    if list == nil return false end
     i = 1
     while i <= rawlen(list)
-        if fn(list[i]) then return true end
+        if fn(list[i]) return true end
         i += 1
     end
     false

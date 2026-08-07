@@ -1,24 +1,24 @@
 -- std.atomic — atomic operations on table-backed memory
 -- Uses compare_swap for CAS-based mutex and spin_wait for CPU yielding.
 
-fun store(t: any, key: any, value: any): any
+store(t: any, key: any, value: any): any
     old = t[key]
     t[key] = value
     old
 end
 
-fun compare_swap(t: any, key: any, expected: any, new_value: any): any
+compare_swap(t: any, key: any, expected: any, new_value: any): any
     old = t[key]
-    if old == expected then
+    if old == expected
         t[key] = new_value
         return true, new_value
     end
     return false, old
 end
 
-fun fetch_add(t: any, key: any, delta: any): any
+fetch_add(t: any, key: any, delta: any): any
     old = t[key]
-    if type(old) == "number" then
+    if type(old) == "number"
         t[key] = old + delta
     else
         t[key] = delta
@@ -26,9 +26,9 @@ fun fetch_add(t: any, key: any, delta: any): any
     old
 end
 
-fun fetch_sub(t: any, key: any, delta: any): any
+fetch_sub(t: any, key: any, delta: any): any
     old = t[key]
-    if type(old) == "number" then
+    if type(old) == "number"
         t[key] = old - delta
     else
         t[key] = -delta
@@ -36,9 +36,9 @@ fun fetch_sub(t: any, key: any, delta: any): any
     old
 end
 
-fun inc(t: any, key: any): any
+inc(t: any, key: any): any
     old = t[key]
-    if type(old) == "number" then
+    if type(old) == "number"
         t[key] = old + 1
     else
         t[key] = 1
@@ -46,9 +46,9 @@ fun inc(t: any, key: any): any
     old
 end
 
-fun dec(t: any, key: any): any
+dec(t: any, key: any): any
     old = t[key]
-    if type(old) == "number" then
+    if type(old) == "number"
         t[key] = old - 1
     else
         t[key] = -1
@@ -56,14 +56,14 @@ fun dec(t: any, key: any): any
     old
 end
 
-fun mutex_new(): any
+mutex_new(): any
     { locked = false, owner = nil, count = 0 }
 end
 
-fun lock(m: any): void
+lock(m: any): void
     while true
         ok, _ = compare_swap(m, "locked", false, true)
-        if ok then
+        if ok
             m.owner = "current"
             m.count = 1
             return
@@ -77,15 +77,15 @@ fun lock(m: any): void
     end
 end
 
-fun unlock(m: any): void
+unlock(m: any): void
     m.owner = nil
     m.count = 0
     m.locked = false
 end
 
-fun try_lock(m: any): bool
+try_lock(m: any): bool
     ok, _ = compare_swap(m, "locked", false, true)
-    if ok then
+    if ok
         m.owner = "current"
         m.count = 1
         return true
@@ -93,12 +93,12 @@ fun try_lock(m: any): bool
     false
 end
 
-fun is_locked(m: any): bool
+is_locked(m: any): bool
     m.locked
 end
 
-fun std_atomic_signal(sp: any): void
-    if sp == nil then return end
+std_atomic_signal(sp: any): void
+    if sp == nil return end
     sp.notify = true
 end
 

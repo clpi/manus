@@ -22,7 +22,7 @@ defaults = { color = "blue", size = 10 }
 custom = { ..defaults, color = "red" }
 
 -- ═══ Field projections (GP-001) ═══
-fun map(t, f)
+map(t, f)
     result = {}
     for i = 1, #t do result[i] = f(t[i]) end
     return result
@@ -47,10 +47,10 @@ origin: Point = { x = 0.0, y = 0.0 }
 target: Point = { x = 3.0, y = 4.0 }
 
 -- ═══ If-expressions (GS-003) ═══
-label = if total > 250 then "high" else "normal" end
+label = if total > 250 "high" else "normal" end
 
 -- ═══ Implicit return, no 'then', no 'do' (GS-005/006/012) ═══
-fun distance(a: Point, b: Point): f64
+distance(a: Point, b: Point): f64
     dx = a.x - b.x
     dy = a.y - b.y
     return math.sqrt(dx * dx + dy * dy)

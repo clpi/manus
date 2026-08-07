@@ -1,5 +1,5 @@
 @ffi("puts")
-fun puts(s: str): i64
+puts(s: str): i64
 
 main(): i64
     puts("Hello from native duo!")

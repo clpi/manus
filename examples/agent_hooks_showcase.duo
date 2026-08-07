@@ -12,18 +12,18 @@ GAPS: str = agent.gaps_index()
 POLICY: str = agent.native_policy()
 GATES: str = agent.build_gates()
 
-has_map = string.find(DISCOVER, "comp.map") ~= nil or string.find(DISCOVER, "meta.map") ~= nil
-has_burst = string.find(DISCOVER, "comp.burst") ~= nil or string.find(DISCOVER, "meta.burst") ~= nil
-has_power = string.find(LADDER, "power:O(2^n)", 1, true) ~= nil
-has_coord = string.find(HOOKS, "AGENT_COORDINATION") ~= nil
-has_dedupe = string.find(DEDUPE, "duo_coordination_update") ~= nil
-has_gaps = string.find(GAPS, "Gap Buffer") ~= nil and string.find(GAPS, "duo_agent_gaps") ~= nil
-has_no_lua = string.find(POLICY, "NO lua_Value") ~= nil
-has_tier0 = string.find(GATES, "agent_smoke.duo") ~= nil
-has_comp_alias = string.find(DISCOVER, "comp.agent.catalog") ~= nil
+has_map = string.find(DISCOVER, "comp.map") != nil or string.find(DISCOVER, "meta.map") != nil
+has_burst = string.find(DISCOVER, "comp.burst") != nil or string.find(DISCOVER, "meta.burst") != nil
+has_power = string.find(LADDER, "power:O(2^n)", 1, true) != nil
+has_coord = string.find(HOOKS, "AGENT_COORDINATION") != nil
+has_dedupe = string.find(DEDUPE, "duo_coordination_update") != nil
+has_gaps = string.find(GAPS, "Gap Buffer") != nil and string.find(GAPS, "duo_agent_gaps") != nil
+has_no_lua = string.find(POLICY, "NO lua_Value") != nil
+has_tier0 = string.find(GATES, "agent_smoke.duo") != nil
+has_comp_alias = string.find(DISCOVER, "comp.agent.catalog") != nil
 
 HINT = agent.multiplier_for("derive traits for all types")
-has_derive_hint = string.find(HINT, "@comp.derive") ~= nil
+has_derive_hint = string.find(HINT, "@comp.derive") != nil
 
 ok = has_map
 ok = ok and has_burst

@@ -10,7 +10,7 @@ type Vec2 = { x: f64, y: f64 }
 type Vec3 = { x: f64, y: f64, z: f64 }
 type Pt = { x: f64, y: f64 }
 
-@comp.define.derive("SubsetStub", fun generate(meta) -> str
+@comp.define.derive("SubsetStub", generate(meta) -> str
     "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " */\n"
 end)
 

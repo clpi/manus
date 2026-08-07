@@ -3,31 +3,31 @@
 -- Each generation emits a C function with a unique name and return value.
 -- The recursion terminates once three generations have been generated.
 
-@comp.define.derive("Evolving", fun generate(meta) -> str
-    local derives = __list_derives()
-    local gen = 0
+@comp.define.derive("Evolving", generate(meta) -> str
+    derives = @comp.derive.list()
+    gen = 0
     for i = 1, #derives do
-        if string.sub(derives[i], 1, 8) == "Evolving" then
+        if string.sub(derives[i], 1, 8) == "Evolving"
             gen = gen + 1
         end
     end
-    if gen > 3 then return "" end
+    if gen > 3 return "" end
 
-    local marker = gen - 1
-    local code = "int64_t duo_" .. meta.name .. "_evolve_marker_v" .. tostring(marker) .. "(void) { return " .. tostring(marker) .. "; }\n"
-    local next_name = "Evolving_" .. tostring(gen + 1)
-    __register_derive(next_name, __lookup_derive("Evolving"))
-    local rest = __eval_derive(next_name, meta)
+    marker = gen - 1
+    code = "int64_t duo_" .. meta.name .. "_evolve_marker_v" .. tostring(marker) .. "(void) { return " .. tostring(marker) .. "; }\n"
+    next_name = "Evolving_" .. tostring(gen + 1)
+    @comp.register.derive(next_name, @comp.derive.lookup("Evolving"))
+    rest = @comp.derive.eval(next_name, meta)
     return code .. rest
 end)
 
 @derive(Evolving)
 type Point = { x: i64, y: i64 }
 
-local v0: i64 = @c.call("duo_Point_evolve_marker_v0")
-local v1: i64 = @c.call("duo_Point_evolve_marker_v1")
-local v2: i64 = @c.call("duo_Point_evolve_marker_v2")
-if v0 ~= 0 or v1 ~= 1 or v2 ~= 2 then
+v0: i64 = @c.call("duo_Point_evolve_marker_v0")
+v1: i64 = @c.call("duo_Point_evolve_marker_v1")
+v2: i64 = @c.call("duo_Point_evolve_marker_v2")
+if v0 != 0 or v1 != 1 or v2 != 2
     error("self-improving derive did not generate all three generations")
 end
 

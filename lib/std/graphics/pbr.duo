@@ -5,7 +5,7 @@
 -- PBR Material
 -- ═══════════════════════════════════════════════════════════════
 
-fun pbr_material_new(): any
+pbr_material_new(): any
     {
         albedo = {r = 1, g = 1, b = 1, a = 1},
         metallic = 0.0,
@@ -21,19 +21,19 @@ fun pbr_material_new(): any
     }
 end
 
-fun pbr_material_set_albedo(mat: any, r: f64, g: f64, b: f64, a: f64): void
+pbr_material_set_albedo(mat: any, r: f64, g: f64, b: f64, a: f64): void
     mat.albedo = {r = r, g = g, b = b, a = a or 1}
 end
 
-fun pbr_material_set_metallic(mat: any, metallic: f64): void
+pbr_material_set_metallic(mat: any, metallic: f64): void
     mat.metallic = math.max(0, math.min(1, metallic))
 end
 
-fun pbr_material_set_roughness(mat: any, roughness: f64): void
+pbr_material_set_roughness(mat: any, roughness: f64): void
     mat.roughness = math.max(0.04, math.min(1, roughness))
 end
 
-fun pbr_material_set_emissive(mat: any, r: f64, g: f64, b: f64): void
+pbr_material_set_emissive(mat: any, r: f64, g: f64, b: f64): void
     mat.emissive = {r = r, g = g, b = b}
 end
 
@@ -42,7 +42,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 -- Normal Distribution Function (GGX/Trowbridge-Reitz)
-fun distribution_ggx(n_dot_h: f64, roughness: f64): f64
+distribution_ggx(n_dot_h: f64, roughness: f64): f64
     a = roughness * roughness
     a2 = a * a
     n_dot_h2 = n_dot_h * n_dot_h
@@ -50,7 +50,7 @@ fun distribution_ggx(n_dot_h: f64, roughness: f64): f64
     denom = n_dot_h2 * (a2 - 1) + 1
     denom = math.pi * denom * denom
 
-    if denom > 0 then
+    if denom > 0
         a2 / denom
     else
         0
@@ -58,21 +58,21 @@ fun distribution_ggx(n_dot_h: f64, roughness: f64): f64
 end
 
 -- Geometry Function (Smith's method)
-fun geometry_schlick_ggx(n_dot_v: f64, roughness: f64): f64
+geometry_schlick_ggx(n_dot_v: f64, roughness: f64): f64
     r = roughness + 1
     k = (r * r) / 8
     denom = n_dot_v * (1 - k) + k
     n_dot_v / denom
 end
 
-fun geometry_smith(n_dot_v: f64, n_dot_l: f64, roughness: f64): f64
+geometry_smith(n_dot_v: f64, n_dot_l: f64, roughness: f64): f64
     ggx1 = geometry_schlick_ggx(n_dot_v, roughness)
     ggx2 = geometry_schlick_ggx(n_dot_l, roughness)
     ggx1 * ggx2
 end
 
 -- Fresnel Equation (Schlick approximation)
-fun fresnel_schlick(cos_theta: f64, f0: any): any
+fresnel_schlick(cos_theta: f64, f0: any): any
     power = math.pow(1 - cos_theta, 5)
     return {
         r = f0.r + (1 - f0.r) * power,
@@ -85,7 +85,7 @@ end
 -- PBR Shading
 -- ═══════════════════════════════════════════════════════════════
 
-fun pbr_calculate_f0(mat: any): any
+pbr_calculate_f0(mat: any): any
     -- F0 is the reflectance at normal incidence
     -- Dielectrics: 0.04, Metals: albedo
     {
@@ -95,7 +95,7 @@ fun pbr_calculate_f0(mat: any): any
     }
 end
 
-fun pbr_shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64): any
+pbr_shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64): any
     -- Calculate F0
     f0 = pbr_calculate_f0(mat)
 
@@ -149,27 +149,27 @@ end
 -- Vector Utilities
 -- ═══════════════════════════════════════════════════════════════
 
-fun vec3_new(x: f64, y: f64, z: f64): any
+vec3_new(x: f64, y: f64, z: f64): any
     {x = x, y = y, z = z}
 end
 
-fun vec3_add(a: any, b: any): any
+vec3_add(a: any, b: any): any
     {x = a.x + b.x, y = a.y + b.y, z = a.z + b.z}
 end
 
-fun vec3_sub(a: any, b: any): any
+vec3_sub(a: any, b: any): any
     {x = a.x - b.x, y = a.y - b.y, z = a.z - b.z}
 end
 
-fun vec3_scale(v: any, s: f64): any
+vec3_scale(v: any, s: f64): any
     {x = v.x * s, y = v.y * s, z = v.z * s}
 end
 
-fun vec3_dot(a: any, b: any): f64
+vec3_dot(a: any, b: any): f64
     a.x * b.x + a.y * b.y + a.z * b.z
 end
 
-fun vec3_cross(a: any, b: any): any
+vec3_cross(a: any, b: any): any
     {
         x = a.y * b.z - a.z * b.y,
         y = a.z * b.x - a.x * b.z,
@@ -177,13 +177,13 @@ fun vec3_cross(a: any, b: any): any
     }
 end
 
-fun vec3_length(v: any): f64
+vec3_length(v: any): f64
     math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
 end
 
-fun vec3_normalize(v: any): any
+vec3_normalize(v: any): any
     len = vec3_length(v)
-    if len > 0 then
+    if len > 0
         {x = v.x / len, y = v.y / len, z = v.z / len}
     else
         {x = 0, y = 0, z = 0}

@@ -19,8 +19,8 @@ SIG_RSA_4096 = 5
 -- Key Generation
 -- ═══════════════════════════════════════════════════════════════
 
-fun sig_keygen(key_type: i64): any
-    if key_type == SIG_ED25519 then
+sig_keygen(key_type: i64): any
+    if key_type == SIG_ED25519
         -- Ed25519 key generation using CSPRNG
         key_data = crypto_rand.bytes(32)
         private_key = {}
@@ -48,7 +48,7 @@ fun sig_keygen(key_type: i64): any
             public = public_key,
         }
 
-    elseif key_type == SIG_ECDSA_P256 then
+    elseif key_type == SIG_ECDSA_P256
         -- ECDSA P-256 key generation using CSPRNG
         key_data = crypto_rand.bytes(32)
         private_key = {}
@@ -77,7 +77,7 @@ fun sig_keygen(key_type: i64): any
             public = public_key,
         }
 
-    elseif key_type == SIG_RSA_2048 then
+    elseif key_type == SIG_RSA_2048
         -- RSA key generation (simplified - uses Miller-Rabin for primes)
         rand = req "std.crypto.rand"
         p = rand.prime(1024)
@@ -97,7 +97,7 @@ end
 -- Ed25519 Signing
 -- ═══════════════════════════════════════════════════════════════
 
-fun ed25519_sign(message: any, private_key: any): any
+ed25519_sign(message: any, private_key: any): any
     -- Simplified Ed25519 signing using hash-based construction
     -- Hash the message
     crypto = req "std.crypto"
@@ -123,29 +123,29 @@ fun ed25519_sign(message: any, private_key: any): any
     signature
 end
 
-fun ed25519_verify(message: any, signature: any, public_key: any): bool
+ed25519_verify(message: any, signature: any, public_key: any): bool
     -- Verify signature structure
-    if type(signature) ~= "table" then return false end
-    if #signature ~= 64 then return false end
-    if #public_key ~= 32 then return false end
+    if type(signature) != "table" return false end
+    if #signature != 64 return false end
+    if #public_key != 32 return false end
 
     -- Verify first half is not all zeros (basic sanity check)
     non_zero = false
     i = 1
     while i <= 32
-        if signature[i] ~= 0 then non_zero = true end
+        if signature[i] != 0 non_zero = true end
         i += 1
     end
-    if not non_zero then return false end
+    if not non_zero return false end
 
     -- Verify second half is not all zeros
     non_zero = false
     i = 33
     while i <= 64
-        if signature[i] ~= 0 then non_zero = true end
+        if signature[i] != 0 non_zero = true end
         i += 1
     end
-    if not non_zero then return false end
+    if not non_zero return false end
 
     -- In production, verify actual Ed25519 curve equation
     -- For now, accept signatures that pass structural checks
@@ -157,7 +157,7 @@ end
 -- ECDSA Signing
 -- ═══════════════════════════════════════════════════════════════
 
-fun ecdsa_sign(message: any, private_key: any, curve: i64): any
+ecdsa_sign(message: any, private_key: any, curve: i64): any
     -- Deterministic ECDSA signing using hash-based construction
     crypto = req "std.crypto"
     msg_hash = crypto.sha256(tostring(message))
@@ -165,7 +165,7 @@ fun ecdsa_sign(message: any, private_key: any, curve: i64): any
     r = {}
     s = {}
     sig_len = 32
-    if curve == SIG_ECDSA_P384 then sig_len = 48 end
+    if curve == SIG_ECDSA_P384 sig_len = 48 end
 
     -- Derive r from message hash + private key
     i = 1
@@ -189,19 +189,19 @@ fun ecdsa_sign(message: any, private_key: any, curve: i64): any
     }
 end
 
-fun ecdsa_verify(message: any, signature: any, public_key: any, curve: i64): bool
+ecdsa_verify(message: any, signature: any, public_key: any, curve: i64): bool
     -- Verify signature structure
-    if type(signature) ~= "table" then return false end
-    if type(signature.r) ~= "table" or type(signature.s) ~= "table" then return false end
+    if type(signature) != "table" return false end
+    if type(signature.r) != "table" or type(signature.s) != "table" return false end
     
     expected_len = 32
-    if curve == SIG_ECDSA_P384 then expected_len = 48 end
+    if curve == SIG_ECDSA_P384 expected_len = 48 end
     
-    if #signature.r ~= expected_len or #signature.s ~= expected_len then return false end
-    if #public_key ~= 65 and #public_key ~= 49 then return false end
+    if #signature.r != expected_len or #signature.s != expected_len return false end
+    if #public_key != 65 and #public_key != 49 return false end
     
     -- Verify public key starts with 0x04 (uncompressed point)
-    if public_key[1] ~= 0x04 then return false end
+    if public_key[1] != 0x04 return false end
     
     -- In production, verify actual ECDSA curve equation
     -- For now, accept signatures that pass structural checks
@@ -212,14 +212,14 @@ end
 -- Generic Sign/Verify Interface
 -- ═══════════════════════════════════════════════════════════════
 
-fun sign(message: any, key: any): any
-    if key.type == SIG_ED25519 then
+sign(message: any, key: any): any
+    if key.type == SIG_ED25519
         {
             type = "ed25519",
             signature = ed25519_sign(message, key.private),
             public_key = key.public,
         }
-    elseif key.type == SIG_ECDSA_P256 or key.type == SIG_ECDSA_P384 then
+    elseif key.type == SIG_ECDSA_P256 or key.type == SIG_ECDSA_P384
         {
             type = "ecdsa",
             signature = ecdsa_sign(message, key.private, key.type),
@@ -231,10 +231,10 @@ fun sign(message: any, key: any): any
     end
 end
 
-fun verify(message: any, signed: any): bool
-    if signed.type == "ed25519" then
+verify(message: any, signed: any): bool
+    if signed.type == "ed25519"
         ed25519_verify(message, signed.signature, signed.public_key)
-    elseif signed.type == "ecdsa" then
+    elseif signed.type == "ecdsa"
         ecdsa_verify(message, signed.signature, signed.public_key, signed.curve)
     else
         false
@@ -245,7 +245,7 @@ end
 -- Digital Envelope (encrypt + sign)
 -- ═══════════════════════════════════════════════════════════════
 
-fun digital_envelope_seal(data: any, sender_key: any, recipient_public: any): any
+digital_envelope_seal(data: any, sender_key: any, recipient_public: any): any
     -- Generate symmetric key using CSPRNG
     key_data = crypto_rand.bytes(32)
     symmetric_key = {}
@@ -273,15 +273,15 @@ fun digital_envelope_seal(data: any, sender_key: any, recipient_public: any): an
     }
 end
 
-fun digital_envelope_open(envelope: any, recipient_private: any, sender_public: any): any
+digital_envelope_open(envelope: any, recipient_private: any, sender_public: any): any
     -- Verify signature
-    if not verify(envelope.encrypted, envelope.signed) then
+    if not verify(envelope.encrypted, envelope.signed)
         return {error = "Signature verification failed"}
     end
 
     -- Decrypt data using the symmetric key from key_nonce
     key = envelope.key_nonce
-    if key == nil or #key == 0 then
+    if key == nil or #key == 0
         return {error = "Missing symmetric key in envelope"}
     end
 
@@ -299,7 +299,7 @@ end
 -- Key Serialization
 -- ═══════════════════════════════════════════════════════════════
 
-fun key_to_bytes(key: any): any
+key_to_bytes(key: any): any
     result = {}
     -- Type
     result[#result + 1] = (key.type >> 8) & 0xFF
@@ -315,7 +315,7 @@ fun key_to_bytes(key: any): any
     result
 end
 
-fun key_from_bytes(data: any): any
+key_from_bytes(data: any): any
     key_type = (data[1] << 8) | data[2]
     pub_len = (data[3] << 8) | data[4]
     public = {}

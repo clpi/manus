@@ -16,8 +16,8 @@
 
 -- zig_to_c: translate common Zig patterns to C.
 -- Returns the C equivalent as a string.
-fun zig_to_c(code: str): str
-    local result = code
+zig_to_c(code: str): str
+    result = code
     result = string.gsub(result, ": u64", ": uint64_t")
     result = string.gsub(result, ": u32", ": uint32_t")
     result = string.gsub(result, ": u16", ": uint16_t")
@@ -42,8 +42,8 @@ end
 
 -- rust_to_c: translate common Rust patterns to C.
 -- Returns the C equivalent as a string.
-fun rust_to_c(code: str): str
-    local result = code
+rust_to_c(code: str): str
+    result = code
     result = string.gsub(result, "pub fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
     result = string.gsub(result, "fn (%w+)%((.-)%)%s*->%s*(%S+)", "%3 %1(%2)")
     result = string.gsub(result, ": u64", ": uint64_t")
@@ -71,8 +71,8 @@ end
 
 -- python_func: generate a C function declaration from Python-style metadata.
 -- Returns the C function as a string (caller can pass to @c.emit).
-fun python_func(name: str, params: any, body: str, ret_type: str): str
-    local parts = {}
+python_func(name: str, params: any, body: str, ret_type: str): str
+    parts = {}
     parts[#parts + 1] = "/* [foreign.python] " .. name .. " */"
     parts[#parts + 1] = ret_type .. " " .. name .. "("
     if #params > 0
@@ -99,8 +99,8 @@ end
 -- String joining helper
 -- ═══════════════════════════════════════════════════════════════
 
-fun str_join(parts: any, sep: str): str
-    local result = ""
+str_join(parts: any, sep: str): str
+    result = ""
     for i, part in parts
         if i > 1
             result = result .. sep

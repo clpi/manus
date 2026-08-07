@@ -110,6 +110,12 @@ test {
     _ = @import("pass26_abi_resource.zig");
     _ = @import("pass26_transform_meta.zig");
     _ = @import("pass26_wiring.zig");
+    _ = @import("pass48_catalog.zig");
+    _ = @import("pass48_gate.zig");
+    _ = @import("pass52_catalog.zig");
+    _ = @import("pass52_gate.zig");
+    _ = @import("pass49_catalog.zig");
+    _ = @import("pass49_gate.zig");
     _ = @import("pass27_catalog.zig");
     _ = @import("pass27_gate.zig");
     _ = @import("pass27_proof_bundle.zig");

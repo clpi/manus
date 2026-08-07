@@ -1,13 +1,13 @@
 -- Test traditional fun calls
 
-fun greet(name: str): str
+greet(name: str): str
     "Hello, " .. name
 end
 
 -- Traditional Lua-style call
 print(greet("World"))
 
-fun add(a: i64, b: i64): i64
+add(a: i64, b: i64): i64
     a + b
 end
 

@@ -22,7 +22,7 @@ type Pt = { x: f64, y: f64 }
 
 -- 1. @comp.power -- power-set enumeration: O(2^n).
 --    For 3 matching types -> 2^3 - 1 = 7 non-empty subsets.
-fun power_sig(subset) -> str
+power_sig(subset) -> str
     subset.name .. ";"
 end
 
@@ -38,7 +38,7 @@ print(PSET)
 
 -- 3. @comp.permute -- permutation enumeration: O(n!).
 --    For 3 matching types -> 3! = 6 permutations.
-fun perm_sig(ordered) -> str
+perm_sig(ordered) -> str
     ordered.name .. ";"
 end
 
@@ -47,10 +47,10 @@ print("=== @comp.permute (3! = 6 orderings) ===")
 print(PERMUTE)
 
 -- 4. Count verification: power over a set of n types yields 2^n - 1 fragments.
-fun count_semicolons(s) -> i64
+count_semicolons(s) -> i64
     n = 0
     for i = 1, #s
-        if string.sub(s, i, i) == ";" then n += 1 end
+        if string.sub(s, i, i) == ";" n += 1 end
     end
     n
 end
@@ -63,7 +63,7 @@ print("powerset fragments = " .. PSET_COUNT .. "  (expect 7 = 2^3-1)")
 print("permute fragments  = " .. PERMUTE_COUNT .. "  (expect 6 = 3!)")
 
 -- 5. @comp.derive.power -- apply a derive macro to every non-empty subset.
-@comp.define.derive("SubsetStub", fun generate(meta) -> str
+@comp.define.derive("SubsetStub", generate(meta) -> str
     "/* subset " .. meta.name .. " mask=" .. tostring(meta.mask) .. " count=" .. tostring(meta.count) .. " */\n"
 end)
 

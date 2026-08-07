@@ -1,0 +1,18 @@
+-- A Duo program that emits real ARM64 machine code to a file.
+--
+-- Writes `mov x0, #42; ret` as little-endian words and returns the byte count.
+-- Verify with:  xxd /tmp/duo_emit_probe.bin
+--   4005 80d2  -> 0xd2800540  mov x0, #42
+--   c003 5fd6  -> 0xd65f03c0  ret
+--
+-- Lowers on BOTH backends. On the direct backend the program's own object is
+-- pure machine code: `E.emit_u32(...)` becomes a `bl` with a relocation against
+-- the module's `@comp.c.export` symbol, and the compiler compiles and links
+-- `lib/std/emit.duo` itself. Gated by `zig build direct-module-link`.
+main(): i64
+    E = req "std.emit"
+    E.emit_begin("/tmp/duo_emit_probe.bin")
+    E.emit_u32("/tmp/duo_emit_probe.bin", 3531605312)
+    E.emit_u32("/tmp/duo_emit_probe.bin", 3596551104)
+    E.emit_size("/tmp/duo_emit_probe.bin")
+end

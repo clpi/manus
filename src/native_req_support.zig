@@ -8,9 +8,15 @@ pub const ModuleMeta = struct {
     mod_cname: []const u8,
     constants: std.StringHashMapUnmanaged(i64),
     exports: std.StringHashMapUnmanaged([]const u8),
+    /// The `.duo` file this module resolved to, when it was found on disk. The
+    /// direct backend emits relocations against this module's `@comp.c.export`
+    /// symbols, so it must be able to compile and link the file that defines
+    /// them; the alias and C prefix alone do not say where that file lives.
+    source_path: ?[]const u8 = null,
 
     pub fn deinit(self: *ModuleMeta, alloc: std.mem.Allocator) void {
         alloc.free(self.mod_cname);
+        if (self.source_path) |sp| alloc.free(sp);
         var cit = self.constants.iterator();
         while (cit.next()) |e| alloc.free(e.key_ptr.*);
         self.constants.deinit(alloc);
@@ -59,6 +65,27 @@ pub const Context = struct {
         const meta = self.modules.get(mc) orelse return null;
         return meta.exports.get(field);
     }
+
+    /// `.duo` files that define `@comp.c.export` symbols. A direct-backend call
+    /// into one of these lowers to a relocation, so the linker needs an object
+    /// built from each file — without them the link fails on undefined
+    /// `duo_*` symbols even though lowering fully succeeded. Modules with no
+    /// exports contribute only folded constants and need no object.
+    pub fn exportingModuleSources(
+        self: *const Context,
+        alloc: std.mem.Allocator,
+        out: *std.ArrayListUnmanaged([]const u8),
+    ) !void {
+        var it = self.modules.iterator();
+        while (it.next()) |e| {
+            const meta = e.value_ptr;
+            if (meta.exports.count() == 0) continue;
+            const sp = meta.source_path orelse continue;
+            for (out.items) |seen| {
+                if (std.mem.eql(u8, seen, sp)) break;
+            } else try out.append(alloc, sp);
+        }
+    }
 };
 
 pub fn collectFromModule(alloc: std.mem.Allocator, mod: *const ast.Module) !Context {
@@ -70,29 +97,53 @@ pub fn collectFromModule(alloc: std.mem.Allocator, mod: *const ast.Module) !Cont
         val: *const ast.Expr,
     };
 
-    for (mod.body.stmts) |*stmt| {
-        const parsed: ?ReqBinding = switch (stmt.*) {
-            .assign => |as| blk: {
-                if (as.targets.len != 1 or as.values.len != 1) break :blk null;
-                if (as.targets[0].* != .name) break :blk null;
-                break :blk ReqBinding{ .alias = as.targets[0].name.ident, .val = as.values[0] };
+    _ = ReqBinding;
+    // `req` is idiomatically bound inside the function that uses it — every
+    // Pass 16 lexer proof writes `main(): i64  Token = req "..."`. Scanning only
+    // `mod.body.stmts` missed those bindings entirely, so `Token.KIND_FUN` fell
+    // through to a runtime `load_field` and the direct backend reported DNB007.
+    // Walk function bodies too. Aliases stay in one module-wide map, matching the
+    // existing design; a re-bound alias resolves to its most recent binding.
+    try collectReqBindingsFromBlock(alloc, &ctx, &mod.body);
+    return ctx;
+}
+
+fn collectReqBindingsFromBlock(
+    alloc: std.mem.Allocator,
+    ctx: *Context,
+    block: *const ast.Block,
+) !void {
+    for (block.stmts) |*stmt| {
+        var alias: ?[]const u8 = null;
+        var val: ?*const ast.Expr = null;
+        switch (stmt.*) {
+            .assign => |as| {
+                if (as.targets.len == 1 and as.values.len == 1 and as.targets[0].* == .name) {
+                    alias = as.targets[0].name.ident;
+                    val = as.values[0];
+                }
             },
-            .local_decl => |ld| blk: {
-                if (ld.names.len != 1 or ld.inits.len != 1) break :blk null;
-                break :blk ReqBinding{ .alias = ld.names[0].ident, .val = ld.inits[0] };
+            .local_decl => |ld| {
+                if (ld.names.len == 1 and ld.inits.len == 1) {
+                    alias = ld.names[0].ident;
+                    val = ld.inits[0];
+                }
             },
-            else => null,
-        };
-        const item = parsed orelse continue;
-        const path = reqPathFromExpr(item.val) orelse continue;
+            .func_decl => |fd| try collectReqBindingsFromBlock(alloc, ctx, &fd.func.body),
+            .do_block => |db| try collectReqBindingsFromBlock(alloc, ctx, &db.body),
+            .while_loop => |ws| try collectReqBindingsFromBlock(alloc, ctx, &ws.body),
+            else => {},
+        }
+        const a = alias orelse continue;
+        const v = val orelse continue;
+        const path = reqPathFromExpr(v) orelse continue;
         const mod_cname = try duo_module_names.moduleCName(alloc, path);
-        const owned_alias = try alloc.dupe(u8, item.alias);
+        const owned_alias = try alloc.dupe(u8, a);
         try ctx.bindings.put(alloc, owned_alias, mod_cname);
         if (ctx.modules.contains(mod_cname)) continue;
         const meta = try loadModuleMeta(alloc, path, mod_cname);
         try ctx.modules.put(alloc, try alloc.dupe(u8, mod_cname), meta);
     }
-    return ctx;
 }
 
 fn reqPathFromExpr(expr: *const ast.Expr) ?[]const u8 {
@@ -130,12 +181,17 @@ fn loadModuleMeta(alloc: std.mem.Allocator, req_path: []const u8, mod_cname: []c
     const cwd = Io.Dir.cwd();
     var path_buf: [768]u8 = undefined;
     var owned_source: ?[]const u8 = null;
+    var found_path: ?[]const u8 = null;
     const prefixes = [_][]const u8{ "lib/std/", "lib/" };
     for (prefixes) |prefix| {
         const path = std.fmt.bufPrint(&path_buf, "{s}{s}.duo", .{ prefix, rel_path }) catch continue;
         owned_source = Io.Dir.readFileAlloc(cwd, io, path, alloc, .unlimited) catch null;
-        if (owned_source != null) break;
+        if (owned_source != null) {
+            found_path = try alloc.dupe(u8, path);
+            break;
+        }
     }
+    errdefer if (found_path) |fp| alloc.free(fp);
     const source = owned_source orelse return makeEmpty(alloc, mod_cname);
     defer alloc.free(source);
 
@@ -161,6 +217,7 @@ fn loadModuleMeta(alloc: std.mem.Allocator, req_path: []const u8, mod_cname: []c
         .mod_cname = try alloc.dupe(u8, mod_cname),
         .constants = constants,
         .exports = exports,
+        .source_path = found_path,
     };
 }
 
@@ -180,20 +237,27 @@ fn scanModuleSource(
             pending_export = parseExportFromLine(line);
             continue;
         }
-        if (std.mem.startsWith(u8, line, "fun ")) {
-            const rest = line["fun ".len..];
-            const end = std.mem.indexOfScalar(u8, rest, '(') orelse {
+        // Canonical Duo declares functions bare: `name(params) ... end`. The
+        // `fun` keyword is optional, so a scanner that matched only `fun ` lost
+        // every export the moment a module was written idiomatically — and the
+        // direct backend then had no symbol to relocate against.
+        const decl = if (std.mem.startsWith(u8, line, "fun "))
+            std.mem.trim(u8, line["fun ".len..], " \t")
+        else
+            line;
+        if (std.mem.indexOfScalar(u8, decl, '(')) |open_paren| {
+            const field = std.mem.trim(u8, decl[0..open_paren], " \t");
+            // `X = foo(1)` is a constant, not a declaration: its text before the
+            // paren is not a bare identifier.
+            if (isIdent(field)) {
+                if (pending_export) |sym| {
+                    const owned_field = try alloc.dupe(u8, field);
+                    const owned_sym = try alloc.dupe(u8, sym);
+                    try exports.put(alloc, owned_field, owned_sym);
+                }
                 pending_export = null;
                 continue;
-            };
-            const field = std.mem.trim(u8, rest[0..end], " \t");
-            if (pending_export) |sym| {
-                const owned_field = try alloc.dupe(u8, field);
-                const owned_sym = try alloc.dupe(u8, sym);
-                try exports.put(alloc, owned_field, owned_sym);
             }
-            pending_export = null;
-            continue;
         }
         if (std.mem.indexOf(u8, line, " = ")) |eq| {
             pending_export = null;

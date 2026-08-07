@@ -11,11 +11,11 @@ iter = req "std.iter"
 test = req "std.test"
 
 test.start("stdlib comprehensive test")
-local pass = 0
-local fail = 0
+pass = 0
+fail = 0
 
-fun check(desc, cond)
-    if cond then
+check(desc, cond)
+    if cond
         pass += 1
     else
         fail += 1
@@ -126,7 +126,7 @@ check("log with_fields", (function() log.with_fields("INFO", {user = "test", id 
 
 io.write("\n--- std.zip ---\n")
 
-check("zip module loaded", zip ~= nil)
+check("zip module loaded", zip != nil)
 check("zip.test exists", type(zip.test) == "function")
 check("zip.list exists", type(zip.list) == "function")
 check("zip.info exists", type(zip.info) == "function")

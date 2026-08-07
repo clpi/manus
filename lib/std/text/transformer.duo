@@ -5,12 +5,12 @@
 -- Text Normalization
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_lower(s: str): str
+text_lower(s: str): str
     result = ""
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c >= 65 and c <= 90 then  -- A-Z
+        if c >= 65 and c <= 90  -- A-Z
             result = result .. string.char(c + 32)
         else
             result = result .. string.char(c)
@@ -20,12 +20,12 @@ fun text_lower(s: str): str
     result
 end
 
-fun text_upper(s: str): str
+text_upper(s: str): str
     result = ""
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c >= 97 and c <= 122 then  -- a-z
+        if c >= 97 and c <= 122  -- a-z
             result = result .. string.char(c - 32)
         else
             result = result .. string.char(c)
@@ -35,16 +35,16 @@ fun text_upper(s: str): str
     result
 end
 
-fun text_title(s: str): str
+text_title(s: str): str
     capitalize_next = true
     result = ""
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c == 32 or c == 9 or c == 10 then  -- whitespace
+        if c == 32 or c == 9 or c == 10  -- whitespace
             capitalize_next = true
             result = result .. string.char(c)
-        elseif capitalize_next and c >= 97 and c <= 122 then
+        elseif capitalize_next and c >= 97 and c <= 122
             result = result .. string.char(c - 32)
             capitalize_next = false
         else
@@ -56,10 +56,10 @@ fun text_title(s: str): str
     result
 end
 
-fun text_capitalize(s: str): str
-    if string.len(s) == 0 then return s end
+text_capitalize(s: str): str
+    if string.len(s) == 0 return s end
     first = string.byte(s, 1)
-    if first >= 97 and first <= 122 then
+    if first >= 97 and first <= 122
         return string.char(first - 32) .. string.sub(s, 2)
     end
     s
@@ -69,12 +69,12 @@ end
 -- Whitespace Handling
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_trim(s: str): str
+text_trim(s: str): str
     -- Trim leading whitespace
     start = 1
     while start <= string.len(s)
         c = string.byte(s, start)
-        if c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
     end
 
@@ -82,41 +82,41 @@ fun text_trim(s: str): str
     finish = string.len(s)
     while finish >= start
         c = string.byte(s, finish)
-        if c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break end
         finish -= 1
     end
 
     string.sub(s, start, finish)
 end
 
-fun text_trim_left(s: str): str
+text_trim_left(s: str): str
     start = 1
     while start <= string.len(s)
         c = string.byte(s, start)
-        if c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break end
         start += 1
     end
     string.sub(s, start)
 end
 
-fun text_trim_right(s: str): str
+text_trim_right(s: str): str
     finish = string.len(s)
     while finish >= 1
         c = string.byte(s, finish)
-        if c ~= 32 and c ~= 9 and c ~= 10 and c ~= 13 then break end
+        if c != 32 and c != 9 and c != 10 and c != 13 break end
         finish -= 1
     end
     string.sub(s, 1, finish)
 end
 
-fun text_compress_whitespace(s: str): str
+text_compress_whitespace(s: str): str
     result = ""
     in_whitespace = false
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c == 32 or c == 9 or c == 10 or c == 13 then
-            if not in_whitespace then
+        if c == 32 or c == 9 or c == 10 or c == 13
+            if not in_whitespace
                 result = result .. " "
                 in_whitespace = true
             end
@@ -129,7 +129,7 @@ fun text_compress_whitespace(s: str): str
     result
 end
 
-fun text_normalize_whitespace(s: str): str
+text_normalize_whitespace(s: str): str
     text_compress_whitespace(text_trim(s))
 end
 
@@ -137,7 +137,7 @@ end
 -- Text Cleaning (for NLP)
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_remove_accents(s: str): str
+text_remove_accents(s: str): str
     -- Simple accent removal (ASCII approximation)
     accents = {
         ["á"] = "a", ["à"] = "a", ["ä"] = "a", ["â"] = "a", ["ã"] = "a",
@@ -161,14 +161,14 @@ fun text_remove_accents(s: str): str
         found = false
         for pattern, replacement in accents
             plen = string.len(pattern)
-            if string.sub(s, i, i + plen - 1) == pattern then
+            if string.sub(s, i, i + plen - 1) == pattern
                 result = result .. replacement
                 i += plen
                 found = true
                 break
             end
         end
-        if not found then
+        if not found
             result = result .. string.char(string.byte(s, i))
             i += 1
         end
@@ -176,7 +176,7 @@ fun text_remove_accents(s: str): str
     result
 end
 
-fun text_remove_punctuation(s: str): str
+text_remove_punctuation(s: str): str
     result = ""
     i = 1
     while i <= string.len(s)
@@ -185,7 +185,7 @@ fun text_remove_punctuation(s: str): str
         if (c >= 48 and c <= 57) or  -- 0-9
            (c >= 65 and c <= 90) or  -- A-Z
            (c >= 97 and c <= 122) or -- a-z
-           c == 32 then              -- space
+           c == 32              -- space
             result = result .. string.char(c)
         end
         i += 1
@@ -193,11 +193,11 @@ fun text_remove_punctuation(s: str): str
     result
 end
 
-fun text_collapse_whitespace(s: str): str
+text_collapse_whitespace(s: str): str
     text_normalize_whitespace(s)
 end
 
-fun text_normalize_unicode(s: str): str
+text_normalize_unicode(s: str): str
     -- Simple Unicode normalization (NFKD approximation)
     -- Remove combining characters, normalize forms
     text_remove_accents(s)
@@ -207,15 +207,15 @@ end
 -- Text Analysis
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_word_count(s: str): i64
-    if string.len(s) == 0 then return 0 end
+text_word_count(s: str): i64
+    if string.len(s) == 0 return 0 end
     count = 1
     in_word = true
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c == 32 or c == 9 or c == 10 or c == 13 then
-            if in_word then
+        if c == 32 or c == 9 or c == 10 or c == 13
+            if in_word
                 count += 1
                 in_word = false
             end
@@ -224,20 +224,20 @@ fun text_word_count(s: str): i64
         end
         i += 1
     end
-    if not in_word then count -= 1 end
+    if not in_word count -= 1 end
     count
 end
 
-fun text_char_count(s: str): i64
+text_char_count(s: str): i64
     string.len(s)
 end
 
-fun text_sentence_count(s: str): i64
+text_sentence_count(s: str): i64
     count = 0
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c == 46 or c == 33 or c == 63 then  -- . ! ?
+        if c == 46 or c == 33 or c == 63  -- . ! ?
             count += 1
         end
         i += 1
@@ -245,9 +245,9 @@ fun text_sentence_count(s: str): i64
     count
 end
 
-fun text_avg_word_length(s: str): f64
+text_avg_word_length(s: str): f64
     words = text_split_words(s)
-    if #words == 0 then return 0 end
+    if #words == 0 return 0.0 end
     total = 0
     for word in words
         total += string.len(word)
@@ -259,36 +259,36 @@ end
 -- Text Splitting
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_split_lines(s: str): any
+text_split_lines(s: str): any
     lines = {}
     current = ""
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c == 10 then  -- newline
+        if c == 10  -- newline
             lines[#lines + 1] = current
             current = ""
-        elseif c == 13 then  -- carriage return
+        elseif c == 13  -- carriage return
             -- Skip, handle \r\n
         else
             current = current .. string.char(c)
         end
         i += 1
     end
-    if string.len(current) > 0 then
+    if string.len(current) > 0
         lines[#lines + 1] = current
     end
     lines
 end
 
-fun text_split_words(s: str): any
+text_split_words(s: str): any
     words = {}
     current = ""
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
-        if c == 32 or c == 9 or c == 10 or c == 13 then
-            if string.len(current) > 0 then
+        if c == 32 or c == 9 or c == 10 or c == 13
+            if string.len(current) > 0
                 words[#words + 1] = current
                 current = ""
             end
@@ -297,52 +297,52 @@ fun text_split_words(s: str): any
         end
         i += 1
     end
-    if string.len(current) > 0 then
+    if string.len(current) > 0
         words[#words + 1] = current
     end
     words
 end
 
-fun text_split_sentences(s: str): any
+text_split_sentences(s: str): any
     sentences = {}
     current = ""
     i = 1
     while i <= string.len(s)
         c = string.byte(s, i)
         current = current .. string.char(c)
-        if c == 46 or c == 33 or c == 63 then  -- . ! ?
+        if c == 46 or c == 33 or c == 63  -- . ! ?
             sentences[#sentences + 1] = text_trim(current)
             current = ""
         end
         i += 1
     end
-    if string.len(text_trim(current)) > 0 then
+    if string.len(text_trim(current)) > 0
         sentences[#sentences + 1] = text_trim(current)
     end
     sentences
 end
 
-fun text_split_tokens(s: str, max_length: i64): any
+text_split_tokens(s: str, max_length: i64): any
     words = text_split_words(s)
     tokens = {}
     current = ""
     for word in words
-        if string.len(current) + string.len(word) + 1 > max_length then
-            if string.len(current) > 0 then
+        if string.len(current) + string.len(word) + 1 > max_length
+            if string.len(current) > 0
                 tokens[#tokens + 1] = current
                 current = word
             else
                 tokens[#tokens + 1] = word
             end
         else
-            if string.len(current) > 0 then
+            if string.len(current) > 0
                 current = current .. " " .. word
             else
                 current = word
             end
         end
     end
-    if string.len(current) > 0 then
+    if string.len(current) > 0
         tokens[#tokens + 1] = current
     end
     tokens
@@ -352,12 +352,12 @@ end
 -- Text Search & Replace
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_replace(s: str, old: str, new: str): str
+text_replace(s: str, old: str, new: str): str
     result = ""
     i = 1
     old_len = string.len(old)
     while i <= string.len(s)
-        if string.sub(s, i, i + old_len - 1) == old then
+        if string.sub(s, i, i + old_len - 1) == old
             result = result .. new
             i += old_len
         else
@@ -368,16 +368,16 @@ fun text_replace(s: str, old: str, new: str): str
     result
 end
 
-fun text_replace_all(s: str, old: str, new: str): str
+text_replace_all(s: str, old: str, new: str): str
     text_replace(s, old, new)
 end
 
-fun text_count_occurrences(s: str, pattern: str): i64
+text_count_occurrences(s: str, pattern: str): i64
     count = 0
     i = 1
     pat_len = string.len(pattern)
     while i <= string.len(s)
-        if string.sub(s, i, i + pat_len - 1) == pattern then
+        if string.sub(s, i, i + pat_len - 1) == pattern
             count += 1
             i += pat_len
         else
@@ -391,16 +391,16 @@ end
 -- Text Encoding Detection (simplified)
 -- ═══════════════════════════════════════════════════════════════
 
-fun text_is_ascii(s: str): bool
+text_is_ascii(s: str): bool
     i = 1
     while i <= string.len(s)
-        if string.byte(s, i) > 127 then return false end
+        if string.byte(s, i) > 127 return false end
         i += 1
     end
     true
 end
 
-fun text_is_utf8(s: str): bool
+text_is_utf8(s: str): bool
     -- Simplified check
     text_is_ascii(s)
 end

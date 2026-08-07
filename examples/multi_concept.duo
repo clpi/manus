@@ -1,23 +1,23 @@
 -- Multi-concept constraints: fun f<T: A + B>(x: T)
 
 concept Hashable
-    fun hash(self) -> i64
+    hash(self) -> i64
 end
 
 concept Counter
-    fun value(self) -> i64
+    value(self) -> i64
 end
 
 Both = {}
-fun Both:hash() -> i64
+Both:hash() -> i64
     return 11
 end
-fun Both:value() -> i64
+Both:value() -> i64
     return 3
 end
 
 Half = {}
-fun Half:hash() -> i64
+Half:hash() -> i64
     return 7
 end
 

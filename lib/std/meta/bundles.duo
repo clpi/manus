@@ -11,7 +11,7 @@ bundles = {
     Full = { "Debug", "Comparable", "Default" },
 }
 
-fun names(): any
+names(): any
     out = {}
     for name, _ in bundles
         out[#out + 1] = name

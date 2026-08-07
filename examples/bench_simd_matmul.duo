@@ -1,13 +1,13 @@
 -- bench_simd_matmul.duo
 -- Benchmarks the builtin simd.matmul_f32 against a baseline C compiler.
 
-fun run_bench()
+run_bench()
     print("STARTING")
-    local n = 512
+    n = 512
 
-    local a_ptr: ptr = nil
-    local b_ptr: ptr = nil
-    local c_ptr: ptr = nil
+    a_ptr: ptr = nil
+    b_ptr: ptr = nil
+    c_ptr: ptr = nil
 
     @c.emit([[
         int N = 512;
@@ -33,17 +33,17 @@ fun run_bench()
     
     -- Warmup
     simd.matmul_f32(a_ptr, b_ptr, c_ptr, 128, 128, 128)
-    local dummy = 0
+    dummy = 0
 
-    local start = os.clock()
+    start = os.clock()
     -- 10 iterations of 512x512 to get a measurable time
     for i = 1, 10 do
         simd.matmul_f32(a_ptr, b_ptr, c_ptr, n, n, n)
         dummy = 0
     end
-    local time_taken = os.clock() - start
+    time_taken = os.clock() - start
 
-    local checksum: f64 = 0.0
+    checksum: f64 = 0.0
     @c.emit([[
         double sum = 0.0;
         for(int i=0; i<N*N; i++) {

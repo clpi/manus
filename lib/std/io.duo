@@ -2,69 +2,73 @@
 -- Binary I/O: io.read(n) reads exactly n bytes from stdin (LSP Content-Length framing)
 -- io.read("*l") reads a line, io.read("*a") reads all remaining input
 
-fun std_io_open(filename: str, mode: str): any
+std_io_open(filename: str, mode: str): any
     io.open(filename, mode)
 end
 
-fun std_io_popen(prog: str, mode: str): any
+std_io_popen(prog: str, mode: str): any
     io.popen(prog, mode)
 end
 
-fun std_io_read(file: any, arg: any): any
+std_io_read(file: any, arg: any): any
     file:read(arg)
 end
 
-fun std_io_write(file: any, arg: any): any
+std_io_write(file: any, arg: any): any
     file:write(arg)
 end
 
-fun std_io_close(file: any): void
+std_io_close(file: any): void
     file:close()
 end
 
-fun std_io_flush(file: any): void
+std_io_flush(file: any): void
     file:flush()
 end
 
-fun std_io_lines(filename: str): any
+std_io_lines(filename: str): any
     io.lines(filename)
 end
 
-fun std_io_input(file: any): any
+std_io_input(file: any): any
     io.input(file)
 end
 
-fun std_io_output(file: any): any
+std_io_output(file: any): any
     io.output(file)
 end
 
-fun std_io_tmpfile(): any
+std_io_tmpfile(): any
     io.tmpfile()
 end
 
-fun std_io_type(obj: any): any
+std_io_type(obj: any): any
     io.type(obj)
 end
 
 -- read_bytes: read exactly n bytes from a file or stdin.
 -- For LSP JSON-RPC: read header with read("*l"), extract Content-Length,
 -- then read_bytes(len) to get the body.
-fun std_io_read_bytes(file: any, n: int): str
+std_io_read_bytes(file: any, n: int): str
     file:read(n)
 end
 
 -- write_bytes: write a string/bytes to a file or stdout.
-fun std_io_write_bytes(file: any, data: str): void
+std_io_write_bytes(file: any, data: str): void
     file:write(data)
 end
 
--- read_line: convenience to read one line from a file
-fun std_io_read_line(file: any): str
+-- read_line: convenience to read one line from a file.
+-- Returns `any`, not `str`: `file:read("*l")` yields nil at EOF, and declaring
+-- `str` coerced that nil into the four-character string "nil". Every caller
+-- testing `line == nil` then looped forever — this is what made the Duo MCP
+-- servers hang instead of completing a handshake.
+std_io_read_line(file: any): any
     file:read("*l")
 end
 
--- read_all: convenience to read all remaining input
-fun std_io_read_all(file: any): str
+-- read_all: same — nil at EOF must survive as nil.
+std_io_read_all(file: any): any
     file:read("*a")
 end
 

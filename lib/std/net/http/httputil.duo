@@ -1,33 +1,33 @@
 -- std.net.http.httputil — HTTP utilities (mirrors Go's net/http/httputil)
 -- Provides reverse proxy and dump helpers
 
-fun dump_request(req: any): str
-    if req == nil then return "" end
+dump_request(req: any): str
+    if req == nil return "" end
     out = {req.method or "GET", " ", req.path or "/", " HTTP/1.1\r\n"}
-    if req.headers then
+    if req.headers
         for k, v in pairs(req.headers)
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
         end
     end
     out[rawlen(out) + 1] = "\r\n"
-    if req.body then out[rawlen(out) + 1] = req.body end
+    if req.body out[rawlen(out) + 1] = req.body end
     table.concat(out)
 end
 
-fun dump_response(resp: any): str
-    if resp == nil then return "" end
+dump_response(resp: any): str
+    if resp == nil return "" end
     out = {"HTTP/1.1 ", tostring(resp.status or 200), " OK\r\n"}
-    if resp.headers then
+    if resp.headers
         for k, v in pairs(resp.headers)
             out[rawlen(out) + 1] = k .. ": " .. v .. "\r\n"
         end
     end
     out[rawlen(out) + 1] = "\r\n"
-    if resp.body then out[rawlen(out) + 1] = resp.body end
+    if resp.body out[rawlen(out) + 1] = resp.body end
     table.concat(out)
 end
 
-fun reverse_proxy(target: str): any
+reverse_proxy(target: str): any
     {target = target}
 end
 

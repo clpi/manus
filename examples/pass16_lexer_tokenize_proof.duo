@@ -5,9 +5,9 @@ embed_tokenize(): i64
     Token = req "std.compiler.token"
     lex = Lexer.new("fun", "proof.duo")
     tok = Lexer.next(lex)
-    if tok.kind ~= Token.KIND_FUN return 1 end
+    if tok.kind != Token.KIND_FUN return 1 end
     tok2 = Lexer.next(lex)
-    if tok2.kind ~= Token.KIND_EOF return 2 end
+    if tok2.kind != Token.KIND_EOF return 2 end
     0
 end
 

@@ -7,52 +7,52 @@ enum Shape
     Point
 end
 
-fun area(s: Shape): f64
+area(s: Shape): f64
     a: f64 = 0.0
     match s
-        Shape.Circle(r) then a = 3.14159265 * r * r
-        Shape.Rect(w, h) then a = w * h
-        Shape.Triangle(b, h) then a = 0.5 * b * h
-        Shape.Point then a = 0.0
+        Shape.Circle(r) a = 3.14159265 * r * r
+        Shape.Rect(w, h) a = w * h
+        Shape.Triangle(b, h) a = 0.5 * b * h
+        Shape.Point a = 0.0
     end
     a
 end
 
-fun tag_of(s: Shape): i64
+tag_of(s: Shape): i64
     tag: i64 = -1
     match s
-        Shape.Circle(_) then tag = 0
-        Shape.Rect(_, _) then tag = 1
-        Shape.Triangle(_, _) then tag = 2
-        Shape.Point then tag = 3
+        Shape.Circle(_) tag = 0
+        Shape.Rect(_, _) tag = 1
+        Shape.Triangle(_, _) tag = 2
+        Shape.Point tag = 3
     end
     tag
 end
 
-fun is_unit_square(s: Shape): bool
+is_unit_square(s: Shape): bool
     yes: bool = false
     match s
-        Shape.Rect(1.0, 1.0) then yes = true
-        _ then yes = false
+        Shape.Rect(1.0, 1.0) yes = true
+        _ yes = false
     end
     yes
 end
 
-fun sum3(nums: any): f64
+sum3(nums: any): f64
     result: f64 = 0.0
     match nums
-        [a, b, c] then result = a + b + c
-        _ then result = -1.0
+        [a, b, c] result = a + b + c
+        _ result = -1.0
     end
     result
 end
 
-fun head(xs: any): any
+head(xs: any): any
     h: any = nil
     match xs
-        [first, _] then h = first
-        [only] then h = only
-        _ then h = nil
+        [first, _] h = first
+        [only] h = only
+        _ h = nil
     end
     h
 end

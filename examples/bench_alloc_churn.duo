@@ -1,9 +1,9 @@
 -- bench_alloc_churn.duo
 -- Tests table churn and dynamic array growth overhead compared to native C arrays.
 
-fun bench_alloc_churn(n)
+bench_alloc_churn(n)
     collectgarbage("stop")
-    local t = {}
+    t = {}
     for i = 1, n do
         t[i] = i
     end
@@ -14,15 +14,15 @@ fun bench_alloc_churn(n)
     return 1
 end
 
-fun run_bench()
-    local n = 10000000
+run_bench()
+    n = 10000000
     
     -- Warm up
     bench_alloc_churn(1000)
 
-    local start = os.clock()
+    start = os.clock()
     bench_alloc_churn(n)
-    local time_taken = os.clock() - start
+    time_taken = os.clock() - start
 
     print("RESULT alloc_churn")
     print(time_taken)

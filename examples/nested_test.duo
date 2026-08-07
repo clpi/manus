@@ -1,5 +1,5 @@
 -- Test nested call
-fun greet(name: str): str
+greet(name: str): str
     "Hello, " .. name
 end
 

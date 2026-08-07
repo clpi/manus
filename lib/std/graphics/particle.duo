@@ -5,7 +5,7 @@
 -- Particle
 -- ═══════════════════════════════════════════════════════════════
 
-fun particle_new(): any
+particle_new(): any
     {
         position = {x = 0, y = 0, z = 0},
         velocity = {x = 0, y = 0, z = 0},
@@ -24,7 +24,7 @@ end
 -- Emitter Configuration
 -- ═══════════════════════════════════════════════════════════════
 
-fun emitter_config_new(): any
+emitter_config_new(): any
     {
         position = {x = 0, y = 0, z = 0},
         spread = {x = 1, y = 1, z = 1},
@@ -46,35 +46,35 @@ fun emitter_config_new(): any
     }
 end
 
-fun emitter_config_set_position(config: any, x: f64, y: f64, z: f64): void
+emitter_config_set_position(config: any, x: f64, y: f64, z: f64): void
     config.position = {x = x, y = y, z = z}
 end
 
-fun emitter_config_set_spread(config: any, x: f64, y: f64, z: f64): void
+emitter_config_set_spread(config: any, x: f64, y: f64, z: f64): void
     config.spread = {x = x, y = y, z = z}
 end
 
-fun emitter_config_set_speed(config: any, min: f64, max: f64): void
+emitter_config_set_speed(config: any, min: f64, max: f64): void
     config.speed = {min = min, max = max}
 end
 
-fun emitter_config_set_lifetime(config: any, min: f64, max: f64): void
+emitter_config_set_lifetime(config: any, min: f64, max: f64): void
     config.lifetime = {min = min, max = max}
 end
 
-fun emitter_config_set_colors(config: any, colors: any): void
+emitter_config_set_colors(config: any, colors: any): void
     config.colors = colors
 end
 
-fun emitter_config_set_rate(config: any, rate: f64): void
+emitter_config_set_rate(config: any, rate: f64): void
     config.rate = rate
 end
 
-fun emitter_config_set_burst(config: any, count: i64): void
+emitter_config_set_burst(config: any, count: i64): void
     config.burst = count
 end
 
-fun emitter_config_set_gravity(config: any, x: f64, y: f64, z: f64): void
+emitter_config_set_gravity(config: any, x: f64, y: f64, z: f64): void
     config.gravity = {x = x, y = y, z = z}
 end
 
@@ -82,7 +82,7 @@ end
 -- Particle Emitter
 -- ═══════════════════════════════════════════════════════════════
 
-fun emitter_new(config: any): any
+emitter_new(config: any): any
     {
         config = config,
         particles = {},
@@ -91,7 +91,7 @@ fun emitter_new(config: any): any
     }
 end
 
-fun emitter_emit(emitter: any): any
+emitter_emit(emitter: any): any
     config = emitter.config
     particle = particle_new()
 
@@ -120,7 +120,7 @@ fun emitter_emit(emitter: any): any
     particle.angular_velocity = config.angular_velocity.min + math.random() * (config.angular_velocity.max - config.angular_velocity.min)
 
     -- Interpolate color
-    if #config.colors >= 2 then
+    if #config.colors >= 2
         t = math.random()
         c1 = config.colors[1]
         c2 = config.colors[#config.colors]
@@ -137,20 +137,20 @@ fun emitter_emit(emitter: any): any
     particle
 end
 
-fun emitter_update(emitter: any, delta_time: f64): void
-    if not emitter.active then return end
+emitter_update(emitter: any, delta_time: f64): void
+    if not emitter.active return end
 
     config = emitter.config
 
     -- Emit new particles
     emitter.time_since_emission = emitter.time_since_emission + delta_time
-    if emitter.time_since_emission >= 1 / config.rate then
+    if emitter.time_since_emission >= 1 / config.rate
         emitter_emit(emitter)
         emitter.time_since_emission = 0
     end
 
     -- Burst
-    if config.burst > 0 then
+    if config.burst > 0
         i = 0
         while i < config.burst
             emitter_emit(emitter)
@@ -165,7 +165,7 @@ fun emitter_update(emitter: any, delta_time: f64): void
         p = emitter.particles[i]
         p.age = p.age + delta_time
 
-        if p.age >= p.lifetime then
+        if p.age >= p.lifetime
             p.alive = false
             table.remove(emitter.particles, i)
         else
@@ -193,19 +193,19 @@ fun emitter_update(emitter: any, delta_time: f64): void
     end
 end
 
-fun emitter_get_particles(emitter: any): any
+emitter_get_particles(emitter: any): any
     emitter.particles
 end
 
-fun emitter_clear(emitter: any): void
+emitter_clear(emitter: any): void
     emitter.particles = {}
 end
 
-fun emitter_set_active(emitter: any, active: bool): void
+emitter_set_active(emitter: any, active: bool): void
     emitter.active = active
 end
 
-fun emitter_particle_count(emitter: any): i64
+emitter_particle_count(emitter: any): i64
     #emitter.particles
 end
 
@@ -213,18 +213,18 @@ end
 -- Particle System
 -- ═══════════════════════════════════════════════════════════════
 
-fun particle_system_new(): any
+particle_system_new(): any
     {
         emitters = {},
         max_particles = 10000,
     }
 end
 
-fun particle_system_add_emitter(system: any, emitter: any): void
+particle_system_add_emitter(system: any, emitter: any): void
     system.emitters[#system.emitters + 1] = emitter
 end
 
-fun particle_system_update(system: any, delta_time: f64): void
+particle_system_update(system: any, delta_time: f64): void
     total_particles = 0
     for emitter in system.emitters
         emitter_update(emitter, delta_time)
@@ -232,7 +232,7 @@ fun particle_system_update(system: any, delta_time: f64): void
     end
 end
 
-fun particle_system_get_all_particles(system: any): any
+particle_system_get_all_particles(system: any): any
     particles = {}
     for emitter in system.emitters
         for p in emitter_get_particles(emitter)
@@ -242,13 +242,13 @@ fun particle_system_get_all_particles(system: any): any
     particles
 end
 
-fun particle_system_clear(system: any): void
+particle_system_clear(system: any): void
     for emitter in system.emitters
         emitter_clear(emitter)
     end
 end
 
-fun particle_system_total_count(system: any): i64
+particle_system_total_count(system: any): i64
     count = 0
     for emitter in system.emitters
         count += emitter_particle_count(emitter)
@@ -260,7 +260,7 @@ end
 -- Preset Configurations
 -- ═══════════════════════════════════════════════════════════════
 
-fun emitter_fire(): any
+emitter_fire(): any
     config = emitter_config_new()
     config.direction = {x = 0, y = 1, z = 0}
     config.spread = {x = 0.2, y = 0.1, z = 0.2}
@@ -278,7 +278,7 @@ fun emitter_fire(): any
     config
 end
 
-fun emitter_smoke(): any
+emitter_smoke(): any
     config = emitter_config_new()
     config.direction = {x = 0, y = 1, z = 0}
     config.spread = {x = 0.3, y = 0.2, z = 0.3}
@@ -295,7 +295,7 @@ fun emitter_smoke(): any
     config
 end
 
-fun emitter_rain(): any
+emitter_rain(): any
     config = emitter_config_new()
     config.position = {x = 0, y = 10, z = 0}
     config.spread = {x = 20, y = 0, z = 20}
@@ -313,7 +313,7 @@ fun emitter_rain(): any
     config
 end
 
-fun emitter_sparkle(): any
+emitter_sparkle(): any
     config = emitter_config_new()
     config.spread = {x = 0.5, y = 0.5, z = 0.5}
     config.speed = {min = 0.1, max = 0.5}

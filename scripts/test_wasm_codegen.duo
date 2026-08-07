@@ -9,26 +9,26 @@ end
 global PASS: i64 = 0
 global FAIL: i64 = 0
 
-function pass(label: str)
+pass(label: str)
     s.echo("  PASS: " .. label)
     PASS = PASS + 1
 end
 
-function fail(label: str)
+fail(label: str)
     s.echo("  FAIL: " .. label)
     FAIL = FAIL + 1
 end
 
-function assert_contains(label: str, text: str, pattern: str)
-    if string.find(text, pattern, 1, true) ~= nil
+assert_contains(label: str, text: str, pattern: str)
+    if string.find(text, pattern, 1, true) != nil
         pass(label)
     else
         fail(label .. " — expected to find: " .. pattern)
     end
 end
 
-function assert_not_contains(label: str, text: str, pattern: str)
-    if string.find(text, pattern, 1, true) ~= nil
+assert_not_contains(label: str, text: str, pattern: str)
+    if string.find(text, pattern, 1, true) != nil
         fail(label .. " — expected NOT to find: " .. pattern)
     else
         pass(label)
@@ -37,17 +37,17 @@ end
 
 global TMPDIR_TEST: str = string.gsub(tostring(s.fs_tmpdir()), "\n", "")
 
-function write_src(name: str, src: str) -> str
-    local path: str = tostring(s.path_join(TMPDIR_TEST, name))
+write_src(name: str, src: str) -> str
+    path: str = tostring(s.path_join(TMPDIR_TEST, name))
     s.fs_write(path, src)
     return path
 end
 
-function dump_native(file: str) -> str
+dump_native(file: str) -> str
     return tostring(s.capture(DUO .. " dump-c " .. file))
 end
 
-function dump_wasm(file: str) -> str
+dump_wasm(file: str) -> str
     return tostring(s.capture(DUO .. " dump-c " .. file .. " --target wasm32-wasi"))
 end
 
@@ -55,8 +55,8 @@ s.echo("=== WASM/WASI Codegen Tests ===")
 s.echo("")
 s.echo("--- 1. Native target preamble (baseline) ---")
 
-local HELLO: str = write_src("hello.lua", 'print("hello")')
-local NATIVE_C: str = dump_native(HELLO)
+HELLO: str = write_src("hello.lua", 'print("hello")')
+NATIVE_C: str = dump_native(HELLO)
 
 assert_contains("native: _XOPEN_SOURCE is defined", NATIVE_C, "#define _XOPEN_SOURCE 600")
 assert_contains("native: setjmp.h is included", NATIVE_C, "#include <setjmp.h>")
@@ -73,7 +73,7 @@ assert_contains("native: lua_os_init called", NATIVE_C, "lua_os_init()")
 s.echo("")
 s.echo("--- 2. WASM target preamble ---")
 
-local WASM_C: str = dump_wasm(HELLO)
+WASM_C: str = dump_wasm(HELLO)
 
 assert_not_contains("wasm: _XOPEN_SOURCE is NOT defined", WASM_C, "#define _XOPEN_SOURCE 600")
 assert_not_contains("wasm: setjmp.h is NOT directly included", WASM_C, "#include <setjmp.h>")
@@ -121,34 +121,34 @@ assert_contains("runtime: duo_contains iterates hash", NATIVE_C, "capacity")
 s.echo("")
 s.echo("--- 6. try_expr / unwrap_expr / await_expr codegen ---")
 
-local TRY_SRC: str = write_src("try_expr.lua", "local x = 42")
-local TRY_C: str = dump_native(TRY_SRC)
+TRY_SRC: str = write_src("try_expr.lua", "local x = 42")
+TRY_C: str = dump_native(TRY_SRC)
 assert_not_contains("no TODO try_expr", TRY_C, "TODO: try_expr")
 assert_not_contains("no TODO unwrap_expr", TRY_C, "TODO: unwrap_expr")
 assert_not_contains("no TODO await_expr", TRY_C, "TODO: await_expr")
 assert_not_contains("no TODO contains", TRY_C, "TODO: contains")
 
-local UNWRAP_SRC: str = write_src("unwrap.duo", "local x: i64 = 1\nlocal y = x\n")
-local UNWRAP_C: str = dump_native(UNWRAP_SRC)
+UNWRAP_SRC: str = write_src("unwrap.duo", "local x: i64 = 1\nlocal y = x\n")
+UNWRAP_C: str = dump_native(UNWRAP_SRC)
 assert_not_contains("no TODO unwrap_expr in duo", UNWRAP_C, "TODO")
 
 s.echo("")
 s.echo("--- 7. contains_expr (x in y) codegen ---")
 
-local CONTAINS_SRC: str = write_src("contains.lua", "local t = {1, 2, 3}\nlocal found = 2\nprint(found)\n")
-local CONTAINS_C: str = dump_native(CONTAINS_SRC)
+CONTAINS_SRC: str = write_src("contains.lua", "local t = {1, 2, 3}\nlocal found = 2\nprint(found)\n")
+CONTAINS_C: str = dump_native(CONTAINS_SRC)
 assert_contains("contains: duo_contains in runtime", CONTAINS_C, "duo_contains")
 
 s.echo("")
 s.echo("--- 8. Output file extension ---")
 
-local OUT_WASM: str = tostring(s.path_join(TMPDIR_TEST, "hello.wasm"))
-local OUT_NATIVE: str = tostring(s.path_join(TMPDIR_TEST, "hello.out"))
+OUT_WASM: str = tostring(s.path_join(TMPDIR_TEST, "hello.wasm"))
+OUT_NATIVE: str = tostring(s.path_join(TMPDIR_TEST, "hello.out"))
 
 if s.ok(DUO .. " compile " .. HELLO .. " --target wasm32-wasi -o " .. OUT_WASM)
     if s.ok("test -f " .. OUT_WASM)
-        local out_type: str = tostring(s.capture("file " .. OUT_WASM))
-        if string.find(out_type, "WebAssembly", 1, true) ~= nil
+        out_type: str = tostring(s.capture("file " .. OUT_WASM))
+        if string.find(out_type, "WebAssembly", 1, true) != nil
             pass("wasm: output is valid WebAssembly binary")
         else
             fail("wasm: output is not valid WebAssembly binary")

@@ -5,38 +5,38 @@
 -- Complex Number Operations (for FFT)
 -- ═══════════════════════════════════════════════════════════════
 
-fun complex_new(re: f64, im: f64): any
+complex_new(re: f64, im: f64): any
     {re = re, im = im}
 end
 
-fun complex_add(a: any, b: any): any
+complex_add(a: any, b: any): any
     {re = a.re + b.re, im = a.im + b.im}
 end
 
-fun complex_sub(a: any, b: any): any
+complex_sub(a: any, b: any): any
     {re = a.re - b.re, im = a.im - b.im}
 end
 
-fun complex_mul(a: any, b: any): any
+complex_mul(a: any, b: any): any
     {
         re = a.re * b.re - a.im * b.im,
         im = a.re * b.im + a.im * b.re,
     }
 end
 
-fun complex_scale(a: any, s: f64): any
+complex_scale(a: any, s: f64): any
     {re = a.re * s, im = a.im * s}
 end
 
-fun complex_conjugate(a: any): any
+complex_conjugate(a: any): any
     {re = a.re, im = -a.im}
 end
 
-fun complex_abs(a: any): f64
+complex_abs(a: any): f64
     math.sqrt(a.re * a.re + a.im * a.im)
 end
 
-fun complex_phase(a: any): f64
+complex_phase(a: any): f64
     math.atan2(a.im, a.re)
 end
 
@@ -44,12 +44,12 @@ end
 -- FFT (Cooley-Tukey algorithm)
 -- ═══════════════════════════════════════════════════════════════
 
-fun fft(x: any): any
+fft(x: any): any
     n = #x
-    if n == 0 then return {} end
+    if n == 0 return {} end
 
     -- Check if power of 2
-    if n & (n - 1) ~= 0 then
+    if n & (n - 1) != 0
         -- Pad to next power of 2
         new_n = 1
         while new_n < n
@@ -68,20 +68,20 @@ fun fft(x: any): any
         n = new_n
     end
 
-    if n == 1 then return x end
+    if n == 1 return x end
 
     -- Bit-reversal permutation
     j = 0
     i = 1
     while i < n
         bit = n >> 1
-        while j & bit ~= 0
+        while j & bit != 0
             j = j ~ bit
             bit = bit >> 1
         end
         j = j ~ bit
 
-        if i < j then
+        if i < j
             temp = x[i + 1]
             x[i + 1] = x[j + 1]
             x[j + 1] = temp
@@ -120,9 +120,9 @@ end
 -- Inverse FFT
 -- ═══════════════════════════════════════════════════════════════
 
-fun ifft(x: any): any
+ifft(x: any): any
     n = #x
-    if n == 0 then return {} end
+    if n == 0 return {} end
 
     -- Conjugate input
     conjugated = {}
@@ -149,7 +149,7 @@ end
 -- Real-valued FFT (for real signals)
 -- ═══════════════════════════════════════════════════════════════
 
-fun rfft(signal: any): any
+rfft(signal: any): any
     n = #signal
     complex_input = {}
     i = 1
@@ -160,8 +160,8 @@ fun rfft(signal: any): any
     fft(complex_input)
 end
 
-fun irfft(spectrum: any, n: i64): any
-    if n == nil then n = #spectrum end
+irfft(spectrum: any, n: i64): any
+    if n == nil n = #spectrum end
     result = ifft(spectrum)
     signal = {}
     i = 1
@@ -176,7 +176,7 @@ end
 -- Power Spectrum
 -- ═══════════════════════════════════════════════════════════════
 
-fun power_spectrum(spectrum: any): any
+power_spectrum(spectrum: any): any
     ps = {}
     i = 1
     while i <= #spectrum
@@ -186,7 +186,7 @@ fun power_spectrum(spectrum: any): any
     ps
 end
 
-fun magnitude_spectrum(spectrum: any): any
+magnitude_spectrum(spectrum: any): any
     mag = {}
     i = 1
     while i <= #spectrum
@@ -196,7 +196,7 @@ fun magnitude_spectrum(spectrum: any): any
     mag
 end
 
-fun phase_spectrum(spectrum: any): any
+phase_spectrum(spectrum: any): any
     phase = {}
     i = 1
     while i <= #spectrum
@@ -210,7 +210,7 @@ end
 -- Convolution via FFT
 -- ═══════════════════════════════════════════════════════════════
 
-fun fft_convolve(a: any, b: any): any
+fft_convolve(a: any, b: any): any
     n = #a + #b - 1
 
     -- Pad to next power of 2
@@ -224,12 +224,12 @@ fun fft_convolve(a: any, b: any): any
     fb = {}
     i = 1
     while i <= fft_size
-        if i <= #a then
+        if i <= #a
             fa[i] = complex_new(a[i], 0)
         else
             fa[i] = {re = 0, im = 0}
         end
-        if i <= #b then
+        if i <= #b
             fb[i] = complex_new(b[i], 0)
         else
             fb[i] = {re = 0, im = 0}
@@ -266,7 +266,7 @@ end
 -- Correlation via FFT
 -- ═══════════════════════════════════════════════════════════════
 
-fun fft_correlate(a: any, b: any): any
+fft_correlate(a: any, b: any): any
     -- Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
     b_rev = {}
     i = #b
@@ -277,7 +277,7 @@ fun fft_correlate(a: any, b: any): any
     fft_convolve(a, b_rev)
 end
 
-fun autocorrelate(x: any): any
+autocorrelate(x: any): any
     fft_correlate(x, x)
 end
 
@@ -285,7 +285,7 @@ end
 -- DFT (Discrete Fourier Transform) - for small sizes
 -- ═══════════════════════════════════════════════════════════════
 
-fun dft(x: any): any
+dft(x: any): any
     n = #x
     result = {}
     k = 0
@@ -304,7 +304,7 @@ fun dft(x: any): any
     result
 end
 
-fun idft(x: any): any
+idft(x: any): any
     n = #x
     result = {}
     k = 0

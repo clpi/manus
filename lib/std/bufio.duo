@@ -5,15 +5,15 @@ io_mod = require "std.io"
 
 -- new_reader: wrap a file handle in a buffered reader.
 -- Fields: fh (file handle), buf (string), pos (1-based cursor), err
-fun new_reader(fh: any, size: i64): any
-    if size == nil or size <= 0 then size = 4096 end
+new_reader(fh: any, size: i64): any
+    if size == nil or size <= 0 size = 4096 end
     {fh = fh, buf = "", pos = 1, size = size, err = nil}
 end
 
 -- reader_fill: read more data from the underlying handle into the buffer.
-fun reader_fill(r: any): any
+reader_fill(r: any): any
     chunk = r.fh:read(r.size)
-    if chunk == nil then
+    if chunk == nil
         r.err = "EOF"
         return r
     end
@@ -23,15 +23,15 @@ fun reader_fill(r: any): any
 end
 
 -- reader_read_line: read one line (without trailing newline). Returns (line, ok).
-fun reader_read_line(r: any): any
+reader_read_line(r: any): any
     while true
         -- look for newline in remaining buffer
         remaining = string.sub(r.buf, r.pos)
         nl = string.find(remaining, "\n", 1, true)
-        if nl ~= nil then
+        if nl != nil
             line = string.sub(remaining, 1, nl - 1)
             -- strip trailing \r
-            if string.len(line) > 0 and string.sub(line, string.len(line), string.len(line)) == "\r" then
+            if string.len(line) > 0 and string.sub(line, string.len(line), string.len(line)) == "\r"
                 line = string.sub(line, 1, string.len(line) - 1)
             end
             r.pos = r.pos + nl
@@ -40,10 +40,10 @@ fun reader_read_line(r: any): any
         -- no newline yet, try to fill
         old_len = string.len(string.sub(r.buf, r.pos))
         reader_fill(r)
-        if r.err ~= nil then
+        if r.err != nil
             -- return whatever is left
             left = string.sub(r.buf, r.pos)
-            if string.len(left) > 0 then
+            if string.len(left) > 0
                 r.pos = string.len(r.buf) + 1
                 return left, true
             end
@@ -54,12 +54,12 @@ fun reader_read_line(r: any): any
 end
 
 -- reader_read_bytes: read n bytes. Returns (bytes, ok).
-fun reader_read_bytes(r: any, n: i64): any
+reader_read_bytes(r: any, n: i64): any
     while string.len(string.sub(r.buf, r.pos)) < n
         reader_fill(r)
-        if r.err ~= nil then
+        if r.err != nil
             left = string.sub(r.buf, r.pos)
-            if string.len(left) > 0 then
+            if string.len(left) > 0
                 r.pos = string.len(r.buf) + 1
                 return left, true
             end
@@ -72,15 +72,15 @@ fun reader_read_bytes(r: any, n: i64): any
 end
 
 -- reader_read_string: alias for read_bytes (same semantics in Duo).
-fun reader_read_string(r: any, n: i64): any
+reader_read_string(r: any, n: i64): any
     reader_read_bytes(r, n)
 end
 
 -- reader_read_byte: read a single byte value. Returns (byte, ok).
-fun reader_read_byte(r: any): any
+reader_read_byte(r: any): any
     while r.pos > string.len(r.buf)
         reader_fill(r)
-        if r.err ~= nil then return 0, false end
+        if r.err != nil return 0, false end
     end
     b = string.byte(r.buf, r.pos)
     r.pos = r.pos + 1
@@ -88,16 +88,16 @@ fun reader_read_byte(r: any): any
 end
 
 -- reader_unread_byte: move cursor back one byte.
-fun reader_unread_byte(r: any): any
-    if r.pos > 1 then r.pos = r.pos - 1 end
+reader_unread_byte(r: any): any
+    if r.pos > 1 r.pos = r.pos - 1 end
     r
 end
 
 -- reader_peek: peek n bytes without consuming them.
-fun reader_peek(r: any, n: i64): any
+reader_peek(r: any, n: i64): any
     while string.len(string.sub(r.buf, r.pos)) < n
         reader_fill(r)
-        if r.err ~= nil then break end
+        if r.err != nil break end
     end
     string.sub(r.buf, r.pos, r.pos + n - 1)
 end
@@ -105,28 +105,28 @@ end
 -- ----- Scanner -----
 
 -- new_scanner: create a scanner that splits input on a delimiter (default "\n").
-fun new_scanner(fh: any, delim: str): any
-    if delim == nil then delim = "\n" end
+new_scanner(fh: any, delim: str): any
+    if delim == nil delim = "\n" end
     {fh = fh, buf = "", pos = 1, delim = delim, done = false, size = 4096}
 end
 
 -- scanner_scan: advance to the next token. Returns true if a token is available.
-fun scanner_scan(s: any): bool
-    if s.done then return false end
+scanner_scan(s: any): bool
+    if s.done return false end
     while true
         remaining = string.sub(s.buf, s.pos)
         pos = string.find(remaining, s.delim, 1, true)
-        if pos ~= nil then
+        if pos != nil
             s.token = string.sub(remaining, 1, pos - 1)
             s.pos = s.pos + pos + string.len(s.delim) - 1
             return true
         end
         -- need more data
         chunk = s.fh:read(s.size)
-        if chunk == nil then
+        if chunk == nil
             s.done = true
             left = string.sub(s.buf, s.pos)
-            if string.len(left) > 0 then
+            if string.len(left) > 0
                 s.token = left
                 s.pos = string.len(s.buf) + 1
                 return true
@@ -140,26 +140,26 @@ fun scanner_scan(s: any): bool
 end
 
 -- scanner_text: return the current token.
-fun scanner_text(s: any): str
+scanner_text(s: any): str
     s.token
 end
 
 -- scanner_bytes: alias for scanner_text (strings ARE byte sequences in Duo).
-fun scanner_bytes(s: any): str
+scanner_bytes(s: any): str
     s.token
 end
 
 -- ----- Writer -----
 
 -- new_writer: create a buffered writer wrapping a file handle.
-fun new_writer(fh: any, size: i64): any
-    if size == nil or size <= 0 then size = 4096 end
+new_writer(fh: any, size: i64): any
+    if size == nil or size <= 0 size = 4096 end
     {fh = fh, buf = "", size = size}
 end
 
 -- writer_flush: write all buffered data to the underlying handle.
-fun writer_flush(w: any): any
-    if string.len(w.buf) > 0 then
+writer_flush(w: any): any
+    if string.len(w.buf) > 0
         w.fh:write(w.buf)
         w.buf = ""
     end
@@ -167,25 +167,25 @@ fun writer_flush(w: any): any
 end
 
 -- writer_write: buffer a string for later flushing.
-fun writer_write(w: any, s: str): any
+writer_write(w: any, s: str): any
     w.buf = w.buf .. s
-    if string.len(w.buf) >= w.size then
+    if string.len(w.buf) >= w.size
         writer_flush(w)
     end
     w
 end
 
 -- writer_write_byte: buffer a single byte.
-fun writer_write_byte(w: any, b: i64): any
+writer_write_byte(w: any, b: i64): any
     w.buf = w.buf .. string.char(b)
-    if string.len(w.buf) >= w.size then
+    if string.len(w.buf) >= w.size
         writer_flush(w)
     end
     w
 end
 
 -- writer_close: flush and close.
-fun writer_close(w: any): any
+writer_close(w: any): any
     writer_flush(w)
     w.fh:close()
     w

@@ -36,14 +36,14 @@ print("\n-- 1. Synthesize a C declaration from a shell command --")
 
 print("\n-- 2. Compile-time string from a command --")
 
-local user = @run("whoami")
+user = @run("whoami")
 print("  user = " .. user)
 
-local cores = @run("getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1")
+cores = @run("getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1")
 print("  cores = " .. cores)
 
 -- Compose @run with string concatenation to build a compile-time constant.
-local stamp = @run("date +%Y-%m-%d")
+stamp = @run("date +%Y-%m-%d")
 print("  built " .. stamp)
 
 -- ═══════════════════════════════════════════════════════════════════════════════

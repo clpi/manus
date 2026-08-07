@@ -1,4 +1,4 @@
-@comp.define.derive("TagOnly", fun generate(meta) -> str
+@comp.define.derive("TagOnly", generate(meta) -> str
     "/* tagged " .. meta.name .. " */\n"
 end)
 

@@ -1,0 +1,12 @@
+f(n: i64): i64
+    t = n
+    i = n
+    while i <= 3 do
+        t = t + i
+        i = i + 1
+    end
+    return t
+end
+main(): i64
+    return f(1)
+end

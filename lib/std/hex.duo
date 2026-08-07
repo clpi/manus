@@ -2,12 +2,12 @@
 
 global crypto = req "std.crypto"
 
-fun encode(s: str): str
+encode(s: str): str
     crypto.hex_encode(s)
 end
 
-fun decode(s: str): str
-    if s == nil then return "" end
+decode(s: str): str
+    if s == nil return "" end
     out = {}
     for i = 1, string.len(s), 2
         byte_str = string.sub(s, i, i + 1)

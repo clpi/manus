@@ -18,10 +18,10 @@ type Point = { x: f64, y: f64, tag: str, id: i64 }
 type Pair = { x: f64, y: f64, tag: str, id: i64 }
 type Label = { tag: str, id: i64 }
 
-@comp.define.derive("TripleApi", fun generate(meta) -> str
-    if meta.right ~= nil then
+@comp.define.derive("TripleApi", generate(meta) -> str
+    if meta.right != nil
         "/* tensor " .. meta.left.name .. " x " .. meta.mid.name .. " x " .. meta.right.name .. " */\n"
-    elseif meta.left ~= nil then
+    elseif meta.left != nil
         "/* pair " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
     else
         acc = ""
@@ -36,7 +36,7 @@ end)
 -- One line: derive.all + quadratic product emit + cubic derive tensor emit
 @comp.transcend("HasXY", TripleApi, "HasTag", "HasId")
 
-fun triple_sig(a, b, c) -> str
+triple_sig(a, b, c) -> str
     a.name .. "x" .. b.name .. "x" .. c.name .. ";"
 end
 

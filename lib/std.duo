@@ -302,6 +302,7 @@ std.index = {
 }
 
 std.script = req "std.script"
+std.proof = req "std.proof"
 
 -- Pass 12 M1 — Duo-native keyword classifier (generated from src/token_semantic.zig)
 -- Pass 16 M1 — Duo-native compiler substrate

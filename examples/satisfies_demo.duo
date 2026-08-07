@@ -1,21 +1,21 @@
 -- @satisfies — compile-time concept membership for table modules and typed records
 
 concept Hashable
-    fun hash(self) -> i64
+    hash(self) -> i64
 end
 
 alias M = {}
-fun M:hash() -> i64
+M:hash() -> i64
     return 42
 end
 
 alias S = {}
-fun S:hash() -> i64
+S:hash() -> i64
     return 13
 end
 
 alias X = {}
-fun X:nope() -> i64
+X:nope() -> i64
     return 0
 end
 

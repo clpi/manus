@@ -1,0 +1,6 @@
+n(s: str): i64
+    return #s
+end
+main(): i64
+    return n("hello")
+end

@@ -22,6 +22,7 @@ const comptime_eval = @import("comptime.zig");
 const directives = @import("directives.zig");
 const meta_directives = @import("meta_directives.zig");
 const sema_mod = @import("sema.zig");
+const native_req_support = @import("native_req_support.zig");
 const debug_trace = @import("debug_trace.zig");
 const ml_kernels = @import("ml_kernels.zig");
 const jit = @import("jit.zig");
@@ -126,6 +127,11 @@ pub const CodeGen = struct {
     req_module_bindings: std.StringHashMapUnmanaged([]const u8) = .empty,
     /// Req bindings that omit `lua_require` / `duo_g_*` storage (native-direct embedded modules).
     req_native_direct: std.StringHashMapUnmanaged(void) = .empty,
+    /// Pass 34 L1 — req module bindings assumed sealed after load unless invalidated.
+    module_sealed_bindings: std.StringHashMapUnmanaged(void) = .empty,
+    /// Pass 34 L2 — interned field IDs for fallback `.field` access. Field name -> stable
+    /// integer ID emitted at every fallback access site (duo_fallback_get_* markers).
+    fallback_interned_fields: std.StringHashMapUnmanaged(u32) = .empty,
     /// File paths of embedded modules (dedupe + dependency-first ordering).
     /// Embedded module file path -> the C name its `duo_mod_*` function was
     /// emitted under. Two require names can resolve to the same file (e.g.
@@ -160,6 +166,10 @@ pub const CodeGen = struct {
     /// All module functions are native-eligible and embedded req deps are native-direct:
     /// omit Lua runtime/thunks while still compiling via C or direct backend.
     substrate_native_mode: bool = false,
+    /// Whether this translation unit emits the lua runtime declarations. Captured
+    /// once at preamble time; `moduleNeedsLuaRuntime()` answers for the module
+    /// currently being emitted, which is the wrong question inside embedded modules.
+    tu_needs_lua_runtime: bool = true,
     /// True while emitting an embedded req module under a full-native parent.
     embed_parent_full_native: bool = false,
     /// Set of function names that are native-eligible in mixed mode.
@@ -173,6 +183,10 @@ pub const CodeGen = struct {
     test_entries: []const sema_mod.Sema.TestEntry = &.{},
     target: []const u8 = "native",
     current_module_cname: []const u8 = "",
+    /// `req` alias -> module export symbols for the module being emitted, so a
+    /// qualified call `Alias.fn(...)` can lower to a direct C call instead of a
+    /// boxed table lookup. Null until `emit_module` collects it.
+    req_ctx: ?native_req_support.Context = null,
     current_module: ?*const ast.Module = null,
     emit_stmt_blocks_as_returns: bool = false,
     vararg_funcs: std.StringHashMapUnmanaged([]const u8) = .empty,
@@ -216,6 +230,19 @@ pub const CodeGen = struct {
     next_closure_id: u32 = 0,
     current_func_body: ?*const ast.FuncBody = null,
     current_func_name: ?[]const u8 = null,
+    // Module `const` decls are emitted as `static const <mod>__<name>`, but
+    // sema also records them as module globals, so `emit_var_name_mode` spelled
+    // every read `duo_g_<mod>_<name>` — a name nothing declares. Names recorded
+    // here are const-declared *and* never assigned by any function in the
+    // module, so reads must use the declaration's own name. Names that ARE
+    // assigned stay out: `y = -100` folded to a const then written as `y = 1`
+    // needs real `duo_g_` storage, which is the case this must not break.
+    const_read_only: std.StringHashMapUnmanaged(void) = .{},
+    // Names for which an embedded module actually emitted `duo_g_<mod>_<name>`
+    // storage. Declaration and readers kept picking different spellings for the
+    // same binding; this records what was really declared so reads can follow it.
+    // Keyed `<mod>|<name>` because the same name lives in many modules.
+    emitted_global_storage: std.StringHashMapUnmanaged(void) = .{},
     /// Pass 7: active function carries @noalloc — heap emit sites call guardNoAlloc.
     current_func_noalloc: bool = false,
     noalloc_violation: ?[]const u8 = null,
@@ -900,6 +927,17 @@ pub const CodeGen = struct {
 
     fn emit_comptime_const_var_name(self: *CodeGen, name: []const u8) void {
         if (self.current_module_cname.len > 0) {
+            // Central guard: if real `duo_g_` storage was emitted for this
+            // binding, the folded `<mod>__<name>` symbol does not exist. Several
+            // callers reach this helper by different routes, so the check lives
+            // here rather than at each one.
+            var kb: [512]u8 = undefined;
+            if (std.fmt.bufPrint(&kb, "{s}|{s}", .{ self.current_module_cname, name })) |k| {
+                if (self.emitted_global_storage.contains(k)) {
+                    self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
+                    return;
+                }
+            } else |_| {}
             self.p("{s}__{s}", .{ self.current_module_cname, name });
         } else {
             self.p("{s}", .{name});
@@ -914,6 +952,21 @@ pub const CodeGen = struct {
         var name_buf: [256]u8 = undefined;
         if (self.function_c_names.get(name)) |cname| {
             self.p("{s}", .{cname});
+        } else if (self.current_module_cname.len > 0 and blk: {
+            var kb: [512]u8 = undefined;
+            const k = std.fmt.bufPrint(&kb, "{s}|{s}", .{ self.current_module_cname, name }) catch break :blk false;
+            break :blk self.emitted_global_storage.contains(k);
+        }) {
+            // Real storage exists under this name — use it, whatever the binding
+            // was classified as. The module export table was still spelling it
+            // `<mod>__<name>` after the storage moved to `duo_g_`.
+            self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
+        } else if (mode == .read and self.current_module_cname.len > 0 and
+            self.const_read_only.contains(name))
+        {
+            // Must precede the `duo_g_` branches: sema reports these as globals,
+            // but their only storage is the `static const <mod>__<name>` above.
+            self.emit_comptime_const_var_name(name);
         } else if (self.current_module_cname.len > 0 and !is_runtime_global(name) and self.global_type(name) != null) {
             self.p("duo_g_{s}_{s}", .{ self.current_module_cname, name });
         } else if (!is_runtime_global(name) and self.global_type(name) != null) {
@@ -968,26 +1021,27 @@ pub const CodeGen = struct {
     }
 
     /// Native record parameters are passed by pointer so mutating methods
-    /// (e.g. lexer `self.pos = …`) persist across calls.
+    /// (e.g. lexer `self.pos = …`, ByteCursor `c.pos = …`) persist across calls.
     fn native_record_param_by_ptr(self: *const CodeGen, rt: RT) bool {
-        if (rt != .table_type) return false;
+        var resolved = rt;
+        if (resolved == .@"struct") {
+            if (self.record_aliases.get(resolved.@"struct".name)) |alias_rt| resolved = alias_rt;
+        }
+        if (resolved != .table_type) return false;
         if (self.moduleUsesFullNativeLowering()) return true;
-        if (self.embedded_module_self_param_by_ptr(rt)) return true;
-        if (self.current_func_name) |name| return self.funcUsesNativeLowering(name);
+        // Embedded req modules (`std.compiler.*`, etc.): all record params by pointer.
+        if (self.current_module_cname.len > 0) return true;
+        if (self.current_func_name) |name| {
+            if (self.funcUsesNativeLowering(name)) return true;
+        }
+        // ABI uniformity. The record parameter convention must be identical for
+        // every function in a translation unit. In mixed-scalar mode only some
+        // functions lower natively; letting that split reach the calling
+        // convention makes a caller and callee disagree about the same record
+        // type — `next_tok` took `Lexer` by value while its caller `next` and
+        // its callee `cur_loc` used `Lexer *`, which is not compilable C.
+        if (self.mixed_scalar_mode and self.native_scalar_funcs.count() > 0) return true;
         return false;
-    }
-
-    /// Embedded req modules (`std.compiler.*`): the first parameter named `self`
-    /// with a record type is always passed by pointer in native emission so
-    /// internal call chains (adv → next_tok) preserve mutating field updates.
-    fn embedded_module_self_param_by_ptr(self: *const CodeGen, rt: RT) bool {
-        if (self.current_module_cname.len == 0) return false;
-        const fb = self.current_func_body orelse return false;
-        if (fb.params.len == 0) return false;
-        const par = &fb.params[0];
-        if (!std.mem.eql(u8, par.name, "self")) return false;
-        const self_rt = @constCast(self).resolve_type(par.typ);
-        return self_rt == .table_type and self_rt.eql(rt);
     }
 
     fn funcUsesRecordSelfPointer(self: *CodeGen, fb: *const ast.FuncBody) bool {
@@ -1061,13 +1115,43 @@ pub const CodeGen = struct {
     /// Check if a mutable upvalue should use pointer indirection.
     /// Only lua_Value (untyped) upvalues use the heap-cell pattern.
     /// Typed native upvalues are captured by value (no mutation sharing).
+    /// When a captured local was emitted as a native scalar but the closure slot
+    /// is a `lua_Value`, returns the scalar type so the capture can be boxed.
+    /// Returns null when no coercion is needed.
+    fn upvalue_scalar_coercion(self: *CodeGen, uv: ast.Upvalue) ?RT {
+        if (uv.typ) |t| {
+            if (t != .any) return null;
+        } else return null;
+        const lt = self.local_type(uv.name) orelse return null;
+        return switch (lt) {
+            .any, .nil, .void => null,
+            else => lt,
+        };
+    }
+
     fn upvalue_uses_pointer(uv: ast.Upvalue) bool {
         if (!uv.mutable) return false;
-        // Only use pointer for untyped (lua_Value) upvalues
-        if (uv.typ) |t| {
-            if (t != .any) return false;
-        }
-        return true;
+        // Only use pointer for untyped (lua_Value) upvalues.
+        //
+        // An *unknown* type is not the same as `.any` and must not take the
+        // pointer path. `base = 100` (no annotation) left `sym.typ` null, so a
+        // read-only capture was emitted as `duo_make_closure_0(&base)` against a
+        // `lua_Value*` parameter — both a type confusion (`base` is `int64_t`) and
+        // a dangling pointer into the dead frame of the enclosing function. It
+        // silently returned garbage: `base = 100; f(1)` gave 2 instead of 101,
+        // while the annotated `base: i64 = 100` was correct. Capture by value when
+        // the type is unknown; the genuinely shared-mutable case is the one that
+        // needs a heap cell (see the note on `Upvalue.mutable`) and does not
+        // compile today either way.
+        const t = uv.typ orelse return false;
+        if (t != .any) return false;
+        // Even for a `.any` upvalue the pointer is `&local` — the address of a
+        // stack slot in the *enclosing* frame. That frame is gone by the time the
+        // closure escapes, so the pointer path is only accidentally correct when
+        // the closure is invoked before its creator returns. Shared mutation needs
+        // a heap cell (see `Upvalue.mutable`); until that exists, capture by value,
+        // which is correct for every read-only capture and no worse for the rest.
+        return false;
     }
 
     /// Find the index of a name as an upvalue of the current closure context.
@@ -2503,7 +2587,13 @@ pub const CodeGen = struct {
             native_diag_fail("bench-direct-via-codegen");
             return false;
         }
-        if (self.load_chunk or self.lib_mode or self.test_mode) {
+        // `lib_mode` is deliberately NOT disqualifying here. It was excluded because
+        // `--lib` existed for wasm WAST testing, and the target guard immediately
+        // below already rejects every wasm target — so relaxing it changes behavior
+        // only for native targets, where `--lib` means exactly "a natively lowered
+        // object with no main", the emission mode a linkable `duo_lexer_tokenize.c`
+        // needs (SH-03 / MP4-B02).
+        if (self.load_chunk or self.test_mode) {
             native_diag_fail("guard-mode");
             return false;
         }
@@ -2631,11 +2721,62 @@ pub const CodeGen = struct {
         return true;
     }
 
+    /// True when any statement in the module needs the lua runtime: a return
+    /// pack (`a, b = f()`, several targets fed by one call) or a generic-for
+    /// (which lowers through the dynamic `__iter` protocol). Both emit
+    /// `lua_mret_*`, which the substrate-native profile never declares.
+    fn blockHasReturnPack(blk: *const ast.Block) bool {
+        for (blk.stmts) |*stmt| {
+            switch (stmt.*) {
+                .assign => |as| if (as.targets.len != as.values.len) return true,
+                .local_decl => |ld| if (ld.names.len != ld.inits.len and ld.inits.len == 1) return true,
+                .do_block => |db| if (blockHasReturnPack(&db.body)) return true,
+                .while_loop => |ws| if (blockHasReturnPack(&ws.body)) return true,
+                .repeat_loop => |rs| if (blockHasReturnPack(&rs.body)) return true,
+                .num_for => |nf| if (blockHasReturnPack(&nf.body)) return true,
+                .gen_for => |gf| {
+                    // The loop itself needs the runtime, not just its body.
+                    _ = gf;
+                    return true;
+                },
+                .if_stmt => |is| {
+                    if (blockHasReturnPack(&is.then)) return true;
+                    for (is.elseifs) |ei| if (blockHasReturnPack(&ei.body)) return true;
+                    if (is.else_body) |eb| if (blockHasReturnPack(&eb)) return true;
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    fn moduleHasReturnPack(mod: *const ast.Module) bool {
+        if (blockHasReturnPack(&mod.body)) return true;
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl and blockHasReturnPack(&stmt.func_decl.func.body)) return true;
+        }
+        return false;
+    }
+
     fn compute_substrate_native_mode(self: *CodeGen, mod: *const ast.Module) bool {
-        if (!self.duo_mode or self.load_chunk or self.lib_mode or self.test_mode or self.bench_mode) return false;
+        if (!self.duo_mode or self.load_chunk or self.test_mode) return false;
+        if (self.bench_mode and self.bench_backend != .c_specialized) return false;
         if (self.native_scalar_mode) return true;
         if (!self.mixed_scalar_mode) return false;
-        if (!self.native_scalar_funcs.contains("main")) return false;
+        // A library has no `main` by construction; requiring one is what forced
+        // `lexer.duo` to lower with the full lua runtime when compiled standalone.
+        // Its exported entries carry the native-lowering requirement instead.
+        if (!self.lib_mode and !self.native_scalar_funcs.contains("main")) return false;
+        // Substrate-native means *no lua runtime is emitted at all*, so it is not
+        // enough for `main` to be native-eligible: a module whose `main` is scalar
+        // but whose helpers use return packs claimed substrate-native and then
+        // emitted `lua_mret_*` against a runtime that was never declared.
+        //
+        // Disqualify on the construct that actually needs the runtime, not on
+        // `native_scalar_funcs` membership — that predicate is much broader, and
+        // requiring it of every function knocked `lexer.duo --lib` off the native
+        // path entirely (1761 lines / 0 lua_Value became 8332 / 1066).
+        if (moduleHasReturnPack(mod)) return false;
         if (!self.req_deps_are_native_direct(mod)) return false;
         return self.module_top_level_is_native(mod);
     }
@@ -2671,6 +2812,13 @@ pub const CodeGen = struct {
             defer self.alloc.free(sub_src);
             var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
             var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
+            // The embed path must parse a `.duo` module in the same dialect the
+            // standalone path uses. Without this, duo-mode-only syntax (bare
+            // function declarations) parses fine when the file is compiled
+            // directly but fails with "expected '<eof>', got 'end'" the moment it
+            // is embedded — which is what stopped `std/script.duo` and
+            // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
+            sub_parser.duo_mode = std.mem.endsWith(u8, mod_path, ".duo");
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -2864,6 +3012,29 @@ pub const CodeGen = struct {
     }
 
     fn stmt_is_native_scalar(self: *CodeGen, stmt: *const ast.Stmt, allow_return: bool) bool {
+        // Pass 42 §3.1 — a return pack (`a, b = f()`: several targets, one call)
+        // is emitted via `lua_mret_clear` / `lua_mret_get`, which the full-native
+        // profile never declares. Treating such a function as native-scalar
+        // produced C that referenced undeclared `lua_mret_*` and failed to
+        // compile — so `for v in tbl` and `if a, b = f()` could not be built in a
+        // typed module at all. Excluding packs here keeps the lua runtime present
+        // for exactly the functions that need it. When correlated packs gain a
+        // native ABI (§3.1 proper), this exclusion is what gets deleted.
+        switch (stmt.*) {
+            .assign => |as| {
+                if (as.targets.len != as.values.len) {
+                    native_diag_fail("return-pack-assign");
+                    return false;
+                }
+            },
+            .local_decl => |ld| {
+                if (ld.names.len != ld.inits.len and ld.inits.len == 1) {
+                    native_diag_fail("return-pack-local-decl");
+                    return false;
+                }
+            },
+            else => {},
+        }
         return switch (stmt.*) {
             .local_decl => |ld| blk: {
                 for (ld.names) |lname| {
@@ -2955,6 +3126,16 @@ pub const CodeGen = struct {
             },
             .brk, .cont => true,
             .gen_for => |gf| blk: {
+                // Pass 42 §1.2 — generic-for lowers through the dynamic `__iter`
+                // metafield protocol (`lua_get_metafield_lit` + `lua_mret_*`), so
+                // no `for v in tbl` can be full-native today: claiming it emitted C
+                // referencing undeclared `lua_mret_clear`, which meant direct
+                // iteration — the *canonical* idiom that replaced pairs/ipairs —
+                // could not be compiled in a typed module at all. §1.2's `@iter`
+                // return-pack closure is what will make this native and delete
+                // this exclusion.
+                native_diag_fail("gen-for-dynamic-iter");
+                if (true) break :blk false;
                 for (gf.iters) |iter| {
                     if (!self.expr_is_native_scalar(iter)) break :blk false;
                 }
@@ -3038,6 +3219,9 @@ pub const CodeGen = struct {
     fn skip_lua_thunk_emit(self: *const CodeGen) bool {
         if (!self.moduleNeedsLuaRuntime()) return true;
         if (self.moduleUsesFullNativeLowering() and self.current_module_cname.len == 0) return true;
+        if (self.bench_mode and self.bench_backend == .c_specialized and self.mixed_scalar_mode and
+            self.current_module_cname.len == 0)
+            return true;
         if (self.embedded_module_skips_lua_thunks()) return true;
         if (self.current_module_cname.len > 0 and self.embed_parent_full_native) return true;
         return false;
@@ -3212,7 +3396,7 @@ pub const CodeGen = struct {
         const fb_type = self.func_expr_type(body);
         if (fb_type == .func) ft = fb_type;
         if (ft != .func) return false;
-        if (self.mixed_scalar_mode and !self.funcUsesNativeLowering(c.func.name.ident)) return false;
+        if (!self.funcUsesNativeLowering(c.func.name.ident)) return false;
         if (!self.exprLowersToNativeC(ft.func.ret.*)) return false;
         try self.emitDirectNamedFuncCall(expr);
         return true;
@@ -3437,6 +3621,7 @@ pub const CodeGen = struct {
                         .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
                             !self.expr_is_native_scalar(idx.val)) break :blk false,
                         .spread => break :blk false,
+                        .semantic => break :blk false,
                     };
                     break :blk true;
                 }
@@ -3447,6 +3632,8 @@ pub const CodeGen = struct {
                         .indexed => |idx| if (!self.expr_is_native_scalar(idx.key) or
                             !self.expr_is_native_scalar(idx.val)) break :blk false,
                         .spread => break :blk false,
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): a semantic entry is never a native scalar.
+                        .semantic => break :blk false,
                     };
                     break :blk true;
                 }
@@ -3525,6 +3712,7 @@ pub const CodeGen = struct {
                     if (!self.init_is_native_scalar(idx.val, .any)) return false;
                 },
                 .spread => return false,
+                .semantic => return false,
             };
             for (hint.table_type.fields, 0..) |rf, i| {
                 const v = if (found.get(rf.name)) |val| val else if (i < positionals.items.len) positionals.items[i] else continue;
@@ -4055,7 +4243,13 @@ pub const CodeGen = struct {
         const old_module = self.current_module;
         self.current_module_cname = "";
         self.current_module = mod;
+        const old_req_ctx = self.req_ctx;
+        // Collect `req` bindings so qualified calls can resolve to module
+        // symbols. Failure is non-fatal: the boxed path still applies.
+        self.req_ctx = native_req_support.collectFromModule(self.alloc, mod) catch null;
         defer {
+            if (self.req_ctx) |*rc| rc.deinit(self.alloc);
+            self.req_ctx = old_req_ctx;
             self.current_module_cname = old_module_cname;
             self.current_module = old_module;
         }
@@ -4089,7 +4283,22 @@ pub const CodeGen = struct {
                 self.mixed_scalar_mode = true;
             }
         }
+        // Pass 27 P0: bench profiles must diverge in generated C, not just manifest metadata.
+        if (self.bench_mode and self.bench_backend == .c_dynamic) {
+            self.mixed_scalar_mode = false;
+            self.native_scalar_funcs.clearRetainingCapacity();
+        }
         self.substrate_native_mode = self.compute_substrate_native_mode(mod);
+        // Same dependency check `native_scalar_mode` gets above: both feed
+        // `moduleUsesFullNativeLowering`, which drops the Lua runtime from the
+        // whole TU. Guarding only one of them let a small typed `main` that reqs
+        // `std.io`/`std.json` choose substrate-native, then embed those modules'
+        // `lua_Value` signatures with no runtime declared — "unknown type name
+        // 'lua_Value'". A req dependency that needs the runtime disqualifies
+        // full-native lowering regardless of which mode selected it.
+        if (self.substrate_native_mode and !self.req_deps_allow_full_native(mod)) {
+            self.substrate_native_mode = false;
+        }
         self.module_knowledge = if (self.native_scalar_mode or self.substrate_native_mode)
             .native
         else if (self.mixed_scalar_mode)
@@ -4142,6 +4351,13 @@ pub const CodeGen = struct {
         if (!native_scalar_plain or self.native_scalar_needs_string_h(mod)) {
             self.p("#include <string.h>\n", .{});
         }
+        // Translation-unit-level decision, captured before any embedded module
+        // swaps `native_scalar_mode` / `substrate_native_mode` / `module_knowledge`
+        // to its own values. Everything that must agree with the presence of the
+        // lua runtime declarations — the `duo_mod_*` thunks in particular — has to
+        // consult this rather than `moduleNeedsLuaRuntime()`, which answers for
+        // whichever module is currently being emitted.
+        self.tu_needs_lua_runtime = self.moduleNeedsLuaRuntime();
         if (self.moduleNeedsLuaRuntime()) {
             self.p("#include <stdarg.h>\n", .{});
             self.p("#include <math.h>\n", .{});
@@ -4538,8 +4754,40 @@ pub const CodeGen = struct {
                 // field read that sema types as `.any` still emits the variable,
                 // and skipping the declaration made that "use of undeclared
                 // identifier". An unused static is harmless; a missing one is not.
-                if (self.comptime_binding_is_scalar_const(key.*)) continue;
+                // …unless a function assigns it. `y = -100` at module scope folds
+                // to a scalar constant, so the declaration was skipped — but a
+                // function containing `y = 1` resolves `y` to that module binding
+                // (the scoping rule) and emits `duo_g_y = 1`, needing real
+                // storage. Constant-folding a binding that is written to is the
+                // bug; it produced "use of undeclared identifier 'duo_g_y'".
+                // …and reads are just as demanding as writes. This loop walks
+                // `module_globals`, so `global_type(key)` is non-null for every
+                // key, which means `emit_var_name_mode` takes its first branch and
+                // spells each read `duo_g_<mod>_<name>` — scalar-const or not.
+                // Guarding only on *assignment* therefore still dropped storage
+                // for read-only folded constants: `std.vector.WORD_W` is never
+                // written, so the declaration was skipped, while every use in a
+                // function body emitted `duo_g_std_vector_WORD_W`. Same defect as
+                // the note above, reached through a read instead of a write.
+                // Per that note's own rule — an unused static is harmless, a
+                // missing one is not — module globals always get storage.
+                _ = self.module_functions_assign_name(mod, key.*);
                 const gt = globals.get(key.*) orelse .any;
+                // …with one exception the note above predates: a no-lua translation
+                // unit never declares `lua_Value`, so an `.any` binding cannot be
+                // spelled at all. Under native lowering a *req-module* binding
+                // resolves to direct C symbols (no lua_invoke, no fallback field
+                // reads), so there is nothing left to declare.
+                //
+                // This must stay limited to req bindings. Applied to every `.any`
+                // global it dropped ordinary ones: `y = -100` at module scope, then
+                // `y = 1` inside a function (which targets that global per the
+                // scoping rule), emitted `duo_g_y = 1;` with no declaration
+                // anywhere — "use of undeclared identifier 'duo_g_y'". It only
+                // surfaced once a module became no-lua, which is why the untyped
+                // benchmark compiled and the typed migration did not.
+                if (!self.tu_needs_lua_runtime and gt == .any and
+                    self.req_module_bindings.contains(key.*)) continue;
                 if (self.current_module_cname.len > 0) {
                     self.p("static ", .{});
                     self.typ(gt);
@@ -4576,6 +4824,8 @@ pub const CodeGen = struct {
                     try table_consts.append(self.alloc, stmt);
                     try self.note_comptime_binding(cd.ident, cd.val);
                 } else {
+                    if (!self.module_functions_assign_name(mod, cd.ident))
+                        self.const_read_only.put(self.alloc, cd.ident, {}) catch {};
                     self.p("static const ", .{});
                     self.typ(rt);
                     self.p(" {s} = ", .{mname});
@@ -4594,7 +4844,12 @@ pub const CodeGen = struct {
                 if (fd.is_local) continue;
                 // In duo_mode, single-name functions are local (handled below)
                 if (self.duo_mode and fd.path.len == 1 and !fd.method) continue;
-                if ((fd.path.len == 1 and !fd.method) or fd.method) {
+                // Dotted non-method functions (`Pt.__tostring = (self) ... end`,
+                // the canonical bare form for metamethods) also need a forward
+                // declaration: otherwise the call site sees an implicit
+                // declaration and the later `static` definition conflicts with it
+                // ("static declaration follows non-static declaration").
+                if ((fd.path.len >= 1 and !fd.method) or fd.method) {
                     try self.emit_func_decl_forward(fd);
                 }
             }
@@ -5264,6 +5519,8 @@ pub const CodeGen = struct {
                             .indexed => |ix| try c.walk_expr(ix.val),
                             .positional => |pos| try c.walk_expr(pos),
                             .spread => |sp| try c.walk_expr(sp),
+                            // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                            .semantic => |sm| try c.walk_expr(sm.val),
                         };
                     },
                     .func_expr => |f| try c.walk_block(&f.body),
@@ -6273,6 +6530,8 @@ pub const CodeGen = struct {
                     .indexed => |ix| try self.collect_records_in_expr(ix.val),
                     .positional => |pos| try self.collect_records_in_expr(pos),
                     .spread => |sp| try self.collect_records_in_expr(sp),
+                    // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                    .semantic => |sm| try self.collect_records_in_expr(sm.val),
                 }
             },
             .call => |c| {
@@ -6543,7 +6802,14 @@ pub const CodeGen = struct {
 
     fn func_export_name(fd: *const ast.FuncDecl) ?[]const u8 {
         for (fd.attributes) |attr| {
-            if (std.mem.eql(u8, attr.name, "c.export")) {
+            // `@comp.c.export` is the canonical spelling (`@` is the single
+            // compile-time prefix); `@c.export` is the deprecated form still in
+            // `lib/std/compiler/lexer.duo`. Only the deprecated one was matched
+            // here, so a canonically-written module got `static inline`
+            // functions with no external linkage and could not be linked.
+            if (std.mem.eql(u8, attr.name, "c.export") or
+                std.mem.eql(u8, attr.name, "comp.c.export"))
+            {
                 if (attr.args) |raw| {
                     if (raw.len >= 2 and raw[0] == '"' and raw[raw.len - 1] == '"') return raw[1 .. raw.len - 1];
                     if (raw.len > 0) return raw;
@@ -7004,7 +7270,13 @@ pub const CodeGen = struct {
     fn emit_native_scalar_to_lua_value(self: *CodeGen, ft: RT, c_expr: []const u8) E!void {
         if (ft == .str) {
             self.p("lua_val_from_str({s})", .{c_expr});
-        } else if (ft.is_integer() or ft.is_float()) {
+        } else if (ft.is_integer()) {
+            // Box integers as integers. Routing them through `double` silently
+            // rounded any value above 2^53: `crc64.final` returned the correct
+            // int64 0x2B9C7EE4E2780C8A and the thunk handed back …0C00, its low
+            // 9 bits cleared.
+            self.p("lua_val_from_int((int64_t)({s}))", .{c_expr});
+        } else if (ft.is_float()) {
             self.p("lua_val_from_num((double)({s}))", .{c_expr});
         } else if (ft == .bool) {
             self.p("lua_val_from_bool({s})", .{c_expr});
@@ -7062,6 +7334,14 @@ pub const CodeGen = struct {
         const saved_body = self.current_func_body;
         self.current_func_body = fb;
         defer self.current_func_body = saved_body;
+
+        // The record-parameter ABI is a property of the callee, not of whatever
+        // function happened to be emitted last. A thunk bridges lua -> native for
+        // `cname`, so evaluate `native_record_param_by_ptr` in `cname`'s context;
+        // otherwise a by-pointer callee is handed a by-value argument.
+        const saved_name = self.current_func_name;
+        self.current_func_name = cname;
+        defer self.current_func_name = saved_name;
 
         if (ret == .void) {
             self.ind();
@@ -7176,6 +7456,10 @@ pub const CodeGen = struct {
             self.p("lua_val_from_bool({s})", .{c_expr});
         } else if (rt == .any) {
             self.p("{s}", .{c_expr});
+        } else if (rt.is_integer()) {
+            // See emit_native_scalar_to_lua_value: integers must not round-trip
+            // through double.
+            self.p("lua_val_from_int((int64_t)({s}))", .{c_expr});
         } else if (rt.is_numeric()) {
             self.p("lua_val_from_num((double)({s}))", .{c_expr});
         } else if (self.enum_name_of(rt)) |ename| {
@@ -7195,15 +7479,15 @@ pub const CodeGen = struct {
                     f.name.len,
                 });
                 var f_c_expr: [128]u8 = undefined;
-                const f_c_expr_str = std.fmt.bufPrint(&f_c_expr, "{s}.{s}", .{c_expr, f.name}) catch unreachable;
+                const f_c_expr_str = std.fmt.bufPrint(&f_c_expr, "{s}.{s}", .{ c_expr, f.name }) catch unreachable;
                 try self.emit_lua_value_from_native(f.typ, f_c_expr_str);
                 self.p(");\n", .{});
             }
-            
+
             // If we have an alias name, we might want to attach its metatable.
             // But we don't have the alias name here, we only have .table_type.
             // So we just return the plain table.
-            
+
             self.p("    _tmp;\n", .{});
             self.p("}})", .{});
         } else {
@@ -7564,8 +7848,39 @@ pub const CodeGen = struct {
         self.p("}}\n", .{});
         if (fb.use_fp_strict_always_inline) self.p("#pragma GCC pop_options\n", .{});
         self.p("\n", .{});
+        try self.emit_native_export_alias(fd, ret, cname);
         // Note: lua thunk is emitted at the top of emit_func_def, not here,
         // to avoid double emission.
+    }
+
+    /// `export_name` is a WASM attribute: on a native target it leaves the C
+    /// symbol as the Duo name, so a separately compiled module defined
+    /// `emit_size` while the direct backend's relocation asked the linker for
+    /// `duo_emit_size`. Renaming the definition instead is not an option — the
+    /// whole-program build inlines these modules and its call sites still use
+    /// the module-mangled name. A thin forwarding wrapper is additive: existing
+    /// callers are untouched, the export name becomes a real native symbol, and
+    /// `-O2` tail-calls the hop away.
+    fn emit_native_export_alias(self: *CodeGen, fd: *const ast.FuncDecl, ret: RT, cname: []const u8) E!void {
+        const export_name = func_export_name(fd) orelse return;
+        if (std.mem.eql(u8, export_name, cname)) return;
+        const fb = &fd.func;
+        if (fb.vararg_name != null or fb.vararg) return;
+        self.p("__attribute__((visibility(\"default\"))) ", .{});
+        self.typ(ret);
+        self.p(" {s}(", .{export_name});
+        for (fb.params, 0..) |*par, i| {
+            if (i > 0) self.p(", ", .{});
+            self.emit_param_decl(self.resolve_type(par.typ), par.name);
+        }
+        self.p(") {{\n", .{});
+        if (ret == .void) self.p("  ", .{}) else self.p("  return ", .{});
+        self.p("{s}(", .{cname});
+        for (fb.params, 0..) |*par, i| {
+            if (i > 0) self.p(", ", .{});
+            self.p("{s}", .{par.name});
+        }
+        self.p(");\n}}\n\n", .{});
     }
 
     fn emit_vararg_func_def(self: *CodeGen, fd: *const ast.FuncDecl) E!void {
@@ -8971,8 +9286,22 @@ pub const CodeGen = struct {
         }
         self.ind();
         const ret_name = if (expr.* == .name) expr.name.ident else "";
+        // The frees below are emitted *before* the return expression, so a table
+        // the expression still reads must not be freed here: `t[1] + t[2] + t[3]`
+        // as an implicit return produced
+        //     free(__dt_t); return ((__dt_t[1] + __dt_t[2]) + __dt_t[3]);
+        // — a use-after-free that returned garbage. The old guard only covered
+        // `return t` (the expression *being* the name), not expressions that read
+        // it. Skipping the free leaks the table for the rest of the process;
+        // that is strictly better than reading freed memory, and the allocation
+        // is function-local and bounded.
+        const frees_dense = struct {
+            fn skip(e: *const ast.Expr, dt: []const u8, rname: []const u8) bool {
+                return std.mem.eql(u8, dt, rname) or expr_references_name(e, dt);
+            }
+        };
         if (self.dense_table) |dt| {
-            if (!std.mem.eql(u8, dt, ret_name)) {
+            if (!frees_dense.skip(expr, dt, ret_name)) {
                 self.pl("free(__dt_{s});", .{dt});
             }
         }
@@ -8980,7 +9309,7 @@ pub const CodeGen = struct {
         if (self.current_func_body) |fb| {
             for (fb.dense_tables) |dt| {
                 if (self.dense_table) |primary| if (std.mem.eql(u8, dt, primary)) continue;
-                if (!std.mem.eql(u8, dt, ret_name)) {
+                if (!frees_dense.skip(expr, dt, ret_name)) {
                     self.pl("free(__dt_{s});", .{dt});
                 }
             }
@@ -9029,7 +9358,13 @@ pub const CodeGen = struct {
                     for (seq.exprs[1..]) |v| {
                         self.ind();
                         self.p("lua_mret_push(", .{});
-                        try self.emit_expr(v);
+                        // `lua_mret_push` takes a `lua_Value` unconditionally —
+                        // only the *returned* first value follows the function's
+                        // native return type. Emitting the extras raw here passed
+                        // `char*` and `NULL` straight into it ("passing 'char *'
+                        // to parameter of incompatible type 'lua_Value'"), which
+                        // is what stopped duo_lsp.duo from compiling.
+                        try self.emit_as_lua_value(v);
                         self.p(");\n", .{});
                     }
                     self.ind();
@@ -9200,10 +9535,15 @@ pub const CodeGen = struct {
             };
             if (!read_later and !self.stmt_has_cross_branch_read(stmt, name)) continue;
             // Hoist a scalar (or boxed) declaration before the control statement.
-            const effective: RT = if (rt == .any or rt.is_numeric() or rt == .bool or rt == .str)
+            var effective: RT = if (rt == .any or rt.is_numeric() or rt == .bool or rt == .str)
+                rt
+            else if (self.type_lowers_native(rt))
                 rt
             else
                 .any;
+            if (effective == .@"struct") {
+                if (self.record_aliases.get(effective.@"struct".name)) |alias_rt| effective = alias_rt;
+            }
             try self.note_local(name);
             try self.note_local_type(name, effective);
             self.ind();
@@ -9215,6 +9555,11 @@ pub const CodeGen = struct {
                 },
                 .bool => self.pl("bool {s} = false;", .{name}),
                 .str => self.pl("const char* {s} = 0;", .{name}),
+                .table_type => {
+                    try self.ensure_record_decl(effective);
+                    var buf: [64]u8 = undefined;
+                    self.pl("{s} {s} = {{0}};", .{ self.c_type(effective, &buf), name });
+                },
                 else => {
                     var buf: [64]u8 = undefined;
                     self.pl("{s} {s} = 0;", .{ effective.c_type(&buf), name });
@@ -9236,7 +9581,10 @@ pub const CodeGen = struct {
                     const name = tgt.name.ident;
                     if (excluded.contains(name)) continue;
                     if (self.is_local_name(name) or self.is_global_name(name) or is_runtime_global(name)) continue;
-                    const vt = if (i < as.values.len) self.expr_type(as.values[i]) else .any;
+                    const vt = if (i < as.values.len) blk: {
+                        if (self.infer_req_module_call_return_type(as.values[i])) |call_rt| break :blk call_rt;
+                        break :blk self.expr_type(as.values[i]);
+                    } else .any;
                     if (out.get(name)) |prev| {
                         try out.put(name, self.merge_assigned_types(prev, vt));
                     } else {
@@ -9806,7 +10154,39 @@ pub const CodeGen = struct {
                                 if (self.req_module_skips_lua_binding(path)) {
                                     try self.mark_req_native_direct(name);
                                     try self.note_comptime_unavailable(name);
-                                    if (!(self.at_module_top_level or self.emitting_main_driver)) continue;
+                                    // Native-direct req targets expose C symbols only; duo_mod_* returns nil.
+                                    //
+                                    // Only safe at module scope. Skipping assumes every use
+                                    // resolves to a direct C symbol, but the use site decides
+                                    // independently: `lookup_req_module_func_type` +
+                                    // `funcTypeLowersNative` send any member whose type is not
+                                    // a native scalar down the dynamic path, emitting
+                                    // `lua_table_get_str_lit(m, …)`. `std.io.input()` returns a
+                                    // file handle, so `m = req "std.io"` inside a function was
+                                    // skipped *and* still referenced — "use of undeclared
+                                    // identifier 'm'". Module-level bindings survive because
+                                    // they get `duo_g_*` storage anyway; function-local ones do
+                                    // not. This is what stopped `std.mcp:mcp_read_message` from
+                                    // reading stdin, so the Duo MCP servers never handshook.
+                                    // `current_module_cname.len > 0` means "somewhere inside
+                                    // module M", not "at M's top level" — it stays set through
+                                    // every function body in the module. Gating on it alone
+                                    // re-created the exact bug this comment describes, one level
+                                    // down: `io_mod = req "std.io"` inside `mcp_read_message` was
+                                    // skipped, then referenced as `std_mcp__io_mod`. A binding is
+                                    // module-scope only when no function body is open.
+                                    // `at_module_top_level` covers the *main* translation
+                                    // unit, where a req binding lowers to an ordinary
+                                    // file-scope local (`mcp`), not a `duo_g_` global.
+                                    // Skipping there dropped the initializer while every
+                                    // use still emitted the bare name — this is why
+                                    // `mcp = req "std.mcp"` in duo_bench.duo produced
+                                    // "use of undeclared identifier 'mcp'". Only embedded
+                                    // modules, which really do get `duo_g_` storage, may
+                                    // be skipped.
+                                    const module_scope = self.current_module_cname.len > 0 and
+                                        self.current_func_name == null;
+                                    if (module_scope) continue;
                                 }
                             }
                         }
@@ -10201,7 +10581,9 @@ pub const CodeGen = struct {
                     for (r.vals[1..]) |v| {
                         self.ind();
                         self.p("lua_mret_push(", .{});
-                        try self.emit_expr(v);
+                        // Same as the `.seq` path above: pushed extras are always
+                        // boxed; only the returned value is native.
+                        try self.emit_as_lua_value(v);
                         self.p(");\n", .{});
                     }
                     self.ind();
@@ -10559,7 +10941,11 @@ pub const CodeGen = struct {
                     self.pl("lua_mret_clear();", .{});
                     self.ind();
                     self.p("lua_Value tbl = ", .{});
-                    try self.emit_expr(tbl);
+                    // `emit_as_lua_value`, not `emit_expr`: a dense table lowers to a
+                    // raw `int64_t*`, and assigning that straight into a `lua_Value`
+                    // is a type error — `for v in t` over a dense literal did not
+                    // compile. The list-comprehension path above already does this.
+                    try self.emit_as_lua_value(tbl);
                     self.p(";\n", .{});
                     self.ind();
                     self.p("lua_Value _gf_mm = ", .{});
@@ -11251,6 +11637,16 @@ pub const CodeGen = struct {
             }
             return;
         }
+        // `tonumber(s) or fallback` already lowers to a native double under full
+        // native lowering, so coercing it must be a plain cast — `lua_to_num` does
+        // not exist in that profile.
+        if (want.is_numeric() and self.expr_is_native_tonumber_or(e)) {
+            var cbuf: [64]u8 = undefined;
+            self.p("(({s})(", .{want.c_type(&cbuf)});
+            try self.emit_expr(e);
+            self.p("))", .{});
+            return;
+        }
         switch (want) {
             .str => {
                 if (et == .str) {
@@ -11313,17 +11709,23 @@ pub const CodeGen = struct {
                 }
                 if (obj_rt != .any and self.expr_type(e) != .any) return false;
                 const hash = calc_lua_hash(f.field);
+                // Pass 34 L2 — interned field IDs: every fallback `.field` access on the
+                // dynamic path is emitted through a duo_fallback_get_* marker carrying a
+                // stable per-compilation field ID. The marker expands to the standard
+                // string-keyed lookup (zero runtime cost), and the generated C records
+                // fallback field access + interned field-ID counts for the L6 manifest.
+                const fid = self.interned_fallback_field_id(f.field);
                 if (want.is_numeric()) {
                     var buf: [64]u8 = undefined;
-                    self.p("(({s})lua_table_get_str_num(", .{want.c_type(&buf)});
+                    self.p("(({s})duo_fallback_get_num({d}, ", .{ want.c_type(&buf), fid });
                     try self.emit_expr(f.obj);
                     self.p(", \"{s}\", {d}u, {d}))", .{ f.field, hash, f.field.len });
                 } else if (want == .bool) {
-                    self.p("lua_table_get_str_bool(", .{});
+                    self.p("duo_fallback_get_bool({d}, ", .{fid});
                     try self.emit_expr(f.obj);
                     self.p(", \"{s}\", {d}u, {d})", .{ f.field, hash, f.field.len });
                 } else {
-                    self.p("lua_table_get_str_cstr(", .{});
+                    self.p("duo_fallback_get_cstr({d}, ", .{fid});
                     try self.emit_expr(f.obj);
                     self.p(", \"{s}\", {d}u, {d})", .{ f.field, hash, f.field.len });
                 }
@@ -11824,6 +12226,32 @@ pub const CodeGen = struct {
                 self.p("lua_val_from_func((void*){s}__argv)", .{argv_cname});
                 return;
             }
+            // A module file-scope constant is emitted as a *native* C const
+            // (`static const int64_t std_hash_crc64__poly_lo`), but `expr_type`
+            // reports it as a plain comptime binding, so no boxing wrapper was
+            // added and it reached `lua_bxor` raw: "passing 'const int64_t' to
+            // parameter of incompatible type 'lua_Value'". Box it here, where we
+            // know a lua_Value is required.
+            if (self.current_module_cname.len > 0 and
+                self.global_type(expr.name.ident) == null and
+                !self.is_local_name(expr.name.ident) and
+                self.function_c_names.get(expr.name.ident) == null)
+            {
+                if (self.comptime_bindings().get(expr.name.ident)) |cv| {
+                    const wrap: ?[]const u8 = switch (cv) {
+                        .int => "lua_val_from_int",
+                        .float => "lua_val_from_num",
+                        .bool => "lua_val_from_bool",
+                        else => null,
+                    };
+                    if (wrap) |w| {
+                        self.p("{s}(", .{w});
+                        self.emit_var_name(expr.name.ident);
+                        self.p(")", .{});
+                        return;
+                    }
+                }
+            }
         }
         if (expr.* == .string_lit) {
             const hash = calc_lua_hash(expr.string_lit.val);
@@ -11892,6 +12320,38 @@ pub const CodeGen = struct {
                 self.p("lua_val_nil()", .{});
             },
         }
+    }
+
+    /// Emit `Alias.fn(args)` as a direct call to the `req`'d module's symbol.
+    /// Returns false when the callee is not a resolvable module export, so the
+    /// caller can fall through to its existing handling.
+    fn emitReqQualifiedCall(self: *CodeGen, c: anytype) E!bool {
+        if (c.func.* != .field) return false;
+        const f = c.func.field;
+        if (f.obj.* != .name) return false;
+        const rc = self.req_ctx orelse return false;
+        // `@comp.c.export("name")` fixes the emitted C symbol, so it is used
+        // verbatim rather than mangled with the module prefix.
+        const sym = rc.exportSymbol(f.obj.name.ident, f.field) orelse return false;
+
+        self.p("{s}(", .{sym});
+        for (c.args, 0..) |arg, i| {
+            if (i > 0) self.p(", ", .{});
+            // A field access must go through the native path, which knows a
+            // record parameter passed by pointer needs `->`. Plain `emit_expr`
+            // always writes `.`, so `Str.sub(self.src, ...)` emitted
+            // `self.src` on a `self` that the same function was otherwise
+            // dereferencing as `self->pos` — clang rejected the whole module.
+            // The native helper falls back to `.` for non-pointer bases, so
+            // this is identical everywhere else.
+            if (arg.* == .field) {
+                try self.emit_native_field_access(arg.field.obj, arg.field.field);
+            } else {
+                try self.emit_expr(arg);
+            }
+        }
+        self.p(")", .{});
+        return true;
     }
 
     fn emit_bound_field_call(self: *CodeGen, c: anytype) E!void {
@@ -12043,6 +12503,10 @@ pub const CodeGen = struct {
     fn emit_expr(self: *CodeGen, expr: *const ast.Expr) E!void {
         switch (expr.*) {
             .quote, .unquote, .macro_call => self.p("/* unexpanded macro expression */ lua_val_nil()", .{}),
+            // Pass 36 G1/G2 (`@name`, `@`) are canon but Phase 0 ships no parser
+            // production for them, so nothing reaches here. Refuse rather than
+            // invent a lowering before the resolution ladder exists.
+            .semantic, .semantic_scope => self.p("/* Pass 36 semantic access: not yet lowered */ lua_val_nil()", .{}),
             .sequence => |seq| {
                 // In single-value context, emit first expression; rest are side effects.
                 if (seq.exprs.len > 0) {
@@ -12688,6 +13152,10 @@ pub const CodeGen = struct {
                     try self.emit_why_intrinsic(c.args);
                     return;
                 }
+                if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__why_module") and c.args.len == 1) {
+                    try self.emit_why_module_intrinsic(c.args);
+                    return;
+                }
                 // __origin(expr) — provenance summary: storage_class + shape_id when known
                 if (c.func.* == .name and std.mem.eql(u8, c.func.name.ident, "__origin") and c.args.len == 1) {
                     try self.emit_origin_intrinsic(c.args);
@@ -12844,8 +13312,8 @@ pub const CodeGen = struct {
                     // Mixed native/dynamic: non-allowlisted callees route through lua_invoke
                     // UNLESS the callee's resolved type proves all params+return are native.
                     // This is the per-call knowledge lattice (Pass 2) driving emission.
-                    if (self.mixed_scalar_mode and !self.moduleUsesFullNativeLowering() and
-                        ft == .func and !self.funcUsesNativeLowering(c.func.name.ident))
+                    if (!self.moduleUsesFullNativeLowering() and
+                        ft == .func and c.func.* == .name and !self.funcUsesNativeLowering(c.func.name.ident))
                     {
                         if (!self.funcTypeIsFullyNative(ft)) {
                             // Embedded modules: keep native ft for same-module calls with
@@ -12923,6 +13391,13 @@ pub const CodeGen = struct {
                             try self.emitDirectNamedFuncCall(expr);
                             return;
                         }
+                        // `Alias.fn(args)` where Alias came from `req`: emit a
+                        // direct call to the module's mangled symbol. Without
+                        // this a pure-native module had no lowering for any
+                        // qualified call and fell through to duo_fatal, which is
+                        // what blocked a Duo code generator from calling stdlib
+                        // primitives such as std.emit.
+                        if (try self.emitReqQualifiedCall(c)) return;
                         self.p("duo_fatal(\"unlowered native call\")", .{});
                         return;
                     }
@@ -13869,15 +14344,15 @@ pub const CodeGen = struct {
                                         try self.emit_expr(u.operand);
                                         self.p("))", .{});
                                     },
-                        .len => {
-                            if (u.operand.* == .name and self.is_native_str_list_local(u.operand.name.ident)) {
-                                self.p("{s}_len", .{u.operand.name.ident});
-                            } else {
-                                self.p("lua_len_num(", .{});
-                                try self.emit_expr(u.operand);
-                                self.p(")", .{});
-                            }
-                        },
+                                    .len => {
+                                        if (u.operand.* == .name and self.is_native_str_list_local(u.operand.name.ident)) {
+                                            self.p("{s}_len", .{u.operand.name.ident});
+                                        } else {
+                                            self.p("lua_len_num(", .{});
+                                            try self.emit_expr(u.operand);
+                                            self.p(")", .{});
+                                        }
+                                    },
                                     .bnot => {
                                         self.p("lua_bnot(", .{});
                                         try self.emit_expr(u.operand);
@@ -14000,6 +14475,33 @@ pub const CodeGen = struct {
                         // Mutable upvalue: pass address of the variable
                         self.p("&", .{});
                         self.emit_var_name(uv.name);
+                    } else if (self.upvalue_scalar_coercion(uv)) |scalar_rt| {
+                        // The closure slot is a `lua_Value`, but sema typed this
+                        // capture `.any` while codegen emitted the local as a
+                        // native scalar (`base = 100` -> `int64_t base`). Passing
+                        // it raw is a type error, so box it at the capture point.
+                        switch (scalar_rt) {
+                            .bool => {
+                                self.p("lua_val_from_bool(", .{});
+                                self.emit_var_name(uv.name);
+                                self.p(")", .{});
+                            },
+                            .str => {
+                                self.p("lua_val_from_str(", .{});
+                                self.emit_var_name(uv.name);
+                                self.p(")", .{});
+                            },
+                            .f32, .f64 => {
+                                self.p("lua_val_from_num((double)(", .{});
+                                self.emit_var_name(uv.name);
+                                self.p("))", .{});
+                            },
+                            else => {
+                                self.p("lua_val_from_int((int64_t)(", .{});
+                                self.emit_var_name(uv.name);
+                                self.p("))", .{});
+                            },
+                        }
                     } else if (uv.typ) |t| {
                         if (t == .func) {
                             try self.emit_native_func_name_as_lua_value(uv.name, t.func.params, t.func.is_compile_only);
@@ -14020,6 +14522,9 @@ pub const CodeGen = struct {
                         .positional => array_count += 1,
                         .named, .indexed => hash_count += 1,
                         .spread => {},
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries live in the
+                        // semantic namespace, so they reserve no ordinary table slot.
+                        .semantic => {},
                     }
                 }
                 self.p("({{\n", .{});
@@ -14099,6 +14604,11 @@ pub const CodeGen = struct {
                             self.ind();
                             self.pl("}}", .{});
                         },
+                        // Pass 36 G8 (`{ @eq = impl }`): a semantic entry installs into
+                        // the semantic namespace, not the ordinary table, so it emits
+                        // no raw set here. Refuse rather than invent an installation
+                        // path before the resolution ladder exists.
+                        .semantic => self.p("/* Pass 36 semantic table entry: not yet lowered */\n", .{}),
                     }
                 }
                 self.ind();
@@ -15432,6 +15942,25 @@ pub const CodeGen = struct {
         const fallback = "no compiler explanation available for this expression kind yet";
         self.logTransformProvenance("comp.why", .emit_call, "expr", fallback);
         self.p("\"{s}\"", .{fallback});
+    }
+
+    /// __why_module(binding) — Pass 34 L1 module sealing witness string.
+    fn emit_why_module_intrinsic(self: *CodeGen, args: []const *ast.Expr) E!void {
+        const explanation = blk: {
+            if (args[0].* != .name) break :blk "module_sealed=n/a; operand is not a module binding name";
+            const name = args[0].name.ident;
+            const has_req = self.req_module_bindings.contains(name);
+            const sealed = self.module_sealed_bindings.contains(name);
+            if (has_req and sealed) {
+                break :blk "module_sealed=true; req binding frozen after load; cross-module calls may devirtualize";
+            }
+            if (has_req) {
+                break :blk "module_sealed=false; req binding mutated after load; guarded dynamic fallback";
+            }
+            break :blk "module_sealed=n/a; not a req module binding";
+        };
+        self.logTransformProvenance("comp.why.module", .emit_call, "binding", explanation);
+        self.p("\"{s}\"", .{explanation});
     }
 
     /// __origin(expr) — compact provenance: storage_class + shape_id for typed records
@@ -17436,6 +17965,21 @@ pub const CodeGen = struct {
         return false;
     }
 
+    /// True when `e` is the `tonumber(s) or fallback` form that
+    /// `try_emit_native_tonumber_or` lowers to a native strtod statement
+    /// expression. Callers must not wrap such an expression in `lua_to_num()`:
+    /// it already yields a `double`, and the full-native profile that selects
+    /// this lowering never declares `lua_to_num`.
+    fn expr_is_native_tonumber_or(self: *CodeGen, e: *const ast.Expr) bool {
+        if (e.* != .binop) return false;
+        const b = e.binop;
+        if (b.op != .@"or" or self.moduleNeedsLuaRuntime()) return false;
+        if (b.lhs.* != .call or b.lhs.call.func.* != .name) return false;
+        if (!std.mem.eql(u8, b.lhs.call.func.name.ident, "tonumber")) return false;
+        if (b.lhs.call.args.len != 1 or self.expr_type(b.lhs.call.args[0]) != .str) return false;
+        return true;
+    }
+
     fn try_emit_native_tonumber_or(self: *CodeGen, b: anytype) E!bool {
         if (b.op != .@"or" or self.moduleNeedsLuaRuntime()) return false;
         if (b.lhs.* != .call or b.lhs.call.func.* != .name) return false;
@@ -18300,6 +18844,8 @@ pub const CodeGen = struct {
                         .named => |nmd| try self.collect_closures_expr(nmd.val, list),
                         .positional => |pos| try self.collect_closures_expr(pos, list),
                         .spread => |sp| try self.collect_closures_expr(sp, list),
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                        .semantic => |sm| try self.collect_closures_expr(sm.val, list),
                     }
                 }
             },
@@ -18639,6 +19185,8 @@ pub const CodeGen = struct {
                         .named => |nmd| try self.collect_require_names(nmd.val, names),
                         .positional => |pos| try self.collect_require_names(pos, names),
                         .spread => |sp| try self.collect_require_names(sp, names),
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): walk the implementation only.
+                        .semantic => |sm| try self.collect_require_names(sm.val, names),
                     }
                 }
             },
@@ -18839,6 +19387,14 @@ pub const CodeGen = struct {
                 defer self.alloc.free(sub_src);
                 var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path.?);
                 var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
+                sub_parser.duo_mode = std.mem.endsWith(u8, mod_path.?, ".duo");
+                // The embed path must parse a `.duo` module in the same dialect the
+                // standalone path uses. Without this, duo-mode-only syntax (bare
+                // function declarations) parses fine when the file is compiled
+                // directly but fails with "expected '<eof>', got 'end'" the moment it
+                // is embedded — which is what stopped `std/script.duo` and
+                // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
+                sub_parser.duo_mode = std.mem.endsWith(u8, mod_path.?, ".duo");
                 var sub_mod = sub_parser.parse_module() catch |e| {
                     term.err("emit_required_modules: re-parse failed for {s}: {}", .{ mod_path.?, e });
                     continue;
@@ -19102,6 +19658,13 @@ pub const CodeGen = struct {
             defer self.alloc.free(sub_src);
             var sub_lex = @import("lexer.zig").Lexer.init(sub_src, mod_path);
             var sub_parser = @import("parser.zig").Parser.init(&sub_lex, self.alloc);
+            // The embed path must parse a `.duo` module in the same dialect the
+            // standalone path uses. Without this, duo-mode-only syntax (bare
+            // function declarations) parses fine when the file is compiled
+            // directly but fails with "expected '<eof>', got 'end'" the moment it
+            // is embedded — which is what stopped `std/script.duo` and
+            // `std/mcp.duo` from embedding, and so kept the Duo MCP servers dead.
+            sub_parser.duo_mode = std.mem.endsWith(u8, mod_path, ".duo");
             var sub_mod = sub_parser.parse_module() catch return false;
             self.collect_require_names_block(&sub_mod.body, &names) catch return false;
             for (sub_mod.body.stmts) |*sub_stmt| {
@@ -19113,6 +19676,80 @@ pub const CodeGen = struct {
         return true;
     }
 
+    fn req_binding_path_for_name(mod: *const ast.Module, name: []const u8) ?[]const u8 {
+        for (mod.body.stmts) |*stmt| {
+            switch (stmt.*) {
+                .local_decl => |*ld| {
+                    for (ld.names, 0..) |*ln, i| {
+                        if (!std.mem.eql(u8, ln.ident, name)) continue;
+                        if (i < ld.inits.len) {
+                            if (req_path_from_expr(ld.inits[i])) |path| return path;
+                        }
+                    }
+                },
+                .assign => |*as| {
+                    if (as.targets.len != 1 or as.values.len != 1 or as.targets[0].* != .name) continue;
+                    if (!std.mem.eql(u8, as.targets[0].name.ident, name)) continue;
+                    if (req_path_from_expr(as.values[0])) |path| return path;
+                },
+                .global_decl => |*gd| {
+                    for (gd.names, 0..) |*ln, i| {
+                        if (!std.mem.eql(u8, ln.ident, name)) continue;
+                        if (i < gd.inits.len) {
+                            if (req_path_from_expr(gd.inits[i])) |path| return path;
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    fn emit_embedded_module_req_binding_inits(self: *CodeGen, mod: *const ast.Module) !void {
+        var it = self.req_module_bindings.iterator();
+        while (it.next()) |entry| {
+            const name = entry.key_ptr.*;
+            if (self.req_native_direct.contains(name) and !module_top_level_assigns(mod, name)) continue;
+            const path = req_binding_path_for_name(mod, name) orelse continue;
+            // A module that was embedded has its definitions inlined and its
+            // functions called directly, so no runtime require is needed. Emitting
+            // one anyway assigns to a `duo_g_*` global that is never declared —
+            // invalid C. The declaration and the assignment disagree because
+            // `mangled_name` prefixes with `current_module_cname` while the
+            // declaration was emitted in the outer module's (empty) context, so a
+            // *nested* embedded module requiring another embedded module (e.g.
+            // std.compiler.token -> std.token.classify) writes to a symbol that
+            // does not exist and that nothing reads.
+            // ...unless real `duo_g_` storage was declared for this binding, in
+            // which case the body *does* read it as a table (e.g. std.script's
+            // `_os.read_file(p)` lowers to `lua_table_get_str_lit(duo_g_std_script__os,
+            // "read_file", …)`). Skipping the require then leaves the global
+            // permanently VAL_NIL and the first call through it segfaults —
+            // which is what took out std.script, and with it every repo tooling
+            // script and both duo-mcp servers. The declaration loop above has
+            // already populated `emitted_global_storage`, so this is exact:
+            // emit the require iff something will read the global.
+            if (self.current_module_cname.len > 0) {
+                if (self.find_module_file_for_req(path)) |mod_file| {
+                    if (self.embedded_module_paths.contains(mod_file)) {
+                        var kb: [512]u8 = undefined;
+                        const declared = if (std.fmt.bufPrint(&kb, "{s}|{s}", .{ self.current_module_cname, name })) |k|
+                            self.emitted_global_storage.contains(k)
+                        else |_|
+                            false;
+                        if (!declared) continue;
+                    }
+                }
+            }
+            const hash = calc_lua_hash(path);
+            self.ind();
+            self.p("duo_g_{s}_{s} = lua_require(lua_val_from_literal(\"", .{ self.current_module_cname, name });
+            try self.emit_string_escaped(path);
+            self.p("\", {d}u, {d}));\n", .{ hash, path.len });
+        }
+    }
+
     fn collect_req_module_bindings(self: *CodeGen, mod: *const ast.Module) !void {
         for (mod.body.stmts) |*stmt| {
             switch (stmt.*) {
@@ -19122,6 +19759,7 @@ pub const CodeGen = struct {
                         const path = req_path_from_expr(ld.inits[i]) orelse continue;
                         try self.try_register_req_binding(ln.ident, path);
                         if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
+                        if (self.duo_mode) try self.mark_module_sealed(ln.ident);
                     }
                 },
                 .assign => |*as| {
@@ -19129,6 +19767,7 @@ pub const CodeGen = struct {
                     const path = req_path_from_expr(as.values[0]) orelse continue;
                     try self.try_register_req_binding(as.targets[0].name.ident, path);
                     if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(as.targets[0].name.ident);
+                    if (self.duo_mode) try self.mark_module_sealed(as.targets[0].name.ident);
                 },
                 .global_decl => |*gd| {
                     for (gd.names, 0..) |*ln, i| {
@@ -19136,10 +19775,83 @@ pub const CodeGen = struct {
                         const path = req_path_from_expr(gd.inits[i]) orelse continue;
                         try self.try_register_req_binding(ln.ident, path);
                         if (self.req_module_skips_lua_binding(path)) try self.mark_req_native_direct(ln.ident);
+                        if (self.duo_mode) try self.mark_module_sealed(ln.ident);
                     }
                 },
                 else => {},
             }
+        }
+        try self.collect_module_seal_invalidations(mod);
+    }
+
+    fn mark_module_sealed(self: *CodeGen, name: []const u8) !void {
+        if (self.module_sealed_bindings.contains(name)) return;
+        const owned = try self.alloc.dupe(u8, name);
+        try self.module_sealed_bindings.put(self.alloc, owned, {});
+    }
+
+    /// Pass 34 L2 — assign a stable interned field ID to a fallback `.field` access.
+    /// IDs are assigned in first-use order per compilation (0-based).
+    fn interned_fallback_field_id(self: *CodeGen, field: []const u8) u32 {
+        if (self.fallback_interned_fields.get(field)) |id| return id;
+        const owned = self.alloc.dupe(u8, field) catch return 0;
+        const next_id: u32 = @intCast(self.fallback_interned_fields.count());
+        self.fallback_interned_fields.put(self.alloc, owned, next_id) catch return 0;
+        return next_id;
+    }
+
+    fn invalidate_module_sealed(self: *CodeGen, name: []const u8) void {
+        if (self.module_sealed_bindings.fetchRemove(name)) |kv| {
+            self.alloc.free(kv.key);
+        }
+    }
+
+    fn collect_module_seal_invalidations_in_block(self: *CodeGen, block: *const ast.Block) void {
+        for (block.stmts) |*stmt| {
+            switch (stmt.*) {
+                .assign => |*as| {
+                    for (as.targets, 0..) |tgt, i| {
+                        const val: ?*const ast.Expr = if (i < as.values.len) as.values[i] else null;
+                        self.note_module_seal_invalidation(tgt, val);
+                    }
+                },
+                .if_stmt => |*is| {
+                    self.collect_module_seal_invalidations_in_block(&is.then);
+                    for (is.elseifs) |*ei| self.collect_module_seal_invalidations_in_block(&ei.body);
+                    if (is.else_body) |*eb| self.collect_module_seal_invalidations_in_block(eb);
+                },
+                .while_loop => |*wl| self.collect_module_seal_invalidations_in_block(&wl.body),
+                .repeat_loop => |*rl| self.collect_module_seal_invalidations_in_block(&rl.body),
+                .do_block => |*db| self.collect_module_seal_invalidations_in_block(&db.body),
+                else => {},
+            }
+        }
+    }
+
+    fn collect_module_seal_invalidations(self: *CodeGen, mod: *const ast.Module) !void {
+        if (!self.duo_mode) return;
+        self.collect_module_seal_invalidations_in_block(&mod.body);
+    }
+
+    fn note_module_seal_invalidation(self: *CodeGen, tgt: *const ast.Expr, value: ?*const ast.Expr) void {
+        switch (tgt.*) {
+            .name => |n| {
+                if (self.module_sealed_bindings.contains(n.ident)) {
+                    if (value) |v| {
+                        if (req_path_from_expr(v) == null) self.invalidate_module_sealed(n.ident);
+                    } else {
+                        self.invalidate_module_sealed(n.ident);
+                    }
+                } else if (value) |v| {
+                    if (req_path_from_expr(v)) |_| self.mark_module_sealed(n.ident) catch {};
+                }
+            },
+            .field => |f| {
+                if (f.obj.* == .name and self.module_sealed_bindings.contains(f.obj.name.ident)) {
+                    self.invalidate_module_sealed(f.obj.name.ident);
+                }
+            },
+            else => {},
         }
     }
 
@@ -19260,7 +19972,18 @@ pub const CodeGen = struct {
         result_rt: RT,
     ) E!bool {
         var sym_buf: [384]u8 = undefined;
-        const sym = std.fmt.bufPrint(&sym_buf, "{s}__{s}", .{ mod_cname, field }) catch return false;
+        // A cross-module const field read assumes the target is a folded
+        // `static const <mod>__<field>`. When that module instead emitted real
+        // `duo_g_` storage (because one of its own functions reads the name),
+        // the const symbol does not exist and this produced "use of undeclared
+        // identifier 'std_vector__WORD_W'" in the export table. Follow whatever
+        // storage was actually declared.
+        var key_buf: [512]u8 = undefined;
+        const storage_key = std.fmt.bufPrint(&key_buf, "{s}|{s}", .{ mod_cname, field }) catch "";
+        const sym = if (storage_key.len > 0 and self.emitted_global_storage.contains(storage_key))
+            std.fmt.bufPrint(&sym_buf, "duo_g_{s}_{s}", .{ mod_cname, field }) catch return false
+        else
+            std.fmt.bufPrint(&sym_buf, "{s}__{s}", .{ mod_cname, field }) catch return false;
         const cast_rt = result_rt;
         if (cast_rt.is_integer() or cast_rt.is_float() or cast_rt == .bool) {
             if (cast_rt.is_integer()) {
@@ -19381,16 +20104,28 @@ pub const CodeGen = struct {
             }
         }
         self.p("{s}(", .{mname});
-        // The callee's module context was only needed to mangle `mname`. The
-        // arguments are the *caller's* expressions, so restore before emitting
-        // them — otherwise a constant belonging to the calling module gets the
-        // callee's prefix (e.g. runtime.duo's PAGE_SIZE emitted as
-        // `std_mem__PAGE_SIZE` inside a `mem_mod.dup(...)` call).
+        // Arguments belong to the caller's scope (names/constants must not pick up
+        // the callee module prefix), but record params still use the callee's
+        // pointer ABI — restore caller context only for name resolution, not &.
         self.current_module_cname = saved_cname;
+        // Arguments are the *caller's* expressions, so the caller's body must be
+        // in scope while emitting them. Leaving the callee's body installed made
+        // `expr_is_native_record_ptr_param` search the callee's parameter list,
+        // so a record the caller holds by pointer emitted `self.src` while the
+        // rest of the same function used `self->pos` — clang then rejected the
+        // module. The callee is still consulted for param *types* below, which
+        // come from `ft` and do not depend on the installed body.
+        self.current_func_body = saved_body;
         for (args, 0..) |arg, i| {
             if (i > 0) self.p(", ", .{});
             const pt: RT = if (i < ft.func.params.len) ft.func.params[i] else .any;
-            if (self.native_record_param_by_ptr(pt)) {
+            const pass_by_ptr = blk: {
+                self.current_module_cname = mod_cname;
+                const by_ptr = self.native_record_param_by_ptr(pt);
+                self.current_module_cname = saved_cname;
+                break :blk by_ptr;
+            };
+            if (pass_by_ptr) {
                 self.p("&", .{});
                 try self.emit_expr(arg);
             } else {
@@ -19531,6 +20266,8 @@ pub const CodeGen = struct {
                     .named => |named| if (expr_references_name(named.val, name)) break :blk true,
                     .positional => |pos| if (expr_references_name(pos, name)) break :blk true,
                     .spread => |sp| if (expr_references_name(sp, name)) break :blk true,
+                    // Pass 36 G1/G8 recorded, not implemented (Phase 0): only the implementation can reference a name.
+                    .semantic => |sm| if (expr_references_name(sm.val, name)) break :blk true,
                 };
                 break :blk false;
             },
@@ -19620,6 +20357,16 @@ pub const CodeGen = struct {
     fn func_body_references_name(fb: *const ast.FuncBody, name: []const u8) bool {
         for (fb.params) |param| if (std.mem.eql(u8, param.name, name)) return false;
         return block_references_name(&fb.body, name);
+    }
+
+    /// True when any top-level function assigns `name` (so it cannot be folded to
+    /// a compile-time constant — it needs storage). Uses the existing
+    /// `block_assigns_name` method, which already walks nested blocks.
+    fn module_functions_assign_name(self: *CodeGen, mod: *const ast.Module, name: []const u8) bool {
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl and self.block_assigns_name(&stmt.func_decl.func.body, name)) return true;
+        }
+        return false;
     }
 
     fn module_functions_reference_name(mod: *const ast.Module, name: []const u8) bool {
@@ -19885,6 +20632,10 @@ pub const CodeGen = struct {
             term.err("emit_embedded_module: req module bindings failed for {s}: {}", .{ path, e });
             return false;
         };
+        self.promote_module_captured_locals(&submod, @constCast(self.module_globals.?), self.type_map) catch |e| {
+            term.err("emit_embedded_module: promote globals failed for {s}: {}", .{ path, e });
+            return false;
+        };
         if (!self.ensure_req_deps_embedded(&submod)) {
             term.err("emit_embedded_module: req dependency embed failed for {s}", .{path});
             return false;
@@ -19927,7 +20678,16 @@ pub const CodeGen = struct {
             var any_global = false;
             while (globals_it.next()) |entry| {
                 if (self.is_native_dense_module_table(entry.key_ptr.*)) continue;
-                if (embedded_module_scalar_const_assign(&submod, entry.key_ptr.*) != null) continue;
+                // Third instance of the read-vs-write skip defect: a module-top-level
+                // scalar assignment (`WORD_W = 3.0` in std/vector.duo) folds at its
+                // use sites *only* when those sites resolve it directly. A function
+                // body reads it as `duo_g_<mod>_WORD_W`, so dropping the declaration
+                // produced "use of undeclared identifier". Keep storage whenever a
+                // function in the module references the name; the top-level assign
+                // still emits the initializer, so the value is not lost.
+                const scalar_const_init = embedded_module_scalar_const_assign(&submod, entry.key_ptr.*);
+                if (scalar_const_init != null and
+                    !module_functions_reference_name(&submod, entry.key_ptr.*)) continue;
                 // A native-direct req binding normally needs no variable (uses
                 // resolve to C symbols), but a `global x = req "..."` that the
                 // body reads through an `.any`-typed field access still emits
@@ -19945,11 +20705,34 @@ pub const CodeGen = struct {
                     !module_top_level_assigns(&submod, entry.key_ptr.*)) continue;
                 if (!self.moduleNeedsLuaRuntime() and rt == .any) continue;
                 any_global = true;
+                {
+                    var kb: [512]u8 = undefined;
+                    if (std.fmt.bufPrint(&kb, "{s}|{s}", .{ self.current_module_cname, entry.key_ptr.* })) |k| {
+                        if (self.alloc.dupe(u8, k)) |owned| {
+                            self.emitted_global_storage.put(self.alloc, owned, {}) catch {};
+                        } else |_| {}
+                    } else |_| {}
+                }
                 if (rt == .any) {
                     self.p("static lua_Value duo_g_{s}_{s};\n", .{ self.current_module_cname, entry.key_ptr.* });
                 } else {
                     var buf: [128]u8 = undefined;
-                    self.p("static {s} duo_g_{s}_{s};\n", .{ rt.c_type(&buf), self.current_module_cname, entry.key_ptr.* });
+                    self.p("static {s} duo_g_{s}_{s}", .{ rt.c_type(&buf), self.current_module_cname, entry.key_ptr.* });
+                    // The top-level assignment that gave this global its value is
+                    // folded away, not emitted, so declaring the storage alone left
+                    // `WORD_W` reading 0.0 instead of 3.0 — a silent wrong answer
+                    // rather than a link error. Carry the literal into the
+                    // declaration. `embedded_module_scalar_const_assign` only ever
+                    // returns int/float/true/false literals, so this cannot reorder
+                    // or duplicate a side effect.
+                    if (scalar_const_init) |ce| {
+                        self.p(" = ", .{});
+                        self.emit_expr(ce) catch |e| {
+                            term.err("emit_embedded_module: const init emit failed for {s}: {}", .{ entry.key_ptr.*, e });
+                            return false;
+                        };
+                    }
+                    self.p(";\n", .{});
                 }
             }
             self.emit_native_dense_module_table_decls() catch |e| {
@@ -19986,6 +20769,8 @@ pub const CodeGen = struct {
                         return false;
                     };
                 } else {
+                    if (!self.module_functions_assign_name(&submod, cd.ident))
+                        self.const_read_only.put(self.alloc, cd.ident, {}) catch {};
                     self.p("static const ", .{});
                     self.typ(rt);
                     self.p(" {s} = ", .{mname});
@@ -20087,10 +20872,10 @@ pub const CodeGen = struct {
         for (sub_funcs.items) |fd| {
             if (fd.path.len == 1 and !fd.method) {
                 // Embedded-module functions are always emitted: they are the module's API,
-            // reachable through its export table. Filtering them by native-scalar
-            // eligibility dropped every helper with `any` in its signature while the
-            // table still referenced it, so `req "std.jit"`/`"std.mem"` could not
-            // compile at all (BUG C).
+                // reachable through its export table. Filtering them by native-scalar
+                // eligibility dropped every helper with `any` in its signature while the
+                // table still referenced it, so `req "std.jit"`/`"std.mem"` could not
+                // compile at all (BUG C).
                 self.note_func_body(fd.path[0], &fd.func) catch |e| {
                     term.err("emit_embedded_module: func body registration failed for {s}: {}", .{ fd.path[0], e });
                     return false;
@@ -20135,10 +20920,23 @@ pub const CodeGen = struct {
         }
         if (table_consts.items.len > 0) self.p("\n", .{});
 
-        // Always emit the module thunk. The caller registers every embedded
-        // module in duo_register_modules() unconditionally, and ward requires
-        // several of them at runtime — skipping the thunk here left those
-        // registrations naming an undefined symbol.
+        // Emit the module thunk whenever a lua runtime exists. The caller
+        // registers every embedded module in duo_register_modules(), and ward
+        // requires several of them at runtime — skipping the thunk while that
+        // registration is emitted leaves it naming an undefined symbol.
+        //
+        // Under full native lowering there is no lua runtime: the registration
+        // returns early on `moduleNeedsLuaRuntime()`, so nothing references the
+        // thunk, and emitting it anyway spells `lua_Value` — which that profile
+        // never declares. The two guards must stay symmetric, and the registration
+        // is emitted in the *parent's* context: `native_scalar_mode`,
+        // `substrate_native_mode` and `module_knowledge` are all swapped to the
+        // submodule's values by the time we get here, so consulting
+        // `moduleNeedsLuaRuntime()` now answers for the wrong module, and
+        // `embed_parent_full_native` answers for the immediate parent (which
+        // nesting clobbers: proof -> lexer -> token/classify). Use the
+        // translation-unit decision captured at preamble time.
+        if (!self.tu_needs_lua_runtime) return true;
 
         self.p("static lua_Value duo_mod_{s}(lua_Value _unused) {{\n", .{cname});
         self.p("    (void)_unused;\n", .{});
@@ -20149,6 +20947,10 @@ pub const CodeGen = struct {
         self.closure_ctx = null;
         self.push_local_scope() catch |e| {
             term.err("emit_embedded_module: scope setup failed: {}", .{e});
+            return false;
+        };
+        self.emit_embedded_module_req_binding_inits(&submod) catch |e| {
+            term.err("emit_embedded_module: req binding init failed: {}", .{e});
             return false;
         };
         // Initialize table-valued submodule constants
@@ -20645,7 +21447,7 @@ const duo_runtime =
     \\ * touching the union directly. A wasm i64 above 2^53 has no exact double
     \\ * representation, which is why the integer slot exists at all. */
     \\static inline double lua_num(lua_Value v) {
-    \\    return v.number_kind == 1 ? (double)v.as.ival : lua_num(v);
+    \\    return v.number_kind == 1 ? (double)v.as.ival : v.as.nval;
     \\}
     \\static inline int64_t lua_intval(lua_Value v) {
     \\    return v.number_kind == 1 ? v.as.ival : (int64_t)lua_num(v);
@@ -21320,7 +22122,7 @@ const duo_runtime =
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
     \\    }
-    ++ runtimeMetafieldLitLine("__index", "table", "idx") ++
+++ runtimeMetafieldLitLine("__index", "table", "idx") ++
     \\    if (idx.type == VAL_TABLE) return lua_table_get(idx, key);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { table, key };
@@ -21348,7 +22150,7 @@ const duo_runtime =
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
     \\    }
-    ++ runtimeMetafieldLitLine("__index", "table", "idx") ++
+++ runtimeMetafieldLitLine("__index", "table", "idx") ++
     \\    if (idx.type == VAL_TABLE) return lua_table_get_str_lit(idx, s, hash, len);
     \\    if (idx.type == VAL_FUNC || idx.type == VAL_CLOSURE) {
     \\        lua_Value key = lua_val_from_literal(s, hash, len);
@@ -21376,7 +22178,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
-    ++ runtimeMetafieldLitLine("__index", "table", "mt") ++
+++ runtimeMetafieldLitLine("__index", "table", "mt") ++
     \\        if (mt.type == VAL_TABLE) return lua_table_get_i64(mt, idx);
     \\        if (mt.type == VAL_FUNC || mt.type == VAL_CLOSURE) {
     \\            lua_Value key = lua_val_from_int(idx);
@@ -21407,7 +22209,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(table.type == VAL_TABLE)) {
     \\        lua_Table* t = (lua_Table*)table.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_nil();
-    ++ runtimeMetafieldLitLine("__index", "table", "mt") ++
+++ runtimeMetafieldLitLine("__index", "table", "mt") ++
     \\        if (mt.type == VAL_TABLE) return lua_table_get_num(mt, n);
     \\        if (mt.type == VAL_FUNC || mt.type == VAL_CLOSURE) {
     \\            lua_Value key = lua_val_from_num(n);
@@ -21788,7 +22590,7 @@ const duo_runtime =
     \\                lua_table_set_raw_str_lit(table, s, hash, len, val);
     \\                return;
     \\            }
-    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_TABLE) {
     \\                lua_table_set_str_lit(ni, s, hash, len, val);
     \\                return;
@@ -21810,6 +22612,14 @@ const duo_runtime =
     \\#define lua_table_init_lit(table, key, val) lua_table_set_raw_str_lit((table), (key), calc_hash((key), sizeof(key) - 1), sizeof(key) - 1, (val))
     \\#define lua_table_set_lit(table, key, val) lua_table_set_str_lit((table), (key), calc_hash((key), sizeof(key) - 1), sizeof(key) - 1, (val))
     \\
+    \\/* Pass 34 L2 — fallback `.field` access markers. The first argument is a stable
+    \\ * interned field ID (compile-time literal). The macro expands to the standard
+    \\ * string-keyed lookup, so there is no runtime cost; the marker lets the L6
+    \\ * manifest count fallback field accesses and distinct interned field IDs. */
+    \\#define duo_fallback_get_num(fid, table, s, hash, len) lua_table_get_str_num((table), (s), (hash), (len))
+    \\#define duo_fallback_get_bool(fid, table, s, hash, len) lua_table_get_str_bool((table), (s), (hash), (len))
+    \\#define duo_fallback_get_cstr(fid, table, s, hash, len) lua_table_get_str_cstr((table), (s), (hash), (len))
+    \\
     \\static inline void lua_table_set(lua_Value table, lua_Value key, lua_Value val) {
     \\    if (table.type == VAL_TABLE) {
     \\        lua_Value existing = lua_table_get_raw(table, key);
@@ -21819,7 +22629,7 @@ const duo_runtime =
     \\                lua_table_set_raw(table, key, val);
     \\                return;
     \\            }
-    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_TABLE) {
     \\                lua_table_set(ni, key, val);
     \\                return;
@@ -21859,7 +22669,7 @@ const duo_runtime =
     \\                lua_table_set_raw_i64(table, idx, val);
     \\                return;
     \\            }
-    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_NIL) {
     \\                lua_table_set_raw_i64(table, idx, val);
     \\                return;
@@ -21901,7 +22711,7 @@ const duo_runtime =
     \\                lua_table_set_raw_num(table, n, val);
     \\                return;
     \\            }
-    ++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
+++ runtimeMetafieldLitLine("__newindex", "table", "ni") ++
     \\            if (ni.type == VAL_NIL) {
     \\                lua_table_set_raw_num(table, n, val);
     \\                return;
@@ -21948,13 +22758,13 @@ const duo_runtime =
     \\}
     \\
     \\static inline const char* lua_concat(lua_Value a, lua_Value b) {
-    ++ runtimeMetafieldLitLine("__concat", "a", "mm") ++
+++ runtimeMetafieldLitLine("__concat", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
     \\        return lua_to_str(res);
     \\    }
-    ++ runtimeMetafieldLitReassignLine("__concat", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine("__concat", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        lua_Value res = lua_invoke(mm, 2, args);
@@ -21979,7 +22789,7 @@ const duo_runtime =
     \\        if (v.number_kind == 1) return lua_val_from_int(-(int64_t)lua_num(v));
     \\        return lua_val_from_num(-lua_num(v));
     \\    }
-    ++ runtimeMetafieldLitLine("__unm", "v", "mm") ++
+++ runtimeMetafieldLitLine("__unm", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -21991,7 +22801,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(v.type == VAL_NUMBER)) {
     \\        return lua_val_from_int(~((int64_t)lua_num(v)));
     \\    }
-    ++ runtimeMetafieldLitLine("__bnot", "v", "mm") ++
+++ runtimeMetafieldLitLine("__bnot", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -22001,27 +22811,51 @@ const duo_runtime =
     \\
     \\static inline lua_Value lua_add(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        /* Integer operands stay in int64. `lua_num_combine` takes a
+    \\         * *double*, so int arithmetic was rounded to 53 bits before its
+    \\         * round-trip check — and that check then passed on the already
+    \\         * rounded value. `crc_hi * 4294967296 + crc_lo` (62 bits) came
+    \\         * back with its low 9 bits cleared. Unsigned wrap matches Lua. */
+    \\        if (a.number_kind == 1 && b.number_kind == 1) {
+    \\            return lua_val_from_int((int64_t)((uint64_t)a.as.ival + (uint64_t)b.as.ival));
+    \\        }
     \\        return lua_num_combine(lua_num(a) + lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-    ++ runtimeBinopMetamethodLine(.add) ++
+++ runtimeBinopMetamethodLine(.add) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) + lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_sub(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        /* Integer operands stay in int64. `lua_num_combine` takes a
+    \\         * *double*, so int arithmetic was rounded to 53 bits before its
+    \\         * round-trip check — and that check then passed on the already
+    \\         * rounded value. `crc_hi * 4294967296 + crc_lo` (62 bits) came
+    \\         * back with its low 9 bits cleared. Unsigned wrap matches Lua. */
+    \\        if (a.number_kind == 1 && b.number_kind == 1) {
+    \\            return lua_val_from_int((int64_t)((uint64_t)a.as.ival - (uint64_t)b.as.ival));
+    \\        }
     \\        return lua_num_combine(lua_num(a) - lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-    ++ runtimeBinopMetamethodLine(.subtract) ++
+++ runtimeBinopMetamethodLine(.subtract) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) - lua_to_num(b));
     \\}
     \\
     \\static inline lua_Value lua_mul(lua_Value a, lua_Value b) {
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
+    \\        /* Integer operands stay in int64. `lua_num_combine` takes a
+    \\         * *double*, so int arithmetic was rounded to 53 bits before its
+    \\         * round-trip check — and that check then passed on the already
+    \\         * rounded value. `crc_hi * 4294967296 + crc_lo` (62 bits) came
+    \\         * back with its low 9 bits cleared. Unsigned wrap matches Lua. */
+    \\        if (a.number_kind == 1 && b.number_kind == 1) {
+    \\            return lua_val_from_int((int64_t)((uint64_t)a.as.ival * (uint64_t)b.as.ival));
+    \\        }
     \\        return lua_num_combine(lua_num(a) * lua_num(b), a.number_kind, b.number_kind, 0);
     \\    }
-    ++ runtimeBinopMetamethodLine(.multiply) ++
+++ runtimeBinopMetamethodLine(.multiply) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) * lua_to_num(b));
     \\}
@@ -22030,7 +22864,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_num(lua_num(a) / lua_num(b));
     \\    }
-    ++ runtimeBinopMetamethodLine(.divide) ++
+++ runtimeBinopMetamethodLine(.divide) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(lua_to_num(a) / lua_to_num(b));
     \\}
@@ -22042,7 +22876,7 @@ const duo_runtime =
     \\        }
     \\        return lua_val_from_num(floor(lua_num(a) / lua_num(b)));
     \\    }
-    ++ runtimeBinopMetamethodLine(.integer_divide) ++
+++ runtimeBinopMetamethodLine(.integer_divide) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(floor(lua_to_num(a) / lua_to_num(b)));
     \\}
@@ -22055,7 +22889,7 @@ const duo_runtime =
     \\        if (a.number_kind == 1 && b.number_kind == 1) return lua_val_from_int((int64_t)r);
     \\        return lua_val_from_num(r);
     \\    }
-    ++ runtimeBinopMetamethodLine(.remainder) ++
+++ runtimeBinopMetamethodLine(.remainder) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    double na = lua_to_num(a);
     \\    double nb = lua_to_num(b);
@@ -22066,7 +22900,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_num(pow(lua_num(a), lua_num(b)));
     \\    }
-    ++ runtimeBinopMetamethodLine(.power) ++
+++ runtimeBinopMetamethodLine(.power) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num(pow(lua_to_num(a), lua_to_num(b)));
     \\}
@@ -22075,7 +22909,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) & (int64_t)lua_num(b));
     \\    }
-    ++ runtimeBinopMetamethodLine(.bit_and) ++
+++ runtimeBinopMetamethodLine(.bit_and) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) & (int64_t)lua_to_num(b)));
     \\}
@@ -22084,7 +22918,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) | (int64_t)lua_num(b));
     \\    }
-    ++ runtimeBinopMetamethodLine(.bit_or) ++
+++ runtimeBinopMetamethodLine(.bit_or) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) | (int64_t)lua_to_num(b)));
     \\}
@@ -22093,7 +22927,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) ^ (int64_t)lua_num(b));
     \\    }
-    ++ runtimeBinopMetamethodLine(.bit_xor) ++
+++ runtimeBinopMetamethodLine(.bit_xor) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) ^ (int64_t)lua_to_num(b)));
     \\}
@@ -22102,7 +22936,7 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) << (int64_t)lua_num(b));
     \\    }
-    ++ runtimeBinopMetamethodLine(.shift_left) ++
+++ runtimeBinopMetamethodLine(.shift_left) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) << (int64_t)lua_to_num(b)));
     \\}
@@ -22111,19 +22945,19 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_val_from_int((int64_t)lua_num(a) >> (int64_t)lua_num(b));
     \\    }
-    ++ runtimeBinopMetamethodLine(.shift_right) ++
+++ runtimeBinopMetamethodLine(.shift_right) ++
     \\    if (mm.type != VAL_NIL) return mm;
     \\    return lua_val_from_num((double)((int64_t)lua_to_num(a) >> (int64_t)lua_to_num(b)));
     \\}
     \\
     \\static inline bool lua_eq(lua_Value a, lua_Value b) {
     \\    if (lua_raweq_value(a, b)) return true;
-    ++ runtimeMetafieldLitLine("__eq", "a", "mm") ++
+++ runtimeMetafieldLitLine("__eq", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-    ++ runtimeMetafieldLitReassignLine("__eq", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine("__eq", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22136,7 +22970,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline bool duo_contains(lua_Value container, lua_Value item) {
-    ++ runtimeMetafieldLitLine("__contains", "container", "mm") ++
+++ runtimeMetafieldLitLine("__contains", "container", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { container, item };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22281,12 +23115,12 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_num(a) < lua_num(b);
     \\    }
-    ++ runtimeMetafieldLitLine("__lt", "a", "mm") ++
+++ runtimeMetafieldLitLine("__lt", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-    ++ runtimeMetafieldLitReassignLine("__lt", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine("__lt", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22305,12 +23139,12 @@ const duo_runtime =
     \\    if (LUA_LIKELY(a.type == VAL_NUMBER && b.type == VAL_NUMBER)) {
     \\        return lua_num(a) <= lua_num(b);
     \\    }
-    ++ runtimeMetafieldLitLine("__le", "a", "mm") ++
+++ runtimeMetafieldLitLine("__le", "a", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
     \\    }
-    ++ runtimeMetafieldLitReassignLine("__le", "b", "mm") ++
+++ runtimeMetafieldLitReassignLine("__le", "b", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[2] = { a, b };
     \\        return lua_to_bool(lua_invoke(mm, 2, args));
@@ -22326,7 +23160,7 @@ const duo_runtime =
     \\}
     \\
     \\static inline lua_Value tostring(lua_Value v) {
-    ++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
+++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_invoke(mm, 1, args);
@@ -22342,7 +23176,7 @@ const duo_runtime =
     \\ * it is also used where a raw string is required. */
     \\static inline const char* lua_to_display_str(lua_Value v) {
     \\    if (LUA_LIKELY(v.type == VAL_STRING)) return v.as.sval;
-    ++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
+++ runtimeMetafieldLitLine("__tostring", "v", "mm") ++
     \\    if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\        lua_Value args[1] = { v };
     \\        return lua_to_str(lua_invoke(mm, 1, args));
@@ -22500,6 +23334,20 @@ const duo_runtime =
     \\    return out;
     \\}
     \\
+    \\/* Widen a printf spec to 64 bits: insert "ll" before the conversion char.
+    \\ * fmtb holds the verbatim spec ("%d", "%08X", …) of length spec_len. */
+    \\static inline void duo_fmt_widen_ll(char* fmtb, int spec_len) {
+    \\    if (spec_len < 2 || spec_len > 28) return;
+    \\    char conv = fmtb[spec_len - 1];
+    \\    int w = spec_len - 1;
+    \\    while (w > 1 && (fmtb[w - 1] == 'l' || fmtb[w - 1] == 'h' ||
+    \\                     fmtb[w - 1] == 'z' || fmtb[w - 1] == 'j' || fmtb[w - 1] == 't')) w--;
+    \\    fmtb[w] = 'l';
+    \\    fmtb[w + 1] = 'l';
+    \\    fmtb[w + 2] = conv;
+    \\    fmtb[w + 3] = 0;
+    \\}
+    \\
     \\static inline lua_Value lua_str_format(lua_Value fmt_val, lua_Value a1, lua_Value a2, lua_Value a3, lua_Value a4, lua_Value a5, lua_Value a6, lua_Value a7, lua_Value a8) {
     \\    const char* fmt = lua_to_str(fmt_val);
     \\    char* out = malloc(8192);
@@ -22529,18 +23377,29 @@ const duo_runtime =
     \\            else if (arg_idx == 5) arg = a6;
     \\            else if (arg_idx == 6) arg = a7;
     \\            else if (arg_idx == 7) arg = a8;
-    \\            arg_idx++;
+    \\            /* "%%" is a literal percent and consumes no argument. Advancing
+    \\             * unconditionally shifted every later spec by one, so
+    \\             * string.format("100%% of %d", 7) printed "100% of 0". */
+    \\            if (spec != '%') arg_idx++;
     \\            if (spec == 's') {
     \\                const char* s = lua_to_str(arg);
     \\                size_t slen = lua_str_byte_len(arg);
     \\                memcpy(p, s, slen);
     \\                p += slen;
     \\            } else if (spec == 'd' || spec == 'i') {
-    \\                p += sprintf(p, fmtb, (long long)lua_to_num(arg));
+    \\                /* `lua_to_num` routes through double, discarding everything
+    \\                 * above 2^53, and `fmtb` is the user's verbatim "%d" while a
+    \\                 * 64-bit value is passed — sprintf then read 32 bits of a
+    \\                 * 64-bit vararg. string.format("%d", <big i64>) printed 0
+    \\                 * and "%X" printed only the low word. Take the integer
+    \\                 * directly and widen the spec to "%lld". */
+    \\                duo_fmt_widen_ll(fmtb, spec_len);
+    \\                p += sprintf(p, fmtb, (long long)lua_intval(arg));
     \\            } else if (spec == 'f' || spec == 'g' || spec == 'e' || spec == 'F' || spec == 'G' || spec == 'E') {
     \\                p += sprintf(p, fmtb, lua_to_num(arg));
     \\            } else if (spec == 'x' || spec == 'X' || spec == 'o' || spec == 'u') {
-    \\                p += sprintf(p, fmtb, (unsigned long long)(long long)lua_to_num(arg));
+    \\                duo_fmt_widen_ll(fmtb, spec_len);
+    \\                p += sprintf(p, fmtb, (unsigned long long)lua_intval(arg));
     \\            } else if (spec == 'c') {
     \\                *p++ = (char)lua_to_num(arg);
     \\            } else if (spec == '%') {
@@ -22917,7 +23776,7 @@ const duo_runtime =
     \\    if (v.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)v.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return lua_val_from_num((double)lua_table_len(v));
-    ++ runtimeMetafieldLitLine("__len", "v", "mm") ++
+++ runtimeMetafieldLitLine("__len", "v", "mm") ++
     \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { v };
     \\            return lua_invoke(mm, 1, args);
@@ -22934,7 +23793,7 @@ const duo_runtime =
     \\    if (v.type == VAL_TABLE) {
     \\        lua_Table* t = (lua_Table*)v.as.tval;
     \\        if (t && t->metatable.type == VAL_NIL) return (double)lua_table_len(v);
-    ++ runtimeMetafieldLitLine("__len", "v", "mm") ++
+++ runtimeMetafieldLitLine("__len", "v", "mm") ++
     \\        if (mm.type == VAL_FUNC || mm.type == VAL_CLOSURE) {
     \\            lua_Value args[1] = { v };
     \\            return lua_to_num(lua_invoke(mm, 1, args));
@@ -25313,6 +26172,11 @@ const duo_runtime =
     \\static inline lua_Value lua_math_init(void) {
     \\    lua_Value m = lua_table_new_with_capacity(0, 30);
     \\    lua_table_init_lit(m, "pi", lua_val_from_num(3.14159265358979323846));
+    \\    /* math.huge was never registered, so it read as nil everywhere. Any
+    \\     * guard written against it silently did nothing: std.json.encode's
+    \\     * `val == math.huge` / `val == -math.huge` infinity checks compared a
+    \\     * number to nil, and `-math.huge` lowered to a cast of nil-as-number. */
+    \\    lua_table_init_lit(m, "huge", lua_val_from_num(HUGE_VAL));
     \\    lua_table_init_lit(m, "maxinteger", lua_val_from_num(9223372036854775807.0));
     \\    lua_table_init_lit(m, "mininteger", lua_val_from_num(-9223372036854775808.0));
     \\    lua_table_init_lit(m, "random", lua_val_from_func((lua_Value (*)(lua_Value))lua_math_random));
@@ -30348,4 +31212,38 @@ test "codegen: __origin reports shape_id for typed records" {
     try cg.emit_module(&module);
     const output = aw.written();
     try testing.expect(std.mem.indexOf(u8, output, "storage_class=native;shape_id=") != null);
+}
+
+// The float arm of `lua_num` once read `lua_num(v)` instead of `v.as.nval`, so
+// every float-tagged number recursed forever: SIGSEGV at -O0, and at -O2 LLVM
+// folded the infinite tail self-call into a bare `b .` spin. Any `any`-typed
+// parameter routes its return through this helper, which is how it took down
+// ward. The helper is emitted as fixed prelude text, so assert on that text.
+test "codegen: lua_num reads the double slot instead of recursing" {
+    const Lexer = @import("lexer.zig").Lexer;
+    const Parser = @import("parser.zig").Parser;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lex = Lexer.init(
+        \\fun main()
+        \\  print(1)
+        \\end
+    , "test.duo");
+    var parser = Parser.init(&lex, alloc);
+    parser.duo_mode = true;
+    var module = try parser.parse_module();
+    var semantic = sema.Sema.init(alloc);
+    defer semantic.deinit();
+    semantic.duo_mode = true;
+    try semantic.check_module(&module);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, undefined, &semantic.type_map, &semantic.module_globals, &aw.writer, semantic.next_closure_id, &semantic.table_field_types, &semantic.concepts);
+    cg.duo_mode = true;
+    try cg.emit_module(&module);
+    const output = aw.written();
+    try testing.expect(std.mem.indexOf(u8, output, "return v.number_kind == 1 ? (double)v.as.ival : v.as.nval;") != null);
+    try testing.expect(std.mem.indexOf(u8, output, ": lua_num(v);") == null);
 }

@@ -4,9 +4,9 @@
 Inst = req "std.wasm.instruction"
 
 main(): i64
-    if Inst.mvp_instruction_count() ~= 63 then return 1 end
-    if Inst.schema_version() ~= "wasm-instruction-v0" then return 2 end
-    if Inst.semantic_owner() ~= "src/wasm_semantic.zig" then return 3 end
-    if #Inst.EXAMPLE_IDS < 4 then return 4 end
+    if Inst.mvp_instruction_count() != 63 return 1 end
+    if Inst.schema_version() != "wasm-instruction-v0" return 2 end
+    if Inst.semantic_owner() != "src/wasm_semantic.zig" return 3 end
+    if #Inst.EXAMPLE_IDS < 4 return 4 end
     0
 end

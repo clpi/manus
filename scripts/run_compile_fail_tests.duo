@@ -9,11 +9,11 @@ DUO = "env DUO_BUILD_REPORT=plain " .. DUO
 
 global any_failed: i64 = 0
 
-fun pass(msg: str)
+pass(msg: str)
     s.echo("OK:   " .. msg)
 end
 
-fun fail(msg: str, out: str)
+fail(msg: str, out: str)
     s.echo("FAIL: " .. msg)
     if string.len(out) > 0
         s.echo(out)
@@ -21,33 +21,33 @@ fun fail(msg: str, out: str)
     any_failed = 1
 end
 
-fun temp_file(): str
-    local tmp = tostring(s.fs_tmp())
+temp_file(): str
+    tmp = tostring(s.fs_tmp())
     if string.len(tmp) == 0
         tmp = "/tmp/duo_test_" .. tostring(os.time())
     end
     return string.gsub(tmp, "\n", "")
 end
 
-fun run_fail(file: str, pattern: str)
-    local tmp = temp_file()
-    local rc = s.run(DUO .. " check " .. file .. " > " .. tmp .. " 2>&1")
-    local out = s.fs_read(tmp)
+run_fail(file: str, pattern: str)
+    tmp = temp_file()
+    rc = s.run(DUO .. " check " .. file .. " > " .. tmp .. " 2>&1")
+    out = s.fs_read(tmp)
     os.remove(tmp)
     
     if rc == 0
         fail(file .. " should not compile", out)
-    elseif string.find(out, pattern, 1, true) ~= nil
+    elseif string.find(out, pattern, 1, true) != nil
         pass(file .. "  (expected error found)")
     else
         fail(file .. "  expected pattern: " .. pattern, out)
     end
 end
 
-fun run_ok(file: str)
-    local tmp = temp_file()
-    local rc = s.run(DUO .. " check " .. file .. " > " .. tmp .. " 2>&1")
-    local out = s.fs_read(tmp)
+run_ok(file: str)
+    tmp = temp_file()
+    rc = s.run(DUO .. " check " .. file .. " > " .. tmp .. " 2>&1")
+    out = s.fs_read(tmp)
     os.remove(tmp)
     
     if rc == 0
@@ -57,10 +57,10 @@ fun run_ok(file: str)
     end
 end
 
-fun run_output(file: str, expected: str)
-    local tmp = temp_file()
-    local rc = s.run(DUO .. " run " .. file .. " > " .. tmp .. " 2>&1")
-    local out = s.fs_read(tmp)
+run_output(file: str, expected: str)
+    tmp = temp_file()
+    rc = s.run(DUO .. " run " .. file .. " > " .. tmp .. " 2>&1")
+    out = s.fs_read(tmp)
     os.remove(tmp)
     
     if rc == 0
@@ -74,10 +74,10 @@ fun run_output(file: str, expected: str)
     end
 end
 
-fun run_shell_ok(label: str, script: str)
-    local tmp = temp_file()
-    local rc = s.run("bash " .. script .. " > " .. tmp .. " 2>&1")
-    local out = s.fs_read(tmp)
+run_shell_ok(label: str, script: str)
+    tmp = temp_file()
+    rc = s.run("bash " .. script .. " > " .. tmp .. " 2>&1")
+    out = s.fs_read(tmp)
     os.remove(tmp)
     
     if rc == 0
@@ -87,10 +87,10 @@ fun run_shell_ok(label: str, script: str)
     end
 end
 
-fun run_duo_ok(label: str, script: str)
-    local tmp = temp_file()
-    local rc = s.run(DUO .. " run " .. script .. " > " .. tmp .. " 2>&1")
-    local out = s.fs_read(tmp)
+run_duo_ok(label: str, script: str)
+    tmp = temp_file()
+    rc = s.run(DUO .. " run " .. script .. " > " .. tmp .. " 2>&1")
+    out = s.fs_read(tmp)
     os.remove(tmp)
     
     if rc == 0

@@ -4,7 +4,7 @@
 @c.include("string.h")
 @comp.ffi("string.h")
 
-fun demo_len(s: str): i64
+demo_len(s: str): i64
   return @c.call("strlen", s)
 end
 

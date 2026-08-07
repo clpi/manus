@@ -1,14 +1,14 @@
 -- std.image.gif — GIF image decoder with LZW decompression
 -- Decodes GIF87a/GIF89a images including LZW-compressed image data.
 
-local string = req "std.string"
-local image = req "std.image"
+string = req "std.string"
+image = req "std.image"
 
 -- ═══════════════════════════════════════════════════════════════
 -- LZW Decompressor (GIF variant: LSB-first, variable-width codes)
 -- ═══════════════════════════════════════════════════════════════
 
-fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
+lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
     clear_code = 2 ^ min_code_size
     eoi_code = clear_code + 1
 
@@ -28,17 +28,17 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
     bit_pos = 0
 
     -- Read a variable-width code from the bit stream (LSB first)
-    fun read_code(): i64
+    read_code(): i64
         code = 0
         bits_read = 0
         while bits_read < code_size
-            if byte_pos > string.len(data) then return eoi_code end
+            if byte_pos > string.len(data) return eoi_code end
             byte_val = string.byte(data, byte_pos)
             bit = (byte_val >> bit_pos) & 1
             code = code | (bit << bits_read)
             bit_pos += 1
             bits_read += 1
-            if bit_pos >= 8 then
+            if bit_pos >= 8
                 bit_pos = 0
                 byte_pos += 1
             end
@@ -53,7 +53,7 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
     while true
         code = read_code()
 
-        if code == clear_code then
+        if code == clear_code
             -- Reset
             i = 0
             while i < clear_code
@@ -65,10 +65,10 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
             next_code = table_size
             prev = nil
 
-        elseif code == eoi_code then
+        elseif code == eoi_code
             break
 
-        elseif code < table_size then
+        elseif code < table_size
             -- Code is in the table
             entry = table[code]
             -- Output the entry
@@ -78,7 +78,7 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                 i += 1
             end
 
-            if prev ~= nil then
+            if prev != nil
                 -- Add new entry: prev + first byte of current entry
                 new_entry = {}
                 j = 1
@@ -86,14 +86,14 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                     new_entry[j] = table[prev][j]
                     j += 1
                 end
-                if #entry > 0 then
+                if #entry > 0
                     new_entry[j] = entry[1]
                 end
-                if next_code < 4096 then
+                if next_code < 4096
                     table[next_code] = new_entry
                     next_code += 1
                     -- Increase code size if needed
-                    if next_code > (2 ^ code_size) and code_size < 12 then
+                    if next_code > (2 ^ code_size) and code_size < 12
                         code_size += 1
                     end
                 end
@@ -102,7 +102,7 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
 
         else
             -- code >= table_size: special case
-            if prev == nil then break end
+            if prev == nil break end
             entry = table[prev]
             -- Output entry + first byte of entry
             new_entry = {}
@@ -116,17 +116,17 @@ fun lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
             new_entry[j] = first
             output[#output + 1] = first
 
-            if next_code < 4096 then
+            if next_code < 4096
                 table[next_code] = new_entry
                 next_code += 1
-                if next_code > (2 ^ code_size) and code_size < 12 then
+                if next_code > (2 ^ code_size) and code_size < 12
                     code_size += 1
                 end
             end
             prev = next_code - 1
         end
 
-        if #output >= pixel_count then break end
+        if #output >= pixel_count break end
     end
 
     output
@@ -136,16 +136,16 @@ end
 -- GIF Decoder
 -- ═══════════════════════════════════════════════════════════════
 
-fun read_u16_le(s: str, off: i64): i64
+read_u16_le(s: str, off: i64): i64
     string.byte(s, off) + string.byte(s, off + 1) * 256
 end
 
-fun decode(data: str): any
-    if data == nil then return nil end
+decode(data: str): any
+    if data == nil return nil end
 
     -- Verify signature
     sig = string.sub(data, 1, 6)
-    if sig ~= "GIF87a" and sig ~= "GIF89a" then return nil end
+    if sig != "GIF87a" and sig != "GIF89a" return nil end
 
     -- Logical Screen Descriptor
     width = read_u16_le(data, 7)
@@ -160,7 +160,7 @@ fun decode(data: str): any
 
     -- Global Color Table
     gct = {}
-    if gct_flag == 1 then
+    if gct_flag == 1
         i = 0
         while i < gct_size
             gct[i] = {
@@ -180,19 +180,19 @@ fun decode(data: str): any
     while off < string.len(data)
         byte = string.byte(data, off)
 
-        if byte == 0x21 then
+        if byte == 0x21
             -- Extension block
             ext_label = string.byte(data, off + 1)
             off += 2
 
             -- Read sub-blocks
             sub_len = string.byte(data, off)
-            if ext_label == 0xF9 then
+            if ext_label == 0xF9
                 -- Graphics Control Extension
-                if sub_len >= 4 then
+                if sub_len >= 4
                     packed = string.byte(data, off + 1)
                     transparent_flag = packed & 1
-                    if transparent_flag == 1 then
+                    if transparent_flag == 1
                         transparent_idx = string.byte(data, off + 4)
                     end
                 end
@@ -203,11 +203,11 @@ fun decode(data: str): any
             while off < string.len(data)
                 sub_len = string.byte(data, off)
                 off += 1
-                if sub_len == 0 then break end
+                if sub_len == 0 break end
                 off += sub_len
             end
 
-        elseif byte == 0x2C then
+        elseif byte == 0x2C
             -- Image Descriptor
             left = read_u16_le(data, off + 1)
             top = read_u16_le(data, off + 3)
@@ -220,7 +220,7 @@ fun decode(data: str): any
 
             -- Local Color Table
             lct = nil
-            if lct_flag == 1 then
+            if lct_flag == 1
                 lct = {}
                 i = 0
                 while i < lct_size
@@ -246,7 +246,7 @@ fun decode(data: str): any
             while off < string.len(data)
                 sub_len = string.byte(data, off)
                 off += 1
-                if sub_len == 0 then break end
+                if sub_len == 0 break end
                 lzw_data = lzw_data .. string.sub(data, off, off + sub_len - 1)
                 off += sub_len
             end
@@ -260,11 +260,11 @@ fun decode(data: str): any
             while y < top + img_h and y < height
                 x = left
                 while x < left + img_w and x < width
-                    if idx <= #pixels then
+                    if idx <= #pixels
                         color_idx = pixels[idx]
-                        if color_idx ~= transparent_idx and palette ~= nil then
+                        if color_idx != transparent_idx and palette != nil
                             c = palette[color_idx]
-                            if c ~= nil then
+                            if c != nil
                                 image.img_set(img, x, y, image.color.rgba(
                                     c.r * 257, c.g * 257, c.b * 257, 65535
                                 ))
@@ -277,7 +277,7 @@ fun decode(data: str): any
                 y += 1
             end
 
-        elseif byte == 0x3B then
+        elseif byte == 0x3B
             -- Trailer
             break
         else

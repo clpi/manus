@@ -2,7 +2,7 @@
 -- A non-cryptographic hash function suitable for use in hash tables.
 -- Uses a seed-based FNV-like approach to resist hash-collision attacks.
 
-fun make_seed(): i64
+make_seed(): i64
     crypto_rand = req "std.crypto.rand"
     bytes = crypto_rand.bytes(8)
     seed = 0
@@ -14,30 +14,30 @@ fun make_seed(): i64
     seed
 end
 
-fun new(): any
+new(): any
     {seed = make_seed(), hash = 0}
 end
 
-fun new_with_seed(seed: i64): any
+new_with_seed(seed: i64): any
     {seed = seed, hash = 0}
 end
 
-fun write(h: any, data: str): void
+write(h: any, data: str): void
     h.hash = h.seed
     for i = 1, string.len(data)
         h.hash = (h.hash * 31 + string.byte(data, i)) % (2^64)
     end
 end
 
-fun write_byte(h: any, b: i64): void
+write_byte(h: any, b: i64): void
     h.hash = (h.hash * 31 + b) % (2^64)
 end
 
-fun sum(h: any): i64
+sum(h: any): i64
     h.hash % (2^64)
 end
 
-fun hash_string(seed: i64, s: str): i64
+hash_string(seed: i64, s: str): i64
     h = seed
     for i = 1, string.len(s)
         h = (h * 31 + string.byte(s, i)) % (2^64)
@@ -45,7 +45,7 @@ fun hash_string(seed: i64, s: str): i64
     h
 end
 
-fun hash_bytes(seed: i64, data: str, off: i64, len: i64): i64
+hash_bytes(seed: i64, data: str, off: i64, len: i64): i64
     h = seed
     for i = off, off + len - 1
         h = (h * 31 + string.byte(data, i)) % (2^64)

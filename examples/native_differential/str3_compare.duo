@@ -1,0 +1,5 @@
+main(): i64
+    s = "fun"
+    if s == "fun" return 1 end
+    return 0
+end

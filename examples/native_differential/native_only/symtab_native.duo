@@ -1,0 +1,59 @@
+-- expect: 21
+-- SH-06 completed slice: a MUTABLE symbol table — declare and look up — written
+-- in Duo and compiled to native ARM64.
+--
+-- `resolver_native.duo` could only resolve against a scope fixed at compile time,
+-- because Duo strings are immutable and the native subset had no mutable
+-- collection. Positional tables now support dynamic read *and* dynamic write, so
+-- a bounded symbol table works: declare a name into a slot, look it up later.
+--
+-- No memory is involved. Table elements live in registers, and a non-constant
+-- index lowers as a select-chain over the slots. That is the right trade for the
+-- small, bounded scopes a compiler frontend actually uses; an unbounded table
+-- still needs real allocation.
+--
+-- Symbols are represented by their id, which is what a binder stores after
+-- interning — the string itself lives in the lexer's source buffer.
+
+-- declare(tab, slot, sym) is `tab[slot] = sym`; lookup scans for a match and
+-- returns its slot, or 0 for "not found" — the exact shape of a scope query.
+lookup = (t0: i64, t1: i64, t2: i64, t3: i64, sym: i64): i64
+    if t0 == sym
+        return 1
+    end
+    if t1 == sym
+        return 2
+    end
+    if t2 == sym
+        return 3
+    end
+    if t3 == sym
+        return 4
+    end
+    0
+end
+
+main(): i64
+    -- A four-slot scope, empty (0 = unbound).
+    scope = { 0, 0, 0, 0 }
+
+    -- Declare three symbols by id, through dynamic index writes.
+    n = 1
+    while n <= 3
+        scope[n] = n * 100
+        n = n + 1
+    end
+
+    -- Look each one up, and confirm an undeclared symbol is not found.
+    a = lookup(scope[1], scope[2], scope[3], scope[4], 100)   -- 1
+    b = lookup(scope[1], scope[2], scope[3], scope[4], 200)   -- 2
+    c = lookup(scope[1], scope[2], scope[3], scope[4], 300)   -- 3
+    d = lookup(scope[1], scope[2], scope[3], scope[4], 999)   -- 0, unbound
+
+    -- Overwrite slot 1 and re-query: the table is genuinely mutable.
+    scope[1] = 999
+    e = lookup(scope[1], scope[2], scope[3], scope[4], 999)   -- 1
+
+    -- 1 + 2 + 3 + 0 + 1 = 7, times the 3 declared symbols = 21
+    (a + b + c + d + e) * 3
+end

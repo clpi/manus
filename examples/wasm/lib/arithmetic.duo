@@ -1,79 +1,79 @@
 -- Typed arithmetic exports for WAST testing.
 
 @export
-fun add(a: int, b: int): int
+add(a: int, b: int): int
     a + b
 end
 
 @export
-fun sub(a: int, b: int): int
+sub(a: int, b: int): int
     a - b
 end
 
 @export
-fun mul(a: int, b: int): int
+mul(a: int, b: int): int
     a * b
 end
 
 @export
-fun idiv(a: int, b: int): int
+idiv(a: int, b: int): int
     a // b
 end
 
 @export
-fun imod(a: int, b: int): int
+imod(a: int, b: int): int
     a % b
 end
 
 @export
-fun neg(a: int): int
+neg(a: int): int
     0 - a
 end
 
 @export
-fun band(a: int, b: int): int
+band(a: int, b: int): int
     a & b
 end
 
 @export
-fun bor(a: int, b: int): int
+bor(a: int, b: int): int
     a | b
 end
 
 @export
-fun bxor(a: int, b: int): int
+bxor(a: int, b: int): int
     a ~ b
 end
 
 @export
-fun lshift(a: int, b: int): int
+lshift(a: int, b: int): int
     a << b
 end
 
 @export
-fun rshift(a: int, b: int): int
+rshift(a: int, b: int): int
     a >> b
 end
 
 @export
-fun abs_val(a: int): int
-    if a < 0 then
+abs_val(a: int): int
+    if a < 0
         0 - a
     end
     a
 end
 
 @export
-fun max_val(a: int, b: int): int
-    if a > b then
+max_val(a: int, b: int): int
+    if a > b
         a
     end
     b
 end
 
 @export
-fun min_val(a: int, b: int): int
-    if a < b then
+min_val(a: int, b: int): int
+    if a < b
         a
     end
     b

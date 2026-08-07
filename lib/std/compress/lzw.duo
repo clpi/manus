@@ -1,21 +1,21 @@
 -- std.compress.lzw — LZW decompression (mirrors Go's compress/lzw)
 -- Used in GIF and PDF. Implements LZW with variable-width codes (3-12 bits).
 
-local string = req "std.string"
+string = req "std.string"
 
-local LSB = "lsb"
-local MSB = "msb"
+LSB = "lsb"
+MSB = "msb"
 
-fun new_reader(order: str, lit_width: i64): any
+new_reader(order: str, lit_width: i64): any
     {order = order, lit_width = lit_width, clear_code = 1 << lit_width,
      eoi_code = (1 << lit_width) + 1, width = lit_width + 1,
      table = {}, next_code = (1 << lit_width) + 2,
      buf = 0, bits = 0, data = "", pos = 1}
 end
 
-fun read_bit(r: any): i64
-    if r.bits == 0 then
-        if r.pos > string.len(r.data) then return nil end
+read_bit(r: any): any
+    if r.bits == 0
+        if r.pos > string.len(r.data) return nil end
         r.buf = string.byte(r.data, r.pos)
         r.pos = r.pos + 1
         r.bits = 8
@@ -24,12 +24,12 @@ fun read_bit(r: any): i64
     (r.buf >> r.bits) & 1
 end
 
-fun read_bits(r: any, n: i64): i64
+read_bits(r: any, n: i64): any
     v = 0
     for i = 0, n - 1
         b = read_bit(r)
-        if b == nil then return nil end
-        if r.order == MSB then
+        if b == nil return nil end
+        if r.order == MSB
             v = (v << 1) | b
         else
             v = v | (b << i)
@@ -38,7 +38,7 @@ fun read_bits(r: any, n: i64): i64
     v
 end
 
-fun init_table(r: any): void
+init_table(r: any): void
     r.table = {}
     r.next_code = r.clear_code + 2
     for i = 0, (1 << r.lit_width) - 1
@@ -46,8 +46,8 @@ fun init_table(r: any): void
     end
 end
 
-fun decompress(data: str, order: str, lit_width: i64): str
-    if data == nil then return "" end
+decompress(data: str, order: str, lit_width: i64): str
+    if data == nil return "" end
     r = new_reader(order, lit_width)
     r.data = data
     out_parts = {}
@@ -56,28 +56,28 @@ fun decompress(data: str, order: str, lit_width: i64): str
     prev = nil
     while true
         code = read_bits(r, r.width)
-        if code == nil or code == r.eoi_code then break end
-        if code == r.clear_code then
+        if code == nil or code == r.eoi_code break end
+        if code == r.clear_code
             init_table(r)
             r.width = r.lit_width + 1
             prev = nil
         else
             entry = nil
-            if code < r.next_code then
+            if code < r.next_code
                 entry = r.table[code]
-            elseif code == r.next_code then
+            elseif code == r.next_code
                 entry = r.table[prev] .. string.sub(r.table[prev], 1, 1)
             else
                 break
             end
-            if entry ~= nil then
+            if entry != nil
                 out_parts[rawlen(out_parts) + 1] = entry
             end
-            if prev ~= nil and entry ~= nil then
+            if prev != nil and entry != nil
                 new_entry = r.table[prev] .. string.sub(entry, 1, 1)
                 r.table[r.next_code] = new_entry
                 r.next_code = r.next_code + 1
-                if r.next_code > (1 << r.width) and r.width < max_width then
+                if r.next_code > (1 << r.width) and r.width < max_width
                     r.width = r.width + 1
                 end
             end
@@ -87,11 +87,11 @@ fun decompress(data: str, order: str, lit_width: i64): str
     table.concat(out_parts)
 end
 
-fun decompress_gif(data: str): str
+decompress_gif(data: str): str
     decompress(data, LSB, 8)
 end
 
-fun decompress_pdf(data: str): str
+decompress_pdf(data: str): str
     decompress(data, MSB, 8)
 end
 

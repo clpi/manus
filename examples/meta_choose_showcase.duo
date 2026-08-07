@@ -11,14 +11,14 @@ type Vec3 = { x: i64, y: i64, z: i64 }
 type Pt = { x: i64, y: i64 }
 type Ray = { x: i64, y: i64, dx: i64, dy: i64 }
 
-fun combo_sig(meta) -> str
+combo_sig(meta) -> str
     meta.name .. ";"
 end
 
 CHOOSE2: str = @comp.choose("HasXY", 2, combo_sig)
 CHOOSE3: str = @comp.choose("HasXY", 3, combo_sig)
 
-fun count_semis(s: str): i64
+count_semis(s: str): i64
     n: i64 = 0
     for i = 1, #s
         if string.sub(s, i, i) == ";"
@@ -28,7 +28,7 @@ fun count_semis(s: str): i64
     n
 end
 
-fun stamp(frag) -> str
+stamp(frag) -> str
     "[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "]" .. frag.name .. "\n"
 end
 

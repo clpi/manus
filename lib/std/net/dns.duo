@@ -1,7 +1,7 @@
 -- std.net.dns — DNS resolver (UDP-based)
 -- Used by ward for network communication and service discovery.
 
-local net = req "std.net"
+net = req "std.net"
 
 -- ═══════════════════════════════════════════════════════════════
 -- DNS Record Types
@@ -22,7 +22,7 @@ DNSANY = 255
 -- DNS Header
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z: i64, rcode: i64): any
+dns_header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra: i64, z: i64, rcode: i64): any
     {
         id = id,
         qr = qr,
@@ -40,7 +40,7 @@ fun dns_header_new(id: i64, qr: i64, opcode: i64, aa: i64, tc: i64, rd: i64, ra:
     }
 end
 
-fun dns_header_encode(h: any): any
+dns_header_encode(h: any): any
     bytes = {}
     -- ID (16 bits)
     bytes[1] = (h.id >> 8) & 0xFF
@@ -61,7 +61,7 @@ fun dns_header_encode(h: any): any
     bytes
 end
 
-fun dns_header_decode(data: any): any
+dns_header_decode(data: any): any
     id = (data[1] << 8) | data[2]
     flags = (data[3] << 8) | data[4]
     {
@@ -85,7 +85,7 @@ end
 -- DNS Name Encoding/Decoding (label format)
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_name_encode(name: str): any
+dns_name_encode(name: str): any
     bytes = {}
     pos = 1
     len = string.len(name)
@@ -93,7 +93,7 @@ fun dns_name_encode(name: str): any
     while pos <= len
         -- Find next dot
         dot_pos = string.find(name, ".", pos, true)
-        if dot_pos == nil then dot_pos = len + 1 end
+        if dot_pos == nil dot_pos = len + 1 end
 
         -- Label length
         label_len = dot_pos - pos
@@ -113,21 +113,21 @@ fun dns_name_encode(name: str): any
     bytes
 end
 
-fun dns_name_decode(data: any, pos: i64): any
+dns_name_decode(data: any, pos: i64): any
     parts = {}
     jumped = false
     original_pos = pos
 
     while true
-        if pos > #data then break end
+        if pos > #data break end
         len = data[pos]
 
-        if len == 0 then
+        if len == 0
             pos += 1
             break
-        elseif (len & 0xC0) == 0xC0 then
+        elseif (len & 0xC0) == 0xC0
             -- Pointer
-            if not jumped then original_pos += 2 end
+            if not jumped original_pos += 2 end
             pointer = ((len & 0x3F) << 8) | data[pos + 1]
             pos = pointer + 1
             jumped = true
@@ -154,7 +154,7 @@ end
 -- DNS Query
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_query_new(name: str, qtype: i64): any
+dns_query_new(name: str, qtype: i64): any
     crypto_rand = req "std.crypto.rand"
     id_bytes = crypto_rand.bytes(2)
     query_id = (string.byte(id_bytes, 1) << 8) | string.byte(id_bytes, 2)
@@ -179,7 +179,7 @@ fun dns_query_new(name: str, qtype: i64): any
     }
 end
 
-fun dns_query_encode(q: any): any
+dns_query_encode(q: any): any
     bytes = {}
 
     -- Header
@@ -210,7 +210,7 @@ end
 -- DNS Record
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_record_decode(data: any, pos: i64): any
+dns_record_decode(data: any, pos: i64): any
     -- Name
     result = dns_name_decode(data, pos)
     name = result.name
@@ -234,9 +234,9 @@ fun dns_record_decode(data: any, pos: i64): any
 
     -- RDATA
     rdata = nil
-    if rtype == DNS_A and rdlength == 4 then
+    if rtype == DNS_A and rdlength == 4
         rdata = tostring(data[pos]) .. "." .. tostring(data[pos + 1]) .. "." .. tostring(data[pos + 2]) .. "." .. tostring(data[pos + 3])
-    elseif rtype == DNS_AAAA and rdlength == 16 then
+    elseif rtype == DNS_AAAA and rdlength == 16
         -- IPv6 address
         parts = {}
         i = 0
@@ -248,15 +248,15 @@ fun dns_record_decode(data: any, pos: i64): any
             i += 2
         end
         rdata = table.concat(parts, ":")
-    elseif rtype == DNS_CNAME or rtype == DNS_NS or rtype == DNS_PTR then
+    elseif rtype == DNS_CNAME or rtype == DNS_NS or rtype == DNS_PTR
         cname = dns_name_decode(data, pos)
         rdata = cname.name
-    elseif rtype == DNS_MX then
+    elseif rtype == DNS_MX
         -- MX record: preference + exchange
         preference = (data[pos] << 8) | data[pos + 1]
         exchange = dns_name_decode(data, pos + 2)
         rdata = {preference = preference, exchange = exchange.name}
-    elseif rtype == DNS_TXT then
+    elseif rtype == DNS_TXT
         -- TXT record: length-prefixed strings
         txt_len = data[pos]
         txt = ""
@@ -266,7 +266,7 @@ fun dns_record_decode(data: any, pos: i64): any
             i += 1
         end
         rdata = txt
-    elseif rtype == DNS_SRV then
+    elseif rtype == DNS_SRV
         -- SRV record: priority, weight, port, target
         priority = (data[pos] << 8) | data[pos + 1]
         weight = (data[pos + 2] << 8) | data[pos + 3]
@@ -292,7 +292,7 @@ end
 -- DNS Response
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_response_decode(data: any): any
+dns_response_decode(data: any): any
     -- Header
     header = dns_header_decode(data)
     pos = 13  -- Skip header
@@ -347,7 +347,7 @@ end
 -- DNS Resolver
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_resolver_new(): any
+dns_resolver_new(): any
     {
         servers = {"8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1"},
         port = 53,
@@ -357,25 +357,25 @@ fun dns_resolver_new(): any
     }
 end
 
-fun dns_resolver_set_servers(resolver: any, servers: any): void
+dns_resolver_set_servers(resolver: any, servers: any): void
     resolver.servers = servers
 end
 
-fun dns_resolver_set_timeout(resolver: any, timeout: i64): void
+dns_resolver_set_timeout(resolver: any, timeout: i64): void
     resolver.timeout = timeout
 end
 
-fun dns_resolver_resolve(resolver: any, name: str, qtype: i64): any
+dns_resolver_resolve(resolver: any, name: str, qtype: i64): any
     -- Check cache first
     cache_key = name .. ":" .. tostring(qtype)
-    if resolver.cache[cache_key] then
+    if resolver.cache[cache_key]
         return resolver.cache[cache_key]
     end
 
     -- Use native DNS resolution via codegen (getaddrinfo)
-    if qtype == DNS_A then
+    if qtype == DNS_A
         ip = net.dns_resolve(name)
-        if ip ~= nil then
+        if ip != nil
             result = {
                 header = dns_header_new(0, 1, 0, 0, 0, 1, 1, 0, 0),
                 answers = {{
@@ -407,7 +407,7 @@ fun dns_resolver_resolve(resolver: any, name: str, qtype: i64): any
             additional = {},
         }
 
-        if result.header.rcode == 0 and #result.answers > 0 then
+        if result.header.rcode == 0 and #result.answers > 0
             resolver.cache[cache_key] = result
         end
 
@@ -417,61 +417,61 @@ fun dns_resolver_resolve(resolver: any, name: str, qtype: i64): any
     {error = "All DNS servers failed"}
 end
 
-fun dns_resolver_lookup_a(resolver: any, name: str): any
+dns_resolver_lookup_a(resolver: any, name: str): any
     result = dns_resolver_resolve(resolver, name, DNS_A)
-    if result.error then return result end
+    if result.error return result end
 
     ips = {}
     for answer in result.answers
-        if answer.type == DNS_A then
+        if answer.type == DNS_A
             ips[#ips + 1] = answer.rdata
         end
     end
     {ips = ips}
 end
 
-fun dns_resolver_lookup_aaaa(resolver: any, name: str): any
+dns_resolver_lookup_aaaa(resolver: any, name: str): any
     result = dns_resolver_resolve(resolver, name, DNS_AAAA)
-    if result.error then return result end
+    if result.error return result end
 
     ips = {}
     for answer in result.answers
-        if answer.type == DNS_AAAA then
+        if answer.type == DNS_AAAA
             ips[#ips + 1] = answer.rdata
         end
     end
     {ips = ips}
 end
 
-fun dns_resolver_lookup_mx(resolver: any, name: str): any
+dns_resolver_lookup_mx(resolver: any, name: str): any
     result = dns_resolver_resolve(resolver, name, DNS_MX)
-    if result.error then return result end
+    if result.error return result end
 
     mx_records = {}
     for answer in result.answers
-        if answer.type == DNS_MX then
+        if answer.type == DNS_MX
             mx_records[#mx_records + 1] = answer.rdata
         end
     end
 
     -- Sort by preference
-    table.sort(mx_records, function(a, b) return a.preference < b.preference end)
+    table.sort(mx_records, fun(a: any, b: any): any a.preference < b.preference)
     {records = mx_records}
 end
 
-fun dns_resolver_lookup_cname(resolver: any, name: str): any
+dns_resolver_lookup_cname(resolver: any, name: str): any
     result = dns_resolver_resolve(resolver, name, DNS_CNAME)
-    if result.error then return result end
+    if result.error return result end
 
     for answer in result.answers
-        if answer.type == DNS_CNAME then
+        if answer.type == DNS_CNAME
             return {cname = answer.rdata}
         end
     end
     {cname = nil}
 end
 
-fun dns_resolver_flush_cache(resolver: any): void
+dns_resolver_flush_cache(resolver: any): void
     resolver.cache = {}
 end
 
@@ -479,7 +479,7 @@ end
 -- Utility Functions
 -- ═══════════════════════════════════════════════════════════════
 
-fun dns_type_name(qtype: i64): str
+dns_type_name(qtype: i64): str
     types = {
         [DNS_A] = "A",
         [DNS_NS] = "NS",
@@ -495,7 +495,7 @@ fun dns_type_name(qtype: i64): str
     types[qtype] or "UNKNOWN"
 end
 
-fun dns_type_from_name(name: str): i64
+dns_type_from_name(name: str): i64
     types = {
         A = DNS_A,
         NS = DNS_NS,

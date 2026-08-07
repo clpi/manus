@@ -1,21 +1,21 @@
 -- Reflection demo: runtime type introspection using Duo's type system
 
 -- Test basic type introspection
-fun typeof_str(x): str
-    if x == nil then return "nil" end
-    if type(x) ~= "table" then return type(x) end
+typeof_str(x): str
+    if x == nil return "nil" end
+    if type(x) != "table" return type(x) end
     mt = getmetatable(x)
-    if mt ~= nil and mt.type ~= nil then return mt.type end
+    if mt != nil and mt.type != nil return mt.type end
     "table"
 end
 
-fun is_nil(x): bool    x == nil end
-fun is_bool(x): bool   type(x) == "boolean" end
-fun is_number(x): bool type(x) == "number" end
-fun is_str(x): bool    type(x) == "string" end
-fun is_table(x): bool  type(x) == "table" end
-fun is_integer(x): bool
-    if type(x) ~= "number" then return false end
+is_nil(x): bool    x == nil end
+is_bool(x): bool   type(x) == "boolean" end
+is_number(x): bool type(x) == "number" end
+is_str(x): bool    type(x) == "string" end
+is_table(x): bool  type(x) == "table" end
+is_integer(x): bool
+    if type(x) != "number" return false end
     x == math.floor(x)
 end
 
@@ -44,25 +44,25 @@ person = {
 }
 
 print("\nPerson introspection:")
-print("has field 'name': " .. tostring(person.name ~= nil))
-print("has field 'email': " .. tostring(person.email ~= nil))
+print("has field 'name': " .. tostring(person.name != nil))
+print("has field 'email': " .. tostring(person.email != nil))
 
 -- Table utilities
-fun clone(t)
-    if type(t) ~= "table" then return t end
+clone(t)
+    if type(t) != "table" return t end
     c = {}
     for k, v in pairs(t) do c[k] = v end
     c
 end
 
-fun shallow_eq(a, b): bool
-    if a == b then return true end
-    if type(a) ~= "table" or type(b) ~= "table" then return false end
+shallow_eq(a, b): bool
+    if a == b return true end
+    if type(a) != "table" or type(b) != "table" return false end
     for k, v in pairs(a) do
-        if b[k] ~= v then return false end
+        if b[k] != v return false end
     end
     for k, _ in pairs(b) do
-        if a[k] == nil then return false end
+        if a[k] == nil return false end
     end
     true
 end
@@ -70,7 +70,7 @@ end
 t = { a = 1, b = 2, c = 3 }
 print("\nTable utils:")
 print("len: " .. tostring(#t))
-print("has 'b': " .. tostring(t.b ~= nil))
+print("has 'b': " .. tostring(t.b != nil))
 
 shallow = clone(t)
 print("shallow_eq: " .. tostring(shallow_eq(t, shallow)))

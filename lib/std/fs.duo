@@ -1,16 +1,16 @@
 -- std.fs — simple file-system helpers
 
-fun std_fs_exists(path: any): bool
-    if path == nil then return false end
+std_fs_exists(path: any): bool
+    if path == nil return false end
     f = io.open(path, "r")
-    if f == nil then return false end
+    if f == nil return false end
     f:close()
     true
 end
 
-fun std_fs_read_file(path: any): any
+std_fs_read_file(path: any): any
     f = io.open(path, "r")
-    if f == nil then return "" end
+    if f == nil return "" end
     -- Read the WHOLE file in one C-level call (f:read("*a")). The previous
     -- line-by-line `data = data .. line .. "\n"` loop was (a) O(n^2) and (b)
     -- triggered a runtime large-string-concat corruption (extra bytes +
@@ -18,34 +18,34 @@ fun std_fs_read_file(path: any): any
     -- index (apparent "1029 truncation") and any large-file read.
     data = f:read("*a")
     f:close()
-    if data == nil then return "" end
+    if data == nil return "" end
     data
 end
 
-fun std_fs_write_file(path: any, data: any): bool
+std_fs_write_file(path: any, data: any): bool
     f = io.open(path, "w")
-    if f == nil then return false end
-    if data == nil then data = "" end
+    if f == nil return false end
+    if data == nil data = "" end
     f:write(data)
     f:close()
     true
 end
 
-fun std_fs_append_file(path: any, data: any): bool
+std_fs_append_file(path: any, data: any): bool
     f = io.open(path, "a")
-    if f == nil then return false end
-    if data == nil then data = "" end
+    if f == nil return false end
+    if data == nil data = "" end
     f:write(data)
     f:close()
     true
 end
 
-fun std_fs_read_lines(path: any): any
+std_fs_read_lines(path: any): any
     out = {}
     f = io.open(path, "r")
-    if f == nil then return out end
+    if f == nil return out end
     line = f:read()
-    while line ~= nil
+    while line != nil
         out[rawlen(out) + 1] = line
         line = f:read()
     end
@@ -53,36 +53,36 @@ fun std_fs_read_lines(path: any): any
     out
 end
 
-fun std_fs_remove(path: any): bool
-    os.remove(path) ~= nil
+std_fs_remove(path: any): bool
+    os.remove(path) != nil
 end
 
-fun std_fs_rename(old_path: any, new_path: any): bool
-    os.rename(old_path, new_path) ~= nil
+std_fs_rename(old_path: any, new_path: any): bool
+    os.rename(old_path, new_path) != nil
 end
 
-fun std_fs_mkdir(path: str): bool
-    if path == nil then return false end
+std_fs_mkdir(path: str): bool
+    if path == nil return false end
     os.execute("mkdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-fun std_fs_mkdir_all(path: str): bool
-    if path == nil then return false end
+std_fs_mkdir_all(path: str): bool
+    if path == nil return false end
     os.execute("mkdir -p '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-fun std_fs_copy(src: str, dest: str): bool
-    if src == nil or dest == nil then return false end
+std_fs_copy(src: str, dest: str): bool
+    if src == nil or dest == nil return false end
     os.execute("cp '" .. string.gsub(src, "'", "'\\''") .. "' '" .. string.gsub(dest, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-fun std_fs_read_dir(path: str): any
+std_fs_read_dir(path: str): any
     out = {}
-    if path == nil then return out end
+    if path == nil return out end
     f = io.popen("ls -1A '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
-    if f == nil then return out end
+    if f == nil return out end
     line = f:read()
-    while line ~= nil
+    while line != nil
         out[rawlen(out) + 1] = line
         line = f:read()
     end
@@ -90,38 +90,38 @@ fun std_fs_read_dir(path: str): any
     out
 end
 
-fun std_fs_is_dir(path: str): bool
-    if path == nil then return false end
+std_fs_is_dir(path: str): bool
+    if path == nil return false end
     os.execute("test -d '" .. string.gsub(path, "'", "'\\''") .. "'")
 end
 
-fun std_fs_is_file(path: str): bool
-    if path == nil then return false end
+std_fs_is_file(path: str): bool
+    if path == nil return false end
     os.execute("test -f '" .. string.gsub(path, "'", "'\\''") .. "'")
 end
 
-fun std_fs_rmdir(path: str): bool
-    if path == nil then return false end
+std_fs_rmdir(path: str): bool
+    if path == nil return false end
     os.execute("rmdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-fun std_fs_chmod(path: str, mode: str): bool
-    if path == nil or mode == nil then return false end
+std_fs_chmod(path: str, mode: str): bool
+    if path == nil or mode == nil return false end
     os.execute("chmod " .. mode .. " '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-fun std_fs_size(path: str): i64
-    if path == nil then return 0 - 1 end
+std_fs_size(path: str): i64
+    if path == nil return 0 - 1 end
     f = io.popen("stat -c%s '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
-    if f == nil then
+    if f == nil
         f = io.popen("stat -f%z '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
-        if f == nil then return 0 - 1 end
+        if f == nil return 0 - 1 end
     end
     out = f:read("*a")
     f:close()
-    if out == nil or out == "" then return 0 - 1 end
+    if out == nil or out == "" return 0 - 1 end
     s = tonumber(out)
-    if s == nil then return 0 - 1 end
+    if s == nil return 0 - 1 end
     s
 end
 

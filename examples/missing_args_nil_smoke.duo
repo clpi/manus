@@ -1,6 +1,6 @@
 -- Smoke: missing trailing call args are deterministic nil/default values.
 
-fun missing_any(a, b, c, d): bool
+missing_any(a, b, c, d): bool
     d == nil
 end
 

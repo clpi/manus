@@ -31,14 +31,14 @@ M.defaults = {
 }
 
 -- TypeByExtension returns the MIME type for the extension.
-fun type_by_extension(ext: str): str
+type_by_extension(ext: str): str
     t = M.defaults[ext]
-    if t == nil then return "application/octet-stream" end
+    if t == nil return "application/octet-stream" end
     t
 end
 
 -- AddExtension adds a MIME type for an extension (persists across calls).
-fun add_extension(ext: str, mime: str): void
+add_extension(ext: str, mime: str): void
     M.defaults[ext] = mime
 end
 

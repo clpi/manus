@@ -3,6 +3,10 @@
 
 token = req "std.compiler.token"
 classify = req "std.token.classify"
+-- Native string slicing: string.sub allocates, and the direct backend emits
+-- only read-only __TEXT. std.str exports the allocation as a @comp.c.export
+-- primitive, so a qualified call lowers to a relocation instead (SH-03).
+Str = req "std.str"
 
 type Loc = {
     file: str,
@@ -47,7 +51,7 @@ type Lexer = {
     hint_7: str
 }
 
-fun new(src: str, file: str): Lexer
+new(src: str, file: str): Lexer
     dummy_loc: Loc = { file = "", line = 0, col = 0 }
     dummy_tok: Tok = { kind = 0, loc = dummy_loc, text = "", int_val = 0, float_val = 0.0 }
     return {
@@ -72,15 +76,15 @@ fun new(src: str, file: str): Lexer
     }
 end
 
-fun cur_loc(self: Lexer): Loc
+cur_loc(self: Lexer): Loc
     return { file = self.file, line = self.line, col = self.col }
 end
 
-fun has_pending_hints(self: Lexer): bool
+has_pending_hints(self: Lexer): bool
     self.hint_count > 0
 end
 
-fun consume_hints(self: Lexer): any
+consume_hints(self: Lexer): any
     hints = {}
     i = 0
     while i < self.hint_count
@@ -107,17 +111,17 @@ fun consume_hints(self: Lexer): any
     hints
 end
 
-fun peek_char(self: Lexer): i64
+peek_char(self: Lexer): i64
     if self.pos > string.len(self.src) return 0 end
     string.byte(self.src, self.pos)
 end
 
-fun peek_char2(self: Lexer): i64
+peek_char2(self: Lexer): i64
     if self.pos + 1 > string.len(self.src) return 0 end
     string.byte(self.src, self.pos + 1)
 end
 
-fun adv(self: Lexer)
+adv(self: Lexer)
     if self.pos > string.len(self.src) return end
     c = string.byte(self.src, self.pos)
     self.pos = self.pos + 1
@@ -129,23 +133,23 @@ fun adv(self: Lexer)
     end
 end
 
-fun is_digit(c: i64): bool
+is_digit(c: i64): bool
     (c >= 48 and c <= 57)
 end
 
-fun is_alpha(c: i64): bool
+is_alpha(c: i64): bool
     ((c >= 65 and c <= 90) or (c >= 97 and c <= 122))
 end
 
-fun is_alnum(c: i64): bool
+is_alnum(c: i64): bool
     is_alpha(c) or is_digit(c)
 end
 
-fun is_hex(c: i64): bool
+is_hex(c: i64): bool
     is_digit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)
 end
 
-fun long_bracket_level(self: Lexer): i64
+long_bracket_level(self: Lexer): i64
     i = self.pos
     if i > string.len(self.src) or string.byte(self.src, i) != 91 return -1 end
     i = i + 1
@@ -158,7 +162,7 @@ fun long_bracket_level(self: Lexer): i64
     lvl
 end
 
-fun skip_long(self: Lexer, level: i64)
+skip_long(self: Lexer, level: i64)
     adv(self)
     i = 0
     while i < level
@@ -185,7 +189,7 @@ fun skip_long(self: Lexer, level: i64)
     error("UnterminatedLongString")
 end
 
-fun skip_ws(self: Lexer)
+skip_ws(self: Lexer)
     while self.pos <= string.len(self.src)
         c = peek_char(self)
         if c == 32 or c == 9 or c == 13 or c == 10
@@ -210,9 +214,9 @@ fun skip_ws(self: Lexer)
                     adv(self)
                 end
                 if is_triple and self.hint_count < 8
-                    comment_text = string.sub(self.src, start, self.pos - 1)
+                    comment_text = Str.sub(self.src, start, self.pos - 1)
                     if string.len(comment_text) > 0 and string.byte(comment_text, 1) == 64
-                        h = string.sub(comment_text, 2, -1)
+                        h = Str.sub(comment_text, 2, -1)
                         if self.hint_count == 0 self.hint_0 = h
                         elseif self.hint_count == 1 self.hint_1 = h
                         elseif self.hint_count == 2 self.hint_2 = h
@@ -232,7 +236,7 @@ fun skip_ws(self: Lexer)
     end
 end
 
-fun read_long_str(self: Lexer, level: i64): str
+read_long_str(self: Lexer, level: i64): str
     adv(self)
     i = 0
     while i < level
@@ -259,7 +263,7 @@ fun read_long_str(self: Lexer, level: i64): str
                 eq = eq + 1
             end
             if eq == level and peek_char(self) == 93
-                content = string.sub(self.src, start, close_start - 1)
+                content = Str.sub(self.src, start, close_start - 1)
                 adv(self)
                 return content
             end
@@ -270,13 +274,13 @@ fun read_long_str(self: Lexer, level: i64): str
     error("UnterminatedLongString")
 end
 
-fun read_str(self: Lexer, quote: i64): str
+read_str(self: Lexer, quote: i64): str
     adv(self)
     start = self.pos
     while self.pos <= string.len(self.src)
         c = peek_char(self)
         if c == quote
-            s = string.sub(self.src, start, self.pos - 1)
+            s = Str.sub(self.src, start, self.pos - 1)
             adv(self)
             return s
         end
@@ -333,7 +337,7 @@ fun read_str(self: Lexer, quote: i64): str
     error("UnterminatedString")
 end
 
-fun read_num(self: Lexer): Tok
+read_num(self: Lexer): Tok
     l = cur_loc(self)
     start = self.pos
     is_float = false
@@ -393,7 +397,7 @@ fun read_num(self: Lexer): Tok
         end
     end
     
-    text = string.sub(self.src, start, self.pos - 1)
+    text = Str.sub(self.src, start, self.pos - 1)
     if is_float
         v = tonumber(text) or 0.0
         return { kind = token.KIND_FLOAT_LIT, loc = l, text = text, int_val = 0, float_val = v }
@@ -403,7 +407,7 @@ fun read_num(self: Lexer): Tok
     end
 end
 
-fun next_tok(self: Lexer): Tok
+next_tok(self: Lexer): Tok
     skip_ws(self)
     if self.pos > string.len(self.src)
         return { kind = token.KIND_EOF, loc = cur_loc(self), text = "", int_val = 0, float_val = 0.0 }
@@ -426,7 +430,7 @@ fun next_tok(self: Lexer): Tok
                 break
             end
         end
-        text = string.sub(self.src, start, self.pos - 1)
+        text = Str.sub(self.src, start, self.pos - 1)
         kind = classify.classify(text)
         if kind == 0
             kind = token.KIND_NAME
@@ -453,147 +457,147 @@ fun next_tok(self: Lexer): Tok
     if c == 43
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_PLUS_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_PLUS_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_PLUS, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_PLUS, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 42
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_STAR_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_STAR_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_STAR, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_STAR, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 37
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_PERCENT_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_PERCENT_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_PERCENT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_PERCENT, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 94
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_CARET_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_CARET_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_CARET, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_CARET, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 35
         if peek_char(self) == 35
             adv(self)
-            return { kind = token.KIND_HASH_HASH, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_HASH_HASH, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_HASH, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_HASH, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 38
-        return { kind = token.KIND_AMP, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_AMP, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 124
         if self.pos <= string.len(self.src) and string.byte(self.src, self.pos) == 62
             self.pos = self.pos + 1
-            return { kind = token.KIND_PIPE_GT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_PIPE_GT, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_PIPE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_PIPE, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 40
-        return { kind = token.KIND_LPAREN, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_LPAREN, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 41
-        return { kind = token.KIND_RPAREN, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_RPAREN, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 91
-        return { kind = token.KIND_LBRACKET, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_LBRACKET, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 93
-        return { kind = token.KIND_RBRACKET, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_RBRACKET, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 123
-        return { kind = token.KIND_LBRACE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_LBRACE, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 125
-        return { kind = token.KIND_RBRACE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_RBRACE, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 59
-        return { kind = token.KIND_SEMI, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_SEMI, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 44
-        return { kind = token.KIND_COMMA, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_COMMA, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 45
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_MINUS_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_MINUS_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if peek_char(self) == 62
             adv(self)
-            return { kind = token.KIND_ARROW, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_ARROW, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_MINUS, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_MINUS, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 47
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_SLASH_ASSIGN, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_SLASH_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if peek_char(self) == 47
             adv(self)
-            return { kind = token.KIND_IDIV, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_IDIV, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_SLASH, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_SLASH, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 46
         if peek_char(self) == 46
             adv(self)
             if peek_char(self) == 46
                 adv(self)
-                return { kind = token.KIND_DOTS, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+                return { kind = token.KIND_DOTS, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
             end
-            return { kind = token.KIND_CONCAT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_CONCAT, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_DOT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_DOT, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 61
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_EQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_EQ, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if peek_char(self) == 62
             adv(self)
-            return { kind = token.KIND_FAT_ARROW, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_FAT_ARROW, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_ASSIGN, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_ASSIGN, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 126
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_NEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_NEQ, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_TILDE, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_TILDE, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 60
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_LEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_LEQ, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if peek_char(self) == 60
             adv(self)
-            return { kind = token.KIND_LSHIFT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_LSHIFT, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_LT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_LT, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 62
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_GEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_GEQ, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
         if peek_char(self) == 62
             adv(self)
-            return { kind = token.KIND_RSHIFT, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_RSHIFT, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_GT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_GT, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 58
         if peek_char(self) == 58
             adv(self)
-            return { kind = token.KIND_DCOLON, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_DCOLON, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_COLON, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_COLON, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 64
-        return { kind = token.KIND_AT, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_AT, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 63
-        return { kind = token.KIND_QUESTION, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_QUESTION, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 33
         if peek_char(self) == 61
             adv(self)
-            return { kind = token.KIND_NEQ, loc = l, text = string.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
+            return { kind = token.KIND_NEQ, loc = l, text = Str.sub(self.src, p - 1, self.pos - 1), int_val = 0, float_val = 0.0 }
         end
-        return { kind = token.KIND_BANG, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_BANG, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     elseif c == 96
-        return { kind = token.KIND_BACKTICK, loc = l, text = string.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
+        return { kind = token.KIND_BACKTICK, loc = l, text = Str.sub(self.src, p - 1, p - 1), int_val = 0, float_val = 0.0 }
     else
         error("UnexpectedChar")
     end
 end
 
-fun next(self: Lexer): Tok
+next(self: Lexer): Tok
     if self.has_peeked
         tok = self.peeked_token
         self.has_peeked = false
@@ -602,7 +606,7 @@ fun next(self: Lexer): Tok
     return next_tok(self)
 end
 
-fun peek(self: Lexer): Tok
+peek(self: Lexer): Tok
     if not self.has_peeked
         self.peeked_token = next_tok(self)
         self.has_peeked = true
@@ -610,7 +614,7 @@ fun peek(self: Lexer): Tok
     self.peeked_token
 end
 
-fun save_state(self: Lexer): State
+save_state(self: Lexer): State
     return {
         pos = self.pos,
         line = self.line,
@@ -620,10 +624,54 @@ fun save_state(self: Lexer): State
     }
 end
 
-fun restore_state(self: Lexer, state: State)
+restore_state(self: Lexer, state: State)
     self.pos = state.pos
     self.line = state.line
     self.col = state.col
     self.has_peeked = state.has_peeked
     self.peeked_token = state.peeked_token
+end
+
+-- ── Pass 16 MP4-B02 — sovereign tokenize surface ──────────────────────────────
+--
+-- Two entries, because two is all the power needs: a streaming primitive the host
+-- tokenizer loop consumes, and the differential that proves this lexer agrees with
+-- the production one token-for-token. Everything else (counts, kinds at an index,
+-- spans) derives from `step` in the caller, and deriving it there is also the only
+-- way to keep it O(n) — a `kind_at(index)` entry must re-lex per call.
+--
+-- Both lower through DNIR to native machine code: no C backend, no runtime helper.
+-- `@c.export` sets the wasm export name; the native symbol is the Duo function
+-- name, so each is named exactly what the ABI must see.
+
+-- Lex one token at 1-based byte offset `pos`; return `kind * 2^40 + next_pos`.
+-- Feed `next_pos` back to walk the stream in O(n). Packing keeps this a single
+-- scalar, so no aggregate crosses the boundary.
+--
+-- `kind` is at most 105 and `next_pos` is a byte offset, so the product cannot
+-- overflow i64 for any source a compiler will see.
+@c.export("duo_lexer_step")
+duo_lexer_step(src: str, file: str, pos: i64): i64
+    lex = new(src, file)
+    lex.pos = pos
+    tok = next_tok(lex)
+    tok.kind * 1099511627776 + lex.pos
+end
+
+-- Token-kind fingerprint: mixes every token including the terminating EOF.
+-- Agrees bit-for-bit with `src/lexer_differential.zig:fingerprintSource`
+-- (`h = h * 31 + kind`), which is what makes it a differential against the
+-- production lexer rather than a self-consistency check.
+--
+-- u64, not i64: a hash must wrap, and signed overflow is UB in lowered code.
+@c.export("duo_lexer_kind_fingerprint")
+duo_lexer_kind_fingerprint(src: str, file: str): u64
+    lex = new(src, file)
+    h: u64 = 0
+    while true
+        tok = next_tok(lex)
+        h = h * 31 + tok.kind
+        if tok.kind == token.KIND_EOF return h end
+    end
+    h
 end

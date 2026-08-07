@@ -1,19 +1,19 @@
 -- std.random — Random number generation and utilities
 
 -- seed: seed the random number generator.
-fun seed(s: int): void
+seed(s: int): void
     math.randomseed(s)
 end
 
 -- float: return a random float in [0, 1).
-fun rand_float(): float
+rand_float(): float
     math.random()
 end
 
 -- int: return a random integer in [min, max] (inclusive).
 -- If only one argument, returns random int in [1, max].
-fun rand_int(min: int, max: int): int
-    if max == nil then
+rand_int(min: int, max: int): int
+    if max == nil
         math.random(min)
     else
         math.random(min, max)
@@ -21,27 +21,27 @@ fun rand_int(min: int, max: int): int
 end
 
 -- rand_bool: return a random boolean (50/50).
-fun rand_bool(): bool
+rand_bool(): bool
     math.random() < 0.5
 end
 
 -- bool_weighted: return a random boolean with the given probability of true.
-fun bool_weighted(p: float): bool
+bool_weighted(p: float): bool
     math.random() < p
 end
 
 -- choice: return a random element from a list.
-fun choice(list: any): any
-    if list == nil or #list == 0 then return nil end
+choice(list: any): any
+    if list == nil or #list == 0 return nil end
     list[math.random(1, #list)]
 end
 
 -- sample: return n unique random elements from a list (without replacement).
-fun sample(list: any, n: i64): any
+sample(list: any, n: i64): any
     out = {}
-    if list == nil or n <= 0 then return out end
+    if list == nil or n <= 0 return out end
     len = rawlen(list)
-    if n > len then n = len end
+    if n > len n = len end
     indices = {}
     i = 1
     while i <= len
@@ -61,17 +61,17 @@ fun sample(list: any, n: i64): any
 end
 
 -- pick_n: alias for sample (more idiomatic name).
-fun pick_n(list: any, n: i64): any
+pick_n(list: any, n: i64): any
     sample(list, n)
 end
 
 -- weighted_choice: choose from items with corresponding weights.
 -- items: list of values, weights: parallel list of numeric weights.
-fun weighted_choice(items: any, weights: any): any
-    if items == nil or weights == nil then return nil end
+weighted_choice(items: any, weights: any): any
+    if items == nil or weights == nil return nil end
     len = rawlen(items)
-    if len == 0 then return nil end
-    if rawlen(weights) ~= len then return nil end
+    if len == 0 return nil end
+    if rawlen(weights) != len return nil end
     total = 0
     i = 1
     while i <= len
@@ -83,18 +83,18 @@ fun weighted_choice(items: any, weights: any): any
     i = 1
     while i <= len
         cumulative += weights[i]
-        if r <= cumulative then return items[i] end
+        if r <= cumulative return items[i] end
         i += 1
     end
     items[len]
 end
 
 -- range: return a list of integers from start to stop (exclusive), with optional step.
-fun range(start: i64, stop: i64, step: i64): any
+range(start: i64, stop: i64, step: i64): any
     out = {}
-    if step == nil then step = 1 end
-    if step == 0 then return out end
-    if step > 0 then
+    if step == nil step = 1 end
+    if step == 0 return out end
+    if step > 0
         i = start
         while i < stop
             out[rawlen(out) + 1] = i
@@ -111,9 +111,9 @@ fun range(start: i64, stop: i64, step: i64): any
 end
 
 -- gauss: return a random number from a normal distribution (Box-Muller).
-fun gauss(mean: float, stddev: float): float
-    if mean == nil then mean = 0 end
-    if stddev == nil then stddev = 1 end
+gauss(mean: float, stddev: float): float
+    if mean == nil mean = 0 end
+    if stddev == nil stddev = 1 end
     u1 = math.random()
     u2 = math.random()
     while u1 == 0
@@ -124,8 +124,8 @@ fun gauss(mean: float, stddev: float): float
 end
 
 -- shuffle: shuffle a list in-place (Fisher-Yates).
-fun shuffle(list: any): void
-    if list == nil then return end
+shuffle(list: any): void
+    if list == nil return end
     n = #list
     while n > 1
         k = math.random(1, n)
@@ -137,31 +137,31 @@ fun shuffle(list: any): void
 end
 
 -- coin: flip a coin, return "heads" or "tails".
-fun coin(): str
-    if math.random() < 0.5 then return "heads" end
+coin(): str
+    if math.random() < 0.5 return "heads" end
     "tails"
 end
 
 -- uuid_v4ish: generate a random UUID-like string (not cryptographically secure).
-fun uuid_v4ish(): str
+uuid_v4ish(): str
     hex_chars = "0123456789abcdef"
     parts = {}
     i = 1
     while i <= 36
-        if i == 9 or i == 14 or i == 19 or i == 24 then
+        if i == 9 or i == 14 or i == 19 or i == 24
             parts[i] = "-"
-        elseif i == 15 then
+        elseif i == 15
             parts[i] = "4"
-        elseif i == 20 then
+        elseif i == 20
             idx = math.random(1, 4)
-            if idx == 1 then parts[i] = "8"
-            elseif idx == 2 then parts[i] = "9"
-            elseif idx == 3 then parts[i] = "a"
+            if idx == 1 parts[i] = "8"
+            elseif idx == 2 parts[i] = "9"
+            elseif idx == 3 parts[i] = "a"
             else parts[i] = "b"
             end
         else
             -- Use single random call to get one hex character
-            local idx = math.random(1, 16)
+            idx = math.random(1, 16)
             parts[i] = string.sub(hex_chars, idx, idx)
         end
         i += 1

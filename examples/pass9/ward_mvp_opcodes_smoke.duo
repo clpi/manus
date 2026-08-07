@@ -3,8 +3,8 @@
 WardOps = req "std.wasm.ward_mvp_opcodes"
 
 main(): i64
-    if WardOps.M.OP_i32_add ~= 106 then return 1 end
-    if WardOps.M.OP_i32_const ~= 65 then return 2 end
-    if WardOps.canonical_owner() ~= "src/wasm_semantic.zig" then return 3 end
+    if WardOps.M.OP_i32_add != 106 return 1 end
+    if WardOps.M.OP_i32_const != 65 return 2 end
+    if WardOps.canonical_owner() != "src/wasm_semantic.zig" return 3 end
     0
 end

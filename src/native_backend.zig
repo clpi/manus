@@ -128,7 +128,7 @@ fn emitObjectMode(alloc: std.mem.Allocator, mod: *const ast.Module, process_entr
 
     var output = try emitArm64Module(alloc, mod, process_entry);
     defer output.deinit(alloc);
-    return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations);
+    return emitMachOArm64Object(alloc, output.text, output.cstring, output.symbols, output.relocations, output.bss_size);
 }
 
 pub fn emitAssembly(alloc: std.mem.Allocator, mod: *const ast.Module, target: []const u8) Error![]u8 {
@@ -413,6 +413,9 @@ const Arm64Output = struct {
     cstring: []u8 = &.{},
     symbols: []Symbol,
     relocations: []Relocation,
+    /// Bytes of `__DATA,__bss` zerofill arena this module needs. 0 means the
+    /// section is not emitted at all, which is the pre-arena behavior verbatim.
+    bss_size: u64 = 0,
 
     fn deinit(self: *Arm64Output, alloc: std.mem.Allocator) void {
         alloc.free(self.text);
@@ -512,8 +515,29 @@ fn validateFunction(
     }
     if (fd.func.params.len > 8) return error.UnsupportedProgram;
     for (fd.func.params) |param| {
-        if (!isIntegerAnnotation(param.typ)) return error.InvalidMainSignature;
+        // `str` is a `const char*` — an integer-class argument that rides x0..x7
+        // exactly like an i64. The record-returning path above already accepts
+        // it; excluding it here was an oversight, and it rejected every
+        // `f(s: str): i64` reaching the AST path (which is any function using
+        // `and`/`or`, since DNIR lowering has no arm for them).
+        // `ptr` is the base address of a memory-backed positional table — an
+        // integer-class argument in x0..x7 like `i64` and `str`. Admitting it is
+        // what lets a table cross a function boundary at all (SH-04).
+        if (!isIntegerAnnotation(param.typ) and !isStrAnnotation(param.typ) and !isPtrAnnotation(param.typ)) {
+            return error.InvalidMainSignature;
+        }
     }
+}
+
+fn isPtrAnnotation(t: ast.TypeExpr) bool {
+    return switch (t) {
+        .named => |name| std.mem.eql(u8, name, "ptr") or std.mem.eql(u8, name, "void*"),
+        else => false,
+    };
+}
+
+fn isStrAnnotation(t: ast.TypeExpr) bool {
+    return t == .named and std.mem.eql(u8, t.named, "str");
 }
 
 fn isFloatAnnotation(t: ast.TypeExpr) bool {
@@ -651,6 +675,8 @@ const Arm64Compiler = struct {
     /// Stack slots for sealed record fields (f64 or i64): "c.pos" -> slot meta.
     fp_stack_slots: std.StringHashMapUnmanaged(StackSlot) = .empty,
     stack_frame_bytes: u16 = 0,
+    /// `alloc_slots` result temp -> sp-relative byte offset of its slot region.
+    slot_bases: std.AutoHashMapUnmanaged(u32, u16) = .empty,
     f64_kernel_names: std.StringHashMapUnmanaged(void) = .empty,
     blob_symbol_map: std.StringHashMapUnmanaged(u32) = .empty,
     spilled_regs: std.AutoHashMapUnmanaged(u5, u16) = .empty,
@@ -722,6 +748,7 @@ const Arm64Compiler = struct {
         self.string_map.deinit(self.alloc);
         self.fp_locals.deinit(self.alloc);
         self.fp_stack_slots.deinit(self.alloc);
+        self.slot_bases.deinit(self.alloc);
         self.f64_kernel_names.deinit(self.alloc);
         self.blob_symbol_map.deinit(self.alloc);
         self.spilled_regs.deinit(self.alloc);
@@ -906,6 +933,17 @@ const Arm64Compiler = struct {
         }
     }
 
+    /// True when the body contains any call, so parameters must be relocated out
+    /// of the argument/return registers to survive it.
+    fn dnirFunctionHasCall(f: dnir.Function) bool {
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.op == .call_direct or ins.op == .call_extern) return true;
+            }
+        }
+        return false;
+    }
+
     fn regIsPinned(pinned: *const std.AutoHashMapUnmanaged(u32, u5), reg: u5) bool {
         var it = pinned.valueIterator();
         while (it.next()) |slot_reg| {
@@ -928,7 +966,7 @@ const Arm64Compiler = struct {
         self.cur_func_float = f.is_float_kernel;
         self.cur_func_ret_float = f.ret == .f64 and !f.is_float_kernel;
 
-    const offset: u32 = @intCast(self.code.items.len);
+        const offset: u32 = @intCast(self.code.items.len);
         const link_name = try linkerSymbolName(self.alloc, f.name);
         try self.symbols.append(self.alloc, .{ .name = link_name, .offset = offset, .defined = true });
         try self.asm_text.appendSlice(self.alloc, "\n.globl _");
@@ -962,11 +1000,119 @@ const Arm64Compiler = struct {
                 } else return error.UnsupportedProgram;
             }
         } else {
-            for (f.params, 0..) |_, i| {
-                const slot: u32 = @intCast(i);
-                const reg: u5 = @intCast(i);
-                try temps.put(self.alloc, slot, reg);
-                try pinned.put(self.alloc, slot, reg);
+            // x0..x7 are both the argument registers and the return-value
+            // register, and `emitSaveCallerRegs` only preserves x9..x28. A
+            // parameter left in its incoming register is therefore destroyed by
+            // any call: in `fib(n-1) + fib(n-2)` the second operand read x0
+            // after the first call and computed `fib(n-1) - 2` instead of
+            // `n - 2`. Copy parameters into the caller-saved range when the body
+            // can call; leaf functions keep the incoming register and pay nothing.
+            const body_has_call = dnirFunctionHasCall(f);
+            // A record parameter occupies one ABI slot per field, so slots are
+            // not 1:1 with parameters; walk a cursor. This mirrors how the
+            // lowerer assigns `p.field` locals.
+            var slot_cursor: u32 = 0;
+            for (f.params) |p| {
+                var slots_for_param: u32 = 1;
+                if (p.record) |rec_name| {
+                    if (scalRecordDesc(self.scal_records, .{ .named = rec_name })) |rec| {
+                        slots_for_param = @intCast(rec.field_names.len);
+                    }
+                }
+                var k: u32 = 0;
+                while (k < slots_for_param) : (k += 1) {
+                    if (slot_cursor >= 8) return error.UnsupportedProgram;
+                    const slot = slot_cursor;
+                    const arg_reg: u5 = @intCast(slot);
+                    if (body_has_call) {
+                        const home = try self.allocReg();
+                        try self.emitMovReg(home, arg_reg);
+                        try temps.put(self.alloc, slot, home);
+                        try pinned.put(self.alloc, slot, home);
+                    } else {
+                        try temps.put(self.alloc, slot, arg_reg);
+                        try pinned.put(self.alloc, slot, arg_reg);
+                    }
+                    slot_cursor += 1;
+                }
+            }
+        }
+
+        // Reserve every record's stack slot ONCE, here in the prologue.
+        //
+        // Reserving where the record is produced re-executes on each loop
+        // iteration and is never balanced before the back-edge, so `sp` walks
+        // down a frame per iteration and every field offset shifts — a record
+        // built inside a loop then reads garbage. Offsets are sp-relative and
+        // only meaningful against a frame reserved once, so size the frame by a
+        // pre-pass and hand out fixed offsets.
+        //
+        // Skipped when the function also builds f64 records: those still reserve
+        // at point of use, and their `sub sp` would shift offsets assigned here.
+        var has_f64_record = false;
+        for (f.blocks) |b| {
+            for (b.instrs) |ins| {
+                if (ins.record.len == 0) continue;
+                if (f64RecordDesc(self.f64_records, .{ .named = ins.record }) != null) has_f64_record = true;
+            }
+        }
+        if (!has_f64_record) {
+            var record_frame: u16 = 0;
+            for (f.blocks) |b| {
+                for (b.instrs) |ins| {
+                    if (ins.record.len == 0) continue;
+                    switch (ins.op) {
+                        .init_record, .call_direct, .call_extern => {},
+                        else => continue,
+                    }
+                    const rec = scalRecordDesc(self.scal_records, .{ .named = ins.record }) orelse continue;
+                    if (rec.field_names.len == 0 or rec.field_names.len > 8) continue;
+                    const base = if (ins.field.len > 0) ins.field else "rec";
+                    const probe = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, rec.field_names[0] });
+                    defer self.alloc.free(probe);
+                    if (self.fp_stack_slots.contains(probe)) continue;
+                    for (rec.field_names, 0..) |fname, i| {
+                        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, fname });
+                        const off: u16 = record_frame + @as(u16, @intCast(i * 8));
+                        try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = false });
+                    }
+                    record_frame += @intCast(std.mem.alignForward(usize, rec.field_names.len * 8, 16));
+                }
+            }
+            if (record_frame > 0) {
+                try self.emitSubSp(record_frame);
+                self.stack_frame_bytes += record_frame;
+            }
+        }
+
+        // Memory-backed positional tables. Same reasoning as records above: the
+        // reservation must happen once, not at the point of use, or a table
+        // built inside a loop walks `sp` down a frame per iteration. Each
+        // `alloc_slots` gets a fixed sp-relative offset assigned here, keyed by
+        // the instruction's own result temp.
+        self.slot_bases.clearRetainingCapacity();
+        {
+            var slots_frame: u16 = 0;
+            for (f.blocks) |b| {
+                for (b.instrs) |ins| {
+                    if (ins.op != .alloc_slots) continue;
+                    const t = ins.result orelse continue;
+                    const n: u16 = switch (ins.lhs) {
+                        .i64 => |v| if (v > 0 and v <= 4096) @intCast(v) else return error.UnsupportedProgram,
+                        else => return error.UnsupportedProgram,
+                    };
+                    const bytes: u16 = @intCast(std.mem.alignForward(usize, @as(usize, n) * 8, 16));
+                    if (@as(u32, slots_frame) + bytes > 32752) return error.UnsupportedProgram;
+                    try self.slot_bases.put(self.alloc, t, slots_frame);
+                    slots_frame += bytes;
+                }
+            }
+            if (slots_frame > 0) {
+                try self.emitSubSp(slots_frame);
+                self.stack_frame_bytes += slots_frame;
+                // Offsets were handed out relative to the base of this region,
+                // which sits at the *bottom* of the frame reserved so far, so
+                // they are already correct sp-relative displacements.
             }
         }
 
@@ -975,10 +1121,20 @@ const Arm64Compiler = struct {
         var branch_patches: std.ArrayList(DnirBranchPatch) = .empty;
         defer branch_patches.deinit(self.alloc);
 
+        // Whether the LAST instruction emitted was a terminator. `self.returned`
+        // is a single flag for the whole function, so an early `return` inside an
+        // `if` marks it true even when the fall-through path just runs off the
+        // end — the function then executes whatever symbol the linker placed
+        // next. Track the final instruction separately.
+        var tail_terminates = false;
         for (f.blocks) |b| {
             for (b.instrs) |ins| {
                 try code_offsets.append(self.alloc, @intCast(self.code.items.len));
                 try self.compileDnirInstr(&temps, &pinned, ins, &branch_patches);
+                tail_terminates = switch (ins.op) {
+                    .ret, .ret_record, .br => true,
+                    else => false,
+                };
             }
         }
         // Sentinel: branch_target may equal instr count (fall-through past if-block).
@@ -993,6 +1149,11 @@ const Arm64Compiler = struct {
             }
         }
         if (!self.returned) return error.UnsupportedProgram;
+        // Falling off the end of a function is never recoverable at runtime:
+        // execution continues into whatever symbol the linker placed next
+        // (here, straight into _duo_keyword_classify → SIGSEGV). Refuse instead
+        // of emitting it, so the honest DNB001 path reports the gap.
+        if (!tail_terminates) return error.UnsupportedProgram;
     }
 
     fn compileDnirInstr(
@@ -1044,7 +1205,10 @@ const Arm64Compiler = struct {
                 const slot: u5 = @intCast(ins.result orelse return error.UnsupportedProgram);
                 const reg = try self.evalDnirValue(temps, ins.lhs);
                 if (reg != slot) try self.emitMovReg(slot, reg);
-                if (!Arm64Compiler.regIsPinned(pinned, reg) and reg != slot) self.releaseReg(reg);
+                // Same rule as the single-argument path: a register still owned
+                // by the slot map must survive being passed. Releasing a table
+                // base here handed it to the next argument's index constant.
+                if (reg != slot) self.releaseDnirTemp(pinned, ins.lhs, reg);
             },
             .load_local => {
                 if (ins.ty == .f64) {
@@ -1071,9 +1235,15 @@ const Arm64Compiler = struct {
                 } else {
                     const val_reg = try self.evalDnirValue(temps, ins.lhs);
                     if (ins.result) |slot| {
-                        const local_reg = try self.allocReg();
-                        try self.emitMovReg(local_reg, val_reg);
-                        if (!Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
+                        // A local must keep ONE register for its whole lifetime.
+                        // Allocating a fresh register per store is invisible in
+                        // straight-line code but breaks loops: the loop head was
+                        // already emitted reading the previous register, so the
+                        // update never reaches the condition and the loop spins.
+                        // Reuse the existing home register when the local has one.
+                        const local_reg = pinned.get(slot) orelse temps.get(slot) orelse try self.allocReg();
+                        if (local_reg != val_reg) try self.emitMovReg(local_reg, val_reg);
+                        if (val_reg != local_reg and !Arm64Compiler.regIsPinned(pinned, val_reg)) self.releaseReg(val_reg);
                         try pinned.put(self.alloc, slot, local_reg);
                         try temps.put(self.alloc, slot, local_reg);
                     } else if (!Arm64Compiler.regIsPinned(pinned, val_reg)) {
@@ -1152,7 +1322,15 @@ const Arm64Compiler = struct {
                     if (ins.lhs != .void) {
                         const arg_reg = try self.evalDnirValue(temps, ins.lhs);
                         if (arg_reg != 0) try self.emitMovReg(0, arg_reg);
-                        self.releaseReg(arg_reg);
+                        // Passing a local as an argument must not free the local:
+                        // `t = g(a)` released a's home register, so the following
+                        // emitSaveCallerRegs skipped it AND allocReg handed the
+                        // same register to the call's result, clobbering `a`.
+                        // `regIsPinned` covers parameter slots only; a temp still
+                        // live in the slot map has the same problem, which is how
+                        // a table base pointer got overwritten by the very call it
+                        // was being passed to.
+                        self.releaseDnirTemp(pinned, ins.lhs, arg_reg);
                     }
                     if (ins.op == .call_extern) try self.ensureExternalSymbol(ins.callee);
                     const save = try self.emitSaveCallerRegs();
@@ -1192,7 +1370,13 @@ const Arm64Compiler = struct {
                 } else {
                     const reg = try self.evalDnirValue(temps, ins.lhs);
                     if (reg != 0) try self.emitMovReg(0, reg);
-                    self.releaseReg(reg);
+                    // Register allocation is linear over the instruction stream
+                    // and does not model control flow, so freeing a pinned local
+                    // here leaks across the branch: after an early `return n`
+                    // the parameter's register looks free and the fall-through
+                    // path reuses it for a constant (`n - 1` became `1 - 1`).
+                    // A local's register stays reserved for the whole function.
+                    if (!Arm64Compiler.regIsPinned(pinned, reg)) self.releaseReg(reg);
                 }
                 try self.restoreStackFrame();
                 try self.emitRet();
@@ -1204,18 +1388,42 @@ const Arm64Compiler = struct {
                 {
                     try self.emitRetF64RecordFromDnir(temps, ins);
                 } else {
-                    const r0 = try self.evalDnirValue(temps, ins.lhs);
-                    if (r0 != 0) try self.emitMovReg(0, r0);
-                    self.releaseReg(r0);
+                    // Returning a record is a PARALLEL move into x0..x2, not a
+                    // sequential one. Writing x0 first and then reading a later
+                    // field that still lives in x0 — a parameter, typically —
+                    // substitutes the value just stored: `{ kind = 1, start = pos }`
+                    // with `pos` in x0 returned `kind` for `start`.
+                    //
+                    // Evaluate every field, stage each through a scratch register
+                    // (allocReg hands out x9+, so it can never alias an ABI
+                    // destination), then commit. Redundant `mov`s here are folded
+                    // by the peephole; a wrong answer is not recoverable.
+                    var srcs: [3]u5 = .{ 0, 0, 0 };
+                    var n: usize = 1;
+                    srcs[0] = try self.evalDnirValue(temps, ins.lhs);
                     if (ins.rhs != .void) {
-                        const r1 = try self.evalDnirValue(temps, ins.rhs);
-                        if (r1 != 1) try self.emitMovReg(1, r1);
-                        self.releaseReg(r1);
+                        srcs[1] = try self.evalDnirValue(temps, ins.rhs);
+                        n = 2;
                     }
                     if (ins.third != .void) {
-                        const r2 = try self.evalDnirValue(temps, ins.third);
-                        if (r2 != 2) try self.emitMovReg(2, r2);
-                        self.releaseReg(r2);
+                        srcs[2] = try self.evalDnirValue(temps, ins.third);
+                        n = 3;
+                    }
+
+                    var staged: [3]u5 = .{ 0, 0, 0 };
+                    var i: usize = 0;
+                    while (i < n) : (i += 1) {
+                        staged[i] = try self.allocReg();
+                        try self.emitMovReg(staged[i], srcs[i]);
+                    }
+                    i = 0;
+                    while (i < n) : (i += 1) {
+                        try self.emitMovReg(@intCast(i), staged[i]);
+                        self.releaseReg(staged[i]);
+                    }
+                    i = 0;
+                    while (i < n) : (i += 1) {
+                        if (!Arm64Compiler.regIsPinned(pinned, srcs[i])) self.releaseReg(srcs[i]);
                     }
                 }
                 try self.restoreStackFrame();
@@ -1224,6 +1432,13 @@ const Arm64Compiler = struct {
             },
             .br_if_not => {
                 const cond = try self.evalDnirValue(temps, ins.lhs);
+                // `evalDnirValue` materializes the condition into a GPR (via
+                // `cset`, which does not write NZCV). Without this compare the
+                // branch below would consume whatever flags the condition's own
+                // `cmp` left, turning every `if <comparison>` into
+                // `if (lhs == rhs)`. Test the boolean itself: `b.eq` then means
+                // "condition was false", which is br_if_not.
+                try self.emitCmpZero(cond);
                 const patch_off = try self.emitBCond(.eq, 0);
                 self.releaseReg(cond);
                 try branch_patches.append(self.alloc, .{ .patch_off = patch_off, .target_instr = ins.branch_target, .is_cond = true });
@@ -1243,6 +1458,100 @@ const Arm64Compiler = struct {
                     const reg = try self.loadStackField(key);
                     if (ins.result) |t| try temps.put(self.alloc, t, reg);
                 }
+            },
+            .str_len => {
+                // Inline byte-length scan — the sovereign form of `string.len`.
+                // No libc `strlen`, no runtime helper: just a load/compare loop,
+                // so a tokenizer using it stays in the direct backend subset.
+                //
+                //     len = 0
+                //   loop: b = ldrb [base + len]
+                //         if b == 0 goto done
+                //         len += 1
+                //         goto loop
+                //   done:
+                const base = try self.evalDnirValue(temps, ins.lhs);
+                const len = try self.allocReg();
+                try self.emitMovImm(len, 0);
+                const one = try self.allocReg();
+                try self.emitMovImm(one, 1);
+                const addr = try self.allocReg();
+                const byte = try self.allocReg();
+
+                const loop_off: u32 = @intCast(self.code.items.len);
+                try self.emitAddReg(addr, base, len);
+                try self.emitLdrb(byte, addr);
+                try self.emitCmpZero(byte);
+                const done_patch = try self.emitBCond(.eq, 0);
+                try self.emitAddReg(len, len, one);
+                const back_patch = try self.emitB(0);
+                const done_off: u32 = @intCast(self.code.items.len);
+
+                try self.patchCondBranch(done_patch, done_off);
+                try self.patchB(back_patch, loop_off);
+
+                self.releaseReg(byte);
+                self.releaseReg(addr);
+                self.releaseReg(one);
+                if (!Arm64Compiler.regIsPinned(pinned, base)) self.releaseReg(base);
+                if (ins.result) |t| try temps.put(self.alloc, t, len);
+            },
+            .alloc_slots => {
+                const t = ins.result orelse return error.UnsupportedProgram;
+                const off = self.slot_bases.get(t) orelse return error.UnsupportedProgram;
+                const dst = try self.allocReg();
+                try self.emitAddSpImm(dst, off);
+                try temps.put(self.alloc, t, dst);
+            },
+            .load_index, .store_index => |op| if (ins.ty == .i64) {
+                // Memory-backed positional table: 8-byte elements, Duo-indexed
+                // from 1, so element `i` is at `base + (i - 1) * 8`. The scaled
+                // register form `[base, idx, lsl #3]` does the multiply for
+                // free, so only the 1-based bias costs an instruction.
+                const base = try self.evalDnirValue(temps, ins.lhs);
+                const idx = try self.evalDnirValue(temps, ins.rhs);
+                const biased = try self.allocReg();
+                const one = try self.allocReg();
+                try self.emitMovImm(one, 1);
+                try self.emitSubReg(biased, idx, one);
+                self.releaseReg(one);
+                if (op == .load_index) {
+                    const dst = try self.allocReg();
+                    try self.emitLdrScaled(dst, base, biased);
+                    if (ins.result) |t| try temps.put(self.alloc, t, dst);
+                } else {
+                    const val = try self.evalDnirValue(temps, ins.third);
+                    try self.emitStrScaled(val, base, biased);
+                    self.releaseDnirTemp(pinned, ins.third, val);
+                }
+                self.releaseReg(biased);
+                // Only release registers this instruction owns. A base or index
+                // that came from a slot is still live in `temps`: materializing a
+                // table emits one store per element off the *same* base, and
+                // releasing it after the first store handed x9 straight back to
+                // the next index constant, so element 2 stored through `[2]` as
+                // an address.
+                self.releaseDnirTemp(pinned, ins.lhs, base);
+                self.releaseDnirTemp(pinned, ins.rhs, idx);
+            } else if (op == .store_index) {
+                return error.UnsupportedProgram;
+            } else {
+                // `string.byte(s, i)`: Duo indexes strings from 1, C pointers
+                // from 0, so the byte lives at `base + (i - 1)`.
+                const base = try self.evalDnirValue(temps, ins.lhs);
+                const idx = try self.evalDnirValue(temps, ins.rhs);
+                const one = try self.allocReg();
+                try self.emitMovImm(one, 1);
+                const addr = try self.allocReg();
+                try self.emitSubReg(addr, idx, one);
+                try self.emitAddReg(addr, base, addr);
+                self.releaseReg(one);
+                const dst = try self.allocReg();
+                try self.emitLdrb(dst, addr);
+                self.releaseReg(addr);
+                if (!Arm64Compiler.regIsPinned(pinned, base)) self.releaseReg(base);
+                if (!Arm64Compiler.regIsPinned(pinned, idx)) self.releaseReg(idx);
+                if (ins.result) |t| try temps.put(self.alloc, t, dst);
             },
             .hw_fence => {
                 if (dnir_hardware.arm64FixedWord(.fence)) |word| {
@@ -1618,7 +1927,7 @@ const Arm64Compiler = struct {
     }
 
     fn emitCsetFp(self: *Arm64Compiler, dst: u5, cond: Condition) Error!void {
-        try self.emitFmt(0x9a9f17e0 | (@as(u32, @intFromEnum(conditionForCset(cond))) << 12) | @as(u32, dst), "cset x{d}, {s}", .{ dst, conditionName(cond) });
+        try self.emitFmt(encodeCset(dst, cond), "cset x{d}, {s}", .{ dst, conditionName(cond) });
     }
 
     fn assignRecordTable(self: *Arm64Compiler, base: []const u8, expr: *const ast.Expr) Error!void {
@@ -2142,15 +2451,32 @@ const Arm64Compiler = struct {
     fn assignRecordFromAbiRegs(self: *Arm64Compiler, base: []const u8, desc: ScalRecordDesc) Error!void {
         const n = desc.field_names.len;
         if (n == 0 or n > 8) return error.UnsupportedProgram;
-        const raw_frame: u16 = @intCast(n * 8);
-        const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
-        try self.emitSubSp(frame);
-        self.stack_frame_bytes += frame;
+
+        // The slot is reserved once per record local, not once per execution.
+        // This code runs again on every loop iteration, and emitting `sub sp`
+        // each time walks the stack pointer down by a frame per iteration —
+        // every field offset shifts and the loads return garbage. Reuse the
+        // reservation when this base already has one.
+        const first_key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[0] });
+        defer self.alloc.free(first_key);
+        const already_reserved = self.fp_stack_slots.contains(first_key);
+
+        var base_off: u16 = 0;
+        if (already_reserved) {
+            base_off = (self.fp_stack_slots.get(first_key) orelse unreachable).off;
+        } else {
+            const raw_frame: u16 = @intCast(n * 8);
+            const frame: u16 = @intCast(std.mem.alignForward(u16, raw_frame, 16));
+            try self.emitSubSp(frame);
+            self.stack_frame_bytes += frame;
+        }
+
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            const off: u16 = @intCast(i * 8);
+            const off: u16 = base_off + @as(u16, @intCast(i * 8));
             const abi_reg: u5 = @intCast(i);
             try self.emitStrSp(abi_reg, off);
+            if (already_reserved) continue;
             const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ base, desc.field_names[i] });
             try self.fp_stack_slots.put(self.alloc, key, .{ .off = off, .float = false });
         }
@@ -2682,6 +3008,55 @@ const Arm64Compiler = struct {
         try self.emitFmt(0xf94003e0 | ((@as(u32, offset) / 8) << 10) | @as(u32, reg), "ldr x{d}, [sp, #{d}]", .{ reg, offset });
     }
 
+    /// Release `reg` only if it was scratch for this instruction. A `.local` or
+    /// `.temp` operand's register is owned by the slot map and outlives us.
+    fn releaseDnirTemp(
+        self: *Arm64Compiler,
+        pinned: *const std.AutoHashMapUnmanaged(u32, u5),
+        v: dnir.Value,
+        reg: u5,
+    ) void {
+        switch (v) {
+            .local, .temp => return,
+            else => {},
+        }
+        if (Arm64Compiler.regIsPinned(pinned, reg)) return;
+        self.releaseReg(reg);
+    }
+
+    /// `add xd, sp, #imm` — materialize the address of a frame slot region.
+    fn emitAddSpImm(self: *Arm64Compiler, dst: u5, bytes: u16) Error!void {
+        if (bytes > 4095) return error.UnsupportedProgram;
+        try self.emitFmt(
+            0x910003e0 | (@as(u32, bytes) << 10) | @as(u32, dst),
+            "add x{d}, sp, #{d}",
+            .{ dst, bytes },
+        );
+    }
+
+    /// `ldr xd, [xbase, xidx, lsl #3]` — 8-byte scaled indexed load.
+    fn emitLdrScaled(self: *Arm64Compiler, dst: u5, base: u5, idx: u5) Error!void {
+        try self.ensureRegLive(base);
+        try self.ensureRegLive(idx);
+        try self.emitFmt(
+            0xf8607800 | (@as(u32, idx) << 16) | (@as(u32, base) << 5) | @as(u32, dst),
+            "ldr x{d}, [x{d}, x{d}, lsl #3]",
+            .{ dst, base, idx },
+        );
+    }
+
+    /// `str xs, [xbase, xidx, lsl #3]` — 8-byte scaled indexed store.
+    fn emitStrScaled(self: *Arm64Compiler, src: u5, base: u5, idx: u5) Error!void {
+        try self.ensureRegLive(base);
+        try self.ensureRegLive(idx);
+        try self.ensureRegLive(src);
+        try self.emitFmt(
+            0xf8207800 | (@as(u32, idx) << 16) | (@as(u32, base) << 5) | @as(u32, src),
+            "str x{d}, [x{d}, x{d}, lsl #3]",
+            .{ src, base, idx },
+        );
+    }
+
     fn emitLdrb(self: *Arm64Compiler, dst: u5, base: u5) Error!void {
         try self.ensureRegLive(base);
         try self.emitFmt(0x39400000 | (@as(u32, base) << 5) | @as(u32, dst), "ldrb x{d}, [x{d}]", .{ dst, base });
@@ -2712,7 +3087,7 @@ const Arm64Compiler = struct {
 
     fn emitCompareResult(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5, cond: Condition) Error!void {
         try self.emitCmpReg(lhs, rhs);
-        try self.emitFmt(0x9a9f17e0 | (@as(u32, @intFromEnum(conditionForCset(cond))) << 12) | @as(u32, dst), "cset x{d}, {s}", .{ dst, conditionName(cond) });
+        try self.emitFmt(encodeCset(dst, cond), "cset x{d}, {s}", .{ dst, conditionName(cond) });
     }
 
     fn emitMulReg(self: *Arm64Compiler, dst: u5, lhs: u5, rhs: u5) Error!void {
@@ -2833,7 +3208,15 @@ const Arm64Compiler = struct {
                 try self.relocations.append(self.alloc, .{ .offset = patch.offset, .symbol_index = symbol_index });
                 continue;
             }
-            return error.UnsupportedProgram;
+            // A call target that is neither defined here nor registered extern
+            // is an undefined symbol — DNB007. Reporting it as DNB001 claimed
+            // the *program* was outside the subset, when lowering had in fact
+            // fully succeeded and only relocation failed; that misdirects every
+            // investigation to the wrong phase.
+            if (std.c.getenv("DUO_DNIR_TRACE") != null) {
+                std.debug.print("DUO_DNIR_TRACE: unresolved call target '{s}'\n", .{patch.target});
+            }
+            return error.UnknownSymbol;
         }
     }
 
@@ -2940,6 +3323,18 @@ fn invertCondition(cond: Condition) Condition {
 
 fn conditionForCset(cond: Condition) Condition {
     return invertCondition(cond);
+}
+
+/// `CSET Xd, cond` is an alias for `CSINC Xd, XZR, XZR, invert(cond)`.
+///
+/// Base encoding is `0x9A800400 | Rm<<16 | cond<<12 | Rn<<5 | Rd`; with
+/// `Rm = Rn = XZR (31)` that is `0x9A9F07E0`. The condition field MUST start at
+/// zero — a base with any cond bit pre-set silently ORs into the condition and
+/// corrupts every condition whose encoding has that bit clear (`ge`, `eq`,
+/// `gt`), which is why this is one function rather than a repeated literal.
+fn encodeCset(dst: u5, cond: Condition) u32 {
+    const CSINC_XZR_XZR: u32 = 0x9a9f07e0;
+    return CSINC_XZR_XZR | (@as(u32, @intFromEnum(conditionForCset(cond))) << 12) | @as(u32, dst);
 }
 
 fn conditionName(cond: Condition) []const u8 {
@@ -3115,7 +3510,15 @@ fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_ent
             }
             return emitArm64FromDnir(alloc, dnir_mod, process_entry);
         }
-    } else |_| {}
+    } else |e| {
+        // Without this the only trace a developer sees is the *AST fallback's*
+        // failure, which is a different and usually less informative site. The
+        // DNIR bail is the one that decides whether a program lowers natively.
+        if (std.c.getenv("DUO_DNIR_TRACE") != null) {
+            std.debug.print("DUO_DNIR_TRACE: DNIR lowering bailed with {s}; falling back to the AST path\n", .{@errorName(e)});
+            if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
+        }
+    }
 
     var records = try collectF64Records(alloc, mod);
     defer freeF64Records(alloc, &records);
@@ -3146,14 +3549,18 @@ fn emitArm64Module(alloc: std.mem.Allocator, mod: *const ast.Module, process_ent
     return compiler.finish();
 }
 
-fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation) Error![]u8 {
+fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []const u8, symbols: []const Symbol, relocations: []const Relocation, bss_size: u64) Error![]u8 {
     const header_size: usize = 32;
     const segment_size: usize = 72;
     const section_size: usize = 80;
     const symtab_size: usize = 24;
     const build_version_size: usize = 24;
     const has_cstring = cstring.len > 0;
-    const nsects: u32 = if (has_cstring) 2 else 1;
+    // `__DATA,__bss` is S_ZEROFILL: it has a VM size but NO file bytes, so it
+    // adds one section header and leaves every file offset below untouched.
+    // That is what makes a writable arena affordable here.
+    const has_bss = bss_size > 0;
+    const nsects: u32 = (if (has_cstring) @as(u32, 2) else 1) + (if (has_bss) @as(u32, 1) else 0);
     const sizeofcmds = segment_size + section_size * nsects + symtab_size + build_version_size;
     const text_offset: usize = header_size + sizeofcmds;
     const reloff: usize = text_offset + text.len;
@@ -3182,7 +3589,7 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
     try appendU32(&out, alloc, @intCast(segment_size + section_size * nsects));
     try appendName16(&out, alloc, "");
     try appendU64(&out, alloc, 0); // vmaddr
-    try appendU64(&out, alloc, text.len + cstring.len); // vmsize
+    try appendU64(&out, alloc, text.len + cstring.len + bss_size); // vmsize (bss is zerofill: VM only)
     try appendU64(&out, alloc, text_offset); // fileoff
     try appendU64(&out, alloc, symoff - text_offset); // filesize: section data + their relocations
     try appendU32(&out, alloc, 7); // maxprot
@@ -3215,6 +3622,22 @@ fn emitMachOArm64Object(alloc: std.mem.Allocator, text: []const u8, cstring: []c
         try appendU32(&out, alloc, 0); // reloff
         try appendU32(&out, alloc, 0); // nreloc
         try appendU32(&out, alloc, 0x2); // S_CSTRING_LITERALS
+        try appendU32(&out, alloc, 0);
+        try appendU32(&out, alloc, 0);
+        try appendU32(&out, alloc, 0);
+    }
+
+    // section 3: __DATA,__bss (zerofill arena — writable storage for string ops)
+    if (has_bss) {
+        try appendName16(&out, alloc, "__bss");
+        try appendName16(&out, alloc, "__DATA");
+        try appendU64(&out, alloc, text.len + cstring.len); // addr (after the __TEXT sections)
+        try appendU64(&out, alloc, bss_size); // size
+        try appendU32(&out, alloc, 0); // offset: zerofill occupies no file bytes
+        try appendU32(&out, alloc, 3); // align (2^3 = 8)
+        try appendU32(&out, alloc, 0); // reloff
+        try appendU32(&out, alloc, 0); // nreloc
+        try appendU32(&out, alloc, 0x1); // S_ZEROFILL
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
         try appendU32(&out, alloc, 0);
@@ -3997,6 +4420,81 @@ test "native backend reuses expression registers and narrows call saves" {
     try std.testing.expect(std.mem.indexOf(u8, obj, "_id") != null);
 }
 
+// The asm listing prints the *intended* mnemonic while the object file carries
+// the *encoded* bits, so a wrong encoding is invisible to any text assertion.
+// Decode the condition field back out and check it against the CSET alias rule.
+test "native backend: cset encodes the inverted condition in bits 15:12" {
+    const cases = [_]struct { cond: Condition, want: Condition }{
+        .{ .cond = .eq, .want = .ne },
+        .{ .cond = .ne, .want = .eq },
+        .{ .cond = .lt, .want = .ge },
+        .{ .cond = .ge, .want = .lt },
+        .{ .cond = .gt, .want = .le },
+        .{ .cond = .le, .want = .gt },
+    };
+    for (cases) |c| {
+        const word = encodeCset(10, c.cond);
+        const field: u4 = @truncate(word >> 12);
+        try std.testing.expectEqual(@intFromEnum(c.want), field);
+        // Rd, Rn=XZR, Rm=XZR and the CSINC op bits must survive untouched.
+        try std.testing.expectEqual(@as(u32, 10), word & 0x1f);
+        try std.testing.expectEqual(@as(u32, 0x1f), (word >> 5) & 0x1f);
+        try std.testing.expectEqual(@as(u32, 0x1f), (word >> 16) & 0x1f);
+        try std.testing.expectEqual(@as(u32, 0b01), (word >> 10) & 0b11);
+    }
+}
+
+// `cset` writes a GPR but leaves NZCV untouched. A conditional branch that
+// immediately follows one is therefore testing whatever flags the *previous*
+// `cmp` left behind, not the boolean `cset` just produced — so every
+// `if <comparison>` silently degenerates into `if (lhs == rhs)`.
+//
+// The existing branch tests only count `cmp`/`b.` occurrences, which this bug
+// satisfies perfectly. Assert the flag-dependency invariant instead.
+test "native backend: conditional branch never consumes stale flags after cset" {
+    if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lex = Lexer.init(
+        \\f(n: i64): i64
+        \\    if n < 0
+        \\        return 111
+        \\    end
+        \\    return 222
+        \\end
+        \\
+        \\main(): i64
+        \\    f(7)
+        \\end
+    , "native.duo");
+    var parser = Parser.init(&lex, alloc);
+    var mod = try parser.parse_module();
+    var sem = Sema.init(alloc);
+    defer sem.deinit();
+    try sem.check_module(&mod);
+
+    const asm_text = try emitAssembly(alloc, &mod, "native-asm");
+    defer alloc.free(asm_text);
+
+    var prev_was_cset = false;
+    var lines = std.mem.splitScalar(u8, asm_text, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or std.mem.endsWith(u8, line, ":")) continue;
+        if (prev_was_cset and std.mem.startsWith(u8, line, "b.")) {
+            std.debug.print(
+                "\nflag-clobber bug: conditional branch '{s}' follows a cset with no intervening cmp\n{s}\n",
+                .{ line, asm_text },
+            );
+            return error.TestUnexpectedResult;
+        }
+        prev_was_cset = std.mem.startsWith(u8, line, "cset ");
+    }
+}
+
 test "native backend emits assembly listing for arithmetic" {
     if (builtin.os.tag != .macos or builtin.cpu.arch != .aarch64) return error.SkipZigTest;
 
@@ -4068,7 +4566,11 @@ test "native backend rejects unsupported dynamic body" {
     defer sem.deinit();
     try sem.check_module(&mod);
 
-    try std.testing.expectError(error.UnsupportedProgram, emitObject(alloc, &mod, "native-object"));
+    // Still refused — but as DNB007, not DNB001. `print` is a boxed-runtime
+    // function with no native symbol, so "undefined symbol" names the actual
+    // obstruction; "program is outside the subset" pointed at the wrong phase
+    // and sent investigations hunting through the lowering rules instead.
+    try std.testing.expectError(error.UnknownSymbol, emitObject(alloc, &mod, "native-object"));
 }
 
 test "native backend Pass 11 sealed record proof (integer main + f64 kernel)" {

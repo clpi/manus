@@ -14,8 +14,8 @@ type Point = { x: f64, y: f64, tag: str }
 type Pair = { x: f64, y: f64, tag: str }
 type Label = { tag: str }
 
-@comp.define.derive("PairApi", fun generate(meta) -> str
-    if meta.left ~= nil then
+@comp.define.derive("PairApi", generate(meta) -> str
+    if meta.left != nil
         "/* omni " .. meta.left.name .. " x " .. meta.right.name .. " */\n"
     else
         acc = ""
@@ -27,7 +27,7 @@ type Label = { tag: str }
     end
 end)
 
-fun registry_line(meta) -> str
+registry_line(meta) -> str
     meta.name .. ";"
 end
 

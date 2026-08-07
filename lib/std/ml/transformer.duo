@@ -4,7 +4,7 @@ Shape = req "std.ml.shape"
 Tensor = req "std.ml.tensor"
 Ops = req "std.ml.ops"
 
-fun block(heads, dim): any
+block(heads, dim): any
     spec = Shape.transformer_block(heads, dim)
     return {
         type = "transformer_block",
@@ -18,7 +18,7 @@ fun block(heads, dim): any
     }
 end
 
-fun stack(layers, heads, dim): any
+stack(layers, heads, dim): any
     blocks = {}
     for i = 1, layers
         blocks[i] = block(heads, dim)
@@ -34,25 +34,25 @@ end
 
 -- Hot path: native attention kernel checksum (pairs with ml.attention)
 @hot
-fun bench_attention(): f64
+bench_attention(): f64
     return ml.attention()
 end
 
 -- Reference FFN (compiler may fuse linear+gelu+linear later)
-fun ffn_forward(block, x): any
+ffn_forward(block, x): any
     h = Tensor.matmul(x, block.ffn1.weight)
     h = Ops.gelu(h)
     return Tensor.matmul(h, block.ffn2.weight)
 end
 
-fun forward_block(block, x): any
+forward_block(block, x): any
     -- Residual + attention: native kernel validates hot path; full MHA in stdlib later
     _ = bench_attention()
     h = x
     return Tensor.add(h, ffn_forward(block, h))
 end
 
-fun forward(model, x): any
+forward(model, x): any
     h = x
     for i = 1, model.layers
         h = forward_block(model.blocks[i], h)

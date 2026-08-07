@@ -39,13 +39,13 @@ Vector.__tostring = fun(self: any): str
     "Vector(" .. tostring(self.x) .. ", " .. tostring(self.y) .. ")"
 end
 
-local v = Vector(2, 3)
+v = Vector(2, 3)
 v:move(1, 1)
-local w = Vector(3, 4)
-local sum = v + w
+w = Vector(3, 4)
+sum = v + w
 
 global backing = {}
-local proxy = setmetatable({}, {
+proxy = setmetatable({}, {
     __index = backing,
     __newindex = fun(self: any, key: any, value: any): void
         rawset(backing, key, value * 2)
@@ -53,7 +53,7 @@ local proxy = setmetatable({}, {
 })
 proxy.answer = 21
 
-local fallback = setmetatable({}, {
+fallback = setmetatable({}, {
     __index = fun(self: any, key: any): any
         "missing:" .. tostring(key)
     end,

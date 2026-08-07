@@ -3,7 +3,7 @@
 -- for ascending/descending order on homogeneous array-like tables.
 
 -- Insertion sort for small ranges (stable).
-fun std_sort_insertion(arr: any, lo: any, hi: any, less: any): void
+std_sort_insertion(arr: any, lo: any, hi: any, less: any): void
     i = lo + 1
     while i <= hi
         key = arr[i]
@@ -18,22 +18,22 @@ fun std_sort_insertion(arr: any, lo: any, hi: any, less: any): void
 end
 
 -- Median-of-three pivot selection.
-fun std_sort_median3(arr: any, lo: any, hi: any, less: any): any
+std_sort_median3(arr: any, lo: any, hi: any, less: any): any
     mid = lo + (hi - lo) / 2
-    if less(arr[mid], arr[lo]) then
+    if less(arr[mid], arr[lo])
         tmp = arr[lo]; arr[lo] = arr[mid]; arr[mid] = tmp
     end
-    if less(arr[hi], arr[lo]) then
+    if less(arr[hi], arr[lo])
         tmp = arr[lo]; arr[lo] = arr[hi]; arr[hi] = tmp
     end
-    if less(arr[hi], arr[mid]) then
+    if less(arr[hi], arr[mid])
         tmp = arr[mid]; arr[mid] = arr[hi]; arr[hi] = tmp
     end
     arr[mid]
 end
 
 -- Partition for quicksort (Lomuto scheme).
-fun std_sort_partition(arr: any, lo: any, hi: any, less: any): any
+std_sort_partition(arr: any, lo: any, hi: any, less: any): any
     pivot = std_sort_median3(arr, lo, hi, less)
     -- move pivot to hi-1
     tmp = arr[hi - 1]; arr[hi - 1] = arr[lo + (hi - lo) / 2]; arr[lo + (hi - lo) / 2] = tmp
@@ -45,7 +45,7 @@ fun std_sort_partition(arr: any, lo: any, hi: any, less: any): any
         while less(arr[i], pivot) do i += 1 end
         j -= 1
         while less(pivot, arr[j]) do j -= 1 end
-        if i >= j then break end
+        if i >= j break end
         tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
     end
     -- place pivot
@@ -54,10 +54,10 @@ fun std_sort_partition(arr: any, lo: any, hi: any, less: any): any
 end
 
 -- Introsort-style quicksort with insertion-sort cutoff.
-fun std_sort_quicksort(arr: any, lo: any, hi: any, less: any): void
+std_sort_quicksort(arr: any, lo: any, hi: any, less: any): void
     while hi - lo > 24
         p = std_sort_partition(arr, lo, hi, less)
-        if p - lo < hi - p then
+        if p - lo < hi - p
             std_sort_quicksort(arr, lo, p - 1, less)
             lo = p + 1
         else
@@ -65,82 +65,82 @@ fun std_sort_quicksort(arr: any, lo: any, hi: any, less: any): void
             hi = p - 1
         end
     end
-    if hi - lo > 1 then
+    if hi - lo > 1
         std_sort_insertion(arr, lo, hi, less)
     end
 end
 
 -- sort: sort the array portion of `arr` in-place using `less` comparator.
 -- less(a, b) should return true when a should come before b.
-fun sort(arr: any, less: any): void
-    if arr == nil then return end
+sort(arr: any, less: any): void
+    if arr == nil return end
     n = rawlen(arr)
-    if n < 2 then return end
+    if n < 2 return end
     std_sort_quicksort(arr, 1, n, less)
 end
 
 -- stable: sort stably (insertion sort, O(n^2) but correct for all inputs).
-fun stable(arr: any, less: any): void
-    if arr == nil then return end
+stable(arr: any, less: any): void
+    if arr == nil return end
     n = rawlen(arr)
-    if n < 2 then return end
+    if n < 2 return end
     std_sort_insertion(arr, 1, n, less)
 end
 
 -- Ascending integer sort.
-fun std_sort_less_int(a: any, b: any): bool
+std_sort_less_int(a: any, b: any): bool
     return a < b
 end
 
 -- Descending integer sort.
-fun std_sort_greater_int(a: any, b: any): bool
+std_sort_greater_int(a: any, b: any): bool
     return a > b
 end
 
-fun ints(arr: any): void
-    if arr == nil then return end
+ints(arr: any): void
+    if arr == nil return end
     n = rawlen(arr)
-    if n < 2 then return end
+    if n < 2 return end
     std_sort_quicksort(arr, 1, n, std_sort_less_int)
 end
 
-fun ints_desc(arr: any): void
-    if arr == nil then return end
+ints_desc(arr: any): void
+    if arr == nil return end
     n = rawlen(arr)
-    if n < 2 then return end
+    if n < 2 return end
     std_sort_quicksort(arr, 1, n, std_sort_greater_int)
 end
 
-fun std_sort_less_str(a: any, b: any): bool
+std_sort_less_str(a: any, b: any): bool
     return tostring(a) < tostring(b)
 end
 
-fun strings(arr: any): void
-    if arr == nil then return end
+strings(arr: any): void
+    if arr == nil return end
     n = rawlen(arr)
-    if n < 2 then return end
+    if n < 2 return end
     std_sort_quicksort(arr, 1, n, std_sort_less_str)
 end
 
 -- is_sorted: returns true if arr is sorted according to less.
-fun is_sorted(arr: any, less: any): bool
-    if arr == nil then return true end
+is_sorted(arr: any, less: any): bool
+    if arr == nil return true end
     n = rawlen(arr)
     i = 2
     while i <= n
-        if less(arr[i], arr[i - 1]) then return false end
+        if less(arr[i], arr[i - 1]) return false end
         i += 1
     end
     true
 end
 
 -- search: binary search for the smallest index i in [lo, hi) where f(i) is true.
-fun search(n: any, f: any): any
+search(n: any, f: any): any
     lo = 0
     hi = n
     while lo < hi
         mid = lo + (hi - lo) / 2
-        if f(mid + 1) then
+        if f(mid + 1)
             hi = mid
         else
             lo = mid + 1
@@ -151,16 +151,16 @@ end
 
 -- search_sorted: binary search for value v in a sorted arr.
 -- Returns 1-based index or -1. Uses iterative search (no closures).
-fun search_sorted(arr: any, v: any, less: any): any
-    if arr == nil then return 0 - 1 end
+search_sorted(arr: any, v: any, less: any): any
+    if arr == nil return 0 - 1 end
     n = rawlen(arr)
     lo = 0
     hi = n
     while lo < hi
         mid = lo + (hi - lo) / 2
-        if less(v, arr[mid + 1]) then
+        if less(v, arr[mid + 1])
             hi = mid
-        elseif less(arr[mid + 1], v) then
+        elseif less(arr[mid + 1], v)
             lo = mid + 1
         else
             return mid + 1
@@ -170,8 +170,8 @@ fun search_sorted(arr: any, v: any, less: any): any
 end
 
 -- reverse: reverse the array portion of arr in-place.
-fun reverse(arr: any): void
-    if arr == nil then return end
+reverse(arr: any): void
+    if arr == nil return end
     n = rawlen(arr)
     i = 1
     j = n
@@ -183,16 +183,16 @@ fun reverse(arr: any): void
 end
 
 -- swap: swap two indices.
-fun swap(arr: any, i: any, j: any): void
+swap(arr: any, i: any, j: any): void
     tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp
 end
 
 -- slice: sort a sub-range [from, to] of arr.
-fun slice(arr: any, from: any, to: any, less: any): void
-    if arr == nil then return end
-    if from < 1 then from = 1 end
-    if to > rawlen(arr) then to = rawlen(arr) end
-    if to - from < 1 then return end
+slice(arr: any, from: any, to: any, less: any): void
+    if arr == nil return end
+    if from < 1 from = 1 end
+    if to > rawlen(arr) to = rawlen(arr) end
+    if to - from < 1 return end
     std_sort_quicksort(arr, from, to, less)
 end
 

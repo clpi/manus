@@ -22,8 +22,8 @@ type Point = { x: f64, y: f64, tag: str, id: i64, extra: i64 }
 type Pair = { x: f64, y: f64, tag: str, id: i64, extra: i64 }
 type Label = { tag: str, id: i64, extra: i64 }
 
-@comp.define.derive("QuadApi", fun generate(meta) -> str
-    if meta.parts ~= nil and #meta.parts >= 4 then
+@comp.define.derive("QuadApi", generate(meta) -> str
+    if meta.parts != nil and #meta.parts >= 4
         "/* quad " .. meta.name .. " */\n"
     else
         acc = ""
@@ -38,7 +38,7 @@ end)
 -- One line: derive.all + quadratic + cubic + quartic emit
 @comp.infinity("HasXY", QuadApi, "HasTag", "HasId", "HasExtra")
 
-fun quad_sig(a, b, c, d) -> str
+quad_sig(a, b, c, d) -> str
     a.name .. "x" .. b.name .. "x" .. c.name .. "x" .. d.name .. ";"
 end
 

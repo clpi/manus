@@ -1,7 +1,7 @@
 -- std.maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
-fun std_maps_clone(m: any): any
-    if m == nil then return {} end
+std_maps_clone(m: any): any
+    if m == nil return {} end
     out = {}
     for k, v in m
         out[k] = v
@@ -9,9 +9,9 @@ fun std_maps_clone(m: any): any
     out
 end
 
-fun std_maps_copy(dst: any, src: any): i64
-    if dst == nil then return 0 end
-    if src == nil then return 0 end
+std_maps_copy(dst: any, src: any): i64
+    if dst == nil return 0 end
+    if src == nil return 0 end
     count = 0
     for k, v in src
         dst[k] = v
@@ -20,101 +20,101 @@ fun std_maps_copy(dst: any, src: any): i64
     count
 end
 
-fun std_maps_delete_key(m: any, k: any): any
-    if m == nil then return nil end
+std_maps_delete_key(m: any, k: any): any
+    if m == nil return nil end
     v = m[k]
     m[k] = nil
     v
 end
 
-fun std_maps_equal(m1: any, m2: any): bool
-    if m1 == nil and m2 == nil then return true end
-    if m1 == nil or m2 == nil then return false end
+std_maps_equal(m1: any, m2: any): bool
+    if m1 == nil and m2 == nil return true end
+    if m1 == nil or m2 == nil return false end
     c1 = 0
     for _k, _v in m1 do c1 += 1 end
     c2 = 0
     for _k, _v in m2 do c2 += 1 end
-    if c1 ~= c2 then return false end
+    if c1 != c2 return false end
     for k, v in m1
-        if m2[k] ~= v then return false end
+        if m2[k] != v return false end
     end
     true
 end
 
-fun std_maps_equal_func(m1: any, m2: any, eq: any): bool
-    if m1 == nil and m2 == nil then return true end
-    if m1 == nil or m2 == nil then return false end
+std_maps_equal_func(m1: any, m2: any, eq: any): bool
+    if m1 == nil and m2 == nil return true end
+    if m1 == nil or m2 == nil return false end
     c1 = 0
     for _k, _v in m1 do c1 += 1 end
     c2 = 0
     for _k, _v in m2 do c2 += 1 end
-    if c1 ~= c2 then return false end
+    if c1 != c2 return false end
     for k, v in m1
         v2 = m2[k]
-        if v2 == nil then return false end
-        if not eq(v, v2) then return false end
+        if v2 == nil return false end
+        if not eq(v, v2) return false end
     end
     true
 end
 
-fun std_maps_keys(m: any): any
-    if m == nil then return {} end
+std_maps_keys(m: any): any
+    if m == nil return {} end
     out = {}
     for k, _ in m do out[rawlen(out) + 1] = k end
     out
 end
 
-fun std_maps_values(m: any): any
-    if m == nil then return {} end
+std_maps_values(m: any): any
+    if m == nil return {} end
     out = {}
     for _, v in m do out[rawlen(out) + 1] = v end
     out
 end
 
-fun std_maps_entries(m: any): any
-    if m == nil then return {} end
+std_maps_entries(m: any): any
+    if m == nil return {} end
     out = {}
     for k, v in m do out[rawlen(out) + 1] = {key = k, value = v} end
     out
 end
 
-fun std_maps_has(m: any, k: any): bool
-    if m == nil then return false end
-    m[k] ~= nil
+std_maps_has(m: any, k: any): bool
+    if m == nil return false end
+    m[k] != nil
 end
 
-fun std_maps_get(m: any, k: any, dflt: any): any
-    if m == nil then return dflt end
+std_maps_get(m: any, k: any, dflt: any): any
+    if m == nil return dflt end
     v = m[k]
-    if v == nil then return dflt end
+    if v == nil return dflt end
     v
 end
 
-fun std_maps_set(m: any, k: any, v: any): any
-    if m == nil then m = {} end
+std_maps_set(m: any, k: any, v: any): any
+    if m == nil m = {} end
     m[k] = v
     m
 end
 
-fun std_maps_size(m: any): i64
-    if m == nil then return 0 end
+std_maps_size(m: any): i64
+    if m == nil return 0 end
     c = 0
     for _k, _v in m do c += 1 end
     c
 end
 
-fun std_maps_merge(dst: any, src: any): any
-    if dst == nil then dst = {} end
-    if src == nil then return dst end
+std_maps_merge(dst: any, src: any): any
+    if dst == nil dst = {} end
+    if src == nil return dst end
     for k, v in src
-        if dst[k] == nil then dst[k] = v end
+        if dst[k] == nil dst[k] = v end
     end
     dst
 end
 
-fun std_maps_merge_overwrite(dst: any, src: any): any
-    if dst == nil then dst = {} end
-    if src == nil then return dst end
+std_maps_merge_overwrite(dst: any, src: any): any
+    if dst == nil dst = {} end
+    if src == nil return dst end
     for k, v in src
         dst[k] = v
     end

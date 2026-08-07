@@ -1,7 +1,7 @@
 -- @comp.grammar EBNF → O(b^d) expansion fragments (comptime, native C output)
 -- Run: duo run examples/meta_grammar_showcase.duo
 
-fun frag(meta): str
+frag(meta): str
     "/* grammar[" .. tostring(meta.index) .. "/" .. tostring(meta.count) .. "]: " .. meta.expansion .. " */\n"
 end
 

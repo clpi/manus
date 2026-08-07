@@ -14,7 +14,7 @@ RPC_NOTIFICATION = 4
 -- RPC Message
 -- ═══════════════════════════════════════════════════════════════
 
-fun rpc_request_new(id: i64, method: str, params: any): any
+rpc_request_new(id: i64, method: str, params: any): any
     {
         jsonrpc = "2.0",
         id = id,
@@ -23,7 +23,7 @@ fun rpc_request_new(id: i64, method: str, params: any): any
     }
 end
 
-fun rpc_response_new(id: i64, result: any): any
+rpc_response_new(id: i64, result: any): any
     {
         jsonrpc = "2.0",
         id = id,
@@ -31,7 +31,7 @@ fun rpc_response_new(id: i64, result: any): any
     }
 end
 
-fun rpc_error_new(id: i64, code: i64, message: str, data: any): any
+rpc_error_new(id: i64, code: i64, message: str, data: any): any
     {
         jsonrpc = "2.0",
         id = id,
@@ -43,7 +43,7 @@ fun rpc_error_new(id: i64, code: i64, message: str, data: any): any
     }
 end
 
-fun rpc_notification_new(method: str, params: any): any
+rpc_notification_new(method: str, params: any): any
     {
         jsonrpc = "2.0",
         method = method,
@@ -55,7 +55,7 @@ end
 -- RPC Server
 -- ═══════════════════════════════════════════════════════════════
 
-fun rpc_server_new(): any
+rpc_server_new(): any
     {
         handlers = {},
         middleware = {},
@@ -63,23 +63,23 @@ fun rpc_server_new(): any
     }
 end
 
-fun rpc_server_register(server: any, method: str, handler: any): void
+rpc_server_register(server: any, method: str, handler: any): void
     server.handlers[method] = handler
 end
 
-fun rpc_server_add_middleware(server: any, middleware: any): void
+rpc_server_add_middleware(server: any, middleware: any): void
     server.middleware[#server.middleware + 1] = middleware
 end
 
-fun rpc_server_handle(server: any, request: any): any
+rpc_server_handle(server: any, request: any): any
     -- Validate JSON-RPC version
-    if request.jsonrpc ~= "2.0" then
+    if request.jsonrpc != "2.0"
         return rpc_error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
     end
 
     -- Check if method exists
     handler = server.handlers[request.method]
-    if handler == nil then
+    if handler == nil
         return rpc_error_new(request.id, -32601, "Method not found", request.method)
     end
 
@@ -90,19 +90,19 @@ fun rpc_server_handle(server: any, request: any): any
     }
     for mw in server.middleware
         result = mw(context)
-        if result then return result end
+        if result return result end
     end
 
     -- Call handler
     ok, result = pcall(handler, request.params, context)
-    if not ok then
+    if not ok
         return rpc_error_new(request.id, -32603, "Internal error", tostring(result))
     end
 
     rpc_response_new(request.id, result)
 end
 
-fun rpc_server_next_id(server: any): i64
+rpc_server_next_id(server: any): i64
     id = server.next_id
     server.next_id += 1
     id
@@ -112,7 +112,7 @@ end
 -- RPC Client
 -- ═══════════════════════════════════════════════════════════════
 
-fun rpc_client_new(transport: any): any
+rpc_client_new(transport: any): any
     {
         transport = transport,
         next_id = 1,
@@ -120,7 +120,7 @@ fun rpc_client_new(transport: any): any
     }
 end
 
-fun rpc_client_call(client: any, method: str, params: any): any
+rpc_client_call(client: any, method: str, params: any): any
     id = client.next_id
     client.next_id += 1
 
@@ -128,7 +128,7 @@ fun rpc_client_call(client: any, method: str, params: any): any
 
     -- Send request
     result = client.transport.send(request)
-    if result.error then return result end
+    if result.error return result end
 
     -- Store pending request
     client.pending[id] = {
@@ -139,13 +139,13 @@ fun rpc_client_call(client: any, method: str, params: any): any
     {id = id, request = request}
 end
 
-fun rpc_client_notify(client: any, method: str, params: any): any
+rpc_client_notify(client: any, method: str, params: any): any
     notification = rpc_notification_new(method, params)
     client.transport.send(notification)
 end
 
-fun rpc_client_handle_response(client: any, response: any): any
-    if response.id and client.pending[response.id] then
+rpc_client_handle_response(client: any, response: any): any
+    if response.id and client.pending[response.id]
         pending = client.pending[response.id]
         client.pending[response.id] = nil
         return {
@@ -158,11 +158,11 @@ fun rpc_client_handle_response(client: any, response: any): any
     {notification = response}
 end
 
-fun rpc_client_cancel(client: any, id: i64): void
+rpc_client_cancel(client: any, id: i64): void
     client.pending[id] = nil
 end
 
-fun rpc_client_pending_count(client: any): i64
+rpc_client_pending_count(client: any): i64
     count = 0
     for _ in client.pending
         count += 1
@@ -174,7 +174,7 @@ end
 -- Transport Layer (pluggable)
 -- ═══════════════════════════════════════════════════════════════
 
-fun rpc_transport_http_new(url: str): any
+rpc_transport_http_new(url: str): any
     {
         type = "http",
         url = url,
@@ -183,18 +183,18 @@ fun rpc_transport_http_new(url: str): any
     }
 end
 
-fun rpc_transport_http_send(transport: any, message: any): any
+rpc_transport_http_send(transport: any, message: any): any
     json = req "std.encoding.json"
     net = req "std.net"
     payload = json.encode(message)
     result = net.http_post(transport.url, payload, "application/json")
-    if result.error then
+    if result.error
         return {ok = false, error = result.error}
     end
     {ok = true, data = result.body}
 end
 
-fun rpc_transport_websocket_new(url: str): any
+rpc_transport_websocket_new(url: str): any
     {
         type = "websocket",
         url = url,
@@ -203,12 +203,12 @@ fun rpc_transport_websocket_new(url: str): any
     }
 end
 
-fun rpc_transport_websocket_send(transport: any, message: any): any
+rpc_transport_websocket_send(transport: any, message: any): any
     json = req "std.encoding.json"
     net = req "std.net"
-    if transport.connection == nil then
+    if transport.connection == nil
         result = net.ws_connect(transport.url)
-        if result.error then
+        if result.error
             return {ok = false, error = result.error}
         end
         transport.connection = result.conn
@@ -219,7 +219,7 @@ fun rpc_transport_websocket_send(transport: any, message: any): any
     {ok = true}
 end
 
-fun rpc_transport_tcp_new(host: str, port: i64): any
+rpc_transport_tcp_new(host: str, port: i64): any
     {
         type = "tcp",
         host = host,
@@ -229,12 +229,12 @@ fun rpc_transport_tcp_new(host: str, port: i64): any
     }
 end
 
-fun rpc_transport_tcp_send(transport: any, message: any): any
+rpc_transport_tcp_send(transport: any, message: any): any
     json = req "std.encoding.json"
     net = req "std.net"
-    if transport.socket == nil then
+    if transport.socket == nil
         result = net.connect(transport.host, transport.port)
-        if result.error then
+        if result.error
             return {ok = false, error = result.error}
         end
         transport.socket = result.socket
@@ -256,7 +256,7 @@ RPC_INVALID_PARAMS = -32602
 RPC_INTERNAL_ERROR = -32603
 RPC_SERVER_ERROR = -32000
 
-fun rpc_error_code_name(code: i64): str
+rpc_error_code_name(code: i64): str
     codes = {
         [RPC_PARSE_ERROR] = "Parse error",
         [RPC_INVALID_REQUEST] = "Invalid Request",
@@ -272,13 +272,13 @@ end
 -- Service Discovery
 -- ═══════════════════════════════════════════════════════════════
 
-fun rpc_registry_new(): any
+rpc_registry_new(): any
     {
         services = {},
     }
 end
 
-fun rpc_registry_register(registry: any, name: str, address: str, metadata: any): void
+rpc_registry_register(registry: any, name: str, address: str, metadata: any): void
     registry.services[name] = {
         address = address,
         metadata = metadata or {},
@@ -286,15 +286,15 @@ fun rpc_registry_register(registry: any, name: str, address: str, metadata: any)
     }
 end
 
-fun rpc_registry_unregister(registry: any, name: str): void
+rpc_registry_unregister(registry: any, name: str): void
     registry.services[name] = nil
 end
 
-fun rpc_registry_discover(registry: any, name: str): any
+rpc_registry_discover(registry: any, name: str): any
     registry.services[name]
 end
 
-fun rpc_registry_discover_all(registry: any): any
+rpc_registry_discover_all(registry: any): any
     services = {}
     for name, service in registry.services
         services[#services + 1] = {name = name, address = service.address, metadata = service.metadata}
@@ -302,9 +302,9 @@ fun rpc_registry_discover_all(registry: any): any
     services
 end
 
-fun rpc_registry_heartbeat(registry: any, name: str): void
+rpc_registry_heartbeat(registry: any, name: str): void
     service = registry.services[name]
-    if service then
+    if service
         service.last_heartbeat = os.clock()
     end
 end

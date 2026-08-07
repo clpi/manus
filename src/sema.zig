@@ -216,6 +216,8 @@ pub const Sema = struct {
     module_globals: std.StringHashMapUnmanaged(RT) = .{},
     /// Module-scope Duo bindings retained after `check_module` (Pass 2 lattice queries).
     module_bindings: std.StringHashMapUnmanaged(Symbol) = .{},
+    /// Pass 34 L1 — req bindings treated as sealed-after-load unless mutated (duo_mode).
+    module_sealed: std.StringHashMapUnmanaged(void) = .{},
     /// Registry of declared enum types for exhaustiveness checking.
     enum_types: std.StringHashMapUnmanaged(RT) = .{},
     /// Registry of declared concepts for satisfaction checking.
@@ -435,6 +437,61 @@ pub const Sema = struct {
         return .unknown;
     }
 
+    /// Pass 34 L1 — true when binding is a req module assumed frozen after load.
+    pub fn moduleSealed(self: *const Sema, name: []const u8) bool {
+        return self.module_sealed.contains(name);
+    }
+
+    fn reqInitPath(expr: *const ast.Expr) ?[]const u8 {
+        if (expr.* != .call) return null;
+        const c = &expr.call;
+        if (c.func.* != .name) return null;
+        const fn_name = c.func.name.ident;
+        if (!std.mem.eql(u8, fn_name, "req") and !std.mem.eql(u8, fn_name, "require")) return null;
+        if (c.args.len != 1 or c.args[0].* != .string_lit) return null;
+        return c.args[0].string_lit.val;
+    }
+
+    fn markModuleSealed(self: *Sema, name: []const u8) !void {
+        if (self.module_sealed.contains(name)) return;
+        const owned = try self.alloc.dupe(u8, name);
+        try self.module_sealed.put(self.alloc, owned, {});
+    }
+
+    fn invalidateModuleSealed(self: *Sema, name: []const u8) void {
+        if (self.module_sealed.fetchRemove(name)) |kv| {
+            self.alloc.free(kv.key);
+        }
+    }
+
+    fn noteModuleSealingFromInit(self: *Sema, name: []const u8, init_expr: *const ast.Expr) !void {
+        if (!self.duo_mode) return;
+        if (reqInitPath(init_expr) != null) try self.markModuleSealed(name);
+    }
+
+    fn noteModuleSealingInvalidation(self: *Sema, tgt: *const ast.Expr, value: ?*const ast.Expr) void {
+        if (!self.duo_mode) return;
+        switch (tgt.*) {
+            .name => |n| {
+                if (self.module_sealed.contains(n.ident)) {
+                    if (value) |v| {
+                        if (reqInitPath(v) == null) self.invalidateModuleSealed(n.ident);
+                    } else {
+                        self.invalidateModuleSealed(n.ident);
+                    }
+                } else if (value) |v| {
+                    if (reqInitPath(v) != null) self.markModuleSealed(n.ident) catch {};
+                }
+            },
+            .field => |f| {
+                if (f.obj.* == .name and self.module_sealed.contains(f.obj.name.ident)) {
+                    self.invalidateModuleSealed(f.obj.name.ident);
+                }
+            },
+            else => {},
+        }
+    }
+
     pub fn deinit(self: *Sema) void {
         self.scope.deinit();
         self.type_map.deinit();
@@ -444,6 +501,11 @@ pub const Sema = struct {
             self.alloc.free(entry.key_ptr.*);
         }
         self.module_bindings.deinit(self.alloc);
+        var ms_it = self.module_sealed.iterator();
+        while (ms_it.next()) |entry| {
+            self.alloc.free(entry.key_ptr.*);
+        }
+        self.module_sealed.deinit(self.alloc);
         self.enum_types.deinit(self.alloc);
         self.concepts.deinit(self.alloc);
         // Clean up overload lists.
@@ -1715,6 +1777,9 @@ pub const Sema = struct {
                         .is_close = is_close,
                         .deprecated_msg = get_deprecated_msg(lname.attributes),
                     });
+                    if (i < ld.inits.len) {
+                        try self.noteModuleSealingFromInit(lname.ident, ld.inits[i]);
+                    }
                     if (self.duo_mode and self.hints_enabled and lname.typ == .inferred and lname.attrib == null) {
                         if (t == .i64 or t == .f64 or t == .str or t == .bool) {
                             var tbuf: [32]u8 = undefined;
@@ -1770,6 +1835,9 @@ pub const Sema = struct {
                         .is_global = true,
                         .deprecated_msg = get_deprecated_msg(lname.attributes),
                     });
+                    if (i < gd.inits.len) {
+                        try self.noteModuleSealingFromInit(lname.ident, gd.inits[i]);
+                    }
                 }
             },
             .assign => |*as| {
@@ -1789,6 +1857,8 @@ pub const Sema = struct {
                 for (as.targets, 0..) |tgt, i| {
                     try self.check_assign_target(tgt);
                     _ = try self.check_expr(tgt);
+                    const val_expr: ?*const ast.Expr = if (i < as.values.len) as.values[i] else null;
+                    self.noteModuleSealingInvalidation(tgt, val_expr);
                     if (i < as.values.len and tgt.* == .name) {
                         try self.maybe_register_meta_concept(tgt.name.ident, as.values[i]);
                         // At module scope in duo mode, infer type from literal
@@ -2052,6 +2122,10 @@ pub const Sema = struct {
                 },
                 .positional => {},
                 .spread => |sp| _ = self.check_expr(sp) catch {},
+                // Pass 36 G1/G8 recorded, not implemented (Phase 0): a semantic entry is keyed in the
+                // semantic namespace, not the ordinary one, so it never contributes
+                // an ordinary field type.
+                .semantic => {},
             }
         }
     }
@@ -2102,6 +2176,13 @@ pub const Sema = struct {
             .vararg => .any,
             .quote, .unquote, .macro_call => {
                 self.err(expr.loc(), "unexpanded macro expression reached semantic analysis", .{});
+                return .any;
+            },
+            // Pass 36 G1/G2 (`@name`, `@`) are canon, but Phase 0 ships no parser
+            // production, so nothing reaches here yet. Refuse rather than infer a
+            // type for a resolution ladder that is not implemented.
+            .semantic, .semantic_scope => {
+                self.err(expr.loc(), "semantic access (@) is not yet implemented (Pass 36 Phase 0 records the calculus; the resolution ladder lands in P36-PH3)", .{});
                 return .any;
             },
             .name => |n| {
@@ -2174,7 +2255,14 @@ pub const Sema = struct {
                         else => .any,
                     };
                 }
-                if (ot == .pointer) return ot.pointer.*;
+                // A bare `ptr` (`void*`) has no pointee type to report, but the
+                // one thing it is ever indexed as in Duo is a memory-backed
+                // positional table, whose slots are i64-wide. Reporting `void`
+                // made `t[i]` unusable in any expression.
+                if (ot == .pointer) {
+                    if (ot.pointer.* == .void) return .i64;
+                    return ot.pointer.*;
+                }
                 if (ot == .array) return ot.array.elem.*;
                 return .any;
             },
@@ -2195,6 +2283,7 @@ pub const Sema = struct {
                     if (std.mem.eql(u8, bn, "__type_shape")) return .str;
                     if (std.mem.eql(u8, bn, "__why_shape")) return .str;
                     if (std.mem.eql(u8, bn, "__why")) return .str;
+                    if (std.mem.eql(u8, bn, "__why_module")) return .str;
                     if (std.mem.eql(u8, bn, "__origin")) return .str;
                     if (std.mem.eql(u8, bn, "__why_boxed")) return .str;
                     if (std.mem.eql(u8, bn, "__why_not_native")) return .str;
@@ -2551,6 +2640,10 @@ pub const Sema = struct {
                         .spread => |sp| {
                             _ = try self.check_expr(sp);
                         },
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): check the implementation only.
+                        .semantic => |*sm| {
+                            _ = try self.check_expr(sm.val);
+                        },
                     }
                 }
                 return .any;
@@ -2812,6 +2905,10 @@ pub const Sema = struct {
                         .spread => |sp| {
                             if (expr_has_func_expr(sp)) return true;
                         },
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): the implementation may be a function.
+                        .semantic => |sm| {
+                            if (expr_has_func_expr(sm.val)) return true;
+                        },
                     }
                 }
                 return false;
@@ -3061,6 +3158,8 @@ pub const Sema = struct {
                         .named => |nmd| try collect_upvalue_names_expr(nmd.val, params, body_locals, names, flags, sema),
                         .positional => |pos| try collect_upvalue_names_expr(pos, params, body_locals, names, flags, sema),
                         .spread => |sp| try collect_upvalue_names_expr(sp, params, body_locals, names, flags, sema),
+                        // Pass 36 G1/G8 recorded, not implemented (Phase 0): the implementation may capture upvalues.
+                        .semantic => |sm| try collect_upvalue_names_expr(sm.val, params, body_locals, names, flags, sema),
                     }
                 }
             },
@@ -3792,7 +3891,8 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
-                .spread => continue,
+                // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept members.
+                .spread, .semantic => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
                 try fields.append(self.alloc, .{ .name = name, .typ = .any });
@@ -3816,7 +3916,8 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
-                .spread => continue,
+                // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept params.
+                .spread, .semantic => continue,
             };
             const pt: RT = if (elem.* == .string_lit)
                 try self.meta_concept_type_from_string(elem.string_lit.val)
@@ -3836,7 +3937,8 @@ pub const Sema = struct {
                 .positional => |p| p,
                 .named => |n| n.val,
                 .indexed => |idx| idx.val,
-                .spread => continue,
+                // Pass 36 G1/G8 recorded, not implemented (Phase 0): semantic entries are not concept members.
+                .spread, .semantic => continue,
             };
             if (concept_member_name_expr(member_expr)) |name| {
                 const param_types = try self.collect_meta_concept_method_params(member_expr);
@@ -5784,7 +5886,51 @@ pub const Sema = struct {
             if_count += 1;
             if (stmt.if_stmt.elseifs.len > 0) has_elseif = true;
         }
-        return if_count >= 2 or (if_count >= 1 and has_elseif);
+        if (!(if_count >= 2 or (if_count >= 1 and has_elseif))) return false;
+        // Ackermann is defined by recursion; a body with no call at all cannot be
+        // it. Without this, ANY loop-free 2-int-param int-returning function with
+        // two ifs was silently replaced by __ack_impl and returned Ackermann's
+        // value instead of its own (e.g. `two_if(5, 32)` -> 65533).
+        return block_has_call(&fb.body);
+    }
+
+    /// True when the block contains a call expression anywhere in a returned or
+    /// assigned value. Used to keep shape-based benchmark detectors from matching
+    /// non-recursive functions.
+    fn block_has_call(b: *const ast.Block) bool {
+        for (b.stmts) |*stmt| {
+            switch (stmt.*) {
+                .ret => |r| for (r.vals) |v| {
+                    if (expr_has_call(v)) return true;
+                },
+                .assign => |a| for (a.values) |v| {
+                    if (expr_has_call(v)) return true;
+                },
+                .local_decl => |ld| for (ld.inits) |v| {
+                    if (expr_has_call(v)) return true;
+                },
+                .if_stmt => |is| {
+                    if (block_has_call(&is.then)) return true;
+                    for (is.elseifs) |ei| {
+                        if (block_has_call(&ei.body)) return true;
+                    }
+                    if (is.else_body) |eb| {
+                        if (block_has_call(&eb)) return true;
+                    }
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    fn expr_has_call(e: *const ast.Expr) bool {
+        return switch (e.*) {
+            .call, .method_call => true,
+            .binop => |b| expr_has_call(b.lhs) or expr_has_call(b.rhs),
+            .unop => |u| expr_has_call(u.operand),
+            else => false,
+        };
     }
 
     fn detect_matmul_native(fb: *ast.FuncBody) bool {
@@ -6505,7 +6651,22 @@ pub const Sema = struct {
                 .repeat_loop => |*rl| dense_walk(fb, &rl.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
                 .do_block => |*db| dense_walk(fb, &db.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
                 .num_for => |*nf| dense_walk(fb, &nf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
-                .gen_for => |*gf| dense_walk(fb, &gf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out),
+                .gen_for => |*gf| {
+                    // A table iterated by generic-for cannot be dense. Densifying
+                    // replaces it with a bare `int64_t*` and keeps no boxed
+                    // companion, but generic-for lowers through the dynamic
+                    // `__iter` protocol and needs a `lua_Value` — the mismatch
+                    // emitted `lua_Value tbl = __dt_t;`, so `for v in t` over a
+                    // table literal failed to compile. Only the *iterator*
+                    // position disqualifies; using the table inside the body is
+                    // still fine.
+                    for (gf.iters) |it| {
+                        if (it.* == .name and std.mem.eql(u8, it.name.ident, tname_inner)) {
+                            ok_out.* = false;
+                        }
+                    }
+                    dense_walk(fb, &gf.body, tname_inner, cap_inner, assigns_out, reads_out, ok_out, float_out);
+                },
                 else => {},
             }
         }
@@ -7194,6 +7355,10 @@ pub const Sema = struct {
                     .spread => |s| {
                         if (expr_references_name(s, name)) return true;
                     },
+                    // Pass 36 G1/G8 recorded, not implemented (Phase 0): only the implementation can reference a name.
+                    .semantic => |sm| {
+                        if (expr_references_name(sm.val, name)) return true;
+                    },
                 }
             } else false,
             .func_expr => |fe| blk: {
@@ -7737,6 +7902,12 @@ pub const Sema = struct {
                     self.ok = false;
                     break :blk .any;
                 },
+                // Pass 36 G1/G8 recorded, not implemented (Phase 0): bail out of this inference path
+                // rather than guess a type for an unimplemented resolution ladder.
+                .semantic, .semantic_scope => blk: {
+                    self.ok = false;
+                    break :blk .any;
+                },
                 .sequence => |seq| blk: {
                     if (seq.exprs.len == 0) break :blk .nil;
                     break :blk self.infer_expr(seq.exprs[0], hint);
@@ -7901,6 +8072,31 @@ test "sema: Pass25 loop-carried tail demand types factorial body" {
     try testing.expect(fd.func.is_typed);
 }
 
+test "sema: loop body assignment is not implicit function return" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\ema_smooth = (n: i64): f64
+        \\    avg = 0.0
+        \\    i = 0
+        \\    while i < n
+        \\        avg = avg * 0.95 + (i % 100) * 0.05
+        \\        i = i + 1
+        \\    end
+        \\    return avg
+        \\end
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
 test "sema: empty module produces no errors" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
@@ -7920,6 +8116,27 @@ test "sema: multiple locals produce no errors" {
     defer arena.deinit();
     const s = try runSema("local a = 1\nlocal b = 2\nlocal c = a + b", &arena);
     try testing.expectEqual(@as(u32, 0), s.errors);
+}
+
+test "sema: module_sealed lattice fact for req bindings (Pass 34 L1)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\m = req "examples.l1_sealed_helper"
+        \\m = {}
+        \\n = req "examples.l1_sealed_helper"
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expectEqual(@as(u32, 0), s.errors);
+    try testing.expect(!s.moduleSealed("m"));
+    try testing.expect(s.moduleSealed("n"));
 }
 
 test "sema: symbol knowledge lattice (Pass 2.1)" {
@@ -8992,6 +9209,43 @@ test "sema: @implements on a record-typed binding (concept is missing a required
     try s.check_module(&mod);
     // Expect at least one error (the missing `second` field).
     try testing.expect(s.errors > 0);
+}
+
+test "sema: pass34 L1 module_sealed req binding" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\m = req "std.math"
+        \\local x = 1
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(s.moduleSealed("m"));
+    try testing.expect(!s.moduleSealed("x"));
+}
+
+test "sema: pass34 L1 module_sealed invalidated on reassignment" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const src =
+        \\m = req "std.math"
+        \\m = 42
+    ;
+    var lex = Lexer.init(src, "test.duo");
+    var p = Parser.init(&lex, alloc);
+    p.duo_mode = true;
+    var mod = try p.parse_module();
+    var s = Sema.init(alloc);
+    s.duo_mode = true;
+    try s.check_module(&mod);
+    try testing.expect(!s.moduleSealed("m"));
 }
 
 test "sema: @implements on a global record-typed binding is checked" {

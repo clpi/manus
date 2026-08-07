@@ -13,19 +13,19 @@ static const int64_t ints[] = { 1, 2, 3, 4 };
 static const double floats[] = { 1.5, 2.0, 2.5, 3.0 };
 ]])
 
-fun int_all(): i64
+int_all(): i64
     @c.call("sum_i64_all", @(ints), @(4))
 end
 
-fun int_first2(): i64
+int_first2(): i64
     @c.call("sum_i64_first2", @(ints), @(4))
 end
 
-fun float_all(): f64
+float_all(): f64
     @c.call("sum_f64_all", @(floats), @(4))
 end
 
-fun float_first2(): f64
+float_first2(): f64
     @c.call("sum_f64_first2", @(floats), @(4))
 end
 

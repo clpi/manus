@@ -15,27 +15,27 @@ NEWLINE = 8
 WS = 9
 
 -- new_scanner: create a scanner over source string s.
-fun new_scanner(s: str): any
+new_scanner(s: str): any
     {src = s, pos = 1, tok = "", kind = 0, line = 1, col = 1}
 end
 
 -- is_ident_start: report whether byte b can start an identifier.
-fun is_ident_start(b: i64): bool
+is_ident_start(b: i64): bool
     (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 95
 end
 
 -- is_ident_part: report whether byte b can continue an identifier.
-fun is_ident_part(b: i64): bool
+is_ident_part(b: i64): bool
     is_ident_start(b) or (b >= 48 and b <= 57)
 end
 
 -- is_digit: report whether byte b is a digit.
-fun is_digit(b: i64): bool
+is_digit(b: i64): bool
     b >= 48 and b <= 57
 end
 
 -- scan_ident: scan an identifier starting at current position.
-fun scan_ident(sc: any): any
+scan_ident(sc: any): any
     start = sc.pos
     while sc.pos <= string.len(sc.src) and is_ident_part(string.byte(sc.src, sc.pos))
         sc.pos = sc.pos + 1
@@ -46,14 +46,14 @@ fun scan_ident(sc: any): any
 end
 
 -- scan_number: scan an integer or float.
-fun scan_number(sc: any): any
+scan_number(sc: any): any
     start = sc.pos
     is_float = false
     while sc.pos <= string.len(sc.src) and is_digit(string.byte(sc.src, sc.pos))
         sc.pos = sc.pos + 1
     end
     -- check for decimal point
-    if sc.pos <= string.len(sc.src) and string.byte(sc.src, sc.pos) == 46 then
+    if sc.pos <= string.len(sc.src) and string.byte(sc.src, sc.pos) == 46
         is_float = true
         sc.pos = sc.pos + 1
         while sc.pos <= string.len(sc.src) and is_digit(string.byte(sc.src, sc.pos))
@@ -61,14 +61,14 @@ fun scan_number(sc: any): any
         end
     end
     -- check for exponent
-    if sc.pos <= string.len(sc.src) then
+    if sc.pos <= string.len(sc.src)
         b = string.byte(sc.src, sc.pos)
-        if b == 101 or b == 69 then  -- 'e' or 'E'
+        if b == 101 or b == 69  -- 'e' or 'E'
             is_float = true
             sc.pos = sc.pos + 1
-            if sc.pos <= string.len(sc.src) then
+            if sc.pos <= string.len(sc.src)
                 b = string.byte(sc.src, sc.pos)
-                if b == 43 or b == 45 then sc.pos = sc.pos + 1 end  -- + or -
+                if b == 43 or b == 45 sc.pos = sc.pos + 1 end  -- + or -
             end
             while sc.pos <= string.len(sc.src) and is_digit(string.byte(sc.src, sc.pos))
                 sc.pos = sc.pos + 1
@@ -76,7 +76,7 @@ fun scan_number(sc: any): any
         end
     end
     sc.tok = string.sub(sc.src, start, sc.pos - 1)
-    if is_float then
+    if is_float
         sc.kind = FLOAT
     else
         sc.kind = INT
@@ -85,19 +85,19 @@ fun scan_number(sc: any): any
 end
 
 -- scan_string: scan a quoted string. Supports " and ' delimiters.
-fun scan_string(sc: any): any
+scan_string(sc: any): any
     quote = string.byte(sc.src, sc.pos)
     sc.pos = sc.pos + 1
     start = sc.pos
     while sc.pos <= string.len(sc.src)
         b = string.byte(sc.src, sc.pos)
-        if b == quote then
+        if b == quote
             sc.tok = string.sub(sc.src, start, sc.pos - 1)
             sc.pos = sc.pos + 1
             sc.kind = STRING
             return sc
         end
-        if b == 92 then  -- backslash escape
+        if b == 92  -- backslash escape
             sc.pos = sc.pos + 2
         else
             sc.pos = sc.pos + 1
@@ -110,10 +110,10 @@ fun scan_string(sc: any): any
 end
 
 -- scan_comment: scan a line comment starting with -- or //.
-fun scan_comment(sc: any): any
+scan_comment(sc: any): any
     start = sc.pos
     sc.pos = sc.pos + 2  -- skip prefix
-    while sc.pos <= string.len(sc.src) and string.byte(sc.src, sc.pos) ~= 10
+    while sc.pos <= string.len(sc.src) and string.byte(sc.src, sc.pos) != 10
         sc.pos = sc.pos + 1
     end
     sc.tok = string.sub(sc.src, start, sc.pos - 1)
@@ -122,8 +122,8 @@ fun scan_comment(sc: any): any
 end
 
 -- scan: advance to the next token. Returns the token kind (or EOF).
-fun scan(sc: any): i64
-    if sc.pos > string.len(sc.src) then
+scan(sc: any): i64
+    if sc.pos > string.len(sc.src)
         sc.tok = ""
         sc.kind = EOF
         return EOF
@@ -131,9 +131,9 @@ fun scan(sc: any): i64
     -- skip whitespace but track newlines
     while sc.pos <= string.len(sc.src)
         b = string.byte(sc.src, sc.pos)
-        if b == 32 or b == 9 then
+        if b == 32 or b == 9
             sc.pos = sc.pos + 1
-        elseif b == 10 then
+        elseif b == 10
             sc.line = sc.line + 1
             sc.pos = sc.pos + 1
             sc.tok = "\n"
@@ -143,29 +143,29 @@ fun scan(sc: any): i64
             break
         end
     end
-    if sc.pos > string.len(sc.src) then
+    if sc.pos > string.len(sc.src)
         sc.tok = ""
         sc.kind = EOF
         return EOF
     end
     b = string.byte(sc.src, sc.pos)
     -- comment
-    if b == 45 and sc.pos + 1 <= string.len(sc.src) and string.byte(sc.src, sc.pos + 1) == 45 then
+    if b == 45 and sc.pos + 1 <= string.len(sc.src) and string.byte(sc.src, sc.pos + 1) == 45
         return scan_comment(sc)
     end
-    if b == 47 and sc.pos + 1 <= string.len(sc.src) and string.byte(sc.src, sc.pos + 1) == 47 then
+    if b == 47 and sc.pos + 1 <= string.len(sc.src) and string.byte(sc.src, sc.pos + 1) == 47
         return scan_comment(sc)
     end
     -- identifier
-    if is_ident_start(b) then
+    if is_ident_start(b)
         return scan_ident(sc)
     end
     -- number
-    if is_digit(b) then
+    if is_digit(b)
         return scan_number(sc)
     end
     -- string
-    if b == 34 or b == 39 then  -- " or '
+    if b == 34 or b == 39  -- " or '
         return scan_string(sc)
     end
     -- punctuation (single char)
@@ -176,12 +176,12 @@ fun scan(sc: any): i64
 end
 
 -- token_text: return the current token text.
-fun token_text(sc: any): str
+token_text(sc: any): str
     sc.tok
 end
 
 -- token_kind: return the current token kind.
-fun token_kind(sc: any): i64
+token_kind(sc: any): i64
     sc.kind
 end
 

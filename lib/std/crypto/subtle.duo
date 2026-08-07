@@ -1,29 +1,29 @@
 -- std.crypto.subtle — constant-time operations (mirrors Go's crypto/subtle)
 
-fun constant_time_compare(x: str, y: str): bool
-    if string.len(x) ~= string.len(y) then return false end
-    local v = 0
+constant_time_compare(x: str, y: str): bool
+    if string.len(x) != string.len(y) return false end
+    v = 0
     for i = 1, string.len(x)
         v = v | (string.byte(x, i) ~ string.byte(y, i))
     end
     return v == 0
 end
 
-fun constant_time_select(v: i64, a: i64, b: i64): i64
-    local m = -(v % 2)
+constant_time_select(v: i64, a: i64, b: i64): i64
+    m = -(v % 2)
     return (a & m) | (b & ~m)
 end
 
-fun constant_time_byte_eq(x: i64, y: i64): i64
-    local v = x ~ y
+constant_time_byte_eq(x: i64, y: i64): i64
+    v = x ~ y
     v = v | (v >> 4)
     v = v | (v >> 2)
     v = v | (v >> 1)
     return (v & 1) ~ 1
 end
 
-fun constant_time_eq(x: i64, y: i64): i64
-    local v = x ~ y
+constant_time_eq(x: i64, y: i64): i64
+    v = x ~ y
     v = v | (v >> 16)
     v = v | (v >> 8)
     v = v | (v >> 4)
@@ -32,10 +32,10 @@ fun constant_time_eq(x: i64, y: i64): i64
     return (v & 1) ~ 1
 end
 
-fun xor_bytes(dst: any, a: any, b: any): i64
-    local n = rawlen(dst)
-    if rawlen(a) < n then n = rawlen(a) end
-    if rawlen(b) < n then n = rawlen(b) end
+xor_bytes(dst: any, a: any, b: any): i64
+    n = rawlen(dst)
+    if rawlen(a) < n n = rawlen(a) end
+    if rawlen(b) < n n = rawlen(b) end
     for i = 1, n
         dst[i] = a[i] ~ b[i]
     end

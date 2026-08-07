@@ -1,61 +1,61 @@
 -- std.log — structured logging with level filtering
 
-global __log_level = 1
-global __log_levels = {DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3}
+global log_level = 1
+global log_levels = {DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3}
 
-fun set_level(level: str): void
-    if level == nil then level = "DEBUG" end
-    local v = __log_levels[level]
-    if v ~= nil then
-        __log_level = v
+set_level(level: str): void
+    if level == nil level = "DEBUG" end
+    v = log_levels[level]
+    if v != nil
+        log_level = v
     end
 end
 
-fun get_level(): str
-    for name, v in pairs(__log_levels)
-        if v == __log_level then return name end
+get_level(): str
+    for name, v in pairs(log_levels)
+        if v == log_level return name end
     end
     "INFO"
 end
 
-fun std_log_debug(msg: str): void
-    if __log_level <= 0 then
+std_log_debug(msg: str): void
+    if log_level <= 0
         io.write(string.format("[DEBUG] %s\n", msg))
     end
 end
 
-fun std_log_info(msg: str): void
-    if __log_level <= 1 then
+std_log_info(msg: str): void
+    if log_level <= 1
         io.write(string.format("[INFO] %s\n", msg))
     end
 end
 
-fun std_log_warn(msg: str): void
-    if __log_level <= 2 then
+std_log_warn(msg: str): void
+    if log_level <= 2
         io.write(string.format("[WARN] %s\n", msg))
     end
 end
 
-fun std_log_error(msg: str): void
-    if __log_level <= 3 then
+std_log_error(msg: str): void
+    if log_level <= 3
         io.write(string.format("[ERROR] %s\n", msg))
     end
 end
 
-fun print(level: str, msg: str): void
-    if level == nil then
+print(level: str, msg: str): void
+    if level == nil
         io.write(string.format("%s\n", msg))
     else
         io.write(string.format("[%s] %s\n", string.upper(level), msg))
     end
 end
 
-fun with_fields(level: str, fields: any, msg: str): void
-    if level == nil then level = "INFO" end
-    local level_val = __log_levels[string.upper(level)] or 1
-    if level_val < __log_level then return end
-    local parts = {string.format("[%s] %s", string.upper(level), msg)}
-    if fields ~= nil then
+with_fields(level: str, fields: any, msg: str): void
+    if level == nil level = "INFO" end
+    level_val = log_levels[string.upper(level)] or 1
+    if level_val < log_level return end
+    parts = {string.format("[%s] %s", string.upper(level), msg)}
+    if fields != nil
         for k, v in pairs(fields)
             parts[rawlen(parts) + 1] = string.format("%s=%s", k, tostring(v))
         end

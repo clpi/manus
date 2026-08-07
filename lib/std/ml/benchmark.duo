@@ -5,7 +5,7 @@
 -- Benchmark Config
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_config_new(): any
+benchmark_config_new(): any
     {
         warmup_runs = 10,
         num_runs = 100,
@@ -22,7 +22,7 @@ end
 -- Benchmark Result
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_result_new(model_name: str, batch_size: i64): any
+benchmark_result_new(model_name: str, batch_size: i64): any
     {
         model_name = model_name,
         batch_size = batch_size,
@@ -35,13 +35,13 @@ fun benchmark_result_new(model_name: str, batch_size: i64): any
     }
 end
 
-fun benchmark_result_add_latency(result: any, latency: f64): void
+benchmark_result_add_latency(result: any, latency: f64): void
     result.latencies[#result.latencies + 1] = latency
 end
 
-fun benchmark_result_calculate_stats(result: any): void
+benchmark_result_calculate_stats(result: any): void
     n = #result.latencies
-    if n == 0 then return end
+    if n == 0 return end
 
     -- Sort latencies
     sorted = {table.unpack(result.latencies)}
@@ -60,7 +60,7 @@ fun benchmark_result_calculate_stats(result: any): void
     result.max_latency = sorted[n]
 
     -- Throughput (tokens/sec)
-    if result.mean_latency > 0 then
+    if result.mean_latency > 0
         result.throughput = result.batch_size / result.mean_latency
         result.tokens_per_second = result.throughput
     end
@@ -70,14 +70,14 @@ end
 -- Benchmark Runner
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_runner_new(config: any): any
+benchmark_runner_new(config: any): any
     {
         config = config,
         results = {},
     }
 end
 
-fun benchmark_runner_run(runner: any, model_fn: any, input_generator: any): any
+benchmark_runner_run(runner: any, model_fn: any, input_generator: any): any
     config = runner.config
     results = {}
 
@@ -118,7 +118,7 @@ end
 -- Throughput Test
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64): any
+benchmark_throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64): any
     -- Warmup
     i = 0
     while i < 5
@@ -155,7 +155,7 @@ end
 -- Latency Test
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): any
+benchmark_latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64): any
     -- Warmup
     i = 0
     while i < 5
@@ -199,7 +199,7 @@ end
 -- Memory Test
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_memory(model_fn: any, input_generator: any, batch_size: i64): any
+benchmark_memory(model_fn: any, input_generator: any, batch_size: i64): any
     -- Measure memory before
     -- In production, would use system-specific memory measurement
     -- For now, estimate based on tensor sizes
@@ -209,12 +209,12 @@ fun benchmark_memory(model_fn: any, input_generator: any, batch_size: i64): any
 
     -- Estimate tensor sizes
     input_size = 0
-    if input and input.data then
+    if input and input.data
         input_size = #input.data * 4  -- float32
     end
 
     output_size = 0
-    if output and output.data then
+    if output and output.data
         output_size = #output.data * 4
     end
 
@@ -230,7 +230,7 @@ end
 -- Comparison
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_compare(results: any): any
+benchmark_compare(results: any): any
     comparison = {}
     for name, result in results
         comparison[name] = {
@@ -242,7 +242,7 @@ fun benchmark_compare(results: any): any
     comparison
 end
 
-fun benchmark_rank(results: any, metric: str): any
+benchmark_rank(results: any, metric: str): any
     ranked = {}
     for name, result in results
         ranked[#ranked + 1] = {
@@ -250,7 +250,7 @@ fun benchmark_rank(results: any, metric: str): any
             value = result[metric] or 0,
         }
     end
-    table.sort(ranked, function(a, b) return a.value > b.value end)
+    table.sort(ranked, fun(a: any, b: any): any a.value > b.value)
     ranked
 end
 
@@ -258,7 +258,7 @@ end
 -- Report Generation
 -- ═══════════════════════════════════════════════════════════════
 
-fun benchmark_report(results: any): str
+benchmark_report(results: any): str
     lines = {}
     lines[#lines + 1] = "=== Benchmark Report ==="
     lines[#lines + 1] = ""

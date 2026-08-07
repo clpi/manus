@@ -1,26 +1,26 @@
 -- std.net.http.httptest — HTTP test utilities (mirrors Go's net/http/httptest)
 
-fun new_server(handler: any): any
-    local port = 0
+new_server(handler: any): any
+    port = 0
     port = math.random(20000, 30000)
     {port = port, handler = handler}
 end
 
-fun new_request(method: str, path: str, body: str): any
-    if method == nil then method = "GET" end
-    if path == nil then path = "/" end
+new_request(method: str, path: str, body: str): any
+    if method == nil method = "GET" end
+    if path == nil path = "/" end
     {method = method, path = path, body = body, headers = {["Content-Type"] = "text/plain"}}
 end
 
-fun response_recorder(): any
+response_recorder(): any
     {status = 200, headers = {}, body = ""}
 end
 
-fun recorder_write(r: any, data: str): void
+recorder_write(r: any, data: str): void
     r.body = r.body .. data
 end
 
-fun recorder_result(r: any): any
+recorder_result(r: any): any
     {status = r.status, headers = r.headers, body = r.body}
 end
 

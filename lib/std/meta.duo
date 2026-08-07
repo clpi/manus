@@ -8,53 +8,53 @@
 -- ─────────────────────────────────────────────────────────────
 
 -- Get the type kind of a value as a string
-fun std_meta_typeof(x): str
-    if x == nil then return "nil" end
-    if type(x) ~= "table" then return type(x) end
-    if getmetatable(x) ~= nil then
+std_meta_typeof(x): str
+    if x == nil return "nil" end
+    if type(x) != "table" return type(x) end
+    if getmetatable(x) != nil
         mt = getmetatable(x)
-        if mt.type ~= nil then return mt.type end
+        if mt.type != nil return mt.type end
     end
     "table"
 end
 
 -- Check if a value is of a specific type kind
-fun is(x, kind: str): bool
+is(x, kind: str): bool
     std_meta_typeof(x) == kind
 end
 
-fun is_nil(x): bool
+is_nil(x): bool
     x == nil
 end
 
-fun is_bool(x): bool
+is_bool(x): bool
     return type(x) == "boolean"
 end
 
-fun is_number(x): bool
+is_number(x): bool
     return type(x) == "number"
 end
 
-fun is_str(x): bool
+is_str(x): bool
     return type(x) == "string"
 end
 
-fun is_table(x): bool
+is_table(x): bool
     return type(x) == "table"
 end
 
-fun is_func(x): bool
+is_func(x): bool
     return type(x) == "function"
 end
 
-fun is_integer(x): bool
-    if type(x) ~= "number" then return false end
+is_integer(x): bool
+    if type(x) != "number" return false end
     x == math.floor(x)
 end
 
-fun is_float(x): bool
-    if type(x) ~= "number" then return false end
-    x ~= math.floor(x)
+is_float(x): bool
+    if type(x) != "number" return false end
+    x != math.floor(x)
 end
 
 -- ─────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- Get all keys of a table (both array and hash parts)
-fun fields(t: any)
+fields(t: any)
     ks = {}
     for k, _ in t
         ks[#ks + 1] = k
@@ -71,10 +71,10 @@ fun fields(t: any)
 end
 
 -- Get field names (string keys only)
-fun field_names(t: any)
+field_names(t: any)
     ks = {}
     for k, _ in t
-        if type(k) == "string" then
+        if type(k) == "string"
             ks[#ks + 1] = k
         end
     end
@@ -82,10 +82,10 @@ fun field_names(t: any)
 end
 
 -- Get method names (function-valued fields)
-fun method_names(t: any)
+method_names(t: any)
     ms = {}
     for k, v in t
-        if type(k) == "string" and type(v) == "function" then
+        if type(k) == "string" and type(v) == "function"
             ms[#ms + 1] = k
         end
     end
@@ -93,22 +93,22 @@ fun method_names(t: any)
 end
 
 -- Check if a table has a field
-fun has_field(t: any, name: str): bool
-    if type(t) ~= "table" then return false end
-    t[name] ~= nil
+has_field(t: any, name: str): bool
+    if type(t) != "table" return false end
+    t[name] != nil
 end
 
 -- Check if a table has a method (function-valued field)
-fun has_method(t: any, name: str): bool
-    if type(t) ~= "table" then return false end
+has_method(t: any, name: str): bool
+    if type(t) != "table" return false end
     return type(t[name]) == "function"
 end
 
 -- Get the metatable type name
-fun type_name(t: any): str
-    if t == nil then return "nil" end
+type_name(t: any): str
+    if t == nil return "nil" end
     mt = getmetatable(t)
-    if mt ~= nil and mt.type ~= nil then return mt.type end
+    if mt != nil and mt.type != nil return mt.type end
     return type(t)
 end
 
@@ -118,63 +118,63 @@ end
 
 -- Check if a value satisfies a concept (has required fields/methods)
 -- concept_def is a concept table with required_methods and required_fields
-fun concept_member_name(member: any): any
-    if type(member) == "string" then return member end
-    if type(member) == "table" then return member.name end
+concept_member_name(member: any): any
+    if type(member) == "string" return member end
+    if type(member) == "table" return member.name end
     nil
 end
 
-fun satisfies_concept(val: any, concept_def: any): bool
-    if val == nil or concept_def == nil then return false end
-    if concept_def.required_fields ~= nil then
+satisfies_concept(val: any, concept_def: any): bool
+    if val == nil or concept_def == nil return false end
+    if concept_def.required_fields != nil
         for _, f in concept_def.required_fields
             name = concept_member_name(f)
-            if name == nil or val[name] == nil then return false end
+            if name == nil or val[name] == nil return false end
         end
     end
-    if concept_def.required_methods ~= nil then
+    if concept_def.required_methods != nil
         for _, m in concept_def.required_methods
             name = concept_member_name(m)
-            if name == nil or type(val[name]) ~= "function" then return false end
+            if name == nil or type(val[name]) != "function" return false end
         end
     end
     true
 end
 
-fun concept_member(member: any, kind: str): any
-    if type(member) == "string" then
+concept_member(member: any, kind: str): any
+    if type(member) == "string"
         return { name = member, kind = kind }
     end
-    if member.kind == nil then member.kind = kind end
-    if kind == "method" and member.param_count == nil and member.params ~= nil then
+    if member.kind == nil member.kind = kind end
+    if kind == "method" and member.param_count == nil and member.params != nil
         member.param_count = #member.params
     end
     member
 end
 
-fun concept_member_list(items: any, kind: str): any
+concept_member_list(items: any, kind: str): any
     out = {}
-    if items == nil then return out end
+    if items == nil return out end
     for _, item in items
         out[#out + 1] = concept_member(item, kind)
     end
     out
 end
 
-fun make_concept(name: str, spec: any): any
-    if spec == nil then spec = {} end
+make_concept(name: str, spec: any): any
+    if spec == nil spec = {} end
     concept_fields = spec.required_fields
-    if concept_fields == nil then concept_fields = spec.fields end
+    if concept_fields == nil concept_fields = spec.fields end
     concept_methods = spec.required_methods
-    if concept_methods == nil then concept_methods = spec.methods end
+    if concept_methods == nil concept_methods = spec.methods end
     desc = {
-        __duo_kind = "concept",
+        @comp.duo.kind = "concept",
         name = name,
         required_fields = concept_member_list(concept_fields, "field"),
         required_methods = concept_member_list(concept_methods, "method"),
     }
     setmetatable(desc, {
-        __duo_kind = "concept_metatable",
+        @comp.duo.kind = "concept_metatable",
         type = "concept",
     })
     return desc
@@ -184,11 +184,11 @@ end
 -- General table utilities
 -- ─────────────────────────────────────────────────────────────
 
-fun len(t: any): i64
+len(t: any): i64
     return #t
 end
 
-fun keys(t: any)
+keys(t: any)
     ks = {}
     for k, _ in t
         ks[#ks + 1] = k
@@ -196,7 +196,7 @@ fun keys(t: any)
     ks
 end
 
-fun values(t: any)
+values(t: any)
     vs = {}
     for _, v in t
         vs[#vs + 1] = v
@@ -204,13 +204,13 @@ fun values(t: any)
     vs
 end
 
-fun has_key(t: any, key: any): bool
-    if type(t) ~= "table" then return false end
-    t[key] ~= nil
+has_key(t: any, key: any): bool
+    if type(t) != "table" return false end
+    t[key] != nil
 end
 
-fun clone(t: any)
-    if type(t) ~= "table" then return t end
+clone(t: any)
+    if type(t) != "table" return t end
     c = {}
     for k, v in t
         c[k] = v
@@ -218,18 +218,18 @@ fun clone(t: any)
     c
 end
 
-fun merge(dst: any, src: any): any
+merge(dst: any, src: any): any
     for k, v in src
         dst[k] = v
     end
     dst
 end
 
-fun deep_clone(t: any)
-    if type(t) ~= "table" then return t end
+deep_clone(t: any)
+    if type(t) != "table" return t end
     c = {}
     for k, v in t
-        if type(v) == "table" then
+        if type(v) == "table"
             c[k] = deep_clone(v)
         else
             c[k] = v
@@ -239,25 +239,25 @@ fun deep_clone(t: any)
 end
 
 -- Compare two tables for shallow equality
-fun shallow_eq(a: any, b: any): bool
-    if a == b then return true end
-    if type(a) ~= "table" or type(b) ~= "table" then return false end
+shallow_eq(a: any, b: any): bool
+    if a == b return true end
+    if type(a) != "table" or type(b) != "table" return false end
     for k, v in a
-        if b[k] ~= v then return false end
+        if b[k] != v return false end
     end
     for k, _ in b
-        if a[k] == nil then return false end
+        if a[k] == nil return false end
     end
     true
 end
 
 -- Collect garbage (if available) — triggers cycle collector in ARC mode
-fun collect(): void
+collect(): void
     collectgarbage("collect")
 end
 
 -- Get memory usage stats
-fun memory_stats(): any
+memory_stats(): any
     return {
         total = collectgarbage("count"),
         step = collectgarbage("step"),
@@ -270,31 +270,31 @@ end
 
 -- Verify that a table-type binding satisfies a concept
 -- returns true if satisfied, errors with details if not
-fun derive_clone(val: any): any
-    if type(val) ~= "table" then return val end
+derive_clone(val: any): any
+    if type(val) != "table" return val end
     clone(val)
 end
 
-fun derive_eq(a: any, b: any): bool
-    if a == nil and b == nil then return true end
-    if a == nil or b == nil then return false end
-    if type(a) == "table" and type(b) == "table" then
+derive_eq(a: any, b: any): bool
+    if a == nil and b == nil return true end
+    if a == nil or b == nil return false end
+    if type(a) == "table" and type(b) == "table"
         return shallow_eq(a, b)
     end
     a == b
 end
 
-fun derive_display(val: any): str
-    if val == nil then return "nil" end
-    if type(val) == "boolean" then
-        if val then return "true" else return "false" end
+derive_display(val: any): str
+    if val == nil return "nil" end
+    if type(val) == "boolean"
+        if val return "true" else return "false" end
     end
-    if type(val) == "number" then return tostring(val) end
-    if type(val) == "string" then return val end
-    if type(val) == "table" then
+    if type(val) == "number" return tostring(val) end
+    if type(val) == "string" return val end
+    if type(val) == "table"
         parts = {}
         for k, v in val
-            if type(k) == "string" then
+            if type(k) == "string"
                 parts[#parts + 1] = k .. ": " .. derive_display(v)
             end
         end
@@ -303,11 +303,11 @@ fun derive_display(val: any): str
     tostring(val)
 end
 
-fun derive_deep_clone(val: any): any
-    if type(val) ~= "table" then return val end
+derive_deep_clone(val: any): any
+    if type(val) != "table" return val end
     c = {}
     for k, v in val
-        if type(v) == "table" then
+        if type(v) == "table"
             c[k] = derive_deep_clone(v)
         else
             c[k] = v
@@ -316,24 +316,24 @@ fun derive_deep_clone(val: any): any
     c
 end
 
-fun derive_default(): any
+derive_default(): any
     {}
 end
 
-fun derive_hash(val: any): u64
-    if val == nil then return 0 end
-    if type(val) == "number" then
+derive_hash(val: any): u64
+    if val == nil return 0 end
+    if type(val) == "number"
         i = math.floor(val)
         return i % 4294967296
     end
-    if type(val) == "string" then
+    if type(val) == "string"
         h = 5381
         for i = 1, #val
             h = (h * 33 + string.byte(val, i)) % 4294967296
         end
         return h
     end
-    if type(val) == "table" then
+    if type(val) == "table"
         h = 0
         for _, v in val
             h = (h + derive_hash(v)) % 4294967296
@@ -343,55 +343,55 @@ fun derive_hash(val: any): u64
     string.len(tostring(val))
 end
 
-fun derive_ord(a: any, b: any): i64
-    if a == b then return 0 end
-    if a == nil then return -1 end
-    if b == nil then return 1 end
-    if type(a) == "number" and type(b) == "number" then
-        if a < b then return -1 else return 1 end
+derive_ord(a: any, b: any): i64
+    if a == b return 0 end
+    if a == nil return -1 end
+    if b == nil return 1 end
+    if type(a) == "number" and type(b) == "number"
+        if a < b return -1 else return 1 end
     end
     sa = tostring(a)
     sb = tostring(b)
-    if sa < sb then return -1 else return 1 end
+    if sa < sb return -1 else return 1 end
 end
 
-fun derive_format(val: any, spec: str): str
-    if spec == "d" or spec == "i" then
+derive_format(val: any, spec: str): str
+    if spec == "d" or spec == "i"
         return tostring(math.floor(val))
     end
-    if spec == "f" then
+    if spec == "f"
         return string.format("%f", val)
     end
-    if spec == "x" then
+    if spec == "x"
         return string.format("%x", math.floor(val))
     end
-    if spec == "s" then
+    if spec == "s"
         return tostring(val)
     end
-    if spec == "t" then
+    if spec == "t"
         return derive_display(val)
     end
     tostring(val)
 end
 
-fun derive_len(val: any): i64
-    if val == nil then return 0 end
-    if type(val) == "string" then return #val end
-    if type(val) == "table" then return #val end
+derive_len(val: any): i64
+    if val == nil return 0 end
+    if type(val) == "string" return #val end
+    if type(val) == "table" return #val end
     0
 end
 
-fun derive_contains(val: any, elem: any): bool
-    if type(val) == "table" then
+derive_contains(val: any, elem: any): bool
+    if type(val) == "table"
         for _, v in val
-            if v == elem then return true end
+            if v == elem return true end
         end
     end
     false
 end
 
-fun derive_iter(val: any): any
-    if type(val) ~= "table" then return fun() return nil end end
+derive_iter(val: any): any
+    if type(val) != "table" return fun(): any nil end
     val
 end
 
@@ -400,7 +400,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- map: transform each element of an array
-fun map(t: any, f: any): any
+map(t: any, f: any): any
     out = {}
     i = 1
     while i <= #t
@@ -411,7 +411,7 @@ fun map(t: any, f: any): any
 end
 
 -- mapk: transform each key-value pair
-fun mapk(t: any, f: any): any
+mapk(t: any, f: any): any
     out = {}
     for k, v in t
         out[k] = f(v, k)
@@ -420,12 +420,12 @@ fun mapk(t: any, f: any): any
 end
 
 -- filter: keep elements where predicate returns true
-fun filter(t: any, pred: any): any
+filter(t: any, pred: any): any
     out = {}
     n = 0
     i = 1
     while i <= #t
-        if pred(t[i], i) then
+        if pred(t[i], i)
             n += 1
             out[n] = t[i]
         end
@@ -435,10 +435,10 @@ fun filter(t: any, pred: any): any
 end
 
 -- filterk: keep entries where predicate(value, key) returns true
-fun filterk(t: any, pred: any): any
+filterk(t: any, pred: any): any
     out = {}
     for k, v in t
-        if pred(v, k) then
+        if pred(v, k)
             out[k] = v
         end
     end
@@ -446,7 +446,7 @@ fun filterk(t: any, pred: any): any
 end
 
 -- reduce: fold array left-to-right with accumulator
-fun reduce(t: any, f: any, init: any): any
+reduce(t: any, f: any, init: any): any
     acc = init
     i = 1
     while i <= #t
@@ -457,7 +457,7 @@ fun reduce(t: any, f: any, init: any): any
 end
 
 -- reducek: fold table with (accumulator, value, key)
-fun reducek(t: any, f: any, init: any): any
+reducek(t: any, f: any, init: any): any
     acc = init
     for k, v in t
         acc = f(acc, v, k)
@@ -466,7 +466,7 @@ fun reducek(t: any, f: any, init: any): any
 end
 
 -- each: call side-effecting function on each element
-fun each(t: any, f: any): void
+each(t: any, f: any): void
     i = 1
     while i <= #t
         f(t[i], i)
@@ -475,76 +475,76 @@ fun each(t: any, f: any): void
 end
 
 -- eachk: call side-effecting function on each key-value pair
-fun eachk(t: any, f: any): void
+eachk(t: any, f: any): void
     for k, v in t
         f(v, k)
     end
 end
 
 -- find: return first element matching predicate, or nil
-fun find(t: any, pred: any): any
+find(t: any, pred: any): any
     i = 1
     while i <= #t
-        if pred(t[i], i) then return t[i] end
+        if pred(t[i], i) return t[i] end
         i += 1
     end
     nil
 end
 
 -- findk: return first key whose value matches predicate
-fun findk(t: any, pred: any): any
+findk(t: any, pred: any): any
     for k, v in t
-        if pred(v, k) then return k end
+        if pred(v, k) return k end
     end
     nil
 end
 
 -- find_index: return 1-based index of first matching element, or 0
-fun find_index(t: any, pred: any): i64
+find_index(t: any, pred: any): i64
     i = 1
     while i <= #t
-        if pred(t[i], i) then return i end
+        if pred(t[i], i) return i end
         i += 1
     end
     0
 end
 
 -- includes: check if any element equals value
-fun includes(t: any, value: any): bool
+includes(t: any, value: any): bool
     i = 1
     while i <= #t
-        if t[i] == value then return true end
+        if t[i] == value return true end
         i += 1
     end
     false
 end
 
 -- count: count elements matching predicate
-fun count(t: any, pred: any): i64
+count(t: any, pred: any): i64
     n = 0
     i = 1
     while i <= #t
-        if pred(t[i], i) then n += 1 end
+        if pred(t[i], i) n += 1 end
         i += 1
     end
     n
 end
 
 -- all: true if every element matches predicate
-fun all(t: any, pred: any): bool
+all(t: any, pred: any): bool
     i = 1
     while i <= #t
-        if not pred(t[i], i) then return false end
+        if not pred(t[i], i) return false end
         i += 1
     end
     true
 end
 
 -- any: true if at least one element matches predicate
-fun any(t: any, pred: any): bool
+any(t: any, pred: any): bool
     i = 1
     while i <= #t
-        if pred(t[i], i) then return true end
+        if pred(t[i], i) return true end
         i += 1
     end
     false
@@ -555,13 +555,13 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- flatten: one-level flatten of array of arrays
-fun flatten(t: any): any
+flatten(t: any): any
     out = {}
     n = 0
     i = 1
     while i <= #t
         sub = t[i]
-        if type(sub) == "table" then
+        if type(sub) == "table"
             j = 1
             while j <= #sub
                 n += 1
@@ -578,18 +578,18 @@ fun flatten(t: any): any
 end
 
 -- flat_map: map then flatten one level
-fun flat_map(t: any, f: any): any
+flat_map(t: any, f: any): any
     flatten(map(t, f))
 end
 
 -- zip: combine N arrays into array of tuples
-fun zip(...): any
-    local args = {...}
-    if #args == 0 then return {} end
+zip(...): any
+    args = {...}
+    if #args == 0 return {} end
     min_len = #args[1]
     i = 2
     while i <= #args
-        if #args[i] < min_len then min_len = #args[i] end
+        if #args[i] < min_len min_len = #args[i] end
         i += 1
     end
     out = {}
@@ -608,7 +608,7 @@ fun zip(...): any
 end
 
 -- enumerate: array to array of {index, value} pairs
-fun enumerate(t: any): any
+enumerate(t: any): any
     out = {}
     i = 1
     while i <= #t
@@ -619,10 +619,10 @@ fun enumerate(t: any): any
 end
 
 -- take: first n elements
-fun take(t: any, n: i64): any
+take(t: any, n: i64): any
     out = {}
     limit = n
-    if limit > #t then limit = #t end
+    if limit > #t limit = #t end
     i = 1
     while i <= limit
         out[i] = t[i]
@@ -632,10 +632,10 @@ fun take(t: any, n: i64): any
 end
 
 -- drop: skip first n elements
-fun drop(t: any, n: i64): any
+drop(t: any, n: i64): any
     out = {}
     start = n + 1
-    if start > #t then return out end
+    if start > #t return out end
     i = start
     j = 1
     while i <= #t
@@ -647,7 +647,7 @@ fun drop(t: any, n: i64): any
 end
 
 -- reverse: return new reversed array
-fun reverse(t: any): any
+reverse(t: any): any
     out = {}
     n = #t
     i = 1
@@ -659,7 +659,7 @@ fun reverse(t: any): any
 end
 
 -- unique: remove duplicate elements (preserves first occurrence)
-fun unique(t: any): any
+unique(t: any): any
     seen = {}
     out = {}
     n = 0
@@ -667,7 +667,7 @@ fun unique(t: any): any
     while i <= #t
         v = t[i]
         key = tostring(v)
-        if not seen[key] then
+        if not seen[key]
             seen[key] = true
             n += 1
             out[n] = v
@@ -678,14 +678,14 @@ fun unique(t: any): any
 end
 
 -- partition: split array into {matching, rest} based on predicate
-fun partition(t: any, pred: any): any
+partition(t: any, pred: any): any
     yes = {}
     no = {}
     ny = 0
     nn = 0
     i = 1
     while i <= #t
-        if pred(t[i], i) then
+        if pred(t[i], i)
             ny += 1
             yes[ny] = t[i]
         else
@@ -702,7 +702,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- sort: return new sorted array (ascending)
-fun sort(t: any): any
+sort(t: any): any
     out = {}
     i = 1
     while i <= #t
@@ -724,7 +724,7 @@ fun sort(t: any): any
 end
 
 -- sort_by: sort by key function
-fun sort_by(t: any, key_fn: any): any
+sort_by(t: any, key_fn: any): any
     indexed = {}
     i = 1
     while i <= #t
@@ -752,7 +752,7 @@ fun sort_by(t: any, key_fn: any): any
 end
 
 -- sort_desc: descending order
-fun sort_desc(t: any): any
+sort_desc(t: any): any
     return reverse(sort(t))
 end
 
@@ -761,12 +761,12 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- group_by: group array elements by key function
-fun group_by(t: any, key_fn: any): any
+group_by(t: any, key_fn: any): any
     groups = {}
     i = 1
     while i <= #t
         k = tostring(key_fn(t[i]))
-        if groups[k] == nil then groups[k] = {} end
+        if groups[k] == nil groups[k] = {} end
         groups[k][rawlen(groups[k]) + 1] = t[i]
         i += 1
     end
@@ -774,12 +774,12 @@ fun group_by(t: any, key_fn: any): any
 end
 
 -- count_by: count elements grouped by key function
-fun count_by(t: any, key_fn: any): any
+count_by(t: any, key_fn: any): any
     counts = {}
     i = 1
     while i <= #t
         k = tostring(key_fn(t[i]))
-        if counts[k] == nil then counts[k] = 0 end
+        if counts[k] == nil counts[k] = 0 end
         counts[k] += 1
         i += 1
     end
@@ -787,7 +787,7 @@ fun count_by(t: any, key_fn: any): any
 end
 
 -- sum_by: sum numeric values extracted by key function
-fun sum_by(t: any, key_fn: any): any
+sum_by(t: any, key_fn: any): any
     total = 0
     i = 1
     while i <= #t
@@ -798,14 +798,14 @@ fun sum_by(t: any, key_fn: any): any
 end
 
 -- min_by / max_by: find element with min/max key
-fun min_by(t: any, key_fn: any): any
-    if #t == 0 then return nil end
+min_by(t: any, key_fn: any): any
+    if #t == 0 return nil end
     best = t[1]
     best_key = key_fn(t[1])
     i = 2
     while i <= #t
         k = key_fn(t[i])
-        if k < best_key then
+        if k < best_key
             best = t[i]
             best_key = k
         end
@@ -814,14 +814,14 @@ fun min_by(t: any, key_fn: any): any
     best
 end
 
-fun max_by(t: any, key_fn: any): any
-    if #t == 0 then return nil end
+max_by(t: any, key_fn: any): any
+    if #t == 0 return nil end
     best = t[1]
     best_key = key_fn(t[1])
     i = 2
     while i <= #t
         k = key_fn(t[i])
-        if k > best_key then
+        if k > best_key
             best = t[i]
             best_key = k
         end
@@ -835,10 +835,10 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- pipe: left-to-right function composition
-fun pipe(...): any
-    local funcs = {...}
+pipe(...): any
+    funcs = {...}
     return function(x)
-        local result = x
+        result = x
         i = 1
         while i <= #funcs
             result = funcs[i](result)
@@ -849,10 +849,10 @@ fun pipe(...): any
 end
 
 -- compose: right-to-left function composition
-fun compose(...): any
-    local funcs = {...}
+compose(...): any
+    funcs = {...}
     return function(x)
-        local result = x
+        result = x
         i = #funcs
         while i >= 1
             result = funcs[i](result)
@@ -863,18 +863,18 @@ fun compose(...): any
 end
 
 -- partial: partially apply a function with leading args
-fun partial(f: any, ...): any
-    local partial_args = {...}
+partial(f: any, ...): any
+    partial_args = {...}
     return function(...)
-        local all = {}
-        local n = 0
+        all = {}
+        n = 0
         i = 1
         while i <= #partial_args
             n += 1
             all[n] = partial_args[i]
             i += 1
         end
-        local extra = {...}
+        extra = {...}
         i = 1
         while i <= #extra
             n += 1
@@ -886,7 +886,7 @@ fun partial(f: any, ...): any
 end
 
 -- tap: side-effecting pass-through
-fun tap(value: any, f: any): any
+tap(value: any, f: any): any
     f(value)
     value
 end
@@ -895,7 +895,7 @@ end
 -- Functional: numeric aggregation
 -- ─────────────────────────────────────────────────────────────
 
-fun sum(t: any): any
+sum(t: any): any
     total = 0
     i = 1
     while i <= #t
@@ -905,7 +905,7 @@ fun sum(t: any): any
     total
 end
 
-fun product(t: any): any
+product(t: any): any
     total = 1
     i = 1
     while i <= #t
@@ -915,23 +915,23 @@ fun product(t: any): any
     total
 end
 
-fun min(t: any): any
-    if #t == 0 then return nil end
+min(t: any): any
+    if #t == 0 return nil end
     best = t[1]
     i = 2
     while i <= #t
-        if t[i] < best then best = t[i] end
+        if t[i] < best best = t[i] end
         i += 1
     end
     best
 end
 
-fun max(t: any): any
-    if #t == 0 then return nil end
+max(t: any): any
+    if #t == 0 return nil end
     best = t[1]
     i = 2
     while i <= #t
-        if t[i] > best then best = t[i] end
+        if t[i] > best best = t[i] end
         i += 1
     end
     best
@@ -942,7 +942,7 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- map_values: transform only values, keep keys
-fun map_values(t: any, f: any): any
+map_values(t: any, f: any): any
     out = {}
     for k, v in t
         out[k] = f(v, k)
@@ -951,7 +951,7 @@ fun map_values(t: any, f: any): any
 end
 
 -- map_keys: transform only keys, keep values
-fun map_keys(t: any, f: any): any
+map_keys(t: any, f: any): any
     out = {}
     for k, v in t
         out[f(v, k)] = v
@@ -960,7 +960,7 @@ fun map_keys(t: any, f: any): any
 end
 
 -- key_by: array to table keyed by extract function
-fun key_by(t: any, key_fn: any): any
+key_by(t: any, key_fn: any): any
     out = {}
     i = 1
     while i <= #t
@@ -972,7 +972,7 @@ fun key_by(t: any, key_fn: any): any
 end
 
 -- invert: swap keys and values
-fun invert(t: any): any
+invert(t: any): any
     out = {}
     for k, v in t
         out[tostring(v)] = k
@@ -985,51 +985,51 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- eq: build equality predicate
-fun eq(val: any): any
-    return function(x) return x == val end
+eq(val: any): any
+    return fun(x: any): any x == val
 end
 
 -- gt / lt / gte / lte: comparison predicates
-fun gt(val: any): any
-    return function(x) return x > val end
+gt(val: any): any
+    return fun(x: any): any x > val
 end
 
-fun lt(val: any): any
-    return function(x) return x < val end
+lt(val: any): any
+    return fun(x: any): any x < val
 end
 
-fun gte(val: any): any
-    return function(x) return x >= val end
+gte(val: any): any
+    return fun(x: any): any x >= val
 end
 
-fun lte(val: any): any
-    return function(x) return x <= val end
+lte(val: any): any
+    return fun(x: any): any x <= val
 end
 
 -- notf: negate a predicate
-fun notf(pred: any): any
-    return function(x) return not pred(x) end
+notf(pred: any): any
+    return fun(x: any): any not pred(x)
 end
 
 -- andf / orf: combine predicates
-fun andf(...): any
-    local preds = {...}
+andf(...): any
+    preds = {...}
     return function(x)
         i = 1
         while i <= #preds
-            if not preds[i](x) then return false end
+            if not preds[i](x) return false end
             i += 1
         end
         return true
     end
 end
 
-fun orf(...): any
-    local preds = {...}
+orf(...): any
+    preds = {...}
     return function(x)
         i = 1
         while i <= #preds
-            if preds[i](x) then return true end
+            if preds[i](x) return true end
             i += 1
         end
         return false
@@ -1041,39 +1041,39 @@ end
 -- ─────────────────────────────────────────────────────────────
 
 -- identity: return value unchanged
-fun identity(x: any): any
+identity(x: any): any
     x
 end
 
 -- always / never: constant predicates
-fun always(): bool
+always(): bool
     true
 end
 
-fun never(): bool
+never(): bool
     false
 end
 
 -- noop: do nothing
-fun noop(): void
+noop(): void
 end
 
 -- ─────────────────────────────────────────────────────────────
 -- Functional: numeric helpers
 -- ─────────────────────────────────────────────────────────────
 
-fun clamp(value: any, lo: any, hi: any): any
-    if value < lo then return lo end
-    if value > hi then return hi end
+clamp(value: any, lo: any, hi: any): any
+    if value < lo return lo end
+    if value > hi return hi end
     value
 end
 
-fun lerp(a: any, b: any, t: any): any
+lerp(a: any, b: any, t: any): any
     a + (b - a) * t
 end
 
-fun abs(x: any): any
-    if x < 0 then return -x end
+abs(x: any): any
+    if x < 0 return -x end
     x
 end
 

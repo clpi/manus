@@ -1,7 +1,7 @@
 -- std.term — terminal styling helpers for Duo programs and build scripts
 
-local color = req "std.color"
-local string = req "std.string"
+color = req "std.color"
+string = req "std.string"
 
 global M = {}
 
@@ -9,84 +9,84 @@ M.RESET = color.RESET
 M.BOLD = color.BOLD
 M.DIM = color.DIM
 
-fun is_tty(): bool
-    local ok, val = pcall(os.getenv, "DUO_COLOR")
-    if ok and val ~= nil and val ~= "" and val ~= "0" then
+is_tty(): bool
+    ok, val = pcall(os.getenv, "DUO_COLOR")
+    if ok and val != nil and val != "" and val != "0"
         return true
     end
-    local ok2, val2 = pcall(os.getenv, "NO_COLOR")
-    if ok2 and val2 ~= nil and val2 ~= "" then
+    ok2, val2 = pcall(os.getenv, "NO_COLOR")
+    if ok2 and val2 != nil and val2 != ""
         return false
     end
     true
 end
 
-fun styled(prefix, text, suffix): str
-    if is_tty() then
+styled(prefix, text, suffix): str
+    if is_tty()
         prefix .. text .. suffix
     else
         text
     end
 end
 
-fun bold(text: str): str
+bold(text: str): str
     styled(color.BOLD, text, color.RESET)
 end
 
-fun dim(text: str): str
+dim(text: str): str
     styled(color.DIM, text, color.RESET)
 end
 
-fun green(text: str): str
+green(text: str): str
     color.green(text)
 end
 
-fun red(text: str): str
+red(text: str): str
     color.red(text)
 end
 
-fun yellow(text: str): str
+yellow(text: str): str
     color.yellow(text)
 end
 
-fun cyan(text: str): str
+cyan(text: str): str
     color.blue(text)
 end
 
-fun banner(title: str): str
-    if is_tty() then
+banner(title: str): str
+    if is_tty()
         color.CYAN .. "╭─ " .. title .. color.RESET
     else
         "== " .. title .. " =="
     end
 end
 
-fun kv(key: str, value: str): str
-    if is_tty() then
+kv(key: str, value: str): str
+    if is_tty()
         color.DIM .. key .. color.RESET .. " " .. color.CYAN .. value .. color.RESET
     else
         key .. " " .. value
     end
 end
 
-fun divider(): str
-    if is_tty() then
+divider(): str
+    if is_tty()
         color.DIM .. "────────────────────────────────────────" .. color.RESET
     else
         "----------------------------------------"
     end
 end
 
-fun ok_msg(text: str): str
-    if is_tty() then
+ok_msg(text: str): str
+    if is_tty()
         color.GREEN .. "✓ " .. text .. color.RESET
     else
         "ok: " .. text
     end
 end
 
-fun err_msg(text: str): str
-    if is_tty() then
+err_msg(text: str): str
+    if is_tty()
         color.RED .. "● error: " .. text .. color.RESET
     else
         "error: " .. text

@@ -29,87 +29,87 @@
 
 -- duo_onnx_init(const char* model_path) -> void* (session handle)
 @ffi("duo_onnx_init")
-fun duo_onnx_init(model_path: str): any
+duo_onnx_init(model_path: str): any
 
 -- duo_onnx_run(void* session, const char* input_name,
 --              const float* input_data, size_t input_len,
 --              const char* output_name,
 --              float* output_data, size_t* output_len) -> int
 @ffi("duo_onnx_run")
-fun duo_onnx_run(session: any, input_name: str, input_data: any, input_len: int,
+duo_onnx_run(session: any, input_name: str, input_data: any, input_len: int,
                  output_name: str, output_data: any, output_len: any): int
 
 -- duo_onnx_close(void* session) -> void
 @ffi("duo_onnx_close")
-fun duo_onnx_close(session: any): void
+duo_onnx_close(session: any): void
 
 -- duo_onnx_input_count(void* session) -> int
 @ffi("duo_onnx_input_count")
-fun duo_onnx_input_count(session: any): int
+duo_onnx_input_count(session: any): int
 
 -- duo_onnx_output_count(void* session) -> int
 @ffi("duo_onnx_output_count")
-fun duo_onnx_output_count(session: any): int
+duo_onnx_output_count(session: any): int
 
 -- duo_onnx_input_name(void* session, int idx, char* buf, int buf_len) -> int
 @ffi("duo_onnx_input_name")
-fun duo_onnx_input_name(session: any, idx: int, buf: str, buf_len: int): int
+duo_onnx_input_name(session: any, idx: int, buf: str, buf_len: int): int
 
 -- duo_onnx_output_name(void* session, int idx, char* buf, int buf_len) -> int
 @ffi("duo_onnx_output_name")
-fun duo_onnx_output_name(session: any, idx: int, buf: str, buf_len: int): int
+duo_onnx_output_name(session: any, idx: int, buf: str, buf_len: int): int
 
 -- duo_onnx_input_shape(void* session, int idx, int64_t* dims, int max_dims) -> int
 @ffi("duo_onnx_input_shape")
-fun duo_onnx_input_shape(session: any, idx: int, dims: any, max_dims: int): int
+duo_onnx_input_shape(session: any, idx: int, dims: any, max_dims: int): int
 
 -- duo_onnx_output_shape(void* session, int idx, int64_t* dims, int max_dims) -> int
 @ffi("duo_onnx_output_shape")
-fun duo_onnx_output_shape(session: any, idx: int, dims: any, max_dims: int): int
+duo_onnx_output_shape(session: any, idx: int, dims: any, max_dims: int): int
 
 -- ===========================================================================
 -- Constants
 -- ===========================================================================
 
-local NAME_BUF_SIZE  = 256
-local SHAPE_MAX_DIMS  = 8
-local EMBEDDING_MAX_OUTPUT = 4096
+NAME_BUF_SIZE  = 256
+SHAPE_MAX_DIMS  = 8
+EMBEDDING_MAX_OUTPUT = 4096
 
 -- ===========================================================================
 -- Helpers
 -- ===========================================================================
 
 -- read_name: query input or output name at idx into a string buffer.
-local function read_name(session: any, idx: int, is_input: bool): str
-    local buf = string.rep(" ", NAME_BUF_SIZE)
-    local rc
-    if is_input then
+read_name(session: any, idx: int, is_input: bool): str
+    buf = string.rep(" ", NAME_BUF_SIZE)
+    rc
+    if is_input
         rc = duo_onnx_input_name(session, idx, buf, NAME_BUF_SIZE)
     else
         rc = duo_onnx_output_name(session, idx, buf, NAME_BUF_SIZE)
     end
-    if rc < 0 then
+    if rc < 0
         return ""
     end
     string.sub(buf, 1, rc)
 end
 
 -- read_shape: query input or output shape at idx into a duo array.
-local function read_shape(session: any, idx: int, is_input: bool): any
+read_shape(session: any, idx: int, is_input: bool): any
     -- We use a table of 8 zero values as our int64_t buffer.
-    local dims_buf = {0, 0, 0, 0, 0, 0, 0, 0}
-    local rc
-    if is_input then
+    dims_buf = {0, 0, 0, 0, 0, 0, 0, 0}
+    rc
+    if is_input
         rc = duo_onnx_input_shape(session, idx, dims_buf, SHAPE_MAX_DIMS)
     else
         rc = duo_onnx_output_shape(session, idx, dims_buf, SHAPE_MAX_DIMS)
     end
-    if rc < 0 then
+    if rc < 0
         return {}
     end
     -- rc = number of dimensions
-    local shape = {}
-    local i = 1
+    shape = {}
+    i = 1
     while i <= rc
         shape[i] = dims_buf[i]
         i += 1
@@ -119,23 +119,23 @@ end
 
 -- flatten_array: convert a nested duo table into a flat float array.
 -- e.g. {{1.0, 2.0}, {3.0, 4.0}} -> {1.0, 2.0, 3.0, 4.0}
-local function flatten_array(data: any): any
-    if type(data) == "number" then
+flatten_array(data: any): any
+    if type(data) == "number"
         return {data}
     end
-    if type(data) ~= "table" then
+    if type(data) != "table"
         return {}
     end
-    local out = {}
-    local oi = 1
+    out = {}
+    oi = 1
 
-    local function flatten(t: any): void
-        local n = rawlen(t)
-        if n == 0 then return end
-        local i = 1
+    flatten(t: any): void
+        n = rawlen(t)
+        if n == 0 return end
+        i = 1
         while i <= n
-            local v = t[i]
-            if type(v) == "table" then
+            v = t[i]
+            if type(v) == "table"
                 flatten(v)
             else
                 out[oi] = v
@@ -148,7 +148,7 @@ local function flatten_array(data: any): any
     flatten(data)
 
     -- Compute total element count
-    local count = rawlen(out)
+    count = rawlen(out)
     return {data = out, len = count}
 end
 
@@ -158,21 +158,21 @@ end
 
 -- load: load an ONNX model file and create a session.
 -- Returns an opaque session handle, or nil on failure.
-local function load(model_path: str): any
-    local session = duo_onnx_init(model_path)
-    if session == nil then
+load(model_path: str): any
+    session = duo_onnx_init(model_path)
+    if session == nil
         return nil
     end
     {handle = session, closed = false, model_path = model_path}
 end
 
 -- close: release a session handle and free resources.
-local function close(session: any): void
-    if session == nil then return end
-    if type(session) == "table" then
-        if session.closed then return end
+close(session: any): void
+    if session == nil return end
+    if type(session) == "table"
+        if session.closed return end
         session.closed = true
-        if session.handle ~= nil then
+        if session.handle != nil
             duo_onnx_close(session.handle)
         end
     else
@@ -185,109 +185,109 @@ end
 -- inputs is a table of {input_name = float_array_or_nested_array}.
 -- Returns a table of {output_name = float_array}.
 -- For simplicity, runs the first input/output pair.
-local function run(session: any, inputs: any): any
-    local handle = session
-    if type(session) == "table" then handle = session.handle end
-    if handle == nil then return nil end
+run(session: any, inputs: any): any
+    handle = session
+    if type(session) == "table" handle = session.handle end
+    if handle == nil return nil end
 
     -- Get input name (index 0)
-    local input_name = read_name(handle, 0, true)
-    if input_name == "" then return nil end
+    input_name = read_name(handle, 0, true)
+    if input_name == "" return nil end
 
     -- Get output name (index 0)
-    local output_name = read_name(handle, 0, false)
-    if output_name == "" then return nil end
+    output_name = read_name(handle, 0, false)
+    if output_name == "" return nil end
 
     -- Find the input data: either by name from inputs table, or the first value
-    local input_data_raw = nil
-    if inputs[input_name] ~= nil then
+    input_data_raw = nil
+    if inputs[input_name] != nil
         input_data_raw = inputs[input_name]
     else
         -- Try first value in the table
-        local k, v = next(inputs, nil)
-        if v ~= nil then
+        k, v = next(inputs, nil)
+        if v != nil
             input_data_raw = v
         end
     end
-    if input_data_raw == nil then return nil end
+    if input_data_raw == nil return nil end
 
     -- Flatten the input data into a single float array
-    local flat = flatten_array(input_data_raw)
-    if flat.len == 0 then return nil end
+    flat = flatten_array(input_data_raw)
+    if flat.len == 0 return nil end
 
     -- Determine output size from shape info
-    local output_shape = read_shape(handle, 0, false)
-    local output_size = 1
-    local i = 1
+    output_shape = read_shape(handle, 0, false)
+    output_size = 1
+    i = 1
     while i <= rawlen(output_shape)
-        local d = output_shape[i]
-        if d > 0 then
+        d = output_shape[i]
+        if d > 0
             output_size *= d
         end
         i += 1
     end
 
     -- Allocate output buffer
-    local output_data = {}
-    local oi = 1
+    output_data = {}
+    oi = 1
     while oi <= output_size
         output_data[oi] = 0.0
         oi += 1
     end
 
     -- output_len is passed as a table cell (output parameter)
-    local output_len_buf = {output_size}
+    output_len_buf = {output_size}
 
-    local rc = duo_onnx_run(handle, input_name, flat.data, flat.len,
+    rc = duo_onnx_run(handle, input_name, flat.data, flat.len,
                            output_name, output_data, output_len_buf)
-    if rc ~= 0 then
+    if rc != 0
         return nil
     end
 
     -- Trim output_data to actual length
-    local actual_len = output_len_buf[1]
-    if actual_len == nil then actual_len = output_size end
+    actual_len = output_len_buf[1]
+    if actual_len == nil actual_len = output_size end
 
-    local result_data = {}
-    local ri = 1
+    result_data = {}
+    ri = 1
     while ri <= actual_len
         result_data[ri] = output_data[ri]
         ri += 1
     end
 
-    local result = {}
+    result = {}
     result[output_name] = result_data
     result
 end
 
 -- info: return model metadata (input/output names and shapes).
 -- Returns: {inputs = {{name = str, shape = [int]}}, outputs = {...}}
-local function info(session: any): any
-    local handle = session
-    if type(session) == "table" then handle = session.handle end
-    if handle == nil then return nil end
+info(session: any): any
+    handle = session
+    if type(session) == "table" handle = session.handle end
+    if handle == nil return nil end
 
-    local result = {inputs = {}, outputs = {}}
+    result = {inputs = {}, outputs = {}}
 
     -- Query inputs
-    local in_count = duo_onnx_input_count(handle)
-    if in_count > 0 then
-        local i = 0
+    in_count = duo_onnx_input_count(handle)
+    if in_count > 0
+        i = 0
         while i < in_count
-            local name = read_name(handle, i, true)
-            local shape = read_shape(handle, i, true)
+            name = read_name(handle, i, true)
+            shape = read_shape(handle, i, true)
             result.inputs[i + 1] = {name = name, shape = shape}
             i += 1
         end
     end
 
     -- Query outputs
-    local out_count = duo_onnx_output_count(handle)
-    if out_count > 0 then
-        local i = 0
+    out_count = duo_onnx_output_count(handle)
+    if out_count > 0
+        i = 0
         while i < out_count
-            local name = read_name(handle, i, false)
-            local shape = read_shape(handle, i, false)
+            name = read_name(handle, i, false)
+            shape = read_shape(handle, i, false)
             result.outputs[i + 1] = {name = name, shape = shape}
             i += 1
         end
@@ -303,38 +303,38 @@ end
 -- NOTE: This uses a very basic tokenizer (character-level) suitable for
 -- testing. For production use, you should pre-tokenize and pass the
 -- token_ids array directly to run().
-local function embedding(session: any, text: str): any
-    local handle = session
-    if type(session) == "table" then handle = session.handle end
-    if handle == nil then return nil end
+embedding(session: any, text: str): any
+    handle = session
+    if type(session) == "table" handle = session.handle end
+    if handle == nil return nil end
 
     -- Simple character-level tokenization: convert each byte to a float.
     -- Real tokenizers (WordPiece, BPE, etc.) should be implemented separately.
-    local n = string.len(text)
-    if n == 0 then
+    n = string.len(text)
+    if n == 0
         return {}
     end
 
-    local token_ids = {}
-    local i = 1
+    token_ids = {}
+    i = 1
     while i <= n
         token_ids[i] = tonumber(string.byte(text, i))
         i += 1
     end
 
     -- Build the input table with the input name
-    local input_name = read_name(handle, 0, true)
-    if input_name == "" then return nil end
+    input_name = read_name(handle, 0, true)
+    if input_name == "" return nil end
 
-    local inputs = {}
+    inputs = {}
     inputs[input_name] = token_ids
 
-    local result = run(session, inputs)
-    if result == nil then return nil end
+    result = run(session, inputs)
+    if result == nil return nil end
 
     -- Get the first output array
-    local k, v = next(result, nil)
-    if v == nil then return nil end
+    k, v = next(result, nil)
+    if v == nil return nil end
     v
 end
 

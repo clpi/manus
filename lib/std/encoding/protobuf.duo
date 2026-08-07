@@ -15,11 +15,11 @@ WIRE_32BIT = 5
 -- Writer
 -- ═══════════════════════════════════════════════════════════════
 
-fun writer_new(): any
+writer_new(): any
     {bytes = {}}
 end
 
-fun write_varint(w: any, value: i64): void
+write_varint(w: any, value: i64): void
     while value >= 0x80
         w.bytes[#w.bytes + 1] = (value & 0x7F) | 0x80
         value = value >> 7
@@ -27,16 +27,16 @@ fun write_varint(w: any, value: i64): void
     w.bytes[#w.bytes + 1] = value
 end
 
-fun write_tag(w: any, field: i64, wire_type: i64): void
+write_tag(w: any, field: i64, wire_type: i64): void
     write_varint(w, (field << 3) | wire_type)
 end
 
-fun write_field_varint(w: any, field: i64, value: i64): void
+write_field_varint(w: any, field: i64, value: i64): void
     write_tag(w, field, WIRE_VARINT)
     write_varint(w, value)
 end
 
-fun write_field_bytes(w: any, field: i64, data: any): void
+write_field_bytes(w: any, field: i64, data: any): void
     write_tag(w, field, WIRE_LENGTH_DELIMITED)
     write_varint(w, #data)
     for b in data
@@ -44,7 +44,7 @@ fun write_field_bytes(w: any, field: i64, data: any): void
     end
 end
 
-fun write_field_string(w: any, field: i64, value: str): void
+write_field_string(w: any, field: i64, value: str): void
     write_tag(w, field, WIRE_LENGTH_DELIMITED)
     bytes = string_to_bytes(value)
     write_varint(w, #bytes)
@@ -53,7 +53,7 @@ fun write_field_string(w: any, field: i64, value: str): void
     end
 end
 
-fun write_field_fixed32(w: any, field: i64, value: i64): void
+write_field_fixed32(w: any, field: i64, value: i64): void
     write_tag(w, field, WIRE_32BIT)
     w.bytes[#w.bytes + 1] = value & 0xFF
     w.bytes[#w.bytes + 1] = (value >> 8) & 0xFF
@@ -61,7 +61,7 @@ fun write_field_fixed32(w: any, field: i64, value: i64): void
     w.bytes[#w.bytes + 1] = (value >> 24) & 0xFF
 end
 
-fun write_field_fixed64(w: any, field: i64, value: i64): void
+write_field_fixed64(w: any, field: i64, value: i64): void
     write_tag(w, field, WIRE_64BIT)
     i = 0
     while i < 8
@@ -70,11 +70,11 @@ fun write_field_fixed64(w: any, field: i64, value: i64): void
     end
 end
 
-fun write_field_float(w: any, field: i64, value: f64): void
+write_field_float(w: any, field: i64, value: f64): void
     -- IEEE 754 single-precision float encoding
     write_tag(w, field, WIRE_32BIT)
     -- Convert to IEEE 754 float32 bytes
-    if value ~= value then
+    if value != value
         -- NaN
         w.bytes[#w.bytes + 1] = 0x7F
         w.bytes[#w.bytes + 1] = 0xC0
@@ -82,14 +82,14 @@ fun write_field_float(w: any, field: i64, value: f64): void
         w.bytes[#w.bytes + 1] = 0x00
         return
     end
-    if value == math.huge then
+    if value == math.huge
         w.bytes[#w.bytes + 1] = 0x7F
         w.bytes[#w.bytes + 1] = 0x80
         w.bytes[#w.bytes + 1] = 0x00
         w.bytes[#w.bytes + 1] = 0x00
         return
     end
-    if value == -math.huge then
+    if value == -math.huge
         w.bytes[#w.bytes + 1] = 0xFF
         w.bytes[#w.bytes + 1] = 0x80
         w.bytes[#w.bytes + 1] = 0x00
@@ -97,11 +97,11 @@ fun write_field_float(w: any, field: i64, value: f64): void
         return
     end
     sign = 0
-    if value < 0 then
+    if value < 0
         sign = 1
         value = -value
     end
-    if value == 0 then
+    if value == 0
         w.bytes[#w.bytes + 1] = sign * 128
         w.bytes[#w.bytes + 1] = 0x00
         w.bytes[#w.bytes + 1] = 0x00
@@ -130,30 +130,30 @@ fun write_field_float(w: any, field: i64, value: f64): void
     w.bytes[#w.bytes + 1] = b3
 end
 
-fun read_field_float(r: any): f64
+read_field_float(r: any): f64
     -- Read IEEE 754 single-precision float
-    if r.pos + 3 > r.len then return 0 end
+    if r.pos + 3 > r.len return 0.0 end
     b0 = r.data[r.pos]
     b1 = r.data[r.pos + 1]
     b2 = r.data[r.pos + 2]
     b3 = r.data[r.pos + 3]
     r.pos += 4
     sign = 1
-    if b0 >= 128 then
+    if b0 >= 128
         sign = -1
         b0 = b0 - 128
     end
     exp = math.floor(b0 / 2) * 16 + math.floor(b1 / 16)
     mantissa = (b0 % 2) * (2^23) + b1 * (2^15) + b2 * (2^7) + b3
-    if exp == 0 then return sign * mantissa * (2^-149) end
-    if exp == 255 then
-        if mantissa == 0 then return sign * math.huge end
+    if exp == 0 return sign * mantissa * (2^-149) end
+    if exp == 255
+        if mantissa == 0 return sign * math.huge end
         return 0/0
     end
     sign * (1 + mantissa * (2^-23)) * (2^(exp - 127))
 end
 
-fun writer_bytes(w: any): any
+writer_bytes(w: any): any
     w.bytes
 end
 
@@ -161,45 +161,45 @@ end
 -- Reader
 -- ═══════════════════════════════════════════════════════════════
 
-fun reader_new(data: any): any
+reader_new(data: any): any
     {data = data, pos = 1, len = #data}
 end
 
-fun reader_varint(r: any): i64
+reader_varint(r: any): any
     result = 0
     shift = 0
     while true
-        if r.pos > r.len then return nil end
+        if r.pos > r.len return nil end
         byte = r.data[r.pos]
         r.pos = r.pos + 1
         result = result | ((byte & 0x7F) << shift)
         shift += 7
-        if (byte & 0x80) == 0 then break end
+        if (byte & 0x80) == 0 break end
     end
     result
 end
 
-fun reader_tag(r: any): any
+reader_tag(r: any): any
     val = reader_varint(r)
-    if val == nil then return nil end
+    if val == nil return nil end
     {field = val >> 3, wire_type = val & 0x07}
 end
 
-fun reader_skip_field(r: any, wire_type: i64): void
-    if wire_type == WIRE_VARINT then
+reader_skip_field(r: any, wire_type: i64): void
+    if wire_type == WIRE_VARINT
         reader_varint(r)
-    elseif wire_type == WIRE_64BIT then
+    elseif wire_type == WIRE_64BIT
         r.pos = r.pos + 8
-    elseif wire_type == WIRE_LENGTH_DELIMITED then
+    elseif wire_type == WIRE_LENGTH_DELIMITED
         len = reader_varint(r)
         r.pos = r.pos + len
-    elseif wire_type == WIRE_32BIT then
+    elseif wire_type == WIRE_32BIT
         r.pos = r.pos + 4
     end
 end
 
-fun reader_field_bytes(r: any, wire_type: i64): any
-    if wire_type ~= WIRE_LENGTH_DELIMITED then return nil end
+reader_field_bytes(r: any, wire_type: i64): any
+    if wire_type != WIRE_LENGTH_DELIMITED return nil end
     len = reader_varint(r)
     out = {}
     i = 0
@@ -211,14 +211,14 @@ fun reader_field_bytes(r: any, wire_type: i64): any
     out
 end
 
-fun reader_field_string(r: any, wire_type: i64): str
+reader_field_string(r: any, wire_type: i64): str
     bytes = reader_field_bytes(r, wire_type)
-    if bytes == nil then return "" end
+    if bytes == nil return "" end
     bytes_to_string(bytes)
 end
 
-fun reader_field_fixed32(r: any, wire_type: i64): i64
-    if wire_type ~= WIRE_32BIT then return nil end
+reader_field_fixed32(r: any, wire_type: i64): any
+    if wire_type != WIRE_32BIT return nil end
     b0 = r.data[r.pos]
     b1 = r.data[r.pos + 1]
     b2 = r.data[r.pos + 2]
@@ -227,8 +227,8 @@ fun reader_field_fixed32(r: any, wire_type: i64): i64
     b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 end
 
-fun reader_field_fixed64(r: any, wire_type: i64): i64
-    if wire_type ~= WIRE_64BIT then return nil end
+reader_field_fixed64(r: any, wire_type: i64): any
+    if wire_type != WIRE_64BIT return nil end
     result = 0
     i = 0
     while i < 8
@@ -243,7 +243,7 @@ end
 -- Helper functions
 -- ═══════════════════════════════════════════════════════════════
 
-fun string_to_bytes(s: str): any
+string_to_bytes(s: str): any
     out = {}
     i = 1
     while i <= string.len(s)
@@ -253,7 +253,7 @@ fun string_to_bytes(s: str): any
     out
 end
 
-fun bytes_to_string(bytes: any): str
+bytes_to_string(bytes: any): str
     parts = {}
     i = 1
     while i <= #bytes
@@ -267,32 +267,32 @@ end
 -- Schema definition helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun message_new(fields: any): any
+message_new(fields: any): any
     {
         type = "protobuf_message",
         fields = fields,  -- {name = {field_num, wire_type, type}}
     }
 end
 
-fun field_def(field_num: i64, wire_type: i64, type_name: str): any
+field_def(field_num: i64, wire_type: i64, type_name: str): any
     {field_num = field_num, wire_type = wire_type, type = type_name}
 end
 
 -- Encode a message from a table of field values
-fun message_encode(schema: any, values: any): any
+message_encode(schema: any, values: any): any
     w = writer_new()
     for name, field_def in schema.fields
         value = values[name]
-        if value ~= nil then
-            if field_def.type == "varint" then
+        if value != nil
+            if field_def.type == "varint"
                 write_field_varint(w, field_def.field_num, value)
-            elseif field_def.type == "string" then
+            elseif field_def.type == "string"
                 write_field_string(w, field_def.field_num, value)
-            elseif field_def.type == "bytes" then
+            elseif field_def.type == "bytes"
                 write_field_bytes(w, field_def.field_num, value)
-            elseif field_def.type == "fixed32" then
+            elseif field_def.type == "fixed32"
                 write_field_fixed32(w, field_def.field_num, value)
-            elseif field_def.type == "fixed64" then
+            elseif field_def.type == "fixed64"
                 write_field_fixed64(w, field_def.field_num, value)
             end
         end

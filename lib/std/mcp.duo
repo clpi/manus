@@ -4,7 +4,7 @@
 global M = {}
 M.tools = {}
 
-fun mcp_read_message(): any
+mcp_read_message(): any
     -- MCP stdio transport = newline-delimited JSON-RPC: one JSON object per
     -- line, no embedded newlines (Model Context Protocol spec). This is NOT
     -- LSP Content-Length framing — every real MCP client (Claude Code, Cursor,
@@ -14,14 +14,14 @@ fun mcp_read_message(): any
     json_mod = req "std.json"
     while true
         line = io_mod.read_line(io_mod.input())
-        if line == nil then return nil end
+        if line == nil return nil end
         line = string.gsub(line, "[\r\n]", "")
-        if line != "" then break end
+        if line != "" break end
     end
     json_mod.decode(line)
 end
 
-fun mcp_send_message(obj: any): void
+mcp_send_message(obj: any): void
     -- MCP stdio: one compact JSON object per line. json.encode emits no
     -- embedded newlines, so the trailing "\n" is the sole delimiter.
     json_mod = req "std.json"
@@ -31,7 +31,7 @@ fun mcp_send_message(obj: any): void
     io_mod.flush(io_mod.output())
 end
 
-fun mcp_send_response(id: any, result: any): void
+mcp_send_response(id: any, result: any): void
     mcp_send_message({
         jsonrpc = "2.0",
         id = id,
@@ -39,7 +39,7 @@ fun mcp_send_response(id: any, result: any): void
     })
 end
 
-fun mcp_send_error(id: any, code: int, message: str): void
+mcp_send_error(id: any, code: int, message: str): void
     mcp_send_message({
         jsonrpc = "2.0",
         id = id,
@@ -50,7 +50,7 @@ fun mcp_send_error(id: any, code: int, message: str): void
     })
 end
 
-fun mcp_handle_initialize(msg: any): void
+mcp_handle_initialize(msg: any): void
     mcp_send_response(msg.id, {
         protocolVersion = "2024-11-05",
         capabilities = {
@@ -63,9 +63,9 @@ fun mcp_handle_initialize(msg: any): void
     })
 end
 
-fun mcp_handle_tools_list(msg: any): void
+mcp_handle_tools_list(msg: any): void
     tools_list = {}
-    for name, tool in M.tools do
+    for name, tool in M.tools
         tools_list[#tools_list + 1] = {
             name = name,
             description = tool.description,
@@ -77,18 +77,18 @@ fun mcp_handle_tools_list(msg: any): void
     })
 end
 
-fun mcp_handle_tools_call(msg: any): void
+mcp_handle_tools_call(msg: any): void
     params = msg.params
     name = params.name
     args = params.arguments
     tool = M.tools[name]
-    if tool == nil then
+    if tool == nil
         mcp_send_error(msg.id, -32601, "Tool not found: " .. name)
         return
     end
     
     res = tool.handler(args)
-    if type(res) == "string" then
+    if type(res) == "string"
         mcp_send_response(msg.id, {
             content = {
                 {
@@ -97,7 +97,7 @@ fun mcp_handle_tools_call(msg: any): void
                 }
             }
         })
-    elseif type(res) == "table" and res.isError then
+    elseif type(res) == "table" and res.isError
         mcp_send_response(msg.id, {
             isError = true,
             content = {
@@ -120,36 +120,36 @@ fun mcp_handle_tools_call(msg: any): void
     end
 end
 
-fun mcp_serve(): void
+mcp_serve(): void
     while true
         msg = mcp_read_message()
-        if msg == nil then
+        if msg == nil
             break
         end
-        if msg.method == "initialize" then
+        if msg.method == "initialize"
             mcp_handle_initialize(msg)
-        elseif msg.method == "tools/list" then
+        elseif msg.method == "tools/list"
             mcp_handle_tools_list(msg)
-        elseif msg.method == "tools/call" then
+        elseif msg.method == "tools/call"
             mcp_handle_tools_call(msg)
-        elseif msg.method == "notifications/initialized" then
+        elseif msg.method == "notifications/initialized"
             -- nothing to do
-        elseif msg.method == "ping" then
+        elseif msg.method == "ping"
             mcp_send_response(msg.id, {})
-        elseif msg.id ~= nil then
+        elseif msg.id != nil
             mcp_send_error(msg.id, -32601, "Method not found: " .. tostring(msg.method))
         end
     end
 end
 
-fun mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
+mcp_register_tool(name: str, p2: any, p3: any, p4: any): void
     -- Accept two calling conventions:
     --   3-arg: register_tool(name, inputSchema_with_description, handler)
     --   4-arg: register_tool(name, description, inputSchema, handler)
     -- Distinguish by type, not nil: Duo codegen leaves missing trailing args as
     -- non-nil garbage, so `p4 ~= nil` misfires on the 3-arg form and stores garbage
     -- as the handler (tools/call then crashes). `type(p4)=="function"` is unambiguous.
-    if type(p4) == "function" then
+    if type(p4) == "function"
         M.tools[name] = { name = name, description = p2 or "", inputSchema = p3, handler = p4 }
     else
         M.tools[name] = { name = name, description = p2.description or "", inputSchema = p2, handler = p3 }

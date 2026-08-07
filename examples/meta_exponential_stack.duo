@@ -14,7 +14,7 @@ type Point = { x: f64, y: f64, tag: str }
 type Pair = { x: f64, y: f64, tag: str }
 type Label = { tag: str }
 
-@comp.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", generate(meta) -> str
     acc = ""
     for i = 1, #meta.fields
         f = meta.fields[i]
@@ -25,11 +25,11 @@ end)
 
 @comp.derive.all("HasXY", TouchApi)
 
-fun pair_sig(a, b) -> str
+pair_sig(a, b) -> str
     a.name .. "x" .. b.name .. ";"
 end
 
-fun mark(meta) -> str
+mark(meta) -> str
     meta.name .. ";"
 end
 

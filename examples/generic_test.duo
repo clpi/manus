@@ -13,7 +13,7 @@ end
 -- Generic with early return in conditional
 -- Early returns in conditionals ARE allowed and supported
 fun safe_div<T>(a: T, b: T): T
-    if b == 0 then
+    if b == 0
         return a
     end
     a // b
@@ -26,11 +26,11 @@ end
 
 -- Generic function with type constraints via runtime checks
 fun print_if_str<T>(val: T): void
-    if type(val) == "string" then
+    if type(val) == "string"
         print("str value: " .. val)
         return
     end
-    if type(val) == "number" then
+    if type(val) == "number"
         print("num value: " .. tostring(val))
         return
     end

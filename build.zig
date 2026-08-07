@@ -216,6 +216,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"pass_gates:"},
     });
+    linkProductionKeywordClassify(b, pass11_gate_tests.root_module);
     const run_pass11_gate_tests = b.addRunArtifact(pass11_gate_tests);
 
     const pass11_native_tests = b.addTest(.{
@@ -226,6 +227,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"Pass 11"},
     });
+    linkProductionKeywordClassify(b, pass11_native_tests.root_module);
     const run_pass11_native_tests = b.addRunArtifact(pass11_native_tests);
 
     const pass11_gate_step = b.step("pass11-gate", "Pass 11 Profile A closure gate (native catalog + module tests, cross-platform)");
@@ -245,6 +247,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"pass_gates: pass12"},
     });
+    linkProductionKeywordClassify(b, pass12_gate_tests.root_module);
     const run_pass12_gate_tests = b.addRunArtifact(pass12_gate_tests);
     const pass12_gate_step = b.step("pass12-gate", "Pass 12 semantic autonomy gate (native, cross-platform)");
     pass12_gate_step.dependOn(&pass12_gate_cmd.step);
@@ -262,6 +265,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"pass_gates: pass13"},
     });
+    linkProductionKeywordClassify(b, pass13_gate_tests.root_module);
     const run_pass13_gate_tests = b.addRunArtifact(pass13_gate_tests);
     const pass13_gate_step = b.step("pass13-gate", "Pass 13 development control plane gate (native, cross-platform)");
     pass13_gate_step.dependOn(&pass13_gate_cmd.step);
@@ -279,6 +283,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"pass_gates: pass14"},
     });
+    linkProductionKeywordClassify(b, pass14_gate_tests.root_module);
     const run_pass14_gate_tests = b.addRunArtifact(pass14_gate_tests);
     const pass14_gate_step = b.step("pass14-gate", "Pass 14 constructive evolution gate (native, cross-platform)");
     pass14_gate_step.dependOn(&pass14_gate_cmd.step);
@@ -296,6 +301,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = &.{"pass_gates: pass15"},
     });
+    linkProductionKeywordClassify(b, pass15_gate_tests.root_module);
     const run_pass15_gate_tests = b.addRunArtifact(pass15_gate_tests);
     const pass15_gate_step = b.step("pass15-gate", "Pass 15 semantic shell gate (native, cross-platform)");
     pass15_gate_step.dependOn(&pass15_gate_cmd.step);
@@ -453,11 +459,136 @@ pub fn build(b: *std.Build) void {
     const proof_bundle_gate_step = b.step("proof-bundle-gate", "Alias for pass27-gate");
     proof_bundle_gate_step.dependOn(pass27_gate_step);
 
-    const bench_proof_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark_proof.sh" });
+    const foundation_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: self-hosting foundation"},
+    });
+    linkProductionKeywordClassify(b, foundation_gate_tests.root_module);
+    const run_foundation_gate_tests = b.addRunArtifact(foundation_gate_tests);
+    const foundation_gate_cmd = b.addRunArtifact(exe);
+    foundation_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "foundation" });
+    foundation_gate_cmd.step.dependOn(b.getInstallStep());
+    foundation_gate_cmd.setCwd(b.path("."));
+    const foundation_gate_step = b.step("foundation-gate", "Self-hosting foundation catalog + F-G01..F-G10 schema gate (M0)");
+    foundation_gate_step.dependOn(&foundation_gate_cmd.step);
+    foundation_gate_step.dependOn(&run_foundation_gate_tests.step);
+    const self_hosting_foundation_gate_step = b.step("self-hosting-foundation-gate", "Alias for foundation-gate");
+    self_hosting_foundation_gate_step.dependOn(foundation_gate_step);
+
+    const pass34_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass34 HPLS"},
+    });
+    linkProductionKeywordClassify(b, pass34_gate_tests.root_module);
+    const run_pass34_gate_tests = b.addRunArtifact(pass34_gate_tests);
+    const pass34_gate_cmd = b.addRunArtifact(exe);
+    pass34_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass34" });
+    pass34_gate_cmd.step.dependOn(b.getInstallStep());
+    pass34_gate_cmd.setCwd(b.path("."));
+    const pass34_l1_proof = b.addRunArtifact(exe);
+    pass34_l1_proof.addArgs(&.{ "run", "examples/l1_module_sealed_proof.duo" });
+    pass34_l1_proof.step.dependOn(b.getInstallStep());
+    pass34_l1_proof.setCwd(b.path("."));
+    const pass34_gate_step = b.step("pass34-gate", "Pass 34 HPLS Frontier catalog Phase 0+1 gate (L6 manifest + L1 seal)");
+    pass34_gate_step.dependOn(&pass34_gate_cmd.step);
+    pass34_gate_step.dependOn(&run_pass34_gate_tests.step);
+    pass34_gate_step.dependOn(&pass34_l1_proof.step);
+    const hpls_gate_step = b.step("hpls-gate", "Alias for pass34-gate");
+    hpls_gate_step.dependOn(pass34_gate_step);
+    const hpls_frontier_gate_step = b.step("hpls-frontier-gate", "Alias for pass34-gate");
+    hpls_frontier_gate_step.dependOn(pass34_gate_step);
+
+    const native_diff_cmd = b.addSystemCommand(&.{ "bash", "scripts/native_differential.sh" });
+    native_diff_cmd.step.dependOn(b.getInstallStep());
+    native_diff_cmd.setCwd(b.path("."));
+    const native_diff_step = b.step("native-differential", "Direct ARM64 backend must agree with the C backend on the native corpus");
+    native_diff_step.dependOn(&native_diff_cmd.step);
+
+    const direct_link_cmd = b.addSystemCommand(&.{ "bash", "scripts/direct_module_link_proof.sh" });
+    direct_link_cmd.step.dependOn(b.getInstallStep());
+    direct_link_cmd.setCwd(b.path("."));
+    const direct_link_step = b.step("direct-module-link", "A direct-backend program must be able to call a req'd Duo module");
+    direct_link_step.dependOn(&direct_link_cmd.step);
+
+    const pass49_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass49_gate.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_pass49_gate = b.addRunArtifact(pass49_gate_tests);
+    const pass49_gate_step = b.step("pass49-gate", "Pass 49 sums/protocols/demand-return proofs");
+    pass49_gate_step.dependOn(&run_pass49_gate.step);
+
+    const pass52_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass52_gate.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_pass52_gate = b.addRunArtifact(pass52_gate_tests);
+    const pass52_gate_step = b.step("pass52-gate", "Pass 52 no-magic / de-magicking proofs");
+    pass52_gate_step.dependOn(&run_pass52_gate.step);
+
+    const pass48_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass48_gate.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_pass48_gate = b.addRunArtifact(pass48_gate_tests);
+    const pass48_gate_step = b.step("pass48-gate", "Pass 48 canonical specification consolidation proofs");
+    pass48_gate_step.dependOn(&run_pass48_gate.step);
+
+    const idiom_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_idiom_gate.sh" });
+    idiom_cmd.setCwd(b.path("."));
+    const idiom_step = b.step("idiom-gate", "Every .duo file must use canonical Duo idioms");
+    idiom_step.dependOn(&idiom_cmd.step);
+
+    const pass36_gate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/pass_gates.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = &.{"pass_gates: pass36 universal semantic access"},
+    });
+    linkProductionKeywordClassify(b, pass36_gate_tests.root_module);
+    const run_pass36_gate_tests = b.addRunArtifact(pass36_gate_tests);
+    const pass36_gate_cmd = b.addRunArtifact(exe);
+    pass36_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass36" });
+    pass36_gate_cmd.step.dependOn(b.getInstallStep());
+    pass36_gate_cmd.setCwd(b.path("."));
+    const pass36_gate_step = b.step("pass36-gate", "Pass 36 universal semantic access catalog Phase 0 gate (recorded calculus)");
+    pass36_gate_step.dependOn(&pass36_gate_cmd.step);
+    pass36_gate_step.dependOn(&run_pass36_gate_tests.step);
+    const semantic_access_gate_step = b.step("semantic-access-gate", "Alias for pass36-gate");
+    semantic_access_gate_step.dependOn(pass36_gate_step);
+    const projection_gate_step = b.step("projection-gate", "Alias for pass36-gate");
+    projection_gate_step.dependOn(pass36_gate_step);
+
+    const bench_proof_cmd = b.addSystemCommand(&.{ "bash", "scripts/run_benchmark_proof_impl.sh" });
     bench_proof_cmd.setCwd(b.path("."));
     bench_proof_cmd.step.dependOn(b.getInstallStep());
     const bench_proof_step = b.step("bench-proof-gate", "P0 benchmark 3-profile correctness + proof artifacts");
     bench_proof_step.dependOn(&bench_proof_cmd.step);
+
+    const duo_idiom_cmd = b.addSystemCommand(&.{ "bash", "scripts/duo_idiom_gate.sh" });
+    duo_idiom_cmd.setCwd(b.path("."));
+    duo_idiom_cmd.step.dependOn(b.getInstallStep());
+    const duo_idiom_step = b.step("duo-idiom-gate", "Enforce compact idiomatic .duo in scripts/ and examples/");
+    duo_idiom_step.dependOn(&duo_idiom_cmd.step);
 
     const pass21_gate_cmd = b.addRunArtifact(exe);
     pass21_gate_cmd.addArgs(&.{ "catalog", "audit", "gate", "pass21" });
@@ -522,6 +653,11 @@ pub fn build(b: *std.Build) void {
     pass16_source_cursor_proof.step.dependOn(b.getInstallStep());
     pass16_source_cursor_proof.setCwd(b.path("."));
 
+    const pass16_source_module_proof = b.addRunArtifact(exe);
+    pass16_source_module_proof.addArgs(&.{ "run", "examples/pass16_source_module_proof.duo" });
+    pass16_source_module_proof.step.dependOn(b.getInstallStep());
+    pass16_source_module_proof.setCwd(b.path("."));
+
     const pass16_m1_verify = b.addRunArtifact(exe);
     pass16_m1_verify.addArgs(&.{ "selfhost", "verify" });
     pass16_m1_verify.step.dependOn(b.getInstallStep());
@@ -546,6 +682,7 @@ pub fn build(b: *std.Build) void {
     pass16_m1_smoke_step.dependOn(&pass16_m1_diff.step);
     pass16_m1_smoke_step.dependOn(&pass16_m1_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_source_cursor_proof.step);
+    pass16_m1_smoke_step.dependOn(&pass16_source_module_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_corpus_proof.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_embed.step);
     pass16_m1_smoke_step.dependOn(&pass16_lexer_tokenize.step);
@@ -618,7 +755,7 @@ pub fn build(b: *std.Build) void {
 
     // G-061 strict dispatch gate: metaprogramming smoke under DUO_TRANSFORM_GATE=1
     const meta_gate_cmd = b.addSystemCommand(&.{
-        "bash", "-c",
+        "bash",                                                                                                                 "-c",
         "DUO_TRANSFORM_GATE=1 DUO_PROVENANCE=1 scripts/duo_lock.sh -- ./zig-out/bin/duo run examples/metaprogramming_test.duo",
     });
     meta_gate_cmd.setCwd(b.path("."));

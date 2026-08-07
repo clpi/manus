@@ -5,21 +5,21 @@
 -- dodges the f64-literal-pool follow-up). See examples/native_float_harness.c.
 
 @export
-fun duo_fadd(a: f64, b: f64): f64
+duo_fadd(a: f64, b: f64): f64
     a + b
 end
 
 @export
-fun duo_fmul(a: f64, b: f64): f64
+duo_fmul(a: f64, b: f64): f64
     a * b
 end
 
 @export
-fun duo_scale(a: f64): f64
+duo_scale(a: f64): f64
     a * 3.14
 end
 
 @export
-fun duo_wrap(a: f64, b: f64): f64
+duo_wrap(a: f64, b: f64): f64
     duo_fadd(a, b)
 end

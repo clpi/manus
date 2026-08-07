@@ -2,11 +2,11 @@
 -- Constraints are checked at instantiation; methods dispatch to table modules.
 
 concept Hashable
-    fun hash(self) -> i64
+    hash(self) -> i64
 end
 
 Good = {}
-fun Good:hash() -> i64
+Good:hash() -> i64
     return 99
 end
 

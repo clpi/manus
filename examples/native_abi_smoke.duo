@@ -2,16 +2,16 @@
 -- Run: duo run examples/native_abi_smoke.duo
 
 @native
-fun native_add(a: i64, b: i64): i64
+native_add(a: i64, b: i64): i64
     return a + b
 end
 
-fun use_native(): i64
+use_native(): i64
     native_add(10, 20)
 end
 
 RESULT = use_native()
 print("RESULT native_abi_sum = " .. tostring(RESULT))
-if RESULT ~= 30
+if RESULT != 30
     error("native_abi smoke failed")
 end

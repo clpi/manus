@@ -1,0 +1,8 @@
+-- expect: 30
+-- Positional table, constant index. Reference Lua gives 30 (t[1]=10, t[2]=20).
+-- Gated native_only because the C BACKEND IS WRONG here: it returns 0 for t[1],
+-- where both Lua and the direct backend give 10. C is not a valid oracle.
+main(): i64
+    t = { 10, 20, 30 }
+    return t[1] + t[2]
+end

@@ -1,15 +1,15 @@
 -- std.net_url — URL parsing and construction (mirrors Go's net/url)
 
 -- escape: percent-encode a string for use in URL components.
-fun escape(s: str): str
-    if s == nil then return "" end
+escape(s: str): str
+    if s == nil return "" end
     out = {}
     i = 1
     while i <= string.len(s)
         b = string.byte(s, i)
-        if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126 then
+        if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126
             out[rawlen(out) + 1] = string.sub(s, i, i)
-        elseif b == 32 then
+        elseif b == 32
             out[rawlen(out) + 1] = "+"
         else
             out[rawlen(out) + 1] = string.format("%%%02X", b)
@@ -20,13 +20,13 @@ fun escape(s: str): str
 end
 
 -- path_escape: percent-encode for URL path segments (preserves /).
-fun path_escape(s: str): str
-    if s == nil then return "" end
+path_escape(s: str): str
+    if s == nil return "" end
     out = {}
     i = 1
     while i <= string.len(s)
         b = string.byte(s, i)
-        if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126 or b == 47 then
+        if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or (b >= 48 and b <= 57) or b == 45 or b == 46 or b == 95 or b == 126 or b == 47
             out[rawlen(out) + 1] = string.sub(s, i, i)
         else
             out[rawlen(out) + 1] = string.format("%%%02X", b)
@@ -37,22 +37,22 @@ fun path_escape(s: str): str
 end
 
 -- unescape: decode a percent-encoded string.
-fun unescape(s: str): str
-    if s == nil then return "" end
+unescape(s: str): str
+    if s == nil return "" end
     out = {}
     i = 1
     while i <= string.len(s)
         ch = string.sub(s, i, i)
-        if ch == "%" and i + 2 <= string.len(s) then
+        if ch == "%" and i + 2 <= string.len(s)
             hex = string.sub(s, i + 1, i + 2)
             code = tonumber(hex, 16)
-            if code ~= nil then
+            if code != nil
                 out[rawlen(out) + 1] = string.char(code)
             else
                 out[rawlen(out) + 1] = ch
             end
             i += 3
-        elseif ch == "+" then
+        elseif ch == "+"
             out[rawlen(out) + 1] = " "
             i += 1
         else
@@ -64,14 +64,14 @@ fun unescape(s: str): str
 end
 
 -- parse_query: parse a query string into a table mapping keys to value arrays.
-fun parse_query(query: str): any
-    if query == nil or query == "" then return {} end
+parse_query(query: str): any
+    if query == nil or query == "" return {} end
     out = {}
     parts = {}
     start = 1
     i = 1
     while i <= string.len(query)
-        if string.sub(query, i, i) == "&" then
+        if string.sub(query, i, i) == "&"
             parts[rawlen(parts) + 1] = string.sub(query, start, i - 1)
             start = i + 1
         end
@@ -84,14 +84,14 @@ fun parse_query(query: str): any
         eq = string.find(pair, "=", 1, true)
         k = ""
         v = ""
-        if eq ~= nil then
+        if eq != nil
             k = unescape(string.sub(pair, 1, eq - 1))
             v = unescape(string.sub(pair, eq + 1))
         else
             k = unescape(pair)
             v = ""
         end
-        if out[k] == nil then out[k] = {} end
+        if out[k] == nil out[k] = {} end
         out[k][rawlen(out[k]) + 1] = v
         j += 1
     end
@@ -99,11 +99,11 @@ fun parse_query(query: str): any
 end
 
 -- encode_query: encode a query table into a URL query string.
-fun encode_query(params: any): str
-    if params == nil then return "" end
+encode_query(params: any): str
+    if params == nil return "" end
     out = {}
     for k, vs in pairs(params)
-        if type(vs) == "table" then
+        if type(vs) == "table"
             i = 1
             while i <= rawlen(vs)
                 out[rawlen(out) + 1] = escape(k) .. "=" .. escape(vs[i])
@@ -117,113 +117,113 @@ fun encode_query(params: any): str
 end
 
 -- parse: parse a URL string into a structured table.
-fun parse(raw_url: str): any
-    if raw_url == nil or raw_url == "" then return nil end
+parse(raw_url: str): any
+    if raw_url == nil or raw_url == "" return nil end
     url = raw_url
     scheme = ""
     colon = string.find(url, "://", 1, true)
-    if colon ~= nil then
+    if colon != nil
         scheme = string.sub(url, 1, colon - 1)
         url = string.sub(url, colon + 3)
     else
         colon2 = string.find(url, ":", 1, true)
         slash = string.find(url, "/", 1, true)
-        if colon2 ~= nil and (slash == nil or colon2 < slash) then
+        if colon2 != nil and (slash == nil or colon2 < slash)
             scheme = string.sub(url, 1, colon2 - 1)
             url = string.sub(url, colon2 + 1)
         end
     end
     fragment = ""
     hash = string.find(url, "#", 1, true)
-    if hash ~= nil then
+    if hash != nil
         fragment = string.sub(url, hash + 1)
         url = string.sub(url, 1, hash - 1)
     end
     raw_query = ""
     query = nil
     qmark = string.find(url, "?", 1, true)
-    if qmark ~= nil then
+    if qmark != nil
         raw_query = string.sub(url, qmark + 1)
         query = parse_query(raw_query)
         url = string.sub(url, 1, qmark - 1)
     end
     user = ""
     at = string.find(url, "@", 1, true)
-    if at ~= nil then
+    if at != nil
         user = string.sub(url, 1, at - 1)
         url = string.sub(url, at + 1)
     end
     host = url
     port = nil
     slash_pos = string.find(url, "/", 1, true)
-    if slash_pos ~= nil then
+    if slash_pos != nil
         host = string.sub(url, 1, slash_pos - 1)
         url = string.sub(url, slash_pos)
     else
         url = ""
     end
     colon_pos = string.find(host, ":", 1, true)
-    if colon_pos ~= nil then
+    if colon_pos != nil
         port = tonumber(string.sub(host, colon_pos + 1))
         host = string.sub(host, 1, colon_pos - 1)
     end
-    if url == "" then url = "/" end
+    if url == "" url = "/" end
     {scheme = scheme, host = host, port = port, path = url, query = query, raw_query = raw_query, fragment = fragment, user = user}
 end
 
 -- resolve: resolve a reference URL against a base URL.
-fun resolve(base: str, ref: str): str
-    if ref == nil or ref == "" then return base end
-    if string.find(ref, "://", 1, true) ~= nil then return ref end
-    if string.sub(ref, 1, 1) == "/" then
+resolve(base: str, ref: str): str
+    if ref == nil or ref == "" return base end
+    if string.find(ref, "://", 1, true) != nil return ref end
+    if string.sub(ref, 1, 1) == "/"
         base_url = parse(base)
         result = base_url.scheme .. "://"
-        if base_url.user ~= "" then result = result .. base_url.user .. "@" end
+        if base_url.user != "" result = result .. base_url.user .. "@" end
         result = result .. base_url.host
-        if base_url.port ~= nil then result = result .. ":" .. tostring(base_url.port) end
+        if base_url.port != nil result = result .. ":" .. tostring(base_url.port) end
         return result .. ref
     end
     base_url = parse(base)
     base_path = base_url.path
     last_slash = string.find(base_path, "/", 1, true)
-    if last_slash ~= nil then
+    if last_slash != nil
         while true
             next_slash = string.find(base_path, "/", last_slash + 1, true)
-            if next_slash == nil then break end
+            if next_slash == nil break end
             last_slash = next_slash
         end
     end
     new_path = ref
-    if last_slash ~= nil then
+    if last_slash != nil
         new_path = string.sub(base_path, 1, last_slash) .. ref
     end
     result = base_url.scheme .. "://"
-    if base_url.user ~= "" then result = result .. base_url.user .. "@" end
+    if base_url.user != "" result = result .. base_url.user .. "@" end
     result = result .. base_url.host
-    if base_url.port ~= nil then result = result .. ":" .. tostring(base_url.port) end
+    if base_url.port != nil result = result .. ":" .. tostring(base_url.port) end
     result .. new_path
 end
 
 -- build: construct a URL string from a parsed URL table.
-fun build(u: any): str
-    if u == nil then return "" end
+build(u: any): str
+    if u == nil return "" end
     result = ""
-    if u.scheme ~= nil and u.scheme ~= "" then
+    if u.scheme != nil and u.scheme != ""
         result = u.scheme .. "://"
     end
-    if u.user ~= nil and u.user ~= "" then
+    if u.user != nil and u.user != ""
         result = result .. u.user .. "@"
     end
     result = result .. (u.host or "")
-    if u.port ~= nil then result = result .. ":" .. tostring(u.port) end
+    if u.port != nil result = result .. ":" .. tostring(u.port) end
     result = result .. (u.path or "/")
-    if u.raw_query ~= nil and u.raw_query ~= "" then
+    if u.raw_query != nil and u.raw_query != ""
         result = result .. "?" .. u.raw_query
-    elseif u.query ~= nil then
+    elseif u.query != nil
         qs = encode_query(u.query)
-        if qs ~= "" then result = result .. "?" .. qs end
+        if qs != "" result = result .. "?" .. qs end
     end
-    if u.fragment ~= nil and u.fragment ~= "" then
+    if u.fragment != nil and u.fragment != ""
         result = result .. "#" .. u.fragment
     end
     result

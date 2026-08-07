@@ -5,8 +5,8 @@
 -- Descriptive Statistics
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_mean(data: any): f64
-    if #data == 0 then return 0 end
+stats_mean(data: any): f64
+    if #data == 0 return 0.0 end
     sum = 0
     for v in data
         sum += v
@@ -14,8 +14,8 @@ fun stats_mean(data: any): f64
     sum / #data
 end
 
-fun stats_median(data: any): f64
-    if #data == 0 then return 0 end
+stats_median(data: any): f64
+    if #data == 0 return 0.0 end
     sorted = {}
     for v in data
         sorted[#sorted + 1] = v
@@ -23,15 +23,15 @@ fun stats_median(data: any): f64
     table.sort(sorted)
 
     n = #sorted
-    if n % 2 == 1 then
+    if n % 2 == 1
         return sorted[math.floor(n / 2) + 1]
     else
         return (sorted[n / 2] + sorted[n / 2 + 1]) / 2
     end
 end
 
-fun stats_mode(data: any): any
-    if #data == 0 then return nil end
+stats_mode(data: any): any
+    if #data == 0 return nil end
 
     counts = {}
     for v in data
@@ -41,7 +41,7 @@ fun stats_mode(data: any): any
     max_count = 0
     mode = nil
     for v, count in counts
-        if count > max_count then
+        if count > max_count
             max_count = count
             mode = v
         end
@@ -49,9 +49,9 @@ fun stats_mode(data: any): any
     {value = mode, count = max_count}
 end
 
-fun stats_variance(data: any, population: bool): f64
+stats_variance(data: any, population: bool): f64
     n = #data
-    if n == 0 then return 0 end
+    if n == 0 return 0.0 end
 
     mean = stats_mean(data)
     sum_sq = 0
@@ -60,21 +60,21 @@ fun stats_variance(data: any, population: bool): f64
         sum_sq += diff * diff
     end
 
-    if population then
+    if population
         return sum_sq / n
     else
         return sum_sq / (n - 1)
     end
 end
 
-fun stats_std_dev(data: any, population: bool): f64
+stats_std_dev(data: any, population: bool): f64
     math.sqrt(stats_variance(data, population))
 end
 
-fun stats_standardize(data: any): any
+stats_standardize(data: any): any
     mean = stats_mean(data)
     std = stats_std_dev(data, false)
-    if std < 1e-10 then std = 1 end
+    if std < 1e-10 std = 1 end
 
     result = {}
     for v in data
@@ -87,8 +87,8 @@ end
 -- Percentiles & Quartiles
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_percentile(data: any, p: f64): f64
-    if #data == 0 then return 0 end
+stats_percentile(data: any, p: f64): f64
+    if #data == 0 return 0.0 end
     sorted = {}
     for v in data
         sorted[#sorted + 1] = v
@@ -98,7 +98,7 @@ fun stats_percentile(data: any, p: f64): f64
     k = (p / 100) * (#sorted - 1)
     f = math.floor(k)
     c = math.ceil(k)
-    if f == c then
+    if f == c
         return sorted[f + 1]
     end
     d0 = sorted[f + 1] * (c - k)
@@ -106,7 +106,7 @@ fun stats_percentile(data: any, p: f64): f64
     d0 + d1
 end
 
-fun stats_quartiles(data: any): any
+stats_quartiles(data: any): any
     {
         q1 = stats_percentile(data, 25),
         q2 = stats_percentile(data, 50),
@@ -114,7 +114,7 @@ fun stats_quartiles(data: any): any
     }
 end
 
-fun stats_iqr(data: any): f64
+stats_iqr(data: any): f64
     q = stats_quartiles(data)
     q.q3 - q.q1
 end
@@ -123,9 +123,9 @@ end
 -- Covariance & Correlation
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_covariance(x: any, y: any): f64
+stats_covariance(x: any, y: any): f64
     n = #x
-    if n == 0 or n ~= #y then return 0 end
+    if n == 0 or n != #y return 0.0 end
 
     mean_x = stats_mean(x)
     mean_y = stats_mean(y)
@@ -137,12 +137,12 @@ fun stats_covariance(x: any, y: any): f64
     sum / (n - 1)
 end
 
-fun stats_correlation(x: any, y: any): f64
+stats_correlation(x: any, y: any): f64
     cov = stats_covariance(x, y)
     std_x = stats_std_dev(x, false)
     std_y = stats_std_dev(y, false)
 
-    if std_x < 1e-10 or std_y < 1e-10 then return 0 end
+    if std_x < 1e-10 or std_y < 1e-10 return 0.0 end
     cov / (std_x * std_y)
 end
 
@@ -150,26 +150,26 @@ end
 -- Distribution Functions
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_normal_pdf(x: f64, mean: f64, std: f64): f64
-    if std < 1e-10 then return 0 end
+stats_normal_pdf(x: f64, mean: f64, std: f64): f64
+    if std < 1e-10 return 0.0 end
     z = (x - mean) / std
     (1 / (std * math.sqrt(2 * math.pi))) * math.exp(-0.5 * z * z)
 end
 
-fun stats_normal_cdf(x: f64, mean: f64, std: f64): f64
-    if std < 1e-10 then return x >= mean and 1 or 0 end
+stats_normal_cdf(x: f64, mean: f64, std: f64): f64
+    if std < 1e-10 return x >= mean and 1 or 0 end
     z = (x - mean) / std
     0.5 * (1 + math.erf(z / math.sqrt(2)))
 end
 
-fun stats_uniform_pdf(x: f64, a: f64, b: f64): f64
-    if x < a or x > b then return 0 end
+stats_uniform_pdf(x: f64, a: f64, b: f64): f64
+    if x < a or x > b return 0.0 end
     1 / (b - a)
 end
 
-fun stats_uniform_cdf(x: f64, a: f64, b: f64): f64
-    if x < a then return 0 end
-    if x > b then return 1 end
+stats_uniform_cdf(x: f64, a: f64, b: f64): f64
+    if x < a return 0.0 end
+    if x > b return 1.0 end
     (x - a) / (b - a)
 end
 
@@ -177,18 +177,18 @@ end
 -- Histogram
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_histogram(data: any, bins: i64): any
-    if #data == 0 then return {bins = {}, edges = {}} end
-    if bins == nil then bins = 10 end
+stats_histogram(data: any, bins: i64): any
+    if #data == 0 return {bins = {}, edges = {}} end
+    if bins == nil bins = 10 end
 
     min_val = data[1]
     max_val = data[1]
     for v in data
-        if v < min_val then min_val = v end
-        if v > max_val then max_val = v end
+        if v < min_val min_val = v end
+        if v > max_val max_val = v end
     end
 
-    if min_val == max_val then
+    if min_val == max_val
         return {
             bins = {#data},
             edges = {min_val, max_val},
@@ -203,7 +203,7 @@ fun stats_histogram(data: any, bins: i64): any
 
     for v in data
         bin = math.floor((v - min_val) / bin_width) + 1
-        if bin > bins then bin = bins end
+        if bin > bins bin = bins end
         counts[bin] = counts[bin] + 1
     end
 
@@ -219,8 +219,8 @@ end
 -- Summary Statistics
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_summary(data: any): any
-    if #data == 0 then
+stats_summary(data: any): any
+    if #data == 0
         return {count = 0}
     end
 
@@ -247,7 +247,7 @@ end
 -- Outlier Detection
 -- ═══════════════════════════════════════════════════════════════
 
-fun stats_outliers_iqr(data: any): any
+stats_outliers_iqr(data: any): any
     q = stats_quartiles(data)
     iqr = q.q3 - q.q1
     lower = q.q1 - 1.5 * iqr
@@ -255,23 +255,23 @@ fun stats_outliers_iqr(data: any): any
 
     outliers = {}
     for v in data
-        if v < lower or v > upper then
+        if v < lower or v > upper
             outliers[#outliers + 1] = v
         end
     end
     {lower = lower, upper = upper, outliers = outliers}
 end
 
-fun stats_outliers_zscore(data: any, threshold: f64): any
-    if threshold == nil then threshold = 3 end
+stats_outliers_zscore(data: any, threshold: f64): any
+    if threshold == nil threshold = 3 end
     mean = stats_mean(data)
     std = stats_std_dev(data, false)
-    if std < 1e-10 then return {outliers = {}} end
+    if std < 1e-10 return {outliers = {}} end
 
     outliers = {}
     for v in data
         z = math.abs((v - mean) / std)
-        if z > threshold then
+        if z > threshold
             outliers[#outliers + 1] = {value = v, zscore = z}
         end
     end

@@ -1,6 +1,6 @@
 global finalized = 0
 
-local object = setmetatable({}, {
+object = setmetatable({}, {
     __gc = fun(self: any): void
         finalized += 1
     end,

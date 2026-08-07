@@ -1,20 +1,20 @@
 -- Comptime-built @pipeline spec → fused C loop (map + reduce over range)
 -- Run: duo run examples/pipeline_comptime_fuse_showcase.duo
 
-fun pipeline_spec(map_fn: str, reduce_fn: str) -> str
+pipeline_spec(map_fn: str, reduce_fn: str) -> str
     '{ fn = "fused_sum_sq", source = "range", start = 1, stop = 6, elem = "int64_t", kind = "reduce", init = "0", map = "' .. map_fn .. '", reduce = "' .. reduce_fn .. '" }'
 end
 
-FUSED = @(string.len(@(__pipeline(pipeline_spec("square", "acc_add")))))
+FUSED = @(string.len(@(@comp.pipeline(pipeline_spec("square", "acc_add")))))
 
-@c.emit(@(__pipeline(pipeline_spec("square", "acc_add"))))
+@c.emit(@(@comp.pipeline(pipeline_spec("square", "acc_add"))))
 
 @c.emit([[
 static inline int64_t square(int64_t x) { return x * x; }
 static inline int64_t acc_add(int64_t a, int64_t b) { return a + b; }
 ]])
 
-fun answer(): i64
+answer(): i64
     @c.call("fused_sum_sq")
 end
 

@@ -12,7 +12,7 @@ Deploy = req "std.ml.deploy"
 
 @device(.auto)
 @profile
-fun bench_all(): f64
+bench_all(): f64
     s = 0.0
     s += ml.matmul_256()
     s += ml.softmax_1k()
@@ -25,12 +25,12 @@ end
 
 @autodiff
 @device(.auto)
-fun loss_mnist(model, x, target): f64
+loss_mnist(model, x, target): f64
     pred = NN.forward(model, x)
     return NN.cross_entropy(pred, target)
 end
 
-fun main()
+main()
     print("=== Duo ML Showcase (Mojo-class path) ===")
     print("")
 

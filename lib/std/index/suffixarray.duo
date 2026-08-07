@@ -1,22 +1,22 @@
 -- std.index.suffixarray — suffix array for substring search (mirrors Go's index/suffixarray)
 -- Builds a suffix array (sorted list of all suffixes) for efficient substring search.
 
-local string = req "std.string"
+string = req "std.string"
 
-fun build(data: str): any
-    if data == nil then return {data = "", sa = {}} end
-    local n = string.len(data)
-    local sa = {}
+build(data: str): any
+    if data == nil return {data = "", sa = {}} end
+    n = string.len(data)
+    sa = {}
     for i = 1, n
         sa[i] = i
     end
     -- Sort suffixes using insertion sort (simple, adequate for small-medium data)
     for i = 1, n
-        local j = i
+        j = i
         while j > 1
-            local a = string.sub(data, sa[j - 1])
-            local b = string.sub(data, sa[j])
-            if a <= b then break end
+            a = string.sub(data, sa[j - 1])
+            b = string.sub(data, sa[j])
+            if a <= b break end
             sa[j - 1], sa[j] = sa[j], sa[j - 1]
             j -= 1
         end
@@ -24,62 +24,62 @@ fun build(data: str): any
     {data = data, sa = sa}
 end
 
-fun lookup(sa_obj: any, pattern: str): any
-    local data = sa_obj.data
-    local sa = sa_obj.sa
-    local n = string.len(data)
-    local plen = string.len(pattern)
-    if plen == 0 or n == 0 then return {} end
-    local results = {}
+lookup(sa_obj: any, pattern: str): any
+    data = sa_obj.data
+    sa = sa_obj.sa
+    n = string.len(data)
+    plen = string.len(pattern)
+    if plen == 0 or n == 0 return {} end
+    results = {}
     -- Binary search for first occurrence
-    local lo = 1
-    local hi = n
-    while lo <= hi
-        local mid = math.floor((lo + hi) / 2)
-        local suffix = string.sub(data, sa[mid])
-        local cmp = 0
-        if string.len(suffix) < plen then
-            if suffix < pattern then cmp = -1 else cmp = 1 end
-        else
-            local prefix = string.sub(suffix, 1, plen)
-            if prefix < pattern then cmp = -1 elseif prefix > pattern then cmp = 1 end
-        end
-        if cmp < 0 then
-            lo = mid + 1
-        else
-            hi = mid - 1
-        end
-    end
-    local start = lo
+    lo = 1
     hi = n
     while lo <= hi
-        local mid = math.floor((lo + hi) / 2)
-        local suffix = string.sub(data, sa[mid])
-        local cmp = 0
-        if string.len(suffix) < plen then
-            if suffix > pattern then cmp = 1 else cmp = -1 end
+        mid = math.floor((lo + hi) / 2)
+        suffix = string.sub(data, sa[mid])
+        cmp = 0
+        if string.len(suffix) < plen
+            if suffix < pattern cmp = -1 else cmp = 1 end
         else
-            local prefix = string.sub(suffix, 1, plen)
-            if prefix > pattern then cmp = 1 elseif prefix < pattern then cmp = -1 end
+            prefix = string.sub(suffix, 1, plen)
+            if prefix < pattern cmp = -1 elseif prefix > pattern cmp = 1 end
         end
-        if cmp <= 0 then
+        if cmp < 0
             lo = mid + 1
         else
             hi = mid - 1
         end
     end
-    local end_pos = lo - 1
+    start = lo
+    hi = n
+    while lo <= hi
+        mid = math.floor((lo + hi) / 2)
+        suffix = string.sub(data, sa[mid])
+        cmp = 0
+        if string.len(suffix) < plen
+            if suffix > pattern cmp = 1 else cmp = -1 end
+        else
+            prefix = string.sub(suffix, 1, plen)
+            if prefix > pattern cmp = 1 elseif prefix < pattern cmp = -1 end
+        end
+        if cmp <= 0
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    end_pos = lo - 1
     for i = start, end_pos
         results[rawlen(results) + 1] = sa[i] - 1
     end
     results
 end
 
-fun find_all(sa_obj: any, pattern: str): any
+find_all(sa_obj: any, pattern: str): any
     lookup(sa_obj, pattern)
 end
 
-fun contains(sa_obj: any, pattern: str): bool
+contains(sa_obj: any, pattern: str): bool
     rawlen(lookup(sa_obj, pattern)) > 0
 end
 

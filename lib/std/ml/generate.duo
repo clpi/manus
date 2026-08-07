@@ -5,7 +5,7 @@
 -- Generation Config
 -- ═══════════════════════════════════════════════════════════════
 
-fun generation_config_new(): any
+generation_config_new(): any
     {
         max_tokens = 512,
         temperature = 1.0,
@@ -20,32 +20,32 @@ fun generation_config_new(): any
     }
 end
 
-fun generation_config_set_max_tokens(config: any, max_tokens: i64): any
+generation_config_set_max_tokens(config: any, max_tokens: i64): any
     config.max_tokens = max_tokens
     config
 end
 
-fun generation_config_set_temperature(config: any, temperature: f64): any
+generation_config_set_temperature(config: any, temperature: f64): any
     config.temperature = temperature
     config
 end
 
-fun generation_config_set_top_k(config: any, top_k: i64): any
+generation_config_set_top_k(config: any, top_k: i64): any
     config.top_k = top_k
     config
 end
 
-fun generation_config_set_top_p(config: any, top_p: f64): any
+generation_config_set_top_p(config: any, top_p: f64): any
     config.top_p = top_p
     config
 end
 
-fun generation_config_set_stop(config: any, stop: any): any
+generation_config_set_stop(config: any, stop: any): any
     config.stop = stop
     config
 end
 
-fun generation_config_set_seed(config: any, seed: i64): any
+generation_config_set_seed(config: any, seed: i64): any
     config.seed = seed
     config
 end
@@ -54,12 +54,12 @@ end
 -- Sampling Strategies
 -- ═══════════════════════════════════════════════════════════════
 
-fun sample_greedy(logits: any): i64
+sample_greedy(logits: any): i64
     max_idx = 1
     max_val = logits[1]
     i = 2
     while i <= #logits
-        if logits[i] > max_val then
+        if logits[i] > max_val
             max_val = logits[i]
             max_idx = i
         end
@@ -68,8 +68,8 @@ fun sample_greedy(logits: any): i64
     max_idx
 end
 
-fun sample_temperature(logits: any, temperature: f64): i64
-    if temperature < 0.01 then return sample_greedy(logits) end
+sample_temperature(logits: any, temperature: f64): i64
+    if temperature < 0.01 return sample_greedy(logits) end
 
     -- Apply temperature
     scaled = {}
@@ -84,8 +84,8 @@ fun sample_temperature(logits: any, temperature: f64): i64
     return sample_from_probs(probs)
 end
 
-fun sample_top_k(logits: any, k: i64, temperature: f64): i64
-    if temperature < 0.01 then return sample_greedy(logits) end
+sample_top_k(logits: any, k: i64, temperature: f64): i64
+    if temperature < 0.01 return sample_greedy(logits) end
 
     -- Find top k
     indexed = {}
@@ -94,7 +94,7 @@ fun sample_top_k(logits: any, k: i64, temperature: f64): i64
     end
 
     -- Sort by logit descending
-    table.sort(indexed, function(a, b) return a.logit > b.logit end)
+    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
 
     -- Keep top k
     top_k = {}
@@ -118,15 +118,15 @@ fun sample_top_k(logits: any, k: i64, temperature: f64): i64
     top_k[chosen].idx
 end
 
-fun sample_top_p(logits: any, top_p: f64, temperature: f64): i64
-    if temperature < 0.01 then return sample_greedy(logits) end
+sample_top_p(logits: any, top_p: f64, temperature: f64): i64
+    if temperature < 0.01 return sample_greedy(logits) end
 
     -- Sort logits
     indexed = {}
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, function(a, b) return a.logit > b.logit end)
+    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
 
     -- Apply temperature and softmax
     scaled = {}
@@ -141,14 +141,14 @@ fun sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     i = 1
     while i <= #probs
         cumulative += probs[i]
-        if cumulative >= top_p then
+        if cumulative >= top_p
             cutoff = i
             break
         end
         i += 1
     end
 
-    if cutoff == 0 then cutoff = #probs end
+    if cutoff == 0 cutoff = #probs end
 
     -- Renormalize and sample
     truncated_probs = {}
@@ -162,10 +162,10 @@ fun sample_top_p(logits: any, top_p: f64, temperature: f64): i64
     indexed[chosen].idx
 end
 
-fun sample_beam_search(logits: any, beams: i64, sequence: any): any
+sample_beam_search(logits: any, beams: i64, sequence: any): any
     -- Beam search: maintain top-k candidates across decoding steps
     -- sequence is the accumulated token history for each beam
-    if sequence == nil then
+    if sequence == nil
         -- First step: initialize beams from first logits
         beam_scores = {}
         for i = 1, beams
@@ -176,7 +176,7 @@ fun sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, function(a, b) return a.logit > b.logit end)
+        table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
 
         i = 1
         while i <= beams and i <= #indexed
@@ -196,7 +196,7 @@ fun sample_beam_search(logits: any, beams: i64, sequence: any): any
         for i = 1, #logits
             indexed[#indexed + 1] = {idx = i, logit = logits[i]}
         end
-        table.sort(indexed, function(a, b) return a.logit > b.logit end)
+        table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
 
         top_n = math.min(beams, #indexed)
         i = 1
@@ -215,7 +215,7 @@ fun sample_beam_search(logits: any, beams: i64, sequence: any): any
     end
 
     -- Sort all candidates by score and keep top beams
-    table.sort(all_candidates, function(a, b) return a.score > b.score end)
+    table.sort(all_candidates, fun(a: any, b: any): any a.score > b.score)
     result = {}
     i = 1
     while i <= beams and i <= #all_candidates
@@ -229,8 +229,8 @@ end
 -- Repetition Penalty
 -- ═══════════════════════════════════════════════════════════════
 
-fun apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
-    if penalty <= 1.0 then return logits end
+apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
+    if penalty <= 1.0 return logits end
 
     result = {}
     for i = 1, #logits
@@ -238,7 +238,7 @@ fun apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
     end
 
     for token in generated
-        if result[token + 1] > 0 then
+        if result[token + 1] > 0
             result[token + 1] = result[token + 1] / penalty
         else
             result[token + 1] = result[token + 1] * penalty
@@ -248,8 +248,8 @@ fun apply_repetition_penalty(logits: any, generated: any, penalty: f64): any
     result
 end
 
-fun apply_frequency_penalty(logits: any, token_counts: any, penalty: f64): any
-    if penalty == 0.0 then return logits end
+apply_frequency_penalty(logits: any, token_counts: any, penalty: f64): any
+    if penalty == 0.0 return logits end
 
     result = {}
     for i = 1, #logits
@@ -259,8 +259,8 @@ fun apply_frequency_penalty(logits: any, token_counts: any, penalty: f64): any
     result
 end
 
-fun apply_presence_penalty(logits: any, generated: any, penalty: f64): any
-    if penalty == 0.0 then return logits end
+apply_presence_penalty(logits: any, generated: any, penalty: f64): any
+    if penalty == 0.0 return logits end
 
     result = {}
     for i = 1, #logits
@@ -268,7 +268,7 @@ fun apply_presence_penalty(logits: any, generated: any, penalty: f64): any
     end
 
     for token in generated
-        if result[token + 1] > 0 then
+        if result[token + 1] > 0
             result[token + 1] = result[token + 1] - penalty
         end
     end
@@ -280,30 +280,30 @@ end
 -- Stop Conditions
 -- ═══════════════════════════════════════════════════════════════
 
-fun check_stop_tokens(generated: any, stop_tokens: any): bool
-    if #stop_tokens == 0 then return false end
+check_stop_tokens(generated: any, stop_tokens: any): bool
+    if #stop_tokens == 0 return false end
     -- Check if any stop token appears at the end
     for stop in stop_tokens
         stop_len = #stop
-        if #generated >= stop_len then
+        if #generated >= stop_len
             match = true
             i = 1
             while i <= stop_len
-                if generated[#generated - stop_len + i] ~= stop[i] then
+                if generated[#generated - stop_len + i] != stop[i]
                     match = false
                     break
                 end
                 i += 1
             end
-            if match then return true end
+            if match return true end
         end
     end
     false
 end
 
-fun check_stop_strings(generated_text: str, stop_strings: any): bool
+check_stop_strings(generated_text: str, stop_strings: any): bool
     for stop in stop_strings
-        if string.find(generated_text, stop, 1, true) then
+        if string.find(generated_text, stop, 1, true)
             return true
         end
     end
@@ -314,10 +314,10 @@ end
 -- Utility Functions
 -- ═══════════════════════════════════════════════════════════════
 
-fun softmax(logits: any): any
+softmax(logits: any): any
     max_logit = -1e30
     for v in logits
-        if v > max_logit then max_logit = v end
+        if v > max_logit max_logit = v end
     end
 
     exp_sum = 0
@@ -334,24 +334,24 @@ fun softmax(logits: any): any
     probs
 end
 
-fun sample_from_probs(probs: any): i64
+sample_from_probs(probs: any): i64
     r = math.random()
     cumulative = 0
     for i = 1, #probs
         cumulative += probs[i]
-        if r <= cumulative then
+        if r <= cumulative
             return i
         end
     end
     #probs
 end
 
-fun top_k_logits(logits: any, k: i64): any
+top_k_logits(logits: any, k: i64): any
     indexed = {}
     for i = 1, #logits
         indexed[#indexed + 1] = {idx = i, logit = logits[i]}
     end
-    table.sort(indexed, function(a, b) return a.logit > b.logit end)
+    table.sort(indexed, fun(a: any, b: any): any a.logit > b.logit)
 
     result = {}
     i = 1

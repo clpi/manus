@@ -1,0 +1,66 @@
+-- expect: 5
+-- SH-11 step: ARM64 instruction encoding written in Duo, compiled to native
+-- ARM64 by the very backend whose encodings it reproduces.
+--
+-- A code generator's correctness-critical core is not file I/O — it is turning
+-- (opcode, registers, immediate) into a 32-bit word. That is pure integer
+-- arithmetic and fits the native subset exactly. This file encodes five
+-- instructions and checks each against the word the Zig backend emits, verified
+-- against `objdump` output during this session's work on `src/native_backend.zig`.
+--
+-- What it does NOT do is write an object file: that needs mutable buffers and
+-- file I/O, neither of which lowers natively yet. So this is the encoder, not
+-- the emitter — but the encoder is where backends are actually wrong. The CSET
+-- case below is here for a reason: the Zig backend had bit 12 of the base
+-- constant pre-set, so ORing the condition corrupted `ge`/`eq`/`gt` and every
+-- `cset` with an even condition encoded the wrong test.
+
+-- MOVZ Xd, #imm16        : 0xd2800000 | imm<<5 | Rd
+enc_movz = (rd: i64, imm: i64): i64
+    3531603968 + imm * 32 + rd
+end
+
+-- ADD Xd, Xn, Xm         : 0x8b000000 | Rm<<16 | Rn<<5 | Rd
+enc_add = (rd: i64, rn: i64, rm: i64): i64
+    2332033024 + rm * 65536 + rn * 32 + rd
+end
+
+-- SUB Xd, Xn, Xm         : 0xcb000000 | Rm<<16 | Rn<<5 | Rd
+enc_sub = (rd: i64, rn: i64, rm: i64): i64
+    3405774848 + rm * 65536 + rn * 32 + rd
+end
+
+-- CSET Xd, cond ≡ CSINC Xd, XZR, XZR, invert(cond)
+--                        : 0x9a9f07e0 | invcond<<12 | Rd
+-- The condition field MUST start at zero — a base with a cond bit pre-set ORs
+-- into the condition and silently encodes a different test.
+enc_cset = (rd: i64, invcond: i64): i64
+    2594113504 + invcond * 4096 + rd
+end
+
+-- RET                    : 0xd65f03c0
+enc_ret = (): i64
+    3596551104
+end
+
+check = (got: i64, want: i64): i64
+    if got == want
+        return 1
+    end
+    0
+end
+
+main(): i64
+    ok = 0
+    -- mov x9, #0        -> 0xd2800009
+    ok = ok + check(enc_movz(9, 0), 3531603977)
+    -- add x11, x9, x10  -> 0x8b0a012b
+    ok = ok + check(enc_add(11, 9, 10), 2332688683)
+    -- sub x10, x0, x9   -> 0xcb09000a
+    ok = ok + check(enc_sub(10, 0, 9), 3406364682)
+    -- cset x10, lt      -> encodes invert(lt) = ge = 0xa -> 0x9a9fa7ea
+    ok = ok + check(enc_cset(10, 10), 2594154474)
+    -- ret               -> 0xd65f03c0
+    ok = ok + check(enc_ret(), 3596551104)
+    ok
+end

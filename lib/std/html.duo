@@ -1,8 +1,8 @@
 -- std.html — basic HTML escaping and unescaping
 
-local string = req "std.string"
+string = req "std.string"
 
-fun escape(s: str): str
+escape(s: str): str
     s = string.gsub(s, "&", "&amp;")
     s = string.gsub(s, "<", "&lt;")
     s = string.gsub(s, ">", "&gt;")
@@ -11,7 +11,7 @@ fun escape(s: str): str
     s
 end
 
-fun unescape(s: str): str
+unescape(s: str): str
     s = string.gsub(s, "&lt;", "<")
     s = string.gsub(s, "&gt;", ">")
     s = string.gsub(s, "&quot;", '"')

@@ -26,6 +26,9 @@ const pass24_catalog = @import("pass24_catalog.zig");
 const pass25_catalog = @import("pass25_catalog.zig");
 const pass26_catalog = @import("pass26_catalog.zig");
 const pass27_catalog = @import("pass27_catalog.zig");
+const pass34_catalog = @import("pass34_catalog.zig");
+const pass36_catalog = @import("pass36_catalog.zig");
+const foundation_catalog = @import("foundation_catalog.zig");
 const pass19_catalog = @import("pass19_catalog.zig");
 const passes_audit = @import("passes_audit.zig");
 
@@ -210,6 +213,12 @@ pub fn writePass3Json(w: *std.Io.Writer, alloc: std.mem.Allocator) !void {
     try w.print(",", .{});
     try pass27_catalog.writePass27Json(w, alloc);
     try w.print(",", .{});
+    try pass34_catalog.writePass34Json(w, alloc);
+    try w.print(",", .{});
+    try pass36_catalog.writePass36Json(w, alloc);
+    try w.print(",", .{});
+    try foundation_catalog.writeFoundationJson(w, alloc);
+    try w.print(",", .{});
     try passes_audit.writePassesAuditEmbedJson(w, alloc);
     try w.print("}}\n", .{});
 }
@@ -249,6 +258,8 @@ test "pass3_catalog: writePass3Json emits valid structure" {
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass25\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass26\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass27\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"pass36\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "\"foundation\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "\"pass19\"") != null);
     var parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, out, .{});
     defer parsed.deinit();

@@ -6,43 +6,43 @@
 -- Binary Min-Heap
 -- ═══════════════════════════════════════════════════════════════
 
-fun heap_new(cmp: any): any
+heap_new(cmp: any): any
     {
         data = {},
         n = 0,
-        cmp = cmp or (fun(a, b) a < b end),
+        cmp = cmp or ((a, b) a < b),
     }
 end
 
-fun heap_push(h: any, value: any): void
+heap_push(h: any, value: any): void
     h.n = h.n + 1
     h.data[h.n] = value
     heap_up(h, h.n)
 end
 
-fun heap_pop(h: any): any
-    if h.n == 0 then return nil end
+heap_pop(h: any): any
+    if h.n == 0 return nil end
     top = h.data[1]
     h.data[1] = h.data[h.n]
     h.data[h.n] = nil
     h.n = h.n - 1
-    if h.n > 0 then heap_down(h, 1) end
+    if h.n > 0 heap_down(h, 1) end
     top
 end
 
-fun heap_peek(h: any): any
-    if h.n == 0 then return nil end
+heap_peek(h: any): any
+    if h.n == 0 return nil end
     h.data[1]
 end
 
-fun heap_size(h: any): i64
+heap_size(h: any): i64
     h.n
 end
 
-fun heap_up(h: any, i: i64): void
+heap_up(h: any, i: i64): void
     while i > 1
         parent = math.floor(i / 2)
-        if h.cmp(h.data[i], h.data[parent]) then
+        if h.cmp(h.data[i], h.data[parent])
             h.data[i], h.data[parent] = h.data[parent], h.data[i]
             i = parent
         else
@@ -51,18 +51,18 @@ fun heap_up(h: any, i: i64): void
     end
 end
 
-fun heap_down(h: any, i: i64): void
+heap_down(h: any, i: i64): void
     while true
         left = 2 * i
         right = 2 * i + 1
         smallest = i
-        if left <= h.n and h.cmp(h.data[left], h.data[smallest]) then
+        if left <= h.n and h.cmp(h.data[left], h.data[smallest])
             smallest = left
         end
-        if right <= h.n and h.cmp(h.data[right], h.data[smallest]) then
+        if right <= h.n and h.cmp(h.data[right], h.data[smallest])
             smallest = right
         end
-        if smallest ~= i then
+        if smallest != i
             h.data[i], h.data[smallest] = h.data[smallest], h.data[i]
             i = smallest
         else
@@ -75,16 +75,16 @@ end
 -- Priority Queue (keyed heap with decrease-key)
 -- ═══════════════════════════════════════════════════════════════
 
-fun pq_new(cmp: any): any
+pq_new(cmp: any): any
     {
         data = {},
         index = {},
         n = 0,
-        cmp = cmp or (fun(a, b) a.priority < b.priority end),
+        cmp = cmp or ((a, b) a.priority < b.priority),
     }
 end
 
-fun pq_push(pq: any, key: any, priority: any): void
+pq_push(pq: any, key: any, priority: any): void
     entry = {key = key, priority = priority, pos = pq.n + 1}
     pq.n = pq.n + 1
     pq.data[pq.n] = entry
@@ -92,45 +92,45 @@ fun pq_push(pq: any, key: any, priority: any): void
     heap_up_pq(pq, pq.n)
 end
 
-fun pq_pop(pq: any): any
-    if pq.n == 0 then return nil end
+pq_pop(pq: any): any
+    if pq.n == 0 return nil end
     top = pq.data[1]
     pq.index[top.key] = nil
     pq.data[1] = pq.data[pq.n]
     pq.data[pq.n] = nil
     pq.n = pq.n - 1
-    if pq.n > 0 then
+    if pq.n > 0
         pq.data[1].pos = 1
         heap_down_pq(pq, 1)
     end
     {key = top.key, priority = top.priority}
 end
 
-fun pq_peek(pq: any): any
-    if pq.n == 0 then return nil end
+pq_peek(pq: any): any
+    if pq.n == 0 return nil end
     top = pq.data[1]
     {key = top.key, priority = top.priority}
 end
 
-fun pq_decrease_key(pq: any, key: any, new_priority: any): void
+pq_decrease_key(pq: any, key: any, new_priority: any): void
     entry = pq.index[key]
-    if entry == nil then return end
+    if entry == nil return end
     entry.priority = new_priority
     heap_up_pq(pq, entry.pos)
 end
 
-fun pq_contains(pq: any, key: any): bool
-    pq.index[key] ~= nil
+pq_contains(pq: any, key: any): bool
+    pq.index[key] != nil
 end
 
-fun pq_size(pq: any): i64
+pq_size(pq: any): i64
     pq.n
 end
 
-fun heap_up_pq(pq: any, i: i64): void
+heap_up_pq(pq: any, i: i64): void
     while i > 1
         parent = math.floor(i / 2)
-        if pq.cmp(pq.data[i], pq.data[parent]) then
+        if pq.cmp(pq.data[i], pq.data[parent])
             pq.data[i], pq.data[parent] = pq.data[parent], pq.data[i]
             pq.data[i].pos = i
             pq.data[parent].pos = parent
@@ -141,18 +141,18 @@ fun heap_up_pq(pq: any, i: i64): void
     end
 end
 
-fun heap_down_pq(pq: any, i: i64): void
+heap_down_pq(pq: any, i: i64): void
     while true
         left = 2 * i
         right = 2 * i + 1
         smallest = i
-        if left <= pq.n and pq.cmp(pq.data[left], pq.data[smallest]) then
+        if left <= pq.n and pq.cmp(pq.data[left], pq.data[smallest])
             smallest = left
         end
-        if right <= pq.n and pq.cmp(pq.data[right], pq.data[smallest]) then
+        if right <= pq.n and pq.cmp(pq.data[right], pq.data[smallest])
             smallest = right
         end
-        if smallest ~= i then
+        if smallest != i
             pq.data[i], pq.data[smallest] = pq.data[smallest], pq.data[i]
             pq.data[i].pos = i
             pq.data[smallest].pos = smallest
@@ -167,8 +167,8 @@ end
 -- Bloom Filter (probabilistic set membership)
 -- ═══════════════════════════════════════════════════════════════
 
-fun bloom_new(expected_items: i64, fp_rate: any): any
-    if fp_rate == nil then fp_rate = 0.01 end
+bloom_new(expected_items: i64, fp_rate: any): any
+    if fp_rate == nil fp_rate = 0.01 end
     -- Optimal bit count: m = -n * ln(p) / (ln2)^2
     m = math.ceil(-expected_items * math.log(fp_rate) / (math.log(2) * math.log(2)))
     -- Optimal hash count: k = (m/n) * ln2
@@ -189,13 +189,13 @@ fun bloom_new(expected_items: i64, fp_rate: any): any
 end
 
 -- FNV-1a hash for bloom filter
-fun bloom_hash(data: any, seed: i64): i64
+bloom_hash(data: any, seed: i64): i64
     h = 0xcbf29ce484222325 + seed
     i = 1
     n = #data
-    if type(data) == "string" then n = string.len(data) end
+    if type(data) == "string" n = string.len(data) end
     while i <= n
-        if type(data) == "string" then
+        if type(data) == "string"
             byte = string.byte(data, i)
         else
             byte = data[i]
@@ -208,7 +208,7 @@ fun bloom_hash(data: any, seed: i64): i64
     h
 end
 
-fun bloom_add(bf: any, item: any): void
+bloom_add(bf: any, item: any): void
     data = tostring(item)
     i = 0
     while i < bf.num_hashes
@@ -221,14 +221,14 @@ fun bloom_add(bf: any, item: any): void
     bf.count = bf.count + 1
 end
 
-fun bloom_may_contain(bf: any, item: any): bool
+bloom_may_contain(bf: any, item: any): bool
     data = tostring(item)
     i = 0
     while i < bf.num_hashes
         pos = bloom_hash(data, i) % bf.num_bits
         word = math.floor(pos / 64) + 1
         bit = pos % 64
-        if (bf.bits[word] & (1 << bit)) == 0 then
+        if (bf.bits[word] & (1 << bit)) == 0
             return false
         end
         i += 1
@@ -236,7 +236,7 @@ fun bloom_may_contain(bf: any, item: any): bool
     true
 end
 
-fun bloom_false_positive_rate(bf: any): f64
+bloom_false_positive_rate(bf: any): f64
     math.pow(1 - math.exp(-bf.num_hashes * bf.count / bf.num_bits), bf.num_hashes)
 end
 
@@ -244,7 +244,7 @@ end
 -- LRU Cache (fixed-size, O(1) get/put via hash map + doubly-linked list)
 -- ═══════════════════════════════════════════════════════════════
 
-fun lru_new(capacity: i64): any
+lru_new(capacity: i64): any
     {
         capacity = capacity,
         map = {},
@@ -254,9 +254,9 @@ fun lru_new(capacity: i64): any
     }
 end
 
-fun lru_get(cache: any, key: any): any
+lru_get(cache: any, key: any): any
     entry = cache.map[key]
-    if entry == nil then
+    if entry == nil
         cache.misses = cache.misses + 1
         return nil
     end
@@ -266,15 +266,15 @@ fun lru_get(cache: any, key: any): any
     entry.value
 end
 
-fun lru_put(cache: any, key: any, value: any): void
+lru_put(cache: any, key: any, value: any): void
     entry = cache.map[key]
-    if entry ~= nil then
+    if entry != nil
         entry.value = value
         lru_touch(cache, key)
         return
     end
     -- Evict if at capacity
-    if #cache.list >= cache.capacity then
+    if #cache.list >= cache.capacity
         oldest = table.remove(cache.list)
         cache.map[oldest] = nil
     end
@@ -283,10 +283,10 @@ fun lru_put(cache: any, key: any, value: any): void
     cache.map[key] = {key = key, value = value}
 end
 
-fun lru_touch(cache: any, key: any): void
+lru_touch(cache: any, key: any): void
     i = 1
     while i <= #cache.list
-        if cache.list[i] == key then
+        if cache.list[i] == key
             table.remove(cache.list, i)
             table.insert(cache.list, 1, key)
             return
@@ -295,13 +295,13 @@ fun lru_touch(cache: any, key: any): void
     end
 end
 
-fun lru_remove(cache: any, key: any): bool
+lru_remove(cache: any, key: any): bool
     entry = cache.map[key]
-    if entry == nil then return false end
+    if entry == nil return false end
     cache.map[key] = nil
     i = 1
     while i <= #cache.list
-        if cache.list[i] == key then
+        if cache.list[i] == key
             table.remove(cache.list, i)
             return true
         end
@@ -310,17 +310,17 @@ fun lru_remove(cache: any, key: any): bool
     false
 end
 
-fun lru_size(cache: any): i64
+lru_size(cache: any): i64
     #cache.list
 end
 
-fun lru_hit_rate(cache: any): f64
+lru_hit_rate(cache: any): f64
     total = cache.hits + cache.misses
-    if total == 0 then return 0.0 end
+    if total == 0 return 0.0 end
     cache.hits / total
 end
 
-fun lru_clear(cache: any): void
+lru_clear(cache: any): void
     cache.map = {}
     cache.list = {}
     cache.hits = 0

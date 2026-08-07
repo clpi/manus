@@ -22,14 +22,14 @@ type Vec3 = { x: f64, y: f64, z: f64 }
 type Pt = { x: f64, y: f64 }
 
 -- Stage 1: @comp.map produces "Name;" fragments for each matching type.
-fun type_sig(m) -> str
+type_sig(m) -> str
     m.name .. ";"
 end
 
 NAMES = @comp.map("HasXY", type_sig)
 
 -- Stage 2: @comp.each splits that output and re-expands each fragment.
-fun expand(frag) -> str
+expand(frag) -> str
     "/* each[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] = " .. frag.name .. " */\n"
 end
 
@@ -45,13 +45,13 @@ print("map→each fragments = " .. tostring(LINES) .. "  (expect 3 = one per typ
 
 -- Stage 3: compose @comp.power (2^n) with @comp.each — nest an exponential
 -- stage inside the composition glue. 3 types → 2^3-1 = 7 subsets.
-fun subset_sig(subset) -> str
+subset_sig(subset) -> str
     subset.name .. ";"
 end
 
 SUBSETS = @comp.power("HasXY", subset_sig)
 
-fun stamp(frag) -> str
+stamp(frag) -> str
     "/* pow[" .. tostring(frag.index) .. "/" .. tostring(frag.count) .. "] " .. frag.name .. " */\n"
 end
 

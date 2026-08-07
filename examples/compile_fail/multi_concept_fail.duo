@@ -1,14 +1,14 @@
 -- compile_fail: multi-concept constraint violation
 concept Hashable
-    fun hash(self) -> i64
+    hash(self) -> i64
 end
 
 concept Counter
-    fun value(self) -> i64
+    value(self) -> i64
 end
 
 Half = {}
-fun Half:hash() -> i64
+Half:hash() -> i64
     return 1
 end
 

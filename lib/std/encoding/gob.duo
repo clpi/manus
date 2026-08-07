@@ -13,30 +13,30 @@ TAG_ARRAY = 5
 TAG_TABLE = 6
 
 -- marshal: encode a value as a binary string.
-fun marshal(v: any): str
-    local out = {}
+marshal(v: any): str
+    out = {}
     encode(v, out)
     return table.concat(out)
 end
 
 -- encode: internal encoder that appends to the out array.
-fun encode(v: any, out: any): void
-    if v == nil then
+encode(v: any, out: any): void
+    if v == nil
         out[rawlen(out) + 1] = string.char(TAG_NIL)
         return
     end
     t = type(v)
-    if t == "boolean" then
+    if t == "boolean"
         out[rawlen(out) + 1] = string.char(TAG_BOOL)
-        if v then
+        if v
             out[rawlen(out) + 1] = string.char(1)
         else
             out[rawlen(out) + 1] = string.char(0)
         end
         return
     end
-    if t == "number" then
-        if math.floor(v) == v and math.abs(v) < 2^53 then
+    if t == "number"
+        if math.floor(v) == v and math.abs(v) < 2^53
             out[rawlen(out) + 1] = string.char(TAG_INT)
             encode_int(v, out)
         else
@@ -46,18 +46,18 @@ fun encode(v: any, out: any): void
         end
         return
     end
-    if t == "string" then
+    if t == "string"
         out[rawlen(out) + 1] = string.char(TAG_STRING)
         encode_int(string.len(v), out)
         out[rawlen(out) + 1] = v
         return
     end
-    if t == "table" then
+    if t == "table"
         -- check if array
         n = rawlen(v)
         count = 0
         for _ in pairs(v) do count += 1 end
-        if count == n and n > 0 then
+        if count == n and n > 0
             out[rawlen(out) + 1] = string.char(TAG_ARRAY)
             encode_int(n, out)
             i = 1
@@ -80,14 +80,14 @@ fun encode(v: any, out: any): void
 end
 
 -- encode_int: encode an integer as a variable-length string.
-fun encode_int(v: i64, out: any): void
-    if v == 0 then
+encode_int(v: i64, out: any): void
+    if v == 0
         out[rawlen(out) + 1] = string.char(0)
         return
     end
     parts = {}
     n = v
-    if n < 0 then
+    if n < 0
         -- encode sign as complement
         n = 0 - n
     end
@@ -104,43 +104,43 @@ end
 
 -- unmarshal: decode a binary string into a Duo value.
 -- Returns (value, bytes_consumed).
-fun unmarshal(data: str): any
-    if data == nil or data == "" then return nil, 0 end
+unmarshal(data: str): any
+    if data == nil or data == "" return nil, 0 end
     parser = {s = data, pos = 1}
     v = decode(parser)
     return v, parser.pos - 1
 end
 
 -- decode: internal decoder.
-fun decode(p: any): any
-    if p.pos > string.len(p.s) then return nil end
+decode(p: any): any
+    if p.pos > string.len(p.s) return nil end
     tag = string.byte(p.s, p.pos)
     p.pos = p.pos + 1
-    if tag == TAG_NIL then return nil end
-    if tag == TAG_BOOL then
+    if tag == TAG_NIL return nil end
+    if tag == TAG_BOOL
         b = string.byte(p.s, p.pos)
         p.pos = p.pos + 1
-        return b ~= 0
+        return b != 0
     end
-    if tag == TAG_INT then
+    if tag == TAG_INT
         return decode_int(p)
     end
-    if tag == TAG_FLOAT then
+    if tag == TAG_FLOAT
         start = p.pos
-        while p.pos <= string.len(p.s) and string.byte(p.s, p.pos) ~= 0
+        while p.pos <= string.len(p.s) and string.byte(p.s, p.pos) != 0
             p.pos = p.pos + 1
         end
         s = string.sub(p.s, start, p.pos - 1)
         p.pos = p.pos + 1  -- skip null terminator
         return tonumber(s)
     end
-    if tag == TAG_STRING then
+    if tag == TAG_STRING
         len = decode_int(p)
         s = string.sub(p.s, p.pos, p.pos + len - 1)
         p.pos = p.pos + len
         return s
     end
-    if tag == TAG_ARRAY then
+    if tag == TAG_ARRAY
         n = decode_int(p)
         arr = {}
         i = 1
@@ -150,7 +150,7 @@ fun decode(p: any): any
         end
         return arr
     end
-    if tag == TAG_TABLE then
+    if tag == TAG_TABLE
         n = decode_int(p)
         tbl = {}
         i = 1
@@ -166,13 +166,13 @@ fun decode(p: any): any
 end
 
 -- decode_int: decode a variable-length integer.
-fun decode_int(p: any): i64
+decode_int(p: any): i64
     v = 0
     while p.pos <= string.len(p.s)
         b = string.byte(p.s, p.pos)
         p.pos = p.pos + 1
         v = v * 256 + b
-        if b < 128 then break end
+        if b < 128 break end
     end
     v
 end

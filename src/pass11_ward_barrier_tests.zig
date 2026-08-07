@@ -16,6 +16,10 @@ test "Pass 11 WP-15: pass12 M1 classifier paths are no-boxing" {
     try runProfile(testing.allocator, native_barrier_checks.pass12_m1_profile);
 }
 
+test "Pass 27 P1: ward direct cursor + leb128 profile" {
+    try runProfile(testing.allocator, native_barrier_checks.pass27_ward_direct_profile);
+}
+
 test "Pass 11 WP-15: pass12 M1 sorted lookup is no-boxing" {
     try runProfile(testing.allocator, native_barrier_checks.pass12_m1_sorted_lookup_profile);
 }

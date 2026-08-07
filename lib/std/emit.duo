@@ -1,0 +1,55 @@
+-- std.emit — native-typed emission primitives for code generators.
+--
+-- STATUS: the primitives below lower correctly — inspect the generated C and
+-- `std_emit__emit_read_u32` is clean native code with zero `lua_*`. But they are
+-- NOT yet callable: invoking a `req`'d module function from a typed function
+-- emits `duo_fatal("unlowered native call")` on BOTH backends, whether the
+-- result is used or discarded. Module *constants* fold fine; module *calls* do
+-- not lower. That call path — not these primitives — is what blocks a Duo code
+-- generator from persisting machine code. Delete this file if you would rather
+-- not carry an unusable module.
+--
+-- Every I/O entry point in `lib/std` is written against the boxed runtime:
+-- `os.write_file(path: str, data: any)` calls `lua_to_str` / `lua_str_byte_len`
+-- on a `lua_Value`. That is exactly what the direct backend forbids, which is
+-- why a Duo code generator could encode and sequence instructions natively but
+-- never persist them (`DNB007`).
+--
+-- These take `i64` and `str` only — no `any`, no `lua_*` in the emitted C — so
+-- they lower on the native path. Per the repo's own rule, C-level primitives
+-- belong in duo's stdlib; this is the one place `@c.emit` is legitimate.
+--
+-- Appending is deliberate: an emitter that appends needs no buffer at all. Open,
+-- write each word as it is encoded, close. A runtime-sized byte buffer is not
+-- required to produce machine code.
+
+-- Truncate (or create) `path`, so a fresh emission starts from an empty file.
+@comp.c.export("duo_emit_begin")
+emit_begin(path: str): bool
+    return @comp.c.emit([[({ FILE* _f = fopen(path, "wb"); int _ok = _f != NULL; if (_f) fclose(_f); _ok; })]])
+end
+
+-- Append one 32-bit word, little-endian — the natural unit for a fixed-width
+-- instruction set such as ARM64.
+@comp.c.export("duo_emit_u32")
+emit_u32(path: str, word: i64): bool
+    return @comp.c.emit([[({ FILE* _f = fopen(path, "ab"); int _ok = 0; if (_f) { unsigned char _b[4]; unsigned int _w = (unsigned int)word; _b[0] = (unsigned char)(_w & 0xff); _b[1] = (unsigned char)((_w >> 8) & 0xff); _b[2] = (unsigned char)((_w >> 16) & 0xff); _b[3] = (unsigned char)((_w >> 24) & 0xff); _ok = fwrite(_b, 1, 4, _f) == 4; fclose(_f); } _ok; })]])
+end
+
+-- Size of `path` in bytes, or 0 - 1 when it cannot be read. Lets a generator
+-- verify its own output without a boxed string round-trip.
+@comp.c.export("duo_emit_size")
+emit_size(path: str): i64
+    return @comp.c.emit([[({ FILE* _f = fopen(path, "rb"); long _n = -1; if (_f) { fseek(_f, 0, SEEK_END); _n = ftell(_f); fclose(_f); } (int64_t)_n; })]])
+end
+
+-- Read one 32-bit word back, little-endian, at word index `idx` (0-based).
+@comp.c.export("duo_emit_read_u32")
+emit_read_u32(path: str, idx: i64): i64
+    return @comp.c.emit([[({ FILE* _f = fopen(path, "rb"); int64_t _v = -1; if (_f) { if (fseek(_f, (long)idx * 4, SEEK_SET) == 0) { unsigned char _b[4]; if (fread(_b, 1, 4, _f) == 4) { _v = (int64_t)((unsigned int)_b[0] | ((unsigned int)_b[1] << 8) | ((unsigned int)_b[2] << 16) | ((unsigned int)_b[3] << 24)); } } fclose(_f); } _v; })]])
+end
+
+-- No `M` export table: the native export map is built by scanning
+-- `@comp.c.export` + `fun` declarations, not this table, and emitting a table
+-- would pull `lua_table_set_str_lit` (the boxed runtime) into a module that is
+-- otherwise pure native C — which is exactly what stops it compiling standalone.

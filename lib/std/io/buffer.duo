@@ -2,14 +2,14 @@
 -- For efficient file and network I/O.
 -- Sources: file handles (io.open), stdin, or raw byte-table sources.
 
-local io = req "std.io"
+io = req "std.io"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Buffered Reader
 -- ═══════════════════════════════════════════════════════════════
 
-fun buffered_reader_new(source: any, buffer_size: i64): any
-    if buffer_size == nil then buffer_size = 4096 end
+buffered_reader_new(source: any, buffer_size: i64): any
+    if buffer_size == nil buffer_size = 4096 end
     {
         source = source,
         buffer = {},
@@ -21,17 +21,17 @@ fun buffered_reader_new(source: any, buffer_size: i64): any
     }
 end
 
-fun buffered_reader_fill(br: any): any
-    if br.eof then return {ok = false, reason = "EOF"} end
+buffered_reader_fill(br: any): any
+    if br.eof return {ok = false, reason = "EOF"} end
 
     br.buffer = {}
     br.buffer_pos = 1
     br.buffer_len = 0
 
     -- Read from Lua file handle
-    if type(br.source) ~= "table" then
-        local chunk = br.source:read(br.buffer_size)
-        if chunk == nil or chunk == "" then
+    if type(br.source) != "table"
+        chunk = br.source:read(br.buffer_size)
+        if chunk == nil or chunk == ""
             br.eof = true
             return {ok = true, bytes = 0}
         end
@@ -45,14 +45,14 @@ fun buffered_reader_fill(br: any): any
     end
 
     -- Read from raw byte table (source.pos tracks read cursor)
-    local pos = br.source.pos or 1
-    local src = br.source.data or br.source
-    local avail = #src - pos + 1
-    if avail <= 0 then
+    pos = br.source.pos or 1
+    src = br.source.data or br.source
+    avail = #src - pos + 1
+    if avail <= 0
         br.eof = true
         return {ok = true, bytes = 0}
     end
-    local n = math.min(br.buffer_size, avail)
+    n = math.min(br.buffer_size, avail)
     i = 0
     while i < n
         br.buffer[i + 1] = src[pos + i]
@@ -63,11 +63,11 @@ fun buffered_reader_fill(br: any): any
     {ok = true, bytes = n}
 end
 
-fun buffered_reader_read_byte(br: any): any
-    if br.buffer_pos > br.buffer_len then
+buffered_reader_read_byte(br: any): any
+    if br.buffer_pos > br.buffer_len
         result = buffered_reader_fill(br)
-        if not result.ok then return {ok = false, reason = result.reason} end
-        if br.buffer_len == 0 then
+        if not result.ok return {ok = false, reason = result.reason} end
+        if br.buffer_len == 0
             br.eof = true
             return {ok = false, reason = "EOF"}
         end
@@ -79,15 +79,15 @@ fun buffered_reader_read_byte(br: any): any
     {ok = true, byte = byte}
 end
 
-fun buffered_reader_read(br: any, n: i64): any
+buffered_reader_read(br: any, n: i64): any
     result = {}
     count = 0
 
     while count < n
-        if br.buffer_pos > br.buffer_len then
+        if br.buffer_pos > br.buffer_len
             fill_result = buffered_reader_fill(br)
-            if not fill_result.ok then break end
-            if br.buffer_len == 0 then
+            if not fill_result.ok break end
+            if br.buffer_len == 0
                 br.eof = true
                 break
             end
@@ -108,24 +108,24 @@ fun buffered_reader_read(br: any, n: i64): any
     {ok = true, data = result, bytes = count}
 end
 
-fun buffered_reader_read_line(br: any): any
+buffered_reader_read_line(br: any): any
     line = ""
     while true
         result = buffered_reader_read_byte(br)
-        if not result.ok then
-            if string.len(line) > 0 then
+        if not result.ok
+            if string.len(line) > 0
                 return {ok = true, line = line, eof = true}
             end
             return {ok = false, reason = result.reason}
         end
 
         byte = result.byte
-        if byte == 10 then  -- newline
+        if byte == 10  -- newline
             return {ok = true, line = line, eof = false}
-        elseif byte == 13 then  -- carriage return
+        elseif byte == 13  -- carriage return
             -- Check for \r\n — if next byte is not \n, push it back
             peek = buffered_reader_read_byte(br)
-            if peek.ok and peek.byte ~= 10 then
+            if peek.ok and peek.byte != 10
                 -- Push back the non-newline byte
                 buffered_reader_unread(br, peek.byte)
             end
@@ -136,10 +136,10 @@ fun buffered_reader_read_line(br: any): any
     end
 end
 
-fun buffered_reader_peek(br: any): any
-    if br.buffer_pos > br.buffer_len then
+buffered_reader_peek(br: any): any
+    if br.buffer_pos > br.buffer_len
         result = buffered_reader_fill(br)
-        if not result.ok or br.buffer_len == 0 then
+        if not result.ok or br.buffer_len == 0
             return {ok = false, reason = "EOF"}
         end
     end
@@ -147,19 +147,19 @@ fun buffered_reader_peek(br: any): any
     {ok = true, byte = br.buffer[br.buffer_pos]}
 end
 
-fun buffered_reader_unread(br: any, byte: i64): void
-    if br.buffer_pos > 1 then
+buffered_reader_unread(br: any, byte: i64): void
+    if br.buffer_pos > 1
         br.buffer_pos = br.buffer_pos - 1
         br.buffer[br.buffer_pos] = byte
         br.bytes_read = br.bytes_read - 1
     end
 end
 
-fun buffered_reader_is_eof(br: any): bool
+buffered_reader_is_eof(br: any): bool
     br.eof
 end
 
-fun buffered_reader_bytes_read(br: any): i64
+buffered_reader_bytes_read(br: any): i64
     br.bytes_read
 end
 
@@ -167,8 +167,8 @@ end
 -- Buffered Writer
 -- ═══════════════════════════════════════════════════════════════
 
-fun buffered_writer_new(destination: any, buffer_size: i64): any
-    if buffer_size == nil then buffer_size = 4096 end
+buffered_writer_new(destination: any, buffer_size: i64): any
+    if buffer_size == nil buffer_size = 4096 end
     {
         destination = destination,
         buffer = {},
@@ -179,8 +179,8 @@ fun buffered_writer_new(destination: any, buffer_size: i64): any
     }
 end
 
-fun buffered_writer_flush(bw: any): any
-    if bw.buffer_pos == 1 then return {ok = true} end
+buffered_writer_flush(bw: any): any
+    if bw.buffer_pos == 1 return {ok = true} end
 
     -- Build chunk from buffered bytes
     chunk = ""
@@ -191,7 +191,7 @@ fun buffered_writer_flush(bw: any): any
     end
 
     -- Write to Lua file handle
-    if type(bw.destination) ~= "table" then
+    if type(bw.destination) != "table"
         bw.destination:write(chunk)
     end
 
@@ -200,10 +200,10 @@ fun buffered_writer_flush(bw: any): any
     {ok = true}
 end
 
-fun buffered_writer_write_byte(bw: any, byte: i64): any
-    if bw.buffer_pos > bw.buffer_size then
+buffered_writer_write_byte(bw: any, byte: i64): any
+    if bw.buffer_pos > bw.buffer_size
         result = buffered_writer_flush(bw)
-        if not result.ok then return result end
+        if not result.ok return result end
     end
 
     bw.buffer[bw.buffer_pos] = byte
@@ -212,27 +212,27 @@ fun buffered_writer_write_byte(bw: any, byte: i64): any
     {ok = true}
 end
 
-fun buffered_writer_write(bw: any, data: any): any
+buffered_writer_write(bw: any, data: any): any
     i = 1
     while i <= #data
         result = buffered_writer_write_byte(bw, data[i])
-        if not result.ok then return result end
+        if not result.ok return result end
         i += 1
     end
     {ok = true, bytes = #data}
 end
 
-fun buffered_writer_write_string(bw: any, s: str): any
+buffered_writer_write_string(bw: any, s: str): any
     i = 1
     while i <= string.len(s)
         result = buffered_writer_write_byte(bw, string.byte(s, i))
-        if not result.ok then return result end
+        if not result.ok return result end
         i += 1
     end
     {ok = true, bytes = string.len(s)}
 end
 
-fun buffered_writer_bytes_written(bw: any): i64
+buffered_writer_bytes_written(bw: any): i64
     bw.bytes_written
 end
 
@@ -240,7 +240,7 @@ end
 -- Ring Buffer I/O (for streaming)
 -- ═══════════════════════════════════════════════════════════════
 
-fun ring_io_new(capacity: i64): any
+ring_io_new(capacity: i64): any
     actual = 1
     while actual < capacity
         actual *= 2
@@ -255,15 +255,15 @@ fun ring_io_new(capacity: i64): any
     }
 end
 
-fun ring_io_write(rio: any, data: any): any
+ring_io_write(rio: any, data: any): any
     i = 1
     while i <= #data
-        if rio.full then
+        if rio.full
             return {ok = false, reason = "Buffer full", written = i - 1}
         end
         rio.buf[rio.write_pos & rio.mask] = data[i]
         rio.write_pos = rio.write_pos + 1
-        if rio.write_pos - rio.read_pos >= rio.capacity then
+        if rio.write_pos - rio.read_pos >= rio.capacity
             rio.full = true
         end
         i += 1
@@ -271,7 +271,7 @@ fun ring_io_write(rio: any, data: any): any
     {ok = true, written = #data}
 end
 
-fun ring_io_read(rio: any, n: i64): any
+ring_io_read(rio: any, n: i64): any
     result = {}
     count = 0
     while count < n and (rio.read_pos < rio.write_pos or rio.full)
@@ -283,13 +283,13 @@ fun ring_io_read(rio: any, n: i64): any
     {ok = true, data = result, bytes = count}
 end
 
-fun ring_io_available(rio: any): i64
-    if rio.full then return rio.capacity end
+ring_io_available(rio: any): i64
+    if rio.full return rio.capacity end
     rio.write_pos - rio.read_pos
 end
 
-fun ring_io_free(rio: any): i64
-    if rio.full then return 0 end
+ring_io_free(rio: any): i64
+    if rio.full return 0 end
     rio.capacity - (rio.write_pos - rio.read_pos)
 end
 

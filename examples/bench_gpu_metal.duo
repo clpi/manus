@@ -6,16 +6,16 @@
 
 -- FFI declarations for the Metal helper (metal_compute.m)
 @ffi("metal_init")
-fun metal_init(): i32
+metal_init(): i32
 
 @ffi("metal_matmul")
-fun metal_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): i32
+metal_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): i32
 
 @ffi("metal_sync")
-fun metal_sync()
+metal_sync()
 
 @ffi("metal_cleanup")
-fun metal_cleanup()
+metal_cleanup()
 
 -- C stdlib timing
 @c.include("time.h")
@@ -24,7 +24,7 @@ fun metal_cleanup()
 @c.include("string.h")
 
 -- Helper: get time in seconds
-fun clock_sec(): float
+clock_sec(): float
   @c.emit([[
     struct timespec _ts;
     clock_gettime(CLOCK_MONOTONIC, &_ts);
@@ -33,29 +33,29 @@ fun clock_sec(): float
 end
 
 -- Helper: allocate float array
-fun alloc_floats(n: i32): ptr
+alloc_floats(n: i32): ptr
   @c.emit("return calloc((size_t)n, sizeof(float));")
 end
 
 -- Helper: free float array
-fun free_floats(p: ptr): void
+free_floats(p: ptr): void
   @c.emit("free(p);")
 end
 
 -- Helper: set float at index
-fun set_float(p: ptr, idx: i32, val: float): void
+set_float(p: ptr, idx: i32, val: float): void
   @c.emit("((float*)p)[idx] = val;")
 end
 
 -- Helper: get float at index
-fun get_float(p: ptr, idx: i32): float
+get_float(p: ptr, idx: i32): float
   @c.emit("return ((float*)p)[idx];")
 end
 
 -- CPU matmul: C = A * B, all MxN with inner dim K
 -- Emitted as raw C for fair comparison (typed Duo compiles to this anyway)
 @hot
-fun cpu_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
+cpu_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
   @c.emit([[
     float* A = (float*)a;
     float* B = (float*)b;
@@ -73,7 +73,7 @@ fun cpu_matmul(a: ptr, b: ptr, c: ptr, M: i32, N: i32, K: i32): void
 end
 
 -- Fill matrix with pseudo-random values
-fun fill_random(p: ptr, n: i32): void
+fill_random(p: ptr, n: i32): void
   @c.emit([[
     float* arr = (float*)p;
     for (int i = 0; i < n; i++) {
@@ -83,7 +83,7 @@ fun fill_random(p: ptr, n: i32): void
 end
 
 -- Verify results match (returns max absolute error)
-fun max_error(a: ptr, b: ptr, n: i32): float
+max_error(a: ptr, b: ptr, n: i32): float
   @c.emit([[
     float* x = (float*)a;
     float* y = (float*)b;
@@ -97,7 +97,7 @@ fun max_error(a: ptr, b: ptr, n: i32): float
 end
 
 -- Main benchmark
-fun run_bench(): void
+run_bench(): void
   const DIM = 1024
   const SIZE = DIM * DIM
 
@@ -118,7 +118,7 @@ fun run_bench(): void
   -- Initialize Metal
   print("[bench] Initializing Metal...")
   rc = metal_init()
-  if rc ~= 0
+  if rc != 0
     print("ERROR: Metal initialization failed")
     free_floats(a)
     free_floats(b)

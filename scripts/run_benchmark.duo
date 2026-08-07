@@ -7,7 +7,7 @@ if string.len(DUO_BUILD_REPORT) == 0
     s.env_set("DUO_BUILD_REPORT", "plain")
 end
 
-fun trim(s: str): str
+trim(s: str): str
     if string.sub(s, -1) == "\n" return string.sub(s, 1, #s - 1) end
     s
 end
@@ -30,7 +30,7 @@ global SDKROOT = tostring(s.getenv_or("SDKROOT"))
 if string.len(SDKROOT) == 0
     SDKROOT = trim(s.capture("xcrun --sdk macosx --show-sdk-path 2>/dev/null || true"))
 end
-if string.len(SDKROOT) ~= 0
+if string.len(SDKROOT) != 0
     CFLAGS = CFLAGS .. " -isysroot " .. SDKROOT
 end
 
@@ -62,13 +62,13 @@ s.must("cd " .. ROOT .. " && " .. DUO .. " compile --pgo -O3 examples/benchmark.
 
 global BENCHES: i64 = 40
 
-fun extract_times(out: str): table
+extract_times(out: str): table
     times = {}
     for line in string.gmatch(out, "([^\n]+)")
-        if string.find(line, "Time") ~= nil
+        if string.find(line, "Time") != nil
             for word in string.gmatch(line, "([^%s]+)")
                 num = tonumber(word)
-                if num ~= nil
+                if num != nil
                     table.insert(times, num)
                     break
                 end
@@ -78,31 +78,31 @@ fun extract_times(out: str): table
     times
 end
 
-fun extract_results(out: str): table
+extract_results(out: str): table
     res = {}
     for line in string.gmatch(out, "([^\n]+)")
         id, val = string.match(line, "^RESULT%s+([^%s]+)%s+([^%s]+)")
-        if id ~= nil
+        if id != nil
             table.insert(res, { id = id, val = val })
         end
     end
     res
 end
 
-fun compare_results(name: str, duo_res: table, c_res: table): bool
-    if #duo_res ~= BENCHES or #c_res ~= BENCHES
+compare_results(name: str, duo_res: table, c_res: table): bool
+    if #duo_res != BENCHES or #c_res != BENCHES
         print("RESULT count mismatch for " .. name .. ": Duo=" .. tostring(#duo_res) .. " C=" .. tostring(#c_res) .. " (expected " .. tostring(BENCHES) .. ")")
         return false
     end
     fail = false
     for i = 1, BENCHES
-        if duo_res[i].id ~= c_res[i].id
+        if duo_res[i].id != c_res[i].id
             print("RESULT mismatch: id order differs (" .. duo_res[i].id .. " vs " .. c_res[i].id .. ")")
             fail = true
         else
             a = duo_res[i].val
             b = c_res[i].val
-            if a ~= b
+            if a != b
                 da = tonumber(a)
                 db = tonumber(b)
                 if da == nil or db == nil
@@ -120,11 +120,11 @@ fun compare_results(name: str, duo_res: table, c_res: table): bool
                         diff = math.abs(da - db)
                         base = math.max(abs_a, abs_b)
                         tol = 1e-9
-                        if base ~= 0
+                        if base != 0
                             tol = base * 1e-6
                         end
-                        if tol < 1e-9 then tol = 1e-9 end
-                        if base > 1e6 and tol < 1 then tol = 1 end
+                        if tol < 1e-9 tol = 1e-9 end
+                        if base > 1e6 and tol < 1 tol = 1 end
                         if diff > tol
                             print("RESULT mismatch for " .. duo_res[i].id .. ": Duo=" .. a .. " C=" .. b)
                             fail = true
@@ -137,7 +137,7 @@ fun compare_results(name: str, duo_res: table, c_res: table): bool
     not fail
 end
 
-fun _collect_min_times_impl(cmd: str, min_times: table): table
+_collect_min_times_impl(cmd: str, min_times: table): table
     runs = 10
     for i = 1, runs
         out = s.capture("cd " .. ROOT .. " && " .. cmd .. " 2>/dev/null")
@@ -145,7 +145,7 @@ fun _collect_min_times_impl(cmd: str, min_times: table): table
         for j = 1, #times
             t = tonumber(times[j])
             m = tonumber(min_times[j])
-            if m == nil or (t ~= nil and t < m)
+            if m == nil or (t != nil and t < m)
                 min_times[j] = t
             end
         end
@@ -153,11 +153,11 @@ fun _collect_min_times_impl(cmd: str, min_times: table): table
     min_times
 end
 
-fun collect_min_times(cmd: str): table
+collect_min_times(cmd: str): table
     _collect_min_times_impl(cmd, {})
 end
 
-fun capture_results(label: str, cmd: str): table
+capture_results(label: str, cmd: str): table
     status = 0
     res = {}
     for attempt = 1, 2
@@ -249,7 +249,7 @@ s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"----------------
 
 for i = 1, BENCHES
     name = NAMES[i]
-    if name == nil then name = "bench-" .. tostring(i) end
+    if name == nil name = "bench-" .. tostring(i) end
     
     d = DUO_TIMES[i]
     duo_file = DUO_FILE_TIMES[i]
@@ -259,13 +259,13 @@ for i = 1, BENCHES
     n = NELUA_TIMES[i]
     
     eps = 1e-7
-    if c ~= nil
-        if c > 0 then eps = c * 0.05 end
-        if c < 0.01 and eps < 5e-5 then eps = 5e-5 end
+    if c != nil
+        if c > 0 eps = c * 0.05 end
+        if c < 0.01 and eps < 5e-5 eps = 5e-5 end
     end
     
     c_wins = 1
-    if d ~= nil and duo_file ~= nil and c ~= nil
+    if d != nil and duo_file != nil and c != nil
         if (d <= c + eps) and (duo_file <= c + eps)
             c_wins = 0
         end
@@ -277,22 +277,22 @@ for i = 1, BENCHES
         RESULT_FAIL_FLAG = 1
     end
     d_fmt = "N/A"
-    if d ~= nil d_fmt = string.format("%g", d) end
+    if d != nil d_fmt = string.format("%g", d) end
     
     duo_file_fmt = "N/A"
-    if duo_file ~= nil duo_file_fmt = string.format("%g", duo_file) end
+    if duo_file != nil duo_file_fmt = string.format("%g", duo_file) end
     
     c_fmt = "N/A"
-    if c ~= nil c_fmt = string.format("%g", c) end
+    if c != nil c_fmt = string.format("%g", c) end
     
     lj_fmt = "N/A"
-    if lj ~= nil lj_fmt = string.format("%g", lj) end
+    if lj != nil lj_fmt = string.format("%g", lj) end
     
     l5_fmt = "N/A"
-    if l5 ~= nil l5_fmt = string.format("%g", l5) end
+    if l5 != nil l5_fmt = string.format("%g", l5) end
     
     n_fmt = "N/A"
-    if n ~= nil n_fmt = string.format("%g", n) end
+    if n != nil n_fmt = string.format("%g", n) end
     
     s.must("printf \"%-16s %12s %12s %12s %12s %12s %12s %8s\\n\" \"" .. name .. "\" \"" .. d_fmt .. "\" \"" .. duo_file_fmt .. "\" \"" .. c_fmt .. "\" \"" .. lj_fmt .. "\" \"" .. l5_fmt .. "\" \"" .. n_fmt .. "\" \"" .. winner .. "\"")
 end

@@ -5,24 +5,24 @@
 -- Color
 -- ═══════════════════════════════════════════════════════════════
 
-fun color_rgb(r: f64, g: f64, b: f64): any
+color_rgb(r: f64, g: f64, b: f64): any
     {r = r, g = g, b = b, a = 1.0}
 end
 
-fun color_rgba(r: f64, g: f64, b: f64, a: f64): any
+color_rgba(r: f64, g: f64, b: f64, a: f64): any
     {r = r, g = g, b = b, a = a}
 end
 
-fun color_hex(hex_str: str): any
+color_hex(hex_str: str): any
     s = hex_str
-    if string.sub(s, 1, 1) == "#" then s = string.sub(s, 2) end
-    if string.len(s) == 6 then
+    if string.sub(s, 1, 1) == "#" s = string.sub(s, 2) end
+    if string.len(s) == 6
         r = tonumber(string.sub(s, 1, 2), 16) / 255
         g = tonumber(string.sub(s, 3, 4), 16) / 255
         b = tonumber(string.sub(s, 5, 6), 16) / 255
         return {r = r, g = g, b = b, a = 1.0}
     end
-    if string.len(s) == 8 then
+    if string.len(s) == 8
         r = tonumber(string.sub(s, 1, 2), 16) / 255
         g = tonumber(string.sub(s, 3, 4), 16) / 255
         b = tonumber(string.sub(s, 5, 6), 16) / 255
@@ -32,14 +32,14 @@ fun color_hex(hex_str: str): any
     {r = 0, g = 0, b = 0, a = 1.0}
 end
 
-fun color_to_hex(c: any): str
+color_to_hex(c: any): str
     ri = math.floor(c.r * 255 + 0.5)
     gi = math.floor(c.g * 255 + 0.5)
     bi = math.floor(c.b * 255 + 0.5)
     string.format("#%02x%02x%02x", ri, gi, bi)
 end
 
-fun color_lerp(a: any, b: any, t: f64): any
+color_lerp(a: any, b: any, t: f64): any
     {
         r = a.r + (b.r - a.r) * t,
         g = a.g + (b.g - a.g) * t,
@@ -48,15 +48,15 @@ fun color_lerp(a: any, b: any, t: f64): any
     }
 end
 
-fun color_mul(c: any, s: f64): any
+color_mul(c: any, s: f64): any
     {r = c.r * s, g = c.g * s, b = c.b * s, a = c.a * s}
 end
 
-fun color_add(a: any, b: any): any
+color_add(a: any, b: any): any
     {r = a.r + b.r, g = a.g + b.g, b = a.b + b.b, a = a.a + b.a}
 end
 
-fun color_clamp(c: any): any
+color_clamp(c: any): any
     {
         r = std.math.clamp(c.r, 0, 1),
         g = std.math.clamp(c.g, 0, 1),
@@ -66,7 +66,7 @@ fun color_clamp(c: any): any
 end
 
 -- Convert RGB to HSV
-fun color_to_hsv(c: any): any
+color_to_hsv(c: any): any
     r, g, b = c.r, c.g, c.b
     max_val = math.max(r, math.max(g, b))
     min_val = math.min(r, math.min(g, b))
@@ -74,12 +74,12 @@ fun color_to_hsv(c: any): any
     h = 0
     s = 0
     v = max_val
-    if max_val ~= 0 then s = d / max_val end
-    if d ~= 0 then
-        if max_val == r then
+    if max_val != 0 s = d / max_val end
+    if d != 0
+        if max_val == r
             h = (g - b) / d
-            if g < b then h += 6 end
-        elseif max_val == g then
+            if g < b h += 6 end
+        elseif max_val == g
             h = (b - r) / d + 2
         else
             h = (r - g) / d + 4
@@ -90,18 +90,18 @@ fun color_to_hsv(c: any): any
 end
 
 -- Convert HSV to RGB
-fun color_from_hsv(h: f64, s: f64, v: f64): any
+color_from_hsv(h: f64, s: f64, v: f64): any
     i = math.floor(h * 6)
     f = h * 6 - i
     p = v * (1 - s)
     q = v * (1 - f * s)
     t = v * (1 - (1 - f) * s)
     i = i % 6
-    if i == 0 then return {r = v, g = t, b = p, a = 1.0} end
-    if i == 1 then return {r = q, g = v, b = p, a = 1.0} end
-    if i == 2 then return {r = p, g = v, b = t, a = 1.0} end
-    if i == 3 then return {r = p, g = q, b = v, a = 1.0} end
-    if i == 4 then return {r = t, g = p, b = v, a = 1.0} end
+    if i == 0 return {r = v, g = t, b = p, a = 1.0} end
+    if i == 1 return {r = q, g = v, b = p, a = 1.0} end
+    if i == 2 return {r = p, g = v, b = t, a = 1.0} end
+    if i == 3 return {r = p, g = q, b = v, a = 1.0} end
+    if i == 4 return {r = t, g = p, b = v, a = 1.0} end
     {r = v, g = p, b = q, a = 1.0}
 end
 
@@ -125,81 +125,81 @@ COLORS = {
 -- Geometry: 2D vectors and shapes
 -- ═══════════════════════════════════════════════════════════════
 
-fun vec2(x: f64, y: f64): any
+vec2(x: f64, y: f64): any
     {x = x, y = y}
 end
 
-fun vec2_add(a: any, b: any): any
+vec2_add(a: any, b: any): any
     {x = a.x + b.x, y = a.y + b.y}
 end
 
-fun vec2_sub(a: any, b: any): any
+vec2_sub(a: any, b: any): any
     {x = a.x - b.x, y = a.y - b.y}
 end
 
-fun vec2_mul(v: any, s: f64): any
+vec2_mul(v: any, s: f64): any
     {x = v.x * s, y = v.y * s}
 end
 
-fun vec2_dot(a: any, b: any): f64
+vec2_dot(a: any, b: any): f64
     a.x * b.x + a.y * b.y
 end
 
-fun vec2_length(v: any): f64
+vec2_length(v: any): f64
     math.sqrt(v.x * v.x + v.y * v.y)
 end
 
-fun vec2_normalize(v: any): any
+vec2_normalize(v: any): any
     len = vec2_length(v)
-    if len < 1e-10 then return {x = 0, y = 0} end
+    if len < 1e-10 return {x = 0, y = 0} end
     {x = v.x / len, y = v.y / len}
 end
 
-fun vec2_distance(a: any, b: any): f64
+vec2_distance(a: any, b: any): f64
     vec2_length(vec2_sub(a, b))
 end
 
-fun vec2_lerp(a: any, b: any, t: f64): any
+vec2_lerp(a: any, b: any, t: f64): any
     {x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t}
 end
 
 -- 2D Rectangle
-fun rect(x: f64, y: f64, w: f64, h: f64): any
+rect(x: f64, y: f64, w: f64, h: f64): any
     {x = x, y = y, w = w, h = h}
 end
 
-fun rect_contains(r: any, px: f64, py: f64): bool
+rect_contains(r: any, px: f64, py: f64): bool
     px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h
 end
 
-fun rect_intersects(a: any, b: any): bool
+rect_intersects(a: any, b: any): bool
     a.x < b.x + b.w and a.x + a.w > b.x and a.y < b.y + b.h and a.y + a.h > b.y
 end
 
-fun rect_area(r: any): f64
+rect_area(r: any): f64
     r.w * r.h
 end
 
-fun rect_center(r: any): any
+rect_center(r: any): any
     {x = r.x + r.w / 2, y = r.y + r.h / 2}
 end
 
 -- Circle
-fun circle(cx: f64, cy: f64, r: f64): any
+circle(cx: f64, cy: f64, r: f64): any
     {cx = cx, cy = cy, r = r}
 end
 
-fun circle_contains(c: any, px: f64, py: f64): bool
+circle_contains(c: any, px: f64, py: f64): bool
     dx = px - c.cx
     dy = py - c.cy
     dx * dx + dy * dy <= c.r * c.r
 end
 
-fun circle_area(c: any): f64
+circle_area(c: any): f64
     math.pi * c.r * c.r
 end
 
-fun circle_perimeter(c: any): f64
+circle_perimeter(c: any): f64
     2 * math.pi * c.r
 end
 
@@ -207,28 +207,28 @@ end
 -- Transform (2D affine: translation + rotation + scale)
 -- ═══════════════════════════════════════════════════════════════
 
-fun transform_new(): any
+transform_new(): any
     {tx = 0, ty = 0, sx = 1, sy = 1, rotation = 0}
 end
 
-fun transform_translate(t: any, dx: f64, dy: f64): any
+transform_translate(t: any, dx: f64, dy: f64): any
     t.tx = t.tx + dx
     t.ty = t.ty + dy
     t
 end
 
-fun transform_rotate(t: any, angle: f64): any
+transform_rotate(t: any, angle: f64): any
     t.rotation = t.rotation + angle
     t
 end
 
-fun transform_scale(t: any, sx: f64, sy: f64): any
+transform_scale(t: any, sx: f64, sy: f64): any
     t.sx = t.sx * sx
     t.sy = t.sy * sy
     t
 end
 
-fun transform_apply(t: any, px: f64, py: f64): any
+transform_apply(t: any, px: f64, py: f64): any
     cos_r = math.cos(t.rotation)
     sin_r = math.sin(t.rotation)
     rx = px * t.sx
@@ -243,7 +243,7 @@ end
 -- Canvas (simple rasterizer for ML visualization / image gen)
 -- ═══════════════════════════════════════════════════════════════
 
-fun canvas_new(width: i64, height: i64): any
+canvas_new(width: i64, height: i64): any
     pixels = {}
     total = width * height
     i = 1
@@ -254,7 +254,7 @@ fun canvas_new(width: i64, height: i64): any
     {width = width, height = height, pixels = pixels}
 end
 
-fun canvas_clear(canvas: any, color: any): void
+canvas_clear(canvas: any, color: any): void
     total = canvas.width * canvas.height
     i = 1
     while i <= total
@@ -263,18 +263,18 @@ fun canvas_clear(canvas: any, color: any): void
     end
 end
 
-fun canvas_set_pixel(canvas: any, x: i64, y: i64, color: any): void
-    if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height then return end
+canvas_set_pixel(canvas: any, x: i64, y: i64, color: any): void
+    if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height return end
     canvas.pixels[y * canvas.width + x + 1] = color
 end
 
-fun canvas_get_pixel(canvas: any, x: i64, y: i64): any
-    if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height then return nil end
+canvas_get_pixel(canvas: any, x: i64, y: i64): any
+    if x < 0 or x >= canvas.width or y < 0 or y >= canvas.height return nil end
     canvas.pixels[y * canvas.width + x + 1]
 end
 
 -- Draw a filled rectangle
-fun canvas_fill_rect(canvas: any, x: i64, y: i64, w: i64, h: i64, color: any): void
+canvas_fill_rect(canvas: any, x: i64, y: i64, w: i64, h: i64, color: any): void
     dy = 0
     while dy < h
         dx = 0
@@ -287,24 +287,24 @@ fun canvas_fill_rect(canvas: any, x: i64, y: i64, w: i64, h: i64, color: any): v
 end
 
 -- Draw a line (Bresenham's algorithm)
-fun canvas_line(canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any): void
+canvas_line(canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any): void
     dx = math.abs(x1 - x0)
     dy = -math.abs(y1 - y0)
     sx = 1
-    if x0 > x1 then sx = -1 end
+    if x0 > x1 sx = -1 end
     sy = 1
-    if y0 > y1 then sy = -1 end
+    if y0 > y1 sy = -1 end
     err = dx + dy
     x, y = x0, y0
     while true
         canvas_set_pixel(canvas, x, y, color)
-        if x == x1 and y == y1 then break end
+        if x == x1 and y == y1 break end
         e2 = 2 * err
-        if e2 >= dy then
+        if e2 >= dy
             err += dy
             x += sx
         end
-        if e2 <= dx then
+        if e2 <= dx
             err += dx
             y += sy
         end
@@ -312,7 +312,7 @@ fun canvas_line(canvas: any, x0: i64, y0: i64, x1: i64, y1: i64, color: any): vo
 end
 
 -- Draw a circle (Midpoint circle algorithm)
-fun canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
+canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
     x = r
     y = 0
     err = 1 - r
@@ -326,7 +326,7 @@ fun canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
         canvas_set_pixel(canvas, cx + y, cy - x, color)
         canvas_set_pixel(canvas, cx + x, cy - y, color)
         y += 1
-        if err < 0 then
+        if err < 0
             err += 2 * y + 1
         else
             x -= 1
@@ -336,7 +336,7 @@ fun canvas_circle(canvas: any, cx: i64, cy: i64, r: i64, color: any): void
 end
 
 -- Convert canvas to PPM format (for easy viewing)
-fun canvas_to_ppm(canvas: any): str
+canvas_to_ppm(canvas: any): str
     out = "P6\n" .. tostring(canvas.width) .. " " .. tostring(canvas.height) .. "\n255\n"
     i = 1
     while i <= canvas.width * canvas.height

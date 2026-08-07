@@ -10,6 +10,7 @@ const Mono = @import("mono.zig");
 const MacroExpand = @import("macro_expand.zig");
 const Arc = @import("arc.zig");
 const AsyncLower = @import("async_lower.zig");
+const native_req_support = @import("native_req_support.zig");
 const escape = @import("escape.zig");
 const PrettyPrinter = @import("pretty.zig").PrettyPrinter;
 const term = @import("term.zig");
@@ -19,6 +20,7 @@ const ml_kernels = @import("ml_kernels.zig");
 const native_backend = @import("native_backend.zig");
 const backend_identity = @import("backend_identity.zig");
 const pass27_benchmark_evidence = @import("pass27_benchmark_evidence.zig");
+const pass34_representation_manifest = @import("pass34_representation_manifest.zig");
 const target_model = @import("target_model.zig");
 const semantic_graph = @import("semantic_graph.zig");
 const sim = @import("sim.zig");
@@ -64,6 +66,8 @@ var forwarded_program_args: []const []const u8 = &.{};
 var graph_diag_enabled: bool = false;
 var graph_write_enabled: bool = false;
 var global_bench_backend: backend_identity.BenchBackend = .c_specialized;
+var global_bench_profile_cli: bool = false;
+var global_backend_explicit: bool = false;
 var semantic_cache_enabled: bool = true;
 
 fn env_value_truthy(value: []const u8) bool {
@@ -193,6 +197,81 @@ fn shouldEmitCompileProof(bench_mode: bool) bool {
     return false;
 }
 
+fn shouldEmitRepresentationManifest(bench_mode: bool) bool {
+    if (shouldEmitCompileProof(bench_mode)) return true;
+    if (std.c.getenv("DUO_EMIT_MANIFEST")) |p| {
+        return p[0] != 0 and p[0] != '0';
+    }
+    return false;
+}
+
+fn emitRepresentationManifestFile(
+    alloc: std.mem.Allocator,
+    io: Io,
+    artifact_path: []const u8,
+    manifest: backend_identity.Manifest,
+    l6_counts: pass34_representation_manifest.EmissionCounts,
+    bench_mode: bool,
+) !void {
+    if (!shouldEmitRepresentationManifest(bench_mode)) return;
+    const manifest_path = try std.fmt.allocPrint(alloc, "{s}.manifest.json", .{artifact_path});
+    defer alloc.free(manifest_path);
+    const contamination = pass34_representation_manifest.classifyContamination(l6_counts, 0);
+    try pass34_representation_manifest.writeManifestFile(io, manifest_path, manifest, l6_counts, contamination, alloc);
+}
+
+fn emitDirectCompileProofArtifact(
+    alloc: std.mem.Allocator,
+    io: Io,
+    src_path: []const u8,
+    object_path: []const u8,
+    target: []const u8,
+) !void {
+    if (!shouldEmitCompileProof(false)) return;
+
+    const object_bytes = try Io.Dir.readFileAlloc(Io.Dir.cwd(), io, object_path, alloc, .unlimited);
+    defer alloc.free(object_bytes);
+    const counters = pass27_benchmark_evidence.EvidenceCounters.fromDirectObject(object_bytes);
+    const manifest = backend_identity.Manifest{
+        .backend = .direct,
+        .representation = .native,
+        .runtime = .freestanding,
+        .target = target,
+        .intermediate = "mach-o-arm64",
+        .external_compiler = null,
+        .boxing_mode = "none",
+    };
+    const proof_path = try std.fmt.allocPrint(alloc, "{s}.proof.json", .{object_path});
+    defer alloc.free(proof_path);
+
+    var prov = std.ArrayListUnmanaged(pass27_benchmark_evidence.ManifestProvenance).empty;
+    defer prov.deinit(alloc);
+    for (transform_engine.provenanceEntries()) |e| {
+        try prov.append(alloc, .{
+            .transform = e.public_name,
+            .site = transform_engine.siteKindName(e.site),
+            .inputs_hash = e.inputs_hash,
+            .output_hash = e.output_hash,
+        });
+    }
+
+    try pass27_benchmark_evidence.writeCompileProofFile(io, proof_path, .{
+        .source_path = src_path,
+        .generated_path = object_path,
+        .bench_backend = global_bench_backend,
+        .manifest = manifest,
+        .counters = counters,
+    }, prov.items, alloc);
+
+    const l6_counts = pass34_representation_manifest.EmissionCounts{
+        .boxes = counters.boxes,
+        .allocations = counters.allocations,
+        .dynamic_dispatches = counters.generic_calls + counters.generic_table_ops,
+        .runtime_helpers = counters.runtime_helpers,
+    };
+    try emitRepresentationManifestFile(alloc, io, object_path, manifest, l6_counts, false);
+}
+
 fn emitCompileProofArtifact(
     alloc: std.mem.Allocator,
     io: Io,
@@ -208,17 +287,42 @@ fn emitCompileProofArtifact(
     const source = try Io.Dir.readFileAlloc(Io.Dir.cwd(), io, generated_c_path, alloc, .unlimited);
     defer alloc.free(source);
     const counters = pass27_benchmark_evidence.EvidenceCounters.fromGeneratedC(source, source.len);
-    const manifest = backend_identity.inferFromCompile(.c, target, full_native_lowering, duo_mode);
+    const manifest = if (global_bench_profile_cli) blk: {
+        const prof = backend_identity.profileForBenchBackend(global_bench_backend);
+        break :blk backend_identity.Manifest{
+            .backend = prof.backend,
+            .representation = prof.representation,
+            .runtime = prof.runtime,
+            .target = target,
+            .intermediate = "generated-c",
+            .external_compiler = null,
+            .boxing_mode = if (global_bench_backend == .c_dynamic) "boxed" else if (global_bench_backend == .direct) "none" else "specialized",
+        };
+    } else backend_identity.inferFromCompile(.c, target, full_native_lowering, duo_mode);
     const proof_path = try std.fmt.allocPrint(alloc, "{s}.proof.json", .{generated_c_path});
     defer alloc.free(proof_path);
+
+    var prov = std.ArrayListUnmanaged(pass27_benchmark_evidence.ManifestProvenance).empty;
+    defer prov.deinit(alloc);
+    for (transform_engine.provenanceEntries()) |e| {
+        try prov.append(alloc, .{
+            .transform = e.public_name,
+            .site = transform_engine.siteKindName(e.site),
+            .inputs_hash = e.inputs_hash,
+            .output_hash = e.output_hash,
+        });
+    }
 
     try pass27_benchmark_evidence.writeCompileProofFile(io, proof_path, .{
         .source_path = src_path,
         .generated_path = generated_c_path,
-        .bench_backend = if (bench_mode) global_bench_backend else null,
+        .bench_backend = global_bench_backend,
         .manifest = manifest,
         .counters = counters,
-    }, alloc);
+    }, prov.items, alloc);
+
+    const l6_from_c = pass34_representation_manifest.EmissionCounts.fromGeneratedC(source);
+    try emitRepresentationManifestFile(alloc, io, generated_c_path, manifest, l6_from_c, bench_mode);
 }
 
 const usage =
@@ -247,7 +351,7 @@ const usage =
     \\  catalog             export Pass 3 keyword/directive/grammar catalog JSON
     \\  catalog audit       full Pass 1–14 audit JSON (open_items + findings)
     \\  catalog audit check native gate (fast, cross-platform, exit 0/1)
-    \\  catalog audit gate [all|pass11|...|pass27|lua-superset|semantic-unification|foundational-closure|proof-bundle] [--barrier] per-pass native gate
+    \\  catalog audit gate [all|pass11|...|pass34|pass36|pass27|foundation|lua-superset|semantic-unification|foundational-closure|proof-bundle|self-hosting-foundation|hpls-frontier|semantic-access] [--barrier] per-pass native gate
     \\  catalog audit summary audit without open_items (medium)
     \\  dev        <sub>    Pass 13 development control plane (snapshot|audit|context|summary|claim|persist|session|validate|integration|coordination)
     \\  semantic   <sub>    Pass 12 semantic projections (intent|compare|proof|preview|validate|transforms|…)
@@ -398,17 +502,33 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, arg, "--backend") and i + 1 < args.len) {
             i += 1;
             compile_backend = args[i];
+            global_backend_explicit = true;
         } else if (std.mem.startsWith(u8, arg, "--backend=")) {
             compile_backend = arg["--backend=".len..];
+            global_backend_explicit = true;
         } else if (std.mem.eql(u8, arg, "--bench-backend") and i + 1 < args.len) {
             i += 1;
-            if (backend_identity.BenchBackend.parse(args[i])) |bb| global_bench_backend = bb else {
+            if (backend_identity.BenchBackend.parse(args[i])) |bb| {
+                global_bench_backend = bb;
+                global_bench_profile_cli = true;
+                if (!global_backend_explicit) {
+                    // Bench profiles select codegen representation; machine backend stays auto
+                    // so eligible programs can use direct ARM64 while others bootstrap via C.
+                    compile_backend = "auto";
+                }
+            } else {
                 term.err("unknown --bench-backend '{s}' (expected c-dynamic, c-specialized, or direct)", .{args[i]});
                 std.process.exit(1);
             }
         } else if (std.mem.startsWith(u8, arg, "--bench-backend=")) {
             const val = arg["--bench-backend=".len..];
-            if (backend_identity.BenchBackend.parse(val)) |bb| global_bench_backend = bb else {
+            if (backend_identity.BenchBackend.parse(val)) |bb| {
+                global_bench_backend = bb;
+                global_bench_profile_cli = true;
+                if (!global_backend_explicit) {
+                    compile_backend = "auto";
+                }
+            } else {
                 term.err("unknown --bench-backend '{s}'", .{val});
                 std.process.exit(1);
             }
@@ -768,7 +888,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     if (std.mem.eql(u8, cmd, "compile")) {
-        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, false, null, link_flags.items, entry_override);
+        try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, false, false, false, load_chunk, pgo, lib_mode, shared_mem, false, global_bench_profile_cli, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "run")) {
         try do_compile(alloc, io, file, out, cc, opt_level, target, backend_mode, true, false, verbose, false, false, false, false, false, false, null, link_flags.items, entry_override);
     } else if (std.mem.eql(u8, cmd, "check")) {
@@ -1405,7 +1525,6 @@ fn do_sim_c_import(alloc: std.mem.Allocator, io: Io, header_path: []const u8) !v
     try fw.interface.flush();
 }
 
-
 fn do_realize(alloc: std.mem.Allocator, io: Io, src_path: []const u8) !void {
     var ps = try parse_and_check(alloc, io, src_path);
     defer ps.sem.deinit();
@@ -1595,7 +1714,7 @@ fn do_catalog_audit_gate(alloc: std.mem.Allocator, io: Io, args: []const []const
             scope = parsed;
             continue;
         }
-        term.err("unknown catalog audit gate arg '{s}' (expected: all, pass11, pass12, pass13, pass14, pass15, pass16, pass19, pass20, pass21, pass22, pass23, pass24, pass25, pass26, pass27, lua-superset, semantic-unification, foundational-closure, proof-bundle, --barrier)", .{arg});
+        term.err("unknown catalog audit gate arg '{s}' (expected: all, pass11, pass12, pass13, pass14, pass15, pass16, pass19, pass20, pass21, pass22, pass23, pass24, pass25, pass26, pass27, pass34, pass36, foundation, self-hosting-foundation, lua-superset, semantic-unification, foundational-closure, proof-bundle, hpls-frontier, semantic-access, projection, --barrier)", .{arg});
         std.process.exit(1);
     }
     if (scope == .pass13 or scope == .all) barrier_m1 = true;
@@ -2562,6 +2681,7 @@ fn table_fields_have_macro_syntax(fields: []const ast.TableField) bool {
             .named => |named| if (expr_has_macro_syntax(named.val)) return true,
             .positional => |expr| if (expr_has_macro_syntax(expr)) return true,
             .spread => |expr| if (expr_has_macro_syntax(expr)) return true,
+            .semantic => |sm| if (expr_has_macro_syntax(sm.val)) return true,
         }
     }
     return false;
@@ -2839,11 +2959,169 @@ fn machineTargetForBackend(target: []const u8) []const u8 {
     return "native-exe";
 }
 
-fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8) void {
+/// Emit a `req`'d module's C so the direct backend can link the symbols it
+/// relocates against.
+///
+/// The direct backend lowers `E.emit_u32(...)` to a `bl` with a relocation
+/// against the module's `@comp.c.export` symbol. Nothing in the program's own
+/// object defines that symbol, so without this the link fails on undefined
+/// `duo_*` names even though lowering fully succeeded. Mirrors `do_dump_c`, but
+/// writes to a file and returns errors instead of exiting: a dependency that
+/// cannot be lowered must not kill the build — it just leaves the link to fail
+/// with an honest undefined symbol.
+fn emitReqModuleC(
+    alloc: std.mem.Allocator,
+    io: Io,
+    mod_src_path: []const u8,
+    out_c_path: []const u8,
+    target: []const u8,
+) !void {
+    var ps = try parse_and_check(alloc, io, mod_src_path);
+    defer ps.sem.deinit();
+
+    var mono = Mono.Monomorphizer.init(alloc, &ps.sem.type_map);
+    defer mono.deinit();
+    try mono.run(&ps.mod);
+
+    var arc_pass = Arc.ArcPass.init(alloc, &ps.sem.type_map);
+    defer arc_pass.deinit();
+    {
+        var it = ps.sem.escape_names.iterator();
+        while (it.next()) |entry| arc_pass.markEscaping(entry.key_ptr.*) catch {};
+    }
+    try arc_pass.run(&ps.mod);
+
+    var async_pass = AsyncLower.AsyncLower.init(alloc, &ps.sem.type_map);
+    defer async_pass.deinit();
+    try async_pass.run(&ps.mod);
+
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    var cg = CodeGen.init(alloc, io, &ps.sem.type_map, &ps.sem.module_globals, &aw.writer, ps.sem.next_closure_id, &ps.sem.table_field_types, &ps.sem.concepts);
+    cg.table_methods = &ps.sem.table_methods;
+    cg.mono = &mono;
+    cg.arc = &arc_pass;
+    cg.async_lower = &async_pass;
+    cg.src_path = mod_src_path;
+    cg.stdlib_root = compiler_lib_root;
+    cg.target = target;
+    cg.duo_mode = ps.sem.duo_mode;
+    cg.foreign_records = &ps.sem.foreign_records;
+    cg.foreign_functions = &ps.sem.foreign_functions;
+    try cg.emit_module(&ps.mod);
+    try aw.writer.flush();
+
+    try Io.Dir.writeFile(Io.Dir.cwd(), io, .{ .sub_path = out_c_path, .data = aw.written() });
+}
+
+/// Compile one `req`'d module's C to an object. Returns false when it does not
+/// stand alone, so the caller can leave it out of the link. `-Dmain=` renames
+/// the module's synthesized entry point: only the program's own object may
+/// define `main`.
+fn compileReqModuleObject(
+    alloc: std.mem.Allocator,
+    io: Io,
+    cc: []const u8,
+    c_path: []const u8,
+    o_path: []const u8,
+) bool {
+    // Same `xcrun` guard as `link_native_object`: without it the macOS SDK
+    // headers are not on the include path and every module fails on <stdio.h>.
+    const launcher = if (@import("builtin").os.tag == .macos and !macos_sdkroot_configured) "xcrun " else "";
+    const cmd = std.fmt.allocPrint(
+        alloc,
+        "{s}{s} -O2 -w -Dmain=duo_unused_module_main -c '{s}' -o '{s}' >/dev/null 2>&1",
+        .{ launcher, cc, c_path, o_path },
+    ) catch return false;
+    defer alloc.free(cmd);
+    const argv = [_][]const u8{ "/bin/sh", "-c", cmd };
+    var child = std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch return false;
+    const res = child.wait(io) catch return false;
+    return switch (res) {
+        .exited => |c| c == 0,
+        else => false,
+    };
+}
+
+/// Link inputs for a direct-backend executable: the fixed C helper plus one C
+/// file per `req`'d module that exports native symbols. `-Dmain=` renames each
+/// module's synthesized entry point — only the program's own object may define
+/// `main`, and the direct object is machine code, so the define cannot reach it.
+fn directLinkInputs(
+    alloc: std.mem.Allocator,
+    io: Io,
+    mod: *const ast.Module,
+    target: []const u8,
+    cc: []const u8,
+) ![]const []const u8 {
+    var inputs: std.ArrayListUnmanaged([]const u8) = .empty;
+    try inputs.append(alloc, "src/duo_keyword_classify.c");
+
+    var req = native_req_support.collectFromModule(alloc, mod) catch return inputs.toOwnedSlice(alloc);
+    defer req.deinit(alloc);
+
+    var sources: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer sources.deinit(alloc);
+    req.exportingModuleSources(alloc, &sources) catch return inputs.toOwnedSlice(alloc);
+    if (sources.items.len == 0) return inputs.toOwnedSlice(alloc);
+
+    for (sources.items) |sp| {
+        const stem = std.fs.path.stem(sp);
+        const out_c = try std.fmt.allocPrint(alloc, "/tmp/duo_reqmod_{s}.c", .{stem});
+        emitReqModuleC(alloc, io, sp, out_c, target) catch {
+            if (term.trace) term.traceStep("req-module-c-failed", .{});
+            continue;
+        };
+        const out_o = try std.fmt.allocPrint(alloc, "/tmp/duo_reqmod_{s}.o", .{stem});
+        // Compile to an object here rather than handing the .c to the linker.
+        // Not every module stands alone — `std.token.classify` reaches for a
+        // global its whole-program build supplies — and adding such a file to
+        // the link line breaks programs that linked fine without it. Building
+        // it separately lets a module that cannot stand alone be skipped, so
+        // the only failure left is the honest one: a genuinely missing symbol.
+        if (compileReqModuleObject(alloc, io, cc, out_c, out_o)) {
+            // `std.token.classify` exports `duo_keyword_classify`, which is
+            // exactly what the fixed helper at inputs[0] provides. Linking both
+            // is a duplicate-symbol error, so the module's own object wins — it
+            // is generated from the same .duo source and is the canonical one.
+            if (std.mem.endsWith(u8, sp, "token/classify.duo") and
+                inputs.items.len > 0 and
+                std.mem.eql(u8, inputs.items[0], "src/duo_keyword_classify.c"))
+            {
+                _ = inputs.orderedRemove(0);
+            }
+            try inputs.append(alloc, out_o);
+        } else {
+            if (term.trace) term.traceStep("req-module-object-skipped", .{});
+        }
+    }
+    return inputs.toOwnedSlice(alloc);
+}
+
+fn reportDirectBackendError(io: Io, err: anyerror, target: []const u8, trace: ?*std.builtin.StackTrace) void {
     var buf: [512]u8 = undefined;
     const msg = native_backend.describeError(err, target, &buf);
     term.err("direct backend: {s}", .{msg});
     term.hint("{s}", .{native_backend.unsupportedReason(target)});
+    // A DNB001 says only "outside the subset" — it never says *which* of the
+    // ~57 `return error.UnsupportedConstruct` sites fired, so narrowing one
+    // meant bisecting the .duo source by hand. Zig already records where an
+    // error was returned; dumping that trace names the exact bail site. Opt-in
+    // because it is debug output, and empty in ReleaseFast where the compiler
+    // elides return traces entirely.
+    if (std.c.getenv("DUO_DNIR_TRACE") != null) {
+        if (trace) |st| {
+            term.hint("DUO_DNIR_TRACE: lowering bailed at —", .{});
+            std.debug.dumpErrorReturnTrace(st);
+        } else {
+            term.hint("DUO_DNIR_TRACE: no return trace (build with -Doptimize=Debug)", .{});
+        }
+    }
     _ = io;
 }
 
@@ -2952,8 +3230,17 @@ fn do_compile(
     else
         null;
 
+    // Pass 27 P0: bench profiles c-dynamic/c-specialized must measure C emit, not direct Mach-O.
+    const skip_native_for_bench = global_bench_profile_cli and global_bench_backend != .direct;
+
     if (effective_machine_target) |mt| {
-        if (run_after and !native_backend.isNativeExecutableTarget(mt)) {
+        if (skip_native_for_bench) {
+            if (!std.mem.eql(u8, backend_mode, "auto") and !std.mem.eql(u8, backend_mode, "direct")) {
+                term.err("bench profile requires C emit path", .{});
+                std.process.exit(1);
+            }
+            // fall through to generated C below
+        } else if (run_after and !native_backend.isNativeExecutableTarget(mt)) {
             if (std.mem.eql(u8, backend_mode, "auto")) {
                 // fall through to C for auto when run needs executable but target is object/asm
             } else {
@@ -2975,10 +3262,13 @@ fn do_compile(
                 if (native_backend.resolveNativeEntrySymbol(&ps.mod, entry_override)) |entry| {
                     const obj_result = native_backend.emitObjectForExecutable(alloc, &ps.mod, entry);
                     if (obj_result) |obj| {
-                        const direct_extra = [_][]const u8{"src/duo_keyword_classify.c"};
+                        const direct_extra = try directLinkInputs(alloc, io, &ps.mod, mt, cc);
                         const obj_path = try std.fmt.allocPrint(alloc, "/tmp/duo_{s}_native.o", .{std.fs.path.stem(src_path)});
                         const cwd = Io.Dir.cwd();
                         try Io.Dir.writeFile(cwd, io, .{ .sub_path = obj_path, .data = obj });
+                        if (emitDirectCompileProofArtifact(alloc, io, src_path, obj_path, mt)) {
+                            if (term.trace) term.traceStep("direct-proof-artifact", .{});
+                        } else |_| {}
                         try link_native_object(
                             alloc,
                             io,
@@ -2988,7 +3278,7 @@ fn do_compile(
                             link_flags,
                             run_after and !verbose,
                             false,
-                            &direct_extra,
+                            direct_extra,
                             entry,
                         );
                         if (phase_timer) |*t| trace_phase(io, t, "native link", out_path);
@@ -3023,7 +3313,7 @@ fn do_compile(
                         if (std.mem.eql(u8, backend_mode, "auto")) {
                             if (term.info) term.infoMsg("auto backend: direct machine lowering unavailable ({s}) — using C emit bootstrap", .{@errorName(e)});
                         } else {
-                            reportDirectBackendError(io, e, mt);
+                            reportDirectBackendError(io, e, mt, @errorReturnTrace());
                             std.process.exit(1);
                         }
                     }
@@ -3043,7 +3333,7 @@ fn do_compile(
                     if (std.mem.eql(u8, backend_mode, "auto")) {
                         if (term.info) term.infoMsg("auto backend: direct dylib lowering unavailable ({s})", .{@errorName(e)});
                     } else {
-                        reportDirectBackendError(io, e, mt);
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace());
                         std.process.exit(1);
                     }
                     return;
@@ -3068,7 +3358,7 @@ fn do_compile(
                     if (std.mem.eql(u8, backend_mode, "auto")) {
                         if (term.info) term.infoMsg("auto backend: direct object lowering unavailable ({s})", .{@errorName(e)});
                     } else {
-                        reportDirectBackendError(io, e, mt);
+                        reportDirectBackendError(io, e, mt, @errorReturnTrace());
                         std.process.exit(1);
                     }
                     return;
@@ -3687,14 +3977,14 @@ fn do_dump_c(alloc: std.mem.Allocator, io: Io, src_path: []const u8, target: []c
     cg.duo_mode = ps.sem.duo_mode;
     cg.foreign_records = &ps.sem.foreign_records;
     cg.foreign_functions = &ps.sem.foreign_functions;
-        cg.emit_module(&ps.mod) catch |e| {
-            if (e == error.NoAllocViolation) {
-                if (cg.noallocViolationMessage()) |msg| term.err("{s}", .{msg});
-                std.process.exit(1);
-            }
-            term.err("codegen error: {}", .{e});
+    cg.emit_module(&ps.mod) catch |e| {
+        if (e == error.NoAllocViolation) {
+            if (cg.noallocViolationMessage()) |msg| term.err("{s}", .{msg});
             std.process.exit(1);
-        };
+        }
+        term.err("codegen error: {}", .{e});
+        std.process.exit(1);
+    };
     try fw.interface.flush();
     transform_engine.dumpProvenanceSummary(io, std.Io.File.stderr());
 }

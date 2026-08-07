@@ -3,54 +3,54 @@
 Tensor = req "std.ml.tensor"
 
 -- Native kernels (zero-arg checksum benchmarks / fused paths)
-fun bench_matmul(): f64
+bench_matmul(): f64
     return ml.matmul_256()
 end
 
-fun bench_conv2d(): f64
+bench_conv2d(): f64
     return ml.conv2d()
 end
 
-fun bench_softmax(): f64
+bench_softmax(): f64
     return ml.softmax_1k()
 end
 
-fun bench_attention(): f64
+bench_attention(): f64
     return ml.attention()
 end
 
-fun bench_mlp(): f64
+bench_mlp(): f64
     return ml.mlp_forward()
 end
 
-fun bench_gelu(): f64
+bench_gelu(): f64
     return ml.gelu_1k()
 end
 
-fun bench_layernorm(): f64
+bench_layernorm(): f64
     return ml.layernorm_1k()
 end
 
-fun bench_dot(): f64
+bench_dot(): f64
     return ml.dot_1m()
 end
 
-fun bench_conv1d(): f64
+bench_conv1d(): f64
     return ml.conv1d()
 end
 
 -- User-facing tensor ops (stdlib path; compiler may fuse later)
 @hot
-fun matmul(a, b): any
+matmul(a, b): any
     return Tensor.matmul(a, b)
 end
 
 @hot
-fun softmax(t): any
+softmax(t): any
     return Tensor.softmax(t)
 end
 
-fun gelu(t): any
+gelu(t): any
     result = Tensor.zeros(t.rows, t.cols)
     for i = 1, t.size
         v = t.data[i]
@@ -60,7 +60,7 @@ fun gelu(t): any
     return result
 end
 
-fun layernorm(t, eps): any
+layernorm(t, eps): any
     if eps == nil eps = 1e-5 end
     n = t.size
     mean = 0.0
@@ -79,7 +79,7 @@ fun layernorm(t, eps): any
     return result
 end
 
-fun dot(a, b): f64
+dot(a, b): f64
     assert(a.size == b.size, "dot size mismatch")
     sum = 0.0
     for i = 1, a.size

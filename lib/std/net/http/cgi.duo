@@ -1,11 +1,11 @@
 -- std.net.http.cgi — CGI handler (mirrors Go's net/http/cgi)
 
-fun serve(handler: any): void
+serve(handler: any): void
     method = os.getenv("REQUEST_METHOD") or "GET"
     path = os.getenv("PATH_INFO") or "/"
     query = os.getenv("QUERY_STRING") or ""
     body = ""
-    if method == "POST" or method == "PUT" then
+    if method == "POST" or method == "PUT"
         body = io.read()
     end
     resp = handler(method, path, query, body)
@@ -13,7 +13,7 @@ fun serve(handler: any): void
     io.write(resp)
 end
 
-fun request(): any
+request(): any
     {method = os.getenv("REQUEST_METHOD") or "GET", path = os.getenv("PATH_INFO") or "/", query = os.getenv("QUERY_STRING") or ""}
 end
 

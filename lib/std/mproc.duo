@@ -1,47 +1,47 @@
 -- std.mproc — multi-process utilities
 
-local io = req "std.io"
+io = req "std.io"
 
-fun pid(): str
+pid(): str
     -- Get PID via /proc/self (Linux) or POSIX getpid
-    local f = io.open("/proc/self/stat", "r")
-    if f then
-        local line = io.read(f, "*l")
+    f = io.open("/proc/self/stat", "r")
+    if f
+        line = io.read(f, "*l")
         io.close(f)
-        if line then
-            local space_idx = string.find(line, " ")
-            if space_idx then
+        if line
+            space_idx = string.find(line, " ")
+            if space_idx
                 return string.sub(line, 1, space_idx - 1)
             end
         end
     end
     -- Fallback: use Lua's os.execute to capture $$
-    local handle = io.popen("echo $$")
-    if handle then
-        local result = io.read(handle, "*l")
+    handle = io.popen("echo $$")
+    if handle
+        result = io.read(handle, "*l")
         io.close(handle)
-        if result then return result end
+        if result return result end
     end
     "0"
 end
 
-fun spawn(cmd: str): i64
-    local handle = io.popen(cmd .. " 2>&1 & echo $!")
-    if handle then
-        local pid_str = io.read(handle, "*l")
+spawn(cmd: str): i64
+    handle = io.popen(cmd .. " 2>&1 & echo $!")
+    if handle
+        pid_str = io.read(handle, "*l")
         io.close(handle)
-        if pid_str then
+        if pid_str
             return tonumber(pid_str) or 0
         end
     end
     0
 end
 
-fun kill(pid: str): void
+kill(pid: str): void
     os.execute("kill " .. tostring(pid) .. " 2>/dev/null")
 end
 
-fun mproc_wait(pid: str): void
+mproc_wait(pid: str): void
     -- Use waitpid via os.execute for the given PID
     os.execute("wait " .. tostring(pid) .. " 2>/dev/null")
 end

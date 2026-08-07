@@ -9,7 +9,7 @@ end
 type Point = { x: f64, y: f64 }
 type Pair = { x: f64, y: f64 }
 
-@comp.define.derive("TouchApi", fun generate(meta) -> str
+@comp.define.derive("TouchApi", generate(meta) -> str
     acc = "/* " .. meta.name .. " touch API */\n"
     for i = 1, #meta.fields
         f = meta.fields[i]

@@ -5,7 +5,7 @@
 -- Gradient Descent (1D)
 -- ═══════════════════════════════════════════════════════════════
 
-fun optimize_gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
+optimize_gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64): any
     x = x0
     history = {x}
 
@@ -29,10 +29,10 @@ end
 -- Adam Optimizer (for scalar functions)
 -- ═══════════════════════════════════════════════════════════════
 
-fun optimize_adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64): any
-    if beta1 == nil then beta1 = 0.9 end
-    if beta2 == nil then beta2 = 0.999 end
-    if epsilon == nil then epsilon = 1e-8 end
+optimize_adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64): any
+    if beta1 == nil beta1 = 0.9 end
+    if beta2 == nil beta2 = 0.999 end
+    if epsilon == nil epsilon = 1e-8 end
 
     x = x0
     m = 0
@@ -63,11 +63,11 @@ end
 -- Nelder-Mead (derivative-free)
 -- ═══════════════════════════════════════════════════════════════
 
-fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64): any
-    if alpha == nil then alpha = 1.0 end
-    if gamma == nil then gamma = 2.0 end
-    if rho == nil then rho = 0.5 end
-    if sigma == nil then sigma = 0.5 end
+optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64): any
+    if alpha == nil alpha = 1.0 end
+    if gamma == nil gamma = 2.0 end
+    if rho == nil rho = 0.5 end
+    if sigma == nil sigma = 0.5 end
 
     n = #x0
 
@@ -79,7 +79,7 @@ fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigm
         point = {}
         j = 1
         while j <= n
-            if j == i then
+            if j == i
                 point[j] = x0[j] + 0.05
             else
                 point[j] = x0[j]
@@ -93,7 +93,7 @@ fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigm
     iter = 0
     while iter < iterations
         -- Sort simplex by value
-        table.sort(simplex, function(a, b) return a.value < b.value end)
+        table.sort(simplex, fun(a: any, b: any): any a.value < b.value)
 
         -- Best and worst
         best = simplex[1]
@@ -122,10 +122,10 @@ fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigm
         end
         reflected_value = f(reflected)
 
-        if reflected_value < simplex[n].value and reflected_value >= best.value then
+        if reflected_value < simplex[n].value and reflected_value >= best.value
             -- Accept reflection
             simplex[n + 1] = {point = reflected, value = reflected_value}
-        elseif reflected_value < best.value then
+        elseif reflected_value < best.value
             -- Expansion
             expanded = {}
             i = 1
@@ -135,7 +135,7 @@ fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigm
             end
             expanded_value = f(expanded)
 
-            if expanded_value < reflected_value then
+            if expanded_value < reflected_value
                 simplex[n + 1] = {point = expanded, value = expanded_value}
             else
                 simplex[n + 1] = {point = reflected, value = reflected_value}
@@ -150,7 +150,7 @@ fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigm
             end
             contracted_value = f(contracted)
 
-            if contracted_value < worst.value then
+            if contracted_value < worst.value
                 simplex[n + 1] = {point = contracted, value = contracted_value}
             else
                 -- Shrink
@@ -171,7 +171,7 @@ fun optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigm
     end
 
     -- Sort final simplex
-    table.sort(simplex, function(a, b) return a.value < b.value end)
+    table.sort(simplex, fun(a: any, b: any): any a.value < b.value)
 
     {
         x = simplex[1].point,
@@ -184,7 +184,7 @@ end
 -- Grid Search
 -- ═══════════════════════════════════════════════════════════════
 
-fun optimize_grid_search(f: any, ranges: any, steps: i64): any
+optimize_grid_search(f: any, ranges: any, steps: i64): any
     -- Generate grid points
     grid = {}
     for param_name, range in ranges
@@ -211,23 +211,23 @@ fun optimize_grid_search(f: any, ranges: any, steps: i64): any
         param_names[#param_names + 1] = name
     end
 
-    if #param_names == 1 then
+    if #param_names == 1
         for v in grid[param_names[1]]
             params = {[param_names[1]] = v}
             value = f(params)
             results[#results + 1] = {params = params, value = value}
-            if value < best_value then
+            if value < best_value
                 best_value = value
                 best = params
             end
         end
-    elseif #param_names == 2 then
+    elseif #param_names == 2
         for v1 in grid[param_names[1]]
             for v2 in grid[param_names[2]]
                 params = {[param_names[1]] = v1, [param_names[2]] = v2}
                 value = f(params)
                 results[#results + 1] = {params = params, value = value}
-                if value < best_value then
+                if value < best_value
                     best_value = value
                     best = params
                 end
@@ -246,7 +246,7 @@ end
 -- Random Search
 -- ═══════════════════════════════════════════════════════════════
 
-fun optimize_random_search(f: any, ranges: any, iterations: i64): any
+optimize_random_search(f: any, ranges: any, iterations: i64): any
     best = nil
     best_value = 1e30
     results = {}
@@ -263,7 +263,7 @@ fun optimize_random_search(f: any, ranges: any, iterations: i64): any
         value = f(params)
         results[#results + 1] = {params = params, value = value}
 
-        if value < best_value then
+        if value < best_value
             best_value = value
             best = params
         end
@@ -282,17 +282,17 @@ end
 -- Line Search (backtracking)
 -- ═══════════════════════════════════════════════════════════════
 
-fun optimize_line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_iter: i64): f64
-    if alpha == nil then alpha = 0.5 end
-    if beta == nil then beta = 0.8 end
-    if max_iter == nil then max_iter = 20 end
+optimize_line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_iter: i64): f64
+    if alpha == nil alpha = 0.5 end
+    if beta == nil beta = 0.8 end
+    if max_iter == nil max_iter = 20 end
 
     t = 1.0
     f_x = f(x)
 
     i = 0
     while i < max_iter
-        if f(x + t * direction) <= f_x + alpha * t * direction then
+        if f(x + t * direction) <= f_x + alpha * t * direction
             return t
         end
         t = beta * t

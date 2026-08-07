@@ -43,7 +43,7 @@ end
 -- Chars scanned directly (no Lua patterns) to dodge the F-13813-5 bugs.
 tokens(text: str): any
     out = {}
-    if text == nil then return out end
+    if text == nil return out end
     n = string.len(text)
     i = 1
     cur = ""
@@ -71,10 +71,10 @@ end
 -- Char 3-grams of a token, edge-padded with sentinels so prefix/suffix matter.
 trigrams(token: str): any
     out = {}
-    if token == nil then return out end
+    if token == nil return out end
     s = "^" .. token .. "$"
     n = string.len(s)
-    if n < 3 then return out end
+    if n < 3 return out end
     i = 1
     while i <= n - 2
         out[#out + 1] = s:sub(i, i + 2)
@@ -112,13 +112,13 @@ end
 -- Cosine similarity between two sparse vectors from embed(). Iterates the
 -- (usually smaller) query vector and probes `s` by shared feature key.
 cosine(q: any, s: any): float
-    if q == nil or s == nil then return 0.0 end
-    if q.norm == 0 or s.norm == 0 then return 0.0 end
+    if q == nil or s == nil return 0.0 end
+    if q.norm == 0 or s.norm == 0 return 0.0 end
     dot = 0.0
     for k, qw in q
-        if k ~= "norm" and k ~= "dim"
+        if k != "norm" and k != "dim"
             sw = s[k]
-            if sw ~= nil
+            if sw != nil
                 dot = dot + qw * sw
             end
         end
@@ -142,8 +142,8 @@ rank(q: any, records: any, top_k: i64): any
     end
     n = #all
     k = top_k
-    if k > n then k = n end
-    if k < 0 then k = 0 end
+    if k > n k = n end
+    if k < 0 k = 0 end
     out = {}
     taken = {}
     round = 1
@@ -160,7 +160,7 @@ rank(q: any, records: any, top_k: i64): any
             end
             i = i + 1
         end
-        if besti == 0 then break end
+        if besti == 0 break end
         taken[besti] = true
         out[#out + 1] = all[besti]
         round = round + 1

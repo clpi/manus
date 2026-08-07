@@ -1,0 +1,33 @@
+-- expect: 99
+-- Native tables, step 4: a table CROSSING A FUNCTION BOUNDARY, mutated by the
+-- callee, with the mutation visible to the caller.
+--
+-- This is the SH-04 blocker in `src/selfhosting_matrix.zig`. Steps 1-3 in this
+-- directory work because a positional table is register-exploded — one local per
+-- element — which is fast and needs no memory, but leaves no contiguous storage
+-- and therefore no pointer to hand across a call. A table parameter was DNB002,
+-- a module-scope table DNB001, and a record with a table field DNB001.
+--
+-- `alloc_slots` gives a table a real frame region; a `ptr` parameter carries its
+-- base address in x0..x7 like any integer-class argument; and `load_index` /
+-- `store_index` with `ty == .i64` are scaled 8-byte accesses (`[base, idx, lsl #3]`).
+-- Materialization happens at the first call that takes the table, and the name
+-- is rebound to the base from that point on, so later reads see the callee's
+-- writes instead of stale element registers.
+--
+-- The C backend cannot compile this, so it is gated on the declared answer.
+bump(t: ptr): i64
+    t[2] = 99
+    0
+end
+
+at(t: ptr, i: i64): i64
+    t[i]
+end
+
+main(): i64
+    a = { 10, 20, 30 }
+    z: i64 = bump(a)
+    r: i64 = at(a, 2)
+    r + z
+end

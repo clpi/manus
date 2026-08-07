@@ -67,8 +67,17 @@ pub const Op = enum {
     load_field,
     store_field,
     init_record,
+    /// Indexed element access. `ty == .i64` selects 8-byte word semantics over a
+    /// memory-backed positional table (see `alloc_slots`); any other `ty` keeps
+    /// the original byte semantics used by `string.byte`.
     load_index,
     store_index,
+    /// Reserve `lhs` i64 slots in the current frame and put their base address in
+    /// `result`. This is the memory representation a positional table needs in
+    /// order to cross a function boundary: without it a table is exploded into
+    /// one local per element, so there is no contiguous storage and no pointer to
+    /// pass (the SH-04 blocker in `selfhosting_matrix.zig`).
+    alloc_slots,
     load_global,
     binop,
     cmp,
@@ -89,6 +98,11 @@ pub const Op = enum {
     hw_spin,
     /// Unary hardware/bit op — see `Instr.hw`.
     hw_unary,
+    /// `string.len(s)` — byte length of a `const char*`, emitted as an inline
+    /// scan loop. Sovereign by construction: no libc `strlen`, no C helper, no
+    /// runtime call, so a tokenizer built on `string.len` stays inside the
+    /// direct backend subset.
+    str_len,
 };
 
 pub const Value = union(enum) {
@@ -207,14 +221,34 @@ pub fn moduleIsNativeDirectReady(m: Module) bool {
         for (f.blocks) |b| {
             for (b.instrs) |i| {
                 switch (i.op) {
-                    .call_direct, .call_extern, .load_field, .store_field,
-                    .init_record, .load_index, .store_index,
-                    .binop, .cmp, .ret, .ret_record,
-                    .const_i64, .const_f64, .const_str, .const_req,
-                    .load_local, .store_local, .load_global,
-                    .mov_arg, .fp_mov_arg,
-                    .br, .br_if, .br_if_not,
-                    .hw_fence, .hw_spin, .hw_unary,
+                    .call_direct,
+                    .call_extern,
+                    .load_field,
+                    .store_field,
+                    .init_record,
+                    .load_index,
+                    .store_index,
+                    .alloc_slots,
+                    .binop,
+                    .cmp,
+                    .ret,
+                    .ret_record,
+                    .const_i64,
+                    .const_f64,
+                    .const_str,
+                    .const_req,
+                    .load_local,
+                    .store_local,
+                    .load_global,
+                    .mov_arg,
+                    .fp_mov_arg,
+                    .br,
+                    .br_if,
+                    .br_if_not,
+                    .hw_fence,
+                    .hw_spin,
+                    .hw_unary,
+                    .str_len,
                     => {},
                 }
             }

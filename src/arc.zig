@@ -334,6 +334,7 @@ pub const ArcPass = struct {
                         try self.processExpr(sp);
                         if (self.exprCanHoldRef(sp)) holds_ref = true;
                     },
+                    .semantic => |sm| try self.processExpr(sm.val),
                 };
                 // A table whose fields can themselves hold references may form a
                 // cycle and must be registered with the cycle collector.
@@ -363,6 +364,7 @@ pub const ArcPass = struct {
                 if (r.step) |s| try self.processExpr(s);
             },
             .quote, .unquote, .macro_call => unreachable,
+            .semantic, .semantic_scope => {}, // semantic identity / world: no child exprs
             .nil, .true_lit, .false_lit, .int_lit, .float_lit, .string_lit, .vararg, .name => {},
             .sequence => |seq| {
                 for (seq.exprs) |e| try self.processExpr(e);

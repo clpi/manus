@@ -1,103 +1,103 @@
 -- std.collections — basic data structures over Duo tables
 
-fun list_new(): any
+list_new(): any
     {}
 end
 
-fun list_push(list: any, value: any): void
+list_push(list: any, value: any): void
     table.insert(list, value)
 end
 
-fun list_pop(list: any): any
+list_pop(list: any): any
     table.remove(list)
 end
 
-fun list_get(list: any, index: i64): any
+list_get(list: any, index: i64): any
     list[index]
 end
 
-fun list_len(list: any): i64
+list_len(list: any): i64
     return #list
 end
 
-fun stack_new(): any
+stack_new(): any
     {}
 end
 
-fun stack_push(stack: any, value: any): void
+stack_push(stack: any, value: any): void
     table.insert(stack, value)
 end
 
-fun stack_pop(stack: any): any
+stack_pop(stack: any): any
     table.remove(stack)
 end
 
-fun queue_new(): any
+queue_new(): any
     {}
 end
 
-fun queue_enqueue(q: any, value: any): void
+queue_enqueue(q: any, value: any): void
     table.insert(q, value)
 end
 
-fun queue_dequeue(q: any): any
+queue_dequeue(q: any): any
     n = #q
-    if n == 0 then
+    if n == 0
         nil
     end
     table.remove(q, 1)
 end
 
-fun map_new(): any
+map_new(): any
     {}
 end
 
-fun map_set(m: any, key: any, value: any): void
+map_set(m: any, key: any, value: any): void
     m[key] = value
 end
 
-fun map_get(m: any, key: any): any
+map_get(m: any, key: any): any
     m[key]
 end
 
-fun map_has(m: any, key: any): bool
-    m[key] ~= nil
+map_has(m: any, key: any): bool
+    m[key] != nil
 end
 
-fun set_new(): any
+set_new(): any
     {}
 end
 
-fun set_add(s: any, value: any): void
+set_add(s: any, value: any): void
     s[value] = true
 end
 
-fun set_has(s: any, value: any): bool
-    s[value] ~= nil
+set_has(s: any, value: any): bool
+    s[value] != nil
 end
 
-fun is_array(t: any): bool
-    if type(t) ~= "table" then return false end
-    if t[1] == nil then return true end
+is_array(t: any): bool
+    if type(t) != "table" return false end
+    if t[1] == nil return true end
     i = 2
-    while t[i] ~= nil i += 1 end
+    while t[i] != nil i += 1 end
     for k, _ in pairs(t)
-        if type(k) ~= "number" then return false end
-        if k < 1 then return false end
+        if type(k) != "number" return false end
+        if k < 1 return false end
     end
     true
 end
 
-fun remove_at(list: any, index: i64): any
+remove_at(list: any, index: i64): any
     table.remove(list, index)
 end
 
-fun list_insert(list: any, index: i64, value: any): void
+list_insert(list: any, index: i64, value: any): void
     table.insert(list, index, value)
 end
 
-fun list_clear(list: any): void
-    if list == nil then return end
+list_clear(list: any): void
+    if list == nil return end
     i = #list
     while i > 0
         table.remove(list, i)
@@ -105,66 +105,66 @@ fun list_clear(list: any): void
     end
 end
 
-fun map_delete(m: any, key: any): void
-    if m == nil then return end
+map_delete(m: any, key: any): void
+    if m == nil return end
     m[key] = nil
 end
 
-fun map_keys(m: any): any
+map_keys(m: any): any
     out = {}
-    if m == nil then return out end
+    if m == nil return out end
     for k, _ in pairs(m)
         table.insert(out, k)
     end
     out
 end
 
-fun map_values(m: any): any
+map_values(m: any): any
     out = {}
-    if m == nil then return out end
+    if m == nil return out end
     for _, v in pairs(m)
         table.insert(out, v)
     end
     out
 end
 
-fun set_remove(s: any, value: any): void
-    if s == nil then return end
+set_remove(s: any, value: any): void
+    if s == nil return end
     s[value] = nil
 end
 
-fun set_clear(s: any): void
-    if s == nil then return end
+set_clear(s: any): void
+    if s == nil return end
     for k, _ in pairs(s)
         s[k] = nil
     end
 end
 
-fun set_union(s1: any, s2: any): any
+set_union(s1: any, s2: any): any
     out = {}
-    if s1 ~= nil then
+    if s1 != nil
         for k, _ in pairs(s1) out[k] = true end
     end
-    if s2 ~= nil then
+    if s2 != nil
         for k, _ in pairs(s2) out[k] = true end
     end
     out
 end
 
-fun set_intersection(s1: any, s2: any): any
+set_intersection(s1: any, s2: any): any
     out = {}
-    if s1 == nil or s2 == nil then return out end
+    if s1 == nil or s2 == nil return out end
     for k, _ in pairs(s1)
-        if s2[k] ~= nil then out[k] = true end
+        if s2[k] != nil out[k] = true end
     end
     out
 end
 
-fun set_difference(s1: any, s2: any): any
+set_difference(s1: any, s2: any): any
     out = {}
-    if s1 == nil then return out end
+    if s1 == nil return out end
     for k, _ in pairs(s1)
-        if s2 == nil or s2[k] == nil then out[k] = true end
+        if s2 == nil or s2[k] == nil out[k] = true end
     end
     out
 end

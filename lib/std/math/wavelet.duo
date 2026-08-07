@@ -5,13 +5,13 @@
 -- Haar Wavelet Transform
 -- ═══════════════════════════════════════════════════════════════
 
-fun haar_forward(data: any): any
+haar_forward(data: any): any
     n = #data
-    if n <= 1 then return data end
+    if n <= 1 return data end
 
     -- Pad to even length if needed
     padded = {table.unpack(data)}
-    if n % 2 ~= 0 then
+    if n % 2 != 0
         padded[n + 1] = padded[n]
         n += 1
     end
@@ -42,9 +42,9 @@ fun haar_forward(data: any): any
     result
 end
 
-fun haar_inverse(data: any): any
+haar_inverse(data: any): any
     n = #data
-    if n <= 1 then return data end
+    if n <= 1 return data end
 
     temp = {table.unpack(data)}
 
@@ -93,7 +93,7 @@ DB4_HI_RE = {
     0.1294095225512603,
 }
 
-fun convolve(signal: any, filter: any): any
+convolve(signal: any, filter: any): any
     n = #signal
     f = #filter
     result = {}
@@ -103,7 +103,7 @@ fun convolve(signal: any, filter: any): any
         j = 1
         while j <= f
             idx = i - j + 1
-            if idx >= 1 and idx <= n then
+            if idx >= 1 and idx <= n
                 sum += signal[idx] * filter[j]
             end
             j += 1
@@ -114,7 +114,7 @@ fun convolve(signal: any, filter: any): any
     result
 end
 
-fun downsample(data: any, factor: i64): any
+downsample(data: any, factor: i64): any
     result = {}
     i = 1
     while i <= #data
@@ -124,7 +124,7 @@ fun downsample(data: any, factor: i64): any
     result
 end
 
-fun upsample(data: any, factor: i64): any
+upsample(data: any, factor: i64): any
     result = {}
     i = 1
     while i <= #data
@@ -139,7 +139,7 @@ fun upsample(data: any, factor: i64): any
     result
 end
 
-fun db4_forward(data: any): any
+db4_forward(data: any): any
     approx = convolve(data, DB4_LO_DE)
     detail = convolve(data, DB4_HI_DE)
     approx_ds = downsample(approx, 2)
@@ -150,7 +150,7 @@ fun db4_forward(data: any): any
     }
 end
 
-fun db4_inverse(approx: any, detail: any): any
+db4_inverse(approx: any, detail: any): any
     approx_us = upsample(approx, 2)
     detail_us = upsample(detail, 2)
     a = convolve(approx_us, DB4_LO_RE)
@@ -169,7 +169,7 @@ end
 -- Multi-level Decomposition
 -- ═══════════════════════════════════════════════════════════════
 
-fun wavelet_decompose(data: any, levels: i64): any
+wavelet_decompose(data: any, levels: i64): any
     coeffs = {data}
     i = 1
     while i <= levels
@@ -185,7 +185,7 @@ fun wavelet_decompose(data: any, levels: i64): any
     }
 end
 
-fun wavelet_reconstruct(decomp: any): any
+wavelet_reconstruct(decomp: any): any
     signal = decomp.approx
     i = decomp.levels
     while i >= 1
@@ -199,7 +199,7 @@ end
 -- Denoising
 -- ═══════════════════════════════════════════════════════════════
 
-fun wavelet_denoise(signal: any, threshold: f64): any
+wavelet_denoise(signal: any, threshold: f64): any
     decomp = wavelet_decompose(signal, 3)
 
     -- Soft threshold detail coefficients
@@ -208,7 +208,7 @@ fun wavelet_denoise(signal: any, threshold: f64): any
         j = 1
         while j <= #decomp.details[i]
             coeff = decomp.details[i][j]
-            if math.abs(coeff) < threshold then
+            if math.abs(coeff) < threshold
                 decomp.details[i][j] = 0
             else
                 decomp.details[i][j] = coeff - math.sign(coeff) * threshold

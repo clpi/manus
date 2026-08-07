@@ -41,53 +41,53 @@ static const char* duo_jit_arch(void) {
 
 -- Reserve `bytes` of writable memory that seal() can later make executable.
 -- Returns a buffer value, or nil if the host refused the mapping.
-fun alloc(bytes: i64): any
-    return __emit([[({ lua_Value _v; _v.type = VAL_BUFFER;
+alloc(bytes: i64): any
+    return @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER;
         void* _p = mmap(NULL, (size_t)bytes, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANON, -1, 0);
         _v.as.tval = (_p == MAP_FAILED) ? NULL : _p; _v; })]])
 end
 
 -- Store one 32-bit instruction word at instruction index `idx`.
-fun w32(buf: any, idx: i64, word: i64): void
-    __emit("((uint32_t*)buf.as.tval)[idx] = (uint32_t)word")
+w32(buf: any, idx: i64, word: i64): void
+    @c.emit("((uint32_t*)buf.as.tval)[idx] = (uint32_t)word")
 end
 
 -- Read back one 32-bit word (debugging emitted code).
-fun r32(buf: any, idx: i64): i64
-    return __emit("(int64_t)((uint32_t*)buf.as.tval)[idx]")
+r32(buf: any, idx: i64): i64
+    return @c.emit("(int64_t)((uint32_t*)buf.as.tval)[idx]")
 end
 
 -- Store one raw byte at byte offset `off`.
-fun w8(buf: any, off: i64, byte: i64): void
-    __emit("((uint8_t*)buf.as.tval)[off] = (uint8_t)byte")
+w8(buf: any, off: i64, byte: i64): void
+    @c.emit("((uint8_t*)buf.as.tval)[off] = (uint8_t)byte")
 end
 
 -- Make the first `bytes` executable and flush the instruction cache.
 -- Returns true on success.
-fun seal(buf: any, bytes: i64): bool
-    return __emit("(duo_jit_seal(buf.as.tval, (long)bytes) == 0)")
+seal(buf: any, bytes: i64): bool
+    return @c.emit("(duo_jit_seal(buf.as.tval, (long)bytes) == 0)")
 end
 
 -- Call the buffer. The arity-specific entry points exist because a raw
 -- function pointer has to be cast to a concrete signature at the call site.
-fun call0(buf: any): i64
-    return __emit("((int64_t(*)(void))buf.as.tval)()")
+call0(buf: any): i64
+    return @c.emit("((int64_t(*)(void))buf.as.tval)()")
 end
-fun call1(buf: any, a0: i64): i64
-    return __emit("((int64_t(*)(int64_t))buf.as.tval)(a0)")
+call1(buf: any, a0: i64): i64
+    return @c.emit("((int64_t(*)(int64_t))buf.as.tval)(a0)")
 end
-fun call2(buf: any, a0: i64, a1: i64): i64
-    return __emit("((int64_t(*)(int64_t,int64_t))buf.as.tval)(a0, a1)")
+call2(buf: any, a0: i64, a1: i64): i64
+    return @c.emit("((int64_t(*)(int64_t,int64_t))buf.as.tval)(a0, a1)")
 end
 
-fun release(buf: any, bytes: i64): void
-    __emit("munmap(buf.as.tval, (size_t)bytes)")
+release(buf: any, bytes: i64): void
+    @c.emit("munmap(buf.as.tval, (size_t)bytes)")
 end
 
 -- True when this build targets an architecture std.jit can emit for.
-fun arch(): str
-    return __emit("duo_jit_arch()")
+arch(): str
+    return @c.emit("duo_jit_arch()")
 end
 
 M = {}

@@ -19,35 +19,35 @@ LOOKUP_TABLE_OWNER = "lib/std/wasm/opcode_lookup.duo"
 -- Bounded MVP count (must match wasm_semantic.zig mvp_instructions.len).
 MVP_INSTRUCTION_COUNT = 63
 
-fun semantic_owner(): str
+semantic_owner(): str
     SEMANTIC_OWNER
 end
 
-fun generator_owner(): str
+generator_owner(): str
     GENERATOR_OWNER
 end
 
-fun schema_version(): str
+schema_version(): str
     SCHEMA
 end
 
-fun mvp_feature(): str
+mvp_feature(): str
     MVP_FEATURE
 end
 
-fun mvp_instruction_count(): i64
+mvp_instruction_count(): i64
     MVP_INSTRUCTION_COUNT
 end
 
-fun opcode_table_size(): i64
+opcode_table_size(): i64
     OPCODE_TABLE_SIZE
 end
 
-fun decoder_table_owner(): str
+decoder_table_owner(): str
     DECODER_TABLE_OWNER
 end
 
-fun lookup_table_owner(): str
+lookup_table_owner(): str
     LOOKUP_TABLE_OWNER
 end
 

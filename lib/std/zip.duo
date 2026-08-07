@@ -1,70 +1,70 @@
 -- std.zip — ZIP archive utilities
 
-local proc = req("std.proc")
-local fs = req("std.fs")
+proc = req("std.proc")
+fs = req("std.fs")
 
-fun create(archive_path: str, source_dir: str): bool
-    local cmd = "cd " .. source_dir .. " && zip -r -q " .. archive_path .. " ."
+create(archive_path: str, source_dir: str): bool
+    cmd = "cd " .. source_dir .. " && zip -r -q " .. archive_path .. " ."
     proc.exec(cmd) == 0
 end
 
-fun create_files(archive_path: str, files: any): bool
-    if files == nil or rawlen(files) == 0 then return false end
-    local file_args = table.concat(files, " ")
-    local cmd = "zip -q " .. archive_path .. " " .. file_args
+create_files(archive_path: str, files: any): bool
+    if files == nil or rawlen(files) == 0 return false end
+    file_args = table.concat(files, " ")
+    cmd = "zip -q " .. archive_path .. " " .. file_args
     proc.exec(cmd) == 0
 end
 
-fun extract(archive_path: str, dest_dir: str): bool
+extract(archive_path: str, dest_dir: str): bool
     proc.exec("mkdir -p " .. dest_dir)
-    local cmd = "unzip -q " .. archive_path .. " -d " .. dest_dir
+    cmd = "unzip -q " .. archive_path .. " -d " .. dest_dir
     proc.exec(cmd) == 0
 end
 
-fun extract_overwrite(archive_path: str, dest_dir: str): bool
+extract_overwrite(archive_path: str, dest_dir: str): bool
     proc.exec("mkdir -p " .. dest_dir)
-    local cmd = "unzip -o -q " .. archive_path .. " -d " .. dest_dir
+    cmd = "unzip -o -q " .. archive_path .. " -d " .. dest_dir
     proc.exec(cmd) == 0
 end
 
-fun list(archive_path: str): any
-    local handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
-    if handle == nil then return {} end
-    local output = handle:read("*a")
+list(archive_path: str): any
+    handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
+    if handle == nil return {} end
+    output = handle:read("*a")
     handle:close()
-    local files = {}
-    local in_listing = false
+    files = {}
+    in_listing = false
     for line in output:gmatch("[^\n]+")
-        if in_listing then
-            if line:match("^%-") then
+        if in_listing
+            if line:match("^%-")
                 break
             end
-            local name = line:match("^%s+%d+%s+%S+%s+(.+)$")
-            if name and name ~= "" then
+            name = line:match("^%s+%d+%s+%S+%s+(.+)$")
+            if name and name != ""
                 files[rawlen(files) + 1] = name
             end
         end
-        if line:match("^%s+Length") then
+        if line:match("^%s+Length")
             in_listing = true
         end
     end
     files
 end
 
-fun list_detailed(archive_path: str): any
-    local handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
-    if handle == nil then return {} end
-    local output = handle:read("*a")
+list_detailed(archive_path: str): any
+    handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
+    if handle == nil return {} end
+    output = handle:read("*a")
     handle:close()
-    local files = {}
-    local in_listing = false
+    files = {}
+    in_listing = false
     for line in output:gmatch("[^\n]+")
-        if in_listing then
-            if line:match("^%-") then
+        if in_listing
+            if line:match("^%-")
                 break
             end
-            local size, date, time, name = line:match("^%s+(%d+)%s+(%S+)%s+(%S+)%s+(.+)$")
-            if name and name ~= "" then
+            size, date, time, name = line:match("^%s+(%d+)%s+(%S+)%s+(%S+)%s+(.+)$")
+            if name and name != ""
                 files[rawlen(files) + 1] = {
                     name = name,
                     size = tonumber(size),
@@ -73,21 +73,21 @@ fun list_detailed(archive_path: str): any
                 }
             end
         end
-        if line:match("^%s+Length") then
+        if line:match("^%s+Length")
             in_listing = true
         end
     end
     files
 end
 
-fun info(archive_path: str): any
-    if not fs.exists(archive_path) then return nil end
-    local handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
-    if handle == nil then return nil end
-    local output = handle:read("*a")
+info(archive_path: str): any
+    if not fs.exists(archive_path) return nil end
+    handle = io.popen("unzip -l " .. archive_path .. " 2>/dev/null")
+    if handle == nil return nil end
+    output = handle:read("*a")
     handle:close()
-    local total_size, file_count = output:match("(%d+)%s+files?$")
-    local method, compressed, ratio, flag = output:match("^%s*(%S+)%s+(%d+)%s+(%d+)%%.*$")
+    total_size, file_count = output:match("(%d+)%s+files?$")
+    method, compressed, ratio, flag = output:match("^%s*(%S+)%s+(%d+)%s+(%d+)%%.*$")
     return {
         path = archive_path,
         file_count = tonumber(file_count) or 0,
@@ -95,18 +95,18 @@ fun info(archive_path: str): any
     }
 end
 
-fun add_file(archive_path: str, file_path: str): bool
-    local cmd = "zip -q " .. archive_path .. " " .. file_path
+add_file(archive_path: str, file_path: str): bool
+    cmd = "zip -q " .. archive_path .. " " .. file_path
     proc.exec(cmd) == 0
 end
 
-fun remove_file(archive_path: str, file_path: str): bool
-    local cmd = "zip -d -q " .. archive_path .. " " .. file_path
+remove_file(archive_path: str, file_path: str): bool
+    cmd = "zip -d -q " .. archive_path .. " " .. file_path
     proc.exec(cmd) == 0
 end
 
-fun test_archive(archive_path: str): bool
-    local cmd = "unzip -t " .. archive_path .. " 2>/dev/null"
+test_archive(archive_path: str): bool
+    cmd = "unzip -t " .. archive_path .. " 2>/dev/null"
     proc.exec(cmd) == 0
 end
 

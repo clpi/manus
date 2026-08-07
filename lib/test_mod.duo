@@ -1,5 +1,5 @@
-fun foo(a: str, b: str): str
-    if a == "" then
+foo(a: str, b: str): str
+    if a == ""
         b
     end
     a .. b

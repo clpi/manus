@@ -555,10 +555,20 @@ pub const Lexer = struct {
             const v = std.fmt.parseFloat(f64, text) catch return LexError.InvalidNumber;
             return Token{ .kind = .float_lit, .loc = l, .text = text, .float_val = v };
         } else {
-            const v = if (text.len > 2 and (text[1] == 'x' or text[1] == 'X'))
-                std.fmt.parseInt(i64, text[2..], 16) catch return LexError.InvalidNumber
-            else
-                std.fmt.parseInt(i64, text, 10) catch return LexError.InvalidNumber;
+            const v = if (text.len > 2 and (text[1] == 'x' or text[1] == 'X')) blk: {
+                // A hex literal is a bit pattern, not a signed magnitude. Parsing it
+                // as i64 rejected every constant with the top bit set — e.g. the FNV
+                // offset basis `0xcbf29ce484222325` (14695981039346656037) in
+                // `lib/std/heap.duo`, which failed the whole file with
+                // "lexer failed with InvalidNumber". Fall back to u64 and reinterpret.
+                if (std.fmt.parseInt(i64, text[2..], 16)) |signed| {
+                    break :blk signed;
+                } else |_| {
+                    const unsigned = std.fmt.parseInt(u64, text[2..], 16) catch
+                        return LexError.InvalidNumber;
+                    break :blk @as(i64, @bitCast(unsigned));
+                }
+            } else std.fmt.parseInt(i64, text, 10) catch return LexError.InvalidNumber;
             return Token{ .kind = .int_lit, .loc = l, .text = text, .int_val = v };
         }
     }

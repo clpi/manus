@@ -6,6 +6,12 @@
 > **Bootstrap:** `docs/bootstrap.md`  
 > **Mission:** Canonical production compiler in Duo; bootstrap closure; compiler-as-proof.
 
+> **Canonical spec:** `docs/plans/duo_self_hosting_foundation.md` is the authoritative
+> statement of the self-hosting architecture (bootstrap ladder S0-S3, the single semantic
+> graph, the nine IR layers and their invariants, the foundation completion gate). This
+> document is the **execution plan** — milestones, gates, catalog wiring. Where the two
+> disagree, the canonical spec wins.
+
 ## Governing thesis (§1)
 
 Self-hosting is the **architectural closure test** for the entire language. Every weakness exposed while implementing the compiler in Duo must improve the smallest general Duo foundation — not introduce compiler-only escape hatches.

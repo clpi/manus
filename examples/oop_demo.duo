@@ -16,7 +16,7 @@ alias Float = f64
 -- All fields are implicitly public, just like Lua tables.
 -- Methods are just function-valued fields.
 
-local point = {
+point = {
     x = 3.0,
     y = 4.0,
     distance = fun(self: any): f64
@@ -38,7 +38,7 @@ print("New distance: " .. tostring(point.distance(point)))
 -- ── Inheritance via metatables (extends pattern) ────────────────────────────
 
 -- Base "class" - a factory function returning instances
-fun Point_base(x: f64, y: f64): any
+Point_base(x: f64, y: f64): any
     {
         x = x,
         y = y,
@@ -49,8 +49,8 @@ fun Point_base(x: f64, y: f64): any
 end
 
 -- Derived "class" via metatable delegation
-fun Point3D_base(x: f64, y: f64, z: f64): any
-    local base = Point_base(x, y)
+Point3D_base(x: f64, y: f64, z: f64): any
+    base = Point_base(x, y)
     setmetatable(
         { z = z,
           describe = fun(self): str
@@ -71,7 +71,7 @@ print(p2.describe(p2))
 -- ── Factory function pattern (constructor + methods) ────────────────────────
 
 -- A counter "class" using constructor functions
-fun Counter_new(): any
+Counter_new(): any
     {
         _value = 0,
         increment = fun(self: any): void self._value = self._value + 1 end,
@@ -92,11 +92,11 @@ print("After decrement: " .. tostring(counter.value(counter)))
 -- ── Concepts with table types ──────────────────────────────────────────────
 
 concept Describable
-    fun describe(self): str
+    describe(self): str
 end
 
 concept Measurable
-    fun measure(self, unit: str): f64
+    measure(self, unit: str): f64
 end
 
 -- A shape that implements both concepts
@@ -106,7 +106,7 @@ shape.describe = fun(self): str
 end
 shape.measure = fun(self, unit: str): f64
     area = 3.14159 * self.radius * self.radius
-    if unit == "mm" then
+    if unit == "mm"
         area * 100.0
     else
         area
@@ -119,12 +119,12 @@ print("Area (mm): " .. tostring(shape.measure(shape, "mm")))
 
 -- ── Default function parameter values ───────────────────────────────────────
 
-fun greet(name: str = "World", greeting: str = "Hello"): str
+greet(name: str = "World", greeting: str = "Hello"): str
     greeting .. ", " .. name .. "!"
 end
 
-fun power(base: f64, exp: f64 = 2.0): f64
-    if exp == 0 then return 1.0 end
+power(base: f64, exp: f64 = 2.0): f64
+    if exp == 0 return 1.0 end
     result: f64 = base
     i: i64 = 1
     while i < math.floor(exp)

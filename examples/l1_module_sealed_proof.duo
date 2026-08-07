@@ -1,0 +1,19 @@
+-- Pass 34 PH1 — L1 module sealing witness + direct cross-module call.
+helper = req "examples.l1_sealed_helper"
+os = req "std.os"
+
+why: str = @comp.why.module(helper)
+expected = "module_sealed=true; req binding frozen after load; cross-module calls may devirtualize"
+if why != expected
+    print("FAIL: module_sealed witness mismatch")
+    print("  got: " .. why)
+    os.exit(1)
+end
+
+result: i64 = helper.add(40, 2)
+if result != 42
+    print("FAIL: helper.add returned wrong value")
+    os.exit(2)
+end
+
+print("pass34_l1_module_sealed: PASS")

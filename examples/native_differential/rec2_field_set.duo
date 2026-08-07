@@ -1,0 +1,6 @@
+Pair: { a: i64, b: i64 }
+main(): i64
+    p: Pair = { a = 1, b = 2 }
+    p.a = 40
+    return p.a + p.b
+end

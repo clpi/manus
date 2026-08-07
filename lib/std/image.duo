@@ -2,56 +2,56 @@
 
 global color = req "std.image.color"
 
-fun pt(x: any, y: any): any
+pt(x: any, y: any): any
     {x = x, y = y, kind = "point"}
 end
 
-fun rect(x0: any, y0: any, x1: any, y1: any): any
+rect(x0: any, y0: any, x1: any, y1: any): any
     {min = pt(x0, y0), max = pt(x1, y1), kind = "rect"}
 end
 
-fun rect_dx(r: any): i64
+rect_dx(r: any): i64
     r.max.x - r.min.x
 end
 
-fun rect_dy(r: any): i64
+rect_dy(r: any): i64
     r.max.y - r.min.y
 end
 
-fun rect_empty(r: any): bool
+rect_empty(r: any): bool
     r.min.x >= r.max.x or r.min.y >= r.max.y
 end
 
-fun rect_inset(r: any, n: i64): any
+rect_inset(r: any, n: i64): any
     rect(r.min.x + n, r.min.y + n, r.max.x - n, r.max.y - n)
 end
 
-fun rect_union(r1: any, r2: any): any
+rect_union(r1: any, r2: any): any
     rect(math.min(r1.min.x, r2.min.x), math.min(r1.min.y, r2.min.y),
          math.max(r1.max.x, r2.max.x), math.max(r1.max.y, r2.max.y))
 end
 
-fun rect_intersect(r1: any, r2: any): any
+rect_intersect(r1: any, r2: any): any
     rect(math.max(r1.min.x, r2.min.x), math.max(r1.min.y, r2.min.y),
          math.min(r1.max.x, r2.max.x), math.min(r1.max.y, r2.max.y))
 end
 
-fun rect_overlaps(r1: any, r2: any): bool
-    if rect_empty(rect_intersect(r1, r2)) then return false end
+rect_overlaps(r1: any, r2: any): bool
+    if rect_empty(rect_intersect(r1, r2)) return false end
     true
 end
 
-fun new_rgba(r: any): any
+new_rgba(r: any): any
     {rect = r, pix = {}, stride = rect_dx(r) * 4, kind = "rgba_img"}
 end
 
-fun new_gray(r: any): any
+new_gray(r: any): any
     {rect = r, pix = {}, stride = rect_dx(r), kind = "gray_img"}
 end
 
-fun img_set(img: any, x: i64, y: i64, c: any): void
+img_set(img: any, x: i64, y: i64, c: any): void
     r = img.rect
-    if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y then return end
+    if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y return end
     off = (y - r.min.y) * img.stride + (x - r.min.x) * 4
     img.pix[off + 1] = c.r / 257
     img.pix[off + 2] = c.g / 257
@@ -59,9 +59,9 @@ fun img_set(img: any, x: i64, y: i64, c: any): void
     img.pix[off + 4] = c.a / 257
 end
 
-fun img_at(img: any, x: i64, y: i64): any
+img_at(img: any, x: i64, y: i64): any
     r = img.rect
-    if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y then
+    if x < r.min.x or x >= r.max.x or y < r.min.y or y >= r.max.y
         return color.rgba(0, 0, 0, 0)
     end
     off = (y - r.min.y) * img.stride + (x - r.min.x) * 4

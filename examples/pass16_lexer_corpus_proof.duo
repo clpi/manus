@@ -4,10 +4,10 @@ Classify = req "std.token.classify"
 Token = req "std.compiler.token"
 
 main(): i64
-    if Classify.classify("fun") ~= Token.KIND_FUN return 1 end
-    if Classify.classify("end") ~= Token.KIND_END return 2 end
-    if Classify.classify("i64") ~= Token.KIND_I64 return 3 end
-    if Classify.classify("x") ~= 0 return 4 end
-    if Classify.classify("inline") ~= 0 return 5 end
+    if Classify.classify("fun") != Token.KIND_FUN return 1 end
+    if Classify.classify("end") != Token.KIND_END return 2 end
+    if Classify.classify("i64") != Token.KIND_I64 return 3 end
+    if Classify.classify("x") != 0 return 4 end
+    if Classify.classify("inline") != 0 return 5 end
     0
 end

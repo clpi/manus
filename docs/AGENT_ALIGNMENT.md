@@ -78,6 +78,10 @@ Read **[`plans/pass27_proof_bundle.md`](plans/pass27_proof_bundle.md)**.
 Index: [`plans/pass27_proof_index.md`](plans/pass27_proof_index.md).
 Gate: `zig build pass27-gate` (alias `proof-bundle-gate`); P0 matrix: `zig build bench-proof-gate`. **Agent rule:** treat `provisional-boxed-path` evidence class as disqualifying for zero-boxing claims.
 
+**Self-hosting foundation (2026-08-05):** Umbrella constitution for language monoculture + graph-native bootstrap ladder (S0→S3), unified semantic graph, IR layers, and F-G01..F-G10 completion gates.
+Read **[`plans/self_hosting_foundation.md`](plans/self_hosting_foundation.md)**.
+Catalog: `src/foundation_catalog.zig`. Gate: `zig build foundation-gate` (alias `self-hosting-foundation-gate`). **Agent rule:** no permanent foreign code without a deletion gate in `dependency_manifest.zig` / `removal_ledger.zig`.
+
 **Pass 7 (2026-08-04):** AI-native compilation — compiler knowledge, optimization intelligence,
 agent APIs, inference workloads. **Not** an OS, Git replacement, or IDE.
 Read [`plans/pass7_ai_native_compilation.md`](plans/pass7_ai_native_compilation.md).
@@ -341,3 +345,5 @@ If any answer is wrong, stop and align in the coordination buffer first.
 ---
 
 *Last updated: 2026-08-04 — Pass 2 convergence audit.*
+
+**Pass 34 HPLS Frontier:** Phase 0 = barrier records only (no speculative fixes). Gate: `zig build pass34-gate` (alias `hpls-frontier-gate`); query `duo catalog audit gate pass34`. Agent rule: pick one ranked item, execute bounded_first_step only, update record status honestly.

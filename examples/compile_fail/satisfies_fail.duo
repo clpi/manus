@@ -1,7 +1,7 @@
 -- compile-fail: @comp.assert(@satisfies(...)) must error when concept not satisfied
 
 concept HasHash
-    fun hash(self): i64
+    hash(self): i64
 end
 
 type Empty = {}

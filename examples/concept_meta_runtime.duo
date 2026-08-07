@@ -5,7 +5,7 @@ meta = req "std.meta"
 
 concept Drawable
     id: i64
-    fun draw(self): str
+    draw(self): str
 end
 
 shape = {

@@ -1,56 +1,56 @@
-fun start(msg: str): void
+start(msg: str): void
     io.write(string.format("=== %s ===\n", msg))
 end
 
-fun assert_eq(actual: any, expected: any, msg: str): void
-    if actual == expected then
+assert_eq(actual: any, expected: any, msg: str): void
+    if actual == expected
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
         io.write(string.format("  FAIL: %s (expected %s, got %s)\n", msg or "", tostring(expected), tostring(actual)))
     end
 end
 
-fun assert_ne(actual: any, not_expected: any, msg: str): void
-    if actual ~= not_expected then
+assert_ne(actual: any, not_expected: any, msg: str): void
+    if actual != not_expected
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
         io.write(string.format("  FAIL: %s (expected not %s)\n", msg or "", tostring(not_expected)))
     end
 end
 
-fun assert_true(val: any, msg: str): void
-    if val == true then
+assert_true(val: any, msg: str): void
+    if val == true
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
         io.write(string.format("  FAIL: %s\n", msg or ""))
     end
 end
 
-fun assert_false(val: any, msg: str): void
-    if val == false then
+assert_false(val: any, msg: str): void
+    if val == false
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
         io.write(string.format("  FAIL: %s\n", msg or ""))
     end
 end
 
-fun assert_nil(val: any, msg: str): void
-    if val == nil then
+assert_nil(val: any, msg: str): void
+    if val == nil
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
         io.write(string.format("  FAIL: %s (expected nil, got %s)\n", msg or "", tostring(val)))
     end
 end
 
-fun assert_not_nil(val: any, msg: str): void
-    if val ~= nil then
+assert_not_nil(val: any, msg: str): void
+    if val != nil
         io.write(string.format("  PASS: %s\n", msg or ""))
     else
         io.write(string.format("  FAIL: %s (expected not nil)\n", msg or ""))
     end
 end
 
-fun done(): void
+done(): void
     io.write("=== tests done ===\n")
 end
 

@@ -13,38 +13,38 @@
 -- JSON arrays are tables whose every key is a positive integer. A table with
 -- only string keys (an object) is not an array; an empty table is treated as
 -- an empty array (matches Duo/Lua table usage where {} grows as a sequence).
-fun json_is_array(t: any): bool
-    if type(t) ~= "table" then return false end
-    for k, _ in t do
-        if type(k) ~= "number" then return false end
-        if k < 1 then return false end
+json_is_array(t: any): bool
+    if type(t) != "table" return false end
+    for k, _ in t
+        if type(k) != "number" return false end
+        if k < 1 return false end
     end
     true
 end
 
-fun json_escape(s: any): str
-    if s == nil then return "" end
+json_escape(s: any): str
+    if s == nil return "" end
     out = {}
     n = string.len(s)
     i = 1
     hex = "0123456789abcdef"
     while i <= n
         b = string.byte(s, i)
-        if b == 34 then
+        if b == 34
             out[rawlen(out) + 1] = "\\\""
-        elseif b == 92 then
+        elseif b == 92
             out[rawlen(out) + 1] = "\\\\"
-        elseif b == 10 then
+        elseif b == 10
             out[rawlen(out) + 1] = "\\n"
-        elseif b == 13 then
+        elseif b == 13
             out[rawlen(out) + 1] = "\\r"
-        elseif b == 9 then
+        elseif b == 9
             out[rawlen(out) + 1] = "\\t"
-        elseif b == 8 then
+        elseif b == 8
             out[rawlen(out) + 1] = "\\b"
-        elseif b == 12 then
+        elseif b == 12
             out[rawlen(out) + 1] = "\\f"
-        elseif b < 32 then
+        elseif b < 32
             hi = math.floor(b / 16) + 1
             lo = (b % 16) + 1
             out[rawlen(out) + 1] = "\\u00" .. string.sub(hex, hi, hi) .. string.sub(hex, lo, lo)
@@ -56,33 +56,33 @@ fun json_escape(s: any): str
     table.concat(out)
 end
 
-fun encode(val: any): str
-    if val == nil then return "null" end
-    if type(val) == "boolean" then
-        if val then return "true" else return "false" end
+encode(val: any): str
+    if val == nil return "null" end
+    if type(val) == "boolean"
+        if val return "true" else return "false" end
     end
-    if type(val) == "number" then
-        if val ~= val then return "null" end
-        if val == math.huge then return "1e999" end
-        if val == -math.huge then return "-1e999" end
+    if type(val) == "number"
+        if val != val return "null" end
+        if val == math.huge return "1e999" end
+        if val == -math.huge return "-1e999" end
         return tostring(val)
     end
-    if type(val) == "string" then
+    if type(val) == "string"
         return "\"" .. json_escape(val) .. "\""
     end
-    if type(val) == "table" then
-        if json_is_array(val) then
+    if type(val) == "table"
+        if json_is_array(val)
             parts = {}
             i = 1
-            while val[i] ~= nil
+            while val[i] != nil
                 parts[rawlen(parts) + 1] = encode(val[i])
                 i += 1
             end
             return "[" .. table.concat(parts, ",") .. "]"
         end
         parts = {}
-        for k, v in val do
-            if type(k) == "string" then
+        for k, v in val
+            if type(k) == "string"
                 parts[rawlen(parts) + 1] = encode(k) .. ":" .. encode(v)
             end
         end
@@ -97,12 +97,12 @@ end
 -- Recursive-descent over a {s=string, i=index} cursor table. Passes the cursor
 -- explicitly to avoid nested-function codegen quirks.
 
-fun json_skip_ws(cur)
+json_skip_ws(cur: any)
     s = cur.s
     n = string.len(s)
     while cur.i <= n
         b = string.byte(s, cur.i)
-        if b == 32 or b == 9 or b == 10 or b == 13 then
+        if b == 32 or b == 9 or b == 10 or b == 13
             cur.i = cur.i + 1
         else
             break
@@ -110,17 +110,17 @@ fun json_skip_ws(cur)
     end
 end
 
-fun json_hex4(s): i64
+json_hex4(s): i64
     v = 0
     i = 1
     while i <= 4
         b = string.byte(s, i)
         d = 0
-        if b >= 48 and b <= 57 then
+        if b >= 48 and b <= 57
             d = b - 48
-        elseif b >= 65 and b <= 70 then
+        elseif b >= 65 and b <= 70
             d = b - 55
-        elseif b >= 97 and b <= 102 then
+        elseif b >= 97 and b <= 102
             d = b - 87
         end
         v = v * 16 + d
@@ -129,11 +129,11 @@ fun json_hex4(s): i64
     v
 end
 
-fun json_utf8_char(cp): str
-    if cp < 128 then
+json_utf8_char(cp): str
+    if cp < 128
         return string.char(cp)
     end
-    if cp < 2048 then
+    if cp < 2048
         b1 = math.floor(cp / 64) + 192
         b2 = (cp % 64) + 128
         return string.char(b1) .. string.char(b2)
@@ -144,37 +144,37 @@ fun json_utf8_char(cp): str
     return string.char(b1) .. string.char(b2) .. string.char(b3)
 end
 
-fun json_string(cur): any
+json_string(cur): any
     cur.i = cur.i + 1
     s = cur.s
     n = string.len(s)
     out = {}
     while cur.i <= n
         b = string.byte(s, cur.i)
-        if b == 34 then
+        if b == 34
             cur.i = cur.i + 1
             return table.concat(out)
         end
-        if b == 92 then
+        if b == 92
             cur.i = cur.i + 1
             e = string.byte(s, cur.i)
-            if e == 110 then
+            if e == 110
                 out[rawlen(out) + 1] = "\n"
-            elseif e == 116 then
+            elseif e == 116
                 out[rawlen(out) + 1] = "\t"
-            elseif e == 114 then
+            elseif e == 114
                 out[rawlen(out) + 1] = "\r"
-            elseif e == 34 then
+            elseif e == 34
                 out[rawlen(out) + 1] = "\""
-            elseif e == 92 then
+            elseif e == 92
                 out[rawlen(out) + 1] = "\\"
-            elseif e == 47 then
+            elseif e == 47
                 out[rawlen(out) + 1] = "/"
-            elseif e == 98 then
+            elseif e == 98
                 out[rawlen(out) + 1] = string.char(8)
-            elseif e == 102 then
+            elseif e == 102
                 out[rawlen(out) + 1] = string.char(12)
-            elseif e == 117 then
+            elseif e == 117
                 hex = string.sub(s, cur.i + 1, cur.i + 4)
                 cp = json_hex4(hex)
                 out[rawlen(out) + 1] = json_utf8_char(cp)
@@ -192,7 +192,7 @@ fun json_string(cur): any
             cur.i = cur.i + 1
             while cur.i <= n
                 b2 = string.byte(s, cur.i)
-                if b2 == 34 or b2 == 92 then break end
+                if b2 == 34 or b2 == 92 break end
                 cur.i = cur.i + 1
             end
             out[rawlen(out) + 1] = string.sub(s, start, cur.i - 1)
@@ -201,13 +201,13 @@ fun json_string(cur): any
     table.concat(out)
 end
 
-fun json_number(cur): any
+json_number(cur): any
     s = cur.s
     start = cur.i
     n = string.len(s)
     while cur.i <= n
         b = string.byte(s, cur.i)
-        if (b >= 48 and b <= 57) or b == 45 or b == 43 or b == 46 or b == 101 or b == 69 then
+        if (b >= 48 and b <= 57) or b == 45 or b == 43 or b == 46 or b == 101 or b == 69
             cur.i = cur.i + 1
         else
             break
@@ -217,16 +217,16 @@ fun json_number(cur): any
     tonumber(num_str)
 end
 
-fun json_value(cur): any
+json_value(cur): any
     json_skip_ws(cur)
     s = cur.s
-    if cur.i > string.len(s) then return nil end
+    if cur.i > string.len(s) return nil end
     b = string.byte(s, cur.i)
-    if b == 123 then
+    if b == 123
         cur.i = cur.i + 1
         obj = {}
         json_skip_ws(cur)
-        if string.byte(cur.s, cur.i) == 125 then
+        if string.byte(cur.s, cur.i) == 125
             cur.i = cur.i + 1
             return obj
         end
@@ -239,9 +239,9 @@ fun json_value(cur): any
             obj[key] = val
             json_skip_ws(cur)
             b2 = string.byte(cur.s, cur.i)
-            if b2 == 44 then
+            if b2 == 44
                 cur.i = cur.i + 1
-            elseif b2 == 125 then
+            elseif b2 == 125
                 cur.i = cur.i + 1
                 break
             else
@@ -250,12 +250,12 @@ fun json_value(cur): any
         end
         return obj
     end
-    if b == 91 then
+    if b == 91
         cur.i = cur.i + 1
         arr = {}
         arrn = 0
         json_skip_ws(cur)
-        if string.byte(cur.s, cur.i) == 93 then
+        if string.byte(cur.s, cur.i) == 93
             cur.i = cur.i + 1
             return arr
         end
@@ -265,9 +265,9 @@ fun json_value(cur): any
             arr[arrn] = val
             json_skip_ws(cur)
             b2 = string.byte(cur.s, cur.i)
-            if b2 == 44 then
+            if b2 == 44
                 cur.i = cur.i + 1
-            elseif b2 == 93 then
+            elseif b2 == 93
                 cur.i = cur.i + 1
                 break
             else
@@ -276,26 +276,26 @@ fun json_value(cur): any
         end
         return arr
     end
-    if b == 34 then
+    if b == 34
         return json_string(cur)
     end
-    if b == 116 then
+    if b == 116
         cur.i = cur.i + 4
         return true
     end
-    if b == 102 then
+    if b == 102
         cur.i = cur.i + 5
         return false
     end
-    if b == 110 then
+    if b == 110
         cur.i = cur.i + 4
         return nil
     end
     json_number(cur)
 end
 
-fun decode(s: str): any
-    if s == nil or s == "" then return nil end
+decode(s: str): any
+    if s == nil or s == "" return nil end
     cur = {}
     cur.s = s
     cur.i = 1

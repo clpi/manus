@@ -16,12 +16,12 @@ make_loc(): Loc
 end
 
 main(): i64
-    if Classify.classify("fun") ~= Token.KIND_FUN return 1 end
-    if Classify.classify("end") ~= Token.KIND_END return 2 end
-    if Classify.classify("i64") ~= Token.KIND_I64 return 3 end
-    if Token.KIND_EOF ~= 105 return 4 end
+    if Classify.classify("fun") != Token.KIND_FUN return 1 end
+    if Classify.classify("end") != Token.KIND_END return 2 end
+    if Classify.classify("i64") != Token.KIND_I64 return 3 end
+    if Token.KIND_EOF != 105 return 4 end
     loc = make_loc()
-    if loc.line ~= 42 return 5 end
-    if loc.col ~= 7 return 6 end
+    if loc.line != 42 return 5 end
+    if loc.col != 7 return 6 end
     0
 end

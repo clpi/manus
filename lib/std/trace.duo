@@ -135,20 +135,20 @@ M.level_name = {
     [3] = "warn", [4] = "error", [5] = "fatal",
 }
 
-global __trace_level = M.LV_INFO
-global __trace_show_caller = true
-global __trace_show_ts = true
-global __trace_spans = {}
-global __trace_color = true
+global trace_level = M.LV_INFO
+global trace_show_caller = true
+global trace_show_ts = true
+global trace_spans = {}
+global trace_color = true
 
 -- ─── tty detection ────────────────────────────────────────────────
-fun tty(): bool
-    local ok, val = pcall(os.getenv, "DUO_COLOR")
-    if ok and val ~= nil and val ~= "" and val ~= "0" then
+tty(): bool
+    ok, val = pcall(os.getenv, "DUO_COLOR")
+    if ok and val != nil and val != "" and val != "0"
         return true
     end
-    local ok2, val2 = pcall(os.getenv, "NO_COLOR")
-    if ok2 and val2 ~= nil and val2 ~= "" then
+    ok2, val2 = pcall(os.getenv, "NO_COLOR")
+    if ok2 and val2 != nil and val2 != ""
         return false
     end
     return true
@@ -156,96 +156,96 @@ end
 
 -- ─── Low-level style wrappers ────────────────────────────────────
 
-fun s(prefix: str, text: str, suffix: str): str
-    if prefix == nil then prefix = "" end
-    if suffix == nil then suffix = M.RESET end
-    if not tty() then
+s(prefix: str, text: str, suffix: str): str
+    if prefix == nil prefix = "" end
+    if suffix == nil suffix = M.RESET end
+    if not tty()
         return tostring(text)
     end
     return prefix .. tostring(text) .. suffix
 end
 
-fun bold(text: str): str
+bold(text: str): str
     return M.BOLD .. tostring(text) .. M.RESET
 end
 
-fun dim(text: str): str
+dim(text: str): str
     return M.DIM .. tostring(text) .. M.RESET
 end
 
-fun italic(text: str): str
+italic(text: str): str
     return M.ITALIC .. tostring(text) .. M.RESET
 end
 
-fun underline(text: str): str
+underline(text: str): str
     return M.UNDERLINE .. tostring(text) .. M.RESET
 end
 
-fun strikethrough(text: str): str
+strikethrough(text: str): str
     return M.STRIKE .. tostring(text) .. M.RESET
 end
 
-fun reverse(text: str): str
+reverse(text: str): str
     return M.REVERSE .. tostring(text) .. M.RESET
 end
 
-fun blink(text: str): str
+blink(text: str): str
     return M.BLINK .. tostring(text) .. M.RESET
 end
 
-fun red(text: str): str
+red(text: str): str
     return M.RED .. tostring(text) .. M.RESET
 end
 
-fun green(text: str): str
+green(text: str): str
     return M.GREEN .. tostring(text) .. M.RESET
 end
 
-fun yellow(text: str): str
+yellow(text: str): str
     return M.YELLOW .. tostring(text) .. M.RESET
 end
 
-fun blue(text: str): str
+blue(text: str): str
     return M.BLUE .. tostring(text) .. M.RESET
 end
 
-fun magenta(text: str): str
+magenta(text: str): str
     return M.MAGENTA .. tostring(text) .. M.RESET
 end
 
-fun cyan(text: str): str
+cyan(text: str): str
     return M.CYAN .. tostring(text) .. M.RESET
 end
 
-fun bright_red(text: str): str
+bright_red(text: str): str
     return M.BRIGHT_RED .. tostring(text) .. M.RESET
 end
 
-fun bright_green(text: str): str
+bright_green(text: str): str
     return M.BRIGHT_GREEN .. tostring(text) .. M.RESET
 end
 
-fun bright_yellow(text: str): str
+bright_yellow(text: str): str
     return M.BRIGHT_YELLOW .. tostring(text) .. M.RESET
 end
 
-fun bright_blue(text: str): str
+bright_blue(text: str): str
     return M.BRIGHT_BLUE .. tostring(text) .. M.RESET
 end
 
-fun bright_magenta(text: str): str
+bright_magenta(text: str): str
     return M.BRIGHT_MAGENTA .. tostring(text) .. M.RESET
 end
 
-fun bright_cyan(text: str): str
+bright_cyan(text: str): str
     return M.BRIGHT_CYAN .. tostring(text) .. M.RESET
 end
 
-fun bright_white(text: str): str
+bright_white(text: str): str
     return M.BRIGHT_WHITE .. tostring(text) .. M.RESET
 end
 
-fun gray(text: str): str
+gray(text: str): str
     return M.BRIGHT_BLACK .. tostring(text) .. M.RESET
 end
 
@@ -253,178 +253,178 @@ end
 -- These combine attributes for specific semantic roles.
 -- Each one paints a single concept — use them to build readable output.
 
-fun sem_success(text: str): str
+sem_success(text: str): str
     return M.BOLD .. M.GREEN .. tostring(text) .. M.RESET
 end
 
-fun sem_failure(text: str): str
+sem_failure(text: str): str
     return M.BOLD .. M.RED .. tostring(text) .. M.RESET
 end
 
-fun sem_caution(text: str): str
+sem_caution(text: str): str
     return M.BOLD .. M.YELLOW .. tostring(text) .. M.RESET
 end
 
-fun sem_identity(text: str): str
+sem_identity(text: str): str
     return M.ITALIC .. M.MAGENTA .. tostring(text) .. M.RESET
 end
 
-fun sem_location(text: str): str
+sem_location(text: str): str
     return M.UNDERLINE .. tostring(text) .. M.RESET
 end
 
-fun sem_meta(text: str): str
+sem_meta(text: str): str
     return M.DIM .. tostring(text) .. M.RESET
 end
 
-fun sem_payload(text: str): str
+sem_payload(text: str): str
     return M.BOLD .. tostring(text) .. M.RESET
 end
 
-fun sem_deleted(text: str): str
+sem_deleted(text: str): str
     return M.STRIKE .. M.RED .. tostring(text) .. M.RESET
 end
 
-fun sem_added(text: str): str
+sem_added(text: str): str
     return M.BOLD .. M.GREEN .. tostring(text) .. M.RESET
 end
 
-fun sem_changed_old(text: str): str
+sem_changed_old(text: str): str
     return M.DIM .. M.RED .. tostring(text) .. M.RESET
 end
 
-fun sem_changed_new(text: str): str
+sem_changed_new(text: str): str
     return M.BOLD .. M.GREEN .. tostring(text) .. M.RESET
 end
 
-fun sem_type(text: str): str
+sem_type(text: str): str
     return M.ITALIC .. M.CYAN .. tostring(text) .. M.RESET
 end
 
-fun sem_constant(text: str): str
+sem_constant(text: str): str
     return M.BOLD .. M.BRIGHT_CYAN .. tostring(text) .. M.RESET
 end
 
-fun sem_hex(text: str): str
+sem_hex(text: str): str
     return M.BRIGHT_BLACK .. M.UNDERLINE .. tostring(text) .. M.RESET
 end
 
-fun sem_size(text: str): str
+sem_size(text: str): str
     return M.BRIGHT_YELLOW .. tostring(text) .. M.RESET
 end
 
-fun sem_percent(text: str): str
+sem_percent(text: str): str
     return M.BRIGHT_MAGENTA .. tostring(text) .. M.RESET
 end
 
-fun sem_time_fast(text: str): str
+sem_time_fast(text: str): str
     return M.DIM .. M.GREEN .. tostring(text) .. M.RESET
 end
 
-fun sem_time_normal(text: str): str
+sem_time_normal(text: str): str
     return M.YELLOW .. tostring(text) .. M.RESET
 end
 
-fun sem_time_slow(text: str): str
+sem_time_slow(text: str): str
     return M.BOLD .. M.RED .. tostring(text) .. M.RESET
 end
 
-fun sem_attention(text: str): str
+sem_attention(text: str): str
     return M.REVERSE .. M.BOLD .. tostring(text) .. M.RESET
 end
 
-fun sem_deprecated(text: str): str
+sem_deprecated(text: str): str
     return M.STRIKE .. M.DIM .. tostring(text) .. M.RESET
 end
 
-fun sem_key(text: str): str
+sem_key(text: str): str
     return M.UNDERLINE .. M.CYAN .. tostring(text) .. M.RESET
 end
 
-fun sem_nil(text: str): str
+sem_nil(text: str): str
     return M.DIM .. M.ITALIC .. tostring(text) .. M.RESET
 end
 
-fun sem_string_val(text: str): str
+sem_string_val(text: str): str
     return M.GREEN .. tostring(text) .. M.RESET
 end
 
-fun sem_number_val(text: str): str
+sem_number_val(text: str): str
     return M.YELLOW .. tostring(text) .. M.RESET
 end
 
-fun sem_bool_val(text: str): str
+sem_bool_val(text: str): str
     return M.MAGENTA .. tostring(text) .. M.RESET
 end
 
-fun sem_table_val(text: str): str
+sem_table_val(text: str): str
     return M.CYAN .. tostring(text) .. M.RESET
 end
 
-fun sem_function_val(text: str): str
+sem_function_val(text: str): str
     return M.ITALIC .. M.CYAN .. tostring(text) .. M.RESET
 end
 
-fun sem_breakpoint(text: str): str
+sem_breakpoint(text: str): str
     return M.REVERSE .. M.RED .. M.BOLD .. tostring(text) .. M.RESET
 end
 
-fun sem_banner_line(text: str): str
+sem_banner_line(text: str): str
     return M.BOLD .. M.CYAN .. tostring(text) .. M.RESET
 end
 
-fun sem_frame(text: str): str
+sem_frame(text: str): str
     return M.BRIGHT_BLACK .. tostring(text) .. M.RESET
 end
 
-fun sem_numbering(text: str): str
+sem_numbering(text: str): str
     return M.DIM .. M.BRIGHT_BLACK .. tostring(text) .. M.RESET
 end
 
-fun sem_diff_hunk(text: str): str
+sem_diff_hunk(text: str): str
     return M.BOLD .. M.BRIGHT_WHITE .. tostring(text) .. M.RESET
 end
 
-fun sem_context_line(text: str): str
+sem_context_line(text: str): str
     return M.DIM .. tostring(text) .. M.RESET
 end
 
 -- ─── Value formatting ─────────────────────────────────────────────
-fun tbl_summary(t: any): str
-    if t == nil then return "nil" end
-    local n = rawlen(t)
-    if n > 0 then
+tbl_summary(t: any): str
+    if t == nil return "nil" end
+    n = rawlen(t)
+    if n > 0
         return "array(" .. tostring(n) .. ")"
     end
-    local count = 0
-    local first = ""
+    count = 0
+    first = ""
     for k, _v in t
         count += 1
-        if count == 1 then first = tostring(k) end
+        if count == 1 first = tostring(k) end
     end
-    if count == 0 then return "{}" end
-    if count <= 3 then
+    if count == 0 return "{}" end
+    if count <= 3
         return "{" .. first .. ", ...}"
     end
     return "{" .. tostring(count) .. " keys}"
 end
 
-fun pretty_val(value: any): str
-    if value == nil then
+pretty_val(value: any): str
+    if value == nil
         return sem_nil("nil")
     end
-    local t = type(value)
-    if t:find("string") == 1 then
+    t = type(value)
+    if t:find("string") == 1
         return sem_string_val('"' .. tostring(value) .. '"')
-    elseif t:find("number") == 1 then
+    elseif t:find("number") == 1
         return sem_number_val(tostring(value))
-    elseif t:find("boolean") == 1 then
+    elseif t:find("boolean") == 1
         return sem_bool_val(tostring(value))
-    elseif t:find("function") == 1 then
+    elseif t:find("function") == 1
         return sem_function_val("⟪fn⟫")
-    elseif t:find("table") == 1 then
-        local n = rawlen(value)
-        if n > 0 then
+    elseif t:find("table") == 1
+        n = rawlen(value)
+        if n > 0
             return sem_table_val("⟦array " .. tostring(n) .. "⟧")
         end
         return sem_table_val(italic("{" .. tbl_summary(value) .. "}"))
@@ -432,163 +432,163 @@ fun pretty_val(value: any): str
     return tostring(value)
 end
 
-fun pretty_kv(k: str, v: any): str
+pretty_kv(k: str, v: any): str
     return sem_key(tostring(k)) .. dim(" " .. M.G_KV_SEP .. " ") .. pretty_val(v)
 end
 
 -- ─── Contextual formatters ───────────────────────────────────────
 
-fun _to_hex(n: int): str
-    local digits = "0123456789abcdef"
-    if n == 0 then return "0" end
-    local result = ""
+_to_hex(n: int): str
+    digits = "0123456789abcdef"
+    if n == 0 return "0" end
+    result = ""
     while n > 0
-        local d = math.floor(n % 16) + 1
+        d = math.floor(n % 16) + 1
         result = string.sub(digits, d, d) .. result
         n = math.floor(n / 16)
     end
     return result
 end
 
-fun fmt_hex(value: any): str
-    local n = tonumber(value)
-    if n == nil then return tostring(value) end
-    local neg = false
-    if n < 0 then neg = true; n = -n end
-    local hex = _to_hex(math.floor(n))
-    if neg then hex = "-" .. hex end
+fmt_hex(value: any): str
+    n = tonumber(value)
+    if n == nil return tostring(value) end
+    neg = false
+    if n < 0 neg = true; n = -n end
+    hex = _to_hex(math.floor(n))
+    if neg hex = "-" .. hex end
     return sem_hex("0x" .. hex)
 end
 
-fun fmt_size(bytes: any): str
-    local n = tonumber(bytes)
-    if n == nil then return tostring(bytes) end
-    if n < 1024 then
+fmt_size(bytes: any): str
+    n = tonumber(bytes)
+    if n == nil return tostring(bytes) end
+    if n < 1024
         return sem_size(tostring(n) .. "B")
-    elseif n < 1048576 then
-        local whole = math.floor(n / 1024)
-        local frac = math.floor((n - whole * 1024) * 10 / 1024)
+    elseif n < 1048576
+        whole = math.floor(n / 1024)
+        frac = math.floor((n - whole * 1024) * 10 / 1024)
         return sem_size(tostring(whole) .. "." .. tostring(frac) .. "KB")
-    elseif n < 1073741824 then
-        local whole = math.floor(n / 1048576)
-        local frac = math.floor((n - whole * 1048576) * 10 / 1048576)
+    elseif n < 1073741824
+        whole = math.floor(n / 1048576)
+        frac = math.floor((n - whole * 1048576) * 10 / 1048576)
         return sem_size(tostring(whole) .. "." .. tostring(frac) .. "MB")
     else
-        local whole = math.floor(n / 1073741824)
-        local frac = math.floor((n - whole * 1073741824) * 10 / 1073741824)
+        whole = math.floor(n / 1073741824)
+        frac = math.floor((n - whole * 1073741824) * 10 / 1073741824)
         return sem_size(tostring(whole) .. "." .. tostring(frac) .. "GB")
     end
 end
 
-fun fmt_pct(value: any): str
-    local n = tonumber(value)
-    if n == nil then return tostring(value) end
-    local whole = math.floor(n)
-    local frac = math.floor((n - whole) * 100 + 0.5)
-    if frac >= 100 then frac = 99 end
-    local frac_str = tostring(frac)
-    if frac < 10 then frac_str = "0" .. tostring(frac) end
+fmt_pct(value: any): str
+    n = tonumber(value)
+    if n == nil return tostring(value) end
+    whole = math.floor(n)
+    frac = math.floor((n - whole) * 100 + 0.5)
+    if frac >= 100 frac = 99 end
+    frac_str = tostring(frac)
+    if frac < 10 frac_str = "0" .. tostring(frac) end
     return sem_percent(tostring(whole) .. "." .. frac_str .. "%")
 end
 
-fun fmt_count(n: any): str
-    local num = tonumber(n)
-    if num == nil then return tostring(n) end
+fmt_count(n: any): str
+    num = tonumber(n)
+    if num == nil return tostring(n) end
     return sem_number_val(tostring(num))
 end
 
-fun fmt_bool(b: any): str
-    if b then return sem_added("true") end
+fmt_bool(b: any): str
+    if b return sem_added("true") end
     return sem_deleted("false")
 end
 
-fun fmt_nil(): str
+fmt_nil(): str
     return sem_nil("nil")
 end
 
-fun fmt_ref(id: any): str
+fmt_ref(id: any): str
     return sem_hex(tostring(id))
 end
 
-fun fmt_path(path: str): str
+fmt_path(path: str): str
     return sem_location(tostring(path))
 end
 
 -- ─── Caller info ───────────────────────────────────────────────────
-fun caller(level: int): str
-    local info = debug.getinfo(level, "Snl")
-    if info == nil then return "" end
-    local name_part = info.name
-    if name_part == nil or name_part == "" then
+caller(level: int): str
+    info = debug.getinfo(level, "Snl")
+    if info == nil return "" end
+    name_part = info.name
+    if name_part == nil or name_part == ""
         name_part = "?"
     end
-    local src = info.short_src
-    if src == nil then src = info.source end
-    if src == nil then src = "?" end
-    local loc = src
-    if info.currentline and info.currentline > 0 then
+    src = info.short_src
+    if src == nil src = info.source end
+    if src == nil src = "?" end
+    loc = src
+    if info.currentline and info.currentline > 0
         loc = src .. dim(":") .. yellow(tostring(info.currentline))
     end
     return sem_identity(name_part) .. dim(" " .. M.G_ARROW .. " ") .. sem_location(loc)
 end
 
 -- ─── Timestamp ─────────────────────────────────────────────────────
-fun ts(): str
-    local secs = os.time()
-    local ms = math.floor((os.clock() * 1000) % 1000)
-    local frac = "." .. tostring(ms)
-    if ms < 10 then frac = ".00" .. tostring(ms)
-    elseif ms < 100 then frac = ".0" .. tostring(ms)
+ts(): str
+    secs = os.time()
+    ms = math.floor((os.clock() * 1000) % 1000)
+    frac = "." .. tostring(ms)
+    if ms < 10 frac = ".00" .. tostring(ms)
+    elseif ms < 100 frac = ".0" .. tostring(ms)
     end
     return sem_meta(os.date("%H:%M:%S", secs) .. frac)
 end
 
 -- ─── Level tag ─────────────────────────────────────────────────────
-fun level_tag(level: int): str
-    local glyph = M.G_TRACE
-    local tag = "trace"
-    if level == M.LV_DEBUG then
+level_tag(level: int): str
+    glyph = M.G_TRACE
+    tag = "trace"
+    if level == M.LV_DEBUG
         glyph = M.G_DEBUG; tag = "debug"
-    elseif level == M.LV_INFO then
+    elseif level == M.LV_INFO
         glyph = M.G_INFO;  tag = " info"
-    elseif level == M.LV_WARN then
+    elseif level == M.LV_WARN
         glyph = M.G_WARN;  tag = " warn"
-    elseif level == M.LV_ERROR then
+    elseif level == M.LV_ERROR
         glyph = M.G_ERROR; tag = "error"
-    elseif level == M.LV_FATAL then
+    elseif level == M.LV_FATAL
         glyph = M.G_FATAL; tag = "fatal"
     end
-    local body = glyph .. " " .. tag
-    if level == M.LV_TRACE then return dim(body) end
-    if level == M.LV_DEBUG then return blue(body) end
-    if level == M.LV_INFO  then return sem_success(body) end
-    if level == M.LV_WARN  then return sem_caution(body) end
-    if level == M.LV_ERROR then return sem_failure(body) end
-    if level == M.LV_FATAL then
+    body = glyph .. " " .. tag
+    if level == M.LV_TRACE return dim(body) end
+    if level == M.LV_DEBUG return blue(body) end
+    if level == M.LV_INFO return sem_success(body) end
+    if level == M.LV_WARN return sem_caution(body) end
+    if level == M.LV_ERROR return sem_failure(body) end
+    if level == M.LV_FATAL
         return sem_breakpoint(body)
     end
     return body
 end
 
 -- ─── Span indent ───────────────────────────────────────────────────
-fun span_indent(): str
-    local n = rawlen(__trace_spans)
-    if n <= 0 then return "" end
-    local rep = string.rep(M.G_PIPE .. " ", n)
-    if rep == nil or rep == "" then return "" end
+span_indent(): str
+    n = rawlen(trace_spans)
+    if n <= 0 return "" end
+    rep = string.rep(M.G_PIPE .. " ", n)
+    if rep == nil or rep == "" return "" end
     return dim(rep)
 end
 
 -- ─── Duration formatting with speed coloring ──────────────────────
-fun _fmt_dur(ms: float): str
-    local whole = math.floor(ms)
-    local frac = math.floor((ms - whole) * 100)
-    local frac_str = tostring(frac)
-    if frac < 10 then frac_str = "0" .. tostring(frac) end
-    local raw = tostring(whole) .. "." .. frac_str .. "ms"
-    if ms < 1 then
+_fmt_dur(ms: float): str
+    whole = math.floor(ms)
+    frac = math.floor((ms - whole) * 100)
+    frac_str = tostring(frac)
+    if frac < 10 frac_str = "0" .. tostring(frac) end
+    raw = tostring(whole) .. "." .. frac_str .. "ms"
+    if ms < 1
         return sem_time_fast(raw)
-    elseif ms < 16 then
+    elseif ms < 16
         return sem_time_normal(raw)
     else
         return sem_time_slow(raw)
@@ -596,24 +596,24 @@ fun _fmt_dur(ms: float): str
 end
 
 -- ─── Emit ──────────────────────────────────────────────────────────
-fun emit(level: int, msg: str, fields: any, skip: int): void
-    if level < __trace_level then return end
-    local parts = {}
+emit(level: int, msg: str, fields: any, skip: int): void
+    if level < trace_level return end
+    parts = {}
     parts[rawlen(parts) + 1] = level_tag(level)
-    if __trace_show_ts then
+    if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
-    if __trace_show_caller then
-        local c = caller(skip + 1)
-        if c ~= "" then
+    if trace_show_caller
+        c = caller(skip + 1)
+        if c != ""
             parts[rawlen(parts) + 1] = dim("(") .. c .. dim(")")
         end
     end
     parts[rawlen(parts) + 1] = span_indent()
-    if msg ~= nil and msg ~= "" then
+    if msg != nil and msg != ""
         parts[rawlen(parts) + 1] = sem_payload(msg)
     end
-    if fields ~= nil and type(fields) == "table" then
+    if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[rawlen(parts) + 1] = pretty_kv(k, v)
         end
@@ -622,85 +622,85 @@ fun emit(level: int, msg: str, fields: any, skip: int): void
 end
 
 -- ─── Public API ─────────────────────────────────────────────────
-fun set_level(level: any): void
-    if type(level) == "string" then
-        local v = M.level_value[string.lower(level)]
-        if v ~= nil then
-            __trace_level = v
+set_level(level: any): void
+    if type(level) == "string"
+        v = M.level_value[string.lower(level)]
+        if v != nil
+            trace_level = v
         end
         return
     end
-    if type(level) == "number" then
-        if level >= M.LV_TRACE and level <= M.LV_FATAL then
-            __trace_level = level
+    if type(level) == "number"
+        if level >= M.LV_TRACE and level <= M.LV_FATAL
+            trace_level = level
         end
     end
 end
 
-fun get_level(): str
-    return M.level_name[__trace_level] or "info"
+get_level(): str
+    return M.level_name[trace_level] or "info"
 end
 
-fun show_caller(on: bool): void
-    __trace_show_caller = on and true or false
+show_caller(on: bool): void
+    trace_show_caller = on and true or false
 end
 
-fun show_timestamp(on: bool): void
-    __trace_show_ts = on and true or false
+show_timestamp(on: bool): void
+    trace_show_ts = on and true or false
 end
 
-fun set_color(on: bool): void
-    __trace_color = on and true or false
+set_color(on: bool): void
+    trace_color = on and true or false
 end
 
-fun trace(msg: str, fields: any): void
+trace(msg: str, fields: any): void
     emit(M.LV_TRACE, msg, fields, 2)
 end
 
-fun _debug(msg: str, fields: any): void
+_debug(msg: str, fields: any): void
     emit(M.LV_DEBUG, msg, fields, 2)
 end
 
-fun info(msg: str, fields: any): void
+info(msg: str, fields: any): void
     emit(M.LV_INFO, msg, fields, 2)
 end
 
-fun warn(msg: str, fields: any): void
+warn(msg: str, fields: any): void
     emit(M.LV_WARN, msg, fields, 2)
 end
 
-fun error(msg: str, fields: any): void
+error(msg: str, fields: any): void
     emit(M.LV_ERROR, msg, fields, 2)
 end
 
-fun fatal(msg: str, fields: any): void
+fatal(msg: str, fields: any): void
     emit(M.LV_FATAL, msg, fields, 2)
 end
 
 -- ─── Spans ────────────────────────────────────────────────────────
-fun span(name: str, fields: any): any
-    local h = {
+span(name: str, fields: any): any
+    h = {
         name = name or "span",
         start = os.clock(),
-        depth = rawlen(__trace_spans) + 1,
+        depth = rawlen(trace_spans) + 1,
     }
-    __trace_spans[rawlen(__trace_spans) + 1] = h
-    local ind = dim(string.rep(M.G_PIPE .. " ", h.depth - 1))
-    local parts = {}
+    trace_spans[rawlen(trace_spans) + 1] = h
+    ind = dim(string.rep(M.G_PIPE .. " ", h.depth - 1))
+    parts = {}
     parts[rawlen(parts) + 1] = magenta(M.G_SPAN_BEGIN)
     parts[rawlen(parts) + 1] = sem_identity(name or "span")
     parts[rawlen(parts) + 1] = dim(M.G_ARROW)
-    if __trace_show_ts then
+    if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
-    if __trace_show_caller then
-        local c = caller(2)
-        if c ~= "" then
+    if trace_show_caller
+        c = caller(2)
+        if c != ""
             parts[rawlen(parts) + 1] .. dim("(") .. c .. dim(")")
         end
     end
     parts[rawlen(parts) + 1] = ind
-    if fields ~= nil and type(fields) == "table" then
+    if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[rawlen(parts) + 1] = pretty_kv(k, v)
         end
@@ -709,27 +709,27 @@ fun span(name: str, fields: any): any
     return h
 end
 
-fun span_end(h: any, fields: any): void
-    if h == nil then return end
-    local n = rawlen(__trace_spans)
+span_end(h: any, fields: any): void
+    if h == nil return end
+    n = rawlen(trace_spans)
     while n > 0
-        if __trace_spans[n] == h then
-            table.remove(__trace_spans, n)
+        if trace_spans[n] == h
+            table.remove(trace_spans, n)
             break
         end
         n -= 1
     end
-    local dur_s = os.clock() - h.start
-    local dur_ms = dur_s * 1000
-    local dur_str = _fmt_dur(dur_ms)
-    local ind = dim(string.rep(M.G_PIPE .. " ", (h.depth - 1)))
-    local parts = {}
+    dur_s = os.clock() - h.start
+    dur_ms = dur_s * 1000
+    dur_str = _fmt_dur(dur_ms)
+    ind = dim(string.rep(M.G_PIPE .. " ", (h.depth - 1)))
+    parts = {}
     parts[rawlen(parts) + 1] = magenta(M.G_SPAN_END)
     parts[rawlen(parts) + 1] = italic(h.name)
     parts[rawlen(parts) + 1] = dim(M.G_DUR)
     parts[rawlen(parts) + 1] = dur_str
     parts[rawlen(parts) + 1] = ind
-    if fields ~= nil and type(fields) == "table" then
+    if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[rawlen(parts) + 1] = pretty_kv(k, v)
         end
@@ -739,19 +739,19 @@ end
 
 -- ─── Assertion / check helpers ────────────────────────────────────
 
-fun assert_ok(condition: bool, msg: str): void
-    if condition then
+assert_ok(condition: bool, msg: str): void
+    if condition
         print(sem_success(M.G_CHECK .. " " .. tostring(msg or "ok")))
     else
         print(sem_failure(M.G_CROSS_MARK .. " " .. tostring(msg or "assertion failed")))
     end
 end
 
-fun assert_eq(actual: any, expected: any, msg: str): void
-    if actual == expected then
+assert_eq(actual: any, expected: any, msg: str): void
+    if actual == expected
         print(sem_success(M.G_CHECK .. " " .. tostring(msg or "eq")))
     else
-        local parts = {}
+        parts = {}
         parts[rawlen(parts) + 1] = sem_failure(M.G_CROSS_MARK .. " " .. tostring(msg or "eq"))
         parts[rawlen(parts) + 1] = dim("expected")
         parts[rawlen(parts) + 1] = sem_changed_new(pretty_val(expected))
@@ -763,16 +763,16 @@ end
 
 -- ─── Structured diff ──────────────────────────────────────────────
 
-fun diff_line(kind: str, key: str, old_val: any, new_val: any): str
-    local prefix = ""
-    local line = ""
-    if kind == "added" then
+diff_line(kind: str, key: str, old_val: any, new_val: any): str
+    prefix = ""
+    line = ""
+    if kind == "added"
         prefix = dim(green(M.G_PROPEL .. " "))
         line = sem_added("+" .. key) .. " " .. pretty_val(new_val)
-    elseif kind == "removed" then
+    elseif kind == "removed"
         prefix = dim(red(M.G_RETURN .. " "))
         line = sem_deleted("-" .. key) .. " " .. pretty_val(old_val)
-    elseif kind == "changed" then
+    elseif kind == "changed"
         prefix = dim(yellow(M.G_CROSS .. " "))
         line = sem_changed_old("-" .. key .. " " .. pretty_val(old_val)) ..
                "\n" .. dim("  ") ..
@@ -784,18 +784,18 @@ fun diff_line(kind: str, key: str, old_val: any, new_val: any): str
     return prefix .. line
 end
 
-fun print_diff(label: str, diffs: any): void
-    if label == nil then label = "diff" end
-    local n = rawlen(diffs)
-    if n == 0 then
+print_diff(label: str, diffs: any): void
+    if label == nil label = "diff" end
+    n = rawlen(diffs)
+    if n == 0
         print(sem_success(M.G_CHECK .. " " .. bold(label) .. " " .. dim("— no differences")))
         return
     end
     print(sem_diff_hunk(M.BOX_TL .. M.G_DIAMOND .. " " .. bold(label) ..
           " " .. dim(M.G_DASH) .. dim(string.rep(M.G_DASH, 38))))
-    local i = 1
+    i = 1
     while i <= n
-        local d = diffs[i]
+        d = diffs[i]
         print(M.BOX_V .. " " .. diff_line(d.kind, d.path, d.old, d.new))
         i += 1
     end
@@ -805,35 +805,35 @@ end
 
 -- ─── Checkpoint / milestone markers ───────────────────────────────
 
-fun checkpoint(label: str): void
-    local ind = span_indent()
-    local parts = {}
+checkpoint(label: str): void
+    ind = span_indent()
+    parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = sem_constant(M.G_SNAPSHOT)
     parts[rawlen(parts) + 1] = sem_payload(tostring(label or "checkpoint"))
-    if __trace_show_ts then
+    if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
-    if __trace_show_caller then
-        local c = caller(2)
-        if c ~= "" then
+    if trace_show_caller
+        c = caller(2)
+        if c != ""
             parts[rawlen(parts) + 1] = dim("(") .. c .. dim(")")
         end
     end
     print(table.concat(parts, " "))
 end
 
-fun milestone(label: str, value: any): void
-    local ind = span_indent()
-    local parts = {}
+milestone(label: str, value: any): void
+    ind = span_indent()
+    parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = sem_constant(M.G_STAR)
     parts[rawlen(parts) + 1] = sem_identity(tostring(label or "milestone"))
-    if value ~= nil then
+    if value != nil
         parts[rawlen(parts) + 1] = dim(M.G_ARROW)
         parts[rawlen(parts) + 1] = pretty_val(value)
     end
-    if __trace_show_ts then
+    if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
     print(table.concat(parts, " "))
@@ -841,15 +841,15 @@ end
 
 -- ─── Variable watch ───────────────────────────────────────────────
 
-fun watch(name: str, value: any): void
-    local ind = span_indent()
-    local parts = {}
+watch(name: str, value: any): void
+    ind = span_indent()
+    parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = dim(M.G_SEED)
     parts[rawlen(parts) + 1] = sem_key(tostring(name))
     parts[rawlen(parts) + 1] = dim("→")
     parts[rawlen(parts) + 1] = pretty_val(value)
-    if __trace_show_ts then
+    if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
     print(table.concat(parts, " "))
@@ -857,17 +857,17 @@ end
 
 -- ─── Event timeline entry ────────────────────────────────────────
 
-fun event(name: str, fields: any): void
-    local ind = span_indent()
-    local parts = {}
+event(name: str, fields: any): void
+    ind = span_indent()
+    parts = {}
     parts[rawlen(parts) + 1] = ind
     parts[rawlen(parts) + 1] = sem_type(M.G_PROPEL .. " " .. tostring(name))
-    if fields ~= nil and type(fields) == "table" then
+    if fields != nil and type(fields) == "table"
         for k, v in fields
             parts[rawlen(parts) + 1] = pretty_kv(k, v)
         end
     end
-    if __trace_show_ts then
+    if trace_show_ts
         parts[rawlen(parts) + 1] = dim("[") .. ts() .. dim("]")
     end
     print(table.concat(parts, " "))
@@ -875,48 +875,48 @@ end
 
 -- ─── Section / divider helpers ────────────────────────────────────
 
-fun banner(title: str, subtitle: str): void
-    if title == nil then title = "trace" end
-    if tty() then
-        local w = 50
-        local title_len = #title
-        local pad = w - title_len - 4
-        if pad < 2 then pad = 2 end
+banner(title: str, subtitle: str): void
+    if title == nil title = "trace" end
+    if tty()
+        w = 50
+        title_len = #title
+        pad = w - title_len - 4
+        if pad < 2 pad = 2 end
         print(sem_banner_line(M.BOX_TL .. string.rep(M.BOX_H, 2) .. " " .. title .. " " ..
               string.rep(M.BOX_H, pad) .. M.BOX_TR))
-        if subtitle ~= nil and subtitle ~= "" then
+        if subtitle != nil and subtitle != ""
             print(dim(M.BOX_V .. "  " .. subtitle .. string.rep(" ", w - 2 - #subtitle) .. M.BOX_V))
         end
         print(dim(M.BOX_BL .. string.rep(M.BOX_H, w) .. M.BOX_BR))
     else
         print("=== " .. title .. " ===")
-        if subtitle ~= nil and subtitle ~= "" then
+        if subtitle != nil and subtitle != ""
             print("    " .. subtitle)
         end
     end
 end
 
-fun divider(): void
+divider(): void
     print(span_indent() .. dim(string.rep(M.BOX_H, 60)))
 end
 
-fun double_divider(): void
+double_divider(): void
     print(span_indent() .. dim(string.rep("═", 60)))
 end
 
-fun section(title: str): void
-    local ind = span_indent()
-    local w = 50
-    local title_len = #title
-    local pad = w - title_len - 3
-    if pad < 2 then pad = 2 end
+section(title: str): void
+    ind = span_indent()
+    w = 50
+    title_len = #title
+    pad = w - title_len - 3
+    if pad < 2 pad = 2 end
     print(ind .. dim(" ") .. sem_banner_line(M.G_DIAMOND .. " " .. title) ..
           dim(" " .. string.rep(M.BOX_H, pad)))
 end
 
 -- ─── Legend ───────────────────────────────────────────────────────
 
-fun legend(): void
+legend(): void
     print(bold(italic("trace legend:")))
     print("")
     print("  " .. level_tag(M.LV_TRACE) .. "  " .. dim("fine-grained, usually off"))
@@ -961,49 +961,49 @@ fun legend(): void
 end
 
 -- ─── Recursive pretty printer for dump() ───────────────────────────
-fun _seen(seen: any, value: any): bool
-    if seen == nil then return false end
-    local i = 1
-    local n = rawlen(seen)
+_seen(seen: any, value: any): bool
+    if seen == nil return false end
+    i = 1
+    n = rawlen(seen)
     while i <= n
-        if seen[i] == value then return true end
+        if seen[i] == value return true end
         i += 1
     end
     return false
 end
 
-fun _seen_add(seen: any, value: any): void
+_seen_add(seen: any, value: any): void
     seen[rawlen(seen) + 1] = value
 end
 
-fun pretty_repr(value: any, depth: int, seen: any): str
-    if depth == nil then depth = 0 end
-    if seen == nil then seen = {} end
-    if value == nil then return "nil" end
-    local t = type(value)
-    if t:find("string") == 1 then
+pretty_repr(value: any, depth: int, seen: any): str
+    if depth == nil depth = 0 end
+    if seen == nil seen = {} end
+    if value == nil return "nil" end
+    t = type(value)
+    if t:find("string") == 1
         return '"' .. tostring(value) .. '"'
-    elseif t:find("number") == 1 then
+    elseif t:find("number") == 1
         return tostring(value)
-    elseif t:find("boolean") == 1 then
+    elseif t:find("boolean") == 1
         return tostring(value)
-    elseif t:find("function") == 1 then
+    elseif t:find("function") == 1
         return "<function>"
-    elseif t:find("table") ~= 1 then
+    elseif t:find("table") != 1
         return tostring(value)
     end
-    if _seen(seen, value) then return "<circular>" end
+    if _seen(seen, value) return "<circular>" end
     _seen_add(seen, value)
-    local n = rawlen(value)
-    local parts = {}
-    if n > 0 then
-        local i = 1
+    n = rawlen(value)
+    parts = {}
+    if n > 0
+        i = 1
         while i <= n
             parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
                 pretty_repr(value[i], depth + 1, seen)
             i += 1
         end
-        if rawlen(parts) <= 3 then
+        if rawlen(parts) <= 3
             return "[" .. table.concat(parts, ", ") .. "]"
         end
         return "[\n" .. table.concat(parts, ",\n") .. "\n" ..
@@ -1013,28 +1013,28 @@ fun pretty_repr(value: any, depth: int, seen: any): str
         parts[rawlen(parts) + 1] = string.rep("  ", depth + 1) ..
             tostring(k) .. " = " .. pretty_repr(v, depth + 1, seen)
     end
-    if rawlen(parts) == 0 then return "{}" end
+    if rawlen(parts) == 0 return "{}" end
     return "{\n" .. table.concat(parts, "\n") .. "\n" ..
         string.rep("  ", depth) .. "}"
 end
 
-fun dump(label: str, value: any): void
-    if label == nil then label = "dump" end
-    local ind = span_indent()
-    local header = ind .. cyan(M.G_BULLET) .. " " .. bold(label) ..
+dump(label: str, value: any): void
+    if label == nil label = "dump" end
+    ind = span_indent()
+    header = ind .. cyan(M.G_BULLET) .. " " .. bold(label) ..
         dim(" ⟜ ") .. pretty_val(value)
     print(header)
-    if value ~= nil and type(value) == "table" then
-        local rendered = pretty_repr(value, 1, nil)
-        local i = 1
-        local n = #rendered
-        local line_start = 1
-        local line_num = 1
+    if value != nil and type(value) == "table"
+        rendered = pretty_repr(value, 1, nil)
+        i = 1
+        n = #rendered
+        line_start = 1
+        line_num = 1
         while i <= n
-            local ch = string.sub(rendered, i, i)
-            if ch == "\n" then
-                local seg = string.sub(rendered, line_start, i - 1)
-                if seg ~= "" then
+            ch = string.sub(rendered, i, i)
+            if ch == "\n"
+                seg = string.sub(rendered, line_start, i - 1)
+                if seg != ""
                     print(dim(M.BOX_V .. " ") .. sem_numbering(tostring(line_num) .. " ") .. cyan(seg))
                     line_num += 1
                 end
@@ -1042,7 +1042,7 @@ fun dump(label: str, value: any): void
             end
             i += 1
         end
-        if line_start <= n then
+        if line_start <= n
             print(dim(M.BOX_V .. " ") .. sem_numbering(tostring(line_num) .. " ") ..
                   cyan(string.sub(rendered, line_start)))
         end
@@ -1051,16 +1051,16 @@ end
 
 -- ─── Compact value table ──────────────────────────────────────────
 
-fun table_print(label: str, t: any): void
-    if t == nil or type(t) ~= "table" then
+table_print(label: str, t: any): void
+    if t == nil or type(t) != "table"
         dump(label, t)
         return
     end
-    local ind = span_indent()
-    local n = rawlen(t)
-    if n > 0 then
+    ind = span_indent()
+    n = rawlen(t)
+    if n > 0
         print(ind .. bold(label) .. dim(" [" .. tostring(n) .. " items]"))
-        local i = 1
+        i = 1
         while i <= n
             print(ind .. dim(M.G_PIPE .. " ") .. sem_numbering(tostring(i) .. " ") .. pretty_val(t[i]))
             i += 1

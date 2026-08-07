@@ -2,16 +2,16 @@
 -- Parses JPEG headers for real dimensions, components, and quantization tables.
 -- Pixel decoding uses a simplified IDCT approximation (not full ITU-T T.81).
 
-local string = req "std.string"
-local image = req "std.image"
+string = req "std.string"
+image = req "std.image"
 
-fun read_u16(s: str, off: i64): i64
+read_u16(s: str, off: i64): i64
     (string.byte(s, off) * 256 + string.byte(s, off + 1)) % 65536
 end
 
-fun decode_header(data: str): any
-    if data == nil then return nil end
-    if string.byte(data, 1) ~= 0xFF or string.byte(data, 2) ~= 0xD8 then
+decode_header(data: str): any
+    if data == nil return nil end
+    if string.byte(data, 1) != 0xFF or string.byte(data, 2) != 0xD8
         return nil
     end
     off = 3
@@ -21,20 +21,20 @@ fun decode_header(data: str): any
         frame_marker = 0xC0,
     }
     while off + 1 <= string.len(data)
-        if string.byte(data, off) ~= 0xFF then break end
+        if string.byte(data, off) != 0xFF break end
         marker = string.byte(data, off + 1)
-        if marker == 0xD9 then break end
-        if marker == 0x00 or (marker >= 0xD0 and marker <= 0xD7) then
+        if marker == 0xD9 break end
+        if marker == 0x00 or (marker >= 0xD0 and marker <= 0xD7)
             off += 2
         else
             seg_len = read_u16(data, off + 2)
-            if marker == 0xC0 or marker == 0xC1 or marker == 0xC2 then
+            if marker == 0xC0 or marker == 0xC1 or marker == 0xC2
                 info.precision = string.byte(data, off + 4)
                 info.height = read_u16(data, off + 5)
                 info.width = read_u16(data, off + 7)
                 info.components = string.byte(data, off + 9)
                 info.frame_marker = marker
-            elseif marker == 0xDB then
+            elseif marker == 0xDB
                 -- Quantization table
                 table_id = string.byte(data, off + 4) & 0x0F
                 qt = {}
@@ -44,7 +44,7 @@ fun decode_header(data: str): any
                     qi += 1
                 end
                 info.quant_tables[table_id] = qt
-            elseif marker == 0xDA then
+            elseif marker == 0xDA
                 -- Start of scan — record offset for later decoding
                 info.sos_data = off + 4
             end
@@ -55,7 +55,7 @@ fun decode_header(data: str): any
 end
 
 -- Minimal IDCT approximation for 8x8 block
-fun idct_8x8(block: any): any
+idct_8x8(block: any): any
     -- Simple DCT-II inverse using direct formula (not optimized)
     result = {}
     for y = 0, 7
@@ -63,10 +63,10 @@ fun idct_8x8(block: any): any
             sum = 0.0
             for u = 0, 7
                 cu = 1.0
-                if u == 0 then cu = 1 / math.sqrt(2) end
+                if u == 0 cu = 1 / math.sqrt(2) end
                 for v = 0, 7
                     cv = 1.0
-                    if v == 0 then cv = 1 / math.sqrt(2) end
+                    if v == 0 cv = 1 / math.sqrt(2) end
                     val = block[u * 8 + v + 1] or 0
                     sum += cu * cv * val *
                         math.cos((2 * x + 1) * u * math.pi / 16) *
@@ -79,19 +79,19 @@ fun idct_8x8(block: any): any
     result
 end
 
-fun decode(data: str): any
+decode(data: str): any
     info = decode_header(data)
-    if info == nil then return nil end
-    if info.width == 0 or info.height == 0 then return nil end
+    if info == nil return nil end
+    if info.width == 0 or info.height == 0 return nil end
     img = image.new_rgba(image.rect(0, 0, info.width, info.height))
 
     -- Decode MCU blocks using simplified approach
     -- For baseline JPEG: try to extract entropy-coded data after SOS marker
-    if info.sos_data and info.sos_data < string.len(data) then
+    if info.sos_data and info.sos_data < string.len(data)
         -- Read entropy-coded segment (simplified: extract raw bytes as pseudo-pixels)
         entropy_start = info.sos_data
         entropy_len = string.len(data) - entropy_start - 2  -- minus EOI
-        if entropy_len > 0 then
+        if entropy_len > 0
             -- Generate a procedural decode from the entropy data
             -- This is a visual approximation — not a correct JPEG decode
             for y = 0, info.height - 1

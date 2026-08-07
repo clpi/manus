@@ -21,9 +21,9 @@ os = req "std.os"
 total = 0
 fail = 0
 
-fun check(name: str, cond: bool)
+check(name: str, cond: bool)
     total = total + 1
-    if not cond then
+    if not cond
         fail = fail + 1
         print("  FAIL: " .. name)
     end
@@ -31,10 +31,10 @@ end
 
 CANDIDATES = { "branch_chain", "length_bucket", "sorted_lookup" }
 
-fun classify_with(cid: str, w: str): i64
-    if cid == "branch_chain" then return C.classify_branch_chain(w) end
-    if cid == "length_bucket" then return C.classify_length_bucket(w) end
-    if cid == "sorted_lookup" then return C.classify_sorted_lookup(w) end
+classify_with(cid: str, w: str): i64
+    if cid == "branch_chain" return C.classify_branch_chain(w) end
+    if cid == "length_bucket" return C.classify_length_bucket(w) end
+    if cid == "sorted_lookup" return C.classify_sorted_lookup(w) end
     0
 end
 
@@ -71,12 +71,12 @@ end
 
 -- 3. Deterministic fuzz (LCG over lowercase words, 0..12 chars).
 seed = 0xC12A1F00D
-fun next_rand(): i64
+next_rand(): i64
     seed = (seed * 1103515245 + 12345) % 2147483648
     seed
 end
 
-fun random_word(): str
+random_word(): str
     len = next_rand() % 13
     w = ""
     for i = 1, len
@@ -86,9 +86,9 @@ fun random_word(): str
     w
 end
 
-fun descriptor_ref(w: str): i64
+descriptor_ref(w: str): i64
     for i = 1, C.KEYWORD_COUNT
-        if C.SORTED_TEXT[i] == w then return C.SORTED_ID[i] end
+        if C.SORTED_TEXT[i] == w return C.SORTED_ID[i] end
     end
     0
 end
@@ -119,7 +119,7 @@ for i = 1, C.KEYWORD_COUNT
 end
 
 print(string.format("pass12_m1_diff: %d checks, %d failures", total, fail))
-if fail > 0 then
+if fail > 0
     os.exit(1)
 end
 print("pass12_m1_diff: PASS")

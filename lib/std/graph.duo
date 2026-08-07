@@ -5,13 +5,13 @@
 -- resolution, network routing, and workflow orchestration.
 
 -- new: create an empty directed graph.
-fun new(): any
+new(): any
     {adj = {}, nodes = {}, in_degree = {}}
 end
 
 -- add_node: add a node with optional value.
-fun add_node(g: any, id: any, val: any): void
-    if g.adj[id] == nil then
+add_node(g: any, id: any, val: any): void
+    if g.adj[id] == nil
         g.adj[id] = {}
         g.in_degree[id] = 0
     end
@@ -19,16 +19,16 @@ fun add_node(g: any, id: any, val: any): void
 end
 
 -- add_edge: add a directed edge from -> to with optional weight.
-fun add_edge(g: any, from: any, to: any, weight: any): void
-    if g.adj[from] == nil then add_node(g, from, nil) end
-    if g.adj[to] == nil then add_node(g, to, nil) end
+add_edge(g: any, from: any, to: any, weight: any): void
+    if g.adj[from] == nil add_node(g, from, nil) end
+    if g.adj[to] == nil add_node(g, to, nil) end
     g.adj[from][rawlen(g.adj[from]) + 1] = {to = to, weight = weight or 1}
     g.in_degree[to] = (g.in_degree[to] or 0) + 1
 end
 
 -- remove_node: remove a node and all its edges.
-fun remove_node(g: any, id: any): void
-    if g.adj[id] == nil then return end
+remove_node(g: any, id: any): void
+    if g.adj[id] == nil return end
     g.adj[id] = nil
     g.nodes[id] = nil
     g.in_degree[id] = nil
@@ -36,7 +36,7 @@ fun remove_node(g: any, id: any): void
         new_edges = {}
         i = 1
         while i <= rawlen(g.adj[n])
-            if g.adj[n][i].to ~= id then
+            if g.adj[n][i].to != id
                 new_edges[rawlen(new_edges) + 1] = g.adj[n][i]
             end
             i += 1
@@ -46,8 +46,8 @@ fun remove_node(g: any, id: any): void
 end
 
 -- neighbors: return the list of outgoing neighbors.
-fun neighbors(g: any, id: any): any
-    if g.adj[id] == nil then return {} end
+neighbors(g: any, id: any): any
+    if g.adj[id] == nil return {} end
     out = {}
     i = 1
     while i <= rawlen(g.adj[id])
@@ -58,7 +58,7 @@ fun neighbors(g: any, id: any): any
 end
 
 -- nodes_: return all node IDs.
-fun nodes_(g: any): any
+nodes_(g: any): any
     out = {}
     for k, _ in g.nodes
         out[rawlen(out) + 1] = k
@@ -67,14 +67,14 @@ fun nodes_(g: any): any
 end
 
 -- node_count: return the number of nodes.
-fun node_count(g: any): i64
+node_count(g: any): i64
     n = 0
     for _ in g.nodes do n += 1 end
     n
 end
 
 -- edge_count: return the number of edges.
-fun edge_count(g: any): i64
+edge_count(g: any): i64
     n = 0
     for _, edges in g.adj
         n += rawlen(edges)
@@ -83,27 +83,27 @@ fun edge_count(g: any): i64
 end
 
 -- has_node: check if a node exists.
-fun has_node(g: any, id: any): bool
-    g.nodes[id] ~= nil
+has_node(g: any, id: any): bool
+    g.nodes[id] != nil
 end
 
 -- has_edge: check if an edge from -> to exists.
-fun has_edge(g: any, from: any, to: any): bool
-    if g.adj[from] == nil then return false end
+has_edge(g: any, from: any, to: any): bool
+    if g.adj[from] == nil return false end
     i = 1
     while i <= rawlen(g.adj[from])
-        if g.adj[from][i].to == to then return true end
+        if g.adj[from][i].to == to return true end
         i += 1
     end
     false
 end
 
 -- get_weight: return the weight of edge from -> to, or nil.
-fun get_weight(g: any, from: any, to: any): any
-    if g.adj[from] == nil then return nil end
+get_weight(g: any, from: any, to: any): any
+    if g.adj[from] == nil return nil end
     i = 1
     while i <= rawlen(g.adj[from])
-        if g.adj[from][i].to == to then return g.adj[from][i].weight end
+        if g.adj[from][i].to == to return g.adj[from][i].weight end
         i += 1
     end
     nil
@@ -113,7 +113,7 @@ end
 -- BFS: breadth-first traversal
 -- ═══════════════════════════════════════════════════════════════
 
-fun bfs(g: any, start: any, visit: any): void
+bfs(g: any, start: any, visit: any): void
     visited = {}
     queue = {start}
     visited[start] = true
@@ -123,7 +123,7 @@ fun bfs(g: any, start: any, visit: any): void
         i = 1
         while i <= rawlen(g.adj[id] or {})
             nb = g.adj[id][i].to
-            if not visited[nb] then
+            if not visited[nb]
                 visited[nb] = true
                 queue[rawlen(queue) + 1] = nb
             end
@@ -133,8 +133,8 @@ fun bfs(g: any, start: any, visit: any): void
 end
 
 -- bfs_shortest_path: return the shortest path (fewest edges) from start to goal.
-fun bfs_shortest_path(g: any, start: any, goal: any): any
-    if start == goal then return {start} end
+bfs_shortest_path(g: any, start: any, goal: any): any
+    if start == goal return {start} end
     visited = {}
     prev = {}
     queue = {start}
@@ -144,13 +144,13 @@ fun bfs_shortest_path(g: any, start: any, goal: any): any
         i = 1
         while i <= rawlen(g.adj[id] or {})
             nb = g.adj[id][i].to
-            if not visited[nb] then
+            if not visited[nb]
                 visited[nb] = true
                 prev[nb] = id
-                if nb == goal then
+                if nb == goal
                     path = {}
                     cur = nb
-                    while cur ~= nil
+                    while cur != nil
                         path[rawlen(path) + 1] = cur
                         cur = prev[cur]
                     end
@@ -174,18 +174,18 @@ end
 -- DFS: depth-first traversal
 -- ═══════════════════════════════════════════════════════════════
 
-fun dfs(g: any, start: any, visit: any): void
+dfs(g: any, start: any, visit: any): void
     visited = {}
     stack = {start}
     while rawlen(stack) > 0
         id = table.remove(stack)
-        if not visited[id] then
+        if not visited[id]
             visited[id] = true
             visit(id, g.nodes[id])
             i = rawlen(g.adj[id] or {})
             while i >= 1
                 nb = g.adj[id][i].to
-                if not visited[nb] then
+                if not visited[nb]
                     stack[rawlen(stack) + 1] = nb
                 end
                 i -= 1
@@ -195,7 +195,7 @@ fun dfs(g: any, start: any, visit: any): void
 end
 
 -- dfs_topological: DFS-based topological sort (returns nil if cycle exists).
-fun dfs_topological(g: any): any
+dfs_topological(g: any): any
     WHITE = 0; GRAY = 1; BLACK = 2
     color = {}
     order = {}
@@ -203,8 +203,8 @@ fun dfs_topological(g: any): any
         color[n] = WHITE
     end
     for n, _ in g.nodes
-        if color[n] == WHITE then
-            if not dfs_topo_visit(g, n, color, order) then return nil end
+        if color[n] == WHITE
+            if not dfs_topo_visit(g, n, color, order) return nil end
         end
     end
     out = {}
@@ -216,14 +216,14 @@ fun dfs_topological(g: any): any
     out
 end
 
-fun dfs_topo_visit(g: any, id: any, color: any, order: any): bool
+dfs_topo_visit(g: any, id: any, color: any, order: any): bool
     color[id] = GRAY
     i = 1
     while i <= rawlen(g.adj[id] or {})
         nb = g.adj[id][i].to
-        if color[nb] == GRAY then return false end
-        if color[nb] == WHITE then
-            if not dfs_topo_visit(g, nb, color, order) then return false end
+        if color[nb] == GRAY return false end
+        if color[nb] == WHITE
+            if not dfs_topo_visit(g, nb, color, order) return false end
         end
         i += 1
     end
@@ -236,7 +236,7 @@ end
 -- Kahn's topological sort (BFS-based)
 -- ═══════════════════════════════════════════════════════════════
 
-fun topological_sort(g: any): any
+topological_sort(g: any): any
     in_deg = {}
     for n, _ in g.nodes
         in_deg[n] = 0
@@ -250,7 +250,7 @@ fun topological_sort(g: any): any
     end
     queue = {}
     for n, d in in_deg
-        if d == 0 then queue[rawlen(queue) + 1] = n end
+        if d == 0 queue[rawlen(queue) + 1] = n end
     end
     order = {}
     while rawlen(queue) > 0
@@ -260,13 +260,13 @@ fun topological_sort(g: any): any
         while i <= rawlen(g.adj[id] or {})
             nb = g.adj[id][i].to
             in_deg[nb] -= 1
-            if in_deg[nb] == 0 then
+            if in_deg[nb] == 0
                 queue[rawlen(queue) + 1] = nb
             end
             i += 1
         end
     end
-    if rawlen(order) ~= node_count(g) then return nil end
+    if rawlen(order) != node_count(g) return nil end
     order
 end
 
@@ -274,28 +274,28 @@ end
 -- Cycle detection
 -- ═══════════════════════════════════════════════════════════════
 
-fun has_cycle(g: any): bool
+has_cycle(g: any): bool
     WHITE = 0; GRAY = 1; BLACK = 2
     color = {}
     for n, _ in g.nodes
         color[n] = WHITE
     end
     for n, _ in g.nodes
-        if color[n] == WHITE then
-            if cycle_dfs(g, n, color) then return true end
+        if color[n] == WHITE
+            if cycle_dfs(g, n, color) return true end
         end
     end
     false
 end
 
-fun cycle_dfs(g: any, id: any, color: any): bool
+cycle_dfs(g: any, id: any, color: any): bool
     color[id] = GRAY
     i = 1
     while i <= rawlen(g.adj[id] or {})
         nb = g.adj[id][i].to
-        if color[nb] == GRAY then return true end
-        if color[nb] == WHITE then
-            if cycle_dfs(g, nb, color) then return true end
+        if color[nb] == GRAY return true end
+        if color[nb] == WHITE
+            if cycle_dfs(g, nb, color) return true end
         end
         i += 1
     end
@@ -307,7 +307,7 @@ end
 -- Dijkstra: shortest weighted path
 -- ═══════════════════════════════════════════════════════════════
 
-fun dijkstra(g: any, start: any): any
+dijkstra(g: any, start: any): any
     dist = {}
     prev = {}
     visited = {}
@@ -320,17 +320,17 @@ fun dijkstra(g: any, start: any): any
         min_idx = 1
         i = 2
         while i <= rawlen(pq)
-            if pq[i].d < pq[min_idx].d then min_idx = i end
+            if pq[i].d < pq[min_idx].d min_idx = i end
             i += 1
         end
         cur = table.remove(pq, min_idx)
-        if not visited[cur.id] then
+        if not visited[cur.id]
             visited[cur.id] = true
             i = 1
             while i <= rawlen(g.adj[cur.id] or {})
                 edge = g.adj[cur.id][i]
                 new_dist = dist[cur.id] + edge.weight
-                if new_dist < dist[edge.to] then
+                if new_dist < dist[edge.to]
                     dist[edge.to] = new_dist
                     prev[edge.to] = cur.id
                     pq[rawlen(pq) + 1] = {id = edge.to, d = new_dist}
@@ -343,11 +343,11 @@ fun dijkstra(g: any, start: any): any
 end
 
 -- dijkstra_path: reconstruct path from dijkstra result.
-fun dijkstra_path(result: any, goal: any): any
-    if result.dist[goal] >= 1e308 then return nil end
+dijkstra_path(result: any, goal: any): any
+    if result.dist[goal] >= 1e308 return nil end
     path = {}
     cur = goal
-    while cur ~= nil
+    while cur != nil
         path[rawlen(path) + 1] = cur
         cur = result.prev[cur]
     end
@@ -364,25 +364,25 @@ end
 -- Connected components (undirected)
 -- ═══════════════════════════════════════════════════════════════
 
-fun connected_components(g: any): any
+connected_components(g: any): any
     visited = {}
     components = {}
     for n, _ in g.nodes
         visited[n] = false
     end
     for n, _ in g.nodes
-        if not visited[n] then
+        if not visited[n]
             comp = {}
             stack = {n}
             while rawlen(stack) > 0
                 id = table.remove(stack)
-                if not visited[id] then
+                if not visited[id]
                     visited[id] = true
                     comp[rawlen(comp) + 1] = id
                     i = 1
                     while i <= rawlen(g.adj[id] or {})
                         nb = g.adj[id][i].to
-                        if not visited[nb] then
+                        if not visited[nb]
                             stack[rawlen(stack) + 1] = nb
                         end
                         i += 1
@@ -396,17 +396,17 @@ fun connected_components(g: any): any
 end
 
 -- indegree: return in-degree of a node.
-fun indegree(g: any, id: any): i64
+indegree(g: any, id: any): i64
     g.in_degree[id] or 0
 end
 
 -- outdegree: return out-degree of a node.
-fun outdegree(g: any, id: any): i64
+outdegree(g: any, id: any): i64
     rawlen(g.adj[id] or {})
 end
 
 -- transpose: return the transpose (reverse all edges).
-fun transpose(g: any): any
+transpose(g: any): any
     g2 = new()
     for n, v in g.nodes
         add_node(g2, n, v)
@@ -423,23 +423,23 @@ fun transpose(g: any): any
 end
 
 -- subgraph: return the induced subgraph on the given node set.
-fun subgraph(g: any, node_ids: any): any
+subgraph(g: any, node_ids: any): any
     g2 = new()
     set = {}
     i = 1
     while i <= rawlen(node_ids)
         set[node_ids[i]] = true
-        if g.nodes[node_ids[i]] ~= nil then
+        if g.nodes[node_ids[i]] != nil
             add_node(g2, node_ids[i], g.nodes[node_ids[i]])
         end
         i += 1
     end
     for n, _ in g.nodes
-        if set[n] then
+        if set[n]
             i = 1
             while i <= rawlen(g.adj[n] or {})
                 e = g.adj[n][i]
-                if set[e.to] then
+                if set[e.to]
                     add_edge(g2, n, e.to, e.weight)
                 end
                 i += 1

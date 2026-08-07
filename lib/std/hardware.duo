@@ -5,13 +5,13 @@
 
 -- Compiler memory fence (prevents reordering across this point)
 @hot
-fun fence()
+fence(): void
     @c.emit("__asm__ volatile(\"\" ::: \"memory\");")
 end
 
 -- Spin-loop hint: x86 `pause`, AArch64 `yield`
 @hot
-fun spin_wait()
+spin_wait(): void
     @c.emit("#if defined(__x86_64__) || defined(__i386__)")
     @c.emit("__asm__ volatile(\"pause\");")
     @c.emit("#elif defined(__aarch64__)")

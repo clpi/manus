@@ -85,18 +85,32 @@ fn buildConstSlotMap(
 ) Error!std.AutoHashMapUnmanaged(u32, i64) {
     var map: std.AutoHashMapUnmanaged(u32, i64) = .empty;
     errdefer map.deinit(alloc);
+
+    // Constant propagation is only sound for a slot that is assigned ONCE.
+    // A loop-carried variable is initialised from a literal and then reassigned
+    // inside the body; recording just the literal folds the body against the
+    // entry value, so `i = i + 1` becomes `i = 2` and the loop never advances.
+    // Count every definition first, then keep only the single-definition slots.
+    var defs: std.AutoHashMapUnmanaged(u32, u32) = .empty;
+    defer defs.deinit(alloc);
     for (f.blocks) |b| {
         for (b.instrs) |ins| {
-            if (ins.op == .const_i64) {
-                const rt = ins.result orelse continue;
-                if (ins.lhs != .i64) continue;
-                try map.put(alloc, rt, ins.lhs.i64);
-                continue;
-            }
-            if (ins.op == .store_local and ins.lhs == .i64) {
-                const slot = ins.result orelse continue;
-                try map.put(alloc, slot, ins.lhs.i64);
-            }
+            const slot = switch (ins.op) {
+                .const_i64, .store_local => ins.result orelse continue,
+                else => continue,
+            };
+            const gop = try defs.getOrPut(alloc, slot);
+            gop.value_ptr.* = if (gop.found_existing) gop.value_ptr.* + 1 else 1;
+        }
+    }
+
+    for (f.blocks) |b| {
+        for (b.instrs) |ins| {
+            if (ins.op != .const_i64 and ins.op != .store_local) continue;
+            if (ins.lhs != .i64) continue;
+            const slot = ins.result orelse continue;
+            if ((defs.get(slot) orelse 0) != 1) continue;
+            try map.put(alloc, slot, ins.lhs.i64);
         }
     }
     return map;

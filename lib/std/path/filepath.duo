@@ -7,14 +7,14 @@ separator = "/"
 list_separator = ":"
 
 -- IsSeparator reports whether c is a directory separator.
-fun is_separator(c: str): bool
-    if c == "/" or c == "\\" then return true end
+is_separator(c: str): bool
+    if c == "/" or c == "\\" return true end
     false
 end
 
 -- Clean returns the shortest path name equivalent of path.
-fun clean(path: str): str
-    if path == "" then return "." end
+clean(path: str): str
+    if path == "" return "." end
     -- Normalize separators.
     result = string.gsub(path, "\\", "/")
     -- Handle . and ..
@@ -23,7 +23,7 @@ fun clean(path: str): str
     len = string.len(result)
     while i <= len do
         nxt = string.find(result, "/", i, true)
-        if nxt == nil then
+        if nxt == nil
             part = string.sub(result, i)
             parts[#parts + 1] = part
             break
@@ -34,53 +34,53 @@ fun clean(path: str): str
     end
     stack = {}
     for _, part in ipairs(parts) do
-        if part == ".." then
+        if part == ".."
             table.remove(stack)
-        elseif part ~= "." and part ~= "" then
+        elseif part != "." and part != ""
             stack[#stack + 1] = part
         end
     end
-    if #stack == 0 then return "." end
+    if #stack == 0 return "." end
     table.concat(stack, "/")
 end
 
 -- Ext returns the file name extension.
-fun ext(path: str): str
+ext(path: str): str
     dot = string.find(path, "%.")
-    if dot == nil then return "" end
+    if dot == nil return "" end
     string.sub(path, dot)
 end
 
 -- Base returns the last element of path.
-fun base(path: str): str
+base(path: str): str
     dot = string.len(path)
     while dot > 1 and string.sub(path, dot, dot) == "/" do
         dot -= 1
     end
     last = dot
-    while dot > 1 and string.sub(path, dot - 1, dot - 1) ~= "/" do
+    while dot > 1 and string.sub(path, dot - 1, dot - 1) != "/" do
         dot -= 1
     end
     string.sub(path, dot, last)
 end
 
 -- Dir returns the directory part of path.
-fun dir(path: str): str
+dir(path: str): str
     dot = string.len(path)
     while dot > 1 and string.sub(path, dot, dot) == "/" do
         dot -= 1
     end
-    while dot > 1 and string.sub(path, dot - 1, dot - 1) ~= "/" do
+    while dot > 1 and string.sub(path, dot - 1, dot - 1) != "/" do
         dot -= 1
     end
-    if dot <= 1 then return "." end
+    if dot <= 1 return "." end
     string.sub(path, 1, dot - 1)
 end
 
 -- IsAbs reports whether path is absolute.
-fun is_abs(path: str): bool
-    if string.sub(path, 1, 1) == "/" then return true end
-    if string.len(path) >= 2 and string.sub(path, 2, 2) == ":" then return true end
+is_abs(path: str): bool
+    if string.sub(path, 1, 1) == "/" return true end
+    if string.len(path) >= 2 and string.sub(path, 2, 2) == ":" return true end
     false
 end
 

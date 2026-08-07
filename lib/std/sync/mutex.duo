@@ -4,12 +4,12 @@
 -- coroutines rather than threads.
 
 -- new_mutex: create a new Mutex.
-fun new_mutex(): any
+new_mutex(): any
     {locked = false}
 end
 
 -- lock: acquire the mutex. If already locked, yield until available.
-fun lock(m: any): void
+lock(m: any): void
     while m.locked
         co = require "std.coroutine"
         co.yield_()
@@ -18,24 +18,24 @@ fun lock(m: any): void
 end
 
 -- unlock: release the mutex.
-fun unlock(m: any): void
+unlock(m: any): void
     m.locked = false
 end
 
 -- try_lock: attempt to acquire the mutex without blocking. Returns true if acquired.
-fun try_lock(m: any): bool
-    if m.locked then return false end
+try_lock(m: any): bool
+    if m.locked return false end
     m.locked = true
     true
 end
 
 -- new_rwmutex: create a new RWMutex.
-fun new_rwmutex(): any
+new_rwmutex(): any
     {writers = 0, readers = 0, write_locked = false}
 end
 
 -- rlock: acquire a read lock.
-fun rlock(m: any): void
+rlock(m: any): void
     while m.write_locked
         co = require "std.coroutine"
         co.yield_()
@@ -44,13 +44,13 @@ fun rlock(m: any): void
 end
 
 -- runlock: release a read lock.
-fun runlock(m: any): void
+runlock(m: any): void
     m.readers = m.readers - 1
-    if m.readers < 0 then m.readers = 0 end
+    if m.readers < 0 m.readers = 0 end
 end
 
 -- wlock: acquire a write lock.
-fun wlock(m: any): void
+wlock(m: any): void
     while m.write_locked or m.readers > 0
         co = require "std.coroutine"
         co.yield_()
@@ -59,7 +59,7 @@ fun wlock(m: any): void
 end
 
 -- wunlock: release a write lock.
-fun wunlock(m: any): void
+wunlock(m: any): void
     m.write_locked = false
 end
 

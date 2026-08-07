@@ -6,103 +6,103 @@
 -- ===== Result type =====
 
 -- ok: wrap a successful value.
-fun ok(value: any): any
+ok(value: any): any
     {kind = "ok", value = value, err = nil}
 end
 
 -- err: wrap a failure with a message.
-fun err(message: any): any
-    if type(message) == "table" and message.message ~= nil then
+err(message: any): any
+    if type(message) == "table" and message.message != nil
         return {kind = "err", value = nil, err = message}
     end
     {kind = "err", value = nil, err = {message = tostring(message), cause = nil, kind = "error"}}
 end
 
 -- is_ok: returns true if the result is ok.
-fun is_ok(r: any): bool
-    if r == nil then return false end
+is_ok(r: any): bool
+    if r == nil return false end
     r.kind == "ok"
 end
 
 -- is_err: returns true if the result is an error.
-fun is_err(r: any): bool
-    if r == nil then return true end
+is_err(r: any): bool
+    if r == nil return true end
     r.kind == "err"
 end
 
 -- value: extract the value or return fallback.
-fun value(r: any, fallback: any): any
-    if r ~= nil and r.kind == "ok" then return r.value end
+value(r: any, fallback: any): any
+    if r != nil and r.kind == "ok" return r.value end
     fallback
 end
 
 -- error: extract the error or return nil.
-fun std_result_error(r: any): any
-    if r == nil then return nil end
+std_result_error(r: any): any
+    if r == nil return nil end
     r.err
 end
 
 -- unwrap: extract the value or raise an error message.
-fun unwrap(r: any): any
-    if r ~= nil and r.kind == "ok" then return r.value end
+unwrap(r: any): any
+    if r != nil and r.kind == "ok" return r.value end
     msg = "unwrap called on error"
-    if r ~= nil and r.err ~= nil and r.err.message ~= nil then
+    if r != nil and r.err != nil and r.err.message != nil
         msg = msg .. ": " .. r.err.message
     end
     error(msg)
 end
 
 -- unwrap_or_else: extract value or compute fallback from the error.
-fun unwrap_or_else(r: any, fn: any): any
-    if r ~= nil and r.kind == "ok" then return r.value end
+unwrap_or_else(r: any, fn: any): any
+    if r != nil and r.kind == "ok" return r.value end
     fn(r.err)
 end
 
 -- map: transform the value inside an ok result; pass through errors.
-fun map(r: any, fn: any): any
-    if r ~= nil and r.kind == "ok" then
+map(r: any, fn: any): any
+    if r != nil and r.kind == "ok"
         return ok(fn(r.value))
     end
     r
 end
 
 -- map_err: transform the error inside an err result; pass through oks.
-fun map_err(r: any, fn: any): any
-    if r ~= nil and r.kind == "err" then
+map_err(r: any, fn: any): any
+    if r != nil and r.kind == "err"
         return err(fn(r.err))
     end
     r
 end
 
 -- flat_map: like map but fn returns a Result (avoids double-wrapping).
-fun flat_map(r: any, fn: any): any
-    if r ~= nil and r.kind == "ok" then
+flat_map(r: any, fn: any): any
+    if r != nil and r.kind == "ok"
         return fn(r.value)
     end
     r
 end
 
 -- and_then: alias for flat_map.
-fun and_then(r: any, fn: any): any
+and_then(r: any, fn: any): any
     flat_map(r, fn)
 end
 
 -- or_else: if err, call fn(error) which should return a new Result.
-fun or_else(r: any, fn: any): any
-    if r ~= nil and r.kind == "err" then
+or_else(r: any, fn: any): any
+    if r != nil and r.kind == "err"
         return fn(r.err)
     end
     r
 end
 
 -- to_string: human-readable representation.
-fun result_to_str(r: any): str
-    if r == nil then return "Result(nil)" end
-    if r.kind == "ok" then
+result_to_str(r: any): str
+    if r == nil return "Result(nil)" end
+    if r.kind == "ok"
         return "Ok(" .. tostring(r.value) .. ")"
     end
     msg = ""
-    if r.err ~= nil and r.err.message ~= nil then
+    if r.err != nil and r.err.message != nil
         msg = r.err.message
     end
     return "Err(" .. msg .. ")"
@@ -111,86 +111,86 @@ end
 -- ===== Option type =====
 
 -- some: wrap a present value.
-fun some(value: any): any
+some(value: any): any
     {kind = "some", value = value}
 end
 
 -- none: represent absence of value.
-fun none(): any
+none(): any
     {kind = "none", value = nil}
 end
 
 -- is_some: returns true if the option has a value.
-fun is_some(o: any): bool
-    if o == nil then return false end
+is_some(o: any): bool
+    if o == nil return false end
     o.kind == "some"
 end
 
 -- is_none: returns true if the option is empty.
-fun is_none(o: any): bool
-    if o == nil then return true end
-    o.kind ~= "some"
+is_none(o: any): bool
+    if o == nil return true end
+    o.kind != "some"
 end
 
 -- option_value: extract the value or return fallback.
-fun option_value(o: any, fallback: any): any
-    if o ~= nil and o.kind == "some" then return o.value end
+option_value(o: any, fallback: any): any
+    if o != nil and o.kind == "some" return o.value end
     fallback
 end
 
 -- option_unwrap: extract the value or raise an error.
-fun option_unwrap(o: any): any
-    if o ~= nil and o.kind == "some" then return o.value end
+option_unwrap(o: any): any
+    if o != nil and o.kind == "some" return o.value end
     error("option_unwrap called on none")
 end
 
 -- option_unwrap_or_else: extract value or compute from a function.
-fun option_unwrap_or_else(o: any, fn: any): any
-    if o ~= nil and o.kind == "some" then return o.value end
+option_unwrap_or_else(o: any, fn: any): any
+    if o != nil and o.kind == "some" return o.value end
     fn()
 end
 
 -- option_map: transform the value inside a some; pass through none.
-fun option_map(o: any, fn: any): any
-    if o ~= nil and o.kind == "some" then
+option_map(o: any, fn: any): any
+    if o != nil and o.kind == "some"
         return some(fn(o.value))
     end
     none()
 end
 
 -- option_flat_map: like option_map but fn returns an Option.
-fun option_flat_map(o: any, fn: any): any
-    if o ~= nil and o.kind == "some" then
+option_flat_map(o: any, fn: any): any
+    if o != nil and o.kind == "some"
         return fn(o.value)
     end
     none()
 end
 
 -- option_filter: keep the value only if predicate holds.
-fun option_filter(o: any, fn: any): any
-    if o ~= nil and o.kind == "some" and fn(o.value) then
+option_filter(o: any, fn: any): any
+    if o != nil and o.kind == "some" and fn(o.value)
         return o
     end
     none()
 end
 
 -- option_to_string: human-readable representation.
-fun option_to_str(o: any): str
-    if o == nil or o.kind ~= "some" then return "None" end
+option_to_str(o: any): str
+    if o == nil or o.kind != "some" return "None" end
     return "Some(" .. tostring(o.value) .. ")"
 end
 
 -- ===== Batch utilities =====
 
 -- collect: take a list of Results; return {ok: values, err: first_error}.
-fun collect(results: any): any
+collect(results: any): any
     vals = {}
     errs = {}
-    if results == nil then return {ok = vals, err = nil} end
+    if results == nil return {ok = vals, err = nil} end
     i = 1
     while i <= rawlen(results)
         r = results[i]
-        if r ~= nil and r.kind == "ok" then
+        if r != nil and r.kind == "ok"
             vals[rawlen(vals) + 1] = r.value
         else
             errs[rawlen(errs) + 1] = std_result_error(r)
@@ -198,29 +198,29 @@ fun collect(results: any): any
         i += 1
     end
     first_err = nil
-    if rawlen(errs) > 0 then first_err = errs[1] end
+    if rawlen(errs) > 0 first_err = errs[1] end
     {ok = vals, err = first_err, errors = errs}
 end
 
 -- all_ok: returns true if every Result in the list is ok.
-fun all_ok(results: any): bool
-    if results == nil then return true end
+all_ok(results: any): bool
+    if results == nil return true end
     i = 1
     while i <= rawlen(results)
-        if not is_ok(results[i]) then return false end
+        if not is_ok(results[i]) return false end
         i += 1
     end
     true
 end
 
 -- values: extract all ok values from a list of Results.
-fun values(results: any): any
+values(results: any): any
     out = {}
-    if results == nil then return out end
+    if results == nil return out end
     i = 1
     while i <= rawlen(results)
         r = results[i]
-        if r ~= nil and r.kind == "ok" then
+        if r != nil and r.kind == "ok"
             out[rawlen(out) + 1] = r.value
         end
         i += 1
@@ -229,13 +229,13 @@ fun values(results: any): any
 end
 
 -- errors: extract all error values from a list of Results.
-fun std_result_errors(results: any): any
+std_result_errors(results: any): any
     out = {}
-    if results == nil then return out end
+    if results == nil return out end
     i = 1
     while i <= rawlen(results)
         r = results[i]
-        if r ~= nil and r.kind == "err" then
+        if r != nil and r.kind == "err"
             out[rawlen(out) + 1] = r.err
         end
         i += 1

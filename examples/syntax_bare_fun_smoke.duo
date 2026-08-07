@@ -8,20 +8,20 @@ mul = (a: i64, b: i64) -> i64
     a * b
 end
 
-fun pick(a: i64, b: i64, c: i64, value: i64) -> i64
+pick(a: i64, b: i64, c: i64, value: i64) -> i64
     if a < b value
     elseif b < c value * 2
     else value * 3
     end
 end
 
-fun run_smoke() -> i64
+run_smoke() -> i64
     x = if 1 < 2 10 else if 2 < 3 20 else 30 end
     add(1, 2) + mul(3, 4) + pick(1, 2, 3, 5) + x
 end
 
 RESULT = run_smoke()
 print("RESULT syntax_bare_fun = " .. tostring(RESULT))
-if RESULT ~= 30
+if RESULT != 30
     error("syntax bare fun smoke failed")
 end

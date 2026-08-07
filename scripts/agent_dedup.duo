@@ -30,7 +30,7 @@ start = string.find(content, "## Active claims")
 if start
     section = string.sub(content, start)
     _end = string.find(section, "\n## ")
-    if _end then section = string.sub(section, 1, _end - 1) end
+    if _end section = string.sub(section, 1, _end - 1) end
     print("--- Active Claims ---")
     for line in string.gmatch(section, "| [^|]+ | [^|]+ | [^|]+ | [^|]+ |")
         if not string.find(line, "Area.*Agent")

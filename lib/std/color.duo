@@ -1,6 +1,6 @@
 -- std.color — ANSI terminal color codes
 
-local string = req "std.string"
+string = req "std.string"
 
 global M = {}
 
@@ -28,23 +28,23 @@ M.BG_MAGENTA = "\x1b[45m"
 M.BG_CYAN = "\x1b[46m"
 M.BG_WHITE = "\x1b[47m"
 
-fun red(text: str): str
+red(text: str): str
     M.RED .. text .. M.RESET
 end
 
-fun green(text: str): str
+green(text: str): str
     M.GREEN .. text .. M.RESET
 end
 
-fun yellow(text: str): str
+yellow(text: str): str
     M.YELLOW .. text .. M.RESET
 end
 
-fun blue(text: str): str
+blue(text: str): str
     M.BLUE .. text .. M.RESET
 end
 
-fun bold(text: str): str
+bold(text: str): str
     M.BOLD .. text .. M.RESET
 end
 

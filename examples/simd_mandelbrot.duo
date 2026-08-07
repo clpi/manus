@@ -1,7 +1,7 @@
 -- Duo SIMD Mandelbrot Benchmark
 -- Processes 4 pixels at once using v4f64 with masked early exit
 
-fun mandel_v4(cx: v4f64, cy: v4f64): v4i64
+mandel_v4(cx: v4f64, cy: v4f64): v4i64
     zx: v4f64 = simd.v4f64(0.0, 0.0, 0.0, 0.0)
     zy: v4f64 = simd.v4f64(0.0, 0.0, 0.0, 0.0)
     iters: v4i64 = simd.v4i64(0, 0, 0, 0)
@@ -15,7 +15,7 @@ fun mandel_v4(cx: v4f64, cy: v4f64): v4i64
         mag2: v4f64 = zx2 + zy2
         still: v4i64 = simd.le(mag2, four)
         active = active & still
-        if not simd.any(active) then
+        if not simd.any(active)
             iters
         end
         zy = 2.0 * zx * zy + cy

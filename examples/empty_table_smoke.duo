@@ -1,11 +1,11 @@
 -- G-054 regression: empty {} must stay heterogeneous when storing field-sourced strings.
 
-fun g(f: any): str
+g(f: any): str
     types = {}
     seen = {}
     for i = 1, #f.members do
         t = f.members[i].type
-        if seen[t] == nil then
+        if seen[t] == nil
             seen[t] = 1
             types[#types + 1] = t
         end
@@ -13,10 +13,10 @@ fun g(f: any): str
     "x"
 end
 
-fun main(): i64
+main(): i64
     f = { members = { { type = "i64", name = "x" }, { type = "str", name = "y" } } }
     r = g(f)
-    if r ~= "x" then return 1 end
+    if r != "x" return 1 end
     print("PASS empty_table_smoke")
     return 0
 end

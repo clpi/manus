@@ -1,41 +1,41 @@
 -- std.text.template.parse — Template AST and parser (mirrors Go's text/template/parse)
 
-local function new_node(kind)
+new_node(kind: any)
     return {kind = kind, children = {}, text = "", pos = 0}
 end
 
-local function parse(template)
-    if template == nil then return new_node("module") end
-    local root = new_node("module")
-    local i = 1
-    local n = string.len(template)
+parse(template: any)
+    if template == nil return new_node("module") end
+    root = new_node("module")
+    i = 1
+    n = string.len(template)
     while i <= n
-        local d1, d2, before = string.find(template, "^(.-){[{]", i)
-        if before ~= nil then
-            local pos = string.len(before)
+        d1, d2, before = string.find(template, "^(.-){[{]", i)
+        if before != nil
+            pos = string.len(before)
             before = string.gsub(before, "^{", "", 1)
-            if string.len(before) > 0 then
-                local text_node = new_node("text")
+            if string.len(before) > 0
+                text_node = new_node("text")
                 text_node.text = before
                 root.children[rawlen(root.children) + 1] = text_node
             end
             i = string.find(template, "{", i + 1)
-            if i == nil then break end
-            local d3, d4, expr = string.find(template, "{{(.-)}}", i)
-            if expr ~= nil then
-                local action_node = new_node("action")
+            if i == nil break end
+            d3, d4, expr = string.find(template, "{{(.-)}}", i)
+            if expr != nil
+                action_node = new_node("action")
                 action_node.text = expr
                 root.children[rawlen(root.children) + 1] = action_node
-                local d5, ni = string.find(template, "}}", i)
-                if ni then i = ni + 1 end
+                d5, ni = string.find(template, "}}", i)
+                if ni i = ni + 1 end
             else
-                local text_node = new_node("text")
+                text_node = new_node("text")
                 text_node.text = string.sub(template, i, i)
                 root.children[rawlen(root.children) + 1] = text_node
                 i += 1
             end
         else
-            local text_node = new_node("text")
+            text_node = new_node("text")
             text_node.text = string.sub(template, i)
             root.children[rawlen(root.children) + 1] = text_node
             break
@@ -44,7 +44,7 @@ local function parse(template)
     return root
 end
 
-local M = {}
+M = {}
 M.new_node = new_node
 M.parse = parse
 M

@@ -5,7 +5,7 @@
 -- Process Configuration
 -- ═══════════════════════════════════════════════════════════════
 
-fun process_config_new(cmd: str): any
+process_config_new(cmd: str): any
     {
         cmd = cmd,
         args = {},
@@ -20,44 +20,44 @@ fun process_config_new(cmd: str): any
     }
 end
 
-fun process_config_arg(config: any, arg: str): any
+process_config_arg(config: any, arg: str): any
     config.args[#config.args + 1] = arg
     config
 end
 
-fun process_config_args(config: any, args: any): any
+process_config_args(config: any, args: any): any
     for arg in args
         config.args[#config.args + 1] = arg
     end
     config
 end
 
-fun process_config_env(config: any, key: str, value: str): any
+process_config_env(config: any, key: str, value: str): any
     config.env[key] = value
     config
 end
 
-fun process_config_cwd(config: any, cwd: str): any
+process_config_cwd(config: any, cwd: str): any
     config.cwd = cwd
     config
 end
 
-fun process_config_stdin(config: any, mode: str): any
+process_config_stdin(config: any, mode: str): any
     config.stdin = mode  -- "pipe", "inherit", "ignore", or file path
     config
 end
 
-fun process_config_stdout(config: any, mode: str): any
+process_config_stdout(config: any, mode: str): any
     config.stdout = mode
     config
 end
 
-fun process_config_stderr(config: any, mode: str): any
+process_config_stderr(config: any, mode: str): any
     config.stderr = mode
     config
 end
 
-fun process_config_detached(config: any, detached: bool): any
+process_config_detached(config: any, detached: bool): any
     config.detached = detached
     config
 end
@@ -66,7 +66,7 @@ end
 -- Process Handle
 -- ═══════════════════════════════════════════════════════════════
 
-fun process_new(): any
+process_new(): any
     {
         pid = nil,
         exit_code = nil,
@@ -78,7 +78,7 @@ fun process_new(): any
     }
 end
 
-fun process_start(proc: any, config: any): any
+process_start(proc: any, config: any): any
     -- Build command with arguments
     full_cmd = config.cmd
     for arg in config.args
@@ -93,10 +93,10 @@ fun process_start(proc: any, config: any): any
 
     -- Capture PID and run in background
     handle = io.popen(env_prefix .. full_cmd .. " 2>&1 & echo $!")
-    if handle then
+    if handle
         pid_str = io.read(handle, "*l")
         io.close(handle)
-        if pid_str then
+        if pid_str
             proc.pid = tonumber(pid_str) or 0
             proc.running = true
             proc.exit_code = nil
@@ -107,17 +107,17 @@ fun process_start(proc: any, config: any): any
     {ok = false, error = "Failed to start process"}
 end
 
-fun process_wait(proc: any): any
-    if not proc.running then
+process_wait(proc: any): any
+    if not proc.running
         return {exit_code = proc.exit_code}
     end
 
     -- Wait for process and capture exit code
-    if proc.pid and proc.pid > 0 then
+    if proc.pid and proc.pid > 0
         os.execute("wait " .. tostring(proc.pid) .. " 2>/dev/null")
         -- Get exit code via $?
         handle = io.popen("echo $?")
-        if handle then
+        if handle
             code_str = io.read(handle, "*l")
             io.close(handle)
             proc.exit_code = tonumber(code_str) or 0
@@ -132,13 +132,13 @@ fun process_wait(proc: any): any
     {exit_code = proc.exit_code}
 end
 
-fun process_kill(proc: any, signal: i64): any
-    if not proc.running then
+process_kill(proc: any, signal: i64): any
+    if not proc.running
         return {error = "Process not running"}
     end
 
     sig = signal or 15  -- SIGTERM default
-    if proc.pid and proc.pid > 0 then
+    if proc.pid and proc.pid > 0
         os.execute("kill -" .. tostring(sig) .. " " .. tostring(proc.pid) .. " 2>/dev/null")
     end
     proc.killed = true
@@ -147,48 +147,48 @@ fun process_kill(proc: any, signal: i64): any
     {ok = true}
 end
 
-fun process_write_stdin(proc: any, data: str): any
-    if proc.stdin == nil then
+process_write_stdin(proc: any, data: str): any
+    if proc.stdin == nil
         return {error = "stdin not available"}
     end
 
     -- Write to the process's stdin pipe
-    if type(proc.stdin) == "userdata" then
+    if type(proc.stdin) == "userdata"
         proc.stdin:write(data)
         proc.stdin:flush()
     end
     {ok = true}
 end
 
-fun process_read_stdout(proc: any): any
-    if proc.stdout == nil then
+process_read_stdout(proc: any): any
+    if proc.stdout == nil
         return {error = "stdout not available"}
     end
 
-    if type(proc.stdout) == "userdata" then
+    if type(proc.stdout) == "userdata"
         data = proc.stdout:read("*a") or ""
         return {data = data, eof = string.len(data) == 0}
     end
     {data = "", eof = true}
 end
 
-fun process_read_stderr(proc: any): any
-    if proc.stderr == nil then
+process_read_stderr(proc: any): any
+    if proc.stderr == nil
         return {error = "stderr not available"}
     end
 
-    if type(proc.stderr) == "userdata" then
+    if type(proc.stderr) == "userdata"
         data = proc.stderr:read("*a") or ""
         return {data = data, eof = string.len(data) == 0}
     end
     {data = "", eof = true}
 end
 
-fun process_is_running(proc: any): bool
+process_is_running(proc: any): bool
     proc.running
 end
 
-fun process_exit_code(proc: any): any
+process_exit_code(proc: any): any
     proc.exit_code
 end
 
@@ -196,10 +196,10 @@ end
 -- Command Execution Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-fun process_run(cmd: str, args: any): any
+process_run(cmd: str, args: any): any
     -- Build full command line
     full_cmd = cmd
-    if args then
+    if args
         for arg in args
             full_cmd = full_cmd .. " " .. tostring(arg)
         end
@@ -207,7 +207,7 @@ fun process_run(cmd: str, args: any): any
 
     -- Execute and capture output + exit code in one shot
     f = io.popen(full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
-    if f == nil then
+    if f == nil
         return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
     end
     raw = f:read("*a") or ""
@@ -215,7 +215,7 @@ fun process_run(cmd: str, args: any): any
 
     -- Split output from exit code (last line after final newline)
     last_nl = string.find(raw, "\n[^\n]*$")
-    if last_nl then
+    if last_nl
         stdout = string.sub(raw, 1, last_nl - 1)
         exit_str = string.sub(raw, last_nl + 1)
         exit_code = tonumber(string.match(exit_str, "%d+")) or 0
@@ -231,9 +231,9 @@ fun process_run(cmd: str, args: any): any
     }
 end
 
-fun process_run_with_input(cmd: str, args: any, input: str): any
+process_run_with_input(cmd: str, args: any, input: str): any
     full_cmd = cmd
-    if args then
+    if args
         for arg in args
             full_cmd = full_cmd .. " " .. tostring(arg)
         end
@@ -242,14 +242,14 @@ fun process_run_with_input(cmd: str, args: any, input: str): any
     -- Pipe input to command and capture output + exit code
     escaped_input = string.gsub(input, "'", "'\\''")
     f = io.popen("echo '" .. escaped_input .. "' | " .. full_cmd .. " 2>&1; echo \"\\n$?\"", "r")
-    if f == nil then
+    if f == nil
         return {exit_code = 1, stdout = "", stderr = "Failed to execute: " .. cmd}
     end
     raw = f:read("*a") or ""
     f:close()
 
     last_nl = string.find(raw, "\n[^\n]*$")
-    if last_nl then
+    if last_nl
         stdout = string.sub(raw, 1, last_nl - 1)
         exit_str = string.sub(raw, last_nl + 1)
         exit_code = tonumber(string.match(exit_str, "%d+")) or 0
@@ -265,7 +265,7 @@ fun process_run_with_input(cmd: str, args: any, input: str): any
     }
 end
 
-fun process_output(cmd: str, args: any): any
+process_output(cmd: str, args: any): any
     result = process_run(cmd, args)
     result.stdout
 end
@@ -274,7 +274,7 @@ end
 -- Pipe (inter-process communication)
 -- ═══════════════════════════════════════════════════════════════
 
-fun pipe_new(): any
+pipe_new(): any
     {
         read_end = nil,
         write_end = nil,
@@ -282,8 +282,8 @@ fun pipe_new(): any
     }
 end
 
-fun pipe_read(pipe: any): any
-    if #pipe.buffer == 0 then
+pipe_read(pipe: any): any
+    if #pipe.buffer == 0
         return {data = "", eof = true}
     end
 
@@ -292,12 +292,12 @@ fun pipe_read(pipe: any): any
     {data = data, eof = false}
 end
 
-fun pipe_write(pipe: any, data: str): any
+pipe_write(pipe: any, data: str): any
     pipe.buffer[#pipe.buffer + 1] = data
     {ok = true}
 end
 
-fun pipe_close(pipe: any): void
+pipe_close(pipe: any): void
     pipe.buffer = {}
 end
 
@@ -305,26 +305,26 @@ end
 -- Environment Variables
 -- ═══════════════════════════════════════════════════════════════
 
-fun process_env_get(name: str): any
+process_env_get(name: str): any
     os.getenv(name)
 end
 
-fun process_env_set(name: str, value: str): any
+process_env_set(name: str, value: str): any
     -- Use C setenv for persistent environment changes in the current process
-    __emit("setenv(" .. name .. ", " .. value .. ", 1)")
+    @c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
     -- Also update Lua's environment table
     os.setenv(name, value)
     {ok = true}
 end
 
-fun process_env_unset(name: str): any
+process_env_unset(name: str): any
     -- Use C unsetenv for persistent environment changes
-    __emit("unsetenv(" .. name .. ")")
+    @c.emit("unsetenv(" .. name .. ")")
     os.setenv(name, nil)
     {ok = true}
 end
 
-fun process_env_list(): any
+process_env_list(): any
     os.getenv()
 end
 

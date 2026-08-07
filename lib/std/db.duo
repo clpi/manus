@@ -1,13 +1,13 @@
 -- std.db — Database abstraction: connection pooling, query builder
 -- Generic interface for SQLite (via std.sqlite FFI), PostgreSQL, MySQL with connection pooling.
 
-local sqlite = req "std.sqlite"
+sqlite = req "std.sqlite"
 
 -- ═══════════════════════════════════════════════════════════════
 -- Database Configuration
 -- ═══════════════════════════════════════════════════════════════
 
-fun db_config_new(driver: str): any
+db_config_new(driver: str): any
     {
         driver = driver,          -- "sqlite", "postgres", "mysql"
         host = "localhost",
@@ -25,28 +25,28 @@ fun db_config_new(driver: str): any
     }
 end
 
-fun db_config_set_host(config: any, host: str): any
+db_config_set_host(config: any, host: str): any
     config.host = host
     config
 end
 
-fun db_config_set_port(config: any, port: i64): any
+db_config_set_port(config: any, port: i64): any
     config.port = port
     config
 end
 
-fun db_config_set_database(config: any, database: str): any
+db_config_set_database(config: any, database: str): any
     config.database = database
     config
 end
 
-fun db_config_set_auth(config: any, username: str, password: str): any
+db_config_set_auth(config: any, username: str, password: str): any
     config.username = username
     config.password = password
     config
 end
 
-fun db_config_set_pool(config: any, min: i64, max: i64): any
+db_config_set_pool(config: any, min: i64, max: i64): any
     config.min_connections = min
     config.max_connections = max
     config
@@ -56,7 +56,7 @@ end
 -- Connection Pool
 -- ═══════════════════════════════════════════════════════════════
 
-fun db_pool_new(config: any): any
+db_pool_new(config: any): any
     pool = {
         config = config,
         connections = {},
@@ -68,7 +68,7 @@ fun db_pool_new(config: any): any
     i = 0
     while i < config.min_connections
         conn = db_connection_new(config)
-        if conn then
+        if conn
             pool.connections[#pool.connections + 1] = conn
             pool.available[#pool.available + 1] = conn
             pool.total += 1
@@ -78,9 +78,9 @@ fun db_pool_new(config: any): any
     pool
 end
 
-fun db_pool_acquire(pool: any): any
+db_pool_acquire(pool: any): any
     -- Try to get an available connection
-    if #pool.available > 0 then
+    if #pool.available > 0
         conn = pool.available[#pool.available]
         pool.available[#pool.available] = nil
         pool.in_use += 1
@@ -88,9 +88,9 @@ fun db_pool_acquire(pool: any): any
     end
 
     -- Create new connection if under limit
-    if pool.total < pool.config.max_connections then
+    if pool.total < pool.config.max_connections
         conn = db_connection_new(pool.config)
-        if conn then
+        if conn
             pool.total += 1
             pool.in_use += 1
             return conn
@@ -100,13 +100,13 @@ fun db_pool_acquire(pool: any): any
     nil  -- pool exhausted
 end
 
-fun db_pool_release(pool: any, conn: any): void
-    if conn == nil then return end
+db_pool_release(pool: any, conn: any): void
+    if conn == nil return end
     pool.in_use -= 1
     pool.available[#pool.available + 1] = conn
 end
 
-fun db_pool_close(pool: any): void
+db_pool_close(pool: any): void
     for conn in pool.connections
         db_connection_close(conn)
     end
@@ -116,7 +116,7 @@ fun db_pool_close(pool: any): void
     pool.in_use = 0
 end
 
-fun db_pool_stats(pool: any): any
+db_pool_stats(pool: any): any
     {
         total = pool.total,
         available = #pool.available,
@@ -130,14 +130,14 @@ end
 -- Database Connection (backed by real SQLite FFI)
 -- ═══════════════════════════════════════════════════════════════
 
-fun db_connection_new(config: any): any
-    if config.driver == "sqlite" then
+db_connection_new(config: any): any
+    if config.driver == "sqlite"
         db_path = config.database
-        if db_path == nil or db_path == "" then
+        if db_path == nil or db_path == ""
             db_path = ":memory:"
         end
         handle = sqlite.open(db_path)
-        if handle == nil then
+        if handle == nil
             return {error = "Failed to open SQLite database: " .. db_path}
         end
         {
@@ -153,27 +153,27 @@ fun db_connection_new(config: any): any
     end
 end
 
-fun db_connection_close(conn: any): void
-    if conn == nil then return end
-    if conn.handle ~= nil and conn.connected then
+db_connection_close(conn: any): void
+    if conn == nil return end
+    if conn.handle != nil and conn.connected
         sqlite.close(conn.handle)
         conn.handle = nil
     end
     conn.connected = false
 end
 
-fun db_connection_ping(conn: any): bool
-    conn.connected and conn.handle ~= nil
+db_connection_ping(conn: any): bool
+    conn.connected and conn.handle != nil
 end
 
-fun db_connection_execute(conn: any, sql: str, params: any): any
-    if not conn.connected then
+db_connection_execute(conn: any, sql: str, params: any): any
+    if not conn.connected
         return {error = "Connection closed"}
     end
-    if conn.driver == "sqlite" then
+    if conn.driver == "sqlite"
         -- Use sqlite.exec for DDL/DML without results
         err = sqlite.execute(conn.handle, sql)
-        if err ~= "" then
+        if err != ""
             return {ok = false, error = err, rows_affected = 0, rows = {}, columns = {}}
         end
         affected = sqlite.changes(conn.handle)
@@ -182,18 +182,18 @@ fun db_connection_execute(conn: any, sql: str, params: any): any
     {error = "Unsupported driver"}
 end
 
-fun db_connection_query(conn: any, sql: str, params: any): any
-    if not conn.connected then
+db_connection_query(conn: any, sql: str, params: any): any
+    if not conn.connected
         return {error = "Connection closed"}
     end
-    if conn.driver == "sqlite" then
+    if conn.driver == "sqlite"
         rows = sqlite.query(conn.handle, sql)
-        if rows == nil then
+        if rows == nil
             return {ok = false, error = "Query failed", rows = {}, columns = {}}
         end
         -- Extract column names from first row
         columns = {}
-        if #rows > 0 then
+        if #rows > 0
             for k, _ in rows[1]
                 columns[#columns + 1] = k
             end
@@ -203,22 +203,22 @@ fun db_connection_query(conn: any, sql: str, params: any): any
     {error = "Unsupported driver"}
 end
 
-fun db_connection_query_one(conn: any, sql: str, params: any): any
+db_connection_query_one(conn: any, sql: str, params: any): any
     result = db_connection_query(conn, sql, params)
-    if result.error or not result.ok then return result end
-    if #result.rows > 0 then
+    if result.error or not result.ok return result end
+    if #result.rows > 0
         return result.rows[1]
     end
     nil
 end
 
-fun db_connection_begin(conn: any): any
-    if conn.transaction_active then
+db_connection_begin(conn: any): any
+    if conn.transaction_active
         return {error = "Transaction already active"}
     end
-    if conn.driver == "sqlite" then
+    if conn.driver == "sqlite"
         err = sqlite.execute(conn.handle, "BEGIN TRANSACTION")
-        if err ~= "" then
+        if err != ""
             return {ok = false, error = err}
         end
     end
@@ -226,13 +226,13 @@ fun db_connection_begin(conn: any): any
     {ok = true}
 end
 
-fun db_connection_commit(conn: any): any
-    if not conn.transaction_active then
+db_connection_commit(conn: any): any
+    if not conn.transaction_active
         return {error = "No active transaction"}
     end
-    if conn.driver == "sqlite" then
+    if conn.driver == "sqlite"
         err = sqlite.execute(conn.handle, "COMMIT")
-        if err ~= "" then
+        if err != ""
             return {ok = false, error = err}
         end
     end
@@ -240,13 +240,13 @@ fun db_connection_commit(conn: any): any
     {ok = true}
 end
 
-fun db_connection_rollback(conn: any): any
-    if not conn.transaction_active then
+db_connection_rollback(conn: any): any
+    if not conn.transaction_active
         return {error = "No active transaction"}
     end
-    if conn.driver == "sqlite" then
+    if conn.driver == "sqlite"
         err = sqlite.execute(conn.handle, "ROLLBACK")
-        if err ~= "" then
+        if err != ""
             return {ok = false, error = err}
         end
     end
@@ -258,7 +258,7 @@ end
 -- Query Builder
 -- ═══════════════════════════════════════════════════════════════
 
-fun query_new(): any
+query_new(): any
     {
         type = "select",
         table = "",
@@ -274,7 +274,7 @@ fun query_new(): any
     }
 end
 
-fun query_select(q: any, ...columns): any
+query_select(q: any, ...columns): any
     q.type = "select"
     args = {...}
     for i = 1, #args
@@ -283,12 +283,12 @@ fun query_select(q: any, ...columns): any
     q
 end
 
-fun query_from(q: any, table: str): any
+query_from(q: any, table: str): any
     q.table = table
     q
 end
 
-fun query_where(q: any, condition: str, ...args): any
+query_where(q: any, condition: str, ...args): any
     q.where[#q.where + 1] = condition
     vals = {...}
     for i = 1, #vals
@@ -297,17 +297,17 @@ fun query_where(q: any, condition: str, ...args): any
     q
 end
 
-fun query_join(q: any, table: str, condition: str): any
+query_join(q: any, table: str, condition: str): any
     q.joins[#q.joins + 1] = {table = table, condition = condition, type = "INNER"}
     q
 end
 
-fun query_left_join(q: any, table: str, condition: str): any
+query_left_join(q: any, table: str, condition: str): any
     q.joins[#q.joins + 1] = {table = table, condition = condition, type = "LEFT"}
     q
 end
 
-fun query_group_by(q: any, ...columns): any
+query_group_by(q: any, ...columns): any
     args = {...}
     for i = 1, #args
         q.group_by[#q.group_by + 1] = args[i]
@@ -315,61 +315,61 @@ fun query_group_by(q: any, ...columns): any
     q
 end
 
-fun query_having(q: any, condition: str): any
+query_having(q: any, condition: str): any
     q.having[#q.having + 1] = condition
     q
 end
 
-fun query_order_by(q: any, column: str, direction: str): any
-    if direction == nil then direction = "ASC" end
+query_order_by(q: any, column: str, direction: str): any
+    if direction == nil direction = "ASC" end
     q.order_by[#q.order_by + 1] = {column = column, direction = direction}
     q
 end
 
-fun query_limit(q: any, n: i64): any
+query_limit(q: any, n: i64): any
     q.limit = n
     q
 end
 
-fun query_offset(q: any, n: i64): any
+query_offset(q: any, n: i64): any
     q.offset = n
     q
 end
 
-fun query_insert(q: any, table: str, data: any): any
+query_insert(q: any, table: str, data: any): any
     q.type = "insert"
     q.table = table
     q.data = data
     q
 end
 
-fun query_update(q: any, table: str, data: any): any
+query_update(q: any, table: str, data: any): any
     q.type = "update"
     q.table = table
     q.data = data
     q
 end
 
-fun query_delete(q: any, table: str): any
+query_delete(q: any, table: str): any
     q.type = "delete"
     q.table = table
     q
 end
 
-fun query_build(q: any): any
+query_build(q: any): any
     parts = {}
     params = {}
 
-    if q.type == "select" then
+    if q.type == "select"
         -- SELECT
-        if #q.columns == 0 then
+        if #q.columns == 0
             parts[#parts + 1] = "SELECT *"
         else
             parts[#parts + 1] = "SELECT " .. table.concat(q.columns, ", ")
         end
 
         -- FROM
-        if q.table ~= "" then
+        if q.table != ""
             parts[#parts + 1] = "FROM " .. q.table
         end
 
@@ -379,7 +379,7 @@ fun query_build(q: any): any
         end
 
         -- WHERE
-        if #q.where > 0 then
+        if #q.where > 0
             parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
             for p in q.params
                 params[#params + 1] = p
@@ -387,17 +387,17 @@ fun query_build(q: any): any
         end
 
         -- GROUP BY
-        if #q.group_by > 0 then
+        if #q.group_by > 0
             parts[#parts + 1] = "GROUP BY " .. table.concat(q.group_by, ", ")
         end
 
         -- HAVING
-        if #q.having > 0 then
+        if #q.having > 0
             parts[#parts + 1] = "HAVING " .. table.concat(q.having, " AND ")
         end
 
         -- ORDER BY
-        if #q.order_by > 0 then
+        if #q.order_by > 0
             order_parts = {}
             for o in q.order_by
                 order_parts[#order_parts + 1] = o.column .. " " .. o.direction
@@ -406,16 +406,16 @@ fun query_build(q: any): any
         end
 
         -- LIMIT
-        if q.limit ~= nil then
+        if q.limit != nil
             parts[#parts + 1] = "LIMIT " .. tostring(q.limit)
         end
 
         -- OFFSET
-        if q.offset ~= nil then
+        if q.offset != nil
             parts[#parts + 1] = "OFFSET " .. tostring(q.offset)
         end
 
-    elseif q.type == "insert" then
+    elseif q.type == "insert"
         -- INSERT INTO
         parts[#parts + 1] = "INSERT INTO " .. q.table
 
@@ -432,7 +432,7 @@ fun query_build(q: any): any
         parts[#parts + 1] = "(" .. table.concat(columns, ", ") .. ")"
         parts[#parts + 1] = "VALUES (" .. table.concat(placeholders, ", ") .. ")"
 
-    elseif q.type == "update" then
+    elseif q.type == "update"
         -- UPDATE
         parts[#parts + 1] = "UPDATE " .. q.table
 
@@ -445,19 +445,19 @@ fun query_build(q: any): any
         parts[#parts + 1] = "SET " .. table.concat(set_parts, ", ")
 
         -- WHERE
-        if #q.where > 0 then
+        if #q.where > 0
             parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
             for p in q.params
                 params[#params + 1] = p
             end
         end
 
-    elseif q.type == "delete" then
+    elseif q.type == "delete"
         -- DELETE
         parts[#parts + 1] = "DELETE FROM " .. q.table
 
         -- WHERE
-        if #q.where > 0 then
+        if #q.where > 0
             parts[#parts + 1] = "WHERE " .. table.concat(q.where, " AND ")
             for p in q.params
                 params[#params + 1] = p

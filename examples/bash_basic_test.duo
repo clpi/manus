@@ -1,7 +1,7 @@
 -- Test basic bash-style fun calls
 
 -- Define a simple fun
-fun greet(name: str): str
+greet(name: str): str
     "Hello, " .. name
 end
 
@@ -12,7 +12,7 @@ print(greet("World"))
 print greet "Duo"
 
 -- Multiple arguments
-fun add(a: i64, b: i64): i64
+add(a: i64, b: i64): i64
     a + b
 end
 

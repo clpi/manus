@@ -2,75 +2,75 @@
 -- Demonstrates WASI type constants and bindings
 
 -- WASI errno constants
-fun errno_success(): u16    0 end
-fun errno_badf(): u16       8 end
-fun errno_exist(): u16      20 end
-fun errno_noent(): u16      44 end
-fun errno_perm(): u16       63 end
-fun errno_inval(): u16      28 end
-fun errno_notdir(): u16     54 end
-fun errno_overflow(): u16   61 end
+errno_success(): u16    0 end
+errno_badf(): u16       8 end
+errno_exist(): u16      20 end
+errno_noent(): u16      44 end
+errno_perm(): u16       63 end
+errno_inval(): u16      28 end
+errno_notdir(): u16     54 end
+errno_overflow(): u16   61 end
 
 -- WASI file descriptor types
-fun fd_stdin(): i32    0 end
-fun fd_stdout(): i32   1 end
-fun fd_stderr(): i32   2 end
+fd_stdin(): i32    0 end
+fd_stdout(): i32   1 end
+fd_stderr(): i32   2 end
 
 -- WASI rights
-fun right_fd_read(): u64        1 end
-fun right_fd_write(): u64       2 end
-fun right_fd_seek(): u64        4 end
-fun right_fd_fdstat_get(): u64  16 end
-fun right_poll_oneoff(): u64    256 end
-fun right_sock_accept(): u64    65536 end
+right_fd_read(): u64        1 end
+right_fd_write(): u64       2 end
+right_fd_seek(): u64        4 end
+right_fd_fdstat_get(): u64  16 end
+right_poll_oneoff(): u64    256 end
+right_sock_accept(): u64    65536 end
 
 -- WASI open flags
-fun oflags_creat(): u16      1 end
-fun oflags_directory(): u16  2 end
-fun oflags_excl(): u16       4 end
-fun oflags_trunc(): u16      8 end
+oflags_creat(): u16      1 end
+oflags_directory(): u16  2 end
+oflags_excl(): u16       4 end
+oflags_trunc(): u16      8 end
 
 -- WASI file types
-fun filetype_unknown(): u8            0 end
-fun filetype_block_device(): u8       1 end
-fun filetype_character_device(): u8   2 end
-fun filetype_directory(): u8          3 end
-fun filetype_regular_file(): u8       4 end
-fun filetype_socket_dgram(): u8       5 end
-fun filetype_socket_stream(): u8      6 end
-fun filetype_symlink(): u8            7 end
+filetype_unknown(): u8            0 end
+filetype_block_device(): u8       1 end
+filetype_character_device(): u8   2 end
+filetype_directory(): u8          3 end
+filetype_regular_file(): u8       4 end
+filetype_socket_dgram(): u8       5 end
+filetype_socket_stream(): u8      6 end
+filetype_symlink(): u8            7 end
 
 -- WASI clock IDs
-fun clockid_realtime(): u32               0 end
-fun clockid_monotonic(): u32              1 end
-fun clockid_process_cputime_id(): u32     2 end
-fun clockid_thread_cputime_id(): u32      3 end
+clockid_realtime(): u32               0 end
+clockid_monotonic(): u32              1 end
+clockid_process_cputime_id(): u32     2 end
+clockid_thread_cputime_id(): u32      3 end
 
 -- WASI event types
-fun eventtype_clock(): u8     0 end
-fun eventtype_fd_read(): u8   1 end
-fun eventtype_fd_write(): u8  2 end
+eventtype_clock(): u8     0 end
+eventtype_fd_read(): u8   1 end
+eventtype_fd_write(): u8  2 end
 
 -- WASI whence (seek origin)
-fun whence_set(): u8  0 end
-fun whence_cur(): u8  1 end
-fun whence_end(): u8  2 end
+whence_set(): u8  0 end
+whence_cur(): u8  1 end
+whence_end(): u8  2 end
 
 -- WASI signal constants
-fun signal_hup(): u8   1 end
-fun signal_int(): u8   2 end
-fun signal_quit(): u8  3 end
-fun signal_kill(): u8  9 end
-fun signal_term(): u8  15 end
+signal_hup(): u8   1 end
+signal_int(): u8   2 end
+signal_quit(): u8  3 end
+signal_kill(): u8  9 end
+signal_term(): u8  15 end
 
 -- WASI exit codes
-fun exit_success(): u32  0 end
-fun exit_failure(): u32  1 end
+exit_success(): u32  0 end
+exit_failure(): u32  1 end
 
 -- WASI timestamp helpers
-fun timestamp_second(): u64      1000000000 end
-fun timestamp_millisecond(): u64 1000000 end
-fun timestamp_microsecond(): u64 1000 end
+timestamp_second(): u64      1000000000 end
+timestamp_millisecond(): u64 1000000 end
+timestamp_microsecond(): u64 1000 end
 
 print("=== WASI File Descriptors ===")
 print("stdin:  " .. tostring(fd_stdin()))

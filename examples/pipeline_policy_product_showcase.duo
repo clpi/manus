@@ -18,15 +18,15 @@ static const int64_t values[] = { -5, 2, 7, 4 };
     kind = "reduce",
 })
 
-fun sum_all(): i64
+sum_all(): i64
     @c.call("fold_i64_all_id_all_sum", @(values), @(4))
 end
 
-fun doubled_positive_max(): i64
+doubled_positive_max(): i64
     @c.call("fold_i64_all_dbl_pos_max", @(values), @(4))
 end
 
-fun first3_doubled_sum(): i64
+first3_doubled_sum(): i64
     @c.call("fold_i64_first3_dbl_all_sum", @(values), @(4))
 end
 

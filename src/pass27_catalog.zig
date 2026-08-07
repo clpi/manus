@@ -42,8 +42,8 @@ pub const Workstream = struct {
 
 /// Performance gaps I.1–I.12 (P27-WS01–WS12).
 pub const perf_workstreams: []const Workstream = &.{
-    .{ .id = "P27-WS01", .title = "Benchmark harness profile matrix + evidence counters", .status = "partial", .priority = .p0, .owner = "pass27_benchmark_evidence + bench", .plan_section = "I.1" },
-    .{ .id = "P27-WS02", .title = "Direct backend coverage (ARM64 cursor/LEB128)", .status = "open", .priority = .p1, .owner = "native_backend + pass11 WP-15", .plan_section = "I.2" },
+    .{ .id = "P27-WS01", .title = "Benchmark harness profile matrix + evidence counters", .status = "partial", .priority = .p0, .owner = "scripts/run_benchmark_proof.sh + pass27_benchmark_evidence", .plan_section = "I.1" },
+    .{ .id = "P27-WS02", .title = "Direct backend coverage (ARM64 cursor/LEB128)", .status = "partial", .priority = .p1, .owner = "examples/pass27_proof_matrix_direct.duo + native_barrier_checks", .plan_section = "I.2" },
     .{ .id = "P27-WS03", .title = "Native records + scalar replacement ladder", .status = "open", .priority = .p2, .owner = "realization + pass26 descriptors", .plan_section = "I.3" },
     .{ .id = "P27-WS04", .title = "Return-pack specialization + consumed-position", .status = "open", .priority = .p2, .owner = "tail_result_demand + pass25", .plan_section = "I.4" },
     .{ .id = "P27-WS05", .title = "Closure environment elimination", .status = "open", .priority = .p2, .owner = "realization + escape analysis", .plan_section = "I.5" },
@@ -84,7 +84,7 @@ pub const CompletionGate = struct {
 
 pub const completion_gates: []const CompletionGate = &.{
     .{ .id = "P27-G01", .title = "P0 honest benchmark profiles + evidence counters schema", .status = "partial", .plan_section = "P0" },
-    .{ .id = "P27-G02", .title = "P1 Ward cursor/LEB128/direct ARM64 proof bundle", .status = "open", .plan_section = "P1" },
+    .{ .id = "P27-G02", .title = "P1 Ward cursor/LEB128/direct ARM64 proof bundle", .status = "partial", .plan_section = "P1" },
     .{ .id = "P27-G03", .title = "P2 sealed record scalar replacement on direct path", .status = "open", .plan_section = "P2" },
     .{ .id = "P27-G04", .title = "P2 return-pack selective realization", .status = "open", .plan_section = "P2" },
     .{ .id = "P27-G05", .title = "P3 meta-object API + generated hygiene + transactions", .status = "open", .plan_section = "P3" },

@@ -19,6 +19,9 @@ const pass24_gate = @import("pass24_gate.zig");
 const pass25_gate = @import("pass25_gate.zig");
 const pass26_gate = @import("pass26_gate.zig");
 const pass27_gate = @import("pass27_gate.zig");
+const pass34_gate = @import("pass34_gate.zig");
+const pass36_gate = @import("pass36_gate.zig");
+const foundation_gate = @import("foundation_gate.zig");
 const lua_superset_gate = @import("lua_superset_gate.zig");
 const pass19_catalog = @import("pass19_catalog.zig");
 const pass19_gate = @import("pass19_gate.zig");
@@ -215,6 +218,27 @@ pub fn validatePass27Gate() PassGateError!void {
     try pass27_gate.validatePass27Gate(arena.allocator());
 }
 
+/// Pass 34 HPLS Frontier — barrier catalog Phase 0 gate.
+pub fn validatePass34Gate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try pass34_gate.validatePass34Gate(arena.allocator());
+}
+
+/// Pass 36 universal semantic access — Phase 0 recorded-calculus gate.
+pub fn validatePass36Gate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try pass36_gate.validatePass36Gate(arena.allocator());
+}
+
+/// Self-hosting foundation — umbrella catalog + §11 F-G01..F-G10 schema gate (M0).
+pub fn validateFoundationGate() PassGateError!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    try foundation_gate.validateFoundationGate(arena.allocator());
+}
+
 /// Pass 25 native semantic unification, provenance lifetimes, bidirectional metaprogramming gates.
 pub fn validatePass25Gate() PassGateError!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -253,7 +277,10 @@ pub const GateScope = enum {
     pass25,
     pass26,
     pass27,
+    pass34,
+    pass36,
     pass19,
+    foundation,
 
     pub fn parse(s: []const u8) ?GateScope {
         if (std.mem.eql(u8, s, "all")) return .all;
@@ -271,7 +298,10 @@ pub const GateScope = enum {
         if (std.mem.eql(u8, s, "pass25") or std.mem.eql(u8, s, "semantic-unification")) return .pass25;
         if (std.mem.eql(u8, s, "pass26") or std.mem.eql(u8, s, "semantic-closure") or std.mem.eql(u8, s, "foundational-closure")) return .pass26;
         if (std.mem.eql(u8, s, "pass27") or std.mem.eql(u8, s, "proof-bundle") or std.mem.eql(u8, s, "performance-evidence")) return .pass27;
+        if (std.mem.eql(u8, s, "pass34") or std.mem.eql(u8, s, "hpls") or std.mem.eql(u8, s, "hpls-frontier")) return .pass34;
+        if (std.mem.eql(u8, s, "pass36") or std.mem.eql(u8, s, "semantic-access") or std.mem.eql(u8, s, "projection")) return .pass36;
         if (std.mem.eql(u8, s, "pass19")) return .pass19;
+        if (std.mem.eql(u8, s, "foundation") or std.mem.eql(u8, s, "self-hosting-foundation") or std.mem.eql(u8, s, "self_hosting_foundation")) return .foundation;
         return null;
     }
 
@@ -292,7 +322,10 @@ pub const GateScope = enum {
             .pass25 => "pass25",
             .pass26 => "pass26",
             .pass27 => "pass27",
+            .pass34 => "pass34",
+            .pass36 => "pass36",
             .pass19 => "pass19",
+            .foundation => "foundation",
         };
     }
 };
@@ -337,7 +370,10 @@ pub fn runScopedGate(
         .pass25 => try validatePass25Gate(),
         .pass26 => try validatePass26Gate(),
         .pass27 => try validatePass27Gate(),
+        .pass34 => try validatePass34Gate(),
+        .pass36 => try validatePass36Gate(),
         .pass19 => try validatePass19Gate(),
+        .foundation => try validateFoundationGate(),
     }
 }
 
@@ -403,6 +439,18 @@ test "pass_gates: pass26 foundational closure catalog + schema gates" {
 
 test "pass_gates: pass27 proof bundle catalog + evidence schema gates" {
     try validatePass27Gate();
+}
+
+test "pass_gates: pass34 HPLS frontier catalog Phase 0 gate" {
+    try validatePass34Gate();
+}
+
+test "pass_gates: pass36 universal semantic access Phase 0 gate" {
+    try validatePass36Gate();
+}
+
+test "pass_gates: self-hosting foundation catalog + schema gates" {
+    try validateFoundationGate();
 }
 
 test "pass_gates: pass24 lua superset long-bracket gate (alias)" {

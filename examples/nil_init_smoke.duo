@@ -12,10 +12,10 @@ schema_swap(): str
     schema
 end
 
-fun main(): i64
-    if nil_then_str() ~= 2 then return 1 end
+main(): i64
+    if nil_then_str() != 2 return 1 end
     s = schema_swap()
-    if #s ~= 14 then return 2 end
+    if #s != 14 return 2 end
     print("PASS nil_init_smoke")
     return 0
 end

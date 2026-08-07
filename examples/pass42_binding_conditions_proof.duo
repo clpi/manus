@@ -1,0 +1,75 @@
+-- Pass 42 §1.1 — correlated return-pack binding conditions.
+--
+-- `if value, err = parse(text)` binds the whole return pack, tests position 1 by
+-- ordinary truth semantics, and makes every position visible in *both* branches —
+-- so the else arm can report the error it was handed.
+--
+-- §1.6 scoping falls out of the desugaring: the names are introduced in a block
+-- that encloses only the `if`, so they die with it.
+--
+-- Exit code is the failing check number; 0 means every check held.
+
+lookup(k: i64): any
+    if k > 0 return k, nil end
+    return nil, 9
+end
+
+-- Success arm: position 1 is truthy, both positions bound.
+check_success(): i64
+    if v, e = lookup(5)
+        if v != 5 return 1 end
+        if e != nil return 2 end
+        return 0
+    end
+    3
+end
+
+-- Failure arm: position 1 is nil, and the error position is readable in `else`.
+check_failure(): i64
+    if v, e = lookup(0)
+        return 4
+    else
+        if e != 9 return 5 end
+        return 0
+    end
+    6
+end
+
+-- Truth semantics, not C-style falsiness: 0 is a *value*, so a pack of `0, nil`
+-- is a success. Only nil/false take the else arm.
+check_zero_is_truthy(): i64
+    if v, e = lookup(0)
+        return 7
+    end
+    0
+end
+
+-- KNOWN GAP (pre-existing, not §1.1): the single-name binding path emits
+-- `lua_to_bool(z)` on an `int64_t` when the bound value is a typed integer —
+-- `if z = 0` fails to compile with an incompatible-type error. The pack path
+-- below is unaffected because it lowers through the ordinary multi-assign.
+
+-- Single-name binding (already closed before this pass) still behaves.
+check_single(): i64
+    if u = lookup(3)
+        if u != 3 return 9 end
+        return 0
+    end
+    10
+end
+
+-- Typed profile: `main(): i64` with exit codes. This module previously could not
+-- compile at all — return packs were emitted via `lua_mret_*`, which the native
+-- profile never declares. Fixed by excluding return-pack statements from
+-- native-scalar eligibility so the runtime stays present for exactly the
+-- functions that need it. Pass 42 §3.1 (a native ABI for correlated packs) is
+-- what will let these lower with no runtime at all.
+main(): i64
+    r = check_success()
+    if r != 0 return r end
+    r = check_failure()
+    if r != 0 return r end
+    r = check_zero_is_truthy()
+    if r != 0 return r end
+    check_single()
+end

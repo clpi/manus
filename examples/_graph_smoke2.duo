@@ -1,5 +1,5 @@
 alias Point = { x: f64, y: f64 }
 
-fun main()
+main()
     p: Point = { x = 3.0, y = 4.0 }
 end

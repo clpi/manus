@@ -1,22 +1,22 @@
 -- std.utf8 — utf-8 utilities
 
-fun char(codepoint: int): str
+char(codepoint: int): str
     utf8.char(codepoint)
 end
 
-fun codes(s: str): any
+codes(s: str): any
     utf8.codes(s)
 end
 
-fun codepoint(s: str, i: int, j: int): any
+codepoint(s: str, i: int, j: int): any
     utf8.codepoint(s, i, j)
 end
 
-fun len(s: str, i: int, j: int): any
+len(s: str, i: int, j: int): any
     utf8.len(s, i, j)
 end
 
-fun offset(s: str, n: int, i: int): any
+offset(s: str, n: int, i: int): any
     utf8.offset(s, n, i)
 end
 

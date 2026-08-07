@@ -1,7 +1,7 @@
 -- @comp.template with named top-level callback (G-035: heap-stable meta table)
 -- Run: duo run examples/meta_template_callback_showcase.duo
 
-fun tmpl_unit(m) -> str
+tmpl_unit(m) -> str
     "/* tmpl[" .. m.name .. ":" .. m.ctype .. "] */\n"
 end
 

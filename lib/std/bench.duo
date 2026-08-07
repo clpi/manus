@@ -1,16 +1,16 @@
 -- Benchmark helpers and @bench / @time attribute documentation (runtime helpers).
 
-fun now(): float
+now(): float
     -- Placeholder: native @bench uses compiler-injected timing in generated main.
     return 0.0
 end
 
-fun format_ns(ns: float): str
-    if ns >= 1e9 then
+format_ns(ns: float): str
+    if ns >= 1e9
         return string.format("%.3fs", ns / 1e9)
-    elseif ns >= 1e6 then
+    elseif ns >= 1e6
         return string.format("%.3fms", ns / 1e6)
-    elseif ns >= 1e3 then
+    elseif ns >= 1e3
         return string.format("%.3fus", ns / 1e3)
     end
     return string.format("%.0fns", ns)

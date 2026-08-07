@@ -1,0 +1,17 @@
+Tok: @{ kind: i64, start: i64, len: i64 }
+scan = (src: str, pos: i64): Tok
+    n = #src
+    i = pos
+    if i < n
+        j = i
+        while j < n
+            j = j + 1
+        end
+        return { kind = 1, start = j, len = 1 }
+    end
+    { kind = 2, start = i, len = 1 }
+end
+main(): i64
+    t: Tok = scan("abcd", 1)
+    t.start
+end

@@ -3,48 +3,48 @@
 -- boolean flags. Sub-arguments after -- are treated as positional args.
 
 -- new_flag_set: create a new flag set with the given name.
-fun new_flag_set(name: str): any
+new_flag_set(name: str): any
     {name = name, flags = {}, args = {}, parsed = false}
 end
 
 -- bool_flag: register a boolean flag.
-fun bool_flag(fs: any, name: str, default_val: bool, usage: str): any
+bool_flag(fs: any, name: str, default_val: bool, usage: str): any
     f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = true}
     fs.flags[name] = f
     f
 end
 
 -- string_flag: register a string flag.
-fun string_flag(fs: any, name: str, default_val: str, usage: str): any
+string_flag(fs: any, name: str, default_val: str, usage: str): any
     f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "string"}
     fs.flags[name] = f
     f
 end
 
 -- int_flag: register an integer flag.
-fun int_flag(fs: any, name: str, default_val: i64, usage: str): any
+int_flag(fs: any, name: str, default_val: i64, usage: str): any
     f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "int"}
     fs.flags[name] = f
     f
 end
 
 -- float_flag: register a float flag.
-fun float_flag(fs: any, name: str, default_val: f64, usage: str): any
+float_flag(fs: any, name: str, default_val: f64, usage: str): any
     f = {name = name, value = default_val, default = default_val, usage = usage, is_bool = false, kind = "float"}
     fs.flags[name] = f
     f
 end
 
 -- parse: parse the given argument array (1-based).
-fun parse(fs: any, argv: any): any
-    if argv == nil then argv = {} end
+parse(fs: any, argv: any): any
+    if argv == nil argv = {} end
     i = 1
     n = rawlen(argv)
-    local fname: any = nil
-    local fval: any = nil
+    fname: any = nil
+    fval: any = nil
     while i <= n
         arg = argv[i]
-        if arg == "--" then
+        if arg == "--"
             -- all remaining are positional
             i += 1
             while i <= n
@@ -54,10 +54,10 @@ fun parse(fs: any, argv: any): any
             break
         end
         -- long flag: --name or --name=value
-        if string.sub(arg, 1, 2) == "--" then
+        if string.sub(arg, 1, 2) == "--"
             rest = string.sub(arg, 3)
             eq = string.find(rest, "=", 1, true)
-            if eq ~= nil then
+            if eq != nil
                 fname = string.sub(rest, 1, eq - 1)
                 fval = string.sub(rest, eq + 1)
             else
@@ -65,38 +65,38 @@ fun parse(fs: any, argv: any): any
                 fval = nil
             end
             f = fs.flags[fname]
-            if f == nil then
+            if f == nil
                 io.write("flag: unknown flag --" .. fname .. "\n")
                 return fs, false
             end
-            if f.is_bool then
-                if fval ~= nil then
+            if f.is_bool
+                if fval != nil
                     f.value = (fval == "true" or fval == "1")
                 else
                     f.value = true
                 end
             else
-                if fval == nil then
+                if fval == nil
                     i += 1
-                    if i > n then
+                    if i > n
                         io.write("flag: --" .. fname .. " requires a value\n")
                         return fs, false
                     end
                     fval = argv[i]
                 end
-                if f.kind == "int" then
+                if f.kind == "int"
                     f.value = tonumber(fval)
-                elseif f.kind == "float" then
+                elseif f.kind == "float"
                     f.value = tonumber(fval)
                 else
                     f.value = fval
                 end
             end
-        elseif string.sub(arg, 1, 1) == "-" and string.len(arg) > 1 then
+        elseif string.sub(arg, 1, 1) == "-" and string.len(arg) > 1
             -- short flag: -name or -name=value
             rest = string.sub(arg, 2)
             eq = string.find(rest, "=", 1, true)
-            if eq ~= nil then
+            if eq != nil
                 fname = string.sub(rest, 1, eq - 1)
                 fval = string.sub(rest, eq + 1)
             else
@@ -104,28 +104,28 @@ fun parse(fs: any, argv: any): any
                 fval = nil
             end
             f = fs.flags[fname]
-            if f == nil then
+            if f == nil
                 io.write("flag: unknown flag -" .. fname .. "\n")
                 return fs, false
             end
-            if f.is_bool then
-                if fval ~= nil then
+            if f.is_bool
+                if fval != nil
                     f.value = (fval == "true" or fval == "1")
                 else
                     f.value = true
                 end
             else
-                if fval == nil then
+                if fval == nil
                     i += 1
-                    if i > n then
+                    if i > n
                         io.write("flag: -" .. fname .. " requires a value\n")
                         return fs, false
                     end
                     fval = argv[i]
                 end
-                if f.kind == "int" then
+                if f.kind == "int"
                     f.value = tonumber(fval)
-                elseif f.kind == "float" then
+                elseif f.kind == "float"
                     f.value = tonumber(fval)
                 else
                     f.value = fval
@@ -142,27 +142,27 @@ fun parse(fs: any, argv: any): any
 end
 
 -- get: return the value of a flag.
-fun get(fs: any, name: str): any
+get(fs: any, name: str): any
     f = fs.flags[name]
-    if f == nil then return nil end
+    if f == nil return nil end
     f.value
 end
 
 -- lookup: return the flag descriptor.
-fun lookup(fs: any, name: str): any
+lookup(fs: any, name: str): any
     fs.flags[name]
 end
 
 -- args_: return the positional arguments (named args_ to avoid shadowing).
-fun positional_args(fs: any): any
+positional_args(fs: any): any
     fs.args
 end
 
 -- print_defaults: print usage information for all flags.
-fun print_defaults(fs: any): void
+print_defaults(fs: any): void
     for name, f in fs.flags
         prefix = "  -" .. name
-        if not f.is_bool then
+        if not f.is_bool
             prefix = prefix .. " value"
         end
         io.write(prefix .. "\n        " .. tostring(f.usage) .. " (default: " .. tostring(f.default) .. ")\n")
@@ -174,23 +174,23 @@ end
 global default_fs = new_flag_set("")
 
 -- global bool: register a bool on the default flag set.
-fun global_bool(name: str, default_val: bool, usage: str): any
+global_bool(name: str, default_val: bool, usage: str): any
     bool_flag(default_fs, name, default_val, usage)
 end
 
-fun global_string(name: str, default_val: str, usage: str): any
+global_string(name: str, default_val: str, usage: str): any
     string_flag(default_fs, name, default_val, usage)
 end
 
-fun global_int(name: str, default_val: i64, usage: str): any
+global_int(name: str, default_val: i64, usage: str): any
     int_flag(default_fs, name, default_val, usage)
 end
 
-fun global_parse(argv: any): any
+global_parse(argv: any): any
     parse(default_fs, argv)
 end
 
-fun global_get(name: str): any
+global_get(name: str): any
     get(default_fs, name)
 end
 

@@ -5,7 +5,7 @@
 -- GUI State
 -- ═══════════════════════════════════════════════════════════════
 
-fun gui_state_new(): any
+gui_state_new(): any
     {
         mouse_x = 0,
         mouse_y = 0,
@@ -27,7 +27,7 @@ fun gui_state_new(): any
     }
 end
 
-fun gui_state_set_mouse(state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool): void
+gui_state_set_mouse(state: any, x: f64, y: f64, pressed: bool, down: bool, released: bool): void
     state.mouse_x = x
     state.mouse_y = y
     state.mouse_pressed = pressed
@@ -39,11 +39,11 @@ end
 -- GUI ID
 -- ═══════════════════════════════════════════════════════════════
 
-fun gui_id_hash(str: str): i64
+gui_id_hash(s: str): i64
     hash = 5381
     i = 1
-    while i <= #str
-        hash = ((hash * 33) + string.byte(str, i)) % 2147483647
+    while i <= #s
+        hash = ((hash * 33) + string.byte(s, i)) % 2147483647
         i += 1
     end
     hash
@@ -53,7 +53,7 @@ end
 -- GUI Drawing
 -- ═══════════════════════════════════════════════════════════════
 
-fun gui_draw_rect(state: any, x: f64, y: f64, w: f64, h: f64, color: any): void
+gui_draw_rect(state: any, x: f64, y: f64, w: f64, h: f64, color: any): void
     state.draw_commands[#state.draw_commands + 1] = {
         type = "rect",
         x = x,
@@ -64,7 +64,7 @@ fun gui_draw_rect(state: any, x: f64, y: f64, w: f64, h: f64, color: any): void
     }
 end
 
-fun gui_draw_text(state: any, text: str, x: f64, y: f64, color: any): void
+gui_draw_text(state: any, text: str, x: f64, y: f64, color: any): void
     state.draw_commands[#state.draw_commands + 1] = {
         type = "text",
         text = text,
@@ -78,12 +78,12 @@ end
 -- GUI Widgets
 -- ═══════════════════════════════════════════════════════════════
 
-fun gui_label(state: any, text: str): void
+gui_label(state: any, text: str): void
     gui_draw_text(state, text, state.layout.x, state.layout.y, {r = 1, g = 1, b = 1, a = 1})
     state.layout.y = state.layout.y + 16 + state.layout.item_spacing
 end
 
-fun gui_button(state: any, label: str): bool
+gui_button(state: any, label: str): bool
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -96,19 +96,19 @@ fun gui_button(state: any, label: str): bool
 
     -- Check click
     clicked = false
-    if hover and state.mouse_pressed then
+    if hover and state.mouse_pressed
         state.active_item = id
     end
 
-    if state.active_item == id and state.mouse_released and hover then
+    if state.active_item == id and state.mouse_released and hover
         clicked = true
         state.active_item = nil
     end
 
     -- Draw
-    if state.active_item == id and hover then
+    if state.active_item == id and hover
         gui_draw_rect(state, x, y, w, h, {r = 0.3, g = 0.3, b = 0.8, a = 1})
-    elseif hover then
+    elseif hover
         gui_draw_rect(state, x, y, w, h, {r = 0.4, g = 0.4, b = 0.4, a = 1})
     else
         gui_draw_rect(state, x, y, w, h, {r = 0.2, g = 0.2, b = 0.2, a = 1})
@@ -120,22 +120,22 @@ fun gui_button(state: any, label: str): bool
     clicked
 end
 
-fun gui_checkbox(state: any, label: str, value: bool): bool
+gui_checkbox(state: any, label: str, value: bool): bool
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
     box_size = 16
 
     -- Toggle on click
-    if state.mouse_pressed then
+    if state.mouse_pressed
         if x <= state.mouse_x and state.mouse_x <= x + box_size and
-           y <= state.mouse_y and state.mouse_y <= y + box_size then
+           y <= state.mouse_y and state.mouse_y <= y + box_size
             value = not value
         end
     end
 
     -- Draw box
-    if value then
+    if value
         gui_draw_rect(state, x, y, box_size, box_size, {r = 0.2, g = 0.6, b = 0.2, a = 1})
     else
         gui_draw_rect(state, x, y, box_size, box_size, {r = 0.3, g = 0.3, b = 0.3, a = 1})
@@ -148,7 +148,7 @@ fun gui_checkbox(state: any, label: str, value: bool): bool
     value
 end
 
-fun gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
+gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -156,19 +156,19 @@ fun gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
     h = 16
 
     -- Handle drag
-    if state.mouse_pressed then
+    if state.mouse_pressed
         if x <= state.mouse_x and state.mouse_x <= x + w and
-           y <= state.mouse_y and state.mouse_y <= y + h then
+           y <= state.mouse_y and state.mouse_y <= y + h
             state.active_item = id
         end
     end
 
-    if state.active_item == id then
+    if state.active_item == id
         ratio = math.max(0, math.min(1, (state.mouse_x - x) / w))
         value = min + ratio * (max - min)
     end
 
-    if state.active_item == id and state.mouse_released then
+    if state.active_item == id and state.mouse_released
         state.active_item = nil
     end
 
@@ -190,7 +190,7 @@ fun gui_slider(state: any, label: str, value: f64, min: f64, max: f64): f64
     value
 end
 
-fun gui_text_input(state: any, label: str, text: str): str
+gui_text_input(state: any, label: str, text: str): str
     id = gui_id_hash(label)
     x = state.layout.x
     y = state.layout.y
@@ -198,17 +198,17 @@ fun gui_text_input(state: any, label: str, text: str): str
     h = 24
 
     -- Focus on click
-    if state.mouse_pressed then
+    if state.mouse_pressed
         if x <= state.mouse_x and state.mouse_x <= x + w and
-           y <= state.mouse_y and state.mouse_y <= y + h then
+           y <= state.mouse_y and state.mouse_y <= y + h
             state.active_item = id
-        elseif state.active_item == id then
+        elseif state.active_item == id
             state.active_item = nil
         end
     end
 
     -- Draw background
-    if state.active_item == id then
+    if state.active_item == id
         gui_draw_rect(state, x, y, w, h, {r = 0.1, g = 0.1, b = 0.3, a = 1})
     else
         gui_draw_rect(state, x, y, w, h, {r = 0.15, g = 0.15, b = 0.15, a = 1})
@@ -228,16 +228,16 @@ end
 -- GUI Layout
 -- ═══════════════════════════════════════════════════════════════
 
-fun gui_begin_group(state: any, x: f64, y: f64): void
+gui_begin_group(state: any, x: f64, y: f64): void
     state.layout.x = x
     state.layout.y = y
 end
 
-fun gui_end_group(state: any): void
+gui_end_group(state: any): void
     state.layout.y = state.layout.y + state.layout.group_spacing
 end
 
-fun gui_get_draw_commands(state: any): any
+gui_get_draw_commands(state: any): any
     commands = state.draw_commands
     state.draw_commands = {}
     commands

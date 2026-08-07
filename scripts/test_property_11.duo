@@ -6,7 +6,7 @@ s.echo("[Property 11] Testing C codegen...")
 s.echo("1")
 global ROOT: str = tostring(s.path_dirname(s.path_dirname(s.capture("pwd"))))
 s.echo("2")
-if tostring(s.getenv_or("PWD")) ~= ""
+if tostring(s.getenv_or("PWD")) != ""
     ROOT = tostring(s.getenv_or("PWD"))
 end
 
@@ -23,7 +23,7 @@ if uname == "Darwin\n"
 end
 s.echo("7")
 
-fun check_module(name: str, code: str): void
+check_module(name: str, code: str): void
     s.echo("  checking " .. name .. "...")
     duo_file = s.path_join(TMP_DIR, name .. ".duo")
     c_file = s.path_join(TMP_DIR, name .. ".c")
@@ -41,37 +41,37 @@ fun check_module(name: str, code: str): void
 end
 
 check_module("arithmetic", [[
-function add(a: i64, b: i64) -> i64
+add(a: i64, b: i64) -> i64
   return a + b
 end
 
-function mix(a: i64, b: i64) -> i64
-  local x: i64 = add(a, b)
-  local y: i64 = (x * 3) - (b // 2)
+mix(a: i64, b: i64) -> i64
+  x: i64 = add(a, b)
+  y: i64 = (x * 3) - (b // 2)
   return y % 97
 end
 
-local result: i64 = mix(40, 2)
+result: i64 = mix(40, 2)
 ]])
 
 check_module("floats_and_branches", [[
-function scale(x: f64, n: i64) -> f64
-  if n > 10 then
+scale(x: f64, n: i64) -> f64
+  if n > 10
     return x * 2.5
-  elseif n == 10 then
+  elseif n == 10
     return x + 1.25
   end
   return x / 2.0
 end
 
-local a: f64 = scale(3.0, 12)
-local b: bool = a > 1.0
+a: f64 = scale(3.0, 12)
+b: bool = a > 1.0
 ]])
 
 check_module("loops", [[
-function sum_to(n: i64) -> i64
-  local acc: i64 = 0
-  local i: i64 = 1
+sum_to(n: i64) -> i64
+  acc: i64 = 0
+  i: i64 = 1
   while i <= n do
     acc = acc + i
     i = i + 1
@@ -79,20 +79,20 @@ function sum_to(n: i64) -> i64
   return acc
 end
 
-local total: i64 = sum_to(16)
+total: i64 = sum_to(16)
 ]])
 
 check_module("strings", [[
-function middle(s: str): str
+middle(s: str): str
   return string.sub(s, 2, 4)
 end
 
-function label(n: i64): str
-  local s: str = tostring(n)
+label(n: i64): str
+  s: str = tostring(n)
   return middle("abcdef") .. s
 end
 
-local out: str = label(42)
+out: str = label(42)
 ]])
 
 check_module("records_and_globals", [[
@@ -100,45 +100,45 @@ check_module("records_and_globals", [[
 @align(16)
 global gp: { x: i8, y: i64 } = { x = 1, y = 2 }
 
-function sum_point(): i64
+sum_point(): i64
   @packed
   @align(8)
-  local p: { x: i8, y: i64 } = { x = 3, y = 4 }
+  p: { x: i8, y: i64 } = { x = 3, y = 4 }
   return gp.y + p.y
 end
 
-local n: i64 = sum_point()
+n: i64 = sum_point()
 ]])
 
 check_module("record_alias_params", [[
 type Point = { x: i64, y: i64 }
 
-function get_y(p: { x: i64, y: i64 }) -> i64
+get_y(p: { x: i64, y: i64 }) -> i64
   return p.y
 end
 
-function sum_point(p: Point) -> i64
+sum_point(p: Point) -> i64
   return p.x + p.y
 end
 
-local p: Point = { x = 5, y = 7 }
-local a: i64 = get_y({ x = 3, y = 4 })
-local b: i64 = sum_point(p)
+p: Point = { x = 5, y = 7 }
+a: i64 = get_y({ x = 3, y = 4 })
+b: i64 = sum_point(p)
 ]])
 
 check_module("bitwise", [[
-function bits(a: i64, b: i64, s: i64) -> i64
-  local x: i64 = (a & b) | (a ~ b)
-  local y: i64 = (a & 65535) << s
-  local z: i64 = y >> s
+bits(a: i64, b: i64, s: i64) -> i64
+  x: i64 = (a & b) | (a ~ b)
+  y: i64 = (a & 65535) << s
+  z: i64 = y >> s
   return x + z + (~b)
 end
 
-local n: i64 = bits(123456, 7890, 3)
+n: i64 = bits(123456, 7890, 3)
 ]])
 
 check_module("native_indexing", [[
-function pointer_read(xs: *i32, i: i64) -> i32
+pointer_read(xs: *i32, i: i64) -> i32
   return xs[i]
 end
 ]])
@@ -149,15 +149,15 @@ if not s.ok("grep -Fq 'return xs[i];' " .. TMP_DIR .. "/native_indexing.c")
 end
 
 check_module("typed_function_values", [[
-function increment(x: i32) -> i32
+increment(x: i32) -> i32
   return x + 1
 end
 
-function apply(f: (i32) -> i32, x: i32) -> i32
+apply(f: (i32) -> i32, x: i32) -> i32
   return f(x)
 end
 
-local result: i32 = apply(increment, 41)
+result: i32 = apply(increment, 41)
 ]])
 
 if not s.ok("grep -Fq 'int32_t (*f)(int32_t)' " .. TMP_DIR .. "/typed_function_values.c") or not s.ok("grep -Fq 'return f(x);' " .. TMP_DIR .. "/typed_function_values.c")

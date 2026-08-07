@@ -9,8 +9,8 @@
 SNAPPY_BLOCK_SIZE = 32768
 
 -- Compress data using Snappy-like algorithm
-fun compress(data: any): any
-    if data == nil or #data == 0 then return {0} end
+compress(data: any): any
+    if data == nil or #data == 0 return {0} end
 
     src_len = #data
     out = {}
@@ -25,13 +25,13 @@ fun compress(data: any): any
         -- Find longest match
         match_len, match_offset = find_match(data, i, src_len)
 
-        if match_len >= 4 then
+        if match_len >= 4
             -- Emit copy operation
             -- Copy with offset
             length = match_len - 4
-            if length < 60 then
+            if length < 60
                 out[#out + 1] = (length << 2) | 0x01
-            elseif length < 256 then
+            elseif length < 256
                 out[#out + 1] = (59 << 2) | 0x01
                 out[#out + 1] = length
             else
@@ -49,15 +49,15 @@ fun compress(data: any): any
             literal_len = 0
             while i <= src_len and literal_len < SNAPPY_BLOCK_SIZE
                 ml, _ = find_match(data, i, src_len)
-                if ml >= 4 then break end
+                if ml >= 4 break end
                 literal_len += 1
                 i += 1
             end
 
             -- Write literal header
-            if literal_len < 61 then
+            if literal_len < 61
                 out[#out + 1] = ((literal_len - 1) << 2) | 0x00
-            elseif literal_len < 256 then
+            elseif literal_len < 256
                 out[#out + 1] = (60 << 2) | 0x00
                 out[#out + 1] = literal_len
             else
@@ -79,8 +79,8 @@ fun compress(data: any): any
 end
 
 -- Decompress Snappy data
-fun decompress(data: any): any
-    if data == nil or #data == 0 then return {} end
+decompress(data: any): any
+    if data == nil or #data == 0 return {} end
 
     r = {pos = 1, data = data}
     src_len = read_varint(r)
@@ -92,15 +92,15 @@ fun decompress(data: any): any
 
         tag = byte & 0x03
 
-        if tag == 0 then
+        if tag == 0
             -- Literal
             literal_len = (byte >> 2) & 0x3F
-            if literal_len < 60 then
+            if literal_len < 60
                 literal_len += 1
-            elseif literal_len == 60 then
+            elseif literal_len == 60
                 literal_len = data[r.pos] + 1
                 r.pos = r.pos + 1
-            elseif literal_len == 61 then
+            elseif literal_len == 61
                 literal_len = data[r.pos] + (data[r.pos + 1] << 8) + 1
                 r.pos = r.pos + 2
             end
@@ -112,15 +112,15 @@ fun decompress(data: any): any
                 i += 1
             end
 
-        elseif tag == 1 then
+        elseif tag == 1
             -- Copy with 2-byte offset
             length = (byte >> 2) & 0x3F
-            if length < 60 then
+            if length < 60
                 length += 4
-            elseif length == 60 then
+            elseif length == 60
                 length = data[r.pos] + 4
                 r.pos = r.pos + 1
-            elseif length == 61 then
+            elseif length == 61
                 length = data[r.pos] + (data[r.pos + 1] << 8) + 4
                 r.pos = r.pos + 2
             end
@@ -135,10 +135,10 @@ fun decompress(data: any): any
                 i += 1
             end
 
-        elseif tag == 2 then
+        elseif tag == 2
             -- Copy with 1-byte offset
             length = (byte >> 2) & 0x3F
-            if length < 60 then
+            if length < 60
                 length += 4
             else
                 length = data[r.pos] + 4
@@ -154,10 +154,10 @@ fun decompress(data: any): any
                 i += 1
             end
 
-        elseif tag == 3 then
+        elseif tag == 3
             -- Copy with 4-byte offset
             length = (byte >> 2) & 0x3F
-            if length < 60 then
+            if length < 60
                 length += 4
             else
                 length = data[r.pos] + 4
@@ -180,7 +180,7 @@ fun decompress(data: any): any
 end
 
 -- Find longest match using simple hash chain
-fun find_match(data: any, pos: i64, src_len: i64): any
+find_match(data: any, pos: i64, src_len: i64): any
     best_len = 0
     best_offset = 0
     max_len = math.min(64, src_len - pos + 1)
@@ -193,7 +193,7 @@ fun find_match(data: any, pos: i64, src_len: i64): any
         while match_len < max_len and data[i + match_len] == data[pos + match_len]
             match_len += 1
         end
-        if match_len > best_len then
+        if match_len > best_len
             best_len = match_len
             best_offset = pos - i
         end
@@ -204,7 +204,7 @@ fun find_match(data: any, pos: i64, src_len: i64): any
 end
 
 -- Varint encoding/decoding
-fun write_varint(out: any, value: i64): void
+write_varint(out: any, value: i64): void
     while value >= 0x80
         out[#out + 1] = (value & 0x7F) | 0x80
         value = value >> 7
@@ -212,7 +212,7 @@ fun write_varint(out: any, value: i64): void
     out[#out + 1] = value
 end
 
-fun read_varint(r: any): i64
+read_varint(r: any): i64
     result = 0
     shift = 0
     while true
@@ -220,7 +220,7 @@ fun read_varint(r: any): i64
         r.pos = r.pos + 1
         result = result | ((byte & 0x7F) << shift)
         shift += 7
-        if (byte & 0x80) == 0 then break end
+        if (byte & 0x80) == 0 break end
     end
     result
 end

@@ -1,0 +1,24 @@
+Tok: @{ kind: i64, start: i64, len: i64 }
+is_alpha = (c: i64): i64
+    if c >= 97 and c <= 122
+        return 1
+    end
+    0
+end
+scan = (src: str, pos: i64): Tok
+    n = #src
+    i = pos
+    c = string.byte(src, i)
+    if is_alpha(c) == 1
+        j = i
+        while j < n
+            j = j + 1
+        end
+        return { kind = 1, start = j, len = 1 }
+    end
+    { kind = 2, start = i, len = 1 }
+end
+main(): i64
+    t: Tok = scan("abcd", 1)
+    t.start
+end

@@ -50,16 +50,16 @@ AES_RCON = {
 }
 
 -- Galois field multiplication
-fun aes_gmul(a: i64, b: i64): i64
+aes_gmul(a: i64, b: i64): i64
     p = 0
     i = 0
     while i < 8
-        if b & 1 ~= 0 then
+        if b & 1 != 0
             p = p ~ a
         end
         hi = a & 0x80
         a = (a << 1) & 0xFF
-        if hi ~= 0 then
+        if hi != 0
             a = a ~ 0x1B
         end
         b = b >> 1
@@ -72,10 +72,10 @@ end
 -- Key Expansion
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_key_expansion(key: any, key_len: i64): any
-    if key_len == 16 then
+aes_key_expansion(key: any, key_len: i64): any
+    if key_len == 16
         nk = 4; nr = 10
-    elseif key_len == 24 then
+    elseif key_len == 24
         nk = 6; nr = 12
     else
         nk = 8; nr = 14
@@ -92,7 +92,7 @@ fun aes_key_expansion(key: any, key_len: i64): any
     while i < 4 * (nr + 1)
         temp = {w[i-1][1], w[i-1][2], w[i-1][3], w[i-1][4]}
 
-        if i % nk == 0 then
+        if i % nk == 0
             -- RotWord + SubWord + Rcon
             temp = {
                 AES_SBOX[temp[2] + 1] ~ AES_RCON[(i / nk)],
@@ -100,7 +100,7 @@ fun aes_key_expansion(key: any, key_len: i64): any
                 AES_SBOX[temp[4] + 1],
                 AES_SBOX[temp[1] + 1],
             }
-        elseif nk > 6 and i % nk == 4 then
+        elseif nk > 6 and i % nk == 4
             -- SubWord only for AES-256
             temp = {
                 AES_SBOX[temp[1] + 1],
@@ -126,7 +126,7 @@ end
 -- AES Block Operations
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_sub_bytes(state: any): void
+aes_sub_bytes(state: any): void
     i = 0
     while i < 16
         state[i] = AES_SBOX[state[i] + 1]
@@ -134,7 +134,7 @@ fun aes_sub_bytes(state: any): void
     end
 end
 
-fun aes_inv_sub_bytes(state: any): void
+aes_inv_sub_bytes(state: any): void
     i = 0
     while i < 16
         state[i] = AES_INV_SBOX[state[i] + 1]
@@ -142,7 +142,7 @@ fun aes_inv_sub_bytes(state: any): void
     end
 end
 
-fun aes_inv_shift_rows(state: any): void
+aes_inv_shift_rows(state: any): void
     -- Row 1: shift right by 1
     temp = state[13]
     state[13] = state[9]
@@ -166,7 +166,7 @@ fun aes_inv_shift_rows(state: any): void
     state[15] = temp
 end
 
-fun aes_inv_mix_columns(state: any): void
+aes_inv_mix_columns(state: any): void
     col = 0
     while col < 4
         s0 = state[col * 4]
@@ -182,7 +182,7 @@ fun aes_inv_mix_columns(state: any): void
     end
 end
 
-fun aes_shift_rows(state: any): void
+aes_shift_rows(state: any): void
     -- Row 1: shift left by 1
     temp = state[1]
     state[1] = state[5]
@@ -206,7 +206,7 @@ fun aes_shift_rows(state: any): void
     state[3] = temp
 end
 
-fun aes_mix_columns(state: any): void
+aes_mix_columns(state: any): void
     col = 0
     while col < 4
         s0 = state[col * 4]
@@ -222,7 +222,7 @@ fun aes_mix_columns(state: any): void
     end
 end
 
-fun aes_add_round_key(state: any, w: any, round: i64): void
+aes_add_round_key(state: any, w: any, round: i64): void
     i = 0
     while i < 16
         state[i] = state[i] ~ w[round * 4 + i / 4][i % 4 + 1]
@@ -234,7 +234,7 @@ end
 -- AES Encrypt Block (single 16-byte block)
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_encrypt_block(block: any, expanded_key: any): any
+aes_encrypt_block(block: any, expanded_key: any): any
     state = {}
     i = 0
     while i < 16
@@ -270,7 +270,7 @@ end
 -- AES Decrypt Block
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_decrypt_block(block: any, expanded_key: any): any
+aes_decrypt_block(block: any, expanded_key: any): any
     state = {}
     i = 0
     while i < 16
@@ -288,7 +288,7 @@ fun aes_decrypt_block(block: any, expanded_key: any): any
         aes_inv_shift_rows(state)
         aes_inv_sub_bytes(state)
         aes_add_round_key(state, w, round)
-        if round > 1 then
+        if round > 1
             aes_inv_mix_columns(state)
         end
         round -= 1
@@ -305,7 +305,7 @@ end
 -- AES-CBC Mode
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_cbc_encrypt(plaintext: any, key: any, iv: any): any
+aes_cbc_encrypt(plaintext: any, key: any, iv: any): any
     key_len = #key
     expanded = aes_key_expansion(key, key_len)
 
@@ -348,7 +348,7 @@ fun aes_cbc_encrypt(plaintext: any, key: any, iv: any): any
     ciphertext
 end
 
-fun aes_cbc_decrypt(ciphertext: any, key: any, iv: any): any
+aes_cbc_decrypt(ciphertext: any, key: any, iv: any): any
     key_len = #key
     expanded = aes_key_expansion(key, key_len)
 
@@ -377,12 +377,12 @@ fun aes_cbc_decrypt(ciphertext: any, key: any, iv: any): any
     end
 
     -- Remove PKCS7 padding
-    if #plaintext > 0 then
+    if #plaintext > 0
         pad = plaintext[#plaintext]
-        if pad >= 1 and pad <= 16 then
+        if pad >= 1 and pad <= 16
             i = #plaintext - pad + 1
             while i <= #plaintext
-                if plaintext[i] ~= pad then return plaintext end
+                if plaintext[i] != pad return plaintext end
                 i += 1
             end
             -- Valid padding, trim
@@ -403,7 +403,7 @@ end
 -- AES-CTR Mode (stream cipher)
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_ctr_crypt(data: any, key: any, nonce: any): any
+aes_ctr_crypt(data: any, key: any, nonce: any): any
     key_len = #key
     expanded = aes_key_expansion(key, key_len)
 
@@ -429,7 +429,7 @@ fun aes_ctr_crypt(data: any, key: any, nonce: any): any
         i = 15
         while i >= 0
             counter[i] = (counter[i] + 1) & 0xFF
-            if counter[i] ~= 0 then break end
+            if counter[i] != 0 break end
             i -= 1
         end
 
@@ -443,7 +443,7 @@ end
 -- Utility functions
 -- ═══════════════════════════════════════════════════════════════
 
-fun aes_string_to_bytes(s: str): any
+aes_string_to_bytes(s: str): any
     bytes = {}
     i = 1
     while i <= string.len(s)
@@ -453,7 +453,7 @@ fun aes_string_to_bytes(s: str): any
     bytes
 end
 
-fun aes_bytes_to_string(bytes: any): str
+aes_bytes_to_string(bytes: any): str
     parts = {}
     i = 1
     while i <= #bytes

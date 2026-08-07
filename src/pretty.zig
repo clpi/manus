@@ -204,6 +204,8 @@ pub const PrettyPrinter = struct {
                     try self.printExpr(sub, 0);
                 }
             },
+            .semantic => |x| try self.print("@{s}", .{x.op}),
+            .semantic_scope => try self.write("@"),
             .index => |x| {
                 try self.printExpr(x.obj, 0);
                 try self.write("[");
@@ -301,6 +303,12 @@ pub const PrettyPrinter = struct {
                             .spread => |sp| {
                                 try self.write("..");
                                 try self.printExpr(sp, 0);
+                            },
+                            .semantic => |sm| {
+                                try self.print("@{s}", .{sm.op});
+                                if (sm.param) |p| try self.print("({s})", .{p});
+                                try self.write(" = ");
+                                try self.printExpr(sm.val, 0);
                             },
                         }
                     }
