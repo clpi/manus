@@ -2742,11 +2742,24 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   -- so an inlined callee's locals sit ABOVE the caller's rather than aliasing
   -- them. Depth is capped at one: nesting would exhaust w9..w16 immediately.
   lbase: i64 = 0
-  inl_pc: i64 = -1
-  inl_off: i64 = 0
-  inl_blen: i64 = 0
-  inl_lbase: i64 = 0
-  inl_ldep: i64 = 0
+  -- Inline STACK, so a callee may itself contain calls. Depth is capped and
+  -- the register budget is rechecked at every level; a recursive callee simply
+  -- inlines until the cap and then bails to the interpreter, which is safe.
+  inl_d: i64 = 0
+  inl_pcs = mem.alloc(8 * 8)
+  inl_offs = mem.alloc(8 * 8)
+  inl_bls = mem.alloc(8 * 8)
+  inl_lbs = mem.alloc(8 * 8)
+  inl_lds = mem.alloc(8 * 8)
+  inl_lcs = mem.alloc(8 * 8)
+  mem.zero(inl_pcs, 8 * 8)
+  mem.zero(inl_offs, 8 * 8)
+  mem.zero(inl_bls, 8 * 8)
+  mem.zero(inl_lbs, 8 * 8)
+  mem.zero(inl_lds, 8 * 8)
+  mem.zero(inl_lcs, 8 * 8)
+  -- locals used by the frame currently being compiled
+  curloc: i64 = 0
   -- ── function table, for inlining `call` ──────────────────────────────
   -- `s` is the whole module but `off`/`blen` delimit only THIS body, so a
   -- callee must be located here. Built in-function because BUG B forbids a
@@ -2884,21 +2897,24 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     selfloc = mem.read_i64(jft, (jself * 5 + 2) * 8) + mem.read_i64(jft, (jself * 5 + 3) * 8)
   end
 
-  while pc <= blen or inl_pc >= 0
+  curloc = selfloc
+
+  while pc <= blen or inl_d > 0
     -- An inlined body is done when its cursor runs past its own length:
     -- restore the caller's cursor and register window and carry on.
-    if pc > blen and inl_pc >= 0
-      pc = inl_pc
-      off = inl_off
-      blen = inl_blen
-      lbase = inl_lbase
+    if pc > blen and inl_d > 0
+      inl_d -= 1
+      pc = mem.read_i64(inl_pcs, inl_d * 8)
+      off = mem.read_i64(inl_offs, inl_d * 8)
+      blen = mem.read_i64(inl_bls, inl_d * 8)
+      lbase = mem.read_i64(inl_lbs, inl_d * 8)
+      curloc = mem.read_i64(inl_lcs, inl_d * 8)
       -- Restore the caller's label depth. A callee body ends with its OWN
       -- function-level `end`, so it emits one more `end` than it pushed labels
       -- and that surplus pops a label belonging to the CALLER. Left unrestored,
       -- the caller's later br_if resolved to the wrong target (a nested
       -- factorial sum returned 1 instead of 9).
-      ldep = inl_ldep
-      inl_pc = -1
+      ldep = mem.read_i64(inl_lds, inl_d * 8)
     end
     op: i64 = string.byte(s, off + pc)
     pc += 1
@@ -3284,6 +3300,108 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cset = n - 1
       last_cc = 0
 
+    elseif op >= 167 and op <= 191
+      -- the conversion block. Unary throughout: the operand slot is reused for
+      -- the result. int<->int is one instruction; int->float and float->int are
+      -- two (the FP unit reads/writes a GP register directly for SCVTF/FCVTZS,
+      -- so only one FMOV is needed); demote/promote need three.
+      if sp < 1
+        return -1
+      end
+      cv: i64 = sp - 1
+      if op == 167 or op == 173
+        -- i32.wrap_i64 / i64.extend_i32_u: a 32-bit MOV truncates and
+        -- zero-extends in the same instruction
+        jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
+        n += 1
+      elseif op == 172
+        jitm.w32(code, n, 0x93407C00 | (cv << 5) | cv)   -- SXTW
+        n += 1
+      elseif op >= 188
+        -- reinterpret is FREE here: ward keeps floats in GP registers as bit
+        -- patterns, so this is the identity. Only the 32-bit forms clear the
+        -- high half.
+        if op == 188 or op == 190
+          jitm.w32(code, n, 0x2A0003E0 | (cv << 16) | cv)
+          n += 1
+        end
+      elseif op == 182
+        -- f32.demote_f64
+        jitm.w32(code, n, 0x9E670000 | (cv << 5))
+        n += 1
+        jitm.w32(code, n, 0x1E624000)
+        n += 1
+        jitm.w32(code, n, 0x1E260000 | cv)
+        n += 1
+      elseif op == 187
+        -- f64.promote_f32
+        jitm.w32(code, n, 0x1E270000 | (cv << 5))
+        n += 1
+        jitm.w32(code, n, 0x1E22C000)
+        n += 1
+        jitm.w32(code, n, 0x9E660000 | cv)
+        n += 1
+      elseif op >= 178 and op <= 186
+        -- int -> float: SCVTF/UCVTF reads the GP register directly
+        cw: i64 = 0x1E220000                       -- f32 <- i32, signed
+        if op == 179
+          cw = 0x1E230000
+        elseif op == 180
+          cw = 0x9E220000
+        elseif op == 181
+          cw = 0x9E230000
+        elseif op == 183
+          cw = 0x1E620000
+        elseif op == 184
+          cw = 0x1E630000
+        elseif op == 185
+          cw = 0x9E620000
+        elseif op == 186
+          cw = 0x9E630000
+        end
+        jitm.w32(code, n, cw | (cv << 5))
+        n += 1
+        if op >= 183
+          jitm.w32(code, n, 0x9E660000 | cv)
+          n += 1
+        else
+          jitm.w32(code, n, 0x1E260000 | cv)
+          n += 1
+        end
+      else
+        -- float -> int, truncating toward zero
+        srcf32: i64 = 0
+        if op == 168 or op == 169 or op == 174 or op == 175
+          srcf32 = 1
+        end
+        if srcf32 == 1
+          jitm.w32(code, n, 0x1E270000 | (cv << 5))
+        else
+          jitm.w32(code, n, 0x9E670000 | (cv << 5))
+        end
+        n += 1
+        tw: i64 = 0x1E380000
+        if op == 169
+          tw = 0x1E390000
+        elseif op == 170
+          tw = 0x1E780000
+        elseif op == 171
+          tw = 0x1E790000
+        elseif op == 174
+          tw = 0x9E380000
+        elseif op == 175
+          tw = 0x9E390000
+        elseif op == 176
+          tw = 0x9E780000
+        elseif op == 177
+          tw = 0x9E790000
+        end
+        jitm.w32(code, n, tw | cv)
+        n += 1
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif (op >= 91 and op <= 102)
       -- f32/f64 compares: FCMP then CSET. The conditions are the IEEE ones, so
       -- an unordered (NaN) operand yields false for lt/gt/le/ge and true for
@@ -3608,34 +3726,36 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       cidx: i64 = uleb_val(s, off + pc, off + blen)
       pc = uleb_end(s, off + pc, off + blen) - off
       cfx: i64 = cidx - jimp
-      if inl_pc >= 0 or cfx < 0 or cfx >= jnf
-        return -1
-      end
-      if mem.read_i64(jft, (cfx * 5 + 4) * 8) == 0
+      if inl_d >= 6 or cfx < 0 or cfx >= jnf
         return -1
       end
       cnl: i64 = mem.read_i64(jft, (cfx * 5 + 2) * 8)
       cnp: i64 = mem.read_i64(jft, (cfx * 5 + 3) * 8)
-      if selfloc + cnp + cnl > 8 or cnp > sp
+      -- the callee's locals start above every enclosing frame's
+      nlb2: i64 = lbase + curloc
+      if nlb2 + cnp + cnl > 8 or cnp > sp
         return -1
       end
       -- arguments move from the operand stack into the callee's params, which
       -- are its locals 0..cnp-1 and therefore registers 9+selfloc..
       ck4: i64 = 0
       while ck4 < cnp
-        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | (9 + selfloc + ck4))
+        jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | (9 + nlb2 + ck4))
         n += 1
         ck4 += 1
       end
       sp = sp - cnp
-      inl_pc = pc
-      inl_off = off
-      inl_blen = blen
-      inl_lbase = lbase
-      inl_ldep = ldep
+      mem.write_i64(inl_pcs, inl_d * 8, pc)
+      mem.write_i64(inl_offs, inl_d * 8, off)
+      mem.write_i64(inl_bls, inl_d * 8, blen)
+      mem.write_i64(inl_lbs, inl_d * 8, lbase)
+      mem.write_i64(inl_lds, inl_d * 8, ldep)
+      mem.write_i64(inl_lcs, inl_d * 8, curloc)
+      inl_d += 1
       off = mem.read_i64(jft, (cfx * 5) * 8)
       blen = mem.read_i64(jft, (cfx * 5 + 1) * 8)
-      lbase = selfloc
+      lbase = nlb2
+      curloc = cnp + cnl
       pc = 1
       last_alu = -1
       last_cset = -1
