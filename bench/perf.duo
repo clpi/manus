@@ -1,0 +1,101 @@
+-- Interleaved median wall-clock benchmark: ward vs wasmtime.
+--
+-- Duo replacement for bench/perf.sh, which was bash wrapping a Python heredoc
+-- -- two foreign languages in one file, for a benchmark harness, which the
+-- monoglot mandate puts squarely in Duo.
+--
+-- Use THIS for any perf claim, never ward's printed `seconds=`. That value is
+-- os.clock, which on macOS accumulates CPU time across threads: it read 0.60 s
+-- while wall time was 0.40 s. Comparing it to wasmtime's wall time flattered
+-- ward once and faked a 55% regression later. Interleave, and take the median
+-- -- this box drifts measurably under sustained load.
+--
+-- Timing is std.time.monotonic(), which returned 0 for every call until
+-- 2026-08-07: a no-argument function with a bare @c.emit body drops its value,
+-- so `now_ns` needed an explicit return. Without that fix this harness would
+-- have reported every run as instantaneous -- worse than the bash it replaces.
+
+_ms_per_ns(): i64
+    1000000
+end
+
+-- Wall-clock milliseconds for one command. Monotonic, so it is unaffected by
+-- clock adjustments during a long sweep.
+_time_ms(cmd: str): i64
+    a: i64 = std.time.monotonic()
+    std.script.status(cmd)
+    b: i64 = std.time.monotonic()
+    -- `/` yields f64 even on two i64 operands, so the narrowing is stated.
+    to(i64)((b - a) / _ms_per_ns())
+end
+
+-- Median of a positional list of i64. Sorted in place; n is small (7 by
+-- default), so an insertion sort is the honest shape -- no pipeline surface
+-- exists for this yet (GAP-14).
+_median(xs: any, n: i64): i64
+    i = 2
+    while i <= n
+        key = xs[i]
+        j = i - 1
+        while j >= 1 and xs[j] > key
+            xs[j + 1] = xs[j]
+            j -= 1
+        end
+        xs[j + 1] = key
+        i += 1
+    end
+    xs[(n + 1) / 2]
+end
+
+_min_of(xs: any, n: i64): i64
+    m = xs[1]
+    i = 2
+    while i <= n
+        if xs[i] < m
+            m = xs[i]
+        end
+        i += 1
+    end
+    m
+end
+
+main(): i64
+    ward_bin = std.script.getenv("WARD_BIN", "/tmp/ward")
+    mod = std.script.arg(1, "bench/hash.wasm")
+    n: i64 = to(i64)(std.script.getenv("N", "7"))
+
+    if not std.script.fs_exists(mod)
+        print("perf: module not found: " .. mod)
+        return 1
+    end
+    abs = std.script.chomp(std.script.capture("cd \"$(dirname " .. mod .. ")\" && pwd"))
+        .. "/" .. std.script.path_basename(mod)
+
+    -- ward reads WARD_WASM, NOT argv (src/ward.duo entry) and silently falls
+    -- back to a hardcoded /tmp/hash.wasm. Passing the module as an argument
+    -- measures nothing -- the env var is the only thing that binds.
+    ward_cmd = "WARD_WASM=" .. abs .. " " .. ward_bin
+    wasmtime_cmd = "wasmtime --invoke run " .. mod
+
+    w = {}
+    m = {}
+    i = 1
+    while i <= n
+        w[i] = _time_ms(ward_cmd)
+        m[i] = _time_ms(wasmtime_cmd)
+        i += 1
+    end
+
+    wmin = _min_of(w, n)
+    mmin = _min_of(m, n)
+    wmed = _median(w, n)
+    mmed = _median(m, n)
+
+    print("module   " .. mod)
+    print("ward     median " .. to(str)(wmed) .. " ms  min " .. to(str)(wmin))
+    print("wasmtime median " .. to(str)(mmed) .. " ms  min " .. to(str)(mmin))
+    if mmed > 0
+        print("ratio    " .. to(str)(wmed * 100 / mmed) .. "%  (<100 means ward is faster)")
+    end
+    0
+end
