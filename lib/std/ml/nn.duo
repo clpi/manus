@@ -62,7 +62,7 @@ end
 -- Model construction
 -- ═══════════════════════════════════════════════════════════════
 
-sequential(...)
+sequential(...): any
     layers = {...}
     return {
         type = "sequential",
