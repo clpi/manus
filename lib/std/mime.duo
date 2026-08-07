@@ -34,12 +34,12 @@ defaults = {
 
 -- TypeByExtension returns the MIME type for the extension.
 type_by_extension(ext: str): str
-    t = M.defaults[ext]
+    t = defaults[ext]
     if t == nil return "application/octet-stream" end
     t
 end
 
 -- AddExtension adds a MIME type for an extension (persists across calls).
 add_extension(ext: str, mime: str): void
-    M.defaults[ext] = mime
+    defaults[ext] = mime
 end

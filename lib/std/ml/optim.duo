@@ -1,5 +1,7 @@
 -- std.ml.optim — Optimizers and learning rate schedulers
 
+Tensor = req "std.ml.tensor"
+
 -- ═══════════════════════════════════════════════════════════════
 -- Optimizers
 -- ═══════════════════════════════════════════════════════════════
@@ -139,7 +141,7 @@ step_sgd(opt: any, params: any, grads: any): void
 
         if opt.momentum != 0
             if opt.velocities[key] == nil
-                opt.velocities[key] = std.ml.tensor.zeros(p.rows, p.cols)
+                opt.velocities[key] = Tensor.zeros(p.rows, p.cols)
             end
             v = opt.velocities[key]
             for j = 1, p.size
@@ -165,8 +167,8 @@ step_adam(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.m[key] == nil
-            opt.m[key] = std.ml.tensor.zeros(p.rows, p.cols)
-            opt.v[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.m[key] = Tensor.zeros(p.rows, p.cols)
+            opt.v[key] = Tensor.zeros(p.rows, p.cols)
         end
         m = opt.m[key]
         v = opt.v[key]
@@ -192,8 +194,8 @@ step_adamw(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.m[key] == nil
-            opt.m[key] = std.ml.tensor.zeros(p.rows, p.cols)
-            opt.v[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.m[key] = Tensor.zeros(p.rows, p.cols)
+            opt.v[key] = Tensor.zeros(p.rows, p.cols)
         end
         m = opt.m[key]
         v = opt.v[key]
@@ -217,7 +219,7 @@ step_adagrad(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.accum[key] == nil
-            opt.accum[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.accum[key] = Tensor.zeros(p.rows, p.cols)
         end
         acc = opt.accum[key]
 
@@ -235,8 +237,8 @@ step_rmsprop(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.cache[key] == nil
-            opt.cache[key] = std.ml.tensor.zeros(p.rows, p.cols)
-            opt.velocity[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.cache[key] = Tensor.zeros(p.rows, p.cols)
+            opt.velocity[key] = Tensor.zeros(p.rows, p.cols)
         end
         cache = opt.cache[key]
         vel = opt.velocity[key]
@@ -259,8 +261,8 @@ step_lamb(opt: any, params: any, grads: any): void
         key = to(str)(p)
 
         if opt.m[key] == nil
-            opt.m[key] = std.ml.tensor.zeros(p.rows, p.cols)
-            opt.v[key] = std.ml.tensor.zeros(p.rows, p.cols)
+            opt.m[key] = Tensor.zeros(p.rows, p.cols)
+            opt.v[key] = Tensor.zeros(p.rows, p.cols)
         end
         m = opt.m[key]
         v = opt.v[key]
@@ -454,10 +456,24 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
--- MOD-1: the file IS the module. Identity re-exports deleted; exports
--- carrying real content are ordinary top-level bindings.
+M = {}
 -- Optimizers
-step = optimizer_step
+M.sgd = sgd
+M.adam = adam
+M.adamw = adamw
+M.adagrad = adagrad
+M.rmsprop = rmsprop
+M.lamb = lamb
+M.step = optimizer_step
 -- Schedulers
-get_lr = scheduler_get_lr
+M.step_scheduler = step_scheduler
+M.exponential_scheduler = exponential_scheduler
+M.cosine_scheduler = cosine_scheduler
+M.warmup_cosine = warmup_cosine
+M.warmup_constant = warmup_constant
+M.one_cycle = one_cycle
+M.get_lr = scheduler_get_lr
 -- Gradient ops
+M.clip_grad_norm = clip_grad_norm
+M.clip_grad_value = clip_grad_value
+M
