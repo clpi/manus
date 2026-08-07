@@ -5,69 +5,107 @@
 -- LZW Decompressor (GIF variant: LSB-first, variable-width codes)
 -- ═══════════════════════════════════════════════════════════════
 
+-- Read one variable-width code from the bit stream, LSB first.
+--
+-- This lived INSIDE lzw_decompress as a nested bare declaration
+-- (`read_code(): i64 ... end`). GR-001 bare declarations are file-scope only,
+-- so it never parsed, the block structure came apart, and the error surfaced a
+-- hundred lines later as "expected '<eof>', got 'end'" on the function's own
+-- closing end. That took the whole module down.
+--
+-- It is hoisted rather than turned into a lambda, which is what fixed the same
+-- shape in std.fn: this one CAPTURES a parameter (`data`) and MUTATES three
+-- enclosing locals (`bit_pos`, `byte_pos`, and `code_size`, which grows as the
+-- dictionary fills). Lambdas capture neither, so the state is threaded
+-- explicitly through a record instead — which is also the honest shape, since
+-- the mutation is the point.
+-- The record fields are read into TYPED locals for the duration of the call and
+-- written back once. Operating on `st.bit_pos` directly mixes an i64 with the
+-- `any` field's lua_Value ("invalid operands to binary expression"), and
+-- arithmetic on an `any` field against integer literals truncates the field
+-- before the operation — a silently-wrong-numbers trap. Typed locals sidestep
+-- both, and the bit twiddling stays native.
+gif_read_code(st: any): i64
+    code: i64 = 0
+    bits_read: i64 = 0
+    cs: i64 = st.code_size
+    eoi: i64 = st.eoi_code
+    bp: i64 = st.byte_pos
+    bitp: i64 = st.bit_pos
+    data = st.data
+    n: i64 = std.string.len(data)
+    while bits_read < cs
+        if bp > n
+            st.byte_pos = bp
+            st.bit_pos = bitp
+            return eoi
+        end
+        byte_val: i64 = std.string.byte(data, bp)
+        bit: i64 = (byte_val >> bitp) & 1
+        code = code | (bit << bits_read)
+        bitp += 1
+        bits_read += 1
+        if bitp >= 8
+            bitp = 0
+            bp += 1
+        end
+    end
+    st.byte_pos = bp
+    st.bit_pos = bitp
+    code
+end
+
 lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
     clear_code = 2 ^ min_code_size
     eoi_code = clear_code + 1
 
     -- Initialize code table
-    table = {}
+    dict = {}
     i = 0
     while i < clear_code
-        table[i] = {i}
+        dict[i] = {i}
         i += 1
     end
-    table_size = eoi_code + 1
+    dict_size = eoi_code + 1
     code_size = min_code_size + 1
-    next_code = table_size
+    next_code = dict_size
 
-    -- Bit reader state
-    byte_pos = 1
-    bit_pos = 0
-
-    -- Read a variable-width code from the bit stream (LSB first)
-    read_code(): i64
-        code = 0
-        bits_read = 0
-        while bits_read < code_size
-            if byte_pos > std.string.len(data) return eoi_code end
-            byte_val = std.string.byte(data, byte_pos)
-            bit = (byte_val >> bit_pos) & 1
-            code = code | (bit << bits_read)
-            bit_pos += 1
-            bits_read += 1
-            if bit_pos >= 8
-                bit_pos = 0
-                byte_pos += 1
-            end
-        end
-        code
-    end
+    -- Bit reader state, shared with gif_read_code. `code_size` lives here too
+    -- because the reader consumes it and the decoder grows it as the dictionary
+    -- fills — one owner for one fact.
+    st = {
+        data = data,
+        eoi_code = eoi_code,
+        code_size = code_size,
+        byte_pos = 1,
+        bit_pos = 0
+    }
 
     -- Output buffer
     output = {}
     prev = nil
 
     while true
-        code = read_code()
+        code = gif_read_code(st)
 
         if code == clear_code
             -- Reset
             i = 0
             while i < clear_code
-                table[i] = {i}
+                dict[i] = {i}
                 i += 1
             end
-            table_size = eoi_code + 1
-            code_size = min_code_size + 1
-            next_code = table_size
+            dict_size = eoi_code + 1
+            st.code_size = min_code_size + 1
+            next_code = dict_size
             prev = nil
 
         elseif code == eoi_code
             break
 
-        elseif code < table_size
+        elseif code < dict_size
             -- Code is in the table
-            entry = table[code]
+            entry = dict[code]
             -- Output the entry
             i = 1
             while i <= #entry
@@ -79,28 +117,32 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
                 -- Add new entry: prev + first byte of current entry
                 new_entry = {}
                 j = 1
-                while j <= #table[prev]
-                    new_entry[j] = table[prev][j]
+                while j <= #dict[prev]
+                    new_entry[j] = dict[prev][j]
                     j += 1
                 end
                 if #entry > 0
                     new_entry[j] = entry[1]
                 end
                 if next_code < 4096
-                    table[next_code] = new_entry
+                    dict[next_code] = new_entry
                     next_code += 1
                     -- Increase code size if needed
-                    if next_code > (2 ^ code_size) and code_size < 12
-                        code_size += 1
+                    -- Typed local: `2 ^ st.code_size` on the `any` field
+                    -- yields a lua_Value, and comparing it against the i64
+                    -- next_code is "invalid operands to binary expression".
+                    cs: i64 = st.code_size
+                    if next_code > to(i64)(2 ^ cs) and cs < 12
+                        st.code_size = cs + 1
                     end
                 end
             end
             prev = code
 
         else
-            -- code >= table_size: special case
+            -- code >= dict_size: special case
             if prev == nil break end
-            entry = table[prev]
+            entry = dict[prev]
             -- Output entry + first byte of entry
             new_entry = {}
             j = 1
@@ -114,10 +156,11 @@ lzw_decompress(data: str, min_code_size: i64, pixel_count: i64): any
             output[#output + 1] = first
 
             if next_code < 4096
-                table[next_code] = new_entry
+                dict[next_code] = new_entry
                 next_code += 1
-                if next_code > (2 ^ code_size) and code_size < 12
-                    code_size += 1
+                cs: i64 = st.code_size
+                if next_code > to(i64)(2 ^ cs) and cs < 12
+                    st.code_size = cs + 1
                 end
             end
             prev = next_code - 1
