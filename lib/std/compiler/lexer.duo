@@ -147,18 +147,6 @@ is_hex(c: i64): bool
     is_digit(c) or (c >= 65 and c <= 70) or (c >= 97 and c <= 102)
 end
 
--- Numeric value of a hex digit; callers gate on `is_hex` first.
-hex_val(c: i64): i64
-    if c >= 48 and c <= 57
-        return c - 48
-    end
-    if c >= 97 and c <= 102
-        return c - 87
-    end
-    c - 55
-end
-
-
 long_bracket_level(self: Lexer): i64
     i = self.pos
     if i > string.len(self.src) or string.byte(self.src, i) != 91 return -1 end
@@ -284,132 +272,13 @@ read_long_str(self: Lexer, level: i64): str
     error("UnterminatedLongString")
 end
 
--- Decode a short-string body, matching `src/lexer.zig:decode_lua_short_string`
--- escape for escape. Until this existed `read_str` validated escapes and then
--- returned the RAW source span, so `"a\nb"` came back as four bytes where the
--- host produces three. Nothing could see it: `duo_lexer_kind_fingerprint`
--- hashes token KINDS, so the differential stayed green while every escaped
--- literal would have reached a parser with the wrong value.
-decode_escapes(raw: str): str
-    out = ""
-    n: i64 = string.len(raw)
-    i: i64 = 1
-    while i <= n
-        c: i64 = string.byte(raw, i)
-        if c != 92
-            out = out .. string.char(c)
-            i += 1
-        else
-            i += 1
-            if i > n
-                error("InvalidEscape")
-            end
-            e: i64 = string.byte(raw, i)
-            if e == 97
-                out = out .. string.char(7)
-                i += 1
-            elseif e == 98
-                out = out .. string.char(8)
-                i += 1
-            elseif e == 102
-                out = out .. string.char(12)
-                i += 1
-            elseif e == 110
-                out = out .. string.char(10)
-                i += 1
-            elseif e == 114
-                out = out .. string.char(13)
-                i += 1
-            elseif e == 116
-                out = out .. string.char(9)
-                i += 1
-            elseif e == 118
-                out = out .. string.char(11)
-                i += 1
-            elseif e == 92 or e == 34 or e == 39
-                out = out .. string.char(e)
-                i += 1
-            elseif e == 122
-                i += 1
-                more: i64 = 1
-                while i <= n and more == 1
-                    w: i64 = string.byte(raw, i)
-                    if w == 32 or w == 9 or w == 13 or w == 10
-                        i += 1
-                    else
-                        more = 0
-                    end
-                end
-            elseif e == 120
-                i += 1
-                if i > n or not is_hex(string.byte(raw, i))
-                    error("InvalidEscape")
-                end
-                v: i64 = hex_val(string.byte(raw, i))
-                i += 1
-                if i <= n and is_hex(string.byte(raw, i))
-                    v = v * 16 + hex_val(string.byte(raw, i))
-                    i += 1
-                end
-                out = out .. string.char(v)
-            elseif e == 117
-                i += 1
-                if i > n or string.byte(raw, i) != 123
-                    error("InvalidEscape")
-                end
-                i += 1
-                cp: i64 = 0
-                digits: i64 = 0
-                while i <= n and string.byte(raw, i) != 125
-                    if not is_hex(string.byte(raw, i))
-                        error("InvalidEscape")
-                    end
-                    cp = cp * 16 + hex_val(string.byte(raw, i))
-                    digits += 1
-                    i += 1
-                end
-                if digits == 0 or i > n or string.byte(raw, i) != 125
-                    error("InvalidEscape")
-                end
-                i += 1
-                if cp < 128
-                    out = out .. string.char(cp)
-                elseif cp < 2048
-                    out = out .. string.char(192 + cp // 64)
-                    out = out .. string.char(128 + cp - (cp // 64) * 64)
-                elseif cp < 65536
-                    out = out .. string.char(224 + cp // 4096)
-                    out = out .. string.char(128 + (cp // 64) - (cp // 4096) * 64)
-                    out = out .. string.char(128 + cp - (cp // 64) * 64)
-                else
-                    out = out .. string.char(240 + cp // 262144)
-                    out = out .. string.char(128 + (cp // 4096) - (cp // 262144) * 64)
-                    out = out .. string.char(128 + (cp // 64) - (cp // 4096) * 64)
-                    out = out .. string.char(128 + cp - (cp // 64) * 64)
-                end
-            elseif e == 13
-                i += 1
-                if i <= n and string.byte(raw, i) == 10
-                    i += 1
-                end
-            elseif e == 10
-                i += 1
-            else
-                out = out .. string.char(e)
-                i += 1
-            end
-        end
-    end
-    out
-end
-
 read_str(self: Lexer, quote: i64): str
     adv(self)
     start = self.pos
     while self.pos <= string.len(self.src)
         c = peek_char(self)
         if c == quote
-            s = decode_escapes(strm.sub(self.src, start, self.pos - 1))
+            s = strm.sub(self.src, start, self.pos - 1)
             adv(self)
             return s
         end
@@ -873,47 +742,4 @@ duo_lexer_kind_fingerprint(src: str, file: str): u64
         if tok.kind == std.compiler.token.KIND_EOF return h end
     end
     h
-end
-
--- Location-carrying streaming step (SH-03 / MP4-B02).
---
--- `duo_lexer_step` packs `kind * 2^40 + next_pos` into one scalar, which is all
--- a C-ABI export can carry — and deliberately has no line or column. That is
--- what blocks production tokenize dispatch: each call rebuilds the Lexer (whose
--- line/col start at 1) and jumps `pos` without rescanning, so a driver looping
--- on `step` would report line 1 for every token, and diagnostics need better.
---
--- A record return needs no packing at all. Cross-module record returns work in
--- Duo (verified: `new` then `next_tok` across a module boundary reads
--- `t.loc.line` correctly, including the nested Loc); only the `@c.export`
--- C-ABI boundary is restricted to scalars. So a Duo-side driver can thread
--- location through this directly.
---
--- Thread it by feeding `next_pos`/`next_line`/`next_col` back in. `tok_*` is
--- where the token starts (what a diagnostic wants); `next_*` is where the lexer
--- resumes, which differs whenever a token spans lines — a long string or block
--- comment — so both are returned rather than one being derived from the other.
-type StepLoc = {
-    kind: i64,
-    tok_line: i64,
-    tok_col: i64,
-    next_pos: i64,
-    next_line: i64,
-    next_col: i64
-}
-
-step_loc(src: str, file: str, pos: i64, line: i64, col: i64): StepLoc
-    lex = new(src, file)
-    lex.pos = pos
-    lex.line = line
-    lex.col = col
-    tok = next_tok(lex)
-    return {
-        kind = tok.kind,
-        tok_line = tok.loc.line,
-        tok_col = tok.loc.col,
-        next_pos = lex.pos,
-        next_line = lex.line,
-        next_col = lex.col
-    }
 end
