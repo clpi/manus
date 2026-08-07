@@ -558,9 +558,10 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
+-- MOD-1: the file IS the module. Identity re-exports deleted; the few
+-- exports that carried real content are ordinary top-level bindings now.
 -- Vector 3
-M.vec3 = {
+vec3 = {
     new = vec3_new,
     add = vec3_add,
     sub = vec3_sub,
@@ -571,8 +572,9 @@ M.vec3 = {
     normalize = vec3_normalize,
     lerp = vec3_lerp,
 }
+
 -- Matrix 4x4
-M.mat4 = {
+mat4 = {
     identity = mat4_identity,
     translate = mat4_translate,
     scale = mat4_scale,
@@ -582,32 +584,9 @@ M.mat4 = {
     multiply = mat4_multiply,
     transform_point = mat4_transform_point,
 }
+
 -- Camera
-M.camera_new = camera_new
-M.camera_look_at = camera_look_at
-M.camera_set_fov = camera_set_fov
-M.camera_set_aspect = camera_set_aspect
-M.camera_set_near_far = camera_set_near_far
-M.camera_update = camera_update
 -- Mesh
-M.mesh_new = mesh_new
-M.mesh_add_vertex = mesh_add_vertex
-M.mesh_add_triangle = mesh_add_triangle
-M.mesh_add_normal = mesh_add_normal
-M.mesh_add_uv = mesh_add_uv
-M.mesh_compute_normals = mesh_compute_normals
-M.mesh_cube = mesh_cube
-M.mesh_sphere = mesh_sphere
-M.mesh_plane = mesh_plane
 -- Scene
-M.scene_node_new = scene_node_new
-M.scene_add_child = scene_add_child
-M.scene_remove_child = scene_remove_child
-M.scene_update_transforms = scene_update_transforms
-M.scene_traverse = scene_traverse
 -- Lighting
-M.light_new = light_new
-M.light_calculate = light_calculate
 -- Material
-M.material_new = material_new
-M

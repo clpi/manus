@@ -5,8 +5,13 @@
 WIRE_VARINT = 0
 WIRE_64BIT = 1
 WIRE_LENGTH_DELIMITED = 2
-WIRE_START_GROUP = 3
-WIRE_END_GROUP = 4
+-- WIRE_START_GROUP (3) and WIRE_END_GROUP (4) are not defined as bare
+-- constants: nothing in this module uses them, and once MOD-1 removes the
+-- explicit export table EVERY top-level binding becomes the surface — an
+-- UNUSED file-scope constant then gets REFERENCED by the emitted surface
+-- without being DEFINED ("use of undeclared identifier
+-- 'std_encoding_protobuf__WIRE_START_GROUP'"). Both values remain public
+-- through the WIRE table below, which is where callers read them.
 WIRE_32BIT = 5
 
 -- ═══════════════════════════════════════════════════════════════
@@ -302,40 +307,23 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
+-- MOD-1: the file IS the module. Identity re-exports deleted; the few
+-- exports that carried real content are ordinary top-level bindings now.
 -- Writer
-M.writer_new = writer_new
-M.write_varint = write_varint
-M.write_tag = write_tag
-M.write_field_varint = write_field_varint
-M.write_field_bytes = write_field_bytes
-M.write_field_string = write_field_string
-M.write_field_fixed32 = write_field_fixed32
-M.write_field_fixed64 = write_field_fixed64
-M.writer_bytes = writer_bytes
 -- Reader
-M.reader_new = reader_new
-M.reader_varint = reader_varint
-M.reader_tag = reader_tag
-M.reader_skip_field = reader_skip_field
-M.reader_field_bytes = reader_field_bytes
-M.reader_field_string = reader_field_string
-M.reader_field_fixed32 = reader_field_fixed32
-M.reader_field_fixed64 = reader_field_fixed64
 -- Helpers
-M.string_to_bytes = string_to_bytes
-M.bytes_to_string = bytes_to_string
 -- Schema
-M.message_new = message_new
-M.field_def = field_def
-M.message_encode = message_encode
 -- Wire type constants
-M.WIRE = {
-    VARINT = WIRE_VARINT,
-    FIXED64 = WIRE_64BIT,
-    LENGTH_DELIMITED = WIRE_LENGTH_DELIMITED,
-    START_GROUP = WIRE_START_GROUP,
-    END_GROUP = WIRE_END_GROUP,
-    FIXED32 = WIRE_32BIT,
+-- Literals, not references to the WIRE_* constants above. Referencing a
+-- file-scope constant from inside a nested table emits a bare, UNDECLARED
+-- identifier when the module is EMBEDDED ("use of undeclared identifier
+-- 'WIRE_START_GROUP'"), though it resolves fine standalone. Same compiler gap
+-- as lib/std/net/ws.duo's opcode table; reduced there to a two-file repro.
+WIRE = {
+    VARINT = 0,
+    FIXED64 = 1,
+    LENGTH_DELIMITED = 2,
+    START_GROUP = 3,
+    END_GROUP = 4,
+    FIXED32 = 5,
 }
-M
