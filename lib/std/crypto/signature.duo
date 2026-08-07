@@ -41,7 +41,7 @@ keygen(key_type: i64): any
 
         {
             type = ED25519,
-            private = private_key,
+            ["private"] = private_key,
             public = public_key,
         }
 
@@ -70,7 +70,7 @@ keygen(key_type: i64): any
 
         {
             type = ECDSA_P256,
-            private = private_key,
+            ["private"] = private_key,
             public = public_key,
         }
 
@@ -80,7 +80,7 @@ keygen(key_type: i64): any
         q = std.crypto.rand.prime(1024)
         {
             type = RSA_2048,
-            private = {p = p, q = q},
+            ["private"] = {p = p, q = q},
             public = {n = p * q, e = 65537},
         }
 
@@ -321,7 +321,7 @@ key_from_bytes(data: any): any
     {
         type = key_type,
         public = public,
-        private = nil,
+        ["private"] = nil,
     }
 end
 

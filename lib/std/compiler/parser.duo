@@ -1145,6 +1145,13 @@ proj_unary = (lx: Lexer): str
         _o = lexer.next(lx)
         return "(len " .. proj_unary(lx) .. ")"
     end
+    -- Prefix `~` is bitwise NOT. It shares a token with the infix XOR handled in
+    -- proj_bxor; position decides, which is why the infix level cannot simply
+    -- consume it.
+    if t.kind == token.KIND_TILDE
+        _o = lexer.next(lx)
+        return "(bnot " .. proj_unary(lx) .. ")"
+    end
     proj_pow(lx)
 end
 
@@ -1243,6 +1250,11 @@ proj_primary = (lx: Lexer): str
     if t.kind == token.KIND_DOTS
         _d = lexer.next(lx)
         return "(varargs)"
+    end
+    -- `@` directives appear in expression position too: `return @c.emit(...)`,
+    -- `@as(i64, x)`. Same projection as the statement form.
+    if t.kind == token.KIND_AT
+        return proj_directive(lx)
     end
     -- A leading `.` is a lens on the ambient subject: `.pos`, `map(.name)`.
     if t.kind == token.KIND_DOT

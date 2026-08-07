@@ -117,6 +117,31 @@ read_shape(session: any, idx: int, is_input: bool): any
     shape
 end
 
+-- Append every leaf of a nested table into st.out, in order.
+--
+-- This was a NESTED BARE DECLARATION (`flatten(t: any): void ... end`) inside
+-- flatten_array. GR-001 bare declarations are file-scope only, so it never
+-- parsed and took the module down with "expected function arguments".
+--
+-- Hoisted with explicit state rather than made a lambda: it is RECURSIVE and it
+-- MUTATES two enclosing locals (`out`, `oi`). A lambda captures neither, and a
+-- named function cannot call itself from a local binding either.
+onnx_flatten_into(st: any, t: any): void
+    n = rawlen(t)
+    if n == 0 return end
+    i = 1
+    while i <= n
+        v = t[i]
+        if type(v) == "table"
+            onnx_flatten_into(st, v)
+        else
+            st.out[st.oi] = v
+            st.oi += 1
+        end
+        i += 1
+    end
+end
+
 -- flatten_array: convert a nested duo table into a flat float array.
 -- e.g. {{1.0, 2.0}, {3.0, 4.0}} -> {1.0, 2.0, 3.0, 4.0}
 flatten_array(data: any): any
@@ -126,30 +151,12 @@ flatten_array(data: any): any
     if type(data) != "table"
         return {}
     end
-    out = {}
-    oi = 1
-
-    flatten(t: any): void
-        n = rawlen(t)
-        if n == 0 return end
-        i = 1
-        while i <= n
-            v = t[i]
-            if type(v) == "table"
-                flatten(v)
-            else
-                out[oi] = v
-                oi += 1
-            end
-            i += 1
-        end
-    end
-
-    flatten(data)
+    st = { out = {}, oi = 1 }
+    onnx_flatten_into(st, data)
 
     -- Compute total element count
-    count = rawlen(out)
-    return {data = out, len = count}
+    count = rawlen(st.out)
+    return {data = st.out, len = count}
 end
 
 -- ===========================================================================

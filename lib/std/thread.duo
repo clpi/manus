@@ -38,7 +38,7 @@ try_lock(m: any): bool
     if m._locked and m._holder == coroutine.running()
         return true
     end
-    if m._locked then return false end
+    if m._locked return false end
     m._locked = true
     m._holder = coroutine.running()
     true
@@ -93,7 +93,7 @@ end
 
 -- Acquire for writing.  Blocks if anyone holds the lock.
 wlock(rw: any): void
-    if rw._w_holder == coroutine.running() then return end
+    if rw._w_holder == coroutine.running() return end
     while rw._writing or rw._readers > 0
         co = coroutine.running()
         rw._w_waiters[#rw._w_waiters + 1] = co
@@ -303,8 +303,8 @@ end
 -- Wait for a thread to complete, returning its result.  Raises on error.
 join(h: any): any
     r = sync.channel_recv(h._result)
-    if r == nil then return nil end
-    if r.ok then return r.val end
+    if r == nil return nil end
+    if r.ok return r.val end
     error(r.err, 2)
 end
 
@@ -321,7 +321,7 @@ end
 -- Return a unique identifier for the current thread/coroutine.
 id(): i64
     co = coroutine.running()
-    if co == nil then return 0 end
+    if co == nil return 0 end
     -- Hash the coroutine pointer for a stable id
     s = to(str)(co)
     h = 5381
@@ -441,7 +441,7 @@ tls_get(key: i64): any
     store = _tls_stores and _tls_stores[tid] or nil
     if store != nil
         val = store[key]
-        if val != nil then return val end
+        if val != nil return val end
     end
     default_fn = _tls_registry[key]
     if default_fn != nil
@@ -455,9 +455,9 @@ end
 -- Remove the value for a thread-local key.  Returns the old value.
 tls_del(key: i64): any
     tid = to(str)(id())
-    if _tls_stores == nil then return nil end
+    if _tls_stores == nil return nil end
     store = _tls_stores[tid]
-    if store == nil then return nil end
+    if store == nil return nil end
     val = store[key]
     store[key] = nil
     val

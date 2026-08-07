@@ -8,14 +8,14 @@
 encode_u16_le(v: i64): str
     b0 = v % 256
     b1 = (v / 256) % 256
-    string.char(b0, b1)
+    return string.char(b0, b1)
 end
 
 -- encode_u16_be: encode a 16-bit unsigned integer as 2 bytes (big-endian).
 encode_u16_be(v: i64): str
     b0 = v % 256
     b1 = (v / 256) % 256
-    string.char(b1, b0)
+    return string.char(b1, b0)
 end
 
 -- encode_u32_le: encode a 32-bit unsigned integer as 4 bytes (little-endian).
@@ -24,7 +24,7 @@ encode_u32_le(v: i64): str
     b1 = (v / 256) % 256
     b2 = (v / 65536) % 256
     b3 = (v / 16777216) % 256
-    string.char(b0, b1, b2, b3)
+    return string.char(b0, b1, b2, b3)
 end
 
 -- encode_u32_be: encode a 32-bit unsigned integer as 4 bytes (big-endian).
@@ -33,7 +33,7 @@ encode_u32_be(v: i64): str
     b1 = (v / 256) % 256
     b2 = (v / 65536) % 256
     b3 = (v / 16777216) % 256
-    string.char(b3, b2, b1, b0)
+    return string.char(b3, b2, b1, b0)
 end
 
 -- encode_u64_le: encode a 64-bit unsigned integer as 8 bytes (little-endian).

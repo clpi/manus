@@ -123,6 +123,12 @@ positives = {
     { "x = map(.name)", "(program (assign x (call map (lens name))))" },
     -- Computed keys in a table constructor.
     { "t = { [0] = \"a\", [1] = \"b\" }", "(program (assign t (desc (key 0 \"a\") (key 1 \"b\"))))" },
+    -- Prefix `~` is bitwise NOT and shares its token with infix XOR; position
+    -- decides, so both spellings are pinned together.
+    { "f = (b & c) | ((~b) & d)", "(program (assign f (| (& b c) (& (bnot b) d))))" },
+    { "x = ~a", "(program (assign x (bnot a)))" },
+    -- `@` directives appear in expression position, not just as statements.
+    { "f(): i64 return @as(i64, 1) end", "(program (fun f (params) (ret i64) (return (at as i64 1))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

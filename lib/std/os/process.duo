@@ -213,19 +213,24 @@ run(cmd: str, args: any): any
     raw = f:read("*a") or ""
     f:close()
 
-    -- Split output from exit code (last line after final newline)
+    -- Split output from exit code (last line after final newline).
+    --
+    -- The local is `code`, not `exit_code`: `exit_code` is a TOP-LEVEL FUNCTION
+    -- in this module (see above), so assigning that name inside a function
+    -- shadows a frozen binding and fails with "attempt to assign to const
+    -- variable" — which took the whole module down. Both names are introduced
+    -- before the branch so neither arm is the first assignment.
+    stdout = raw
+    code = 0
     last_nl = string.find(raw, "\n[^\n]*$")
     if last_nl
         stdout = string.sub(raw, 1, last_nl - 1)
         exit_str = string.sub(raw, last_nl + 1)
-        exit_code = tonumber(string.match(exit_str, "%d+")) or 0
-    else
-        stdout = raw
-        exit_code = 0
+        code = tonumber(string.match(exit_str, "%d+")) or 0
     end
 
     {
-        exit_code = exit_code,
+        exit_code = code,
         stdout = stdout,
         stderr = "",
     }
@@ -248,18 +253,18 @@ run_with_input(cmd: str, args: any, input: str): any
     raw = f:read("*a") or ""
     f:close()
 
+    -- Same shadowing hazard as run(): `exit_code` is a top-level function here.
+    stdout = raw
+    code = 0
     last_nl = string.find(raw, "\n[^\n]*$")
     if last_nl
         stdout = string.sub(raw, 1, last_nl - 1)
         exit_str = string.sub(raw, last_nl + 1)
-        exit_code = tonumber(string.match(exit_str, "%d+")) or 0
-    else
-        stdout = raw
-        exit_code = 0
+        code = tonumber(string.match(exit_str, "%d+")) or 0
     end
 
     {
-        exit_code = exit_code,
+        exit_code = code,
         stdout = stdout,
         stderr = "",
     }

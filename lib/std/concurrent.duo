@@ -23,7 +23,7 @@ end
 -- Await a future (blocks/yields until result available).
 wait(fut: any): any
     r = sync.channel_recv(fut)
-    if r == nil then return nil end
+    if r == nil return nil end
     if r.ok
         r.val
     else
@@ -78,7 +78,7 @@ select(cases: any): any
         for _, c in cases
             val = sync.channel_try_recv(c.ch)
             if val != nil
-                if c.fn then c.fn(val) end
+                if c.fn c.fn(val) end
                 return val, c.ch
             end
         end
@@ -108,13 +108,12 @@ waitgroup(n: i64): any
     }
 end
 
-go = go
-wait = wait
-all = all
-race = race
-select = select
-semaphore = semaphore
-waitgroup = waitgroup
+-- LV-2 / Pass 64 SCOPE: a module's top-level bindings ARE its surface, so these
+-- self-assignments (`go = go`) published nothing that was not already public.
+-- They were also const violations — the binding exists by the time the line is
+-- reached — which took the whole module down. The re-exports below are kept
+-- because they bind a DIFFERENT name to a sync.* member; the identity lines are
+-- deleted.
 spawn = sync.spawn
 run = sync.run
 yield = sync.yield
