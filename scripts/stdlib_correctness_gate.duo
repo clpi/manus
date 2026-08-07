@@ -55,6 +55,18 @@ main(): i64
     check("string.sub", std.string.sub("hello", 2, 3), "el")
     check("string.char", std.string.char(65), "A")
 
+    -- std.base64 — RFC 4648 vectors, written from the RFC, not read back from
+    -- the implementation. Encode dropped '=' padding entirely and decode lost
+    -- one byte from every 2-byte tail, so the module's own round trip was
+    -- lossy: encode("hi") -> "aGk" -> decode -> "h".
+    check("base64.encode('h')", std.base64.encode("h"), "aA==")
+    check("base64.encode('hi')", std.base64.encode("hi"), "aGk=")
+    check("base64.encode('hel')", std.base64.encode("hel"), "aGVs")
+    check("base64.encode('hello')", std.base64.encode("hello"), "aGVsbG8=")
+    check("base64.decode('aGk=')", std.base64.decode("aGk="), "hi")
+    check("base64.decode('aA==')", std.base64.decode("aA=="), "h")
+    check("base64.roundtrip", std.base64.decode(std.base64.encode("hello world")), "hello world")
+
     -- std.inspect — hashed every input to "{}" because a line was a concat
     -- expression with no assignment.
     check("inspect.hash", std.inspect.std_inspect_hash({1, 2}), "{1=number:1,2=number:2}")
