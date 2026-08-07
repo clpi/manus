@@ -109,6 +109,20 @@ positives = {
     -- LAW-STRATA: a type name is an ordinary value, so specialization is just a
     -- call whose argument happens to be a type.
     { "x = store(i32)(v)", "(program (assign x (call (call store i32) v)))" },
+    -- Bitwise levels. The mixed case is the one that matters: four precedence
+    -- levels (| < ~ < & < shift) rather than one, because a single level would
+    -- associate `a | b & c` correctly only by luck of token order, and Ward's
+    -- decoders are nothing but mixed masks and shifts.
+    { "v = a | ((b & 0x7f) << s)", "(program (assign v (| a (<< (& b 0x7f) s))))" },
+    { "v = a ~ b ~ c", "(program (assign v (~ (~ a b) c)))" },
+    { "if b & 1 != 0 x end", "(program (if (!= (& b 1) 0) x))" },
+    -- Correlated packs are the error idiom, so a single-value return would
+    -- reject most failure paths in the stdlib.
+    { "f(): i64 return nil, \"bad\" end", "(program (fun f (params) (ret i64) (return nil \"bad\")))" },
+    -- A leading `.` is a lens on the ambient subject.
+    { "x = map(.name)", "(program (assign x (call map (lens name))))" },
+    -- Computed keys in a table constructor.
+    { "t = { [0] = \"a\", [1] = \"b\" }", "(program (assign t (desc (key 0 \"a\") (key 1 \"b\"))))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

@@ -762,7 +762,14 @@ proj_return = (lx: Lexer): str
     if t.kind == token.KIND_END or t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_EOF
         return "(return)"
     end
-    "(return " .. proj_expr(lx) .. ")"
+    -- `return nil, Error.Truncated` — correlated packs are the error idiom, so
+    -- a single-value return would reject most failure paths in the stdlib.
+    vals = proj_expr(lx)
+    while lexer.peek(lx).kind == token.KIND_COMMA
+        _c = lexer.next(lx)
+        vals = vals .. " " .. proj_expr(lx)
+    end
+    "(return " .. vals .. ")"
 end
 
 -- NAME ('=' | op-assign) expr
@@ -949,7 +956,20 @@ proj_desc_body = (lx: Lexer): str
                 keyed = true
             end
         end
-        if keyed
+        -- `{ [0] = "trace", [k] = v }` — a computed key.
+        if t.kind == token.KIND_LBRACKET
+            _lb = lexer.next(lx)
+            k = proj_expr(lx)
+            rb = lexer.next(lx)
+            if rb.kind != token.KIND_RBRACKET
+                mark_error(lx)
+                return s .. ")"
+            end
+            if lexer.peek(lx).kind == token.KIND_ASSIGN
+                _e = lexer.next(lx)
+            end
+            s = s .. " (key " .. k .. " " .. proj_expr(lx) .. ")"
+        elseif keyed
             _n = lexer.next(lx)
             _e = lexer.next(lx)
             s = s .. " " .. t.text
@@ -999,7 +1019,7 @@ proj_and = (lx: Lexer): str
 end
 
 proj_cmp = (lx: Lexer): str
-    left = proj_add(lx)
+    left = proj_bor(lx)
     t = lexer.peek(lx)
     op = "?"
     if t.kind == token.KIND_EQ
@@ -1020,7 +1040,54 @@ proj_cmp = (lx: Lexer): str
         return left
     end
     _o = lexer.next(lx)
-    "(" .. op .. " " .. left .. " " .. proj_add(lx) .. ")"
+    "(" .. op .. " " .. left .. " " .. proj_bor(lx) .. ")"
+end
+
+-- Bitwise levels, Lua precedence: `|` < `~` < `&` < shift < `..`/`+`.
+-- Four levels rather than one because a single level would left-associate
+-- `a & b | c` as `(a & b) | c` only by luck of token order; Ward's decoders are
+-- full of mixed masks and shifts and would be silently mis-parsed.
+proj_bor = (lx: Lexer): str
+    left = proj_bxor(lx)
+    while lexer.peek(lx).kind == token.KIND_PIPE
+        _o = lexer.next(lx)
+        left = "(| " .. left .. " " .. proj_bxor(lx) .. ")"
+    end
+    left
+end
+
+proj_bxor = (lx: Lexer): str
+    left = proj_band(lx)
+    while lexer.peek(lx).kind == token.KIND_TILDE
+        _o = lexer.next(lx)
+        left = "(~ " .. left .. " " .. proj_band(lx) .. ")"
+    end
+    left
+end
+
+proj_band = (lx: Lexer): str
+    left = proj_shift(lx)
+    while lexer.peek(lx).kind == token.KIND_AMP
+        _o = lexer.next(lx)
+        left = "(& " .. left .. " " .. proj_shift(lx) .. ")"
+    end
+    left
+end
+
+proj_shift = (lx: Lexer): str
+    left = proj_add(lx)
+    while true
+        t = lexer.peek(lx)
+        if t.kind == token.KIND_LSHIFT
+            _o = lexer.next(lx)
+            left = "(<< " .. left .. " " .. proj_add(lx) .. ")"
+        elseif t.kind == token.KIND_RSHIFT
+            _o = lexer.next(lx)
+            left = "(>> " .. left .. " " .. proj_add(lx) .. ")"
+        else
+            return left
+        end
+    end
 end
 
 proj_add = (lx: Lexer): str
@@ -1176,6 +1243,16 @@ proj_primary = (lx: Lexer): str
     if t.kind == token.KIND_DOTS
         _d = lexer.next(lx)
         return "(varargs)"
+    end
+    -- A leading `.` is a lens on the ambient subject: `.pos`, `map(.name)`.
+    if t.kind == token.KIND_DOT
+        _d = lexer.next(lx)
+        n = lexer.next(lx)
+        if n.kind != token.KIND_NAME
+            mark_error(lx)
+            return "(error)"
+        end
+        return "(lens " .. n.text .. ")"
     end
     if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
         return proj_fun_expr(lx)
