@@ -18,7 +18,7 @@
 --
 -- Run: duo run scripts/selfhost_manifest.duo
 
-global script = req "std.script"
+global script = std.script
 global _emitted: i64 = 0
 
 _row = (id: str, module_path: str, proof: str, oracle: str): bool

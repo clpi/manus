@@ -19,9 +19,8 @@
 -- Exit: 0 pass, 1..N failing fixture, 100 a corpus file stopped parsing,
 -- 101 a corpus file was not idempotent.
 
-global strm = req "std.str"
-global R = req "std.compiler.rewrite"
-global P = req "std.compiler.parser"
+global R = std.compiler.rewrite
+global P = std.compiler.parser
 
 _expect = (n: i64, src: str, want: str): i64
     got = R.apply("fold_constants", src)
@@ -91,7 +90,7 @@ main(): i64
         end
         if at_end or eol
             if i > start
-                path = strm.sub(listing, start, i - 1)
+                path = string.sub(listing, start, i - 1)
                 fh = io.open(path, "r")
                 if fh
                     src = fh:read("a")

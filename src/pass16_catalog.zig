@@ -24,7 +24,7 @@ pub const workstreams: []const Workstream = &.{
     .{ .id = "P16-WS3", .title = "Token and grammar descriptor", .status = "partial", .priority = 3, .owner = "src/token_semantic.zig + lib/std/token/classify.duo" },
     .{ .id = "P16-WS4", .title = "Duo-native lexer", .status = "partial", .priority = 4, .owner = "lib/std/compiler/lexer.duo" },
     .{ .id = "P16-WS5", .title = "Syntax graph", .status = "open", .priority = 5, .owner = "future" },
-    .{ .id = "P16-WS6", .title = "Duo-native parser", .status = "open", .priority = 6, .owner = "future" },
+    .{ .id = "P16-WS6", .title = "Duo-native parser", .status = "partial", .priority = 6, .owner = "lib/std/compiler/parser.duo" },
     .{ .id = "P16-WS7", .title = "Formatter and canonicalizer convergence", .status = "open", .priority = 7, .owner = "src/fmt.zig" },
     .{ .id = "P16-WS8", .title = "Diagnostic catalog and renderer", .status = "open", .priority = 8, .owner = "src/term.zig" },
     .{ .id = "P16-WS9", .title = "Binding and scope graph", .status = "open", .priority = 9, .owner = "src/sema.zig" },

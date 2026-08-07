@@ -20,8 +20,7 @@
 -- a transformation is discovered without reading this file, which is what
 -- "the compiler is data" has to mean at the smallest scale.
 
-global C = req "std.compiler.comptime"
-global strm = req "std.str"
+global C = std.compiler.comptime
 
 -- The registry. One row per transformation; adding one is a table entry, not a
 -- new pass and not a new call site in a driver.
@@ -66,13 +65,13 @@ _fold_once = (src: str): str
     while i <= n
         c: i64 = string.byte(src, i)
         if in_comment
-            out = out .. strm.sub(src, i, i)
+            out = out .. string.sub(src, i, i)
             if c == 10
                 in_comment = false
             end
             i += 1
         elseif in_long
-            out = out .. strm.sub(src, i, i)
+            out = out .. string.sub(src, i, i)
             if c == 93 and i + 1 <= n and string.byte(src, i + 1) == 93
                 out = out .. "]"
                 in_long = false
@@ -80,9 +79,9 @@ _fold_once = (src: str): str
             end
             i += 1
         elseif quote != 0
-            out = out .. strm.sub(src, i, i)
+            out = out .. string.sub(src, i, i)
             if c == 92 and i + 1 <= n
-                out = out .. strm.sub(src, i + 1, i + 1)
+                out = out .. string.sub(src, i + 1, i + 1)
                 i += 1
             elseif c == quote
                 quote = 0
@@ -98,7 +97,7 @@ _fold_once = (src: str): str
             i += 2
         elseif c == 34 or c == 39
             quote = c
-            out = out .. strm.sub(src, i, i)
+            out = out .. string.sub(src, i, i)
             i += 1
         else
             prev_ok = true
@@ -142,7 +141,7 @@ _fold_once = (src: str): str
                     tail_ok = true
                 end
                 if tail_ok and e > i
-                    cand = strm.sub(src, i, e)
+                    cand = string.sub(src, i, e)
                     if C.foldable(cand)
                         v: i64 = C.fold(cand)
                         rep = to(str)(v)
@@ -155,7 +154,7 @@ _fold_once = (src: str): str
                 end
             end
             if not folded
-                out = out .. strm.sub(src, i, i)
+                out = out .. string.sub(src, i, i)
                 i += 1
             end
         end

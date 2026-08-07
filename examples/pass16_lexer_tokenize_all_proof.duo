@@ -23,7 +23,7 @@
 --
 -- Exit code is the failing check number; 0 means the buffer stream agrees.
 
-L = req "std.compiler.lexer"
+L = std.compiler.lexer
 
 -- Fold the kinds `tokenize_all` wrote, with the mixer the fingerprint uses.
 fold_buf(src: str): u64

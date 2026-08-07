@@ -30,7 +30,6 @@
 -- produces lowercase hex and the caller converts it (`xxd -r -p`). Filed as the
 -- gap it is; the layout below is the deliverable and it is unaffected.
 
-global strm = req "std.str"
 
 _u8 = (v: i64): str
     digits = "0123456789abcdef"

@@ -24,7 +24,6 @@
 -- The emitted C is an artifact, never source (Pass 60): it is written to a temp
 -- path, compiled, run, and deleted. Nothing under version control is generated.
 
-global strm = req "std.str"
 
 -- Translate a closed Duo integer expression to a C expression.
 --
@@ -68,7 +67,7 @@ _expr_to_c = (src: str): str
             end
             i += 1
         else
-            out = out .. strm.sub(src, i, i)
+            out = out .. string.sub(src, i, i)
             i += 1
         end
     end

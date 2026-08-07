@@ -39,7 +39,6 @@
 -- structure the parser has but does not yet hand back; they land behind this
 -- harness, each with its own control.
 
-global strm = req "std.str"
 
 canonicalize = (src: str): str
     n: i64 = #src
@@ -53,5 +52,5 @@ canonicalize = (src: str): str
     if e == 0
         return ""
     end
-    strm.sub(src, 1, e) .. "\n"
+    string.sub(src, 1, e) .. "\n"
 end

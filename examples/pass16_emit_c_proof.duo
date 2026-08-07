@@ -16,8 +16,8 @@
 -- which is a skip and not a pass — a differential that silently degrades to
 -- "nothing ran" is the failure mode this whole session kept finding.
 
-global C = req "std.compiler.comptime"
-global E = req "std.compiler.emit_c"
+global C = std.compiler.comptime
+global E = std.compiler.emit_c
 
 _check = (n: i64, expr: str): i64
     want: i64 = C.fold(expr)

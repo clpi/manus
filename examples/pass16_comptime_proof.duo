@@ -14,7 +14,7 @@
 -- Exit code is the failing case number; 0 means the folder and the host agree
 -- on every one.
 
-global C = req "std.compiler.comptime"
+global C = std.compiler.comptime
 
 check = (n: i64, src: str, expect: i64): i64
     if C.fold(src) != expect

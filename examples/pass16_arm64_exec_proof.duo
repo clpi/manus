@@ -17,8 +17,8 @@
 -- Exit: 0 all agree, else the failing case. 90 for a missing toolchain — a
 -- visible SKIP, never a silent pass.
 
-global A = req "std.compiler.arm64"
-global C = req "std.compiler.comptime"
+global A = std.compiler.arm64
+global C = std.compiler.comptime
 
 global ASM = "/tmp/duo_a64_exec.s"
 global MAIN = "/tmp/duo_a64_exec_main.c"

@@ -20,8 +20,7 @@
 --
 -- Exit: 0 pass, 1..N failing fixture, 100 corpus floor.
 
-global strm = req "std.str"
-global G = req "std.compiler.graph"
+global G = std.compiler.graph
 
 fixtures = (): i64
     -- a private that IS referenced is not dead
@@ -61,7 +60,7 @@ main(): i64
         end
         if at_end or eol
             if i > start
-                path = strm.sub(listing, start, i - 1)
+                path = string.sub(listing, start, i - 1)
                 fh = io.open(path, "r")
                 if fh
                     src = fh:read("a")

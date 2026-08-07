@@ -30,8 +30,7 @@
 -- `req` rather than an ambient root: GAP-13 — ambient `std.str.sub` on a
 -- native-direct module crashes at startup with no output.
 
-global strm = req "std.str"
-global P = req "std.compiler.parser"
+global P = std.compiler.parser
 
 corpus = (): str
     std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
@@ -53,7 +52,7 @@ main(): i64
         end
         if at_end or eol
             if i > start
-                path = strm.sub(listing, start, i - 1)
+                path = string.sub(listing, start, i - 1)
                 f = io.open(path, "r")
                 if f
                     src = f:read("a")

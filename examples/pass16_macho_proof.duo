@@ -18,8 +18,8 @@
 --
 -- Exit: 0 pass, 1..N failing case, 90 toolchain missing (a visible SKIP).
 
-global A = req "std.compiler.arm64"
-global M = req "std.compiler.macho"
+global A = std.compiler.arm64
+global M = std.compiler.macho
 
 global HEX = "/tmp/duo_macho_proof.hex"
 global OBJ = "/tmp/duo_macho_proof.o"

@@ -22,7 +22,6 @@
 -- Exit 0 iff no file reaches through a module surface. Exit 1 on any violation,
 -- or if the positive control fails to fire.
 
-global strm = req "std.str"
 
 is_ident_byte(c: i64): bool
     (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95
@@ -96,7 +95,7 @@ word_at(s: str, i: i64, word: str): bool
     if i + w - 1 > n
         return false
     end
-    if strm.sub(s, i, i + w - 1) != word
+    if string.sub(s, i, i + w - 1) != word
         return false
     end
     if i + w <= n and is_ident_byte(string.byte(s, i + w))
@@ -128,7 +127,7 @@ aliases(src: str): str
                 if k <= n and string.byte(src, k) == 61
                     k = skip_spaces(src, k + 1)
                     if word_at(src, k, "req")
-                        acc = acc .. strm.sub(src, j, e) .. "|"
+                        acc = acc .. string.sub(src, j, e) .. "|"
                     end
                 end
             end
@@ -178,7 +177,7 @@ scan(src: str, path: str, alias_set: str, report: bool): i64
         end
         if is_ident_start(c) and not prev_is_ident
             e: i64 = ident_end(src, i)
-            root = strm.sub(src, i, e)
+            root = string.sub(src, i, e)
             -- Depth at which a `_` segment means "module surface", or 0 for a
             -- root that is not a module at all.
             depth: i64 = 0
@@ -203,7 +202,7 @@ scan(src: str, path: str, alias_set: str, report: bool): i64
                                 found += 1
                                 if report
                                     print(path .. ":" .. to(str)(line_of(src, i)) .. "  "
-                                        .. strm.sub(src, i, se)
+                                        .. string.sub(src, i, se)
                                         .. "  (private binding of another module)")
                                 end
                             end
@@ -235,7 +234,7 @@ self_check(): i64
     if scan(reach, "<control>", aliases(reach), false) != 1
         return 1
     end
-    clean = "strm = req \"std.str\"\nx = strm.sub(s, 1, 2)\n"
+    clean = "strm = req \"std.str\"\nx = string.sub(s, 1, 2)\n"
     if scan(clean, "<control>", aliases(clean), false) != 0
         return 2
     end
@@ -275,7 +274,7 @@ main(): i64
         end
         if at_end or eol
             if i > start
-                path = strm.sub(listing, start, i - 1)
+                path = string.sub(listing, start, i - 1)
                 f = io.open(path, "r")
                 if f
                     src = f:read("a")

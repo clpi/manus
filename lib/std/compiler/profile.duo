@@ -18,7 +18,6 @@
 -- declaration. Predicting from the surface is possible precisely because those
 -- rules are syntactic.
 
-global strm = req "std.str"
 
 _contains = (hay: str, needle: str): bool
     hn: i64 = #hay

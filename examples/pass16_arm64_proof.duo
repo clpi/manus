@@ -17,7 +17,7 @@
 -- Exit: 0 all agree, else the failing case number. 90 when the toolchain is
 -- unavailable — a visible SKIP, never a silent pass.
 
-global A = req "std.compiler.arm64"
+global A = std.compiler.arm64
 
 global ASM = "/tmp/duo_arm64_proof.s"
 global OBJ = "/tmp/duo_arm64_proof.o"

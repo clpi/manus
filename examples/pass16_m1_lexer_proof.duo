@@ -2,8 +2,8 @@
 -- Full std.compiler.lexer embed: remaining blockers are same-module self-calls
 -- and `any`-typed pending_hints (see docs/plans/pass16_self_hosted_compiler.md).
 
-Classify = req "std.token.classify"
-Token = req "std.compiler.token"
+Classify = std.token.classify
+Token = std.compiler.token
 
 Loc: {
     file: str,

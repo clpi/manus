@@ -20,7 +20,10 @@
 -- in member position. Nested scopes, shadowing and indirect reference through a
 -- table field are refinements, not corrections.
 
-global strm = req "std.str"
+-- GAP: these two stay on the graveyard `req` spelling because it brings the
+-- module's TYPE names into scope and the ambient root binding does not —
+-- `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
+-- this file uses ambient roots. Measured, not assumed.
 global lexer = req "std.compiler.lexer"
 global token = req "std.compiler.token"
 
@@ -111,7 +114,7 @@ dead_private = (src: str, file: str, report: bool): i64
     while i <= n
         if string.byte(declared, i) == 124
             if i > start
-                name = strm.sub(declared, start, i - 1)
+                name = string.sub(declared, start, i - 1)
                 if _is_private(name) and not _has(used, name)
                     count += 1
                     if report

@@ -16,8 +16,7 @@
 --
 -- Exit: 0 pass, 1..N the failing fixture, 100 the corpus floor.
 
-global strm = req "std.str"
-global B = req "std.compiler.bind"
+global B = std.compiler.bind
 
 -- Each case: source, and whether the binder must report it clean.
 fixtures = (): i64
@@ -70,7 +69,7 @@ main(): i64
         end
         if at_end or eol
             if i > start
-                path = strm.sub(listing, start, i - 1)
+                path = string.sub(listing, start, i - 1)
                 fh = io.open(path, "r")
                 if fh
                     src = fh:read("a")

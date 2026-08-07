@@ -193,6 +193,12 @@ end
 -- Operator dispatch is on `token.KIND_*` rather than on raw bytes, so adding a
 -- grammar level is a token-kind edit, not a character comparison.
 
+-- GAP: these two keep the graveyard `req` spelling. `req` brings the module's
+-- TYPE names into scope and the ambient root binding does not, so `lx: Lexer`
+-- and `t: Tok` fail to compile ("unknown type name 'duo_Lexer'"). Retyping the
+-- parameters to `any` would lose the native record lowering SH-04 depends on.
+-- Measured, not assumed; the dead spelling stays until ambient roots carry
+-- type names.
 lexer = req "std.compiler.lexer"
 token = req "std.compiler.token"
 

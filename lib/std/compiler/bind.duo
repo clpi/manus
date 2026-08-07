@@ -24,7 +24,10 @@
 --   * a table key       — `{ kind = 1 }` binds a field, not a name
 --   * a declaration or parameter name — those are binding sites
 
-global strm = req "std.str"
+-- GAP: these two stay on the graveyard `req` spelling because it brings the
+-- module's TYPE names into scope and the ambient root binding does not —
+-- `lx: Lexer` fails with "unknown type name 'duo_Lexer'". Everything else in
+-- this file uses ambient roots. Measured, not assumed.
 global lexer = req "std.compiler.lexer"
 global token = req "std.compiler.token"
 

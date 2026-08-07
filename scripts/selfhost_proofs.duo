@@ -29,7 +29,7 @@
 --
 -- Exit 0 iff every row passes. Run: duo run scripts/selfhost_proofs.duo
 
-global script = req "std.script"
+global script = std.script
 
 _row = (id: str, what: str, proof: str): bool
     duo = script.duo_bin()

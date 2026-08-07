@@ -16,9 +16,8 @@
 -- corpus. The failing path prints the file, so a break is named rather than
 -- counted.
 
-global strm = req "std.str"
-global P = req "std.compiler.parser"
-global F = req "std.compiler.fmt"
+global P = std.compiler.parser
+global F = std.compiler.fmt
 
 main(): i64
     listing = std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
@@ -35,7 +34,7 @@ main(): i64
         end
         if at_end or eol
             if i > start
-                path = strm.sub(listing, start, i - 1)
+                path = string.sub(listing, start, i - 1)
                 fh = io.open(path, "r")
                 if fh
                     src = fh:read("a")

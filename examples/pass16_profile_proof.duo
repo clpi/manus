@@ -30,7 +30,7 @@
 --
 -- Exit: 0 fixtures pass, else the failing fixture number.
 
-global P = req "std.compiler.profile"
+global P = std.compiler.profile
 
 _check = (n: i64, src: str, want: str): i64
     got = P.profile_of(src)
