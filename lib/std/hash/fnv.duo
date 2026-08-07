@@ -47,7 +47,7 @@ mul64(hi: i64, lo: i64, m_hi: i64, m_lo: i64): any
     lo_part = lo_lo % (2^32)
     carry = (lo_lo >> 32) + (hi_lo % (2^32)) + (lo_hi % (2^32))
     hi_part = (hi_hi + (hi_lo >> 32) + (lo_hi >> 32) + (carry >> 32)) % (2^32)
-    lo_part = ((carry % (2^32)) * (2^32) + lo_part) % (2^64)
+    lo_part = ((carry % (2^32)) * (2^32) + lo_part)
     {hi = hi_part, lo = lo_part}
 end
 
@@ -66,11 +66,17 @@ update64(state: any, data: str): void
 end
 
 final(state: any): i64
-    state.hash % (2^state.bits)
+    -- `2^state.bits` is a dynamic exponent, so it lowers to a boxed lua_Value
+    -- that integer modulo cannot take. `bits` is only ever 32 or 64, and at 64
+    -- the wrap is the identity because i64 arithmetic already wraps mod 2^64.
+    if state.bits == 32
+        return state.hash % 4294967296
+    end
+    state.hash
 end
 
 final64(state: any): i64
-    (state.hash_hi * (2^32) + state.hash_lo) % (2^64)
+    (state.hash_hi * (2^32) + state.hash_lo)
 end
 
 sum32(data: str): i64

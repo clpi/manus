@@ -56,10 +56,10 @@ encode_value(v: any, buf: any): void
 end
 
 encode_number(n: f64, buf: any): void
-    if n >= 0 and math.floor(n) == n and n < 2^64
+    if n >= 0 and math.floor(n) == n and n < 1.8446744073709552e19
         -- Unsigned integer
         encode_uint(MT_UINT, math.floor(n), buf)
-    elseif n < 0 and math.floor(n) == n and n >= -(2^64)
+    elseif n < 0 and math.floor(n) == n and n >= -1.8446744073709552e19
         -- Negative integer: store as -1 - n
         encode_uint(MT_NEGINT, math.floor(-1 - n), buf)
     elseif math.floor(n) == n and math.abs(n) < 2^53

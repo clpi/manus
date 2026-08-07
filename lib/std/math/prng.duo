@@ -237,7 +237,7 @@ random_float(): f64
         val = (val << 8) | string.byte(bytes, i + 1)
         i += 1
     end
-    return val / (2^64)
+    return val / 1.8446744073709552e19
 end
 
 -- ═══════════════════════════════════════════════════════════════
