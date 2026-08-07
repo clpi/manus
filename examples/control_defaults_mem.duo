@@ -32,8 +32,8 @@ mem.assume(not mem.is_null(raw))
 mem.prefetch(raw)
 
 slot: *i64 = mem.cast("i64", raw)
-mem.store("i64", slot, score(4))
-got: i64 = mem.load("i64", slot)
+mem.store(i64)(slot, score(4))
+got: i64 = mem.load(i64)(slot)
 
 if got != 10
     mem.trap()

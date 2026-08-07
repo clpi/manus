@@ -13,10 +13,10 @@ atomic_demo(): i64
     old_xor: i64 = atomic.fetch_xor("i64", slot, 6, "acq_rel")
     old_exchange: i64 = std.atomic.exchange("i64", slot, 7, "acq_rel")
 
-    mem.store("i64", expected, 7)
+    mem.store(i64)(expected, 7)
     swapped: bool = atomic.compare_exchange("i64", slot, expected, 11, "acq_rel", "acquire")
     final_value: i64 = atomic.load("i64", slot, "acquire")
-    expected_value: i64 = mem.load("i64", expected)
+    expected_value: i64 = mem.load(i64)(expected)
     atomic.compiler_fence("acquire")
     atomic.fence("seq_cst")
 
