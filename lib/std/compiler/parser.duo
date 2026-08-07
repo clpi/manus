@@ -304,8 +304,15 @@ end
 -- right, which is the assumption that actually failed: parsing lib/std/trace.duo
 -- did not finish in 10 minutes and no single construct reproduced it in
 -- isolation.
-stalled = (lx: Lexer, before: i64): bool
-    lx.pos == before
+-- Progress is `pos` AND `has_peeked` together, never `pos` alone.
+--
+-- `lexer.peek` lexes ahead: it advances `pos` and sets `has_peeked`. Consuming
+-- that token then clears `has_peeked` WITHOUT moving `pos` again. So a
+-- one-token statement — `break`, a bare name — leaves `pos` untouched and a
+-- pos-only check calls it a stall. That fired on every `break` in the corpus
+-- and cost 33 files when I put the same check in proj_if.
+stalled = (lx: Lexer, before: i64, peeked: bool): bool
+    lx.pos == before and lx.has_peeked == peeked
 end
 
 mark_error = (lx: Lexer)
@@ -535,8 +542,9 @@ proj_params = (lx: Lexer): str
             return acc
         end
         before: i64 = lx.pos
+        peeked = lx.has_peeked
         acc = join(acc, proj_param(lx))
-        if stalled(lx, before)
+        if stalled(lx, before, peeked)
             mark_error(lx)
             return acc
         end
@@ -597,8 +605,9 @@ proj_body = (lx: Lexer): str
             return acc
         end
         before: i64 = lx.pos
+        peeked = lx.has_peeked
         acc = join(acc, proj_stmt(lx))
-        if stalled(lx, before)
+        if stalled(lx, before, peeked)
             mark_error(lx)
             return acc
         end
@@ -615,8 +624,9 @@ proj_body_until_else = (lx: Lexer): str
             return acc
         end
         before: i64 = lx.pos
+        peeked = lx.has_peeked
         acc = join(acc, proj_stmt(lx))
-        if stalled(lx, before)
+        if stalled(lx, before, peeked)
             mark_error(lx)
             return acc
         end
@@ -987,8 +997,9 @@ proj_arglist = (lx: Lexer): str
             return acc
         end
         before: i64 = lx.pos
+        peeked = lx.has_peeked
         acc = join(acc, proj_expr(lx))
-        if stalled(lx, before)
+        if stalled(lx, before, peeked)
             mark_error(lx)
             return acc
         end
@@ -1045,8 +1056,10 @@ proj_desc_body = (lx: Lexer): str
             end
         else
             before: i64 = lx.pos
+            peeked = lx.has_peeked
+        peeked = lx.has_peeked
             s = s .. " (item " .. proj_expr(lx) .. ")"
-            if stalled(lx, before)
+            if stalled(lx, before, peeked)
                 mark_error(lx)
                 return s .. ")"
             end
@@ -1500,8 +1513,9 @@ proj_program_lx = (lx: Lexer): str
             return "(program " .. acc .. ")"
         end
         before: i64 = lx.pos
+        peeked = lx.has_peeked
         s = proj_stmt(lx)
-        if s == "" or stalled(lx, before)
+        if s == "" or stalled(lx, before, peeked)
             mark_error(lx)
             return "(program " .. acc .. ")"
         end

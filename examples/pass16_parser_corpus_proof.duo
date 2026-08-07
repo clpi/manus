@@ -155,6 +155,13 @@ positives = {
     -- is taken as a single expression. Pinned beside the bare form above, which
     -- must keep working.
     { "closure = (): void\n    f()\nend\n", "(program (assign closure (lambda (params) (ret void) (call f))))" },
+    -- One-token statements. These are the shape the no-progress guard got wrong:
+    -- `peek` advances `pos` and consuming the peeked token clears `has_peeked`
+    -- without moving `pos` again, so a pos-only stall check rejected every
+    -- `break` in the corpus. The existing `while a break end` case passed
+    -- because it predates the guard.
+    { "break", "(program (break))" },
+    { "break; x = 1", "(program (break) (assign x 1))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
