@@ -6,13 +6,13 @@
 -- primitive, so a qualified call lowers to a relocation instead (SH-03).
 global strm = req "std.str"
 
-type Loc = {
+Loc: {
     file: str,
     line: i64,
     col: i64
 }
 
-type Tok = {
+Tok: {
     kind: i64,
     loc: Loc,
     text: str,
@@ -20,7 +20,7 @@ type Tok = {
     float_val: f64
 }
 
-type State = {
+State: {
     pos: i64,
     line: i64,
     col: i64,
@@ -28,7 +28,7 @@ type State = {
     peeked_token: Tok
 }
 
-type Lexer = {
+Lexer: {
     src: str,
     pos: i64,
     line: i64,

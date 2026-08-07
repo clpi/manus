@@ -118,6 +118,14 @@ unresolved = (src: str, file: str, report: bool): i64
             if nxt.kind == token.KIND_LPAREN and prev_kind != token.KIND_DOT and prev_kind != token.KIND_COLON
                 binds = true
             end
+            -- `span: { ... }` is a descriptor DECLARATION and binds the name.
+            -- FF-22 retired `type X = { ... }` in favour of this shape axis
+            -- form, and migrating lib/std to it made every such name unresolved
+            -- until the binder learned the new spelling — the ratchet caught it
+            -- in the same commit.
+            if nxt.kind == token.KIND_COLON and t.loc.col == 1
+                binds = true
+            end
             if prev_kind == token.KIND_FUN or prev_kind == token.KIND_FUNCTION or prev_kind == token.KIND_FOR
                 binds = true
             end

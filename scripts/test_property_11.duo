@@ -111,7 +111,7 @@ n: i64 = sum_point()
 ]])
 
 check_module("record_alias_params", [[
-type Point = { x: i64, y: i64 }
+Point: { x: i64, y: i64 }
 
 get_y(p: { x: i64, y: i64 }): i64
   return p.y

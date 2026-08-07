@@ -312,8 +312,30 @@ M.is_alphanumeric = std_string_is_alphanumeric
 -- These are projections, not reimplementations: one edge, and `string.*`
 -- remains the thing that actually runs. Exposing them here is what makes the
 -- ambient spelling `std.string.byte` mean what every caller already assumed.
+-- `char` and `rep` are FORWARDING FUNCTIONS, not value aliases like the rest.
+-- Aliasing a host function with VARIADIC or OPTIONAL arity through a module
+-- produces wrong results: `std.string.char(104)` returned a value that
+-- table.concat could not join past the first element (base32 decode returned
+-- "h" for an 8-character group whose five bytes were all computed correctly),
+-- and `std.string.rep("x", 2)` returned "xnil" -- the missing optional third
+-- argument materialising as the literal text. Same root as the documented
+-- variadic-module-export gap.
+--
+-- The fixed-arity forwarders below cover every call shape present in lib/:
+-- char is called with 1, 2 and 4 arguments; rep only ever with 2.
+char(a: any, b: any, c: any, d: any): any
+    if b == nil return string.char(a) end
+    if c == nil return string.char(a, b) end
+    if d == nil return string.char(a, b, c) end
+    string.char(a, b, c, d)
+end
+
+rep(s: any, n: any): any
+    string.rep(s, n)
+end
+
 M.byte = string.byte
-M.char = string.char
+M.char = char
 M.len = string.len
 M.sub = string.sub
 M.find = string.find
@@ -321,7 +343,7 @@ M.gsub = string.gsub
 M.gmatch = string.gmatch
 M.match = string.match
 M.format = string.format
-M.rep = string.rep
+M.rep = rep
 M.upper = string.upper
 M.lower = string.lower
 M.reverse_raw = string.reverse
