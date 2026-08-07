@@ -2752,6 +2752,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   -- so an inlined callee's locals sit ABOVE the caller's rather than aliasing
   -- them. Depth is capped at one: nesting would exhaust w9..w16 immediately.
   lbase: i64 = 0
+  -- FLOAT ACCUMULATOR CACHE. `fcl` is the local register whose authoritative
+  -- value currently lives in FP register d2; its GP register is STALE until
+  -- flushed. This exists because every float op otherwise round-trips
+  -- GP->FP->GP around its local, and that round trip — not the moves around it
+  -- — is what puts wart_f64_bench at half wasmtime's speed.
+  fcl: i64 = -1
   -- Inline STACK, so a callee may itself contain calls. Depth is capped and
   -- the register budget is rechecked at every level; a recursive callee simply
   -- inlines until the cap and then bails to the interpreter, which is safe.
@@ -3010,6 +3016,15 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     if op == 67 or op == 68 or (op >= 146 and op <= 151) or (op >= 160 and op <= 165)
       fkeep = 1
     end
+    -- Flush the float cache before ANY opcode that could read the stale GP
+    -- register. Only local.get, float consts and float binops are known safe;
+    -- everything else materialises first. Conservative on purpose — a stale
+    -- local read as an integer is a silent wrong answer.
+    if fcl >= 0 and not (op == 32 or fkeep == 1)
+      jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
+      n += 1
+      fcl = -1
+    end
     if ali_slot >= 0 and not (op == 65 or op == 32 or fkeep == 1 or (aw != 0 and sp >= 2))
       jitm.w32(code, n, 0xAA0003E0 | (ali_reg << 16) | ali_slot)
       n += 1
@@ -3202,6 +3217,22 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         fsb = ali2_reg
         ali2_slot = -1
       end
+      -- Accumulate-in-place: `local.get N; <k>; f64.op; local.set N`. Keeping N
+      -- resident in d2 removes BOTH the FMOV-out and the next iteration's
+      -- FMOV-in from the dependency chain.
+      accreg: i64 = -1
+      if string.byte(s, off + pc) == 33
+        pidx: i64 = uleb_val(s, off + pc + 1, off + blen) + lbase
+        if pidx <= 16
+          prg: i64 = 9 + pidx
+          if pidx >= 9
+            prg = 10 + pidx
+          end
+          if fsa == prg
+            accreg = prg
+          end
+        end
+      end
       f64op: i64 = 0
       if op >= 160
         f64op = 1
@@ -3222,7 +3253,40 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       elseif vix == 5
         fop = 0x4800
       end
-      if f64op == 1
+      -- The cached local's GP register is STALE, so any operand that would read
+      -- it must either come from d2 (only operand `a` on the accumulate path
+      -- can) or force a flush first. Without this, `b` read the stale register
+      -- and wart_f64_bench drifted to 1000100036477765.6.
+      if fcl >= 0 and not (accreg == fcl and fsb != fcl)
+        jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
+        n += 1
+        fcl = -1
+      end
+      if accreg >= 0
+        -- operand a: already in d2 when cached, otherwise move it in once
+        if f64op == 1
+          if fcl != accreg
+            jitm.w32(code, n, 0x9E670000 | (fsa << 5) | 2)
+            n += 1
+          end
+          jitm.w32(code, n, 0x9E670000 | (fsb << 5) | 1)
+          n += 1
+          jitm.w32(code, n, 0x1E600000 | fop | (1 << 16) | (2 << 5) | 2)
+          n += 1
+        else
+          if fcl != accreg
+            jitm.w32(code, n, 0x1E270000 | (fsa << 5) | 2)
+            n += 1
+          end
+          jitm.w32(code, n, 0x1E270000 | (fsb << 5) | 1)
+          n += 1
+          jitm.w32(code, n, 0x1E200000 | fop | (1 << 16) | (2 << 5) | 2)
+          n += 1
+        end
+        fcl = accreg
+        -- consume the fused local.set
+        pc = uleb_end(s, off + pc + 1, off + blen) - off
+      elseif f64op == 1
         jitm.w32(code, n, 0x9E670000 | (fsa << 5))
         n += 1
         jitm.w32(code, n, 0x9E670000 | (fsb << 5) | 1)
@@ -3241,14 +3305,22 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         jitm.w32(code, n, 0x1E260000 | af)
         n += 1
       end
-      sp -= 1
-      -- The FMOV-out writes slot `af`, and its Rd sits in bits 0..4 like any
-      -- ALU word, so a following local.set/tee can retarget it at the local
-      -- register directly instead of emitting its own MOV — the same trick the
-      -- integer path uses, and that MOV was on the chain too.
-      last_alu = n - 1
-      last_slot = af
-      last_cset = -1
+      -- The fused form consumed the local.set itself, so it pops BOTH operands
+      -- and leaves nothing to retarget.
+      if accreg >= 0
+        sp -= 2
+        last_alu = -1
+        last_cset = -1
+      else
+        sp -= 1
+        -- The FMOV-out writes slot `af`, and its Rd sits in bits 0..4 like any
+        -- ALU word, so a following local.set/tee can retarget it at the local
+        -- register directly instead of emitting its own MOV — the same trick
+        -- the integer path uses, and that MOV was on the chain too.
+        last_alu = n - 1
+        last_slot = af
+        last_cset = -1
+      end
 
     elseif op == 66
       -- i64.const -> up to four MOVZ/MOVK into the next stack register, in the
@@ -4293,6 +4365,12 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     else
       return -1
     end
+  end
+
+  if fcl >= 0
+    jitm.w32(code, n, 0x9E660000 | (2 << 5) | fcl)
+    n += 1
+    fcl = -1
   end
 
   -- result in x0, then RET. This MOV must be 64-BIT: a 32-bit one truncates
