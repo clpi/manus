@@ -295,6 +295,15 @@ mark_error(lx: Lexer)
     lx.has_error = true
 end
 
+-- `;` is a separator, not a statement. Skipped by the block loops rather than
+-- by proj_stmt: proj_stmt returns "" to mean "end of block", so a trailing `x =
+-- 1;` would consume the `;`, hit EOF, return "" and be reported as an error.
+skip_semis(lx: Lexer)
+    while lexer.peek(lx).kind == token.KIND_SEMI
+        _s = lexer.next(lx)
+    end
+end
+
 -- Two-token lookahead, via the lexer's own save/restore state.
 peek2(lx: Lexer): Tok
     st = lexer.save_state(lx)
@@ -373,25 +382,39 @@ proj_params(lx: Lexer): str
 end
 
 -- Type reference: primitive keyword kinds or a NAME (record type).
+-- ONE type, optionally dotted: `i64`, `Lexer`, `std.str`.
+--
+-- This used to loop while the next token was a type kind, and `is_type_kind`
+-- accepts KIND_NAME — so a return type ran on into the body and swallowed its
+-- first token. `add(a: i64): i64 a end` projected `(ret i64 a)` with the body
+-- gone. It survived because the only typed cases in the corpus used the
+-- `= expr` body form, where `=` is not a type kind and stopped the run; every
+-- block-bodied typed function was mis-parsed.
 proj_type(lx: Lexer): str
-    acc = ""
-    while true
-        t = lexer.peek(lx)
-        if is_type_kind(t.kind) == false
+    t = lexer.peek(lx)
+    if is_type_kind(t.kind) == false
+        return ""
+    end
+    _n = lexer.next(lx)
+    acc = t.text
+    while lexer.peek(lx).kind == token.KIND_DOT
+        _d = lexer.next(lx)
+        seg = lexer.peek(lx)
+        if is_type_kind(seg.kind) == false
+            mark_error(lx)
             return acc
         end
-        _n = lexer.next(lx)
-        acc = join(acc, t.text)
-        if lexer.peek(lx).kind == token.KIND_DOT
-            _d = lexer.next(lx)
-        end
+        _s = lexer.next(lx)
+        acc = acc .. "." .. seg.text
     end
+    acc
 end
 
 -- Statements until 'end' (consumed). 'else'/'elseif' do not terminate here.
 proj_body(lx: Lexer): str
     acc = ""
     while true
+        skip_semis(lx)
         t = lexer.peek(lx)
         if t.kind == token.KIND_END
             _e = lexer.next(lx)
@@ -409,6 +432,7 @@ end
 proj_body_until_else(lx: Lexer): str
     acc = ""
     while true
+        skip_semis(lx)
         t = lexer.peek(lx)
         if t.kind == token.KIND_ELSE or t.kind == token.KIND_ELSEIF or t.kind == token.KIND_END or t.kind == token.KIND_EOF
             return acc
@@ -448,6 +472,31 @@ proj_fun_decl(lx: Lexer, first: Tok): str
         return s .. " " .. e .. ")"
     end
     s .. " " .. proj_body(lx) .. ")"
+end
+
+-- fun '(' params ')' (':' type)? body 'end' — anonymous, expression position.
+proj_fun_expr(lx: Lexer): str
+    _f = lexer.next(lx)
+    if lexer.peek(lx).kind != token.KIND_LPAREN
+        mark_error(lx)
+        return "(error)"
+    end
+    _lp = lexer.next(lx)
+    params = proj_params(lx)
+    s = "(lambda (params"
+    if params != ""
+        s = s .. " " .. params
+    end
+    s = s .. ")"
+    if lexer.peek(lx).kind == token.KIND_COLON
+        _c = lexer.next(lx)
+        s = s .. " (ret " .. proj_type(lx) .. ")"
+    end
+    body = proj_body(lx)
+    if body != ""
+        return s .. " " .. body .. ")"
+    end
+    s .. ")"
 end
 
 -- if expr ... ('elseif' expr ...)* ('else' ...)? 'end'
@@ -617,6 +666,7 @@ proj_repeat(lx: Lexer): str
     _r = lexer.next(lx)
     acc = ""
     while true
+        skip_semis(lx)
         t = lexer.peek(lx)
         if t.kind == token.KIND_UNTIL
             _u = lexer.next(lx)
@@ -737,19 +787,27 @@ proj_desc_body(lx: Lexer): str
             mark_error(lx)
             return s .. ")"
         end
+        -- A NAME is only a key when `=` or `:` follows it; `{ a, b }` is two
+        -- positional elements that happen to be names. Deciding on the NAME
+        -- alone consumed the name and then projected the *next* element as its
+        -- value, silently shifting every entry.
+        keyed = false
         if t.kind == token.KIND_NAME
-            _n = lexer.next(lx)
-            s = s .. " " .. t.text
-            if lexer.peek(lx).kind == token.KIND_ASSIGN or lexer.peek(lx).kind == token.KIND_COLON
-                _e = lexer.next(lx)
+            k2 = peek2(lx)
+            if k2.kind == token.KIND_ASSIGN or k2.kind == token.KIND_COLON
+                keyed = true
             end
+        end
+        if keyed
+            _n = lexer.next(lx)
+            _e = lexer.next(lx)
+            s = s .. " " .. t.text
             v = proj_expr(lx)
             if v != ""
                 s = s .. " " .. v
             end
         else
-            mark_error(lx)
-            return s .. ")"
+            s = s .. " (item " .. proj_expr(lx) .. ")"
         end
         if lexer.peek(lx).kind == token.KIND_COMMA
             _c = lexer.next(lx)
@@ -788,8 +846,12 @@ proj_cmp(lx: Lexer): str
     left = proj_add(lx)
     t = lexer.peek(lx)
     op = "?"
-    if t.kind == token.KIND_EQ or t.kind == token.KIND_NEQ
+    if t.kind == token.KIND_EQ
         op = "="
+    elseif t.kind == token.KIND_NEQ
+        -- `!=` used to fold into `=` here, so `a != b` and `a == b` projected
+        -- to the identical s-expression and no proof could tell them apart.
+        op = "!="
     elseif t.kind == token.KIND_LEQ
         op = "<="
     elseif t.kind == token.KIND_GEQ
@@ -860,7 +922,19 @@ proj_unary(lx: Lexer): str
         _o = lexer.next(lx)
         return "(len " .. proj_unary(lx) .. ")"
     end
-    proj_postfix(lx)
+    proj_pow(lx)
+end
+
+-- '^' binds tighter than unary minus and is right-associative, so `-a ^ b`
+-- is `-(a ^ b)` and `a ^ b ^ c` is `a ^ (b ^ c)`. Recursing into proj_unary on
+-- the right gives both.
+proj_pow(lx: Lexer): str
+    base = proj_postfix(lx)
+    if lexer.peek(lx).kind == token.KIND_CARET
+        _o = lexer.next(lx)
+        return "(^ " .. base .. " " .. proj_unary(lx) .. ")"
+    end
+    base
 end
 
 proj_postfix(lx: Lexer): str
@@ -935,6 +1009,13 @@ proj_primary(lx: Lexer): str
     if t.kind == token.KIND_IF
         return proj_if(lx)
     end
+    if t.kind == token.KIND_DOTS
+        _d = lexer.next(lx)
+        return "(varargs)"
+    end
+    if t.kind == token.KIND_FUN or t.kind == token.KIND_FUNCTION
+        return proj_fun_expr(lx)
+    end
     if t.kind == token.KIND_LPAREN
         _lp = lexer.next(lx)
         e = proj_expr(lx)
@@ -989,6 +1070,14 @@ proj_stmt(lx: Lexer): str
     if t.kind == token.KIND_REPEAT
         return proj_repeat(lx)
     end
+    if t.kind == token.KIND_DO
+        _d = lexer.next(lx)
+        body = proj_body(lx)
+        if body != ""
+            return "(do " .. body .. ")"
+        end
+        return "(do)"
+    end
     if t.kind == token.KIND_LOCAL or t.kind == token.KIND_GLOBAL
         return proj_decl(lx)
     end
@@ -1015,6 +1104,7 @@ end
 proj_program_lx(lx: Lexer): str
     acc = ""
     while true
+        skip_semis(lx)
         t = lexer.peek(lx)
         if t.kind == token.KIND_EOF
             if acc == ""

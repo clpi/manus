@@ -4,7 +4,7 @@
 -- projection differential (exact sexpr) and the compile-fail differential
 -- (parse_status must reject malformed input), all through the NATIVE backend.
 --
--- Exit code: 0 on full pass, 1..40 positive mismatch index, 101+ compile-fail
+-- Exit code: 0 on full pass, 1..55 positive mismatch index, 101+ compile-fail
 -- index, 200 clean-input misclassification.
 
 positives = {
@@ -56,11 +56,34 @@ positives = {
     { "global x", "(program (global x))" },
     { "while a break end", "(program (while a (break)))" },
     { "repeat x = 1 until a", "(program (repeat (assign x 1) (until a)))" },
+    -- `!=` must not collapse into `=`. These two cases exist as a pair on
+    -- purpose: either alone would pass while the parser conflated them.
+    { "x = a != b", "(program (assign x (!= a b)))" },
+    { "x = a == b", "(program (assign x (= a b)))" },
+    -- `^` binds tighter than unary minus and is right-associative.
+    { "x = a ^ b ^ c", "(program (assign x (^ a (^ b c))))" },
+    { "x = -a ^ b", "(program (assign x (- (^ a b))))" },
+    -- Table constructors: positional, keyed, and mixed.
+    { "x = { 1, 2, 3 }", "(program (assign x (desc (item 1) (item 2) (item 3))))" },
+    { "x = { a, b }", "(program (assign x (desc (item a) (item b))))" },
+    { "x = { 1, y = 2 }", "(program (assign x (desc (item 1) y 2)))" },
+    -- Anonymous functions, varargs, do-blocks, semicolons.
+    { "f = fun(a) a end", "(program (assign f (lambda (params (param a)) a)))" },
+    { "f(...)", "(program (call f (varargs)))" },
+    { "do x = 1 end", "(program (do (assign x 1)))" },
+    { "x = 1; y = 2", "(program (assign x 1) (assign y 2))" },
+    -- A block-bodied function with a return type. This is the case the greedy
+    -- proj_type mis-parsed as `(ret i64 a)` — the body absorbed into the type.
+    { "add(a: i64): i64 a end", "(program (fun add (params (param a i64)) (ret i64) a))" },
+    { "f = fun(a: i64): i64 a end", "(program (assign f (lambda (params (param a i64)) (ret i64) a)))" },
+    { "g(l: Lexer): Tok l end", "(program (fun g (params (param l Lexer)) (ret Tok) l))" },
+    { "f(x: std.str): std.str x end", "(program (fun f (params (param x std.str)) (ret std.str) x))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",
     "for = 1, n end", "for i = 1 end", "for k, in t end",
-    "a, b", "repeat x = 1", "obj:m", "x = t[i", "local = 1" }
+    "a, b", "repeat x = 1", "obj:m", "x = t[i", "local = 1",
+    "f = fun a end", "x = { 1,", "do x = 1" }
 
 main(): i64
     for i = 1, #positives
