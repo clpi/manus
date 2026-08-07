@@ -1,0 +1,98 @@
+-- SH-06 — the binder's first property, on fixtures and then on the corpus.
+--
+-- FIXTURES pin the shapes that must and must not resolve. The CORPUS number is
+-- what actually drives the work: every file in lib/std compiles, so every name
+-- in them resolves under the host, and any file the binder cannot fully resolve
+-- is a binder gap. That is the same arrangement that took SH-04's parser from
+-- 44/245 to 246/246 — the fixtures never found a defect, the corpus number
+-- found all of them.
+--
+-- Baseline 2026-08-07: 214/247, then 231/247 once comma-list assignment
+-- (`ok, err = pcall(f)`) was recognised as a binding site.
+--
+-- BIND_FLOOR (default 231) is a ratchet.
+--
+-- Exit: 0 pass, 1..N the failing fixture, 100 the corpus floor.
+
+global strm = req "std.str"
+global B = req "std.compiler.bind"
+
+-- Each case: source, and whether the binder must report it clean.
+fixtures = (): i64
+    if B.unresolved("f(a: i64): i64\n    a + 1\nend\nf(2)\n", "t.duo", false) != 0
+        return 1
+    end
+    -- the one that must FIRE — a fixture set where nothing fails proves nothing
+    if B.unresolved("f(a: i64): i64\n    a + missing_name\nend\n", "t.duo", false) != 1
+        return 2
+    end
+    -- a member is in the receiver's namespace, not this scope
+    if B.unresolved("f(t: any): any\n    t.kind\nend\n", "t.duo", false) != 0
+        return 3
+    end
+    if B.unresolved("f(t: any): any\n    t:match(\"x\")\nend\n", "t.duo", false) != 0
+        return 4
+    end
+    -- use-before-bind: mutual recursion is the normal case, and is why the
+    -- binder collects bindings in a separate pass
+    if B.unresolved("a(n: i64): i64\n    b(n)\nend\nb(n: i64): i64\n    a(n)\nend\n", "t.duo", false) != 0
+        return 5
+    end
+    -- comma-list assignment binds every name on the left
+    if B.unresolved("f(): any\n    ok, err = g()\n    ok\nend\n", "t.duo", false) != 0
+        return 6
+    end
+    0
+end
+
+main(): i64
+    bad: i64 = fixtures()
+    if bad != 0
+        print("binder_proof: FAIL — fixture " .. to(str)(bad))
+        return bad
+    end
+
+    listing = std.script.capture("find " .. std.script.getenv("DUO_ROOT", ".")
+        .. "/lib/std -name '*.duo' 2>/dev/null | grep -v '/os/linux.duo'")
+    n: i64 = #listing
+    files: i64 = 0
+    clean: i64 = 0
+    total: i64 = 0
+    start: i64 = 1
+    i: i64 = 1
+    while i <= n + 1
+        at_end = i > n
+        eol = false
+        if not at_end
+            eol = string.byte(listing, i) == 10
+        end
+        if at_end or eol
+            if i > start
+                path = strm.sub(listing, start, i - 1)
+                fh = io.open(path, "r")
+                if fh
+                    src = fh:read("a")
+                    fh:close()
+                    files += 1
+                    u: i64 = B.unresolved(src, path, false)
+                    total += u
+                    if u == 0
+                        clean += 1
+                    end
+                end
+            end
+            start = i + 1
+        end
+        i += 1
+    end
+
+    print("binder_proof: fixtures 6/6; corpus " .. to(str)(clean) .. "/" .. to(str)(files)
+        .. " fully resolved, " .. to(str)(total) .. " unresolved names")
+    floor: i64 = to(i64)(std.script.getenv("BIND_FLOOR", "231"))
+    if clean < floor
+        print("binder_proof: FAIL — floor is " .. to(str)(floor))
+        return 100
+    end
+    print("binder_proof: PASS")
+    0
+end

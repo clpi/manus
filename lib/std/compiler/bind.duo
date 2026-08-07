@@ -1,0 +1,159 @@
+-- SH-06 — binding and scopes, seed.
+--
+-- The first thing a binder must be able to say is "this name resolves". This
+-- computes that over a file: every NAME in reference position must be bound
+-- somewhere — as a declaration, a parameter, a loop variable, an assignment
+-- target, or an ambient root.
+--
+-- SCOPE, per Pass 48 §2.2: assignment targets the nearest existing binding and
+-- otherwise INTRODUCES one locally, and there is no `local`. So a name's
+-- binding site is any assignment to it, anywhere in the file — which is why a
+-- file-level bound set is the honest v1 shape rather than a shortcut. Nested
+-- scoping (shadowing, block lifetime) refines this; it does not replace it.
+--
+-- WHAT MAKES IT CHECKABLE. Every file in lib/std compiles, so every name in
+-- them resolves under the host compiler. A binder that reports unresolved names
+-- on those files is wrong, and the count is the metric — the same shape as
+-- SH-04's parser coverage, where the number, not the fixture set, found every
+-- real defect.
+--
+-- Positions that are NOT references, and why each is excluded:
+--   * after `.` or `:`  — a member name lives in the receiver's namespace, not
+--                          this scope (`t.kind`, `a:match(p)`)
+--   * after `@`         — a directive path (`@comp.c.export`)
+--   * a table key       — `{ kind = 1 }` binds a field, not a name
+--   * a declaration or parameter name — those are binding sites
+
+global strm = req "std.str"
+global lexer = req "std.compiler.lexer"
+global token = req "std.compiler.token"
+
+-- Membership over a "|a|b|" set. std.str is `sub` and `len`, so this is spelled
+-- out rather than borrowed.
+_has = (set: str, name: str): bool
+    hay = set
+    needle = "|" .. name .. "|"
+    hn: i64 = #hay
+    nn: i64 = #needle
+    i: i64 = 1
+    while i + nn - 1 <= hn
+        j: i64 = 0
+        hit = true
+        while j < nn
+            if string.byte(hay, i + j) != string.byte(needle, j + 1)
+                hit = false
+                j = nn
+            end
+            j += 1
+        end
+        if hit
+            return true
+        end
+        i += 1
+    end
+    false
+end
+
+_add = (set: str, name: str): str
+    if _has(set, name)
+        return set
+    end
+    set .. name .. "|"
+end
+
+-- Ambient roots and the runtime surface. These are bound by the world, not by
+-- the file (Pass 48 §2.7), so a file that mentions them is not unresolved.
+ambient = (): str
+    "|std|io|os|string|table|math|coroutine|mem|req|print|error|assert|type|"
+        .. "tostring|tonumber|pairs|ipairs|next|select|rawlen|rawget|rawset|"
+        .. "pcall|xpcall|setmetatable|getmetatable|require|to|from|len|arg|"
+        .. "true|false|nil|self|debug|package|utf8|load|dofile|loadstring|"
+        .. "unpack|collectgarbage|_G|_VERSION|"
+end
+
+-- Names this file binds, and names it references but never binds.
+-- Returns the unresolved count; `report` prints each.
+unresolved = (src: str, file: str, report: bool): i64
+    lx: Lexer = lexer.new(src, file)
+    bound = ambient()
+    refs = "|"
+    prev_kind: i64 = 0
+    -- Pass 1 over a fresh lexer collects bindings; pass 2 collects references.
+    -- Two passes because a name may be used before the line that binds it —
+    -- mutual recursion between top-level declarations is the normal case.
+    while true
+        t = lexer.next(lx)
+        if t.kind == token.KIND_EOF
+            break
+        end
+        if t.kind == token.KIND_NAME
+            nxt = lexer.peek(lx)
+            binds = false
+            if nxt.kind == token.KIND_ASSIGN
+                binds = true
+            end
+            -- Multiple assignment binds every name on the left:
+            -- `ok, result = pcall(f)`. Walk the comma list and accept it only
+            -- if it actually reaches `=`, so a call argument list is not
+            -- mistaken for a binding site.
+            if nxt.kind == token.KIND_COMMA
+                st = lexer.save_state(lx)
+                walking = true
+                while walking
+                    walking = false
+                    a = lexer.next(lx)
+                    if a.kind == token.KIND_COMMA
+                        b = lexer.next(lx)
+                        if b.kind == token.KIND_NAME
+                            if lexer.peek(lx).kind == token.KIND_ASSIGN
+                                binds = true
+                            elseif lexer.peek(lx).kind == token.KIND_COMMA
+                                walking = true
+                            end
+                        end
+                    end
+                end
+                lexer.restore_state(lx, st)
+            end
+            if nxt.kind == token.KIND_LPAREN and prev_kind != token.KIND_DOT and prev_kind != token.KIND_COLON
+                binds = true
+            end
+            if prev_kind == token.KIND_FUN or prev_kind == token.KIND_FUNCTION or prev_kind == token.KIND_FOR
+                binds = true
+            end
+            if prev_kind == token.KIND_LPAREN or prev_kind == token.KIND_COMMA
+                binds = true
+            end
+            if binds
+                bound = _add(bound, t.text)
+            end
+        end
+        prev_kind = t.kind
+    end
+
+    lx2: Lexer = lexer.new(src, file)
+    prev_kind = 0
+    count: i64 = 0
+    while true
+        t = lexer.next(lx2)
+        if t.kind == token.KIND_EOF
+            break
+        end
+        if t.kind == token.KIND_NAME
+            skip = prev_kind == token.KIND_DOT or prev_kind == token.KIND_COLON
+                or prev_kind == token.KIND_AT
+            if not skip
+                nxt = lexer.peek(lx2)
+                if nxt.kind != token.KIND_ASSIGN and not _has(bound, t.text) and not _has(refs, t.text)
+                    refs = _add(refs, t.text)
+                    count += 1
+                    if report
+                        print("  unresolved " .. file .. ": " .. t.text)
+                    end
+                end
+            end
+        end
+        prev_kind = t.kind
+    end
+    count
+end
