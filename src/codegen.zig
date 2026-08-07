@@ -616,6 +616,7 @@ pub const CodeGen = struct {
                 .repeat_loop => |*rl| try self.poison_assigned_in_block(&rl.body),
                 .num_for => |*nf| try self.poison_assigned_in_block(&nf.body),
                 .gen_for => |*gf| try self.poison_assigned_in_block(&gf.body),
+                .func_decl => |*fd| try self.poison_assigned_in_block(&fd.func.body),
                 .if_stmt => |*is| {
                     try self.poison_assigned_in_block(&is.then);
                     for (is.elseifs) |*ei| try self.poison_assigned_in_block(&ei.body);
@@ -5065,6 +5066,15 @@ pub const CodeGen = struct {
         self.emitted_closures.clearRetainingCapacity();
         self.emitted_closure_structs.clearRetainingCapacity();
         try self.collect_closures_module(mod, &self.all_closures);
+        // Names a function body assigns cannot be folded against their
+        // file-scope initializer. This must run before ANY body is emitted:
+        // functions are emitted ahead of the top-level walk, so poisoning
+        // discovered during that walk arrives too late. Without it, `n = 0` plus
+        // a `bump()` doing `n = n + 1` left a sibling `get(): i64` compiling to
+        // `return 0` — wrong, and only for native scalars.
+        for (mod.body.stmts) |*stmt| {
+            if (stmt.* == .func_decl) try self.poison_assigned_in_block(&stmt.func_decl.func.body);
+        }
         if (self.duo_mode) {
             try self.emit_required_modules(mod);
         }
@@ -9378,6 +9388,13 @@ pub const CodeGen = struct {
                     for (is.elseifs) |*ei| try self.poison_assigned_in_block(&ei.body);
                     if (is.else_body) |*eb| try self.poison_assigned_in_block(eb);
                 },
+                // A function body is the most conditionally-executed construct
+                // there is: it runs on every call, in an order this pass cannot
+                // know. Without this, `n = 0` followed by a `bump()` that does
+                // `n = n + 1` left `n` foldable, and a sibling `get(): i64`
+                // reading it compiled to `return 0` — silently wrong, and only
+                // for native scalars (a `str` was never folded, so it worked).
+                .func_decl => |*fd| try self.poison_assigned_in_block(&fd.func.body),
                 else => {},
             }
         }
