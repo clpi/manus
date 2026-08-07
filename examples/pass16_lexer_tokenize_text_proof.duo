@@ -20,7 +20,7 @@
 -- Exit code is the failing check number; 0 means text marshalling matches the
 -- raw-span contract src/lexer.zig also implements.
 
-L = std.compiler.lexer
+L = req "std.compiler.lexer"
 
 -- Fold the kinds written by the text-carrying entry (stride 6).
 fold_text(src: str): u64
