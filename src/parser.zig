@@ -15,6 +15,30 @@ pub const ParseError = error{
     ExpectedToken,
 } || @import("lexer.zig").LexError || Allocator.Error;
 
+/// Source text of a primitive type keyword, so a type name can appear wherever
+/// an ordinary identifier can — table keys, field access, and so on. Type names
+/// are ORDINARY names that happen to denote types, not a separate universe of
+/// tokens; `{ i32 = 69 }` and `t.i32` must parse exactly like `{ foo = 69 }`
+/// and `t.foo`. Returns null for every non-type-keyword kind.
+fn typeKeywordName(kind: TK) ?[]const u8 {
+    return switch (kind) {
+        .kw_i8 => "i8",
+        .kw_i16 => "i16",
+        .kw_i32 => "i32",
+        .kw_i64 => "i64",
+        .kw_u8 => "u8",
+        .kw_u16 => "u16",
+        .kw_u32 => "u32",
+        .kw_u64 => "u64",
+        .kw_f32 => "f32",
+        .kw_f64 => "f64",
+        .kw_bool => "bool",
+        .kw_void => "void",
+        .kw_str => "str",
+        else => null,
+    };
+}
+
 fn findMatchingParen(s: []const u8, start: usize) usize {
     var depth: i32 = 1;
     var i: usize = start + 1;
@@ -4450,22 +4474,24 @@ pub const Parser = struct {
                     }
                     try fields.append(self.alloc, .{ .positional = val });
                 }
-            } else if (tok.kind == .name) {
+            } else if (tok.kind == .name or typeKeywordName(tok.kind) != null) {
                 // Speculate: name '=' and name ':' Type '=' mean named fields;
-                // otherwise the entry is positional.
+                // otherwise the entry is positional. A type name is an ORDINARY
+                // name here, so `{ i32 = 69 }` parses like `{ foo = 69 }`.
+                const key_text = if (tok.kind == .name) tok.text else typeKeywordName(tok.kind).?;
                 const saved = self.lex.saveState();
                 _ = try self.adv();
                 if (try self.check(.assign)) {
                     _ = try self.adv();
                     const val = try self.parse_expr();
-                    try fields.append(self.alloc, .{ .named = .{ .key = tok.text, .val = val } });
+                    try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
                 } else if (try self.check(.colon)) {
                     _ = try self.adv();
                     _ = try self.parse_type();
                     if (try self.check(.assign)) {
                         _ = try self.adv();
                         const val = try self.parse_expr();
-                        try fields.append(self.alloc, .{ .named = .{ .key = tok.text, .val = val } });
+                        try fields.append(self.alloc, .{ .named = .{ .key = key_text, .val = val } });
                     } else {
                         self.lex.restoreState(saved);
                         const val = try self.parse_expr();
