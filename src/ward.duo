@@ -2784,6 +2784,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   jco: i64 = 0
   jimp: i64 = 0
   jdata: i64 = 0
+  jglz: i64 = 1
   jsi: i64 = 9
   while jsi <= mlen
     jsid: i64 = string.byte(s, jsi)
@@ -2798,6 +2799,19 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       jco = jsi
     elseif jsid == 11
       jdata = 1
+    elseif jsid == 6
+      jgc: i64 = uleb_val(s, jsi, mlen)
+      jgj: i64 = uleb_end(s, jsi, mlen)
+      jgk: i64 = 0
+      while jgk < jgc and jgj <= mlen
+        jgj += 2
+        jgv2: i64 = uleb_val(s, jgj + 1, mlen)
+        if jgv2 != 0
+          jglz = 0
+        end
+        jgj = uleb_end(s, jgj + 1, mlen) + 1
+        jgk += 1
+      end
     elseif jsid == 2
       jic: i64 = uleb_val(s, jsi, mlen)
       jij: i64 = uleb_end(s, jsi, mlen)
@@ -2930,6 +2944,23 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   -- x0 is reused as operand-stack slot 0
   jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | 28)
   n += 1
+  jitm.w32(code, n, 0xAA0003E0 | (1 << 16) | 27)
+  n += 1
+
+  -- and the entry function's own declared locals, for the same reason
+  sz: i64 = 0
+  if jself >= 0
+    sz = mem.read_i64(jft, (jself * 5 + 3) * 8)
+  end
+  while sz < selfloc
+    rgs: i64 = 9 + sz
+    if sz >= 9
+      rgs = 10 + sz
+    end
+    jitm.w32(code, n, 0x2A1F03E0 | rgs)
+    n += 1
+    sz += 1
+  end
 
   curloc = selfloc
 
@@ -3236,7 +3267,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- because it is the reserved platform register on Darwin, and x29/x30 are
       -- the frame pointer and link register. The old cap of 8 was what blocked
       -- wart_mixed_type_bench and wart_complete_opcode_bench.
-      if idx > 17
+      if idx > 16
         return -1
       end
       rgi: i64 = 9 + idx
@@ -3262,7 +3293,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- local.set / local.tee -> MOV Wlocal, Wtop
       idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
-      if idx2 > 17 or sp < 1
+      if idx2 > 16 or sp < 1
         return -1
       end
       rgo: i64 = 9 + idx2
@@ -3638,6 +3669,30 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_alu = -1
       last_cset = -1
 
+    elseif op == 35 or op == 36
+      gidx: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      if jglz == 0 or gidx > 4095
+        return -1
+      end
+      if op == 35
+        if sp > 8
+          return -1
+        end
+        jitm.w32(code, n, 0xF9400000 | (gidx << 10) | (27 << 5) | sp)
+        n += 1
+        sp += 1
+      else
+        if sp < 1
+          return -1
+        end
+        jitm.w32(code, n, 0xF9000000 | (gidx << 10) | (27 << 5) | (sp - 1))
+        n += 1
+        sp -= 1
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 1
       -- nop: emits nothing
 
@@ -3767,7 +3822,17 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- end: closes a label. Every forward branch that targeted this block is
       -- now resolvable, so patch the placeholders to land here. imm19 sits in
       -- bits 5..23 of both B.cond and CBNZ, so one mask serves both.
-      if ldep > 0
+      -- An inlined callee's own function-level `end` must not touch the
+      -- CALLER's labels. Restoring `ldep` on return handles the pop, but this
+      -- arm also PATCHES forward branches, and a patch cannot be undone: an
+      -- `end` from an inlined body retargeted the caller's `if` into the middle
+      -- of that body, hanging wart_simple_opcode_bench. Below the current
+      -- inline frame's base, `end` does nothing.
+      ebase: i64 = 0
+      if inl_d > 0
+        ebase = mem.read_i64(inl_lds, (inl_d - 1) * 8)
+      end
+      if ldep > ebase
         ldep -= 1
         -- an `if` with no `else`: its conditional branch lands here
         ewd: i64 = mem.read_i64(lelsw, ldep * 8)
@@ -3924,7 +3989,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       cnp: i64 = mem.read_i64(jft, (cfx * 5 + 3) * 8)
       -- the callee's locals start above every enclosing frame's
       nlb2: i64 = lbase + curloc
-      if nlb2 + cnp + cnl > 18 or cnp > sp
+      if nlb2 + cnp + cnl > 17 or cnp > sp
         return -1
       end
       -- arguments move from the operand stack into the callee's params, which
@@ -3938,6 +4003,21 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
         jitm.w32(code, n, 0xAA0003E0 | ((sp - cnp + ck4) << 16) | rga)
         n += 1
         ck4 += 1
+      end
+      -- Wasm guarantees declared locals start at ZERO. Only the params were
+      -- being written, so the callee's remaining locals held whatever the
+      -- previous frame left in those registers: a loop counter came in at 2
+      -- instead of 0 and wart_simple_opcode_bench ran 9998 iterations, giving
+      -- 69986 instead of 70000.
+      cz: i64 = cnp
+      while cz < cnp + cnl
+        rgz: i64 = 9 + nlb2 + cz
+        if nlb2 + cz >= 9
+          rgz = 10 + nlb2 + cz
+        end
+        jitm.w32(code, n, 0x2A1F03E0 | rgz)
+        n += 1
+        cz += 1
       end
       sp = sp - cnp
       mem.write_i64(inl_pcs, inl_d * 8, pc)
@@ -4075,7 +4155,9 @@ main(): void
         rt0: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 2)
         jlin = mem.alloc(65536)
         mem.zero(jlin, 65536)
-        result = jitm.call1(code, mem.addr(jlin))
+        jgl = mem.alloc(4096 * 8)
+        mem.zero(jgl, 4096 * 8)
+        result = jitm.call2(code, mem.addr(jlin), mem.addr(jgl))
         if rt0 == 0x7F
           result = result & M32
         end
