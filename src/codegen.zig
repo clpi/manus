@@ -4618,7 +4618,18 @@ pub const CodeGen = struct {
         if (!self.load_chunk and self.moduleNeedsLuaRuntime()) {
             self.pl("int duo_argc; char** duo_argv;", .{});
         }
-        if (!std.mem.eql(u8, self.target, "wasm32-wasi") and self.moduleNeedsLuaRuntime()) {
+        // Declared on EVERY target, wasm32-wasi included. The `!wasm32-wasi`
+        // guard that used to be here suppressed the declaration while leaving
+        // its USE in place: lua_assert's runtime preamble calls
+        // `longjmp(duo_test_jmp, 1)` unconditionally, so every program needing
+        // the Lua runtime failed to compile for wasm with "use of undeclared
+        // identifier 'duo_test_jmp'" — including examples/benchmark_wasm.lua,
+        // the source scripts/run_wasm_benchmark.sh itself builds.
+        //
+        // Declaring it costs one unused jmp_buf. The longjmp is reachable only
+        // under `duo_test_runner_active`, which a wasm build never sets, so
+        // wasi-libc's limited setjmp support is never exercised.
+        if (self.moduleNeedsLuaRuntime()) {
             self.pl("jmp_buf duo_test_jmp;", .{});
         }
         if (self.test_mode) {
