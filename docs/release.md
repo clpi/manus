@@ -7,7 +7,7 @@
 1. **Closure gate:** `zig build pass11-gate` — Pass 11 Profile A release proof
 2. **Hygiene:** `zig build repo-hygiene` — no forbidden root artifacts
 3. **Build gate:** `zig build test` — unit, compile-fail, agent-smoke
-4. **Toolchain pin:** `bash scripts/ci_zig_version.sh` matches `.github/workflows/ci.yml` `ZIG_VERSION` and `build.zig.zon` `minimum_zig_version`
+4. **Toolchain pin:** `duo run scripts/ci_zig_version.duo` matches `.github/workflows/ci.yml` `ZIG_VERSION` and `build.zig.zon` `minimum_zig_version`
 5. **Reproducibility (Pass 11):** `zig build reproducibility-smoke` — identical ReleaseFast compiler across clean rebuilds
 6. **Direct backend (macOS AArch64):** `zig build pass11-direct-smoke` — `examples/pass11_record_proof.duo` via `--backend=direct`
 7. **Pass 11 modules:** `zig build pass11-module-smoke` — barrier checks + target model + catalog tests (no duo binary)
@@ -51,4 +51,4 @@ GitHub Actions: `.github/workflows/ci.yml`
 | `bench` | `BENCH_BACKEND=c-specialized` performance gate (main only) |
 | `release` | tagged release binaries |
 
-Pin source of truth: `build.zig.zon` → `minimum_zig_version`, mirrored in CI `ZIG_VERSION` env and verified by `scripts/ci_zig_version.sh`.
+Pin source of truth: `build.zig.zon` → `minimum_zig_version`, mirrored in CI `ZIG_VERSION` env and verified by `scripts/ci_zig_version.duo`.
