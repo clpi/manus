@@ -93,32 +93,32 @@ http_request(method: str, url: str, body: str, headers: any): any
 end
 
 -- Raw TCP connect — stub (real impl via codegen interception when var = "net")
-std_net_connect(host: str, port: i64): any
+connect(host: str, port: i64): any
     nil  -- intercepted: duo_net_tcp_connect(host, port)
 end
 
 -- TCP listen — stub
-std_net_listen(host: str, port: i64, backlog: i64): any
+listen(host: str, port: i64, backlog: i64): any
     nil  -- intercepted: duo_net_tcp_listen(host, port, backlog)
 end
 
 -- TCP accept — stub
-std_net_accept(srv_fd: any): any
+accept(srv_fd: any): any
     nil  -- intercepted: duo_net_tcp_accept(srv_fd)
 end
 
 -- TCP send — stub
-std_net_send(fd: any, data: str): i64
+send(fd: any, data: str): i64
     0 - 1   -- intercepted: duo_net_tcp_send(fd, data)
 end
 
 -- TCP recv — stub
-std_net_recv(fd: any, maxlen: i64): any
+recv(fd: any, maxlen: i64): any
     nil     -- intercepted: duo_net_tcp_recv(fd, maxlen)
 end
 
 -- TCP close — stub
-std_net_close(fd: any): void
+close(fd: any): void
     -- intercepted: duo_net_tcp_close(fd)
 end
 
@@ -140,15 +140,15 @@ end
 -- Simple blocking HTTP server (requires native socket support via codegen path)
 -- handler(method, path, raw_request) -> response_body string
 http_serve(port: i64, handler: any): void
-    srv = std_net_listen("0.0.0.0", port, 128)
+    srv = listen("0.0.0.0", port, 128)
     if srv == nil
         io.write("net.http_serve: listen failed on port " .. to(str)(port) .. "\n")
     end
     io.write("net: listening on :" .. to(str)(port) .. "\n")
     while true
-        cli = std_net_accept(srv)
+        cli = accept(srv)
         if cli == nil break end
-        raw = std_net_recv(cli, 16384)
+        raw = recv(cli, 16384)
         if raw != nil
             method = ""
             req_path = ""
@@ -161,32 +161,15 @@ http_serve(port: i64, handler: any): void
                 .. "Content-Length: " .. to(str)(#resp_body) .. "\r\n"
                 .. "Connection: close\r\n\r\n"
                 .. resp_body
-            std_net_send(cli, response)
+            send(cli, response)
         end
-        std_net_close(cli)
+        close(cli)
     end
-    std_net_close(srv)
+    close(srv)
 end
 
 -- DNS resolve — codegen-intercepted to use getaddrinfo
-std_net_dns_resolve(host: str): any
+dns_resolve(host: str): any
     nil  -- intercepted: duo_net_dns_resolve(host)
 end
 
-M = {}
-M.parse_url = parse_url
-M.http_get = http_get
-M.http_post = http_post
-M.http_request = http_request
-M.connect = std_net_connect
-M.listen = std_net_listen
-M.accept = std_net_accept
-M.send = std_net_send
-M.recv = std_net_recv
-M.close = std_net_close
-M.udp_socket   = udp_socket
-M.udp_sendto   = udp_sendto
-M.udp_recvfrom = udp_recvfrom
-M.http_serve   = http_serve
-M.dns_resolve  = std_net_dns_resolve
-M

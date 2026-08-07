@@ -5,7 +5,7 @@
 -- PBR Material
 -- ═══════════════════════════════════════════════════════════════
 
-pbr_material_new(): any
+material_new(): any
     {
         albedo = {r = 1, g = 1, b = 1, a = 1},
         metallic = 0.0,
@@ -21,19 +21,19 @@ pbr_material_new(): any
     }
 end
 
-pbr_material_set_albedo(mat: any, r: f64, g: f64, b: f64, a: f64): void
+material_set_albedo(mat: any, r: f64, g: f64, b: f64, a: f64): void
     mat.albedo = {r = r, g = g, b = b, a = a or 1}
 end
 
-pbr_material_set_metallic(mat: any, metallic: f64): void
+material_set_metallic(mat: any, metallic: f64): void
     mat.metallic = math.max(0, math.min(1, metallic))
 end
 
-pbr_material_set_roughness(mat: any, roughness: f64): void
+material_set_roughness(mat: any, roughness: f64): void
     mat.roughness = math.max(0.04, math.min(1, roughness))
 end
 
-pbr_material_set_emissive(mat: any, r: f64, g: f64, b: f64): void
+material_set_emissive(mat: any, r: f64, g: f64, b: f64): void
     mat.emissive = {r = r, g = g, b = b}
 end
 
@@ -85,7 +85,7 @@ end
 -- PBR Shading
 -- ═══════════════════════════════════════════════════════════════
 
-pbr_calculate_f0(mat: any): any
+calculate_f0(mat: any): any
     -- F0 is the reflectance at normal incidence
     -- Dielectrics: 0.04, Metals: albedo
     {
@@ -95,9 +95,9 @@ pbr_calculate_f0(mat: any): any
     }
 end
 
-pbr_shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64): any
+shade(mat: any, n: any, v: any, l: any, light_color: any, light_intensity: f64): any
     -- Calculate F0
-    f0 = pbr_calculate_f0(mat)
+    f0 = calculate_f0(mat)
 
     -- Half vector
     h = vec3_normalize(vec3_add(v, l))
@@ -194,27 +194,7 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Material
-M.material_new = pbr_material_new
-M.material_set_albedo = pbr_material_set_albedo
-M.material_set_metallic = pbr_material_set_metallic
-M.material_set_roughness = pbr_material_set_roughness
-M.material_set_emissive = pbr_material_set_emissive
 -- BRDF
-M.distribution_ggx = distribution_ggx
-M.geometry_smith = geometry_smith
-M.fresnel_schlick = fresnel_schlick
 -- Shading
-M.shade = pbr_shade
-M.calculate_f0 = pbr_calculate_f0
 -- Vec3
-M.vec3_new = vec3_new
-M.vec3_add = vec3_add
-M.vec3_sub = vec3_sub
-M.vec3_scale = vec3_scale
-M.vec3_dot = vec3_dot
-M.vec3_cross = vec3_cross
-M.vec3_length = vec3_length
-M.vec3_normalize = vec3_normalize
-M

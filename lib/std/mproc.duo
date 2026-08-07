@@ -41,14 +41,8 @@ kill(pid: str): void
     os.execute("kill " .. to(str)(pid) .. " 2>/dev/null")
 end
 
-mproc_wait(pid: str): void
+wait(pid: str): void
     -- Use waitpid via os.execute for the given PID
     os.execute("wait " .. to(str)(pid) .. " 2>/dev/null")
 end
 
-M = {}
-M.pid = pid
-M.spawn = spawn
-M.kill = kill
-M.wait = mproc_wait
-M

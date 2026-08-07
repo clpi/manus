@@ -119,7 +119,7 @@ const H_init = {
     {hi = 0x1f83d9ab, lo = 0xfb41bd6b}, {hi = 0x5be0cd19, lo = 0x137e2179},
 }
 
-hash_string(s: str): str
+sha512(s: str): str
     if s == nil s = "" end
     msg = s .. string.char(0x80)
     while string.len(msg) % 128 != 112
@@ -181,7 +181,3 @@ hash_string(s: str): str
                                        wide_to_hex(H[5]), wide_to_hex(H[6]), wide_to_hex(H[7]), wide_to_hex(H[8]))
 end
 
-M = {}
-M.hash_string = hash_string
-M.sha512 = hash_string
-M

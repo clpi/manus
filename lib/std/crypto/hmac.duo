@@ -79,12 +79,3 @@ equal(a: str, b: str): bool
     result == 0
 end
 
-M = {}
-M.hmac = hmac
-M.hmac_sha256 = hmac_sha256
-M.hmac_sha256_bytes = hmac_sha256_bytes
-M.hmac_sha1 = hmac_sha1
-M.hmac_md5 = hmac_md5
-M.hmac_fnv1a = hmac_fnv1a
-M.equal = equal
-M

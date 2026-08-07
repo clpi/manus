@@ -156,7 +156,7 @@ format_node(node: any, indent: i64): str
     end
     tag = node.tag
     attr_str = ""
-    if node.attrs != nil
+    if has(.attrs)(node)
         for k, v in node.attrs
             attr_str = attr_str .. " " .. k .. "=\"" .. escape(v) .. "\""
         end
@@ -179,9 +179,3 @@ format(doc: any): str
     return format_node(doc, 0)
 end
 
-M = {}
-M.parse = parse
-M.format = format
-M.escape = escape
-M.unescape = unescape
-M

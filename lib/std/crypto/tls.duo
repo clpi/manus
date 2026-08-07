@@ -143,12 +143,12 @@ dial(host: str, port: i64, config: any): any
     }
 end
 
-conn_write(conn: any, data: str): i64
+write(conn: any, data: str): i64
     if conn == nil or conn.ssl == nil return -1 end
     ssl_write(conn.ssl, data, string.len(data))
 end
 
-conn_read(conn: any, maxlen: i64): any
+read(conn: any, maxlen: i64): any
     if conn == nil or conn.ssl == nil return nil end
     if maxlen == nil maxlen = 4096 end
     -- Allocate a buffer of the right size for SSL_read
@@ -158,18 +158,18 @@ conn_read(conn: any, maxlen: i64): any
     string.sub(buf, 1, n), nil
 end
 
-conn_close(conn: any): void
+close(conn: any): void
     if conn == nil return end
-    if conn.ssl != nil
+    if has(.ssl)(conn)
         ssl_shutdown(conn.ssl)
         ssl_free(conn.ssl)
         conn.ssl = nil
     end
-    if conn.ctx != nil
+    if has(.ctx)(conn)
         ssl_ctx_free(conn.ctx)
         conn.ctx = nil
     end
-    if conn.fd != nil
+    if has(.fd)(conn)
         net.close(conn.fd)
         conn.fd = nil
     end
@@ -199,17 +199,17 @@ https_get(url: str): any
         .. "Host: " .. host .. "\r\n"
         .. "Connection: close\r\n"
         .. "\r\n"
-    conn_write(conn, request)
+    write(conn, request)
 
     -- Read response
     body = ""
     while true
-        chunk, err = conn_read(conn, 4096)
+        chunk, err = read(conn, 4096)
         if chunk == nil break end
         body = body .. chunk
     end
 
-    conn_close(conn)
+    close(conn)
 
     -- Parse status
     status = tonumber(string["match"](body, "HTTP/%d+%.%d+ (%d+)")) or 0
@@ -226,14 +226,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.new_config = new_config
-M.config_set_cert = config_set_cert
-M.config_set_ca = config_set_ca
-M.config_set_server_name = config_set_server_name
-M.dial = dial
-M.write = conn_write
-M.read = conn_read
-M.close = conn_close
-M.https_get = https_get
-M

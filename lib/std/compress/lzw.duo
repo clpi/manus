@@ -95,10 +95,3 @@ decompress_pdf(data: str): str
     decompress(data, MSB, 8)
 end
 
-M = {}
-M.decompress = decompress
-M.decompress_gif = decompress_gif
-M.decompress_pdf = decompress_pdf
-M.LSB = LSB
-M.MSB = MSB
-M

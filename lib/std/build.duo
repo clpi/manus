@@ -39,9 +39,9 @@ project(cfg: any): any
     if cfg == nil
         _project
     else
-        if cfg.name != nil _project.name = cfg.name end
-        if cfg.version != nil _project.version = cfg.version end
-        if cfg.default != nil _project.default = cfg.default end
+        if has(.name)(cfg) _project.name = cfg.name end
+        if has(.version)(cfg) _project.version = cfg.version end
+        if has(.default)(cfg) _project.default = cfg.default end
         _project
     end
 end
@@ -83,10 +83,10 @@ end
 
 command(t: any): str
     cmd = "duo compile " .. t.src
-    if t.out != nil cmd = cmd .. " -o " .. t.out end
-    if t.opt != nil cmd = cmd .. " " .. t.opt end
-    if t.target != nil and t.target != "native" cmd = cmd .. " --target " .. t.target end
-    if t.cc != nil cmd = cmd .. " --cc " .. t.cc end
+    if has(.out)(t) cmd = cmd .. " -o " .. t.out end
+    if has(.opt)(t) cmd = cmd .. " " .. t.opt end
+    if has(.target)(t) and t.target != "native" cmd = cmd .. " --target " .. t.target end
+    if has(.cc)(t) cmd = cmd .. " --cc " .. t.cc end
     if t.pgo cmd = cmd .. " --pgo" end
     if t.shared_memory cmd = cmd .. " --shared-memory" end
     if t.load_chunk cmd = cmd .. " --load-chunk" end
@@ -102,7 +102,7 @@ log_target(t: any): void
     print(term.banner("build target"))
     print(term.kv("name", t.name))
     print(term.kv("source", t.src))
-    if t.out != nil print(term.kv("output", t.out)) end
+    if has(.out)(t) print(term.kv("output", t.out)) end
     print(term.kv("command", command(t)))
 end
 
@@ -113,21 +113,3 @@ log_project(): void
     print(term.kv("default", _project.default))
 end
 
-M = {}
-M.info = info
-M.platform = platform
-M.arch = arch
-M.target = target
-M.is_debug = is_debug
-M.env = env
-M.project = project
-M.exe = exe
-M.lib = lib
-M.targets = targets
-M.default_target = default_target
-M.find = find
-M.command = command
-M.clean = clean
-M.log_target = log_target
-M.log_project = log_project
-M

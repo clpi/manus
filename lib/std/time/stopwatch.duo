@@ -165,23 +165,3 @@ benchmark(func: any, iterations: i64) -> any
     ops_per_sec = iterations / total
   }
 end
-M = {}
-M.stopwatch_new = stopwatch_new
-M.stopwatch_start = stopwatch_start
-M.stopwatch_stop = stopwatch_stop
-M.stopwatch_reset = stopwatch_reset
-M.stopwatch_elapsed = stopwatch_elapsed
-M.stopwatch_lap = stopwatch_lap
-M.stopwatch_laps = stopwatch_laps
-M.stopwatch_avg_lap = stopwatch_avg_lap
-M.scoped_timer_new = scoped_timer_new
-M.scoped_timer_stop = scoped_timer_stop
-M.scoped_timer_elapsed = scoped_timer_elapsed
-M.profiler_new = profiler_new
-M.profiler_start = profiler_start
-M.profiler_stop = profiler_stop
-M.profiler_stats = profiler_stats
-M.profiler_report = profiler_report
-M.profiler_reset = profiler_reset
-M.benchmark = benchmark
-M

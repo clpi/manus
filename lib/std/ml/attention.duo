@@ -79,7 +79,7 @@ end
 -- ═══════════════════════════════════════════════════════════════
 
 @hot
-attention_forward(layer: any, x: any, use_cache: bool): any
+mha_forward(layer: any, x: any, use_cache: bool): any
     seq_len = x.rows
     dim = layer.dim
     heads = layer.heads
@@ -329,17 +329,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.mha_layer = mha_layer
-M.mha_forward = attention_forward
-M.gqa_layer = gqa_layer
-M.gqa_forward = gqa_forward
-M.kv_cache_new = kv_cache_new
-M.kv_cache_append = kv_cache_append
-M.kv_cache_get_keys = kv_cache_get_keys
-M.kv_cache_get_values = kv_cache_get_values
-M.kv_cache_reset = kv_cache_reset
-M.softmax_2d = softmax_2d
-M.flash_attention_block = flash_attention_block
-M.repeat_kv = repeat_kv
-M

@@ -54,7 +54,7 @@ end
 -- format_address: format an address table as "Name <addr>" or "addr".
 format_address(addr: any): str
     if addr == nil return "" end
-    if addr.name != nil and addr.name != ""
+    if has(.name)(addr) and addr.name != ""
         return "\"" .. addr.name .. "\" <" .. addr.address .. ">"
     end
     addr.address
@@ -129,10 +129,3 @@ read_message(raw: str): any
     return {headers = headers, body = body}
 end
 
-M = {}
-M.parse_address = parse_address
-M.parse_address_list = parse_address_list
-M.format_address = format_address
-M.read_message = read_message
-M.split_lines = split_lines
-M

@@ -55,8 +55,3 @@ parse(url: str) -> any
     query = query
   }
 end
-M = {}
-M.encode = encode
-M.decode = decode
-M.parse = parse
-M

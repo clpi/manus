@@ -116,10 +116,3 @@ grad(loss_fn, wrt): any
     return { fn = loss_fn, wrt = wrt }
 end
 
-M = {}
-M.tape_new = tape_new
-M.tape_push = tape_push
-M.backward = backward
-M.grad_check = grad_check
-M.grad = grad
-M

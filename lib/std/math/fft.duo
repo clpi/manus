@@ -210,7 +210,7 @@ end
 -- Convolution via FFT
 -- ═══════════════════════════════════════════════════════════════
 
-fft_convolve(a: any, b: any): any
+convolve(a: any, b: any): any
     n = #a + #b - 1
 
     -- Pad to next power of 2
@@ -266,7 +266,7 @@ end
 -- Correlation via FFT
 -- ═══════════════════════════════════════════════════════════════
 
-fft_correlate(a: any, b: any): any
+correlate(a: any, b: any): any
     -- Cross-correlation: correlate(a, b) = convolve(a, reverse(b))
     b_rev = {}
     i = #b
@@ -274,11 +274,11 @@ fft_correlate(a: any, b: any): any
         b_rev[#b_rev + 1] = b[i]
         i -= 1
     end
-    fft_convolve(a, b_rev)
+    convolve(a, b_rev)
 end
 
 autocorrelate(x: any): any
-    fft_correlate(x, x)
+    correlate(x, x)
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -327,30 +327,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Complex
-M.complex_new = complex_new
-M.complex_add = complex_add
-M.complex_sub = complex_sub
-M.complex_mul = complex_mul
-M.complex_scale = complex_scale
-M.complex_conjugate = complex_conjugate
-M.complex_abs = complex_abs
-M.complex_phase = complex_phase
 -- FFT
-M.fft = fft
-M.ifft = ifft
-M.rfft = rfft
-M.irfft = irfft
 -- Spectrum
-M.power_spectrum = power_spectrum
-M.magnitude_spectrum = magnitude_spectrum
-M.phase_spectrum = phase_spectrum
 -- Convolution
-M.convolve = fft_convolve
-M.correlate = fft_correlate
-M.autocorrelate = autocorrelate
 -- DFT
-M.dft = dft
-M.idft = idft
-M

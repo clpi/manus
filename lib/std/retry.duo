@@ -222,18 +222,3 @@ circuit_stats(cb: any): any
     }
 end
 
-M = {}
-M.constant_backoff = constant_backoff
-M.linear_backoff = linear_backoff
-M.exponential_backoff = exponential_backoff
-M.do_retry = do_retry
-M.do_retry_bool = do_retry_bool
-M.retry = retry
-M.retry_with_backoff = retry_with_backoff
-M.retry_if = retry_if
-M.circuit_new = circuit_new
-M.circuit_call = circuit_call
-M.circuit_state = circuit_state
-M.circuit_reset = circuit_reset
-M.circuit_stats = circuit_stats
-M

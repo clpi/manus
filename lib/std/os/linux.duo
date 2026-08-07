@@ -317,7 +317,7 @@ mmap_sync(mmap: any): any
 end
 
 mmap_unmap(mmap: any): void
-    if mmap.ptr != nil
+    if has(.ptr)(mmap)
         @ffi("duo_munmap", i64, {any, i64})(mmap.ptr, mmap.size)
         mmap.ptr = nil
     end

@@ -29,11 +29,3 @@ clamp(val: any, lo: any, hi: any): any
     val
 end
 
-M = {}
-M.compare = compare
-M.less = less
-M.ordered = ordered
-M.min = min
-M.max = max
-M.clamp = clamp
-M

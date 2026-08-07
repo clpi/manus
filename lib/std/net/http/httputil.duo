@@ -31,8 +31,3 @@ reverse_proxy(target: str): any
     {target = target}
 end
 
-M = {}
-M.dump_request = dump_request
-M.dump_response = dump_response
-M.reverse_proxy = reverse_proxy
-M

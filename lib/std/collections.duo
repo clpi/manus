@@ -169,35 +169,3 @@ set_difference(s1: any, s2: any): any
     out
 end
 
-M = {}
-M.list_new = list_new
-M.list_push = list_push
-M.list_pop = list_pop
-M.list_get = list_get
-M.list_len = list_len
-M.list_insert = list_insert
-M.list_clear = list_clear
-M.stack_new = stack_new
-M.stack_push = stack_push
-M.stack_pop = stack_pop
-M.queue_new = queue_new
-M.queue_enqueue = queue_enqueue
-M.queue_dequeue = queue_dequeue
-M.map_new = map_new
-M.map_set = map_set
-M.map_get = map_get
-M.map_has = map_has
-M.map_delete = map_delete
-M.map_keys = map_keys
-M.map_values = map_values
-M.set_new = set_new
-M.set_add = set_add
-M.set_has = set_has
-M.set_remove = set_remove
-M.set_clear = set_clear
-M.set_union = set_union
-M.set_intersection = set_intersection
-M.set_difference = set_difference
-M.is_array = is_array
-M.remove_at = remove_at
-M

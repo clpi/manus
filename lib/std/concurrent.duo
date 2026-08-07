@@ -108,18 +108,16 @@ waitgroup(n: i64): any
     }
 end
 
-M = {}
-M.go         = go
-M.wait       = wait
-M.all        = all
-M.race       = race
-M.select     = select
-M.semaphore  = semaphore
-M.waitgroup  = waitgroup
-M.spawn      = sync.spawn
-M.run        = sync.run
-M.yield      = sync.yield
-M.channel    = sync.channel
-M.channel_send  = sync.channel_send
-M.channel_recv  = sync.channel_recv
-M
+go = go
+wait = wait
+all = all
+race = race
+select = select
+semaphore = semaphore
+waitgroup = waitgroup
+spawn = sync.spawn
+run = sync.run
+yield = sync.yield
+channel = sync.channel
+channel_send = sync.channel_send
+channel_recv = sync.channel_recv

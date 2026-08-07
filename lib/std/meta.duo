@@ -13,7 +13,7 @@ std_meta_typeof(x): str
     if type(x) != "table" return type(x) end
     if getmetatable(x) != nil
         mt = getmetatable(x)
-        if mt.type != nil return mt.type end
+        if has(.type)(mt) return mt.type end
     end
     "table"
 end
@@ -126,13 +126,13 @@ end
 
 satisfies_concept(val: any, concept_def: any): bool
     if val == nil or concept_def == nil return false end
-    if concept_def.required_fields != nil
+    if has(.required_fields)(concept_def)
         for _, f in concept_def.required_fields
             name = concept_member_name(f)
             if name == nil or val[name] == nil return false end
         end
     end
-    if concept_def.required_methods != nil
+    if has(.required_methods)(concept_def)
         for _, m in concept_def.required_methods
             name = concept_member_name(m)
             if name == nil or type(val[name]) != "function" return false end

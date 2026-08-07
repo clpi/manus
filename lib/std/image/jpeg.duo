@@ -132,8 +132,3 @@ decode(data: str): any
     }
 end
 
-M = {}
-M.decode = decode
-M.decode_header = decode_header
-M.idct_8x8 = idct_8x8
-M

@@ -172,7 +172,7 @@ close(session: any): void
     if type(session) == "table"
         if session.closed return end
         session.closed = true
-        if session.handle != nil
+        if has(.handle)(session)
             duo_onnx_close(session.handle)
         end
     else
@@ -342,10 +342,3 @@ end
 -- Module export
 -- ===========================================================================
 
-M = {}
-M.load = load
-M.run = run
-M.close = close
-M.info = info
-M.embedding = embedding
-M

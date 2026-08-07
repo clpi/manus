@@ -60,11 +60,3 @@ forward(model, x): any
     return h
 end
 
-M = {}
-M.block = block
-M.stack = stack
-M.bench_attention = bench_attention
-M.ffn_forward = ffn_forward
-M.forward_block = forward_block
-M.forward = forward
-M

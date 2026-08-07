@@ -97,22 +97,8 @@ is_locked(m: any): bool
     m.locked
 end
 
-std_atomic_signal(sp: any): void
+signal(sp: any): void
     if sp == nil return end
     sp.notify = true
 end
 
-M = {}
-M.store = store
-M.compare_swap = compare_swap
-M.fetch_add = fetch_add
-M.fetch_sub = fetch_sub
-M.inc = inc
-M.dec = dec
-M.mutex_new = mutex_new
-M.lock = lock
-M.unlock = unlock
-M.try_lock = try_lock
-M.is_locked = is_locked
-M.signal = std_atomic_signal
-M

@@ -1,6 +1,6 @@
 -- std.maps — map (table) helper utilities (mirrors Go 1.21 maps package)
 
-std_maps_clone(m: any): any
+clone(m: any): any
     if m == nil return {} end
     out = {}
     for k, v in m
@@ -9,7 +9,7 @@ std_maps_clone(m: any): any
     out
 end
 
-std_maps_copy(dst: any, src: any): i64
+copy(dst: any, src: any): i64
     if dst == nil return 0 end
     if src == nil return 0 end
     count = 0
@@ -20,14 +20,14 @@ std_maps_copy(dst: any, src: any): i64
     count
 end
 
-std_maps_delete_key(m: any, k: any): any
+delete(m: any, k: any): any
     if m == nil return nil end
     v = m[k]
     m[k] = nil
     v
 end
 
-std_maps_equal(m1: any, m2: any): bool
+equal(m1: any, m2: any): bool
     if m1 == nil and m2 == nil return true end
     if m1 == nil or m2 == nil return false end
     c1 = 0
@@ -41,7 +41,7 @@ std_maps_equal(m1: any, m2: any): bool
     true
 end
 
-std_maps_equal_func(m1: any, m2: any, eq: any): bool
+equal_func(m1: any, m2: any, eq: any): bool
     if m1 == nil and m2 == nil return true end
     if m1 == nil or m2 == nil return false end
     c1 = 0
@@ -57,53 +57,53 @@ std_maps_equal_func(m1: any, m2: any, eq: any): bool
     true
 end
 
-std_maps_keys(m: any): any
+keys(m: any): any
     if m == nil return {} end
     out = {}
     for k, _ in m do out[rawlen(out) + 1] = k end
     out
 end
 
-std_maps_values(m: any): any
+values(m: any): any
     if m == nil return {} end
     out = {}
     for _, v in m do out[rawlen(out) + 1] = v end
     out
 end
 
-std_maps_entries(m: any): any
+entries(m: any): any
     if m == nil return {} end
     out = {}
     for k, v in m do out[rawlen(out) + 1] = {key = k, value = v} end
     out
 end
 
-std_maps_has(m: any, k: any): bool
+has(m: any, k: any): bool
     if m == nil return false end
     m[k] != nil
 end
 
-std_maps_get(m: any, k: any, dflt: any): any
+get(m: any, k: any, dflt: any): any
     if m == nil return dflt end
     v = m[k]
     if v == nil return dflt end
     v
 end
 
-std_maps_set(m: any, k: any, v: any): any
+set(m: any, k: any, v: any): any
     if m == nil m = {} end
     m[k] = v
     m
 end
 
-std_maps_size(m: any): i64
+size(m: any): i64
     if m == nil return 0 end
     c = 0
     for _k, _v in m do c += 1 end
     c
 end
 
-std_maps_merge(dst: any, src: any): any
+merge(dst: any, src: any): any
     if dst == nil dst = {} end
     if src == nil return dst end
     for k, v in src
@@ -112,7 +112,7 @@ std_maps_merge(dst: any, src: any): any
     dst
 end
 
-std_maps_merge_overwrite(dst: any, src: any): any
+merge_overwrite(dst: any, src: any): any
     if dst == nil dst = {} end
     if src == nil return dst end
     for k, v in src
@@ -121,19 +121,3 @@ std_maps_merge_overwrite(dst: any, src: any): any
     dst
 end
 
-M = {}
-M.clone = std_maps_clone
-M.copy = std_maps_copy
-M.delete = std_maps_delete_key
-M.equal = std_maps_equal
-M.equal_func = std_maps_equal_func
-M.keys = std_maps_keys
-M.values = std_maps_values
-M.entries = std_maps_entries
-M.has = std_maps_has
-M.get = std_maps_get
-M.set = std_maps_set
-M.size = std_maps_size
-M.merge = std_maps_merge
-M.merge_overwrite = std_maps_merge_overwrite
-M

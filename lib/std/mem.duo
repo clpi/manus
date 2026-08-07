@@ -178,15 +178,15 @@ alloc(bytes: i64): any
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = malloc((size_t)bytes); _v; })]])
 end
 
-mem_free(mem: any): void
+free(mem: any): void
     @c.emit("free(mem.as.tval)")
 end
 
-mem_realloc(mem: any, new_bytes: i64): any
+realloc(mem: any, new_bytes: i64): any
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = realloc(mem.as.tval, (size_t)new_bytes); _v; })]])
 end
 
-mem_dup(mem: any, bytes: i64): any
+dup(mem: any, bytes: i64): any
     if bytes == 0 return alloc(0) end
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; void* _p = malloc((size_t)bytes); if (_p && mem.as.tval) memcpy(_p, mem.as.tval, (size_t)bytes); _v.as.tval = _p; _v; })]])
 end
@@ -196,33 +196,33 @@ offset(mem: any, n: i64): any
 end
 
 -- Raw memory operations
-copy(dst: any, src: any, bytes: i64): void
+mem_copy(dst: any, src: any, bytes: i64): void
     if bytes == 0 return end
     @c.emit("memcpy(dst.as.tval, src.as.tval, (size_t)bytes)")
 end
 
-set(mem: any, val: u8, bytes: i64): void
+mem_set(mem: any, val: u8, bytes: i64): void
     if bytes == 0 return end
     @c.emit("memset(mem.as.tval, (int)val, (size_t)bytes)")
 end
 
-zero(mem: any, bytes: i64): void
+mem_zero(mem: any, bytes: i64): void
     if bytes == 0 return end
     @c.emit("memset(mem.as.tval, 0, (size_t)bytes)")
 end
 
-compare(a: any, b: any, bytes: i64): i64
+mem_compare(a: any, b: any, bytes: i64): i64
     if bytes == 0 return 0 end
     @c.emit("(int64_t)memcmp(a.as.tval, b.as.tval, (size_t)bytes)")
 end
 
 -- mmap-backed allocation
-mem_mmap(bytes: i64): any
+mmap(bytes: i64): any
     -- Use calloc rather than mmap so the codegen is portable across
     -- platforms where MAP_ANON is gated behind feature-test macros
     -- (e.g. macOS with _XOPEN_SOURCE only). calloc yields zeroed
     -- memory, matching mmap(... PROT_READ|PROT_WRITE ...)'s semantics
-    -- on systems with zero-filled pages.
+    -- on systems with mem_zero-filled pages.
     @c.emit([[({ lua_Value _v; _v.type = VAL_BUFFER; _v.as.tval = calloc(1, (size_t)bytes); _v; })]])
 end
 
@@ -244,7 +244,7 @@ mremap(mem: any, old_bytes: i64, new_bytes: i64): any
     _ = old_bytes
 end
 
-mem_munmap(mem: any, bytes: i64): i64
+munmap(mem: any, bytes: i64): i64
     -- Portable: just free. (munmap would require MAP_ANON-like backing.)
     @c.emit("(free(mem.as.tval), 0)")
     _ = bytes
@@ -352,52 +352,3 @@ is_power_of_two(n: i64): bool
     n > 0 and ((n & (n - 1)) == 0)
 end
 
-M = {}
-M.page_size = page_size
-M.megabyte = megabyte
-M.gigabyte = gigabyte
-M.arena_new = arena_new
-M.pool_new = pool_new
-M.stack_new = stack_new
-M.fixed_buffer_new = fixed_buffer_new
-M.default_allocator = default_allocator
-M.alloc = alloc
-M.free = mem_free
-M.realloc = mem_realloc
-M.dup = mem_dup
-M.offset = offset
-M.copy = copy
-M.mem_copy = copy
-M.set = set
-M.mem_set = set
-M.zero = zero
-M.mem_zero = zero
-M.compare = compare
-M.mem_compare = compare
-M.mmap = mem_mmap
-M.mremap = mremap
-M.munmap = mem_munmap
-M.read_byte = read_byte
-M.write_byte = write_byte
-M.read_i16 = read_i16
-M.write_i16 = write_i16
-M.read_u16 = read_u16
-M.write_u16 = write_u16
-M.read_i32 = read_i32
-M.write_i32 = write_i32
-M.read_u32 = read_u32
-M.write_u32 = write_u32
-M.read_i64 = read_i64
-M.write_i64 = write_i64
-M.read_u64 = read_u64
-M.write_u64 = write_u64
-M.read_f32 = read_f32
-M.write_f32 = write_f32
-M.read_f64 = read_f64
-M.write_f64 = write_f64
-M.bytes_to_f32 = bytes_to_f32
-M.bytes_to_f64 = bytes_to_f64
-M.align_up = align_up
-M.align_down = align_down
-M.is_power_of_two = is_power_of_two
-M

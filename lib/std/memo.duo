@@ -24,11 +24,3 @@ clear(m: any) -> void
     m[k] = nil
   end
 end
-M = {}
-M.table_new = table_new
-M.table_get = table_get
-M.table_set = table_set
-M.table_has = table_has
-M.wrap = wrap
-M.clear = clear
-M

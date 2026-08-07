@@ -97,17 +97,3 @@ sum64a(data: str): i64
     final64(s)
 end
 
-M = {}
-M.new32 = new32
-M.new32a = new32a
-M.new64 = new64
-M.new64a = new64a
-M.update = update
-M.update64 = update64
-M.final = final
-M.final64 = final64
-M.sum32 = sum32
-M.sum32a = sum32a
-M.sum64 = sum64
-M.sum64a = sum64a
-M

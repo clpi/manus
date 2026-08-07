@@ -286,14 +286,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.batchnorm = batchnorm
-M.batchnorm_forward = batchnorm_forward
-M.batchnorm_backward = batchnorm_backward
-M.rmsnorm = rmsnorm
-M.rmsnorm_forward = rmsnorm_forward
-M.groupnorm = groupnorm
-M.groupnorm_forward = groupnorm_forward
-M.layernorm = layernorm
-M.layernorm_forward = layernorm_forward
-M

@@ -144,9 +144,3 @@ decode_hex(data: str): str
     decode_with_alphabet(data, hex_dec_table)
 end
 
-M = {}
-M.encode = encode
-M.decode = decode
-M.encode_hex = encode_hex
-M.decode_hex = decode_hex
-M

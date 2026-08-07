@@ -53,13 +53,3 @@ hash_bytes(seed: i64, data: str, off: i64, len: i64): i64
     h
 end
 
-M = {}
-M.make_seed = make_seed
-M.new = new
-M.new_with_seed = new_with_seed
-M.write = write
-M.write_byte = write_byte
-M.sum = sum
-M.hash_string = hash_string
-M.hash_bytes = hash_bytes
-M

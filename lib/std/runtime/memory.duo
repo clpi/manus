@@ -5,7 +5,7 @@
 -- Memory Stats
 -- ═══════════════════════════════════════════════════════════════
 
-memory_stats_new(): any
+stats_new(): any
     {
         allocated = 0,
         freed = 0,
@@ -17,7 +17,7 @@ memory_stats_new(): any
     }
 end
 
-memory_stats_record_alloc(stats: any, size: i64, type: str): void
+stats_record_alloc(stats: any, size: i64, type: str): void
     stats.allocated = stats.allocated + size
     stats.current = stats.current + size
     if stats.current > stats.peak
@@ -26,17 +26,17 @@ memory_stats_record_alloc(stats: any, size: i64, type: str): void
     stats.allocations_by_type[type] = (stats.allocations_by_type[type] or 0) + size
 end
 
-memory_stats_record_free(stats: any, size: i64): void
+stats_record_free(stats: any, size: i64): void
     stats.freed = stats.freed + size
     stats.current = stats.current - size
 end
 
-memory_stats_record_gc(stats: any, paused: f64): void
+stats_record_gc(stats: any, paused: f64): void
     stats.gc_count = stats.gc_count + 1
     stats.gc_paused = stats.gc_paused + paused
 end
 
-memory_stats_summary(stats: any): any
+stats_summary(stats: any): any
     {
         allocated = stats.allocated,
         freed = stats.freed,
@@ -52,7 +52,7 @@ end
 -- Memory Arena (per-isolate)
 -- ═══════════════════════════════════════════════════════════════
 
-memory_arena_new(initial_size: i64): any
+arena_new(initial_size: i64): any
     {
         blocks = {},
         total_size = initial_size or 65536,
@@ -61,7 +61,7 @@ memory_arena_new(initial_size: i64): any
     }
 end
 
-memory_arena_alloc(arena: any, size: i64): any
+arena_alloc(arena: any, size: i64): any
     -- Check if current block has enough space
     if #arena.blocks == 0 or arena.blocks[#arena.blocks].used + size > arena.block_size
         -- Allocate new block
@@ -85,12 +85,12 @@ memory_arena_alloc(arena: any, size: i64): any
     }
 end
 
-memory_arena_reset(arena: any): void
+arena_reset(arena: any): void
     arena.blocks = {}
     arena.used = 0
 end
 
-memory_arena_stats(arena: any): any
+arena_stats(arena: any): any
     {
         total_blocks = #arena.blocks,
         total_size = arena.total_size,
@@ -201,7 +201,7 @@ end
 -- Memory Pressure Monitor
 -- ═══════════════════════════════════════════════════════════════
 
-memory_pressure_new(low_threshold: f64, high_threshold: f64): any
+pressure_new(low_threshold: f64, high_threshold: f64): any
     {
         low_threshold = low_threshold or 0.6,
         high_threshold = high_threshold or 0.85,
@@ -211,7 +211,7 @@ memory_pressure_new(low_threshold: f64, high_threshold: f64): any
     }
 end
 
-memory_pressure_update(pressure: any, allocated: i64, max_size: i64): void
+pressure_update(pressure: any, allocated: i64, max_size: i64): void
     if max_size > 0
         pressure.current_pressure = allocated / max_size
     else
@@ -227,7 +227,7 @@ memory_pressure_update(pressure: any, allocated: i64, max_size: i64): void
     end
 end
 
-memory_pressure_level(pressure: any): str
+pressure_level(pressure: any): str
     if pressure.current_pressure < pressure.low_threshold
         "low"
     elseif pressure.current_pressure < pressure.high_threshold
@@ -237,7 +237,7 @@ memory_pressure_level(pressure: any): str
     end
 end
 
-memory_pressure_should_gc(pressure: any): bool
+pressure_should_gc(pressure: any): bool
     pressure.current_pressure > pressure.high_threshold
 end
 
@@ -245,7 +245,7 @@ end
 -- Object Pool (for frequently allocated objects)
 -- ═══════════════════════════════════════════════════════════════
 
-object_pool_new(factory: any, initial_size: i64): any
+pool_new(factory: any, initial_size: i64): any
     {
         factory = factory,
         available = {},
@@ -258,7 +258,7 @@ object_pool_new(factory: any, initial_size: i64): any
     }
 end
 
-object_pool_acquire(pool: any): any
+pool_acquire(pool: any): any
     if #pool.available > 0
         obj = pool.available[#pool.available]
         pool.available[#pool.available] = nil
@@ -273,7 +273,7 @@ object_pool_acquire(pool: any): any
     obj
 end
 
-object_pool_release(pool: any, obj: any): void
+pool_release(pool: any, obj: any): void
     if pool.in_use[obj]
         pool.in_use[obj] = nil
         pool.available[#pool.available + 1] = obj
@@ -281,7 +281,7 @@ object_pool_release(pool: any, obj: any): void
     end
 end
 
-object_pool_stats(pool: any): any
+pool_stats(pool: any): any
     {
         available = #pool.available,
         in_use_count = 0,
@@ -295,40 +295,9 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Stats
-M.stats_new = memory_stats_new
-M.stats_record_alloc = memory_stats_record_alloc
-M.stats_record_free = memory_stats_record_free
-M.stats_record_gc = memory_stats_record_gc
-M.stats_summary = memory_stats_summary
 -- Arena
-M.arena_new = memory_arena_new
-M.arena_alloc = memory_arena_alloc
-M.arena_reset = memory_arena_reset
-M.arena_stats = memory_arena_stats
 -- GC Config
-M.gc_config_new = gc_config_new
-M.gc_config_set_mode = gc_config_set_mode
-M.gc_config_set_pause_target = gc_config_set_pause_target
-M.gc_config_set_heap_limits = gc_config_set_heap_limits
-M.gc_config_set_growth = gc_config_set_growth
 -- GC State
-M.gc_state_new = gc_state_new
-M.gc_state_should_collect = gc_state_should_collect
-M.gc_state_start_collection = gc_state_start_collection
-M.gc_state_end_collection = gc_state_end_collection
-M.gc_state_record_alloc = gc_state_record_alloc
-M.gc_state_record_free = gc_state_record_free
-M.gc_state_stats = gc_state_stats
 -- Pressure
-M.pressure_new = memory_pressure_new
-M.pressure_update = memory_pressure_update
-M.pressure_level = memory_pressure_level
-M.pressure_should_gc = memory_pressure_should_gc
 -- Object Pool
-M.pool_new = object_pool_new
-M.pool_acquire = object_pool_acquire
-M.pool_release = object_pool_release
-M.pool_stats = object_pool_stats
-M

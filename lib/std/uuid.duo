@@ -45,6 +45,3 @@ v4(): str
     result
 end
 
-M = {}
-M.v4 = v4
-M

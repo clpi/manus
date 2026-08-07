@@ -6,17 +6,17 @@ new(): void
     return {drivers = {}}
 end
 
-register_driver(db: any, name: any, driver: any)
+register(db: any, name: any, driver: any)
     db.drivers[name] = driver
 end
 
-open_driver(db: any, driver_name: any, dsn: any)
+open(db: any, driver_name: any, dsn: any)
     d = db.drivers[driver_name]
     if d == nil return nil, "unknown driver: " .. driver_name end
     return d.open(dsn)
 end
 
-list_databases(db: any)
+databases(db: any)
     out = {}
     for k in pairs(db.drivers)
         out[rawlen(out) + 1] = k
@@ -24,9 +24,3 @@ list_databases(db: any)
     return out
 end
 
-M = {}
-M.new = new
-M.register = register_driver
-M.open = open_driver
-M.databases = list_databases
-M

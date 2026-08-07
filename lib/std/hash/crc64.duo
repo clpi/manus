@@ -62,9 +62,3 @@ checksum(data: str): i64
     final(s)
 end
 
-M = {}
-M.new = new
-M.update = update
-M.final = final
-M.checksum = checksum
-M

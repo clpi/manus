@@ -1,6 +1,6 @@
 -- std.fs — simple file-system helpers
 
-std_fs_exists(path: any): bool
+exists(path: any): bool
     if path == nil return false end
     f = io.open(path, "r")
     if f == nil return false end
@@ -8,7 +8,7 @@ std_fs_exists(path: any): bool
     true
 end
 
-std_fs_read_file(path: any): any
+read_file(path: any): any
     f = io.open(path, "r")
     if f == nil return "" end
     -- Read the WHOLE file in one C-level call (f:read("*a")). The previous
@@ -22,7 +22,7 @@ std_fs_read_file(path: any): any
     data
 end
 
-std_fs_write_file(path: any, data: any): bool
+write_file(path: any, data: any): bool
     f = io.open(path, "w")
     if f == nil return false end
     if data == nil data = "" end
@@ -31,7 +31,7 @@ std_fs_write_file(path: any, data: any): bool
     true
 end
 
-std_fs_append_file(path: any, data: any): bool
+append_file(path: any, data: any): bool
     f = io.open(path, "a")
     if f == nil return false end
     if data == nil data = "" end
@@ -40,7 +40,7 @@ std_fs_append_file(path: any, data: any): bool
     true
 end
 
-std_fs_read_lines(path: any): any
+read_lines(path: any): any
     out = {}
     f = io.open(path, "r")
     if f == nil return out end
@@ -53,30 +53,30 @@ std_fs_read_lines(path: any): any
     out
 end
 
-std_fs_remove(path: any): bool
+remove(path: any): bool
     os.remove(path) != nil
 end
 
-std_fs_rename(old_path: any, new_path: any): bool
+rename(old_path: any, new_path: any): bool
     os.rename(old_path, new_path) != nil
 end
 
-std_fs_mkdir(path: str): bool
+mkdir(path: str): bool
     if path == nil return false end
     os.execute("mkdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-std_fs_mkdir_all(path: str): bool
+mkdir_all(path: str): bool
     if path == nil return false end
     os.execute("mkdir -p '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-std_fs_copy(src: str, dest: str): bool
+copy(src: str, dest: str): bool
     if src == nil or dest == nil return false end
     os.execute("cp '" .. string.gsub(src, "'", "'\\''") .. "' '" .. string.gsub(dest, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-std_fs_read_dir(path: str): any
+read_dir(path: str): any
     out = {}
     if path == nil return out end
     f = io.popen("ls -1A '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
@@ -90,27 +90,27 @@ std_fs_read_dir(path: str): any
     out
 end
 
-std_fs_is_dir(path: str): bool
+is_dir(path: str): bool
     if path == nil return false end
     os.execute("test -d '" .. string.gsub(path, "'", "'\\''") .. "'")
 end
 
-std_fs_is_file(path: str): bool
+is_file(path: str): bool
     if path == nil return false end
     os.execute("test -f '" .. string.gsub(path, "'", "'\\''") .. "'")
 end
 
-std_fs_rmdir(path: str): bool
+rmdir(path: str): bool
     if path == nil return false end
     os.execute("rmdir '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-std_fs_chmod(path: str, mode: str): bool
+chmod(path: str, mode: str): bool
     if path == nil or mode == nil return false end
     os.execute("chmod " .. mode .. " '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null")
 end
 
-std_fs_size(path: str): i64
+size(path: str): i64
     if path == nil return 0 - 1 end
     f = io.popen("stat -c%s '" .. string.gsub(path, "'", "'\\''") .. "' 2>/dev/null", "r")
     if f == nil
@@ -125,21 +125,3 @@ std_fs_size(path: str): i64
     s
 end
 
-M = {}
-M.exists = std_fs_exists
-M.read_file = std_fs_read_file
-M.write_file = std_fs_write_file
-M.append_file = std_fs_append_file
-M.read_lines = std_fs_read_lines
-M.remove = std_fs_remove
-M.rename = std_fs_rename
-M.mkdir = std_fs_mkdir
-M.mkdir_all = std_fs_mkdir_all
-M.copy = std_fs_copy
-M.read_dir = std_fs_read_dir
-M.is_dir = std_fs_is_dir
-M.is_file = std_fs_is_file
-M.rmdir = std_fs_rmdir
-M.chmod = std_fs_chmod
-M.size = std_fs_size
-M

@@ -86,21 +86,9 @@ to_str(err: any): str
     if type(err) == "string" return err end
     msg = err.message
     if msg == nil msg = to(str)(err) end
-    if err.cause != nil
+    if has(.cause)(err)
         msg = msg .. " -> " .. to_str(err.cause)
     end
     msg
 end
 
-M = {}
-M.new = new
-M.newf = newf
-M.wrap = wrap
-M.wrapf = wrapf
-M.is = is
-M.as = as
-M.unwrap = unwrap
-M.message = message
-M.join = join
-M.to_str = to_str
-M

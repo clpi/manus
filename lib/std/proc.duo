@@ -21,7 +21,3 @@ capture(cmd: str): str
     out
 end
 
-M = {}
-M.exec = exec
-M.capture = capture
-M

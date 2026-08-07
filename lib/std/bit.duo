@@ -275,34 +275,3 @@ f32_from_bits(b: i64): f64
     return @c.emit([[ ({ int32_t _i = (int32_t)(uint32_t)b; float _f; memcpy(&_f, &_i, 4); (double)_f; }) ]])
 end
 
-M = {}
-M.popcount = popcount
-M.clz = clz
-M.ctz = ctz
-M.bit_length = bit_length
-M.rotl = rotl
-M.rotr = rotr
-M.reverse = reverse
-M.reverse_bytes = reverse_bytes
-M.extract = extract
-M.insert = insert
-M.set_bit = set_bit
-M.clear_bit = clear_bit
-M.toggle_bit = toggle_bit
-M.test_bit = test_bit
-M.popcount_range = popcount_range
-M.next_pow2 = next_pow2
-M.prev_pow2 = prev_pow2
-M.leb128_encode_u = leb128_encode_u
-M.leb128_decode_u = leb128_decode_u
-M.leb128_encode_s = leb128_encode_s
-M.leb128_decode_s = leb128_decode_s
-M.and_bytes = and_bytes
-M.or_bytes = or_bytes
-M.xor_bytes = xor_bytes
-M.not_bytes = not_bytes
-M.f64_to_bits = f64_to_bits
-M.f64_from_bits = f64_from_bits
-M.f32_to_bits = f32_to_bits
-M.f32_from_bits = f32_from_bits
-M

@@ -5,16 +5,16 @@
 -- RPC Message Types
 -- ═══════════════════════════════════════════════════════════════
 
-RPC_REQUEST = 1
-RPC_RESPONSE = 2
-RPC_ERROR = 3
-RPC_NOTIFICATION = 4
+REQUEST = 1
+RESPONSE = 2
+ERROR = 3
+NOTIFICATION = 4
 
 -- ═══════════════════════════════════════════════════════════════
 -- RPC Message
 -- ═══════════════════════════════════════════════════════════════
 
-rpc_request_new(id: i64, method: str, params: any): any
+request_new(id: i64, method: str, params: any): any
     {
         jsonrpc = "2.0",
         id = id,
@@ -23,7 +23,7 @@ rpc_request_new(id: i64, method: str, params: any): any
     }
 end
 
-rpc_response_new(id: i64, result: any): any
+response_new(id: i64, result: any): any
     {
         jsonrpc = "2.0",
         id = id,
@@ -31,7 +31,7 @@ rpc_response_new(id: i64, result: any): any
     }
 end
 
-rpc_error_new(id: i64, code: i64, message: str, data: any): any
+error_new(id: i64, code: i64, message: str, data: any): any
     {
         jsonrpc = "2.0",
         id = id,
@@ -43,7 +43,7 @@ rpc_error_new(id: i64, code: i64, message: str, data: any): any
     }
 end
 
-rpc_notification_new(method: str, params: any): any
+notification_new(method: str, params: any): any
     {
         jsonrpc = "2.0",
         method = method,
@@ -55,7 +55,7 @@ end
 -- RPC Server
 -- ═══════════════════════════════════════════════════════════════
 
-rpc_server_new(): any
+server_new(): any
     {
         handlers = {},
         middleware = {},
@@ -63,24 +63,24 @@ rpc_server_new(): any
     }
 end
 
-rpc_server_register(server: any, method: str, handler: any): void
+server_register(server: any, method: str, handler: any): void
     server.handlers[method] = handler
 end
 
-rpc_server_add_middleware(server: any, middleware: any): void
+server_add_middleware(server: any, middleware: any): void
     server.middleware[#server.middleware + 1] = middleware
 end
 
-rpc_server_handle(server: any, request: any): any
+server_handle(server: any, request: any): any
     -- Validate JSON-RPC version
     if request.jsonrpc != "2.0"
-        return rpc_error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
+        return error_new(request.id, -32600, "Invalid Request", "Invalid JSON-RPC version")
     end
 
     -- Check if method exists
     handler = server.handlers[request.method]
     if handler == nil
-        return rpc_error_new(request.id, -32601, "Method not found", request.method)
+        return error_new(request.id, -32601, "Method not found", request.method)
     end
 
     -- Run middleware
@@ -96,13 +96,13 @@ rpc_server_handle(server: any, request: any): any
     -- Call handler
     ok, result = pcall(handler, request.params, context)
     if not ok
-        return rpc_error_new(request.id, -32603, "Internal error", to(str)(result))
+        return error_new(request.id, -32603, "Internal error", to(str)(result))
     end
 
-    rpc_response_new(request.id, result)
+    response_new(request.id, result)
 end
 
-rpc_server_next_id(server: any): i64
+server_next_id(server: any): i64
     id = server.next_id
     server.next_id += 1
     id
@@ -112,7 +112,7 @@ end
 -- RPC Client
 -- ═══════════════════════════════════════════════════════════════
 
-rpc_client_new(transport: any): any
+client_new(transport: any): any
     {
         transport = transport,
         next_id = 1,
@@ -120,11 +120,11 @@ rpc_client_new(transport: any): any
     }
 end
 
-rpc_client_call(client: any, method: str, params: any): any
+client_call(client: any, method: str, params: any): any
     id = client.next_id
     client.next_id += 1
 
-    request = rpc_request_new(id, method, params)
+    request = request_new(id, method, params)
 
     -- Send request
     result = client.transport.send(request)
@@ -139,12 +139,12 @@ rpc_client_call(client: any, method: str, params: any): any
     {id = id, request = request}
 end
 
-rpc_client_notify(client: any, method: str, params: any): any
-    notification = rpc_notification_new(method, params)
+client_notify(client: any, method: str, params: any): any
+    notification = notification_new(method, params)
     client.transport.send(notification)
 end
 
-rpc_client_handle_response(client: any, response: any): any
+client_handle_response(client: any, response: any): any
     if response.id and client.pending[response.id]
         pending = client.pending[response.id]
         client.pending[response.id] = nil
@@ -158,11 +158,11 @@ rpc_client_handle_response(client: any, response: any): any
     {notification = response}
 end
 
-rpc_client_cancel(client: any, id: i64): void
+client_cancel(client: any, id: i64): void
     client.pending[id] = nil
 end
 
-rpc_client_pending_count(client: any): i64
+client_pending_count(client: any): i64
     count = 0
     for _ in client.pending
         count += 1
@@ -174,7 +174,7 @@ end
 -- Transport Layer (pluggable)
 -- ═══════════════════════════════════════════════════════════════
 
-rpc_transport_http_new(url: str): any
+transport_http_new(url: str): any
     {
         type = "http",
         url = url,
@@ -183,7 +183,7 @@ rpc_transport_http_new(url: str): any
     }
 end
 
-rpc_transport_http_send(transport: any, message: any): any
+transport_http_send(transport: any, message: any): any
     json = req "std.encoding.json"
     net = req "std.net"
     payload = json.encode(message)
@@ -194,7 +194,7 @@ rpc_transport_http_send(transport: any, message: any): any
     {ok = true, data = result.body}
 end
 
-rpc_transport_websocket_new(url: str): any
+transport_websocket_new(url: str): any
     {
         type = "websocket",
         url = url,
@@ -203,7 +203,7 @@ rpc_transport_websocket_new(url: str): any
     }
 end
 
-rpc_transport_websocket_send(transport: any, message: any): any
+transport_websocket_send(transport: any, message: any): any
     json = req "std.encoding.json"
     net = req "std.net"
     if transport.connection == nil
@@ -219,7 +219,7 @@ rpc_transport_websocket_send(transport: any, message: any): any
     {ok = true}
 end
 
-rpc_transport_tcp_new(host: str, port: i64): any
+transport_tcp_new(host: str, port: i64): any
     {
         type = "tcp",
         host = host,
@@ -229,7 +229,7 @@ rpc_transport_tcp_new(host: str, port: i64): any
     }
 end
 
-rpc_transport_tcp_send(transport: any, message: any): any
+transport_tcp_send(transport: any, message: any): any
     json = req "std.encoding.json"
     net = req "std.net"
     if transport.socket == nil
@@ -249,21 +249,21 @@ end
 -- Error Codes
 -- ═══════════════════════════════════════════════════════════════
 
-RPC_PARSE_ERROR = -32700
-RPC_INVALID_REQUEST = -32600
-RPC_METHOD_NOT_FOUND = -32601
-RPC_INVALID_PARAMS = -32602
-RPC_INTERNAL_ERROR = -32603
-RPC_SERVER_ERROR = -32000
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
+INTERNAL_ERROR = -32603
+SERVER_ERROR = -32000
 
-rpc_error_code_name(code: i64): str
+error_code_name(code: i64): str
     codes = {
-        [RPC_PARSE_ERROR] = "Parse error",
-        [RPC_INVALID_REQUEST] = "Invalid Request",
-        [RPC_METHOD_NOT_FOUND] = "Method not found",
-        [RPC_INVALID_PARAMS] = "Invalid params",
-        [RPC_INTERNAL_ERROR] = "Internal error",
-        [RPC_SERVER_ERROR] = "Server error",
+        [PARSE_ERROR] = "Parse error",
+        [INVALID_REQUEST] = "Invalid Request",
+        [METHOD_NOT_FOUND] = "Method not found",
+        [INVALID_PARAMS] = "Invalid params",
+        [INTERNAL_ERROR] = "Internal error",
+        [SERVER_ERROR] = "Server error",
     }
     codes[code] or "Unknown error"
 end
@@ -272,13 +272,13 @@ end
 -- Service Discovery
 -- ═══════════════════════════════════════════════════════════════
 
-rpc_registry_new(): any
+registry_new(): any
     {
         services = {},
     }
 end
 
-rpc_registry_register(registry: any, name: str, address: str, metadata: any): void
+registry_register(registry: any, name: str, address: str, metadata: any): void
     registry.services[name] = {
         address = address,
         metadata = metadata or {},
@@ -286,15 +286,15 @@ rpc_registry_register(registry: any, name: str, address: str, metadata: any): vo
     }
 end
 
-rpc_registry_unregister(registry: any, name: str): void
+registry_unregister(registry: any, name: str): void
     registry.services[name] = nil
 end
 
-rpc_registry_discover(registry: any, name: str): any
+registry_discover(registry: any, name: str): any
     registry.services[name]
 end
 
-rpc_registry_discover_all(registry: any): any
+registry_discover_all(registry: any): any
     services = {}
     for name, service in registry.services
         services[#services + 1] = {name = name, address = service.address, metadata = service.metadata}
@@ -302,7 +302,7 @@ rpc_registry_discover_all(registry: any): any
     services
 end
 
-rpc_registry_heartbeat(registry: any, name: str): void
+registry_heartbeat(registry: any, name: str): void
     service = registry.services[name]
     if service
         service.last_heartbeat = os.clock()
@@ -313,50 +313,10 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Constants
-M.REQUEST = RPC_REQUEST
-M.RESPONSE = RPC_RESPONSE
-M.ERROR = RPC_ERROR
-M.NOTIFICATION = RPC_NOTIFICATION
 -- Messages
-M.request_new = rpc_request_new
-M.response_new = rpc_response_new
-M.error_new = rpc_error_new
-M.notification_new = rpc_notification_new
 -- Server
-M.server_new = rpc_server_new
-M.server_register = rpc_server_register
-M.server_add_middleware = rpc_server_add_middleware
-M.server_handle = rpc_server_handle
-M.server_next_id = rpc_server_next_id
 -- Client
-M.client_new = rpc_client_new
-M.client_call = rpc_client_call
-M.client_notify = rpc_client_notify
-M.client_handle_response = rpc_client_handle_response
-M.client_cancel = rpc_client_cancel
-M.client_pending_count = rpc_client_pending_count
 -- Transport
-M.transport_http_new = rpc_transport_http_new
-M.transport_http_send = rpc_transport_http_send
-M.transport_websocket_new = rpc_transport_websocket_new
-M.transport_websocket_send = rpc_transport_websocket_send
-M.transport_tcp_new = rpc_transport_tcp_new
-M.transport_tcp_send = rpc_transport_tcp_send
 -- Error Codes
-M.PARSE_ERROR = RPC_PARSE_ERROR
-M.INVALID_REQUEST = RPC_INVALID_REQUEST
-M.METHOD_NOT_FOUND = RPC_METHOD_NOT_FOUND
-M.INVALID_PARAMS = RPC_INVALID_PARAMS
-M.INTERNAL_ERROR = RPC_INTERNAL_ERROR
-M.SERVER_ERROR = RPC_SERVER_ERROR
-M.error_code_name = rpc_error_code_name
 -- Registry
-M.registry_new = rpc_registry_new
-M.registry_register = rpc_registry_register
-M.registry_unregister = rpc_registry_unregister
-M.registry_discover = rpc_registry_discover
-M.registry_discover_all = rpc_registry_discover_all
-M.registry_heartbeat = rpc_registry_heartbeat
-M

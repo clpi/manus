@@ -59,7 +59,7 @@ end
 check(fn: any, config: any): bool
     if config == nil config = default_config() end
     max_count = config.max_count
-    if config.max_count_scale != nil
+    if has(.max_count_scale)(config)
         max_count *= config.max_count_scale
     end
     for i = 1, max_count
@@ -92,15 +92,3 @@ value(t: any): any
     t
 end
 
-M = {}
-M.default_config = default_config
-M.gen = gen
-M.gen_bool = gen_bool
-M.gen_int = gen_int
-M.gen_float = gen_float
-M.gen_string = gen_string
-M.gen_table = gen_table
-M.check = check
-M.check_equal = check_equal
-M.value = value
-M

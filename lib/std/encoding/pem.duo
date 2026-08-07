@@ -50,8 +50,3 @@ new(typ: str, data: str): any
     {type = typ, headers = {}, bytes = data}
 end
 
-M = {}
-M.encode = encode
-M.decode = decode
-M.new = new
-M

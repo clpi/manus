@@ -48,8 +48,3 @@ fit(model, batches, epochs, lr): any
     return model
 end
 
-M = {}
-M.sgd_step = sgd_step
-M.train_step = train_step
-M.fit = fit
-M

@@ -1,4 +1,4 @@
-optimize_gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64) -> any
+gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64) -> any
   x = x0
   history = {
     x
@@ -17,7 +17,7 @@ optimize_gradient_descent(f: any, df: any, x0: f64, lr: f64, iterations: i64) ->
     iterations = iterations
   }
 end
-optimize_adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64) -> any
+adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon: f64, iterations: i64) -> any
   if beta1 == nil
     beta1 = 0.9
   end
@@ -51,7 +51,7 @@ optimize_adam(f: any, df: any, x0: f64, lr: f64, beta1: f64, beta2: f64, epsilon
     iterations = iterations
   }
 end
-optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64) -> any
+nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f64, iterations: i64) -> any
   if alpha == nil
     alpha = 1.0
   end
@@ -175,7 +175,7 @@ optimize_nelder_mead(f: any, x0: any, alpha: f64, gamma: f64, rho: f64, sigma: f
     iterations = iterations
   }
 end
-optimize_grid_search(f: any, ranges: any, steps: i64) -> any
+grid_search(f: any, ranges: any, steps: i64) -> any
   grid = {}
   for param_name, range in ranges
     min_val = range[1]
@@ -236,7 +236,7 @@ optimize_grid_search(f: any, ranges: any, steps: i64) -> any
     results = results
   }
 end
-optimize_random_search(f: any, ranges: any, iterations: i64) -> any
+random_search(f: any, ranges: any, iterations: i64) -> any
   best = nil
   best_value = 1000000000000000000000000000000.0
   results = {}
@@ -265,7 +265,7 @@ optimize_random_search(f: any, ranges: any, iterations: i64) -> any
     results = results
   }
 end
-optimize_line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_iter: i64) -> f64
+line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_iter: i64) -> f64
   if alpha == nil
     alpha = 0.5
   end
@@ -287,11 +287,3 @@ optimize_line_search(f: any, x: f64, direction: f64, alpha: f64, beta: f64, max_
   end
   t
 end
-M = {}
-M.gradient_descent = optimize_gradient_descent
-M.adam = optimize_adam
-M.nelder_mead = optimize_nelder_mead
-M.grid_search = optimize_grid_search
-M.random_search = optimize_random_search
-M.line_search = optimize_line_search
-M

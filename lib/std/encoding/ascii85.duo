@@ -123,8 +123,3 @@ max_encoded_len(n: i64): i64
     (n + 3) / 4 * 5 + 4
 end
 
-M = {}
-M.encode = encode
-M.decode = decode
-M.max_encoded_len = max_encoded_len
-M

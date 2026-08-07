@@ -1,79 +1,64 @@
 -- std.os — operating system utilities
 
-os_execute(cmd: str): int
+execute(cmd: str): int
     if os.execute(cmd) 0 else 1 end
 end
 
-os_exit(code: int)
+exit(code: int)
     os.exit(code)
 end
 
-os_remove(path: str): bool
+remove(path: str): bool
     os.remove(path)
 end
 
-os_rename(old: str, new: str): bool
+rename(old: str, new: str): bool
     os.rename(old, new)
 end
 
-os_read_file(path: str): any
+read_file(path: str): any
     if path == nil return "" end
     return @c.emit([[({ FILE* _f = fopen(path, "rb"); lua_Value _v = lua_val_lit(""); if (_f) { fseek(_f, 0, SEEK_END); long _sz = ftell(_f); if (_sz > 0) { fseek(_f, 0, SEEK_SET); char* _buf = (char*)malloc((size_t)_sz); if (_buf) { fread(_buf, 1, (size_t)_sz, _f); _v = lua_val_from_str_len(_buf, (size_t)_sz); free(_buf); } } fclose(_f); } _v; })]])
 end
 
-os_write_file(path: str, data: any): bool
+write_file(path: str, data: any): bool
     if path == nil return false end
     if data == nil return false end
     return @c.emit([[({ FILE* _f = fopen(path, "wb"); int _ok = 0; if (_f) { const char* _s = lua_to_str(data); size_t _len = lua_str_byte_len(data); _ok = fwrite(_s, 1, _len, _f) == _len; fclose(_f); } _ok; })]])
 end
 
-os_mkdir(path: str): bool
+mkdir(path: str): bool
     if path == nil return false end
     return @c.emit("mkdir(path, 0777) == 0")
 end
 
-os_mkdir_all(path: str): bool
+mkdir_all(path: str): bool
     if path == nil return false end
     os.execute("mkdir -p '" .. path .. "'")
 end
 
-os_chdir(path: str): bool
+chdir(path: str): bool
     if path == nil return false end
     return @c.emit("chdir(path) == 0")
 end
 
-os_getcwd(): any
+getcwd(): any
     return @c.emit([[({ char _buf[1024]; getcwd(_buf, sizeof(_buf)) ? lua_val_from_str(_buf) : lua_val_lit(""); })]])
 end
 
-os_getenv(name: str): any
+getenv(name: str): any
     if name == nil return "" end
     return @c.emit([[({ char* _v = getenv(name); _v ? lua_val_from_str(_v) : lua_val_lit(""); })]])
 end
 
-os_setenv(name: str, value: str, overwrite: bool): bool
+setenv(name: str, value: str, overwrite: bool): bool
     if name == nil or value == nil return false end
     return @c.emit("setenv(name, value, overwrite ? 1 : 0) == 0")
 end
 
-os_args(): any
+args(): any
     out = {}
     @c.emit([[for (int i = 1; i < duo_argc; i++) { lua_table_set_raw_i64(out, i, lua_val_from_str(duo_argv[i])); }]])
     out
 end
 
-M = {}
-M.execute = os_execute
-M.exit = os_exit
-M.remove = os_remove
-M.rename = os_rename
-M.read_file = os_read_file
-M.write_file = os_write_file
-M.mkdir = os_mkdir
-M.mkdir_all = os_mkdir_all
-M.chdir = os_chdir
-M.getcwd = os_getcwd
-M.getenv = os_getenv
-M.setenv = os_setenv
-M.args = os_args
-M

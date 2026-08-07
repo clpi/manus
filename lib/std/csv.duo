@@ -89,9 +89,3 @@ format(rows: any): any
     string.concat(lines, "\n")
 end
 
-M = {}
-M.parse_line = parse_line
-M.parse = parse
-M.format_line = format_line
-M.format = format
-M

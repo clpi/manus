@@ -240,7 +240,7 @@ keys(obj: any): any
 end
 
 -- values: get all leaf values in depth-first order.
-std_property_values(obj: any): any
+values(obj: any): any
     flat = flatten(obj, "")
     out = {}
     for _, v in flat
@@ -276,17 +276,3 @@ merge_deep(a: any, b: any): any
     out
 end
 
-M = {}
-M.parse_path = parse_path
-M.get = get
-M.set = set
-M.has = has
-M.delete = delete
-M.get_or = get_or
-M.set_multiple = set_multiple
-M.flatten = flatten
-M.keys = keys
-M.values = std_property_values
-M.update = update
-M.merge_deep = merge_deep
-M

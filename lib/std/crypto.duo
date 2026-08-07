@@ -8,15 +8,15 @@ global crypto_rand = req "std.crypto.rand"
 -- static level with the same-named implementations in std.crypto.sha
 -- / std.hash.sha512 when both modules end up embedded in the same
 -- compilation unit.
-wrap_sha1(s: str): str
+sha1(s: str): str
     crypto_sha.sha1(s)
 end
 
-wrap_sha256(s: str): str
+sha256(s: str): str
     crypto_sha.sha256(s)
 end
 
-wrap_sha512(s: str): str
+sha512(s: str): str
     hash_sha512.sha512(s)
 end
 
@@ -186,7 +186,7 @@ hmac_sha256(key: str, message: str): str
     block_size = 64
     k = key
     if string.len(k) > block_size
-        k = wrap_sha256(k)
+        k = sha256(k)
     end
     while string.len(k) < block_size
         k = k .. "\0"
@@ -197,23 +197,6 @@ hmac_sha256(key: str, message: str): str
         o_key_pad = o_key_pad .. string.char(string.byte(k, i) ~ 0x5c)
         i_key_pad = i_key_pad .. string.char(string.byte(k, i) ~ 0x36)
     end
-    wrap_sha256(o_key_pad .. wrap_sha256(i_key_pad .. message))
+    sha256(o_key_pad .. sha256(i_key_pad .. message))
 end
 
-M = {}
-M.sha1 = wrap_sha1
-M.sha256 = wrap_sha256
-M.sha512 = wrap_sha512
-M.base64_encode = base64_encode
-M.base64_decode = base64_decode
-M.base64_url_encode = base64_url_encode
-M.base64_url_decode = base64_url_decode
-M.hex_encode = hex_encode
-M.hex_decode = hex_decode
-M.xor_encrypt = xor_encrypt
-M.secure_random_bytes = secure_random_bytes
-M.secure_random_hex = secure_random_hex
-M.secure_random_int = secure_random_int
-M.compare_digest = compare_digest
-M.hmac_sha256 = hmac_sha256
-M

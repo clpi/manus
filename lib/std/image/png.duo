@@ -341,7 +341,3 @@ encode(img: any): str
     out
 end
 
-M = {}
-M.decode = decode
-M.encode = encode
-M

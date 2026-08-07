@@ -104,25 +104,3 @@ is_inf(a: any): bool
     a.re == math.huge or a.re == -math.huge or a.im == math.huge or a.im == -math.huge
 end
 
-M = {}
-M.new = new
-M.add = add
-M.sub = sub
-M.mul = mul
-M.div = div
-M.neg = neg
-M.conj = conj
-M.abs = abs
-M.phase = phase
-M.polar = polar
-M.rect = rect
-M.exp = exp
-M.log = log
-M.sin = sin
-M.cos = cos
-M.tan = tan
-M.sqrt = sqrt
-M.pow = pow
-M.is_nan = is_nan
-M.is_inf = is_inf
-M

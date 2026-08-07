@@ -3,7 +3,7 @@
 
 string = req "std.string"
 
-one_byte_reader(data: str): any
+new_one_byte_reader(data: str): any
     {data = data, pos = 1}
 end
 
@@ -14,7 +14,7 @@ one_byte_read(r: any): any
     b
 end
 
-half_reader(data: str): any
+new_half_reader(data: str): any
     {data = data, pos = 1}
 end
 
@@ -27,7 +27,7 @@ half_read(r: any): any
     chunk
 end
 
-data_err_reader(data: str, err_at: i64): any
+new_data_err_reader(data: str, err_at: i64): any
     {data = data, pos = 1, err_at = err_at, erred = false}
 end
 
@@ -43,7 +43,7 @@ data_err_read(r: any): any
     chunk
 end
 
-timeout_reader(data: str, timeout_after: i64): any
+new_timeout_reader(data: str, timeout_after: i64): any
     {data = data, pos = 1, timeout_after = timeout_after, reads = 0}
 end
 
@@ -56,7 +56,7 @@ timeout_read(r: any): any
     chunk
 end
 
-trunc_writer(): any
+new_trunc_writer(): any
     {written = {}, max = 0, truncated = false}
 end
 
@@ -70,7 +70,7 @@ trunc_bytes(w: any): str
     table.concat(w.written)
 end
 
-error_writer(): any
+new_error_writer(): any
     {erred = false}
 end
 
@@ -79,18 +79,3 @@ error_write(w: any, data: str): any
     nil
 end
 
-M = {}
-M.new_one_byte_reader = one_byte_reader
-M.one_byte_read = one_byte_read
-M.new_half_reader = half_reader
-M.half_read = half_read
-M.new_data_err_reader = data_err_reader
-M.data_err_read = data_err_read
-M.new_timeout_reader = timeout_reader
-M.timeout_read = timeout_read
-M.new_trunc_writer = trunc_writer
-M.trunc_write = trunc_write
-M.trunc_bytes = trunc_bytes
-M.new_error_writer = error_writer
-M.error_write = error_write
-M

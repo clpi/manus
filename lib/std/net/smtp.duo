@@ -96,9 +96,3 @@ new_message(headers: any, body: str): str
     table.concat(out)
 end
 
-M = {}
-M.send_mail = send_mail
-M.plain_auth = plain_auth
-M.send_mail_auth = send_mail_auth
-M.new_message = new_message
-M

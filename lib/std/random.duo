@@ -6,13 +6,13 @@ seed(s: int): void
 end
 
 -- float: return a random float in [0, 1).
-rand_float(): float
+float(): float
     math.random()
 end
 
 -- int: return a random integer in [min, max] (inclusive).
 -- If only one argument, returns random int in [1, max].
-rand_int(min: int, max: int): int
+int(min: int, max: int): int
     if max == nil
         math.random(min)
     else
@@ -175,19 +175,3 @@ uuid_v4ish(): str
     result
 end
 
-M = {}
-M.seed = seed
-M.float = rand_float
-M.int = rand_int
-M.rand_bool = rand_bool
-M.bool_weighted = bool_weighted
-M.choice = choice
-M.sample = sample
-M.pick_n = pick_n
-M.weighted_choice = weighted_choice
-M.range = range
-M.gauss = gauss
-M.shuffle = shuffle
-M.coin = coin
-M.uuid_v4ish = uuid_v4ish
-M

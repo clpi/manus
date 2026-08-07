@@ -21,7 +21,7 @@ end
 -- ===== Timer type =====
 
 -- new: create a new timer, started immediately.
-new_timer(): any
+new(): any
     {start = os.clock(), laps = {}, running = true, stopped_at = nil}
 end
 
@@ -132,7 +132,7 @@ end
 
 -- measure: run fn and return {result, elapsed_seconds}.
 measure(fn_ref: any): any
-    t = new_timer()
+    t = new()
     r = fn_ref()
     d = stop(t)
     out = {}
@@ -147,7 +147,7 @@ time_it(n: i64, fn_ref: any): any
     times = {}
     i = 0
     while i < n
-        t = new_timer()
+        t = new()
         fn_ref()
         stop(t)
         times[rawlen(times) + 1] = elapsed(t)
@@ -180,7 +180,7 @@ bench(fn_ref: any, min_seconds: float): any
     total = 0
     count = 0
     while total < min_seconds
-        t = new_timer()
+        t = new()
         fn_ref()
         stop(t)
         lap_time = elapsed(t)
@@ -230,20 +230,3 @@ compare(name_a: str, fn_a: any, name_b: str, fn_b: any, n: i64): any
     out
 end
 
-M = {}
-M.new = new_timer
-M.elapsed = elapsed
-M.lap = lap
-M.lap_elapsed = lap_elapsed
-M.stop = stop
-M.reset = reset
-M.is_running = is_running
-M.get_laps = get_laps
-M.lap_count = lap_count
-M.format = format
-M.summary = summary
-M.measure = measure
-M.time_it = time_it
-M.bench = bench
-M.compare = compare
-M

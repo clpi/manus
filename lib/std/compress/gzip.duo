@@ -17,7 +17,7 @@ gunzip(data: any)
     return result or data
 end
 
-gzip_compress(data: any)
+compress(data: any)
     f = io.popen("gzip -c 2>/dev/null", "w")
     if f == nil return data end
     f:write(data)
@@ -28,8 +28,3 @@ gzip_compress(data: any)
     return result or data
 end
 
-M = {}
-M.is_gzipped = is_gzipped
-M.gunzip = gunzip
-M.compress = gzip_compress
-M

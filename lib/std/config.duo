@@ -90,7 +90,7 @@ end
 -- ---- Constructors ----
 
 -- new: create a config from a table of defaults.
-config_new(defaults: any): any
+new(defaults: any): any
     if defaults == nil defaults = {} end
     cfg = {}
     cfg.defaults = defaults
@@ -103,26 +103,26 @@ end
 
 -- get: retrieve a value by dot-path key (e.g. "server.port").
 -- Falls back to defaults if not set.
-config_get(cfg: any, key: any): any
+get(cfg: any, key: any): any
     val = deep_get(cfg.values, key)
     if val != nil return val end
     deep_get(cfg.defaults, key)
 end
 
 -- get_or: retrieve a value with a custom fallback.
-config_get_or(cfg: any, key: any, fallback: any): any
-    val = config_get(cfg, key)
+get_or(cfg: any, key: any, fallback: any): any
+    val = get(cfg, key)
     if val != nil return val end
     fallback
 end
 
 -- set: set a value by dot-path key.
-config_set(cfg: any, key: any, value: any): void
+set(cfg: any, key: any, value: any): void
     deep_set(cfg.values, key, value)
 end
 
 -- has: check if a key exists (values or defaults).
-config_has(cfg: any, key: any): bool
+has(cfg: any, key: any): bool
     if deep_has(cfg.values, key) return true end
     deep_has(cfg.defaults, key)
 end
@@ -130,12 +130,12 @@ end
 -- ---- Merge ----
 
 -- merge: deep-merge another config or table into this config's values.
-config_merge(cfg: any, overlay: any): void
+merge(cfg: any, overlay: any): void
     deep_merge_into(cfg.values, overlay)
 end
 
 -- merge_defaults: merge overrides into the defaults schema.
-config_merge_defaults(cfg: any, overlay: any): void
+merge_defaults(cfg: any, overlay: any): void
     deep_merge_into(cfg.defaults, overlay)
 end
 
@@ -172,7 +172,7 @@ end
 -- ---- Bulk Access ----
 
 -- keys: return a list of all defined keys (values + defaults).
-config_keys(cfg: any): any
+keys(cfg: any): any
     seen = {}
     out = {}
     collect_keys(seen, out, cfg.values, "")
@@ -181,7 +181,7 @@ config_keys(cfg: any): any
 end
 
 -- to_table: return the fully resolved config as a flat table.
-config_to_table(cfg: any): any
+to_table(cfg: any): any
     result = {}
     deep_copy_flat(result, "", cfg.defaults)
     deep_copy_flat(result, "", cfg.values)
@@ -195,7 +195,7 @@ require_keys(cfg: any, keys: any): any
     missing = {}
     i = 1
     while i <= rawlen(keys)
-        if not config_has(cfg, keys[i])
+        if not has(cfg, keys[i])
             missing[rawlen(missing) + 1] = keys[i]
         end
         i += 1
@@ -205,19 +205,19 @@ end
 
 -- validate_not_nil: check that a key is not nil; return error message or nil.
 validate_not_nil(cfg: any, key: any): any
-    if config_get(cfg, key) != nil return nil end
+    if get(cfg, key) != nil return nil end
     "missing required config key: " .. key
 end
 
 -- ---- Serialization ----
 
 -- to_string: format config as a readable string.
-config_to_string(cfg: any): str
+to_string(cfg: any): str
     parts = {}
-    all_keys = config_keys(cfg)
+    all_keys = keys(cfg)
     i = 1
     while i <= rawlen(all_keys)
-        val = config_get(cfg, all_keys[i])
+        val = get(cfg, all_keys[i])
         parts[rawlen(parts) + 1] = all_keys[i] .. " = " .. to(str)(val)
         i += 1
     end
@@ -225,19 +225,3 @@ config_to_string(cfg: any): str
     table.concat(parts, "\n")
 end
 
-M = {}
-M.new = config_new
-M.get = config_get
-M.get_or = config_get_or
-M.set = config_set
-M.has = config_has
-M.merge = config_merge
-M.merge_defaults = config_merge_defaults
-M.set_env_prefix = set_env_prefix
-M.load_env = load_env
-M.keys = config_keys
-M.to_table = config_to_table
-M.require_keys = require_keys
-M.validate_not_nil = validate_not_nil
-M.to_string = config_to_string
-M

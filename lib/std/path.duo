@@ -79,11 +79,3 @@ normalize(p: str): str
     p
 end
 
-M = {}
-M.join = join
-M.basename = basename
-M.dirname = dirname
-M.extname = extname
-M.is_absolute = is_absolute
-M.normalize = normalize
-M

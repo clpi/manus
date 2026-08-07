@@ -5,7 +5,7 @@
 -- UI Rect
 -- ═══════════════════════════════════════════════════════════════
 
-ui_rect_new(x: f64, y: f64, width: f64, height: f64): any
+rect_new(x: f64, y: f64, width: f64, height: f64): any
     {
         x = x,
         y = y,
@@ -14,7 +14,7 @@ ui_rect_new(x: f64, y: f64, width: f64, height: f64): any
     }
 end
 
-ui_rect_contains(rect: any, px: f64, py: f64): bool
+rect_contains(rect: any, px: f64, py: f64): bool
     px >= rect.x and px <= rect.x + rect.width and
     py >= rect.y and py <= rect.y + rect.height
 end
@@ -23,11 +23,11 @@ end
 -- UI Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_widget_new(widget_type: str): any
+widget_new(widget_type: str): any
     {
         type = widget_type,
         id = "",
-        rect = ui_rect_new(0, 0, 0, 0),
+        rect = rect_new(0, 0, 0, 0),
         visible = true,
         enabled = true,
         parent = nil,
@@ -45,12 +45,12 @@ ui_widget_new(widget_type: str): any
     }
 end
 
-ui_widget_add_child(parent: any, child: any): void
+widget_add_child(parent: any, child: any): void
     child.parent = parent
     parent.children[#parent.children + 1] = child
 end
 
-ui_widget_remove_child(parent: any, child: any): void
+widget_remove_child(parent: any, child: any): void
     i = 1
     while i <= #parent.children
         if parent.children[i] == child
@@ -62,22 +62,22 @@ ui_widget_remove_child(parent: any, child: any): void
     end
 end
 
-ui_widget_set_rect(widget: any, x: f64, y: f64, width: f64, height: f64): void
-    widget.rect = ui_rect_new(x, y, width, height)
+widget_set_rect(widget: any, x: f64, y: f64, width: f64, height: f64): void
+    widget.rect = rect_new(x, y, width, height)
 end
 
 -- ═══════════════════════════════════════════════════════════════
 -- Button Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_button_new(label: str): any
-    widget = ui_widget_new("button")
+button_new(label: str): any
+    widget = widget_new("button")
     widget.label = label
     widget.on_click = nil
     widget
 end
 
-ui_button_set_on_click(button: any, callback: any): void
+button_set_on_click(button: any, callback: any): void
     button.on_click = callback
 end
 
@@ -85,14 +85,14 @@ end
 -- Label Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_label_new(text: str): any
-    widget = ui_widget_new("label")
+label_new(text: str): any
+    widget = widget_new("label")
     widget.text = text
     widget.font_size = 14
     widget
 end
 
-ui_label_set_text(label: any, text: str): void
+label_set_text(label: any, text: str): void
     label.text = text
 end
 
@@ -100,8 +100,8 @@ end
 -- Text Input Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_text_input_new(placeholder: str): any
-    widget = ui_widget_new("text_input")
+text_input_new(placeholder: str): any
+    widget = widget_new("text_input")
     widget.text = ""
     widget.placeholder = placeholder or ""
     widget.cursor_pos = 0
@@ -112,16 +112,16 @@ ui_text_input_new(placeholder: str): any
     widget
 end
 
-ui_text_input_set_text(input: any, text: str): void
+text_input_set_text(input: any, text: str): void
     input.text = text
     input.cursor_pos = #text
 end
 
-ui_text_input_get_text(input: any): str
+text_input_get_text(input: any): str
     input.text
 end
 
-ui_text_input_set_on_change(input: any, callback: any): void
+text_input_set_on_change(input: any, callback: any): void
     input.on_change = callback
 end
 
@@ -129,8 +129,8 @@ end
 -- Slider Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_slider_new(min: f64, max: f64, value: f64): any
-    widget = ui_widget_new("slider")
+slider_new(min: f64, max: f64, value: f64): any
+    widget = widget_new("slider")
     widget.min = min
     widget.max = max
     widget.value = value or min
@@ -139,11 +139,11 @@ ui_slider_new(min: f64, max: f64, value: f64): any
     widget
 end
 
-ui_slider_set_value(slider: any, value: f64): void
+slider_set_value(slider: any, value: f64): void
     slider.value = math.max(slider.min, math.min(slider.max, value))
 end
 
-ui_slider_get_value(slider: any): f64
+slider_get_value(slider: any): f64
     slider.value
 end
 
@@ -151,19 +151,19 @@ end
 -- Checkbox Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_checkbox_new(label: str, checked: bool): any
-    widget = ui_widget_new("checkbox")
+checkbox_new(label: str, checked: bool): any
+    widget = widget_new("checkbox")
     widget.label = label
     widget.checked = checked or false
     widget.on_change = nil
     widget
 end
 
-ui_checkbox_set_checked(checkbox: any, checked: bool): void
+checkbox_set_checked(checkbox: any, checked: bool): void
     checkbox.checked = checked
 end
 
-ui_checkbox_is_checked(checkbox: any): bool
+checkbox_is_checked(checkbox: any): bool
     checkbox.checked
 end
 
@@ -171,8 +171,8 @@ end
 -- Panel Widget
 -- ═══════════════════════════════════════════════════════════════
 
-ui_panel_new(): any
-    widget = ui_widget_new("panel")
+panel_new(): any
+    widget = widget_new("panel")
     widget.scroll_x = 0
     widget.scroll_y = 0
     widget.overflow = "hidden"
@@ -183,7 +183,7 @@ end
 -- Layout
 -- ═══════════════════════════════════════════════════════════════
 
-ui_layout_vertical(container: any, x: f64, y: f64, spacing: f64): void
+layout_vertical(container: any, x: f64, y: f64, spacing: f64): void
     current_y = y
     for child in container.children
         child.rect.x = x
@@ -192,7 +192,7 @@ ui_layout_vertical(container: any, x: f64, y: f64, spacing: f64): void
     end
 end
 
-ui_layout_horizontal(container: any, x: f64, y: f64, spacing: f64): void
+layout_horizontal(container: any, x: f64, y: f64, spacing: f64): void
     current_x = x
     for child in container.children
         child.rect.x = current_x
@@ -201,7 +201,7 @@ ui_layout_horizontal(container: any, x: f64, y: f64, spacing: f64): void
     end
 end
 
-ui_layout_grid(container: any, x: f64, y: f64, cols: i64, spacing: f64): void
+layout_grid(container: any, x: f64, y: f64, cols: i64, spacing: f64): void
     current_x = x
     current_y = y
     col = 0
@@ -223,12 +223,12 @@ end
 -- Event Handling
 -- ═══════════════════════════════════════════════════════════════
 
-ui_event_mouse_move(widget: any, x: f64, y: f64): bool
-    widget.hovered = ui_rect_contains(widget.rect, x, y)
+event_mouse_move(widget: any, x: f64, y: f64): bool
+    widget.hovered = rect_contains(widget.rect, x, y)
     widget.hovered
 end
 
-ui_event_mouse_down(widget: any, x: f64, y: f64): bool
+event_mouse_down(widget: any, x: f64, y: f64): bool
     if widget.hovered and widget.enabled
         widget.pressed = true
         return true
@@ -236,7 +236,7 @@ ui_event_mouse_down(widget: any, x: f64, y: f64): bool
     false
 end
 
-ui_event_mouse_up(widget: any, x: f64, y: f64): bool
+event_mouse_up(widget: any, x: f64, y: f64): bool
     if widget.pressed and widget.hovered
         widget.pressed = false
         if widget.type == "button" and widget.on_click
@@ -252,42 +252,13 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Rect
-M.rect_new = ui_rect_new
-M.rect_contains = ui_rect_contains
 -- Widget
-M.widget_new = ui_widget_new
-M.widget_add_child = ui_widget_add_child
-M.widget_remove_child = ui_widget_remove_child
-M.widget_set_rect = ui_widget_set_rect
 -- Button
-M.button_new = ui_button_new
-M.button_set_on_click = ui_button_set_on_click
 -- Label
-M.label_new = ui_label_new
-M.label_set_text = ui_label_set_text
 -- Text Input
-M.text_input_new = ui_text_input_new
-M.text_input_set_text = ui_text_input_set_text
-M.text_input_get_text = ui_text_input_get_text
-M.text_input_set_on_change = ui_text_input_set_on_change
 -- Slider
-M.slider_new = ui_slider_new
-M.slider_set_value = ui_slider_set_value
-M.slider_get_value = ui_slider_get_value
 -- Checkbox
-M.checkbox_new = ui_checkbox_new
-M.checkbox_set_checked = ui_checkbox_set_checked
-M.checkbox_is_checked = ui_checkbox_is_checked
 -- Panel
-M.panel_new = ui_panel_new
 -- Layout
-M.layout_vertical = ui_layout_vertical
-M.layout_horizontal = ui_layout_horizontal
-M.layout_grid = ui_layout_grid
 -- Events
-M.event_mouse_move = ui_event_mouse_move
-M.event_mouse_down = ui_event_mouse_down
-M.event_mouse_up = ui_event_mouse_up
-M

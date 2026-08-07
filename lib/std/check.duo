@@ -333,36 +333,3 @@ soft_count(collector: any): i64
     rawlen(collector.failures)
 end
 
-M = {}
-M.assert = assert
-M.assert_eq = assert_eq
-M.assert_ne = assert_ne
-M.assert_true = assert_true
-M.assert_false = assert_false
-M.assert_nil = assert_nil
-M.assert_not_nil = assert_not_nil
-M.assert_gt = assert_gt
-M.assert_gte = assert_gte
-M.assert_lt = assert_lt
-M.assert_lte = assert_lte
-M.assert_in_range = assert_in_range
-M.assert_match = assert_match
-M.assert_contains = assert_contains
-M.assert_starts_with = assert_starts_with
-M.assert_ends_with = assert_ends_with
-M.assert_type = assert_type
-M.assert_is_array = assert_is_array
-M.assert_is_table = assert_is_table
-M.assert_len = assert_len
-M.assert_empty = assert_empty
-M.assert_not_empty = assert_not_empty
-M.assert_in = assert_in
-M.assert_errors = assert_errors
-M.assert_no_errors = assert_no_errors
-M.assert_error_match = assert_error_match
-M.soft_new = soft_new
-M.soft_assert = soft_assert
-M.soft_assert_eq = soft_assert_eq
-M.soft_check = soft_check
-M.soft_count = soft_count
-M

@@ -1,6 +1,6 @@
 -- std.compress_flate — DEFLATE compression (mirrors Go's compress/flate)
 
-flate_compress(data: any)
+compress(data: any)
     if data == nil or data == "" return "" end
     out = {}
     i = 1
@@ -24,7 +24,7 @@ flate_compress(data: any)
     return table.concat(out)
 end
 
-flate_decompress(data: any)
+decompress(data: any)
     if data == nil or data == "" return "" end
     out = {}
     i = 1
@@ -45,39 +45,30 @@ flate_decompress(data: any)
     return table.concat(out)
 end
 
-flate_compress_level(data: any, level: any)
-    return flate_compress(data)
+compress_level(data: any, level: any)
+    return compress(data)
 end
 
-flate_new_writer(fh: any, level: any)
+new_writer(fh: any, level: any)
     return {fh = fh, buf = "", level = level}
 end
 
-flate_writer_write(w: any, data: any)
+writer_write(w: any, data: any)
     w.buf = w.buf .. data
     return w
 end
 
-flate_writer_flush(w: any)
+writer_flush(w: any)
     if string.len(w.buf) > 0
-        w.fh:write(flate_compress(w.buf))
+        w.fh:write(compress(w.buf))
         w.buf = ""
     end
     return w
 end
 
-flate_writer_close(w: any)
-    flate_writer_flush(w)
+writer_close(w: any)
+    writer_flush(w)
     w.fh:close()
     return w
 end
 
-M = {}
-M.compress = flate_compress
-M.decompress = flate_decompress
-M.compress_level = flate_compress_level
-M.new_writer = flate_new_writer
-M.writer_write = flate_writer_write
-M.writer_flush = flate_writer_flush
-M.writer_close = flate_writer_close
-M

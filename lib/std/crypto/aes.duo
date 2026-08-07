@@ -5,7 +5,7 @@
 -- AES S-Box (pre-computed)
 -- ═══════════════════════════════════════════════════════════════
 
-AES_SBOX = {
+SBOX = {
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
     0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
     0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
@@ -45,7 +45,7 @@ AES_INV_SBOX = {
 }
 
 -- Round constants
-AES_RCON = {
+RCON = {
     0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36,
 }
 
@@ -72,7 +72,7 @@ end
 -- Key Expansion
 -- ═══════════════════════════════════════════════════════════════
 
-aes_key_expansion(key: any, key_len: i64): any
+key_expansion(key: any, key_len: i64): any
     if key_len == 16
         nk = 4; nr = 10
     elseif key_len == 24
@@ -95,18 +95,18 @@ aes_key_expansion(key: any, key_len: i64): any
         if i % nk == 0
             -- RotWord + SubWord + Rcon
             temp = {
-                AES_SBOX[temp[2] + 1] ~ AES_RCON[(i / nk)],
-                AES_SBOX[temp[3] + 1],
-                AES_SBOX[temp[4] + 1],
-                AES_SBOX[temp[1] + 1],
+                SBOX[temp[2] + 1] ~ RCON[(i / nk)],
+                SBOX[temp[3] + 1],
+                SBOX[temp[4] + 1],
+                SBOX[temp[1] + 1],
             }
         elseif nk > 6 and i % nk == 4
             -- SubWord only for AES-256
             temp = {
-                AES_SBOX[temp[1] + 1],
-                AES_SBOX[temp[2] + 1],
-                AES_SBOX[temp[3] + 1],
-                AES_SBOX[temp[4] + 1],
+                SBOX[temp[1] + 1],
+                SBOX[temp[2] + 1],
+                SBOX[temp[3] + 1],
+                SBOX[temp[4] + 1],
             }
         end
 
@@ -129,7 +129,7 @@ end
 aes_sub_bytes(state: any): void
     i = 0
     while i < 16
-        state[i] = AES_SBOX[state[i] + 1]
+        state[i] = SBOX[state[i] + 1]
         i += 1
     end
 end
@@ -234,7 +234,7 @@ end
 -- AES Encrypt Block (single 16-byte block)
 -- ═══════════════════════════════════════════════════════════════
 
-aes_encrypt_block(block: any, expanded_key: any): any
+encrypt_block(block: any, expanded_key: any): any
     state = {}
     i = 0
     while i < 16
@@ -270,7 +270,7 @@ end
 -- AES Decrypt Block
 -- ═══════════════════════════════════════════════════════════════
 
-aes_decrypt_block(block: any, expanded_key: any): any
+decrypt_block(block: any, expanded_key: any): any
     state = {}
     i = 0
     while i < 16
@@ -305,9 +305,9 @@ end
 -- AES-CBC Mode
 -- ═══════════════════════════════════════════════════════════════
 
-aes_cbc_encrypt(plaintext: any, key: any, iv: any): any
+cbc_encrypt(plaintext: any, key: any, iv: any): any
     key_len = #key
-    expanded = aes_key_expansion(key, key_len)
+    expanded = key_expansion(key, key_len)
 
     -- PKCS7 padding
     pad_len = 16 - (#plaintext % 16)
@@ -333,7 +333,7 @@ aes_cbc_encrypt(plaintext: any, key: any, iv: any): any
             i += 1
         end
 
-        encrypted = aes_encrypt_block(block, expanded)
+        encrypted = encrypt_block(block, expanded)
         for i = 0, 15
             ciphertext[#ciphertext + 1] = encrypted[i]
         end
@@ -348,9 +348,9 @@ aes_cbc_encrypt(plaintext: any, key: any, iv: any): any
     ciphertext
 end
 
-aes_cbc_decrypt(ciphertext: any, key: any, iv: any): any
+cbc_decrypt(ciphertext: any, key: any, iv: any): any
     key_len = #key
-    expanded = aes_key_expansion(key, key_len)
+    expanded = key_expansion(key, key_len)
 
     plaintext = {}
     prev = iv
@@ -364,7 +364,7 @@ aes_cbc_decrypt(ciphertext: any, key: any, iv: any): any
             i += 1
         end
 
-        decrypted = aes_decrypt_block(block, expanded)
+        decrypted = decrypt_block(block, expanded)
         for i = 0, 15
             plaintext[#plaintext + 1] = decrypted[i] ~ prev[i + 1]
         end
@@ -403,9 +403,9 @@ end
 -- AES-CTR Mode (stream cipher)
 -- ═══════════════════════════════════════════════════════════════
 
-aes_ctr_crypt(data: any, key: any, nonce: any): any
+ctr_crypt(data: any, key: any, nonce: any): any
     key_len = #key
-    expanded = aes_key_expansion(key, key_len)
+    expanded = key_expansion(key, key_len)
 
     counter = {}
     i = 0
@@ -417,7 +417,7 @@ aes_ctr_crypt(data: any, key: any, nonce: any): any
     output = {}
     block_idx = 0
     while block_idx < #data
-        keystream = aes_encrypt_block(counter, expanded)
+        keystream = encrypt_block(counter, expanded)
 
         byte_idx = 0
         while byte_idx < 16 and block_idx + byte_idx < #data
@@ -443,7 +443,7 @@ end
 -- Utility functions
 -- ═══════════════════════════════════════════════════════════════
 
-aes_string_to_bytes(s: str): any
+string_to_bytes(s: str): any
     bytes = {}
     i = 1
     while i <= string.len(s)
@@ -453,7 +453,7 @@ aes_string_to_bytes(s: str): any
     bytes
 end
 
-aes_bytes_to_string(bytes: any): str
+bytes_to_string(bytes: any): str
     parts = {}
     i = 1
     while i <= #bytes
@@ -467,21 +467,9 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Key expansion
-M.key_expansion = aes_key_expansion
 -- Block operations
-M.encrypt_block = aes_encrypt_block
-M.decrypt_block = aes_decrypt_block
 -- CBC mode
-M.cbc_encrypt = aes_cbc_encrypt
-M.cbc_decrypt = aes_cbc_decrypt
 -- CTR mode
-M.ctr_crypt = aes_ctr_crypt
 -- Utilities
-M.string_to_bytes = aes_string_to_bytes
-M.bytes_to_string = aes_bytes_to_string
 -- Constants
-M.SBOX = AES_SBOX
-M.RCON = AES_RCON
-M

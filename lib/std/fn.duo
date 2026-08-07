@@ -9,7 +9,7 @@ identity(x: any): any
 end
 
 -- constant: return the value (for use as a function body).
-constant_val(v: any): any
+constant(v: any): any
     v
 end
 
@@ -318,35 +318,9 @@ curry2(fn_ref: any): any
 end
 
 -- clamp: clamp value between min and max.
-clamp_val(v: any, lo: any, hi: any): any
+clamp(v: any, lo: any, hi: any): any
     if v < lo return lo end
     if v > hi return hi end
     v
 end
 
-M = {}
-M.identity = identity
-M.constant = constant_val
-M.noop = noop
-M.foldl = foldl
-M.foldr = foldr
-M.map_filter = map_filter
-M.group_by = group_by
-M.unique_by = unique_by
-M.take_while = take_while
-M.drop_while = drop_while
-M.chunk = chunk
-M.interleave = interleave
-M.transpose = transpose
-M.count_by = count_by
-M.flatten = flatten
-M.partition = partition
-M.min_by = min_by
-M.max_by = max_by
-M.sort_by = sort_by
-M.pipe = pipe
-M.pipe3 = pipe3
-M.negate = negate
-M.curry2 = curry2
-M.clamp = clamp_val
-M

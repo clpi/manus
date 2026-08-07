@@ -72,15 +72,3 @@ gen_field_accessor(struct_name: str, field_name: str, field_type: str) -> any
     typ = field_type
   }
 end
-M = {}
-M.eval_constant = eval_constant
-M.template_str = template_str
-M.for_range = for_range
-M.gen_vars = gen_vars
-M.when = when
-M.unroll = unroll
-M.sizeof = sizeof
-M.alignof = alignof
-M.static_assert = static_assert
-M.gen_field_accessor = gen_field_accessor
-M

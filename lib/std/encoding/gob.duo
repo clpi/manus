@@ -177,7 +177,3 @@ decode_int(p: any): i64
     v
 end
 
-M = {}
-M.marshal = marshal
-M.unmarshal = unmarshal
-M

@@ -61,13 +61,3 @@ mapfs_glob(fs: any, pattern: str): any
     results
 end
 
-M = {}
-M.new_mapfs = new_mapfs
-M.mapfs_add = mapfs_add
-M.mapfs_add_dir = mapfs_add_dir
-M.mapfs_open = mapfs_open
-M.mapfs_read = mapfs_read
-M.mapfs_read_all = mapfs_read_all
-M.mapfs_seek = mapfs_seek
-M.mapfs_glob = mapfs_glob
-M

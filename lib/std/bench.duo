@@ -25,8 +25,3 @@ attrs = {
     debug = { "trace", "debug", "debug.log" },
 }
 
-M = {}
-M.now = now
-M.format_ns = format_ns
-M.attrs = attrs
-M

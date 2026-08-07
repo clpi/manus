@@ -4,7 +4,7 @@ argparse_key(s: str): str
     string.gsub(s or "", "^%-+", "")
 end
 
-argparse_add_positional(parser, name: str, help: str, options: any)
+add_positional(parser, name: str, help: str, options: any)
     parser.positionals[#parser.positionals + 1] = {
         name = name,
         help = help or "",
@@ -12,7 +12,7 @@ argparse_add_positional(parser, name: str, help: str, options: any)
     }
 end
 
-argparse_add_flag(parser, short_or_long: str, long_or_help: str, help: str)
+add_flag(parser, short_or_long: str, long_or_help: str, help: str)
     short_opt = nil
     long_opt = nil
     desc = help
@@ -31,7 +31,7 @@ argparse_add_flag(parser, short_or_long: str, long_or_help: str, help: str)
     }
 end
 
-argparse_add_option(parser, short_or_long: str, long_or_help: str, help: str)
+add_option(parser, short_or_long: str, long_or_help: str, help: str)
     short_opt = nil
     long_opt = nil
     desc = help
@@ -50,7 +50,7 @@ argparse_add_option(parser, short_or_long: str, long_or_help: str, help: str)
     }
 end
 
-argparse_parse(parser, args: any): any
+parse_with(parser, args: any): any
     if args == nil args = {} end
     opts = { rest_args = {} }
     positional_idx = 1
@@ -178,11 +178,3 @@ parse(args: any): any
     new("", "").parse(args)
 end
 
-M = {}
-M.new = new
-M.parse = parse
-M.add_positional = argparse_add_positional
-M.add_flag = argparse_add_flag
-M.add_option = argparse_add_option
-M.parse_with = argparse_parse
-M

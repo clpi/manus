@@ -105,14 +105,3 @@ nop_closer(fh: any): any
     fh
 end
 
-M = {}
-M.read_all = read_all
-M.read_file = read_file
-M.write_file = write_file
-M.append_file = append_file
-M.read_dir = read_dir
-M.temp_file = temp_file
-M.temp_dir = temp_dir
-M.discard = discard
-M.nop_closer = nop_closer
-M

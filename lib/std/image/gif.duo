@@ -288,6 +288,3 @@ decode(data: str): any
     img
 end
 
-M = {}
-M.decode = decode
-M

@@ -5,7 +5,7 @@
 -- Process Configuration
 -- ═══════════════════════════════════════════════════════════════
 
-process_config_new(cmd: str): any
+config_new(cmd: str): any
     {
         cmd = cmd,
         args = {},
@@ -20,44 +20,44 @@ process_config_new(cmd: str): any
     }
 end
 
-process_config_arg(config: any, arg: str): any
+config_arg(config: any, arg: str): any
     config.args[#config.args + 1] = arg
     config
 end
 
-process_config_args(config: any, args: any): any
+config_args(config: any, args: any): any
     for arg in args
         config.args[#config.args + 1] = arg
     end
     config
 end
 
-process_config_env(config: any, key: str, value: str): any
+config_env(config: any, key: str, value: str): any
     config.env[key] = value
     config
 end
 
-process_config_cwd(config: any, cwd: str): any
+config_cwd(config: any, cwd: str): any
     config.cwd = cwd
     config
 end
 
-process_config_stdin(config: any, mode: str): any
+config_stdin(config: any, mode: str): any
     config.stdin = mode  -- "pipe", "inherit", "ignore", or file path
     config
 end
 
-process_config_stdout(config: any, mode: str): any
+config_stdout(config: any, mode: str): any
     config.stdout = mode
     config
 end
 
-process_config_stderr(config: any, mode: str): any
+config_stderr(config: any, mode: str): any
     config.stderr = mode
     config
 end
 
-process_config_detached(config: any, detached: bool): any
+config_detached(config: any, detached: bool): any
     config.detached = detached
     config
 end
@@ -66,7 +66,7 @@ end
 -- Process Handle
 -- ═══════════════════════════════════════════════════════════════
 
-process_new(): any
+new(): any
     {
         pid = nil,
         exit_code = nil,
@@ -78,7 +78,7 @@ process_new(): any
     }
 end
 
-process_start(proc: any, config: any): any
+start(proc: any, config: any): any
     -- Build command with arguments
     full_cmd = config.cmd
     for arg in config.args
@@ -107,7 +107,7 @@ process_start(proc: any, config: any): any
     {ok = false, error = "Failed to start process"}
 end
 
-process_wait(proc: any): any
+wait(proc: any): any
     if not proc.running
         return {exit_code = proc.exit_code}
     end
@@ -132,7 +132,7 @@ process_wait(proc: any): any
     {exit_code = proc.exit_code}
 end
 
-process_kill(proc: any, signal: i64): any
+kill(proc: any, signal: i64): any
     if not proc.running
         return {error = "Process not running"}
     end
@@ -147,7 +147,7 @@ process_kill(proc: any, signal: i64): any
     {ok = true}
 end
 
-process_write_stdin(proc: any, data: str): any
+write_stdin(proc: any, data: str): any
     if proc.stdin == nil
         return {error = "stdin not available"}
     end
@@ -160,7 +160,7 @@ process_write_stdin(proc: any, data: str): any
     {ok = true}
 end
 
-process_read_stdout(proc: any): any
+read_stdout(proc: any): any
     if proc.stdout == nil
         return {error = "stdout not available"}
     end
@@ -172,7 +172,7 @@ process_read_stdout(proc: any): any
     {data = "", eof = true}
 end
 
-process_read_stderr(proc: any): any
+read_stderr(proc: any): any
     if proc.stderr == nil
         return {error = "stderr not available"}
     end
@@ -184,11 +184,11 @@ process_read_stderr(proc: any): any
     {data = "", eof = true}
 end
 
-process_is_running(proc: any): bool
+is_running(proc: any): bool
     proc.running
 end
 
-process_exit_code(proc: any): any
+exit_code(proc: any): any
     proc.exit_code
 end
 
@@ -196,7 +196,7 @@ end
 -- Command Execution Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-process_run(cmd: str, args: any): any
+run(cmd: str, args: any): any
     -- Build full command line
     full_cmd = cmd
     if args
@@ -231,7 +231,7 @@ process_run(cmd: str, args: any): any
     }
 end
 
-process_run_with_input(cmd: str, args: any, input: str): any
+run_with_input(cmd: str, args: any, input: str): any
     full_cmd = cmd
     if args
         for arg in args
@@ -265,8 +265,8 @@ process_run_with_input(cmd: str, args: any, input: str): any
     }
 end
 
-process_output(cmd: str, args: any): any
-    result = process_run(cmd, args)
+output(cmd: str, args: any): any
+    result = run(cmd, args)
     result.stdout
 end
 
@@ -305,11 +305,11 @@ end
 -- Environment Variables
 -- ═══════════════════════════════════════════════════════════════
 
-process_env_get(name: str): any
+env_get(name: str): any
     os.getenv(name)
 end
 
-process_env_set(name: str, value: str): any
+env_set(name: str, value: str): any
     -- Use C setenv for persistent environment changes in the current process
     @c.emit("setenv(" .. name .. ", " .. value .. ", 1)")
     -- Also update Lua's environment table
@@ -317,14 +317,14 @@ process_env_set(name: str, value: str): any
     {ok = true}
 end
 
-process_env_unset(name: str): any
+env_unset(name: str): any
     -- Use C unsetenv for persistent environment changes
     @c.emit("unsetenv(" .. name .. ")")
     os.setenv(name, nil)
     {ok = true}
 end
 
-process_env_list(): any
+env_list(): any
     os.getenv()
 end
 
@@ -332,39 +332,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Config
-M.config_new = process_config_new
-M.config_arg = process_config_arg
-M.config_args = process_config_args
-M.config_env = process_config_env
-M.config_cwd = process_config_cwd
-M.config_stdin = process_config_stdin
-M.config_stdout = process_config_stdout
-M.config_stderr = process_config_stderr
-M.config_detached = process_config_detached
 -- Process
-M.new = process_new
-M.start = process_start
-M.wait = process_wait
-M.kill = process_kill
-M.write_stdin = process_write_stdin
-M.read_stdout = process_read_stdout
-M.read_stderr = process_read_stderr
-M.is_running = process_is_running
-M.exit_code = process_exit_code
 -- Helpers
-M.run = process_run
-M.run_with_input = process_run_with_input
-M.output = process_output
 -- Pipe
-M.pipe_new = pipe_new
-M.pipe_read = pipe_read
-M.pipe_write = pipe_write
-M.pipe_close = pipe_close
 -- Environment
-M.env_get = process_env_get
-M.env_set = process_env_set
-M.env_unset = process_env_unset
-M.env_list = process_env_list
-M

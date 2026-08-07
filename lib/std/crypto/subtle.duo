@@ -42,10 +42,3 @@ xor_bytes(dst: any, a: any, b: any): i64
     return n
 end
 
-M = {}
-M.constant_time_compare = constant_time_compare
-M.constant_time_select = constant_time_select
-M.constant_time_byte_eq = constant_time_byte_eq
-M.constant_time_eq = constant_time_eq
-M.xor_bytes = xor_bytes
-M

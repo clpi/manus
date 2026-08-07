@@ -26,7 +26,7 @@ get(p: any) -> any
     age = time_mod.now() - (p.last_used[res] or time_mod.now())
     if p.idle_timeout > 0 and age > p.idle_timeout
       destroy_res(p, res)
-    elseif p.health_check != nil and not p.health_check(res)
+    elseif has(.health_check)(p) and not p.health_check(res)
       destroy_res(p, res)
     else
       p.in_use[res] = true
@@ -85,7 +85,7 @@ try_get(p: any) -> any
     age = time_mod.now() - (p.last_used[res] or time_mod.now())
     if p.idle_timeout > 0 and age > p.idle_timeout
       destroy_res(p, res)
-    elseif p.health_check != nil and not p.health_check(res)
+    elseif has(.health_check)(p) and not p.health_check(res)
       destroy_res(p, res)
     else
       p.in_use[res] = true

@@ -16,7 +16,3 @@ extract(archive_path: str, dest_dir: str): bool
     rc == 0
 end
 
-M = {}
-M.create = create
-M.extract = extract
-M

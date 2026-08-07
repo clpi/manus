@@ -270,19 +270,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.conv1d_layer = conv1d_layer
-M.conv1d_forward = conv1d_forward
-M.conv2d_layer = conv2d_layer
-M.conv2d_forward = conv2d_forward
-M.maxpool1d = maxpool1d
-M.maxpool1d_forward = maxpool1d_forward
-M.avgpool1d = avgpool1d
-M.avgpool1d_forward = avgpool1d_forward
-M.adaptive_avgpool = adaptive_avgpool
-M.adaptive_avgpool_forward = adaptive_avgpool_forward
-M.global_avgpool = global_avgpool
-M.global_avgpool_forward = global_avgpool_forward
-M.flatten = flatten
-M.flatten_forward = flatten_forward
-M

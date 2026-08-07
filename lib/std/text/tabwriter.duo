@@ -79,10 +79,3 @@ flush(w: any): str
     table.concat(out, "\n")
 end
 
-M = {}
-M.new_writer = new_writer
-M.write = write
-M.write_col = write_col
-M.newline = newline
-M.flush = flush
-M

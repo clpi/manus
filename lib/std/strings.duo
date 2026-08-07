@@ -10,32 +10,32 @@ new_builder(): any
     {parts = {}, count = 0}
 end
 
--- bldr_write: append a string to the builder.
-bldr_write(b: any, s: any): void
+-- builder_write: append a string to the builder.
+builder_write(b: any, s: any): void
     if s == nil s = "nil" end
     b.count = b.count + 1
     b.parts[b.count] = s
 end
 
--- bldr_write_line: append a string and a newline.
-bldr_write_line(b: any, s: any): void
-    bldr_write(b, s)
-    bldr_write(b, "\n")
+-- builder_write_line: append a string and a newline.
+builder_write_line(b: any, s: any): void
+    builder_write(b, s)
+    builder_write(b, "\n")
 end
 
--- bldr_write_fmt: append a formatted string (using tostring on args).
-bldr_write_fmt(b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: any): void
+-- builder_write_fmt: append a formatted string (using tostring on args).
+builder_write_fmt(b: any, fmt: str, a1: any, a2: any, a3: any, a4: any, a5: any): void
     result = fmt
     if a1 != nil result = string.gsub(result, "{1}", to(str)(a1)) end
     if a2 != nil result = string.gsub(result, "{2}", to(str)(a2)) end
     if a3 != nil result = string.gsub(result, "{3}", to(str)(a3)) end
     if a4 != nil result = string.gsub(result, "{4}", to(str)(a4)) end
     if a5 != nil result = string.gsub(result, "{5}", to(str)(a5)) end
-    bldr_write(b, result)
+    builder_write(b, result)
 end
 
--- bldr_len: return the total length of all parts.
-bldr_len(b: any): i64
+-- builder_len: return the total length of all parts.
+builder_len(b: any): i64
     total = 0
     i = 1
     while i <= b.count
@@ -45,14 +45,14 @@ bldr_len(b: any): i64
     total
 end
 
--- bldr_reset: clear the builder.
-bldr_reset(b: any): void
+-- builder_reset: clear the builder.
+builder_reset(b: any): void
     b.parts = {}
     b.count = 0
 end
 
--- bldr_to_string: concatenate all parts into a single string.
-bldr_to_string(b: any): str
+-- builder_to_string: concatenate all parts into a single string.
+builder_to_string(b: any): str
     table.concat(b.parts)
 end
 
@@ -238,8 +238,8 @@ word_wrap(s: str, width: i64): str
     result
 end
 
--- truncate_str: truncate string to max_len, appending suffix if truncated.
-truncate_str(s: str, max_len: i64, suffix: str): str
+-- truncate: truncate string to max_len, appending suffix if truncated.
+truncate(s: str, max_len: i64, suffix: str): str
     if suffix == nil suffix = "..." end
     if s == nil return "" end
     if string.len(s) <= max_len return s end
@@ -339,31 +339,3 @@ split_trimmed(s: str, sep: str): any
     out
 end
 
-M = {}
-M.new_builder = new_builder
-M.builder_write = bldr_write
-M.builder_write_line = bldr_write_line
-M.builder_write_fmt = bldr_write_fmt
-M.builder_len = bldr_len
-M.builder_reset = bldr_reset
-M.builder_to_string = bldr_to_string
-M.interp = interp
-M.interp_indexed = interp_indexed
-M.to_snake = to_snake
-M.to_camel = to_camel
-M.to_pascal = to_pascal
-M.to_kebab = to_kebab
-M.center = center
-M.repeat_char = repeat_char
-M.word_wrap = word_wrap
-M.truncate = truncate_str
-M.is_empty = is_empty
-M.is_blank = is_blank
-M.count_sub = count_sub
-M.has_prefix = has_prefix
-M.has_suffix = has_suffix
-M.quote = quote
-M.single_quote = single_quote
-M.split_lines = split_lines
-M.split_trimmed = split_trimmed
-M

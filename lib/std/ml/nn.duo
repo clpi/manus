@@ -223,18 +223,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.linear = linear
-M.relu = relu
-M.gelu = gelu
-M.softmax = softmax
-M.dropout = dropout
-M.sequential = sequential
-M.build = build
-M.mnist_classifier = mnist_classifier
-M.forward = forward
-M.cross_entropy = cross_entropy
-M.mse_loss = mse_loss
-M.sgd = sgd
-M.adam = adam
-M

@@ -1,4 +1,4 @@
-benchmark_config_new() -> any
+config_new() -> any
   {
     warmup_runs = 10,
     num_runs = 100,
@@ -17,7 +17,7 @@ benchmark_config_new() -> any
     output_dir = "./benchmarks"
   }
 end
-benchmark_result_new(model_name: str, batch_size: i64) -> any
+result_new(model_name: str, batch_size: i64) -> any
   {
     model_name = model_name,
     batch_size = batch_size,
@@ -29,10 +29,10 @@ benchmark_result_new(model_name: str, batch_size: i64) -> any
     tokens_per_second = 0
   }
 end
-benchmark_result_add_latency(result: any, latency: f64) -> void
+result_add_latency(result: any, latency: f64) -> void
   result.latencies[#result.latencies + 1] = latency
 end
-benchmark_result_calculate_stats(result: any) -> void
+result_calculate_stats(result: any) -> void
   n = #result.latencies
   if n == 0
     return
@@ -56,19 +56,19 @@ benchmark_result_calculate_stats(result: any) -> void
     result.tokens_per_second = result.throughput
   end
 end
-benchmark_runner_new(config: any) -> any
+runner_new(config: any) -> any
   {
     config = config,
     results = {}
   }
 end
-benchmark_runner_run(runner: any, model_fn: any, input_generator: any) -> any
+runner_run(runner: any, model_fn: any, input_generator: any) -> any
   config = runner.config
   results = {}
   batch_idx = 1
   while batch_idx <= #config.batch_sizes
     batch_size = config.batch_sizes[batch_idx]
-    result = benchmark_result_new("model", batch_size)
+    result = result_new("model", batch_size)
     i = 0
     while i < config.warmup_runs
       input = input_generator(batch_size)
@@ -81,17 +81,17 @@ benchmark_runner_run(runner: any, model_fn: any, input_generator: any) -> any
       input = input_generator(batch_size)
       output = model_fn(input)
       end_time = os.clock()
-      benchmark_result_add_latency(result, end_time - start_time)
+      result_add_latency(result, end_time - start_time)
       i = i + 1
     end
-    benchmark_result_calculate_stats(result)
+    result_calculate_stats(result)
     results[batch_idx] = result
     batch_idx = batch_idx + 1
   end
   runner.results = results
   results
 end
-benchmark_throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64) -> any
+throughput(model_fn: any, input_generator: any, batch_size: i64, duration: f64) -> any
   i = 0
   while i < 5
     input = input_generator(batch_size)
@@ -117,7 +117,7 @@ benchmark_throughput(model_fn: any, input_generator: any, batch_size: i64, durat
     runs_per_second = runs / elapsed
   }
 end
-benchmark_latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64) -> any
+latency(model_fn: any, input_generator: any, batch_size: i64, num_runs: i64) -> any
   i = 0
   while i < 5
     input = input_generator(batch_size)
@@ -150,7 +150,7 @@ benchmark_latency(model_fn: any, input_generator: any, batch_size: i64, num_runs
     max = latencies[num_runs]
   }
 end
-benchmark_memory(model_fn: any, input_generator: any, batch_size: i64) -> any
+memory(model_fn: any, input_generator: any, batch_size: i64) -> any
   input = input_generator(batch_size)
   output = model_fn(input)
   input_size = 0
@@ -168,7 +168,7 @@ benchmark_memory(model_fn: any, input_generator: any, batch_size: i64) -> any
     estimated_total = input_size + output_size
   }
 end
-benchmark_compare(results: any) -> any
+compare(results: any) -> any
   comparison = {}
   for name, result in results
     comparison[name] = {
@@ -179,7 +179,7 @@ benchmark_compare(results: any) -> any
   end
   comparison
 end
-benchmark_rank(results: any, metric: str) -> any
+rank(results: any, metric: str) -> any
   ranked = {}
   for name, result in results
     ranked[#ranked + 1] = {
@@ -192,7 +192,7 @@ benchmark_rank(results: any, metric: str) -> any
   end)
   ranked
 end
-benchmark_report(results: any) -> str
+report(results: any) -> str
   lines = {}
   lines[#lines + 1] = "=== Benchmark Report ==="
   lines[#lines + 1] = ""
@@ -209,17 +209,3 @@ benchmark_report(results: any) -> str
   end
   table.concat(lines, "\n")
 end
-M = {}
-M.config_new = benchmark_config_new
-M.result_new = benchmark_result_new
-M.result_add_latency = benchmark_result_add_latency
-M.result_calculate_stats = benchmark_result_calculate_stats
-M.runner_new = benchmark_runner_new
-M.runner_run = benchmark_runner_run
-M.throughput = benchmark_throughput
-M.latency = benchmark_latency
-M.memory = benchmark_memory
-M.compare = benchmark_compare
-M.rank = benchmark_rank
-M.report = benchmark_report
-M

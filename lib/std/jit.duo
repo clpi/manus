@@ -90,15 +90,3 @@ arch(): str
     return @c.emit("duo_jit_arch()")
 end
 
-M = {}
-M.alloc = alloc
-M.w32 = w32
-M.w8 = w8
-M.r32 = r32
-M.seal = seal
-M.call0 = call0
-M.call1 = call1
-M.call2 = call2
-M.release = release
-M.arch = arch
-M

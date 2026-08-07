@@ -7,7 +7,7 @@
 -- SHA-1 implementation
 
 -- sha1: compute SHA-1 digest of string s, return as 40-char hex string.
-sha1_impl(s: str): str
+sha1(s: str): str
     if s == nil s = "" end
     -- padding: append 0x80, then zeros, then 64-bit length
     msg = s .. string.char(0x80)
@@ -88,7 +88,7 @@ end
 -- SHA-256 implementation
 
 -- sha256: compute SHA-256 digest of string s, return as 64-char hex string.
-sha256_impl(s: str): str
+sha256(s: str): str
     if s == nil s = "" end
     -- SHA-256 constants
     K = {
@@ -175,17 +175,11 @@ end
 
 -- sha1_hex: alias for sha1 (returns hex).
 sha1_hex(s: str): str
-    sha1_impl(s)
+    sha1(s)
 end
 
 -- sha256_hex: alias for sha256.
 sha256_hex(s: str): str
-    sha256_impl(s)
+    sha256(s)
 end
 
-M = {}
-M.sha1 = sha1_impl
-M.sha256 = sha256_impl
-M.sha1_hex = sha1_hex
-M.sha256_hex = sha256_hex
-M

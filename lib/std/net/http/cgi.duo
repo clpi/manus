@@ -17,7 +17,3 @@ request(): any
     {method = os.getenv("REQUEST_METHOD") or "GET", path = os.getenv("PATH_INFO") or "/", query = os.getenv("QUERY_STRING") or ""}
 end
 
-M = {}
-M.serve = serve
-M.request = request
-M

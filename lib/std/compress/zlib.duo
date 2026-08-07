@@ -1,7 +1,7 @@
 -- std.compress.zlib — Zlib decompression (mirrors Go's compress/zlib)
 -- Uses the flate module for actual DEFLATE data
 
-zlib_decompress(data: any)
+decompress(data: any)
     if data == nil or string.len(data) < 2 return "" end
     cmf = string.byte(data, 1)
     flg = string.byte(data, 2)
@@ -16,6 +16,3 @@ zlib_decompress(data: any)
     return flate_mod.decompress(deflate_data)
 end
 
-M = {}
-M.decompress = zlib_decompress
-M

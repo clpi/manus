@@ -5,7 +5,7 @@
 -- Image Utilities
 -- ═══════════════════════════════════════════════════════════════
 
-image_new(width: i64, height: i64, channels: i64): any
+new(width: i64, height: i64, channels: i64): any
     {
         width = width,
         height = height,
@@ -15,7 +15,7 @@ image_new(width: i64, height: i64, channels: i64): any
     }
 end
 
-image_from_array(data: any, width: i64, height: i64, channels: i64): any
+from_array(data: any, width: i64, height: i64, channels: i64): any
     {
         width = width,
         height = height,
@@ -25,7 +25,7 @@ image_from_array(data: any, width: i64, height: i64, channels: i64): any
     }
 end
 
-image_get_pixel(img: any, x: i64, y: i64): any
+get_pixel(img: any, x: i64, y: i64): any
     idx = (y * img.width + x) * img.channels
     pixel = {}
     i = 0
@@ -36,7 +36,7 @@ image_get_pixel(img: any, x: i64, y: i64): any
     pixel
 end
 
-image_set_pixel(img: any, x: i64, y: i64, pixel: any): void
+set_pixel(img: any, x: i64, y: i64, pixel: any): void
     idx = (y * img.width + x) * img.channels
     i = 0
     while i < img.channels
@@ -49,8 +49,8 @@ end
 -- Image Transforms
 -- ═══════════════════════════════════════════════════════════════
 
-image_resize(img: any, new_width: i64, new_height: i64): any
-    result = image_new(new_width, new_height, img.channels)
+resize(img: any, new_width: i64, new_height: i64): any
+    result = new(new_width, new_height, img.channels)
     x_scale = img.width / new_width
     y_scale = img.height / new_height
 
@@ -63,8 +63,8 @@ image_resize(img: any, new_width: i64, new_height: i64): any
             src_x = math.min(src_x, img.width - 1)
             src_y = math.min(src_y, img.height - 1)
 
-            pixel = image_get_pixel(img, src_x, src_y)
-            image_set_pixel(result, x, y, pixel)
+            pixel = get_pixel(img, src_x, src_y)
+            set_pixel(result, x, y, pixel)
             x += 1
         end
         y += 1
@@ -72,14 +72,14 @@ image_resize(img: any, new_width: i64, new_height: i64): any
     result
 end
 
-image_crop(img: any, x: i64, y: i64, width: i64, height: i64): any
-    result = image_new(width, height, img.channels)
+crop(img: any, x: i64, y: i64, width: i64, height: i64): any
+    result = new(width, height, img.channels)
     cy = 0
     while cy < height
         cx = 0
         while cx < width
-            pixel = image_get_pixel(img, x + cx, y + cy)
-            image_set_pixel(result, cx, cy, pixel)
+            pixel = get_pixel(img, x + cx, y + cy)
+            set_pixel(result, cx, cy, pixel)
             cx += 1
         end
         cy += 1
@@ -87,14 +87,14 @@ image_crop(img: any, x: i64, y: i64, width: i64, height: i64): any
     result
 end
 
-image_flip_h(img: any): any
-    result = image_new(img.width, img.height, img.channels)
+flip_h(img: any): any
+    result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
         x = 0
         while x < img.width
-            pixel = image_get_pixel(img, img.width - 1 - x, y)
-            image_set_pixel(result, x, y, pixel)
+            pixel = get_pixel(img, img.width - 1 - x, y)
+            set_pixel(result, x, y, pixel)
             x += 1
         end
         y += 1
@@ -102,14 +102,14 @@ image_flip_h(img: any): any
     result
 end
 
-image_flip_v(img: any): any
-    result = image_new(img.width, img.height, img.channels)
+flip_v(img: any): any
+    result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
         x = 0
         while x < img.width
-            pixel = image_get_pixel(img, x, img.height - 1 - y)
-            image_set_pixel(result, x, y, pixel)
+            pixel = get_pixel(img, x, img.height - 1 - y)
+            set_pixel(result, x, y, pixel)
             x += 1
         end
         y += 1
@@ -117,16 +117,16 @@ image_flip_v(img: any): any
     result
 end
 
-image_rotate90(img: any, clockwise: bool): any
-    result = image_new(img.height, img.width, img.channels)
+rotate90(img: any, clockwise: bool): any
+    result = new(img.height, img.width, img.channels)
     y = 0
     while y < img.height
         x = 0
         while x < img.width
             if clockwise
-                image_set_pixel(result, img.height - 1 - y, x, image_get_pixel(img, x, y))
+                set_pixel(result, img.height - 1 - y, x, get_pixel(img, x, y))
             else
-                image_set_pixel(result, y, img.width - 1 - x, image_get_pixel(img, x, y))
+                set_pixel(result, y, img.width - 1 - x, get_pixel(img, x, y))
             end
             x += 1
         end
@@ -139,17 +139,17 @@ end
 -- Color Transforms
 -- ═══════════════════════════════════════════════════════════════
 
-image_grayscale(img: any): any
+grayscale(img: any): any
     if img.channels == 1 return img end
 
-    result = image_new(img.width, img.height, 1)
+    result = new(img.width, img.height, 1)
     y = 0
     while y < img.height
         x = 0
         while x < img.width
-            pixel = image_get_pixel(img, x, y)
+            pixel = get_pixel(img, x, y)
             gray = 0.299 * pixel[1] + 0.587 * pixel[2] + 0.114 * pixel[3]
-            image_set_pixel(result, x, y, {math.floor(gray)})
+            set_pixel(result, x, y, {math.floor(gray)})
             x += 1
         end
         y += 1
@@ -157,20 +157,20 @@ image_grayscale(img: any): any
     result
 end
 
-image_normalize(img: any, mean: any, std: any): any
-    result = image_new(img.width, img.height, img.channels)
+normalize(img: any, mean: any, std: any): any
+    result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
         x = 0
         while x < img.width
-            pixel = image_get_pixel(img, x, y)
+            pixel = get_pixel(img, x, y)
             norm_pixel = {}
             c = 0
             while c < img.channels
                 norm_pixel[c + 1] = (pixel[c + 1] / 255.0 - mean[c + 1]) / std[c + 1]
                 c += 1
             end
-            image_set_pixel(result, x, y, norm_pixel)
+            set_pixel(result, x, y, norm_pixel)
             x += 1
         end
         y += 1
@@ -178,21 +178,21 @@ image_normalize(img: any, mean: any, std: any): any
     result
 end
 
-image_to_float(img: any): any
-    result = image_new(img.width, img.height, img.channels)
+to_float(img: any): any
+    result = new(img.width, img.height, img.channels)
     result.dtype = "f32"
     y = 0
     while y < img.height
         x = 0
         while x < img.width
-            pixel = image_get_pixel(img, x, y)
+            pixel = get_pixel(img, x, y)
             float_pixel = {}
             c = 0
             while c < img.channels
                 float_pixel[c + 1] = pixel[c + 1] / 255.0
                 c += 1
             end
-            image_set_pixel(result, x, y, float_pixel)
+            set_pixel(result, x, y, float_pixel)
             x += 1
         end
         y += 1
@@ -209,12 +209,12 @@ augment_random_crop(img: any, crop_size: i64): any
     max_y = img.height - crop_size
     x = math.random(0, max_x)
     y = math.random(0, max_y)
-    image_crop(img, x, y, crop_size, crop_size)
+    crop(img, x, y, crop_size, crop_size)
 end
 
 augment_random_flip(img: any, p: f64): any
     if math.random() < p
-        image_flip_h(img)
+        flip_h(img)
     else
         img
     end
@@ -226,19 +226,19 @@ augment_random_rotation(img: any, max_angle: f64): any
     result = img
     i = 0
     while i < rotations
-        result = image_rotate90(result, true)
+        result = rotate90(result, true)
         i += 1
     end
     result
 end
 
 augment_color_jitter(img: any, brightness: f64, contrast: f64, saturation: f64): any
-    result = image_new(img.width, img.height, img.channels)
+    result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
         x = 0
         while x < img.width
-            pixel = image_get_pixel(img, x, y)
+            pixel = get_pixel(img, x, y)
             new_pixel = {}
             c = 0
             while c < img.channels
@@ -259,7 +259,7 @@ augment_color_jitter(img: any, brightness: f64, contrast: f64, saturation: f64):
                 new_pixel[c + 1] = math.floor(val * 255)
                 c += 1
             end
-            image_set_pixel(result, x, y, new_pixel)
+            set_pixel(result, x, y, new_pixel)
             x += 1
         end
         y += 1
@@ -272,7 +272,7 @@ augment_random_affine(img: any, translate_range: f64, scale_range: f64): any
     tx = math.floor((math.random() - 0.5) * translate_range * 2)
     ty = math.floor((math.random() - 0.5) * translate_range * 2)
 
-    result = image_new(img.width, img.height, img.channels)
+    result = new(img.width, img.height, img.channels)
     y = 0
     while y < img.height
         x = 0
@@ -280,8 +280,8 @@ augment_random_affine(img: any, translate_range: f64, scale_range: f64): any
             src_x = x - tx
             src_y = y - ty
             if src_x >= 0 and src_x < img.width and src_y >= 0 and src_y < img.height
-                pixel = image_get_pixel(img, src_x, src_y)
-                image_set_pixel(result, x, y, pixel)
+                pixel = get_pixel(img, src_x, src_y)
+                set_pixel(result, x, y, pixel)
             end
             x += 1
         end
@@ -294,7 +294,7 @@ end
 -- Classification Helpers
 -- ═══════════════════════════════════════════════════════════════
 
-classification_softmax(logits: any): any
+softmax(logits: any): any
     max_logit = -1e30
     for v in logits
         if v > max_logit max_logit = v end
@@ -314,7 +314,7 @@ classification_softmax(logits: any): any
     probs
 end
 
-classification_top_k(probs: any, k: i64): any
+top_k(probs: any, k: i64): any
     indexed = {}
     for i = 1, #probs
         indexed[#indexed + 1] = {index = i, prob = probs[i]}
@@ -339,7 +339,7 @@ classification_top_k(probs: any, k: i64): any
     result
 end
 
-classification_accuracy(predictions: any, labels: any): f64
+accuracy(predictions: any, labels: any): f64
     correct = 0
     for i = 1, #predictions
         if predictions[i] == labels[i]
@@ -353,30 +353,8 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Image
-M.new = image_new
-M.from_array = image_from_array
-M.get_pixel = image_get_pixel
-M.set_pixel = image_set_pixel
 -- Transforms
-M.resize = image_resize
-M.crop = image_crop
-M.flip_h = image_flip_h
-M.flip_v = image_flip_v
-M.rotate90 = image_rotate90
 -- Color
-M.grayscale = image_grayscale
-M.normalize = image_normalize
-M.to_float = image_to_float
 -- Augmentation
-M.augment_random_crop = augment_random_crop
-M.augment_random_flip = augment_random_flip
-M.augment_random_rotation = augment_random_rotation
-M.augment_color_jitter = augment_color_jitter
-M.augment_random_affine = augment_random_affine
 -- Classification
-M.softmax = classification_softmax
-M.top_k = classification_top_k
-M.accuracy = classification_accuracy
-M

@@ -57,6 +57,3 @@ parse(data: str): any
     res
 end
 
-M = {}
-M.parse = parse
-M

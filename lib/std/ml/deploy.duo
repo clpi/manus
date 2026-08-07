@@ -112,10 +112,3 @@ load_safetensors(path: str): any
     {ok = true, path = path, tensors = tensors, header = header}
 end
 
-M = {}
-M.static_binary_opts = static_binary_opts
-M.wasm_opts = wasm_opts
-M.edge_pipeline = edge_pipeline
-M.export_onnx = export_onnx
-M.load_safetensors = load_safetensors
-M

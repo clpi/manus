@@ -109,12 +109,12 @@ end
 -- list_remove: remove a node from the list.
 list_remove(l: any, node: any): any
     if node == nil return nil end
-    if node.prev != nil
+    if has(.prev)(node)
         node.prev.next = node.next
     else
         l.head = node.next
     end
-    if node.next != nil
+    if has(.next)(node)
         node.next.prev = node.prev
     else
         l.tail = node.prev
@@ -165,7 +165,7 @@ end
 list_insert_before(l: any, mark: any, v: any): any
     if mark == nil return list_push_back(l, v) end
     node = {value = v, prev = mark.prev, next = mark}
-    if mark.prev != nil
+    if has(.prev)(mark)
         mark.prev.next = node
     else
         l.head = node
@@ -179,7 +179,7 @@ end
 list_insert_after(l: any, mark: any, v: any): any
     if mark == nil return list_push_front(l, v) end
     node = {value = v, prev = mark, next = mark.next}
-    if mark.next != nil
+    if has(.next)(mark)
         mark.next.prev = node
     else
         l.tail = node
@@ -251,32 +251,6 @@ ring_len(r: any): i64
     r.len
 end
 
-M = {}
 -- Heap exports
-M.new_heap = new_heap
-M.heap_push = heap_push
-M.heap_pop = heap_pop
-M.heap_peek = heap_peek
-M.heap_len = heap_len
 -- List exports
-M.new_list = new_list
-M.list_push_back = list_push_back
-M.list_push_front = list_push_front
-M.list_remove = list_remove
-M.list_pop_back = list_pop_back
-M.list_pop_front = list_pop_front
-M.list_front = list_front
-M.list_back = list_back
-M.list_len = list_len
-M.list_foreach = list_foreach
-M.list_insert_before = list_insert_before
-M.list_insert_after = list_insert_after
 -- Ring exports
-M.new_ring = new_ring
-M.ring_set = ring_set
-M.ring_value = ring_value
-M.ring_next = ring_next
-M.ring_prev = ring_prev
-M.ring_do = ring_do
-M.ring_len = ring_len
-M

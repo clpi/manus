@@ -188,25 +188,3 @@ put_u32_le(s: str, offset: i64, v: i64): str
     prefix .. mid .. suffix
 end
 
-M = {}
-M.encode_u16_le = encode_u16_le
-M.encode_u16_be = encode_u16_be
-M.encode_u32_le = encode_u32_le
-M.encode_u32_be = encode_u32_be
-M.encode_u64_le = encode_u64_le
-M.encode_u64_be = encode_u64_be
-M.decode_u16_le = decode_u16_le
-M.decode_u16_be = decode_u16_be
-M.decode_u32_le = decode_u32_le
-M.decode_u32_be = decode_u32_be
-M.decode_u64_le = decode_u64_le
-M.decode_u64_be = decode_u64_be
-M.encode_f32 = encode_f32
-M.decode_f32 = decode_f32
-M.encode_f64 = encode_f64
-M.decode_f64 = decode_f64
-M.encode_varint = encode_varint
-M.decode_varint = decode_varint
-M.put_u16_le = put_u16_le
-M.put_u32_le = put_u32_le
-M

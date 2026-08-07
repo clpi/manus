@@ -183,17 +183,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.cross_entropy = cross_entropy
-M.binary_cross_entropy = binary_cross_entropy
-M.focal_loss = focal_loss
-M.label_smoothing_ce = label_smoothing_ce
-M.mse = mse
-M.mae = mae
-M.huber = huber
-M.log_cosh = log_cosh
-M.hinge_loss = hinge_loss
-M.triplet_loss = triplet_loss
-M.cosine_loss = cosine_loss
-M.kl_divergence = kl_divergence
-M

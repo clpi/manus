@@ -102,7 +102,7 @@ result_to_str(r: any): str
         return "Ok(" .. to(str)(r.value) .. ")"
     end
     msg = ""
-    if r.err != nil and r.err.message != nil
+    if has(.err)(r) and r.err.message != nil
         msg = r.err.message
     end
     return "Err(" .. msg .. ")"

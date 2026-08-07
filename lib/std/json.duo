@@ -12,15 +12,15 @@
 
 -- Sentinel that encodes as `{}` rather than `[]`. An empty Duo table is
 -- indistinguishable from an empty sequence, so `{}` defaults to `[]` (see
--- `json_is_array`). Where the consumer requires a JSON *object* — JSON Schema
+-- `is_array`). Where the consumer requires a JSON *object* — JSON Schema
 -- `properties`, MCP `capabilities` — pass `json.empty_object` instead.
 -- Compared by table identity, so it must never be mutated by callers.
-JSON_EMPTY_OBJECT = {}
+empty_object = {}
 
 -- JSON arrays are tables whose every key is a positive integer. A table with
 -- only string keys (an object) is not an array; an empty table is treated as
 -- an empty array (matches Duo/Lua table usage where {} grows as a sequence).
-json_is_array(t: any): bool
+is_array(t: any): bool
     if type(t) != "table" return false end
     for k, _ in t
         if type(k) != "number" return false end
@@ -29,7 +29,7 @@ json_is_array(t: any): bool
     true
 end
 
-json_escape(s: any): str
+escape(s: any): str
     if s == nil return "" end
     out = {}
     n = string.len(s)
@@ -75,11 +75,11 @@ encode(val: any): str
         return to(str)(val)
     end
     if type(val) == "string"
-        return "\"" .. json_escape(val) .. "\""
+        return "\"" .. escape(val) .. "\""
     end
     if type(val) == "table"
-        if val == JSON_EMPTY_OBJECT return "{}" end
-        if json_is_array(val)
+        if val == empty_object return "{}" end
+        if is_array(val)
             parts = {}
             i = 1
             while val[i] != nil
@@ -311,10 +311,3 @@ decode(s: str): any
     json_value(cur)
 end
 
-M = {}
-M.is_array = json_is_array
-M.escape = json_escape
-M.encode = encode
-M.decode = decode
-M.empty_object = JSON_EMPTY_OBJECT
-M

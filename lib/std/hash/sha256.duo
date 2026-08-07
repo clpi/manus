@@ -2,11 +2,7 @@
 
 crypto_sha = req "std.crypto.sha"
 
-hash_string(s: str): str
+sha256(s: str): str
     crypto_sha.sha256(s)
 end
 
-M = {}
-M.hash_string = hash_string
-M.sha256 = hash_string
-M

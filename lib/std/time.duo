@@ -7,15 +7,15 @@ now(): int
     os.time()
 end
 
-time_clock(): float
+clock(): float
     os.clock()
 end
 
-time_difftime(t2: int, t1: int): float
+difftime(t2: int, t1: int): float
     os.difftime(t2, t1)
 end
 
-time_sleep(seconds: any): void
+sleep(seconds: any): void
     if seconds == nil return end
     sec = math.floor(seconds)
     ns = math.floor((seconds - sec) * 1000000000)
@@ -33,11 +33,3 @@ monotonic(): i64
     now_ns()
 end
 
-M = {}
-M.now = now
-M.clock = time_clock
-M.difftime = time_difftime
-M.sleep = time_sleep
-M.now_ns = now_ns
-M.monotonic = monotonic
-M

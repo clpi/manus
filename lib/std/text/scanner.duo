@@ -185,23 +185,3 @@ token_kind(sc: any): i64
     sc.kind
 end
 
-M = {}
-M.EOF = EOF
-M.IDENT = IDENT
-M.INT = INT
-M.FLOAT = FLOAT
-M.STRING = STRING
-M.CHAR = CHAR
-M.PUNCT = PUNCT
-M.COMMENT = COMMENT
-M.NEWLINE = NEWLINE
-M.WS = WS
-M.new_scanner = new_scanner
-M.scan = scan
-M.scan_ident = scan_ident
-M.scan_number = scan_number
-M.scan_string = scan_string
-M.scan_comment = scan_comment
-M.token_text = token_text
-M.token_kind = token_kind
-M

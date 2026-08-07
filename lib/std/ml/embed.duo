@@ -224,7 +224,7 @@ embedding_forward(layer: any, token_ids: any, offset: i64): any
     -- Token embeddings
     x = token_embed_forward(layer.token, token_ids)
     -- Position embeddings
-    if layer.pos != nil
+    if has(.pos)(layer)
         if layer.pos_encoding == "rope"
             x = rope_forward(layer.pos, x, offset)
         elseif layer.pos_encoding == "sinusoidal"
@@ -246,17 +246,3 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
-M.token_embedding = token_embedding
-M.token_embed_forward = token_embed_forward
-M.sinusoidal_encoding = sinusoidal_encoding
-M.sinusoidal_forward = sinusoidal_forward
-M.learned_positional_embedding = learned_positional_embedding
-M.learned_positional_forward = learned_positional_forward
-M.rope_embedding = rope_embedding
-M.rope_forward = rope_forward
-M.alibi_encoding = alibi_encoding
-M.alibi_forward = alibi_forward
-M.embedding_layer = embedding_layer
-M.embedding_forward = embedding_forward
-M

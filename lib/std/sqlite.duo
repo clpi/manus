@@ -153,7 +153,7 @@ close(db: any): void
     if type(db) == "table"
         if db.closed return end
         db.closed = true
-        if db.handle != nil
+        if has(.handle)(db)
             sqlite3_close(db.handle)
         end
     else
@@ -365,37 +365,3 @@ end
 -- ===========================================================================
 -- Module export table
 -- ===========================================================================
-M = {}
-M.SQLITE_OK = SQLITE_OK
-M.SQLITE_ROW = SQLITE_ROW
-M.SQLITE_DONE = SQLITE_DONE
-M.SQLITE_INTEGER = SQLITE_INTEGER
-M.SQLITE_FLOAT = SQLITE_FLOAT
-M.SQLITE_TEXT = SQLITE_TEXT
-M.SQLITE_BLOB = SQLITE_BLOB
-M.SQLITE_NULL = SQLITE_NULL
-
-M.open = open
-M.close = close
-M.execute = execute
-M.prepare = prepare
-M.bind_int = bind_int
-M.bind_int64 = bind_int64
-M.bind_double = bind_double
-M.bind_text = bind_text
-M.bind_null = bind_null
-M.step = step
-M.column_int = column_int
-M.column_int64 = column_int64
-M.column_double = column_double
-M.column_text = column_text
-M.column_type = column_type
-M.column_count = column_count
-M.column_name = column_name
-M.finalize = finalize
-M.errmsg = errmsg
-M.changes = changes
-M.last_insert_rowid = last_insert_rowid
-M.load_extension = load_extension
-M.query = query
-M

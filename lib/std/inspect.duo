@@ -357,16 +357,3 @@ stack_trace(level: any, max_depth: any, pretty: any): str
     table.concat(lines, "\n")
 end
 
-M = {}
-M.to_str = to_str
-M.deep_equal = deep_equal
-M.deep_hash = deep_hash
-M.diff = diff
-M.diff_summary = diff_summary
-M.type_name = type_name
-M.size = size
-M.keys_of = keys_of
-M.summary = summary
-M.caller_info = caller_info
-M.stack_trace = stack_trace
-M

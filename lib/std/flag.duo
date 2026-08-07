@@ -154,7 +154,7 @@ lookup(fs: any, name: str): any
 end
 
 -- args_: return the positional arguments (named args_ to avoid shadowing).
-positional_args(fs: any): any
+args(fs: any): any
     fs.args
 end
 
@@ -174,41 +174,23 @@ end
 global default_fs = new_flag_set("")
 
 -- global bool: register a bool on the default flag set.
-global_bool(name: str, default_val: bool, usage: str): any
+bool_global(name: str, default_val: bool, usage: str): any
     bool_flag(default_fs, name, default_val, usage)
 end
 
-global_string(name: str, default_val: str, usage: str): any
+string(name: str, default_val: str, usage: str): any
     string_flag(default_fs, name, default_val, usage)
 end
 
-global_int(name: str, default_val: i64, usage: str): any
+int(name: str, default_val: i64, usage: str): any
     int_flag(default_fs, name, default_val, usage)
 end
 
-global_parse(argv: any): any
+parse_argv(argv: any): any
     parse(default_fs, argv)
 end
 
-global_get(name: str): any
+get_flag(name: str): any
     get(default_fs, name)
 end
 
-M = {}
-M.new_flag_set = new_flag_set
-M.bool_flag = bool_flag
-M.string_flag = string_flag
-M.int_flag = int_flag
-M.float_flag = float_flag
-M.parse = parse
-M.get = get
-M.lookup = lookup
-M.args = positional_args
-M.print_defaults = print_defaults
-M.default_fs = default_fs
-M.bool_global = global_bool
-M.string = global_string
-M.int = global_int
-M.parse_argv = global_parse
-M.get_flag = global_get
-M

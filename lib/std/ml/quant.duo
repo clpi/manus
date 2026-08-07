@@ -335,7 +335,7 @@ amp_policy(): any
     }
 end
 
-quantization_stats(q): any
+stats(q): any
     -- Calculate compression ratio
     original_bits = 32
     compressed_bits = q.bits
@@ -364,23 +364,10 @@ quantization_stats(q): any
     }
 end
 
-M = {}
 -- Symmetric
-M.quantize_symmetric = quantize_symmetric
 -- Asymmetric
-M.quantize_asymmetric = quantize_asymmetric
 -- Dequantize
-M.dequantize = dequantize
 -- FP16
-M.fp16_encode = fp16_encode
-M.fp16_decode = fp16_decode
-M.tensor_to_fp16 = tensor_to_fp16
-M.tensor_from_fp16 = tensor_from_fp16
 -- GPTQ
-M.gptq_quantize = gptq_quantize
-M.gptq_dequantize = gptq_dequantize
 -- AMP
-M.amp_policy = amp_policy
 -- Stats
-M.stats = quantization_stats
-M

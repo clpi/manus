@@ -5,7 +5,7 @@
 -- Post-process Config
 -- ═══════════════════════════════════════════════════════════════
 
-postprocess_config_new(): any
+config_new(): any
     {
         enabled = true,
         bloom = {
@@ -411,21 +411,9 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Config
-M.config_new = postprocess_config_new
 -- Bloom
-M.bloom_extract_bright = bloom_extract_bright
-M.bloom_blur = bloom_blur
-M.bloom_apply = bloom_apply
 -- Tone Map
-M.tonemap_reinhard = tonemap_reinhard
-M.tonemap_aces = tonemap_aces
-M.tonemap_linear = tonemap_linear
 -- FXAA
-M.fxaa_process = fxaa_process
 -- Vignette
-M.vignette_apply = vignette_apply
 -- Film Grain
-M.film_grain_apply = film_grain_apply
-M

@@ -88,19 +88,3 @@ dot(a, b): f64
     return sum
 end
 
-M = {}
-M.bench_matmul = bench_matmul
-M.bench_conv2d = bench_conv2d
-M.bench_softmax = bench_softmax
-M.bench_attention = bench_attention
-M.bench_mlp = bench_mlp
-M.bench_gelu = bench_gelu
-M.bench_layernorm = bench_layernorm
-M.bench_dot = bench_dot
-M.bench_conv1d = bench_conv1d
-M.matmul = matmul
-M.softmax = softmax
-M.gelu = gelu
-M.layernorm = layernorm
-M.dot = dot
-M

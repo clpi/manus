@@ -61,14 +61,3 @@ attrs = {
     cli = { "duo test <file.duo>", "duo bench <file.duo>", "duo test <file> --filter <pat>" },
 }
 
-M = {}
-M.start = start
-M.assert_eq = assert_eq
-M.assert_ne = assert_ne
-M.assert_true = assert_true
-M.assert_false = assert_false
-M.assert_nil = assert_nil
-M.assert_not_nil = assert_not_nil
-M.done = done
-M.attrs = attrs
-M

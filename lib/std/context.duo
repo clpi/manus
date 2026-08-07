@@ -29,7 +29,7 @@ with_deadline(parent: any, deadline: any): any
     if parent == nil parent = background_ctx() end
     -- inherit the earlier deadline
     d = deadline
-    if parent.deadline != nil and parent.deadline < d d = parent.deadline end
+    if has(.deadline)(parent) and parent.deadline < d d = parent.deadline end
     {deadline = d, cancelled = false, parent = parent, done = false}
 end
 
@@ -72,7 +72,7 @@ deadline(ctx: any): any
     if ctx == nil return nil end
     cur = ctx
     while cur != nil
-        if cur.deadline != nil return cur.deadline end
+        if has(.deadline)(cur) return cur.deadline end
         cur = cur.parent
     end
     nil

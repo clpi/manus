@@ -55,20 +55,20 @@ is_alnum(b: any): bool
 end
 
 -- to_upper: convert byte b to uppercase if it is a lowercase letter.
-to_upper_rune(b: any): i64
+to_upper(b: any): i64
     if b >= 97 and b <= 122 return b - 32 end
     b
 end
 
 -- to_lower: convert byte b to lowercase if it is an uppercase letter.
-to_lower_rune(b: any): i64
+to_lower(b: any): i64
     if b >= 65 and b <= 90 return b + 32 end
     b
 end
 
 -- to_title: convert byte b to title case (same as upper for ASCII).
-to_title_rune(b: any): i64
-    to_upper_rune(b)
+to_title(b: any): i64
+    to_upper(b)
 end
 
 -- ----- Range-based classification on strings -----
@@ -142,24 +142,3 @@ is_identifier(s: str): bool
     true
 end
 
-M = {}
-M.is_digit = is_digit
-M.is_letter = is_letter
-M.is_upper = is_upper
-M.is_lower = is_lower
-M.is_space = is_space
-M.is_print = is_print
-M.is_control = is_control
-M.is_punct = is_punct
-M.is_hex_digit = is_hex_digit
-M.is_alnum = is_alnum
-M.to_upper = to_upper_rune
-M.to_lower = to_lower_rune
-M.to_title = to_title_rune
-M.is_digit_str = is_digit_str
-M.is_letter_str = is_letter_str
-M.is_alnum_str = is_alnum_str
-M.is_space_str = is_space_str
-M.is_hex_str = is_hex_str
-M.is_identifier = is_identifier
-M

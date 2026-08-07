@@ -39,10 +39,3 @@ transformer_block(heads, dim): any
     }
 end
 
-M = {}
-M.assert_matmul = assert_matmul
-M.assert_broadcast = assert_broadcast
-M.numel = numel
-M.mnist_mlp = mnist_mlp
-M.transformer_block = transformer_block
-M

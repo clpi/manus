@@ -2,9 +2,7 @@
 
 net = req "std.net"
 
-M = {}
-M.get = net.http_get
-M.post = net.http_post
-M.request = net.http_request
-M.serve = net.http_serve
-M
+get = net.http_get
+post = net.http_post
+request = net.http_request
+serve = net.http_serve

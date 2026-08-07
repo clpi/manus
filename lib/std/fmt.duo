@@ -1,11 +1,11 @@
 -- std.fmt — formatting utilities
 
-std_fmt_int(v: any): str
+int(v: any): str
     if v == nil return "nil" end
     to(str)(v)
 end
 
-std_fmt_float(v: any, precision: i64): str
+float(v: any, precision: i64): str
     if v == nil return "nil" end
     if precision == nil
         string.format("%g", v)
@@ -60,7 +60,7 @@ pad(s: str, width: i64, pad_char: str): str
     s .. pad_str
 end
 
-std_fmt_trunc(s: str, width: i64): str
+trunc(s: str, width: i64): str
     if s == nil return "" end
     if width == nil return s end
     len = string.len(s)
@@ -167,19 +167,3 @@ repr(v: any): str
     end
 end
 
-M = {}
-M.int = std_fmt_int
-M.float = std_fmt_float
-M.to_str = to_str
-M.boolean = boolean
-M.hex = hex
-M.bin = bin
-M.trim = trim
-M.pad = pad
-M.trunc = std_fmt_trunc
-M.format = format
-M.println = println
-M.bytes = bytes
-M.join = join
-M.repr = repr
-M

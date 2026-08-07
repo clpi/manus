@@ -169,7 +169,7 @@ end
 -- Multi-level Decomposition
 -- ═══════════════════════════════════════════════════════════════
 
-wavelet_decompose(data: any, levels: i64): any
+decompose(data: any, levels: i64): any
     coeffs = {data}
     i = 1
     while i <= levels
@@ -185,7 +185,7 @@ wavelet_decompose(data: any, levels: i64): any
     }
 end
 
-wavelet_reconstruct(decomp: any): any
+reconstruct(decomp: any): any
     signal = decomp.approx
     i = decomp.levels
     while i >= 1
@@ -199,8 +199,8 @@ end
 -- Denoising
 -- ═══════════════════════════════════════════════════════════════
 
-wavelet_denoise(signal: any, threshold: f64): any
-    decomp = wavelet_decompose(signal, 3)
+denoise(signal: any, threshold: f64): any
+    decomp = decompose(signal, 3)
 
     -- Soft threshold detail coefficients
     i = 1
@@ -218,27 +218,15 @@ wavelet_denoise(signal: any, threshold: f64): any
         i += 1
     end
 
-    wavelet_reconstruct(decomp)
+    reconstruct(decomp)
 end
 
 -- ═══════════════════════════════════════════════════════════════
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
 -- Haar
-M.haar_forward = haar_forward
-M.haar_inverse = haar_inverse
 -- Daubechies
-M.db4_forward = db4_forward
-M.db4_inverse = db4_inverse
 -- Multi-level
-M.decompose = wavelet_decompose
-M.reconstruct = wavelet_reconstruct
 -- Denoise
-M.denoise = wavelet_denoise
 -- Utility
-M.convolve = convolve
-M.downsample = downsample
-M.upsample = upsample
-M

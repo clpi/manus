@@ -40,11 +40,3 @@ count(wg: any): i64
     wg.count
 end
 
-M = {}
-M.new_waitgroup = new_waitgroup
-M.add = add
-M.done = done
-M.wait = wait
-M.wait_block = wait_block
-M.count = count
-M
