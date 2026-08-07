@@ -2773,6 +2773,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   jfo: i64 = 0
   jco: i64 = 0
   jimp: i64 = 0
+  jdata: i64 = 0
   jsi: i64 = 9
   while jsi <= mlen
     jsid: i64 = string.byte(s, jsi)
@@ -2785,6 +2786,8 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       jfo = jsi
     elseif jsid == 10
       jco = jsi
+    elseif jsid == 11
+      jdata = 1
     elseif jsid == 2
       jic: i64 = uleb_val(s, jsi, mlen)
       jij: i64 = uleb_end(s, jsi, mlen)
@@ -2896,6 +2899,27 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
   if jself >= 0
     selfloc = mem.read_i64(jft, (jself * 5 + 2) * 8) + mem.read_i64(jft, (jself * 5 + 3) * 8)
   end
+
+  -- Prologue. x19..x28 are CALLEE-SAVED on AArch64, and this JIT uses them for
+  -- locals and for the memory base, so they must be preserved or the generated
+  -- code corrupts its caller -- ward's own compiled C. That is not theoretical:
+  -- clobbering x28 made `rtype` read back wrong and every f32/f64 module print
+  -- its raw bit pattern instead of a float. The original w9..w16 window needed
+  -- none of this because x9..x15 are caller-saved temporaries.
+  jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (20 << 10) | (31 << 5) | 19)
+  n += 1
+  jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (22 << 10) | (31 << 5) | 21)
+  n += 1
+  jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (24 << 10) | (31 << 5) | 23)
+  n += 1
+  jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (26 << 10) | (31 << 5) | 25)
+  n += 1
+  jitm.w32(code, n, 0xA9800000 | (0x7E << 15) | (28 << 10) | (31 << 5) | 27)
+  n += 1
+  -- the linear-memory base arrives in x0 (jitm.call1); stash it in x28 before
+  -- x0 is reused as operand-stack slot 0
+  jitm.w32(code, n, 0xAA0003E0 | (0 << 16) | 28)
+  n += 1
 
   curloc = selfloc
 
@@ -3198,11 +3222,11 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- Only one alias is tracked; a second local.get materializes the first.
       idx: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
-      -- Locals occupy w9..w17 then w19..w28: NINETEEN of them. x18 is skipped
+      -- Locals occupy w9..w17 then w19..w27: EIGHTEEN of them. x18 is skipped
       -- because it is the reserved platform register on Darwin, and x29/x30 are
       -- the frame pointer and link register. The old cap of 8 was what blocked
       -- wart_mixed_type_bench and wart_complete_opcode_bench.
-      if idx > 18
+      if idx > 17
         return -1
       end
       rgi: i64 = 9 + idx
@@ -3228,7 +3252,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       -- local.set / local.tee -> MOV Wlocal, Wtop
       idx2: i64 = uleb_val(s, off + pc, off + blen) + lbase
       pc = uleb_end(s, off + pc, off + blen) - off
-      if idx2 > 18 or sp < 1
+      if idx2 > 17 or sp < 1
         return -1
       end
       rgo: i64 = 9 + idx2
@@ -3530,6 +3554,63 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       last_cc = 0
       last_alu = -1
 
+    elseif op == 40 or op == 41 or op == 42 or op == 43 or op == 54 or op == 55 or op == 56 or op == 57
+      -- i32/i64/f32/f64 load and store. Both immediates (align, then offset)
+      -- are LEBs. The dynamic address is an UNSIGNED i32 already zero-extended
+      -- in its register, because every 32-bit ARM64 op clears the top half, so
+      -- `ADD Xa, x28, Xa` forms the effective address without a separate UXTW.
+      if jdata != 0
+        return -1
+      end
+      malign: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      moff: i64 = uleb_val(s, off + pc, off + blen)
+      pc = uleb_end(s, off + pc, off + blen) - off
+      wide: i64 = 0
+      if op == 41 or op == 43 or op == 55 or op == 57
+        wide = 1
+      end
+      -- the scaled immediate form needs a naturally aligned offset in range
+      sc: i64 = 4
+      if wide == 1
+        sc = 8
+      end
+      if moff - (moff // sc) * sc != 0 or moff // sc > 4095
+        return -1
+      end
+      if op >= 54
+        -- store: [addr, value]
+        if sp < 2
+          return -1
+        end
+        ma: i64 = sp - 2
+        mv: i64 = sp - 1
+        jitm.w32(code, n, 0x8B000000 | (ma << 16) | (28 << 5) | ma)
+        n += 1
+        if wide == 1
+          jitm.w32(code, n, 0xF9000000 | ((moff // 8) << 10) | (ma << 5) | mv)
+        else
+          jitm.w32(code, n, 0xB9000000 | ((moff // 4) << 10) | (ma << 5) | mv)
+        end
+        n += 1
+        sp -= 2
+      else
+        if sp < 1
+          return -1
+        end
+        ma2: i64 = sp - 1
+        jitm.w32(code, n, 0x8B000000 | (ma2 << 16) | (28 << 5) | ma2)
+        n += 1
+        if wide == 1
+          jitm.w32(code, n, 0xF9400000 | ((moff // 8) << 10) | (ma2 << 5) | ma2)
+        else
+          jitm.w32(code, n, 0xB9400000 | ((moff // 4) << 10) | (ma2 << 5) | ma2)
+        end
+        n += 1
+      end
+      last_alu = -1
+      last_cset = -1
+
     elseif op == 1
       -- nop: emits nothing
 
@@ -3748,7 +3829,7 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
       cnp: i64 = mem.read_i64(jft, (cfx * 5 + 3) * 8)
       -- the callee's locals start above every enclosing frame's
       nlb2: i64 = lbase + curloc
-      if nlb2 + cnp + cnl > 19 or cnp > sp
+      if nlb2 + cnp + cnl > 18 or cnp > sp
         return -1
       end
       -- arguments move from the operand stack into the callee's params, which
@@ -3791,6 +3872,17 @@ jit_compile(s: str, off: i64, blen: i64, code: any, mlen: i64): i64
     jitm.w32(code, n, 0xAA0003E0 | ((sp - 1) << 16) | 0)
     n += 1
   end
+  -- restore the callee-saved window, in reverse
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (28 << 10) | (31 << 5) | 27)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (26 << 10) | (31 << 5) | 25)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (24 << 10) | (31 << 5) | 23)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (22 << 10) | (31 << 5) | 21)
+  n += 1
+  jitm.w32(code, n, 0xA8C00000 | (2 << 15) | (20 << 10) | (31 << 5) | 19)
+  n += 1
   jitm.w32(code, n, 0xD65F03C0)
   n += 1
   n
@@ -3886,7 +3978,9 @@ main(): void
         -- came back as 0), and it was invisible while the JIT could only
         -- compile i32 bodies.
         rt0: i64 = find_run_body(bytes, #bytes, invoke, #invoke, 2)
-        result = jitm.call0(code)
+        jlin = mem.alloc(65536)
+        mem.zero(jlin, 65536)
+        result = jitm.call1(code, mem.addr(jlin))
         if rt0 == 0x7F
           result = result & M32
         end
