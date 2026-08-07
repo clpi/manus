@@ -27,24 +27,30 @@ pub const KEYWORD_PRODUCTION_PATH = duo_keyword_bridge.PRODUCTION_PATH;
 /// `@c.export`. These are the symbols a `duo_lexer_tokenize.c` production
 /// dispatch will bind to, mirroring `duo_keyword_classify` for the keyword leg.
 ///
-/// This list previously named eight symbols, six of which
-/// (`duo_lexer_token_count`, `_kind_at`, `_text_at`, `_int_at`, `_line_at`,
-/// `duo_lexer_start_pos`) do not exist and are not intended to: lexer.duo's own
-/// design note says an indexed `kind_at(index)` entry "must re-lex per call",
-/// so the cursor-style `step` deliberately replaces them to keep tokenization
-/// O(n). Listing them overstated how much of the seam was built. The two below
-/// are what `@c.export` actually emits, verified against the generated C.
+/// This list has now been wrong in BOTH directions, which is why it is pinned.
 ///
-/// `duo_lexer_step` lowers with a real C ABI and no boxing:
+/// It first named eight symbols, six of which (`duo_lexer_token_count`,
+/// `_kind_at`, `_text_at`, `_int_at`, `_line_at`, `duo_lexer_start_pos`) never
+/// existed — overstating the seam. Correcting that overshot: it was cut to the
+/// two cursor/fingerprint entries at a moment when the whole-file tokenize
+/// entries either did not exist yet or were missed, which UNDERSTATED the seam
+/// by three and left the blocker note below describing a gap that had been
+/// closed. All five are verified emitted as real C-ABI symbols
+/// (`std_compiler_lexer__duo_lexer_*`) in the generated C.
+///
+/// Purity has to be judged per function, not by grepping the file: the
+/// whole-program C for a proof always contains `lua_Value` from the runtime
+/// preamble and other embedded modules. `duo_lexer_step` itself lowers with a
+/// real C ABI and no boxing:
 ///     int64_t std_compiler_lexer__duo_lexer_step(const char*, const char*, int64_t)
-/// Its body holds zero `lua_Value`. Note the whole-program C for the proof does
-/// contain `lua_Value` (runtime preamble and other embedded modules), so purity
-/// has to be judged per function, not by grepping the file.
 ///
 /// Note: `@c.export` sets the *wasm* export name; the native symbol is the Duo
 /// function name, so each Duo function is named exactly what C must see.
 pub const TOKENIZE_EXPORTS = [_][]const u8{
+    "duo_lexer_tokenize_text",
+    "duo_lexer_tokenize_all",
     "duo_lexer_step",
+    "duo_lexer_text_fingerprint",
     "duo_lexer_kind_fingerprint",
 };
 
@@ -58,16 +64,31 @@ pub const TOKENIZE_EXPORT_PROOF = "examples/pass16_lexer_tokenize_export_proof.d
 /// record literal, and `duo_lexer_step` sets `pos` and lexes exactly one token,
 /// so feeding `next_pos` back walks a source in O(n). Measured, not assumed.
 ///
-/// The real blocker is *location*. `duo_lexer_step` packs only
-/// `kind * 2^40 + next_pos`; there is no line or column in the return. Because
-/// each call builds a fresh `Lexer` (whose `line`/`col` start at 1) and then
-/// jumps `pos` without rescanning, line/col cannot survive across calls — every
-/// token would report line 1. Streaming a single lexer is fine: `new` + two
-/// `next_tok` calls over "a\nb" reports lines 1 then 2 correctly. So the engine
-/// shape is right and the equivalence evidence is real; what MP4-B02 needs is an
-/// export that threads location through, e.g. taking `line` and packing a line
-/// field alongside `kind`/`next_pos` — diagnostics cannot use a tokenizer that
-/// cannot say where a token is.
+/// LOCATION IS NO LONGER THE BLOCKER — that claim is retired here.
+///
+/// This comment used to say "what MP4-B02 needs is an export that threads
+/// location through, e.g. taking `line` and packing a line field alongside
+/// `kind`/`next_pos`". That export exists, and in a better shape than the one
+/// proposed: `duo_lexer_tokenize_all` writes four i64 per token (kind, line,
+/// col, int_val) and `duo_lexer_tokenize_text` writes six (adding text_off,
+/// text_len) into host-provided buffers. One `Lexer` runs the whole file, so the
+/// stream is state-faithful by construction rather than rebuilt per token —
+/// which also retires `duo_lexer_step`'s own hazard, recorded in lexer.duo:653,
+/// that stepping discards `has_peeked`/`peeked_token` and mis-lexes
+/// context-sensitive shapes.
+///
+/// Proven, not assumed: examples/pass16_lexer_tokenize_all_proof.duo asserts
+/// that tokenizing "a\nb" reports line 1 then line 2, and
+/// pass16_lexer_tokenize_text_proof.duo covers the text arena. Both assert by
+/// EXIT CODE (0 pass, a distinct nonzero per failed check) and print nothing on
+/// success, so "no output" is not evidence of a skipped proof. Negative control
+/// verified: flipping the line-2 assertion yields exit 14.
+///
+/// What actually remains for `.duo_native` is PRODUCTION DISPATCH: `src/lexer.zig`
+/// still tokenizes for the compile driver. Closing it means committing generated
+/// C for the Duo lexer and calling it from the host, exactly as SH-02's keyword
+/// leg already does through `src/duo_keyword_classify.c` — that precedent, not a
+/// missing capability, is the remaining work.
 pub fn tokenizeAuthority() TokenizeAuthority {
     return .host_zig;
 }
@@ -115,8 +136,30 @@ test "duo_lexer_bridge: production split" {
 // quarter. Pin it so re-expanding it is a deliberate, visible act rather than
 // documentation drift — the two names below are the only `@c.export`s in
 // lib/std/compiler/lexer.duo, verified against its generated C.
-test "duo_lexer_bridge: seam is exactly the two real lexer.duo exports" {
-    try std.testing.expectEqual(@as(usize, 2), TOKENIZE_EXPORTS.len);
-    try std.testing.expectEqualStrings("duo_lexer_step", TOKENIZE_EXPORTS[0]);
-    try std.testing.expectEqualStrings("duo_lexer_kind_fingerprint", TOKENIZE_EXPORTS[1]);
+test "duo_lexer_bridge: seam is exactly the five real lexer.duo exports" {
+    const expected = [_][]const u8{
+        "duo_lexer_tokenize_text",
+        "duo_lexer_tokenize_all",
+        "duo_lexer_step",
+        "duo_lexer_text_fingerprint",
+        "duo_lexer_kind_fingerprint",
+    };
+    try std.testing.expectEqual(expected.len, TOKENIZE_EXPORTS.len);
+    for (expected, TOKENIZE_EXPORTS) |want, got| try std.testing.expectEqualStrings(want, got);
+}
+
+// The two whole-file entries are what makes production dispatch possible at all,
+// and the blocker note above now asserts they exist. Name them separately so
+// deleting one breaks a test that says WHY it mattered, rather than only
+// shifting a count.
+test "duo_lexer_bridge: the whole-file tokenize entries carry location" {
+    var found_all = false;
+    var found_text = false;
+    for (TOKENIZE_EXPORTS) |sym| {
+        if (std.mem.eql(u8, sym, "duo_lexer_tokenize_all")) found_all = true;
+        if (std.mem.eql(u8, sym, "duo_lexer_tokenize_text")) found_text = true;
+    }
+    // tokenize_all: kind, line, col, int_val. tokenize_text: + text_off, text_len.
+    try std.testing.expect(found_all);
+    try std.testing.expect(found_text);
 }
