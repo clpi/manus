@@ -13,31 +13,28 @@
 -- Exit code is the failing check number; 0 means the tokenizers agree.
 
 corpus_fingerprint(): i64
-    L = req "std.compiler.lexer"
     h = 0
-    h = h * 131 + L.duo_lexer_kind_fingerprint("fun add(a: i64): i64 = a + 1 end", "corpus.duo")
-    h = h * 131 + L.duo_lexer_kind_fingerprint("42 + 1", "corpus.duo")
-    h = h * 131 + L.duo_lexer_kind_fingerprint("x? y!", "corpus.duo")
-    h = h * 131 + L.duo_lexer_kind_fingerprint("\"hi\" 'there'", "corpus.duo")
-    h = h * 131 + L.duo_lexer_kind_fingerprint("-- line\nfun", "corpus.duo")
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("fun add(a: i64): i64 = a + 1 end", "corpus.duo")
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("42 + 1", "corpus.duo")
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("x? y!", "corpus.duo")
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("\"hi\" 'there'", "corpus.duo")
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("-- line\nfun", "corpus.duo")
     -- Corpus data, not Duo source: this string must stay byte-identical to
     -- `lexer_differential.fingerprint_corpus`. `!=` is graveyarded as *syntax*
     -- (Pass 41 A5) but the lexer must still tokenize it, and that is exactly what
-    -- this entry checks — do not "canonicalize" it to `!=`. It HAD been, which is
-    -- what made the corpus aggregate diverge from src/lexer.zig.
-    h = h * 131 + L.duo_lexer_kind_fingerprint("a == b ~= c", "corpus.duo")
-    h = h * 131 + L.duo_lexer_kind_fingerprint("...", "corpus.duo")
+    -- this entry checks — do not "canonicalize" it to `!=`.
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("a == b != c", "corpus.duo")
+    h = h * 131 + std.compiler.lexer.duo_lexer_kind_fingerprint("...", "corpus.duo")
     h
 end
 
 -- Spot checks that fail loudly before the aggregate, so a mismatch says which
 -- shape diverged rather than only that the corpus hash moved.
 spot_checks(): i64
-    L = req "std.compiler.lexer"
     -- "" is just EOF (kind 105): h = 0 * 31 + 105.
-    if L.duo_lexer_kind_fingerprint("", "c.duo") != 105 return 1 end
+    if std.compiler.lexer.duo_lexer_kind_fingerprint("", "c.duo") != 105 return 1 end
     -- "fun" is kw_fun (14) then EOF (105): h = (0*31+14)*31 + 105 = 539.
-    if L.duo_lexer_kind_fingerprint("fun", "c.duo") != 539 return 2 end
+    if std.compiler.lexer.duo_lexer_kind_fingerprint("fun", "c.duo") != 539 return 2 end
     0
 end
 
