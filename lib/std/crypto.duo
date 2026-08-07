@@ -22,7 +22,7 @@ end
 
 -- ── Base64 ──────────────────────────────────────────────────────────────
 
-const B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 base64_encode(s: str): str
     if s == nil return "" end
@@ -83,7 +83,7 @@ base64_decode(s: str): str
     table.concat(out)
 end
 
-const B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+B64URL_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 base64_url_encode(s: str): str
     std = base64_encode(s)
@@ -105,7 +105,7 @@ end
 
 -- ── Hex ─────────────────────────────────────────────────────────────────
 
-const HEX_CHARS = "0123456789abcdef"
+HEX_CHARS = "0123456789abcdef"
 
 hex_encode(s: str): str
     if s == nil return "" end

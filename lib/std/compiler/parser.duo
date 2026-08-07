@@ -1437,6 +1437,19 @@ proj_stmt = (lx: Lexer): str
             bst = lexer.save_state(lx)
             _n = lexer.next(lx)
             _c = lexer.next(lx)
+            -- `span: { start: u32, ... }` and the staged `@{ ... }` form. `:` is
+            -- IS, so a brace on the right is a DESCRIPTOR declaration, not a
+            -- typed binding — this is the primary data-declaration form and the
+            -- parser had no production for it at all.
+            dt = lexer.peek(lx)
+            if dt.kind == token.KIND_AT
+                _at = lexer.next(lx)
+                dt = lexer.peek(lx)
+            end
+            if dt.kind == token.KIND_LBRACE
+                _lb = lexer.next(lx)
+                return "(descriptor " .. t.text .. " " .. proj_desc_body(lx) .. ")"
+            end
             ty = proj_type(lx)
             if lexer.peek(lx).kind == token.KIND_ASSIGN
                 _a = lexer.next(lx)

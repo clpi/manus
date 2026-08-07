@@ -69,7 +69,7 @@ wide_from_bytes(data: str, off: i64): any
     {hi = hi, lo = lo}
 end
 
-const K = {
+K = {
     {hi = 0x428a2f98, lo = 0xd728ae22}, {hi = 0x71374491, lo = 0x23ef65cd},
     {hi = 0xb5c0fbcf, lo = 0xec4d3b2f}, {hi = 0xe9b5dba5, lo = 0x8189dbbc},
     {hi = 0x3956c25b, lo = 0xf348b538}, {hi = 0x59f111f1, lo = 0xb605d019},
@@ -112,7 +112,7 @@ const K = {
     {hi = 0x5fcb6fab, lo = 0x3ad6faec}, {hi = 0x6c44198c, lo = 0x4a475817},
 }
 
-const H_init = {
+H_init = {
     {hi = 0x6a09e667, lo = 0xf3bcc908}, {hi = 0xbb67ae85, lo = 0x84caa73b},
     {hi = 0x3c6ef372, lo = 0xfe94f82b}, {hi = 0xa54ff53a, lo = 0x5f1d36f1},
     {hi = 0x510e527f, lo = 0xade682d1}, {hi = 0x9b05688c, lo = 0x2b3e6c1f},

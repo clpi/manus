@@ -137,6 +137,13 @@ positives = {
     { "spawn(() f(1))", "(program (call spawn (lambda (params) (call f 1))))" },
     -- `;` separates statements inside a one-line if body.
     { "if n < 0 neg = true; n = -n end", "(program (if (< n 0) (assign neg true) (assign n (- n))))" },
+    -- Descriptor declarations — the primary data form, and the parser had no
+    -- production for it. `:` is IS, so a brace on the right is a descriptor,
+    -- not a typed binding; `@{` is the staged spelling of the same thing.
+    -- These sit beside `n: i64 = 5` and `obj:m(1, 2)` above, which start with
+    -- the identical two tokens.
+    { "span: { start: u32, stop: u32 }", "(program (descriptor span (desc start u32 stop u32)))" },
+    { "ByteCursor: @{ data: str, pos: i64 }", "(program (descriptor ByteCursor (desc data str pos i64)))" },
 }
 
 fails = { "x =", "end", "x = +", "fun f(", "return +", "{ nope } = 1",

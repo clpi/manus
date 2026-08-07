@@ -243,34 +243,8 @@ std_result_errors(results: any): any
     out
 end
 
-M = {}
-M.ok = ok
-M.err = err
-M.is_ok = is_ok
-M.is_err = is_err
-M.value = value
-M.error = std_result_error
-M.unwrap = unwrap
-M.unwrap_or_else = unwrap_or_else
-M.map = map
-M.map_err = map_err
-M.flat_map = flat_map
-M.and_then = and_then
-M.or_else = or_else
-M.to_str = result_to_str
-M.some = some
-M.none = none
-M.is_some = is_some
-M.is_none = is_none
-M.option_value = option_value
-M.option_unwrap = option_unwrap
-M.option_unwrap_or_else = option_unwrap_or_else
-M.option_map = option_map
-M.option_flat_map = option_flat_map
-M.option_filter = option_filter
-M.option_to_str = option_to_str
-M.collect = collect
-M.all_ok = all_ok
-M.values = values
-M.errors = std_result_errors
-M
+-- MOD-1: the file IS the module. Identity re-exports deleted; exports
+-- carrying real content are ordinary top-level bindings.
+error = std_result_error
+to_str = result_to_str
+errors = std_result_errors

@@ -454,24 +454,10 @@ end
 -- Module exports
 -- ═══════════════════════════════════════════════════════════════
 
-M = {}
+-- MOD-1: the file IS the module. Identity re-exports deleted; exports
+-- carrying real content are ordinary top-level bindings.
 -- Optimizers
-M.sgd = sgd
-M.adam = adam
-M.adamw = adamw
-M.adagrad = adagrad
-M.rmsprop = rmsprop
-M.lamb = lamb
-M.step = optimizer_step
+step = optimizer_step
 -- Schedulers
-M.step_scheduler = step_scheduler
-M.exponential_scheduler = exponential_scheduler
-M.cosine_scheduler = cosine_scheduler
-M.warmup_cosine = warmup_cosine
-M.warmup_constant = warmup_constant
-M.one_cycle = one_cycle
-M.get_lr = scheduler_get_lr
+get_lr = scheduler_get_lr
 -- Gradient ops
-M.clip_grad_norm = clip_grad_norm
-M.clip_grad_value = clip_grad_value
-M
